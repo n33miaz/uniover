@@ -237,8 +237,13 @@ jobs:
         with:
           name: sbom-spdx
           path: sbom.spdx.json
+      # Em produção a API exige a string de conexão. Aqui ela aponta para um banco que não existe: além de subir,
+      # prova que /health/live responde sem tocar no banco.
       - name: Subir o contêiner
-        run: docker run -d --name uniover -p 10000:10000 -e PORT=10000 uniover:ci
+        run: >-
+          docker run -d --name uniover -p 10000:10000 -e PORT=10000
+          -e "ConnectionStrings__Default=Host=127.0.0.1;Port=1;Database=none;Username=none;Password=none"
+          uniover:ci
       - name: Esperar /health/live
         run: |
           for _ in $(seq 1 30); do
