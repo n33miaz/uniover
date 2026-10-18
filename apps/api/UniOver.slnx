@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/UniOver.Host/UniOver.Host.csproj" />
+    <Project Path="src/UniOver.SharedKernel/UniOver.SharedKernel.csproj" />
+    <Project Path="src/UniOver.BuildingBlocks.Messaging/UniOver.BuildingBlocks.Messaging.csproj" />
+    <Project Path="src/UniOver.BuildingBlocks.Persistence/UniOver.BuildingBlocks.Persistence.csproj" />
+    <Project Path="src/UniOver.BuildingBlocks.Web/UniOver.BuildingBlocks.Web.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/">
+    <Project Path="src/Modules/Identity/UniOver.Modules.Identity/UniOver.Modules.Identity.csproj" />
+    <Project Path="src/Modules/Identity/UniOver.Modules.Identity.Contracts/UniOver.Modules.Identity.Contracts.csproj" />
+    <Project Path="src/Modules/Tv/UniOver.Modules.Tv/UniOver.Modules.Tv.csproj" />
+    <Project Path="src/Modules/Tv/UniOver.Modules.Tv.Contracts/UniOver.Modules.Tv.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/UniOver.ArchitectureTests/UniOver.ArchitectureTests.csproj" />
+    <Project Path="tests/UniOver.IntegrationTests/UniOver.IntegrationTests.csproj" />
+    <Project Path="tests/UniOver.Modules.Identity.Tests/UniOver.Modules.Identity.Tests.csproj" />
+    <Project Path="tests/UniOver.Modules.Tv.Tests/UniOver.Modules.Tv.Tests.csproj" />
+  </Folder>
+</Solution>
