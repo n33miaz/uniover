@@ -5,10 +5,10 @@
   "description": "Contratos de mensagens entre API e agente do UniOver.",
   "type": "module",
   "scripts": {
-    "validate": "node scripts/validate.mjs && asyncapi validate agent/asyncapi.yaml"
+    "validate": "node scripts/validate.mjs"
   },
   "devDependencies": {
-    "@asyncapi/cli": "^6.0.0",
+    "@asyncapi/parser": "^3.6.6",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1"
   }
