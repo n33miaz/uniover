@@ -22,6 +22,7 @@ builder.Services.AddOpenApi();
 // [composição: eventos]
 builder.Services.AddUniOverMessaging(builder.Configuration);
 // [composição: autenticação]
+builder.Services.AddUniOverAuthentication(builder.Configuration);
 // [composição: passkeys]
 
 // O Host só compõe: cada módulo é chamado explicitamente, sem descoberta por reflexão.
@@ -37,6 +38,7 @@ app.UseUniOverProblemDetails();
 app.UseUniOverStaticFiles();
 app.UseUniOverRateLimiting();
 // [pipeline: autenticação] UseAuthentication e UseAuthorization entram aqui.
+app.UseUniOverAuthentication();
 
 if (app.Environment.IsDevelopment())
 {
