@@ -1,0 +1,85 @@
+[project]
+name = "uniover-agent"
+version = "0.1.0"
+description = "Agente local do UniOver: recebe comandos da API e controla os aparelhos de casa."
+readme = "README.md"
+license = "LicenseRef-Proprietary"
+requires-python = ">=3.14"
+dependencies = [
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.0",
+]
+
+[project.scripts]
+uniover-agent = "uniover_agent.main:main"
+
+[build-system]
+requires = ["uv_build>=0.11.19,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "import-linter",
+    "mypy",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF", "PL", "N", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004"]
+
+[tool.mypy]
+strict = true
+python_version = "3.14"
+files = ["src", "tests"]
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--cov=uniover_agent.core --cov-report=term-missing --cov-fail-under=80"
+
+[tool.importlinter]
+root_package = "uniover_agent"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Camadas: main > adapters > core > ports"
+type = "layers"
+layers = [
+    "uniover_agent.main",
+    "uniover_agent.adapters",
+    "uniover_agent.core",
+    "uniover_agent.ports",
+]
+
+[[tool.importlinter.contracts]]
+name = "Nucleo nao importa adaptadores"
+type = "forbidden"
+source_modules = ["uniover_agent.core", "uniover_agent.ports"]
+forbidden_modules = ["uniover_agent.adapters"]
+
+[[tool.importlinter.contracts]]
+name = "Nucleo nao importa rede nem biblioteca da TV"
+type = "forbidden"
+source_modules = ["uniover_agent.core", "uniover_agent.ports"]
+forbidden_modules = [
+    "websockets",
+    "aiohttp",
+    "httpx",
+    "requests",
+    "paho",
+    "androidtvremote2",
+    "adb_shell",
+]
+allow_indirect_imports = true
