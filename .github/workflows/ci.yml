@@ -77,10 +77,13 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: apps/api/global.json
+      # Roda de dentro de apps/api: o global.json de lá liga o Microsoft.Testing.Platform no dotnet test.
       - name: Compilar
-        run: dotnet build apps/api/UniOver.slnx -warnaserror
+        working-directory: apps/api
+        run: dotnet build UniOver.slnx -warnaserror
       - name: Testar com cobertura
-        run: dotnet test --solution apps/api/UniOver.slnx --coverage --coverage-output-format cobertura
+        working-directory: apps/api
+        run: dotnet test --solution UniOver.slnx --coverage --coverage-output-format cobertura
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
