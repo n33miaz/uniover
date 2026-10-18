@@ -1,0 +1,15 @@
+# Regras do ZAP baseline. Formato: ID, acao e comentario, separados por TAB (acoes: IGNORE, WARN, FAIL).
+# Com fail_action ligado, qualquer alerta fora desta lista que vire WARN ou FAIL derruba o job.
+10020	IGNORE	(Anti-clickjacking: os cabecalhos de seguranca ainda nao existem; virar FAIL quando entrarem)
+10021	IGNORE	(X-Content-Type-Options: idem; virar FAIL quando entrar)
+10038	IGNORE	(CSP ausente: idem; virar FAIL quando entrar)
+10063	IGNORE	(Permissions-Policy ausente: idem; virar FAIL quando entrar)
+10049	IGNORE	(Conteudo armazenavel em cache: esperado para os arquivos estaticos do PWA)
+10109	IGNORE	(Aplicacao web moderna: aviso informativo sobre SPA, sem risco)
+90004	IGNORE	(Cross-Origin-Embedder-Policy: nao se aplica, nao ha recursos de outras origens)
+10010	FAIL	(cookie sem HttpOnly)
+10011	FAIL	(cookie sem Secure)
+10054	FAIL	(cookie sem SameSite)
+10035	FAIL	(HSTS ausente em resposta HTTPS)
+10037	FAIL	(vazamento por X-Powered-By)
+10202	FAIL	(ausencia de token anti-CSRF)

@@ -1,0 +1,73 @@
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /apps/api
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      nuget-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /apps/web
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      npm-web-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /contracts
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      npm-contracts-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: uv
+    directory: /apps/agent
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      uv-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
