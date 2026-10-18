@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="TngTech.ArchUnitNET" />
+    <PackageReference Include="TngTech.ArchUnitNET.xUnitV3" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\UniOver.Host\UniOver.Host.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Identity\UniOver.Modules.Identity\UniOver.Modules.Identity.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Tv\UniOver.Modules.Tv\UniOver.Modules.Tv.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+  </ItemGroup>
+</Project>
