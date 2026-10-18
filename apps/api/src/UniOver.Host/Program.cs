@@ -24,6 +24,7 @@ builder.Services.AddUniOverMessaging(builder.Configuration);
 // [composição: autenticação]
 builder.Services.AddUniOverAuthentication(builder.Configuration);
 // [composição: passkeys]
+builder.Services.AddIdentityPasskeys(builder.Configuration);
 
 // O Host só compõe: cada módulo é chamado explicitamente, sem descoberta por reflexão.
 builder.Services.AddTvModule(builder.Configuration);

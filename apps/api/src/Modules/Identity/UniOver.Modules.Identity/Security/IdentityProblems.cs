@@ -47,6 +47,47 @@ internal static class IdentityProblems
             type: ProblemDetailsExtensions.TypeBase + LoginLocked);
     }
 
+    public const string StepUpFailedType = "step-up-failed";
+    public const string InvalidPasswordType = "invalid-password";
+    public const string NoPasskeyType = "no-passkey";
+    public const string LastPasskeyType = "last-passkey";
+    public const string PasskeyRegistrationFailedType = "passkey-registration-failed";
+
+    /// <summary>Confirmação recusada (desafio vencido ou repetido, assinatura inválida...): sem detalhe para quem tenta.</summary>
+    public static IResult StepUpFailed() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status403Forbidden,
+            title: "Não foi possível confirmar a ação com a passkey.",
+            type: ProblemDetailsExtensions.TypeBase + StepUpFailedType);
+
+    /// <summary>
+    /// Senha errada numa confirmação com a sessão já aberta. Não é 401 de propósito: o app trataria como sessão
+    /// vencida e tentaria renovar, em vez de mostrar que a senha digitada não confere.
+    /// </summary>
+    public static IResult InvalidPassword() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status403Forbidden,
+            title: "Senha incorreta.",
+            type: ProblemDetailsExtensions.TypeBase + InvalidPasswordType);
+
+    public static IResult NoPasskey() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status404NotFound,
+            title: "Nenhuma passkey cadastrada.",
+            type: ProblemDetailsExtensions.TypeBase + NoPasskeyType);
+
+    public static IResult LastPasskey() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: "Esta é a última passkey: cadastre outra antes de remover.",
+            type: ProblemDetailsExtensions.TypeBase + LastPasskeyType);
+
+    public static IResult PasskeyRegistrationFailed() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status400BadRequest,
+            title: "Não foi possível cadastrar a passkey.",
+            type: ProblemDetailsExtensions.TypeBase + PasskeyRegistrationFailedType);
+
     public static IResult Conflict() =>
         Results.Problem(
             statusCode: StatusCodes.Status409Conflict,

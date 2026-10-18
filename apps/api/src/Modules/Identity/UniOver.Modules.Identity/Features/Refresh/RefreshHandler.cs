@@ -123,6 +123,11 @@ internal sealed class RefreshHandler(
                 s => s.SetProperty(t => t.RevokedAt, now).SetProperty(t => t.RevokedReason, RevokeReasons.Reuse),
                 cancellationToken);
 
+        // Sessão possivelmente roubada: nenhuma confirmação dela continua valendo.
+        await db.StepUpConfirmations
+            .Where(c => c.SessionFamilyId == familyId)
+            .ExecuteDeleteAsync(cancellationToken);
+
         audit.Add(token.UserId, AuditEvents.RefreshReuseDetected, client);
         await db.SaveChangesAsync(cancellationToken);
     }

@@ -70,6 +70,66 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                     b.ToTable("login_audit", "identity");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.Passkey", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("Aaguid")
+                        .HasColumnType("uuid")
+                        .HasColumnName("aaguid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<byte[]>("CredentialId")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("credential_id");
+
+                    b.Property<DateTimeOffset?>("LastUsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_used_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("name");
+
+                    b.Property<byte[]>("PublicKey")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("public_key");
+
+                    b.Property<long>("SignCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sign_count");
+
+                    b.Property<string>("Transports")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("transports");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_passkeys");
+
+                    b.HasIndex("CredentialId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_passkeys_credential_id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_passkeys_user_id");
+
+                    b.ToTable("passkeys", "identity");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -140,6 +200,49 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                     b.ToTable("refresh_tokens", "identity");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.StepUpConfirmation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("action");
+
+                    b.Property<DateTimeOffset>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmed_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("SessionFamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("session_family_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_step_up_confirmations");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_step_up_confirmations_expires_at");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_step_up_confirmations_user_id");
+
+                    b.HasIndex("SessionFamilyId", "Action")
+                        .HasDatabaseName("ix_step_up_confirmations_session_family_id_action");
+
+                    b.ToTable("step_up_confirmations", "identity");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -190,6 +293,58 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                     b.ToTable("users", "identity");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.WebAuthnChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("action");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("OptionsJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("options_json");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("purpose");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_webauthn_challenges");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_webauthn_challenges_expires_at");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_webauthn_challenges_user_id");
+
+                    b.ToTable("webauthn_challenges", "identity");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.Passkey", b =>
+                {
+                    b.HasOne("UniOver.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_passkeys_users_user_id");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.RefreshToken", b =>
                 {
                     b.HasOne("UniOver.Modules.Identity.Domain.User", null)
@@ -198,6 +353,26 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_refresh_tokens_users_user_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.StepUpConfirmation", b =>
+                {
+                    b.HasOne("UniOver.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_step_up_confirmations_users_user_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.WebAuthnChallenge", b =>
+                {
+                    b.HasOne("UniOver.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_webauthn_challenges_users_user_id");
                 });
 #pragma warning restore 612, 618
         }
