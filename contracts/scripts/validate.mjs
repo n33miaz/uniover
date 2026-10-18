@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
+import { Parser } from "@asyncapi/parser";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "agent");
 const read = (p) => JSON.parse(readFileSync(p, "utf8"));
@@ -53,6 +54,13 @@ for (const f of invalid) {
 const asyncapi = readFileSync(join(root, "asyncapi.yaml"), "utf8");
 for (const t of byType.keys()) {
   if (!asyncapi.includes(`${t}.schema.json`)) fail(`asyncapi.yaml não cita ${t}`);
+}
+
+// Análise do documento AsyncAPI: qualquer diagnóstico de severidade erro reprova.
+const parsed = await new Parser().parse(asyncapi, { source: join(root, "asyncapi.yaml") });
+if (!parsed.document) fail("asyncapi.yaml não pôde ser analisado");
+for (const d of parsed.diagnostics.filter((x) => x.severity === 0)) {
+  fail(`asyncapi.yaml: ${d.code} ${d.message} (${d.path.join("/")})`);
 }
 
 if (failures) { console.error(`${failures} problema(s)`); process.exit(1); }
