@@ -12,8 +12,15 @@ if (!string.IsNullOrWhiteSpace(port))
 }
 
 builder.Services.AddUniOverProblemDetails();
+builder.Services.AddUniOverRateLimiting(builder.Configuration);
+builder.Services.AddUniOverSecurityHeaders(builder.Configuration);
+builder.Services.AddUniOverPwa(builder.Configuration);
 builder.Services.AddHealthChecks();
 builder.Services.AddOpenApi();
+
+// [composição: eventos]
+// [composição: autenticação]
+// [composição: passkeys]
 
 // O Host só compõe: cada módulo é chamado explicitamente, sem descoberta por reflexão.
 builder.Services.AddTvModule(builder.Configuration);
@@ -21,22 +28,25 @@ builder.Services.AddIdentityModule(builder.Configuration);
 
 var app = builder.Build();
 
+// Ordem importa: IP real primeiro (o limite depende dele), cabeçalhos e erros antes de qualquer resposta.
+app.UseUniOverForwardedHeaders();
+app.UseUniOverSecurityHeaders();
+app.UseUniOverProblemDetails();
+app.UseUniOverStaticFiles();
+app.UseUniOverRateLimiting();
+// [pipeline: autenticação] UseAuthentication e UseAuthorization entram aqui.
+
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
 }
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
-
+// /health/live e /openapi nunca tocam no banco: o monitor externo os chama a cada 5 min e uma consulta
+// manteria o compute do Neon acordado o mês inteiro.
 app.MapHealthChecks("/health/live").AllowAnonymous();
 app.MapTvEndpoints();
 app.MapIdentityEndpoints();
-
-// Rotas desconhecidas em /api e /health devem dar 404; só o resto cai no index.html do PWA.
-app.MapFallback("/api/{**path}", () => Results.NotFound());
-app.MapFallback("/health/{**path}", () => Results.NotFound());
-app.MapFallbackToFile("index.html");
+app.MapUniOverPwa();
 
 app.Run();
 
