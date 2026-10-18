@@ -98,8 +98,10 @@ public class ModuleBoundaryTests
     public void Host_ContainsNoRuleTypes()
     {
         // O Host só compõe: o único tipo próprio permitido é o Program (e o que o compilador gera).
+        // Tipos fora do namespace UniOver vêm de ferramentas (ex.: a cobertura injeta um rastreador no assembly).
         var own = HostAssembly.GetTypes()
             .Where(t => t.Name != "Program" && !t.Name.Contains('<', StringComparison.Ordinal))
+            .Where(t => t.Namespace is null || t.Namespace.StartsWith("UniOver", StringComparison.Ordinal))
             .Select(t => t.FullName);
 
         own.Should().BeEmpty("tipos de regra pertencem a módulos, não ao Host");
