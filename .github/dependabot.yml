@@ -20,6 +20,9 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      - dependency-name: typescript
+        versions: [">=6.1"]
     groups:
       npm-web-minor-patch:
         update-types: [minor, patch]
@@ -68,6 +71,9 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
     groups:
       docker-minor-patch:
         update-types: [minor, patch]
