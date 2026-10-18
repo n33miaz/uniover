@@ -1,3 +1,4 @@
+using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity;
 using UniOver.Modules.Tv;
@@ -19,6 +20,7 @@ builder.Services.AddHealthChecks();
 builder.Services.AddOpenApi();
 
 // [composição: eventos]
+builder.Services.AddUniOverMessaging(builder.Configuration);
 // [composição: autenticação]
 // [composição: passkeys]
 
