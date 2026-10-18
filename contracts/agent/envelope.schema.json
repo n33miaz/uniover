@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/envelope.schema.json",
+  "title": "Envelope",
+  "description": "Envelope único das mensagens entre API e agente; igual em qualquer transporte.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "type", "source", "target", "ts", "correlationId", "body"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "$ref": "#/$defs/uuid" },
+    "type": { "$ref": "#/$defs/messageType" },
+    "source": { "$ref": "#/$defs/endpoint" },
+    "target": { "$ref": "#/$defs/endpoint" },
+    "ts": { "$ref": "#/$defs/timestamp" },
+    "correlationId": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] },
+    "body": { "type": "object" }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" },
+    "messageType": { "type": "string", "pattern": "^[a-z]+[.][a-z]+[.]v[0-9]+$" },
+    "endpoint": { "type": "string", "pattern": "^(api|agent:[a-z0-9][a-z0-9-]*)$" },
+    "timestamp": { "type": "string", "format": "date-time", "pattern": "Z$" }
+  }
+}

@@ -1,0 +1,80 @@
+asyncapi: 3.0.0
+info:
+  title: Contrato de mensagens do agente UniOver
+  version: 1.0.0
+  description: >-
+    Envelope único (envelope.schema.json) igual em qualquer transporte. Hoje o transporte é
+    WebSocket; o servidor MQTT está declarado para o futuro e ainda não é usado.
+servers:
+  api-websocket:
+    host: uniover.example.com
+    protocol: wss
+    pathname: /api/v1/devices/agents/{agentId}/ws
+    description: Transporte em uso. Um canal por agente.
+    variables:
+      agentId:
+        description: Identificador do agente (ex. pc-casa).
+  mqtt-futuro:
+    host: broker.example.com
+    protocol: mqtts
+    description: NÃO USADO AINDA. Alternativa futura com o mesmo envelope (uniover/<agente>/cmd e .../evt).
+channels:
+  agentCommands:
+    address: uniover/{agentId}/cmd
+    description: API para agente. No WebSocket é o mesmo socket; no MQTT, o tópico de comandos.
+    parameters:
+      agentId: {}
+    messages:
+      tvKey:
+        name: tv.key.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.key.v1.schema.json'
+  agentEvents:
+    address: uniover/{agentId}/evt
+    description: Agente para API. No WebSocket é o mesmo socket; no MQTT, o tópico de eventos.
+    parameters:
+      agentId: {}
+    messages:
+      agentHello:
+        name: agent.hello.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/agent.hello.v1.schema.json'
+      tvState:
+        name: tv.state.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.state.v1.schema.json'
+      commandResult:
+        name: command.result.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/command.result.v1.schema.json'
+operations:
+  sendTvKey:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API envia uma tecla ao agente.
+  receiveHello:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe o hello do agente.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/agentHello'
+  receiveTvState:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe o estado da TV.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/tvState'
+  receiveCommandResult:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe o resultado de um comando.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/commandResult'
