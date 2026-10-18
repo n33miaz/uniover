@@ -77,7 +77,7 @@ Cada app roda e testa sozinho a partir da raiz do repositório.
 
 ```bash
 # API (.NET 10)
-dotnet test apps/api/UniOver.slnx
+cd apps/api && dotnet test --solution UniOver.slnx
 
 # PWA (Angular 22)
 npm --prefix apps/web ci && npm --prefix apps/web start
