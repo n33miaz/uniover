@@ -17,6 +17,12 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<LoginAuditEntry> LoginAudit => Set<LoginAuditEntry>();
 
+    public DbSet<Passkey> Passkeys => Set<Passkey>();
+
+    public DbSet<WebAuthnChallenge> WebAuthnChallenges => Set<WebAuthnChallenge>();
+
+    public DbSet<StepUpConfirmation> StepUpConfirmations => Set<StepUpConfirmation>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -62,6 +68,47 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
             // Sem FK de propósito: a trilha precisa sobreviver à exclusão da conta e aceita user_id nulo.
             e.HasIndex(x => x.UserId);
+        });
+
+        modelBuilder.Entity<Passkey>(e =>
+        {
+            e.ToTable("passkeys");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.CredentialId).HasColumnType("bytea").IsRequired();
+            e.HasIndex(x => x.CredentialId).IsUnique();
+            e.Property(x => x.PublicKey).HasColumnType("bytea").IsRequired();
+            e.Property(x => x.Name).HasMaxLength(PasskeyRules.MaxNameLength).IsRequired();
+            e.Property(x => x.Transports).HasMaxLength(100);
+            e.HasIndex(x => x.UserId);
+
+            // Apagar a conta (recuperação manual) leva as passkeys junto, dentro do mesmo schema.
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WebAuthnChallenge>(e =>
+        {
+            e.ToTable("webauthn_challenges");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Purpose).HasMaxLength(20).IsRequired();
+            e.Property(x => x.Action).HasMaxLength(64);
+            e.Property(x => x.OptionsJson).HasColumnType("text").IsRequired();
+            e.HasIndex(x => x.ExpiresAt);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<StepUpConfirmation>(e =>
+        {
+            e.ToTable("step_up_confirmations");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Action).HasMaxLength(64).IsRequired();
+
+            // A consulta do requisito filtra por sessão e ação; a limpeza oportunista, por vencimento.
+            e.HasIndex(x => new { x.SessionFamilyId, x.Action });
+            e.HasIndex(x => x.ExpiresAt);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

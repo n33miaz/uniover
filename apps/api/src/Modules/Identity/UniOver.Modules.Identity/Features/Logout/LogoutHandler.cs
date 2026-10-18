@@ -25,6 +25,11 @@ internal sealed class LogoutHandler(IdentityDbContext db, LoginAuditWriter audit
                 s => s.SetProperty(t => t.RevokedAt, now).SetProperty(t => t.RevokedReason, RevokeReasons.Logout),
                 cancellationToken);
 
+        // As confirmações da sessão acabam junto com ela, sem esperar o vencimento.
+        await db.StepUpConfirmations
+            .Where(c => c.SessionFamilyId == familyId && c.UserId == userId)
+            .ExecuteDeleteAsync(cancellationToken);
+
         audit.Add(userId, AuditEvents.Logout, command.Client);
         await db.SaveChangesAsync(cancellationToken);
     }

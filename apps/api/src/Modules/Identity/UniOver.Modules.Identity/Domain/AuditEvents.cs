@@ -10,4 +10,8 @@ public static class AuditEvents
     public const string RefreshReuseDetected = "refresh_reuse_detected";
     public const string Logout = "logout";
     public const string OwnerCreated = "owner_created";
+    public const string PasskeyRegistered = "passkey_registered";
+    public const string PasskeyRemoved = "passkey_removed";
+    public const string StepUpSucceeded = "step_up_succeeded";
+    public const string StepUpFailed = "step_up_failed";
 }

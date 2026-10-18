@@ -6,11 +6,18 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using UniOver.BuildingBlocks.Persistence;
 using UniOver.Modules.Identity.Bootstrap;
+using UniOver.Modules.Identity.Features.BeginPasskeyRegistration;
+using UniOver.Modules.Identity.Features.CompletePasskeyRegistration;
+using UniOver.Modules.Identity.Features.ConfirmStepUp;
 using UniOver.Modules.Identity.Features.GetMe;
 using UniOver.Modules.Identity.Features.GetModuleInfo;
+using UniOver.Modules.Identity.Features.ListPasskeys;
 using UniOver.Modules.Identity.Features.Login;
 using UniOver.Modules.Identity.Features.Logout;
 using UniOver.Modules.Identity.Features.Refresh;
+using UniOver.Modules.Identity.Features.RemovePasskey;
+using UniOver.Modules.Identity.Features.RenamePasskey;
+using UniOver.Modules.Identity.Features.RequestStepUp;
 using UniOver.Modules.Identity.Features.StreamTicket;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -68,6 +75,13 @@ public static class IdentityModule
         group.MapLogout();
         group.MapStreamTicket();
         group.MapGetMe();
+        group.MapBeginPasskeyRegistration();
+        group.MapCompletePasskeyRegistration();
+        group.MapListPasskeys();
+        group.MapRenamePasskey();
+        group.MapRemovePasskey();
+        group.MapRequestStepUp();
+        group.MapConfirmStepUp();
         return endpoints;
     }
 }
