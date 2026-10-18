@@ -1,0 +1,280 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+      agent: ${{ steps.filter.outputs.agent }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+      image: ${{ steps.filter.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'apps/api/**'
+            web:
+              - 'apps/web/**'
+            agent:
+              - 'apps/agent/**'
+            contracts:
+              - 'contracts/**'
+            image:
+              - 'Dockerfile'
+              - 'apps/api/**'
+              - 'apps/web/**'
+
+  commits:
+    name: commits
+    # A develop é a porta de entrada; a main só recebe a develop, já checada.
+    # PRs de robôs (atualização de dependências) seguem o formato deles e não passam por esta regra.
+    if: github.event_name == 'pull_request' && github.base_ref == 'develop' && github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Conferir o padrão dos commits do PR
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ALLOWED_EMAIL: ncormino@gmail.com
+        run: bash .github/scripts/check-commits.sh "$BASE_SHA" "$HEAD_SHA"
+
+  api:
+    name: api
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: apps/api/global.json
+      - name: Compilar
+        run: dotnet build apps/api/UniOver.slnx -warnaserror
+      - name: Testar com cobertura
+        run: dotnet test --solution apps/api/UniOver.slnx --coverage --coverage-output-format cobertura
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: api-coverage
+          path: apps/api/TestResults/*.cobertura.xml
+          if-no-files-found: warn
+
+  web:
+    name: web
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Testes com cobertura
+        run: npm run test:coverage
+      - name: Build de produção
+        run: npm run build
+      - name: Instalar navegadores do Playwright
+        run: npx playwright install --with-deps chromium webkit
+      - name: E2E
+        run: npm run e2e
+      # Auditoria de PWA (Lighthouse) entra quando houver service worker.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: web-e2e-report
+          path: |
+            apps/web/test-results
+            apps/web/playwright-report
+          if-no-files-found: ignore
+
+  agent:
+    name: agent
+    needs: changes
+    if: needs.changes.outputs.agent == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/agent
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+          cache-dependency-glob: apps/agent/uv.lock
+      - run: uv sync --locked
+      - name: Ruff (lint)
+        run: uv run ruff check
+      - name: Ruff (formato)
+        run: uv run ruff format --check
+      - name: Tipos
+        run: uv run mypy src tests
+      - name: Fronteiras do núcleo
+        run: uv run lint-imports
+      - name: Testes
+        run: uv run pytest
+
+  contracts:
+    name: contracts
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - run: npm ci
+      - name: Validar esquemas e exemplos
+        run: npm run validate
+
+  image:
+    name: image
+    needs: changes
+    if: needs.changes.outputs.image == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Construir a imagem (sem publicar)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: uniover:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Trivy (relatório SARIF)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: uniover:ci
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          limit-severities-for-sarif: true
+          exit-code: "0"
+      - name: Enviar SARIF ao code scanning
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-image
+      - name: Trivy (falha com achado CRITICAL ou HIGH)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: uniover:ci
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: SBOM (SPDX)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: uniover:ci
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-spdx
+          path: sbom.spdx.json
+      - name: Subir o contêiner
+        run: docker run -d --name uniover -p 10000:10000 -e PORT=10000 uniover:ci
+      - name: Esperar /health/live
+        run: |
+          for _ in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:10000/health/live || true)
+            if [ "$code" = "200" ]; then
+              echo "A API respondeu 200 em /health/live."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::a API não respondeu 200 em /health/live em 60 segundos."
+          docker logs uniover
+          exit 1
+      - name: ZAP baseline
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: http://localhost:10000
+          rules_file_name: .github/zap/rules.tsv
+          allow_issue_writing: false
+          fail_action: true
+          artifact_name: zap-baseline
+      - name: Parar o contêiner
+        if: always()
+        run: docker rm -f uniover
+
+  # Check único para exigir nas regras de branch: jobs pulados por caminho contam como verdes.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [changes, commits, api, web, agent, contracts, image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resumir
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Resultados: $RESULTS"
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*)
+              echo "::error::algum job falhou ou foi cancelado."
+              exit 1
+              ;;
+          esac
