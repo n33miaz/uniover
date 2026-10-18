@@ -1,4 +1,4 @@
-# 0013. Fluxo de git: `develop` e `main` protegidas, Conventional Commits, rebase and merge, um PR por entrega
+# 0013. Fluxo de git: `develop` e `main` protegidas, Conventional Commits, rebase na `develop`, merge na `main`
 
 - **Status:** Aceito
 - **Data:** 18/10/2026
@@ -15,7 +15,12 @@ produção. O repositório é público, então o histórico também é uma vitri
   recebem mudanças por pull request com os checks obrigatórios verdes.
 - Trabalho em branches curtas (`feature/...`, `fix/...`, `chore/...`) saindo de `develop`.
 - Mensagens no padrão **Conventional Commits** (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`).
-- Merge por **rebase and merge**, para manter o histórico linear e cada commit com sentido próprio.
+- Trabalho entra na `develop` por **rebase and merge**, para manter o histórico linear e cada commit com sentido
+  próprio.
+- A `develop` entra na `main` por **merge commit** com título no padrão (ex.: `chore: publish ...`). O rebase do
+  GitHub sempre reescreve os commits; usado aqui, deixaria `develop` e `main` com os mesmos commits em SHAs
+  diferentes e a publicação seguinte em conflito.
+- Branch de trabalho é apagada depois do merge, sempre.
 - **Um PR por entrega**: uma fatia que compila, passa nos testes e pode ser revertida sozinha.
 - A promoção de `develop` para `main` é feita por PR, e é ela que dispara o deploy.
 
