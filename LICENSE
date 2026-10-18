@@ -1,0 +1,87 @@
+UniOver — Proprietary, Source-Available License
+Copyright (c) 2026 Neemias Cormino Manso ("UniOver"). All rights reserved.
+
+------------------------------------------------------------------------------
+ENGLISH (summary — the Portuguese text below is the governing version)
+------------------------------------------------------------------------------
+
+This source code is made publicly available for READING, STUDY, AND EVALUATION
+ONLY. It is NOT open source. No license is granted to use, copy, modify, merge,
+publish, distribute, sublicense, host, or run this software (in whole or in
+part) in any environment — including production — without a separate, written
+commercial license granted by the copyright holder.
+
+If you are interested in using UniOver, licensing it, or discussing a
+commercial agreement, please get in touch:
+
+    Contact for licensing & negotiation: ncormino@gmail.com
+
+The "UniOver" name, logos, and visual identity are trademarks of the
+copyright holder and are NOT licensed under this document.
+
+THIRD-PARTY MATERIAL: the contents of the `assets-third-party/` folder and any
+data imported from third parties are governed by their own licenses, stated in
+each folder or record (for example, the Everkinetic illustrations, CC BY-SA
+4.0). They are NOT covered by this license.
+
+This software is provided "AS IS", without warranty of any kind. See the
+DISCLAIMER below.
+
+------------------------------------------------------------------------------
+PORTUGUÊS (versão que prevalece)
+------------------------------------------------------------------------------
+
+Este software e a documentação associada são propriedade exclusiva de
+Neemias Cormino Manso ("UniOver"). Todos os direitos reservados.
+
+1. CÓDIGO ABERTO À VISTA, DIREITOS RESERVADOS
+   O código-fonte é disponibilizado publicamente APENAS para fins de leitura,
+   estudo, auditoria e avaliação. Tornar o repositório público NÃO o torna
+   "open source" e NÃO concede qualquer licença de uso sobre o software.
+
+2. USOS QUE EXIGEM AUTORIZAÇÃO PRÉVIA E POR ESCRITO
+   É estritamente proibido, sem licença comercial expressa e por escrito do
+   detentor dos direitos autorais, qualquer:
+   - uso, execução ou implantação (inclusive em produção) do software, no todo
+     ou em parte;
+   - cópia, reprodução, modificação ou criação de obras derivadas;
+   - distribuição, publicação, sublicenciamento, venda ou hospedagem como
+     serviço (SaaS);
+   - uso comercial, interno ou de terceiros, em qualquer meio.
+
+3. COMO OBTER UMA LICENÇA
+   Interessados em utilizar, licenciar ou negociar o UniOver devem entrar em
+   contato para tratativas comerciais:
+
+       Contato para licenciamento e negociação: ncormino@gmail.com
+
+   Toda concessão de direitos depende de acordo específico, firmado por
+   escrito, entre as partes.
+
+4. MARCAS E IDENTIDADE VISUAL
+   O nome "UniOver", logotipos, marcas e a identidade visual associada são
+   de titularidade do detentor dos direitos e NÃO são licenciados por este
+   documento.
+
+5. MATERIAL DE TERCEIROS
+   O conteúdo da pasta `assets-third-party/` e os dados importados de
+   terceiros seguem as licenças próprias indicadas em cada pasta ou registro
+   (por exemplo, as ilustrações Everkinetic, CC BY-SA 4.0) e NÃO são cobertos
+   por esta licença.
+
+6. ISENÇÃO DE RESPONSABILIDADE (DISCLAIMER)
+   ESTE SOFTWARE É FORNECIDO "COMO ESTÁ", SEM GARANTIA DE QUALQUER TIPO,
+   EXPRESSA OU IMPLÍCITA, INCLUINDO, MAS NÃO SE LIMITANDO ÀS GARANTIAS DE
+   COMERCIALIZAÇÃO, ADEQUAÇÃO A UM DETERMINADO FIM E NÃO VIOLAÇÃO.
+
+   EM NENHUMA CIRCUNSTÂNCIA O(S) AUTOR(ES) OU DETENTOR(ES) DOS DIREITOS
+   AUTORAIS SERÃO RESPONSÁVEIS POR QUAISQUER REIVINDICAÇÕES, DANOS (DIRETOS,
+   INDIRETOS, INCIDENTAIS, ESPECIAIS, EXEMPLARES OU CONSEQUENCIAIS) OU OUTRAS
+   RESPONSABILIDADES, SEJA EM UMA AÇÃO DE CONTRATO, ATO ILÍCITO OU DE OUTRA
+   FORMA, DECORRENTES DE, FORA DE OU EM CONEXÃO COM O SOFTWARE OU O USO OU
+   OUTRAS NEGOCIAÇÕES NO SOFTWARE.
+
+   O USO DESTE SISTEMA É DE INTEIRA RESPONSABILIDADE DO USUÁRIO FINAL. O
+   DESENVOLVEDOR NÃO SE RESPONSABILIZA POR PERDA DE DADOS, FALHAS DE SEGURANÇA
+   DECORRENTES DE MÁ CONFIGURAÇÃO, OU USO INDEVIDO DA PLATAFORMA PARA FINS
+   ILEGAIS.
