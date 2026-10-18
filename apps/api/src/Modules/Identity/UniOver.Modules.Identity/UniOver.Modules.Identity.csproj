@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UniOver.Modules.Identity.Contracts\UniOver.Modules.Identity.Contracts.csproj" />
+    <ProjectReference Include="..\..\Tv\UniOver.Modules.Tv.Contracts\UniOver.Modules.Tv.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\UniOver.SharedKernel\UniOver.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Web\UniOver.BuildingBlocks.Web.csproj" />
+  </ItemGroup>
+</Project>
