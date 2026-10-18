@@ -50,8 +50,9 @@ jobs:
   commits:
     name: commits
     # A develop é a porta de entrada; a main só recebe a develop, já checada.
-    # PRs de robôs (atualização de dependências) seguem o formato deles e não passam por esta regra.
-    if: github.event_name == 'pull_request' && github.base_ref == 'develop' && github.event.pull_request.user.type != 'Bot'
+    # Ficam de fora: PRs de robôs (atualização de dependências) e a volta da main para a develop depois de um
+    # release, que só traz o commit de versão criado pela ferramenta de release.
+    if: github.event_name == 'pull_request' && github.base_ref == 'develop' && github.head_ref != 'main' && github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
