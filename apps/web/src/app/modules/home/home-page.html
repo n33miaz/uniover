@@ -1,0 +1,13 @@
+<main>
+  <h1 i18n="@@home.title">UniOver</h1>
+  <nav aria-labelledby="modules-label">
+    <h2 id="modules-label" class="label" i18n="@@home.modules">Módulos</h2>
+    <ul class="grid">
+      @for (card of modules; track card.id) {
+        <li>
+          <a class="card" [routerLink]="card.path" [attr.data-module]="card.id">{{ card.title }}</a>
+        </li>
+      }
+    </ul>
+  </nav>
+</main>

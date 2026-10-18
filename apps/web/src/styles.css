@@ -1,0 +1,96 @@
+/* Paleta p2 (verde-sálvia). Claro por padrão; escuro quando o sistema pede. */
+:root {
+  color-scheme: light;
+  --a-bg: #f2f5f1;
+  --a-surface: #ffffff;
+  --a-elev: #e5ebe4;
+  --a-ink: #17201a;
+  --a-ink2: #46544a;
+  --a-ink3: #5c6c60;
+  --a-line: #d0dad0;
+  --a-accent: #3b6b4b;
+  --a-accent-soft: #dcebdf;
+  --a-on-accent: #ffffff;
+  --a-ok: #0e7a5c;
+  --a-warn: #8a5200;
+  --a-bad: #b3261e;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --radius: 14px;
+  --gutter: 16px;
+}
+
+/* O serviço de tema grava data-theme; sem ele, vale a preferência do sistema. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --a-bg: #101512;
+    --a-surface: #181f1a;
+    --a-elev: #222b24;
+    --a-ink: #e9efea;
+    --a-ink2: #b0bdb3;
+    --a-ink3: #8fa093;
+    --a-line: #2f3b33;
+    --a-accent: #98c4a3;
+    --a-accent-soft: #243a2b;
+    --a-on-accent: #0a160d;
+    --a-ok: #3fc7a3;
+    --a-warn: #e8a63c;
+    --a-bad: #f0736b;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --a-bg: #101512;
+  --a-surface: #181f1a;
+  --a-elev: #222b24;
+  --a-ink: #e9efea;
+  --a-ink2: #b0bdb3;
+  --a-ink3: #8fa093;
+  --a-line: #2f3b33;
+  --a-accent: #98c4a3;
+  --a-accent-soft: #243a2b;
+  --a-on-accent: #0a160d;
+  --a-ok: #3fc7a3;
+  --a-warn: #e8a63c;
+  --a-bad: #f0736b;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--a-bg);
+  color: var(--a-ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.4;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+h1,
+h2 {
+  margin: 0;
+  line-height: 1.2;
+}
+
+a {
+  color: var(--a-accent);
+}
+
+:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+main {
+  padding: var(--gutter);
+  padding-bottom: calc(var(--gutter) + env(safe-area-inset-bottom));
+}
