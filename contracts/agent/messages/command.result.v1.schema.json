@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/command.result.v1.schema.json",
+  "title": "command.result.v1",
+  "description": "Agente para API: resultado de um comando; correlationId aponta o comando.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "type", "source", "target", "ts", "correlationId", "body"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+    "type": { "const": "command.result.v1" },
+    "source": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "target": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "ts": { "$ref": "../envelope.schema.json#/$defs/timestamp" },
+    "correlationId": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+    "body": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ok"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "error": {
+          "type": "object", "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": { "code": { "type": "string", "minLength": 1 }, "message": { "type": "string", "minLength": 1 } }
+        }
+      },
+      "if": { "properties": { "ok": { "const": false } } },
+      "then": { "required": ["error"], "properties": { "error": true } },
+      "else": { "properties": { "error": false } }
+    }
+  }
+}
