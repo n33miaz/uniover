@@ -1,11 +1,27 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- Mesma versão do EF Core central: sem isto o provedor do Npgsql puxa uma Relational mais antiga e os projetos
+         que referenciam o módulo acusam conflito de versão (o Design, privado, só alinha o próprio módulo). -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <!-- WebAuthn (passkey só para confirmar ação perigosa): a biblioteca verifica atestação e asserção, o módulo guarda o estado. -->
+    <PackageReference Include="Fido2" />
+    <!-- Só para gerar as migrations e o bundle com o dotnet ef; não vai para quem referenciar o módulo. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UniOver.Modules.Identity.Contracts\UniOver.Modules.Identity.Contracts.csproj" />
     <ProjectReference Include="..\..\Tv\UniOver.Modules.Tv.Contracts\UniOver.Modules.Tv.Contracts.csproj" />
     <ProjectReference Include="..\..\..\UniOver.SharedKernel\UniOver.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Persistence\UniOver.BuildingBlocks.Persistence.csproj" />
     <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Web\UniOver.BuildingBlocks.Web.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="UniOver.Modules.Identity.Tests" />
+    <!-- O teste de integração espera o fim do seed do dono pelo próprio serviço, sem adivinhar tempo. -->
+    <InternalsVisibleTo Include="UniOver.IntegrationTests" />
   </ItemGroup>
 </Project>

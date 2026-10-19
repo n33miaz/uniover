@@ -1,0 +1,263 @@
+:host {
+  display: block;
+}
+
+.remote {
+  /*
+   * O anel manda no tamanho: a largura da tela e a altura que sobra depois do cabeçalho, dos chips, da fileira de
+   * atalhos, dos pontos, das pílulas e da barra de abas limitam, para a página 1 caber sem rolagem em 390x664 e
+   * 411x800 (no mock o anel tem 246 px).
+   */
+  --tv-ring: clamp(176px, min(calc(100vw - 150px), calc(100dvh - var(--tv-chrome, 430px))), 260px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+button,
+a.round {
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Os atalhos ficam focáveis mesmo sem agente (aria-disabled): a faixa rolável precisa de algo que o teclado alcance. */
+button:disabled,
+.shortcut[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Visual comum dos botões com contorno. */
+.shortcut,
+.square,
+.round,
+.num,
+.source {
+  border: 1px solid var(--a-line);
+  background: var(--a-surface);
+  color: var(--a-ink);
+}
+.pill-btn.pressed,
+.round.pressed,
+.num.pressed,
+.source.pressed {
+  border-color: var(--a-accent);
+  background: var(--a-accent-soft);
+}
+
+/* Carrossel das duas páginas: rolagem horizontal só aqui dentro, com encaixe. */
+.pager {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.pager::-webkit-scrollbar,
+.shortcuts::-webkit-scrollbar {
+  display: none;
+}
+.panel {
+  display: flex;
+  flex: 0 0 100%;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+/* Atalhos no topo e o botão quadrado do touchpad no mesmo lugar. */
+.top {
+  display: flex;
+  gap: 8px;
+}
+.shortcuts {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.shortcuts li {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+.shortcuts .none {
+  align-self: center;
+  font-size: 0.95rem;
+}
+.shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 96px;
+  height: 52px;
+  padding: 0 14px;
+  border-radius: var(--radius);
+  font-weight: 600;
+}
+.square {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 64px;
+  height: 52px;
+  padding: 0;
+  border-radius: 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* Chips "Botões | Touchpad" do modo touchpad. */
+.modes {
+  display: flex;
+  align-self: center;
+  padding: 3px;
+  border: 1px solid var(--a-line);
+  border-radius: 999px;
+  background: var(--a-surface);
+}
+.chip {
+  min-width: 96px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--a-ink2);
+  font-weight: 600;
+}
+.chip[aria-pressed='true'] {
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+}
+
+/* O anel fica no meio, com os pontos de página embaixo. */
+.ring-slot {
+  align-self: center;
+}
+
+/* Por baixo: pílula de volume, seis botões redondos (3x2) e pílula de canal. */
+.bottom {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 56px;
+  gap: 10px;
+  align-items: stretch;
+}
+.round-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, 56px);
+  gap: 8px;
+  justify-items: center;
+  align-items: center;
+}
+.pill {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--a-line);
+  border-radius: 28px;
+  background: var(--a-surface);
+  overflow: hidden;
+}
+/* O nível do volume enche a pílula de baixo para cima. */
+.pill.volume {
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--a-accent) 40%, var(--a-elev)) var(--level, 0%),
+    var(--a-surface) var(--level, 0%)
+  );
+}
+.pill-btn {
+  flex: 1 1 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--a-ink);
+}
+.level {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  color: var(--a-ink2);
+  font-size: 0.9rem;
+  line-height: 1.1;
+}
+.cap {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.level strong {
+  color: var(--a-ink);
+  font-size: 1.1rem;
+}
+
+/* Botões redondos. */
+.touch-row,
+.media-row {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+.touch-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.media-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.round {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 56px;
+  min-width: 44px;
+  aspect-ratio: 1;
+  padding: 0;
+  border-radius: 50%;
+  text-decoration: none;
+}
+
+/* Segunda página. */
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.num,
+.source {
+  min-height: 48px;
+  border-radius: var(--radius);
+  font-weight: 600;
+}
+.num {
+  font-size: 1.3rem;
+}
+.num.zero {
+  grid-column: 2;
+}
+.source {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}

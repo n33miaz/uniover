@@ -33,3 +33,6 @@ __pycache__/
 # Editores e sistema
 .idea/
 .DS_Store
+
+# Saída dos bundles de migration
+artifacts/

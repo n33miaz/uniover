@@ -1,0 +1,45 @@
+{
+  "id": "/",
+  "name": "UniOver",
+  "short_name": "UniOver",
+  "description": "Seu app pessoal único: TV, treino e os avisos de casa em um lugar só.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "background_color": "#F2F5F1",
+  "theme_color": "#3B6B4B",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/monochrome-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "monochrome"
+    }
+  ]
+}

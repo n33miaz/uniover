@@ -1,0 +1,74 @@
+:host {
+  display: block;
+}
+
+.keyboard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+h2 {
+  font-size: 1.15rem;
+}
+
+.warn {
+  margin: 0;
+  color: var(--a-ink2);
+}
+
+label {
+  margin-top: 6px;
+  font-weight: 600;
+}
+
+input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 12px;
+  border: 1px solid var(--a-ink3);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  font-size: 1.1rem;
+}
+
+.count {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: 0.9rem;
+  text-align: right;
+}
+.count.over {
+  color: var(--a-bad);
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+.actions button {
+  flex: 1 1 0;
+  min-height: 48px;
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.secondary {
+  border: 1px solid var(--a-line);
+  background: var(--a-surface);
+  color: var(--a-ink);
+}
+.primary {
+  border: 0;
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+}

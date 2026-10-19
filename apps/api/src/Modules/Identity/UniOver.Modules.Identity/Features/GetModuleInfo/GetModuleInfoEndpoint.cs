@@ -8,5 +8,5 @@ internal static class GetModuleInfoEndpoint
 {
     public static void MapGetModuleInfo(this IEndpointRouteBuilder group) =>
         group.MapGet("/info", async (GetModuleInfoHandler handler, CancellationToken ct) =>
-            TypedResults.Ok(await handler.HandleAsync(ct)));
+            TypedResults.Ok(await handler.HandleAsync(ct))).AllowAnonymous();
 }

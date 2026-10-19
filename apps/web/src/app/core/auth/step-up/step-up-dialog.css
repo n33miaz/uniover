@@ -1,0 +1,73 @@
+.box {
+  box-sizing: border-box;
+  width: min(100% - 2 * var(--gutter), 420px);
+  margin: auto;
+  padding: 20px;
+  border: 1px solid var(--a-line);
+  border-radius: 20px;
+  background: var(--a-surface);
+  color: var(--a-ink);
+}
+
+.box::backdrop {
+  background: rgb(0 0 0 / 0.55);
+}
+
+h2 {
+  font-size: 1.15rem;
+}
+
+.text {
+  margin: 8px 0 12px;
+  color: var(--a-ink2);
+}
+
+.messages {
+  min-height: 1.5em;
+}
+
+.messages p {
+  margin: 0 0 8px;
+}
+
+.note {
+  color: var(--a-ink2);
+}
+
+.error {
+  color: var(--a-bad);
+  font-weight: 600;
+}
+
+.footer {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.footer button {
+  flex: 1 1 0;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary {
+  border: 1px solid var(--a-line);
+  background: var(--a-surface);
+  color: var(--a-ink);
+}
+
+.primary {
+  border: 0;
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+}
+
+.primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

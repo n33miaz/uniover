@@ -7,7 +7,12 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\UniOver.BuildingBlocks.Messaging\UniOver.BuildingBlocks.Messaging.csproj" />
+    <ProjectReference Include="..\UniOver.BuildingBlocks.Persistence\UniOver.BuildingBlocks.Persistence.csproj" />
     <ProjectReference Include="..\UniOver.BuildingBlocks.Web\UniOver.BuildingBlocks.Web.csproj" />
+    <ProjectReference Include="..\Modules\Devices\UniOver.Modules.Devices\UniOver.Modules.Devices.csproj" />
+    <ProjectReference Include="..\Modules\Devices\UniOver.Modules.Devices.Contracts\UniOver.Modules.Devices.Contracts.csproj" />
+    <ProjectReference Include="..\Modules\Devices\UniOver.Modules.Devices.Transport.WebSocket\UniOver.Modules.Devices.Transport.WebSocket.csproj" />
     <ProjectReference Include="..\Modules\Identity\UniOver.Modules.Identity\UniOver.Modules.Identity.csproj" />
     <ProjectReference Include="..\Modules\Tv\UniOver.Modules.Tv\UniOver.Modules.Tv.csproj" />
   </ItemGroup>

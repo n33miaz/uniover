@@ -12,6 +12,8 @@ RUN npm run build
 # --- Etapa 2: publicação da API ---
 FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa AS api
 WORKDIR /src
+# Os esquemas do agente são embutidos no assembly do protocolo.
+COPY contracts/agent/ contracts/agent/
 COPY apps/api/ apps/api/
 RUN dotnet publish apps/api/src/UniOver.Host -c Release -o /out \
     && rm -rf /out/wwwroot

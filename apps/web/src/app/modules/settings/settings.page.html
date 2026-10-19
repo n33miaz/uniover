@@ -1,0 +1,116 @@
+<div class="settings">
+  <section class="section" aria-labelledby="account-title">
+    <h2 id="account-title" i18n="@@settings.account.title">Conta</h2>
+    @if (user(); as current) {
+      <dl class="facts">
+        <div>
+          <dt i18n="@@settings.account.name">Nome</dt>
+          <dd>{{ current.displayName }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@settings.account.email">E-mail</dt>
+          <dd>{{ current.email }}</dd>
+        </div>
+      </dl>
+    }
+    <p class="session" role="status">{{ sessionText() }}</p>
+    <button
+      type="button"
+      class="secondary"
+      [disabled]="loggingOut()"
+      (click)="logout()"
+      i18n="@@settings.account.logout"
+    >
+      Sair
+    </button>
+    @if (logoutUnconfirmed()) {
+      <p class="note" role="status" i18n="@@settings.account.logout-unconfirmed">
+        Sem conexão: a sessão foi encerrada neste aparelho, mas o servidor ainda não soube.
+      </p>
+    }
+  </section>
+
+  <section class="section" aria-labelledby="modules-title">
+    <h2 id="modules-title" i18n="@@settings.modules.title">Módulos</h2>
+    <p class="hint" i18n="@@settings.modules.hint">
+      Módulo desligado some da Início. A escolha vale só neste aparelho.
+    </p>
+    <ul class="list">
+      @for (module of registry.modules; track module.id) {
+        <li class="row">
+          <label class="module" [for]="'module-' + module.id">
+            <span class="module-name">{{ module.title }}</span>
+            <span class="chip" [class.real]="module.status === 'available'">{{
+              statusLabel(module)
+            }}</span>
+          </label>
+          <input
+            type="checkbox"
+            role="switch"
+            class="switch"
+            [id]="'module-' + module.id"
+            [checked]="enabled(module)"
+            (change)="toggleModule(module, $event)"
+          />
+        </li>
+      }
+    </ul>
+  </section>
+
+  <section class="section" aria-labelledby="appearance-title">
+    <h2 id="appearance-title" i18n="@@settings.appearance.title">Aparência</h2>
+    <fieldset class="themes">
+      <legend i18n="@@settings.appearance.legend">Tema</legend>
+      @for (choice of themeChoices; track choice.value) {
+        <label class="theme">
+          <input
+            type="radio"
+            name="theme"
+            [value]="choice.value"
+            [checked]="themePreference() === choice.value"
+            (change)="chooseTheme(choice.value)"
+          />
+          <span>{{ choice.label }}</span>
+        </label>
+      }
+    </fieldset>
+  </section>
+
+  <a class="row link-row" routerLink="/ajustes/aparelhos">
+    <span class="module-name" i18n="@@settings.devices.link">Aparelhos</span>
+    <span class="hint" i18n="@@settings.devices.hint">Parear o agente do PC de casa</span>
+  </a>
+
+  <app-security-section />
+
+  <section class="section" aria-labelledby="about-title">
+    <h2 id="about-title" i18n="@@settings.about.title">Sobre</h2>
+    <dl class="facts">
+      <div>
+        <dt i18n="@@settings.about.app-version">Versão do app</dt>
+        <dd>
+          @if (appVersion; as version) {
+            {{ version }}
+          } @else {
+            <span i18n="@@settings.about.unknown">não informada</span>
+          }
+        </dd>
+      </div>
+      <div>
+        <dt i18n="@@settings.about.api-version">Versão da API</dt>
+        <dd>
+          @if (apiVersion() === 'loading') {
+            <span i18n="@@settings.about.loading">consultando…</span>
+          } @else if (apiVersion(); as version) {
+            {{ version }}
+          } @else {
+            <span i18n="@@settings.about.unavailable">indisponível agora</span>
+          }
+        </dd>
+      </div>
+    </dl>
+    <button type="button" class="secondary" disabled i18n="@@settings.about.credits">
+      Créditos
+    </button>
+  </section>
+</div>

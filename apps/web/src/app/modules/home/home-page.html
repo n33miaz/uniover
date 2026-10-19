@@ -1,13 +1,56 @@
-<main>
-  <h1 i18n="@@home.title">UniOver</h1>
-  <nav aria-labelledby="modules-label">
-    <h2 id="modules-label" class="label" i18n="@@home.modules">Módulos</h2>
-    <ul class="grid">
-      @for (card of modules; track card.id) {
-        <li>
-          <a class="card" [routerLink]="card.path" [attr.data-module]="card.id">{{ card.title }}</a>
-        </li>
-      }
-    </ul>
-  </nav>
-</main>
+<section class="home">
+  <header class="top">
+    <div>
+      <h1>{{ greeting() }}</h1>
+      <p class="date">{{ dateLabel() }}</p>
+    </div>
+    <p class="time">{{ time() }}</p>
+  </header>
+
+  <ul class="chips" aria-label="Informações úteis" i18n-aria-label="@@home.chips-label">
+    @for (chip of chips(); track chip.id) {
+      <li class="chip" [class.ok]="chip.tone === 'ok'" [class.warn]="chip.tone === 'warn'">
+        {{ chip.label }}
+      </li>
+    }
+  </ul>
+
+  <div class="section-head">
+    <h2 id="modules-label" i18n="@@home.modules">Módulos</h2>
+    <div class="head-actions">
+      <a class="edit" routerLink="/ajustes" i18n="@@home.settings">Ajustes</a>
+      <button #editButton type="button" class="edit" (click)="openEditor()" i18n="@@home.edit">
+        Editar
+      </button>
+    </div>
+  </div>
+
+  <ul class="grid" aria-labelledby="modules-label">
+    @for (widget of widgets(); track widget.definition.id) {
+      <li class="widget" [class.wide]="widget.size === 'wide'">
+        <article class="card" [attr.data-module]="widget.definition.id">
+          <div class="card-head">
+            <span class="ico"><app-icon [name]="widget.definition.icon" /></span>
+            <h3>{{ widget.definition.title }}</h3>
+          </div>
+          @if (widget.definition.status === 'soon') {
+            <span class="chip" i18n="@@home.soon">Em breve</span>
+          }
+          <a class="action" [routerLink]="registry.path(widget.definition)">{{
+            widget.definition.actionLabel
+          }}</a>
+        </article>
+      </li>
+    } @empty {
+      <li class="empty" i18n="@@home.empty">Nenhum módulo na Início. Use Editar para mostrar.</li>
+    }
+  </ul>
+
+  @if (editing()) {
+    <app-home-edit-sheet
+      [widgets]="allWidgets()"
+      (applied)="applyEdit($event)"
+      (cancelled)="closeEditor()"
+    />
+  }
+</section>

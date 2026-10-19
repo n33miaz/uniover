@@ -1,0 +1,98 @@
+.login {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(100%, 420px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding-top: calc(32px + env(safe-area-inset-top));
+}
+
+h1 {
+  font-size: 1.75rem;
+}
+
+.lead {
+  margin: 0 0 8px;
+  color: var(--a-ink2);
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+label {
+  font-weight: 600;
+}
+
+input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--a-ink3);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+}
+
+.password {
+  display: flex;
+  gap: 8px;
+}
+
+.toggle {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.messages {
+  min-height: 1.5em;
+}
+
+.error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 4px solid var(--a-bad);
+  border-radius: 8px;
+  background: var(--a-elev);
+  color: var(--a-ink);
+  font-weight: 600;
+}
+
+.submit {
+  min-height: 48px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.submit:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

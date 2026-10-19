@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<!-- Símbolo tv sobre o verde-sálvia; o fundo vai até as bordas (o sistema aplica a máscara). -->
+  <rect width="512" height="512" fill="#3B6B4B"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="116" y="170" width="220" height="150" rx="24"/>
+    <path d="M186 375H266"/>
+    <circle cx="380" cy="132" r="22" fill="#FFFFFF" stroke="none"/>
+  </g>
+</svg>

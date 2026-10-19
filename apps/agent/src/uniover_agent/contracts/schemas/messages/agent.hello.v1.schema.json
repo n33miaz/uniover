@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/agent.hello.v1.schema.json",
+  "title": "agent.hello.v1",
+  "description": "Agente para API ao conectar: versão do agente e capacidades.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "type", "source", "target", "ts", "correlationId", "body"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+    "type": { "const": "agent.hello.v1" },
+    "source": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "target": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "ts": { "$ref": "../envelope.schema.json#/$defs/timestamp" },
+    "correlationId": { "oneOf": [{ "$ref": "../envelope.schema.json#/$defs/uuid" }, { "type": "null" }] },
+    "body": {
+      "type": "object", "additionalProperties": false,
+      "required": ["agentVersion", "capabilities"],
+      "properties": {
+        "agentVersion": { "type": "string", "minLength": 1 },
+        "capabilities": { "type": "array", "uniqueItems": true, "items": { "enum": ["tv.remote", "tv.adb"] } }
+      }
+    }
+  }
+}
