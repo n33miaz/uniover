@@ -1,0 +1,421 @@
+{
+  "items": [
+    {
+      "id": "abc",
+      "name": "ABC",
+      "description": "Três treinos que se alternam: peito e tríceps, costas e bíceps, pernas e ombros. Pensado para três a seis dias por semana.",
+      "routines": [
+        {
+          "name": "A · Peito e tríceps",
+          "items": [
+            {
+              "exerciseSlug": "supino-reto-com-barra",
+              "targetSets": 4,
+              "repMin": 6,
+              "repMax": 10,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "supino-inclinado-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "crucifixo-na-maquina-voador",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "triceps-na-polia-com-corda",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60,
+              "supersetGroup": 1
+            },
+            {
+              "exerciseSlug": "triceps-testa-com-barra-w",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 60,
+              "supersetGroup": 1
+            }
+          ]
+        },
+        {
+          "name": "B · Costas e bíceps",
+          "items": [
+            {
+              "exerciseSlug": "puxada-aberta-na-polia",
+              "targetSets": 4,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "remada-curvada-com-barra",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "remada-sentada-na-polia",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "rosca-direta-com-barra-w",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 60,
+              "supersetGroup": 1
+            },
+            {
+              "exerciseSlug": "rosca-martelo-com-halteres",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 12,
+              "restSeconds": 60,
+              "supersetGroup": 1
+            }
+          ]
+        },
+        {
+          "name": "C · Pernas e ombros",
+          "items": [
+            {
+              "exerciseSlug": "agachamento-livre-com-barra",
+              "targetSets": 4,
+              "repMin": 6,
+              "repMax": 10,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "prensa-de-pernas-na-maquina",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "mesa-flexora",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 12,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "desenvolvimento-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "elevacao-lateral-com-halteres",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "panturrilha-em-pe-na-maquina",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "abcd",
+      "name": "ABCD",
+      "description": "Quatro treinos que se alternam: peito, costas, pernas e ombros com braços. Pensado para quatro a cinco dias por semana.",
+      "routines": [
+        {
+          "name": "A · Peito",
+          "items": [
+            {
+              "exerciseSlug": "supino-reto-com-barra",
+              "targetSets": 4,
+              "repMin": 6,
+              "repMax": 10,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "supino-inclinado-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "crucifixo-reto-com-halteres",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 12,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "crossover-na-polia",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            }
+          ]
+        },
+        {
+          "name": "B · Costas",
+          "items": [
+            {
+              "exerciseSlug": "puxada-aberta-na-polia",
+              "targetSets": 4,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "remada-curvada-com-barra",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "remada-unilateral-com-halter",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 12,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "puxada-com-bracos-estendidos-na-polia",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            }
+          ]
+        },
+        {
+          "name": "C · Pernas",
+          "items": [
+            {
+              "exerciseSlug": "agachamento-livre-com-barra",
+              "targetSets": 4,
+              "repMin": 6,
+              "repMax": 10,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "prensa-de-pernas-na-maquina",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "cadeira-extensora",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "mesa-flexora",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 12,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "stiff-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "panturrilha-em-pe-na-maquina",
+              "targetSets": 4,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            }
+          ]
+        },
+        {
+          "name": "D · Ombros e braços",
+          "items": [
+            {
+              "exerciseSlug": "desenvolvimento-com-halteres",
+              "targetSets": 4,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "elevacao-lateral-com-halteres",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "crucifixo-inverso-na-maquina",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "rosca-direta-com-barra-w",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 60,
+              "supersetGroup": 1
+            },
+            {
+              "exerciseSlug": "triceps-na-polia-com-corda",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60,
+              "supersetGroup": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "full-body",
+      "name": "Full body",
+      "description": "Corpo inteiro em cada treino, alternando A e B, três vezes por semana (por exemplo segunda, quarta e sexta).",
+      "routines": [
+        {
+          "name": "A · Corpo inteiro",
+          "items": [
+            {
+              "exerciseSlug": "agachamento-livre-com-barra",
+              "targetSets": 3,
+              "repMin": 6,
+              "repMax": 10,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "supino-reto-com-barra",
+              "targetSets": 3,
+              "repMin": 6,
+              "repMax": 10,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "remada-curvada-com-barra",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "desenvolvimento-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "rosca-direta-com-halteres",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 12,
+              "restSeconds": 60,
+              "supersetGroup": 1
+            },
+            {
+              "exerciseSlug": "triceps-na-polia-com-corda",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60,
+              "supersetGroup": 1
+            },
+            {
+              "exerciseSlug": "abdominal-crunch",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 45
+            }
+          ]
+        },
+        {
+          "name": "B · Corpo inteiro",
+          "items": [
+            {
+              "exerciseSlug": "levantamento-terra-romeno-com-barra",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 10,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "supino-inclinado-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "puxada-aberta-na-polia",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "afundo-com-halteres",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "elevacao-lateral-com-halteres",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "panturrilha-em-pe-na-maquina",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "abdominal-na-polia",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 45
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

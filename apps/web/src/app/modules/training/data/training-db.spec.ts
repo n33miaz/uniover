@@ -12,15 +12,20 @@ describe('TrainingDb', () => {
     expect(TRAINING_DB_NAME).not.toBe(OFFLINE_DATABASE_NAME);
   });
 
-  it('opens at version 1 with the exercises, meta and syncState tables', async () => {
+  it('opens at version 2 with the exercises, meta, syncState and routines tables', async () => {
     const db = new TrainingDb('uniover-training-esquema', {
       indexedDB: new FakeIDBFactory(),
       ...FAKE,
     });
     await db.open();
 
-    expect(db.verno).toBe(1);
-    expect(db.tables.map((table) => table.name).sort()).toEqual(['exercises', 'meta', 'syncState']);
+    expect(db.verno).toBe(2);
+    expect(db.tables.map((table) => table.name).sort()).toEqual([
+      'exercises',
+      'meta',
+      'routines',
+      'syncState',
+    ]);
     expect(db.exercises.schema.primKey.name).toBe('id');
     const indexes = db.exercises.schema.indexes;
     expect(indexes.map((index) => index.name).sort()).toEqual([
