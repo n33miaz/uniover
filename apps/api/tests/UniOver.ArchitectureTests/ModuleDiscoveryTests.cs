@@ -10,12 +10,12 @@ namespace UniOver.ArchitectureTests;
 public class ModuleDiscoveryTests
 {
     [Fact]
-    public void AtLeastThreeModulesAreDiscovered_IdentityTvAndDevices()
+    public void AtLeastFourModulesAreDiscovered_IdentityTvDevicesAndTraining()
     {
         var names = DiscoveredModules.Select(m => m.Name).ToList();
 
-        names.Should().HaveCountGreaterThanOrEqualTo(3);
-        names.Should().Contain(["Identity", "Tv", "Devices"]);
+        names.Should().HaveCountGreaterThanOrEqualTo(4);
+        names.Should().Contain(["Identity", "Tv", "Devices", "Training"]);
     }
 
     [Fact]
