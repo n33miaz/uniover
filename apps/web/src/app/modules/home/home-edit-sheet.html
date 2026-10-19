@@ -1,0 +1,75 @@
+<dialog #dialog class="sheet" aria-labelledby="sheet-title" (cancel)="cancel($event)">
+  <h2 id="sheet-title" i18n="@@home.sheet.title">Editar a Início</h2>
+  <p class="hint" i18n="@@home.sheet.hint">
+    Mova, redimensione ou oculte os blocos. A escolha vale só neste aparelho.
+  </p>
+
+  <ul class="rows">
+    @for (item of draft(); track item.id; let first = $first; let last = $last) {
+      <li class="row" [attr.data-id]="item.id" [class.dragging]="dragging() === item.id">
+        <span
+          class="grip"
+          aria-hidden="true"
+          (pointerdown)="startDrag($event, item.id)"
+          (pointermove)="dragOver($event)"
+          (pointerup)="endDrag()"
+          (pointercancel)="endDrag()"
+          ><app-icon name="grip"
+        /></span>
+        <span class="name">{{ title(item.id) }}</span>
+
+        <div class="sizes" role="group" aria-label="Tamanho" i18n-aria-label="@@home.sheet.size">
+          @for (size of sizes; track size) {
+            <button
+              type="button"
+              class="size"
+              [attr.aria-pressed]="item.size === size"
+              (click)="setSize(item.id, size)"
+            >
+              {{ sizeLabel(size) }}
+            </button>
+          }
+        </div>
+
+        <div class="moves">
+          <button
+            type="button"
+            class="icon-button up"
+            [disabled]="first"
+            [attr.aria-label]="upLabel(item.id)"
+            (click)="move(item.id, -1)"
+          >
+            <app-icon name="up" />
+          </button>
+          <button
+            type="button"
+            class="icon-button down"
+            [disabled]="last"
+            [attr.aria-label]="downLabel(item.id)"
+            (click)="move(item.id, 1)"
+          >
+            <app-icon name="down" />
+          </button>
+        </div>
+
+        <label class="show">
+          <input
+            type="checkbox"
+            [checked]="item.enabled"
+            (change)="setEnabled(item.id, $any($event.target).checked)"
+          />
+          <span i18n="@@home.sheet.show">Mostrar na Início</span>
+        </label>
+      </li>
+    }
+  </ul>
+
+  <div class="footer">
+    <button type="button" class="secondary" (click)="cancel()" i18n="@@home.sheet.cancel">
+      Cancelar
+    </button>
+    <button type="button" class="primary" (click)="apply()" i18n="@@home.sheet.apply">
+      Aplicar
+    </button>
+  </div>
+</dialog>

@@ -9,7 +9,7 @@ export default defineConfig({
   use: { baseURL: `http://localhost:${PORT}` },
   // Serve o build de produção (o mesmo que a imagem Docker copia para o wwwroot).
   webServer: {
-    command: `npx ng build && node e2e/static-server.mjs ${PORT}`,
+    command: `npm run build && node e2e/server/static-server.mjs ${PORT}`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env['CI'],
     timeout: 180_000,

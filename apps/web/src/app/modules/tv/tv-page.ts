@@ -1,11 +1,10 @@
 import { Component } from '@angular/core';
-import { PageHeader } from '../../shared/ui/page-header/page-header';
 
+/** A tela da TV chega com o módulo de controle; por ora só ocupa o lugar na casca. */
 @Component({
   selector: 'app-tv-page',
-  imports: [PageHeader],
-  template: `<app-page-header [heading]="title" />`,
+  template: `<p class="soon" i18n="@@tv.placeholder">
+    O controle da TV ainda não está disponível.
+  </p>`,
 })
-export class TvPage {
-  protected readonly title = $localize`:@@tv.title:TV`;
-}
+export class TvPage {}
