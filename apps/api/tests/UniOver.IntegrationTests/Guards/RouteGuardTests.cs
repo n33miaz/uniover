@@ -33,6 +33,9 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
 
         // Pareamento de aparelhos: qualquer rota sob o prefixo (o '*' final significa "começa com").
         ("*", "/api/v1/devices/pairing/*", RateLimitPolicies.Pairing),
+
+        // Canal do agente: cada abertura valida o token de dispositivo, então o limite segura tentativas em massa.
+        ("GET", "/api/v1/devices/agents/{agentId}/ws", RateLimitPolicies.Pairing),
     ];
 
     /// <summary>Production é o que vai para o ar; Development acrescenta o OpenAPI e também não pode vazar rota.</summary>

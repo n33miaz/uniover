@@ -1,6 +1,8 @@
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices;
+using UniOver.Modules.Devices.Features.Agents;
+using UniOver.Modules.Devices.Transport.WebSocket;
 using UniOver.Modules.Identity;
 using UniOver.Modules.Tv;
 
@@ -33,6 +35,8 @@ builder.Services.AddTvModule(builder.Configuration);
 builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddDevicesModule(builder.Configuration);
 // [composição: devices-transport]
+builder.Services.AddDevicesTransport(builder.Configuration);
+builder.Services.AddDevicesWebSocketTransport();
 
 var app = builder.Build();
 
@@ -56,6 +60,8 @@ app.MapHealthChecks("/health/live").AllowAnonymous();
 app.MapTvEndpoints();
 app.MapIdentityEndpoints();
 app.MapDevicesEndpoints();
+app.MapDevicesTransport();
+app.MapDevicesWebSocketTransport();
 app.MapUniOverPwa();
 
 app.Run();
