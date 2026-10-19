@@ -41,6 +41,9 @@ jobs:
           global-json-file: apps/api/global.json
       - name: Instalar o dotnet-ef
         run: dotnet tool install --global dotnet-ef --version 10.0.13
+      - name: Restaurar os pacotes
+        working-directory: apps/api
+        run: dotnet restore UniOver.slnx
       # A conexão só é gerada com um valor de mentira: o dotnet ef não a usa para montar o bundle.
       - name: Gerar os bundles de migration
         working-directory: apps/api
