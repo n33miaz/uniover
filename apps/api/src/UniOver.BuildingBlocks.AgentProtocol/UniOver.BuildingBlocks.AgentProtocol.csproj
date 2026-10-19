@@ -1,3 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Casca do protocolo do agente (envelope e validação por JSON Schema); as classes entram junto com ele. -->
+  <!-- Protocolo do agente: envelope, validação por JSON Schema e tipos gerados de contracts/agent. Só BCL e SharedKernel. -->
+  <ItemGroup>
+    <PackageReference Include="JsonSchema.Net" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UniOver.SharedKernel\UniOver.SharedKernel.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Os esquemas viajam dentro do assembly: o validador não depende de arquivo em disco nem de rede. -->
+    <EmbeddedResource Include="..\..\..\..\contracts\agent\envelope.schema.json" LogicalName="schemas/envelope.schema.json" />
+    <EmbeddedResource Include="..\..\..\..\contracts\agent\messages\*.schema.json" LogicalName="schemas/messages/%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

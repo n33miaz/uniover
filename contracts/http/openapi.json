@@ -1,0 +1,1198 @@
+{
+  "components": {
+    "schemas": {
+      "AgentSummary": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "revoked": {
+            "type": "boolean"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "platform",
+          "createdAt",
+          "revoked"
+        ],
+        "type": "object"
+      },
+      "ApprovePairingRequest": {
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "userCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "userCode",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AssertionResponse": {
+        "properties": {
+          "authenticatorData": {
+            "format": "byte"
+          },
+          "clientDataJSON": {
+            "format": "byte"
+          },
+          "signature": {
+            "format": "byte"
+          },
+          "userHandle": {
+            "format": "byte"
+          }
+        },
+        "required": [
+          "authenticatorData",
+          "signature",
+          "clientDataJSON"
+        ],
+        "type": "object"
+      },
+      "AttestationResponse": {
+        "properties": {
+          "attestationObject": {
+            "format": "byte"
+          },
+          "clientDataJSON": {
+            "format": "byte"
+          },
+          "transports": {
+            "items": {
+              "$ref": "#/components/schemas/AuthenticatorTransport"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "attestationObject",
+          "clientDataJSON",
+          "transports"
+        ],
+        "type": "object"
+      },
+      "AuthenticationExtensionsClientOutputs": {
+        "properties": {
+          "appid": {
+            "type": "boolean"
+          },
+          "credProps": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CredentialPropertiesOutput"
+              }
+            ]
+          },
+          "credProtect": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CredentialProtectionPolicy"
+              }
+            ]
+          },
+          "example.extension.bool": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "exts": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "largeBlob": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AuthenticationExtensionsLargeBlobOutputs"
+              }
+            ]
+          },
+          "prf": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AuthenticationExtensionsPRFOutputs"
+              }
+            ]
+          },
+          "uvm": {
+            "items": {
+              "items": {
+                "format": "uint64",
+                "pattern": "^-?(?:0|[1-9]\\d*)$",
+                "type": [
+                  "integer",
+                  "string"
+                ]
+              },
+              "type": "array"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "AuthenticationExtensionsLargeBlobOutputs": {
+        "properties": {
+          "blob": {
+            "format": "byte"
+          },
+          "supported": {
+            "type": "boolean"
+          },
+          "written": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "AuthenticationExtensionsPRFOutputs": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "results": {
+            "$ref": "#/components/schemas/AuthenticationExtensionsPRFValues"
+          }
+        },
+        "type": "object"
+      },
+      "AuthenticationExtensionsPRFValues": {
+        "properties": {
+          "first": {
+            "format": "byte"
+          },
+          "second": {
+            "format": "byte"
+          }
+        },
+        "required": [
+          "first"
+        ],
+        "type": "object"
+      },
+      "AuthenticatorAssertionRawResponse": {
+        "properties": {
+          "clientExtensionResults": {
+            "$ref": "#/components/schemas/AuthenticationExtensionsClientOutputs"
+          },
+          "extensions": {
+            "$ref": "#/components/schemas/AuthenticationExtensionsClientOutputs"
+          },
+          "id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rawId": {
+            "format": "byte"
+          },
+          "response": {
+            "$ref": "#/components/schemas/AssertionResponse"
+          },
+          "type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PublicKeyCredentialType"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "rawId",
+          "type",
+          "clientExtensionResults"
+        ],
+        "type": "object"
+      },
+      "AuthenticatorAttestationRawResponse": {
+        "properties": {
+          "clientExtensionResults": {
+            "$ref": "#/components/schemas/AuthenticationExtensionsClientOutputs"
+          },
+          "extensions": {
+            "$ref": "#/components/schemas/AuthenticationExtensionsClientOutputs"
+          },
+          "id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rawId": {
+            "format": "byte"
+          },
+          "response": {
+            "$ref": "#/components/schemas/AttestationResponse"
+          },
+          "type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PublicKeyCredentialType"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "rawId",
+          "type",
+          "response",
+          "clientExtensionResults"
+        ],
+        "type": "object"
+      },
+      "AuthenticatorTransport": {
+        "enum": [
+          "usb",
+          "nfc",
+          "ble",
+          "smart-card",
+          "hybrid",
+          "internal"
+        ]
+      },
+      "BeginPasskeyRegistrationRequest": {
+        "properties": {
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "type": "object"
+      },
+      "CompletePasskeyRegistrationRequest": {
+        "properties": {
+          "challengeId": {
+            "format": "uuid",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "credential": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AuthenticatorAttestationRawResponse"
+              }
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "challengeId",
+          "name",
+          "credential"
+        ],
+        "type": "object"
+      },
+      "ConfirmStepUpRequest": {
+        "properties": {
+          "challengeId": {
+            "format": "uuid",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "credential": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AuthenticatorAssertionRawResponse"
+              }
+            ]
+          }
+        },
+        "required": [
+          "challengeId",
+          "credential"
+        ],
+        "type": "object"
+      },
+      "CredentialPropertiesOutput": {
+        "properties": {
+          "authenticatorDisplayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rk": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "CredentialProtectionPolicy": {
+        "enum": [
+          "userVerificationOptional",
+          "userVerificationOptionalWithCredentialIDList",
+          "userVerificationRequired",
+          null
+        ]
+      },
+      "DenyPairingRequest": {
+        "properties": {
+          "userCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "userCode"
+        ],
+        "type": "object"
+      },
+      "DevicesModuleInfo": {
+        "properties": {
+          "module": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "module",
+          "version"
+        ],
+        "type": "object"
+      },
+      "IdentityModuleInfo": {
+        "properties": {
+          "dependsOn": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "module": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "module",
+          "version",
+          "dependsOn"
+        ],
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
+      "ModuleInfo": {
+        "properties": {
+          "module": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "module",
+          "version"
+        ],
+        "type": "object"
+      },
+      "PollPairingRequest": {
+        "properties": {
+          "deviceCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "pairingId": {
+            "format": "uuid",
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "pairingId",
+          "deviceCode"
+        ],
+        "type": "object"
+      },
+      "PublicKeyCredentialType": {
+        "enum": [
+          "public-key",
+          "invalid",
+          null
+        ]
+      },
+      "RenamePasskeyRequest": {
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "RequestStepUpRequest": {
+        "properties": {
+          "action": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "RevokeAgentRequest": {
+        "properties": {
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "StartPairingRequest": {
+        "properties": {
+          "agentName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "agentVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "platform": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "agentName",
+          "platform",
+          "agentVersion"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "UniOver.Host | v1",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.1",
+  "paths": {
+    "/": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PwaExtensions"
+        ]
+      }
+    },
+    "/api/v1/devices/agents": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "UniOver.Host"
+        ]
+      }
+    },
+    "/api/v1/devices/agents/{id}/revoke": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RevokeAgentRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "RevokeAgentEndpoint"
+        ]
+      }
+    },
+    "/api/v1/devices/info": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevicesModuleInfo"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "UniOver.Host"
+        ]
+      }
+    },
+    "/api/v1/devices/pairing/approve": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ApprovePairingRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ApprovePairingEndpoint"
+        ]
+      }
+    },
+    "/api/v1/devices/pairing/deny": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DenyPairingRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "DenyPairingEndpoint"
+        ]
+      }
+    },
+    "/api/v1/devices/pairing/poll": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PollPairingRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PollPairingEndpoint"
+        ]
+      }
+    },
+    "/api/v1/devices/pairing/start": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/StartPairingRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "StartPairingEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/auth/login": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LoginRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "LoginEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/auth/logout": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "LogoutEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/auth/refresh": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "RefreshEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/auth/stream-ticket": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "StreamTicketEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/info": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityModuleInfo"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "UniOver.Host"
+        ]
+      }
+    },
+    "/api/v1/identity/me": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "GetMeEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/passkeys": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ListPasskeysEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/passkeys/registration/complete": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CompletePasskeyRegistrationRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "CompletePasskeyRegistrationEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/passkeys/registration/options": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BeginPasskeyRegistrationRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "BeginPasskeyRegistrationEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/passkeys/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "RemovePasskeyEndpoint"
+        ]
+      },
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RenamePasskeyRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "RenamePasskeyEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/step-up/complete": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ConfirmStepUpRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ConfirmStepUpEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/step-up/options": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RequestStepUpRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "RequestStepUpEndpoint"
+        ]
+      }
+    },
+    "/api/v1/tv/info": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleInfo"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "UniOver.Host"
+        ]
+      }
+    },
+    "/index.html": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PwaExtensions"
+        ]
+      }
+    },
+    "/{path}": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PwaExtensions"
+        ]
+      },
+      "head": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PwaExtensions"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "PwaExtensions"
+    },
+    {
+      "name": "UniOver.Host"
+    },
+    {
+      "name": "LoginEndpoint"
+    },
+    {
+      "name": "RefreshEndpoint"
+    },
+    {
+      "name": "LogoutEndpoint"
+    },
+    {
+      "name": "StreamTicketEndpoint"
+    },
+    {
+      "name": "GetMeEndpoint"
+    },
+    {
+      "name": "BeginPasskeyRegistrationEndpoint"
+    },
+    {
+      "name": "CompletePasskeyRegistrationEndpoint"
+    },
+    {
+      "name": "ListPasskeysEndpoint"
+    },
+    {
+      "name": "RenamePasskeyEndpoint"
+    },
+    {
+      "name": "RemovePasskeyEndpoint"
+    },
+    {
+      "name": "RequestStepUpEndpoint"
+    },
+    {
+      "name": "ConfirmStepUpEndpoint"
+    },
+    {
+      "name": "StartPairingEndpoint"
+    },
+    {
+      "name": "PollPairingEndpoint"
+    },
+    {
+      "name": "ApprovePairingEndpoint"
+    },
+    {
+      "name": "DenyPairingEndpoint"
+    },
+    {
+      "name": "RevokeAgentEndpoint"
+    }
+  ]
+}

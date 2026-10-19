@@ -16,6 +16,9 @@ apps/api/tests
 apps/web/e2e
 apps/agent
 contracts
+# Os esquemas do agente entram na API como recurso embutido (validação das mensagens).
+!contracts/agent/envelope.schema.json
+!contracts/agent/messages/*.schema.json
 **/.env
 **/.env.*
 *.md

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/tv.state.v1.schema.json",
+  "title": "tv.state.v1",
+  "description": "Agente para API: estado atual da TV.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "type", "source", "target", "ts", "correlationId", "body"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+    "type": { "const": "tv.state.v1" },
+    "source": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "target": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "ts": { "$ref": "../envelope.schema.json#/$defs/timestamp" },
+    "correlationId": { "oneOf": [{ "$ref": "../envelope.schema.json#/$defs/uuid" }, { "type": "null" }] },
+    "body": {
+      "type": "object", "additionalProperties": false,
+      "required": ["power", "volume", "app", "connection"],
+      "properties": {
+        "power": { "enum": ["on", "off", "unknown"] },
+        "volume": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+        "app": { "type": ["string", "null"] },
+        "connection": { "enum": ["hot", "hibernating", "disconnected"] }
+      }
+    }
+  }
+}
