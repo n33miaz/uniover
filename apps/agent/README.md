@@ -65,6 +65,10 @@ sem aviso de "app aberto"** (`tv.wake.v1`). O primeiro comando depois de hiberna
 aquecimento é medido e registrado no log. Se a TV não responder, tenta de novo com espera de 1, 2 e 4 s e
 então responde `tv_unreachable`: nunca fica num laço infinito.
 
+Texto (`tv.text.v1`): cada mensagem traz o texto completo e **substitui** o conteúdo do campo de texto em foco
+na TV (não acrescenta). Sem campo em foco a TV ignora em silêncio. Apagar o campo inteiro não é possível por este
+canal: o protocolo recusa texto vazio.
+
 Pareamento (uma vez):
 
 1. Deixe a TV ligada. Rode `uv run uniover-agent tv-pair --host <ip-da-tv>`.

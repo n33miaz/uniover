@@ -42,6 +42,7 @@ class FakeTvRemote:
         self.keys: list[str] = []
         self.sent: list[tuple[str, str]] = []
         self.links: list[str] = []
+        self.texts: list[str] = []
         self.connects = 0
         self.disconnects = 0
         self.connect_errors: list[Exception] = []
@@ -81,6 +82,11 @@ class FakeTvRemote:
         if not self._connected:
             raise TvUnreachable("canal fechado")
         self.links.append(link)
+
+    async def send_text(self, text: str) -> None:
+        if not self._connected:
+            raise TvUnreachable("canal fechado")
+        self.texts.append(text)
 
     def on_power(self, callback: Callable[[bool], None]) -> None:
         self._power.append(callback)

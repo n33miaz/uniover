@@ -86,6 +86,8 @@ class RemoteClient(Protocol):
 
     def send_launch_app_command(self, app_link_or_app_id: str) -> None: ...
 
+    def send_text(self, text: str) -> None: ...
+
 
 ClientFactory = Callable[[str, str, str, str], RemoteClient]
 
@@ -214,6 +216,18 @@ class AndroidTvRemoteV2:
         client = self._require()
         try:
             client.send_launch_app_command(link)
+        except ConnectionClosed:
+            raise TvUnreachable("a conexão com a TV fechou") from None
+
+    async def send_text(self, text: str) -> None:
+        # A biblioteca manda o campo inteiro (`value=text`, cursor no fim): o texto substitui o que
+        # a TV tem no campo em foco. Vazio ela recusa com `ValueError`, e o protocolo não oferece
+        # outro jeito de limpar o campo; por isso aqui também é erro de programação.
+        if not text:
+            raise ValueError("texto vazio não pode ser enviado à TV")
+        client = self._require()
+        try:
+            client.send_text(text)
         except ConnectionClosed:
             raise TvUnreachable("a conexão com a TV fechou") from None
 

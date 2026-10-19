@@ -15,6 +15,7 @@ from uniover_agent.core import (
     TvStatePublisher,
     tv_app_launch_handler,
     tv_key_handler,
+    tv_text_handler,
     tv_wake_handler,
 )
 from uniover_agent.core.tv.handlers import KEY_BLOCKED, LINK_SCHEME_BLOCKED, UNSUPPORTED
@@ -31,6 +32,7 @@ def make() -> tuple[HandleCommand, FakeTvRemote]:
         {
             "tv.key.v1": keys,
             "tv.key.v2": keys,
+            "tv.text.v1": tv_text_handler(session),
             "tv.wake.v1": tv_wake_handler(session),
             "tv.app.launch.v1": tv_app_launch_handler(session),
         },
@@ -135,6 +137,130 @@ async def test_launch_link_reports_an_unreachable_tv() -> None:
     target = {"kind": "link", "value": "https://exemplo.test/a"}
     result = await handler(Command("1", "tv.app.launch.v1", {"target": target}))
     assert (result.status, result.code) == (ResultStatus.FAILED, "tv_unreachable")
+
+
+# --- texto em tempo real ------------------------------------------------------------------------
+
+
+class FlakyTextRemote(FakeTvRemote):
+    """O primeiro envio de texto falha com o canal ainda marcado como aberto (queda silenciosa)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.attempts = 0
+
+    async def send_text(self, text: str) -> None:
+        self.attempts += 1
+        if self.attempts == 1:
+            raise TvUnreachable("a conexão com a TV fechou")
+        await super().send_text(text)
+
+
+async def test_text_reaches_the_remote_and_opens_the_session_on_the_first_command() -> None:
+    handler, remote = make()
+    assert remote.connects == 0
+    result = await handler(Command("1", "tv.text.v1", {"text": "matrix"}))
+    assert result.status is ResultStatus.OK
+    assert remote.connects == 1
+    assert remote.texts == ["matrix"]
+    # Texto não é tecla: nenhuma tecla vai junto.
+    assert remote.sent == []
+
+
+async def test_each_text_replaces_the_previous_one_and_the_last_wins() -> None:
+    handler, remote = make()
+    for index, text in enumerate(["m", "ma", "mat", "matrix"]):
+        result = await handler(Command(str(index), "tv.text.v1", {"text": text}))
+        assert result.status is ResultStatus.OK
+    assert remote.texts == ["m", "ma", "mat", "matrix"]
+    assert remote.connects == 1
+
+
+async def test_text_renews_the_hibernation_clock() -> None:
+    clock, remote = FakeClock(), FakeTvRemote()
+    session = TvSessionManager(clock, remote, hibernate_seconds=300)
+    handler = tv_text_handler(session)
+    await handler(Command("1", "tv.text.v1", {"text": "a"}))
+    clock.advance(200)
+    await handler(Command("2", "tv.text.v1", {"text": "ab"}))
+    clock.advance(200)
+    # 400 s desde o primeiro texto, mas só 200 s desde o segundo: ainda não é hora de dormir.
+    assert not await session.hibernate_if_idle()
+    clock.advance(100)
+    assert await session.hibernate_if_idle()
+
+
+async def test_text_after_hibernation_reconnects() -> None:
+    clock, remote = FakeClock(), FakeTvRemote()
+    session = TvSessionManager(clock, remote, hibernate_seconds=300)
+    handler = tv_text_handler(session)
+    await handler(Command("1", "tv.text.v1", {"text": "a"}))
+    clock.advance(301)
+    assert await session.hibernate_if_idle()
+    assert not remote.connected
+    result = await handler(Command("2", "tv.text.v1", {"text": "ab"}))
+    assert result.status is ResultStatus.OK
+    assert remote.connects == 2
+    assert remote.texts == ["a", "ab"]
+
+
+async def test_text_to_an_unreachable_tv_is_reported_with_its_code() -> None:
+    handler, remote = make()
+    remote.connect_errors = [TvUnreachable("x") for _ in range(4)]
+    result = await handler(Command("1", "tv.text.v1", {"text": "oi"}))
+    assert (result.status, result.code) == (ResultStatus.FAILED, "tv_unreachable")
+    assert remote.texts == []
+
+
+async def test_text_is_resent_on_a_new_session_when_the_channel_dropped_unnoticed() -> None:
+    remote = FlakyTextRemote()
+    handler = tv_text_handler(TvSessionManager(FakeClock(), remote))
+    result = await handler(Command("1", "tv.text.v1", {"text": "oi"}))
+    assert result.status is ResultStatus.OK
+    assert remote.texts == ["oi"]
+    assert remote.attempts == 2
+    assert remote.connects == 2
+
+
+async def test_empty_text_is_ok_but_never_sent_to_the_tv() -> None:
+    handler, remote = make()
+    result = await handler(Command("1", "tv.text.v1", {"text": ""}))
+    assert result.status is ResultStatus.OK
+    assert remote.texts == []
+    assert remote.connects == 0
+
+
+@pytest.mark.parametrize("body", [{}, {"text": 5}, {"text": None}])
+async def test_text_without_a_string_is_rejected(body: dict[str, Any]) -> None:
+    handler, remote = make()
+    result = await handler(Command("1", "tv.text.v1", body))
+    assert result.status is ResultStatus.REJECTED
+    assert remote.connects == 0
+
+
+async def test_texts_arriving_together_are_sent_in_order_and_the_last_wins() -> None:
+    clock, remote = FakeClock(), FakeTvRemote()
+    handler = tv_text_handler(TvSessionManager(clock, remote))
+    commands = [
+        Command(str(index), "tv.text.v1", {"text": text})
+        for index, text in enumerate(["a", "ab", "abc"])
+    ]
+    results = await asyncio.gather(*(handler(command) for command in commands))
+    assert [r.status for r in results] == [ResultStatus.OK] * 3
+    # O último nunca é ultrapassado; os intermediários que ainda esperavam a vez são descartados.
+    assert remote.texts[-1] == "abc"
+    assert remote.texts == sorted(remote.texts, key=len)
+    assert remote.connects == 1
+
+
+async def test_a_failed_text_does_not_block_the_next_one() -> None:
+    handler, remote = make()
+    remote.connect_errors = [TvUnreachable("x") for _ in range(4)]
+    failed = await handler(Command("1", "tv.text.v1", {"text": "a"}))
+    assert failed.status is ResultStatus.FAILED
+    recovered = await handler(Command("2", "tv.text.v1", {"text": "ab"}))
+    assert recovered.status is ResultStatus.OK
+    assert remote.texts == ["ab"]
 
 
 # --- publicação do estado ---------------------------------------------------------------------

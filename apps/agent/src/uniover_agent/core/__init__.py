@@ -24,6 +24,7 @@ from uniover_agent.core.tv import (
     TvStatePublisher,
     tv_app_launch_handler,
     tv_key_handler,
+    tv_text_handler,
     tv_wake_handler,
 )
 
@@ -58,5 +59,6 @@ __all__ = [
     "TvStatePublisher",
     "tv_app_launch_handler",
     "tv_key_handler",
+    "tv_text_handler",
     "tv_wake_handler",
 ]
