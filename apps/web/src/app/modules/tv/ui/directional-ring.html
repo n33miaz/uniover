@@ -1,0 +1,45 @@
+<div class="ring" role="group" aria-label="Setas de direção" i18n-aria-label="@@tv.ring.label">
+  <div class="disk">
+    <button
+      type="button"
+      class="seg up"
+      [appKey]="'UP'"
+      [repeat]="true"
+      aria-label="Para cima"
+      i18n-aria-label="@@tv.key.up"
+    >
+      <span class="glyph"><app-tv-icon name="up" /></span>
+    </button>
+    <button
+      type="button"
+      class="seg right"
+      [appKey]="'RIGHT'"
+      [repeat]="true"
+      aria-label="Para a direita"
+      i18n-aria-label="@@tv.key.right"
+    >
+      <span class="glyph"><app-tv-icon name="right" /></span>
+    </button>
+    <button
+      type="button"
+      class="seg down"
+      [appKey]="'DOWN'"
+      [repeat]="true"
+      aria-label="Para baixo"
+      i18n-aria-label="@@tv.key.down"
+    >
+      <span class="glyph"><app-tv-icon name="down" /></span>
+    </button>
+    <button
+      type="button"
+      class="seg left"
+      [appKey]="'LEFT'"
+      [repeat]="true"
+      aria-label="Para a esquerda"
+      i18n-aria-label="@@tv.key.left"
+    >
+      <span class="glyph"><app-tv-icon name="left" /></span>
+    </button>
+  </div>
+  <button type="button" class="ok" [appKey]="'OK'" i18n="@@tv.key.ok">OK</button>
+</div>
