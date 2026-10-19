@@ -1,0 +1,94 @@
+using Microsoft.EntityFrameworkCore;
+using UniOver.BuildingBlocks.Messaging;
+using UniOver.BuildingBlocks.Persistence;
+using UniOver.Modules.Devices.Domain;
+
+namespace UniOver.Modules.Devices.Persistence;
+
+/// <summary>Banco do módulo: schema <c>devices</c>, nada em outro schema e nenhuma FK para fora dele.</summary>
+public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options) : ModuleDbContext(options)
+{
+    public const string SchemaName = "devices";
+
+    protected override string Schema => SchemaName;
+
+    public DbSet<PairingRequest> Pairings => Set<PairingRequest>();
+
+    public DbSet<Agent> Agents => Set<Agent>();
+
+    public DbSet<PairingAuditEntry> PairingAudit => Set<PairingAuditEntry>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(modelBuilder);
+        base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<PairingRequest>(e =>
+        {
+            e.ToTable("pairings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.DeviceCodeHash).HasColumnType("bytea").IsRequired();
+            e.HasIndex(x => x.DeviceCodeHash).IsUnique();
+
+            // Único entre todos os pedidos guardados; os vencidos há mais de uma hora são apagados na abertura de um novo.
+            e.Property(x => x.UserCode).HasMaxLength(UserCode.Length).IsRequired();
+            e.HasIndex(x => x.UserCode).IsUnique();
+            e.Property(x => x.RequestedName).HasMaxLength(PairingText.NameMax).IsRequired();
+            e.Property(x => x.RequestedSlug).HasMaxLength(AgentSlug.MaxLength).IsRequired();
+            e.Property(x => x.Platform).HasMaxLength(PairingText.PlatformMax).IsRequired();
+            e.Property(x => x.AgentVersion).HasMaxLength(PairingText.VersionMax).IsRequired();
+            e.Property(x => x.ApprovedName).HasMaxLength(PairingText.NameMax);
+            e.HasIndex(x => x.ExpiresAt);
+
+            // Duas aprovações (ou duas entregas de token) ao mesmo tempo: a segunda grava com o valor antigo
+            // e o EF recusa, então só uma vence e o token sai uma única vez.
+            e.Property(x => x.ApprovedAt).IsConcurrencyToken();
+            e.Property(x => x.ConsumedAt).IsConcurrencyToken();
+            e.Property(x => x.DeniedAt).IsConcurrencyToken();
+
+            // Mesmo schema; sem cascata: apagar um agente não apaga o histórico do pedido.
+            e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<Agent>(e =>
+        {
+            e.ToTable("agents");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Slug).HasMaxLength(AgentSlug.MaxLength).IsRequired();
+            e.HasIndex(x => x.Slug).IsUnique();
+            e.Property(x => x.Name).HasMaxLength(PairingText.NameMax).IsRequired();
+            e.Property(x => x.Platform).HasMaxLength(PairingText.PlatformMax).IsRequired();
+
+            // Nulo até a entrega do token; o Postgres aceita vários nulos num índice único.
+            e.Property(x => x.TokenHash).HasColumnType("bytea");
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.Property(x => x.RevokeReason).HasMaxLength(Agent.ReasonMax);
+        });
+
+        modelBuilder.Entity<PairingAuditEntry>(e =>
+        {
+            e.ToTable("pairing_audit");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Event).HasMaxLength(40).IsRequired();
+            e.Property(x => x.Ip).HasMaxLength(AuditText.IpMax);
+            e.Property(x => x.UserAgent).HasMaxLength(AuditText.UserAgentMax);
+            e.HasIndex(x => x.OccurredAt);
+
+            // Sem FK de propósito: a trilha sobrevive ao agente e ao pedido, e o usuário é de outro módulo.
+            e.HasIndex(x => x.AgentId);
+        });
+
+        modelBuilder.AddOutbox().AddDeadLetters();
+    }
+}
+
+/// <summary>Usada só pelo dotnet ef (migrations e bundle); lê <c>UNIOVER_MIGRATIONS_CONNECTION</c>.</summary>
+public sealed class DevicesDesignTimeFactory : ModuleDesignTimeFactory<DevicesDbContext>
+{
+    protected override string Schema => DevicesDbContext.SchemaName;
+
+    protected override DevicesDbContext Create(DbContextOptions<DevicesDbContext> options) => new(options);
+}

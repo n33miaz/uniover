@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Casca do protocolo do agente (envelope e validação por JSON Schema); as classes entram junto com ele. -->
+</Project>

@@ -15,6 +15,8 @@
     <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="10.0.13" />
     <PackageVersion Include="Fido2" Version="4.3.1" />
     <PackageVersion Include="Fido2.AspNet" Version="4.3.1" />
+    <!-- Validação de mensagens do agente contra o JSON Schema (usada pelo protocolo do agente). WebSocket e SSE são nativos do ASP.NET Core: sem pacote. -->
+    <PackageVersion Include="JsonSchema.Net" Version="9.4.1" />
     <PackageVersion Include="xunit.v3" Version="4.0.2" />
     <PackageVersion Include="TngTech.ArchUnitNET" Version="0.13.4" />
     <PackageVersion Include="TngTech.ArchUnitNET.xUnitV3" Version="0.13.4" />

@@ -1,5 +1,6 @@
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Devices;
 using UniOver.Modules.Identity;
 using UniOver.Modules.Tv;
 
@@ -28,7 +29,10 @@ builder.Services.AddIdentityPasskeys(builder.Configuration);
 
 // O Host só compõe: cada módulo é chamado explicitamente, sem descoberta por reflexão.
 builder.Services.AddTvModule(builder.Configuration);
+// [composição: tv]
 builder.Services.AddIdentityModule(builder.Configuration);
+builder.Services.AddDevicesModule(builder.Configuration);
+// [composição: devices-transport]
 
 var app = builder.Build();
 
@@ -51,6 +55,7 @@ if (app.Environment.IsDevelopment())
 app.MapHealthChecks("/health/live").AllowAnonymous();
 app.MapTvEndpoints();
 app.MapIdentityEndpoints();
+app.MapDevicesEndpoints();
 app.MapUniOverPwa();
 
 app.Run();

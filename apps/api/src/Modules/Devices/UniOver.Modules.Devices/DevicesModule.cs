@@ -1,0 +1,78 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using UniOver.BuildingBlocks.Messaging;
+using UniOver.BuildingBlocks.Persistence;
+using UniOver.Modules.Devices.Contracts.Pairing;
+using UniOver.Modules.Devices.Features.ApprovePairing;
+using UniOver.Modules.Devices.Features.DenyPairing;
+using UniOver.Modules.Devices.Features.GetModuleInfo;
+using UniOver.Modules.Devices.Features.ListAgents;
+using UniOver.Modules.Devices.Features.PollPairing;
+using UniOver.Modules.Devices.Features.RevokeAgent;
+using UniOver.Modules.Devices.Features.StartPairing;
+using UniOver.Modules.Devices.Features.Tokens;
+using UniOver.Modules.Devices.Persistence;
+using UniOver.Modules.Devices.Security;
+
+namespace UniOver.Modules.Devices;
+
+public static class DevicesModule
+{
+    public const string Name = "devices";
+
+    public static IServiceCollection AddDevicesModule(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var version = configuration.GetSection(DevicesModuleOptions.SectionName)["Version"] ?? "0.0.0";
+
+        services.AddOptions<DevicesModuleOptions>()
+            .Bind(configuration.GetSection(DevicesModuleOptions.SectionName))
+            .Validate(DevicesModuleOptions.IsValid, "Modules:Devices tem valor fora do permitido (tempos e limites devem ser positivos).")
+            .ValidateOnStart();
+
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddModuleDbContext<DevicesDbContext>(
+            configuration, DevicesDbContext.SchemaName, typeof(DevicesDbContext).Assembly);
+
+        // Eventos pela outbox do schema devices. Os dois tipos precisam estar registrados para o despachante
+        // reconhecê-los; só a revogação tem assinante (o cache de tokens).
+        services.AddModuleOutbox<DevicesDbContext>(Name);
+        services.AddIntegrationEvent<AgentPaired>(AgentPaired.EventType);
+        services.AddIntegrationEvent<AgentRevoked>(AgentRevoked.EventType);
+        services.AddScoped<IIntegrationEventHandler<AgentRevoked>, AgentRevokedCacheInvalidator>();
+
+        services.AddSingleton<IDeviceTokenCache, InMemoryDeviceTokenCache>();
+        services.AddScoped<IDeviceTokenValidator, DeviceTokenValidator>();
+        services.AddScoped<PairingAuditWriter>();
+
+        services.AddSingleton(new GetModuleInfoHandler(version));
+        services.AddScoped<StartPairingHandler>();
+        services.AddScoped<PollPairingHandler>();
+        services.AddScoped<ApprovePairingHandler>();
+        services.AddScoped<DenyPairingHandler>();
+        services.AddScoped<ListAgentsHandler>();
+        services.AddScoped<RevokeAgentHandler>();
+        return services;
+    }
+
+    public static IEndpointRouteBuilder MapDevicesEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+
+        // Sem AllowAnonymous no grupo: a política padrão é "autenticado" e cada rota pública se declara.
+        var group = endpoints.MapGroup($"/api/v1/{Name}");
+        group.MapGetModuleInfo();
+        group.MapStartPairing();
+        group.MapPollPairing();
+        group.MapApprovePairing();
+        group.MapDenyPairing();
+        group.MapListAgents();
+        group.MapRevokeAgent();
+        return endpoints;
+    }
+}
