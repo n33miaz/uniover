@@ -67,10 +67,9 @@ async function expectTargetSize(locator: Locator, min = 44) {
   expect(box!.height, 'altura do alvo').toBeGreaterThanOrEqual(min - 0.5);
 }
 
-/** As duas páginas do controle ficam no DOM; alguns botões (reproduzir/pausar) existem nas duas. */
 const button = (root: Page | Locator, name: string) =>
   root.getByRole('button', { name, exact: true });
-const firstPage = (page: Page) => page.locator('.panel').first();
+/** As duas páginas do palco (direções e números) ficam no DOM; o resto do controle é fixo, fora delas. */
 const secondPage = (page: Page) => page.locator('.panel').nth(1);
 
 /** Os setores do anel têm a caixa do anel inteiro (recortada em triângulo): o toque vai no lado de cada um. */
@@ -125,17 +124,15 @@ test.describe('controle: primeira página', () => {
       'Menu',
       'Mudo',
       'Reproduzir ou pausar',
+      'Anterior',
+      'Próxima',
       'Desligar a TV',
       'Trocar para o modo touchpad',
       'Atalho 1',
       'Página 1 de 2',
       'Página 2 de 2',
     ];
-    for (const name of targets) {
-      const root =
-        name === 'Reproduzir ou pausar' || name.startsWith('Página') ? firstPage(page) : page;
-      await expectTargetSize(button(root, name));
-    }
+    for (const name of targets) await expectTargetSize(button(page, name));
     await expectTargetSize(button(page, 'OK'));
     await expectTargetSize(page.getByRole('link', { name: 'Teclado', exact: true }).first());
     // O setor do anel é um triângulo na caixa do anel inteiro; o ícone dele é o alvo visível.
@@ -157,11 +154,13 @@ test.describe('controle: primeira página', () => {
       ['Menu', 'MENU'],
       ['Mudo', 'MUTE'],
       ['Reproduzir ou pausar', 'PLAY_PAUSE'],
+      ['Anterior', 'MEDIA_PREVIOUS'],
+      ['Próxima', 'MEDIA_NEXT'],
       ['OK', 'OK'],
     ];
     for (const [name, key] of expected) {
       const before = tv.keysSent().length;
-      await button(firstPage(page), name).click();
+      await button(page, name).click();
       await expect.poll(() => tv.keysSent().slice(before)).toEqual([key]);
     }
     const arrows: [string, string][] = [
@@ -254,17 +253,14 @@ test.describe('controle: primeira página', () => {
 });
 
 test.describe('controle: segunda página e touchpad', () => {
-  test('a segunda página tem números, mídia e origem e acompanha os pontos', async ({
+  test('a segunda página tem os números e a origem e acompanha os pontos', async ({
     page,
   }, info) => {
     await openTv(page);
-    const second = button(firstPage(page), 'Página 2 de 2');
+    const second = button(page, 'Página 2 de 2');
     await second.click();
     await expect(second).toHaveAttribute('aria-current', 'true');
-    await expect(button(firstPage(page), 'Página 1 de 2')).not.toHaveAttribute(
-      'aria-current',
-      'true',
-    );
+    await expect(button(page, 'Página 1 de 2')).not.toHaveAttribute('aria-current', 'true');
     await expect(button(secondPage(page), 'Número 5')).toBeInViewport({ ratio: 1 });
     // A rolagem é suave: espera o encaixe terminar antes de medir e de tirar o print.
     await expect
@@ -281,27 +277,20 @@ test.describe('controle: segunda página e touchpad', () => {
       await button(secondPage(page), `Número ${digit}`).click();
       await expect.poll(() => tv.keysSent().slice(before)).toEqual([`NUM_${digit}`]);
     }
-    const media: [string, string][] = [
-      ['Anterior', 'MEDIA_PREVIOUS'],
-      ['Reproduzir ou pausar', 'PLAY_PAUSE'],
-      ['Próxima', 'MEDIA_NEXT'],
-      ['Origem', 'INPUT'],
-    ];
-    for (const [name, key] of media) {
-      const before = tv.keysSent().length;
-      await button(secondPage(page), name).click();
-      await expect.poll(() => tv.keysSent().slice(before)).toEqual([key]);
-    }
+    await expectTargetSize(button(secondPage(page), 'Origem'));
+    const before = tv.keysSent().length;
+    await button(secondPage(page), 'Origem').click();
+    await expect.poll(() => tv.keysSent().slice(before)).toEqual(['INPUT']);
 
-    await button(secondPage(page), 'Página 1 de 2').click();
-    await expect(button(secondPage(page), 'Página 1 de 2')).toHaveAttribute('aria-current', 'true');
+    await button(page, 'Página 1 de 2').click();
+    await expect(button(page, 'Página 1 de 2')).toHaveAttribute('aria-current', 'true');
     await expect(button(page, 'OK')).toBeInViewport({ ratio: 1 });
   });
 
   test('rolar o carrossel para a segunda página marca o ponto', async ({ page }) => {
     await openTv(page);
     await page.locator('.pager').evaluate((el) => el.scrollTo({ left: el.clientWidth }));
-    await expect(button(firstPage(page), 'Página 2 de 2')).toHaveAttribute('aria-current', 'true');
+    await expect(button(page, 'Página 2 de 2')).toHaveAttribute('aria-current', 'true');
     await expectNoHorizontalScroll(page);
   });
 
@@ -327,7 +316,7 @@ test.describe('controle: segunda página e touchpad', () => {
       await page.waitForTimeout(16);
     }
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await expect(button(firstPage(page), 'Página 2 de 2')).toHaveAttribute('aria-current', 'true');
+    await expect(button(page, 'Página 2 de 2')).toHaveAttribute('aria-current', 'true');
     expect(tv.keysSent()).toEqual([]);
   });
 
@@ -631,37 +620,123 @@ test.describe('aba Apps', () => {
 });
 
 test.describe('aba Teclado', () => {
-  test('escreve na TV, avisa onde vai o texto e não guarda o que foi enviado', async ({
+  const openKeyboard = async (page: Page) => {
+    await openTv(page, '/tv/teclado');
+    await expect(page.getByLabel('Texto para a TV')).toBeVisible();
+  };
+  const texts = () => tv.requests.filter((r) => r.path === '/text').map((r) => r.body?.['text']);
+
+  test('o texto vai para a TV enquanto se digita, sem Enviar nem OK, e o campo não limpa', async ({
     page,
   }, info) => {
-    await openTv(page);
-    await page.getByRole('link', { name: 'Teclado', exact: true }).last().click();
-    await expect(page).toHaveURL(/\/tv\/teclado$/);
+    await openKeyboard(page);
     await expect(
-      page.getByText('O texto é escrito no campo que estiver aberto na TV.', { exact: false }),
+      page.getByText('O texto é escrito no campo que estiver aberto na TV', { exact: false }),
     ).toBeVisible();
-    await expect(button(page, 'Enviar')).toBeDisabled();
-    await page.getByLabel('Texto para a TV').fill('batman');
-    await expect(page.getByText('6 / 200')).toBeVisible();
+    await expect(button(page, 'Enviar')).toHaveCount(0);
+    await expect(
+      page.getByText('Para apagar tudo, use o botão de apagar da própria TV.', { exact: false }),
+    ).toBeVisible();
     await expectNoHorizontalScroll(page);
     await screenshot(page, `test-results/tv-keyboard-${info.project.name}.png`);
     await expectNoSeriousViolations(page);
 
-    await button(page, 'Enviar').click();
-    await expect(page.getByText('Texto enviado para a TV.')).toBeVisible();
-    expect(tv.requests.find((r) => r.path === '/text')?.body).toEqual({ text: 'batman' });
-    await expect(page.getByLabel('Texto para a TV')).toHaveValue('');
+    const field = page.getByLabel('Texto para a TV');
+    await field.focus();
+    // Digitação seguida: uma pausa só no fim, então um único envio com o texto completo.
+    await page.keyboard.type('batman', { delay: 40 });
+    await expect.poll(() => texts()).toEqual(['batman']);
+    await expect(page.getByText('Texto na TV.')).toBeVisible();
+    await page.waitForTimeout(700);
+    expect(texts()).toEqual(['batman']);
+    await expect(field).toHaveValue('batman');
+    await expect(page.getByText('6 / 200')).toBeVisible();
+    await screenshot(page, `test-results/tv-keyboard-typed-${info.project.name}.png`);
+    await expectNoSeriousViolations(page);
   });
 
-  test('recusa mais de 200 caracteres e Cancelar volta ao controle', async ({ page }) => {
-    await openTv(page, '/tv/teclado');
-    await page.getByLabel('Texto para a TV').fill('a'.repeat(201));
-    await expect(page.getByText('201 / 200')).toBeVisible();
-    await expect(button(page, 'Enviar')).toBeDisabled();
-    expect(tv.count('/text')).toBe(0);
+  test('com pausas entre as letras o app manda o texto completo a cada pausa, nunca só o pedaço novo', async ({
+    page,
+  }) => {
+    await openKeyboard(page);
+    const field = page.getByLabel('Texto para a TV');
+    await field.focus();
+    for (const letter of ['b', 'a', 't']) {
+      await page.keyboard.type(letter);
+      await page.waitForTimeout(450);
+    }
+    expect(texts()).toEqual(['b', 'ba', 'bat']);
+    // Apagar uma letra também sincroniza (o texto da TV passa a ser o do campo).
+    await page.keyboard.press('Backspace');
+    await expect.poll(() => texts()).toEqual(['b', 'ba', 'bat', 'ba']);
+  });
 
-    await button(page, 'Cancelar').click();
+  test('o texto vazio nunca é enviado: apagar tudo não manda nada e a nota fica à vista', async ({
+    page,
+  }) => {
+    await openKeyboard(page);
+    const field = page.getByLabel('Texto para a TV');
+    await field.fill('bat');
+    await expect.poll(() => texts()).toEqual(['bat']);
+    await field.fill('');
+    await page.waitForTimeout(700);
+    expect(texts()).toEqual(['bat']);
+    expect(tv.requests.some((r) => r.path === '/text' && !r.body?.['text'])).toBe(false);
+    await expect(page.getByText('Texto vazio não é enviado.', { exact: false })).toBeVisible();
+  });
+
+  test('Limpar esvazia só o campo do celular e Voltar ao controle sai da aba', async ({ page }) => {
+    await openKeyboard(page);
+    const field = page.getByLabel('Texto para a TV');
+    await field.fill('bat');
+    await expect.poll(() => texts()).toEqual(['bat']);
+    await button(page, 'Limpar').click();
+    await expect(field).toHaveValue('');
+    await page.waitForTimeout(600);
+    expect(texts()).toEqual(['bat']);
+
+    await field.fill('x');
+    await button(page, 'Voltar ao controle').click();
     await expect(page).toHaveURL(/\/tv$/);
+    // O que ainda estava dentro da pausa de digitação não se perde ao sair.
+    await expect.poll(() => texts()).toEqual(['bat', 'x']);
+  });
+
+  test('recusa mais de 200 caracteres: nada é enviado enquanto passar do limite', async ({
+    page,
+  }) => {
+    await openKeyboard(page);
+    const field = page.getByLabel('Texto para a TV');
+    await field.fill('a'.repeat(201));
+    await expect(page.getByText('201 / 200')).toBeVisible();
+    await expect(
+      page.getByText('A TV recebe no máximo 200 caracteres', { exact: false }),
+    ).toBeVisible();
+    await page.waitForTimeout(700);
+    expect(texts()).toEqual([]);
+    await field.fill('a'.repeat(200));
+    await expect.poll(() => texts()).toEqual(['a'.repeat(200)]);
+  });
+
+  test('falha mostra um erro discreto, não perde o texto e tenta de novo na próxima mudança', async ({
+    page,
+  }) => {
+    await openKeyboard(page);
+    const field = page.getByLabel('Texto para a TV');
+    tv.commandFailure = { status: 504, kind: 'agent-timeout' };
+    await field.fill('bat');
+    await expect(page.getByText('A TV não respondeu a tempo.', { exact: false })).toBeVisible();
+    await expect(page.getByText('Continue digitando para tentar de novo.')).toBeVisible();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(field).toHaveValue('bat');
+    await page.waitForTimeout(700);
+    expect(texts()).toEqual(['bat']);
+
+    tv.commandFailure = null;
+    await field.pressSequentially('m');
+    await expect.poll(() => texts()).toEqual(['bat', 'batm']);
+    await expect(page.getByText('Texto na TV.')).toBeVisible();
+    await expect(field).toHaveValue('batm');
   });
 
   test('o botão de teclado do controle leva até a aba', async ({ page }) => {
@@ -708,3 +783,237 @@ test.describe('acessibilidade e tema', () => {
     expect(menuOutline).toBe('solid');
   });
 });
+
+/** Caixa de cada elemento fixo do controle (tudo que não é o palco que troca de página). */
+async function fixedBoxes(page: Page) {
+  const targets: [string, Locator][] = [
+    ['atalho', button(page, 'Atalho 1')],
+    ['touchpad', button(page, 'Trocar para o modo touchpad')],
+    ['volume+', button(page, 'Aumentar o volume')],
+    ['voltar', button(page, 'Voltar')],
+    ['menu', button(page, 'Menu')],
+    ['teclado', page.getByRole('link', { name: 'Teclado', exact: true }).first()],
+    ['anterior', button(page, 'Anterior')],
+    ['canal+', button(page, 'Próximo canal')],
+    ['ponto 1', button(page, 'Página 1 de 2')],
+    ['ponto 2', button(page, 'Página 2 de 2')],
+    ['palco', page.locator('.viewport')],
+  ];
+  const boxes: Record<string, { x: number; y: number; width: number; height: number }> = {};
+  for (const [name, locator] of targets) {
+    if ((await locator.count()) === 0) continue;
+    boxes[name] = (await locator.boundingBox())!;
+  }
+  return boxes;
+}
+
+async function settlePage(page: Page, index: number) {
+  await expect
+    .poll(() =>
+      page
+        .locator('.pager')
+        .evaluate((el, i) => Math.abs(el.scrollLeft - i * el.clientWidth), index),
+    )
+    .toBeLessThanOrEqual(1);
+}
+
+test.describe('controle: só o palco central troca de página', () => {
+  test('atalhos, pílulas, botões redondos e pontos não saem do lugar ao trocar de página', async ({
+    page,
+  }, info) => {
+    await openTv(page);
+    const before = await fixedBoxes(page);
+    await button(page, 'Página 2 de 2').click();
+    await settlePage(page, 1);
+    await screenshot(page, `test-results/tv-stage-numbers-${info.project.name}.png`);
+    expect(await fixedBoxes(page)).toEqual(before);
+
+    // Só o palco mudou de conteúdo: os números aparecem onde estava o anel.
+    await expect(button(secondPage(page), 'Número 1')).toBeInViewport({ ratio: 1 });
+    await expect(button(page, 'OK')).not.toBeInViewport();
+    await button(page, 'Página 1 de 2').click();
+    await settlePage(page, 0);
+    expect(await fixedBoxes(page)).toEqual(before);
+    await expect(button(page, 'OK')).toBeInViewport({ ratio: 1 });
+  });
+
+  test('as setas do teclado nos pontos trocam a página sem gesto', async ({ page }) => {
+    await openTv(page);
+    await button(page, 'Página 1 de 2').focus();
+    await page.keyboard.press('ArrowRight');
+    await settlePage(page, 1);
+    await expect(button(page, 'Página 2 de 2')).toHaveAttribute('aria-current', 'true');
+    await page.keyboard.press('ArrowLeft');
+    await settlePage(page, 0);
+    await expect(button(page, 'Página 1 de 2')).toHaveAttribute('aria-current', 'true');
+  });
+
+  test('o palco é focável e as setas do teclado rolam para a segunda página', async ({ page }) => {
+    await openTv(page);
+    const pager = page.getByRole('group', { name: 'Direções e teclado numérico' });
+    await pager.focus();
+    await expect(pager).toBeFocused();
+    await page.keyboard.press('ArrowRight');
+    await settlePage(page, 1);
+    await expect(button(page, 'Página 2 de 2')).toHaveAttribute('aria-current', 'true');
+  });
+
+  test('deslizar com o dedo sobre os botões de baixo não vira a página nem aperta tecla', async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName !== 'chromium', 'o gesto de toque sintético só existe no Chromium');
+    await openTv(page);
+    const menu = (await button(page, 'Menu').boundingBox())!;
+    const cdp = await page.context().newCDPSession(page);
+    const x0 = menu.x + menu.width / 2;
+    const y0 = menu.y + menu.height / 2;
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: x0, y: y0 }],
+    });
+    for (let step = 1; step <= 10; step++) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: x0 - step * 20, y: y0 }],
+      });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(400);
+    await expect(button(page, 'Página 1 de 2')).toHaveAttribute('aria-current', 'true');
+    expect(tv.keysSent()).toEqual([]);
+  });
+
+  test('no touchpad a superfície fica no palco, com os botões fixos no mesmo lugar', async ({
+    page,
+  }, info) => {
+    await openTv(page);
+    const before = await fixedBoxes(page);
+    await button(page, 'Trocar para o modo touchpad').click();
+    await expect(page.locator('.panel').first().locator('app-touchpad-surface')).toBeVisible();
+    const after = await fixedBoxes(page);
+    // No lugar do botão "Touchpad" vêm os chips; o que está de baixo e o palco não mexem.
+    for (const name of ['volume+', 'voltar', 'menu', 'teclado', 'anterior', 'canal+', 'palco']) {
+      expect(after[name], name).toEqual(before[name]);
+    }
+    await button(page, 'Página 2 de 2').click();
+    await settlePage(page, 1);
+    await expect(button(secondPage(page), 'Número 5')).toBeInViewport({ ratio: 1 });
+    await screenshot(page, `test-results/tv-touchpad-numbers-${info.project.name}.png`);
+  });
+});
+
+test.describe('controle: aproveita a altura', () => {
+  test('o controle preenche a tela: pouco vazio embaixo e o anel enche o palco', async ({
+    page,
+  }) => {
+    await openTv(page);
+    const tabs = (await page.getByRole('navigation', { name: 'Abas do módulo' }).boundingBox())!;
+    const bottom = (await page.locator('.bottom').boundingBox())!;
+    const gap = tabs.y - (bottom.y + bottom.height);
+    expect(gap, 'vazio entre os botões de baixo e a barra de abas').toBeLessThanOrEqual(28);
+
+    const stage = (await page.locator('.viewport').boundingBox())!;
+    const ring = (await page.locator('.ring').boundingBox())!;
+    expect(ring.width).toBeGreaterThanOrEqual(0.85 * Math.min(stage.width, stage.height));
+    expect(Math.abs(ring.width - ring.height)).toBeLessThanOrEqual(1);
+    await expectNoVerticalScroll(page);
+    await expectNoHorizontalScroll(page);
+  });
+
+  test('com a linha do motivo o controle continua sem rolar', async ({ page }) => {
+    await openTv(page);
+    await sendState(page, { agentOnline: false, connection: 'disconnected', volume: null });
+    await expect(page.locator('.reason')).toBeVisible();
+    await expectNoVerticalScroll(page);
+    await expectNoHorizontalScroll(page);
+    await expectTargetSize(button(page, 'Página 2 de 2'));
+  });
+});
+
+/** Mesmas provas em outros tamanhos de tela (tablet, celular deitado, computador). */
+const SCREENS = [
+  { name: 'tablet', width: 768, height: 1024 },
+  { name: 'paisagem', width: 844, height: 390 },
+  { name: 'desktop', width: 1280, height: 800 },
+] as const;
+
+for (const screen of SCREENS) {
+  test.describe(`controle em ${screen.name} (${screen.width}x${screen.height})`, () => {
+    test.use({ viewport: { width: screen.width, height: screen.height } });
+
+    test('cabe sem rolagem horizontal, com alvos de 44 px e sem esticar', async ({
+      page,
+    }, info) => {
+      await openTv(page);
+      await expect(button(page, 'OK')).toBeVisible();
+      await expectNoHorizontalScroll(page);
+      await expectNoVerticalScroll(page);
+
+      for (const name of [
+        'Aumentar o volume',
+        'Diminuir o volume',
+        'Próximo canal',
+        'Canal anterior',
+        'Voltar',
+        'Início da TV',
+        'Menu',
+        'Mudo',
+        'Reproduzir ou pausar',
+        'Anterior',
+        'Próxima',
+        'Desligar a TV',
+        'Trocar para o modo touchpad',
+        'Atalho 1',
+        'Página 1 de 2',
+        'Página 2 de 2',
+        'OK',
+      ]) {
+        await expectTargetSize(button(page, name));
+      }
+
+      const tvBox = (await page.locator('.tv').boundingBox())!;
+      const limit = screen.width > screen.height ? 960 : 576;
+      expect(tvBox.width).toBeLessThanOrEqual(limit + 1);
+      // Centralizado: as margens dos dois lados são iguais.
+      expect(Math.abs(tvBox.x - (screen.width - tvBox.x - tvBox.width))).toBeLessThanOrEqual(2);
+
+      const ring = (await page.locator('.ring').boundingBox())!;
+      const stage = (await page.locator('.viewport').boundingBox())!;
+      expect(ring.width).toBeGreaterThanOrEqual(0.8 * Math.min(stage.width, stage.height));
+      await screenshot(page, `test-results/tv-control-${screen.name}-${info.project.name}.png`);
+      await expectNoSeriousViolations(page);
+    });
+
+    test('a segunda página tem números de 44 px ou mais e os fixos não mexem', async ({
+      page,
+    }, info) => {
+      await openTv(page);
+      const before = await fixedBoxes(page);
+      await button(page, 'Página 2 de 2').click();
+      await settlePage(page, 1);
+      for (const digit of ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']) {
+        await expectTargetSize(button(secondPage(page), `Número ${digit}`));
+      }
+      await expectTargetSize(button(secondPage(page), 'Origem'));
+      expect(await fixedBoxes(page)).toEqual(before);
+      await expectNoHorizontalScroll(page);
+      await screenshot(page, `test-results/tv-page2-${screen.name}-${info.project.name}.png`);
+    });
+
+    test('touchpad e teclado também funcionam neste tamanho', async ({ page }, info) => {
+      await openTv(page);
+      await button(page, 'Trocar para o modo touchpad').click();
+      const pad = (await page.locator('app-touchpad-surface .pad').boundingBox())!;
+      expect(pad.height).toBeGreaterThanOrEqual(120);
+      await expectNoHorizontalScroll(page);
+      await screenshot(page, `test-results/tv-touchpad-${screen.name}-${info.project.name}.png`);
+
+      await page.goto('/tv/teclado');
+      await expect(page.getByLabel('Texto para a TV')).toBeVisible();
+      await expectNoHorizontalScroll(page);
+      await screenshot(page, `test-results/tv-keyboard-${screen.name}-${info.project.name}.png`);
+    });
+  });
+}

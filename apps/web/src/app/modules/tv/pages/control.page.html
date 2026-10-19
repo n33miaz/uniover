@@ -1,293 +1,234 @@
-<section class="remote">
-  <div #pager class="pager" (scroll)="onScroll()">
-    <div
-      class="panel"
-      role="group"
-      [attr.aria-label]="pageLabel(0)"
-      [attr.inert]="page() === 0 ? null : ''"
-    >
-      @if (mode() === 'buttons') {
-        <div class="top">
-          <ul class="shortcuts" aria-label="Atalhos de apps" i18n-aria-label="@@tv.shortcuts.label">
-            @for (shortcut of shortcuts(); track shortcut.id) {
-              <li>
-                <button
-                  type="button"
-                  class="shortcut"
-                  [attr.aria-disabled]="store.canSend() ? null : 'true'"
-                  (click)="openShortcut(shortcut)"
-                >
-                  <app-tv-icon name="apps" />
-                  <span class="name">{{ label(shortcut) }}</span>
-                </button>
-              </li>
-            }
-            @if (shortcutsLoaded() && shortcuts().length === 0) {
-              <li class="none">
-                <a routerLink="/tv/apps" i18n="@@tv.shortcuts.none"
-                  >Sem atalhos ainda. Veja a aba Apps.</a
-                >
-              </li>
-            }
-          </ul>
-          <button
-            type="button"
-            class="square"
-            aria-label="Trocar para o modo touchpad"
-            i18n-aria-label="@@tv.mode.switch-to-touchpad"
-            (click)="setMode('touchpad')"
-          >
-            <app-tv-icon name="touchpad" />
-            <span i18n="@@tv.mode.touchpad">Touchpad</span>
-          </button>
-        </div>
+<section class="remote" [attr.data-mode]="mode()">
+  @if (mode() === 'buttons') {
+    <div class="top">
+      <ul class="shortcuts" aria-label="Atalhos de apps" i18n-aria-label="@@tv.shortcuts.label">
+        @for (shortcut of shortcuts(); track shortcut.id) {
+          <li>
+            <button
+              type="button"
+              class="shortcut"
+              [attr.aria-disabled]="store.canSend() ? null : 'true'"
+              (click)="openShortcut(shortcut)"
+            >
+              <app-tv-icon name="apps" />
+              <span class="name">{{ label(shortcut) }}</span>
+            </button>
+          </li>
+        }
+        @if (shortcutsLoaded() && shortcuts().length === 0) {
+          <li class="none">
+            <a routerLink="/tv/apps" i18n="@@tv.shortcuts.none"
+              >Sem atalhos ainda. Veja a aba Apps.</a
+            >
+          </li>
+        }
+      </ul>
+      <button
+        type="button"
+        class="square"
+        aria-label="Trocar para o modo touchpad"
+        i18n-aria-label="@@tv.mode.switch-to-touchpad"
+        (click)="setMode('touchpad')"
+      >
+        <app-tv-icon name="touchpad" />
+        <span i18n="@@tv.mode.touchpad">Touchpad</span>
+      </button>
+    </div>
+  } @else {
+    <div class="modes" role="group" aria-label="Modo do controle" i18n-aria-label="@@tv.mode.label">
+      <button
+        type="button"
+        class="chip"
+        [attr.aria-pressed]="false"
+        (click)="setMode('buttons')"
+        i18n="@@tv.mode.buttons"
+      >
+        Botões
+      </button>
+      <button
+        type="button"
+        class="chip"
+        [attr.aria-pressed]="true"
+        (click)="setMode('touchpad')"
+        i18n="@@tv.mode.touchpad-chip"
+      >
+        Touchpad
+      </button>
+    </div>
+  }
 
-        <app-directional-ring class="ring-slot" />
-
-        <app-page-dots [current]="page()" (choose)="goTo($event)" />
-
-        <div class="bottom">
-          <div
-            class="pill volume"
-            role="group"
-            aria-label="Volume"
-            i18n-aria-label="@@tv.volume.label"
-            [style.--level]="volumePercent() + '%'"
-          >
-            <button
-              type="button"
-              class="pill-btn"
-              [appKey]="'VOLUME_UP'"
-              [repeat]="true"
-              aria-label="Aumentar o volume"
-              i18n-aria-label="@@tv.key.volume-up"
-            >
-              <app-tv-icon name="plus" />
-            </button>
-            <span class="level" role="img" [attr.aria-label]="volumeLabel()">
-              <span class="cap" aria-hidden="true" i18n="@@tv.volume.cap">VOL</span>
-              <strong aria-hidden="true">{{ volumeText() }}</strong>
-            </span>
-            <button
-              type="button"
-              class="pill-btn"
-              [appKey]="'VOLUME_DOWN'"
-              [repeat]="true"
-              aria-label="Diminuir o volume"
-              i18n-aria-label="@@tv.key.volume-down"
-            >
-              <app-tv-icon name="minus" />
-            </button>
-          </div>
-
-          <div class="round-grid">
-            <a
-              routerLink="/tv/teclado"
-              class="round"
-              aria-label="Teclado"
-              i18n-aria-label="@@tv.key.keyboard"
-            >
-              <app-tv-icon name="keyboard" />
-            </a>
-            <button
-              type="button"
-              class="round"
-              [appKey]="'HOME'"
-              aria-label="Início da TV"
-              i18n-aria-label="@@tv.key.home"
-            >
-              <app-tv-icon name="home" />
-            </button>
-            <button
-              type="button"
-              class="round"
-              [appKey]="'MENU'"
-              aria-label="Menu"
-              i18n-aria-label="@@tv.key.menu"
-            >
-              <app-tv-icon name="menu" />
-            </button>
-            <button
-              type="button"
-              class="round"
-              [appKey]="'MUTE'"
-              aria-label="Mudo"
-              i18n-aria-label="@@tv.key.mute"
-            >
-              <app-tv-icon name="mute" />
-            </button>
-            <button
-              type="button"
-              class="round"
-              [appKey]="'PLAY_PAUSE'"
-              aria-label="Reproduzir ou pausar"
-              i18n-aria-label="@@tv.key.play-pause"
-            >
-              <app-tv-icon name="play-pause" />
-            </button>
-            <button
-              type="button"
-              class="round"
-              [appKey]="'BACK'"
-              aria-label="Voltar"
-              i18n-aria-label="@@tv.key.back"
-            >
-              <app-tv-icon name="back" />
-            </button>
-          </div>
-
-          <div class="pill" role="group" aria-label="Canal" i18n-aria-label="@@tv.channel.label">
-            <button
-              type="button"
-              class="pill-btn"
-              [appKey]="'CHANNEL_UP'"
-              aria-label="Próximo canal"
-              i18n-aria-label="@@tv.key.channel-up"
-            >
-              <app-tv-icon name="up" />
-            </button>
-            <span class="level" aria-hidden="true">
-              <span class="cap" i18n="@@tv.channel.cap">CH</span>
-            </span>
-            <button
-              type="button"
-              class="pill-btn"
-              [appKey]="'CHANNEL_DOWN'"
-              aria-label="Canal anterior"
-              i18n-aria-label="@@tv.key.channel-down"
-            >
-              <app-tv-icon name="down" />
-            </button>
-          </div>
-        </div>
-      } @else {
+  <!--
+    Só este bloco troca de página: de um lado as direções com o OK (ou o touchpad), do outro os números. Tudo o
+    mais (atalhos, pílulas, botões redondos) fica parado, dentro e fora do gesto.
+  -->
+  <div class="stage">
+    <div class="viewport">
+      <div
+        #pager
+        class="pager"
+        tabindex="0"
+        role="group"
+        aria-label="Direções e teclado numérico"
+        i18n-aria-label="@@tv.stage.label"
+        (scroll)="onScroll()"
+      >
         <div
-          class="modes"
+          class="panel"
           role="group"
-          aria-label="Modo do controle"
-          i18n-aria-label="@@tv.mode.label"
+          [attr.aria-label]="pageLabel(0)"
+          [attr.inert]="page() === 0 ? null : ''"
         >
-          <button
-            type="button"
-            class="chip"
-            [attr.aria-pressed]="false"
-            (click)="setMode('buttons')"
-            i18n="@@tv.mode.buttons"
-          >
-            Botões
-          </button>
-          <button
-            type="button"
-            class="chip"
-            [attr.aria-pressed]="true"
-            (click)="setMode('touchpad')"
-            i18n="@@tv.mode.touchpad-chip"
-          >
-            Touchpad
-          </button>
+          @if (mode() === 'buttons') {
+            <app-directional-ring />
+          } @else {
+            <app-touchpad-surface />
+          }
         </div>
 
-        <app-touchpad-surface />
-
-        <app-page-dots [current]="page()" (choose)="goTo($event)" />
-
-        <div class="touch-row">
-          <button
-            type="button"
-            class="round"
-            [appKey]="'BACK'"
-            aria-label="Voltar"
-            i18n-aria-label="@@tv.key.back"
-          >
-            <app-tv-icon name="back" />
-          </button>
-          <button
-            type="button"
-            class="round"
-            [appKey]="'HOME'"
-            aria-label="Início da TV"
-            i18n-aria-label="@@tv.key.home"
-          >
-            <app-tv-icon name="home" />
-          </button>
-          <button
-            type="button"
-            class="round"
-            [appKey]="'VOLUME_DOWN'"
-            [repeat]="true"
-            aria-label="Diminuir o volume"
-            i18n-aria-label="@@tv.key.volume-down"
-          >
-            <app-tv-icon name="minus" />
-          </button>
-          <button
-            type="button"
-            class="round"
-            [appKey]="'VOLUME_UP'"
-            [repeat]="true"
-            aria-label="Aumentar o volume"
-            i18n-aria-label="@@tv.key.volume-up"
-          >
-            <app-tv-icon name="plus" />
-          </button>
+        <div
+          class="panel"
+          role="group"
+          [attr.aria-label]="pageLabel(1)"
+          [attr.inert]="page() === 1 ? null : ''"
+        >
+          <app-number-pad />
         </div>
-      }
+      </div>
     </div>
 
-    <div
-      class="panel"
-      role="group"
-      [attr.aria-label]="pageLabel(1)"
-      [attr.inert]="page() === 1 ? null : ''"
-    >
-      <div class="keypad">
-        @for (item of digits; track item.key) {
-          <button
-            type="button"
-            class="num"
-            [class.zero]="item.digit === '0'"
-            [appKey]="item.key"
-            [attr.aria-label]="numberLabel(item.digit)"
-          >
-            {{ item.digit }}
-          </button>
-        }
-      </div>
-      <div class="media-row">
-        <button
-          type="button"
-          class="round"
-          [appKey]="'MEDIA_PREVIOUS'"
-          aria-label="Anterior"
-          i18n-aria-label="@@tv.key.previous"
-        >
-          <app-tv-icon name="previous" />
-        </button>
-        <button
-          type="button"
-          class="round"
-          [appKey]="'PLAY_PAUSE'"
-          aria-label="Reproduzir ou pausar"
-          i18n-aria-label="@@tv.key.play-pause"
-        >
-          <app-tv-icon name="play-pause" />
-        </button>
-        <button
-          type="button"
-          class="round"
-          [appKey]="'MEDIA_NEXT'"
-          aria-label="Próxima"
-          i18n-aria-label="@@tv.key.next"
-        >
-          <app-tv-icon name="next" />
-        </button>
-      </div>
-      <button type="button" class="source" [appKey]="'INPUT'">
-        <app-tv-icon name="input" />
-        <span i18n="@@tv.key.input">Origem</span>
-      </button>
+    <app-page-dots [current]="page()" (choose)="goTo($event)" />
+  </div>
 
-      <app-page-dots [current]="page()" (choose)="goTo($event)" />
+  <div class="bottom">
+    <div
+      class="pill volume"
+      role="group"
+      aria-label="Volume"
+      i18n-aria-label="@@tv.volume.label"
+      [style.--level]="volumePercent() + '%'"
+    >
+      <button
+        type="button"
+        class="pill-btn"
+        [appKey]="'VOLUME_UP'"
+        [repeat]="true"
+        aria-label="Aumentar o volume"
+        i18n-aria-label="@@tv.key.volume-up"
+      >
+        <app-tv-icon name="plus" />
+      </button>
+      <span class="level" role="img" [attr.aria-label]="volumeLabel()">
+        <span class="cap" aria-hidden="true" i18n="@@tv.volume.cap">VOL</span>
+        <strong aria-hidden="true">{{ volumeText() }}</strong>
+      </span>
+      <button
+        type="button"
+        class="pill-btn"
+        [appKey]="'VOLUME_DOWN'"
+        [repeat]="true"
+        aria-label="Diminuir o volume"
+        i18n-aria-label="@@tv.key.volume-down"
+      >
+        <app-tv-icon name="minus" />
+      </button>
+    </div>
+
+    <div class="round-grid">
+      <button
+        type="button"
+        class="round"
+        [appKey]="'BACK'"
+        aria-label="Voltar"
+        i18n-aria-label="@@tv.key.back"
+      >
+        <app-tv-icon name="back" />
+      </button>
+      <button
+        type="button"
+        class="round"
+        [appKey]="'HOME'"
+        aria-label="Início da TV"
+        i18n-aria-label="@@tv.key.home"
+      >
+        <app-tv-icon name="home" />
+      </button>
+      <button
+        type="button"
+        class="round"
+        [appKey]="'MENU'"
+        aria-label="Menu"
+        i18n-aria-label="@@tv.key.menu"
+      >
+        <app-tv-icon name="menu" />
+      </button>
+      <a
+        routerLink="/tv/teclado"
+        class="round"
+        aria-label="Teclado"
+        i18n-aria-label="@@tv.key.keyboard"
+      >
+        <app-tv-icon name="keyboard" />
+      </a>
+      <button
+        type="button"
+        class="round"
+        [appKey]="'MEDIA_PREVIOUS'"
+        aria-label="Anterior"
+        i18n-aria-label="@@tv.key.previous"
+      >
+        <app-tv-icon name="previous" />
+      </button>
+      <button
+        type="button"
+        class="round"
+        [appKey]="'PLAY_PAUSE'"
+        aria-label="Reproduzir ou pausar"
+        i18n-aria-label="@@tv.key.play-pause"
+      >
+        <app-tv-icon name="play-pause" />
+      </button>
+      <button
+        type="button"
+        class="round"
+        [appKey]="'MEDIA_NEXT'"
+        aria-label="Próxima"
+        i18n-aria-label="@@tv.key.next"
+      >
+        <app-tv-icon name="next" />
+      </button>
+      <button
+        type="button"
+        class="round"
+        [appKey]="'MUTE'"
+        aria-label="Mudo"
+        i18n-aria-label="@@tv.key.mute"
+      >
+        <app-tv-icon name="mute" />
+      </button>
+    </div>
+
+    <div class="pill" role="group" aria-label="Canal" i18n-aria-label="@@tv.channel.label">
+      <button
+        type="button"
+        class="pill-btn"
+        [appKey]="'CHANNEL_UP'"
+        aria-label="Próximo canal"
+        i18n-aria-label="@@tv.key.channel-up"
+      >
+        <app-tv-icon name="up" />
+      </button>
+      <span class="level" aria-hidden="true">
+        <span class="cap" i18n="@@tv.channel.cap">CH</span>
+      </span>
+      <button
+        type="button"
+        class="pill-btn"
+        [appKey]="'CHANNEL_DOWN'"
+        aria-label="Canal anterior"
+        i18n-aria-label="@@tv.key.channel-down"
+      >
+        <app-tv-icon name="down" />
+      </button>
     </div>
   </div>
 </section>

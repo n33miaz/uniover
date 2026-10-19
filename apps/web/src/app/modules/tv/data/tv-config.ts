@@ -12,6 +12,11 @@ export interface TvConfig {
   readonly repeatIntervalMs: number;
   /** Quanto tempo um aviso fica na tela. */
   readonly noticeMs: number;
+  /**
+   * Pausa de digitação que dispara o envio do texto da aba Teclado. Com uma requisição em voo por vez, o pior caso é
+   * cerca de 4 por segundo (240 por minuto), abaixo do limite de comandos do servidor (300 por minuto).
+   */
+  readonly textDebounceMs: number;
   /** Quantas teclas sem resposta ainda cabem antes de a repetição esperar. */
   readonly maxKeysInFlight: number;
 }
@@ -24,6 +29,7 @@ export const TV_CONFIG = new InjectionToken<TvConfig>('TV_CONFIG', {
     repeatDelayMs: 400,
     repeatIntervalMs: 250,
     noticeMs: 6_000,
+    textDebounceMs: 250,
     maxKeysInFlight: 3,
   }),
 });

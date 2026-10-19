@@ -1,11 +1,35 @@
 :host {
   display: block;
+  /*
+   * Altura útil que a casca deixa para o módulo: a tela menos a barra de abas (56 + 1 px da borda) e o respiro do
+   * `main` (uma margem em cima e outra embaixo, mais as áreas seguras do aparelho). O controle principal usa
+   * esta altura inteira, sem rolar a página; abaixo de `--tv-min` ele prefere rolar a espremer os botões.
+   */
+  --tv-avail: calc(
+    100dvh - 57px - 2 * var(--gutter) - env(safe-area-inset-top) - 2 * env(safe-area-inset-bottom)
+  );
+  --tv-min: 500px;
 }
 
+/* A largura é limitada e centralizada: em tablet e computador o controle não estica. */
 .tv {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
+  max-width: 36rem;
+  min-height: var(--tv-avail);
+  margin-inline: auto;
+}
+
+/* Só a aba Controle (`fill`) ocupa a altura toda; Apps e Teclado crescem com o conteúdo. */
+.tv.fill {
+  height: max(var(--tv-avail), var(--tv-min));
+  min-height: 0;
+}
+
+router-outlet {
+  display: none;
 }
 
 /* Voltar, nome com a bolinha e energia numa linha só. */
@@ -104,11 +128,7 @@
   border-color: var(--a-bad);
 }
 
-/* A linha do motivo ocupa espaço: o anel (que manda na altura da página 1) encolhe o que ela ocupa. */
-.tv.has-note {
-  --tv-chrome: 480px;
-}
-
+/* A linha do motivo entra no fluxo: o palco do controle encolhe o que ela ocupa. */
 .reason {
   margin: 0;
   color: var(--a-ink2);
@@ -135,4 +155,46 @@
 }
 .toast.error {
   border-left-color: var(--a-bad);
+}
+
+/* Paisagem: duas colunas no controle e mais largura. */
+@media (min-aspect-ratio: 6/5) {
+  :host {
+    --tv-min: 420px;
+  }
+  .tv {
+    max-width: 60rem;
+  }
+}
+
+/* Celular deitado: pouca altura, então no controle o cabeçalho e os chips dividem a mesma linha. */
+@media (min-aspect-ratio: 6/5) and (max-height: 500px) {
+  :host {
+    --tv-min: 300px;
+  }
+  .tv.fill {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    column-gap: 8px;
+    row-gap: 4px;
+  }
+  .tv.fill .head {
+    display: contents;
+  }
+  .tv.fill .chips {
+    grid-column: 3;
+    grid-row: 1;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+  .tv.fill .power {
+    grid-column: 4;
+    grid-row: 1;
+  }
+  .tv.fill .reason {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }

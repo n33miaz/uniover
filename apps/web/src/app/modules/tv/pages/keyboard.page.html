@@ -1,7 +1,8 @@
-<form class="keyboard" (submit)="send($event)" novalidate>
+<form class="keyboard" (submit)="submit($event)" novalidate>
   <h2 i18n="@@tv.keyboard.title">Teclado</h2>
   <p class="warn" i18n="@@tv.keyboard.warning">
-    O texto é escrito no campo que estiver aberto na TV. Pode funcionar só em caixas de busca.
+    O texto é escrito no campo que estiver aberto na TV, enquanto você digita. Pode funcionar só em
+    caixas de busca.
   </p>
 
   <label for="tv-text" i18n="@@tv.keyboard.label">Texto para a TV</label>
@@ -12,20 +13,44 @@
     [attr.autocapitalize]="'off'"
     [attr.autocorrect]="'off'"
     spellcheck="false"
-    [attr.enterkeyhint]="'send'"
-    aria-describedby="tv-text-count"
+    [attr.enterkeyhint]="'done'"
+    aria-describedby="tv-text-count tv-text-status tv-text-note"
     [value]="text()"
-    [attr.aria-invalid]="text().length > 0 && !valid() ? 'true' : null"
+    [attr.aria-invalid]="tooLong() ? 'true' : null"
     (input)="onInput($event)"
   />
-  <p id="tv-text-count" class="count" [class.over]="length() > max">{{ length() }} / {{ max }}</p>
+  <div class="meta">
+    <p id="tv-text-status" class="status" [attr.data-status]="status()" role="status">
+      @switch (status()) {
+        @case ('sending') {
+          <span i18n="@@tv.keyboard.sending">Enviando para a TV…</span>
+        }
+        @case ('sent') {
+          <span i18n="@@tv.keyboard.in-sync">Texto na TV.</span>
+        }
+        @case ('error') {
+          <span>{{ failure()?.message || fallbackFailure }}</span>
+          <span i18n="@@tv.keyboard.retry-hint">Continue digitando para tentar de novo.</span>
+        }
+      }
+    </p>
+    <p id="tv-text-count" class="count" [class.over]="tooLong()">{{ length() }} / {{ max }}</p>
+  </div>
+  @if (tooLong()) {
+    <p class="over-note" i18n="@@tv.keyboard.too-long">
+      A TV recebe no máximo 200 caracteres: enquanto passar disso, nada é enviado.
+    </p>
+  }
+  <p id="tv-text-note" class="note" i18n="@@tv.keyboard.clear-note">
+    Texto vazio não é enviado. Para apagar tudo, use o botão de apagar da própria TV.
+  </p>
 
   <div class="actions">
-    <button type="button" class="secondary" (click)="cancel()" i18n="@@tv.keyboard.cancel">
-      Cancelar
+    <button type="button" class="secondary" [disabled]="length() === 0" (click)="clear()">
+      <ng-container i18n="@@tv.keyboard.clear">Limpar</ng-container>
     </button>
-    <button type="submit" class="primary" [disabled]="!canSend()" i18n="@@tv.keyboard.send">
-      Enviar
+    <button type="button" class="primary" (click)="back()">
+      <ng-container i18n="@@tv.keyboard.back">Voltar ao controle</ng-container>
     </button>
   </div>
 </form>

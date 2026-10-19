@@ -240,22 +240,34 @@ export class TvStore {
     }
   }
 
-  async sendText(text: string): Promise<boolean> {
-    if (!this.canSend()) return false;
+  /**
+   * Põe `text` no campo que estiver aberto na TV (o agente trata cada envio como "o campo passa a ser este texto").
+   * Sem aviso flutuante, nem de sucesso nem de falha: a aba Teclado manda a cada pausa de digitação e mostra o
+   * resultado dentro da própria tela. Devolve `null` se a TV confirmou, ou a falha (que também atualiza o que se sabe
+   * do agente, como `agent-offline`).
+   */
+  async sendText(text: string): Promise<TvFailure | null> {
+    if (!this.canSend()) {
+      return {
+        kind: 'agent-offline',
+        message: this.disabledReason() ?? '',
+        retryAfterSeconds: null,
+      };
+    }
     if (!isValidTvText(text)) {
-      this.showNotice(
-        'error',
-        $localize`:@@tv.keyboard.invalid:Escreva de 1 a 200 caracteres, sem quebra de linha.`,
-      );
-      return false;
+      return {
+        kind: 'invalid',
+        message: $localize`:@@tv.keyboard.invalid:Escreva de 1 a 200 caracteres, sem quebra de linha.`,
+        retryAfterSeconds: null,
+      };
     }
     try {
       await this.api.sendText(text);
-      this.showNotice('info', $localize`:@@tv.keyboard.sent:Texto enviado para a TV.`);
-      return true;
+      return null;
     } catch (error) {
-      this.fail(error);
-      return false;
+      const failure = describeFailure(error);
+      this.absorb(failure);
+      return failure;
     }
   }
 
