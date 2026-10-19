@@ -672,6 +672,18 @@
         ]
       }
     },
+    "/api/v1/devices/events": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "StreamEventsEndpoint"
+        ]
+      }
+    },
     "/api/v1/devices/info": {
       "get": {
         "responses": {
@@ -1193,6 +1205,9 @@
     },
     {
       "name": "RevokeAgentEndpoint"
+    },
+    {
+      "name": "StreamEventsEndpoint"
     }
   ]
 }

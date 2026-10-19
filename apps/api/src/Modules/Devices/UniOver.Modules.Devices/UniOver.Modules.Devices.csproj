@@ -16,6 +16,7 @@
     <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Persistence\UniOver.BuildingBlocks.Persistence.csproj" />
     <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Messaging\UniOver.BuildingBlocks.Messaging.csproj" />
     <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Web\UniOver.BuildingBlocks.Web.csproj" />
+    <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.AgentProtocol\UniOver.BuildingBlocks.AgentProtocol.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="UniOver.Modules.Devices.Tests" />
