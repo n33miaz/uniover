@@ -1,6 +1,7 @@
 import { Injectable, InjectionToken, inject } from '@angular/core';
 import { APP_CONFIG } from '../config/app-config';
 import { ConnectivityService } from '../connectivity/connectivity.service';
+import type { components } from '../api/generated/schema';
 import { networkProblem, problemFrom } from './api-problem';
 
 /** `fetch` injetável: os testes trocam por um falso. */
@@ -12,6 +13,9 @@ export const FETCH_FN = new InjectionToken<typeof fetch>('FETCH_FN', {
 /** Cabeçalho que a API exige em todo POST para `/identity/auth/*` (defesa extra contra CSRF). */
 export const CLIENT_HEADER = 'X-UniOver-Client';
 export const CLIENT_HEADER_VALUE = 'web';
+
+/** Tipos gerados do OpenAPI da API (`npm --prefix contracts run generate`): nunca editados à mão. */
+type Schemas = components['schemas'];
 
 const IDENTITY_BASE = `${APP_CONFIG.apiBase}/v1/identity`;
 
@@ -45,11 +49,7 @@ export interface StepUpConfirmation {
   readonly expiresAt: string;
 }
 
-export interface ModuleInfo {
-  readonly module: string;
-  readonly version: string;
-  readonly dependsOn: readonly string[];
-}
+export type ModuleInfo = Readonly<Schemas['IdentityModuleInfo']>;
 
 interface RequestOptions {
   readonly token?: string | null;
@@ -57,8 +57,9 @@ interface RequestOptions {
 }
 
 /**
- * Cliente mínimo do módulo de identidade, escrito à mão. Dívida declarada: a geração de tipos a partir do
- * OpenAPI o substitui quando existir, e este arquivo some. Cada método devolve o corpo ou lança `ApiProblem`
+ * Cliente mínimo do módulo de identidade. Os corpos de pedido vêm tipados do OpenAPI gerado. As respostas
+ * acima continuam escritas à mão porque a API ainda não declara o tipo de resposta dos endpoints (o
+ * documento traz só o código 200, sem corpo); quando declarar, elas passam a ser as geradas. Cada método devolve o corpo ou lança `ApiProblem`
  * (status 0 = sem resposta). Os métodos autenticados recebem o token do chamador: quem renova e repete o
  * pedido é o `AuthService`.
  */
@@ -68,7 +69,8 @@ export class AuthApi {
   private readonly connectivity = inject(ConnectivityService);
 
   login(email: string, password: string): Promise<TokenResponse> {
-    return this.send('POST', '/auth/login', { body: { email, password } });
+    const body: Schemas['LoginRequest'] = { email, password };
+    return this.send('POST', '/auth/login', { body });
   }
 
   /** O cookie `HttpOnly` de refresh viaja sozinho (o JavaScript não o lê). */
@@ -94,7 +96,8 @@ export class AuthApi {
   }
 
   stepUpOptions(token: string, action: string): Promise<WebAuthnChallenge> {
-    return this.send('POST', '/step-up/options', { token, body: { action } });
+    const body: Schemas['RequestStepUpRequest'] = { action };
+    return this.send('POST', '/step-up/options', { token, body });
   }
 
   stepUpComplete(
@@ -102,7 +105,9 @@ export class AuthApi {
     challengeId: string,
     credential: unknown,
   ): Promise<StepUpConfirmation> {
-    return this.send('POST', '/step-up/complete', { token, body: { challengeId, credential } });
+    // A credencial do WebAuthn chega como o navegador a serializa; o servidor a valida.
+    const body = { challengeId, credential } as Schemas['ConfirmStepUpRequest'];
+    return this.send('POST', '/step-up/complete', { token, body });
   }
 
   passkeys(token: string): Promise<readonly PasskeySummary[]> {
@@ -111,7 +116,8 @@ export class AuthApi {
 
   /** Cadastro pede a senha de novo: sessão roubada não consegue registrar a passkey do atacante. */
   registrationOptions(token: string, password: string): Promise<WebAuthnChallenge> {
-    return this.send('POST', '/passkeys/registration/options', { token, body: { password } });
+    const body: Schemas['BeginPasskeyRegistrationRequest'] = { password };
+    return this.send('POST', '/passkeys/registration/options', { token, body });
   }
 
   registrationComplete(
@@ -120,14 +126,13 @@ export class AuthApi {
     name: string | null,
     credential: unknown,
   ): Promise<PasskeySummary> {
-    return this.send('POST', '/passkeys/registration/complete', {
-      token,
-      body: { challengeId, name, credential },
-    });
+    const body = { challengeId, name, credential } as Schemas['CompletePasskeyRegistrationRequest'];
+    return this.send('POST', '/passkeys/registration/complete', { token, body });
   }
 
   renamePasskey(token: string, id: string, name: string): Promise<PasskeySummary> {
-    return this.send('PATCH', `/passkeys/${encodeURIComponent(id)}`, { token, body: { name } });
+    const body: Schemas['RenamePasskeyRequest'] = { name };
+    return this.send('PATCH', `/passkeys/${encodeURIComponent(id)}`, { token, body });
   }
 
   removePasskey(token: string, id: string): Promise<void> {

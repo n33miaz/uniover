@@ -5,11 +5,17 @@
   "description": "Contratos de mensagens entre API e agente do UniOver.",
   "type": "module",
   "scripts": {
-    "validate": "node scripts/validate.mjs"
+    "validate": "node scripts/validate.mjs",
+    "generate": "node scripts/generate.mjs",
+    "check": "node scripts/check.mjs"
   },
   "devDependencies": {
     "@asyncapi/parser": "^3.6.6",
     "ajv": "^8.17.1",
-    "ajv-formats": "^3.0.1"
+    "ajv-formats": "^3.0.1",
+    "json-schema-to-typescript": "16.0.0",
+    "openapi-typescript": "7.13.0",
+    "prettier": "3.9.10",
+    "quicktype": "26.0.0"
   }
 }
