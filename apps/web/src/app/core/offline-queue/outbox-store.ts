@@ -1,5 +1,4 @@
 import { Injectable, inject, signal } from '@angular/core';
-import Dexie from 'dexie';
 import { OFFLINE_DB, OutboxItem, OutboxMethod, OutboxStatus } from './offline-db';
 import { QUEUE_RUNTIME } from './queue-ports';
 import { uuidV7 } from './uuid-v7';
@@ -92,10 +91,14 @@ export class OutboxStore {
 
   /** O mais antigo dos que esperam envio (FIFO por `createdAt`; o id desempata). */
   oldestPending(): Promise<OutboxItem | undefined> {
-    return this.db.outbox
-      .where('[status+createdAt+id]')
-      .between(['pending', Dexie.minKey, Dexie.minKey], ['pending', Dexie.maxKey, Dexie.maxKey])
-      .first();
+    return (
+      this.db.outbox
+        .where('[status+createdAt+id]')
+        // Limites explícitos (número e texto) em vez de `Dexie.maxKey`: o mesmo array repetido na chave é recusado pelo
+        // fake-indexeddb conforme a ordem em que os módulos carregam, e o id é sempre um texto ASCII.
+        .between(['pending', -Infinity, ''], ['pending', Infinity, '\uffff'])
+        .first()
+    );
   }
 
   /** Marca em voo e conta a tentativa. Devolve `undefined` se o item mudou ou sumiu desde que foi lido. */
