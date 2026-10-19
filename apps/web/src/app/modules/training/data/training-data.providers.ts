@@ -4,6 +4,7 @@ import { CatalogStore } from './catalog/catalog-store';
 import { CatalogWriter } from './catalog/catalog-writer';
 import { ExercisesResourceSync } from './catalog/exercises-resource-sync';
 import { provideRoutinesData } from './routines/routines-resource-sync';
+import { provideSessionsData } from './sessions/sessions-resource-sync';
 import { provideResourceSync } from './sync/resource-sync';
 import { TrainingSync } from './sync/training-sync';
 
@@ -31,5 +32,8 @@ export function provideTrainingData(): Provider[] {
 
     // Fichas (rotinas): acesso aos dados e recurso sincronizável.
     ...provideRoutinesData(),
+
+    // Treino ao vivo: sessões, séries, timer de descanso e tela acesa.
+    ...provideSessionsData(),
   ];
 }
