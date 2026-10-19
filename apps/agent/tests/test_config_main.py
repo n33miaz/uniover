@@ -28,15 +28,6 @@ from uniover_agent.main import (
 from .support import AGENT_ID, TOKEN, FakeApi, dump, tv_key
 
 
-@pytest.fixture(autouse=True)
-def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    for name in ("API_URL", "AGENT_ID", "LOG_LEVEL", "ALLOW_INSECURE"):
-        monkeypatch.delenv(f"UNIOVER_{name}", raising=False)
-    config = tmp_path / "agent.toml"
-    monkeypatch.setenv("UNIOVER_CONFIG_FILE", str(config))
-    return config
-
-
 def test_config_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("UNIOVER_API_URL", "https://api.exemplo.test")
     monkeypatch.setenv("UNIOVER_AGENT_ID", "pc-sala")
@@ -252,5 +243,5 @@ async def test_run_connects_with_vault_token_and_stops_on_revocation(
 
 def test_configure_logging_caps_libraries_that_log_headers() -> None:
     configure_logging("DEBUG")
-    for name in ("websockets", "httpx", "httpcore"):
+    for name in ("websockets", "httpx", "httpcore", "androidtvremote2"):
         assert logging.getLogger(name).getEffectiveLevel() == logging.WARNING

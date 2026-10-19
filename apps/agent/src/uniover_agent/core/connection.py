@@ -64,6 +64,7 @@ class ConnectionSupervisor:
         agent_version: str,
         capabilities: Sequence[str],
         policy: BackoffPolicy | None = None,
+        on_connected: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._transport = transport
         self._process = process_message
@@ -73,6 +74,8 @@ class ConnectionSupervisor:
         self._capabilities = tuple(capabilities)
         self._policy = policy or BackoffPolicy()
         self._backoff = Backoff(self._policy, random)
+        # Roda a cada conexão, logo depois do `hello` (ex.: informar à API o estado atual da TV).
+        self._on_connected = on_connected
 
     async def run(self) -> None:
         """Roda até ser cancelado; devolve (sem erro) só quando a credencial é recusada.
@@ -110,6 +113,8 @@ class ConnectionSupervisor:
             await self._transport.send(
                 self._envelopes.hello(self._agent_version, self._capabilities)
             )
+            if self._on_connected is not None:
+                await self._on_connected()
             async for raw in self._transport.incoming():
                 await self._process(raw)
         finally:

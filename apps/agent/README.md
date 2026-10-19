@@ -10,6 +10,7 @@ uv sync
 uv run uniover-agent pair      # pareia este PC com um código curto
 uv run uniover-agent run       # conecta e roda em primeiro plano (é o padrão)
 uv run uniover-agent status    # diz se há token no cofre e se a API responde
+uv run uniover-agent tv-pair --host <ip-da-tv>   # pareia o agente com a TV (código mostrado na tela)
 ```
 
 Verificação do projeto:
@@ -48,14 +49,57 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_LOG_LEVEL` | `DEBUG`, `INFO` (padrão), `WARNING` ou `ERROR` |
 | `UNIOVER_ALLOW_INSECURE` | `1` libera `http://`/`ws://` para a API local em desenvolvimento (com aviso) |
 | `UNIOVER_CONFIG_FILE` | outro caminho para o arquivo de configuração |
+| `UNIOVER_TV_HOST` | endereço (IP) da TV; sem ele o agente não controla TV. O IP não é garantidamente fixo |
+| `UNIOVER_TV_CLIENT_NAME` | nome do agente que aparece na TV no pareamento (padrão `UniOver`) |
+| `UNIOVER_TV_NAME` | nome da pasta do certificado desta TV (padrão `tv`) |
+| `UNIOVER_TV_HIBERNATE_SECONDS` | segundos sem comando até a sessão com a TV hibernar (padrão `300`) |
 
 Arquivo local (fora do repositório): `%LOCALAPPDATA%\UniOver\agent.toml`, com `api_url` e `agent_id`. Nunca
 guarda segredo.
 
+## TV (Android TV Remote v2)
+
+O agente controla a TV pelo protocolo Remote v2 (biblioteca `androidtvremote2` 0.3.2), com a **sessão
+quente**: a conexão fica aberta para o app não esperar ao abrir, e **hiberna depois de 300 s sem comando e
+sem aviso de "app aberto"** (`tv.wake.v1`). O primeiro comando depois de hibernar reabre a sessão; o tempo de
+aquecimento é medido e registrado no log. Se a TV não responder, tenta de novo com espera de 1, 2 e 4 s e
+então responde `tv_unreachable`: nunca fica num laço infinito.
+
+Pareamento (uma vez):
+
+1. Deixe a TV ligada. Rode `uv run uniover-agent tv-pair --host <ip-da-tv>`.
+2. A TV mostra um código de 6 caracteres; digite-o quando o comando pedir.
+3. O par certificado/chave fica em `%LOCALAPPDATA%\UniOver\tv\<nome>\` (`cert.pem` e `key.pem`), numa pasta
+   restrita ao seu usuário (`icacls`). **Nunca** vai para o repositório nem para o log.
+4. Defina `UNIOVER_TV_HOST` (ou `tv_host` no `agent.toml`) e rode `uniover-agent run`. O agente só declara a
+   capacidade `tv.remote` à API se o endereço estiver definido **e** o certificado existir.
+
+Comportamentos que valem saber:
+
+- **Dormir não é desligar.** Hibernando, o estado publicado é `connection: hibernating` e `power: unknown`; o
+  agente nunca afirma "TV desligada" só porque a sessão dormiu.
+- **Um dono da conexão por TV.** Só o `TvSessionManager` abre e fecha canais. O vigia legado (tarefa agendada
+  do PC que religa o serviço do controle por ADB) **precisa ser desligado quando este agente assumir**: dois
+  clientes na mesma TV derrubam um ao outro. O nome da tarefa se descobre no PC de casa com
+  `Get-ScheduledTask`, e quem decide quando desligar é o dono.
+- **`POWER` é recusado** (`key_blocked`): sem infravermelho a TV não volta do standby e não tem botão físico.
+  O desligamento só existirá com confirmação forte, em outra entrega.
+- **Links:** `tv.app.launch.v1` com `kind=link` só abre os esquemas `https`, `http`, `market` e `vnd.youtube`
+  (`intent://`, `file://` e afins são recusados). `kind=package` responde `unsupported` até haver o canal ADB.
+- A biblioteca não avisa quando a conexão cai e **descarta em silêncio** a tecla enviada depois da queda; por
+  isso o adaptador vigia a queda e o gerenciador reabre a sessão (com a mesma espera de 1, 2 e 4 s).
+- **TV em standby** desliga a rede e não responde nada: cada comando espera as tentativas (até ~27 s no pior
+  caso: 4 tentativas de 5 s mais 1 + 2 + 4 s) e responde `tv_unreachable`. Só uma **recusa ativa** da conexão
+  (porta fechada, serviço do controle morto) sinaliza `needs_repair` ao vigia; ficar sem resposta não.
+- Medições na TV real (`tools/measure_tv_session.py`, somente leitura): mortes do serviço por hora com e sem
+  sessão, memória e tempo de religação. Nunca envia tecla de energia. **Pare o agente e o vigia antigo antes de
+  medir**: a ferramenta usa o mesmo certificado e o ADB aceita um cliente por vez.
+
 ## Conexão
 
 - `wss://<api>/api/v1/devices/agents/<agentId>/ws`, `ping` a cada 20 s, mensagens de texto JSON de até 64 KB.
-- Ao conectar envia `agent.hello.v1` (versão e capacidades; por ora nenhuma, até haver aparelhos habilitados).
+- Ao conectar envia `agent.hello.v1` (versão e capacidades: `tv.remote` com a TV configurada e pareada, senão
+  nenhuma) e, em seguida, `tv.state.v1` com o estado atual da TV.
 - Reconexão com espera exponencial e variação aleatória (1 s, 2, 4 ... teto de 30 s), **sem limite de
   tentativas**; a espera volta ao início depois de 60 s de conexão estável.
 - Credencial recusada (401/403 na abertura ou fechamento 4403 `revoked`): **para**, avisa para rodar
@@ -74,9 +118,12 @@ nunca trazem token, `deviceCode`, cabeçalhos nem corpo completo (as bibliotecas
 
 ## Arquitetura
 
-- `core/`: casos de uso (`HandleCommand`, `ProcessMessage`, `ConnectionSupervisor`, `PairAgent`) e o `EnvelopeGate`.
-- `ports/`: `Transport`, `SecretStore`, `PairingClient`, `Clock`, `TvRemote` como `typing.Protocol`.
-- `adapters/`: `transport_ws`, `secret_store_keyring`, `pairing_http`, `system_clock`, `local_config` e dublês de teste.
+- `core/`: casos de uso (`HandleCommand`, `ProcessMessage`, `ConnectionSupervisor`, `PairAgent`) e o `EnvelopeGate`;
+  em `core/tv/`, o `TvSessionManager` (sessão quente, hibernação, reconexão), os handlers dos comandos da TV e o
+  publicador de `tv.state.v1`.
+- `ports/`: `Transport`, `SecretStore`, `PairingClient`, `Clock`, `TvChannel`, `TvRemote` como `typing.Protocol`.
+- `adapters/`: `transport_ws`, `secret_store_keyring`, `pairing_http`, `system_clock`, `local_config`,
+  `tv_remote_v2`, `tv_pairing` e dublês de teste.
 - `contracts/`: modelos e esquemas gerados, não editar.
 - `main.py`: composição e linha de comando.
 
@@ -89,4 +136,4 @@ Trocar de transporte (MQTT, depois) é trocar o adaptador: o núcleo não sabe q
 
 ## Ainda fora daqui
 
-Iniciar sozinho com o Windows e empacotar; controle da TV; adaptador MQTT.
+Iniciar sozinho com o Windows e empacotar; teclas e apps pelo canal ADB; vigia da TV; adaptador MQTT.

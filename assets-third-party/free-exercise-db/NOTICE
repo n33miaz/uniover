@@ -1,0 +1,18 @@
+free-exercise-db (somente o texto)
+
+Origem:     https://github.com/yuhonas/free-exercise-db (arquivo dist/exercises.json)
+Autor:      Clint Plummer (yuhonas) e colaboradores
+Licença:    Unlicense (domínio público); veja o arquivo LICENSE desta pasta, copiado do repositório de origem
+Commit:     f00c92c7dcf1216a928a52c3706c7ce8e2f71ed5
+Obtido em:  19/10/2026
+
+Conteúdo desta pasta:
+- exercises.json: o arquivo de origem, sem modificação (876 exercícios, em inglês).
+
+As imagens da fonte NÃO foram obtidas e NÃO são usadas por este projeto. O mantenedor da fonte declara não saber a
+origem delas. O campo "images" do JSON traz apenas nomes de arquivo relativos (texto) e nenhum deles é carregado,
+baixado ou exibido.
+
+O catálogo em português do app (apps/api/src/Modules/Training/UniOver.Modules.Training/Catalog/Seed) é uma
+reescrita nossa, feita a partir deste texto: nomes e instruções reescritos em português, com a taxonomia de músculos e
+equipamentos do app. Não é cópia do texto original.

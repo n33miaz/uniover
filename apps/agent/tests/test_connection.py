@@ -158,3 +158,33 @@ async def test_cancellation_closes_the_transport() -> None:
         await task
     assert transport.closes == 1
     assert not transport.connected
+
+
+async def test_on_connected_runs_after_the_hello_on_every_connection() -> None:
+    clock = FakeClock()
+    transport = FakeTransport([[TransportError("caiu")], []])
+    order: list[str] = []
+
+    async def announce() -> None:
+        # Quando roda, o `hello` já saiu; o que vier depois dele é o estado atual.
+        order.append(f"hello={len(transport.sent)}")
+
+    supervisor = ConnectionSupervisor(
+        transport,
+        lambda raw: asyncio.sleep(0),
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        clock,
+        middle,
+        agent_version="0.1.0",
+        capabilities=[],
+        on_connected=announce,
+    )
+    task = asyncio.create_task(supervisor.run())
+    for _ in range(200):
+        if len(order) >= 2:
+            break
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert order[:2] == ["hello=1", "hello=2"]

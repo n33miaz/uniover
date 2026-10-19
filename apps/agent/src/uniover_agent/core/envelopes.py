@@ -4,6 +4,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
+from uniover_agent.core.domain import TvState
 from uniover_agent.core.envelope_gate import EnvelopeGate
 from uniover_agent.ports import Clock
 
@@ -44,3 +45,12 @@ class EnvelopeFactory:
         if not ok:
             body["error"] = {"code": code or "failed", "message": message or code or "falha"}
         return self._build("command.result.v1", body, correlation_id)
+
+    def tv_state(self, state: TvState) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "power": state.power,
+            "volume": state.volume,
+            "app": state.app,
+            "connection": state.connection,
+        }
+        return self._build("tv.state.v1", body, None)

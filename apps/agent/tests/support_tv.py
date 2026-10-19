@@ -1,0 +1,159 @@
+"""TV falsa em loopback: fala o Android TV Remote v2 de verdade (TLS + protobuf com tamanho).
+
+Serve para exercitar o adaptador contra a biblioteca **real** sem tocar em nenhuma TV nem na rede:
+o servidor manda `remote_configure`, `remote_set_active` e `remote_start`, empurra volume e app, e
+registra as teclas e os links que recebe.
+"""
+
+import asyncio
+import ssl
+from pathlib import Path
+from types import TracebackType
+
+from androidtvremote2.certificate_generator import generate_selfsigned_cert
+from androidtvremote2.remotemessage_pb2 import RemoteMessage
+
+# PING | KEY | POWER | VOLUME | APP_LINK, as capacidades que a TV real anuncia.
+FEATURES = 1 | 2 | 32 | 64 | 512
+
+
+def write_certificate(directory: Path, name: str) -> None:
+    """Grava `cert.pem` e `key.pem` autoassinados (descartáveis, só de teste)."""
+    cert_pem, key_pem = generate_selfsigned_cert(name)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "cert.pem").write_bytes(cert_pem)
+    (directory / "key.pem").write_bytes(key_pem)
+
+
+def _varint(value: int) -> bytes:
+    out = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        if value:
+            out.append(byte | 0x80)
+        else:
+            out.append(byte)
+            return bytes(out)
+
+
+def frame(message: RemoteMessage) -> bytes:
+    payload = bytes(message.SerializeToString())
+    return _varint(len(payload)) + payload
+
+
+def _read_frames(buffer: bytearray) -> list[RemoteMessage]:
+    messages: list[RemoteMessage] = []
+    while buffer:
+        length = 0
+        shift = 0
+        position = 0
+        while True:
+            if position >= len(buffer):
+                return messages
+            byte = buffer[position]
+            position += 1
+            length |= (byte & 0x7F) << shift
+            shift += 7
+            if not byte & 0x80:
+                break
+        if len(buffer) < position + length:
+            return messages
+        message = RemoteMessage()
+        message.ParseFromString(bytes(buffer[position : position + length]))
+        del buffer[: position + length]
+        messages.append(message)
+    return messages
+
+
+class FakeTvServer:
+    def __init__(self, tmp_path: Path, *, send_start: bool = True) -> None:
+        self._send_start = send_start
+        self.port = 0
+        self.keys: list[tuple[int, int]] = []
+        self.links: list[str] = []
+        self.connections = 0
+        self._writers: list[asyncio.StreamWriter] = []
+        self._server: asyncio.Server | None = None
+        self._tasks: set[asyncio.Task[None]] = set()
+        server_dir = tmp_path / "tv-server"
+        write_certificate(server_dir, "tv-falsa")
+        self._ssl = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        self._ssl.load_cert_chain(server_dir / "cert.pem", server_dir / "key.pem")
+
+    async def __aenter__(self) -> FakeTvServer:
+        self._server = await asyncio.start_server(self._serve, "127.0.0.1", 0, ssl=self._ssl)
+        self.port = self._server.sockets[0].getsockname()[1]
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.drop_all()
+        assert self._server is not None
+        self._server.close()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        await self._server.wait_closed()
+
+    def drop_all(self) -> None:
+        """Derruba todas as conexões abertas (o que o limpador da TV faz com o serviço)."""
+        for writer in self._writers:
+            writer.close()
+        self._writers.clear()
+
+    def push_volume(self, level: int, maximum: int = 100) -> None:
+        message = RemoteMessage()
+        message.remote_set_volume_level.volume_level = level
+        message.remote_set_volume_level.volume_max = maximum
+        for writer in self._writers:
+            writer.write(frame(message))
+
+    async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        task = asyncio.current_task()
+        assert task is not None
+        self._tasks.add(task)
+        self.connections += 1
+        self._writers.append(writer)
+        try:
+            await self._conversation(reader, writer)
+        except ConnectionError, ssl.SSLError, asyncio.IncompleteReadError:
+            pass
+        finally:
+            writer.close()
+            self._tasks.discard(task)
+
+    async def _conversation(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ) -> None:
+        configure = RemoteMessage()
+        configure.remote_configure.code1 = FEATURES
+        configure.remote_configure.device_info.vendor = "TCL"
+        configure.remote_configure.device_info.model = "S65A"
+        configure.remote_configure.device_info.app_version = "1.0"
+        writer.write(frame(configure))
+        active = RemoteMessage()
+        active.remote_set_active.active = FEATURES
+        writer.write(frame(active))
+        if self._send_start:
+            start = RemoteMessage()
+            start.remote_start.started = True
+            writer.write(frame(start))
+            app = RemoteMessage()
+            app.remote_ime_key_inject.app_info.app_package = "com.exemplo.video"
+            writer.write(frame(app))
+            self.push_volume(20)
+        buffer = bytearray()
+        while True:
+            data = await reader.read(4096)
+            if not data:
+                return
+            buffer += data
+            for message in _read_frames(buffer):
+                if message.HasField("remote_key_inject"):
+                    inject = message.remote_key_inject
+                    self.keys.append((int(inject.key_code), int(inject.direction)))
+                elif message.HasField("remote_app_link_launch_request"):
+                    self.links.append(message.remote_app_link_launch_request.app_link)

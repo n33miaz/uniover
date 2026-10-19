@@ -24,6 +24,14 @@ from uniover_agent.ports.transport import (
     Transport,
     TransportError,
 )
+from uniover_agent.ports.tv_channel import (
+    TvChannel,
+    TvChannelError,
+    TvNotPaired,
+    TvPortClosed,
+    TvUnreachable,
+)
+from uniover_agent.ports.tv_remote import TvRemote
 
 
 class Clock(Protocol):
@@ -46,10 +54,6 @@ class SecretStore(Protocol):
     def delete(self, name: str) -> None: ...
 
 
-class TvRemote(Protocol):
-    async def send_key(self, key: str) -> None: ...
-
-
 __all__ = [
     "Clock",
     "ConnectionReplaced",
@@ -70,5 +74,10 @@ __all__ = [
     "SecretStore",
     "Transport",
     "TransportError",
+    "TvChannel",
+    "TvChannelError",
+    "TvNotPaired",
+    "TvPortClosed",
     "TvRemote",
+    "TvUnreachable",
 ]

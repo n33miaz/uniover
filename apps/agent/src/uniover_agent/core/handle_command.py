@@ -2,22 +2,11 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping
 
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
-from uniover_agent.ports import Clock, TvRemote
+from uniover_agent.ports import Clock
 
 Handler = Callable[[Command], Awaitable[CommandResult]]
 
 _log = logging.getLogger(__name__)
-
-
-def tv_key_handler(tv: TvRemote) -> Handler:
-    async def handle(command: Command) -> CommandResult:
-        key = command.body.get("key")
-        if not isinstance(key, str) or not key:
-            return CommandResult(command.id, ResultStatus.REJECTED, "campo 'key' ausente")
-        await tv.send_key(key)
-        return CommandResult(command.id, ResultStatus.OK)
-
-    return handle
 
 
 class HandleCommand:

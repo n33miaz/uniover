@@ -1332,6 +1332,360 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/training/catalog/credits': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['CatalogCreditsResponse'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/catalog/imports/wger': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: {
+          dryRun?: boolean;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ImportWgerResponse'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Bad Gateway */
+        502: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/exercises': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          after?: string;
+          limit?: number | string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PullExercisesResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/exercises/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['UpsertCustomExerciseRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ExerciseResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unprocessable Entity */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/exercises/{id}/step': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['SetExerciseStepRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ExerciseResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unprocessable Entity */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/commands/recent': {
     parameters: {
       query?: never;
@@ -2257,6 +2611,10 @@ export interface components {
       challengeId: string;
       options: components['schemas']['JsonElement'];
     };
+    CatalogCreditsResponse: {
+      sources: components['schemas']['CreditSource'][];
+      wgerAuthors: components['schemas']['WgerCredit'][];
+    };
     CompletePasskeyRegistrationRequest: {
       /** Format: uuid */
       challengeId: null | string;
@@ -2283,6 +2641,13 @@ export interface components {
       | 'userVerificationOptionalWithCredentialIDList'
       | 'userVerificationRequired'
       | null;
+    CreditSource: {
+      /** Format: int32 */
+      count: number | string;
+      license: null | string;
+      licenseUrl: null | string;
+      source: string;
+    };
     DenyPairingRequest: {
       userCode: null | string;
     };
@@ -2290,10 +2655,60 @@ export interface components {
       module: string;
       version: string;
     };
+    ExerciseResponse: {
+      category: null | string;
+      /** Format: date-time */
+      clientUpdatedAt: string;
+      deleted: boolean;
+      equipment: string;
+      /** Format: uuid */
+      id: string;
+      instructions: string[];
+      level: null | string;
+      license: null | string;
+      licenseAuthor: null | string;
+      licenseUrl: null | string;
+      mechanic: null | string;
+      name: string;
+      primaryMuscles: string[];
+      recordType: string;
+      reviewed: boolean;
+      secondaryMuscles: string[];
+      slug: string;
+      source: string;
+      sourceRef: null | string;
+      /** Format: date-time */
+      stepClientUpdatedAt: null | string;
+      /** Format: double */
+      stepKg: null | number | string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
     IdentityModuleInfo: {
       dependsOn: string[];
       module: string;
       version: string;
+    };
+    ImportWgerResponse: {
+      /** Format: int32 */
+      alreadyImported: number | string;
+      dryRun: boolean;
+      /** Format: int32 */
+      duplicates: number | string;
+      /** Format: int32 */
+      importable: number | string;
+      /** Format: int32 */
+      imported: number | string;
+      /** Format: int32 */
+      scanned: number | string;
+      /** Format: int32 */
+      unmappable: number | string;
+      /** Format: int32 */
+      withAuthor: number | string;
+      /** Format: int32 */
+      withLicense: number | string;
+      /** Format: int32 */
+      withPortuguese: number | string;
     };
     JsonElement: unknown;
     LoginRequest: {
@@ -2346,6 +2761,10 @@ export interface components {
     };
     /** @enum {unknown} */
     PublicKeyCredentialType: 'public-key' | 'invalid' | null;
+    PullExercisesResponse: {
+      items: components['schemas']['ExerciseResponse'][];
+      nextCursor: null | string;
+    };
     RecentCommand: {
       command: string;
       detail: null | string;
@@ -2388,6 +2807,12 @@ export interface components {
     };
     SendTextRequest: {
       text: null | string;
+    };
+    SetExerciseStepRequest: {
+      /** Format: date-time */
+      clientUpdatedAt: null | string;
+      /** Format: double */
+      stepKg: null | number | string;
     };
     StartPairingRequest: {
       agentName: null | string;
@@ -2436,6 +2861,26 @@ export interface components {
     UpdateShortcutRequest: {
       customLabel: null | string;
       enabled: null | boolean;
+    };
+    UpsertCustomExerciseRequest: {
+      /** Format: date-time */
+      clientUpdatedAt: null | string;
+      deleted: boolean;
+      equipment: null | string;
+      instructions: null | string[];
+      name: null | string;
+      primaryMuscles: null | string[];
+      recordType: null | string;
+      secondaryMuscles: null | string[];
+      /** Format: double */
+      stepKg: null | number | string;
+    };
+    WgerCredit: {
+      author: string;
+      /** Format: int32 */
+      count: number | string;
+      license: string;
+      licenseUrl: null | string;
     };
   };
   responses: never;

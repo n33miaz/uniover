@@ -372,6 +372,27 @@
         ],
         "type": "object"
       },
+      "CatalogCreditsResponse": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/CreditSource"
+            },
+            "type": "array"
+          },
+          "wgerAuthors": {
+            "items": {
+              "$ref": "#/components/schemas/WgerCredit"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources",
+          "wgerAuthors"
+        ],
+        "type": "object"
+      },
       "CompletePasskeyRegistrationRequest": {
         "properties": {
           "challengeId": {
@@ -469,6 +490,40 @@
           null
         ]
       },
+      "CreditSource": {
+        "properties": {
+          "count": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "license": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "licenseUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "count",
+          "license",
+          "licenseUrl"
+        ],
+        "type": "object"
+      },
       "DenyPairingRequest": {
         "properties": {
           "userCode": {
@@ -498,6 +553,144 @@
         ],
         "type": "object"
       },
+      "ExerciseResponse": {
+        "properties": {
+          "category": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "clientUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "equipment": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "instructions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "level": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "license": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "licenseAuthor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "licenseUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "mechanic": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "primaryMuscles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "recordType": {
+            "type": "string"
+          },
+          "reviewed": {
+            "type": "boolean"
+          },
+          "secondaryMuscles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "sourceRef": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "stepClientUpdatedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "stepKg": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "source",
+          "sourceRef",
+          "name",
+          "instructions",
+          "primaryMuscles",
+          "secondaryMuscles",
+          "equipment",
+          "recordType",
+          "stepKg",
+          "stepClientUpdatedAt",
+          "level",
+          "category",
+          "mechanic",
+          "license",
+          "licenseAuthor",
+          "licenseUrl",
+          "reviewed",
+          "updatedAt",
+          "clientUpdatedAt",
+          "deleted"
+        ],
+        "type": "object"
+      },
       "IdentityModuleInfo": {
         "properties": {
           "dependsOn": {
@@ -517,6 +710,98 @@
           "module",
           "version",
           "dependsOn"
+        ],
+        "type": "object"
+      },
+      "ImportWgerResponse": {
+        "properties": {
+          "alreadyImported": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "dryRun": {
+            "type": "boolean"
+          },
+          "duplicates": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "importable": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "imported": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "scanned": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "unmappable": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "withAuthor": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "withLicense": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "withPortuguese": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "dryRun",
+          "scanned",
+          "withPortuguese",
+          "withAuthor",
+          "withLicense",
+          "unmappable",
+          "alreadyImported",
+          "duplicates",
+          "importable",
+          "imported"
         ],
         "type": "object"
       },
@@ -721,6 +1006,27 @@
           null
         ]
       },
+      "PullExercisesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExerciseResponse"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
       "RecentCommand": {
         "properties": {
           "command": {
@@ -892,6 +1198,31 @@
         },
         "required": [
           "text"
+        ],
+        "type": "object"
+      },
+      "SetExerciseStepRequest": {
+        "properties": {
+          "clientUpdatedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "stepKg": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "stepKg",
+          "clientUpdatedAt"
         ],
         "type": "object"
       },
@@ -1082,6 +1413,117 @@
         "required": [
           "customLabel",
           "enabled"
+        ],
+        "type": "object"
+      },
+      "UpsertCustomExerciseRequest": {
+        "properties": {
+          "clientUpdatedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "equipment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "instructions": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "primaryMuscles": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "recordType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "secondaryMuscles": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "stepKg": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "primaryMuscles",
+          "secondaryMuscles",
+          "equipment",
+          "recordType",
+          "stepKg",
+          "instructions",
+          "clientUpdatedAt",
+          "deleted"
+        ],
+        "type": "object"
+      },
+      "WgerCredit": {
+        "properties": {
+          "author": {
+            "type": "string"
+          },
+          "count": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "license": {
+            "type": "string"
+          },
+          "licenseUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "author",
+          "license",
+          "licenseUrl",
+          "count"
         ],
         "type": "object"
       }
@@ -2229,6 +2671,365 @@
         ]
       }
     },
+    "/api/v1/training/catalog/credits": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogCreditsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "tags": [
+          "UniOver.Host"
+        ]
+      }
+    },
+    "/api/v1/training/catalog/imports/wger": {
+      "post": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dryRun",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportWgerResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "409": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "tags": [
+          "ImportWgerEndpoint"
+        ]
+      }
+    },
+    "/api/v1/training/exercises": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int32",
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullExercisesResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "tags": [
+          "PullExercisesEndpoint"
+        ]
+      }
+    },
+    "/api/v1/training/exercises/{id}": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UpsertCustomExerciseRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExerciseResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "UpsertCustomExerciseEndpoint"
+        ]
+      }
+    },
+    "/api/v1/training/exercises/{id}/step": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SetExerciseStepRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExerciseResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "SetExerciseStepEndpoint"
+        ]
+      }
+    },
     "/api/v1/tv/commands/recent": {
       "get": {
         "parameters": [
@@ -2989,6 +3790,18 @@
     },
     {
       "name": "StreamEventsEndpoint"
+    },
+    {
+      "name": "PullExercisesEndpoint"
+    },
+    {
+      "name": "UpsertCustomExerciseEndpoint"
+    },
+    {
+      "name": "SetExerciseStepEndpoint"
+    },
+    {
+      "name": "ImportWgerEndpoint"
     },
     {
       "name": "LoginEndpoint"

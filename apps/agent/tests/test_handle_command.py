@@ -3,12 +3,20 @@ import logging
 import pytest
 
 from uniover_agent.adapters.fakes import FakeClock, FakeTvRemote
-from uniover_agent.core import Command, CommandResult, HandleCommand, ResultStatus, tv_key_handler
+from uniover_agent.core import (
+    Command,
+    CommandResult,
+    HandleCommand,
+    ResultStatus,
+    TvSessionManager,
+    tv_key_handler,
+)
 
 
 def make() -> tuple[HandleCommand, FakeTvRemote]:
-    tv = FakeTvRemote()
-    return HandleCommand({"tv.key.v1": tv_key_handler(tv)}, FakeClock()), tv
+    clock, tv = FakeClock(), FakeTvRemote()
+    session = TvSessionManager(clock, tv)
+    return HandleCommand({"tv.key.v1": tv_key_handler(session)}, clock), tv
 
 
 async def test_known_command_executes() -> None:
