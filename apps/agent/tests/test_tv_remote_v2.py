@@ -153,6 +153,33 @@ async def test_keys_and_links_reach_the_tv_as_the_right_android_codes(tmp_path: 
     assert server.links == ["https://www.youtube.com/watch?v=abc"]
 
 
+async def test_text_reaches_the_tv_as_the_whole_field_value(tmp_path: Path) -> None:
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        await adapter.connect()
+        try:
+            await adapter.send_text("olá")
+            await adapter.send_text("olá mundo")
+            await eventually(lambda: len(server.texts) == 2)
+        finally:
+            await adapter.disconnect()
+    # Cada envio carrega o campo inteiro: o segundo substitui o primeiro, não se acrescenta a ele.
+    assert server.texts == ["olá", "olá mundo"]
+
+
+async def test_empty_text_is_a_programming_error_and_nothing_is_sent(tmp_path: Path) -> None:
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        await adapter.connect()
+        try:
+            with pytest.raises(ValueError, match="texto vazio"):
+                await adapter.send_text("")
+            await asyncio.sleep(0.1)
+        finally:
+            await adapter.disconnect()
+    assert server.texts == []
+
+
 async def test_every_non_power_key_goes_on_the_wire(tmp_path: Path) -> None:
     # `POWER` nem é enviada, nem à TV falsa: o mapeamento dela é conferido só por valor acima.
     keys = [key for key in KEY_CODES if key != "POWER"]
@@ -184,6 +211,8 @@ async def test_a_dropped_connection_is_detected_and_keys_are_refused(tmp_path: P
                 await adapter.send_key("HOME")
             with pytest.raises(TvUnreachable):
                 await adapter.launch_link("https://exemplo.test/a")
+            with pytest.raises(TvUnreachable):
+                await adapter.send_text("oi")
         finally:
             await adapter.disconnect()
 
@@ -278,6 +307,7 @@ class FakeLibrary:
         self.send_error: Exception | None = None
         self.disconnects = 0
         self.sent: list[tuple[int | str, int | str]] = []
+        self.texts: list[str] = []
         self._volume: list[Callable[[VolumeInfo], None]] = []
         self._app: list[Callable[[str], None]] = []
         self._power: list[Callable[[bool], None]] = []
@@ -306,6 +336,11 @@ class FakeLibrary:
     def send_launch_app_command(self, app_link_or_app_id: str) -> None:
         if self.send_error is not None:
             raise self.send_error
+
+    def send_text(self, text: str) -> None:
+        if self.send_error is not None:
+            raise self.send_error
+        self.texts.append(text)
 
 
 def duplo_adapter(tmp_path: Path, library: FakeLibrary) -> AndroidTvRemoteV2:
@@ -378,6 +413,8 @@ async def test_send_without_a_session_is_unreachable(tmp_path: Path) -> None:
     adapter = duplo_adapter(tmp_path, FakeLibrary())
     with pytest.raises(TvUnreachable):
         await adapter.send_key("HOME")
+    with pytest.raises(TvUnreachable):
+        await adapter.send_text("oi")
 
 
 async def test_library_closed_error_during_send_means_unreachable(tmp_path: Path) -> None:
@@ -389,6 +426,8 @@ async def test_library_closed_error_during_send_means_unreachable(tmp_path: Path
         await adapter.send_key("HOME")
     with pytest.raises(TvUnreachable):
         await adapter.launch_link("https://exemplo.test/a")
+    with pytest.raises(TvUnreachable):
+        await adapter.send_text("oi")
     await adapter.disconnect()
 
 

@@ -41,6 +41,7 @@ from uniover_agent.core import (
     TvStatePublisher,
     tv_app_launch_handler,
     tv_key_handler,
+    tv_text_handler,
     tv_wake_handler,
 )
 from uniover_agent.ports import (
@@ -133,6 +134,7 @@ def build_tv(
         handlers={
             "tv.key.v1": keys,
             "tv.key.v2": keys,
+            "tv.text.v1": tv_text_handler(manager),
             "tv.wake.v1": tv_wake_handler(manager),
             "tv.app.launch.v1": tv_app_launch_handler(manager),
         },

@@ -161,6 +161,10 @@ class TvSessionManager:
     async def launch_link(self, link: str) -> None:
         await self._run(lambda remote: remote.launch_link(link))
 
+    async def send_text(self, text: str) -> None:
+        """Define o texto do campo em foco na TV (substitui o conteúdo; não acrescenta)."""
+        await self._run(lambda remote: remote.send_text(text))
+
     async def wake(self) -> None:
         """Pré-aquece: abre a sessão (se preciso) e renova o relógio."""
         self.touch()

@@ -20,6 +20,16 @@ class TvRemote(TvChannel, Protocol):
         """Abre um link (deep link) na TV."""
         ...
 
+    async def send_text(self, text: str) -> None:
+        """Define o conteúdo do campo de texto em foco na TV: o texto **substitui** o que havia.
+
+        Não acrescenta ao campo. Texto vazio não é aceito (o protocolo não tem como limpar o campo
+        por este canal). Sem campo em foco a TV ignora o envio em silêncio.
+
+        Levanta `TvUnreachable` se o canal não está aberto.
+        """
+        ...
+
     # Assinaturas do estado por empurrão. Os callbacks são síncronos e rodam no laço de eventos.
     def on_power(self, callback: Callable[[bool], None]) -> None:
         """Ligada (`True`) ou desligada (`False`), como a TV informa."""
