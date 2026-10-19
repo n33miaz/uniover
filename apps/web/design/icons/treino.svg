@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<!-- Símbolo treino sobre o verde-sálvia; o fundo vai até as bordas (o sistema aplica a máscara). -->
+  <rect width="512" height="512" fill="#3B6B4B"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M396 256H340L298 382L214 130L172 256H116"/>
+    <circle cx="380" cy="132" r="22" fill="#FFFFFF" stroke="none"/>
+  </g>
+</svg>
