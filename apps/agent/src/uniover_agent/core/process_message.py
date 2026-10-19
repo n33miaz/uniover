@@ -38,7 +38,7 @@ class ProcessMessage:
             self._envelopes.result(
                 outcome.command.id,
                 ok=ok,
-                code=result.status.value,
+                code=result.code or result.status.value,
                 message=result.detail,
             )
         )
