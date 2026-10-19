@@ -4,6 +4,7 @@ using UniOver.Modules.Devices;
 using UniOver.Modules.Devices.Features.Agents;
 using UniOver.Modules.Devices.Transport.WebSocket;
 using UniOver.Modules.Identity;
+using UniOver.Modules.Training;
 using UniOver.Modules.Tv;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -32,6 +33,8 @@ builder.Services.AddIdentityPasskeys(builder.Configuration);
 // O Host só compõe: cada módulo é chamado explicitamente, sem descoberta por reflexão.
 builder.Services.AddTvModule(builder.Configuration);
 // [composição: tv]
+builder.Services.AddTrainingModule(builder.Configuration);
+// [composição: training]
 builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddDevicesModule(builder.Configuration);
 // [composição: devices-transport]
@@ -61,6 +64,7 @@ if (app.Environment.IsDevelopment())
 // manteria o compute do Neon acordado o mês inteiro.
 app.MapHealthChecks("/health/live").AllowAnonymous();
 app.MapTvEndpoints();
+app.MapTrainingEndpoints();
 app.MapIdentityEndpoints();
 app.MapDevicesEndpoints();
 app.MapDevicesTransport();

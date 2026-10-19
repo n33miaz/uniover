@@ -15,5 +15,7 @@
     <ProjectReference Include="..\Modules\Devices\UniOver.Modules.Devices.Transport.WebSocket\UniOver.Modules.Devices.Transport.WebSocket.csproj" />
     <ProjectReference Include="..\Modules\Identity\UniOver.Modules.Identity\UniOver.Modules.Identity.csproj" />
     <ProjectReference Include="..\Modules\Tv\UniOver.Modules.Tv\UniOver.Modules.Tv.csproj" />
+    <ProjectReference Include="..\Modules\Training\UniOver.Modules.Training\UniOver.Modules.Training.csproj" />
+    <ProjectReference Include="..\Modules\Training\UniOver.Modules.Training.Contracts\UniOver.Modules.Training.Contracts.csproj" />
   </ItemGroup>
 </Project>
