@@ -11,7 +11,12 @@ internal static class RemovePasskeyEndpoint
 {
     public static void MapRemovePasskey(this IEndpointRouteBuilder group) =>
         group.MapDelete("/passkeys/{id:guid}", HandleAsync)
-            .RequireAuthorization(StepUp.Policy(StepUpActions.PasskeyRemove));
+            .RequireAuthorization(StepUp.Policy(StepUpActions.PasskeyRemove))
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
     private static async Task<IResult> HandleAsync(
         Guid id,

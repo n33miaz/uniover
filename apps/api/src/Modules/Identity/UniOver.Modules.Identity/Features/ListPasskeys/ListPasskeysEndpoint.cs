@@ -9,7 +9,9 @@ namespace UniOver.Modules.Identity.Features.ListPasskeys;
 internal static class ListPasskeysEndpoint
 {
     public static void MapListPasskeys(this IEndpointRouteBuilder group) =>
-        group.MapGet("/passkeys", HandleAsync).RequireAuthorization();
+        group.MapGet("/passkeys", HandleAsync).RequireAuthorization()
+            .Produces<IReadOnlyList<PasskeySummary>>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
 
     private static async Task<IResult> HandleAsync(
         ICurrentUser current, ListPasskeysHandler handler, CancellationToken cancellationToken)

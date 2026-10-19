@@ -3,6 +3,7 @@ using System.Text.Json;
 using Fido2NetLib;
 using Microsoft.EntityFrameworkCore;
 using UniOver.Modules.Identity.Domain;
+using UniOver.Modules.Identity.Features.ListPasskeys;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
 
@@ -18,9 +19,6 @@ internal sealed record CompletePasskeyRegistrationCommand(
     AuthenticatorAttestationRawResponse Credential,
     ClientInfo Client);
 
-internal sealed record CompletePasskeyRegistrationResponse(
-    Guid Id, string Name, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt);
-
 internal sealed class CompletePasskeyRegistrationHandler(
     IdentityDbContext db,
     WebAuthn webAuthn,
@@ -32,7 +30,7 @@ internal sealed class CompletePasskeyRegistrationHandler(
     private static readonly string[] AcceptedFormats = ["none", "packed"];
 
     /// <summary>Nulo quando o desafio é inválido ou a atestação não confere (a borda devolve um erro único).</summary>
-    public async Task<CompletePasskeyRegistrationResponse?> HandleAsync(
+    public async Task<PasskeySummary?> HandleAsync(
         CompletePasskeyRegistrationCommand command, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
@@ -75,7 +73,7 @@ internal sealed class CompletePasskeyRegistrationHandler(
             audit.Add(command.UserId, AuditEvents.PasskeyRegistered, command.Client, passkey.Id.ToString("N"));
             await db.SaveChangesAsync(cancellationToken);
 
-            return new CompletePasskeyRegistrationResponse(passkey.Id, passkey.Name, passkey.CreatedAt, passkey.LastUsedAt);
+            return new PasskeySummary(passkey.Id, passkey.Name, passkey.CreatedAt, passkey.LastUsedAt);
         }
         catch (Exception ex) when (ex is Fido2VerificationException or CborContentException or FormatException
             or ArgumentException or JsonException or InvalidOperationException or DbUpdateException)

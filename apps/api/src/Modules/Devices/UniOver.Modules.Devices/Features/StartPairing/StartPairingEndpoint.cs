@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -10,7 +11,7 @@ namespace UniOver.Modules.Devices.Features.StartPairing;
 
 internal sealed record StartPairingRequest(string? AgentName, string? Platform, string? AgentVersion);
 
-internal sealed record StartPairingResponse(Guid PairingId, string DeviceCode, string UserCode, int ExpiresIn, int Interval);
+internal sealed record StartPairingResponse(Guid PairingId, string DeviceCode, string UserCode, [property: JsonNumberHandling(JsonNumberHandling.Strict)] int ExpiresIn, [property: JsonNumberHandling(JsonNumberHandling.Strict)] int Interval);
 
 /// <summary>
 /// Validação de forma na borda: a rota é anônima, então tudo que o agente manda é texto não confiável, com
@@ -54,7 +55,10 @@ internal static class StartPairingEndpoint
     public static void MapStartPairing(this IEndpointRouteBuilder group) =>
         group.MapPost("/pairing/start", HandleAsync)
             .AllowAnonymous()
-            .RequireRateLimiting(RateLimitPolicies.Pairing);
+            .RequireRateLimiting(RateLimitPolicies.Pairing)
+            .Produces<StartPairingResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
     private static async Task<IResult> HandleAsync(
         HttpContext http,

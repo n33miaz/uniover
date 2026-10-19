@@ -11,7 +11,12 @@ internal static class ConfirmStepUpEndpoint
     public static void MapConfirmStepUp(this IEndpointRouteBuilder group) =>
         group.MapPost("/step-up/complete", HandleAsync)
             .RequireAuthorization()
-            .RequireRateLimiting(RateLimitPolicies.Login);
+            .RequireRateLimiting(RateLimitPolicies.Login)
+            .Produces<ConfirmStepUpResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
     private static async Task<IResult> HandleAsync(
         HttpContext http,

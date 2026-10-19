@@ -13,7 +13,9 @@ internal static class StreamTicketEndpoint
     /// único credencial que a política <c>StreamAccess</c> aceita.
     /// </summary>
     public static void MapStreamTicket(this IEndpointRouteBuilder group) =>
-        group.MapPost("/auth/stream-ticket", HandleAsync).RequireAuthorization();
+        group.MapPost("/auth/stream-ticket", HandleAsync).RequireAuthorization()
+            .Produces<StreamTicketResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
 
     private static async Task<IResult> HandleAsync(
         HttpContext http,

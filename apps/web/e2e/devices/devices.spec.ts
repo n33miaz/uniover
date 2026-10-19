@@ -196,9 +196,11 @@ test.describe('aparelhos', () => {
       platform: 'windows',
       createdAt: '2026-10-18T12:00:00Z',
       revoked: false,
+      lastSeenAt: '2026-10-18T15:30:00Z',
     });
     await openDevices(page, browserName);
     await expect(page.locator('.item .name')).toHaveText(['PC de casa']);
+    await expect(page.locator('.item .last-seen')).toContainText('Último uso em');
 
     await page.getByRole('button', { name: 'Revogar PC de casa' }).click();
     await expect(
@@ -230,6 +232,7 @@ test.describe('aparelhos', () => {
       platform: 'windows',
       createdAt: '2026-10-18T12:00:00Z',
       revoked: false,
+      lastSeenAt: '2026-10-18T15:30:00Z',
     });
     await openDevices(page, browserName);
     await expect(page.getByRole('button', { name: 'Parear aparelho' })).toBeEnabled();

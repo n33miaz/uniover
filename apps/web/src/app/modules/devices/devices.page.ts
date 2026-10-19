@@ -37,6 +37,12 @@ export class DevicesPage {
     return $localize`:@@devices.paired-at:Pareado em ${this.dateFormat.format(new Date(agent.createdAt))}:date:`;
   }
 
+  protected lastSeen(agent: DeviceAgent): string {
+    return agent.lastSeenAt
+      ? $localize`:@@devices.last-seen:Último uso em ${this.dateFormat.format(new Date(agent.lastSeenAt))}:date:`
+      : $localize`:@@devices.never-seen:Sem uso registrado`;
+  }
+
   protected platform(agent: DeviceAgent): string {
     return $localize`:@@devices.platform:Sistema: ${agent.platform}:platform:`;
   }

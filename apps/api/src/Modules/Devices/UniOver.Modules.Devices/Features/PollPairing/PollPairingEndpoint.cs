@@ -22,7 +22,13 @@ internal static class PollPairingEndpoint
     public static void MapPollPairing(this IEndpointRouteBuilder group) =>
         group.MapPost("/pairing/poll", HandleAsync)
             .AllowAnonymous()
-            .RequireRateLimiting(RateLimitPolicies.Pairing);
+            .RequireRateLimiting(RateLimitPolicies.Pairing)
+            .Produces<PollPairingResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status410Gone)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
     private static async Task<IResult> HandleAsync(
         HttpContext http,

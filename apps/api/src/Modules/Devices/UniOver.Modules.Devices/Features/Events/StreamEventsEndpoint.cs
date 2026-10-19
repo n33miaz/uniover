@@ -15,7 +15,9 @@ internal static class StreamEventsEndpoint
     /// token na URL nunca é aceito. Ao abrir envia o instantâneo da presença e depois cada mudança.
     /// </summary>
     public static void MapStreamEvents(this IEndpointRouteBuilder group) =>
-        group.MapGet("/events", Handle).RequireAuthorization(UniOverAuth.StreamPolicy);
+        group.MapGet("/events", Handle).RequireAuthorization(UniOverAuth.StreamPolicy)
+            .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
 
     private static IResult Handle(
         ICurrentUser current,

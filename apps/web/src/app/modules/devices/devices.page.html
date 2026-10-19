@@ -17,6 +17,7 @@
                 <strong class="name">{{ agent.name }}</strong>
                 <span class="meta">{{ platform(agent) }}</span>
                 <span class="meta">{{ pairedAt(agent) }}</span>
+                <span class="meta last-seen">{{ lastSeen(agent) }}</span>
                 @if (agent.revoked) {
                   <span class="chip revoked" i18n="@@devices.state.revoked">Revogado</span>
                 } @else {

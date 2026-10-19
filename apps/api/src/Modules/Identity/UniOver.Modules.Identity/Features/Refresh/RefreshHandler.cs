@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.Web;
@@ -9,7 +10,7 @@ namespace UniOver.Modules.Identity.Features.Refresh;
 
 internal sealed record RefreshCommand(string? Secret, ClientInfo Client);
 
-internal sealed record RefreshResponse(string AccessToken, int ExpiresIn);
+internal sealed record RefreshResponse(string AccessToken, [property: JsonNumberHandling(JsonNumberHandling.Strict)] int ExpiresIn);
 
 internal enum RefreshStatus
 {

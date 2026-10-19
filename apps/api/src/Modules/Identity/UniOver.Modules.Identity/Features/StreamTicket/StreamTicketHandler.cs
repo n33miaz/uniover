@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.Web;
@@ -8,7 +9,7 @@ namespace UniOver.Modules.Identity.Features.StreamTicket;
 
 internal sealed record StreamTicketCommand(Guid UserId, Guid SessionId);
 
-internal sealed record StreamTicketResponse(int ExpiresIn);
+internal sealed record StreamTicketResponse([property: JsonNumberHandling(JsonNumberHandling.Strict)] int ExpiresIn);
 
 internal sealed record StreamTicketResult(IssuedToken? Ticket, TimeSpan Lifetime);
 

@@ -11,7 +11,12 @@ internal static class RequestStepUpEndpoint
     public static void MapRequestStepUp(this IEndpointRouteBuilder group) =>
         group.MapPost("/step-up/options", HandleAsync)
             .RequireAuthorization()
-            .RequireRateLimiting(RateLimitPolicies.Login);
+            .RequireRateLimiting(RateLimitPolicies.Login)
+            .Produces<RequestStepUpResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
     private static async Task<IResult> HandleAsync(
         ICurrentUser current,
