@@ -1,0 +1,144 @@
+name: Deploy
+
+# Política de publicação
+# - As migrations rodam ANTES do código novo entrar no ar. Por alguns minutos o código antigo roda sobre o schema novo.
+# - Por isso toda migration deve ser retrocompatível com a versão anterior da API: acrescentar primeiro; remover ou
+#   renomear coluna só em duas etapas, depois que nenhum código a usa.
+# - Migration aplicada é imutável: um erro se corrige com uma migration nova, nunca editando a antiga.
+# - As migrations usam a conexão DIRETA do Neon com o papel dono. A aplicação no Render usa o pooler com o papel
+#   sem DDL; a conexão do dono nunca vai para o Render.
+# - O Render deve ficar com o auto-deploy DESLIGADO: quem dispara a troca do código é o deploy hook, depois das
+#   migrations. Sem o segredo RENDER_DEPLOY_HOOK_URL, as migrations rodam e o deploy é pulado com aviso.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  # Variável do repositório APP_URL; se não existir, vale o endereço padrão.
+  APP_URL: ${{ vars.APP_URL || 'https://uniover.onrender.com' }}
+
+jobs:
+  migrate:
+    name: migrate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: apps/api/global.json
+      - name: Instalar o dotnet-ef
+        run: dotnet tool install --global dotnet-ef --version 10.0.13
+      # A conexão só é gerada com um valor de mentira: o dotnet ef não a usa para montar o bundle.
+      - name: Gerar os bundles de migration
+        working-directory: apps/api
+        run: bash scripts/build-bundles.sh
+      - name: Aplicar as migrations (conexão direta, papel dono)
+        working-directory: apps/api
+        env:
+          DB_OWNER_CONNECTION: ${{ secrets.NEON_OWNER_CONNECTION }}
+        run: |
+          if [ -z "$DB_OWNER_CONNECTION" ]; then
+            echo "::error::o segredo NEON_OWNER_CONNECTION não está cadastrado no repositório."
+            exit 1
+          fi
+          echo "::add-mask::$DB_OWNER_CONNECTION"
+          export UNIOVER_MIGRATIONS_CONNECTION="$DB_OWNER_CONNECTION"
+          bash scripts/migrate-all.sh
+
+  deploy:
+    name: deploy
+    needs: migrate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    outputs:
+      deployed: ${{ steps.hook.outputs.deployed }}
+    steps:
+      - name: Disparar o deploy no Render
+        id: hook
+        env:
+          HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK_URL" ]; then
+            echo "::warning::o segredo RENDER_DEPLOY_HOOK_URL não existe: as migrations foram aplicadas, mas o código não foi publicado."
+            echo "deployed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::add-mask::$HOOK_URL"
+          # A URL do hook é credencial: sem -v, sem eco, e o erro do curl (que poderia citá-la) é descartado.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 -X POST "$HOOK_URL" 2>/dev/null || true)
+          case "$code" in
+            200)
+              echo "Deploy iniciado no Render."
+              ;;
+            202)
+              echo "Já havia um deploy em andamento no Render; seguindo com a espera."
+              ;;
+            409)
+              echo "::error::o serviço no Render está suspenso (409). Reative o serviço no painel e rode o workflow de novo."
+              exit 1
+              ;;
+            *)
+              echo "::error::o deploy hook respondeu com o código '${code:-sem resposta}'. Confira o segredo RENDER_DEPLOY_HOOK_URL."
+              exit 1
+              ;;
+          esac
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
+      # O serviço antigo continua respondendo enquanto o Render constrói a imagem nova; a pausa inicial evita
+      # dar por pronta a versão anterior. O plano grátis também pode estar dormindo: a primeira resposta demora.
+      - name: Esperar o serviço ficar saudável
+        if: steps.hook.outputs.deployed == 'true'
+        run: |
+          sleep 90
+          for i in $(seq 1 76); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$APP_URL/health/live" || true)
+            if [ "$code" = "200" ]; then
+              echo "/health/live respondeu 200 (tentativa $i)."
+              exit 0
+            fi
+            echo "Tentativa $i: /health/live respondeu '${code:-sem resposta}'."
+            sleep 15
+          done
+          echo "::error::o serviço não respondeu 200 em /health/live em cerca de 20 minutos."
+          exit 1
+      - name: Conferir o PWA e a API
+        if: steps.hook.outputs.deployed == 'true'
+        run: |
+          curl -fsS --max-time 30 "$APP_URL/" | grep -qi "<app-root" \
+            || { echo "::error::a raiz não devolveu o index.html do PWA."; exit 1; }
+          curl -fsS --max-time 30 -o /dev/null "$APP_URL/api/v1/identity/info" \
+            || { echo "::error::/api/v1/identity/info não respondeu com sucesso."; exit 1; }
+          echo "PWA e API respondendo."
+
+  # Varredura passiva da superfície pública (o ZAP não autentica). Só roda se o código foi mesmo publicado.
+  dast:
+    name: dast
+    needs: deploy
+    if: needs.deploy.outputs.deployed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: ZAP baseline
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: ${{ env.APP_URL }}
+          rules_file_name: .github/zap/rules.tsv
+          allow_issue_writing: false
+          fail_action: true
+          artifact_name: zap-baseline-producao
