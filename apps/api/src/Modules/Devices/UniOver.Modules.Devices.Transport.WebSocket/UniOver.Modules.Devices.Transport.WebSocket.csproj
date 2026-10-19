@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Casca do adaptador de transporte do Devices; as classes entram junto com o transporte. -->
+</Project>

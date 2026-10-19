@@ -24,6 +24,13 @@ internal static class PublicRoutes
         // Descrição mínima do módulo (nome e versão), sem dado do usuário.
         new("GET", "/api/v1/identity/info", "informação pública do módulo de conta"),
         new("GET", "/api/v1/tv/info", "informação pública do módulo de TV"),
+        new("GET", "/api/v1/devices/info", "informação pública do módulo de aparelhos"),
+
+        // O agente que pede pareamento ainda não tem credencial; o limite por IP e o teto de pareamentos abertos protegem a rota.
+        new("POST", "/api/v1/devices/pairing/start", "agente pede um código de pareamento: ainda não existe token"),
+
+        // A credencial desta consulta é o deviceCode (segredo de 32 bytes que só o agente conhece).
+        new("POST", "/api/v1/devices/pairing/poll", "agente consulta o pareamento com o deviceCode para recolher o token"),
 
         // Quem faz login ainda não tem credencial; o limite por IP e o bloqueio por conta protegem a rota.
         new("POST", "/api/v1/identity/auth/login", "entrada por senha: ainda não existe sessão"),
