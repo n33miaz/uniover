@@ -16,12 +16,19 @@ internal static class AgentMessageDirections
     {
         AgentMessageTypes.AgentHelloV1,
         AgentMessageTypes.CommandResultV1,
+        AgentMessageTypes.TvAppsV1,
         AgentMessageTypes.TvStateV1,
+        AgentMessageTypes.TvWatchdogV1,
     }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>Tipos que a API envia ao agente.</summary>
     public static FrozenSet<string> ToAgent { get; } = new[]
     {
+        AgentMessageTypes.TvAppLaunchV1,
+        AgentMessageTypes.TvAppsRefreshV1,
         AgentMessageTypes.TvKeyV1,
+        AgentMessageTypes.TvKeyV2,
+        AgentMessageTypes.TvTextV1,
+        AgentMessageTypes.TvWakeV1,
     }.ToFrozenSet(StringComparer.Ordinal);
 }

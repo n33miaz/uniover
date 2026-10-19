@@ -13,18 +13,46 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>command.result.v1</c>.</summary>
     public const string CommandResultV1 = "command.result.v1";
 
+    /// <summary>Tipo de mensagem <c>tv.app.launch.v1</c>.</summary>
+    public const string TvAppLaunchV1 = "tv.app.launch.v1";
+
+    /// <summary>Tipo de mensagem <c>tv.apps.refresh.v1</c>.</summary>
+    public const string TvAppsRefreshV1 = "tv.apps.refresh.v1";
+
+    /// <summary>Tipo de mensagem <c>tv.apps.v1</c>.</summary>
+    public const string TvAppsV1 = "tv.apps.v1";
+
     /// <summary>Tipo de mensagem <c>tv.key.v1</c>.</summary>
     public const string TvKeyV1 = "tv.key.v1";
 
+    /// <summary>Tipo de mensagem <c>tv.key.v2</c>.</summary>
+    public const string TvKeyV2 = "tv.key.v2";
+
     /// <summary>Tipo de mensagem <c>tv.state.v1</c>.</summary>
     public const string TvStateV1 = "tv.state.v1";
+
+    /// <summary>Tipo de mensagem <c>tv.text.v1</c>.</summary>
+    public const string TvTextV1 = "tv.text.v1";
+
+    /// <summary>Tipo de mensagem <c>tv.wake.v1</c>.</summary>
+    public const string TvWakeV1 = "tv.wake.v1";
+
+    /// <summary>Tipo de mensagem <c>tv.watchdog.v1</c>.</summary>
+    public const string TvWatchdogV1 = "tv.watchdog.v1";
 
     /// <summary>Todos os tipos conhecidos, em ordem alfabética.</summary>
     public static readonly IReadOnlyList<string> All =
     [
         AgentHelloV1,
         CommandResultV1,
+        TvAppLaunchV1,
+        TvAppsRefreshV1,
+        TvAppsV1,
         TvKeyV1,
+        TvKeyV2,
         TvStateV1,
+        TvTextV1,
+        TvWakeV1,
+        TvWatchdogV1,
     ];
 }

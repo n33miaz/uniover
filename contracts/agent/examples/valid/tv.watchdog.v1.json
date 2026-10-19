@@ -1,0 +1,2 @@
+{ "v": 1, "id": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e9f", "type": "tv.watchdog.v1", "source": "agent:pc-casa", "target": "api",
+  "ts": "2026-10-19T14:00:00Z", "correlationId": null, "body": {"kind":"repair_started","severity":"warn","detail":"portas 6466 e 6467 fechadas","attempts":1,"at":"2026-10-19T14:00:00Z"} }

@@ -15,6 +15,23 @@ editados à mão.
 Formato `<area>.<acao>.v<n>`. Mudança incompatível cria um novo `type` (`.v2`); nunca altere o significado de
 um `type` publicado. As duas versões convivem até o agente atualizar.
 
+## Mensagens da TV
+
+| `type` | Direção | Corpo |
+|---|---|---|
+| `tv.key.v1` | API para agente | `key` (14 teclas). Segue válido e inalterado. |
+| `tv.key.v2` | API para agente | `key` (as 14 do `v1` mais `MENU`, `NUM_0` a `NUM_9`, `MEDIA_NEXT`, `MEDIA_PREVIOUS`, `INPUT`) e `direction` opcional (`SHORT`, padrão, `START_LONG`, `END_LONG`). |
+| `tv.wake.v1` | API para agente | `{}`: o app está aberto, aqueça a sessão. |
+| `tv.app.launch.v1` | API para agente | `target`: `{ kind: "package" | "link", value }`. Pacote: nome Android com pontos (até 255); link: `esquema://...` sem espaços nem controles (até 2048). |
+| `tv.apps.refresh.v1` | API para agente | `{}`: pede a lista de apps. |
+| `tv.apps.v1` | agente para API | `apps`: lista de `{ package, label | null }` (até 500) e `at` (UTC). |
+| `tv.text.v1` | API para agente | `text`: 1 a 200 caracteres, sem caracteres de controle. |
+| `tv.watchdog.v1` | agente para API | `kind`, `severity` (`info`, `warn`, `error`), `detail` (até 200), `attempts`, `at`. |
+
+Os resultados voltam em `command.result.v1` (com `correlationId` igual ao `id` do comando). Nenhum corpo traz segredo.
+O formato do `type` aceita dois ou mais segmentos antes da versão (`tv.app.launch.v1`). Os esquemas só fixam o
+formato; quem decide o que pode ser aberto (por exemplo, quais esquemas de link) é o agente.
+
 ## Como validar
 
 ```

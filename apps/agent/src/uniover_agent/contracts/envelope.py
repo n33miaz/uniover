@@ -16,7 +16,7 @@ class Envelope(BaseModel):
     )
     v: Literal[1]
     id: UUID
-    type: Annotated[str, Field(pattern='^[a-z]+[.][a-z]+[.]v[0-9]+$')]
+    type: Annotated[str, Field(pattern='^[a-z]+([.][a-z]+)+[.]v[0-9]+$')]
     source: Annotated[str, Field(pattern='^(api|agent:[a-z0-9][a-z0-9-]*)$')]
     target: Annotated[str, Field(pattern='^(api|agent:[a-z0-9][a-z0-9-]*)$')]
     ts: AwareDatetime
