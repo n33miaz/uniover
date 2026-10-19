@@ -5,6 +5,7 @@
 10038	IGNORE	(CSP ausente: idem; virar FAIL quando entrar)
 10063	IGNORE	(Permissions-Policy ausente: idem; virar FAIL quando entrar)
 10049	IGNORE	(Conteudo armazenavel em cache: esperado para os arquivos estaticos do PWA)
+10015	IGNORE	(Cache-control: index.html e manifest usam no-cache de proposito, o PWA precisa revalidar para pegar versao nova)
 10109	IGNORE	(Aplicacao web moderna: aviso informativo sobre SPA, sem risco)
 90004	IGNORE	(Cross-Origin-Embedder-Policy: nao se aplica, nao ha recursos de outras origens)
 10010	FAIL	(cookie sem HttpOnly)
