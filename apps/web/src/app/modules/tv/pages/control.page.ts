@@ -1,30 +1,27 @@
 import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TvStore } from '../data/tv-store';
-import { TvKey, TvShortcut, shortcutLabel } from '../data/tv-types';
+import { TvShortcut, shortcutLabel } from '../data/tv-types';
 import { KeyButton } from '../input/key-button';
 import { TouchpadSurface } from '../input/touchpad-surface';
 import { DirectionalRing } from '../ui/directional-ring';
+import { NumberPad } from '../ui/number-pad';
 import { PageDots } from '../ui/page-dots';
 import { TvIcon } from '../ui/tv-icon';
 
 type RemoteMode = 'buttons' | 'touchpad';
 
-interface Digit {
-  readonly key: TvKey;
-  readonly digit: string;
-}
-
 const PAGE_COUNT = 2;
 
 /**
- * Aba Controle. Página 1: atalhos, anel direcional, pílulas de volume e canal e botões redondos (ou o touchpad,
- * que troca o anel). Página 2 (deslizar ou tocar no ponto): números, mídia e origem. As páginas são um carrossel
- * de rolagem com encaixe, então o deslize é do próprio navegador e a rolagem horizontal da tela nunca aparece.
+ * Aba Controle. Em cima, os atalhos (ou os chips do touchpad); embaixo, as pílulas de volume e canal e os botões
+ * redondos. No meio fica o palco, e só ele troca de página, deslizando ou pelos pontos: de um lado as direções com
+ * o OK no centro (ou o touchpad), do outro o teclado numérico. O palco é um carrossel de rolagem com encaixe, então
+ * o deslize é do próprio navegador, só a janela do palco se mexe e a rolagem horizontal da tela nunca aparece.
  */
 @Component({
   selector: 'app-tv-control',
-  imports: [RouterLink, KeyButton, TouchpadSurface, DirectionalRing, PageDots, TvIcon],
+  imports: [RouterLink, KeyButton, TouchpadSurface, DirectionalRing, NumberPad, PageDots, TvIcon],
   templateUrl: './control.page.html',
   styleUrl: './control.page.css',
 })
@@ -34,19 +31,6 @@ export class ControlPage {
 
   protected readonly mode = signal<RemoteMode>('buttons');
   protected readonly page = signal(0);
-
-  protected readonly digits: readonly Digit[] = [
-    '1',
-    '2',
-    '3',
-    '4',
-    '5',
-    '6',
-    '7',
-    '8',
-    '9',
-    '0',
-  ].map((digit) => ({ key: `NUM_${digit}` as TvKey, digit }));
 
   /** Só os atalhos ativos, na ordem da posição; o número do "Atalho n" é o da posição, que não muda. */
   protected readonly shortcuts = computed(() =>
@@ -81,10 +65,6 @@ export class ControlPage {
 
   protected setMode(mode: RemoteMode): void {
     this.mode.set(mode);
-  }
-
-  protected numberLabel(digit: string): string {
-    return $localize`:@@tv.key.number:Número ${digit}:digit:`;
   }
 
   protected pageLabel(index: number): string {

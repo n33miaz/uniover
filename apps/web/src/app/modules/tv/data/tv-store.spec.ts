@@ -459,29 +459,44 @@ describe('TvStore', () => {
   });
 
   describe('text', () => {
-    it('validates before calling the API', async () => {
+    it('validates before calling the API, without a toast', async () => {
       await started();
-      await expect(store.sendText('')).resolves.toBe(false);
-      await expect(store.sendText('a\nb')).resolves.toBe(false);
-      await expect(store.sendText('a'.repeat(201))).resolves.toBe(false);
+      for (const text of ['', 'a\nb', 'a'.repeat(201)]) {
+        const failure = await store.sendText(text);
+        expect(failure?.kind).toBe('invalid');
+        expect(failure?.message).toContain('de 1 a 200 caracteres');
+      }
       expect(api.sendText).not.toHaveBeenCalled();
-      expect(store.notice()?.text).toContain('de 1 a 200 caracteres');
+      expect(store.notice()).toBeNull();
     });
 
-    it('sends valid text, counting characters (not UTF-16 units)', async () => {
+    it('sends valid text, counting characters (not UTF-16 units), and stays quiet', async () => {
       await started();
       expect(isValidTvText('😀'.repeat(200))).toBe(true);
       expect(isValidTvText('😀'.repeat(201))).toBe(false);
-      await expect(store.sendText('batman')).resolves.toBe(true);
+      await expect(store.sendText('batman')).resolves.toBeNull();
       expect(api.sendText).toHaveBeenCalledWith('batman');
-      expect(store.notice()).toEqual({ kind: 'info', text: 'Texto enviado para a TV.' });
+      expect(store.notice()).toBeNull();
     });
 
-    it('keeps the failure and returns false', async () => {
+    it('returns the failure without a toast and learns that the agent is off', async () => {
       await started();
       api.sendText.mockRejectedValueOnce(problem(504, 'agent-timeout'));
-      await expect(store.sendText('batman')).resolves.toBe(false);
-      expect(store.notice()?.kind).toBe('error');
+      const timeout = await store.sendText('batman');
+      expect(timeout?.kind).toBe('timeout');
+      expect(store.notice()).toBeNull();
+
+      api.sendText.mockRejectedValueOnce(problem(503, 'agent-offline'));
+      expect((await store.sendText('batman'))?.kind).toBe('agent-offline');
+      expect(store.state()?.agentOnline).toBe(false);
+    });
+
+    it('does not call the API while the remote cannot send', async () => {
+      await started();
+      online.set(false);
+      const failure = await store.sendText('batman');
+      expect(failure?.kind).toBe('agent-offline');
+      expect(api.sendText).not.toHaveBeenCalled();
     });
   });
 

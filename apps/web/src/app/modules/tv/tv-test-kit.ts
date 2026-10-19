@@ -50,7 +50,7 @@ export function createFakeTvStore() {
     start: vi.fn(),
     stop: vi.fn(),
     sendKey: vi.fn<(key: string) => Promise<boolean>>().mockResolvedValue(true),
-    sendText: vi.fn<(text: string) => Promise<boolean>>().mockResolvedValue(true),
+    sendText: vi.fn<(text: string) => Promise<TvFailure | null>>().mockResolvedValue(null),
     powerOff: vi.fn<() => Promise<TvFailure | null>>().mockResolvedValue(null),
     launch: vi.fn<(shortcut: TvShortcut) => Promise<boolean>>().mockResolvedValue(true),
     refreshShortcuts: vi.fn<() => Promise<boolean>>().mockResolvedValue(true),

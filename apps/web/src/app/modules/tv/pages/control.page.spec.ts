@@ -75,20 +75,45 @@ describe('ControlPage', () => {
     });
   });
 
-  describe('page 1 with buttons', () => {
-    it('has the ring, both pills and the six round buttons in the order of the reference', () => {
-      expect(root.querySelector('app-directional-ring')).not.toBeNull();
+  describe('buttons mode', () => {
+    it('has the ring in the first page of the stage, both pills and the eight round buttons', () => {
+      expect(panels()[0].querySelector('app-directional-ring')).not.toBeNull();
+      expect(panels()[0].querySelector('.ok')?.textContent?.trim()).toBe('OK');
       expect(root.querySelectorAll('.pill')).toHaveLength(2);
-      const round = panels()[0].querySelectorAll('.round-grid .round');
-      expect(round).toHaveLength(6);
+      const round = root.querySelectorAll('.round-grid .round');
+      expect(round).toHaveLength(8);
       expect([...round].map((el) => el.getAttribute('aria-label'))).toEqual([
-        'Teclado',
+        'Voltar',
         'Início da TV',
         'Menu',
-        'Mudo',
+        'Teclado',
+        'Anterior',
         'Reproduzir ou pausar',
-        'Voltar',
+        'Próxima',
+        'Mudo',
       ]);
+    });
+
+    it('keeps everything that is not directions or numbers outside the part that slides', () => {
+      const fixed = [
+        '.top',
+        '.shortcuts',
+        '.pill.volume',
+        '.round-grid',
+        'app-page-dots',
+        '.stage app-page-dots',
+      ];
+      for (const selector of fixed) {
+        const element = root.querySelector(selector);
+        expect(element, selector).not.toBeNull();
+        expect(element!.closest('.pager'), selector).toBeNull();
+      }
+      expect(root.querySelectorAll('.pager .pill, .pager .round, .pager .shortcut')).toHaveLength(
+        0,
+      );
+      // O que desliza: só as direções e os números.
+      expect(root.querySelectorAll('.pager .seg')).toHaveLength(4);
+      expect(root.querySelectorAll('.pager .num')).toHaveLength(10);
     });
 
     it('the keyboard button leads to the Keyboard tab', () => {
@@ -106,8 +131,10 @@ describe('ControlPage', () => {
       ['Menu', 'MENU'],
       ['Mudo', 'MUTE'],
       ['Reproduzir ou pausar', 'PLAY_PAUSE'],
+      ['Anterior', 'MEDIA_PREVIOUS'],
+      ['Próxima', 'MEDIA_NEXT'],
     ])('%s sends %s', async (label, key) => {
-      byLabel(label, panels()[0]).click();
+      byLabel(label).click();
       await fixture.whenStable();
       expect(store.sendKey).toHaveBeenCalledWith(key);
     });
@@ -150,12 +177,13 @@ describe('ControlPage', () => {
       expect(chips.map((c) => c.getAttribute('aria-pressed'))).toEqual(['false', 'true']);
     });
 
-    it('keeps back, home and volume at hand', () => {
+    it('puts the touchpad in the first page of the stage and keeps the fixed buttons where they are', () => {
       switchToTouchpad();
-      const labels = [...root.querySelectorAll('.touch-row .round')].map((el) =>
-        el.getAttribute('aria-label'),
-      );
-      expect(labels).toEqual(['Voltar', 'Início da TV', 'Diminuir o volume', 'Aumentar o volume']);
+      expect(panels()[0].querySelector('app-touchpad-surface')).not.toBeNull();
+      expect(root.querySelectorAll('.round-grid .round')).toHaveLength(8);
+      for (const label of ['Voltar', 'Início da TV', 'Diminuir o volume', 'Aumentar o volume']) {
+        expect(byLabel(label).closest('.pager')).toBeNull();
+      }
     });
 
     it('the Botões chip goes back to the ring', () => {
@@ -170,25 +198,19 @@ describe('ControlPage', () => {
   });
 
   describe('page 2', () => {
-    it('has the numbers 0 to 9, the media buttons and the source', () => {
+    it('has the numbers 0 to 9 and the source, and nothing else', () => {
       const second = panels()[1];
       const numbers = [...second.querySelectorAll('.num')].map((el) =>
         el.getAttribute('aria-label'),
       );
       expect(numbers).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((n) => `Número ${n}`));
-      const media = [...second.querySelectorAll('.media-row .round')].map((el) =>
-        el.getAttribute('aria-label'),
-      );
-      expect(media).toEqual(['Anterior', 'Reproduzir ou pausar', 'Próxima']);
       expect(second.querySelector('.source')?.textContent?.trim()).toBe('Origem');
+      expect(second.querySelectorAll('button')).toHaveLength(11);
     });
 
     it.each([
       ['Número 0', 'NUM_0'],
       ['Número 7', 'NUM_7'],
-      ['Anterior', 'MEDIA_PREVIOUS'],
-      ['Reproduzir ou pausar', 'PLAY_PAUSE'],
-      ['Próxima', 'MEDIA_NEXT'],
     ])('%s sends %s', async (label, key) => {
       byLabel(label, panels()[1]).click();
       await fixture.whenStable();
@@ -203,8 +225,8 @@ describe('ControlPage', () => {
   });
 
   describe('paging', () => {
-    /** Cada página tem o seu grupo de pontos; aqui os da primeira. */
-    const dots = () => [...panels()[0].querySelectorAll<HTMLButtonElement>('.dot')];
+    /** Um grupo de pontos só, parado embaixo do palco. */
+    const dots = () => [...root.querySelectorAll<HTMLButtonElement>('app-page-dots .dot')];
 
     it('has one labelled dot per page, the first current', () => {
       expect(dots().map((d) => d.getAttribute('aria-label'))).toEqual([
@@ -220,6 +242,24 @@ describe('ControlPage', () => {
       render();
       expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ left: 300 }));
       expect(dots().map((d) => d.getAttribute('aria-current'))).toEqual([null, 'true']);
+    });
+
+    it('there is a single group of dots, outside the pages', () => {
+      expect(root.querySelectorAll('app-page-dots')).toHaveLength(1);
+      expect(root.querySelector('.pager app-page-dots')).toBeNull();
+    });
+
+    it('the arrow keys on the dots turn the page too, so the gesture is not the only way', () => {
+      Object.defineProperty(root.querySelector('.pager'), 'clientWidth', { value: 300 });
+      const group = root.querySelector('app-page-dots [role="group"]')!;
+      group.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      render();
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ left: 300 }));
+      expect(dots().map((d) => d.getAttribute('aria-current'))).toEqual([null, 'true']);
+      group.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      render();
+      expect(scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ left: 0 }));
+      expect(dots().map((d) => d.getAttribute('aria-current'))).toEqual(['true', null]);
     });
 
     it('follows the scroll position and keeps the page out of sight inert', () => {
@@ -241,7 +281,7 @@ describe('ControlPage', () => {
     store.canSend.set(false);
     render();
     const keyButtons = root.querySelectorAll('.pill-btn, .round-grid button.round, .num, .source');
-    expect(keyButtons.length).toBeGreaterThan(10);
+    expect(keyButtons.length).toBeGreaterThan(20);
     for (const button of keyButtons) expect(button.hasAttribute('disabled')).toBe(true);
   });
 });

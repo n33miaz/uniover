@@ -1,17 +1,30 @@
+/*
+ * O controle ocupa a altura útil que a casca do módulo (`tv-page`) reserva. De cima para baixo: atalhos (ou os chips
+ * do touchpad), o palco, os pontos de página e a fileira de baixo. O palco é o que sobra de altura; só ele troca de
+ * página (direções com o OK, ou touchpad, de um lado; números do outro). Atalhos, pílulas e botões redondos não saem
+ * do lugar.
+ */
 :host {
-  display: block;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  /* No cabeçalho de uma linha só (celular deitado) a casca do módulo é uma grade e este é o corpo dela. */
+  grid-column: 1 / -1;
+  grid-row: 3;
 }
 
 .remote {
-  /*
-   * O anel manda no tamanho: a largura da tela e a altura que sobra depois do cabeçalho, dos chips, da fileira de
-   * atalhos, dos pontos, das pílulas e da barra de abas limitam, para a página 1 caber sem rolagem em 390x664 e
-   * 411x800 (no mock o anel tem 246 px).
-   */
-  --tv-ring: clamp(176px, min(calc(100vw - 150px), calc(100dvh - var(--tv-chrome, 430px))), 260px);
+  /* Tamanho dos botões redondos e das pílulas: cresce com a altura da tela, com piso de alvo de toque (44 px). */
+  --tv-round: clamp(46px, 8.2dvh, 84px);
+  --tv-pill: max(52px, var(--tv-round));
+  --tv-top: clamp(52px, 7dvh, 60px);
   display: flex;
+  flex: 1 1 0;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  min-height: 0;
+  width: 100%;
 }
 
 button,
@@ -34,48 +47,21 @@ button:disabled,
 /* Visual comum dos botões com contorno. */
 .shortcut,
 .square,
-.round,
-.num,
-.source {
+.round {
   border: 1px solid var(--a-line);
   background: var(--a-surface);
   color: var(--a-ink);
 }
 .pill-btn.pressed,
-.round.pressed,
-.num.pressed,
-.source.pressed {
+.round.pressed {
   border-color: var(--a-accent);
   background: var(--a-accent-soft);
-}
-
-/* Carrossel das duas páginas: rolagem horizontal só aqui dentro, com encaixe. */
-.pager {
-  display: flex;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-}
-.pager::-webkit-scrollbar,
-.shortcuts::-webkit-scrollbar {
-  display: none;
-}
-.panel {
-  display: flex;
-  flex: 0 0 100%;
-  flex-direction: column;
-  justify-content: center;
-  gap: 6px;
-  min-width: 0;
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
 }
 
 /* Atalhos no topo e o botão quadrado do touchpad no mesmo lugar. */
 .top {
   display: flex;
+  flex: 0 0 auto;
   gap: 8px;
 }
 .shortcuts {
@@ -90,20 +76,23 @@ button:disabled,
   scroll-snap-type: x proximity;
   scrollbar-width: none;
 }
+.shortcuts::-webkit-scrollbar,
+.pager::-webkit-scrollbar {
+  display: none;
+}
 .shortcuts li {
   flex: 0 0 auto;
   scroll-snap-align: start;
 }
 .shortcuts .none {
   align-self: center;
-  font-size: 0.95rem;
 }
 .shortcut {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-width: 96px;
-  height: 52px;
+  height: var(--tv-top);
   padding: 0 14px;
   border-radius: var(--radius);
   font-weight: 600;
@@ -116,17 +105,20 @@ button:disabled,
   justify-content: center;
   gap: 2px;
   width: 64px;
-  height: 52px;
+  height: var(--tv-top);
   padding: 0;
   border-radius: 14px;
   font-size: 0.78rem;
   font-weight: 600;
 }
 
-/* Chips "Botões | Touchpad" do modo touchpad. */
+/* Chips "Botões | Touchpad" do modo touchpad (no lugar da fileira de atalhos, com a mesma altura). */
 .modes {
   display: flex;
+  flex: 0 0 auto;
   align-self: center;
+  align-items: center;
+  height: var(--tv-top);
   padding: 3px;
   border: 1px solid var(--a-line);
   border-radius: 999px;
@@ -147,25 +139,67 @@ button:disabled,
   color: var(--a-on-accent);
 }
 
-/* O anel fica no meio, com os pontos de página embaixo. */
-.ring-slot {
-  align-self: center;
+/* Palco: o que sobra de altura. A janela é o contêiner das medidas (anel, teclado, touchpad) em unidades `cq*`. */
+.stage {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
+}
+.viewport {
+  position: relative;
+  flex: 1 1 0;
+  width: 100%;
+  min-height: 176px;
+  container-type: size;
 }
 
-/* Por baixo: pílula de volume, seis botões redondos (3x2) e pílula de canal. */
+/* Carrossel das duas páginas do palco: a rolagem horizontal fica só aqui dentro, com encaixe. */
+.pager {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.pager:focus-visible {
+  outline-offset: -3px;
+}
+.panel {
+  display: flex;
+  flex: 0 0 100%;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  /* Anel: o maior quadrado que cabe na janela (sem esticar em telas largas). */
+  --tv-ring: clamp(150px, 38dvh, 300px);
+}
+@supports (width: 1cqi) {
+  .panel {
+    --tv-ring: min(100cqi, 100cqb, 480px);
+  }
+}
+
+/* Por baixo: pílula de volume, oito botões redondos (4x2) e pílula de canal. */
 .bottom {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) 56px;
+  flex: 0 0 auto;
+  grid-template-columns: var(--tv-pill) minmax(0, 1fr) var(--tv-pill);
   gap: 10px;
   align-items: stretch;
 }
 .round-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(2, 56px);
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  align-content: center;
   justify-items: center;
-  align-items: center;
 }
 .pill {
   display: flex;
@@ -211,25 +245,12 @@ button:disabled,
   font-size: 1.1rem;
 }
 
-/* Botões redondos. */
-.touch-row,
-.media-row {
-  display: grid;
-  gap: 8px;
-  justify-items: center;
-}
-.touch-row {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-.media-row {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
+/* Botões redondos: o diâmetro é a largura da célula, limitada por `--tv-round`. */
 .round {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  max-width: 56px;
+  width: min(100%, var(--tv-round));
   min-width: 44px;
   aspect-ratio: 1;
   padding: 0;
@@ -237,27 +258,43 @@ button:disabled,
   text-decoration: none;
 }
 
-/* Segunda página. */
-.keypad {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+/*
+ * Paisagem (celular deitado, tablet, computador): o palco fica à esquerda e o resto à direita, em duas colunas,
+ * para o anel e o teclado não ficarem espremidos numa faixa baixa.
+ */
+@media (min-aspect-ratio: 6/5) {
+  .remote {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 16px;
+    row-gap: 8px;
+    --tv-round: clamp(46px, 11dvh, 84px);
+  }
+  .stage {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  /* Os dois blocos da direita se juntam no meio da altura, sem um vão entre eles. */
+  .top,
+  .modes {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+  }
+  .modes {
+    justify-self: center;
+  }
+  .bottom {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+  }
 }
-.num,
-.source {
-  min-height: 48px;
-  border-radius: var(--radius);
-  font-weight: 600;
-}
-.num {
-  font-size: 1.3rem;
-}
-.num.zero {
-  grid-column: 2;
-}
-.source {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+
+/* A rolagem do palco é animação; quem pediu menos movimento recebe a troca seca. */
+@media (prefers-reduced-motion: reduce) {
+  .pager {
+    scroll-behavior: auto;
+  }
 }
