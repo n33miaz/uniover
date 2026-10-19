@@ -18,7 +18,7 @@
   },
   "$defs": {
     "uuid": { "type": "string", "format": "uuid" },
-    "messageType": { "type": "string", "pattern": "^[a-z]+[.][a-z]+[.]v[0-9]+$" },
+    "messageType": { "type": "string", "pattern": "^[a-z]+([.][a-z]+)+[.]v[0-9]+$" },
     "endpoint": { "type": "string", "pattern": "^(api|agent:[a-z0-9][a-z0-9-]*)$" },
     "timestamp": { "type": "string", "format": "date-time", "pattern": "Z$" }
   }

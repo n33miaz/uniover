@@ -30,6 +30,31 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.key.v1.schema.json'
+      tvKeyV2:
+        name: tv.key.v2
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.key.v2.schema.json'
+      tvWake:
+        name: tv.wake.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.wake.v1.schema.json'
+      tvAppLaunch:
+        name: tv.app.launch.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.app.launch.v1.schema.json'
+      tvAppsRefresh:
+        name: tv.apps.refresh.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.apps.refresh.v1.schema.json'
+      tvText:
+        name: tv.text.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.text.v1.schema.json'
   agentEvents:
     address: uniover/{agentId}/evt
     description: Agente para API. No WebSocket é o mesmo socket; no MQTT, o tópico de eventos.
@@ -51,6 +76,16 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/command.result.v1.schema.json'
+      tvApps:
+        name: tv.apps.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.apps.v1.schema.json'
+      tvWatchdog:
+        name: tv.watchdog.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.watchdog.v1.schema.json'
 operations:
   sendTvKey:
     action: send
@@ -78,3 +113,52 @@ operations:
     summary: A API recebe o resultado de um comando.
     messages:
       - $ref: '#/channels/agentEvents/messages/commandResult'
+  sendTvKeyV2:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API envia uma tecla ao agente, com pressão curta ou longa.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvKeyV2'
+  sendTvWake:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API avisa que o app está aberto, para o agente aquecer a sessão com a TV.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvWake'
+  sendTvAppLaunch:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API pede ao agente que abra um app da TV por pacote ou link.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvAppLaunch'
+  sendTvAppsRefresh:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API pede ao agente a lista de apps da TV.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvAppsRefresh'
+  sendTvText:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API envia um texto para digitar na TV.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvText'
+  receiveTvApps:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe a lista de apps da TV.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/tvApps'
+  receiveTvWatchdog:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe um evento do vigia do controle remoto.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/tvWatchdog'
