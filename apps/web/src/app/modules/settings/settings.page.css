@@ -153,3 +153,16 @@ button:disabled {
   opacity: 0.55;
   cursor: default;
 }
+
+.link-row {
+  flex-wrap: wrap;
+  color: inherit;
+  text-decoration: none;
+}
+
+.link-row::after {
+  content: '›';
+  margin-left: auto;
+  color: var(--a-ink2);
+  font-size: 1.4rem;
+}

@@ -1,0 +1,90 @@
+<dialog #dialog class="sheet" aria-labelledby="pair-title" (cancel)="cancel($event)">
+  <form (submit)="approve($event)" novalidate>
+    <h2 id="pair-title" i18n="@@devices.pair.title">Parear aparelho</h2>
+    <p class="hint" i18n="@@devices.pair.hint">
+      Rode o agente no PC e digite o código que ele mostrar. Ao aprovar, o aparelho passa a receber
+      comandos da casa.
+    </p>
+
+    <label for="pair-code" i18n="@@devices.pair.code">Código do aparelho</label>
+    <input
+      id="pair-code"
+      class="code"
+      type="text"
+      [attr.inputmode]="'text'"
+      autocomplete="one-time-code"
+      [attr.autocapitalize]="'characters'"
+      [attr.autocorrect]="'off'"
+      spellcheck="false"
+      maxlength="12"
+      placeholder="XXXX-XXXX"
+      i18n-placeholder="@@devices.pair.code-placeholder"
+      aria-describedby="pair-code-help"
+      [value]="code()"
+      (input)="onCodeInput($event)"
+    />
+    <p id="pair-code-help" class="help" i18n="@@devices.pair.code-help">
+      8 caracteres, com ou sem hífen. Não usa vogais, 0 nem 1.
+    </p>
+
+    <label for="pair-name" i18n="@@devices.pair.name">Nome do aparelho</label>
+    <input
+      id="pair-name"
+      type="text"
+      autocomplete="off"
+      [attr.maxlength]="maxName"
+      [attr.aria-invalid]="nameValid() ? null : 'true'"
+      [value]="name()"
+      (input)="onNameInput($event)"
+    />
+    @if (!nameValid()) {
+      <p class="error" role="alert" i18n="@@devices.pair.name-invalid">
+        Use letras, números, espaço e . _ ( ) -, começando por letra ou número.
+      </p>
+    }
+
+    <div class="messages" [attr.aria-live]="'polite'">
+      @if (error(); as text) {
+        <p class="error" role="alert">{{ text }}</p>
+      }
+      @if (!online()) {
+        <p class="note" role="status" i18n="@@devices.offline">
+          Sem conexão: parear, recusar e revogar precisam de rede.
+        </p>
+      }
+      @if (busy()) {
+        <p class="note" role="status" i18n="@@devices.pair.busy">Enviando…</p>
+      }
+    </div>
+
+    <button
+      type="button"
+      class="link"
+      [disabled]="!canDeny()"
+      (click)="deny()"
+      i18n="@@devices.pair.deny"
+    >
+      Recusar código
+    </button>
+
+    <div class="footer">
+      <button
+        type="button"
+        class="secondary"
+        [disabled]="busy()"
+        (click)="cancel()"
+        i18n="@@devices.pair.cancel"
+      >
+        Cancelar
+      </button>
+      <button
+        type="submit"
+        class="primary"
+        [disabled]="!canApprove()"
+        i18n="@@devices.pair.approve"
+      >
+        Aprovar
+      </button>
+    </div>
+  </form>
+</dialog>

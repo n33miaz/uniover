@@ -31,6 +31,11 @@ export const routes: Routes = [
           import('./modules/training/training.routes').then((m) => m.TRAINING_ROUTES),
       },
       {
+        path: 'ajustes/aparelhos',
+        data: { title: $localize`:@@devices.route.title:Aparelhos` },
+        loadComponent: () => import('./modules/devices/devices.page').then((m) => m.DevicesPage),
+      },
+      {
         path: 'ajustes',
         data: { title: $localize`:@@settings.title:Ajustes` },
         loadComponent: () => import('./modules/settings/settings.page').then((m) => m.SettingsPage),
