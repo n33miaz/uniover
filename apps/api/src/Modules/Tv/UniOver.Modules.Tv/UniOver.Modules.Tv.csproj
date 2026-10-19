@@ -1,10 +1,27 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- Mesma versão do EF Core central: sem isto o provedor do Npgsql puxa uma Relational mais antiga e os projetos
+         que referenciam o módulo acusam conflito de versão (o Design, privado, só alinha o próprio módulo). -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <!-- Só para gerar as migrations e o bundle com o dotnet ef; não vai para quem referenciar o módulo. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UniOver.Modules.Tv.Contracts\UniOver.Modules.Tv.Contracts.csproj" />
+    <ProjectReference Include="..\..\Devices\UniOver.Modules.Devices.Contracts\UniOver.Modules.Devices.Contracts.csproj" />
     <ProjectReference Include="..\..\..\UniOver.SharedKernel\UniOver.SharedKernel.csproj" />
+    <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Persistence\UniOver.BuildingBlocks.Persistence.csproj" />
+    <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Messaging\UniOver.BuildingBlocks.Messaging.csproj" />
     <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Web\UniOver.BuildingBlocks.Web.csproj" />
+    <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.AgentProtocol\UniOver.BuildingBlocks.AgentProtocol.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="UniOver.Modules.Tv.Tests" />
+    <!-- Os testes de integração leem o banco do módulo sem abrir a API pública. -->
+    <InternalsVisibleTo Include="UniOver.IntegrationTests" />
   </ItemGroup>
 </Project>

@@ -297,7 +297,7 @@ internal sealed partial class AgentHub(
         }
     }
 
-    [GeneratedRegex("^[a-z]+[.][a-z]+[.]v[0-9]+$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 200)]
+    [GeneratedRegex("^[a-z]+([.][a-z]+)+[.]v[0-9]+$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 200)]
     private static partial Regex TypePattern();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Agente {AgentId} conectado.")]

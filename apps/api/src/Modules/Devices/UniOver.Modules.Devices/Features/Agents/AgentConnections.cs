@@ -11,8 +11,13 @@ namespace UniOver.Modules.Devices.Features.Agents;
 /// desconectado (e o SSE emitiria uma queda falsa) mesmo com a sessão nova de pé. O aviso ao SSE é só uma escrita
 /// em fila (não bloqueia), então cabe dentro do lock e mantém a ordem dos eventos.
 /// </summary>
-internal sealed class AgentConnections(IPresenceStore presence, SseBroadcaster<PresenceUpdate> events)
+internal sealed class AgentConnections(
+    IPresenceStore presence,
+    SseBroadcaster<PresenceUpdate> events,
+    IEnumerable<IAgentPresenceListener>? listeners = null)
 {
+    private readonly IAgentPresenceListener[] _listeners = [.. listeners ?? []];
+
     private readonly object _gate = new();
     private readonly Dictionary<string, IAgentSession> _sessions = new(StringComparer.Ordinal);
 
@@ -94,6 +99,23 @@ internal sealed class AgentConnections(IPresenceStore presence, SseBroadcaster<P
         }
     }
 
-    private void Announce(AgentPresenceInfo info) =>
+    private void Announce(AgentPresenceInfo info)
+    {
         events.Publish(new SseMessage<PresenceUpdate>(PresenceUpdate.ChangeEvent, new PresenceUpdate([info])));
+
+        // Em processo e sob o lock (mantém a ordem): quem escuta só pode enfileirar, nunca esperar. Falha de um
+        // ouvinte não pode atrapalhar a conexão do agente nem os outros ouvintes.
+        foreach (var listener in _listeners)
+        {
+            try
+            {
+                listener.OnPresenceChanged(info);
+            }
+#pragma warning disable CA1031 // Um ouvinte com defeito não derruba a presença.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+            }
+        }
+    }
 }

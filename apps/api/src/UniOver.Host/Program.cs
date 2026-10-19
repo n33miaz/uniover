@@ -40,14 +40,17 @@ builder.Services.AddDevicesWebSocketTransport();
 
 var app = builder.Build();
 
-// Ordem importa: IP real primeiro (o limite depende dele), cabeçalhos e erros antes de qualquer resposta.
+// Ordem importa: IP real primeiro (o limite por IP depende dele), cabeçalhos e erros antes de qualquer resposta.
 app.UseUniOverForwardedHeaders();
 app.UseUniOverSecurityHeaders();
 app.UseUniOverProblemDetails();
 app.UseUniOverStaticFiles();
-app.UseUniOverRateLimiting();
 // [pipeline: autenticação] UseAuthentication e UseAuthorization entram aqui.
 app.UseUniOverAuthentication();
+
+// Depois da autenticação de propósito: a política "commands" separa o balde por usuário (claim sub), que só existe
+// quando o JWT já foi lido. Rotas anônimas (login, refresh) não têm sub e continuam por IP.
+app.UseUniOverRateLimiting();
 
 if (app.Environment.IsDevelopment())
 {

@@ -22,3 +22,12 @@ public interface IAgentPresenceReader
     /// <summary>Todos os agentes vistos desde que a API subiu, conectados ou não.</summary>
     IReadOnlyList<AgentPresenceInfo> All();
 }
+
+/// <summary>
+/// Quem quer saber, na hora, quando a presença de um agente muda (conectou, caiu, mandou o <c>hello</c>). Em processo
+/// e sem estado no banco: o ouvinte é chamado dentro da conexão do agente, então deve só enfileirar e voltar.
+/// </summary>
+public interface IAgentPresenceListener
+{
+    void OnPresenceChanged(AgentPresenceInfo info);
+}

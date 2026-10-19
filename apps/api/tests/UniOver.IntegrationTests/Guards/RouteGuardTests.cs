@@ -36,6 +36,14 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
 
         // Canal do agente: cada abertura valida o token de dispositivo, então o limite segura tentativas em massa.
         ("GET", "/api/v1/devices/agents/{agentId}/ws", RateLimitPolicies.Pairing),
+
+        // Comandos da TV: segurar uma tecla repete várias vezes por segundo, então o limite é por usuário e alto.
+        ("POST", "/api/v1/tv/keys", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/tv/text", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/tv/power/off", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/tv/wake", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/tv/shortcuts/refresh", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/tv/shortcuts/{id:guid}/launch", RateLimitPolicies.Commands),
     ];
 
     /// <summary>Production é o que vai para o ar; Development acrescenta o OpenAPI e também não pode vazar rota.</summary>
