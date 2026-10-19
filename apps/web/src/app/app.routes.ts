@@ -12,7 +12,7 @@ export const routes: Routes = [
   {
     path: '',
     component: AppShell,
-    canActivate: [authGuard],
+    canMatch: [authGuard],
     children: [
       {
         path: '',

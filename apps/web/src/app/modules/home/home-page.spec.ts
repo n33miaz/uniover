@@ -95,6 +95,13 @@ describe('HomePage', () => {
     expect(titles((await render()).el)).toEqual(['Treino']);
   });
 
+  it('links to the settings page', async () => {
+    const { el } = await render();
+    const link = el.querySelector<HTMLAnchorElement>('a.edit');
+    expect(link?.textContent?.trim()).toBe('Ajustes');
+    expect(link?.getAttribute('href')).toBe('/ajustes');
+  });
+
   it('opens the edit sheet, and Cancelar discards while Aplicar saves', async () => {
     const { fixture, el } = await render();
     const press = async (selector: string, index = 0) => {
@@ -103,7 +110,7 @@ describe('HomePage', () => {
     };
 
     expect(el.querySelector('app-home-edit-sheet')).toBeNull();
-    await press('.edit');
+    await press('button.edit');
     const dialog = el.querySelector('dialog');
     expect(dialog?.hasAttribute('open')).toBe(true);
     expect(dialog?.querySelector('[aria-label="Fechar"]')).toBeNull();
@@ -113,7 +120,7 @@ describe('HomePage', () => {
     expect(el.querySelector('app-home-edit-sheet')).toBeNull();
     expect(titles(el)).toEqual(['TV', 'Treino']);
 
-    await press('.edit');
+    await press('button.edit');
     await press('.moves .down');
     await press('.footer .primary'); // Aplicar
     expect(titles(el)).toEqual(['Treino', 'TV']);

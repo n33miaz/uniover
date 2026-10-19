@@ -74,7 +74,15 @@ h2 {
   color: var(--a-ink2);
 }
 
+.head-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .edit {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
   min-height: 44px;
   min-width: 44px;
   padding: 0 16px;
