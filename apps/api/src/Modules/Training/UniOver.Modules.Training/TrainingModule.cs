@@ -13,6 +13,7 @@ using UniOver.Modules.Training.Features.Catalog.ImportWger;
 using UniOver.Modules.Training.Features.Catalog.PullExercises;
 using UniOver.Modules.Training.Features.Catalog.SetExerciseStep;
 using UniOver.Modules.Training.Features.Catalog.UpsertCustomExercise;
+using UniOver.Modules.Training.Features.Goals;
 using UniOver.Modules.Training.Features.Routines;
 using UniOver.Modules.Training.Features.Sessions;
 using UniOver.Modules.Training.Persistence;
@@ -67,6 +68,7 @@ public static class TrainingModule
 
         services.AddRoutines();
         services.AddSessions();
+        services.AddGoals();
 
         // [composição: training] as próximas áreas do módulo (rotinas, sessões, medidas) acrescentam as suas linhas aqui.
         return services;
@@ -86,6 +88,7 @@ public static class TrainingModule
 
         group.MapRoutines();
         group.MapSessions();
+        group.MapGoals();
 
         // [composição: training] as próximas áreas do módulo acrescentam as suas rotas aqui.
         return endpoints;

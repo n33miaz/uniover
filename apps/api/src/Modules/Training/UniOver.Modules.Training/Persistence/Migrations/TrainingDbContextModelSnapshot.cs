@@ -291,6 +291,73 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                     b.ToTable("exercise_overrides", "training");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Goals.Goal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ClientUpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("client_updated_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("ExerciseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("exercise_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<decimal?>("Value")
+                        .HasPrecision(9, 2)
+                        .HasColumnType("numeric(9,2)")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id")
+                        .HasName("pk_goals");
+
+                    b.HasIndex("ExerciseId")
+                        .HasDatabaseName("ix_goals_exercise_id");
+
+                    b.HasIndex("UserId", "Kind", "ExerciseId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_goals_user_id_kind_exercise_id");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("UserId", "Kind", "ExerciseId"), false);
+
+                    b.HasIndex("UserId", "UpdatedAt", "Id")
+                        .HasDatabaseName("ix_goals_user_id_updated_at_id");
+
+                    b.ToTable("goals", "training", t =>
+                        {
+                            t.HasCheckConstraint("ck_goals_exercise", "(kind = 'exercise_e1rm') = (exercise_id IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_goals_kind", "kind IN ('exercise_e1rm', 'weekly_sessions', 'daily_kcal')");
+
+                            t.HasCheckConstraint("ck_goals_value", "(value IS NOT NULL AND ((kind = 'exercise_e1rm' AND value BETWEEN 1 AND 1000) OR (kind = 'weekly_sessions' AND value BETWEEN 1 AND 14) OR (kind = 'daily_kcal' AND value BETWEEN 500 AND 10000))) OR (value IS NULL AND deleted_at IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("UniOver.Modules.Training.Domain.Routines.Routine", b =>
                 {
                     b.Property<Guid>("Id")
@@ -613,6 +680,15 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_exercise_overrides_exercises_exercise_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Goals.Goal", b =>
+                {
+                    b.HasOne("UniOver.Modules.Training.Domain.Exercise", null)
+                        .WithMany()
+                        .HasForeignKey("ExerciseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_goals_exercises_exercise_id");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Training.Domain.Routines.RoutineItem", b =>

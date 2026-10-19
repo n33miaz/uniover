@@ -4,6 +4,10 @@ import { CatalogRepository } from './catalog/catalog-repository';
 import { CatalogStore } from './catalog/catalog-store';
 import { CatalogWriter } from './catalog/catalog-writer';
 import { ExercisesResourceSync } from './catalog/exercises-resource-sync';
+import { GoalRepository } from './goals/goal-repository';
+import { GoalsResourceSync } from './goals/goals-resource-sync';
+import { ExportService } from './export/export-service';
+import { ProgressRepository } from './progress/progress-repository';
 import { RoutineRepository } from './routines/routine-repository';
 import { RoutinesResourceSync } from './routines/routines-resource-sync';
 import { SessionRepository } from './sessions/session-repository';
@@ -28,9 +32,12 @@ describe('provideTrainingData', () => {
     expect(TestBed.inject(RestTimerService)).toBeInstanceOf(RestTimerService);
     expect(TestBed.inject(RestAlert)).toBeInstanceOf(RestAlert);
     expect(TestBed.inject(WakeLockService)).toBeInstanceOf(WakeLockService);
+    expect(TestBed.inject(GoalRepository)).toBeInstanceOf(GoalRepository);
+    expect(TestBed.inject(ProgressRepository)).toBeInstanceOf(ProgressRepository);
+    expect(TestBed.inject(ExportService)).toBeInstanceOf(ExportService);
 
     const resources = TestBed.inject(TRAINING_RESOURCE_SYNCS);
-    expect(resources).toHaveLength(4);
+    expect(resources).toHaveLength(5);
     expect(resources[0]).toBeInstanceOf(ExercisesResourceSync);
     expect(resources[0]).toMatchObject({
       resource: 'exercises',
@@ -48,6 +55,8 @@ describe('provideTrainingData', () => {
     });
     expect(resources[3]).toBeInstanceOf(SetsResourceSync);
     expect(resources[3]).toMatchObject({ resource: 'sets', path: '/api/v1/training/sets' });
+    expect(resources[4]).toBeInstanceOf(GoalsResourceSync);
+    expect(resources[4]).toMatchObject({ resource: 'goals', path: '/api/v1/training/goals' });
   });
 });
 
@@ -82,6 +91,7 @@ describe('catalog pull, end to end', () => {
       { path: '/api/v1/training/routines', after: null, limit: 200 },
       { path: '/api/v1/training/sessions', after: null, limit: 200 },
       { path: '/api/v1/training/sets', after: null, limit: 200 },
+      { path: '/api/v1/training/goals', after: null, limit: 200 },
     ]);
     expect(await t.trainingDb.exercises.count()).toBe(203);
     expect(await t.trainingDb.syncState.get('exercises')).toMatchObject({ cursor: 'cursor-2' });
