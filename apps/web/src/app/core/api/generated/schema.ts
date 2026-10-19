@@ -1872,6 +1872,300 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/training/sessions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          after?: string;
+          limit?: number | string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PullSessionsResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/sessions/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['UpsertSessionRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['SessionResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unprocessable Entity */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/sessions/{sessionId}/sets/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+          sessionId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['UpsertSetRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['SetResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unprocessable Entity */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/sets': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          after?: string;
+          limit?: number | string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PullSetsResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/commands/recent': {
     parameters: {
       query?: never;
@@ -2955,6 +3249,14 @@ export interface components {
       items: components['schemas']['RoutineResponse'][];
       nextCursor: null | string;
     };
+    PullSessionsResponse: {
+      items: components['schemas']['SessionResponse'][];
+      nextCursor: null | string;
+    };
+    PullSetsResponse: {
+      items: components['schemas']['SetResponse'][];
+      nextCursor: null | string;
+    };
     RecentCommand: {
       command: string;
       detail: null | string;
@@ -3058,11 +3360,59 @@ export interface components {
     SendTextRequest: {
       text: null | string;
     };
+    SessionResponse: {
+      /** Format: date-time */
+      clientUpdatedAt: string;
+      deleted: boolean;
+      deviceId: string;
+      /** Format: int32 */
+      feeling: null | number | string;
+      /** Format: date-time */
+      finishedAt: null | string;
+      /** Format: uuid */
+      id: string;
+      note: null | string;
+      /** Format: uuid */
+      routineId: null | string;
+      /** Format: date-time */
+      startedAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
     SetExerciseStepRequest: {
       /** Format: date-time */
       clientUpdatedAt: null | string;
       /** Format: double */
       stepKg: null | number | string;
+    };
+    SetResponse: {
+      /** Format: date-time */
+      clientUpdatedAt: string;
+      /** Format: date-time */
+      completedAt: string;
+      deleted: boolean;
+      /** Format: int32 */
+      durationS: null | number | string;
+      /** Format: uuid */
+      exerciseId: string;
+      /** Format: uuid */
+      id: string;
+      note: null | string;
+      /** Format: int32 */
+      position: number | string;
+      /** Format: int32 */
+      reps: null | number | string;
+      /** Format: int32 */
+      rir: null | number | string;
+      /** Format: double */
+      rpe: null | number | string;
+      /** Format: uuid */
+      sessionId: string;
+      setType: string;
+      /** Format: date-time */
+      updatedAt: string;
+      /** Format: double */
+      weightKg: null | number | string;
     };
     StartPairingRequest: {
       agentName: null | string;
@@ -3154,6 +3504,44 @@ export interface components {
       note: null | string;
       /** Format: int32 */
       position: null | number | string;
+    };
+    UpsertSessionRequest: {
+      /** Format: date-time */
+      clientUpdatedAt: null | string;
+      deleted: boolean;
+      deviceId: null | string;
+      /** Format: int32 */
+      feeling: null | number | string;
+      /** Format: date-time */
+      finishedAt: null | string;
+      note: null | string;
+      /** Format: uuid */
+      routineId: null | string;
+      /** Format: date-time */
+      startedAt: null | string;
+    };
+    UpsertSetRequest: {
+      /** Format: date-time */
+      clientUpdatedAt: null | string;
+      /** Format: date-time */
+      completedAt: null | string;
+      deleted: boolean;
+      /** Format: int32 */
+      durationS: null | number | string;
+      /** Format: uuid */
+      exerciseId: null | string;
+      note: null | string;
+      /** Format: int32 */
+      position: null | number | string;
+      /** Format: int32 */
+      reps: null | number | string;
+      /** Format: int32 */
+      rir: null | number | string;
+      /** Format: double */
+      rpe: null | number | string;
+      setType: null | string;
+      /** Format: double */
+      weightKg: null | number | string;
     };
     WgerCredit: {
       author: string;

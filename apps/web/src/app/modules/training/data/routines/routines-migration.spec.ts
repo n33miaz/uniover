@@ -30,7 +30,7 @@ const routine = (id: string, position: number, deletedAt: number | null = null):
   deletedAt,
 });
 
-describe('training database, version 1 to 2', () => {
+describe('training database, version 1 to the latest', () => {
   it('keeps every table of a version 1 database and adds the routines table', async () => {
     const factory = new FakeIDBFactory();
     const name = 'uniover-training-migracao-rotinas';
@@ -55,15 +55,17 @@ describe('training database, version 1 to 2', () => {
     expect(v1.verno).toBe(1);
     v1.close();
 
-    // O app novo abre o mesmo banco com o esquema real (versão 2).
+    // O app novo abre o mesmo banco com o esquema real (a versão mais nova).
     const next = new TrainingDb(name, options);
     await next.open();
 
-    expect(next.verno).toBe(2);
+    expect(next.verno).toBe(3);
     expect(next.tables.map((table) => table.name).sort()).toEqual([
       'exercises',
       'meta',
       'routines',
+      'sessions',
+      'sets',
       'syncState',
     ]);
     const exercises = await next.exercises.orderBy('id').toArray();
@@ -95,7 +97,7 @@ describe('training database, version 1 to 2', () => {
     next.close();
   });
 
-  it('reopening a version 2 database keeps the routines', async () => {
+  it('reopening the latest version keeps the routines', async () => {
     const factory = new FakeIDBFactory();
     const name = 'uniover-training-reabertura';
     const options = { indexedDB: factory, ...FAKE };

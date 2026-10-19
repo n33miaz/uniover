@@ -1048,6 +1048,48 @@
         ],
         "type": "object"
       },
+      "PullSessionsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SessionResponse"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "PullSetsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SetResponse"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
       "RecentCommand": {
         "properties": {
           "command": {
@@ -1473,6 +1515,74 @@
         ],
         "type": "object"
       },
+      "SessionResponse": {
+        "properties": {
+          "clientUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "feeling": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "routineId": {
+            "format": "uuid",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "routineId",
+          "startedAt",
+          "finishedAt",
+          "note",
+          "feeling",
+          "deviceId",
+          "updatedAt",
+          "clientUpdatedAt",
+          "deleted"
+        ],
+        "type": "object"
+      },
       "SetExerciseStepRequest": {
         "properties": {
           "clientUpdatedAt": {
@@ -1495,6 +1605,117 @@
         "required": [
           "stepKg",
           "clientUpdatedAt"
+        ],
+        "type": "object"
+      },
+      "SetResponse": {
+        "properties": {
+          "clientUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "durationS": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "exerciseId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "position": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "reps": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "rir": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "rpe": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "setType": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "weightKg": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "sessionId",
+          "exerciseId",
+          "position",
+          "setType",
+          "weightKg",
+          "reps",
+          "durationS",
+          "rir",
+          "rpe",
+          "note",
+          "completedAt",
+          "updatedAt",
+          "clientUpdatedAt",
+          "deleted"
         ],
         "type": "object"
       },
@@ -1913,6 +2134,182 @@
           "active",
           "note",
           "items",
+          "clientUpdatedAt",
+          "deleted"
+        ],
+        "type": "object"
+      },
+      "UpsertSessionRequest": {
+        "properties": {
+          "clientUpdatedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "deviceId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "feeling": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "routineId": {
+            "format": "uuid",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "routineId",
+          "startedAt",
+          "finishedAt",
+          "note",
+          "feeling",
+          "deviceId",
+          "clientUpdatedAt",
+          "deleted"
+        ],
+        "type": "object"
+      },
+      "UpsertSetRequest": {
+        "properties": {
+          "clientUpdatedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "completedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "durationS": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "exerciseId": {
+            "format": "uuid",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "position": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "reps": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "rir": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "rpe": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "setType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "weightKg": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "exerciseId",
+          "position",
+          "setType",
+          "weightKg",
+          "reps",
+          "durationS",
+          "rir",
+          "rpe",
+          "note",
+          "completedAt",
           "clientUpdatedAt",
           "deleted"
         ],
@@ -3637,6 +4034,337 @@
         ]
       }
     },
+    "/api/v1/training/sessions": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int32",
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullSessionsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "tags": [
+          "PullSessionsEndpoint"
+        ]
+      }
+    },
+    "/api/v1/training/sessions/{id}": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UpsertSessionRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "UpsertSessionEndpoint"
+        ]
+      }
+    },
+    "/api/v1/training/sessions/{sessionId}/sets/{id}": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UpsertSetRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "UpsertSetEndpoint"
+        ]
+      }
+    },
+    "/api/v1/training/sets": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int32",
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullSetsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "tags": [
+          "PullSetsEndpoint"
+        ]
+      }
+    },
     "/api/v1/tv/commands/recent": {
       "get": {
         "parameters": [
@@ -4415,6 +5143,18 @@
     },
     {
       "name": "UpsertRoutineEndpoint"
+    },
+    {
+      "name": "UpsertSessionEndpoint"
+    },
+    {
+      "name": "UpsertSetEndpoint"
+    },
+    {
+      "name": "PullSessionsEndpoint"
+    },
+    {
+      "name": "PullSetsEndpoint"
     },
     {
       "name": "LoginEndpoint"

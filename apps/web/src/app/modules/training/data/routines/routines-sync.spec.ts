@@ -43,6 +43,8 @@ describe('routines pull, end to end', () => {
     expect(t.pull.calls.map((call) => call.path)).toEqual([
       '/api/v1/training/exercises',
       ROUTINES_PATH,
+      '/api/v1/training/sessions',
+      '/api/v1/training/sets',
     ]);
     expect(ROUTINES_PATH).toBe('/api/v1/training/routines');
     expect(await t.trainingDb.syncState.get('routines')).toMatchObject({ cursor: 'cursor-r' });
