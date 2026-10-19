@@ -7,7 +7,7 @@ import { sessionDto, setDto } from './session-data-test-kit';
 
 const FAKE = { IDBKeyRange: FakeIDBKeyRange };
 
-describe('training database, version 2 to 3', () => {
+describe('training database, version 2 to the latest', () => {
   it('keeps every table of a version 2 database and adds sessions and sets', async () => {
     const factory = new FakeIDBFactory();
     const name = 'uniover-training-migracao-sessoes';
@@ -42,9 +42,10 @@ describe('training database, version 2 to 3', () => {
     const next = new TrainingDb(name, options);
     await next.open();
 
-    expect(next.verno).toBe(3);
+    expect(next.verno).toBe(4);
     expect(next.tables.map((table) => table.name).sort()).toEqual([
       'exercises',
+      'goals',
       'meta',
       'routines',
       'sessions',

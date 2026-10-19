@@ -1686,6 +1686,139 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/training/goals': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          after?: string;
+          limit?: number | string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PullGoalsResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/goals/{kind}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          kind: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['UpsertGoalRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['GoalResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unprocessable Entity */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/training/routine-templates': {
     parameters: {
       query?: never;
@@ -3164,6 +3297,20 @@ export interface components {
       /** Format: date-time */
       updatedAt: string;
     };
+    GoalResponse: {
+      /** Format: date-time */
+      clientUpdatedAt: string;
+      deleted: boolean;
+      /** Format: uuid */
+      exerciseId: null | string;
+      /** Format: uuid */
+      id: string;
+      kind: string;
+      /** Format: date-time */
+      updatedAt: string;
+      /** Format: double */
+      value: null | number | string;
+    };
     IdentityModuleInfo: {
       dependsOn: string[];
       module: string;
@@ -3243,6 +3390,10 @@ export interface components {
     PublicKeyCredentialType: 'public-key' | 'invalid' | null;
     PullExercisesResponse: {
       items: components['schemas']['ExerciseResponse'][];
+      nextCursor: null | string;
+    };
+    PullGoalsResponse: {
+      items: components['schemas']['GoalResponse'][];
       nextCursor: null | string;
     };
     PullRoutinesResponse: {
@@ -3474,6 +3625,14 @@ export interface components {
       secondaryMuscles: null | string[];
       /** Format: double */
       stepKg: null | number | string;
+    };
+    UpsertGoalRequest: {
+      /** Format: date-time */
+      clientUpdatedAt: null | string;
+      /** Format: uuid */
+      exerciseId: null | string;
+      /** Format: double */
+      value: null | number | string;
     };
     UpsertRoutineItemRequest: {
       /** Format: uuid */

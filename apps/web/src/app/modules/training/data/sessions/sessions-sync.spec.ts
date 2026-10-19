@@ -34,6 +34,7 @@ describe('sessions pull, end to end', () => {
       '/api/v1/training/routines',
       SESSIONS_PATH,
       SETS_PATH,
+      '/api/v1/training/goals',
     ]);
     expect(await t.trainingDb.sessions.get('s1')).toMatchObject({
       feeling: 4,

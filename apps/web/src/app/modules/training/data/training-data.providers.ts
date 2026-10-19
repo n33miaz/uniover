@@ -3,6 +3,9 @@ import { CatalogRepository } from './catalog/catalog-repository';
 import { CatalogStore } from './catalog/catalog-store';
 import { CatalogWriter } from './catalog/catalog-writer';
 import { ExercisesResourceSync } from './catalog/exercises-resource-sync';
+import { provideExportData } from './export/export-data.providers';
+import { provideGoalsData } from './goals/goals-resource-sync';
+import { provideProgressData } from './progress/progress-data.providers';
 import { provideRoutinesData } from './routines/routines-resource-sync';
 import { provideSessionsData } from './sessions/sessions-resource-sync';
 import { provideResourceSync } from './sync/resource-sync';
@@ -35,5 +38,14 @@ export function provideTrainingData(): Provider[] {
 
     // Treino ao vivo: sessões, séries, timer de descanso e tela acesa.
     ...provideSessionsData(),
+
+    // Metas do dono: acesso aos dados e recurso sincronizável.
+    ...provideGoalsData(),
+
+    // Progresso: consultas de leitura, recalculadas das séries (nada a sincronizar).
+    ...provideProgressData(),
+
+    // Exportação em JSON e CSV, com as seções de dados do módulo.
+    ...provideExportData(),
   ];
 }

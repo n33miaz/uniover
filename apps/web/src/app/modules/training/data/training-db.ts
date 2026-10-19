@@ -1,6 +1,7 @@
 import { InjectionToken } from '@angular/core';
 import Dexie, { type DexieOptions, type EntityTable } from 'dexie';
 import type { LocalExercise } from './catalog/exercise';
+import type { LocalGoal } from './goals/goal';
 import type { LocalRoutine } from './routines/routine';
 import type { LocalSession, LocalSet } from './sessions/session';
 
@@ -46,6 +47,15 @@ export const TRAINING_SCHEMA_V3 = {
   sets: 'id, sessionId, exerciseId, completedAt, [exerciseId+completedAt], deletedAt',
 } as const;
 
+/**
+ * Esquema da versão 4: as metas do dono. A linha tem como `id` a chave natural (tipo e exercício, ver `goalKey`): o
+ * aparelho escreve antes de o servidor dar um id, e `exerciseId` pode ser nulo (que não é chave do IndexedDB), então
+ * ele fica só como índice de leitura. Os blocos das versões 1 a 3 não foram tocados.
+ */
+export const TRAINING_SCHEMA_V4 = {
+  goals: 'id, kind, exerciseId, updatedAt, deletedAt',
+} as const;
+
 export interface TrainingMetaRow {
   readonly key: string;
   readonly value: unknown;
@@ -67,12 +77,14 @@ export class TrainingDb extends Dexie {
   declare routines: EntityTable<LocalRoutine, 'id'>;
   declare sessions: EntityTable<LocalSession, 'id'>;
   declare sets: EntityTable<LocalSet, 'id'>;
+  declare goals: EntityTable<LocalGoal, 'id'>;
 
   constructor(name: string = TRAINING_DB_NAME, options?: DexieOptions) {
     super(name, options);
     this.version(1).stores(TRAINING_SCHEMA_V1);
     this.version(2).stores(TRAINING_SCHEMA_V2);
     this.version(3).stores(TRAINING_SCHEMA_V3);
+    this.version(4).stores(TRAINING_SCHEMA_V4);
   }
 }
 
