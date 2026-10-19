@@ -1,4 +1,5 @@
-import { Injectable, Signal, signal } from '@angular/core';
+import { Injectable, Signal, computed, inject } from '@angular/core';
+import { SessionState } from '../session/session-state';
 
 export type AgentState = 'unknown' | 'online' | 'offline';
 export type WatcherState = 'unknown' | 'ok' | 'alert';
@@ -21,12 +22,17 @@ export abstract class HomeStatusPort {
   abstract readonly status: Signal<HomeStatus>;
 }
 
-/** Adaptador provisório: não inventa estado, devolve "sem dados" para a UI mostrar isso com clareza. */
+/**
+ * Adaptador provisório: o nome vem da sessão; o resto não é inventado e fica "sem dados" para a UI mostrar isso
+ * com clareza.
+ */
 export class NoDataHomeStatus extends HomeStatusPort {
-  readonly status = signal<HomeStatus>({
-    userName: null,
+  private readonly session = inject(SessionState);
+
+  readonly status = computed<HomeStatus>(() => ({
+    userName: this.session.user()?.displayName ?? null,
     agent: 'unknown',
     watcher: 'unknown',
     serviceDown: false,
-  }).asReadonly();
+  }));
 }

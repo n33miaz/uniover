@@ -1,0 +1,73 @@
+<dialog
+  #dialog
+  class="box"
+  aria-labelledby="step-up-title"
+  aria-describedby="step-up-text"
+  (cancel)="onCancel($event)"
+>
+  <h2 id="step-up-title" i18n="@@auth.step-up.title">Confirmar com passkey</h2>
+  <p id="step-up-text" class="text" i18n="@@auth.step-up.text">
+    Para {{ action() }}, confirme com a passkey deste aparelho. A confirmação vale por alguns
+    minutos.
+  </p>
+
+  <div class="messages">
+    @if (errorMessage(); as message) {
+      <p class="error" role="alert">{{ message }}</p>
+    }
+    @switch (service.phase()) {
+      @case ('preparing') {
+        <p class="note" role="status" i18n="@@auth.step-up.preparing">Preparando a confirmação…</p>
+      }
+      @case ('confirming') {
+        <p class="note" role="status" i18n="@@auth.step-up.confirming">
+          Aguardando a passkey do aparelho…
+        </p>
+      }
+      @case ('unavailable') {
+        <p class="error" role="alert" i18n="@@auth.step-up.unavailable">
+          Este aparelho ou navegador não oferece passkeys, então a ação não pode ser confirmada.
+        </p>
+      }
+      @case ('blocked') {
+        @if (!errorMessage()) {
+          <p class="error" role="alert" i18n="@@auth.step-up.no-passkey">
+            Nenhuma passkey cadastrada. Cadastre uma em Ajustes, na seção Segurança.
+          </p>
+        }
+      }
+    }
+  </div>
+
+  <div class="footer">
+    <button type="button" class="secondary" (click)="service.cancel()" i18n="@@auth.step-up.cancel">
+      Cancelar
+    </button>
+    @switch (service.phase()) {
+      @case ('blocked') {
+        @if (service.error() === 'network') {
+          <button
+            type="button"
+            class="primary"
+            (click)="service.retry()"
+            i18n="@@auth.step-up.retry"
+          >
+            Tentar de novo
+          </button>
+        }
+      }
+      @case ('unavailable') {}
+      @default {
+        <button
+          type="button"
+          class="primary"
+          [disabled]="service.phase() !== 'ready'"
+          (click)="service.submit()"
+          i18n="@@auth.step-up.confirm"
+        >
+          Confirmar
+        </button>
+      }
+    }
+  </div>
+</dialog>

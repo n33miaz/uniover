@@ -17,9 +17,12 @@
 
   <div class="section-head">
     <h2 id="modules-label" i18n="@@home.modules">Módulos</h2>
-    <button #editButton type="button" class="edit" (click)="openEditor()" i18n="@@home.edit">
-      Editar
-    </button>
+    <div class="head-actions">
+      <a class="edit" routerLink="/ajustes" i18n="@@home.settings">Ajustes</a>
+      <button #editButton type="button" class="edit" (click)="openEditor()" i18n="@@home.edit">
+        Editar
+      </button>
+    </div>
   </div>
 
   <ul class="grid" aria-labelledby="modules-label">
