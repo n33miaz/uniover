@@ -1,6 +1,7 @@
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import {
   ApplicationConfig,
+  Injector,
   inject,
   provideAppInitializer,
   provideBrowserGlobalErrorListeners,
@@ -22,6 +23,14 @@ export const appConfig: ApplicationConfig = {
     // Confirma a sessão pelo cookie de refresh sem segurar a primeira tela (o guarda espera, com limite de tempo).
     provideAppInitializer(() => {
       void inject(AuthService).init();
+    }),
+    // Sobe o que ficou na fila offline de uma sessão anterior. O import dinâmico deixa o banco local e o motor fora do
+    // pacote inicial: a primeira tela não espera por eles.
+    provideAppInitializer(() => {
+      const injector = inject(Injector);
+      void import('./core/offline-queue/sync-engine').then(({ SyncEngine }) =>
+        injector.get(SyncEngine).start(),
+      );
     }),
   ],
 };
