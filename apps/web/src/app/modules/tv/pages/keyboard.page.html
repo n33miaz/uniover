@@ -1,0 +1,31 @@
+<form class="keyboard" (submit)="send($event)" novalidate>
+  <h2 i18n="@@tv.keyboard.title">Teclado</h2>
+  <p class="warn" i18n="@@tv.keyboard.warning">
+    O texto é escrito no campo que estiver aberto na TV. Pode funcionar só em caixas de busca.
+  </p>
+
+  <label for="tv-text" i18n="@@tv.keyboard.label">Texto para a TV</label>
+  <input
+    id="tv-text"
+    type="text"
+    autocomplete="off"
+    [attr.autocapitalize]="'off'"
+    [attr.autocorrect]="'off'"
+    spellcheck="false"
+    [attr.enterkeyhint]="'send'"
+    aria-describedby="tv-text-count"
+    [value]="text()"
+    [attr.aria-invalid]="text().length > 0 && !valid() ? 'true' : null"
+    (input)="onInput($event)"
+  />
+  <p id="tv-text-count" class="count" [class.over]="length() > max">{{ length() }} / {{ max }}</p>
+
+  <div class="actions">
+    <button type="button" class="secondary" (click)="cancel()" i18n="@@tv.keyboard.cancel">
+      Cancelar
+    </button>
+    <button type="submit" class="primary" [disabled]="!canSend()" i18n="@@tv.keyboard.send">
+      Enviar
+    </button>
+  </div>
+</form>
