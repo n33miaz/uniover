@@ -3,12 +3,15 @@
 Nenhum segredo passa por aqui: o token de dispositivo vive só no cofre do sistema.
 """
 
+import ipaddress
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
+from pydantic import Field
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -25,11 +28,20 @@ class ConfigError(Exception):
     """Configuração ausente ou insegura; a mensagem já é para o usuário."""
 
 
+def _local_base() -> Path:
+    local = os.environ.get("LOCALAPPDATA")
+    return Path(local) if local else Path.home() / ".config"
+
+
 def default_config_path() -> Path:
     """`%LOCALAPPDATA%\\UniOver\\agent.toml` no Windows; `~/.config/UniOver/agent.toml` no resto."""
-    local = os.environ.get("LOCALAPPDATA")
-    base = Path(local) if local else Path.home() / ".config"
-    return base / "UniOver" / "agent.toml"
+    return _local_base() / "UniOver" / "agent.toml"
+
+
+def tv_cert_dir(tv_name: str) -> Path:
+    """Pasta do par certificado/chave da TV: fora do repositório, por usuário e por TV."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "-", tv_name).strip(".-")[:40] or "tv"
+    return _local_base() / "UniOver" / "tv" / safe
 
 
 def config_path() -> Path:
@@ -44,6 +56,14 @@ class Settings(BaseSettings):
     agent_id: str | None = None
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     allow_insecure: bool = False
+    # TV (Remote v2). O IP não é garantidamente fixo, por isso vem de configuração.
+    tv_host: str | None = None
+    # Nome do agente que aparece na TV durante o pareamento.
+    tv_client_name: str = "UniOver"
+    # Nome da pasta do certificado desta TV, em `%LOCALAPPDATA%\UniOver\tv\<nome>`.
+    tv_name: str = "tv"
+    # Sem comando e sem aviso de "app aberto" por este tempo, a sessão com a TV hiberna.
+    tv_hibernate_seconds: int = Field(default=300, ge=1)
 
     @classmethod
     def settings_customise_sources(
@@ -56,6 +76,23 @@ class Settings(BaseSettings):
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         # Ordem de precedência: argumentos > variáveis de ambiente > arquivo local do usuário.
         return (init_settings, env_settings, TomlConfigSettingsSource(settings_cls, config_path()))
+
+
+_HOSTNAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def require_tv_host(host: str | None) -> str:
+    """Endereço da TV (IP ou nome), sem esquema, porta ou espaços."""
+    if not host:
+        raise ConfigError("defina UNIOVER_TV_HOST (endereço IP da TV)")
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        if not _HOSTNAME_PATTERN.fullmatch(host):
+            raise ConfigError(
+                "UNIOVER_TV_HOST precisa ser só o IP ou o nome da TV, sem http:// nem porta"
+            ) from None
+    return host
 
 
 def require_api_url(settings: Settings) -> str:

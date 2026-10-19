@@ -1,4 +1,4 @@
-"""Composição do agente e comandos de linha: `run` (padrão), `pair` e `status`."""
+"""Composição do agente e comandos de linha: `run` (padrão), `pair`, `status` e `tv-pair`."""
 
 import argparse
 import asyncio
@@ -8,22 +8,40 @@ import random
 import re
 import socket
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
+from dataclasses import dataclass, field
 from importlib import metadata
+from typing import Any
 
 from uniover_agent.adapters.local_config import save_agent_config
 from uniover_agent.adapters.pairing_http import HttpPairingClient, probe_api
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.transport_ws import WebSocketTransport, build_ws_url
-from uniover_agent.config import ConfigError, Settings, config_path, require_api_url
+from uniover_agent.adapters.tv_pairing import TvPairingError, is_paired, pair_tv
+from uniover_agent.adapters.tv_remote_v2 import AndroidTvRemoteV2
+from uniover_agent.config import (
+    ConfigError,
+    Settings,
+    config_path,
+    require_api_url,
+    require_tv_host,
+    tv_cert_dir,
+)
 from uniover_agent.core import (
+    POWER_KEYS,
     ConnectionSupervisor,
     EnvelopeFactory,
     EnvelopeGate,
     HandleCommand,
+    Handler,
     PairAgent,
     ProcessMessage,
+    TvSessionManager,
+    TvStatePublisher,
+    tv_app_launch_handler,
+    tv_key_handler,
+    tv_wake_handler,
 )
 from uniover_agent.ports import (
     Clock,
@@ -33,6 +51,7 @@ from uniover_agent.ports import (
     PairingInfo,
     PairingTicket,
     SecretStore,
+    Transport,
 )
 
 _log = logging.getLogger("uniover_agent")
@@ -54,8 +73,9 @@ def agent_version() -> str:
 
 def silence_noisy_loggers() -> None:
     """Em DEBUG essas bibliotecas registram cabeçalhos (inclusive `Authorization`) e corpos:
-    ficam em WARNING sempre, para que nenhum segredo chegue ao registro."""
-    for noisy in ("websockets", "httpx", "httpcore"):
+    ficam em WARNING sempre, para que nenhum segredo chegue ao registro. A `androidtvremote2`
+    também registra o que envia à TV e o código de pareamento."""
+    for noisy in ("websockets", "httpx", "httpcore", "androidtvremote2"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
@@ -66,11 +86,68 @@ def configure_logging(level: str) -> None:
     silence_noisy_loggers()
 
 
-def build_handler(clock: Clock) -> HandleCommand:
+@dataclass(slots=True)
+class TvSetup:
+    """Tudo o que a TV precisa e os pontos onde as outras entregas se encaixam.
+
+    Cada entrega seguinte (canal ADB, vigia) insere **uma linha** num marcador de `build_tv` e
+    estende este objeto: registra handlers, declara capacidades, agenda tarefas de fundo e avisos
+    pós-`hello`. Também tem à mão a sessão, o transporte e as mensagens para enviar eventos.
+    """
+
+    manager: TvSessionManager
+    transport: Transport
+    envelopes: EnvelopeFactory
+    handlers: dict[str, Handler]
+    capabilities: list[str] = field(default_factory=list)
+    # Tarefas de fundo (`async def`) que rodam enquanto o agente roda.
+    background: list[Callable[[], Coroutine[Any, Any, None]]] = field(default_factory=list)
+    # Rodam depois do `hello`, a cada conexão com a API.
+    after_hello: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
+
+
+def build_tv(
+    settings: Settings, clock: Clock, transport: Transport, envelopes: EnvelopeFactory
+) -> TvSetup | None:
+    """Sessão da TV pelo Remote v2, ou `None` se não estiver configurada e pareada.
+
+    A capacidade `tv.remote` só é declarada à API quando há endereço da TV **e** o par
+    certificado/chave existe: declarar sem poder atender faria o app mostrar uma TV que não
+    responde.
+    """
+    if not settings.tv_host:
+        return None
+    host = require_tv_host(settings.tv_host)
+    cert_dir = tv_cert_dir(settings.tv_name)
+    if not is_paired(cert_dir):
+        _log.warning("TV configurada, mas ainda não pareada. Rode `uniover-agent tv-pair`.")
+        return None
+    remote = AndroidTvRemoteV2(host, settings.tv_client_name, cert_dir)
+    manager = TvSessionManager(clock, remote, hibernate_seconds=settings.tv_hibernate_seconds)
+    # `POWER` fica recusado: sem infravermelho a TV não volta do standby e não tem botão físico.
+    keys = tv_key_handler(manager, blocked_keys=POWER_KEYS)
+    setup = TvSetup(
+        manager,
+        transport,
+        envelopes,
+        handlers={
+            "tv.key.v1": keys,
+            "tv.key.v2": keys,
+            "tv.wake.v1": tv_wake_handler(manager),
+            "tv.app.launch.v1": tv_app_launch_handler(manager),
+        },
+        capabilities=["tv.remote"],
+    )
+    # Cada tarefa seguinte insere aqui só a linha dela; o gerenciador é o único dono da conexão.
+    # [composição: adb]
+    # [composição: vigia]
+    return setup
+
+
+def build_handler(clock: Clock, tv: TvSetup | None = None) -> HandleCommand:
     """Comandos que este agente sabe executar. Sem aparelhos habilitados, nenhum: todo comando
     é recusado e registrado (nada finge que apertou uma tecla)."""
-    # [composição: aparelhos] os handlers de TV entram aqui, junto das capacidades declaradas.
-    return HandleCommand({}, clock)
+    return HandleCommand(tv.handlers if tv is not None else {}, clock)
 
 
 def _sanitize(text: str, pattern: str, limit: int, fallback: str) -> str:
@@ -150,7 +227,25 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
         lambda: secrets.get(agent_id),
         user_agent=f"uniover-agent/{agent_version()}",
     )
-    process = ProcessMessage(agent_id, gate, build_handler(clock), envelopes, transport)
+    tv = build_tv(settings, clock, transport, envelopes)
+    process = ProcessMessage(agent_id, gate, build_handler(clock, tv), envelopes, transport)
+    publisher: TvStatePublisher | None = None
+    after_hello: list[Callable[[], Awaitable[None]]] = []
+    if tv is not None:
+        publisher = TvStatePublisher(transport, envelopes)
+        tv.manager.subscribe(publisher.publish)
+        manager, announcer = tv.manager, publisher
+
+        async def announce_tv() -> None:
+            # A API recém-conectada não conhece o estado: informa o atual logo depois do `hello`.
+            await announcer.announce(manager.snapshot())
+
+        after_hello = [announce_tv, *tv.after_hello]
+
+    async def on_connected() -> None:
+        for step in after_hello:
+            await step()
+
     supervisor = ConnectionSupervisor(
         transport,
         process,
@@ -158,10 +253,25 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
         clock,
         random.SystemRandom().random,
         agent_version=agent_version(),
-        capabilities=(),
+        capabilities=tuple(tv.capabilities) if tv is not None else (),
+        on_connected=on_connected if after_hello else None,
     )
     _log.info("agente %s iniciando (api %s)", agent_id, api_url)
-    await supervisor.run()
+    jobs: list[Callable[[], Coroutine[Any, Any, None]]] = []
+    if tv is not None:
+        jobs = [tv.manager.watch, *tv.background]
+    background = [asyncio.create_task(job()) for job in jobs]
+    try:
+        await supervisor.run()
+    finally:
+        # Ao encerrar, fecha a sessão com a TV de forma limpa (não deixa o canal pendurado).
+        for task in background:
+            task.cancel()
+        await asyncio.gather(*background, return_exceptions=True)
+        if tv is not None:
+            await tv.manager.aclose()
+        if publisher is not None:
+            await publisher.aclose()
     # `run` só devolve quando a credencial foi recusada; o token continua no cofre.
     print(
         "Token revogado ou inválido. Rode `uniover-agent pair` para parear de novo.",
@@ -183,6 +293,31 @@ async def status(settings: Settings, open_store: StoreFactory) -> int:
     return EXIT_OK
 
 
+async def _ask_tv_code() -> str:
+    print("\nA TV deve estar mostrando um código de 6 caracteres na tela.")
+    return await asyncio.to_thread(input, "Digite o código da TV: ")
+
+
+async def tv_pair(
+    settings: Settings,
+    host: str | None,
+    name: str | None,
+    ask_code: Callable[[], Awaitable[str]] = _ask_tv_code,
+) -> int:
+    """Pareia o agente com a TV e guarda o certificado fora do repositório."""
+    tv_host = require_tv_host(host or settings.tv_host)
+    cert_dir = tv_cert_dir(name or settings.tv_name)
+    print(f"Pareando com a TV em {tv_host}. Deixe a TV ligada e a tela de pareamento aberta.")
+    try:
+        await pair_tv(tv_host, settings.tv_client_name, cert_dir, ask_code)
+    except TvPairingError as exc:
+        print(f"Falha no pareamento da TV: {exc}", file=sys.stderr)
+        return EXIT_FAILURE
+    print(f"TV pareada. Certificado guardado em {cert_dir} (acesso só do seu usuário).")
+    print(f"Agora defina UNIOVER_TV_HOST={tv_host} (ou tv_host no agent.toml) e rode `run`.")
+    return EXIT_OK
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="uniover-agent", description="Agente local do UniOver.")
     sub = parser.add_subparsers(dest="command")
@@ -190,6 +325,9 @@ def _parser() -> argparse.ArgumentParser:
     pair_parser = sub.add_parser("pair", help="pareia este PC com um código curto")
     pair_parser.add_argument("--name", help="nome do agente (padrão: nome do computador)")
     sub.add_parser("status", help="mostra se há token e se a API responde")
+    tv_parser = sub.add_parser("tv-pair", help="pareia o agente com a TV (código mostrado na tela)")
+    tv_parser.add_argument("--host", help="endereço IP da TV (padrão: UNIOVER_TV_HOST)")
+    tv_parser.add_argument("--name", help="nome da pasta do certificado (padrão: UNIOVER_TV_NAME)")
     return parser
 
 
@@ -208,6 +346,8 @@ def main(argv: Sequence[str] | None = None, *, secrets: SecretStore | None = Non
             return asyncio.run(pair(settings, open_store, args.name))
         if command == "status":
             return asyncio.run(status(settings, open_store))
+        if command == "tv-pair":
+            return asyncio.run(tv_pair(settings, args.host, args.name))
         return asyncio.run(run(settings, open_store))
     except (ConfigError, SecretStoreError) as exc:
         print(f"Erro: {exc}", file=sys.stderr)

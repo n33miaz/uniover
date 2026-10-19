@@ -70,6 +70,16 @@ async def test_failed_handler_replies_not_ok() -> None:
     assert reply["body"]["error"] == {"code": "failed", "message": "tv offline"}
 
 
+async def test_result_code_from_the_handler_reaches_the_api() -> None:
+    result = CommandResult("x", ResultStatus.FAILED, "a TV não respondeu", "tv_unreachable")
+    process, transport = build(Spy(result))
+    await process(dump(tv_key("HOME")))
+    assert transport.sent[0]["body"]["error"] == {
+        "code": "tv_unreachable",
+        "message": "a TV não respondeu",
+    }
+
+
 @pytest.mark.parametrize(
     "raw",
     [
