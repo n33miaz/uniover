@@ -4,6 +4,8 @@ import { CatalogRepository } from './catalog/catalog-repository';
 import { CatalogStore } from './catalog/catalog-store';
 import { CatalogWriter } from './catalog/catalog-writer';
 import { ExercisesResourceSync } from './catalog/exercises-resource-sync';
+import { RoutineRepository } from './routines/routine-repository';
+import { RoutinesResourceSync } from './routines/routines-resource-sync';
 import { TRAINING_RESOURCE_SYNCS } from './sync/resource-sync';
 import { TrainingSync } from './sync/training-sync';
 import { exerciseDto, setupTraining } from './sync/training-test-kit';
@@ -16,13 +18,19 @@ describe('provideTrainingData', () => {
     expect(TestBed.inject(CatalogRepository)).toBeInstanceOf(CatalogRepository);
     expect(TestBed.inject(CatalogStore)).toBeInstanceOf(CatalogStore);
     expect(TestBed.inject(CatalogWriter)).toBeInstanceOf(CatalogWriter);
+    expect(TestBed.inject(RoutineRepository)).toBeInstanceOf(RoutineRepository);
 
     const resources = TestBed.inject(TRAINING_RESOURCE_SYNCS);
-    expect(resources).toHaveLength(1);
+    expect(resources).toHaveLength(2);
     expect(resources[0]).toBeInstanceOf(ExercisesResourceSync);
     expect(resources[0]).toMatchObject({
       resource: 'exercises',
       path: '/api/v1/training/exercises',
+    });
+    expect(resources[1]).toBeInstanceOf(RoutinesResourceSync);
+    expect(resources[1]).toMatchObject({
+      resource: 'routines',
+      path: '/api/v1/training/routines',
     });
   });
 });
@@ -54,6 +62,8 @@ describe('catalog pull, end to end', () => {
     expect(t.pull.calls).toEqual([
       { path: '/api/v1/training/exercises', after: null, limit: 200 },
       { path: '/api/v1/training/exercises', after: 'cursor-1', limit: 200 },
+      // Depois do catálogo o puxador passa pelo recurso seguinte (as rotinas), que aqui vem vazio.
+      { path: '/api/v1/training/routines', after: null, limit: 200 },
     ]);
     expect(await t.trainingDb.exercises.count()).toBe(203);
     expect(await t.trainingDb.syncState.get('exercises')).toMatchObject({ cursor: 'cursor-2' });

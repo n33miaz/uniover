@@ -3,6 +3,7 @@ import { CatalogRepository } from './catalog/catalog-repository';
 import { CatalogStore } from './catalog/catalog-store';
 import { CatalogWriter } from './catalog/catalog-writer';
 import { ExercisesResourceSync } from './catalog/exercises-resource-sync';
+import { provideRoutinesData } from './routines/routines-resource-sync';
 import { provideResourceSync } from './sync/resource-sync';
 import { TrainingSync } from './sync/training-sync';
 
@@ -27,5 +28,8 @@ export function provideTrainingData(): Provider[] {
 
     // Recursos sincronizáveis: uma linha por recurso.
     provideResourceSync(ExercisesResourceSync),
+
+    // Fichas (rotinas): acesso aos dados e recurso sincronizável.
+    ...provideRoutinesData(),
   ];
 }

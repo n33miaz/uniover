@@ -1686,6 +1686,192 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/training/routine-templates': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['RoutineTemplatesResponse'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/routines': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          after?: string;
+          limit?: number | string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PullRoutinesResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/routines/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['UpsertRoutineRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['RoutineResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unprocessable Entity */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/commands/recent': {
     parameters: {
       query?: never;
@@ -2765,6 +2951,10 @@ export interface components {
       items: components['schemas']['ExerciseResponse'][];
       nextCursor: null | string;
     };
+    PullRoutinesResponse: {
+      items: components['schemas']['RoutineResponse'][];
+      nextCursor: null | string;
+    };
     RecentCommand: {
       command: string;
       detail: null | string;
@@ -2800,6 +2990,66 @@ export interface components {
       /** Format: uuid */
       id: string;
       revoked: boolean;
+    };
+    RoutineItemResponse: {
+      /** Format: uuid */
+      exerciseId: string;
+      /** Format: uuid */
+      id: string;
+      note: null | string;
+      /** Format: int32 */
+      position: number | string;
+      /** Format: int32 */
+      repMax: number | string;
+      /** Format: int32 */
+      repMin: number | string;
+      /** Format: int32 */
+      restSeconds: number | string;
+      /** Format: int32 */
+      supersetGroup: null | number | string;
+      /** Format: int32 */
+      targetSets: number | string;
+    };
+    RoutineResponse: {
+      active: boolean;
+      /** Format: date-time */
+      clientUpdatedAt: string;
+      deleted: boolean;
+      /** Format: uuid */
+      id: string;
+      items: components['schemas']['RoutineItemResponse'][];
+      name: string;
+      note: null | string;
+      /** Format: int32 */
+      position: number | string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    RoutineTemplate: {
+      description: string;
+      id: string;
+      name: string;
+      routines: components['schemas']['RoutineTemplateRoutine'][];
+    };
+    RoutineTemplateItem: {
+      exerciseSlug: string;
+      /** Format: int32 */
+      repMax: number | string;
+      /** Format: int32 */
+      repMin: number | string;
+      /** Format: int32 */
+      restSeconds: number | string;
+      /** Format: int32 */
+      supersetGroup: null | number | string;
+      /** Format: int32 */
+      targetSets: number | string;
+    };
+    RoutineTemplateRoutine: {
+      items: components['schemas']['RoutineTemplateItem'][];
+      name: string;
+    };
+    RoutineTemplatesResponse: {
+      items: components['schemas']['RoutineTemplate'][];
     };
     SendKeyRequest: {
       direction: null | string;
@@ -2874,6 +3124,36 @@ export interface components {
       secondaryMuscles: null | string[];
       /** Format: double */
       stepKg: null | number | string;
+    };
+    UpsertRoutineItemRequest: {
+      /** Format: uuid */
+      exerciseId: null | string;
+      /** Format: uuid */
+      id: null | string;
+      note: null | string;
+      /** Format: int32 */
+      position: null | number | string;
+      /** Format: int32 */
+      repMax: null | number | string;
+      /** Format: int32 */
+      repMin: null | number | string;
+      /** Format: int32 */
+      restSeconds: null | number | string;
+      /** Format: int32 */
+      supersetGroup: null | number | string;
+      /** Format: int32 */
+      targetSets: null | number | string;
+    };
+    UpsertRoutineRequest: {
+      active: null | boolean;
+      /** Format: date-time */
+      clientUpdatedAt: null | string;
+      deleted: boolean;
+      items: null | components['schemas']['UpsertRoutineItemRequest'][];
+      name: null | string;
+      note: null | string;
+      /** Format: int32 */
+      position: null | number | string;
     };
     WgerCredit: {
       author: string;

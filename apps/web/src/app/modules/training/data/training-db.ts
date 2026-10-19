@@ -1,6 +1,7 @@
 import { InjectionToken } from '@angular/core';
 import Dexie, { type DexieOptions, type EntityTable } from 'dexie';
 import type { LocalExercise } from './catalog/exercise';
+import type { LocalRoutine } from './routines/routine';
 
 /**
  * Banco local do Treino (IndexedDB, via Dexie). É outro banco que o da fila de escrita (`uniover-offline`): a fila
@@ -25,6 +26,14 @@ export const TRAINING_SCHEMA_V1 = {
   syncState: 'resource',
 } as const;
 
+/**
+ * Esquema da versão 2: a tabela das rotinas (a rotina com os itens dentro). `active` não entra no índice: booleano não
+ * é chave do IndexedDB, e a lista de rotinas ativas filtra em memória (são poucas). O bloco da versão 1 não foi tocado.
+ */
+export const TRAINING_SCHEMA_V2 = {
+  routines: 'id, position, updatedAt, deletedAt',
+} as const;
+
 export interface TrainingMetaRow {
   readonly key: string;
   readonly value: unknown;
@@ -43,10 +52,12 @@ export class TrainingDb extends Dexie {
   declare exercises: EntityTable<LocalExercise, 'id'>;
   declare meta: EntityTable<TrainingMetaRow, 'key'>;
   declare syncState: EntityTable<SyncStateRow, 'resource'>;
+  declare routines: EntityTable<LocalRoutine, 'id'>;
 
   constructor(name: string = TRAINING_DB_NAME, options?: DexieOptions) {
     super(name, options);
     this.version(1).stores(TRAINING_SCHEMA_V1);
+    this.version(2).stores(TRAINING_SCHEMA_V2);
   }
 }
 
