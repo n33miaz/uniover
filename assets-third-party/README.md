@@ -6,6 +6,8 @@ de exercícios da Everkinetic, CC BY-SA 4.0).
 ## Regras
 
 - Cada fonte fica na sua subpasta: `assets-third-party/<fonte>/`.
+- Material que só o PWA usa e publica fica em `apps/web/assets-third-party/<fonte>/` (o Angular não publica de fora
+  do workspace; ver o ADR 0012), com as mesmas regras.
 - Cada subpasta tem o `LICENSE` original da fonte e um `NOTICE` com origem, autor, versão e data de obtenção.
 - Os arquivos entram **sem modificação**. Se precisar adaptar algo, a adaptação vive fora desta pasta e
   respeita o que a licença exige.

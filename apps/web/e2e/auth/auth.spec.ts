@@ -291,7 +291,10 @@ test.describe('ajustes', () => {
       'Em breve',
     );
     await expect(page.getByText('0.9.0-teste')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Créditos' })).toBeDisabled();
+    await expect(page.getByRole('link', { name: /^Créditos/ })).toHaveAttribute(
+      'href',
+      '/ajustes/creditos',
+    );
     await expect(page.getByText('A passkey só confirma ações perigosas')).toBeVisible();
     await expectNoHorizontalScroll(page);
     await screenshot(page, `test-results/settings-${info.project.name}.png`);

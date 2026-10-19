@@ -7,7 +7,8 @@ import {
   precacheAndRoute,
 } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
-import { NetworkOnly } from 'workbox-strategies';
+import { ExpirationPlugin } from 'workbox-expiration';
+import { CacheFirst, NetworkOnly } from 'workbox-strategies';
 import { SCOPED_MODULE_SLUGS } from './app/core/modules/module-slugs';
 
 declare const self: ServiceWorkerGlobalScope & {
@@ -33,6 +34,16 @@ precacheAndRoute(self.__WB_MANIFEST);
 registerRoute(
   ({ url }) => url.origin === self.location.origin && url.pathname.startsWith('/api/'),
   new NetworkOnly(),
+);
+
+// Ilustrações dos exercícios: não entram no precache; ficam em cache na primeira vez que são vistas (ou quando o
+// app as aquece com rede). Os arquivos nunca mudam de conteúdo para o mesmo nome, então vale cache primeiro.
+registerRoute(
+  ({ url }) => url.origin === self.location.origin && url.pathname.startsWith('/exercise-art/'),
+  new CacheFirst({
+    cacheName: 'exercise-art',
+    plugins: [new ExpirationPlugin({ maxEntries: 400, maxAgeSeconds: 90 * 24 * 60 * 60 })],
+  }),
 );
 
 const denylist = [/^\/api(\/|$)/, /^\/health(\/|$)/, /^\/openapi/];

@@ -23,6 +23,11 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "**/*.svg",
+                "input": "assets-third-party/everkinetic/svg",
+                "output": "/exercise-art"
               }
             ],
             "styles": ["src/styles.css"],
