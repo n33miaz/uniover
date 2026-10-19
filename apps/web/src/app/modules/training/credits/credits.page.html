@@ -1,0 +1,80 @@
+<div class="credits">
+  <a routerLink="/ajustes" class="back" i18n="@@credits.back">&larr; Ajustes</a>
+
+  <p class="intro" i18n="@@credits.intro">
+    Material de terceiros usado no app, com autor, fonte e licença. Esta tela abre sem conexão; os
+    links abrem fora do app e precisam de conexão.
+  </p>
+
+  <ul class="list">
+    @for (source of sources; track source.id) {
+      <li class="item">
+        <h2>{{ source.title }}</h2>
+        <dl class="facts">
+          <div>
+            <dt i18n="@@credits.author">Autor</dt>
+            <dd>{{ source.author }}</dd>
+          </div>
+          <div>
+            <dt i18n="@@credits.source">Fonte</dt>
+            <dd>
+              <a class="ext" [href]="source.sourceUrl" target="_blank" [attr.rel]="linkRel">{{
+                source.sourceLabel
+              }}</a>
+            </dd>
+          </div>
+          <div>
+            <dt i18n="@@credits.license">Licença</dt>
+            <dd>
+              <a class="ext" [href]="source.licenseUrl" target="_blank" [attr.rel]="linkRel">{{
+                source.license
+              }}</a>
+            </dd>
+          </div>
+          <div>
+            <dt i18n="@@credits.changes">O que foi feito</dt>
+            <dd>{{ source.changes }}</dd>
+          </div>
+          <div>
+            <dt i18n="@@credits.usage">Onde aparece</dt>
+            <dd>{{ source.usage }}</dd>
+          </div>
+        </dl>
+      </li>
+    }
+
+    @if (wger().length > 0) {
+      <li class="item">
+        <h2 id="wger-title" i18n="@@credits.wger.title">wger: exercícios importados</h2>
+        <p class="note" i18n="@@credits.wger.note">
+          Exercícios trazidos do wger. Cada um mantém o autor e a licença que o wger informa.
+        </p>
+        <dl class="facts">
+          <div>
+            <dt i18n="@@credits.source">Fonte</dt>
+            <dd>
+              <a class="ext" [href]="wgerSource.url" target="_blank" [attr.rel]="linkRel">{{
+                wgerSource.label
+              }}</a>
+            </dd>
+          </div>
+        </dl>
+        <ul class="authors" aria-labelledby="wger-title">
+          @for (credit of wger(); track credit.author + credit.license) {
+            <li class="author">
+              <span class="author-name">{{ credit.author }}</span>
+              @if (credit.licenseUrl; as url) {
+                <a class="ext" [href]="url" target="_blank" [attr.rel]="linkRel">{{
+                  credit.license
+                }}</a>
+              } @else {
+                <span>{{ credit.license }}</span>
+              }
+              <span class="count">{{ countText(credit.count) }}</span>
+            </li>
+          }
+        </ul>
+      </li>
+    }
+  </ul>
+</div>

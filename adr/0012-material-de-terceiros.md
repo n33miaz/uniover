@@ -30,3 +30,16 @@ quais termos valem para cada arquivo e poderia violar a licença original.
 - **Misturar o material às pastas dos apps:** perde-se a rastreabilidade da licença.
 - **Aplicar a licença do UniOver a tudo:** inválido para material de terceiros.
 - **Evitar material de terceiros:** o custo de produzir ilustrações e catálogo próprios é alto demais.
+
+## Atualização (19/10/2026): material usado só pelo PWA mora em `apps/web/assets-third-party/`
+
+O Angular só publica arquivos (`assets`) de dentro da raiz do workspace do app (`apps/web`); apontar para uma
+pasta fora dela faz o build falhar ("asset path must be within the workspace root"). Por isso o material de
+terceiros que **só o PWA usa e publica** (as ilustrações do Everkinetic) fica em
+`apps/web/assets-third-party/<fonte>/`, e não na pasta da raiz.
+
+- A regra não muda: uma subpasta por fonte, com o `LICENSE` original e um `NOTICE`, arquivos sem modificação,
+  crédito na tela, e a licença do UniOver não se aplica a eles.
+- O material usado por outras partes (por exemplo, a semente do catálogo lida pela API) continua em
+  `assets-third-party/<fonte>/` na raiz.
+- A imagem do Docker já copia `apps/web/` inteiro na etapa do PWA, então a pasta nova entra no build sem ajuste.

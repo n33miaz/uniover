@@ -1,0 +1,22 @@
+@if (entry()) {
+  <div class="card">
+    @for (source of sources(); track index; let index = $index) {
+      <img
+        class="frame"
+        [class.on]="frame() === index"
+        [src]="source"
+        [alt]="altText(index)"
+        [attr.aria-hidden]="frame() === index ? null : 'true'"
+        width="268"
+        height="275"
+        [attr.loading]="'lazy'"
+        [attr.decoding]="'async'"
+      />
+    }
+  </div>
+  @if (!animated()) {
+    <button type="button" class="other" (click)="flip()" i18n="@@training.art.other-pose">
+      Ver outra posição
+    </button>
+  }
+}

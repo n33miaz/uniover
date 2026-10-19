@@ -155,12 +155,18 @@ describe('SettingsPage', () => {
       expect(el.querySelector('#about-title + dl')!.textContent).toContain('indisponível agora');
     });
 
-    it('keeps the credits entry disabled', async () => {
+    it('links the credits entry to the credits screen', async () => {
       const { el } = await render();
-      const credits = Array.from(el.querySelectorAll<HTMLButtonElement>('button')).find(
-        (b) => b.textContent?.trim() === 'Créditos',
+      const credits = Array.from(el.querySelectorAll<HTMLAnchorElement>('a')).find((a) =>
+        a.textContent?.trim().startsWith('Créditos'),
       );
-      expect(credits?.disabled).toBe(true);
+      expect(credits?.getAttribute('href')).toBe('/ajustes/creditos');
+      expect(
+        el
+          .querySelector('#about-title')
+          ?.closest('section')
+          ?.contains(credits ?? null),
+      ).toBe(true);
     });
   });
 });
