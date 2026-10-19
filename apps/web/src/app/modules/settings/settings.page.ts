@@ -1,4 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { AuthApi } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { ModulePrefs } from '../../core/modules/module-prefs';
@@ -19,7 +20,7 @@ interface ThemeChoice {
  */
 @Component({
   selector: 'app-settings-page',
-  imports: [SecuritySection],
+  imports: [SecuritySection, RouterLink],
   templateUrl: './settings.page.html',
   styleUrl: './settings.page.css',
 })

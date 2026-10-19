@@ -50,6 +50,12 @@ describe('SettingsPage', () => {
     expect(headings(el)).toEqual(['Conta', 'Módulos', 'Aparência', 'Segurança', 'Sobre']);
   });
 
+  it('links to the devices screen', async () => {
+    const { el } = await render();
+    const link = el.querySelector<HTMLAnchorElement>('a[href="/ajustes/aparelhos"]');
+    expect(link?.textContent).toContain('Aparelhos');
+  });
+
   it('shows the account and signs out', async () => {
     const { fixture, el } = await render();
     expect(el.querySelector('#account-title + dl')?.textContent).toContain('Dono da Casa');
