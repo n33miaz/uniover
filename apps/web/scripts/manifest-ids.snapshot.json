@@ -1,0 +1,14 @@
+{
+  "/manifest.webmanifest": {
+    "id": "/",
+    "scope": "/"
+  },
+  "/tv/manifest.webmanifest": {
+    "id": "/tv/",
+    "scope": "/tv/"
+  },
+  "/treino/manifest.webmanifest": {
+    "id": "/treino/",
+    "scope": "/treino/"
+  }
+}

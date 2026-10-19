@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<!-- Versão para tamanhos pequenos (favicon): ponto maior e uma onda por lado, redesenhada e não só reduzida. -->
+  <rect width="512" height="512" rx="112" fill="#3B6B4B"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="48" stroke-linecap="round">
+    <circle cx="256" cy="256" r="70" fill="#FFFFFF" stroke="none"/>
+    <path d="M362.1 149.9A150 150 0 0 1 362.1 362.1"/>
+    <path d="M149.9 149.9A150 150 0 0 0 149.9 362.1"/>
+  </g>
+</svg>

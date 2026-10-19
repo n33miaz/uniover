@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<!-- Símbolo core sobre o verde-sálvia; o fundo vai até as bordas (o sistema aplica a máscara). -->
+  <rect width="512" height="512" fill="#3B6B4B"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round">
+    <circle cx="256" cy="256" r="46" fill="#FFFFFF" stroke="none"/>
+    <path d="M335.2 176.8A112 112 0 0 1 335.2 335.2"/>
+    <path d="M176.8 176.8A112 112 0 0 0 176.8 335.2"/>
+    <path d="M381.9 130.1A178 178 0 0 1 381.9 381.9"/>
+    <path d="M130.1 130.1A178 178 0 0 0 130.1 381.9"/>
+  </g>
+</svg>
