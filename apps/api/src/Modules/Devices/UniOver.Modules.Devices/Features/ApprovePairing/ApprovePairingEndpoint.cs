@@ -22,7 +22,13 @@ internal static class ApprovePairingEndpoint
 
     public static void MapApprovePairing(this IEndpointRouteBuilder group)
     {
-        var route = group.MapPost("/pairing/approve", HandleAsync).RequireRateLimiting(RateLimitPolicies.Pairing);
+        var route = group.MapPost("/pairing/approve", HandleAsync).RequireRateLimiting(RateLimitPolicies.Pairing)
+            .Produces<ApprovePairingResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
         // A exigência é decidida ao mapear a rota. Só Development aceita dispensá-la (teste por curl sem a tela de
         // Aparelhos); em qualquer outro ambiente o valor false é ignorado e a passkey continua exigida.

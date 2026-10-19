@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity.Domain;
+using UniOver.Modules.Identity.Features.ListPasskeys;
 using UniOver.Modules.Identity.Security;
 
 namespace UniOver.Modules.Identity.Features.RenamePasskey;
@@ -12,7 +13,11 @@ internal sealed record RenamePasskeyRequest(string? Name);
 internal static class RenamePasskeyEndpoint
 {
     public static void MapRenamePasskey(this IEndpointRouteBuilder group) =>
-        group.MapPatch("/passkeys/{id:guid}", HandleAsync).RequireAuthorization();
+        group.MapPatch("/passkeys/{id:guid}", HandleAsync).RequireAuthorization()
+            .Produces<PasskeySummary>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound);
 
     private static async Task<IResult> HandleAsync(
         Guid id,

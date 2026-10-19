@@ -14,6 +14,7 @@ interface StoredAgent {
   platform: string;
   createdAt: string;
   revoked: boolean;
+  lastSeenAt: string | null;
 }
 
 export interface DevicesMock {
@@ -45,8 +46,8 @@ function problem(
 
 /**
  * Simula a API de aparelhos no formato da real: aprovar exige a confirmação com a passkey (lida do estado do mock
- * de identidade) e é gasta ao aprovar; todo POST precisa de `Content-Type: application/json`, senão a API real cai
- * no fallback de `/api` e responde 404, e o teste pega a regressão.
+ * de identidade) e é gasta ao aprovar; todo POST com corpo precisa de `Content-Type: application/json`, senão a API real
+ * responde 415, e o teste pega a regressão.
  */
 export async function mockDevicesApi(
   context: BrowserContext,
@@ -64,7 +65,10 @@ export async function mockDevicesApi(
     mock.requests.push({ method, path, body });
 
     if (identity.offline) return route.abort('internetdisconnected');
-    if (method === 'POST' && !isJson) return route.fulfill({ status: 404 });
+    // Corpo sem Content-Type JSON: a API real responde 415 (corpo opcional ausente passa; este cliente sempre manda JSON).
+    if (method === 'POST' && request.postData() && !isJson) {
+      return problem(route, 415, 'unsupported-media-type', 'Tipo de conteúdo não suportado.');
+    }
 
     const bearer = headers['authorization']?.replace(/^Bearer /, '');
     if (!bearer || !identity.issuedTokens.includes(bearer)) {
@@ -109,6 +113,7 @@ export async function mockDevicesApi(
         platform: 'windows',
         createdAt: '2026-10-18T12:00:00Z',
         revoked: false,
+        lastSeenAt: null,
       };
       mock.agents.push(agent);
       return route.fulfill({

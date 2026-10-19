@@ -50,7 +50,12 @@ internal static class DenyPairingEndpoint
     public static void MapDenyPairing(this IEndpointRouteBuilder group) =>
         group.MapPost("/pairing/deny", HandleAsync)
             .RequireAuthorization()
-            .RequireRateLimiting(RateLimitPolicies.Pairing);
+            .RequireRateLimiting(RateLimitPolicies.Pairing)
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
     private static async Task<IResult> HandleAsync(
         ICurrentUser current,

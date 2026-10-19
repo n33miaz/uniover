@@ -11,7 +11,11 @@ internal static class LoginEndpoint
     public static void MapLogin(this IEndpointRouteBuilder group) =>
         group.MapPost("/auth/login", HandleAsync)
             .AllowAnonymous()
-            .RequireRateLimiting(RateLimitPolicies.Login);
+            .RequireRateLimiting(RateLimitPolicies.Login)
+            .Produces<LoginResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
     private static async Task<IResult> HandleAsync(
         HttpContext http,

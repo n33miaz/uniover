@@ -23,17 +23,18 @@ export class DevicesApi {
 
   /** Aprova o código mostrado no aparelho. Exige a confirmação com a passkey. `name` nulo mantém o nome do agente. */
   async approve(userCode: string, name: string | null): Promise<void> {
-    await firstValueFrom(this.http.post(`${BASE}/pairing/approve`, { userCode, name }));
+    const body: components['schemas']['ApprovePairingRequest'] = { userCode, name };
+    await firstValueFrom(this.http.post(`${BASE}/pairing/approve`, body));
   }
 
   async deny(userCode: string): Promise<void> {
-    await firstValueFrom(this.http.post(`${BASE}/pairing/deny`, { userCode }));
+    const body: components['schemas']['DenyPairingRequest'] = { userCode };
+    await firstValueFrom(this.http.post(`${BASE}/pairing/deny`, body));
   }
 
   /** Ação protetora: sem passkey, e repetir é inofensivo. */
   async revoke(id: string): Promise<void> {
-    await firstValueFrom(
-      this.http.post(`${BASE}/agents/${encodeURIComponent(id)}/revoke`, { reason: null }),
-    );
+    const body: components['schemas']['RevokeAgentRequest'] = { reason: null };
+    await firstValueFrom(this.http.post(`${BASE}/agents/${encodeURIComponent(id)}/revoke`, body));
   }
 }

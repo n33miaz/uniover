@@ -23,6 +23,24 @@ internal sealed partial class GlobalExceptionHandler(
         ArgumentNullException.ThrowIfNull(httpContext);
         ArgumentNullException.ThrowIfNull(exception);
 
+        // Corpo malformado ou sem Content-Type é erro do cliente (400/415), não falha do servidor: o Kestrel e o
+        // vinculador de parâmetros já trazem o status certo na exceção.
+        if (exception is BadHttpRequestException { StatusCode: >= 400 and < 500 } badRequest)
+        {
+            httpContext.Response.StatusCode = badRequest.StatusCode;
+            return await problemDetails.TryWriteAsync(new ProblemDetailsContext
+            {
+                HttpContext = httpContext,
+                ProblemDetails = new Microsoft.AspNetCore.Mvc.ProblemDetails
+                {
+                    Status = badRequest.StatusCode,
+                    Title = badRequest.StatusCode == StatusCodes.Status415UnsupportedMediaType
+                        ? "Tipo de conteúdo não suportado."
+                        : "Requisição inválida.",
+                },
+            });
+        }
+
         LogUnhandled(logger, exception, httpContext.Request.Method, httpContext.Request.Path);
 
         httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;

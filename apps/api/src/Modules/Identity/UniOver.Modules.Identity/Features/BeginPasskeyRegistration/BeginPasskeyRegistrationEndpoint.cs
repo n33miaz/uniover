@@ -12,7 +12,12 @@ internal static class BeginPasskeyRegistrationEndpoint
     public static void MapBeginPasskeyRegistration(this IEndpointRouteBuilder group) =>
         group.MapPost("/passkeys/registration/options", HandleAsync)
             .RequireAuthorization()
-            .RequireRateLimiting(RateLimitPolicies.Login);
+            .RequireRateLimiting(RateLimitPolicies.Login)
+            .Produces<BeginPasskeyRegistrationResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
     private static async Task<IResult> HandleAsync(
         HttpContext http,

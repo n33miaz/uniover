@@ -125,6 +125,7 @@ public sealed class OwnerSeedTests(PostgresFixture postgres)
         using var response = await app.SendAsync(
             HttpMethod.Post, path, new { email = "outro@uniover.test", password = IdentityApp.NewPassword() }, bearer: login.AccessToken);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // Rota inexistente: 404, ou 405 quando só o fallback de GET/HEAD casa o caminho. Nunca sucesso.
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
     }
 }

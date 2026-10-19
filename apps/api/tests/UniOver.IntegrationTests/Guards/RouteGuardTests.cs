@@ -99,13 +99,8 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
             using var request = new HttpRequestMessage(method, url);
             request.Headers.Add(IdentityApp.ClientHeader, "web");
 
-            // Rotas com corpo JSON só casam no roteador quando o pedido declara o tipo do conteúdo; sem ele o
-            // roteador cai no 404 genérico de /api e a rota real nem seria exercitada.
-            if (method != HttpMethod.Get && method != HttpMethod.Delete && method != HttpMethod.Head)
-            {
-                request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
-            }
-
+            // Sem corpo e sem Content-Type de propósito: a rota real tem de responder 401 (e não cair no 404 do
+            // fallback de /api), então a autenticação vem antes de qualquer leitura de corpo.
             using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
             checkedRoutes++;
 

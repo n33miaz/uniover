@@ -11,7 +11,12 @@ internal static class RefreshEndpoint
     public static void MapRefresh(this IEndpointRouteBuilder group) =>
         group.MapPost("/auth/refresh", HandleAsync)
             .AllowAnonymous()
-            .RequireRateLimiting(RateLimitPolicies.Refresh);
+            .RequireRateLimiting(RateLimitPolicies.Refresh)
+            .Produces<RefreshResponse>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
     private static async Task<IResult> HandleAsync(
         HttpContext http,

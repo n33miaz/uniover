@@ -19,36 +19,14 @@ type Schemas = components['schemas'];
 
 const IDENTITY_BASE = `${APP_CONFIG.apiBase}/v1/identity`;
 
-export interface TokenResponse {
-  readonly accessToken: string;
-  /** Validade do token de acesso, em segundos. */
-  readonly expiresIn: number;
-}
-
-export interface MeResponse {
-  readonly id: string;
-  readonly email: string;
-  readonly displayName: string;
-}
-
-export interface PasskeySummary {
-  readonly id: string;
-  readonly name: string;
-  readonly createdAt: string;
-  readonly lastUsedAt: string | null;
-}
-
+/** Resposta de login e de renovação: token de acesso e validade em segundos. */
+export type TokenResponse = Readonly<Schemas['LoginResponse']>;
+export type MeResponse = Readonly<Schemas['MeResponse']>;
+export type PasskeySummary = Readonly<Schemas['PasskeySummary']>;
 /** Opções do WebAuthn como a API as entrega: JSON do servidor, ainda com os binários em base64url. */
-export interface WebAuthnChallenge {
-  readonly challengeId: string;
-  readonly options: unknown;
-}
-
-export interface StepUpConfirmation {
-  readonly action: string;
-  readonly expiresAt: string;
-}
-
+export type WebAuthnChallenge = Readonly<Schemas['RequestStepUpResponse']>;
+export type StepUpConfirmation = Readonly<Schemas['ConfirmStepUpResponse']>;
+export type StreamTicket = Readonly<Schemas['StreamTicketResponse']>;
 export type ModuleInfo = Readonly<Schemas['IdentityModuleInfo']>;
 
 interface RequestOptions {
@@ -57,11 +35,9 @@ interface RequestOptions {
 }
 
 /**
- * Cliente mínimo do módulo de identidade. Os corpos de pedido vêm tipados do OpenAPI gerado. As respostas
- * acima continuam escritas à mão porque a API ainda não declara o tipo de resposta dos endpoints (o
- * documento traz só o código 200, sem corpo); quando declarar, elas passam a ser as geradas. Cada método devolve o corpo ou lança `ApiProblem`
- * (status 0 = sem resposta). Os métodos autenticados recebem o token do chamador: quem renova e repete o
- * pedido é o `AuthService`.
+ * Cliente mínimo do módulo de identidade. Pedidos e respostas vêm tipados do OpenAPI gerado. Cada método
+ * devolve o corpo ou lança `ApiProblem` (status 0 = sem resposta). Os métodos autenticados recebem o token do
+ * chamador: quem renova e repete o pedido é o `AuthService`.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthApi {
@@ -87,7 +63,7 @@ export class AuthApi {
   }
 
   /** Troca o JWT por um bilhete curto em cookie, para abrir o SSE sem token na URL. */
-  streamTicket(token: string): Promise<{ readonly expiresIn: number }> {
+  streamTicket(token: string): Promise<StreamTicket> {
     return this.send('POST', '/auth/stream-ticket', { token });
   }
 

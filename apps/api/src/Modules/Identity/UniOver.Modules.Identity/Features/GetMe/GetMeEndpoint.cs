@@ -9,7 +9,9 @@ namespace UniOver.Modules.Identity.Features.GetMe;
 internal static class GetMeEndpoint
 {
     public static void MapGetMe(this IEndpointRouteBuilder group) =>
-        group.MapGet("/me", HandleAsync).RequireAuthorization();
+        group.MapGet("/me", HandleAsync).RequireAuthorization()
+            .Produces<MeResponse>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
 
     private static async Task<IResult> HandleAsync(ICurrentUser current, GetMeHandler handler, CancellationToken cancellationToken)
     {

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity.Domain;
+using UniOver.Modules.Identity.Features.ListPasskeys;
 using UniOver.Modules.Identity.Security;
 
 namespace UniOver.Modules.Identity.Features.CompletePasskeyRegistration;
@@ -12,7 +13,11 @@ internal static class CompletePasskeyRegistrationEndpoint
     public static void MapCompletePasskeyRegistration(this IEndpointRouteBuilder group) =>
         group.MapPost("/passkeys/registration/complete", HandleAsync)
             .RequireAuthorization()
-            .RequireRateLimiting(RateLimitPolicies.Login);
+            .RequireRateLimiting(RateLimitPolicies.Login)
+            .Produces<PasskeySummary>(StatusCodes.Status201Created)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
     private static async Task<IResult> HandleAsync(
         HttpContext http,

@@ -14,6 +14,7 @@ const PC: DeviceAgent = {
   platform: 'windows',
   createdAt: '2026-10-18T12:00:00Z',
   revoked: false,
+  lastSeenAt: '2026-10-19T09:00:00Z',
 };
 
 describe('DevicesPage', () => {
@@ -47,6 +48,13 @@ describe('DevicesPage', () => {
     expect(item.querySelector('.name')?.textContent).toBe('PC de casa');
     expect(item.textContent).toContain('Pareado em');
     expect(item.textContent).toContain('Ativo');
+    expect(item.querySelector('.last-seen')?.textContent).toContain('Último uso em');
+  });
+
+  it('says so when the device has no recorded use yet', async () => {
+    api.list.mockResolvedValue([{ ...PC, lastSeenAt: null }]);
+    const { el } = await render();
+    expect(el.querySelector('.last-seen')?.textContent).toContain('Sem uso registrado');
   });
 
   it('explains the empty state', async () => {

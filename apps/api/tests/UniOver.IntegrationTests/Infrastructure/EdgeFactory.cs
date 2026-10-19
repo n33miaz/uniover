@@ -51,6 +51,8 @@ public sealed class EdgeFactory(
     {
         private const string RouteBuilderKey = "__EndpointRouteBuilder";
 
+        private sealed record TestBody(string? Name);
+
         private static IResult Boom() => throw new InvalidOperationException("detalhe-interno-secreto");
 
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
@@ -64,6 +66,8 @@ public sealed class EdgeFactory(
             routes.MapGet("/api/test/validation", () => ProblemDetailsExtensions.ValidationProblem(
                 new Dictionary<string, string[]> { ["email"] = ["Informe um e-mail válido."] })).AllowAnonymous();
             routes.MapGet("/api/test/boom", Boom).AllowAnonymous();
+            routes.MapPost("/api/test/optional-body", (TestBody? body) => Results.Ok(new { received = body is not null })).AllowAnonymous();
+            routes.MapPost("/api/test/required-body", (TestBody body) => Results.Ok(new { received = body.Name })).AllowAnonymous();
         };
     }
 }

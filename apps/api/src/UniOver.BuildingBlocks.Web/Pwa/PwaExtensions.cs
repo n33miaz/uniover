@@ -108,7 +108,9 @@ public static class PwaExtensions
         ArgumentNullException.ThrowIfNull(endpoints);
 
         // Rotas desconhecidas dessas áreas devem dar 404 em vez de cair no index.html do PWA.
-        endpoints.MapFallback("/api/{**path}", () => Results.NotFound()).AllowAnonymous();
+        // Só GET/HEAD: um fallback para todos os métodos vence o roteador quando o corpo vem sem Content-Type e
+        // esconde o 415 (ou a execução, se o corpo é opcional) da rota real atrás de um 404.
+        endpoints.MapFallback("/api/{**path}", () => Results.NotFound()).AllowAnonymous().ExcludeFromDescription().WithMetadata(new HttpMethodMetadata(["GET", "HEAD"]));
         endpoints.MapFallback("/health/{**path}", () => Results.NotFound()).AllowAnonymous();
         endpoints.MapFallback("/openapi/{**path}", () => Results.NotFound()).AllowAnonymous();
 
