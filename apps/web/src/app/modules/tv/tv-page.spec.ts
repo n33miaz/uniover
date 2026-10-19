@@ -1,18 +1,19 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
 import { TV_ROUTES } from './tv.routes';
 import { TvPage } from './tv-page';
 
 describe('TvPage', () => {
-  it('renders the title', async () => {
-    TestBed.configureTestingModule({ providers: [provideRouter([])] });
+  it('renders the placeholder text', async () => {
     const fixture = TestBed.createComponent(TvPage);
     await fixture.whenStable();
-    expect((fixture.nativeElement as HTMLElement).querySelector('h1')?.textContent).toBe('TV');
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'ainda não está disponível',
+    );
   });
 
-  it('resolves the lazy component', async () => {
-    const loader = TV_ROUTES[0].loadComponent as () => Promise<unknown>;
-    expect(await loader()).toBe(TvPage);
+  it('resolves the lazy component and declares its tabs', async () => {
+    const route = TV_ROUTES[0];
+    expect(await (route.loadComponent as () => Promise<unknown>)()).toBe(TvPage);
+    expect((route.data as { tabs: unknown[] }).tabs).toHaveLength(1);
   });
 });

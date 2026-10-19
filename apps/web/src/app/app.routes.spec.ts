@@ -10,10 +10,19 @@ describe('app routes', () => {
     ['/', 'app-home-page'],
     ['/tv', 'app-tv-page'],
     ['/treino', 'app-training-page'],
-  ])('%s resolves to %s', async (url, selector) => {
+    ['/ajustes', 'app-settings-page'],
+  ])('%s renders %s inside the shell', async (url, selector) => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl(url);
-    expect(harness.routeNativeElement?.matches(selector)).toBe(true);
+    const root = harness.routeNativeElement as HTMLElement;
+    expect(root.matches('app-shell')).toBe(true);
+    expect(root.querySelector(selector)).not.toBeNull();
+  });
+
+  it('serves the sign-in page outside the shell', async () => {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/entrar');
+    expect(harness.routeNativeElement?.matches('app-login-page')).toBe(true);
   });
 
   it('sends unknown paths home', async () => {

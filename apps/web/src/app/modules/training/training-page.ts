@@ -1,11 +1,8 @@
 import { Component } from '@angular/core';
-import { PageHeader } from '../../shared/ui/page-header/page-header';
 
+/** O módulo de treino ainda não existe; por ora só ocupa o lugar na casca. */
 @Component({
   selector: 'app-training-page',
-  imports: [PageHeader],
-  template: `<app-page-header [heading]="title" />`,
+  template: `<p class="soon" i18n="@@training.placeholder">O treino ainda não está disponível.</p>`,
 })
-export class TrainingPage {
-  protected readonly title = $localize`:@@training.title:Treino`;
-}
+export class TrainingPage {}
