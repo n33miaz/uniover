@@ -192,6 +192,20 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("enabled");
 
+                    b.Property<byte[]>("IconData")
+                        .HasColumnType("bytea")
+                        .HasColumnName("icon_data");
+
+                    b.Property<string>("IconMime")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("icon_mime");
+
+                    b.Property<string>("IconSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("icon_sha256");
+
                     b.Property<bool>("Installed")
                         .HasColumnType("boolean")
                         .HasColumnName("installed");

@@ -33,6 +33,7 @@ const shortcut = (position: number, overrides: Partial<TvShortcut> = {}): TvShor
   tvLabel: null,
   customLabel: null,
   enabled: true,
+  iconDataUri: null,
   ...overrides,
 });
 

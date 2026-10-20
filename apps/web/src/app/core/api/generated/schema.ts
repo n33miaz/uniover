@@ -4034,6 +4034,7 @@ export interface components {
     TvShortcut: {
       customLabel: null | string;
       enabled: boolean;
+      iconDataUri: null | string;
       /** Format: uuid */
       id: string;
       package: string;

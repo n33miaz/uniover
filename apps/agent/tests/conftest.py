@@ -18,6 +18,8 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         "TV_HIBERNATE_SECONDS",
         "TV_ADB_PORT",
         "ADB_TIMEOUT_SECONDS",
+        "ADB_PULL_TIMEOUT_SECONDS",
+        "ICONS_DIR",
     ):
         monkeypatch.delenv(f"UNIOVER_{name}", raising=False)
     # A pasta do certificado da TV vive em `%LOCALAPPDATA%`: nenhum teste toca na real.
@@ -25,6 +27,12 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     # Nenhum teste roda o `adb` de verdade: o caminho aponta para um arquivo que não existe (uma
     # escolha explícita errada não cai na busca pelo PATH). Os testes do canal ADB trocam isto.
     monkeypatch.setenv("UNIOVER_ADB_PATH", str(tmp_path / "sem-adb" / "adb.exe"))
+    # Idem para o `aapt2` (que também não é procurado no SDK real) e o cache de ícones: nenhum
+    # teste lê o Android SDK nem grava em `%LOCALAPPDATA%` de verdade.
+    monkeypatch.setenv("UNIOVER_AAPT_PATH", str(tmp_path / "sem-aapt" / "aapt2.exe"))
+    monkeypatch.setenv("UNIOVER_ICONS_DIR", str(tmp_path / "icones"))
+    for sdk_variable in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
+        monkeypatch.delenv(sdk_variable, raising=False)
     config = tmp_path / "agent.toml"
     monkeypatch.setenv("UNIOVER_CONFIG_FILE", str(config))
     return config

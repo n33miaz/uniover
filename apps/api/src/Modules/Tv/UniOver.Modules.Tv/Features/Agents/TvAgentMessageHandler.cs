@@ -33,7 +33,7 @@ internal sealed partial class TvAgentMessageHandler(
     public const int WatchdogMaxRows = 500;
 
     public IReadOnlyCollection<string> HandledTypes { get; } =
-        [AgentMessageTypes.TvStateV1, AgentMessageTypes.TvAppsV1, AgentMessageTypes.TvWatchdogV1];
+        [AgentMessageTypes.TvStateV1, AgentMessageTypes.TvAppsV1, AgentMessageTypes.TvAppsV2, AgentMessageTypes.TvWatchdogV1];
 
     public async Task HandleAsync(InboundMessage message, CancellationToken cancellationToken)
     {
@@ -52,6 +52,7 @@ internal sealed partial class TvAgentMessageHandler(
                 HandleState(message);
                 break;
             case AgentMessageTypes.TvAppsV1:
+            case AgentMessageTypes.TvAppsV2:
                 await HandleAppsAsync(message, cancellationToken);
                 break;
             case AgentMessageTypes.TvWatchdogV1:
@@ -79,8 +80,9 @@ internal sealed partial class TvAgentMessageHandler(
 
     private async Task HandleAppsAsync(InboundMessage message, CancellationToken cancellationToken)
     {
+        // `tv.apps.v1` não traz ícone; `tv.apps.v2` pode trazer, app por app. Sem o campo, o ícone guardado fica.
         var incoming = message.Body.GetProperty("apps").EnumerateArray()
-            .Select(a => new IncomingApp(a.GetProperty("package").GetString()!, a.GetProperty("label").GetString()))
+            .Select(a => new IncomingApp(a.GetProperty("package").GetString()!, a.GetProperty("label").GetString(), ReadIcon(a, message.AgentId)))
             .ToList();
 
         var existing = await db.Shortcuts.ToListAsync(cancellationToken);
@@ -93,6 +95,28 @@ internal sealed partial class TvAgentMessageHandler(
 
         // Mesmo sem mudança a tela recebe a lista: quem pediu a atualização espera ver a resposta.
         stream.PublishShortcuts(await shortcutReader.ListAsync(cancellationToken));
+    }
+
+    /// <summary>
+    /// Lê o ícone de um app de <c>tv.apps.v2</c>. Ícone inválido (tipo, base64, tamanho ou conteúdo) é descartado com um
+    /// aviso curto, sem o conteúdo, e o app continua na lista: um ícone ruim nunca derruba a lista de atalhos.
+    /// </summary>
+    private ShortcutIcon? ReadIcon(JsonElement app, string agentId)
+    {
+        if (!app.TryGetProperty("icon", out var icon) || icon.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var mime = icon.TryGetProperty("mime", out var m) ? m.GetString() : null;
+        var data = icon.TryGetProperty("data", out var d) ? d.GetString() : null;
+        if (ShortcutIcon.TryCreate(mime, data, out var parsed))
+        {
+            return parsed;
+        }
+
+        LogIconRejected(agentId, app.GetProperty("package").GetString() ?? string.Empty);
+        return null;
     }
 
     private async Task HandleWatchdogAsync(InboundMessage message, CancellationToken cancellationToken)
@@ -124,6 +148,9 @@ internal sealed partial class TvAgentMessageHandler(
 
         stream.PublishWatchdog(new TvWatchdogEntry(kind, severity, detail, attempts, at));
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Ícone do app {Package} do agente {AgentId} recusado (tipo, base64, tamanho ou conteúdo inválido).")]
+    private partial void LogIconRejected(string agentId, string package);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Mensagem {Type} do agente {AgentId} ignorada: não é o agente que controla a TV.")]
     private partial void LogIgnored(string agentId, string type);

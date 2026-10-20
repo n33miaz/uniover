@@ -32,11 +32,14 @@ from uniover_agent.adapters.tv_adb_parsing import (
     input_text_command,
     is_valid_activity,
     is_valid_package,
+    is_valid_remote_apk_path,
     monkey_succeeded,
     parse_connect,
     parse_device_state,
     parse_launchable,
     parse_package_list,
+    parse_package_paths,
+    parse_package_versions,
     quote_for_device_shell,
 )
 from uniover_agent.ports import (
@@ -56,6 +59,8 @@ DEFAULT_TIMEOUT_SECONDS: Final = 5.0
 # Depois de uma falha de conexão, o caminho preguiçoso (comando sem canal aberto) espera isto
 # antes de tentar de novo; a abertura explícita da sessão sempre tenta.
 DEFAULT_RETRY_AFTER_SECONDS: Final = 30.0
+# Copiar um APK leva segundos (o do CineVS, 52 MB, levou ~10 s): bem mais que um comando curto.
+DEFAULT_PULL_TIMEOUT_SECONDS: Final = 120.0
 
 _ADB_EXECUTABLE: Final = "adb.exe" if sys.platform == "win32" else "adb"
 _LEANBACK: Final = "android.intent.category.LEANBACK_LAUNCHER"
@@ -113,6 +118,13 @@ async def run_process(argv: Sequence[str], seconds: float) -> AdbOutput:
     return AdbOutput(process.returncode if process.returncode is not None else -1, text)
 
 
+def _is_empty_or_missing(path: Path) -> bool:
+    try:
+        return path.stat().st_size == 0
+    except OSError:
+        return True
+
+
 class AdbTv:
     """Implementa `TvAdb` com o `adb` do PC."""
 
@@ -124,6 +136,7 @@ class AdbTv:
         *,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         retry_after: float = DEFAULT_RETRY_AFTER_SECONDS,
+        pull_timeout: float = DEFAULT_PULL_TIMEOUT_SECONDS,
         runner: Runner | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -131,6 +144,7 @@ class AdbTv:
         self._serial = f"{host}:{port}"
         self._timeout = timeout
         self._retry_after = retry_after
+        self._pull_timeout = pull_timeout
         self._run: Runner = runner or run_process
         self._monotonic = monotonic
         # Um comando por vez: o `adb` só atende bem um cliente e a TV tem pouca memória.
@@ -243,6 +257,49 @@ class AdbTv:
             await self._ensure_connected_locked()
             await self._shell(command)
 
+    # --- APKs (para os ícones) ----------------------------------------------------------------
+
+    async def package_versions(self) -> dict[str, int]:
+        """`versionCode` de todos os pacotes numa só consulta curta (com a trava)."""
+        async with self._lock:
+            await self._ensure_connected_locked()
+            output = await self._shell("pm list packages --show-versioncode")
+        return parse_package_versions(output.text)
+
+    async def apk_paths(self, package: str) -> list[str]:
+        if not is_valid_package(package):
+            raise ValueError("nome de pacote inválido")
+        async with self._lock:
+            await self._ensure_connected_locked()
+            output = await self._shell(f"pm path {quote_for_device_shell(package)}")
+        return parse_package_paths(output.text)
+
+    async def pull_apk(self, remote_path: str, local_path: Path) -> None:
+        """Copia o APK **sem a trava**: o servidor do `adb` atende um `pull` junto com os `shell`.
+
+        Assim uma tecla ou um texto digitado nunca espera a cópia. Aqui não se reconecta (isso é da
+        trilha com trava): sem canal aberto a cópia falha e a lista de ícones é retomada depois.
+        """
+        if not is_valid_remote_apk_path(remote_path):
+            raise ValueError("caminho de APK inválido")
+        if not self._connected:
+            raise AdbUnreachable("a conexão ADB com a TV não está aberta")
+        output = await self._exec(
+            "-s", self._serial, "pull", remote_path, str(local_path), timeout=self._pull_timeout
+        )
+        if output.returncode != 0:
+            state = parse_device_state(output.text)
+            if state is DeviceState.UNAUTHORIZED:
+                self._connected = False
+                raise AdbUnauthorized("a TV ainda não autorizou este PC no ADB")
+            if state in (DeviceState.OFFLINE, DeviceState.NOT_FOUND):
+                self._connected = False
+                raise AdbUnreachable("a conexão ADB com a TV caiu")
+            raise AdbCommandFailed("a TV não entregou o arquivo")
+        # O código de saída 0 não garante o arquivo: confere que ele existe e não está vazio.
+        if await asyncio.to_thread(_is_empty_or_missing, local_path):
+            raise AdbCommandFailed("a TV não entregou o arquivo")
+
     # --- execução -----------------------------------------------------------------------------
 
     async def _launchable_locked(self) -> list[LaunchableApp]:
@@ -276,12 +333,14 @@ class AdbTv:
             raise AdbUnreachable("a conexão ADB com a TV caiu")
         return output
 
-    async def _exec(self, *args: str) -> AdbOutput:
+    async def _exec(self, *args: str, timeout: float | None = None) -> AdbOutput:  # noqa: ASYNC109
         try:
-            output = await self._run([self._adb, *args], self._timeout)
+            output = await self._run([self._adb, *args], timeout or self._timeout)
         except TimeoutError:
-            # Pode ter executado ou não: ao reconectar no próximo pedido o canal se refaz.
-            self._connected = False
+            # Pode ter executado ou não: ao reconectar no próximo pedido o canal se refaz. Cópia
+            # lenta de APK não prova que o canal caiu: ela só falha, sem derrubar os comandos.
+            if timeout is None:
+                self._connected = False
             raise AdbTimeout("a TV demorou demais para responder ao ADB") from None
         except FileNotFoundError:
             raise AdbUnavailable("o adb não foi encontrado neste PC") from None

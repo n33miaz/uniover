@@ -14,6 +14,7 @@ const shortcut = (overrides: Partial<TvShortcut> = {}): TvShortcut => ({
   tvLabel: null,
   customLabel: null,
   enabled: true,
+  iconDataUri: null,
   ...overrides,
 });
 

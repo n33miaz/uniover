@@ -81,6 +81,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.apps.v1.schema.json'
+      tvAppsV2:
+        name: tv.apps.v2
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.apps.v2.schema.json'
       tvWatchdog:
         name: tv.watchdog.v1
         contentType: application/json
@@ -155,6 +160,13 @@ operations:
     summary: A API recebe a lista de apps da TV.
     messages:
       - $ref: '#/channels/agentEvents/messages/tvApps'
+  receiveTvAppsV2:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe a lista de apps da TV com o ícone de cada app.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/tvAppsV2'
   receiveTvWatchdog:
     action: receive
     channel:

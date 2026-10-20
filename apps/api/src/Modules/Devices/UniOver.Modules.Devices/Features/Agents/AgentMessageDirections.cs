@@ -17,6 +17,7 @@ internal static class AgentMessageDirections
         AgentMessageTypes.AgentHelloV1,
         AgentMessageTypes.CommandResultV1,
         AgentMessageTypes.TvAppsV1,
+        AgentMessageTypes.TvAppsV2,
         AgentMessageTypes.TvStateV1,
         AgentMessageTypes.TvWatchdogV1,
     }.ToFrozenSet(StringComparer.Ordinal);

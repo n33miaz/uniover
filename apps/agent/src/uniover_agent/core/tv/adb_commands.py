@@ -15,6 +15,7 @@ from uniover_agent.core.envelopes import EnvelopeFactory
 from uniover_agent.core.handle_command import Handler
 from uniover_agent.core.tv.apps import AppEntry, describe_apps
 from uniover_agent.core.tv.handlers import failed_result
+from uniover_agent.core.tv.icons import IconRequests
 from uniover_agent.core.tv.session import TvSessionError
 from uniover_agent.ports import AdbError, Transport, TransportError, TvAdb
 
@@ -33,12 +34,19 @@ class TvApps:
     """Lista de apps e abertura por pacote, com a última lista guardada."""
 
     def __init__(
-        self, tv: Wakeable, adb: TvAdb, transport: Transport, envelopes: EnvelopeFactory
+        self,
+        tv: Wakeable,
+        adb: TvAdb,
+        transport: Transport,
+        envelopes: EnvelopeFactory,
+        icons: IconRequests | None = None,
     ) -> None:
         self._tv = tv
         self._adb = adb
         self._transport = transport
         self._envelopes = envelopes
+        # Sem `aapt2` neste PC não há publicador de ícones e a lista segue como sempre foi.
+        self._icons = icons
         self.cache: list[AppEntry] | None = None
 
     async def _warm(self) -> None:
@@ -61,10 +69,16 @@ class TvApps:
         return apps
 
     async def publish(self, apps: list[AppEntry], correlation_id: str | None = None) -> None:
-        """Envia `tv.apps.v1`. Falha de envio sobe como `TransportError`."""
+        """Envia `tv.apps.v1` (sem ícones, sempre primeiro) e só então pede os ícones ao fundo.
+
+        Falha de envio sobe como `TransportError`. Pedir os ícones só marca trabalho: a resposta ao
+        comando e as teclas seguintes nunca esperam um APK.
+        """
         await self._transport.send(
             self._envelopes.tv_apps([(app.package, app.label) for app in apps], correlation_id)
         )
+        if self._icons is not None:
+            self._icons.request(apps)
 
     async def launch_package(self, package: str) -> None:
         """Abre o app. `ValueError` se o nome do pacote não tem o formato do Android."""

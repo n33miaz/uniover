@@ -25,8 +25,12 @@ um `type` publicado. As duas versões convivem até o agente atualizar.
 | `tv.app.launch.v1` | API para agente | `target`: `{ kind: "package" | "link", value }`. Pacote: nome Android com pontos (até 255); link: `esquema://...` sem espaços nem controles (até 2048). |
 | `tv.apps.refresh.v1` | API para agente | `{}`: pede a lista de apps. |
 | `tv.apps.v1` | agente para API | `apps`: lista de `{ package, label | null }` (até 500) e `at` (UTC). |
+| `tv.apps.v2` | agente para API | Como o `v1`, mais `icon` opcional por app: `{ mime: "image/png" | "image/webp", data }` (base64, até 32768 bytes). A lista é sempre completa; app sem `icon` mantém o que a API já guarda. O `v1` segue válido. |
 | `tv.text.v1` | API para agente | `text`: 1 a 200 caracteres, sem caracteres de controle. |
 | `tv.watchdog.v1` | agente para API | `kind`, `severity` (`info`, `warn`, `error`), `detail` (até 200), `attempts`, `at`. |
+
+O transporte recusa mensagens acima de 64 KB. Por isso o agente pode mandar a mesma lista de `tv.apps.v2` mais de uma vez, cada mensagem
+levando só parte dos ícones.
 
 Os resultados voltam em `command.result.v1` (com `correlationId` igual ao `id` do comando). Nenhum corpo traz segredo.
 O formato do `type` aceita dois ou mais segmentos antes da versão (`tv.app.launch.v1`). Os esquemas só fixam o

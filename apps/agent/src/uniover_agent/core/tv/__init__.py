@@ -12,6 +12,7 @@ from uniover_agent.core.tv.handlers import (
     tv_text_handler,
     tv_wake_handler,
 )
+from uniover_agent.core.tv.icons import AppIconPublisher, IconResolver
 from uniover_agent.core.tv.session import (
     TV_NOT_PAIRED,
     TV_UNREACHABLE,
@@ -29,7 +30,9 @@ __all__ = [
     "TV_UNREACHABLE",
     "AdbTyping",
     "AppEntry",
+    "AppIconPublisher",
     "AppsAnnouncer",
+    "IconResolver",
     "PackageLauncher",
     "SessionState",
     "TextReconciler",
