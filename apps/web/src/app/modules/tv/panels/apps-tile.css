@@ -99,16 +99,22 @@ button:disabled {
 }
 .name {
   display: -webkit-box;
-  max-width: 100%;
+  /* O rótulo usa a coluna toda e um pouco das folgas (4 px de cada lado): é largura de graça para a palavra mais comprida. */
+  max-width: calc(100% + 8px);
+  margin-inline: -4px;
   overflow: hidden;
-  /* 11,5 px: "Configurações" cabe inteira numa coluna de ~76 px (celular em pé, quatro por linha). */
-  font-size: 0.72rem;
+  /*
+   * 10,6 px, com o espaçamento um tico apertado: "Configurações" (a palavra mais comprida de um app comum) ocupa cerca de
+   * 80% dos ~84 px de que o rótulo dispõe no celular em pé (quatro colunas de ~76 px mais as folgas). A palavra nunca é
+   * partida no meio: sem hifenização e sem quebra dentro dela; o que passar de duas linhas termina em reticências.
+   */
+  font-size: 0.66rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 1.2;
-  /* Nome comprido em coluna estreita: separa por sílaba ("Configu-rações"); sem hifenização, quebra onde couber. */
-  hyphens: auto;
-  -webkit-hyphens: auto;
-  overflow-wrap: anywhere;
+  hyphens: none;
+  -webkit-hyphens: none;
+  overflow-wrap: normal;
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;

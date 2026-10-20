@@ -28,10 +28,14 @@
  * dentro de um lado (convidado sem voltar, nome mais comprido) desloca o centro. Cada lado reserva, além dos botões
  * da direita (Apps e energia), a folga do ponto de estado, que mora à direita do texto do nome; sem essa folga um nome
  * comprido empurraria o ponto para cima dos botões. O que não cabe no nome vira reticências.
+ * A largura do texto depende da fonte do sistema (a do Linux é bem mais larga que a do Windows): o pior caso é um nome
+ * de 20 letras, que então usa as duas linhas inteiras e, passando delas, termina em reticências; nunca passa da
+ * coluna nem dos 44 px, e o nome completo continua no nome acessível do botão e na folha Personalizar.
  */
 .head {
   /* Os dois botões da direita e o espaço entre eles. */
-  --side: calc(2 * var(--tap) + 8px);
+  --gap: 6px;
+  --side: calc(2 * var(--tap) + var(--gap));
   /* O alvo de 44 px do ponto começa 8 px antes do fim do nome: sobram 36 px à direita do texto. */
   --dot-room: 36px;
   display: grid;
@@ -75,7 +79,7 @@
 }
 .actions {
   display: flex;
-  gap: 8px;
+  gap: var(--gap);
   justify-self: end;
 }
 
@@ -98,7 +102,7 @@ h1 {
   width: 100%;
   min-width: var(--tap);
   min-height: var(--tap);
-  padding: 0 4px;
+  padding: 0 2px;
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
@@ -132,7 +136,7 @@ h1 {
   font-size: 1.1rem;
 }
 .name[data-size='long'] .title-text {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 /* Telas largas dão sobra à coluna do meio: o nome volta ao tamanho de sempre, seja qual for o comprimento. */
 @media (min-width: 520px) {
