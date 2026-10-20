@@ -125,25 +125,27 @@
                 <span class="package">{{ shortcut.package }}</span>
               </span>
             </button>
-            <div class="tools">
-              <button
-                type="button"
-                class="tool"
-                [attr.aria-label]="renameLabel(shortcut)"
-                (click)="startRename(shortcut)"
-              >
-                <app-tv-icon name="rename" />
-              </button>
-              <button
-                type="button"
-                class="tool"
-                [attr.aria-label]="toggleLabel(shortcut)"
-                [disabled]="busy()"
-                (click)="toggle(shortcut)"
-              >
-                <app-tv-icon [name]="shortcut.enabled ? 'hide' : 'show'" />
-              </button>
-            </div>
+            @if (!isGuest()) {
+              <div class="tools">
+                <button
+                  type="button"
+                  class="tool"
+                  [attr.aria-label]="renameLabel(shortcut)"
+                  (click)="startRename(shortcut)"
+                >
+                  <app-tv-icon name="rename" />
+                </button>
+                <button
+                  type="button"
+                  class="tool"
+                  [attr.aria-label]="toggleLabel(shortcut)"
+                  [disabled]="busy()"
+                  (click)="toggle(shortcut)"
+                >
+                  <app-tv-icon [name]="shortcut.enabled ? 'hide' : 'show'" />
+                </button>
+              </div>
+            }
           }
         </li>
       }

@@ -105,6 +105,15 @@ export class AuthService {
     await this.loadUser(tokens.accessToken);
   }
 
+  /** Aceita o convite do dono e já abre a sessão do convidado (mesmo caminho do login depois da resposta). */
+  async acceptInvite(token: string, email: string, password: string): Promise<void> {
+    const tokens = await this.api.acceptInvite(token, email, password);
+    this.session.setToken(tokens.accessToken, tokens.expiresIn);
+    this.scheduleRenewal(tokens.expiresIn);
+    this.stopPendingRetry();
+    await this.loadUser(tokens.accessToken);
+  }
+
   /**
    * Encerra a sessão neste aparelho. Zera só a memória: IndexedDB e filas locais ficam como estão. Devolve
    * `false` se o servidor não confirmou (sem rede): o cookie de refresh pode continuar valendo até a próxima

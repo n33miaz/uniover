@@ -2,6 +2,7 @@ import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
+import { SessionState } from '../session/session-state';
 import { AppShell } from './app-shell';
 
 @Component({ template: '<p class="content" i18n>conteúdo</p>' })
@@ -48,6 +49,20 @@ describe('AppShell', () => {
     expect(el.querySelector('h1')?.textContent).toBe('Módulo');
     expect(el.querySelector('header a')?.getAttribute('href')).toBe('/');
     expect(el.querySelector('header a')?.textContent).toContain('Início');
+  });
+
+  it('hides the way back to Início for a guest (single view, no navigation out of the TV)', async () => {
+    TestBed.inject(SessionState).setUser({
+      id: '1',
+      email: 'a@b.c',
+      displayName: 'A',
+      role: 'guest',
+    });
+    const harness = await RouterTestingHarness.create('/mod');
+    const el = root(harness);
+    expect(el.querySelector('h1')?.textContent).toBe('Módulo');
+    expect(el.querySelector('header a')).toBeNull();
+    localStorage.clear();
   });
 
   it('builds the tab bar from the route data of the module', async () => {

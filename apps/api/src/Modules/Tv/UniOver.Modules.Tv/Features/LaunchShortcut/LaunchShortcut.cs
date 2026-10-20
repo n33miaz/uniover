@@ -45,7 +45,7 @@ internal sealed class LaunchShortcutHandler(TvDbContext db, TvCommandRunner runn
 internal static class LaunchShortcutEndpoint
 {
     public static void MapLaunchShortcut(this IEndpointRouteBuilder group) =>
-        group.MapPost("/shortcuts/{id:guid}/launch", HandleAsync).RequireAuthorization()
+        group.MapPost("/shortcuts/{id:guid}/launch", HandleAsync).RequireAuthorization(TvAuth.ControlPolicy)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces<TvCommandOk>()
             .ProducesProblem(StatusCodes.Status401Unauthorized)

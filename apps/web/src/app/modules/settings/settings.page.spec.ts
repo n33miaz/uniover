@@ -45,9 +45,16 @@ describe('SettingsPage', () => {
   const headings = (el: HTMLElement) =>
     Array.from(el.querySelectorAll('h2')).map((h) => h.textContent?.trim());
 
-  it('lists the sections: account, modules, appearance, security and about', async () => {
+  it('lists the sections: account, modules, appearance, security, guests and about', async () => {
     const { el } = await render();
-    expect(headings(el)).toEqual(['Conta', 'Módulos', 'Aparência', 'Segurança', 'Sobre']);
+    expect(headings(el)).toEqual([
+      'Conta',
+      'Módulos',
+      'Aparência',
+      'Segurança',
+      'Convidados',
+      'Sobre',
+    ]);
   });
 
   it('links to the devices screen', async () => {

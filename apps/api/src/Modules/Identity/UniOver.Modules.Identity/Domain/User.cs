@@ -1,8 +1,12 @@
+using UniOver.BuildingBlocks.Web;
 using UniOver.SharedKernel;
 
 namespace UniOver.Modules.Identity.Domain;
 
-/// <summary>A conta única do dono. Não há cadastro: ela nasce só pelo seed da partida.</summary>
+/// <summary>
+/// Uma conta. A do dono nasce só pelo seed da partida; a de convidado só pelo aceite de um convite do dono. Não há
+/// cadastro aberto.
+/// </summary>
 public sealed class User
 {
     // Para o EF Core materializar a linha.
@@ -27,7 +31,22 @@ public sealed class User
 
     public DateTimeOffset? LastFailedAt { get; private set; }
 
-    public static User Create(string email, string displayName, string passwordHash, DateTimeOffset now)
+    /// <summary><c>owner</c> ou <c>guest</c> (<see cref="AccountRoles"/>). A linha que já existia antes dos convidados é a do dono.</summary>
+    public string Role { get; private set; } = AccountRoles.Owner;
+
+    /// <summary>Quando a conta foi revogada (só convidado). Conta revogada não entra nem renova a sessão.</summary>
+    public DateTimeOffset? DisabledAt { get; private set; }
+
+    public bool IsDisabled => DisabledAt is not null;
+
+    public static User Create(string email, string displayName, string passwordHash, DateTimeOffset now) =>
+        Build(email, displayName, passwordHash, now, AccountRoles.Owner);
+
+    /// <summary>Conta de convidado: usa o controle da TV e nada mais.</summary>
+    public static User CreateGuest(string email, string displayName, string passwordHash, DateTimeOffset now) =>
+        Build(email, displayName, passwordHash, now, AccountRoles.Guest);
+
+    private static User Build(string email, string displayName, string passwordHash, DateTimeOffset now, string role)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(email);
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
@@ -40,7 +59,19 @@ public sealed class User
             DisplayName = displayName.Trim(),
             PasswordHash = passwordHash,
             CreatedAt = now,
+            Role = role,
         };
+    }
+
+    /// <summary>Revoga o acesso. O dono não se revoga por aqui: só convidado.</summary>
+    public void Disable(DateTimeOffset now)
+    {
+        if (Role != AccountRoles.Guest)
+        {
+            throw new InvalidOperationException("Só a conta de convidado pode ser revogada.");
+        }
+
+        DisabledAt ??= now;
     }
 
     public bool IsLockedOut(DateTimeOffset now) => LockoutUntil is { } until && until > now;

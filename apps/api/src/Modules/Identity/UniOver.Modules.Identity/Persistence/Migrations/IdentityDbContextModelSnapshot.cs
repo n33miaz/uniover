@@ -23,6 +23,66 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.GuestInvite", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("label");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("role");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.Property<Guid?>("UsedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("used_by");
+
+                    b.HasKey("Id")
+                        .HasName("pk_guest_invites");
+
+                    b.HasIndex("CreatedBy")
+                        .HasDatabaseName("ix_guest_invites_created_by");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_guest_invites_token_hash");
+
+                    b.ToTable("guest_invites", "identity");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.LoginAuditEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -253,6 +313,10 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<DateTimeOffset?>("DisabledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disabled_at");
+
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -283,6 +347,14 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("password_hash");
 
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("owner")
+                        .HasColumnName("role");
+
                     b.HasKey("Id")
                         .HasName("pk_users");
 
@@ -290,7 +362,10 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_users_email");
 
-                    b.ToTable("users", "identity");
+                    b.ToTable("users", "identity", t =>
+                        {
+                            t.HasCheckConstraint("ck_users_role", "role IN ('owner', 'guest')");
+                        });
                 });
 
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.WebAuthnChallenge", b =>

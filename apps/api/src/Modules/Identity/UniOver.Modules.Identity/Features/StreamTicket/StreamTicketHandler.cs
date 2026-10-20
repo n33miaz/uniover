@@ -37,7 +37,18 @@ internal sealed class StreamTicketHandler(
             return new StreamTicketResult(null, lifetime);
         }
 
-        var ticket = tokens.Issue(userId, familyId, UniOverAuth.StreamAudience, lifetime, time.GetUtcNow());
+
+        // O bilhete leva o papel (a política do stream decide por ele) e não sai para conta revogada.
+        var account = await db.Users
+            .Where(u => u.Id == userId)
+            .Select(u => new { u.Role, u.DisabledAt })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (account is null || account.DisabledAt is not null)
+        {
+            return new StreamTicketResult(null, lifetime);
+        }
+
+        var ticket = tokens.Issue(userId, familyId, account.Role, UniOverAuth.StreamAudience, lifetime, time.GetUtcNow());
         return new StreamTicketResult(ticket, lifetime);
     }
 }

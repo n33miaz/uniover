@@ -84,6 +84,51 @@ describe('AuthApi', () => {
     expect(lastCall().url).toBe('/api/v1/identity/passkeys/registration/complete');
   });
 
+  it('accepting an invite is a public POST with the client header; the secret goes in the body, never in the URL', async () => {
+    fetchFn.mockResolvedValue(reply(200, { accessToken: 't', expiresIn: 600 }));
+    await api().acceptInvite('segredo-do-convite', 'ana@exemplo.com', 'uma-senha-longa');
+    const { url, init, headers } = lastCall();
+    expect(url).toBe('/api/v1/identity/guest-invites/accept');
+    expect(init.method).toBe('POST');
+    expect(headers['X-UniOver-Client']).toBe('web');
+    expect(headers['Authorization']).toBeUndefined();
+    expect(JSON.parse(init.body as string)).toEqual({
+      token: 'segredo-do-convite',
+      email: 'ana@exemplo.com',
+      password: 'uma-senha-longa',
+    });
+    for (const [called] of fetchFn.mock.calls) expect(called).not.toContain('segredo');
+  });
+
+  it('uses the verbs and paths of the invite and guest endpoints, all with the Bearer token', async () => {
+    fetchFn.mockResolvedValue(reply(200, []));
+    await api().guestInvites('jwt');
+    expect([lastCall().init.method, lastCall().url]).toEqual([
+      'GET',
+      '/api/v1/identity/guest-invites',
+    ]);
+    await api().guests('jwt');
+    expect([lastCall().init.method, lastCall().url]).toEqual(['GET', '/api/v1/identity/guests']);
+    fetchFn.mockResolvedValue(
+      reply(200, { id: 'i', displayName: 'Ana', token: 'x', expiresAt: '' }),
+    );
+    await api().createGuestInvite('jwt', 'Ana');
+    expect([lastCall().init.method, lastCall().url]).toEqual([
+      'POST',
+      '/api/v1/identity/guest-invites',
+    ]);
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({ displayName: 'Ana' });
+    fetchFn.mockResolvedValue(new Response(null, { status: 204 }));
+    await api().revokeGuestInvite('jwt', 'i-1');
+    expect(lastCall().url).toBe('/api/v1/identity/guest-invites/i-1/revoke');
+    await api().revokeGuest('jwt', 'g-1');
+    expect([lastCall().init.method, lastCall().url]).toEqual([
+      'POST',
+      '/api/v1/identity/guests/g-1/revoke',
+    ]);
+    expect(lastCall().headers['Authorization']).toBe('Bearer jwt');
+  });
+
   it('turns an error response into an ApiProblem with kind and Retry-After', async () => {
     fetchFn.mockResolvedValue(
       reply(429, { type: 'https://uniover.app/problems/login-locked' }, { 'Retry-After': '90' }),

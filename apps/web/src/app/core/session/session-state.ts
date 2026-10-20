@@ -7,10 +7,40 @@ import { Injectable, computed, signal } from '@angular/core';
  */
 export type SessionStatus = 'unknown' | 'anonymous' | 'authenticated' | 'pending';
 
+/** Papel da conta: o dono usa tudo; o convidado usa só o controle da TV. */
+export type AccountRole = 'owner' | 'guest';
+
 export interface SessionUser {
   readonly id: string;
   readonly email: string;
   readonly displayName: string;
+  /** Ausente em respostas antigas: vale como dono (a API também trata assim um token sem papel). */
+  readonly role?: string;
+}
+
+/**
+ * Dica do papel para a primeira tela quando a sessão ainda não foi confirmada (sem rede, servidor acordando): sem
+ * ela o convidado veria por um instante a navegação do dono. Não é segredo e não decide acesso (quem decide é a API,
+ * com 403): só evita mostrar o que o papel não alcança.
+ */
+const ROLE_HINT_KEY = 'uniover.account-role';
+
+function readRoleHint(): AccountRole | null {
+  try {
+    const value = globalThis.localStorage?.getItem(ROLE_HINT_KEY);
+    return value === 'owner' || value === 'guest' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeRoleHint(role: AccountRole | null): void {
+  try {
+    if (role) globalThis.localStorage?.setItem(ROLE_HINT_KEY, role);
+    else globalThis.localStorage?.removeItem(ROLE_HINT_KEY);
+  } catch {
+    // Sem armazenamento (modo privado): a dica é só conforto.
+  }
 }
 
 /**
@@ -26,12 +56,23 @@ export class SessionState {
   private readonly _status = signal<SessionStatus>('unknown');
   private readonly _user = signal<SessionUser | null>(null);
   private readonly _expiresAt = signal<number | null>(null);
+  private readonly _roleHint = signal<AccountRole | null>(readRoleHint());
 
   readonly status = this._status.asReadonly();
   readonly user = this._user.asReadonly();
   /** Instante (ms desde 1970) em que o token de acesso vence; não é o token. */
   readonly expiresAt = this._expiresAt.asReadonly();
   readonly isAuthenticated = computed(() => this._status() === 'authenticated');
+
+  /** Papel conhecido: o do usuário carregado; sem ele, a dica da última sessão; `null` se não há nenhum dos dois. */
+  readonly role = computed<AccountRole | null>(() => {
+    const user = this._user();
+    if (user) return user.role === 'guest' ? 'guest' : 'owner';
+    return this._roleHint();
+  });
+
+  /** Só é verdadeiro quando se sabe que é convidado: papel desconhecido nunca tranca o dono para fora. */
+  readonly isGuest = computed(() => this.role() === 'guest');
 
   /** Token para o cabeçalho `Authorization`, ou `null` se não houver um ainda utilizável. */
   bearer(nowMs: number = Date.now()): string | null {
@@ -53,6 +94,9 @@ export class SessionState {
 
   setUser(user: SessionUser): void {
     this._user.set(user);
+    const role: AccountRole = user.role === 'guest' ? 'guest' : 'owner';
+    this._roleHint.set(role);
+    writeRoleHint(role);
   }
 
   /** Sessão não confirmada: mantém usuário e token vencido de lado, sem apagar nada do aparelho. */
@@ -65,6 +109,8 @@ export class SessionState {
     this.#accessToken = null;
     this._expiresAt.set(null);
     this._user.set(null);
+    this._roleHint.set(null);
+    writeRoleHint(null);
     this._status.set(status);
   }
 }

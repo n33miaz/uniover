@@ -88,6 +88,39 @@ internal static class IdentityProblems
             title: "Não foi possível cadastrar a passkey.",
             type: ProblemDetailsExtensions.TypeBase + PasskeyRegistrationFailedType);
 
+    public const string InviteInvalidType = "invite-invalid";
+    public const string EmailUnavailableType = "email-unavailable";
+    public const string TooManyInvitesType = "too-many-invites";
+    public const string InviteNotPendingType = "invite-not-pending";
+
+    /// <summary>
+    /// Convite desconhecido, vencido, usado ou revogado: a mesma resposta para todos, sem dizer qual (quem tem só um
+    /// palpite não aprende nada).
+    /// </summary>
+    public static IResult InviteInvalid() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status410Gone,
+            title: "Este convite não vale mais. Peça um novo a quem o enviou.",
+            type: ProblemDetailsExtensions.TypeBase + InviteInvalidType);
+
+    public static IResult EmailUnavailable() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: "Este e-mail não pode ser usado. Escolha outro.",
+            type: ProblemDetailsExtensions.TypeBase + EmailUnavailableType);
+
+    public static IResult TooManyInvites() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: "Há convites pendentes demais. Revogue algum antes de criar outro.",
+            type: ProblemDetailsExtensions.TypeBase + TooManyInvitesType);
+
+    public static IResult InviteNotPending() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: "Este convite já foi aceito: revogue a conta do convidado.",
+            type: ProblemDetailsExtensions.TypeBase + InviteNotPendingType);
+
     public static IResult Conflict() =>
         Results.Problem(
             statusCode: StatusCodes.Status409Conflict,

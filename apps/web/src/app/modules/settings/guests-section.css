@@ -1,0 +1,157 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+h2 {
+  font-size: 1.15rem;
+}
+
+.hint,
+.empty,
+.recommend {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: 0.95rem;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.meta {
+  color: var(--a-ink2);
+  font-size: 0.9rem;
+}
+
+.inline,
+.add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.question {
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+label {
+  font-weight: 600;
+}
+
+input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--a-ink3);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary {
+  border: 1px solid var(--a-line);
+  background: var(--a-surface);
+  color: var(--a-ink);
+}
+
+.primary {
+  border: 0;
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+}
+
+.danger {
+  border: 0;
+  background: var(--a-bad);
+  color: var(--a-on-accent);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.add-button {
+  align-self: flex-start;
+}
+
+.messages {
+  min-height: 1.4em;
+}
+
+.message {
+  margin: 0;
+  font-weight: 600;
+}
+
+.message.error {
+  color: var(--a-bad);
+}
+
+h3 {
+  margin: 6px 0 0;
+  font-size: 1rem;
+}
+
+.link-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--a-line);
+  border-left: 4px solid var(--a-accent);
+  border-radius: var(--radius);
+  background: var(--a-elev);
+}
+
+.link {
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.revoked {
+  color: var(--a-bad);
+  font-weight: 600;
+}

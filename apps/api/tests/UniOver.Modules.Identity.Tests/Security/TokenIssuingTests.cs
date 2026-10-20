@@ -38,7 +38,7 @@ public class TokenIssuingTests
         var user = Guid.NewGuid();
         var session = Guid.NewGuid();
 
-        var token = issuer.Issue(user, session, UniOverAuth.ApiAudience, TimeSpan.FromMinutes(10), Now);
+        var token = issuer.Issue(user, session, AccountRoles.Guest, UniOverAuth.ApiAudience, TimeSpan.FromMinutes(10), Now);
 
         var jwt = new JsonWebTokenHandler().ReadJsonWebToken(token.Value);
         jwt.Alg.Should().Be("HS256");
@@ -46,10 +46,24 @@ public class TokenIssuingTests
         jwt.Audiences.Should().Equal("uniover-api");
         jwt.GetClaim("sub").Value.Should().Be(user.ToString());
         jwt.GetClaim("sid").Value.Should().Be(session.ToString());
+        jwt.GetClaim("role").Value.Should().Be("guest");
         jwt.GetClaim("jti").Value.Should().NotBeNullOrEmpty();
         jwt.ValidFrom.Should().Be(Now.UtcDateTime);
         jwt.ValidTo.Should().Be(Now.AddMinutes(10).UtcDateTime);
         token.ExpiresAt.Should().Be(Now.AddMinutes(10));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("admin")]
+    [InlineData("Owner")]
+    public void Issue_WithAnUnknownRole_IsRefused(string role)
+    {
+        var issuer = new AccessTokenIssuer(Keys(NewKey()), new FakeEnvironment(Environments.Production));
+
+        var act = () => issuer.Issue(Guid.NewGuid(), Guid.NewGuid(), role, UniOverAuth.ApiAudience, TimeSpan.FromMinutes(1), Now);
+
+        act.Should().Throw<ArgumentException>();
     }
 
     [Fact]
@@ -58,8 +72,8 @@ public class TokenIssuingTests
         var issuer = new AccessTokenIssuer(Keys(NewKey()), new FakeEnvironment(Environments.Production));
         var handler = new JsonWebTokenHandler();
 
-        var first = handler.ReadJsonWebToken(issuer.Issue(Guid.NewGuid(), Guid.NewGuid(), "a", TimeSpan.FromMinutes(1), Now).Value);
-        var second = handler.ReadJsonWebToken(issuer.Issue(Guid.NewGuid(), Guid.NewGuid(), "a", TimeSpan.FromMinutes(1), Now).Value);
+        var first = handler.ReadJsonWebToken(issuer.Issue(Guid.NewGuid(), Guid.NewGuid(), AccountRoles.Owner, "a", TimeSpan.FromMinutes(1), Now).Value);
+        var second = handler.ReadJsonWebToken(issuer.Issue(Guid.NewGuid(), Guid.NewGuid(), AccountRoles.Owner, "a", TimeSpan.FromMinutes(1), Now).Value);
 
         first.GetClaim("jti").Value.Should().NotBe(second.GetClaim("jti").Value);
     }
@@ -69,7 +83,7 @@ public class TokenIssuingTests
     {
         var key = NewKey();
         var issuer = new AccessTokenIssuer(Keys(key), new FakeEnvironment(Environments.Production));
-        var token = issuer.Issue(Guid.NewGuid(), Guid.NewGuid(), UniOverAuth.ApiAudience, TimeSpan.FromMinutes(10), DateTimeOffset.UtcNow).Value;
+        var token = issuer.Issue(Guid.NewGuid(), Guid.NewGuid(), AccountRoles.Owner, UniOverAuth.ApiAudience, TimeSpan.FromMinutes(10), DateTimeOffset.UtcNow).Value;
 
         TokenValidationParameters For(string base64) => new()
         {
@@ -127,11 +141,11 @@ public class TokenIssuingTests
         var development = new AccessTokenIssuer(keys, new FakeEnvironment(Environments.Development));
         var testing = new AccessTokenIssuer(keys, new FakeEnvironment("Testing"));
 
-        var act = () => production.Issue(Guid.NewGuid(), Guid.NewGuid(), "a", TimeSpan.FromMinutes(1), Now);
+        var act = () => production.Issue(Guid.NewGuid(), Guid.NewGuid(), AccountRoles.Owner, "a", TimeSpan.FromMinutes(1), Now);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*SigningKey*");
-        development.Issue(Guid.NewGuid(), Guid.NewGuid(), "a", TimeSpan.FromMinutes(1), Now).Value.Should().NotBeNullOrEmpty();
-        testing.Issue(Guid.NewGuid(), Guid.NewGuid(), "a", TimeSpan.FromMinutes(1), Now).Value.Should().NotBeNullOrEmpty();
+        development.Issue(Guid.NewGuid(), Guid.NewGuid(), AccountRoles.Owner, "a", TimeSpan.FromMinutes(1), Now).Value.Should().NotBeNullOrEmpty();
+        testing.Issue(Guid.NewGuid(), Guid.NewGuid(), AccountRoles.Owner, "a", TimeSpan.FromMinutes(1), Now).Value.Should().NotBeNullOrEmpty();
     }
 }
 
@@ -150,6 +164,9 @@ public class IdentityOptionsTests
         options.Lockout.MaxDelay.Should().Be(TimeSpan.FromMinutes(15));
         options.MinPasswordLength.Should().Be(10);
         options.StreamTicketLifetime.Should().Be(TimeSpan.FromSeconds(120));
+        options.GuestInviteLifetime.Should().Be(TimeSpan.FromHours(48));
+        options.MaxPendingGuestInvites.Should().Be(10);
+        options.GuestStatusCacheLifetime.Should().Be(TimeSpan.FromSeconds(30));
         options.Cookies.SecureOverride.Should().BeNull();
         IdentityModuleOptions.IsValid(options).Should().BeTrue();
     }
@@ -169,5 +186,24 @@ public class IdentityOptionsTests
         };
 
         IdentityModuleOptions.IsValid(options).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(0, 10)]
+    [InlineData(721, 10)]
+    [InlineData(48, 0)]
+    public void IsValid_RejectsGuestInviteValuesThatWouldBreakTheRules(int hours, int maxPending)
+    {
+        var options = new IdentityModuleOptions { GuestInviteHours = hours, MaxPendingGuestInvites = maxPending };
+
+        IdentityModuleOptions.IsValid(options).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(601)]
+    public void IsValid_RejectsAGuestStatusCacheOutsideOneSecondToTenMinutes(int seconds)
+    {
+        IdentityModuleOptions.IsValid(new IdentityModuleOptions { GuestStatusCacheSeconds = seconds }).Should().BeFalse();
     }
 }

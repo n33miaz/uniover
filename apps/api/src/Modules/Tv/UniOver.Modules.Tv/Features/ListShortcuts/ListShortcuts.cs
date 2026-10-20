@@ -16,7 +16,7 @@ internal static class ListShortcutsEndpoint
     public static void MapListShortcuts(this IEndpointRouteBuilder group) =>
         group.MapGet("/shortcuts", async (ListShortcutsHandler handler, CancellationToken cancellationToken) =>
             TypedResults.Ok(await handler.HandleAsync(cancellationToken)))
-            .RequireAuthorization()
+            .RequireAuthorization(TvAuth.ControlPolicy)
             .Produces<IReadOnlyList<TvShortcut>>()
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 }

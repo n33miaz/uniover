@@ -72,6 +72,17 @@ internal sealed class RefreshHandler(
                 return new RefreshResult(RefreshStatus.Unauthenticated);
         }
 
+        // O papel entra no JWT novo e a conta revogada não renova: o dono troca de papel ou revoga sem esperar o refresh vencer.
+        var userId = token.UserId;
+        var account = await db.Users
+            .Where(u => u.Id == userId)
+            .Select(u => new { u.Role, u.DisabledAt })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (account is null || account.DisabledAt is not null)
+        {
+            return new RefreshResult(RefreshStatus.Unauthenticated);
+        }
+
         // O teto absoluto sai da data do primeiro token da família: não há coluna própria para ele.
         var familyStartedAt = await db.RefreshTokens
             .Where(t => t.FamilyId == token.FamilyId)
@@ -106,7 +117,7 @@ internal sealed class RefreshHandler(
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        var access = tokens.Issue(token.UserId, token.FamilyId, UniOverAuth.ApiAudience, settings.AccessLifetime, now);
+        var access = tokens.Issue(token.UserId, token.FamilyId, account.Role, UniOverAuth.ApiAudience, settings.AccessLifetime, now);
         return new RefreshResult(
             RefreshStatus.Succeeded,
             access.Value,

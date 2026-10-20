@@ -14,4 +14,8 @@ public static class AuditEvents
     public const string PasskeyRemoved = "passkey_removed";
     public const string StepUpSucceeded = "step_up_succeeded";
     public const string StepUpFailed = "step_up_failed";
+    public const string GuestInviteCreated = "guest_invite_created";
+    public const string GuestInviteAccepted = "guest_invite_accepted";
+    public const string GuestInviteRevoked = "guest_invite_revoked";
+    public const string GuestRevoked = "guest_revoked";
 }

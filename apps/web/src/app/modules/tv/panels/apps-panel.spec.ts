@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { SessionState } from '../../../core/session/session-state';
 import { TvStore } from '../data/tv-store';
 import { FakeTvStore, createFakeTvStore, makeShortcut } from '../tv-test-kit';
 import { AppsPanel } from './apps-panel';
@@ -357,5 +358,32 @@ describe('AppsPanel', () => {
     expect(text).not.toContain('ligar e abrir');
     expect(text).not.toContain('30 min');
     expect(text).not.toContain('voz');
+  });
+});
+
+describe('AppsPanel for a guest', () => {
+  afterEach(() => localStorage.clear());
+
+  it('opens apps and refreshes the list, but offers neither rename nor hide (owner only)', async () => {
+    localStorage.clear();
+    const store = createFakeTvStore();
+    TestBed.configureTestingModule({ providers: [{ provide: TvStore, useValue: store }] });
+    TestBed.inject(SessionState).setUser({
+      id: '1',
+      email: 'a@b.c',
+      displayName: 'Alice',
+      role: 'guest',
+    });
+    const fixture = TestBed.createComponent(AppsPanel);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+
+    expect(root.querySelectorAll('.launch')).toHaveLength(3);
+    expect(root.querySelector('.tools')).toBeNull();
+    expect(root.querySelector('button[aria-label^="Renomear"]')).toBeNull();
+    expect(root.querySelector('button[aria-label^="Ocultar"]')).toBeNull();
+    expect(root.querySelector('button.refresh')).not.toBeNull();
   });
 });

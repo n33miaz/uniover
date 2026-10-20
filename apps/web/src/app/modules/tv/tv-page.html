@@ -1,6 +1,11 @@
 <div class="tv">
   <header class="head">
-    <a routerLink="/" class="back" i18n="@@tv.header.back">&larr; Início</a>
+    @if (isGuest()) {
+      <!-- Convidado: visão única do controle, sem Início nem voltar. O espaço fica para o nome seguir centralizado. -->
+      <span aria-hidden="true"></span>
+    } @else {
+      <a routerLink="/" class="back" i18n="@@tv.header.back">&larr; Início</a>
+    }
     <div class="name">
       <h1 i18n="@@tv.header.name">TV</h1>
       <app-status-indicator />

@@ -56,7 +56,7 @@ public sealed class IdentityPersistenceTests(PostgresFixture postgres) : IDispos
             + "WHERE schema_name NOT IN ('public', 'information_schema', 'identity') AND schema_name NOT LIKE 'pg_%'");
 
         tables.Should().Equal(
-            "__ef_migrations_history", "login_audit", "passkeys", "refresh_tokens", "step_up_confirmations", "users", "webauthn_challenges");
+            "__ef_migrations_history", "guest_invites", "login_audit", "passkeys", "refresh_tokens", "step_up_confirmations", "users", "webauthn_challenges");
         publicTables.Should().BeEmpty();
         otherSchemas.Should().BeEmpty();
     }
@@ -82,7 +82,7 @@ public sealed class IdentityPersistenceTests(PostgresFixture postgres) : IDispos
             "SELECT column_name FROM information_schema.columns WHERE table_schema = 'identity' AND table_name = 'users' ORDER BY column_name");
 
         columns.Should().Equal(
-            "created_at", "display_name", "email", "failed_login_count", "id", "last_failed_at", "lockout_until", "password_hash");
+            "created_at", "disabled_at", "display_name", "email", "failed_login_count", "id", "last_failed_at", "lockout_until", "password_hash", "role");
     }
 
     [Fact]
@@ -156,5 +156,65 @@ public sealed class IdentityPersistenceTests(PostgresFixture postgres) : IDispos
         });
 
         (await second.LoginRawAsync(second.OwnerEmail, newPassword)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task DeletingOnlyTheOwnerRow_WithAGuestStillThere_TheSeedStillRecreatesTheOwner()
+    {
+        await using var first = await IdentityApp.StartAsync(postgres);
+        await using (var db = first.Db())
+        {
+            db.Users.Add(User.CreateGuest("convidada@uniover.test", "Convidada", "hash", DateTimeOffset.UtcNow));
+            await db.SaveChangesAsync(Ct);
+            (await db.Database.ExecuteSqlRawAsync("DELETE FROM identity.users WHERE role = 'owner'", Ct)).Should().Be(1);
+        }
+
+        var newPassword = IdentityApp.NewPassword();
+        await using var second = await IdentityApp.StartAsync(postgres, new IdentityAppOptions
+        {
+            Database = first.Database,
+            OwnerPassword = newPassword,
+        });
+
+        (await second.LoginRawAsync(second.OwnerEmail, newPassword)).StatusCode.Should().Be(HttpStatusCode.OK);
+        await using var check = second.Db();
+        (await check.Users.CountAsync(u => u.Role == "owner", Ct)).Should().Be(1);
+        (await check.Users.CountAsync(u => u.Role == "guest", Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RoleMigration_OverAnExistingAccount_KeepsItAsTheOwner_WithoutRewritingHistory()
+    {
+        // O que a produção vive por alguns minutos: tabela já migrada para o esquema novo, código antigo escrevendo
+        // sem conhecer a coluna de papel. A linha que existia antes e a que o código antigo grava viram dono.
+        var database = await postgres.CreateDatabaseAsync();
+        await using (var context = IdentityApp.CreateContext(database.OwnerConnection))
+        {
+            var migrator = context.GetService<IMigrator>();
+            await migrator.MigrateAsync("20261018223021_AddPasskeysAndStepUp", Ct);
+            await context.Database.ExecuteSqlRawAsync(
+                "INSERT INTO identity.users (id, email, display_name, password_hash, created_at, failed_login_count) "
+                + "VALUES ('0192f1e4-0000-7000-8000-000000000001', 'antigo@uniover.test', 'antigo', 'hash', now(), 0)", Ct);
+            await migrator.MigrateAsync(null, Ct);
+
+            // Código antigo depois do esquema novo: insere sem a coluna `role`.
+            await context.Database.ExecuteSqlRawAsync(
+                "INSERT INTO identity.users (id, email, display_name, password_hash, created_at, failed_login_count) "
+                + "VALUES ('0192f1e4-0000-7000-8000-000000000002', 'outro@uniover.test', 'outro', 'hash', now(), 0)", Ct);
+        }
+
+        var roles = await QueryAsync(database.OwnerConnection, "SELECT role FROM identity.users ORDER BY email");
+        var applied = await QueryAsync(database.OwnerConnection, "SELECT migration_id FROM identity.__ef_migrations_history ORDER BY migration_id");
+
+        roles.Should().Equal("owner", "owner");
+        applied.Should().StartWith("20261018215747_InitialCreate", "20261018223021_AddPasskeysAndStepUp");
+        applied.Should().HaveCount(3);
+
+        // O banco recusa um papel inventado.
+        await using var conn = new NpgsqlConnection(database.OwnerConnection);
+        await conn.OpenAsync(Ct);
+        await using var bad = new NpgsqlCommand("UPDATE identity.users SET role = 'admin'", conn);
+        var act = async () => await bad.ExecuteNonQueryAsync(Ct);
+        (await act.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be("23514");
     }
 }

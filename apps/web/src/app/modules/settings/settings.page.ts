@@ -7,6 +7,7 @@ import { ModuleDefinition, ModuleRegistry } from '../../core/modules/module-regi
 import { AppearanceService, ThemePreference } from '../../core/session/appearance.service';
 import { SessionState } from '../../core/session/session-state';
 import { version as appVersion } from '../../../../package.json';
+import { GuestsSection } from './guests-section';
 import { SecuritySection } from './security-section';
 
 interface ThemeChoice {
@@ -16,11 +17,11 @@ interface ThemeChoice {
 
 /**
  * Ajustes: conta e sessão, módulos ligados/desligados, aparência, segurança (passkeys) e sobre. Tela simples,
- * em lista; sem abas. Fora do básico (de propósito): PIN local, pessoas da casa, exportar configuração.
+ * em lista; sem abas. Só o dono chega aqui (o convidado não tem Ajustes). Fora do básico (de propósito): PIN local, pessoas da casa, exportar configuração.
  */
 @Component({
   selector: 'app-settings-page',
-  imports: [SecuritySection, RouterLink],
+  imports: [SecuritySection, GuestsSection, RouterLink],
   templateUrl: './settings.page.html',
   styleUrl: './settings.page.css',
 })

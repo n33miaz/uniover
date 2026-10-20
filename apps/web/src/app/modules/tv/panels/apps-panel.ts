@@ -1,4 +1,5 @@
 import { Component, computed, inject, output, signal } from '@angular/core';
+import { SessionState } from '../../../core/session/session-state';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut, shortcutLabel } from '../data/tv-types';
 import { TvIcon } from '../ui/tv-icon';
@@ -39,6 +40,9 @@ function storedView(): AppsView {
 })
 export class AppsPanel {
   protected readonly store = inject(TvStore);
+
+  /** Renomear e ocultar atalhos é só do dono (a API recusa o convidado com 403): o convidado só abre os apps. */
+  protected readonly isGuest = inject(SessionState).isGuest;
 
   /** O app foi aberto na TV: o painel pode fechar e devolver o controle. */
   readonly done = output<void>();
