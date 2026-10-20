@@ -90,10 +90,17 @@ export function parseWatchdog(value: unknown): TvWatchdog | null {
   };
 }
 
-/** Nome mostrado de um atalho: o do dono, ou "Atalho n" com a posição que a API deu (estável, nunca renumerada). */
-export function shortcutLabel(shortcut: Pick<TvShortcut, 'customLabel' | 'position'>): string {
+/**
+ * Nome mostrado de um atalho: o nome próprio do dono, depois o nome que o agente publica para o app (`tvLabel`) e só
+ * então "Atalho n", com a posição que a API deu (estável, nunca renumerada).
+ */
+export function shortcutLabel(
+  shortcut: Pick<TvShortcut, 'customLabel' | 'tvLabel' | 'position'>,
+): string {
   const own = shortcut.customLabel?.trim();
   if (own) return own;
+  const published = shortcut.tvLabel?.trim();
+  if (published) return published;
   const position = shortcut.position;
   return $localize`:@@tv.shortcut.default-label:Atalho ${position}:position:`;
 }

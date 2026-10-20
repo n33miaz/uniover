@@ -11,7 +11,7 @@ const shortcut = (overrides: Partial<TvShortcut> = {}): TvShortcut => ({
   id: 'a1',
   position: 1,
   package: 'exemplo.pacote',
-  tvLabel: 'Rótulo da TV',
+  tvLabel: null,
   customLabel: null,
   enabled: true,
   ...overrides,
@@ -90,10 +90,19 @@ describe('shortcutLabel', () => {
     expect(shortcutLabel(shortcut({ customLabel: '  Sala  ' }))).toBe('Sala');
   });
 
-  it('falls back to "Atalho n" with the stable position, never to the TV label or the package', () => {
+  it('then uses the name the agent publishes for the app', () => {
+    expect(shortcutLabel(shortcut({ tvLabel: 'YouTube' }))).toBe('YouTube');
+    expect(shortcutLabel(shortcut({ tvLabel: '  Play Store  ' }))).toBe('Play Store');
+    expect(shortcutLabel(shortcut({ customLabel: 'Sala', tvLabel: 'YouTube' }))).toBe('Sala');
+    expect(shortcutLabel(shortcut({ customLabel: '   ', tvLabel: 'YouTube' }))).toBe('YouTube');
+  });
+
+  it('only then falls back to "Atalho n" with the stable position, never to the package', () => {
     expect(shortcutLabel(shortcut({ position: 2 }))).toBe('Atalho 2');
-    expect(shortcutLabel(shortcut({ position: 5, customLabel: '   ' }))).toBe('Atalho 5');
-    expect(shortcutLabel(shortcut({ position: 3, tvLabel: 'Algum app' }))).not.toContain('Algum');
+    expect(shortcutLabel(shortcut({ position: 5, customLabel: '   ', tvLabel: '  ' }))).toBe(
+      'Atalho 5',
+    );
+    expect(shortcutLabel(shortcut({ position: 3, package: 'com.exemplo.app' }))).toBe('Atalho 3');
   });
 });
 

@@ -1,0 +1,73 @@
+:host {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Alvo de 44 px em volta do ponto pequeno. */
+.trigger {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Flutua logo abaixo do ponto, centrado nele, sem passar das bordas da tela. */
+.panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(20rem, calc(100vw - 2 * var(--gutter)));
+  padding: 14px 16px;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.22);
+  color: var(--a-ink);
+  transform: translateX(-50%);
+}
+
+.panel p {
+  margin: 0;
+}
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.05rem;
+}
+.meaning {
+  color: var(--a-ink);
+}
+.note {
+  color: var(--a-ink2);
+  font-size: 0.9rem;
+}
+
+.action {
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.action:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

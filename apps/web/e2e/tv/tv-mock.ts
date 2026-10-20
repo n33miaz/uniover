@@ -41,6 +41,8 @@ export interface TvMock {
   commandFailure: MockFailure | null;
   /** Falha de `/wake`. */
   wakeFailure: MockFailure | null;
+  /** Enquanto houver uma promessa aqui, `GET /state` espera por ela (para ver a tela "conectando"). */
+  stateGate: Promise<void> | null;
   /** Pedidos de comando por rota (`/keys`, `/power/off`, ...). */
   count(path: string): number;
   keysSent(): string[];
@@ -61,7 +63,7 @@ export const SHORTCUTS: MockShortcut[] = [1, 2, 3].map((position) => ({
   id: `00000000-0000-4000-8000-00000000000${position}`,
   position,
   package: `exemplo.pacote.app${position}`,
-  tvLabel: `Rótulo da TV ${position}`,
+  tvLabel: null,
   customLabel: null,
   enabled: true,
 }));
@@ -99,6 +101,7 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     shortcuts: SHORTCUTS.map((s) => ({ ...s })),
     commandFailure: null,
     wakeFailure: null,
+    stateGate: null,
     count: (path) => mock.requests.filter((r) => r.method === 'POST' && r.path === path).length,
     keysSent: () =>
       mock.requests.filter((r) => r.path === '/keys').map((r) => String(r.body?.['key'])),
@@ -123,7 +126,10 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
       return problem(route, { status: 401, kind: 'unauthenticated' });
     }
 
-    if (method === 'GET' && path === '/state') return json(route, 200, mock.state);
+    if (method === 'GET' && path === '/state') {
+      if (mock.stateGate) await mock.stateGate;
+      return json(route, 200, mock.state);
+    }
     if (method === 'GET' && path === '/shortcuts') return json(route, 200, mock.shortcuts);
 
     if (method === 'POST' && path === '/wake') {

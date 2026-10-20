@@ -324,7 +324,7 @@ export class TvStore {
     }
   }
 
-  /** Dá um nome próprio ao atalho; texto vazio volta a "Atalho n". Não mexe na TV, então vale sem agente. */
+  /** Dá um nome próprio ao atalho; texto vazio volta ao nome da TV (ou a "Atalho n"). Não mexe na TV, então vale sem agente. */
   async renameShortcut(id: string, label: string): Promise<boolean> {
     return this.updateShortcut(id, { customLabel: label });
   }

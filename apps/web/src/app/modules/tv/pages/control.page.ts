@@ -1,5 +1,4 @@
-import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, ElementRef, computed, inject, output, signal, viewChild } from '@angular/core';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut, shortcutLabel } from '../data/tv-types';
 import { KeyButton } from '../input/key-button';
@@ -9,19 +8,20 @@ import { NumberPad } from '../ui/number-pad';
 import { PageDots } from '../ui/page-dots';
 import { TvIcon } from '../ui/tv-icon';
 
-type RemoteMode = 'buttons' | 'touchpad';
-
-const PAGE_COUNT = 2;
+/** Páginas do palco central: direções com o OK, touchpad e números. */
+const PAGE_COUNT = 3;
 
 /**
- * Aba Controle. Em cima, os atalhos (ou os chips do touchpad); embaixo, as pílulas de volume e canal e os botões
- * redondos. No meio fica o palco, e só ele troca de página, deslizando ou pelos pontos: de um lado as direções com
- * o OK no centro (ou o touchpad), do outro o teclado numérico. O palco é um carrossel de rolagem com encaixe, então
- * o deslize é do próprio navegador, só a janela do palco se mexe e a rolagem horizontal da tela nunca aparece.
+ * Controle principal (a tela única do módulo). Em cima, o chip fixo "Apps" e os atalhos favoritos da TV (chips que
+ * abrem o app ao toque); embaixo, as pílulas de volume e canal e os botões redondos. No meio fica o palco, e só ele
+ * troca de página, deslizando ou pelos pontos: direções com o OK no centro, touchpad e teclado numérico. O palco é um
+ * carrossel de rolagem com encaixe, então o deslize é do próprio navegador, só a janela do palco se mexe e a
+ * rolagem horizontal da tela nunca aparece. Apps e Teclado não são telas: esta tela só avisa a página (`openApps`,
+ * `openKeyboard`) para abrir o painel flutuante.
  */
 @Component({
   selector: 'app-tv-control',
-  imports: [RouterLink, KeyButton, TouchpadSurface, DirectionalRing, NumberPad, PageDots, TvIcon],
+  imports: [KeyButton, TouchpadSurface, DirectionalRing, NumberPad, PageDots, TvIcon],
   templateUrl: './control.page.html',
   styleUrl: './control.page.css',
 })
@@ -29,14 +29,17 @@ export class ControlPage {
   protected readonly store = inject(TvStore);
   private readonly pager = viewChild.required<ElementRef<HTMLElement>>('pager');
 
-  protected readonly mode = signal<RemoteMode>('buttons');
+  /** Os dois avisos levam o botão tocado: o painel devolve o foco a ele ao fechar (o Safari não foca botão ao toque). */
+  readonly openApps = output<HTMLElement>();
+  readonly openKeyboard = output<HTMLElement>();
+
+  protected readonly pageCount = PAGE_COUNT;
   protected readonly page = signal(0);
 
   /** Só os atalhos ativos, na ordem da posição; o número do "Atalho n" é o da posição, que não muda. */
   protected readonly shortcuts = computed(() =>
     (this.store.shortcuts() ?? []).filter((shortcut) => shortcut.enabled),
   );
-  protected readonly shortcutsLoaded = computed(() => this.store.shortcuts() !== null);
 
   protected readonly volumeText = computed(() => {
     const volume = this.store.state()?.volume;
@@ -58,13 +61,17 @@ export class ControlPage {
     return shortcutLabel(shortcut);
   }
 
+  protected askApps(event: Event): void {
+    this.openApps.emit(event.currentTarget as HTMLElement);
+  }
+
+  protected askKeyboard(event: Event): void {
+    this.openKeyboard.emit(event.currentTarget as HTMLElement);
+  }
+
   protected openShortcut(shortcut: TvShortcut): void {
     if (!this.store.canSend()) return;
     void this.store.launch(shortcut);
-  }
-
-  protected setMode(mode: RemoteMode): void {
-    this.mode.set(mode);
   }
 
   protected pageLabel(index: number): string {

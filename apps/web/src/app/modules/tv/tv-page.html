@@ -1,10 +1,10 @@
-<div class="tv" [class.fill]="onControl()">
+<div class="tv">
   <header class="head">
     <a routerLink="/" class="back" i18n="@@tv.header.back">&larr; Início</a>
-    <h1 class="name">
-      <span class="dot" [attr.data-tone]="tone()" aria-hidden="true"></span>
-      <span i18n="@@tv.header.name">TV</span>
-    </h1>
+    <div class="name">
+      <h1 i18n="@@tv.header.name">TV</h1>
+      <app-status-indicator />
+    </div>
     <button
       type="button"
       class="power"
@@ -17,37 +17,37 @@
     </button>
   </header>
 
-  <div class="chips" role="status">
-    <span class="chip" [attr.data-tone]="tone()">{{ label() }}</span>
-    @if (lastSeen(); as seen) {
-      <span class="chip soft">{{ seen }}</span>
-    }
-    @if (store.status() === 'hot') {
-      <span class="chip soft" i18n="@@tv.chip.hibernate"
-        >hiberna em {{ hibernateMinutes }} min</span
-      >
-    }
-    @if (store.watchdogNote(); as note) {
-      <span class="chip soft">{{ note }}</span>
-    }
-    @if (store.streamStatus() === 'reconnecting' && store.link() === 'ok') {
-      <span class="chip soft" i18n="@@tv.chip.reconnecting">reconectando…</span>
-    }
-  </div>
-
   @if (store.disabledReason(); as reason) {
     <p class="reason">{{ reason }}</p>
   }
 
-  <router-outlet />
+  <app-tv-control (openApps)="open('apps', $event)" (openKeyboard)="open('keyboard', $event)" />
 </div>
 
-@if (store.notice(); as notice) {
+@if (showToast() && store.notice(); as notice) {
   @if (notice.kind === 'error') {
     <p class="toast error" role="alert">{{ notice.text }}</p>
   } @else {
     <p class="toast" role="status">{{ notice.text }}</p>
   }
+}
+
+@if (panel() === 'apps') {
+  <app-tv-panel [heading]="appsTitle" [opener]="panelOpener()" (closed)="closePanel()">
+    <app-tv-apps (done)="closePanel()" />
+  </app-tv-panel>
+}
+
+@if (panel() === 'keyboard') {
+  <app-tv-panel
+    [heading]="keyboardTitle"
+    [placement]="'top'"
+    [closable]="false"
+    [opener]="panelOpener()"
+    (closed)="closePanel()"
+  >
+    <app-tv-keyboard (done)="closePanel()" />
+  </app-tv-panel>
 }
 
 @if (powerOpen()) {
