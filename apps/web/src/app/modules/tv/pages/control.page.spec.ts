@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { FakeTvStore, HOT, createFakeTvStore, makeShortcut, pngIcon } from '../tv-test-kit';
 import { ControlPage } from './control.page';
@@ -19,6 +20,7 @@ describe('ControlPage', () => {
 
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
     store = createFakeTvStore();
     scrollTo.mockReset();
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
@@ -126,17 +128,6 @@ describe('ControlPage', () => {
       store.shortcuts.set(null);
       render();
       expect(root.querySelector('.top')?.textContent?.trim()).toBe('Apps');
-    });
-
-    it('the Apps chip asks the page to open the Apps panel, and it works without a remote link', () => {
-      const opened = vi.fn();
-      fixture.componentInstance.openApps.subscribe(opened);
-      store.canSend.set(false);
-      render();
-      const chip = root.querySelector<HTMLButtonElement>('.apps-chip')!;
-      chip.click();
-      // Leva o próprio botão, para o painel devolver o foco a ele ao fechar.
-      expect(opened).toHaveBeenCalledExactlyOnceWith(chip);
     });
 
     it('no touchpad chip or button is left in the top row', () => {
@@ -470,5 +461,106 @@ describe('ControlPage', () => {
     store.canSend.set(false);
     render();
     expect(byLabel('Teclado').hasAttribute('disabled')).toBe(false);
+  });
+
+  describe('what Personalizar chooses', () => {
+    const prefs = () => TestBed.inject(TvPrefs);
+    const remote = () => root.querySelector<HTMLElement>('.remote')!;
+    const roundLabels = () =>
+      [...root.querySelectorAll('.round-grid .round')].map((el) => el.getAttribute('aria-label'));
+
+    afterEach(() => localStorage.clear());
+
+    it('gives the bottom keys the comfortable scale by default, and follows the size at once', () => {
+      expect(remote().style.getPropertyValue('--key-scale')).toBe('1');
+      prefs().set({ buttonSize: 'compact' });
+      render();
+      expect(remote().style.getPropertyValue('--key-scale')).toBe('0.9');
+      prefs().set({ buttonSize: 'large' });
+      render();
+      expect(remote().style.getPropertyValue('--key-scale')).toBe('1.15');
+    });
+
+    it('lays the round keys out in four columns, three for the large size and two without the media keys', () => {
+      const cols = () => root.querySelector('.round-grid')!.getAttribute('data-cols');
+      expect(cols()).toBe('4');
+      prefs().set({ buttonSize: 'large' });
+      render();
+      expect(cols()).toBe('3');
+      prefs().set({ showMedia: false });
+      render();
+      expect(cols()).toBe('2');
+      prefs().set({ buttonSize: 'comfortable' });
+      render();
+      expect(cols()).toBe('2');
+    });
+
+    it('hides the four media keys, keeping the first four, and brings them back', () => {
+      prefs().set({ showMedia: false });
+      render();
+      expect(roundLabels()).toEqual(['Voltar', 'Início da TV', 'Menu', 'Teclado']);
+      for (const label of ['Anterior', 'Reproduzir ou pausar', 'Próxima', 'Mudo']) {
+        expect(byLabel(label)).toBeNull();
+      }
+
+      prefs().set({ showMedia: true });
+      render();
+      expect(roundLabels()).toHaveLength(8);
+    });
+
+    it('hides the channel pill, and the volume pill stays', () => {
+      prefs().set({ showChannel: false });
+      render();
+      expect(root.querySelectorAll('.pill')).toHaveLength(1);
+      expect(root.querySelector('.pill.volume')).not.toBeNull();
+      expect(root.querySelector('[aria-label="Canal"]')).toBeNull();
+      expect(byLabel('Próximo canal')).toBeNull();
+      expect(root.querySelector('.bottom')!.classList.contains('no-channel')).toBe(true);
+
+      prefs().set({ showChannel: true });
+      render();
+      expect(root.querySelectorAll('.pill')).toHaveLength(2);
+      expect(root.querySelector('.bottom')!.classList.contains('no-channel')).toBe(false);
+    });
+
+    it('keeps the ring, the numbers, the touchpad and the dots whatever is hidden', () => {
+      prefs().set({ showMedia: false, showChannel: false, buttonSize: 'large' });
+      render();
+      expect(panels()).toHaveLength(3);
+      expect(root.querySelectorAll('app-page-dots .dot')).toHaveLength(3);
+      expect(root.querySelector('.ok')).not.toBeNull();
+    });
+
+    describe('page the stage opens on', () => {
+      const marks = (host: HTMLElement) =>
+        [...host.querySelectorAll('app-page-dots .dot')].map((d) => d.getAttribute('aria-current'));
+      const reopen = () => {
+        const again = TestBed.createComponent(ControlPage);
+        again.detectChanges();
+        return again.nativeElement as HTMLElement;
+      };
+
+      it.each([
+        ['directions', [true, false, false]],
+        ['numbers', [false, true, false]],
+        ['touchpad', [false, false, true]],
+      ] as const)('"%s" opens on that page, whatever the tab remembers', (startPage, expected) => {
+        sessionStorage.setItem('uniover.tv.stage-page', '2');
+        prefs().set({ startPage });
+        expect(marks(reopen())).toEqual(expected.map((on) => (on ? 'true' : null)));
+      });
+
+      it('"last" opens on the page the tab remembers, and on the first one when it remembers none', () => {
+        prefs().set({ startPage: 'last' });
+        expect(marks(reopen())).toEqual(['true', null, null]);
+        sessionStorage.setItem('uniover.tv.stage-page', '1');
+        expect(marks(reopen())).toEqual([null, 'true', null]);
+      });
+
+      it('is the last used page by default, as the control always did', () => {
+        sessionStorage.setItem('uniover.tv.stage-page', '2');
+        expect(marks(reopen())).toEqual([null, null, 'true']);
+      });
+    });
   });
 });

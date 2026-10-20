@@ -3,6 +3,7 @@ import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { collectShellData } from '../../core/layout/route-data';
 import { SessionState } from '../../core/session/session-state';
+import { TV_PREFS_KEY, TvPrefs } from './data/tv-prefs';
 import { TvStore } from './data/tv-store';
 import { TvPage } from './tv-page';
 import { FakeTvStore, createFakeTvStore } from './tv-test-kit';
@@ -21,8 +22,14 @@ describe('TvPage', () => {
   const byLabel = (label: string) =>
     root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
   const dialogs = () => [...root.querySelectorAll<HTMLDialogElement>('app-tv-panel dialog')];
+  /** O botão Apps mora no cabeçalho (o chip da fileira de atalhos tem o mesmo nome até sair de lá). */
+  const appsButton = () =>
+    root.querySelector<HTMLButtonElement>('.head button[aria-label="Apps da TV"]')!;
+  const titleButton = () => root.querySelector<HTMLButtonElement>('h1 button')!;
+  const customizeSheet = () => root.querySelector<HTMLElement>('app-tv-customize-sheet dialog');
 
   beforeEach(async () => {
+    localStorage.clear();
     store = createFakeTvStore();
     TestBed.configureTestingModule({
       providers: [provideRouter([]), { provide: TvStore, useValue: store }],
@@ -30,6 +37,11 @@ describe('TvPage', () => {
     fixture = TestBed.createComponent(TvPage);
     root = fixture.nativeElement;
     await render();
+  });
+
+  afterEach(() => {
+    TestBed.inject(TvPrefs).reset();
+    localStorage.clear();
   });
 
   it('starts the store when it is created and stops it when it is destroyed', () => {
@@ -40,15 +52,47 @@ describe('TvPage', () => {
   });
 
   describe('header', () => {
-    it('has back to Início, the name TV as the h1, the state dot beside it and power', () => {
-      expect(root.querySelector('a.back')?.textContent?.trim()).toBe('← Início');
-      expect(root.querySelector('a.back')?.getAttribute('href')).toBe('/');
+    it('has back to Início, the name TV as the h1, the state dot beside it, Apps and power', () => {
+      const back = root.querySelector('a.back')!;
+      expect(back.getAttribute('href')).toBe('/');
+      expect(back.getAttribute('aria-label')).toBe('Voltar ao Início');
       const h1 = root.querySelector('h1')!;
       expect(h1.textContent?.trim()).toBe('TV');
       // O ponto fica ao lado do título (não dentro): o nome do botão não vira parte do nome do título.
       expect(h1.querySelector('app-status-indicator')).toBeNull();
       expect(h1.nextElementSibling?.matches('app-status-indicator')).toBe(true);
       expect(byLabel('Desligar a TV')).not.toBeNull();
+      expect(
+        [...root.querySelectorAll('.head .actions button')].map((b) =>
+          b.getAttribute('aria-label'),
+        ),
+      ).toEqual(['Apps da TV', 'Desligar a TV']);
+    });
+
+    it('draws back as a plain arrow in a 44 px circle, with no text beside it', () => {
+      const back = root.querySelector('a.back')!;
+      expect(back.classList.contains('circle')).toBe(true);
+      expect(back.textContent?.trim()).toBe('');
+      const svg = back.querySelector('svg')!;
+      expect(svg.getAttribute('viewBox')).toBe('0 0 24 24');
+      expect(svg.getAttribute('width')).toBe('22');
+      expect(svg.getAttribute('height')).toBe('22');
+      expect(svg.getAttribute('stroke-width')).toBe('2.2');
+      expect(svg.getAttribute('aria-hidden')).toBe('true');
+      expect([...svg.querySelectorAll('path')].map((p) => p.getAttribute('d'))).toEqual([
+        'M19 12H5',
+        'M11 18l-6-6 6-6',
+      ]);
+    });
+
+    it('gives back, Apps and power the same circle', () => {
+      const circles = [...root.querySelectorAll('.head .circle')];
+      expect(circles).toHaveLength(3);
+      expect(circles.map((c) => c.getAttribute('aria-label'))).toEqual([
+        'Voltar ao Início',
+        'Apps da TV',
+        'Desligar a TV',
+      ]);
     });
 
     it('no longer has the connected and hibernation pills, nor any chip row', () => {
@@ -95,7 +139,7 @@ describe('TvPage', () => {
     });
 
     it('hides its own toast while a panel is open, because the panel shows the notice inside', async () => {
-      byLabel('Apps da TV').click();
+      appsButton().click();
       await render();
       store.notice.set({ kind: 'error', text: 'A TV não respondeu a tempo.' });
       await render();
@@ -111,8 +155,9 @@ describe('TvPage', () => {
       expect(dialogs()).toHaveLength(0);
     });
 
-    it('the Apps chip opens the Apps panel, which Fechar closes, giving the focus back to the chip', async () => {
-      const chip = byLabel('Apps da TV');
+    it('the Apps button in the header opens the Apps panel, which Fechar closes, giving the focus back to it', async () => {
+      const chip = appsButton();
+      expect(chip.getAttribute('aria-haspopup')).toBe('dialog');
       chip.focus();
       chip.click();
       await render();
@@ -147,7 +192,7 @@ describe('TvPage', () => {
     });
 
     it('Esc closes the open panel', async () => {
-      byLabel('Apps da TV').click();
+      appsButton().click();
       await render();
       dialogs()[0].dispatchEvent(new Event('cancel', { cancelable: true }));
       await render();
@@ -155,7 +200,7 @@ describe('TvPage', () => {
     });
 
     it('opening an app from the panel closes it, so the control is back at hand', async () => {
-      byLabel('Apps da TV').click();
+      appsButton().click();
       await render();
       root.querySelector<HTMLButtonElement>('app-tv-apps .launch')!.click();
       await render();
@@ -165,7 +210,7 @@ describe('TvPage', () => {
 
     it('a failed launch keeps the panel open, where the error is shown', async () => {
       store.launch.mockResolvedValueOnce(false);
-      byLabel('Apps da TV').click();
+      appsButton().click();
       await render();
       root.querySelector<HTMLButtonElement>('app-tv-apps .launch')!.click();
       await render();
@@ -200,6 +245,141 @@ describe('TvPage', () => {
       await render();
       expect(root.querySelector('app-power-sheet')).toBeNull();
       expect(store.powerOff).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Apps in the header', () => {
+    it('is enabled even without the agent: the panel reads the saved list', async () => {
+      store.canSend.set(false);
+      await render();
+      expect(appsButton().disabled).toBe(false);
+      appsButton().click();
+      await render();
+      expect(dialogs()).toHaveLength(1);
+      expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Apps da TV');
+    });
+  });
+
+  describe('name and Personalizar', () => {
+    const typeName = async (text: string) => {
+      const field = root.querySelector<HTMLInputElement>(
+        'app-tv-customize-sheet input#tv-custom-name',
+      )!;
+      field.value = text;
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      await render();
+    };
+    const saved = () => JSON.parse(localStorage.getItem(TV_PREFS_KEY) ?? 'null');
+
+    it('shows the nickname the owner chose, trimmed, in place of "TV"', async () => {
+      TestBed.inject(TvPrefs).set({ name: '  Sala de estar ' });
+      await render();
+      expect(root.querySelector('h1')?.textContent?.trim()).toBe('Sala de estar');
+    });
+
+    it.each([
+      ['TV', 'short'],
+      ['Sala 1', 'short'],
+      ['Sala de TV', 'medium'],
+      ['Quarto 12', 'medium'],
+      ['Sala de estar', 'long'],
+      ['Casa da praia - sala', 'long'],
+    ])(
+      'sets the size class of "%s" to %s, so the long names shrink instead of being cut',
+      async (name, size) => {
+        TestBed.inject(TvPrefs).set({ name });
+        await render();
+        expect(root.querySelector('.name')?.getAttribute('data-size')).toBe(size);
+      },
+    );
+
+    it('falls back to "TV" when the nickname is empty', async () => {
+      TestBed.inject(TvPrefs).set({ name: 'Sala' });
+      await render();
+      TestBed.inject(TvPrefs).set({ name: '   ' });
+      await render();
+      expect(root.querySelector('h1')?.textContent?.trim()).toBe('TV');
+    });
+
+    it('names the title button after the nickname and what the touch does', async () => {
+      expect(titleButton().getAttribute('aria-label')).toBe('TV, personalizar');
+      expect(titleButton().getAttribute('aria-haspopup')).toBe('dialog');
+      TestBed.inject(TvPrefs).set({ name: 'Quarto' });
+      await render();
+      expect(titleButton().getAttribute('aria-label')).toBe('Quarto, personalizar');
+      // O texto visível é só o nome: o que o toque faz vai no nome acessível.
+      expect(titleButton().textContent?.trim()).toBe('Quarto');
+    });
+
+    it('opens the sheet on the title, which changes the name as it is typed and keeps it', async () => {
+      expect(customizeSheet()).toBeNull();
+      titleButton().click();
+      await render();
+      expect(customizeSheet()?.hasAttribute('open')).toBe(true);
+      expect(root.querySelector('app-tv-customize-sheet h2')?.textContent).toBe('Personalizar');
+
+      await typeName('TV da sala');
+      expect(root.querySelector('h1')?.textContent?.trim()).toBe('TV da sala');
+      expect(saved().name).toBe('TV da sala');
+      expect(TestBed.inject(TvPrefs).title()).toBe('TV da sala');
+    });
+
+    it('lets a space be typed in the middle of the name', async () => {
+      titleButton().click();
+      await render();
+      await typeName('TV ');
+      expect(
+        root.querySelector<HTMLInputElement>('app-tv-customize-sheet input#tv-custom-name')!.value,
+      ).toBe('TV ');
+      await typeName('TV d');
+      expect(root.querySelector('h1')?.textContent?.trim()).toBe('TV d');
+    });
+
+    it('closes with Concluir and gives the focus back to the title', async () => {
+      titleButton().focus();
+      titleButton().click();
+      await render();
+      const done = [
+        ...root.querySelectorAll<HTMLButtonElement>('app-tv-customize-sheet button'),
+      ].find((b) => b.textContent?.trim() === 'Concluir')!;
+      done.click();
+      await render();
+      expect(customizeSheet()).toBeNull();
+      expect(document.activeElement).toBe(titleButton());
+    });
+
+    it('Esc closes it too, and the nickname stays', async () => {
+      titleButton().click();
+      await render();
+      await typeName('Sala');
+      customizeSheet()!.dispatchEvent(new Event('cancel', { cancelable: true }));
+      await render();
+      expect(customizeSheet()).toBeNull();
+      expect(root.querySelector('h1')?.textContent?.trim()).toBe('Sala');
+    });
+
+    it('hides the toast while the sheet is open', async () => {
+      titleButton().click();
+      await render();
+      store.notice.set({ kind: 'info', text: 'Texto enviado para a TV.' });
+      await render();
+      expect(root.querySelector('.toast')).toBeNull();
+    });
+
+    it('the controls behind the sheet follow the choices at once', async () => {
+      titleButton().click();
+      await render();
+      const choice = (label: string) =>
+        [...root.querySelectorAll<HTMLButtonElement>('app-tv-customize-sheet .choice')].find(
+          (b) => b.textContent?.trim() === label,
+        )!;
+      choice('Grande').click();
+      await render();
+      expect(
+        root
+          .querySelector<HTMLElement>('app-tv-control .remote')!
+          .style.getPropertyValue('--key-scale'),
+      ).toBe('1.15');
     });
   });
 });
@@ -268,9 +448,10 @@ describe('TV_ROUTES', () => {
 });
 
 describe('TvPage for a guest', () => {
-  afterEach(() => localStorage.clear());
+  let root: HTMLElement;
+  let fixture: ReturnType<typeof TestBed.createComponent<TvPage>>;
 
-  it('has no way back to Início (single view of the control), but keeps name, state and power', async () => {
+  const open = async () => {
     const store = createFakeTvStore();
     TestBed.configureTestingModule({
       providers: [provideRouter([]), { provide: TvStore, useValue: store }],
@@ -281,17 +462,44 @@ describe('TvPage for a guest', () => {
       displayName: 'Alice',
       role: 'guest',
     });
-    const fixture = TestBed.createComponent(TvPage);
+    fixture = TestBed.createComponent(TvPage);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-    const root = fixture.nativeElement as HTMLElement;
+    root = fixture.nativeElement as HTMLElement;
+  };
 
+  beforeEach(() => localStorage.clear());
+  afterEach(() => {
+    TestBed.inject(TvPrefs).reset();
+    localStorage.clear();
+  });
+
+  it('has no way back to Início (single view of the control), but keeps name, state, Apps and power', async () => {
+    await open();
     expect(root.querySelector('a.back')).toBeNull();
     expect(root.querySelector('a[href="/"]')).toBeNull();
     expect(root.textContent).not.toContain('Início');
     expect(root.querySelector('h1')?.textContent?.trim()).toBe('TV');
     expect(root.querySelector('button[aria-label="Desligar a TV"]')).not.toBeNull();
+    expect(root.querySelector('.head button[aria-label="Apps da TV"]')).not.toBeNull();
     expect(root.querySelector('app-tv-control')).not.toBeNull();
+  });
+
+  it('keeps an empty cell where back was, so the name stays in the middle', async () => {
+    await open();
+    const head = root.querySelector('.head')!;
+    expect(head.children).toHaveLength(3);
+    expect(head.children[0].getAttribute('aria-hidden')).toBe('true');
+    expect(head.children[1].classList.contains('name')).toBe(true);
+    expect(head.children[2].classList.contains('actions')).toBe(true);
+  });
+
+  it('can name the TV for itself: the nickname is kept on this device, with no server involved', async () => {
+    await open();
+    TestBed.inject(TvPrefs).set({ name: 'Quarto da Alice' });
+    fixture.detectChanges();
+    expect(root.querySelector('h1')?.textContent?.trim()).toBe('Quarto da Alice');
+    expect(JSON.parse(localStorage.getItem(TV_PREFS_KEY) ?? 'null').name).toBe('Quarto da Alice');
   });
 });

@@ -22,51 +22,132 @@
   margin-inline: auto;
 }
 
-/* Voltar, nome com o ponto de estado e energia numa linha só. */
+/*
+ * Cabeçalho numa linha só: voltar à esquerda, o nome no meio e, à direita, Apps e energia. O nome fica no meio da
+ * TELA: as duas colunas dos lados são iguais (o mesmo mínimo, e o que sobra dividido por igual), então nada que mude
+ * dentro de um lado (convidado sem voltar, nome mais comprido) desloca o centro. Cada lado reserva, além dos botões
+ * da direita (Apps e energia), a folga do ponto de estado, que mora à direita do texto do nome; sem essa folga um nome
+ * comprido empurraria o ponto para cima dos botões. O que não cabe no nome vira reticências.
+ */
 .head {
+  /* Os dois botões da direita e o espaço entre eles. */
+  --side: calc(2 * var(--tap) + 8px);
+  /* O alvo de 44 px do ponto começa 8 px antes do fim do nome: sobram 36 px à direita do texto. */
+  --dot-room: 36px;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns:
+    minmax(calc(var(--side) + var(--dot-room)), 1fr)
+    minmax(0, auto)
+    minmax(calc(var(--side) + var(--dot-room)), 1fr);
   align-items: center;
-  gap: 8px;
 }
 
-.back {
-  display: inline-flex;
-  align-items: center;
-  align-self: center;
-  justify-self: start;
-  min-height: 44px;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.name {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-h1 {
-  font-size: 1.35rem;
-}
-
-.power {
+/* Os três botões do cabeçalho (voltar, Apps e energia) têm o mesmo visual: um círculo de 44 px. */
+.circle {
   display: grid;
   place-items: center;
-  justify-self: end;
-  width: 44px;
-  height: 44px;
+  width: var(--tap);
+  height: var(--tap);
   padding: 0;
   border: 1px solid var(--a-line);
   border-radius: 50%;
   background: var(--a-surface);
-  color: var(--a-bad);
+  color: var(--a-ink);
+  text-decoration: none;
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
-.power:disabled {
+.circle:disabled {
   opacity: 0.4;
   cursor: default;
+}
+@media (hover: hover) {
+  .circle:not(:disabled):hover {
+    border-color: var(--a-accent);
+  }
+}
+.back {
+  justify-self: start;
+}
+.power {
+  color: var(--a-bad);
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-self: end;
+}
+
+/* O ponto de estado é posicionado em relação ao texto do nome (esta caixa envolve só ele). */
+.name {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  justify-self: center;
+}
+h1 {
+  min-width: 0;
+  font-size: 1.35rem;
+}
+.title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+/*
+ * O nome nunca é cortado por reticências enquanto couber em duas linhas: nome curto fica numa linha no tamanho de
+ * sempre, o médio encolhe um pouco e o longo encolhe mais e quebra em até duas linhas (o alvo de 44 px comporta as
+ * duas). Só passando de duas linhas é que sobram as reticências do `line-clamp`.
+ */
+.title-text {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-align: center;
+  line-height: 1.1;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.name[data-size='short'] .title-text {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+.name[data-size='medium'] .title-text {
+  font-size: 1.1rem;
+}
+.name[data-size='long'] .title-text {
+  font-size: 0.95rem;
+}
+/* Telas largas dão sobra à coluna do meio: o nome volta ao tamanho de sempre, seja qual for o comprimento. */
+@media (min-width: 520px) {
+  .name[data-size] .title-text {
+    font-size: 1.35rem;
+  }
+}
+/*
+ * Sem `transform` nem `translate` aqui: eles criariam um contexto de empilhamento e o painelzinho do ponto (z-index 4)
+ * ficaria por baixo do anel e dos botões, que vêm depois no documento. A caixa do nome tem a altura do alvo (44 px).
+ */
+.name app-status-indicator {
+  position: absolute;
+  top: 0;
+  left: calc(100% - 8px);
 }
 
 /* A linha do motivo entra no fluxo: o palco do controle encolhe o que ela ocupa. */
@@ -99,6 +180,38 @@ h1 {
 .toast.error {
   border-left-color: var(--a-bad);
 }
+/*
+ * O aviso sobe e aparece ao entrar (`@starting-style`) e desce e esmaece ao sair (`animate.leave`, que segura o
+ * elemento até o fim da animação). Com "reduzir movimento" ele só aparece e some.
+ */
+.toast {
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+@starting-style {
+  .toast {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.toast-leave {
+  animation: toast-out var(--dur-base) var(--ease-out) forwards;
+}
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    transition: none;
+  }
+  .toast-leave {
+    animation: none;
+  }
+}
 
 /* Paisagem: duas colunas no controle e mais largura. */
 @media (min-aspect-ratio: 6/5) {
@@ -110,27 +223,9 @@ h1 {
   }
 }
 
-/* Celular deitado: pouca altura, então o cabeçalho cabe numa linha só, junto do nome e da energia. */
+/* Celular deitado: pouca altura, então o controle cede um pouco do mínimo (o cabeçalho segue numa linha só). */
 @media (min-aspect-ratio: 6/5) and (max-height: 500px) {
   :host {
     --tv-min: 300px;
-  }
-  .tv {
-    display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
-    grid-template-rows: auto auto minmax(0, 1fr);
-    column-gap: 8px;
-    row-gap: 4px;
-  }
-  .head {
-    display: contents;
-  }
-  .power {
-    grid-column: 4;
-    grid-row: 1;
-  }
-  .reason {
-    grid-column: 1 / -1;
-    grid-row: 2;
   }
 }

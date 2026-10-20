@@ -25,7 +25,8 @@ export type TvIconName =
   | 'show'
   | 'close'
   | 'search'
-  | 'list';
+  | 'list'
+  | 'clock';
 
 // Traços simples (24x24, contorno) só do controle. Decorativos: o texto do botão é que informa.
 const PATHS: Record<TvIconName, string> = {
@@ -53,6 +54,7 @@ const PATHS: Record<TvIconName, string> = {
   close: 'M6 6l12 12 M18 6L6 18',
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z M21 21l-5-5',
   list: 'M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01',
+  clock: 'M12 7v5l3 2 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
   show: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
 };
 

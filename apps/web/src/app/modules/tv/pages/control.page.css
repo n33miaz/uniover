@@ -8,19 +8,19 @@
   flex: 1 1 0;
   flex-direction: column;
   min-height: 0;
-  /* No cabeçalho de uma linha só (celular deitado) a casca do módulo é uma grade e este é o corpo dela. */
-  grid-column: 1 / -1;
-  grid-row: 3;
 }
 
 .remote {
   /*
-   * Tamanho dos botões de baixo, que crescem com a altura da tela. A largura é o que limita: cada botão redondo fica
-   * com o que sobra da linha depois das duas pílulas (o teto `--tv-round` só vale em tela larga). A pílula não fica
-   * mais estreita do que era e os botões redondos ficam maiores.
+   * Tamanho dos botões de baixo. `--key-scale` vem da escolha em Personalizar (0,9 compacto, 1 confortável, 1,15
+   * grande; a página o põe no estilo desta caixa). A conta da largura, no 390 (358 úteis) e no confortável: 4 círculos
+   * + 2 pílulas de 52 px + 2 folgas de 4 px (pílula e círculo) + 3 folgas de 3 px (entre círculos) = 358, o que deixa
+   * 59,25 px por círculo; no 411 sobram 64,5. A pílula fica estreita (50 px de toque) para o círculo ser o maior
+   * possível; o teto `--tv-round` só vale em tela larga.
    */
-  --tv-round: clamp(56px, 9.4dvh, 92px);
-  --tv-pill: clamp(54px, 8.2dvh, 84px);
+  --key-scale: 1;
+  --tv-round: calc(var(--key-scale) * clamp(60px, 8.2dvh, 84px));
+  --tv-pill: calc(var(--key-scale) * 52px);
   --tv-top: clamp(52px, 7dvh, 60px);
   display: flex;
   flex: 1 1 0;
@@ -158,8 +158,13 @@ button:disabled {
   display: grid;
   flex: 0 0 auto;
   grid-template-columns: var(--tv-pill) minmax(0, 1fr) var(--tv-pill);
-  gap: 5px;
+  gap: 4px;
   align-items: stretch;
+}
+/* Sem o canal (Personalizar), os botões redondos ficam com o lugar da segunda pílula e podem crescer (até 67 px). */
+.bottom.no-channel {
+  --tv-round: min(calc(var(--key-scale) * 67px), 70px);
+  grid-template-columns: var(--tv-pill) minmax(0, 1fr);
 }
 .round-grid {
   display: grid;
@@ -167,6 +172,19 @@ button:disabled {
   gap: 6px 3px;
   align-content: center;
   justify-items: center;
+}
+/* Sem as teclas de mídia sobram quatro botões: duas colunas, em vez de uma fileira solta entre as pílulas. */
+.round-grid[data-cols='2'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/*
+ * Tamanho grande: os botões não cabem mais quatro por fileira numa tela estreita, então quebram em três e a última
+ * fileira (dois botões) fica no meio, e não encostada à esquerda.
+ */
+.round-grid[data-cols='3'] {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 .pill {
   display: flex;
@@ -184,21 +202,25 @@ button:disabled {
     var(--a-surface) var(--level, 0%)
   );
 }
+/* Os ícones medem 1,5em: crescem com a fonte, e esta cresce com o tamanho escolhido (20% a mais que antes). */
+.pill-btn,
+.round {
+  font-size: calc(1.5rem * var(--key-scale));
+}
 .pill-btn {
   flex: 1 1 0;
-  min-height: 46px;
+  min-height: calc(52px * var(--key-scale));
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--a-ink);
-  font-size: 1.25rem;
 }
 .level {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
+  min-height: calc(36px * var(--key-scale));
   color: var(--a-ink2);
   font-size: 0.9rem;
   line-height: 1.1;
@@ -210,7 +232,7 @@ button:disabled {
 }
 .level strong {
   color: var(--a-ink);
-  font-size: 1.1rem;
+  font-size: calc(1.15rem * var(--key-scale));
 }
 
 /* Botões redondos: o diâmetro é a largura da célula, limitada por `--tv-round`. */
@@ -223,8 +245,6 @@ button:disabled {
   aspect-ratio: 1;
   padding: 0;
   border-radius: 50%;
-  /* Os ícones medem 1,5em: acompanham o tamanho do botão. */
-  font-size: 1.25rem;
 }
 
 /*
@@ -235,10 +255,11 @@ button:disabled {
   .remote {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    /* As duas fileiras da direita têm a altura do que levam (os botões de baixo cresceram) e o par fica no meio. */
+    grid-template-rows: auto auto;
     column-gap: 16px;
     row-gap: 8px;
-    --tv-round: clamp(56px, 12dvh, 92px);
+    --tv-round: calc(var(--key-scale) * clamp(60px, 12dvh, 92px));
   }
   .stage {
     grid-column: 1;

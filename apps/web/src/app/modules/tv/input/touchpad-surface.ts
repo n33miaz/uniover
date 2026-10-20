@@ -1,8 +1,15 @@
 import { DestroyRef, Component, inject, signal } from '@angular/core';
 import { TV_CONFIG } from '../data/tv-config';
+import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { HoldRepeater } from './hold-repeater';
-import { PadDirection, TouchGesture } from './touch-gesture';
+import {
+  DEFAULT_GESTURE,
+  GestureConfig,
+  PadDirection,
+  STEP_PX_BY_SPEED,
+  TouchGesture,
+} from './touch-gesture';
 import { vibrate } from './key-button';
 
 /**
@@ -42,10 +49,11 @@ import { vibrate } from './key-button';
 export class TouchpadSurface {
   protected readonly store = inject(TvStore);
   private readonly config = inject(TV_CONFIG);
+  private readonly prefs = inject(TvPrefs);
 
   protected readonly active = signal(false);
 
-  private readonly gesture = new TouchGesture();
+  private readonly gesture = new TouchGesture(this.liveGesture());
   private readonly repeater = new HoldRepeater(
     () => this.repeatHeld(),
     this.config.repeatIntervalMs,
@@ -103,6 +111,17 @@ export class TouchpadSurface {
       event.preventDefault();
       this.fire(direction);
     }
+  }
+
+  /** O deslocamento da seta segue a sensibilidade de Personalizar na hora, sem recriar o gesto. */
+  private liveGesture(): GestureConfig {
+    const prefs = this.prefs;
+    return {
+      ...DEFAULT_GESTURE,
+      get stepPx() {
+        return STEP_PX_BY_SPEED[prefs.padSpeed()];
+      },
+    };
   }
 
   private finish(): void {

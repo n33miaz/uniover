@@ -1,5 +1,6 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { TouchpadSurface } from './touchpad-surface';
 
@@ -27,6 +28,7 @@ describe('TouchpadSurface', () => {
   }
 
   beforeEach(() => {
+    localStorage.clear();
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     canSend.set(true);
     inFlightKeys.set(0);
@@ -42,6 +44,7 @@ describe('TouchpadSurface', () => {
   afterEach(() => {
     fixture.destroy();
     vi.useRealTimers();
+    localStorage.clear();
   });
 
   it('explains itself to a screen reader and points to the Buttons mode', () => {
@@ -102,6 +105,46 @@ describe('TouchpadSurface', () => {
     pointer('pointercancel', 100, 100, 10);
     await vi.advanceTimersByTimeAsync(1_000);
     expect(keys()).toEqual([]);
+  });
+
+  describe('sensitivity chosen in Personalizar', () => {
+    const slide = async (dx: number) => {
+      pointer('pointerdown', 100, 100, 0);
+      pointer('pointermove', 100 + dx, 100, 10);
+      pointer('pointerup', 100 + dx, 100, 300);
+      await flush();
+    };
+
+    it('normal asks for about 24 px to count as an arrow', async () => {
+      await slide(20);
+      expect(keys()).toEqual([]);
+      await slide(28);
+      expect(keys()).toEqual(['RIGHT']);
+    });
+
+    it('fast turns a short slide into an arrow, slow needs a longer one', async () => {
+      TestBed.inject(TvPrefs).set({ padSpeed: 'fast' });
+      await slide(20);
+      expect(keys()).toEqual(['RIGHT']);
+
+      sendKey.mockClear();
+      TestBed.inject(TvPrefs).set({ padSpeed: 'slow' });
+      await slide(28);
+      expect(keys()).toEqual([]);
+      await slide(40);
+      expect(keys()).toEqual(['RIGHT']);
+    });
+
+    it('takes effect at once, with the same screen, and a still tap is an OK in every sensitivity', async () => {
+      for (const padSpeed of ['slow', 'normal', 'fast'] as const) {
+        sendKey.mockClear();
+        TestBed.inject(TvPrefs).set({ padSpeed });
+        pointer('pointerdown', 100, 100, 0);
+        pointer('pointerup', 100, 100, 100);
+        await flush();
+        expect(keys()).toEqual(['OK']);
+      }
+    });
   });
 
   it('works from the keyboard: Enter and Space are OK, the arrows are the arrows', async () => {

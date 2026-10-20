@@ -1,0 +1,163 @@
+<dialog #dialog class="sheet" aria-labelledby="tv-custom-title" (cancel)="close($event)">
+  <span class="grabber" aria-hidden="true"></span>
+  <header class="head">
+    <h2 id="tv-custom-title" i18n="@@tv.custom.title">Personalizar</h2>
+    <p class="hint" i18n="@@tv.custom.hint">As mudanças valem na hora e ficam só neste aparelho.</p>
+  </header>
+
+  <div class="block">
+    <label id="tv-custom-name-label" class="label" for="tv-custom-name" i18n="@@tv.custom.name"
+      >Nome da TV</label
+    >
+    <input
+      #nameField
+      id="tv-custom-name"
+      class="ui-input"
+      type="text"
+      autocomplete="off"
+      [attr.enterkeyhint]="'done'"
+      aria-describedby="tv-custom-name-hint"
+      [value]="initialName"
+      [attr.maxlength]="nameMax"
+      [placeholder]="prefs.defaultName"
+      (input)="setName($any($event.target).value)"
+      (keydown.enter)="nameField.blur()"
+    />
+    <p id="tv-custom-name-hint" class="note" i18n="@@tv.custom.name-hint">
+      Até {{ nameMax }} letras. Aparece no alto do controle; deixe vazio para voltar a "TV".
+    </p>
+  </div>
+
+  <div class="block">
+    <span id="tv-custom-size-label" class="label" i18n="@@tv.custom.size">Tamanho dos botões</span>
+    <div class="choices three" role="group" aria-labelledby="tv-custom-size-label">
+      @for (size of sizes; track size.value) {
+        <button
+          type="button"
+          class="choice"
+          [attr.aria-pressed]="prefs.buttonSize() === size.value"
+          (click)="change({ buttonSize: size.value })"
+        >
+          {{ size.label }}
+        </button>
+      }
+    </div>
+  </div>
+
+  <div class="ui-group">
+    <label class="ui-row">
+      <span class="ui-row-text">
+        <span id="tv-custom-media" class="ui-row-title" i18n="@@tv.custom.media"
+          >Teclas de mídia</span
+        >
+        <span id="tv-custom-media-sub" class="ui-row-sub" i18n="@@tv.custom.media-sub"
+          >Anterior, tocar ou pausar, próxima e mudo</span
+        >
+      </span>
+      <input
+        type="checkbox"
+        role="switch"
+        class="ui-switch"
+        aria-labelledby="tv-custom-media"
+        aria-describedby="tv-custom-media-sub"
+        [checked]="prefs.showMedia()"
+        (change)="change({ showMedia: $any($event.target).checked })"
+      />
+    </label>
+    <label class="ui-row">
+      <span class="ui-row-text">
+        <span id="tv-custom-channel" class="ui-row-title" i18n="@@tv.custom.channel">Canal</span>
+        <span id="tv-custom-channel-sub" class="ui-row-sub" i18n="@@tv.custom.channel-sub"
+          >Os botões de canal ao lado do volume</span
+        >
+      </span>
+      <input
+        type="checkbox"
+        role="switch"
+        class="ui-switch"
+        aria-labelledby="tv-custom-channel"
+        aria-describedby="tv-custom-channel-sub"
+        [checked]="prefs.showChannel()"
+        (change)="change({ showChannel: $any($event.target).checked })"
+      />
+    </label>
+    <label class="ui-row">
+      <span class="ui-row-text">
+        <span id="tv-custom-vibration" class="ui-row-title" i18n="@@tv.custom.vibration"
+          >Vibrar ao tocar</span
+        >
+        <span id="tv-custom-vibration-sub" class="ui-row-sub" i18n="@@tv.custom.vibration-sub"
+          >Só nos aparelhos que vibram</span
+        >
+      </span>
+      <input
+        type="checkbox"
+        role="switch"
+        class="ui-switch"
+        aria-labelledby="tv-custom-vibration"
+        aria-describedby="tv-custom-vibration-sub"
+        [checked]="prefs.vibration()"
+        (change)="change({ vibration: $any($event.target).checked })"
+      />
+    </label>
+  </div>
+
+  <div class="block">
+    <span id="tv-custom-page-label" class="label" i18n="@@tv.custom.page"
+      >Página inicial do palco</span
+    >
+    <div class="choices two" role="group" aria-labelledby="tv-custom-page-label">
+      @for (page of pages; track page.value) {
+        <button
+          type="button"
+          class="choice"
+          [attr.aria-pressed]="prefs.startPage() === page.value"
+          (click)="change({ startPage: page.value })"
+        >
+          {{ page.label }}
+        </button>
+      }
+    </div>
+    <p class="note" i18n="@@tv.custom.page-note">Vale na próxima vez que o controle abrir.</p>
+  </div>
+
+  <div class="block">
+    <span id="tv-custom-speed-label" class="label" i18n="@@tv.custom.speed"
+      >Sensibilidade do touchpad</span
+    >
+    <div class="choices three" role="group" aria-labelledby="tv-custom-speed-label">
+      @for (speed of speeds; track speed.value) {
+        <button
+          type="button"
+          class="choice"
+          [attr.aria-pressed]="prefs.padSpeed() === speed.value"
+          (click)="change({ padSpeed: speed.value })"
+        >
+          {{ speed.label }}
+        </button>
+      }
+    </div>
+  </div>
+
+  <div class="footer">
+    <button
+      type="button"
+      class="secondary ui-btn"
+      [disabled]="!prefs.customized()"
+      (click)="restore()"
+      i18n="@@tv.custom.restore"
+    >
+      Restaurar padrão
+    </button>
+    <button
+      #done
+      type="button"
+      class="primary ui-btn"
+      autofocus
+      (click)="close()"
+      i18n="@@tv.custom.done"
+    >
+      Concluir
+    </button>
+  </div>
+</dialog>

@@ -1,5 +1,6 @@
 import { DestroyRef, Directive, inject, input, signal } from '@angular/core';
 import { TV_CONFIG } from '../data/tv-config';
+import { vibrationEnabled } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { TvKey } from '../data/tv-types';
 import { HoldRepeater } from './hold-repeater';
@@ -97,9 +98,10 @@ export class KeyButton {
   }
 }
 
-/** Vibração curta onde existe (o iOS não tem), respeitando "reduzir movimento". */
+/** Vibração curta onde existe (o iOS não tem), respeitando "reduzir movimento" e a escolha de Personalizar. */
 export function vibrate(): void {
   try {
+    if (!vibrationEnabled()) return;
     if (typeof navigator.vibrate !== 'function') return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     navigator.vibrate(8);
