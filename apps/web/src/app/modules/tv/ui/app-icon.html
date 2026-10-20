@@ -1,0 +1,19 @@
+<!--
+  `decoding` vai por vínculo porque o lint de i18n trata o atributo fixo como texto de tela; o valor é sempre "async".
+  A imagem decodifica fora do fio principal, então uma lista com dezenas de ícones não trava a rolagem.
+-->
+@if (source(); as uri) {
+  <img
+    class="image"
+    [src]="uri"
+    alt=""
+    [attr.width]="wide() ? 192 : 96"
+    [attr.height]="wide() ? 108 : 96"
+    [attr.decoding]="'async'"
+    [attr.loading]="lazy() ? 'lazy' : 'eager'"
+    draggable="false"
+    (error)="markFailed(uri)"
+  />
+} @else {
+  <span class="fallback" [class]="hue()" aria-hidden="true">{{ glyph() }}</span>
+}

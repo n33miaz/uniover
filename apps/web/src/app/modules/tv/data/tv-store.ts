@@ -35,6 +35,14 @@ export interface TvNotice {
 export const TV_TEXT_MAX = 200;
 
 const CACHE_KEY = 'uniover.tv.last-state';
+/**
+ * Os ícones dos apps ficam numa chave só deles: cada um pode ter ~44 mil caracteres e o estado é regravado a cada
+ * mudança de volume, então dentro do estado eles pesariam a cada toque (e uma lista cheia estouraria a cota do
+ * navegador, levando junto o "visto às"). Aqui a gravação só acontece quando a lista muda, e tem teto.
+ */
+const ICONS_KEY = 'uniover.tv.app-icons';
+/** Teto, em caracteres de base64, do que se guarda de ícones: cerca de 1 MB, bem abaixo da cota de 5 MB do navegador. */
+export const ICONS_CACHE_MAX_CHARS = 1_000_000;
 const STREAM_EVENTS = [
   TV_STREAM_EVENTS.state,
   TV_STREAM_EVENTS.shortcuts,
@@ -79,6 +87,8 @@ export class TvStore {
   private readonly _streamStatus = signal<TvStreamStatus>('connecting');
   private readonly _notice = signal<TvNotice | null>(null);
   private readonly _inFlightKeys = signal(0);
+  /** O último texto gravado em `ICONS_KEY`, para não regravar o mesmo. */
+  private iconsSaved = '';
 
   readonly state = this._state.asReadonly();
   readonly shortcuts = this._shortcuts.asReadonly();
@@ -395,6 +405,7 @@ export class TvStore {
   private applyShortcuts(list: TvShortcut[]): void {
     this._shortcuts.set(list);
     this.persist();
+    this.persistIcons(list);
   }
 
   /** Fatos que uma falha revela sobre o agente (sem aviso): o estado verdadeiro continua vindo do servidor. */
@@ -451,7 +462,7 @@ export class TvStore {
       if (!state || typeof cached.seenAt !== 'number') return;
       this._state.set(state);
       this._seenAt.set(cached.seenAt);
-      this._shortcuts.set(parseShortcuts(cached.shortcuts) ?? null);
+      this._shortcuts.set(this.withCachedIcons(parseShortcuts(cached.shortcuts)));
     } catch {
       // armazenamento indisponível ou texto corrompido: começa sem estado conhecido
     }
@@ -462,11 +473,50 @@ export class TvStore {
     const seenAt = this._seenAt();
     if (!state || seenAt === null) return;
     try {
-      const cached: CachedTv = { state, seenAt, shortcuts: this._shortcuts() };
+      // Sem os ícones (ver `ICONS_KEY`): o estado cabe sempre, qualquer que seja o tamanho deles.
+      const shortcuts = this._shortcuts()?.map((item) => ({ ...item, iconDataUri: null })) ?? null;
+      const cached: CachedTv = { state, seenAt, shortcuts };
       this.doc.defaultView?.localStorage.setItem(CACHE_KEY, JSON.stringify(cached));
     } catch {
       // sem armazenamento: o estado só vive nesta tela
     }
+  }
+
+  /** Guarda os ícones da lista (os primeiros que couberem no teto); não regrava se nada mudou. */
+  private persistIcons(list: TvShortcut[]): void {
+    const icons: Record<string, string> = {};
+    let used = 0;
+    for (const item of list) {
+      const uri = item.iconDataUri;
+      if (typeof uri !== 'string' || used + uri.length > ICONS_CACHE_MAX_CHARS) continue;
+      icons[item.id] = uri;
+      used += uri.length;
+    }
+    const text = JSON.stringify(icons);
+    if (text === this.iconsSaved) return;
+    try {
+      this.doc.defaultView?.localStorage.setItem(ICONS_KEY, text);
+      this.iconsSaved = text;
+    } catch {
+      // sem armazenamento ou sem espaço: sem ícones ao abrir sem rede (aparece a inicial), o resto segue igual
+    }
+  }
+
+  /** Devolve à lista guardada os ícones guardados à parte (a tela offline mostra os mesmos azulejos). */
+  private withCachedIcons(list: TvShortcut[] | null): TvShortcut[] | null {
+    if (!list) return null;
+    let icons: Record<string, unknown> = {};
+    try {
+      const raw = this.doc.defaultView?.localStorage.getItem(ICONS_KEY);
+      const parsed: unknown = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === 'object') icons = parsed as Record<string, unknown>;
+    } catch {
+      // texto corrompido: segue sem ícones
+    }
+    return list.map((item) => {
+      const icon = icons[item.id];
+      return item.iconDataUri || typeof icon !== 'string' ? item : { ...item, iconDataUri: icon };
+    });
   }
 }
 

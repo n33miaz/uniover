@@ -84,6 +84,13 @@
         >
           @if (editing() === shortcut.id) {
             <form class="edit" (submit)="saveRename(shortcut, $event)">
+              <div class="edit-head">
+                <app-tv-app-icon [shortcut]="shortcut" />
+                <span class="text">
+                  <span class="edit-name">{{ label(shortcut) }}</span>
+                  <span class="edit-package">{{ shortcut.package }}</span>
+                </span>
+              </div>
               <label [for]="'rename-' + shortcut.id" i18n="@@tv.apps.rename-field">
                 Nome do atalho
               </label>
@@ -119,7 +126,7 @@
               [disabled]="!store.canSend() || !shortcut.enabled"
               (click)="launch(shortcut)"
             >
-              <app-tv-icon name="apps" />
+              <app-tv-app-icon [shortcut]="shortcut" [lazy]="true" />
               <span class="text">
                 <span class="name">{{ label(shortcut) }}</span>
                 <span class="package">{{ shortcut.package }}</span>
