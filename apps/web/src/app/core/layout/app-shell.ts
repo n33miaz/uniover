@@ -2,17 +2,19 @@ import { Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
+import { InstallHint } from '../pwa/install-hint';
 import { SessionState } from '../session/session-state';
 import { TabBar } from '../../shared/ui/tab-bar/tab-bar';
 import { collectShellData } from './route-data';
 
 /**
  * Casca de tela: na Início só o conteúdo; dentro de um módulo, cabeçalho com a seta de voltar ao Início e o
- * título, e a barra de abas embaixo. Quem decide é o `data` da rota (`title` e `tabs`).
+ * título, e a barra de abas embaixo. Quem decide é o `data` da rota (`title` e `tabs`). Hospeda também a folha
+ * do atalho na tela de início (`app-install-hint`), que vale para dono e convidado.
  */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, TabBar],
+  imports: [RouterOutlet, RouterLink, TabBar, InstallHint],
   template: `
     @if (data().title; as title) {
       <header class="bar">
@@ -49,6 +51,8 @@ import { collectShellData } from './route-data';
     @if (tabs().length > 0) {
       <app-tab-bar class="tabs" [tabs]="tabs()" />
     }
+    <!-- Fora do <main>: a folha do atalho na tela de início é diálogo (camada do topo) e nunca entra no layout. -->
+    <app-install-hint />
   `,
   styles: `
     :host {

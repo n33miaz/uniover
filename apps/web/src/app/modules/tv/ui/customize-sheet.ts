@@ -1,4 +1,5 @@
 import { Component, ElementRef, afterNextRender, inject, output, viewChild } from '@angular/core';
+import { InstallHintRow } from '../../../core/pwa/install-hint-row';
 import {
   TV_NAME_MAX,
   TvButtonSize,
@@ -22,6 +23,7 @@ interface Choice<T extends string> {
  */
 @Component({
   selector: 'app-tv-customize-sheet',
+  imports: [InstallHintRow],
   templateUrl: './customize-sheet.html',
   styleUrl: './customize-sheet.css',
 })

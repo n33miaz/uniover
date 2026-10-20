@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { INSTALL_ENV, InstallHintService } from '../../../core/pwa/install-hint.service';
 import { TV_PREFS_KEY, TvPrefs } from '../data/tv-prefs';
 import { CustomizeSheet } from './customize-sheet';
 
@@ -219,6 +220,29 @@ describe('CustomizeSheet', () => {
       prefs().set({ name: 'Quarto' });
       await open();
       expect(field().value).toBe('Quarto');
+    });
+  });
+
+  describe('shortcut on the home screen', () => {
+    const IPHONE =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+    const row = () => root.querySelector<HTMLElement>('app-install-hint-row')!;
+
+    it('has no row where there is nothing to offer (computer, or the app already installed)', async () => {
+      await open();
+      expect(row().hidden).toBe(true);
+    });
+
+    it('has one row on an iPhone, that opens the shared sheet even after "Não mostrar de novo"', async () => {
+      TestBed.configureTestingModule({
+        providers: [{ provide: INSTALL_ENV, useValue: { userAgent: IPHONE } }],
+      });
+      TestBed.inject(InstallHintService).never();
+      await open();
+      expect(row().hidden).toBe(false);
+      expect(row().querySelector('.ui-row-title')?.textContent).toBe('Adicionar à tela de início');
+      row().querySelector('button')!.click();
+      expect(TestBed.inject(InstallHintService).sheet()).toBe('manual');
     });
   });
 });
