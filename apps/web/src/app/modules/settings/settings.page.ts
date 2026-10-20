@@ -4,6 +4,7 @@ import { AuthApi } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { ModulePrefs } from '../../core/modules/module-prefs';
 import { ModuleDefinition, ModuleRegistry } from '../../core/modules/module-registry';
+import { InstallHintRow } from '../../core/pwa/install-hint-row';
 import { AppearanceService, ThemePreference } from '../../core/session/appearance.service';
 import { SessionState } from '../../core/session/session-state';
 import { version as appVersion } from '../../../../package.json';
@@ -22,7 +23,7 @@ interface ThemeChoice {
  */
 @Component({
   selector: 'app-settings-page',
-  imports: [SecuritySection, GuestsSection, RouterLink, SettingsGlyph],
+  imports: [SecuritySection, GuestsSection, RouterLink, SettingsGlyph, InstallHintRow],
   templateUrl: './settings.page.html',
   styleUrl: './settings.page.css',
 })

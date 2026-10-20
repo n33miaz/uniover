@@ -75,6 +75,16 @@ describe('AppShell', () => {
     localStorage.clear();
   });
 
+  it('hosts the shortcut sheet outside the content, so it never enters the layout of a screen', async () => {
+    const harness = await RouterTestingHarness.create('/mod');
+    const el = root(harness);
+    const hint = el.querySelector('app-install-hint');
+    expect(hint).not.toBeNull();
+    expect(el.querySelector('main')?.contains(hint)).toBe(false);
+    // Fechada, não desenha nada: a tela não ganha elemento algum.
+    expect(hint?.children).toHaveLength(0);
+  });
+
   it('builds the tab bar from the route data of the module', async () => {
     const harness = await RouterTestingHarness.create('/mod');
     const links = Array.from(root(harness).querySelectorAll('app-tab-bar a'));

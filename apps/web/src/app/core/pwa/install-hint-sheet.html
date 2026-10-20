@@ -1,0 +1,244 @@
+<dialog
+  #dialog
+  class="sheet ui-dialog"
+  aria-labelledby="install-title"
+  aria-describedby="install-intro"
+  (cancel)="later($event)"
+>
+  <span class="grabber" aria-hidden="true"></span>
+
+  <div class="content">
+    <div class="head">
+      <h2 id="install-title" i18n="@@install.title">Atalho na tela de início</h2>
+      <p id="install-intro" class="intro" i18n="@@install.intro">
+        Abre como app, sem a barra do navegador. Não ocupa espaço no aparelho: é só um atalho.
+      </p>
+    </div>
+
+    @if (mode() === 'native') {
+      <button
+        type="button"
+        class="primary ui-btn block"
+        [disabled]="installing() || leaving()"
+        (click)="install()"
+        i18n="@@install.native.action"
+      >
+        Instalar
+      </button>
+      @if (installFailed()) {
+        <p class="ui-notice warn" role="alert" i18n="@@install.native.failed">
+          Não foi possível abrir a instalação agora. Tente de novo em instantes.
+        </p>
+      }
+    } @else {
+      @let base = mode() === 'ios-in-app' ? 1 : 0;
+      <ol class="steps" role="list">
+        @if (mode() === 'ios-in-app') {
+          <li class="step">
+            <span class="num" aria-hidden="true">1</span>
+            <span class="glyph" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                width="22"
+                height="22"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                @for (d of safariIcon; track d) {
+                  <path [attr.d]="d" />
+                }
+              </svg>
+            </span>
+            <div class="text">
+              <p class="step-title" i18n="@@install.step.open-safari.title">
+                Abra este endereço no <strong>Safari</strong>
+              </p>
+              <p class="step-sub" i18n="@@install.step.open-safari.sub">
+                Este app abriu dentro de outro (como o Instagram ou o Facebook), que não deixa
+                adicionar à tela de início. Copie o endereço, abra o Safari e cole na barra de
+                endereço.
+              </p>
+              <button
+                #copyButton
+                type="button"
+                class="copy secondary ui-btn"
+                (click)="copyAddress()"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  @for (d of copyIcon; track d) {
+                    <path [attr.d]="d" />
+                  }
+                </svg>
+                <span i18n="@@install.copy.action">Copiar endereço</span>
+              </button>
+              <p class="copy-status" role="status">{{ copyMessage() }}</p>
+              <input
+                #ghost
+                class="address"
+                [class.ghost]="copy() !== 'failed'"
+                type="text"
+                readonly
+                spellcheck="false"
+                aria-label="Endereço do app"
+                i18n-aria-label="@@install.copy.field-label"
+                [attr.aria-hidden]="copy() === 'failed' ? null : 'true'"
+                [attr.tabindex]="copy() === 'failed' ? 0 : -1"
+                [value]="address"
+              />
+            </div>
+          </li>
+        }
+
+        <li class="step">
+          <span class="num" aria-hidden="true">{{ base + 1 }}</span>
+          <span class="glyph" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              width="22"
+              height="22"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              @for (d of shareIcon; track d) {
+                <path [attr.d]="d" />
+              }
+            </svg>
+          </span>
+          <div class="text">
+            <p class="step-title" i18n="@@install.step.share.title">
+              Toque em <strong>Compartilhar</strong>
+            </p>
+            @if (mode() === 'ios-other') {
+              <p class="step-sub" i18n="@@install.step.share.sub-other">
+                É o quadrado com a seta para cima. No Chrome e no Edge ele fica na barra de endereço
+                ou no menu <strong>⋯</strong>.
+              </p>
+            } @else {
+              <p class="step-sub" i18n="@@install.step.share.sub">
+                É o quadrado com a seta para cima. Fica na barra do Safari ou, em alguns aparelhos,
+                no menu <strong>⋯</strong> ao lado do endereço.
+              </p>
+            }
+          </div>
+        </li>
+
+        <li class="step">
+          <span class="num" aria-hidden="true">{{ base + 2 }}</span>
+          <span class="glyph" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              width="22"
+              height="22"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              @for (d of addIcon; track d) {
+                <path [attr.d]="d" />
+              }
+            </svg>
+          </span>
+          <div class="text">
+            <p class="step-title" i18n="@@install.step.add.title">
+              Toque em <strong>Adicionar à Tela de Início</strong>
+            </p>
+            <p class="step-sub" i18n="@@install.step.add.sub">
+              Se não achar, role a lista de ações para baixo.
+            </p>
+          </div>
+        </li>
+
+        <li class="step">
+          <span class="num" aria-hidden="true">{{ base + 3 }}</span>
+          <span class="glyph" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              width="22"
+              height="22"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              @for (d of confirmIcon; track d) {
+                <path [attr.d]="d" />
+              }
+            </svg>
+          </span>
+          <div class="text">
+            <p class="step-title" i18n="@@install.step.confirm.title">
+              Toque em <strong>Adicionar</strong>
+            </p>
+            <p class="step-sub" i18n="@@install.step.confirm.sub">
+              Fica no canto de cima. Se aparecer a opção de abrir como app, deixe ligada.
+            </p>
+          </div>
+        </li>
+      </ol>
+
+      @if (mode() === 'ios-other') {
+        <p class="note" i18n="@@install.note.other">
+          Este atalho pede o iOS 16.4 ou mais novo. Se não houver "Adicionar à Tela de Início" neste
+          navegador, abra este endereço no Safari.
+        </p>
+      } @else {
+        <p class="note" i18n="@@install.note.whatsapp">
+          Se você abriu pelo WhatsApp, toque no ícone da bússola (Safari) no canto para abrir no
+          Safari e siga daqui.
+        </p>
+      }
+    }
+  </div>
+
+  <div class="footer">
+    @if (manual()) {
+      <button
+        type="button"
+        class="primary ui-btn"
+        [disabled]="leaving()"
+        (click)="later()"
+        i18n="@@install.close"
+      >
+        Fechar
+      </button>
+    } @else {
+      <button
+        type="button"
+        class="secondary ui-btn"
+        [disabled]="leaving()"
+        (click)="later()"
+        i18n="@@install.later"
+      >
+        Agora não
+      </button>
+      <button
+        type="button"
+        class="secondary ui-btn"
+        [disabled]="leaving()"
+        (click)="never()"
+        i18n="@@install.never"
+      >
+        Não mostrar de novo
+      </button>
+    }
+  </div>
+</dialog>
