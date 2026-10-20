@@ -45,29 +45,34 @@ describe('SettingsPage', () => {
   const headings = (el: HTMLElement) =>
     Array.from(el.querySelectorAll('h2')).map((h) => h.textContent?.trim());
 
-  it('lists the sections: account, modules, appearance, security, guests and about', async () => {
+  it('lists the sections: account, modules, appearance, home, security, guests and about', async () => {
     const { el } = await render();
     expect(headings(el)).toEqual([
       'Conta',
       'Módulos',
       'Aparência',
+      'Casa',
       'Segurança',
       'Convidados',
       'Sobre',
     ]);
   });
 
-  it('links to the devices screen', async () => {
+  it('links to the devices screen, with the link name starting with its title', async () => {
     const { el } = await render();
     const link = el.querySelector<HTMLAnchorElement>('a[href="/ajustes/aparelhos"]');
-    expect(link?.textContent).toContain('Aparelhos');
+    expect(link?.textContent?.trim().startsWith('Aparelhos')).toBe(true);
+    expect(link?.closest('section')?.querySelector('h2')?.textContent?.trim()).toBe('Casa');
   });
 
   it('shows the account and signs out', async () => {
     const { fixture, el } = await render();
-    expect(el.querySelector('#account-title + dl')?.textContent).toContain('Dono da Casa');
-    expect(el.querySelector('#account-title + dl')?.textContent).toContain('dono@exemplo.com');
+    expect(el.querySelector('.profile dl')?.textContent).toContain('Dono da Casa');
+    expect(el.querySelector('.profile dl')?.textContent).toContain('dono@exemplo.com');
+    expect(el.querySelector('.avatar')?.textContent?.trim()).toBe('D');
+    expect(el.querySelector('.avatar')?.getAttribute('aria-hidden')).toBe('true');
     expect(el.textContent).toContain('Sessão ativa.');
+    expect(el.querySelector('.session')?.classList.contains('ok')).toBe(true);
 
     el.querySelector<HTMLButtonElement>('section button.secondary')!.click();
     await fixture.whenStable();
@@ -80,6 +85,9 @@ describe('SettingsPage', () => {
     const { el } = await render();
     expect(el.querySelector('.session')?.textContent).toContain('Sessão a confirmar');
     expect(el.querySelector('.session')?.textContent).toContain('Nada foi apagado');
+    // Sem alarme: tom de atenção, nunca o de erro.
+    expect(el.querySelector('.session')?.classList.contains('warn')).toBe(true);
+    expect(el.querySelector('.session')?.classList.contains('bad')).toBe(false);
   });
 
   it('warns when sign-out could not reach the server', async () => {
@@ -135,6 +143,20 @@ describe('SettingsPage', () => {
       expect(options.map((o) => o.value)).toEqual(['auto', 'light', 'dark']);
       expect(options.map((o) => o.checked)).toEqual([true, false, false]);
       expect(el.querySelector('fieldset legend')?.textContent).toBe('Tema');
+    });
+
+    it('shows a sample of each theme, hidden from readers, next to a short label', async () => {
+      const { el } = await render();
+      const cards = Array.from(el.querySelectorAll('label.theme'));
+      expect(cards.map((c) => c.querySelector('.theme-label')?.textContent?.trim())).toEqual([
+        'Automático',
+        'Claro',
+        'Escuro',
+      ]);
+      for (const card of cards) {
+        expect(card.querySelector('.preview')?.getAttribute('aria-hidden')).toBe('true');
+      }
+      expect(el.querySelector('fieldset .hint')?.textContent).toContain('Automático acompanha');
     });
 
     it('choosing dark saves the preference and applies the theme attribute', async () => {

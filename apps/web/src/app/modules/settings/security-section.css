@@ -1,131 +1,136 @@
+:host {
+  display: block;
+}
+
 .section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
-h2 {
-  font-size: 1.15rem;
-}
-
-.hint,
-.empty,
-.recommend {
+.hint {
   margin: 0;
   color: var(--a-ink2);
-  font-size: 0.95rem;
+  font-size: var(--fs-small);
+}
+
+/* Apresentação da seção: o que a passkey faz e o que não faz. */
+.intro {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.item {
+.item,
+.panel,
+.skeleton-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius);
-  background: var(--a-surface);
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .info {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+}
+
+.name {
+  overflow-wrap: anywhere;
 }
 
 .meta {
   color: var(--a-ink2);
-  font-size: 0.9rem;
+  font-size: var(--fs-small);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Confirmação: aviso em tom de perigo com a pergunta e as duas saídas. */
+.confirm-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.question {
+  margin: 0;
+  font-weight: 650;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4);
+  border: 2px dashed var(--a-line);
+  border-radius: var(--radius-lg);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.empty.bad {
+  border-color: color-mix(in srgb, var(--a-bad) 45%, var(--a-line));
+  color: var(--a-bad-ink);
 }
 
 .inline,
 .add {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-3);
 }
 
-.question {
-  margin: 0 0 8px;
-  font-weight: 600;
+.panel {
+  gap: var(--space-4);
 }
 
-label {
-  font-weight: 600;
+.bar {
+  display: block;
+  width: 40%;
+  height: 14px;
 }
 
-input {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 48px;
-  padding: 0 12px;
-  border: 1px solid var(--a-ink3);
-  border-radius: var(--radius);
-  background: var(--a-surface);
-  color: var(--a-ink);
-  font: inherit;
+.bar.wide {
+  width: 70%;
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.skeleton-card {
+  gap: 10px;
 }
 
-button {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: var(--radius);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
+.recommend app-settings-glyph,
+.message app-settings-glyph,
+.confirm app-settings-glyph {
+  --glyph-size: 20px;
+  margin-top: 1px;
 }
 
-.secondary {
-  border: 1px solid var(--a-line);
-  background: var(--a-surface);
-  color: var(--a-ink);
-}
-
-.primary {
-  border: 0;
-  background: var(--a-accent);
-  color: var(--a-on-accent);
-}
-
-.danger {
-  border: 0;
-  background: var(--a-bad);
-  color: var(--a-on-accent);
-}
-
-button:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.add-button {
-  align-self: flex-start;
-}
-
-.messages {
-  min-height: 1.4em;
-}
-
-.message {
-  margin: 0;
-  font-weight: 600;
-}
-
-.message.error {
-  color: var(--a-bad);
+.empty app-settings-glyph {
+  --glyph-size: 24px;
 }

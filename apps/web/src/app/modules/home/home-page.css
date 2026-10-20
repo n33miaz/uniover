@@ -1,107 +1,129 @@
+:host {
+  display: block;
+}
+
+/* Em tablet e computador a Início fica numa coluna centrada, sem esticar os cartões. */
 .home {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
+  max-width: 46rem;
+  margin-inline: auto;
 }
 
-.top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+/* Saudação: faixa suave com a hora do dia desenhada ao fundo. */
+.hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-3);
+  min-height: clamp(136px, 21vw, 172px);
+  padding: clamp(var(--space-5), 3vw, var(--space-6));
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--a-accent) 22%, var(--a-line));
+  border-radius: var(--radius-xl);
+  background: var(--a-hero);
+  box-shadow:
+    var(--shadow-2),
+    inset 0 1px 0 var(--a-highlight);
 }
 
-h1 {
-  font-size: 1.5rem;
+/* A cena tem proporção 3:2; a altura acompanha a largura para ela ficar no alto, acima da hora. */
+.scene {
+  --glyph-size: clamp(112px, 19vw, 156px);
+  position: absolute;
+  top: 6px;
+  right: 18px;
+  height: calc(var(--glyph-size) * 2 / 3);
+  color: var(--a-accent);
+  opacity: 0.22;
+  pointer-events: none;
+}
+
+.hero-text,
+.time {
+  position: relative;
 }
 
 .date {
-  margin: 4px 0 0;
+  margin: 0 0 var(--space-1);
   color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-weight: 600;
 }
 
 .date::first-letter {
   text-transform: uppercase;
 }
 
+h1 {
+  font-size: clamp(1.625rem, 4vw, 2rem);
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
 .time {
   margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
+  font-size: clamp(2rem, 5vw, 2.5rem);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
+/* Faixa de informações úteis. */
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: var(--space-2);
 }
 
-.chip {
-  display: inline-flex;
+/* Atalhos. */
+.shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.shortcut {
+  display: flex;
   align-items: center;
-  min-height: 28px;
-  padding: 2px 12px;
-  border-radius: 999px;
-  background: var(--a-elev);
-  color: var(--a-ink2);
-  font-size: 0.85rem;
-  font-weight: 600;
+  gap: 10px;
+  height: 100%;
+  min-height: 64px;
+  padding: 10px var(--space-3);
+  color: var(--a-ink);
+  text-decoration: none;
 }
 
-.chip.ok {
-  color: var(--a-ok);
-}
-
-.chip.warn {
-  color: var(--a-warn);
-}
-
+/* Cabeçalho da seção de módulos. */
 .section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-}
-
-h2 {
-  font-size: 0.8rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--a-ink2);
-}
-
-.head-actions {
-  display: flex;
-  gap: 8px;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
 }
 
 .edit {
-  display: inline-flex;
-  align-items: center;
-  text-decoration: none;
-  min-height: 44px;
-  min-width: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius);
-  background: var(--a-surface);
-  color: var(--a-accent);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
+  gap: 6px;
+  padding: 0 var(--space-4) 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  color: var(--a-accent-ink);
+  font-size: var(--fs-small);
 }
 
+.edit app-home-glyph {
+  --glyph-size: 18px;
+}
+
+/* Grade de módulos: dois por linha; "Largo" ocupa a linha toda. */
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: var(--space-3);
 }
 
 .widget {
@@ -109,60 +131,179 @@ h2 {
   min-width: 0;
 }
 
-.widget.wide,
+.widget.full,
 .empty {
   grid-column: 1 / -1;
 }
 
-.empty {
-  color: var(--a-ink2);
-}
-
 .card {
+  position: relative;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
+  gap: var(--space-3);
   min-width: 0;
-  padding: 14px;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius);
-  background: var(--a-surface);
+  padding: var(--space-4);
 }
 
-.card-head {
+.card-top {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.card-text {
+  flex: 1 1 auto;
 }
 
 h3 {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 1.125rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.desc {
+  margin: 2px 0 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  line-height: 1.3;
+}
+
+/* A ação principal; o link se estende por cima do cartão inteiro, então o cartão todo é o alvo de toque. */
+.action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  padding: 0 14px;
+  border-radius: var(--radius);
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.action app-home-glyph {
+  --glyph-size: 20px;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.action::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+}
+
+/* Na metade da linha não cabe a seta ao lado do texto. */
+.widget:not(.full) .action {
+  justify-content: center;
+}
+
+.widget:not(.full) .action app-home-glyph {
+  display: none;
+}
+
+.action:focus-visible {
+  outline: none;
+}
+
+.action:focus-visible::after {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+/* "Largo": ícone à esquerda, texto no meio e selos à direita; a ação desce para a linha de baixo. */
+.widget.full .card {
+  display: grid;
+  grid-template-areas:
+    'ico text badges'
+    'action action action';
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-3);
+}
+
+.widget.full .card-top {
+  display: contents;
 }
 
 .ico {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: var(--a-accent-soft);
-  color: var(--a-accent);
+  grid-area: ico;
+}
+
+.card-text {
+  grid-area: text;
 }
 
 .action {
-  display: inline-flex;
+  grid-area: action;
+}
+
+.badges {
+  grid-area: badges;
+}
+
+.widget.full .badges {
+  flex-direction: column;
+  align-items: flex-end;
+  align-self: start;
+}
+
+/* Estado vazio. */
+.empty {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  align-self: stretch;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius);
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  border: 2px dashed var(--a-line);
+  border-radius: var(--radius-lg);
+  color: var(--a-ink2);
+  text-align: center;
+}
+
+.empty p {
+  margin: 0;
+  max-width: 22rem;
+}
+
+.empty-art {
+  --glyph-size: 128px;
   color: var(--a-accent);
-  font-weight: 600;
-  text-decoration: none;
+  opacity: 0.85;
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .card:hover .action app-home-glyph {
+    transform: translateX(3px);
+  }
+}
+
+/* Celular deitado: a saudação encolhe para sobrar espaço aos cartões. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .hero {
+    min-height: 0;
+    padding: var(--space-4);
+  }
+
+  /* Com a tela larga e baixa, a cena sai de cima da hora e fica ao lado dela. */
+  .scene {
+    --glyph-size: 96px;
+    top: 50%;
+    right: 7rem;
+    translate: 0 -50%;
+  }
 }

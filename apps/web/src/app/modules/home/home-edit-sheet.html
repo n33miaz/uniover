@@ -1,12 +1,20 @@
 <dialog #dialog class="sheet" aria-labelledby="sheet-title" (cancel)="cancel($event)">
-  <h2 id="sheet-title" i18n="@@home.sheet.title">Editar a Início</h2>
-  <p class="hint" i18n="@@home.sheet.hint">
-    Mova, redimensione ou oculte os blocos. A escolha vale só neste aparelho.
-  </p>
+  <span class="grabber" aria-hidden="true"></span>
+  <header class="head">
+    <h2 id="sheet-title" i18n="@@home.sheet.title">Editar a Início</h2>
+    <p class="hint" i18n="@@home.sheet.hint">
+      Mova, redimensione ou oculte os blocos. A escolha vale só neste aparelho.
+    </p>
+  </header>
 
   <ul class="rows">
     @for (item of draft(); track item.id; let first = $first; let last = $last) {
-      <li class="row" [attr.data-id]="item.id" [class.dragging]="dragging() === item.id">
+      <li
+        class="row"
+        [attr.data-id]="item.id"
+        [class.dragging]="dragging() === item.id"
+        [class.off]="!item.enabled"
+      >
         <span
           class="grip"
           aria-hidden="true"
@@ -14,22 +22,10 @@
           (pointermove)="dragOver($event)"
           (pointerup)="endDrag()"
           (pointercancel)="endDrag()"
-          ><app-icon name="grip"
+          ><app-home-glyph name="grip"
         /></span>
+        <span class="ico ui-tile"><app-home-glyph [name]="glyph(item.id)" /></span>
         <span class="name">{{ title(item.id) }}</span>
-
-        <div class="sizes" role="group" aria-label="Tamanho" i18n-aria-label="@@home.sheet.size">
-          @for (size of sizes; track size) {
-            <button
-              type="button"
-              class="size"
-              [attr.aria-pressed]="item.size === size"
-              (click)="setSize(item.id, size)"
-            >
-              {{ sizeLabel(size) }}
-            </button>
-          }
-        </div>
 
         <div class="moves">
           <button
@@ -39,7 +35,7 @@
             [attr.aria-label]="upLabel(item.id)"
             (click)="move(item.id, -1)"
           >
-            <app-icon name="up" />
+            <app-home-glyph name="up" />
           </button>
           <button
             type="button"
@@ -48,27 +44,44 @@
             [attr.aria-label]="downLabel(item.id)"
             (click)="move(item.id, 1)"
           >
-            <app-icon name="down" />
+            <app-home-glyph name="down" />
           </button>
         </div>
 
-        <label class="show">
-          <input
-            type="checkbox"
-            [checked]="item.enabled"
-            (change)="setEnabled(item.id, $any($event.target).checked)"
-          />
-          <span i18n="@@home.sheet.show">Mostrar na Início</span>
-        </label>
+        <div class="controls">
+          <div class="sizes" role="group" aria-label="Tamanho" i18n-aria-label="@@home.sheet.size">
+            @for (size of sizes; track size) {
+              <button
+                type="button"
+                class="size"
+                [attr.aria-pressed]="item.size === size"
+                (click)="setSize(item.id, size)"
+              >
+                {{ sizeLabel(size) }}
+              </button>
+            }
+          </div>
+
+          <label class="show">
+            <span i18n="@@home.sheet.show">Mostrar na Início</span>
+            <input
+              type="checkbox"
+              role="switch"
+              class="ui-switch"
+              [checked]="item.enabled"
+              (change)="setEnabled(item.id, $any($event.target).checked)"
+            />
+          </label>
+        </div>
       </li>
     }
   </ul>
 
   <div class="footer">
-    <button type="button" class="secondary" (click)="cancel()" i18n="@@home.sheet.cancel">
+    <button type="button" class="secondary ui-btn" (click)="cancel()" i18n="@@home.sheet.cancel">
       Cancelar
     </button>
-    <button type="button" class="primary" (click)="apply()" i18n="@@home.sheet.apply">
+    <button type="button" class="primary ui-btn" (click)="apply()" i18n="@@home.sheet.apply">
       Aplicar
     </button>
   </div>

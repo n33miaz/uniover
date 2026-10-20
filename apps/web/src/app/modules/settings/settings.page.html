@@ -1,53 +1,70 @@
-<div class="settings">
-  <section class="section" aria-labelledby="account-title">
-    <h2 id="account-title" i18n="@@settings.account.title">Conta</h2>
-    @if (user(); as current) {
-      <dl class="facts">
-        <div>
-          <dt i18n="@@settings.account.name">Nome</dt>
-          <dd>{{ current.displayName }}</dd>
+<div class="settings ui-stagger">
+  <section class="section ui-rise" aria-labelledby="account-title">
+    <h2 id="account-title" class="ui-section-label" i18n="@@settings.account.title">Conta</h2>
+    <div class="profile ui-card">
+      @if (user(); as current) {
+        <div class="who">
+          <span class="avatar" aria-hidden="true">{{ initial(current.displayName) }}</span>
+          <dl class="facts">
+            <div>
+              <dt class="ui-visually-hidden" i18n="@@settings.account.name">Nome</dt>
+              <dd class="person">{{ current.displayName }}</dd>
+            </div>
+            <div>
+              <dt class="ui-visually-hidden" i18n="@@settings.account.email">E-mail</dt>
+              <dd class="mail">{{ current.email }}</dd>
+            </div>
+          </dl>
         </div>
-        <div>
-          <dt i18n="@@settings.account.email">E-mail</dt>
-          <dd>{{ current.email }}</dd>
-        </div>
-      </dl>
-    }
-    <p class="session" role="status">{{ sessionText() }}</p>
-    <button
-      type="button"
-      class="secondary"
-      [disabled]="loggingOut()"
-      (click)="logout()"
-      i18n="@@settings.account.logout"
-    >
-      Sair
-    </button>
-    @if (logoutUnconfirmed()) {
-      <p class="note" role="status" i18n="@@settings.account.logout-unconfirmed">
-        Sem conexão: a sessão foi encerrada neste aparelho, mas o servidor ainda não soube.
+      }
+      <p
+        class="session ui-notice"
+        role="status"
+        [class.ok]="status() === 'authenticated'"
+        [class.warn]="status() === 'pending'"
+      >
+        <app-settings-glyph [name]="status() === 'pending' ? 'clock' : 'checkCircle'" />
+        <span>{{ sessionText() }}</span>
       </p>
-    }
+      <button
+        type="button"
+        class="secondary ui-btn block"
+        [disabled]="loggingOut()"
+        (click)="logout()"
+      >
+        <app-settings-glyph name="logout" />
+        <span i18n="@@settings.account.logout">Sair</span>
+      </button>
+      @if (logoutUnconfirmed()) {
+        <p class="note ui-notice warn" role="status">
+          <app-settings-glyph name="alert" />
+          <span i18n="@@settings.account.logout-unconfirmed"
+            >Sem conexão: a sessão foi encerrada neste aparelho, mas o servidor ainda não
+            soube.</span
+          >
+        </p>
+      }
+    </div>
   </section>
 
-  <section class="section" aria-labelledby="modules-title">
-    <h2 id="modules-title" i18n="@@settings.modules.title">Módulos</h2>
-    <p class="hint" i18n="@@settings.modules.hint">
-      Módulo desligado some da Início. A escolha vale só neste aparelho.
-    </p>
-    <ul class="list">
+  <section class="section ui-rise" aria-labelledby="modules-title">
+    <h2 id="modules-title" class="ui-section-label" i18n="@@settings.modules.title">Módulos</h2>
+    <ul class="list ui-group">
       @for (module of registry.modules; track module.id) {
-        <li class="row">
+        <li class="row ui-row">
           <label class="module" [for]="'module-' + module.id">
-            <span class="module-name">{{ module.title }}</span>
-            <span class="chip" [class.real]="module.status === 'available'">{{
-              statusLabel(module)
-            }}</span>
+            <span class="ui-tile"><app-settings-glyph [name]="glyphFor(module)" /></span>
+            <span class="module-text">
+              <span class="module-name">{{ module.title }}</span>
+              <span class="chip ui-chip" [class.accent]="module.status === 'available'">{{
+                statusLabel(module)
+              }}</span>
+            </span>
           </label>
           <input
             type="checkbox"
             role="switch"
-            class="switch"
+            class="switch ui-switch"
             [id]="'module-' + module.id"
             [checked]="enabled(module)"
             (change)="toggleModule(module, $event)"
@@ -55,40 +72,62 @@
         </li>
       }
     </ul>
+    <p class="hint" i18n="@@settings.modules.hint">
+      Módulo desligado some da Início. A escolha vale só neste aparelho.
+    </p>
   </section>
 
-  <section class="section" aria-labelledby="appearance-title">
-    <h2 id="appearance-title" i18n="@@settings.appearance.title">Aparência</h2>
-    <fieldset class="themes">
+  <section class="section ui-rise" aria-labelledby="appearance-title">
+    <h2 id="appearance-title" class="ui-section-label" i18n="@@settings.appearance.title">
+      Aparência
+    </h2>
+    <fieldset class="themes ui-card">
       <legend i18n="@@settings.appearance.legend">Tema</legend>
-      @for (choice of themeChoices; track choice.value) {
-        <label class="theme">
-          <input
-            type="radio"
-            name="theme"
-            [value]="choice.value"
-            [checked]="themePreference() === choice.value"
-            (change)="chooseTheme(choice.value)"
-          />
-          <span>{{ choice.label }}</span>
-        </label>
-      }
+      <div class="choices">
+        @for (choice of themeChoices; track choice.value) {
+          <label class="theme">
+            <input
+              type="radio"
+              name="theme"
+              [value]="choice.value"
+              [checked]="themePreference() === choice.value"
+              (change)="chooseTheme(choice.value)"
+            />
+            <span [class]="'preview ' + choice.value" aria-hidden="true"></span>
+            <span class="theme-label">{{ choice.label }}</span>
+          </label>
+        }
+      </div>
+      <p class="hint" i18n="@@settings.appearance.auto-hint">
+        Automático acompanha o tema claro ou escuro do aparelho.
+      </p>
     </fieldset>
   </section>
 
-  <a class="row link-row" routerLink="/ajustes/aparelhos">
-    <span class="module-name" i18n="@@settings.devices.link">Aparelhos</span>
-    <span class="hint" i18n="@@settings.devices.hint">Parear o agente do PC de casa</span>
-  </a>
+  <section class="section ui-rise" aria-labelledby="home-title">
+    <h2 id="home-title" class="ui-section-label" i18n="@@settings.home.title">Casa</h2>
+    <div class="ui-group">
+      <a class="link-row ui-row" routerLink="/ajustes/aparelhos">
+        <span class="ui-tile"><app-settings-glyph name="laptop" /></span>
+        <span class="ui-row-text">
+          <span class="ui-row-title module-name" i18n="@@settings.devices.link">Aparelhos</span>
+          <span class="ui-row-sub hint" i18n="@@settings.devices.hint"
+            >Parear o agente do PC de casa</span
+          >
+        </span>
+        <app-settings-glyph class="chev" name="chevron" />
+      </a>
+    </div>
+  </section>
 
-  <app-security-section />
+  <app-security-section class="ui-rise" />
 
-  <app-guests-section />
+  <app-guests-section class="ui-rise" />
 
-  <section class="section" aria-labelledby="about-title">
-    <h2 id="about-title" i18n="@@settings.about.title">Sobre</h2>
-    <dl class="facts">
-      <div>
+  <section class="section ui-rise" aria-labelledby="about-title">
+    <h2 id="about-title" class="ui-section-label" i18n="@@settings.about.title">Sobre</h2>
+    <dl class="facts ui-group">
+      <div class="ui-row">
         <dt i18n="@@settings.about.app-version">Versão do app</dt>
         <dd>
           @if (appVersion; as version) {
@@ -98,7 +137,7 @@
           }
         </dd>
       </div>
-      <div>
+      <div class="ui-row">
         <dt i18n="@@settings.about.api-version">Versão da API</dt>
         <dd>
           @if (apiVersion() === 'loading') {
@@ -111,11 +150,17 @@
         </dd>
       </div>
     </dl>
-    <a class="row link-row" routerLink="/ajustes/creditos">
-      <span class="module-name" i18n="@@settings.about.credits">Créditos</span>
-      <span class="hint" i18n="@@settings.about.credits-hint"
-        >Autores e licenças do material de terceiros</span
-      >
-    </a>
+    <div class="ui-group">
+      <a class="link-row ui-row" routerLink="/ajustes/creditos">
+        <span class="ui-tile"><app-settings-glyph name="heart" /></span>
+        <span class="ui-row-text">
+          <span class="ui-row-title module-name" i18n="@@settings.about.credits">Créditos</span>
+          <span class="ui-row-sub hint" i18n="@@settings.about.credits-hint"
+            >Autores e licenças do material de terceiros</span
+          >
+        </span>
+        <app-settings-glyph class="chev" name="chevron" />
+      </a>
+    </div>
   </section>
 </div>

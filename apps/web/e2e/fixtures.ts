@@ -61,10 +61,14 @@ export async function waitForServiceWorkerControl(page: Page): Promise<void> {
  * Print da tela. No WebKit o Playwright injeta uma folha de estilo em linha para tirar o print, e a CSP a
  * bloqueia: isso é da ferramenta, não do app. Só durante o print o registro de violações fica silenciado.
  */
-export async function screenshot(page: Page, path: string): Promise<void> {
+export async function screenshot(
+  page: Page,
+  path: string,
+  options: { fullPage?: boolean } = {},
+): Promise<void> {
   muted.add(page);
   try {
-    await page.screenshot({ path });
+    await page.screenshot({ path, ...options });
     await page.evaluate(() => undefined); // deixa chegarem as mensagens pendentes antes de voltar a registrar
   } finally {
     muted.delete(page);
