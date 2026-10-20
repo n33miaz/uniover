@@ -18,6 +18,7 @@ from uniover_agent.adapters.pairing_http import HttpPairingClient, probe_api
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.transport_ws import WebSocketTransport, build_ws_url
+from uniover_agent.adapters.tv_adb import AdbTv, locate_adb
 from uniover_agent.adapters.tv_pairing import TvPairingError, is_paired, pair_tv
 from uniover_agent.adapters.tv_remote_v2 import AndroidTvRemoteV2
 from uniover_agent.config import (
@@ -30,6 +31,7 @@ from uniover_agent.config import (
 )
 from uniover_agent.core import (
     POWER_KEYS,
+    AppsAnnouncer,
     ConnectionSupervisor,
     EnvelopeFactory,
     EnvelopeGate,
@@ -37,14 +39,18 @@ from uniover_agent.core import (
     Handler,
     PairAgent,
     ProcessMessage,
+    TextReconciler,
+    TvApps,
     TvSessionManager,
     TvStatePublisher,
     tv_app_launch_handler,
+    tv_apps_refresh_handler,
     tv_key_handler,
     tv_text_handler,
     tv_wake_handler,
 )
 from uniover_agent.ports import (
+    AdbUnauthorized,
     Clock,
     PairingDenied,
     PairingError,
@@ -105,6 +111,10 @@ class TvSetup:
     background: list[Callable[[], Coroutine[Any, Any, None]]] = field(default_factory=list)
     # Rodam depois do `hello`, a cada conexão com a API.
     after_hello: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
+    # Rodam uma vez, antes do primeiro `hello`: podem ajustar `capabilities`.
+    prepare: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
+    # A digitação (uma só, ligada ao handler de `tv.text.v1`): o canal ADB se pluga nela.
+    text: TextReconciler | None = None
 
 
 def build_tv(
@@ -127,6 +137,7 @@ def build_tv(
     manager = TvSessionManager(clock, remote, hibernate_seconds=settings.tv_hibernate_seconds)
     # `POWER` fica recusado: sem infravermelho a TV não volta do standby e não tem botão físico.
     keys = tv_key_handler(manager, blocked_keys=POWER_KEYS)
+    text = TextReconciler(manager, monotonic=clock.monotonic)
     setup = TvSetup(
         manager,
         transport,
@@ -134,16 +145,70 @@ def build_tv(
         handlers={
             "tv.key.v1": keys,
             "tv.key.v2": keys,
-            "tv.text.v1": tv_text_handler(manager),
+            "tv.text.v1": tv_text_handler(manager, reconciler=text),
             "tv.wake.v1": tv_wake_handler(manager),
             "tv.app.launch.v1": tv_app_launch_handler(manager),
         },
         capabilities=["tv.remote"],
+        text=text,
     )
     # Cada tarefa seguinte insere aqui só a linha dela; o gerenciador é o único dono da conexão.
-    # [composição: adb]
+    compose_adb(setup, settings, host, clock)  # [composição: adb]
     # [composição: vigia]
     return setup
+
+
+def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> None:
+    """Liga o canal ADB: lista de apps, abertura por pacote e digitação pelo `input text`.
+
+    Sem o `adb` neste PC nada é registrado e a TV segue só com o controle remoto. O canal entra na
+    sessão como opcional (abre e hiberna junto, mas a falta dele não derruba as teclas) e os
+    handlers dele são os únicos que o usam.
+    """
+    path = locate_adb(settings.adb_path)
+    if path is None:
+        _log.warning(
+            "adb não encontrado (UNIOVER_ADB_PATH, PATH ou Android SDK): "
+            "lista de apps e abertura por pacote ficam desligadas"
+        )
+        return
+    adb = AdbTv(
+        path,
+        host,
+        settings.tv_adb_port,
+        timeout=settings.adb_timeout_seconds,
+        monotonic=clock.monotonic,
+    )
+    manager = setup.manager
+    manager.add_channel(adb)
+    apps = TvApps(manager, adb, setup.transport, setup.envelopes)
+    announcer = AppsAnnouncer(apps, lambda: manager.snapshot().connection == "hot")
+    # O handler de `tv.text.v1` continua sendo um só: ele recebe o ADB, não é substituído.
+    if setup.text is not None:
+        setup.text.use_adb(adb)
+    setup.handlers["tv.apps.refresh.v1"] = tv_apps_refresh_handler(apps)
+    setup.handlers["tv.app.launch.v1"] = tv_app_launch_handler(manager, packages=apps)
+    manager.subscribe(announcer.on_state)
+    setup.after_hello.append(announcer.after_hello)
+    setup.background.append(announcer.run)
+
+    async def declare_when_usable() -> None:
+        # `tv.adb` só vai ao `hello` se o ADB não está sabidamente quebrado. TV desligada agora
+        # (sem resposta) não conta: é o normal de manhã e o ADB serve quando ela ligar. Já "a TV
+        # não autorizou este PC" não se resolve sozinho: não anuncia e avisa o dono.
+        try:
+            await adb.connect()
+        except AdbUnauthorized:
+            _log.warning(
+                "a TV não autorizou este PC no ADB: aceite o aviso na tela da TV "
+                "e reinicie o agente. Lista de apps desligada até lá"
+            )
+            return
+        except Exception as exc:
+            _log.info("ADB sem resposta agora (%s); será usado quando a TV responder", exc)
+        setup.capabilities.append("tv.adb")
+
+    setup.prepare.append(declare_when_usable)
 
 
 def build_handler(clock: Clock, tv: TvSetup | None = None) -> HandleCommand:
@@ -230,6 +295,9 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
         user_agent=f"uniover-agent/{agent_version()}",
     )
     tv = build_tv(settings, clock, transport, envelopes)
+    if tv is not None:
+        for step in tv.prepare:
+            await step()
     process = ProcessMessage(agent_id, gate, build_handler(clock, tv), envelopes, transport)
     publisher: TvStatePublisher | None = None
     after_hello: list[Callable[[], Awaitable[None]]] = []

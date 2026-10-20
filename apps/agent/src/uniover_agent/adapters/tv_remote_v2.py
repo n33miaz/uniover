@@ -68,6 +68,10 @@ KEY_CODES: Final[Mapping[str, str]] = {
     **{f"NUM_{digit}": f"KEYCODE_{digit}" for digit in range(10)},
 }
 
+# Teclas de edição de texto: não fazem parte do contrato de teclas (a API não as envia); só o
+# agente as usa, para apagar o que ele mesmo digitou.
+EDIT_KEY_CODES: Final[Mapping[str, str]] = {"DEL": "KEYCODE_DEL"}
+
 
 class RemoteClient(Protocol):
     """O pedaço de `AndroidTVRemote` que o adaptador usa (permite um duplo nos testes)."""
@@ -201,7 +205,7 @@ class AndroidTvRemoteV2:
     # --- comandos -----------------------------------------------------------------------------
 
     async def send_key(self, key: str, direction: str = "SHORT") -> None:
-        code = KEY_CODES.get(key)
+        code = KEY_CODES.get(key) or EDIT_KEY_CODES.get(key)
         if code is None:
             raise ValueError(f"tecla desconhecida: {key}")
         if direction not in DIRECTIONS:

@@ -10,6 +10,7 @@ from uniover_agent.core import (
     EnvelopeGate,
     HandleCommand,
     ResultStatus,
+    TextReconciler,
     TvSessionManager,
     TvState,
     TvStatePublisher,
@@ -167,12 +168,14 @@ async def test_text_reaches_the_remote_and_opens_the_session_on_the_first_comman
     assert remote.sent == []
 
 
-async def test_each_text_replaces_the_previous_one_and_the_last_wins() -> None:
+async def test_each_text_sends_only_what_was_added() -> None:
     handler, remote = make()
     for index, text in enumerate(["m", "ma", "mat", "matrix"]):
         result = await handler(Command(str(index), "tv.text.v1", {"text": text}))
         assert result.status is ResultStatus.OK
-    assert remote.texts == ["m", "ma", "mat", "matrix"]
+    # Nada de reenviar o campo inteiro (a TV insere, então duplicaria): só o acréscimo.
+    assert remote.texts == ["m", "a", "t", "rix"]
+    assert remote.sent == []
     assert remote.connects == 1
 
 
@@ -193,7 +196,9 @@ async def test_text_renews_the_hibernation_clock() -> None:
 async def test_text_after_hibernation_reconnects() -> None:
     clock, remote = FakeClock(), FakeTvRemote()
     session = TvSessionManager(clock, remote, hibernate_seconds=300)
-    handler = tv_text_handler(session)
+    handler = tv_text_handler(
+        session, reconciler=TextReconciler(session, monotonic=clock.monotonic)
+    )
     await handler(Command("1", "tv.text.v1", {"text": "a"}))
     clock.advance(301)
     assert await session.hibernate_if_idle()
@@ -201,7 +206,9 @@ async def test_text_after_hibernation_reconnects() -> None:
     result = await handler(Command("2", "tv.text.v1", {"text": "ab"}))
     assert result.status is ResultStatus.OK
     assert remote.connects == 2
-    assert remote.texts == ["a", "ab"]
+    # Mesmo depois da pausa longa, "ab" continua "a": só o "b" vai (sem duplicar).
+    assert remote.texts == ["a", "b"]
+    assert remote.sent == []
 
 
 async def test_text_to_an_unreachable_tv_is_reported_with_its_code() -> None:
@@ -240,16 +247,19 @@ async def test_text_without_a_string_is_rejected(body: dict[str, Any]) -> None:
 
 async def test_texts_arriving_together_are_sent_in_order_and_the_last_wins() -> None:
     clock, remote = FakeClock(), FakeTvRemote()
-    handler = tv_text_handler(TvSessionManager(clock, remote))
+    session = TvSessionManager(clock, remote)
+    reconciler = TextReconciler(session, monotonic=clock.monotonic)
+    handler = tv_text_handler(session, reconciler=reconciler)
     commands = [
         Command(str(index), "tv.text.v1", {"text": text})
         for index, text in enumerate(["a", "ab", "abc"])
     ]
     results = await asyncio.gather(*(handler(command) for command in commands))
     assert [r.status for r in results] == [ResultStatus.OK] * 3
-    # O último nunca é ultrapassado; os intermediários que ainda esperavam a vez são descartados.
-    assert remote.texts[-1] == "abc"
-    assert remote.texts == sorted(remote.texts, key=len)
+    # O intermediário que ainda esperava a vez é descartado; o diff é contra o último texto pedido,
+    # então o campo termina com "abc" sem nada duplicado.
+    assert "".join(remote.texts) == "abc"
+    assert reconciler.last_text == "abc"
     assert remote.connects == 1
 
 

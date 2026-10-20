@@ -53,6 +53,9 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_TV_CLIENT_NAME` | nome do agente que aparece na TV no pareamento (padrão `UniOver`) |
 | `UNIOVER_TV_NAME` | nome da pasta do certificado desta TV (padrão `tv`) |
 | `UNIOVER_TV_HIBERNATE_SECONDS` | segundos sem comando até a sessão com a TV hibernar (padrão `300`) |
+| `UNIOVER_ADB_PATH` | caminho do `adb` (padrão: procura no `PATH` e em `%LOCALAPPDATA%\Android\Sdk\platform-tools`); habilita lista de apps, abrir app por pacote e digitação pelo ADB |
+| `UNIOVER_TV_ADB_PORT` | porta do ADB da TV (padrão `5555`) |
+| `UNIOVER_ADB_TIMEOUT_SECONDS` | tempo máximo de cada comando `adb` (padrão `5`) |
 
 Arquivo local (fora do repositório): `%LOCALAPPDATA%\UniOver\agent.toml`, com `api_url` e `agent_id`. Nunca
 guarda segredo.
@@ -89,7 +92,7 @@ Comportamentos que valem saber:
 - **`POWER` é recusado** (`key_blocked`): sem infravermelho a TV não volta do standby e não tem botão físico.
   O desligamento só existirá com confirmação forte, em outra entrega.
 - **Links:** `tv.app.launch.v1` com `kind=link` só abre os esquemas `https`, `http`, `market` e `vnd.youtube`
-  (`intent://`, `file://` e afins são recusados). `kind=package` responde `unsupported` até haver o canal ADB.
+  (`intent://`, `file://` e afins são recusados). `kind=package` abre o app pelo ADB; sem `adb` neste PC responde `unsupported`.
 - A biblioteca não avisa quando a conexão cai e **descarta em silêncio** a tecla enviada depois da queda; por
   isso o adaptador vigia a queda e o gerenciador reabre a sessão (com a mesma espera de 1, 2 e 4 s).
 - **TV em standby** desliga a rede e não responde nada: cada comando espera as tentativas (até ~27 s no pior
