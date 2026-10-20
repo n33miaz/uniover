@@ -1,13 +1,14 @@
 import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ModulePrefs, WidgetPref } from '../../core/modules/module-prefs';
-import { ModuleRegistry } from '../../core/modules/module-registry';
+import { ModuleDefinition, ModuleRegistry } from '../../core/modules/module-registry';
 import { HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
-import { Icon } from '../../shared/ui/icon/icon';
 import { HomeEditSheet } from './home-edit-sheet';
+import { HomeGlyph, HomeGlyphName, moduleGlyph } from './home-glyph';
 
 type ChipTone = 'neutral' | 'ok' | 'warn';
+type DayPart = 'morning' | 'afternoon' | 'evening';
 
 interface InfoChip {
   readonly id: string;
@@ -15,17 +16,40 @@ interface InfoChip {
   readonly tone: ChipTone;
 }
 
-/** Saudação pela hora do dia: manhã até 11h59, tarde até 17h59, noite no resto. */
-export function greetingFor(hour: number): string {
-  if (hour >= 5 && hour < 12) return $localize`:@@home.greeting.morning:Bom dia`;
-  if (hour >= 12 && hour < 18) return $localize`:@@home.greeting.afternoon:Boa tarde`;
-  return $localize`:@@home.greeting.evening:Boa noite`;
+interface Shortcut {
+  readonly id: string;
+  readonly link: string;
+  readonly glyph: HomeGlyphName;
+  readonly title: string;
+  readonly hint: string;
 }
 
-/** Início: saudação, faixa de informações e um bloco por módulo, que o usuário reordena e redimensiona. */
+/** Parte do dia: manhã até 11h59, tarde até 17h59, noite no resto (a mesma régua da saudação). */
+export function dayPartFor(hour: number): DayPart {
+  if (hour >= 5 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 18) return 'afternoon';
+  return 'evening';
+}
+
+/** Saudação pela hora do dia: manhã até 11h59, tarde até 17h59, noite no resto. */
+export function greetingFor(hour: number): string {
+  switch (dayPartFor(hour)) {
+    case 'morning':
+      return $localize`:@@home.greeting.morning:Bom dia`;
+    case 'afternoon':
+      return $localize`:@@home.greeting.afternoon:Boa tarde`;
+    default:
+      return $localize`:@@home.greeting.evening:Boa noite`;
+  }
+}
+
+/**
+ * Início: saudação com data e hora, faixa de informações, atalhos e um bloco por módulo, que o usuário
+ * reordena e redimensiona.
+ */
 @Component({
   selector: 'app-home-page',
-  imports: [RouterLink, Icon, HomeEditSheet],
+  imports: [RouterLink, HomeGlyph, HomeEditSheet],
   templateUrl: './home-page.html',
   styleUrl: './home-page.css',
 })
@@ -38,8 +62,30 @@ export class HomePage {
   private readonly editButton = viewChild<ElementRef<HTMLButtonElement>>('editButton');
 
   protected readonly editing = signal(false);
-  protected readonly widgets = this.prefs.visible;
+  /**
+   * Blocos na ordem escolhida, já com a largura de fato: "Largo" ocupa a linha toda; um "Pequeno" que ficaria
+   * sozinho na linha (porque o próximo é largo, ou porque é o último) também a ocupa, sem deixar buraco.
+   */
+  protected readonly widgets = computed(() => {
+    const visible = this.prefs.visible();
+    let column = 0;
+    return visible.map((widget, index) => {
+      let full = widget.size === 'wide';
+      if (full) {
+        column = 0;
+      } else if (column === 0) {
+        const next = visible[index + 1];
+        full = !next || next.size === 'wide';
+        column = full ? 0 : 1;
+      } else {
+        column = 0;
+      }
+      return { ...widget, full };
+    });
+  });
   protected readonly allWidgets = this.prefs.widgets;
+
+  protected readonly dayPart = computed(() => dayPartFor(this.clock.now().getHours()));
 
   protected readonly greeting = computed(() => {
     const base = greetingFor(this.clock.now().getHours());
@@ -58,6 +104,24 @@ export class HomePage {
       this.clock.now(),
     ),
   );
+
+  /** Atalhos para o que mais se procura fora dos módulos; só rotas que existem hoje. */
+  protected readonly shortcuts: readonly Shortcut[] = [
+    {
+      id: 'devices',
+      link: '/ajustes/aparelhos',
+      glyph: 'laptop',
+      title: $localize`:@@home.shortcut.devices:Aparelhos`,
+      hint: $localize`:@@home.shortcut.devices-hint:Parear o PC de casa`,
+    },
+    {
+      id: 'settings',
+      link: '/ajustes',
+      glyph: 'sliders',
+      title: $localize`:@@home.shortcut.settings:Ajustes`,
+      hint: $localize`:@@home.shortcut.settings-hint:Conta, tema e convidados`,
+    },
+  ];
 
   /** Faixa de informações úteis. Sem dado real mostra "sem dados" em vez de inventar um estado. */
   protected readonly chips = computed<readonly InfoChip[]>(() => {
@@ -96,6 +160,46 @@ export class HomePage {
     }
     return chips;
   });
+
+  protected glyphFor(module: ModuleDefinition): HomeGlyphName {
+    return moduleGlyph(module.icon);
+  }
+
+  /** Uma linha que diz para que serve o módulo. */
+  protected describe(module: ModuleDefinition): string {
+    switch (module.id) {
+      case 'tv':
+        return $localize`:@@home.module.tv-hint:Ligar, volume, canais e apps`;
+      case 'training':
+        return $localize`:@@home.module.training-hint:Fichas, séries e progresso`;
+      default:
+        return '';
+    }
+  }
+
+  /**
+   * Estado ao vivo do módulo, só quando já existe no que a Início conhece: o controle da TV depende do agente.
+   * Sem dado (agente desconhecido) não mostra nada, em vez de inventar.
+   */
+  protected live(module: ModuleDefinition): InfoChip | null {
+    if (module.id !== 'tv') return null;
+    switch (this.status().agent) {
+      case 'online':
+        return {
+          id: 'tv-live',
+          label: $localize`:@@home.live.tv-on:Pronto para usar`,
+          tone: 'ok',
+        };
+      case 'offline':
+        return {
+          id: 'tv-live',
+          label: $localize`:@@home.live.tv-off:Sem agente em casa`,
+          tone: 'warn',
+        };
+      default:
+        return null;
+    }
+  }
 
   protected openEditor(): void {
     this.editing.set(true);

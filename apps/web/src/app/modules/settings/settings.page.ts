@@ -9,6 +9,7 @@ import { SessionState } from '../../core/session/session-state';
 import { version as appVersion } from '../../../../package.json';
 import { GuestsSection } from './guests-section';
 import { SecuritySection } from './security-section';
+import { SettingsGlyph, SettingsGlyphName, moduleGlyph } from './settings-glyph';
 
 interface ThemeChoice {
   readonly value: ThemePreference;
@@ -21,7 +22,7 @@ interface ThemeChoice {
  */
 @Component({
   selector: 'app-settings-page',
-  imports: [SecuritySection, GuestsSection, RouterLink],
+  imports: [SecuritySection, GuestsSection, RouterLink, SettingsGlyph],
   templateUrl: './settings.page.html',
   styleUrl: './settings.page.css',
 })
@@ -44,7 +45,7 @@ export class SettingsPage {
   protected readonly appVersion: string | null = appVersion || null;
 
   protected readonly themeChoices: readonly ThemeChoice[] = [
-    { value: 'auto', label: $localize`:@@settings.theme.auto:Automático (segue o sistema)` },
+    { value: 'auto', label: $localize`:@@settings.theme.auto:Automático` },
     { value: 'light', label: $localize`:@@settings.theme.light:Claro` },
     { value: 'dark', label: $localize`:@@settings.theme.dark:Escuro` },
   ];
@@ -64,6 +65,15 @@ export class SettingsPage {
 
   constructor() {
     void this.loadApiVersion();
+  }
+
+  /** Letra do avatar: a primeira do nome (ou do e-mail, se o nome vier vazio). */
+  protected initial(name: string): string {
+    return (name.trim() || this.user()?.email || '?').charAt(0).toLocaleUpperCase('pt-BR');
+  }
+
+  protected glyphFor(module: ModuleDefinition): SettingsGlyphName {
+    return moduleGlyph(module.icon);
   }
 
   protected enabled(module: ModuleDefinition): boolean {

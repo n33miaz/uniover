@@ -5,50 +5,80 @@
   max-width: 100%;
   max-height: 88dvh;
   margin: auto 0 0;
-  padding: 20px var(--gutter);
-  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  padding: var(--space-2) var(--gutter) 0;
   border: 0;
-  border-radius: 20px 20px 0 0;
-  background: var(--a-surface);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--a-surface-raised);
   color: var(--a-ink);
+  box-shadow: var(--shadow-3);
   overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Em tela larga a folha vira um cartão centrado, ainda colado ao rodapé. */
+@media (min-width: 640px) {
+  .sheet {
+    width: min(100%, 34rem);
+    margin-inline: auto;
+  }
 }
 
 .sheet[open] {
-  animation: sheet-up 180ms ease-out;
+  animation: sheet-up var(--dur-slow) var(--ease-out);
+}
+
+.sheet[open]::backdrop {
+  animation: backdrop-in var(--dur-base) linear;
 }
 
 .sheet::backdrop {
-  background: rgb(0 0 0 / 0.45);
+  background: rgb(8 16 10 / 0.52);
 }
 
 @keyframes sheet-up {
   from {
-    transform: translateY(24px);
+    transform: translateY(40px);
+  }
+}
+
+@keyframes backdrop-in {
+  from {
     opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sheet[open] {
+  .sheet[open],
+  .sheet[open]::backdrop {
     animation: none;
   }
 }
 
+.grabber {
+  display: block;
+  width: 40px;
+  height: 5px;
+  margin: 0 auto var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--a-line);
+}
+
 h2 {
-  font-size: 1.15rem;
+  font-size: var(--fs-title);
+  font-weight: 750;
+  letter-spacing: -0.01em;
 }
 
 .hint {
-  margin: 6px 0 12px;
+  margin: var(--space-1) 0 var(--space-4);
   color: var(--a-ink2);
-  font-size: 0.9rem;
+  font-size: var(--fs-small);
 }
 
 .rows {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -56,93 +86,126 @@ h2 {
 
 .row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    'grip ico name moves'
+    'controls controls controls controls';
+  grid-template-columns: 36px auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px 10px;
-  padding: 10px;
+  gap: var(--space-2) 10px;
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-1);
   border: 1px solid var(--a-line);
-  border-radius: var(--radius);
-  background: var(--a-bg);
+  border-radius: var(--radius-lg);
+  background: var(--a-surface-2);
+  transition:
+    border-color var(--dur-fast) linear,
+    box-shadow var(--dur-fast) linear;
 }
 
 .row.dragging {
   border-color: var(--a-accent);
+  box-shadow: var(--shadow-2);
+}
+
+.row.off .ico {
+  opacity: 0.55;
 }
 
 .grip {
+  grid-area: grip;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: var(--tap);
   color: var(--a-ink2);
   cursor: grab;
   touch-action: none;
 }
 
+.ico {
+  grid-area: ico;
+}
+
 .name {
-  font-weight: 600;
+  grid-area: name;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .moves {
+  grid-area: moves;
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
-.sizes {
+.controls {
+  grid-area: controls;
   display: flex;
-  gap: 6px;
-  grid-column: 2 / -1;
-}
-
-.show {
-  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  grid-column: 1 / -1;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding-left: var(--space-2);
 }
 
-.show input {
-  width: 24px;
-  height: 24px;
-  accent-color: var(--a-accent);
-}
-
-.size,
-.icon-button,
-.secondary,
-.primary {
-  min-height: 44px;
-  min-width: 44px;
-  border-radius: var(--radius);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.size,
-.icon-button,
-.secondary {
-  border: 1px solid var(--a-line);
-  background: var(--a-surface);
-  color: var(--a-ink);
+/* Tamanho: controle segmentado; o selecionado "sobe" para a superfície. */
+.sizes {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--a-elev);
 }
 
 .size {
-  padding: 0 14px;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--a-ink2);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) linear,
+    color var(--dur-fast) linear;
 }
 
 .size[aria-pressed='true'] {
-  border-color: var(--a-accent);
-  background: var(--a-accent-soft);
-  color: var(--a-ink);
+  border-color: var(--a-line);
+  background: var(--a-surface);
+  color: var(--a-accent-ink);
+  box-shadow: var(--shadow-1);
+}
+
+.show {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  font-size: var(--fs-small);
+  font-weight: 650;
 }
 
 .icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.icon-button:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
 .icon-button:disabled {
@@ -150,18 +213,31 @@ h2 {
   cursor: default;
 }
 
+/* Rodapé fixo na base da folha: as duas saídas sempre à mão, mesmo com a lista rolando. */
 .footer {
+  position: sticky;
+  bottom: 0;
   display: flex;
   gap: 10px;
-  margin-top: 16px;
+  margin: var(--space-4) calc(-1 * var(--gutter)) 0;
+  padding: var(--space-3) var(--gutter);
+  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--a-line);
+  background: var(--a-surface-raised);
 }
 
 .footer button {
   flex: 1 1 0;
 }
 
-.primary {
-  border: 0;
-  background: var(--a-accent);
-  color: var(--a-on-accent);
+@media (prefers-reduced-motion: reduce) {
+  .row,
+  .size,
+  .icon-button {
+    transition: none;
+  }
+
+  .icon-button:active:not(:disabled) {
+    transform: none;
+  }
 }

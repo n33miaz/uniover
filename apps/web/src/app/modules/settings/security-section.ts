@@ -9,6 +9,7 @@ import {
   toCreationOptions,
 } from '../../core/auth/step-up/webauthn';
 import { SessionState } from '../../core/session/session-state';
+import { SettingsGlyph } from './settings-glyph';
 
 /** Limite de caracteres do nome da passkey na API. */
 const MAX_NAME = 60;
@@ -19,6 +20,7 @@ const MAX_NAME = 60;
  */
 @Component({
   selector: 'app-security-section',
+  imports: [SettingsGlyph],
   templateUrl: './security-section.html',
   styleUrl: './security-section.css',
 })

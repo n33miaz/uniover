@@ -4,6 +4,7 @@ import { problemOf } from '../../core/auth/api-problem';
 import { AuthApi, GuestInviteSummary, GuestSummary } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { SessionState } from '../../core/session/session-state';
+import { SettingsGlyph } from './settings-glyph';
 
 /** Limite de caracteres do nome do convidado na API. */
 const MAX_NAME = 100;
@@ -22,6 +23,7 @@ interface CreatedLink {
  */
 @Component({
   selector: 'app-guests-section',
+  imports: [SettingsGlyph],
   templateUrl: './guests-section.html',
   styleUrl: './guests-section.css',
 })
@@ -81,7 +83,7 @@ export class GuestsSection {
   }
 
   protected revokeGuestLabel(guest: GuestSummary): string {
-    return $localize`:@@settings.guests.revoke-guest-label:Revogar o acesso de ${guest.displayName}:name:`;
+    return $localize`:@@settings.guests.revoke-guest-label:Revogar acesso de ${guest.displayName}:name:`;
   }
 
   protected revokeGuestQuestion(guest: GuestSummary): string {
