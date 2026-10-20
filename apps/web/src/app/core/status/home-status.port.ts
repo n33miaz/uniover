@@ -1,5 +1,4 @@
-import { Injectable, Signal, computed, inject } from '@angular/core';
-import { SessionState } from '../session/session-state';
+import { Signal } from '@angular/core';
 
 export type AgentState = 'unknown' | 'online' | 'offline';
 export type WatcherState = 'unknown' | 'ok' | 'alert';
@@ -14,25 +13,16 @@ export interface HomeStatus {
 }
 
 /**
- * Porta de leitura do estado da casa. A Início depende só dela; o adaptador real (agente e eventos em tempo
- * real) vem com o módulo de dispositivos e substitui o provisório abaixo.
+ * Porta de leitura do estado da casa. A Início depende só dela; quem fala com a API e com o fluxo em tempo real é o
+ * adaptador registrado na composição do app, e os testes da tela trocam por um duplo. Sem dado, o adaptador diz
+ * "sem dados" em vez de inventar um estado.
  */
-@Injectable({ providedIn: 'root', useFactory: () => new NoDataHomeStatus() })
 export abstract class HomeStatusPort {
   abstract readonly status: Signal<HomeStatus>;
-}
 
-/**
- * Adaptador provisório: o nome vem da sessão; o resto não é inventado e fica "sem dados" para a UI mostrar isso
- * com clareza.
- */
-export class NoDataHomeStatus extends HomeStatusPort {
-  private readonly session = inject(SessionState);
-
-  readonly status = computed<HomeStatus>(() => ({
-    userName: this.session.user()?.displayName ?? null,
-    agent: 'unknown',
-    watcher: 'unknown',
-    serviceDown: false,
-  }));
+  /**
+   * A tela chama ao aparecer: enquanto houver quem acompanhe, o adaptador mantém o estado fresco (e só então
+   * consulta a API ou abre o fluxo). Devolve a função que encerra o acompanhamento, para a tela chamar ao sair.
+   */
+  abstract watch(): () => void;
 }

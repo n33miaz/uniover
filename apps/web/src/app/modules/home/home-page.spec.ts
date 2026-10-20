@@ -35,12 +35,16 @@ describe('HomePage', () => {
     watcher: 'unknown',
     serviceDown: false,
   });
+  const release = vi.fn();
+  const watch = vi.fn(() => release);
 
   beforeEach(() => {
     localStorage.clear();
     status.set({ userName: null, agent: 'unknown', watcher: 'unknown', serviceDown: false });
+    release.mockClear();
+    watch.mockClear();
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), { provide: HomeStatusPort, useValue: { status } }],
+      providers: [provideRouter([]), { provide: HomeStatusPort, useValue: { status, watch } }],
     });
     TestBed.inject(ClockService).now.set(new Date('2026-10-18T09:30:00'));
   });
@@ -62,10 +66,53 @@ describe('HomePage', () => {
     expect((await render()).el.querySelector('h1')?.textContent).toBe('Boa noite, Neemias');
   });
 
-  it('says "no data" in the info strip while there is no real source', async () => {
+  it('says "no data" in the info strip while the status has nothing to tell', async () => {
     const { el } = await render();
     const chips = Array.from(el.querySelectorAll('.chips li')).map((c) => c.textContent?.trim());
     expect(chips).toEqual(['Agente sem dados', 'Vigia sem dados']);
+  });
+
+  it('asks the status to follow the house while on screen and lets go when it leaves', async () => {
+    const { fixture } = await render();
+    expect(watch).toHaveBeenCalledTimes(1);
+    expect(release).not.toHaveBeenCalled();
+    fixture.destroy();
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('colours the strip by state and always says it in words as well', async () => {
+    const strip = async (next: Partial<HomeStatus>) => {
+      status.set({
+        userName: null,
+        agent: 'unknown',
+        watcher: 'unknown',
+        serviceDown: false,
+        ...next,
+      });
+      const { el } = await render();
+      return Array.from(el.querySelectorAll('.chips li')).map((chip) => [
+        chip.textContent?.trim(),
+        chip.classList.contains('ok') ? 'ok' : chip.classList.contains('warn') ? 'warn' : 'neutral',
+        chip.querySelector('.dot')?.classList.contains('hollow') ?? false,
+      ]);
+    };
+    expect(await strip({ agent: 'online', watcher: 'ok' })).toEqual([
+      ['Agente ligado', 'ok', false],
+      ['Vigia sem avisos', 'ok', false],
+    ]);
+    expect(await strip({ agent: 'offline' })).toEqual([
+      ['Agente desligado', 'warn', false],
+      ['Vigia sem dados', 'neutral', true],
+    ]);
+    expect(await strip({ agent: 'online', watcher: 'alert' })).toEqual([
+      ['Agente ligado', 'ok', false],
+      ['Vigia com aviso', 'warn', false],
+    ]);
+    expect(await strip({ serviceDown: true })).toEqual([
+      ['Agente sem dados', 'neutral', true],
+      ['Vigia sem dados', 'neutral', true],
+      ['Serviço fora do ar', 'warn', false],
+    ]);
   });
 
   it('reflects agent, watcher and service state when known', async () => {

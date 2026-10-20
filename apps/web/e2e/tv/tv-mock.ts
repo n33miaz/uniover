@@ -258,3 +258,8 @@ export async function failSse(page: Page): Promise<void> {
 export async function sseUrls(page: Page): Promise<string[]> {
   return page.evaluate(() => (window as unknown as { __sse: { urls(): string[] } }).__sse.urls());
 }
+
+/** Quantas conexões do fluxo seguem abertas agora (as fechadas pelo app ficam de fora). */
+export async function openStreams(page: Page): Promise<number> {
+  return page.evaluate(() => (window as unknown as { __sse: { open(): number } }).__sse.open());
+}
