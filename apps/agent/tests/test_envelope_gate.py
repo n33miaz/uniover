@@ -49,7 +49,13 @@ def test_valid_text_command_is_accepted() -> None:
     assert outcome.command.body == {"text": "matrix"}
 
 
-@pytest.mark.parametrize("text", ["", "a\nb", "a\x07", "a" * 201])
+def test_empty_text_command_is_accepted_to_clear_the_field() -> None:
+    outcome = gate.check_inbound(dump(envelope("tv.text.v1", {"text": ""})))
+    assert isinstance(outcome, Accepted)
+    assert outcome.command.body == {"text": ""}
+
+
+@pytest.mark.parametrize("text", ["a\nb", "a\x07", "a" * 201])
 def test_text_command_outside_the_contract_is_rejected(text: str) -> None:
     outcome = rejected(dump(envelope("tv.text.v1", {"text": text})))
     assert outcome.reason == "fora_do_contrato"
