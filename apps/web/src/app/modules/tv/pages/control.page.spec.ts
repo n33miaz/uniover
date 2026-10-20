@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { TvStore } from '../data/tv-store';
-import { FakeTvStore, HOT, createFakeTvStore, makeShortcut } from '../tv-test-kit';
+import { FakeTvStore, HOT, createFakeTvStore, makeShortcut, pngIcon } from '../tv-test-kit';
 import { ControlPage } from './control.page';
 
 describe('ControlPage', () => {
@@ -13,8 +13,9 @@ describe('ControlPage', () => {
   const byLabel = (label: string, scope: ParentNode = root) =>
     scope.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
   const panels = () => root.querySelectorAll<HTMLElement>('.panel');
+  /** O atalho é o ícone do app: o nome está no nome acessível do botão. */
   const shortcutNames = () =>
-    [...root.querySelectorAll('.shortcut .name')].map((el) => el.textContent?.trim());
+    [...root.querySelectorAll('.shortcut')].map((el) => el.getAttribute('aria-label'));
 
   beforeEach(() => {
     sessionStorage.clear();
@@ -44,6 +45,18 @@ describe('ControlPage', () => {
     it('shows the enabled shortcuts as "Atalho n" when nothing else names them, never the package', () => {
       expect(shortcutNames()).toEqual(['Atalho 1', 'Atalho 2', 'Atalho 3']);
       expect(root.textContent).not.toContain('pacote.app');
+    });
+
+    it('shows the app icon on the chip, not its name, and still opens the app', () => {
+      store.shortcuts.set([
+        makeShortcut(1, { tvLabel: 'Spotify', iconDataUri: pngIcon(96, 96) }),
+        makeShortcut(2),
+      ]);
+      render();
+      expect(root.querySelectorAll('.shortcut img')).toHaveLength(1);
+      expect(root.querySelectorAll('.shortcut .name')).toHaveLength(0);
+      expect(root.querySelector('.shortcut')!.textContent?.trim()).toBe('');
+      expect(shortcutNames()).toEqual(['Spotify', 'Atalho 2']);
     });
 
     it('names a chip by the owner name, then by the name the agent publishes, then "Atalho n"', () => {

@@ -79,6 +79,23 @@ describe('parseShortcuts', () => {
     expect(list?.map((item) => item.id)).toEqual(['a', 'b', 'c']);
   });
 
+  it('keeps the icon that came and reads a missing or invalid one as "no icon" (rows saved before the icons)', () => {
+    const old: Partial<TvShortcut> = shortcut({ id: 'old', position: 1 });
+    delete old.iconDataUri;
+    const list = parseShortcuts([
+      old,
+      shortcut({ id: 'ok', position: 2, iconDataUri: 'data:image/png;base64,AAAA' }),
+      { ...shortcut({ id: 'bad', position: 3 }), iconDataUri: 42 },
+      shortcut({ id: 'null', position: 4, iconDataUri: null }),
+    ]);
+    expect(list?.map((item) => item.iconDataUri)).toEqual([
+      null,
+      'data:image/png;base64,AAAA',
+      null,
+      null,
+    ]);
+  });
+
   it('returns null for what is not a list', () => {
     expect(parseShortcuts({})).toBeNull();
     expect(parseShortcuts(undefined)).toBeNull();

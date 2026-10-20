@@ -5,7 +5,7 @@ import { Subject } from 'rxjs';
 import { ConnectivityService, ServerState } from '../../../core/connectivity/connectivity.service';
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
 import { TvApi } from './tv-api';
-import { TvStore, isValidTvText } from './tv-store';
+import { ICONS_CACHE_MAX_CHARS, TvStore, isValidTvText } from './tv-store';
 import { TvShortcut } from './tv-types';
 
 const PROBLEM = 'https://uniover.app/problems/';
@@ -421,6 +421,122 @@ describe('TvStore', () => {
       await started();
       expect(store.state()).toBeNull();
       expect(store.status()).toBe('offline');
+    });
+  });
+
+  describe('app icons in the browser cache', () => {
+    const STATE_KEY = 'uniover.tv.last-state';
+    const ICONS_KEY = 'uniover.tv.app-icons';
+    /** Um ícone do tamanho do teto da API: cerca de 44 mil caracteres. */
+    const bigIcon = (seed: number) => `data:image/png;base64,${String(seed % 10).repeat(43_690)}`;
+    const iconsStored = () =>
+      JSON.parse(localStorage.getItem(ICONS_KEY) ?? '{}') as Record<string, string>;
+
+    it('keeps the icons out of the state cache (rewritten at every volume change) and in a key of their own', async () => {
+      await started();
+      emit('tv.shortcuts', [
+        shortcut(1, { iconDataUri: 'data:image/png;base64,AAAA' }),
+        shortcut(2),
+      ]);
+      expect(iconsStored()).toEqual({ s1: 'data:image/png;base64,AAAA' });
+      const cached = JSON.parse(localStorage.getItem(STATE_KEY)!);
+      expect(cached.shortcuts.map((item: TvShortcut) => item.iconDataUri)).toEqual([null, null]);
+      expect(localStorage.getItem(STATE_KEY)).not.toContain('AAAA');
+      // A lista em uso na tela continua com o ícone.
+      expect(store.shortcuts()?.[0].iconDataUri).toBe('data:image/png;base64,AAAA');
+    });
+
+    it('writes the icons only when the list arrives, never again for a state change or the same list', async () => {
+      const set = vi.spyOn(Storage.prototype, 'setItem');
+      await started();
+      const iconWrites = () => set.mock.calls.filter(([key]) => key === ICONS_KEY).length;
+      emit('tv.shortcuts', [shortcut(1, { iconDataUri: bigIcon(1) })]);
+      const written = iconWrites();
+      expect(written).toBeGreaterThan(0);
+      for (const volume of [23, 24, 25, 26]) emit('tv.state', { ...hot, volume });
+      emit('tv.shortcuts', [shortcut(1, { iconDataUri: bigIcon(1) })]);
+      expect(iconWrites()).toBe(written);
+      set.mockRestore();
+    });
+
+    it('shows the cached icons when the app opens without network', async () => {
+      localStorage.setItem(
+        STATE_KEY,
+        JSON.stringify({
+          state: hot,
+          seenAt: new Date(2026, 9, 19, 13, 7).getTime(),
+          shortcuts: [shortcut(1), shortcut(2)],
+        }),
+      );
+      localStorage.setItem(ICONS_KEY, JSON.stringify({ s2: 'data:image/png;base64,AAAA' }));
+      online.set(false);
+      await started();
+      expect(store.shortcuts()?.map((item) => item.iconDataUri)).toEqual([
+        null,
+        'data:image/png;base64,AAAA',
+      ]);
+    });
+
+    it('reads a row saved before the icons existed (no field at all) as "no icon"', async () => {
+      const old: Partial<TvShortcut> = shortcut(1);
+      delete old.iconDataUri;
+      localStorage.setItem(
+        STATE_KEY,
+        JSON.stringify({ state: hot, seenAt: Date.now(), shortcuts: [old] }),
+      );
+      online.set(false);
+      await started();
+      expect(store.shortcuts()).toHaveLength(1);
+      expect(store.shortcuts()?.[0].iconDataUri).toBeNull();
+    });
+
+    it('survives a corrupt icon cache: the shortcuts and the state still come back, just without icons', async () => {
+      localStorage.setItem(
+        STATE_KEY,
+        JSON.stringify({ state: hot, seenAt: Date.now(), shortcuts: [shortcut(1)] }),
+      );
+      localStorage.setItem(ICONS_KEY, '{lixo');
+      online.set(false);
+      await started();
+      expect(store.state()).not.toBeNull();
+      expect(store.shortcuts()?.[0].iconDataUri).toBeNull();
+    });
+
+    it('stores a full list of 100 maximum-size icons within the cap, state included', async () => {
+      await started();
+      emit(
+        'tv.shortcuts',
+        Array.from({ length: 100 }, (_, index) =>
+          shortcut(index + 1, { iconDataUri: bigIcon(index) }),
+        ),
+      );
+      const stored = iconsStored();
+      const chars = Object.values(stored).reduce((sum, uri) => sum + uri.length, 0);
+      expect(chars).toBeLessThanOrEqual(ICONS_CACHE_MAX_CHARS);
+      expect(Object.keys(stored).length).toBeGreaterThan(15);
+      expect(Object.keys(stored).length).toBeLessThan(100);
+      // O estado, que é o que vale sem rede, continua pequeno e gravado.
+      expect(localStorage.getItem(STATE_KEY)!.length).toBeLessThan(30_000);
+      // E a tela em uso tem os 100 ícones.
+      expect(store.shortcuts()?.filter((item) => item.iconDataUri)).toHaveLength(100);
+    });
+
+    it('still keeps the state cache when the browser has no room for the icons', async () => {
+      const original = Storage.prototype.setItem;
+      const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+        this: Storage,
+        key: string,
+        value: string,
+      ) {
+        if (key === ICONS_KEY) throw new DOMException('cheio', 'QuotaExceededError');
+        original.call(this, key, value);
+      });
+      await started();
+      emit('tv.shortcuts', [shortcut(1, { iconDataUri: bigIcon(1) }), shortcut(2)]);
+      expect(store.shortcuts()).toHaveLength(2);
+      expect(JSON.parse(localStorage.getItem(STATE_KEY)!).shortcuts).toHaveLength(2);
+      expect(localStorage.getItem(ICONS_KEY)).toBeNull();
+      set.mockRestore();
     });
   });
 

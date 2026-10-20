@@ -64,7 +64,10 @@ export function parseState(value: unknown): TvState | null {
   };
 }
 
-/** Lê a lista de atalhos, descartando o que não tem o mínimo; a ordem é a de `position`. */
+/**
+ * Lê a lista de atalhos, descartando o que não tem o mínimo; a ordem é a de `position`. `iconDataUri` sempre sai
+ * como texto ou `null`: linhas guardadas antes dos ícones não têm o campo.
+ */
 export function parseShortcuts(value: unknown): TvShortcut[] | null {
   if (!Array.isArray(value)) return null;
   const list = value.filter(
@@ -74,7 +77,12 @@ export function parseShortcuts(value: unknown): TvShortcut[] | null {
       typeof (item as TvShortcut).id === 'string' &&
       typeof (item as TvShortcut).position === 'number',
   );
-  return [...list].sort((a, b) => a.position - b.position);
+  return list
+    .map((item) => {
+      const icon = typeof item.iconDataUri === 'string' ? item.iconDataUri : null;
+      return item.iconDataUri === icon ? item : { ...item, iconDataUri: icon };
+    })
+    .sort((a, b) => a.position - b.position);
 }
 
 export function parseWatchdog(value: unknown): TvWatchdog | null {

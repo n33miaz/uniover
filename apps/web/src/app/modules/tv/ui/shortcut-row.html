@@ -12,14 +12,17 @@
   </button>
   <ul class="shortcuts" aria-label="Atalhos de apps" i18n-aria-label="@@tv.shortcuts.label">
     @for (shortcut of shortcuts(); track shortcut.id) {
+      @let name = label(shortcut);
       <li>
         <button
           type="button"
           class="shortcut"
+          [attr.aria-label]="name"
+          [attr.title]="name"
           [attr.aria-disabled]="canSend() ? null : 'true'"
           (click)="open.emit(shortcut)"
         >
-          <span class="name">{{ label(shortcut) }}</span>
+          <app-tv-app-icon [shortcut]="shortcut" />
         </button>
       </li>
     }

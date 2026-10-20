@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../../core/session/session-state';
 import { TvStore } from '../data/tv-store';
-import { FakeTvStore, createFakeTvStore, makeShortcut } from '../tv-test-kit';
+import { FakeTvStore, createFakeTvStore, makeShortcut, pngIcon } from '../tv-test-kit';
 import { AppsPanel } from './apps-panel';
 
 describe('AppsPanel', () => {
@@ -110,6 +110,93 @@ describe('AppsPanel', () => {
     await render();
     expect(launcher(1).disabled).toBe(true);
     expect(root.querySelector<HTMLButtonElement>('.refresh')!.disabled).toBe(true);
+  });
+
+  describe('icons', () => {
+    const tiles = () => [...root.querySelectorAll<HTMLElement>('.launch app-tv-app-icon')];
+
+    beforeEach(async () => {
+      store.shortcuts.set([
+        makeShortcut(1, { tvLabel: 'CineVS', iconDataUri: pngIcon(320, 180) }),
+        makeShortcut(2, { tvLabel: 'Spotify', iconDataUri: pngIcon(96, 96) }),
+        makeShortcut(3, { customLabel: 'Sala' }),
+        makeShortcut(4),
+      ]);
+      await render();
+    });
+
+    it('shows each app with its icon, a banner on a wider tile, and a tile with the initial where there is none', () => {
+      expect(tiles()).toHaveLength(4);
+      expect(tiles().map((tile) => tile.querySelectorAll('img').length)).toEqual([1, 1, 0, 0]);
+      expect(tiles().map((tile) => tile.classList.contains('wide'))).toEqual([
+        true,
+        false,
+        false,
+        false,
+      ]);
+      expect(
+        tiles()
+          .slice(2)
+          .map((tile) => tile.querySelector('.fallback')?.textContent?.trim()),
+      ).toEqual(['S', '4']);
+    });
+
+    it('keeps the icons out of the names: the button is still named by the text, the pictures are decorative', () => {
+      expect(names()).toEqual(['CineVS', 'Spotify', 'Sala', 'Atalho 4']);
+      for (const image of root.querySelectorAll('.launch img')) {
+        expect(image.getAttribute('alt')).toBe('');
+      }
+      for (const tile of root.querySelectorAll('.launch .fallback')) {
+        expect(tile.getAttribute('aria-hidden')).toBe('true');
+      }
+    });
+
+    it('loads the pictures late, so a long list does not hold up the scroll', () => {
+      for (const image of root.querySelectorAll('.launch img')) {
+        expect(image.getAttribute('loading')).toBe('lazy');
+        expect(image.getAttribute('decoding')).toBe('async');
+      }
+    });
+
+    it('shows the same icons in the list, in the same order', async () => {
+      buttonByText('Lista').click();
+      await render();
+      expect(root.querySelector('.list')!.getAttribute('data-view')).toBe('list');
+      expect(tiles().map((tile) => tile.querySelectorAll('img').length)).toEqual([1, 1, 0, 0]);
+      expect(names()).toEqual(['CineVS', 'Spotify', 'Sala', 'Atalho 4']);
+    });
+
+    it('opens the app when the icon is tapped', async () => {
+      root.querySelector<HTMLElement>('.launch img')!.click();
+      await render();
+      expect(store.launch).toHaveBeenCalledWith(expect.objectContaining({ id: 's1' }));
+    });
+
+    it('finds an app by its name and keeps its icon in the filtered list', async () => {
+      search('spot');
+      await render();
+      expect(names()).toEqual(['Spotify']);
+      expect(tiles()).toHaveLength(1);
+      expect(tiles()[0].querySelector('img')).not.toBeNull();
+    });
+
+    it('dims the icon of a hidden app along with its name', async () => {
+      store.shortcuts.set([makeShortcut(1, { tvLabel: 'Spotify', enabled: false })]);
+      await render();
+      expect(root.querySelector('.item')?.classList.contains('off')).toBe(true);
+      expect(tiles()).toHaveLength(1);
+    });
+
+    it('shows the icon and the current name above the field while renaming', async () => {
+      byLabel('Renomear Spotify').click();
+      await render();
+      const head = root.querySelector('.edit .edit-head')!;
+      expect(head.querySelector('app-tv-app-icon img')).not.toBeNull();
+      expect(head.querySelector('.edit-name')?.textContent?.trim()).toBe('Spotify');
+      expect(head.querySelector('.edit-package')?.textContent?.trim()).toBe('pacote.app2');
+      expect(root.querySelector('label')?.textContent?.trim()).toBe('Nome do atalho');
+      expect(names()).toEqual(['CineVS', 'Sala', 'Atalho 4']);
+    });
   });
 
   describe('search', () => {

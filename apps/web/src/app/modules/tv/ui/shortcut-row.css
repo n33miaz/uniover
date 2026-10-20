@@ -43,16 +43,23 @@ button {
   background: var(--a-accent-soft);
   font-weight: 700;
 }
+/*
+ * O atalho é só o ícone do app: um azulejo da altura da fileira, de cantos arredondados (a pílula é do chip Apps). O
+ * ícone enche o chip por dentro da borda; o banner 16:9 deixa o chip mais largo. A borda do chip já separa o azulejo do
+ * fundo, então o fio do azulejo some aqui.
+ */
 .shortcut {
-  min-width: 96px;
-  max-width: 14rem;
-  padding: 0 18px;
-  font-weight: 600;
-}
-.shortcut .name {
+  --chip-radius: 16px;
+  justify-content: center;
+  min-width: var(--tv-top);
+  padding: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  border-radius: var(--chip-radius);
+}
+.shortcut app-tv-app-icon {
+  --tile: calc(var(--tv-top) - 2px);
+  --tile-radius: calc(var(--chip-radius) - 1px);
+  --tile-edge: transparent;
 }
 
 /* Resposta imediata ao toque: o chip afunda um pouco. Quem pediu menos movimento não vê a animação. */
@@ -75,14 +82,19 @@ button {
   }
 }
 
-/* A faixa dos atalhos rola na horizontal, com encaixe suave e sem barra. */
+/*
+ * A faixa dos atalhos rola na horizontal, com encaixe suave e sem barra. Quem rola também corta na vertical, e o
+ * anel de foco (3 px, a 2 px do botão) fica fora do chip: a faixa tem 5 px de folga em volta, devolvidos pela margem
+ * negativa, para o anel aparecer inteiro sem mexer em nenhuma posição.
+ */
 .shortcuts {
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
   gap: 8px;
-  margin: 0;
-  padding: 0;
+  margin: -5px;
+  padding: 5px;
+  scroll-padding-inline: 5px;
   list-style: none;
   overflow-x: auto;
   scroll-snap-type: x proximity;

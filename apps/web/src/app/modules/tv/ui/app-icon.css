@@ -1,0 +1,65 @@
+/*
+ * O azulejo tem altura fixa (`--tile`) e largura de quadrado, ou de 16:9 para banner: nasce do tamanho certo e a imagem
+ * não empurra nada ao carregar. Atrás da imagem fica um neutro claro igual nos dois temas: ícones com fundo transparente
+ * são feitos para fundo claro e sumiriam sobre o escuro. O fio de 1 px por cima separa o azulejo do fundo da tela.
+ */
+:host {
+  --tile: 44px;
+  display: block;
+  flex: 0 0 auto;
+  width: var(--tile);
+  height: var(--tile);
+  overflow: hidden;
+  border-radius: var(--tile-radius, calc(var(--tile) * 0.22));
+  background: #eef2ee;
+  outline: 1px solid var(--tile-edge, color-mix(in srgb, var(--a-ink) 16%, transparent));
+  outline-offset: -1px;
+}
+:host(.wide) {
+  width: calc(var(--tile) * 16 / 9);
+}
+
+/* `contain`: a imagem aparece inteira. O quadrado enche o azulejo; o que tiver outra proporção deixa uma faixa neutra. */
+.image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  pointer-events: none;
+}
+
+/* Reserva: cor do pacote misturada ao fundo do tema (fundo) e à tinta do tema (letra), AA nos dois temas. */
+.fallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  background: color-mix(in srgb, var(--hue) 25%, var(--a-surface));
+  color: color-mix(in srgb, var(--hue) 55%, var(--a-ink));
+  font-size: calc(var(--tile) * 0.44);
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.hue-0 {
+  --hue: #3b6b4b;
+}
+.hue-1 {
+  --hue: #1f7a8c;
+}
+.hue-2 {
+  --hue: #3a5a9b;
+}
+.hue-3 {
+  --hue: #7a4a8a;
+}
+.hue-4 {
+  --hue: #b5532e;
+}
+.hue-5 {
+  --hue: #9a7416;
+}

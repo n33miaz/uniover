@@ -4,6 +4,7 @@ import { IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import {
   HOT_STATE,
+  MockShortcut,
   MockTvState,
   SHORTCUTS,
   TvMock,
@@ -13,6 +14,7 @@ import {
   mockTvApi,
   sseUrls,
 } from './tv-mock';
+import { BROKEN_PNG, ICONS, TINY_WEBP, noisyIcon, toDataUri } from './synthetic-icons';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -81,6 +83,15 @@ const statusDot = (page: Page, title?: string) =>
     name: title ? `Estado do controle: ${title}` : /^Estado do controle:/,
   });
 const statusPanel = (page: Page) => page.locator('app-status-indicator .panel');
+
+/** Os atalhos de cima são só o ícone do app: o nome está no nome acessível (e na dica) do botão. */
+async function expectChipNames(page: Page, names: string[]) {
+  const chips = page.locator('.shortcuts .shortcut');
+  await expect(chips).toHaveCount(names.length);
+  for (const [index, name] of names.entries()) {
+    await expect(chips.nth(index)).toHaveAccessibleName(name);
+  }
+}
 
 const appsDialog = (page: Page) => page.getByRole('dialog', { name: 'Apps da TV' });
 const keyboardDialog = (page: Page) => page.getByRole('dialog', { name: 'Teclado' });
@@ -358,7 +369,7 @@ test.describe('controle: fileira de atalhos e chip Apps', () => {
       tvLabel: s.position <= 2 ? ['YouTube', 'Spotify'][s.position - 1] : null,
     }));
     await openTv(page);
-    await expect(page.locator('.shortcuts .shortcut')).toHaveText(['Sala', 'Spotify', 'Atalho 3']);
+    await expectChipNames(page, ['Sala', 'Spotify', 'Atalho 3']);
 
     // O mesmo nome na grade e na lista do painel Apps, e a busca acha pelo nome que o agente publicou.
     await openApps(page);
@@ -382,7 +393,7 @@ test.describe('controle: fileira de atalhos e chip Apps', () => {
     await openTv(page);
     const chips = page.locator('.shortcuts .shortcut');
     // A API entrega por posição e o app mantém essa ordem (aqui a lista chega embaralhada e sai por posição).
-    await expect(chips).toHaveText(['App 1', 'App 2', 'App 3']);
+    await expectChipNames(page, ['App 1', 'App 2', 'App 3']);
     const apps = (await button(page, 'Apps da TV').boundingBox())!;
     const first = (await chips.first().boundingBox())!;
     expect(apps.x).toBeLessThan(first.x);
@@ -1882,4 +1893,503 @@ test.describe('carrossel do palco: gestos de dedo (toque sintético, só Chromiu
     expect(tv.keysSent().length, 'a repetição continuou depois do gesto').toBe(before);
     expect(tv.keysSent()).toEqual([]);
   });
+});
+
+/** Seis apps com todos os casos: banner, quadrado, fundo transparente, sem ícone, nome padrão e imagem quebrada. */
+function iconShortcuts(): MockShortcut[] {
+  const rows: Pick<MockShortcut, 'tvLabel' | 'package' | 'iconDataUri'>[] = [
+    { tvLabel: 'CineVS', package: 'exemplo.cine', iconDataUri: ICONS.banner },
+    { tvLabel: 'Spotify', package: 'exemplo.musica', iconDataUri: ICONS.square },
+    { tvLabel: 'Configurações', package: 'exemplo.ajustes', iconDataUri: ICONS.transparent },
+    { tvLabel: 'Play Store', package: 'exemplo.loja', iconDataUri: null },
+    { tvLabel: null, package: 'exemplo.sem.nome', iconDataUri: null },
+    { tvLabel: 'YouTube', package: 'exemplo.video', iconDataUri: BROKEN_PNG },
+  ];
+  return rows.map((row, index) => ({
+    id: `00000000-0000-4000-8000-0000000001${String(index).padStart(2, '0')}`,
+    position: index + 1,
+    customLabel: null,
+    enabled: true,
+    ...row,
+  }));
+}
+const ICON_NAMES = ['CineVS', 'Spotify', 'Configurações', 'Play Store', 'Atalho 5', 'YouTube'];
+
+const imageLoaded = (image: Locator) =>
+  image.evaluate(
+    (el) => (el as HTMLImageElement).complete && (el as HTMLImageElement).naturalWidth > 0,
+  );
+
+/** Contraste WCAG da letra de cada azulejo de reserva da tela contra o fundo dele (o axe não mede texto escondido). */
+async function fallbackContrasts(page: Page): Promise<number[]> {
+  return page.evaluate(() => {
+    const channels = (color: string) => {
+      const numbers = (color.match(/-?\d*\.?\d+/g) ?? []).slice(0, 3).map(Number);
+      return color.startsWith('color(') ? numbers.map((v) => v * 255) : numbers;
+    };
+    const lum = ([r, g, b]: number[]) => {
+      const [lr, lg, lb] = [r, g, b].map((v) => {
+        const c = v / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+    };
+    return [...document.querySelectorAll<HTMLElement>('.fallback')].map((el) => {
+      const style = getComputedStyle(el);
+      const [a, b] = [lum(channels(style.color)), lum(channels(style.backgroundColor))].sort(
+        (x, y) => y - x,
+      );
+      return (a + 0.05) / (b + 0.05);
+    });
+  });
+}
+
+test.describe('ícones dos apps', () => {
+  test('a fileira de cima mostra o ícone no lugar do nome, e o nome segue no botão e na dica', async ({
+    page,
+  }) => {
+    tv.shortcuts = iconShortcuts();
+    await openTv(page);
+    await expectChipNames(page, ICON_NAMES);
+    const chips = page.locator('.shortcuts .shortcut');
+    for (const [index, name] of ICON_NAMES.entries()) {
+      await expect(chips.nth(index)).toHaveAttribute('title', name);
+    }
+    // Com ícone: só a imagem, decorativa (alt vazio), sem texto.
+    for (const index of [0, 1, 2]) {
+      await expect(chips.nth(index)).toHaveText('');
+      await expect(chips.nth(index).locator('img')).toHaveAttribute('alt', '');
+      await expect.poll(() => imageLoaded(chips.nth(index).locator('img'))).toBe(true);
+    }
+    // Sem ícone: a inicial do nome (ou o número da posição, no "Atalho n"), escondida de leitor de tela.
+    await expect(chips.nth(3).locator('.fallback')).toHaveText('P');
+    await expect(chips.nth(4).locator('.fallback')).toHaveText('5');
+    await expect(chips.nth(3).locator('.fallback')).toHaveAttribute('aria-hidden', 'true');
+    // A imagem que não carrega cai no azulejo de reserva, sem quebrar a fileira.
+    await expect(chips.nth(5).locator('.fallback')).toHaveText('Y');
+    await expect(chips.nth(5).locator('img')).toHaveCount(0);
+    await expect(button(page, 'Apps da TV')).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    await expectNoVerticalScroll(page);
+  });
+
+  test('o banner 16:9 ganha um chip mais largo e aparece inteiro; o ícone quadrado enche o chip', async ({
+    page,
+  }) => {
+    tv.shortcuts = iconShortcuts();
+    await openTv(page);
+    const chips = page.locator('.shortcuts .shortcut');
+    await expect.poll(() => imageLoaded(chips.nth(0).locator('img'))).toBe(true);
+    await expect.poll(() => imageLoaded(chips.nth(1).locator('img'))).toBe(true);
+
+    const banner = (await chips.nth(0).boundingBox())!;
+    const square = (await chips.nth(1).boundingBox())!;
+    const fallback = (await chips.nth(3).boundingBox())!;
+    expect(banner.height, 'mesma altura').toBeCloseTo(square.height, 0);
+    expect(fallback.height, 'mesma altura').toBeCloseTo(square.height, 0);
+    expect(square.width, 'ícone quadrado, chip quadrado').toBeCloseTo(square.height, 0);
+    expect(banner.width / banner.height, 'banner, chip mais largo').toBeGreaterThan(1.6);
+    expect(banner.width / banner.height).toBeLessThan(1.9);
+
+    // Nem cortado nem esticado: a imagem inteira cabe na caixa, com a proporção que ela tem.
+    for (const index of [0, 1]) {
+      const fit = await chips
+        .nth(index)
+        .locator('img')
+        .evaluate((el) => {
+          const image = el as HTMLImageElement;
+          const box = image.getBoundingClientRect();
+          return {
+            objectFit: getComputedStyle(image).objectFit,
+            boxRatio: box.width / box.height,
+            naturalRatio: image.naturalWidth / image.naturalHeight,
+          };
+        });
+      expect(fit.objectFit).toBe('contain');
+      expect(
+        Math.abs(fit.boxRatio - fit.naturalRatio),
+        `proporção do chip ${index + 1}`,
+      ).toBeLessThan(0.06);
+    }
+    for (const index of [0, 1, 2, 3, 4, 5]) await expectTargetSize(chips.nth(index));
+  });
+
+  test('a faixa rola com o chip Apps parado, e nada passa da largura da tela', async ({ page }) => {
+    tv.shortcuts = iconShortcuts();
+    await openTv(page);
+    const apps = (await button(page, 'Apps da TV').boundingBox())!;
+    const strip = page.locator('.shortcuts');
+    expect(await strip.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    await strip.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+    await expect
+      .poll(() => strip.evaluate((el) => el.scrollLeft + el.clientWidth >= el.scrollWidth - 1))
+      .toBe(true);
+    expect(await button(page, 'Apps da TV').boundingBox()).toEqual(apps);
+    const last = (await button(page, 'YouTube').boundingBox())!;
+    const stripBox = (await strip.boundingBox())!;
+    const viewport = page.viewportSize()!;
+    expect(last.x + last.width).toBeLessThanOrEqual(stripBox.x + stripBox.width + 0.5);
+    expect(stripBox.x + stripBox.width).toBeLessThanOrEqual(viewport.width);
+    await expectNoHorizontalScroll(page);
+    await expectNoVerticalScroll(page);
+  });
+
+  test('tocar no ícone abre o app', async ({ page }) => {
+    tv.shortcuts = iconShortcuts();
+    await openTv(page);
+    await button(page, 'Spotify').click();
+    await expect.poll(() => tv.count(`/shortcuts/${tv.shortcuts[1].id}/launch`)).toBe(1);
+    await expect(page.getByText('Spotify aberto na TV.')).toBeVisible();
+    // O banner também: o toque na própria imagem chega ao chip (a imagem não recebe o toque, quem recebe é o botão).
+    const picture = (await button(page, 'CineVS').locator('img').boundingBox())!;
+    await page.mouse.click(picture.x + picture.width / 2, picture.y + picture.height / 2);
+    await expect.poll(() => tv.count(`/shortcuts/${tv.shortcuts[0].id}/launch`)).toBe(1);
+  });
+
+  test('sem o agente os ícones ficam apagados mas focáveis, e o toque não abre nada', async ({
+    page,
+  }) => {
+    tv.shortcuts = iconShortcuts();
+    await openTv(page);
+    await sendState(page, { agentOnline: false, connection: 'disconnected', volume: null });
+    const chip = button(page, 'Spotify');
+    await expect(chip).toHaveAttribute('aria-disabled', 'true');
+    // Apagado só por aria-disabled: o botão não está desabilitado de verdade, para a faixa seguir focável.
+    expect(await chip.evaluate((el) => (el as HTMLButtonElement).disabled)).toBe(false);
+    expect(await chip.evaluate((el) => Number(getComputedStyle(el).opacity))).toBeLessThan(0.6);
+    await chip.focus();
+    await expect(chip).toBeFocused();
+    await chip.click({ force: true });
+    await page.waitForTimeout(150);
+    expect(tv.count(`/shortcuts/${tv.shortcuts[1].id}/launch`)).toBe(0);
+  });
+
+  test('o foco do teclado aparece inteiro em volta do chip, sem ser cortado pela faixa que rola', async ({
+    page,
+  }, info) => {
+    tv.shortcuts = iconShortcuts();
+    await openTv(page);
+    const strip = (await page.locator('.shortcuts').boundingBox())!;
+    for (const name of ['CineVS', 'Spotify']) {
+      const chip = button(page, name);
+      await chip.focus();
+      const focus = await chip.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return {
+          style: style.outlineStyle,
+          width: parseFloat(style.outlineWidth),
+          offset: parseFloat(style.outlineOffset),
+        };
+      });
+      expect(focus.style, name).toBe('solid');
+      expect(focus.width, name).toBeGreaterThanOrEqual(2);
+      // O anel (largura + distância) cabe na faixa, em cima, embaixo e à esquerda: nada a cortar.
+      const reach = focus.width + Math.max(focus.offset, 0);
+      const box = (await chip.boundingBox())!;
+      expect(box.y - reach, name + ': em cima').toBeGreaterThanOrEqual(strip.y - 0.5);
+      expect(box.y + box.height + reach, name + ': embaixo').toBeLessThanOrEqual(
+        strip.y + strip.height + 0.5,
+      );
+      if (name === 'CineVS') {
+        expect(box.x - reach, name + ': à esquerda').toBeGreaterThanOrEqual(strip.x - 0.5);
+      }
+    }
+    await screenshot(page, `test-results/tv-icons-focus-${info.project.name}.png`);
+  });
+
+  test('um WebP também aparece', async ({ page }) => {
+    tv.shortcuts = iconShortcuts().map((s, index) =>
+      index === 3 ? { ...s, iconDataUri: TINY_WEBP } : s,
+    );
+    await openTv(page);
+    const image = button(page, 'Play Store').locator('img');
+    await expect(image).toHaveCount(1);
+    await expect.poll(() => imageLoaded(image)).toBe(true);
+  });
+
+  test('um atalho sem o campo do ícone (guardado antes dele existir) vira azulejo, sem erro', async ({
+    page,
+  }) => {
+    tv.shortcuts = iconShortcuts().map((s, index) => {
+      const old: MockShortcut = { ...s };
+      if (index === 1) delete old.iconDataUri;
+      return old;
+    });
+    await openTv(page);
+    await expect(button(page, 'Spotify').locator('.fallback')).toHaveText('S');
+    await expect(button(page, 'CineVS').locator('img')).toHaveCount(1);
+  });
+
+  test('o ícone chega depois da lista pelo fluxo e troca o azulejo, sem mexer na ordem', async ({
+    page,
+  }) => {
+    tv.shortcuts = iconShortcuts();
+    await openTv(page);
+    await expect(button(page, 'Play Store').locator('.fallback')).toHaveText('P');
+    await emitSse(
+      page,
+      'tv.shortcuts',
+      tv.shortcuts.map((s) =>
+        s.tvLabel === 'Play Store' ? { ...s, iconDataUri: ICONS.square } : s,
+      ),
+    );
+    await expect(button(page, 'Play Store').locator('img')).toHaveCount(1);
+    await expect(button(page, 'Play Store').locator('.fallback')).toHaveCount(0);
+    await expectChipNames(page, ICON_NAMES);
+  });
+
+  test.describe('painel Apps', () => {
+    const LONG = 'Aplicativo com um nome bem comprido que passa de duas linhas na grade';
+
+    test('na grade o ícone fica grande com o nome embaixo, em até duas linhas, sem estourar', async ({
+      page,
+    }) => {
+      tv.shortcuts = [
+        ...iconShortcuts(),
+        {
+          id: '00000000-0000-4000-8000-000000000199',
+          position: 7,
+          package: 'exemplo.comprido',
+          tvLabel: null,
+          customLabel: LONG,
+          enabled: true,
+          iconDataUri: ICONS.square,
+        },
+      ];
+      await openTv(page);
+      await openApps(page);
+      const dialog = appsDialog(page);
+      await expect(dialog.locator('.list')).toHaveAttribute('data-view', 'grid');
+      const items = dialog.locator('.item');
+      await expect(items).toHaveCount(7);
+      const dialogBox = (await dialog.boundingBox())!;
+
+      for (let index = 0; index < 7; index++) {
+        const item = items.nth(index);
+        await item.scrollIntoViewIfNeeded();
+        const tile = (await item.locator('app-tv-app-icon').boundingBox())!;
+        const name = (await item.locator('.name').boundingBox())!;
+        const card = (await item.boundingBox())!;
+        expect(tile.height, `ícone ${index + 1}`).toBeGreaterThanOrEqual(55);
+        expect(name.y, `nome ${index + 1} embaixo do ícone`).toBeGreaterThanOrEqual(
+          tile.y + tile.height - 1,
+        );
+        expect(tile.x + tile.width, 'ícone dentro do cartão').toBeLessThanOrEqual(
+          card.x + card.width + 0.5,
+        );
+        expect(card.x + card.width, 'cartão dentro do painel').toBeLessThanOrEqual(
+          dialogBox.x + dialogBox.width + 0.5,
+        );
+        const lines = await item.locator('.name').evaluate((el) => {
+          const style = getComputedStyle(el);
+          const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
+          return Math.round(el.getBoundingClientRect().height / line);
+        });
+        expect(lines, `linhas do nome ${index + 1}`).toBeLessThanOrEqual(2);
+      }
+      // O banner ocupa um azulejo mais largo, o quadrado não.
+      const banner = (await items.nth(0).locator('app-tv-app-icon').boundingBox())!;
+      const square = (await items.nth(1).locator('app-tv-app-icon').boundingBox())!;
+      expect(banner.width / banner.height).toBeGreaterThan(1.6);
+      expect(square.width / square.height).toBeCloseTo(1, 1);
+      // Cada imagem carrega (a lista carrega a imagem só perto da tela; cada cartão foi trazido à vista acima).
+      for (const index of [0, 1, 2, 6]) {
+        await expect.poll(() => imageLoaded(items.nth(index).locator('img'))).toBe(true);
+      }
+      await expectNoHorizontalScroll(page);
+    });
+
+    test('na lista o ícone fica à esquerda do nome; a busca, o renomear e o ocultar seguem valendo', async ({
+      page,
+    }) => {
+      tv.shortcuts = iconShortcuts();
+      await openTv(page);
+      await openApps(page);
+      const dialog = appsDialog(page);
+      await dialog.getByRole('button', { name: 'Lista', exact: true }).click();
+      const items = dialog.locator('.item');
+      await expect(items).toHaveCount(6);
+      for (let index = 0; index < 6; index++) {
+        const item = items.nth(index);
+        const tile = (await item.locator('app-tv-app-icon').boundingBox())!;
+        const name = (await item.locator('.name').boundingBox())!;
+        expect(tile.x + tile.width, `ícone ${index + 1} antes do nome`).toBeLessThanOrEqual(
+          name.x + 0.5,
+        );
+        expect(tile.height).toBeGreaterThanOrEqual(43);
+        expect(tile.height).toBeLessThanOrEqual(45);
+      }
+      // Busca pelo nome, ordem, renomear (o ícone aparece no campo) e ocultar.
+      await dialog.getByRole('searchbox', { name: 'Buscar app' }).fill('spot');
+      await expect(dialog.locator('.item .name')).toHaveText(['Spotify']);
+      await expect(items.first().locator('img')).toHaveCount(1);
+      await button(dialog, 'Renomear Spotify').click();
+      const head = dialog.locator('.edit-head');
+      await expect(head.locator('img')).toHaveCount(1);
+      await expect(head.locator('.edit-name')).toHaveText('Spotify');
+      await expect.poll(() => imageLoaded(head.locator('img'))).toBe(true);
+      await dialog.getByRole('button', { name: 'Cancelar' }).click();
+      await button(dialog, 'Ocultar Spotify').click();
+      await expect(button(dialog, 'Mostrar Spotify')).toBeVisible();
+      await expectNoHorizontalScroll(page);
+    });
+  });
+
+  test('os ícones grandes ficam numa chave só deles e o estado guardado continua pequeno', async ({
+    page,
+  }) => {
+    tv.shortcuts = iconShortcuts();
+    await openTv(page);
+    const stored = await page.evaluate(() => ({
+      state: localStorage.getItem('uniover.tv.last-state') ?? '',
+      icons: JSON.parse(localStorage.getItem('uniover.tv.app-icons') ?? '{}') as Record<
+        string,
+        string
+      >,
+    }));
+    expect(stored.state).not.toContain('data:image');
+    expect(stored.state.length).toBeLessThan(5_000);
+    expect(Object.keys(stored.icons)).toHaveLength(4);
+    expect(stored.icons[tv.shortcuts[1].id]).toBe(ICONS.square);
+  });
+
+  test('100 ícones de ~44 mil caracteres: a lista abre, rola sem travar e o que se guarda tem teto', async ({
+    page,
+  }, info) => {
+    test.setTimeout(120_000);
+    tv.shortcuts = Array.from({ length: 100 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-00000000${String(1000 + index)}`,
+      position: index + 1,
+      package: `exemplo.pacote.app${index + 1}`,
+      tvLabel: `Aplicativo ${index + 1}`,
+      customLabel: null,
+      enabled: true,
+      iconDataUri: toDataUri(noisyIcon(index)),
+    }));
+    const chars = tv.shortcuts.reduce((sum, s) => sum + (s.iconDataUri?.length ?? 0), 0);
+    expect(chars, 'ícones de teste perto do teto').toBeGreaterThan(4_000_000);
+
+    await openTv(page);
+    await expect(page.locator('.shortcuts .shortcut')).toHaveCount(100);
+    await expectNoHorizontalScroll(page);
+    await expectNoVerticalScroll(page);
+
+    await openApps(page);
+    const dialog = appsDialog(page);
+    await expect(dialog.locator('.item')).toHaveCount(100);
+    await page.waitForTimeout(250);
+
+    // Rola a lista inteira, um passo por quadro, e mede o maior intervalo entre dois quadros seguidos.
+    const frames = await dialog.locator('.body').evaluate(async (body) => {
+      const gaps: number[] = [];
+      let last = performance.now();
+      const started = last;
+      while (body.scrollTop + body.clientHeight < body.scrollHeight - 1) {
+        body.scrollTop += 360;
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const now = performance.now();
+        gaps.push(now - last);
+        last = now;
+      }
+      return {
+        worst: Math.max(0, ...gaps),
+        steps: gaps.length,
+        total: performance.now() - started,
+      };
+    });
+    console.log(
+      `rolagem de 100 ícones (${info.project.name}): ${frames.steps} passos em ${Math.round(frames.total)} ms, pior quadro ${Math.round(frames.worst)} ms`,
+    );
+    expect(frames.worst, 'maior intervalo entre quadros durante a rolagem').toBeLessThan(1_000);
+    const lastItem = dialog.locator('.item').last();
+    await expect.poll(() => imageLoaded(lastItem.locator('img')), { timeout: 15_000 }).toBe(true);
+
+    // O que o navegador guarda: ícones só até o teto, e o estado intacto e pequeno.
+    const stored = await page.evaluate(() => {
+      const icons = JSON.parse(localStorage.getItem('uniover.tv.app-icons') ?? '{}') as Record<
+        string,
+        string
+      >;
+      return {
+        iconChars: Object.values(icons).reduce((sum, uri) => sum + uri.length, 0),
+        iconCount: Object.keys(icons).length,
+        stateChars: (localStorage.getItem('uniover.tv.last-state') ?? '').length,
+      };
+    });
+    expect(stored.iconChars).toBeLessThanOrEqual(1_000_000);
+    expect(stored.iconCount).toBeGreaterThan(0);
+    expect(stored.stateChars).toBeGreaterThan(0);
+    expect(stored.stateChars).toBeLessThan(30_000);
+  });
+
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`fileira e painel Apps com ícone, banner e sem ícone passam no axe, com letra AA e prints, no tema ${scheme}`, async ({
+      page,
+    }, info) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      tv.shortcuts = iconShortcuts();
+      await openTv(page);
+      const chips = page.locator('.shortcuts .shortcut');
+      for (const index of [0, 1, 2]) {
+        await expect.poll(() => imageLoaded(chips.nth(index).locator('img'))).toBe(true);
+      }
+      await expect(chips.nth(5).locator('.fallback')).toBeVisible();
+      const print = (scene: string) =>
+        screenshot(page, `test-results/tv-icons-${scene}-${scheme}-${info.project.name}.png`);
+
+      await print('row');
+      await expectNoSeriousViolations(page);
+      await page.locator('.shortcuts').evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+      await page.waitForTimeout(200);
+      await print('row-end');
+
+      const ratios = await fallbackContrasts(page);
+      expect(ratios.length, 'azulejos de reserva na fileira').toBe(3);
+      for (const ratio of ratios)
+        expect(ratio, `contraste da letra (${scheme})`).toBeGreaterThanOrEqual(4.5);
+
+      // Atrás da imagem há o mesmo neutro claro nos dois temas, para o ícone de fundo transparente não sumir no escuro.
+      const backdrops = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>('.shortcut app-tv-app-icon')]
+          .filter((el) => el.querySelector('img'))
+          .map((el) => getComputedStyle(el).backgroundColor),
+      );
+      expect(new Set(backdrops).size, 'um só fundo atrás das imagens').toBe(1);
+      expect(backdrops[0]).toMatch(/238,\s*242,\s*238/);
+
+      await openApps(page);
+      const dialog = appsDialog(page);
+      await expect(dialog.locator('.item')).toHaveCount(6);
+      for (const index of [0, 1, 2]) {
+        await expect
+          .poll(() => imageLoaded(dialog.locator('.item').nth(index).locator('img')))
+          .toBe(true);
+      }
+      // As imagens do painel carregam perto da tela: espera a quebrada cair no azulejo antes de medir.
+      await expect
+        .poll(async () => (await fallbackContrasts(page)).length)
+        .toBeGreaterThanOrEqual(6);
+      for (const ratio of await fallbackContrasts(page)) {
+        expect(ratio, `contraste da letra no painel (${scheme})`).toBeGreaterThanOrEqual(4.5);
+      }
+      await page.waitForTimeout(250);
+      await print('apps-grid');
+      await expectNoSeriousViolations(page);
+      await expectNoHorizontalScroll(page);
+
+      await dialog.getByRole('button', { name: 'Lista', exact: true }).click();
+      await expect(dialog.locator('.list')).toHaveAttribute('data-view', 'list');
+      await page.waitForTimeout(150);
+      await print('apps-list');
+      await expectNoSeriousViolations(page);
+      await expectNoHorizontalScroll(page);
+
+      await button(dialog, 'Renomear CineVS').click();
+      await expect(dialog.locator('.edit-head img')).toHaveCount(1);
+      await page.waitForTimeout(150);
+      await print('apps-edit');
+      await expectNoSeriousViolations(page);
+      await dialog.getByRole('button', { name: 'Cancelar' }).click();
+    });
+  }
 });
