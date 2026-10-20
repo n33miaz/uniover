@@ -37,7 +37,7 @@
   <button
     type="button"
     class="launch"
-    [disabled]="!canSend() || !s.enabled"
+    [disabled]="!canSend() || !s.installed"
     [attr.aria-describedby]="marked() && s.enabled ? describedBy() : null"
     (click)="launch.emit(s)"
   >

@@ -56,15 +56,6 @@ button:disabled {
   flex: 1 1 auto;
 }
 
-/*
- * O app fora do controle fica apagado: a API não o abre enquanto ninguém o fixa. Só o ícone e, no botão desabilitado, o
- * nome; na edição o nome fica inteiro (ali não é um botão apagado, e o texto precisa do contraste todo).
- */
-:host(.off) .art,
-:host(.off) .launch .name {
-  opacity: 0.5;
-}
-
 .art {
   position: relative;
   display: block;

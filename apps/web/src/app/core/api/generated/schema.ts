@@ -4037,6 +4037,7 @@ export interface components {
       iconDataUri: null | string;
       /** Format: uuid */
       id: string;
+      installed: boolean;
       package: string;
       /** Format: int32 */
       position: number;

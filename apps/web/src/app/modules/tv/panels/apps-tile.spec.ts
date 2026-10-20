@@ -62,13 +62,21 @@ describe('AppsTile', () => {
       expect(launched).not.toHaveBeenCalled();
     });
 
-    it('an app out of the control is dimmed and cannot be opened', () => {
+    it('an app out of the control is a plain tile and opens like the others', () => {
       show(makeShortcut(1, { enabled: false }));
-      expect(root.classList.contains('off')).toBe(true);
-      expect(launch().disabled).toBe(true);
-      update({ shortcut: makeShortcut(1) });
       expect(root.classList.contains('off')).toBe(false);
       expect(launch().disabled).toBe(false);
+      launch().click();
+      expect(launched).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 's1', enabled: false, installed: true }),
+      );
+    });
+
+    it('an app that left the TV has nothing to open: the button is shut (the panel does not even list it)', () => {
+      show(makeShortcut(1, { enabled: false, installed: false }));
+      expect(launch().disabled).toBe(true);
+      launch().click();
+      expect(launched).not.toHaveBeenCalled();
     });
 
     it('marks what is in the control only when asked to, with the mark as a description and not in the name', () => {

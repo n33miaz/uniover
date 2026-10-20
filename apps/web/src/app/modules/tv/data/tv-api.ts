@@ -3,7 +3,14 @@ import { Injectable, Injector, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import type { components } from '../../../core/api/generated/schema';
 import { APP_CONFIG } from '../../../core/config/app-config';
-import { TvKey, TvShortcut, TvState, parseShortcuts, parseState } from './tv-types';
+import {
+  TvKey,
+  TvShortcut,
+  TvState,
+  normalizeShortcut,
+  parseShortcuts,
+  parseState,
+} from './tv-types';
 
 const BASE = `${APP_CONFIG.apiBase}/v1/tv`;
 
@@ -78,8 +85,9 @@ export class TvApi {
       customLabel: change.customLabel ?? null,
       enabled: change.enabled ?? null,
     };
-    return firstValueFrom(
+    const updated = await firstValueFrom(
       this.http.patch<TvShortcut>(`${BASE}/shortcuts/${encodeURIComponent(id)}`, body),
     );
+    return normalizeShortcut(updated);
   }
 }

@@ -1,5 +1,6 @@
 import {
   clockText,
+  normalizeShortcut,
   parseShortcuts,
   parseState,
   parseWatchdog,
@@ -14,6 +15,7 @@ const shortcut = (overrides: Partial<TvShortcut> = {}): TvShortcut => ({
   tvLabel: null,
   customLabel: null,
   enabled: true,
+  installed: true,
   iconDataUri: null,
   ...overrides,
 });
@@ -96,9 +98,48 @@ describe('parseShortcuts', () => {
     ]);
   });
 
+  it('keeps "installed" as it came: "out of the control" and "left the TV" are different things', () => {
+    const list = parseShortcuts([
+      shortcut({ id: 'pinned', position: 1, enabled: true, installed: true }),
+      shortcut({ id: 'hidden', position: 2, enabled: false, installed: true }),
+      shortcut({ id: 'gone', position: 3, enabled: false, installed: false }),
+    ]);
+    expect(list?.map((item) => [item.enabled, item.installed])).toEqual([
+      [true, true],
+      [false, true],
+      [false, false],
+    ]);
+  });
+
+  it('reads a shortcut without "installed" (cache or mock from before the field) as installed when it was active', () => {
+    const legacy = (id: string, position: number, enabled: boolean): Partial<TvShortcut> => {
+      const item: Partial<TvShortcut> = shortcut({ id, position, enabled });
+      delete item.installed;
+      return item;
+    };
+    const list = parseShortcuts([legacy('on', 1, true), legacy('off', 2, false)]);
+    expect(list?.map((item) => item.installed)).toEqual([true, false]);
+  });
+
   it('returns null for what is not a list', () => {
     expect(parseShortcuts({})).toBeNull();
     expect(parseShortcuts(undefined)).toBeNull();
+  });
+});
+
+describe('normalizeShortcut', () => {
+  it('hands back the very same object when nothing needs fixing', () => {
+    const item = shortcut();
+    expect(normalizeShortcut(item)).toBe(item);
+  });
+
+  it('fills a missing "installed" from "enabled" and a missing icon with null, without touching the rest', () => {
+    const old: Partial<TvShortcut> = shortcut({ customLabel: 'Sala', enabled: true });
+    delete old.installed;
+    delete old.iconDataUri;
+    expect(normalizeShortcut(old as TvShortcut)).toEqual(
+      shortcut({ customLabel: 'Sala', enabled: true, installed: true, iconDataUri: null }),
+    );
   });
 });
 

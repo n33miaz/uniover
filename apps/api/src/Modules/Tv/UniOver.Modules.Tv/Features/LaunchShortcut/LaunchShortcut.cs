@@ -14,8 +14,8 @@ namespace UniOver.Modules.Tv.Features.LaunchShortcut;
 
 internal sealed record LaunchShortcutCommand(TvCommandOrigin Origin, Guid ShortcutId);
 
-/// <summary>Resultado do lançamento: o atalho pode não existir ou estar escondido (nada vai ao agente nesses casos).</summary>
-internal sealed record LaunchShortcutResult(bool Found, bool Active, TvSendOutcome? Outcome);
+/// <summary>Resultado do lançamento: o atalho pode não existir ou o app não estar mais na TV (nada vai ao agente nesses casos).</summary>
+internal sealed record LaunchShortcutResult(bool Found, bool Installed, TvSendOutcome? Outcome);
 
 internal sealed class LaunchShortcutHandler(TvDbContext db, TvCommandRunner runner)
 {
@@ -29,7 +29,9 @@ internal sealed class LaunchShortcutHandler(TvDbContext db, TvCommandRunner runn
             return new LaunchShortcutResult(false, false, null);
         }
 
-        if (!shortcut.IsActive)
+        // Só "instalado" vale: o que o dono fixou no controle (Enabled) decide a fileira de atalhos, não o que se pode
+        // abrir. A TV é um controle remoto completo, então abrir um app que já está nela não dá poder novo a ninguém.
+        if (!shortcut.Installed)
         {
             return new LaunchShortcutResult(true, false, null);
         }
@@ -70,11 +72,11 @@ internal static class LaunchShortcutEndpoint
             return TypedResults.NotFound();
         }
 
-        if (!result.Active)
+        if (!result.Installed)
         {
             return Results.Problem(
                 statusCode: StatusCodes.Status409Conflict,
-                title: "Este atalho está escondido ou o app não está mais na TV.",
+                title: "O app não está mais instalado na TV.",
                 type: ProblemDetailsExtensions.TypeBase + TvProblems.ShortcutDisabledType);
         }
 

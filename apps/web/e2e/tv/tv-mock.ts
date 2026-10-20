@@ -13,7 +13,10 @@ export interface MockShortcut {
   package: string;
   tvLabel: string | null;
   customLabel: string | null;
+  /** No controle (a fileira de atalhos): escolhido pelo dono e instalado. */
   enabled: boolean;
+  /** O app está na TV. Só isso decide se ele abre: um app instalado e fora do controle também abre. */
+  installed: boolean;
   /** Ausente nos atalhos antigos (o mock não preenche): a tela trata como "sem ícone". */
   iconDataUri?: string | null;
 }
@@ -68,6 +71,7 @@ export const SHORTCUTS: MockShortcut[] = [1, 2, 3].map((position) => ({
   tvLabel: null,
   customLabel: null,
   enabled: true,
+  installed: true,
 }));
 
 function problem(route: Route, failure: MockFailure) {
@@ -168,7 +172,8 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     if (method === 'POST' && launch) {
       const found = mock.shortcuts.find((s) => s.id === launch[1]);
       if (!found) return problem(route, { status: 404, kind: 'not-found' });
-      if (!found.enabled) return problem(route, { status: 409, kind: 'shortcut-disabled' });
+      // Como a API: só o app que saiu da TV é recusado; estar fora do controle não impede de abrir.
+      if (!found.installed) return problem(route, { status: 409, kind: 'shortcut-disabled' });
       return json(route, 200, { ok: true, latencyMs: 40 });
     }
 

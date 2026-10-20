@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { TvApi } from './tv-api';
+import type { TvShortcut } from './tv-types';
 
 const SHORTCUT = {
   id: 'a1',
@@ -10,6 +11,7 @@ const SHORTCUT = {
   tvLabel: null,
   customLabel: null,
   enabled: true,
+  installed: true,
 };
 
 describe('TvApi', () => {
@@ -109,6 +111,17 @@ describe('TvApi', () => {
     const second = http.expectOne('/api/v1/tv/shortcuts/a1');
     expect(second.request.body).toEqual({ customLabel: null, enabled: false });
     second.flush({ ...SHORTCUT, enabled: false });
-    expect((await hide).enabled).toBe(false);
+    const hidden = await hide;
+    // Tirar do controle não desinstala o app: ele continua podendo ser aberto.
+    expect(hidden.enabled).toBe(false);
+    expect(hidden.installed).toBe(true);
+  });
+
+  it('reads the answer of an edit without "installed" (an older server) as installed when it is active', async () => {
+    const legacy: Partial<TvShortcut> = { ...SHORTCUT };
+    delete legacy.installed;
+    const pin = api.updateShortcut('a1', { enabled: true });
+    http.expectOne('/api/v1/tv/shortcuts/a1').flush({ ...legacy, enabled: true });
+    expect((await pin).installed).toBe(true);
   });
 });

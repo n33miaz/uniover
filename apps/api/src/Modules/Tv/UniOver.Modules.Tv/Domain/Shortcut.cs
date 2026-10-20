@@ -32,7 +32,7 @@ public sealed class Shortcut
     /// <summary>Posição estável (1, 2, 3...): quem entra depois vai para o fim e ninguém é renumerado.</summary>
     public int Position { get; private set; }
 
-    /// <summary>Escolha do dono: <c>false</c> esconde o atalho.</summary>
+    /// <summary>Escolha do dono: <c>false</c> tira o app da fileira de atalhos do controle (ele segue podendo ser aberto pelo painel Apps).</summary>
     public bool Enabled { get; private set; } = true;
 
     /// <summary>
@@ -52,7 +52,7 @@ public sealed class Shortcut
 
     public DateTimeOffset UpdatedAt { get; private set; }
 
-    /// <summary>O que a tela e o lançamento enxergam como "ativo": escolhido pelo dono e ainda instalado.</summary>
+    /// <summary>O que a tela mostra como "no controle" (a fileira de atalhos): escolhido pelo dono e ainda instalado.</summary>
     public bool IsActive => Enabled && Installed;
 
     public static Shortcut Create(string package, string? tvLabel, int position, DateTimeOffset now) =>
@@ -133,7 +133,10 @@ public sealed class Shortcut
 /// <summary>Um app que o agente informou (<c>tv.apps.v1</c> ou <c>tv.apps.v2</c>); sem <see cref="Icon"/>, o ícone guardado fica.</summary>
 public sealed record IncomingApp(string Package, string? Label, ShortcutIcon? Icon = null);
 
-/// <summary>Atalho como a tela o recebe.</summary>
+/// <summary>
+/// Atalho como a tela o recebe. <see cref="Enabled"/> é "no controle" (escolhido pelo dono e instalado); <see cref="Installed"/>
+/// é só se o app está na TV, e é ele que decide se o app pode ser aberto: um app instalado que o dono não fixou também abre.
+/// </summary>
 public sealed record TvShortcut(
     Guid Id,
     [property: JsonNumberHandling(JsonNumberHandling.Strict)] int Position,
@@ -141,12 +144,13 @@ public sealed record TvShortcut(
     string? TvLabel,
     string? CustomLabel,
     bool Enabled,
+    bool Installed,
     string? IconDataUri)
 {
     public static TvShortcut From(Shortcut shortcut)
     {
         ArgumentNullException.ThrowIfNull(shortcut);
-        return new TvShortcut(shortcut.Id, shortcut.Position, shortcut.Package, shortcut.TvLabel, shortcut.CustomLabel, shortcut.IsActive, shortcut.IconData is { Length: > 0 } && shortcut.IconMime is { } mime
+        return new TvShortcut(shortcut.Id, shortcut.Position, shortcut.Package, shortcut.TvLabel, shortcut.CustomLabel, shortcut.IsActive, shortcut.Installed, shortcut.IconData is { Length: > 0 } && shortcut.IconMime is { } mime
             ? new ShortcutIcon(mime, shortcut.IconData).ToDataUri()
             : null);
     }

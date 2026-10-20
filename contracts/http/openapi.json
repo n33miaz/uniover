@@ -2049,6 +2049,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "installed": {
+            "type": "boolean"
+          },
           "package": {
             "type": "string"
           },
@@ -2070,6 +2073,7 @@
           "tvLabel",
           "customLabel",
           "enabled",
+          "installed",
           "iconDataUri"
         ],
         "type": "object"

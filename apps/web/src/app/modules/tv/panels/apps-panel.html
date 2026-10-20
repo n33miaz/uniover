@@ -5,7 +5,6 @@
 <ng-template #tile let-shortcut let-i="i" let-flat="flat">
   <li
     class="item"
-    [class.off]="!shortcut.enabled"
     [class.editing]="editing() === shortcut.id"
     [class.cardlike]="editMode() && editing() !== shortcut.id"
     [class.enter]="i < stagger"
@@ -173,8 +172,13 @@
         <h3 id="apps-group-rest" class="ui-section-label" i18n="@@tv.apps.group-rest">
           Fora do controle
         </h3>
-        @if (!isGuest()) {
-          <p class="note" i18n="@@tv.apps.rest-hint">Fixe um app em Editar para poder abri-lo.</p>
+        <!-- O convidado não vê o Editar: para ele a dica não o cita. -->
+        @if (isGuest()) {
+          <p class="note" i18n="@@tv.apps.rest-hint-guest">Toque para abrir.</p>
+        } @else {
+          <p class="note" i18n="@@tv.apps.rest-hint">
+            Toque para abrir. Para ter no controle, fixe em Editar.
+          </p>
         }
         <ul class="grid">
           @for (shortcut of unpinned(); track shortcut.id; let i = $index) {
