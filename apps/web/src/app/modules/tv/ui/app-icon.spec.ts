@@ -31,24 +31,22 @@ describe('AppIcon', () => {
     expect(img.getAttribute('draggable')).toBe('false');
     expect(img.getAttribute('loading')).toBe('eager');
     expect([img.getAttribute('width'), img.getAttribute('height')]).toEqual(['96', '96']);
-    expect(host.classList.contains('wide')).toBe(false);
     expect(fallback()).toBeNull();
     expect(host.textContent?.trim()).toBe('');
   });
 
-  it('gives a 16:9 banner a wider tile before it loads, so nothing jumps afterwards', () => {
+  it('keeps every tile the same square: a 16:9 banner is not given a wider tile, only the same fixed dimensions', () => {
     show(makeShortcut(1, { iconDataUri: pngIcon(320, 180) }));
-    expect(host.classList.contains('wide')).toBe(true);
-    expect([image()!.getAttribute('width'), image()!.getAttribute('height')]).toEqual([
-      '192',
-      '108',
-    ]);
+    expect(host.classList.contains('wide')).toBe(false);
+    expect([image()!.getAttribute('width'), image()!.getAttribute('height')]).toEqual(['96', '96']);
+    show(makeShortcut(2, { iconDataUri: pngIcon(90, 160) }));
+    expect([image()!.getAttribute('width'), image()!.getAttribute('height')]).toEqual(['96', '96']);
+    expect(host.className).not.toContain('wide');
   });
 
   it('also draws a WebP', () => {
     show(makeShortcut(1, { iconDataUri: webpIcon('lossless', 128, 128) }));
     expect(image()).not.toBeNull();
-    expect(host.classList.contains('wide')).toBe(false);
   });
 
   it('loads the image late only where it is asked to (the long list in the panel)', () => {

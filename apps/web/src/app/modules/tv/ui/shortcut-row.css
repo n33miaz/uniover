@@ -3,11 +3,12 @@
   display: contents;
 }
 
+/* A altura de um azulejo fica reservada mesmo sem atalho (carregando ou vazia): nada salta quando eles chegam. */
 .top {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 8px;
+  min-height: var(--tv-top);
 }
 
 button {
@@ -25,36 +26,26 @@ button {
   cursor: default;
 }
 
-.apps-chip,
-.shortcut {
-  display: inline-flex;
-  align-items: center;
-  height: var(--tv-top);
-  border: 1px solid var(--a-line);
-  border-radius: 999px;
-  background: var(--a-surface);
-  color: var(--a-ink);
-}
-.apps-chip {
-  flex: 0 0 auto;
-  gap: 8px;
-  min-width: 96px;
-  padding: 0 16px;
-  background: var(--a-accent-soft);
-  font-weight: 700;
-}
 /*
- * O atalho é só o ícone do app: um azulejo da altura da fileira, de cantos arredondados (a pílula é do chip Apps). O
- * ícone enche o chip por dentro da borda; o banner 16:9 deixa o chip mais largo. A borda do chip já separa o azulejo do
- * fundo, então o fio do azulejo some aqui.
+ * O atalho é só o ícone do app: um azulejo QUADRADO da altura da fileira, igual para todos (a imagem que não é
+ * quadrada fica contida dentro dele, nunca o alarga). O ícone enche o azulejo por dentro da borda; a borda do azulejo
+ * já o separa do fundo, então o fio do ícone some aqui.
  */
 .shortcut {
   --chip-radius: 16px;
-  justify-content: center;
-  min-width: var(--tv-top);
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  box-sizing: border-box;
+  width: var(--tv-top);
+  height: var(--tv-top);
+  aspect-ratio: 1;
   padding: 0;
   overflow: hidden;
+  border: 1px solid var(--a-line);
   border-radius: var(--chip-radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
 }
 .shortcut app-tv-app-icon {
   --tile: calc(var(--tv-top) - 2px);
@@ -62,30 +53,27 @@ button {
   --tile-edge: transparent;
 }
 
-/* Resposta imediata ao toque: o chip afunda um pouco. Quem pediu menos movimento não vê a animação. */
+/* Resposta imediata ao toque: o azulejo afunda um pouco. Quem pediu menos movimento não vê a animação. */
 @media (prefers-reduced-motion: no-preference) {
-  .apps-chip,
   .shortcut {
     transition:
       transform 90ms ease-out,
       border-color 120ms ease-out;
   }
-  .apps-chip:active,
   .shortcut:active {
     transform: scale(0.93);
   }
 }
 @media (hover: hover) {
-  .shortcut:not([aria-disabled='true']):hover,
-  .apps-chip:hover {
+  .shortcut:not([aria-disabled='true']):hover {
     border-color: var(--a-accent);
   }
 }
 
 /*
- * A faixa dos atalhos rola na horizontal, com encaixe suave e sem barra. Quem rola também corta na vertical, e o
- * anel de foco (3 px, a 2 px do botão) fica fora do chip: a faixa tem 5 px de folga em volta, devolvidos pela margem
- * negativa, para o anel aparecer inteiro sem mexer em nenhuma posição.
+ * A faixa dos atalhos rola na horizontal, com encaixe suave e sem barra, alinhada ao início. Quem rola também corta na
+ * vertical, e o anel de foco (3 px, a 2 px do botão) fica fora do azulejo: a faixa tem 5 px de folga em volta,
+ * devolvidos pela margem negativa, para o anel aparecer inteiro sem mexer em nenhuma posição.
  */
 .shortcuts {
   display: flex;
@@ -106,6 +94,22 @@ button {
 .shortcuts li {
   flex: 0 0 auto;
   scroll-snap-align: start;
+}
+
+/* Sem atalho ativo: só uma dica, discreta, que não é um botão. Tem a altura de um azulejo. */
+.hint {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: var(--tv-top);
+  margin: 0;
+  padding: 0 14px;
+  border: 1px dashed var(--a-line);
+  border-radius: 16px;
+  color: var(--a-ink2);
+  font-size: 0.9rem;
+  line-height: 1.25;
 }
 
 /* Paisagem: o controle vira grade de duas colunas e esta fileira fica à direita, em cima, colada no bloco de baixo. */

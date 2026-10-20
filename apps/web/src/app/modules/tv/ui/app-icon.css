@@ -1,30 +1,35 @@
 /*
- * O azulejo tem altura fixa (`--tile`) e largura de quadrado, ou de 16:9 para banner: nasce do tamanho certo e a imagem
- * não empurra nada ao carregar. Atrás da imagem fica um neutro claro igual nos dois temas: ícones com fundo transparente
- * são feitos para fundo claro e sumiriam sobre o escuro. O fio de 1 px por cima separa o azulejo do fundo da tela.
+ * O azulejo é um quadrado de lado fixo (`--tile`): nasce do tamanho certo e a imagem não empurra nada ao carregar. Atrás
+ * da imagem fica um neutro claro igual nos dois temas: ícones com fundo transparente são feitos para fundo claro e
+ * sumiriam sobre o escuro. O fio de 1 px por cima separa o azulejo do fundo da tela.
  */
 :host {
   --tile: 44px;
   display: block;
   flex: 0 0 auto;
+  box-sizing: border-box;
   width: var(--tile);
   height: var(--tile);
+  aspect-ratio: 1;
   overflow: hidden;
   border-radius: var(--tile-radius, calc(var(--tile) * 0.22));
   background: #eef2ee;
   outline: 1px solid var(--tile-edge, color-mix(in srgb, var(--a-ink) 16%, transparent));
   outline-offset: -1px;
 }
-:host(.wide) {
-  width: calc(var(--tile) * 16 / 9);
-}
 
-/* `contain`: a imagem aparece inteira. O quadrado enche o azulejo; o que tiver outra proporção deixa uma faixa neutra. */
+/*
+ * `contain`: a imagem aparece inteira, centralizada, com a mesma folga em qualquer tamanho de azulejo. O quadrado
+ * enche o espaço; o que tiver outra proporção deixa uma faixa neutra nos lados que sobram.
+ */
 .image {
   display: block;
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
+  padding: calc(var(--tile) * 0.08);
   object-fit: contain;
+  object-position: center;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;

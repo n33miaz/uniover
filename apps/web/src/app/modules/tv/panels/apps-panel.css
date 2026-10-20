@@ -1,13 +1,14 @@
 :host {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 button {
   font: inherit;
   cursor: pointer;
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 button:disabled {
   opacity: 0.5;
@@ -18,6 +19,19 @@ button:disabled {
   margin: 0;
   color: var(--a-ink2);
   font-size: 0.95rem;
+}
+
+/* Texto só para leitor de tela: o andamento do pedido de atualizar a lista. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* Estado vazio: sem a lista da TV ainda. */
@@ -42,8 +56,7 @@ button:disabled {
 }
 
 .primary,
-.secondary,
-.refresh {
+.secondary {
   min-height: 44px;
   white-space: nowrap;
   padding: 0 16px;
@@ -55,8 +68,7 @@ button:disabled {
   background: var(--a-accent);
   color: var(--a-on-accent);
 }
-.secondary,
-.refresh {
+.secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -66,10 +78,18 @@ button:disabled {
   color: var(--a-ink);
 }
 
+/* Em cima: a busca, o botão de atualizar (só o ícone) e, para o dono, o de editar. Tudo com 48 px de altura. */
+.bar {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
 .search {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   padding: 0 12px;
   border: 1px solid var(--a-ink3);
   border-radius: var(--radius);
@@ -92,164 +112,104 @@ button:disabled {
   outline: 3px solid var(--a-accent);
   outline-offset: 2px;
 }
-
-.tools-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px;
-}
-.seg {
-  display: flex;
-  padding: 3px;
+.icon-btn,
+.edit-toggle {
+  flex: 0 0 auto;
+  min-height: 48px;
   border: 1px solid var(--a-line);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--a-surface);
+  color: var(--a-ink);
 }
-.seg button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 40px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--a-ink2);
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  padding: 0;
+}
+.icon-btn[aria-disabled='true'] {
+  cursor: default;
+}
+.edit-toggle {
+  padding: 0 14px;
   font-weight: 600;
 }
-.seg button[aria-pressed='true'] {
+.edit-toggle.on {
+  border-color: var(--a-accent);
   background: var(--a-accent);
   color: var(--a-on-accent);
 }
 
-.list {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+/* O ícone de atualizar gira enquanto a TV responde; quem pediu menos movimento só vê o botão apagado. */
+app-tv-icon.spin {
+  opacity: 0.7;
+}
+@media (prefers-reduced-motion: no-preference) {
+  app-tv-icon.spin {
+    animation: spin 900ms linear infinite;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+}
+.group + .group {
+  margin-top: 4px;
+}
+
+/*
+ * A grade se ajusta sozinha à largura: ~4 azulejos no celular em pé. Na edição cada azulejo carrega os dois botões de
+ * 44 px lado a lado, então as colunas são mais largas (3 no celular).
+ */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.list[data-view='grid'] {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.grid.roomy {
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
 }
 
 .item {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
   min-width: 0;
-  padding: 6px;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius);
-  background: var(--a-surface);
-}
-.item.off .text,
-.item.off app-tv-app-icon {
-  opacity: 0.55;
 }
 .item.editing {
   grid-column: 1 / -1;
 }
-/* Na grade o cartão empilha: o app em cima, as ferramentas embaixo. */
-[data-view='grid'] .item:not(.editing) {
-  flex-direction: column;
-  align-items: stretch;
-}
-[data-view='grid'] .launch {
-  flex-direction: column;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px 6px 6px;
-  text-align: center;
-}
-[data-view='grid'] .text {
-  align-items: center;
-  width: 100%;
-}
-/* Na grade o nome cabe em até duas linhas, com reticências, sem estourar o cartão. */
-[data-view='grid'] .name {
-  display: -webkit-box;
-  max-width: 100%;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-[data-view='grid'] .package {
-  max-width: 100%;
-}
-[data-view='grid'] .tools {
-  justify-content: center;
-}
 
-/* O tamanho do azulejo: 44 px ao lado do nome na lista; 56 px (o banner 16:9 fica mais largo) em cima do nome na grade. */
-.launch app-tv-app-icon,
-.edit-head app-tv-app-icon {
-  --tile: 44px;
-}
-[data-view='grid'] .launch app-tv-app-icon {
-  --tile: 56px;
-}
-
-.launch {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  min-height: 52px;
-  padding: 0 8px;
-  border: 0;
-  background: transparent;
-  color: var(--a-ink);
-  text-align: left;
-}
-.text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.name {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.package {
-  color: var(--a-ink2);
-  font-size: 0.8rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tools {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 6px;
-}
-.tool {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
+/* Na edição o azulejo vira um cartão: o app em cima e os dois botões embaixo (o conteúdo é do `AppsTile`). */
+.item.cardlike {
+  padding: 6px 4px 8px;
   border: 1px solid var(--a-line);
-  border-radius: 50%;
-  background: var(--a-surface);
-  color: var(--a-ink);
+  border-radius: var(--radius);
+  background: var(--a-surface-2, var(--a-surface));
 }
 
+/* O campo de renomear ocupa a linha toda, no lugar do azulejo. */
+.item.editing {
+  padding: 10px;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface-2, var(--a-surface));
+}
 .edit {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   gap: 6px;
-  padding: 4px;
 }
 .edit-head {
   display: flex;
@@ -257,9 +217,13 @@ button:disabled {
   gap: 12px;
   min-width: 0;
 }
+.edit-head app-tv-app-icon {
+  --tile: 44px;
+}
 .edit-head .text {
-  align-items: flex-start;
-  width: auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .edit-name {
   font-weight: 600;
@@ -293,4 +257,22 @@ button:disabled {
 }
 .actions button {
   flex: 1 1 0;
+}
+
+/*
+ * Movimento: os primeiros azulejos entram em escalonado curto (no total, menos de meio segundo). Só opacidade e
+ * deslocamento, nada que mexa no layout nem atrapalhe a rolagem. Quem pediu menos movimento vê tudo no lugar, parado.
+ * O escalonado fica no item e o afundar ao toque, no botão do azulejo, para um não apagar o transform do outro.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .item.enter {
+    animation: tile-in var(--dur-base) var(--ease-out) backwards;
+    animation-delay: calc(40ms + var(--i, 0) * 14ms);
+  }
+}
+@keyframes tile-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
 }
