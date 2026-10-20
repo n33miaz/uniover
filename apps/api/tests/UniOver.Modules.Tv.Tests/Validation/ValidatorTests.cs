@@ -56,23 +56,23 @@ public class ValidatorTests
     }
 
     [Theory]
+    [InlineData("")]
     [InlineData("a")]
     [InlineData("olá, mundo")]
     [InlineData("🙂 emoji conta como um caractere")]
-    public void Text_AcceptsPrintableText(string text)
+    public void Text_AcceptsPrintableAndEmptyText(string text)
     {
         SendTextValidator.Validate(new SendTextRequest(text)).Should().BeEmpty();
     }
 
     [Theory]
     [InlineData(null)]
-    [InlineData("")]
     [InlineData("linha\nnova")]
     [InlineData("tab\taqui")]
     [InlineData("nulo\u0000no meio")]
     [InlineData("controle\u0085c1")]
     [InlineData("del\u007f")]
-    public void Text_RejectsEmptyAndControlCharacters(string? text)
+    public void Text_RejectsMissingAndControlCharacters(string? text)
     {
         SendTextValidator.Validate(new SendTextRequest(text)).Should().ContainKey("text");
     }

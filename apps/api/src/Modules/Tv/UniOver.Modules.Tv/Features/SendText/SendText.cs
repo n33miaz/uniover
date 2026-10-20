@@ -20,15 +20,16 @@ internal static class SendTextValidator
     public const int MaxLength = 200;
 
     /// <summary>
-    /// As mesmas regras do contrato com o agente (1 a 200 caracteres Unicode, sem caracteres de controle): um texto
-    /// que a API deixasse passar e o contrato recusasse viraria erro 500 em vez de 400.
+    /// As mesmas regras do contrato com o agente (0 a 200 caracteres Unicode, sem caracteres de controle): um texto
+    /// que a API deixasse passar e o contrato recusasse viraria erro 500 em vez de 400. O texto vazio é válido e
+    /// significa "apagar o que o agente digitou"; só a ausência do campo é erro.
     /// </summary>
     public static Dictionary<string, string[]> Validate(SendTextRequest? request)
     {
         var errors = new Dictionary<string, string[]>();
         var text = request?.Text;
 
-        if (string.IsNullOrEmpty(text))
+        if (text is null)
         {
             errors["text"] = ["Informe o texto a digitar."];
         }

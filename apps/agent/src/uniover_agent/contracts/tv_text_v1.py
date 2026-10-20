@@ -15,7 +15,7 @@ class TvTextV1Body(BaseModel):
         extra='forbid',
     )
     text: Annotated[
-        str, Field(max_length=200, min_length=1, pattern='^[^\x00-\x1f\x7f-\x9f]+$')
+        str, Field(max_length=200, min_length=0, pattern='^[^\x00-\x1f\x7f-\x9f]*$')
     ]
 
 

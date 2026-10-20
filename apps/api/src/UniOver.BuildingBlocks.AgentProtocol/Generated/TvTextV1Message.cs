@@ -16,7 +16,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     using System.Globalization;
 
     /// <summary>
-    /// API para agente: digitar um texto no campo em foco da TV.
+    /// API para agente: digitar um texto no campo em foco da TV. O agente reconcilia com o que
+    /// já digitou; texto vazio apaga tudo o que ele digitou.
     /// </summary>
     public partial class TvTextV1Message
     {
@@ -80,7 +81,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
             var value = reader.GetString();
-            if (value.Length >= 1 && value.Length <= 200)
+            if (value.Length >= 0 && value.Length <= 200)
             {
                 return value;
             }
@@ -89,7 +90,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
         public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
         {
-            if (value.Length >= 1 && value.Length <= 200)
+            if (value.Length >= 0 && value.Length <= 200)
             {
                 JsonSerializer.Serialize(writer, value, options);
                 return;
