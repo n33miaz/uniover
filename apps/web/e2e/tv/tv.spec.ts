@@ -2455,9 +2455,41 @@ test.describe('ícones dos apps', () => {
           return Math.round(el.getBoundingClientRect().height / line);
         });
         expect(lines, `linhas do nome ${index + 1}`).toBeLessThanOrEqual(2);
-        // "Configurações" é a palavra mais comprida do teste: cabe inteira numa linha, sem partir no meio.
-        if (index === 2) expect(lines, 'palavra inteira numa linha só').toBe(1);
+        // Nenhuma palavra do nome é partida no meio (sem hifenização nem quebra dentro da palavra): cada palavra tem uma
+        // única caixa de linha. Quantas linhas o nome usa depende da fonte do sistema, e isto não.
+        const broken = await item.locator('.name').evaluate((el) => {
+          const node = el.firstChild as Text;
+          return [...node.data.matchAll(/\S+/g)]
+            .filter((match) => {
+              const range = document.createRange();
+              range.setStart(node, match.index);
+              range.setEnd(node, match.index + match[0].length);
+              return (
+                new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size > 1
+              );
+            })
+            .map((match) => match[0]);
+        });
+        expect(broken, `palavras partidas no meio no nome ${index + 1}`).toEqual([]);
       }
+      // "Configurações", a palavra mais comprida de um app comum, cabe no rótulo com folga de pelo menos 8%. A largura do
+      // texto depende da fonte do sistema (a do Linux é bem mais larga que a do Windows), então a medida usa uma fonte de
+      // referência que os dois têm, com as mesmas métricas: Arial (no Linux, a Liberation Sans). O rótulo dispõe da coluna
+      // mais 4 px de cada folga (apps-tile.css).
+      const slack = await items
+        .nth(2)
+        .locator('.name')
+        .evaluate((el) => {
+          const css = getComputedStyle(el);
+          const context = document.createElement('canvas').getContext('2d')!;
+          context.font = `${css.fontWeight} ${css.fontSize} Arial, "Liberation Sans", sans-serif`;
+          const text = el.textContent!.trim();
+          const natural =
+            context.measureText(text).width + (parseFloat(css.letterSpacing) || 0) * text.length;
+          return 1 - natural / (el.parentElement!.clientWidth + 8);
+        });
+      expect(slack, 'folga da palavra mais comprida no rótulo').toBeGreaterThanOrEqual(0.08);
+
       // O de nome longo corta com reticências (nunca estoura o azulejo).
       expect(
         await items
