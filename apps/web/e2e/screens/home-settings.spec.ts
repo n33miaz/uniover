@@ -240,6 +240,9 @@ test.describe('Ajustes', () => {
     });
 
     test(`confirmações, formulários e avisos no tema ${scheme}`, async ({ page }, info) => {
+      // Cenário longo (quatro telas, quatro varreduras do axe e cinco prints): no executor lento do WebKit do Linux ele
+      // chegou a 30,1 s contra o limite de 30 s, sem nenhum passo travado. O limite triplicado só cobre essa soma.
+      test.slow();
       seedAccount();
       await openSettings(page, scheme);
 
