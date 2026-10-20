@@ -1,7 +1,7 @@
 /*
  * O controle ocupa a altura útil que a casca do módulo (`tv-page`) reserva. De cima para baixo: o chip Apps e os
  * atalhos, o palco, os pontos de página e a fileira de baixo. O palco é o que sobra de altura; só ele troca de
- * página (direções com o OK, touchpad e números). Atalhos, pílulas e botões redondos não saem do lugar.
+ * página (direções com o OK, números e touchpad). Atalhos, pílulas e botões redondos não saem do lugar.
  */
 :host {
   display: flex;
@@ -14,9 +14,13 @@
 }
 
 .remote {
-  /* Tamanho dos botões redondos e das pílulas: cresce com a altura da tela, com piso de alvo de toque (44 px). */
-  --tv-round: clamp(46px, 8.2dvh, 84px);
-  --tv-pill: max(52px, var(--tv-round));
+  /*
+   * Tamanho dos botões de baixo, que crescem com a altura da tela. A largura é o que limita: cada botão redondo fica
+   * com o que sobra da linha depois das duas pílulas (o teto `--tv-round` só vale em tela larga). A pílula não fica
+   * mais estreita do que era e os botões redondos ficam maiores.
+   */
+  --tv-round: clamp(56px, 9.4dvh, 92px);
+  --tv-pill: clamp(54px, 8.2dvh, 84px);
   --tv-top: clamp(52px, 7dvh, 60px);
   display: flex;
   flex: 1 1 0;
@@ -35,16 +39,34 @@ button {
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
 }
-/* Os atalhos ficam focáveis mesmo sem agente (aria-disabled): a faixa rolável precisa de algo que o teclado alcance. */
-button:disabled,
-.shortcut[aria-disabled='true'] {
+button:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-/* Visual comum dos botões com contorno. */
-.shortcut,
-.apps-chip,
+/* Resposta imediata ao toque: o botão afunda um pouco e a cor da paleta aparece. Quem pediu menos movimento só vê a cor. */
+@media (prefers-reduced-motion: no-preference) {
+  .round,
+  .pill-btn {
+    transition:
+      transform 90ms ease-out,
+      background-color 120ms ease-out,
+      border-color 120ms ease-out;
+  }
+  .round.pressed,
+  .pill-btn.pressed {
+    transform: scale(0.93);
+  }
+}
+@media (hover: hover) {
+  .round:not(:disabled):hover {
+    border-color: var(--a-accent);
+  }
+  .pill-btn:not(:disabled):hover {
+    background: color-mix(in srgb, var(--a-accent) 12%, transparent);
+  }
+}
+
 .round {
   border: 1px solid var(--a-line);
   background: var(--a-surface);
@@ -56,59 +78,8 @@ button:disabled,
   background: var(--a-accent-soft);
 }
 
-/* Fileira de cima: o chip fixo "Apps" e, ao lado, os atalhos favoritos (a faixa deles rola na horizontal). */
-.top {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 8px;
-}
-.apps-chip {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 8px;
-  min-width: 96px;
-  height: var(--tv-top);
-  padding: 0 16px;
-  border-radius: 999px;
-  background: var(--a-accent-soft);
-  font-weight: 700;
-}
-.shortcuts {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow-x: auto;
-  scroll-snap-type: x proximity;
-  scrollbar-width: none;
-}
-.shortcuts::-webkit-scrollbar,
 .pager::-webkit-scrollbar {
   display: none;
-}
-.shortcuts li {
-  flex: 0 0 auto;
-  scroll-snap-align: start;
-}
-.shortcut {
-  display: inline-flex;
-  align-items: center;
-  min-width: 96px;
-  max-width: 14rem;
-  height: var(--tv-top);
-  padding: 0 18px;
-  border-radius: 999px;
-  font-weight: 600;
-}
-.shortcut .name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Palco: o que sobra de altura. A janela é o contêiner das medidas (anel, teclado, touchpad) em unidades `cq*`. */
@@ -149,17 +120,36 @@ button:disabled,
   min-width: 0;
   scroll-snap-align: start;
   scroll-snap-stop: always;
+  /*
+   * Folga de 2 px nas bordas: com a largura da janela fracionária (celular deitado), o navegador desenha até 1 px da
+   * página vizinha no canto da janela; sem a folga, a borda de um botão encostado na margem aparecia como um fio.
+   */
+  padding-inline: 2px;
   /* Anel: o maior quadrado que cabe na janela (sem esticar em telas largas). */
   --tv-ring: clamp(150px, 38dvh, 300px);
 }
-/* O touchpad deixa uma margem nas laterais: o gesto de deslizar nele manda setas, então a troca de página por
-   deslize começa fora dele (ou pelos pontos). */
+/* O touchpad (última página) deixa uma margem nas laterais: o deslize dentro dele manda setas, então para voltar por
+   gesto o dedo começa na margem esquerda; pelos pontos e pelo teclado a volta é sempre possível. */
 .panel.touch {
-  padding-inline: 20px;
+  position: relative;
+  padding-inline: 28px;
+}
+/* Marca na margem esquerda do touchpad: ali o deslize volta ao teclado numérico (o resto da superfície manda setas). */
+.edge {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  width: 4px;
+  height: 36px;
+  border-radius: 2px;
+  background: var(--a-accent);
+  opacity: 0.45;
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 @supports (width: 1cqi) {
   .panel {
-    --tv-ring: min(100cqi, 100cqb, 480px);
+    --tv-ring: min(100cqi - 4px, 100cqb, 480px);
   }
 }
 
@@ -168,13 +158,13 @@ button:disabled,
   display: grid;
   flex: 0 0 auto;
   grid-template-columns: var(--tv-pill) minmax(0, 1fr) var(--tv-pill);
-  gap: 10px;
+  gap: 5px;
   align-items: stretch;
 }
 .round-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
+  gap: 6px 3px;
   align-content: center;
   justify-items: center;
 }
@@ -182,7 +172,7 @@ button:disabled,
   display: flex;
   flex-direction: column;
   border: 1px solid var(--a-line);
-  border-radius: 28px;
+  border-radius: calc(var(--tv-pill) / 2);
   background: var(--a-surface);
   overflow: hidden;
 }
@@ -196,18 +186,19 @@ button:disabled,
 }
 .pill-btn {
   flex: 1 1 0;
-  min-height: 44px;
+  min-height: 46px;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--a-ink);
+  font-size: 1.25rem;
 }
 .level {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
+  min-height: 36px;
   color: var(--a-ink2);
   font-size: 0.9rem;
   line-height: 1.1;
@@ -228,10 +219,12 @@ button:disabled,
   align-items: center;
   justify-content: center;
   width: min(100%, var(--tv-round));
-  min-width: 44px;
+  min-width: 48px;
   aspect-ratio: 1;
   padding: 0;
   border-radius: 50%;
+  /* Os ícones medem 1,5em: acompanham o tamanho do botão. */
+  font-size: 1.25rem;
 }
 
 /*
@@ -245,18 +238,13 @@ button:disabled,
     grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
     column-gap: 16px;
     row-gap: 8px;
-    --tv-round: clamp(46px, 11dvh, 84px);
+    --tv-round: clamp(56px, 12dvh, 92px);
   }
   .stage {
     grid-column: 1;
     grid-row: 1 / span 2;
   }
-  /* Os dois blocos da direita se juntam no meio da altura, sem um vão entre eles. */
-  .top {
-    grid-column: 2;
-    grid-row: 1;
-    align-self: end;
-  }
+  /* Os dois blocos da direita (a fileira de cima, em `ShortcutRow`, e esta) se juntam no meio da altura. */
   .bottom {
     grid-column: 2;
     grid-row: 2;

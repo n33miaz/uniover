@@ -70,10 +70,10 @@ async function expectTargetSize(locator: Locator, min = 44) {
 
 const button = (root: Page | Locator, name: string) =>
   root.getByRole('button', { name, exact: true });
-/** Os três pontos do palco: direções com o OK, touchpad e números. */
+/** Os três pontos do palco, nesta ordem: direções com o OK, números e touchpad. */
 const dot = (page: Page, n: 1 | 2 | 3) => button(page, `Página ${n} de 3`);
 /** As três páginas do palco ficam no DOM; o resto do controle é fixo, fora delas. */
-const numbersPage = (page: Page) => page.locator('.panel').nth(2);
+const numbersPage = (page: Page) => page.locator('.panel').nth(1);
 
 /** O ponto de estado do cabeçalho (um botão) e o painelzinho que ele abre. */
 const statusDot = (page: Page, title?: string) =>
@@ -217,6 +217,32 @@ test.describe('controle: tela única, sem abas', () => {
       await expectTargetSize(button(page, name).locator('.glyph'));
       await expectTargetSize(button(page, name));
     }
+  });
+
+  test('os botões de baixo cresceram: redondos maiores e pílulas que não ficaram mais estreitas', async ({
+    page,
+  }, info) => {
+    await openTv(page);
+    // Medidas da versão anterior nestes dois aparelhos (largura da pílula e diâmetro do botão redondo, em px).
+    const before = {
+      'iphone-12': { pill: 54.4, round: 52.8 },
+      's23-fe': { pill: 65.6, round: 52.4 },
+    }[info.project.name as 'iphone-12' | 's23-fe'];
+    const round = (await button(page, 'Voltar').boundingBox())!;
+    const pill = (await page.getByRole('group', { name: 'Volume' }).boundingBox())!;
+    const channel = (await page.getByRole('group', { name: 'Canal' }).boundingBox())!;
+    expect(round.width, 'botão redondo é círculo').toBeCloseTo(round.height, 0);
+    expect(round.width, 'botão redondo maior que antes').toBeGreaterThanOrEqual(before.round + 3);
+    expect(pill.width, 'pílula de volume não encolheu').toBeGreaterThanOrEqual(before.pill - 0.6);
+    expect(channel.width, 'pílula de canal não encolheu').toBeGreaterThanOrEqual(before.pill - 0.6);
+    expect(pill.height, 'pílula de volume não ficou mais baixa').toBeGreaterThanOrEqual(127);
+    // Cada botão da pílula continua sendo um alvo confortável para o polegar.
+    for (const name of ['Aumentar o volume', 'Diminuir o volume']) {
+      const box = (await button(page, name).boundingBox())!;
+      expect(box.height, name).toBeGreaterThanOrEqual(46);
+    }
+    await expectNoVerticalScroll(page);
+    await expectNoHorizontalScroll(page);
   });
 
   test('cada botão da primeira página manda a tecla certa, uma vez por toque', async ({ page }) => {
@@ -393,7 +419,7 @@ test.describe('controle: fileira de atalhos e chip Apps', () => {
 });
 
 test.describe('controle: as três páginas do palco central', () => {
-  test('direções com o OK, touchpad e números, com três pontos que acompanham', async ({
+  test('direções com o OK, números e touchpad (nesta ordem), com três pontos que acompanham', async ({
     page,
   }, info) => {
     await openTv(page);
@@ -403,16 +429,6 @@ test.describe('controle: as três páginas do palco central', () => {
     await dot(page, 2).click();
     await settlePage(page, 1);
     await expect(dot(page, 2)).toHaveAttribute('aria-current', 'true');
-    await expect(page.locator('app-touchpad-surface .pad')).toBeInViewport({ ratio: 1 });
-    await expect(page.getByText('Deslize para mover · toque para OK')).toBeVisible();
-    await expectNoHorizontalScroll(page);
-    await expectNoVerticalScroll(page);
-    await screenshot(page, `test-results/tv-touchpad-${info.project.name}.png`);
-    await expectNoSeriousViolations(page);
-
-    await dot(page, 3).click();
-    await settlePage(page, 2);
-    await expect(dot(page, 3)).toHaveAttribute('aria-current', 'true');
     await expect(button(numbersPage(page), 'Número 5')).toBeInViewport({ ratio: 1 });
     await expectNoHorizontalScroll(page);
     await expectNoVerticalScroll(page);
@@ -429,6 +445,16 @@ test.describe('controle: as três páginas do palco central', () => {
     const before = tv.keysSent().length;
     await button(numbersPage(page), 'Origem').click();
     await expect.poll(() => tv.keysSent().slice(before)).toEqual(['INPUT']);
+
+    await dot(page, 3).click();
+    await settlePage(page, 2);
+    await expect(dot(page, 3)).toHaveAttribute('aria-current', 'true');
+    await expect(page.locator('app-touchpad-surface .pad')).toBeInViewport({ ratio: 1 });
+    await expect(page.getByText('Deslize para mover · toque para OK')).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    await expectNoVerticalScroll(page);
+    await screenshot(page, `test-results/tv-touchpad-${info.project.name}.png`);
+    await expectNoSeriousViolations(page);
 
     await dot(page, 1).click();
     await settlePage(page, 0);
@@ -470,7 +496,7 @@ test.describe('controle: as três páginas do palco central', () => {
 
   test('o palco é focável e as setas do teclado rolam entre as páginas', async ({ page }) => {
     await openTv(page);
-    const pager = page.getByRole('group', { name: 'Direções, touchpad e números' });
+    const pager = page.getByRole('group', { name: 'Direções, números e touchpad' });
     await pager.focus();
     await expect(pager).toBeFocused();
     await page.keyboard.press('ArrowRight');
@@ -485,15 +511,14 @@ test.describe('controle: as três páginas do palco central', () => {
     const before = await fixedBoxes(page);
     await dot(page, 2).click();
     await settlePage(page, 1);
-    expect(await fixedBoxes(page)).toEqual(before);
-    await dot(page, 3).click();
-    await settlePage(page, 2);
     await screenshot(page, `test-results/tv-stage-numbers-${info.project.name}.png`);
     expect(await fixedBoxes(page)).toEqual(before);
-
     // Só o palco mudou de conteúdo: os números aparecem onde estava o anel.
     await expect(button(numbersPage(page), 'Número 1')).toBeInViewport({ ratio: 1 });
     await expect(button(page, 'OK')).not.toBeInViewport();
+    await dot(page, 3).click();
+    await settlePage(page, 2);
+    expect(await fixedBoxes(page)).toEqual(before);
     await dot(page, 1).click();
     await settlePage(page, 0);
     expect(await fixedBoxes(page)).toEqual(before);
@@ -525,20 +550,20 @@ test.describe('controle: as três páginas do palco central', () => {
     expect(tv.keysSent()).toEqual([]);
   });
 
-  test('no touchpad, deslizar a partir da margem vira a página; dentro dele manda setas', async ({
+  test('no touchpad, deslizar a partir da margem esquerda volta aos números; dentro dele manda setas', async ({
     page,
     browserName,
   }) => {
     test.skip(browserName !== 'chromium', 'o gesto de toque sintético só existe no Chromium');
     await openTv(page);
-    await dot(page, 2).click();
-    await settlePage(page, 1);
+    await dot(page, 3).click();
+    await settlePage(page, 2);
     const pager = (await page.locator('.pager').boundingBox())!;
     const pad = (await page.locator('app-touchpad-surface .pad').boundingBox())!;
     expect(pad.x - pager.x, 'margem do touchpad').toBeGreaterThanOrEqual(12);
     // Começando na margem (fora do touchpad), o deslize vira a página e não manda tecla.
-    await swipe(page, { x: pager.x + 6, y: pad.y + pad.height / 2 }, -250);
-    await expect(dot(page, 3)).toHaveAttribute('aria-current', 'true');
+    await swipe(page, { x: pager.x + 6, y: pad.y + pad.height / 2 }, 250);
+    await expect(dot(page, 2)).toHaveAttribute('aria-current', 'true');
     expect(tv.keysSent()).toEqual([]);
   });
 
@@ -546,8 +571,8 @@ test.describe('controle: as três páginas do palco central', () => {
     page,
   }) => {
     await openTv(page);
-    await dot(page, 2).click();
-    await settlePage(page, 1);
+    await dot(page, 3).click();
+    await settlePage(page, 2);
     const pad = page.locator('app-touchpad-surface .pad');
     await expect(pad).toBeVisible();
     // O touchpad tem rótulo e instrução para leitor de tela (o anel e os botões seguem como alternativa).
@@ -1193,6 +1218,23 @@ test.describe('painel Apps', () => {
 test.describe('painel Teclado', () => {
   const texts = () => tv.requests.filter((r) => r.path === '/text').map((r) => r.body?.['text']);
 
+  test('sem o agente o painel já diz o motivo, antes de digitar, e nada é enviado', async ({
+    page,
+  }, info) => {
+    await openTv(page);
+    await sendState(page, { agentOnline: false, connection: 'disconnected', volume: null });
+    await openKeyboard(page);
+    const note = keyboardDialog(page).getByRole('status').filter({ hasText: 'O agente da TV' });
+    await expect(note).toBeVisible();
+    await expect(note).toHaveText(
+      'O agente da TV está desligado, então os botões não funcionam agora.',
+    );
+    await page.waitForTimeout(250);
+    await screenshot(page, `test-results/tv-keyboard-agent-off-${info.project.name}.png`);
+    await expectNoSeriousViolations(page);
+    expect(texts()).toEqual([]);
+  });
+
   test('o campo fica no topo do painel, já com o foco, sobre o controle', async ({
     page,
   }, info) => {
@@ -1385,6 +1427,36 @@ test.describe('acessibilidade e tema', () => {
     });
   }
 
+  test('os pontos das páginas fora de vista têm contraste de 3:1 contra o fundo, nos dois temas', async ({
+    page,
+  }) => {
+    await openTv(page);
+    for (const scheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      // O axe não mede contraste de elemento sem texto: aqui a conta é feita à mão (WCAG 1.4.11).
+      const measured = await page.evaluate(() => {
+        const channels = (color: string) => (color.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+        const lum = ([r, g, b]: number[]) => {
+          const [lr, lg, lb] = [r, g, b].map((v) => {
+            const c = v / 255;
+            return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+        };
+        const mark = document.querySelectorAll('app-page-dots .mark')[1] as HTMLElement;
+        const style = getComputedStyle(mark);
+        const background = channels(getComputedStyle(document.body).backgroundColor);
+        const opacity = Number(style.opacity);
+        const own = channels(style.backgroundColor);
+        const shown = own.map((v, i) => v * opacity + background[i] * (1 - opacity));
+        const [a, b] = [lum(shown), lum(background)].sort((x, y) => y - x);
+        return { ratio: (a + 0.05) / (b + 0.05), opacity };
+      });
+      expect(measured.opacity, `opacidade do ponto (${scheme})`).toBe(1);
+      expect(measured.ratio, `contraste do ponto (${scheme})`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
   test('o foco do teclado é visível nos botões, nos setores do anel e no chip Apps', async ({
     page,
   }) => {
@@ -1516,13 +1588,6 @@ for (const screen of SCREENS) {
 
       await dot(page, 2).click();
       await settlePage(page, 1);
-      const pad = (await page.locator('app-touchpad-surface .pad').boundingBox())!;
-      expect(pad.height).toBeGreaterThanOrEqual(120);
-      await expectNoHorizontalScroll(page);
-      await screenshot(page, `test-results/tv-touchpad-${screen.name}-${info.project.name}.png`);
-
-      await dot(page, 3).click();
-      await settlePage(page, 2);
       for (const digit of ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']) {
         await expectTargetSize(button(numbersPage(page), `Número ${digit}`));
       }
@@ -1530,6 +1595,13 @@ for (const screen of SCREENS) {
       expect(await fixedBoxes(page)).toEqual(before);
       await expectNoHorizontalScroll(page);
       await screenshot(page, `test-results/tv-numbers-${screen.name}-${info.project.name}.png`);
+
+      await dot(page, 3).click();
+      await settlePage(page, 2);
+      const pad = (await page.locator('app-touchpad-surface .pad').boundingBox())!;
+      expect(pad.height).toBeGreaterThanOrEqual(120);
+      await expectNoHorizontalScroll(page);
+      await screenshot(page, `test-results/tv-touchpad-${screen.name}-${info.project.name}.png`);
     });
 
     test('os painéis cabem na tela, sem rolagem horizontal', async ({ page }, info) => {
@@ -1556,3 +1628,258 @@ for (const screen of SCREENS) {
     });
   });
 }
+
+test.describe('carrossel do palco: o indicador e a posição não perdem o fio', () => {
+  test('tocar num ponto distante leva o indicador direto, sem passar pelas páginas do caminho', async ({
+    page,
+  }) => {
+    await openTv(page);
+    await page.evaluate(() => {
+      const w = window as unknown as { __seq: number[] };
+      w.__seq = [];
+      const dots = [...document.querySelectorAll('app-page-dots .dot')];
+      const observer = new MutationObserver(() => {
+        const index = dots.findIndex((d) => d.getAttribute('aria-current') === 'true');
+        if (w.__seq[w.__seq.length - 1] !== index) w.__seq.push(index);
+      });
+      dots.forEach((d) =>
+        observer.observe(d, { attributes: true, attributeFilter: ['aria-current'] }),
+      );
+    });
+    await dot(page, 3).click();
+    await settlePage(page, 2);
+    await page.waitForTimeout(300);
+    const seen = await page.evaluate(() => (window as unknown as { __seq: number[] }).__seq);
+    expect(seen, 'o indicador só pode ir ao destino, sem voltar nem parar no meio').toEqual([2]);
+  });
+
+  test('redimensionar a janela com a página 2 à vista não deixa o carrossel preso no meio', async ({
+    page,
+  }) => {
+    await openTv(page);
+    await dot(page, 2).click();
+    await settlePage(page, 1);
+    await page.setViewportSize({ width: 340, height: 640 });
+    await expect(dot(page, 2)).toHaveAttribute('aria-current', 'true');
+    await settlePage(page, 1);
+    await page.setViewportSize({ width: 430, height: 700 });
+    await settlePage(page, 1);
+    await expect(dot(page, 2)).toHaveAttribute('aria-current', 'true');
+  });
+
+  test('recarregar a tela volta à mesma página do palco', async ({ page }) => {
+    await openTv(page);
+    await dot(page, 2).click();
+    await settlePage(page, 1);
+    await page.reload();
+    await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
+    await emitSse(page, 'tv.state', tv.state);
+    await emitSse(page, 'tv.shortcuts', tv.shortcuts);
+    await expect(dot(page, 2)).toHaveAttribute('aria-current', 'true');
+    await settlePage(page, 1);
+  });
+
+  test('com "reduzir movimento" a troca de página é seca, sem a rolagem animada', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openTv(page);
+    await dot(page, 3).click();
+    // Dois quadros depois do toque a posição já chegou: uma rolagem animada levaria uns 300 ms.
+    const distance = await page
+      .locator('.pager')
+      .evaluate(
+        (el) =>
+          new Promise<number>((resolve) =>
+            requestAnimationFrame(() =>
+              requestAnimationFrame(() => resolve(Math.abs(el.scrollLeft - 2 * el.clientWidth))),
+            ),
+          ),
+      );
+    expect(distance).toBeLessThanOrEqual(1);
+    await expect(dot(page, 3)).toHaveAttribute('aria-current', 'true');
+  });
+});
+
+/** Gesto de toque com ritmo: `steps` passos de `stepMs` cada, sem soltar se `release` for falso. */
+async function drag(
+  page: Page,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  opts: { steps: number; stepMs: number; release?: boolean },
+) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [from] });
+  for (let step = 1; step <= opts.steps; step++) {
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        {
+          x: from.x + ((to.x - from.x) * step) / opts.steps,
+          y: from.y + ((to.y - from.y) * step) / opts.steps,
+        },
+      ],
+    });
+    await page.waitForTimeout(opts.stepMs);
+  }
+  if (opts.release !== false) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  }
+  return cdp;
+}
+
+test.describe('carrossel do palco: gestos de dedo (toque sintético, só Chromium)', () => {
+  test.beforeEach(({ browserName }) => {
+    test.skip(browserName !== 'chromium', 'o gesto de toque sintético só existe no Chromium');
+  });
+
+  const stageBox = (page: Page) => page.locator('.viewport').boundingBox();
+
+  test('arrasto lento: passando da metade vira a página, antes da metade volta', async ({
+    page,
+  }) => {
+    await openTv(page);
+    const box = (await stageBox(page))!;
+    const y = box.y + box.height / 2;
+    // Menos de um terço da largura, devagar: fica na página 1.
+    await drag(
+      page,
+      { x: box.x + box.width * 0.7, y },
+      { x: box.x + box.width * 0.45, y },
+      {
+        steps: 25,
+        stepMs: 40,
+      },
+    );
+    await settlePage(page, 0);
+    await expect(dot(page, 1)).toHaveAttribute('aria-current', 'true');
+    // Quase toda a largura, devagar: vai para a página 2.
+    await drag(
+      page,
+      { x: box.x + box.width * 0.9, y },
+      { x: box.x + box.width * 0.1, y },
+      {
+        steps: 25,
+        stepMs: 40,
+      },
+    );
+    await settlePage(page, 1);
+    await expect(dot(page, 2)).toHaveAttribute('aria-current', 'true');
+    expect(tv.keysSent()).toEqual([]);
+  });
+
+  test('toque rápido e curto (flick) avança uma página, e um flick enorme não pula duas', async ({
+    page,
+  }) => {
+    await openTv(page);
+    const box = (await stageBox(page))!;
+    const y = box.y + box.height / 2;
+    await drag(
+      page,
+      { x: box.x + box.width * 0.75, y },
+      { x: box.x + box.width * 0.45, y },
+      {
+        steps: 4,
+        stepMs: 8,
+      },
+    );
+    await settlePage(page, 1);
+    await expect(dot(page, 2)).toHaveAttribute('aria-current', 'true');
+    await drag(
+      page,
+      { x: box.x + box.width * 0.95, y },
+      { x: box.x + 2, y },
+      {
+        steps: 4,
+        stepMs: 6,
+      },
+    );
+    await page.waitForTimeout(500);
+    const left = await page.locator('.pager').evaluate((el) => el.scrollLeft / el.clientWidth);
+    expect(left, 'um deslize só passa uma página').toBeLessThanOrEqual(2.01);
+    await expect(dot(page, 3)).toHaveAttribute('aria-current', 'true');
+  });
+
+  test('o dedo para a meio caminho: o indicador acompanha o arrasto e solta junto com a página', async ({
+    page,
+  }) => {
+    await openTv(page);
+    const box = (await stageBox(page))!;
+    const y = box.y + box.height / 2;
+    // O dedo anda 65% da largura e fica parado, sem soltar: mais da metade da página, menos que ela inteira.
+    const cdp = await drag(
+      page,
+      { x: box.x + box.width * 0.85, y },
+      { x: box.x + box.width * 0.2, y },
+      { steps: 12, stepMs: 20, release: false },
+    );
+    const progress = await page.locator('.pager').evaluate((el) => el.scrollLeft / el.clientWidth);
+    expect(progress).toBeGreaterThan(0.5);
+    expect(progress).toBeLessThan(0.8);
+    const thumb = page.locator('app-page-dots .thumb');
+    await expect(thumb).toHaveCount(1);
+    const dots = page.locator('app-page-dots .dot');
+    const first = (await dots.nth(0).boundingBox())!;
+    const second = (await dots.nth(1).boundingBox())!;
+    const t = (await thumb.boundingBox())!;
+    const centre = t.x + t.width / 2;
+    expect(centre, 'o indicador saiu do primeiro ponto').toBeGreaterThan(
+      first.x + first.width / 2 + 4,
+    );
+    expect(centre, 'o indicador ainda não chegou ao segundo').toBeLessThan(
+      second.x + second.width / 2,
+    );
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await settlePage(page, 1);
+    await expect(dot(page, 2)).toHaveAttribute('aria-current', 'true');
+    expect(tv.keysSent()).toEqual([]);
+  });
+
+  test('tocar num ponto no meio de uma animação e depois arrastar não deixa o carrossel brigar consigo', async ({
+    page,
+  }) => {
+    await openTv(page);
+    await dot(page, 3).click();
+    await page.waitForTimeout(60);
+    const box = (await stageBox(page))!;
+    const y = box.y + box.height / 2;
+    await drag(
+      page,
+      { x: box.x + box.width * 0.2, y },
+      { x: box.x + box.width * 0.85, y },
+      {
+        steps: 10,
+        stepMs: 16,
+      },
+    );
+    // Espera o encaixe terminar em vez de uma pausa fixa: num executor lento a animação ainda corre aos 500 ms.
+    // Carrossel realmente preso no meio nunca encaixa, e o poll estoura.
+    await expect
+      .poll(
+        () =>
+          page.locator('.pager').evaluate((el) => {
+            const ratio = el.scrollLeft / el.clientWidth;
+            return Math.abs(ratio - Math.round(ratio));
+          }),
+        { message: 'preso no meio' },
+      )
+      .toBeLessThan(0.02);
+    const index = await page
+      .locator('.pager')
+      .evaluate((el) => Math.round(el.scrollLeft / el.clientWidth));
+    await expect(dot(page, (index + 1) as 1 | 2 | 3)).toHaveAttribute('aria-current', 'true');
+  });
+
+  test('segurar uma seta e arrastar vira a página e para de repetir a tecla', async ({ page }) => {
+    await openTv(page);
+    const right = (await button(page, 'Para a direita').boundingBox())!;
+    const box = (await stageBox(page))!;
+    const from = { x: right.x + right.width * 0.86, y: right.y + right.height * 0.5 };
+    await drag(page, from, { x: box.x + 4, y: from.y }, { steps: 12, stepMs: 20 });
+    await settlePage(page, 1);
+    const before = tv.keysSent().length;
+    await page.waitForTimeout(900);
+    expect(tv.keysSent().length, 'a repetição continuou depois do gesto').toBe(before);
+    expect(tv.keysSent()).toEqual([]);
+  });
+});

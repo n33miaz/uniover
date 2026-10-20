@@ -17,6 +17,7 @@ describe('ControlPage', () => {
     [...root.querySelectorAll('.shortcut .name')].map((el) => el.textContent?.trim());
 
   beforeEach(() => {
+    sessionStorage.clear();
     store = createFakeTvStore();
     scrollTo.mockReset();
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
@@ -79,6 +80,23 @@ describe('ControlPage', () => {
       expect(first.disabled).toBe(false); // continua focável: a faixa rolável precisa de algo que o teclado alcance
       first.click();
       expect(store.launch).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives a short vibration when a shortcut opens an app, and none when it cannot send', () => {
+      const vibrateSpy = vi.fn();
+      Object.defineProperty(navigator, 'vibrate', { value: vibrateSpy, configurable: true });
+      vi.stubGlobal('matchMedia', () => ({ matches: false }));
+      try {
+        root.querySelector<HTMLButtonElement>('.shortcut')!.click();
+        expect(vibrateSpy).toHaveBeenCalledTimes(1);
+        store.canSend.set(false);
+        render();
+        root.querySelector<HTMLButtonElement>('.shortcut')!.click();
+        expect(vibrateSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.unstubAllGlobals();
+        Reflect.deleteProperty(navigator, 'vibrate');
+      }
     });
 
     it('with no shortcuts there is no error text: only the Apps chip', () => {
@@ -209,12 +227,12 @@ describe('ControlPage', () => {
   });
 
   describe('the three pages of the central block', () => {
-    it('are the directions with OK, the touchpad and the numbers, in that order', () => {
+    it('are the directions with OK, the numbers and, last, the touchpad, in that order', () => {
       expect(panels()).toHaveLength(3);
       expect(panels()[0].querySelector('app-directional-ring')).not.toBeNull();
       expect(panels()[0].querySelector('.ok')?.textContent?.trim()).toBe('OK');
-      expect(panels()[1].querySelector('app-touchpad-surface .pad')).not.toBeNull();
-      expect(panels()[2].querySelector('app-number-pad')).not.toBeNull();
+      expect(panels()[1].querySelector('app-number-pad')).not.toBeNull();
+      expect(panels()[2].querySelector('app-touchpad-surface .pad')).not.toBeNull();
     });
 
     it('no longer has a mode switch: no "Botões | Touchpad" chips and no swap of the ring', () => {
@@ -224,30 +242,31 @@ describe('ControlPage', () => {
     });
 
     it('the touchpad leaves a margin at the sides, so a page swipe can start outside it', () => {
-      expect(panels()[1].classList.contains('touch')).toBe(true);
+      expect(panels()[2].classList.contains('touch')).toBe(true);
+      expect(panels()[2].querySelector('.edge')?.getAttribute('aria-hidden')).toBe('true');
     });
 
     it('the numbers page has 0 to 9 and the source, and nothing else', () => {
-      const third = panels()[2];
-      const numbers = [...third.querySelectorAll('.num')].map((el) =>
+      const second = panels()[1];
+      const numbers = [...second.querySelectorAll('.num')].map((el) =>
         el.getAttribute('aria-label'),
       );
       expect(numbers).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((n) => `Número ${n}`));
-      expect(third.querySelector('.source')?.textContent?.trim()).toBe('Origem');
-      expect(third.querySelectorAll('button')).toHaveLength(11);
+      expect(second.querySelector('.source')?.textContent?.trim()).toBe('Origem');
+      expect(second.querySelectorAll('button')).toHaveLength(11);
     });
 
     it.each([
       ['Número 0', 'NUM_0'],
       ['Número 7', 'NUM_7'],
     ])('%s sends %s', async (label, key) => {
-      byLabel(label, panels()[2]).click();
+      byLabel(label, panels()[1]).click();
       await fixture.whenStable();
       expect(store.sendKey).toHaveBeenCalledWith(key);
     });
 
     it('the source button only sends the key that opens the TV picker', async () => {
-      panels()[2].querySelector<HTMLButtonElement>('.source')!.click();
+      panels()[1].querySelector<HTMLButtonElement>('.source')!.click();
       await fixture.whenStable();
       expect(store.sendKey).toHaveBeenCalledWith('INPUT');
     });
@@ -308,6 +327,99 @@ describe('ControlPage', () => {
       press('ArrowLeft');
       expect(scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ left: 300 }));
       expect(current()).toEqual([null, 'true', null]);
+    });
+
+    it('the arrow keys, Home and End on the stage itself turn the page; on a button inside they do not', () => {
+      const pager = root.querySelector<HTMLElement>('.pager')!;
+      Object.defineProperty(pager, 'clientWidth', { value: 300 });
+      const press = (key: string, target: Element = pager) => {
+        const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+        target.dispatchEvent(event);
+        render();
+        return event.defaultPrevented;
+      };
+      expect(press('ArrowRight')).toBe(true);
+      expect(current()).toEqual([null, 'true', null]);
+      expect(press('End')).toBe(true);
+      expect(current()).toEqual([null, null, 'true']);
+      expect(press('ArrowRight')).toBe(true);
+      expect(current()).toEqual([null, null, 'true']);
+      expect(press('Home')).toBe(true);
+      expect(current()).toEqual(['true', null, null]);
+      expect(press('ArrowLeft')).toBe(true);
+      expect(current()).toEqual(['true', null, null]);
+      expect(press('ArrowRight', panels()[0].querySelector('button')!)).toBe(false);
+      expect(current()).toEqual(['true', null, null]);
+      expect(press('a')).toBe(false);
+    });
+
+    it('hands the dots the fractional scroll position to follow the finger', () => {
+      const pager = root.querySelector<HTMLElement>('.pager')!;
+      Object.defineProperty(pager, 'clientWidth', { value: 300 });
+      Object.defineProperty(pager, 'scrollLeft', { value: 150, configurable: true });
+      pager.dispatchEvent(new Event('scroll'));
+      render();
+      const thumb = root.querySelector<HTMLElement>('app-page-dots .thumb')!;
+      // Meio caminho entre o primeiro e o segundo ponto: centro em 22 + 44 * 0,5 e o destaque alongado.
+      expect(thumb.style.getPropertyValue('--w')).toBe('34px');
+      expect(thumb.style.getPropertyValue('--x')).toBe('27px');
+    });
+
+    it('puts the chosen page back in view when the tab comes back or the size changes', () => {
+      const pager = root.querySelector<HTMLElement>('.pager')!;
+      Object.defineProperty(pager, 'clientWidth', { value: 300 });
+      let left = 0;
+      Object.defineProperty(pager, 'scrollLeft', { get: () => left, configurable: true });
+      dots()[1].click();
+      render();
+      left = 300;
+      pager.dispatchEvent(new Event('scroll'));
+      scrollTo.mockClear();
+
+      // O navegador perdeu a posição enquanto a aba estava em segundo plano.
+      left = 0;
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(scrollTo).toHaveBeenLastCalledWith({ left: 300, behavior: 'auto' });
+
+      scrollTo.mockClear();
+      left = 270;
+      window.dispatchEvent(new Event('pageshow'));
+      expect(scrollTo).toHaveBeenLastCalledWith({ left: 300, behavior: 'auto' });
+
+      // Já no lugar, nada é pedido.
+      scrollTo.mockClear();
+      left = 300;
+      window.dispatchEvent(new Event('pageshow'));
+      expect(scrollTo).not.toHaveBeenCalled();
+    });
+
+    it('remembers the page for the life of the tab and opens on it after a reload', async () => {
+      dots()[2].click();
+      render();
+      await fixture.whenStable();
+      expect(sessionStorage.getItem('uniover.tv.stage-page')).toBe('2');
+
+      const again = TestBed.createComponent(ControlPage);
+      again.detectChanges();
+      const marks = [...again.nativeElement.querySelectorAll('app-page-dots .dot')].map((d) =>
+        (d as HTMLElement).getAttribute('aria-current'),
+      );
+      expect(marks).toEqual([null, null, 'true']);
+    });
+
+    it('works without storage (private mode) and ignores a nonsense saved value', () => {
+      sessionStorage.setItem('uniover.tv.stage-page', '9');
+      const again = TestBed.createComponent(ControlPage);
+      expect(() => again.detectChanges()).not.toThrow();
+      expect(
+        again.nativeElement.querySelector('app-page-dots .dot').getAttribute('aria-current'),
+      ).toBe('true');
+      const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('blocked');
+      });
+      const third = TestBed.createComponent(ControlPage);
+      expect(() => third.detectChanges()).not.toThrow();
+      spy.mockRestore();
     });
 
     it('follows the scroll position and keeps the pages out of sight inert', () => {
