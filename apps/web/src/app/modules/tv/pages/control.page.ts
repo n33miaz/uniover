@@ -31,8 +31,8 @@ const PAGE_KEY = 'uniover.tv.stage-page';
 const DRAG_SLOP_PX = 6;
 
 /**
- * Controle principal (a tela única do módulo). Em cima, o chip fixo "Apps" e os atalhos favoritos da TV (chips que
- * abrem o app ao toque); embaixo, as pílulas de volume e canal e os botões redondos. No meio fica o palco, e só ele
+ * Controle principal (a tela única do módulo). Em cima, os atalhos favoritos da TV (azulejos quadrados que abrem o
+ * app ao toque; o botão Apps fica no cabeçalho da tela); embaixo, as pílulas de volume e canal e os botões redondos. No meio fica o palco, e só ele
  * troca de página, deslizando, pelos pontos ou pelas setas do teclado: direções com o OK no centro, teclado numérico
  * e, por último, o touchpad (que engole o deslize dentro dele, então a volta é pela margem, pelos pontos ou pelo
  * teclado). O palco é um carrossel de rolagem com encaixe: o gesto é do próprio navegador e a `StagePager` cuida do

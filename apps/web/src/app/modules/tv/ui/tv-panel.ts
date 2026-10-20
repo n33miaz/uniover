@@ -110,8 +110,12 @@ export class TvPanel {
     this.finish();
   }
 
-  /** Pede o fechamento: a saída anima e, no fim dela, `closed` sai (uma vez só, venha o pedido de onde vier). */
-  protected close(): void {
+  /**
+   * Pede o fechamento: a saída anima e, no fim dela, `closed` sai (uma vez só, venha o pedido de onde vier). É público
+   * para a página fechar o painel por aqui quando o conteúdo termina o que veio fazer (abrir um app, fechar o teclado),
+   * e não tirá-lo do DOM no meio da saída.
+   */
+  close(): void {
     if (this.emitted || this.leaving()) return;
     this.leaving.set(true);
     if (!this.animates()) {

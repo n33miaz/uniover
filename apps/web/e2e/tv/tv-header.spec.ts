@@ -282,9 +282,7 @@ test.describe('cabeçalho: voltar, nome, Apps e energia', () => {
     await expectStatusPanelOnTop(page);
   });
 
-  test('o botão Apps do cabeçalho abre o painel mesmo sem agente, e o foco volta a ele', async ({
-    page,
-  }) => {
+  test('o botão Apps do cabeçalho abre o painel mesmo sem agente', async ({ page }) => {
     await openTv(page);
     await expect(appsButton(page)).toHaveAttribute('aria-haspopup', 'dialog');
     // Sem agente os botões da TV apagam, mas o painel lê a lista guardada.
@@ -299,9 +297,22 @@ test.describe('cabeçalho: voltar, nome, Apps e energia', () => {
     await appsButton(page).click();
     const dialog = page.getByRole('dialog', { name: 'Apps da TV' });
     await expect(dialog).toBeVisible();
+    // O foco que volta ao botão ao fechar é provado em tv.spec.ts ("devolve o foco ao botão do cabeçalho").
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
-    await expect(appsButton(page)).toBeFocused();
+  });
+
+  test('o painel Apps abre pelo botão do cabeçalho, com o controle por trás, e passa no axe', async ({
+    page,
+  }, info) => {
+    await openTv(page);
+    await appsButton(page).click();
+    const dialog = page.getByRole('dialog', { name: 'Apps da TV' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('.item')).toHaveCount(tv.shortcuts.length);
+    await settle(page);
+    await expectNoA11yViolations(page);
+    await screenshot(page, `test-results/tv-header-apps-panel-${info.project.name}.png`);
   });
 
   test('alvos de toque de 44 px ou mais, sem rolagem horizontal, com e sem a folha aberta', async ({
