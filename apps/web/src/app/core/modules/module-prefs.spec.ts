@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { ModuleRegistry } from './module-registry';
 import {
   MODULE_PREFS_KEY,
   ModulePrefs,
@@ -33,12 +34,41 @@ describe('ModulePrefs', () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => vi.restoreAllMocks());
 
-  it('starts with the registry defaults', () => {
+  const registryIds = () => TestBed.inject(ModuleRegistry).modules.map((m) => m.id);
+
+  it('starts with the registry defaults, the planned modules shown and small', () => {
     const prefs = TestBed.inject(ModulePrefs);
     expect(prefs.widgets()).toEqual([
       { id: 'tv', size: 'small', enabled: true },
       { id: 'training', size: 'wide', enabled: true },
+      { id: 'health', size: 'small', enabled: true },
+      { id: 'monitor', size: 'small', enabled: true },
+      { id: 'network', size: 'small', enabled: true },
+      { id: 'backup', size: 'small', enabled: true },
+      { id: 'notifications', size: 'small', enabled: true },
+      { id: 'pc', size: 'small', enabled: true },
     ]);
+  });
+
+  it('keeps a preference saved before the planned modules existed and appends them at the end', () => {
+    // O que um aparelho antigo guardou: só TV e Treino, na ordem e nos tamanhos que o dono escolheu.
+    localStorage.setItem(
+      MODULE_PREFS_KEY,
+      JSON.stringify([
+        { id: 'training', size: 'small', enabled: true },
+        { id: 'tv', size: 'wide', enabled: false },
+      ]),
+    );
+    const widgets = TestBed.inject(ModulePrefs).widgets();
+    expect(widgets.slice(0, 2)).toEqual([
+      { id: 'training', size: 'small', enabled: true },
+      { id: 'tv', size: 'wide', enabled: false },
+    ]);
+    expect(widgets.slice(2).map((w) => [w.id, w.size, w.enabled])).toEqual(
+      registryIds()
+        .slice(2)
+        .map((id) => [id, 'small', true]),
+    );
   });
 
   it('saves on the device and restores in a new instance', () => {
@@ -50,6 +80,7 @@ describe('ModulePrefs', () => {
     expect(
       TestBed.inject(ModulePrefs)
         .widgets()
+        .slice(0, 2)
         .map((w) => [w.id, w.size]),
     ).toEqual([
       ['training', 'small'],
@@ -60,9 +91,11 @@ describe('ModulePrefs', () => {
   it('hides a module that is turned off and brings it back', () => {
     const prefs = TestBed.inject(ModulePrefs);
     prefs.setEnabled('training', false);
-    expect(prefs.visible().map((w) => w.definition.id)).toEqual(['tv']);
+    expect(prefs.visible().map((w) => w.definition.id)).toEqual(
+      registryIds().filter((id) => id !== 'training'),
+    );
     prefs.setEnabled('training', true);
-    expect(prefs.visible()).toHaveLength(2);
+    expect(prefs.visible()).toHaveLength(registryIds().length);
   });
 
   it('appends modules missing from storage and drops unknown ones', () => {
@@ -76,12 +109,12 @@ describe('ModulePrefs', () => {
     const ids = TestBed.inject(ModulePrefs)
       .widgets()
       .map((w) => w.id);
-    expect(ids).toEqual(['training', 'tv']);
+    expect(ids).toEqual(['training', ...registryIds().filter((id) => id !== 'training')]);
   });
 
   it.each(['not json', '{"a":1}', '[{"id":1}]'])('ignores corrupted storage (%s)', (raw) => {
     localStorage.setItem(MODULE_PREFS_KEY, raw);
-    expect(TestBed.inject(ModulePrefs).widgets()).toHaveLength(2);
+    expect(TestBed.inject(ModulePrefs).widgets()).toHaveLength(registryIds().length);
   });
 
   it('keeps working when writing to storage fails', () => {
@@ -90,6 +123,8 @@ describe('ModulePrefs', () => {
     });
     const prefs = TestBed.inject(ModulePrefs);
     expect(() => prefs.setEnabled('tv', false)).not.toThrow();
-    expect(prefs.visible().map((w) => w.definition.id)).toEqual(['training']);
+    expect(prefs.visible().map((w) => w.definition.id)).toEqual(
+      registryIds().filter((id) => id !== 'tv'),
+    );
   });
 });

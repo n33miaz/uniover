@@ -172,11 +172,54 @@ describe('PairSheet', () => {
   });
 
   it('cancels with the button and with Esc', async () => {
-    const { el, button, closed } = await render();
-    button('Cancelar').click();
-    expect(closed()).toBe(1);
-    el.querySelector('dialog')!.dispatchEvent(new Event('cancel', { cancelable: true }));
-    expect(closed()).toBe(2);
+    const withButton = await render();
+    withButton.button('Cancelar').click();
+    expect(withButton.closed()).toBe(1);
+
+    const withEsc = await render();
+    withEsc.el.querySelector('dialog')!.dispatchEvent(new Event('cancel', { cancelable: true }));
+    expect(withEsc.closed()).toBe(1);
+  });
+
+  describe('exit', () => {
+    /** Faz a folha achar que há uma transição de saída rodando, e devolve quem a encerra. */
+    function slowExit(el: HTMLElement) {
+      let end!: () => void;
+      const finished = new Promise<void>((resolve) => (end = resolve));
+      el.querySelector('dialog')!.getAnimations = () =>
+        [
+          { finished, effect: { getComputedTiming: () => ({ iterations: 1 }) } },
+        ] as unknown as Animation[];
+      return end;
+    }
+
+    it('goes down before telling the page it was approved, and no second action counts meanwhile', async () => {
+      const { el, button, type, outcomes } = await render();
+      const end = slowExit(el);
+      await type('BCDF2345');
+      button('Aprovar').click();
+      await vi.waitFor(() =>
+        expect(el.querySelector('dialog')!.classList.contains('closing')).toBe(true),
+      );
+      expect(outcomes).toEqual([]);
+      expect(button('Aprovar').disabled).toBe(true);
+      expect(button('Recusar código').disabled).toBe(true);
+      expect(button('Cancelar').disabled).toBe(true);
+
+      end();
+      await vi.waitFor(() => expect(outcomes).toEqual([{ kind: 'approved', name: 'PC de casa' }]));
+      expect(api.approve).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels once even when Cancelar and Esc come together', async () => {
+      const { el, button, closed } = await render();
+      const end = slowExit(el);
+      button('Cancelar').click();
+      el.querySelector('dialog')!.dispatchEvent(new Event('cancel', { cancelable: true }));
+      expect(closed()).toBe(0);
+      end();
+      await vi.waitFor(() => expect(closed()).toBe(1));
+    });
   });
 
   it('disables every action without a network and explains why', async () => {

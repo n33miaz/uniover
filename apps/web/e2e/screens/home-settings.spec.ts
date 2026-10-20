@@ -76,7 +76,8 @@ async function openHome(page: Page, scheme: Scheme) {
   await page.emulateMedia({ colorScheme: scheme });
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 1 })).toContainText(OWNER.displayName);
-  await expect(page.locator('article.card')).toHaveCount(2);
+  // TV e Treino, que já têm tela, e os seis módulos planejados ("Em breve").
+  await expect(page.locator('article.card')).toHaveCount(8);
   await settle(page);
 }
 
@@ -169,10 +170,12 @@ test.describe('Início', () => {
     await page.addInitScript(() =>
       localStorage.setItem(
         'uniover.home.widgets.v1',
-        JSON.stringify([
-          { id: 'tv', size: 'small', enabled: false },
-          { id: 'training', size: 'wide', enabled: false },
-        ]),
+        // Todos os módulos do catálogo desligados (os planejados entram ligados se não estiverem na lista).
+        JSON.stringify(
+          ['tv', 'training', 'health', 'monitor', 'network', 'backup', 'notifications', 'pc'].map(
+            (id) => ({ id, size: 'small', enabled: false }),
+          ),
+        ),
       ),
     );
     for (const scheme of SCHEMES) {

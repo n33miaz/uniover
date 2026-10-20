@@ -11,14 +11,14 @@
 
   @if (passkeys(); as list) {
     @if (list.length === 0) {
-      <p class="empty">
+      <p class="empty ui-rise">
         <app-settings-glyph name="key" />
         <span i18n="@@settings.passkeys.empty">Nenhuma passkey cadastrada.</span>
       </p>
     } @else {
-      <ul class="list">
+      <ul class="list ui-stagger">
         @for (passkey of list; track passkey.id) {
-          <li class="item ui-card">
+          <li class="item ui-card ui-rise">
             @if (renamingId() === passkey.id) {
               <form class="inline" (submit)="saveRename($event, passkey)">
                 <div class="ui-field">
@@ -63,7 +63,7 @@
               </div>
               @if (removingId() === passkey.id) {
                 <div
-                  class="confirm ui-notice bad"
+                  class="confirm ui-notice bad ui-rise"
                   role="group"
                   [attr.aria-label]="removeQuestion(passkey)"
                 >
@@ -119,7 +119,7 @@
       </ul>
     }
     @if (needsMore()) {
-      <p class="recommend ui-notice warn">
+      <p class="recommend ui-notice warn ui-rise">
         <app-settings-glyph name="alert" />
         <span i18n="@@settings.passkeys.recommend"
           >Recomendamos ter pelo menos duas passkeys, por exemplo uma em cada aparelho.</span
@@ -127,7 +127,7 @@
       </p>
     }
   } @else if (loadFailed()) {
-    <p class="empty bad">
+    <p class="empty bad ui-rise">
       <app-settings-glyph name="alert" />
       <span i18n="@@settings.passkeys.load-failed"
         >Não foi possível carregar as passkeys agora. Elas aparecem quando a sessão for
@@ -147,16 +147,20 @@
 
   <div class="messages" [attr.aria-live]="'polite'">
     @if (message(); as text) {
-      <p
-        class="message ui-notice"
-        [class.bad]="messageIsError()"
-        [class.ok]="!messageIsError()"
-        [class.error]="messageIsError()"
-        [attr.role]="messageIsError() ? 'alert' : null"
-      >
-        <app-settings-glyph [name]="messageIsError() ? 'alert' : 'checkCircle'" />
-        <span>{{ text }}</span>
-      </p>
+      <div class="ui-collapse" [animate.leave]="'leaving'">
+        <div class="ui-collapse-inner">
+          <p
+            class="message ui-notice"
+            [class.bad]="messageIsError()"
+            [class.ok]="!messageIsError()"
+            [class.error]="messageIsError()"
+            [attr.role]="messageIsError() ? 'alert' : null"
+          >
+            <app-settings-glyph [name]="messageIsError() ? 'alert' : 'checkCircle'" />
+            <span>{{ text }}</span>
+          </p>
+        </div>
+      </div>
     }
   </div>
 
@@ -216,7 +220,7 @@
       <span i18n="@@settings.passkeys.add">Cadastrar passkey</span>
     </button>
   } @else {
-    <p class="empty">
+    <p class="empty ui-rise">
       <app-settings-glyph name="info" />
       <span i18n="@@settings.passkeys.unavailable"
         >Este aparelho ou navegador não oferece passkeys.</span

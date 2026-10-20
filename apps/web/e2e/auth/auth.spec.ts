@@ -13,6 +13,15 @@ import { IdentityMock, OWNER, mockIdentityApi } from './identity-mock';
 test.use({ serviceWorkers: 'block' });
 
 const MODULE_PREFS_KEY = 'uniover.home.widgets.v1';
+// Módulos planejados, que a Início mostra como "Em breve" depois de TV e Treino.
+const PLANNED_MODULES = [
+  'Saúde e eventos',
+  'Monitor dos serviços',
+  'Rede da casa',
+  'Backup de fotos',
+  'Avisos',
+  'Controle do PC',
+];
 
 async function expectNoSeriousA11yViolations(page: Page) {
   const { violations } = await new AxeBuilder({ page }).analyze();
@@ -303,11 +312,11 @@ test.describe('ajustes', () => {
   test('módulo desligado some da grade do Início', async ({ page }) => {
     await page.getByRole('switch', { name: /TV/ }).uncheck();
     await page.goto('/');
-    await expect(page.locator('article.card h3')).toHaveText(['Treino']);
+    await expect(page.locator('article.card h3')).toHaveText(['Treino', ...PLANNED_MODULES]);
     await page.goto('/ajustes');
     await page.getByRole('switch', { name: /TV/ }).check();
     await page.goto('/');
-    await expect(page.locator('article.card h3')).toHaveText(['TV', 'Treino']);
+    await expect(page.locator('article.card h3')).toHaveText(['TV', 'Treino', ...PLANNED_MODULES]);
   });
 
   test('tema escuro fica salvo no aparelho e volta ao recarregar', async ({ page }) => {

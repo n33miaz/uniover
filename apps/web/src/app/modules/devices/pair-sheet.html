@@ -1,4 +1,5 @@
-<dialog #dialog class="sheet" aria-labelledby="pair-title" (cancel)="cancel($event)">
+<dialog #dialog class="sheet ui-dialog" aria-labelledby="pair-title" (cancel)="cancel($event)">
+  <span class="grabber" aria-hidden="true"></span>
   <form (submit)="approve($event)" novalidate>
     <h2 id="pair-title" i18n="@@devices.pair.title">Parear aparelho</h2>
     <p class="hint" i18n="@@devices.pair.hint">
@@ -9,7 +10,7 @@
     <label for="pair-code" i18n="@@devices.pair.code">Código do aparelho</label>
     <input
       id="pair-code"
-      class="code"
+      class="code ui-input"
       type="text"
       [attr.inputmode]="'text'"
       autocomplete="one-time-code"
@@ -30,6 +31,7 @@
     <label for="pair-name" i18n="@@devices.pair.name">Nome do aparelho</label>
     <input
       id="pair-name"
+      class="ui-input"
       type="text"
       autocomplete="off"
       [attr.maxlength]="maxName"
@@ -38,28 +40,31 @@
       (input)="onNameInput($event)"
     />
     @if (!nameValid()) {
-      <p class="error" role="alert" i18n="@@devices.pair.name-invalid">
+      <p class="error ui-notice bad ui-rise" role="alert" i18n="@@devices.pair.name-invalid">
         Use letras, números, espaço e . _ ( ) -, começando por letra ou número.
       </p>
     }
 
     <div class="messages" [attr.aria-live]="'polite'">
       @if (error(); as text) {
-        <p class="error" role="alert">{{ text }}</p>
+        <p class="error ui-notice bad ui-rise" role="alert">{{ text }}</p>
       }
       @if (!online()) {
-        <p class="note" role="status" i18n="@@devices.offline">
+        <p class="note ui-notice warn ui-rise" role="status" i18n="@@devices.offline">
           Sem conexão: parear, recusar e revogar precisam de rede.
         </p>
       }
       @if (busy()) {
-        <p class="note" role="status" i18n="@@devices.pair.busy">Enviando…</p>
+        <p class="note ui-notice ui-rise" role="status">
+          <span class="ui-spinner" aria-hidden="true"></span>
+          <span i18n="@@devices.pair.busy">Enviando…</span>
+        </p>
       }
     </div>
 
     <button
       type="button"
-      class="link"
+      class="link ui-tap"
       [disabled]="!canDeny()"
       (click)="deny()"
       i18n="@@devices.pair.deny"
@@ -70,8 +75,8 @@
     <div class="footer">
       <button
         type="button"
-        class="secondary"
-        [disabled]="busy()"
+        class="secondary ui-btn"
+        [disabled]="busy() || leaving()"
         (click)="cancel()"
         i18n="@@devices.pair.cancel"
       >
@@ -79,7 +84,7 @@
       </button>
       <button
         type="submit"
-        class="primary"
+        class="primary ui-btn"
         [disabled]="!canApprove()"
         i18n="@@devices.pair.approve"
       >

@@ -248,7 +248,8 @@ h3 {
   grid-area: text;
 }
 
-.action {
+.action,
+.quiet {
   grid-area: action;
 }
 

@@ -7,6 +7,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
+import { leaveDialog } from '../../../shared/ui/dialog-motion';
 import { ApiProblem } from '../api-problem';
 import { AuthApi, WebAuthnChallenge } from '../auth-api';
 import { AuthService } from '../auth.service';
@@ -52,12 +53,15 @@ export class StepUpService {
   readonly action = signal<string | null>(null);
 
   private pending: Pending | null = null;
+  /** Só existe enquanto um diálogo ainda está saindo da tela; o pedido seguinte espera o fim para abrir o dele. */
+  private leaving: Promise<void> | null = null;
 
   confirm(action: string): Promise<boolean> {
     if (this.pending) {
       // Já há um diálogo aberto: o pedido seguinte espera a vez em vez de empilhar diálogos.
       return this.pending.promise.then(() => this.confirm(action));
     }
+    if (this.leaving) return this.leaving.then(() => this.confirm(action));
     return this.open(action);
   }
 
@@ -153,16 +157,35 @@ export class StepUpService {
     }
   }
 
+  /**
+   * Encerra o pedido. A resposta sai na hora (a ação protegida segue sem esperar), mas o diálogo ainda desce
+   * antes de sair do DOM; o texto dele (`action`) e o foco de quem o abriu só se mexem depois disso.
+   */
   private finish(confirmed: boolean): void {
     const pending = this.pending;
     if (!pending) return;
     this.pending = null;
-    this.appRef.detachView(pending.dialog.hostView);
-    pending.dialog.destroy();
-    this.action.set(null);
-    // O diálogo some do DOM; devolve o foco a quem o abriu.
-    if (pending.opener instanceof HTMLElement && pending.opener.isConnected) pending.opener.focus();
     pending.settle(confirmed);
+
+    let gone = false;
+    let release!: () => void;
+    const left = new Promise<void>((resolve) => (release = resolve));
+    const teardown = () => {
+      gone = true;
+      this.appRef.detachView(pending.dialog.hostView);
+      pending.dialog.destroy();
+      this.action.set(null);
+      this.leaving = null;
+      // O diálogo some do DOM; devolve o foco a quem o abriu.
+      if (pending.opener instanceof HTMLElement && pending.opener.isConnected) {
+        pending.opener.focus();
+      }
+      release();
+    };
+    const element = (pending.dialog.location.nativeElement as HTMLElement).querySelector('dialog');
+    if (element) leaveDialog(element, teardown);
+    else teardown();
+    if (!gone) this.leaving = left;
   }
 }
 

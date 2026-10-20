@@ -24,6 +24,7 @@ describe('SessionNotice', () => {
       'Sessão a confirmar',
     );
     expect(el.textContent).toContain('nada foi apagado');
+    expect(el.querySelector('.ui-collapse > .ui-collapse-inner > .notice')).not.toBeNull();
 
     session.setToken('t', 600);
     fixture.detectChanges();

@@ -8,10 +8,15 @@
     <p class="time">{{ time() }}</p>
   </header>
 
-  <ul class="chips ui-plain" aria-label="Informações úteis" i18n-aria-label="@@home.chips-label">
-    @for (chip of chips(); track chip.id) {
+  <ul
+    class="chips ui-plain ui-stagger"
+    aria-label="Informações úteis"
+    i18n-aria-label="@@home.chips-label"
+  >
+    <!-- O chip troca de elemento quando o estado muda (o rótulo muda junto): a entrada suave marca a troca. -->
+    @for (chip of chips(); track chip.id + chip.label) {
       <li
-        class="chip ui-chip outlined"
+        class="chip ui-chip outlined ui-rise"
         [class.ok]="chip.tone === 'ok'"
         [class.warn]="chip.tone === 'warn'"
       >
@@ -21,9 +26,13 @@
     }
   </ul>
 
-  <ul class="shortcuts ui-plain" aria-label="Atalhos" i18n-aria-label="@@home.shortcuts-label">
+  <ul
+    class="shortcuts ui-plain ui-stagger"
+    aria-label="Atalhos"
+    i18n-aria-label="@@home.shortcuts-label"
+  >
     @for (shortcut of shortcuts; track shortcut.id) {
-      <li>
+      <li class="ui-rise">
         <a class="shortcut ui-card ui-press" [routerLink]="shortcut.link">
           <span class="ui-tile"><app-home-glyph [name]="shortcut.glyph" /></span>
           <span class="shortcut-text ui-row-text">
@@ -46,7 +55,15 @@
   <ul class="grid ui-stagger ui-plain" aria-labelledby="modules-label">
     @for (widget of widgets(); track widget.definition.id) {
       <li class="widget ui-rise" [class.wide]="widget.size === 'wide'" [class.full]="widget.full">
-        <article class="card ui-card ui-press" [attr.data-module]="widget.definition.id">
+        <!-- Módulo sem tela ainda (sem caminho): cartão calmo, sem link nem resposta ao toque. -->
+        @let path = registry.path(widget.definition);
+        <article
+          class="card ui-card"
+          [class.ui-press]="path"
+          [class.calm]="!path"
+          [class.planned]="!path"
+          [attr.data-module]="widget.definition.id"
+        >
           <div class="card-top">
             <span class="ico ui-tile lg"
               ><app-home-glyph [name]="glyphFor(widget.definition)"
@@ -69,12 +86,17 @@
           </div>
           <div class="card-text">
             <h3>{{ widget.definition.title }}</h3>
-            <p class="desc">{{ describe(widget.definition) }}</p>
+            <p class="desc">{{ widget.definition.description }}</p>
           </div>
-          <a class="action" [routerLink]="registry.path(widget.definition)">
-            <span>{{ widget.definition.actionLabel }}</span>
-            <app-home-glyph name="arrow" />
-          </a>
+          @if (path) {
+            <a class="action" [routerLink]="path">
+              <span>{{ widget.definition.actionLabel }}</span>
+              <app-home-glyph name="arrow" />
+            </a>
+          } @else {
+            <!-- O selo "Em breve" já está em cima; aqui só ocupa o lugar da ação, e fica fora da leitura de tela. -->
+            <p class="quiet ui-quiet" aria-hidden="true" i18n="@@home.soon">Em breve</p>
+          }
         </article>
       </li>
     } @empty {

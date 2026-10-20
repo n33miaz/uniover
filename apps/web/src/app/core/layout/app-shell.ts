@@ -7,8 +7,8 @@ import { TabBar } from '../../shared/ui/tab-bar/tab-bar';
 import { collectShellData } from './route-data';
 
 /**
- * Casca de tela: na Início só o conteúdo; dentro de um módulo, cabeçalho com "Início" e título em cima e
- * barra de abas embaixo. Quem decide é o `data` da rota (`title` e `tabs`).
+ * Casca de tela: na Início só o conteúdo; dentro de um módulo, cabeçalho com a seta de voltar ao Início e o
+ * título, e a barra de abas embaixo. Quem decide é o `data` da rota (`title` e `tabs`).
  */
 @Component({
   selector: 'app-shell',
@@ -17,7 +17,28 @@ import { collectShellData } from './route-data';
     @if (data().title; as title) {
       <header class="bar">
         @if (!isGuest()) {
-          <a routerLink="/" class="back" i18n="@@shell.back-home">&larr; Início</a>
+          <a
+            routerLink="/"
+            class="back ui-tap"
+            aria-label="Voltar ao Início"
+            i18n-aria-label="@@shell.back-home-label"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="22"
+              height="22"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              @for (d of backArrow; track d) {
+                <path [attr.d]="d" />
+              }
+            </svg>
+          </a>
         }
         <h1>{{ title }}</h1>
       </header>
@@ -35,25 +56,60 @@ import { collectShellData } from './route-data';
       flex-direction: column;
       min-height: 100dvh;
     }
+    /* Seta e título na mesma linha, centrados um no outro; o título pode quebrar sem empurrar a seta. */
     .bar {
       display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 8px var(--gutter) 12px;
-      padding-top: calc(8px + env(safe-area-inset-top));
+      align-items: center;
+      gap: var(--space-3);
+      padding: var(--space-2) var(--gutter);
+      padding-top: calc(var(--space-2) + env(safe-area-inset-top));
       background: var(--a-surface);
       border-bottom: 1px solid var(--a-line);
     }
     .back {
       display: inline-flex;
+      flex: none;
       align-items: center;
-      align-self: flex-start;
-      min-height: 44px;
-      font-weight: 600;
+      justify-content: center;
+      width: var(--tap);
+      height: var(--tap);
+      border: 1px solid var(--a-line);
+      border-radius: 50%;
+      background: var(--a-surface);
+      color: var(--a-ink);
+      box-shadow: var(--shadow-1);
       text-decoration: none;
+      transition:
+        background-color var(--dur-fast) linear,
+        transform var(--dur-fast) var(--ease-out);
+    }
+    .back svg {
+      transition: translate var(--dur-base) var(--ease-out);
+    }
+    .back:active {
+      background: var(--a-elev);
+    }
+    @media (hover: hover) {
+      .back:hover {
+        background: var(--a-surface-2);
+      }
+      .back:hover svg {
+        translate: -2px 0;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .back,
+      .back svg {
+        transition: none;
+      }
+      .back:hover svg {
+        translate: none;
+      }
     }
     h1 {
+      min-width: 0;
       font-size: 1.5rem;
+      overflow-wrap: anywhere;
     }
     main {
       flex: 1 1 auto;
@@ -70,6 +126,9 @@ import { collectShellData } from './route-data';
 })
 export class AppShell {
   private readonly router = inject(Router);
+
+  /** Traços da seta de voltar (a mesma seta da tela da TV): a haste e a ponta. */
+  protected readonly backArrow = ['M19 12H5', 'M11 18l-6-6 6-6'] as const;
 
   /** Convidado: sem navegação para fora da TV (o retorno ao Início some). */
   protected readonly isGuest = inject(SessionState).isGuest;

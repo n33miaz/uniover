@@ -173,6 +173,40 @@ describe('StepUpService', () => {
     await result;
   });
 
+  it('answers at once but lets the dialog go down before it leaves the page, then restores the focus and opens the next request', async () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+    const first = open('identity.passkey-remove');
+    await vi.waitFor(() => expect(button('Cancelar')).toBeTruthy());
+
+    let end!: () => void;
+    const finished = new Promise<void>((resolve) => (end = resolve));
+    const sheet = dialog()!.querySelector('dialog')!;
+    sheet.getAnimations = () =>
+      [
+        { finished, effect: { getComputedTiming: () => ({ iterations: 1 }) } },
+      ] as unknown as Animation[];
+
+    button('Cancelar')!.click();
+    await expect(first).resolves.toBe(false); // quem pediu já tem a resposta
+    expect(sheet.classList.contains('closing')).toBe(true);
+    expect(dialog()).not.toBeNull(); // ainda descendo
+    expect(service().action()).toBe('identity.passkey-remove'); // o texto não muda no meio da saída
+
+    const second = service().confirm('devices.pair-approve');
+    await Promise.resolve();
+    expect(document.querySelectorAll('app-step-up-dialog')).toHaveLength(1); // não empilha
+
+    end();
+    await vi.waitFor(() => expect(service().action()).toBe('devices.pair-approve'));
+    expect(document.querySelectorAll('app-step-up-dialog')).toHaveLength(1);
+    expect(document.activeElement).toBe(opener); // o segundo diálogo guarda o foco certo
+    service().cancel();
+    await expect(second).resolves.toBe(false);
+    opener.remove();
+  });
+
   it('a second request waits for the dialog already open instead of stacking another', async () => {
     const first = open('identity.passkey-remove');
     await vi.waitFor(() => expect(service().phase()).toBe('ready'));

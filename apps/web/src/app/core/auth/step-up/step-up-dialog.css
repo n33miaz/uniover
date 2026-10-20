@@ -1,73 +1,45 @@
+/* Cartão centrado no meio da tela; a entrada e a saída vêm da classe ui-dialog (styles.css). */
 .box {
+  --dialog-shift: var(--shift-2);
   box-sizing: border-box;
   width: min(100% - 2 * var(--gutter), 420px);
   margin: auto;
-  padding: 20px;
+  padding: var(--space-5);
   border: 1px solid var(--a-line);
-  border-radius: 20px;
-  background: var(--a-surface);
+  border-radius: var(--radius-lg);
+  background: var(--a-surface-raised);
   color: var(--a-ink);
+  box-shadow: var(--shadow-2);
 }
 
 .box::backdrop {
-  background: rgb(0 0 0 / 0.55);
+  background: rgb(8 16 10 / 0.55);
 }
 
 h2 {
-  font-size: 1.15rem;
+  font-size: var(--fs-title);
+  font-weight: 750;
+  letter-spacing: -0.01em;
 }
 
 .text {
-  margin: 8px 0 12px;
+  margin: var(--space-2) 0 var(--space-3);
   color: var(--a-ink2);
 }
 
 .messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   min-height: 1.5em;
-}
-
-.messages p {
-  margin: 0 0 8px;
-}
-
-.note {
-  color: var(--a-ink2);
-}
-
-.error {
-  color: var(--a-bad);
-  font-weight: 600;
 }
 
 .footer {
   display: flex;
   gap: 10px;
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 
 .footer button {
   flex: 1 1 0;
-  min-width: 44px;
-  min-height: 44px;
-  border-radius: var(--radius);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.secondary {
-  border: 1px solid var(--a-line);
-  background: var(--a-surface);
-  color: var(--a-ink);
-}
-
-.primary {
-  border: 0;
-  background: var(--a-accent);
-  color: var(--a-on-accent);
-}
-
-.primary:disabled {
-  opacity: 0.5;
-  cursor: default;
 }

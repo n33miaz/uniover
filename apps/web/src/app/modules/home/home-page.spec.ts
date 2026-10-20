@@ -2,6 +2,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { MODULE_PREFS_KEY, ModulePrefs } from '../../core/modules/module-prefs';
+import { ModuleRegistry } from '../../core/modules/module-registry';
 import { HomeStatus, HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
 import { HomePage, dayPartFor, greetingFor } from './home-page';
@@ -56,6 +57,26 @@ describe('HomePage', () => {
   }
   const titles = (el: HTMLElement) =>
     Array.from(el.querySelectorAll('article h3')).map((h) => h.textContent?.trim());
+  const PLANNED = [
+    'Saúde e eventos',
+    'Monitor dos serviços',
+    'Rede da casa',
+    'Backup de fotos',
+    'Avisos',
+    'Controle do PC',
+  ];
+  /** Preferência guardada com todos os módulos do catálogo, ligados ou desligados, na ordem do catálogo. */
+  const storeAll = (enabled: (id: string) => boolean) =>
+    localStorage.setItem(
+      MODULE_PREFS_KEY,
+      JSON.stringify(
+        TestBed.inject(ModuleRegistry).modules.map((m) => ({
+          id: m.id,
+          size: m.defaultSize,
+          enabled: enabled(m.id),
+        })),
+      ),
+    );
 
   it('greets by the time of day and shows the clock', async () => {
     const { el } = await render();
@@ -127,45 +148,108 @@ describe('HomePage', () => {
     expect(again).toEqual(['Agente ligado', 'Vigia sem avisos']);
   });
 
-  it('shows one block per module with its main action and size', async () => {
+  it('shows one block per module, TV and Treino first and then the planned ones, in order', async () => {
     const { el } = await render();
-    expect(titles(el)).toEqual(['TV', 'Treino']);
-    const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('article a.action'));
+    expect(titles(el)).toEqual(['TV', 'Treino', ...PLANNED]);
+    const sizes = Array.from(el.querySelectorAll('li.widget')).map((li) =>
+      li.classList.contains('wide'),
+    );
+    expect(sizes).toEqual([false, true, ...PLANNED.map(() => false)]);
+  });
+
+  it('links only the modules that have a screen', async () => {
+    const { el } = await render();
+    const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('article a'));
     expect(links.map((a) => [a.textContent?.trim(), a.getAttribute('href')])).toEqual([
       ['Abrir controle', '/tv'],
       ['Ver treino', '/treino'],
     ]);
-    const sizes = Array.from(el.querySelectorAll('li.widget')).map((li) =>
-      li.classList.contains('wide'),
+    expect(el.querySelector('article[data-module="tv"] .chip')?.textContent ?? '').not.toContain(
+      'Em breve',
     );
-    expect(sizes).toEqual([false, true]);
-    expect(el.querySelector('.card .chip')?.textContent).toContain('Em breve');
+  });
+
+  it('shows a planned module as a calm card: badge and footer say coming soon, nothing to tap or focus', async () => {
+    const { el } = await render();
+    const planned = Array.from(el.querySelectorAll<HTMLElement>('article.card.planned'));
+    expect(planned.map((card) => card.querySelector('h3')?.textContent?.trim())).toEqual(PLANNED);
+    for (const card of planned) {
+      const id = card.dataset['module'];
+      expect(card.querySelector('.badges .chip')?.textContent?.trim(), id).toBe('Em breve');
+      const note = card.querySelector('.quiet')!;
+      expect(note.textContent?.trim(), id).toBe('Em breve');
+      expect(note.getAttribute('aria-hidden')).toBe('true');
+      // O rodapé não é ação: nada que receba foco, nada que seja link ou botão, nada que aperte ao toque.
+      expect(
+        card.querySelector('a, button, [tabindex], [role="link"], [role="button"]'),
+        id,
+      ).toBeNull();
+      expect(card.classList.contains('ui-press'), id).toBe(false);
+    }
+    // Treino ainda tem tela: continua com o selo, mas com a ação de sempre.
+    const training = el.querySelector('article[data-module="training"]')!;
+    expect(training.classList.contains('planned')).toBe(false);
+    expect(training.querySelector('.badges')?.textContent).toContain('Em breve');
+    expect(training.querySelector('a.action')?.getAttribute('href')).toBe('/treino');
+  });
+
+  it('keeps the footer slot of every card, the link or the quiet note, so the rows keep the same rhythm', async () => {
+    const { el } = await render();
+    const footers = Array.from(el.querySelectorAll('article .action, article .quiet')).map(
+      (f) => f.tagName,
+    );
+    expect(footers).toEqual(['A', 'A', ...PLANNED.map(() => 'P')]);
   });
 
   it('lets a small block that would be alone on its row take the whole row', async () => {
     const full = (el: HTMLElement) =>
       Array.from(el.querySelectorAll('li.widget')).map((li) => li.classList.contains('full'));
-    // TV pequena seguida de Treino largo: a TV ficaria sozinha na linha.
-    expect(full((await render()).el)).toEqual([true, true]);
+    // TV pequena seguida de Treino largo: a TV ficaria sozinha na linha; os planejados, pequenos, formam pares.
+    expect(full((await render()).el)).toEqual([true, true, ...PLANNED.map(() => false)]);
     // Duas pequenas dividem a linha (as preferências já foram lidas, então troca pelo serviço).
     TestBed.inject(ModulePrefs).apply([
       { id: 'tv', size: 'small', enabled: true },
       { id: 'training', size: 'small', enabled: true },
     ]);
     const pair = (await render()).el;
-    expect(full(pair)).toEqual([false, false]);
+    expect(full(pair).every((isFull) => !isFull)).toBe(true);
     expect(pair.querySelectorAll('li.widget.wide')).toHaveLength(0);
   });
 
+  it('lets a lone block on the last row take the whole row', async () => {
+    // Sete blocos pequenos (sem o Controle do PC e com o Treino pequeno): o último ficaria sozinho.
+    storeAll((id) => id !== 'pc');
+    TestBed.inject(ModulePrefs).apply(
+      TestBed.inject(ModulePrefs)
+        .widgets()
+        .map((w) => ({ ...w, size: 'small' as const })),
+    );
+    const cards = Array.from((await render()).el.querySelectorAll('li.widget'));
+    expect(cards).toHaveLength(7);
+    expect(cards.at(-1)!.classList.contains('full')).toBe(true);
+    expect(cards.at(-2)!.classList.contains('full')).toBe(false);
+  });
+
   it('hides a module that was turned off', async () => {
+    storeAll((id) => id !== 'tv');
+    expect(titles((await render()).el)).toEqual(['Treino', ...PLANNED]);
+  });
+
+  it('hides a planned module that was turned off', async () => {
+    storeAll((id) => id !== 'network');
+    expect(titles((await render()).el)).not.toContain('Rede da casa');
+  });
+
+  it('still reads a preference saved before the planned modules existed', async () => {
+    // Só TV e Treino, como um aparelho antigo guardou: os planejados entram no fim, ligados.
     localStorage.setItem(
       MODULE_PREFS_KEY,
       JSON.stringify([
-        { id: 'tv', size: 'small', enabled: false },
         { id: 'training', size: 'wide', enabled: true },
+        { id: 'tv', size: 'small', enabled: true },
       ]),
     );
-    expect(titles((await render()).el)).toEqual(['Treino']);
+    expect(titles((await render()).el)).toEqual(['Treino', 'TV', ...PLANNED]);
   });
 
   it('offers shortcuts to the devices and settings screens', async () => {
@@ -209,6 +293,7 @@ describe('HomePage', () => {
       'Em breve',
     );
     expect(online.querySelector('article[data-module="training"] .chip.ok')).toBeNull();
+    expect(online.querySelector('article[data-module="health"] .chip.ok')).toBeNull();
 
     status.set({ ...status(), agent: 'offline' });
     const offline = (await render()).el;
@@ -222,20 +307,36 @@ describe('HomePage', () => {
     const descriptions = Array.from(el.querySelectorAll('article .desc')).map((p) =>
       p.textContent?.trim(),
     );
-    expect(descriptions).toEqual(['Ligar, volume, canais e apps', 'Fichas, séries e progresso']);
+    expect(descriptions).toEqual([
+      'Ligar, volume, canais e apps',
+      'Fichas, séries e progresso',
+      'Aparelhos e linha do tempo',
+      'Seus serviços na internet',
+      'A rede de casa num lugar só',
+      'Cópia das fotos do Android',
+      'Avisos e notificações',
+      'Mais adiante: controlar o PC',
+    ]);
     for (const svg of Array.from(el.querySelectorAll('article svg'))) {
       expect(svg.getAttribute('aria-hidden')).toBe('true');
     }
   });
 
-  it('shows a friendly empty state when every module is hidden, and it opens the editor', async () => {
-    localStorage.setItem(
-      MODULE_PREFS_KEY,
-      JSON.stringify([
-        { id: 'tv', size: 'small', enabled: false },
-        { id: 'training', size: 'wide', enabled: false },
-      ]),
+  it('draws a glyph of its own for every module, planned ones included', async () => {
+    const { el } = await render();
+    const icons = Array.from(el.querySelectorAll('article .ico'));
+    expect(icons).toHaveLength(8);
+    const drawings = icons.map((icon) =>
+      Array.from(icon.querySelectorAll('svg path'))
+        .map((path) => path.getAttribute('d'))
+        .join('|'),
     );
+    expect(drawings.every((drawing) => drawing.length > 0)).toBe(true);
+    expect(new Set(drawings).size).toBe(8);
+  });
+
+  it('shows a friendly empty state when every module is hidden, and it opens the editor', async () => {
+    storeAll(() => false);
     const { fixture, el } = await render();
     expect(el.querySelectorAll('article.card')).toHaveLength(0);
     expect(el.querySelector('.empty')?.textContent).toContain('Nenhum módulo na Início');
@@ -260,12 +361,12 @@ describe('HomePage', () => {
     await press('.moves .down'); // desce a TV
     await press('.footer .secondary'); // Cancelar
     expect(el.querySelector('app-home-edit-sheet')).toBeNull();
-    expect(titles(el)).toEqual(['TV', 'Treino']);
+    expect(titles(el)).toEqual(['TV', 'Treino', ...PLANNED]);
 
     await press('button.edit');
     await press('.moves .down');
     await press('.footer .primary'); // Aplicar
-    expect(titles(el)).toEqual(['Treino', 'TV']);
+    expect(titles(el)).toEqual(['Treino', 'TV', ...PLANNED]);
     expect(JSON.parse(localStorage.getItem(MODULE_PREFS_KEY)!)[0].id).toBe('training');
   });
 });
