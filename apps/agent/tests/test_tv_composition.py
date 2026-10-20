@@ -121,8 +121,9 @@ async def test_run_declares_the_capability_and_serves_tv_commands(
         await connection.send(
             dump(envelope("tv.text.v1", {"text": "matrix"}, id=ids["text_final"]))
         )
-        # Vazio fica fora do contrato: o envelope recusa antes de chegar ao handler.
-        await connection.send(dump(envelope("tv.text.v1", {"text": ""}, id=ids["text_invalid"])))
+        # Texto longo demais fica fora do contrato: o envelope recusa antes de chegar ao handler.
+        too_long = {"text": "x" * 201}
+        await connection.send(dump(envelope("tv.text.v1", too_long, id=ids["text_invalid"])))
         await asyncio.sleep(0.4)
         await connection.close(4403, "revoked")
 
