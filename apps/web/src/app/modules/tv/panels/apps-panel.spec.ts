@@ -116,15 +116,49 @@ describe('AppsPanel', () => {
       expect(names()).toHaveLength(4);
     });
 
-    it('shows what is out of the control dimmed and unable to open, and says how to pin it', () => {
-      const off = [...root.querySelectorAll('.item.off')];
-      expect(off).toHaveLength(2);
-      expect(root.querySelectorAll<HTMLButtonElement>('.launch:disabled')).toHaveLength(2);
-      expect(launcher(3).disabled).toBe(true);
-      expect(launcher(1).disabled).toBe(false);
+    it('shows what is out of the control as plain tiles, and says that a tap opens them and how to pin them', () => {
+      expect(root.querySelectorAll('.item.off')).toHaveLength(0);
+      expect(root.querySelectorAll<HTMLButtonElement>('.launch:disabled')).toHaveLength(0);
       expect(root.querySelector('#apps-group-rest')!.parentElement!.textContent).toContain(
-        'Fixe um app em Editar para poder abri-lo.',
+        'Toque para abrir. Para ter no controle, fixe em Editar.',
       );
+    });
+
+    it('opens an app that is out of the control with a tap, like any other', async () => {
+      // A ordem da tela é a das seções: Spotify, Netflix (no controle), YouTube, Jogos (fora).
+      launcher(4).click();
+      await render();
+      expect(store.launch).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 's4', enabled: false, installed: true }),
+      );
+      expect(done).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not list an app that left the TV: not in the sections, not in the search, not in the edit mode', async () => {
+      store.shortcuts.set([
+        makeShortcut(1, { tvLabel: 'Spotify' }),
+        makeShortcut(2, { tvLabel: 'YouTube', enabled: false }),
+        makeShortcut(3, { tvLabel: 'Netflix', enabled: false, installed: false }),
+      ]);
+      await render();
+      expect(names()).toEqual(['Spotify', 'YouTube']);
+      expect(headings()).toEqual(['No controle', 'Fora do controle']);
+      search('netflix');
+      await render();
+      expect(names()).toEqual([]);
+      expect(root.textContent).toContain('Nenhum app encontrado para essa busca.');
+      search('');
+      await startEditing();
+      expect(names()).toEqual(['Spotify', 'YouTube']);
+    });
+
+    it('does not show a pinned app that left the TV either', async () => {
+      store.shortcuts.set([
+        makeShortcut(1, { tvLabel: 'Spotify' }),
+        makeShortcut(2, { tvLabel: 'Netflix', enabled: true, installed: false }),
+      ]);
+      await render();
+      expect(names()).toEqual(['Spotify']);
     });
 
     it('marks nothing in the sections (the heading already says it) and has no "Todos os apps" heading', () => {
@@ -210,11 +244,12 @@ describe('AppsPanel', () => {
       expect(tiles()[0].querySelector('img')).not.toBeNull();
     });
 
-    it('dims the icon of an app out of the control along with its name', async () => {
+    it('does not dim the icon of an app out of the control: it opens like the others', async () => {
       store.shortcuts.set([makeShortcut(1, { tvLabel: 'Spotify', enabled: false })]);
       await render();
-      expect(root.querySelector('.item')?.classList.contains('off')).toBe(true);
+      expect(root.querySelector('.item')?.classList.contains('off')).toBe(false);
       expect(tiles()).toHaveLength(1);
+      expect(launcher(1).disabled).toBe(false);
     });
 
     it('shows the icon, the name and the package above the field while renaming', async () => {
@@ -653,18 +688,27 @@ describe('AppsPanel for a guest', () => {
     expect(root.querySelector('button.refresh')).not.toBeNull();
   });
 
-  it('sees the apps out of the control dimmed and shut, without the owner hints', async () => {
+  it('opens the apps out of the control too, and is told only that a tap opens them (no mention of Editar)', async () => {
     const root = await open([
       makeShortcut(1, { tvLabel: 'Spotify' }),
       makeShortcut(2, { tvLabel: 'YouTube', enabled: false }),
+      makeShortcut(3, { tvLabel: 'Netflix', enabled: false, installed: false }),
     ]);
     expect([...root.querySelectorAll('h3')].map((h) => h.textContent?.trim())).toEqual([
       'No controle',
       'Fora do controle',
     ]);
-    expect(root.querySelectorAll<HTMLButtonElement>('.launch:disabled')).toHaveLength(1);
+    // O que saiu da TV não aparece; o que só está fora do controle abre.
+    expect([...root.querySelectorAll('.item .name')].map((el) => el.textContent?.trim())).toEqual([
+      'Spotify',
+      'YouTube',
+    ]);
+    expect(root.querySelectorAll<HTMLButtonElement>('.launch:disabled')).toHaveLength(0);
+    expect(root.querySelector('#apps-group-rest')!.parentElement!.textContent).toContain(
+      'Toque para abrir.',
+    );
     expect(root.textContent).not.toContain('Editar');
-    expect(root.textContent).not.toContain('Fixe um app');
+    expect(root.textContent).not.toContain('fixe');
   });
 
   it('has no empty "No controle" section when nothing is in the control', async () => {

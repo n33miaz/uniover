@@ -82,7 +82,7 @@ export function describeFailure(error: unknown): TvFailure {
     case 409:
       return make(
         'shortcut-disabled',
-        $localize`:@@tv.error.shortcut-disabled:Este atalho está escondido ou o app não está mais na TV.`,
+        $localize`:@@tv.error.shortcut-disabled:Este app não está mais instalado na TV. Atualize a lista.`,
       );
     case 429: {
       const seconds = problem.retryAfterSeconds;

@@ -44,15 +44,15 @@ export class PinGlyph {
 /**
  * Azulejo de um app no painel Apps: o ícone quadrado e grande com o nome embaixo (até duas linhas). Normalmente é um
  * botão que abre o app; no modo de edição não abre nada (para um dedo errado não ligar app na TV) e mostra o pacote e
- * os botões de fixar no controle e de renomear. Só apresenta: quem fala com a TV e com a API é o painel. O app que
- * está fora do controle fica apagado e sem abrir, porque a API só abre os ativos.
+ * os botões de fixar no controle e de renomear. Só apresenta: quem fala com a TV e com a API é o painel. Estar ou não
+ * no controle não muda o azulejo nem o impede de abrir (a API abre todo app instalado); o painel é quem só mostra os
+ * instalados.
  */
 @Component({
   selector: 'app-tv-apps-tile',
   imports: [AppIcon, PinGlyph, TvIcon],
   templateUrl: './apps-tile.html',
   styleUrl: './apps-tile.css',
-  host: { '[class.off]': '!shortcut().enabled' },
 })
 export class AppsTile {
   readonly shortcut = input.required<TvShortcut>();

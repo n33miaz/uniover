@@ -31,13 +31,15 @@ function plain(text: string): string {
 }
 
 /**
- * Painel Apps: os apps que a TV informou, em grade de azulejos quadrados com o ícone grande e o nome embaixo. Tocar num
- * azulejo abre o app. Sem busca, a grade vem em duas seções: os que estão no controle (os atalhos da fileira de cima)
- * e os que ficaram de fora, que a API não deixa abrir até alguém fixá-los. Com busca, uma lista só, com os do controle
- * marcados. O dono tem o modo Editar: uma lista só com todos os apps, e em cada azulejo os botões de fixar no controle
- * (ou tirar de lá) e de renomear; nesse modo tocar no azulejo não abre nada, para um dedo errado não ligar app na TV. O
- * pacote só aparece nesse modo. Sem lista ainda, um estado vazio com o botão que a pede à TV. Nenhum nome de app vem
- * do código: o nome é o do dono, o que o agente publicou para o app ou, por último, "Atalho" mais a posição.
+ * Painel Apps: o lançador dos apps instalados na TV, em grade de azulejos quadrados com o ícone grande e o nome
+ * embaixo. Tocar em qualquer azulejo abre o app, esteja ele no controle ou não: "fixar no controle" só decide quem
+ * aparece na fileira de atalhos de cima. Sem busca, a grade vem em duas seções, os que estão no controle e os que
+ * ficaram de fora. Com busca, uma lista só, com os do controle marcados. App que saiu da TV some da grade (não há o que
+ * abrir nem o que fixar). O dono tem o modo Editar: uma lista só com todos os apps, e em cada azulejo os botões de
+ * fixar no controle (ou tirar de lá) e de renomear; nesse modo tocar no azulejo não abre nada, para um dedo errado não
+ * ligar app na TV. O pacote só aparece nesse modo. Sem lista ainda, um estado vazio com o botão que a pede à TV. Nenhum
+ * nome de app vem do código: o nome é o do dono, o que o agente publicou para o app ou, por último, "Atalho" mais a
+ * posição.
  */
 @Component({
   selector: 'app-tv-apps',
@@ -58,7 +60,10 @@ export class AppsPanel {
 
   protected readonly maxLabel = LABEL_MAX;
   protected readonly stagger = STAGGER_TILES;
-  protected readonly all = computed(() => this.store.shortcuts() ?? []);
+  /** Só o que está instalado na TV: quem saiu da lista dela não tem o que abrir, então some (da busca e da edição também). */
+  protected readonly all = computed(() =>
+    (this.store.shortcuts() ?? []).filter((item) => item.installed),
+  );
   protected readonly loaded = computed(() => this.store.shortcuts() !== null);
 
   protected readonly query = signal('');

@@ -203,7 +203,7 @@ public sealed class StateAndMessagesTests(PostgresFixture postgres)
         list.Select(s => s.GetProperty("package").GetString()).Should().Equal("com.a.um", "com.b.dois", "com.c.tres");
         list.Select(s => s.GetProperty("tvLabel").GetString()).Should().Equal("Um", null, "Três");
         list.Should().OnlyContain(s => s.GetProperty("customLabel").ValueKind == System.Text.Json.JsonValueKind.Null);
-        list.Should().OnlyContain(s => s.GetProperty("enabled").GetBoolean());
+        list.Should().OnlyContain(s => s.GetProperty("enabled").GetBoolean() && s.GetProperty("installed").GetBoolean());
 
         // O dono dá nome ao segundo atalho.
         var secondId = list[1].GetProperty("id").GetGuid();
@@ -221,40 +221,66 @@ public sealed class StateAndMessagesTests(PostgresFixture postgres)
         second.GetProperty("customLabel").GetString().Should().Be("Meu streaming");
         second.GetProperty("position").GetInt32().Should().Be(2);
         second.GetProperty("tvLabel").GetString().Should().Be("Dois novo");
-        again.Single(s => s.GetProperty("package").GetString() == "com.c.tres").GetProperty("enabled").GetBoolean()
-            .Should().BeFalse("o app sumiu da lista");
+        var gone = again.Single(s => s.GetProperty("package").GetString() == "com.c.tres");
+        gone.GetProperty("enabled").GetBoolean().Should().BeFalse("o app sumiu da lista");
+        gone.GetProperty("installed").GetBoolean().Should().BeFalse("o app sumiu da lista");
         again.Single(s => s.GetProperty("package").GetString() == "com.d.quatro").GetProperty("position").GetInt32().Should().Be(4);
     }
 
     [Fact]
-    public async Task Shortcut_Launch_SendsThePackageTheAgentReported_AndHiddenOrMissingOnesAreRefused()
+    public async Task Shortcut_Launch_OpensAnyInstalledApp_EvenOneTheOwnerTookOffTheRemote_AndRefusesOnlyUninstalledOrUnknownOnes()
     {
         await using var app = await TvApp.StartAsync(postgres);
         await using var agent = await app.ConnectAndWaitAsync();
-        await agent.SendTextAsync(agent.Envelope("tv.apps.v1", TvApp.AppsBody(("com.a.um", "Um"), ("com.b.dois", "Dois"))));
-        var list = await WaitShortcutsAsync(app, 2);
+        await agent.SendTextAsync(agent.Envelope(
+            "tv.apps.v1", TvApp.AppsBody(("com.a.um", "Um"), ("com.b.dois", "Dois"), ("com.c.tres", "Três"))));
+        var list = await WaitShortcutsAsync(app, 3);
         var first = list[0].GetProperty("id").GetGuid();
         var second = list[1].GetProperty("id").GetGuid();
+        var third = list[2].GetProperty("id").GetGuid();
 
-        var launch = app.PostAsync($"/api/v1/tv/shortcuts/{first}/launch");
-        var command = await TvApp.NextCommandAsync(agent);
-        command.GetProperty("type").GetString().Should().Be("tv.app.launch.v1");
-        command.GetProperty("body").GetRawText().Should().Be("{\"target\":{\"kind\":\"package\",\"value\":\"com.a.um\"}}");
-        await TvApp.ReplyAsync(agent, command);
-        using (var ok = await launch.WaitAsync(FakeAgent.Patience, Ct))
+        // O pacote que vai à TV é o que o agente informou, nunca texto da requisição.
+        await LaunchAndExpectPackageAsync(app, agent, first, "com.a.um");
+
+        // O dono tira o segundo do controle: ele segue instalado (o DTO diz as duas coisas) e continua abrindo.
+        using (var patch = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/shortcuts/{second}", new { enabled = false }))
         {
-            ok.StatusCode.Should().Be(HttpStatusCode.OK);
+            var updated = await TvApp.JsonAsync(patch);
+            updated.GetProperty("enabled").GetBoolean().Should().BeFalse();
+            updated.GetProperty("installed").GetBoolean().Should().BeTrue();
         }
 
-        (await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/shortcuts/{second}", new { enabled = false })).Dispose();
-        using var hidden = await app.PostAsync($"/api/v1/tv/shortcuts/{second}/launch");
-        hidden.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await LaunchAndExpectPackageAsync(app, agent, second, "com.b.dois");
+
+        // O terceiro some da lista da TV: fica desinstalado e o lançamento é recusado, sem nada ir ao agente.
+        await agent.SendTextAsync(agent.Envelope("tv.apps.v1", TvApp.AppsBody(("com.a.um", "Um"), ("com.b.dois", "Dois"))));
+        await TvApp.WaitUntilAsync(async () =>
+        {
+            using var response = await app.GetAsync("/api/v1/tv/shortcuts");
+            var items = (await TvApp.JsonAsync(response)).EnumerateArray().Select(e => e.Clone()).ToList();
+            return items.Single(s => s.GetProperty("id").GetGuid() == third).GetProperty("installed").GetBoolean() == false;
+        }, "terceiro app desinstalado");
+        using var gone = await app.PostAsync($"/api/v1/tv/shortcuts/{third}/launch");
+        gone.StatusCode.Should().Be(HttpStatusCode.Conflict);
 
         using var missing = await app.PostAsync($"/api/v1/tv/shortcuts/{Guid.NewGuid()}/launch");
         missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
+        // Só os dois lançamentos que saíram foram auditados.
         await using var db = app.Db();
-        (await db.CommandAudit.Where(a => a.Command == "tv.app.launch").Select(a => a.Detail).SingleAsync(Ct)).Should().Be("com.a.um");
+        (await db.CommandAudit.Where(a => a.Command == "tv.app.launch").Select(a => a.Detail).ToListAsync(Ct))
+            .Should().BeEquivalentTo("com.a.um", "com.b.dois");
+    }
+
+    private static async Task LaunchAndExpectPackageAsync(TvApp app, FakeAgent agent, Guid id, string package)
+    {
+        var launch = app.PostAsync($"/api/v1/tv/shortcuts/{id}/launch");
+        var command = await TvApp.NextCommandAsync(agent);
+        command.GetProperty("type").GetString().Should().Be("tv.app.launch.v1");
+        command.GetProperty("body").GetRawText().Should().Be($"{{\"target\":{{\"kind\":\"package\",\"value\":\"{package}\"}}}}");
+        await TvApp.ReplyAsync(agent, command);
+        using var ok = await launch.WaitAsync(FakeAgent.Patience, Ct);
+        ok.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]

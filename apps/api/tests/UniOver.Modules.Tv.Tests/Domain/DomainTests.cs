@@ -141,6 +141,24 @@ public class DomainTests
     }
 
     [Fact]
+    public void TheShortcutTheScreenReceives_SeparatesWhatIsOnTheRemoteFromWhatIsInstalled()
+    {
+        var (list, _) = ShortcutCatalog.Merge([], [new IncomingApp("a.um", "Um")], Now);
+        var shortcut = list.Single();
+
+        TvShortcut.From(shortcut).Should().Match<TvShortcut>(s => s.Enabled && s.Installed);
+
+        // O dono tirou o app do controle: segue instalado (e, por isso, aberto pelo painel Apps).
+        shortcut.SetEnabled(false, Now);
+        TvShortcut.From(shortcut).Should().Match<TvShortcut>(s => !s.Enabled && s.Installed);
+
+        // O app saiu da TV: nem instalado nem no controle, mesmo que o dono o tenha fixado antes.
+        shortcut.SetEnabled(true, Now);
+        ShortcutCatalog.Merge(list, [new IncomingApp("b.dois", "Dois")], Now);
+        TvShortcut.From(shortcut).Should().Match<TvShortcut>(s => !s.Enabled && !s.Installed);
+    }
+
+    [Fact]
     public void Merge_IgnoresARepeatedPackage()
     {
         var (added, _) = ShortcutCatalog.Merge([], [new IncomingApp("a.um", "Um"), new IncomingApp("a.um", "Outro")], Now);

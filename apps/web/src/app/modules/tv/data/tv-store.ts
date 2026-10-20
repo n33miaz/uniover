@@ -307,8 +307,12 @@ export class TvStore {
     }
   }
 
+  /**
+   * Abre o app na TV. Vale para qualquer app instalado, esteja ele fixado no controle ou não: `enabled` só decide quem
+   * aparece na fileira de atalhos. Um app que saiu da TV não tem o que abrir (a API também o recusa).
+   */
   async launch(shortcut: TvShortcut): Promise<boolean> {
-    if (!this.canSend() || !shortcut.enabled) return false;
+    if (!this.canSend() || !shortcut.installed) return false;
     try {
       await this.api.launch(shortcut.id);
       const name = shortcutLabel(shortcut);

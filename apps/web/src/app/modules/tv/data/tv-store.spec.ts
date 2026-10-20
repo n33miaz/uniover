@@ -33,6 +33,7 @@ const shortcut = (position: number, overrides: Partial<TvShortcut> = {}): TvShor
   tvLabel: null,
   customLabel: null,
   enabled: true,
+  installed: true,
   iconDataUri: null,
   ...overrides,
 });
@@ -490,6 +491,25 @@ describe('TvStore', () => {
       expect(store.shortcuts()?.[0].iconDataUri).toBeNull();
     });
 
+    it('reads a cached shortcut saved before "installed" existed as installed when it was active, and not otherwise', async () => {
+      const legacy = (position: number, enabled: boolean): Partial<TvShortcut> => {
+        const item: Partial<TvShortcut> = shortcut(position, { enabled });
+        delete item.installed;
+        return item;
+      };
+      localStorage.setItem(
+        STATE_KEY,
+        JSON.stringify({
+          state: hot,
+          seenAt: Date.now(),
+          shortcuts: [legacy(1, true), legacy(2, false)],
+        }),
+      );
+      online.set(false);
+      await started();
+      expect(store.shortcuts()?.map((item) => item.installed)).toEqual([true, false]);
+    });
+
     it('survives a corrupt icon cache: the shortcuts and the state still come back, just without icons', async () => {
       localStorage.setItem(
         STATE_KEY,
@@ -618,16 +638,33 @@ describe('TvStore', () => {
   });
 
   describe('shortcuts', () => {
-    it('launches an enabled shortcut and names it by "Atalho n"', async () => {
+    it('launches an app in the control and names it by "Atalho n"', async () => {
       await started();
       await expect(store.launch(shortcut(2))).resolves.toBe(true);
       expect(api.launch).toHaveBeenCalledWith('s2');
       expect(store.notice()?.text).toBe('Atalho 2 aberto na TV.');
     });
 
-    it('does not launch a hidden shortcut', async () => {
+    it('launches an installed app that is out of the control: pinning only decides the row of shortcuts', async () => {
       await started();
-      await expect(store.launch(shortcut(2, { enabled: false }))).resolves.toBe(false);
+      await expect(store.launch(shortcut(2, { enabled: false, installed: true }))).resolves.toBe(
+        true,
+      );
+      expect(api.launch).toHaveBeenCalledWith('s2');
+    });
+
+    it('does not launch an app that left the TV', async () => {
+      await started();
+      await expect(store.launch(shortcut(2, { enabled: false, installed: false }))).resolves.toBe(
+        false,
+      );
+      expect(api.launch).not.toHaveBeenCalled();
+    });
+
+    it('does not launch while the remote cannot send, whatever the app', async () => {
+      await started();
+      online.set(false);
+      await expect(store.launch(shortcut(2))).resolves.toBe(false);
       expect(api.launch).not.toHaveBeenCalled();
     });
 

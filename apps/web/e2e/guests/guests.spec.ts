@@ -59,7 +59,7 @@ async function addVirtualAuthenticator(page: Page) {
 async function showTv(page: Page) {
   await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
   await emitSse(page, 'tv.state', HOT_STATE);
-  await emitSse(page, 'tv.shortcuts', SHORTCUTS);
+  await emitSse(page, 'tv.shortcuts', tv.shortcuts);
   await expect(page.getByRole('heading', { level: 1, name: 'TV' })).toBeVisible();
 }
 
@@ -140,6 +140,22 @@ test.describe('convidado: só o controle da TV', () => {
   test('aceita o convite, define a própria senha e cai direto no controle, sem Início nem voltar', async ({
     page,
   }, info) => {
+    // Além dos três do controle, um app instalado que o dono não fixou (o convidado o abre) e um que saiu da TV (não aparece).
+    const outOfControl = {
+      ...SHORTCUTS[0],
+      id: '00000000-0000-4000-8000-000000000004',
+      position: 4,
+      package: 'exemplo.pacote.app4',
+      enabled: false,
+    };
+    const gone = {
+      ...outOfControl,
+      id: '00000000-0000-4000-8000-000000000005',
+      position: 5,
+      package: 'exemplo.pacote.app5',
+      installed: false,
+    };
+    tv.shortcuts = [...SHORTCUTS, outOfControl, gone];
     const invite = identity.seedInvite();
     await page.goto(`/convite#${invite.token}`);
     await expect(page.getByRole('heading', { level: 1, name: 'Criar sua conta' })).toBeVisible();
@@ -196,9 +212,13 @@ test.describe('convidado: só o controle da TV', () => {
     await expect(apps.getByRole('button', { name: /^Renomear / })).toHaveCount(0);
     await expect(apps.getByRole('button', { name: /^(Fixar|Tirar) / })).toHaveCount(0);
     await expect(apps.getByRole('button', { name: 'Editar', exact: true })).toHaveCount(0);
-    await expect(apps.locator('.launch')).toHaveCount(SHORTCUTS.length);
-    await page.keyboard.press('Escape');
+    // Abre todo app instalado, também o que está fora do controle; o que saiu da TV não aparece.
+    await expect(apps.locator('.launch')).toHaveCount(SHORTCUTS.length + 1);
+    await expect(apps.getByRole('button', { name: 'Atalho 5', exact: true })).toHaveCount(0);
+    await apps.getByRole('button', { name: 'Atalho 4', exact: true }).click();
+    await expect.poll(() => tv.count(`/shortcuts/${outOfControl.id}/launch`)).toBe(1);
     await expect(apps).toHaveCount(0);
+    expect(tv.count(`/shortcuts/${gone.id}/launch`)).toBe(0);
 
     // E usa a TV inteira: tecla, e desligar sem passkey.
     const before = tv.keysSent().length;

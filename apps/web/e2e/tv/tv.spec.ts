@@ -485,6 +485,7 @@ test.describe('controle: fileira de atalhos', () => {
       tvLabel: null,
       customLabel: `Aplicativo número ${index + 1}`,
       enabled: true,
+      installed: true,
     }));
     await openTv(page);
     const strip = page.locator('.shortcuts');
@@ -1234,6 +1235,7 @@ test.describe('painel flutuante: comportamento comum', () => {
       tvLabel: `Aplicativo ${index + 1}`,
       customLabel: null,
       enabled: true,
+      installed: true,
     }));
     await openTv(page);
     await openApps(page);
@@ -1303,10 +1305,10 @@ test.describe('painel Apps', () => {
     await expect(button(dialog, 'Fixar Atalho 3 no controle')).toBeVisible();
     await expect(dialog.locator('.item .name')).toHaveText(['Atalho 1', 'Sala', 'Atalho 3']);
 
-    // Concluir: volta às seções, e o que saiu do controle fica na de baixo, apagado e sem abrir.
+    // Concluir: volta às seções, e o que saiu do controle fica na de baixo, igual aos outros e podendo abrir.
     await button(dialog, 'Concluir').click();
     await expect(dialog.getByRole('heading', { level: 3, name: 'Fora do controle' })).toBeVisible();
-    await expect(button(dialog, 'Atalho 3')).toBeDisabled();
+    await expect(button(dialog, 'Atalho 3')).toBeEnabled();
 
     await button(dialog, 'Atualizar lista').click();
     await expect.poll(() => tv.count('/shortcuts/refresh')).toBe(1);
@@ -1358,7 +1360,7 @@ test.describe('painel Apps', () => {
     await expect(dialog.locator('.mark')).toHaveCount(2);
     await expect(button(dialog, 'Filmes')).toHaveAccessibleDescription('No controle');
     await expect(button(dialog, 'Jogos')).toHaveAccessibleDescription('');
-    await expect(button(dialog, 'Jogos')).toBeDisabled();
+    await expect(button(dialog, 'Jogos')).toBeEnabled();
     await settleMotion(page);
     await screenshot(page, `test-results/tv-apps-search-${info.project.name}.png`);
     await expectNoSeriousViolations(page);
@@ -1369,9 +1371,82 @@ test.describe('painel Apps', () => {
     // Nada de Grade | Lista: o painel é sempre uma grade.
     await expect(dialog.getByRole('button', { name: 'Lista', exact: true })).toHaveCount(0);
 
-    // Abrir um app continua valendo.
+    // Abrir um app continua valendo, e o que está fora do controle abre do mesmo jeito.
     await button(dialog, 'Filmes').click();
     await expect.poll(() => tv.count(`/shortcuts/${tv.shortcuts[1].id}/launch`)).toBe(1);
+  });
+
+  test('app instalado fora do controle abre ao toque, e app que saiu da TV não aparece', async ({
+    page,
+  }, info) => {
+    // CineVS e Spotify no controle; Configurações, Play Store e "Atalho 5" instalados mas fora dele; YouTube saiu da TV.
+    tv.shortcuts = iconShortcuts().map((s, index) => ({
+      ...s,
+      enabled: index < 2,
+      installed: index !== 5,
+    }));
+    const [, , , playStore, , youtube] = tv.shortcuts;
+    await openTv(page);
+    // A fileira de cima segue só com os do controle.
+    await expectChipNames(page, ['CineVS', 'Spotify']);
+
+    await openApps(page);
+    const dialog = appsDialog(page);
+    await expect(dialog.getByRole('heading', { level: 3 })).toHaveText([
+      'No controle',
+      'Fora do controle',
+    ]);
+    await expect(dialog.locator('.item .name')).toHaveText([
+      'CineVS',
+      'Spotify',
+      'Configurações',
+      'Play Store',
+      'Atalho 5',
+    ]);
+    await expect(
+      dialog.getByText('Toque para abrir. Para ter no controle, fixe em Editar.'),
+    ).toBeVisible();
+
+    // Fora do controle não é apagado nem desabilitado: o azulejo é igual ao dos outros.
+    await expect(dialog.locator('.launch:disabled')).toHaveCount(0);
+    const opacities = await dialog
+      .locator('.item .launch')
+      .evaluateAll((els) => els.map((el) => getComputedStyle(el.querySelector('.art')!).opacity));
+    expect(new Set(opacities.map(Number)).size, 'a mesma opacidade em todos os azulejos').toBe(1);
+
+    // O app que saiu da TV não existe para o painel: nem na busca, nem na edição.
+    const search = dialog.getByRole('searchbox', { name: 'Buscar app' });
+    await search.fill('youtube');
+    await expect(dialog.getByText('Nenhum app encontrado para essa busca.')).toBeVisible();
+    await search.fill('');
+    await button(dialog, 'Editar').click();
+    await expect(dialog.locator('.item .name')).toHaveText([
+      'CineVS',
+      'Spotify',
+      'Configurações',
+      'Play Store',
+      'Atalho 5',
+    ]);
+    await button(dialog, 'Concluir').click();
+
+    for (const index of [0, 1, 2]) {
+      await expect
+        .poll(() => imageLoaded(dialog.locator('.item').nth(index).locator('img')))
+        .toBe(true);
+    }
+    await expectNoHorizontalScroll(page);
+    await settleMotion(page);
+    await screenshot(page, `test-results/apps-launch-sections-${info.project.name}.png`);
+    await expectNoSeriousViolations(page);
+
+    // Tocar num app que está fora do controle o abre: o pedido sai com o id certo, e o painel fecha.
+    await button(dialog, 'Play Store').click();
+    await expect.poll(() => tv.count(`/shortcuts/${playStore.id}/launch`)).toBe(1);
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText('Play Store aberto na TV.')).toBeVisible();
+    // Nenhum pedido de abrir saiu para o que não está mais na TV, e a fileira não ganhou o app aberto.
+    expect(tv.count(`/shortcuts/${youtube.id}/launch`)).toBe(0);
+    await expectChipNames(page, ['CineVS', 'Spotify']);
   });
 
   test('sem a lista da TV: estado vazio amigável e "Buscar apps da TV" que mostra o resultado', async ({
@@ -2109,6 +2184,7 @@ function iconShortcuts(): MockShortcut[] {
     position: index + 1,
     customLabel: null,
     enabled: true,
+    installed: true,
     ...row,
   }));
 }
@@ -2269,6 +2345,7 @@ test.describe('ícones dos apps', () => {
         tvLabel: null,
         customLabel: `Extra ${position}`,
         enabled: true,
+        installed: true,
         iconDataUri: ICONS.square,
       })),
     ];
@@ -2411,6 +2488,7 @@ test.describe('ícones dos apps', () => {
           tvLabel: null,
           customLabel: LONG,
           enabled: true,
+          installed: true,
           iconDataUri: ICONS.square,
         },
       ];
@@ -2592,6 +2670,7 @@ test.describe('ícones dos apps', () => {
       tvLabel: `Aplicativo ${index + 1}`,
       customLabel: null,
       enabled: true,
+      installed: true,
       iconDataUri: toDataUri(noisyIcon(index)),
     }));
     const chars = tv.shortcuts.reduce((sum, s) => sum + (s.iconDataUri?.length ?? 0), 0);
@@ -2719,7 +2798,7 @@ test.describe('ícones dos apps', () => {
       await expectNoSeriousViolations(page);
       await dialog.getByRole('button', { name: 'Cancelar' }).click();
 
-      // Tirar um app do controle e voltar: as duas seções, com o de fora apagado.
+      // Tirar um app do controle e voltar: as duas seções, com o de fora igual aos outros.
       await button(dialog, 'Tirar Atalho 5 do controle').click();
       await expect(button(dialog, 'Fixar Atalho 5 no controle')).toBeVisible();
       await button(dialog, 'Concluir').click();

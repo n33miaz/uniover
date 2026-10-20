@@ -22,6 +22,7 @@ export function makeShortcut(position: number, overrides: Partial<TvShortcut> = 
     tvLabel: null,
     customLabel: null,
     enabled: true,
+    installed: true,
     iconDataUri: null,
     ...overrides,
   };
