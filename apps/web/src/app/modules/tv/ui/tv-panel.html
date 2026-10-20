@@ -1,0 +1,45 @@
+<dialog
+  #dialog
+  class="panel"
+  [attr.data-placement]="placement()"
+  aria-modal="true"
+  [attr.aria-labelledby]="titleId"
+  (cancel)="onCancel($event)"
+  (close)="onNativeClose()"
+>
+  <div class="card" [class.dragging]="dragging()" [style.transform]="transform()">
+    <div
+      class="grab"
+      (pointerdown)="onGrabDown($event)"
+      (pointermove)="onGrabMove($event)"
+      (pointerup)="onGrabEnd()"
+      (pointercancel)="onGrabEnd()"
+    >
+      <span class="handle" aria-hidden="true"></span>
+      <div class="head">
+        <h2 [id]="titleId">{{ heading() }}</h2>
+        @if (closable()) {
+          <button
+            type="button"
+            class="x"
+            aria-label="Fechar"
+            i18n-aria-label="@@tv.panel.close"
+            (click)="close()"
+          >
+            <app-tv-icon name="close" />
+          </button>
+        }
+      </div>
+    </div>
+    <div class="body">
+      <ng-content />
+    </div>
+    @if (store.notice(); as notice) {
+      @if (notice.kind === 'error') {
+        <p class="notice error" role="alert">{{ notice.text }}</p>
+      } @else {
+        <p class="notice" role="status">{{ notice.text }}</p>
+      }
+    }
+  </div>
+</dialog>

@@ -1,8 +1,7 @@
 /*
- * O controle ocupa a altura útil que a casca do módulo (`tv-page`) reserva. De cima para baixo: atalhos (ou os chips
- * do touchpad), o palco, os pontos de página e a fileira de baixo. O palco é o que sobra de altura; só ele troca de
- * página (direções com o OK, ou touchpad, de um lado; números do outro). Atalhos, pílulas e botões redondos não saem
- * do lugar.
+ * O controle ocupa a altura útil que a casca do módulo (`tv-page`) reserva. De cima para baixo: o chip Apps e os
+ * atalhos, o palco, os pontos de página e a fileira de baixo. O palco é o que sobra de altura; só ele troca de
+ * página (direções com o OK, touchpad e números). Atalhos, pílulas e botões redondos não saem do lugar.
  */
 :host {
   display: flex;
@@ -27,8 +26,7 @@
   width: 100%;
 }
 
-button,
-a.round {
+button {
   font: inherit;
   cursor: pointer;
   touch-action: manipulation;
@@ -46,7 +44,7 @@ button:disabled,
 
 /* Visual comum dos botões com contorno. */
 .shortcut,
-.square,
+.apps-chip,
 .round {
   border: 1px solid var(--a-line);
   background: var(--a-surface);
@@ -58,11 +56,24 @@ button:disabled,
   background: var(--a-accent-soft);
 }
 
-/* Atalhos no topo e o botão quadrado do touchpad no mesmo lugar. */
+/* Fileira de cima: o chip fixo "Apps" e, ao lado, os atalhos favoritos (a faixa deles rola na horizontal). */
 .top {
   display: flex;
   flex: 0 0 auto;
+  align-items: center;
   gap: 8px;
+}
+.apps-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 96px;
+  height: var(--tv-top);
+  padding: 0 16px;
+  border-radius: 999px;
+  background: var(--a-accent-soft);
+  font-weight: 700;
 }
 .shortcuts {
   display: flex;
@@ -84,59 +95,20 @@ button:disabled,
   flex: 0 0 auto;
   scroll-snap-align: start;
 }
-.shortcuts .none {
-  align-self: center;
-}
 .shortcut {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
   min-width: 96px;
+  max-width: 14rem;
   height: var(--tv-top);
-  padding: 0 14px;
-  border-radius: var(--radius);
-  font-weight: 600;
-}
-.square {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  width: 64px;
-  height: var(--tv-top);
-  padding: 0;
-  border-radius: 14px;
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-/* Chips "Botões | Touchpad" do modo touchpad (no lugar da fileira de atalhos, com a mesma altura). */
-.modes {
-  display: flex;
-  flex: 0 0 auto;
-  align-self: center;
-  align-items: center;
-  height: var(--tv-top);
-  padding: 3px;
-  border: 1px solid var(--a-line);
+  padding: 0 18px;
   border-radius: 999px;
-  background: var(--a-surface);
-}
-.chip {
-  min-width: 96px;
-  min-height: 44px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--a-ink2);
   font-weight: 600;
 }
-.chip[aria-pressed='true'] {
-  background: var(--a-accent);
-  color: var(--a-on-accent);
+.shortcut .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Palco: o que sobra de altura. A janela é o contêiner das medidas (anel, teclado, touchpad) em unidades `cq*`. */
@@ -155,7 +127,7 @@ button:disabled,
   container-type: size;
 }
 
-/* Carrossel das duas páginas do palco: a rolagem horizontal fica só aqui dentro, com encaixe. */
+/* Carrossel das três páginas do palco: a rolagem horizontal fica só aqui dentro, com encaixe. */
 .pager {
   position: absolute;
   inset: 0;
@@ -179,6 +151,11 @@ button:disabled,
   scroll-snap-stop: always;
   /* Anel: o maior quadrado que cabe na janela (sem esticar em telas largas). */
   --tv-ring: clamp(150px, 38dvh, 300px);
+}
+/* O touchpad deixa uma margem nas laterais: o gesto de deslizar nele manda setas, então a troca de página por
+   deslize começa fora dele (ou pelos pontos). */
+.panel.touch {
+  padding-inline: 20px;
 }
 @supports (width: 1cqi) {
   .panel {
@@ -255,7 +232,6 @@ button:disabled,
   aspect-ratio: 1;
   padding: 0;
   border-radius: 50%;
-  text-decoration: none;
 }
 
 /*
@@ -276,14 +252,10 @@ button:disabled,
     grid-row: 1 / span 2;
   }
   /* Os dois blocos da direita se juntam no meio da altura, sem um vão entre eles. */
-  .top,
-  .modes {
+  .top {
     grid-column: 2;
     grid-row: 1;
     align-self: end;
-  }
-  .modes {
-    justify-self: center;
   }
   .bottom {
     grid-column: 2;

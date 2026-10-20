@@ -1,0 +1,152 @@
+@if (!loaded()) {
+  <p class="note" role="status" i18n="@@tv.apps.loading">Carregando os apps…</p>
+} @else if (all().length === 0) {
+  <div class="empty">
+    <app-tv-icon name="apps" />
+    <p class="empty-title" i18n="@@tv.apps.empty-title">Ainda não temos a lista de apps da TV</p>
+    <p class="note" i18n="@@tv.apps.empty-text">
+      A TV precisa informar quais apps tem instalados. É só pedir aqui.
+    </p>
+    <button
+      type="button"
+      class="primary"
+      [disabled]="!store.canSend() || refreshing()"
+      (click)="refresh()"
+    >
+      @if (refreshing()) {
+        <span i18n="@@tv.apps.searching">Buscando apps…</span>
+      } @else {
+        <span i18n="@@tv.apps.search-tv">Buscar apps da TV</span>
+      }
+    </button>
+    @if (asked() && !refreshing()) {
+      <p class="note" role="status" i18n="@@tv.apps.asked-empty">
+        A TV ainda não informou nenhum app. Tente de novo em instantes.
+      </p>
+    }
+    @if (!store.canSend()) {
+      <p class="note">{{ store.disabledReason() }}</p>
+    }
+  </div>
+} @else {
+  <div class="search">
+    <app-tv-icon name="search" />
+    <input
+      type="search"
+      autocomplete="off"
+      spellcheck="false"
+      aria-label="Buscar app"
+      i18n-aria-label="@@tv.apps.search-label"
+      placeholder="Buscar app"
+      i18n-placeholder="@@tv.apps.search-placeholder"
+      [value]="query()"
+      (input)="onQuery($event)"
+    />
+  </div>
+
+  <div class="tools-row">
+    <div class="seg" role="group" aria-label="Como mostrar" i18n-aria-label="@@tv.apps.view-label">
+      <button type="button" [attr.aria-pressed]="view() === 'grid'" (click)="setView('grid')">
+        <app-tv-icon name="apps" />
+        <span i18n="@@tv.apps.view-grid">Grade</span>
+      </button>
+      <button type="button" [attr.aria-pressed]="view() === 'list'" (click)="setView('list')">
+        <app-tv-icon name="list" />
+        <span i18n="@@tv.apps.view-list">Lista</span>
+      </button>
+    </div>
+    <button
+      type="button"
+      class="refresh"
+      [disabled]="!store.canSend() || refreshing()"
+      (click)="refresh()"
+    >
+      <app-tv-icon name="refresh" />
+      @if (refreshing()) {
+        <span i18n="@@tv.apps.searching-short">Buscando…</span>
+      } @else {
+        <span i18n="@@tv.apps.refresh">Atualizar lista</span>
+      }
+    </button>
+  </div>
+
+  @if (visible().length === 0) {
+    <p class="note" role="status" i18n="@@tv.apps.no-match">
+      Nenhum app encontrado para essa busca.
+    </p>
+  } @else {
+    <ul class="list" [attr.data-view]="view()">
+      @for (shortcut of visible(); track shortcut.id) {
+        <li
+          class="item"
+          [class.off]="!shortcut.enabled"
+          [class.editing]="editing() === shortcut.id"
+        >
+          @if (editing() === shortcut.id) {
+            <form class="edit" (submit)="saveRename(shortcut, $event)">
+              <label [for]="'rename-' + shortcut.id" i18n="@@tv.apps.rename-field">
+                Nome do atalho
+              </label>
+              <input
+                [id]="'rename-' + shortcut.id"
+                type="text"
+                autocomplete="off"
+                [attr.maxlength]="maxLabel"
+                [value]="draft()"
+                (input)="onDraft($event)"
+              />
+              <p class="note" i18n="@@tv.apps.rename-help">
+                Deixe em branco para voltar ao nome padrão.
+              </p>
+              <div class="actions">
+                <button
+                  type="button"
+                  class="secondary"
+                  (click)="cancelRename()"
+                  i18n="@@tv.apps.cancel"
+                >
+                  Cancelar
+                </button>
+                <button type="submit" class="primary" [disabled]="busy()" i18n="@@tv.apps.save">
+                  Salvar
+                </button>
+              </div>
+            </form>
+          } @else {
+            <button
+              type="button"
+              class="launch"
+              [disabled]="!store.canSend() || !shortcut.enabled"
+              (click)="launch(shortcut)"
+            >
+              <app-tv-icon name="apps" />
+              <span class="text">
+                <span class="name">{{ label(shortcut) }}</span>
+                <span class="package">{{ shortcut.package }}</span>
+              </span>
+            </button>
+            <div class="tools">
+              <button
+                type="button"
+                class="tool"
+                [attr.aria-label]="renameLabel(shortcut)"
+                (click)="startRename(shortcut)"
+              >
+                <app-tv-icon name="rename" />
+              </button>
+              <button
+                type="button"
+                class="tool"
+                [attr.aria-label]="toggleLabel(shortcut)"
+                [disabled]="busy()"
+                (click)="toggle(shortcut)"
+              >
+                <app-tv-icon [name]="shortcut.enabled ? 'hide' : 'show'" />
+              </button>
+            </div>
+          }
+        </li>
+      }
+    </ul>
+  }
+}

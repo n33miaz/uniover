@@ -1,0 +1,34 @@
+<button
+  #trigger
+  type="button"
+  class="trigger"
+  [attr.aria-haspopup]="'dialog'"
+  [attr.aria-expanded]="open()"
+  [attr.aria-controls]="open() ? panelId : null"
+  [attr.aria-label]="triggerLabel()"
+  [attr.data-phase]="phase()"
+  (click)="toggle()"
+>
+  <app-status-dot [phase]="phase()" />
+</button>
+
+@if (open()) {
+  <div [id]="panelId" class="panel" role="dialog" [attr.aria-labelledby]="titleId">
+    <p class="title">
+      <app-status-dot [phase]="phase()" />
+      <strong [id]="titleId">{{ text().title }}</strong>
+    </p>
+    <p class="meaning">{{ text().meaning }}</p>
+    @for (note of notes(); track note) {
+      <p class="note">{{ note }}</p>
+    }
+    @if (seen(); as seenText) {
+      <p class="note time">{{ seenText }}</p>
+    }
+    @if (text().action; as action) {
+      <button type="button" class="action" [disabled]="busy()" (click)="run(action)">
+        {{ text().actionLabel }}
+      </button>
+    }
+  </div>
+}

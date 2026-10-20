@@ -1,0 +1,216 @@
+import { TestBed } from '@angular/core/testing';
+import { TvStatus, TvStore } from '../data/tv-store';
+import { FakeTvStore, createFakeTvStore } from '../tv-test-kit';
+import { StatusIndicator } from './status-indicator';
+
+describe('StatusIndicator', () => {
+  let store: FakeTvStore;
+  let fixture: ReturnType<typeof TestBed.createComponent<StatusIndicator>>;
+  let root: HTMLElement;
+
+  const render = async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    // Deixa as promessas encadeadas da ação (ler o estado e depois acordar) terminarem.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+  };
+  const trigger = () => root.querySelector<HTMLButtonElement>('.trigger')!;
+  const panel = () => root.querySelector<HTMLElement>('.panel');
+  const phase = () => trigger().getAttribute('data-phase');
+  const setStatus = async (status: TvStatus, known: TvStatus | null = status) => {
+    store.status.set(status);
+    store.lastKnownStatus.set(known);
+    await render();
+  };
+
+  beforeEach(async () => {
+    store = createFakeTvStore();
+    TestBed.configureTestingModule({ providers: [{ provide: TvStore, useValue: store }] });
+    fixture = TestBed.createComponent(StatusIndicator);
+    root = fixture.nativeElement;
+    await render();
+  });
+
+  it('is a button with a name that says the state, and no panel until it is touched', () => {
+    expect(trigger().tagName).toBe('BUTTON');
+    expect(trigger().getAttribute('aria-label')).toBe('Estado do controle: Conectada');
+    expect(trigger().getAttribute('aria-expanded')).toBe('false');
+    expect(trigger().getAttribute('aria-haspopup')).toBe('dialog');
+    expect(panel()).toBeNull();
+  });
+
+  describe('phase of the dot, one per state', () => {
+    it.each<[TvStatus, string, string]>([
+      ['hot', 'connected', 'Conectada'],
+      ['hibernating', 'sleeping', 'Dormindo'],
+      ['loading', 'connecting', 'Conectando'],
+      ['waking', 'connecting', 'Servidor acordando'],
+      ['agent-off', 'agent-off', 'Agente desligado'],
+      ['offline', 'offline', 'Sem rede'],
+      ['unconfigured', 'attention', 'Sem agente configurado'],
+    ])('%s -> %s ("%s")', async (status, expectedPhase, title) => {
+      await setStatus(status);
+      expect(phase()).toBe(expectedPhase);
+      expect(trigger().getAttribute('aria-label')).toBe(`Estado do controle: ${title}`);
+      expect(root.querySelector('app-status-dot svg')?.getAttribute('data-phase')).toBe(
+        expectedPhase,
+      );
+    });
+
+    it('a failed repair by the watchdog while it looks connected is attention', async () => {
+      store.watchdog.set({
+        kind: 'repair_failed',
+        severity: 'error',
+        detail: '',
+        attempts: 3,
+        at: '2026-10-19T14:02:00Z',
+      });
+      await render();
+      expect(phase()).toBe('attention');
+      expect(trigger().getAttribute('aria-label')).toBe('Estado do controle: Atenção');
+    });
+  });
+
+  describe('the little panel', () => {
+    const toggle = async () => {
+      trigger().click();
+      await render();
+    };
+
+    it('opens on touch with the name, the meaning and the last update time', async () => {
+      await toggle();
+      expect(trigger().getAttribute('aria-expanded')).toBe('true');
+      expect(panel()?.getAttribute('role')).toBe('dialog');
+      expect(panel()?.querySelector('strong')?.textContent).toBe('Conectada');
+      expect(panel()?.textContent).toContain('Depois de 5 min sem uso');
+      expect(panel()?.querySelector('.time')?.textContent).toBe('Atualizado às 14:02');
+      expect(panel()?.getAttribute('aria-labelledby')).toBe(panel()?.querySelector('strong')?.id);
+      expect(panel()?.querySelector('button')).toBeNull();
+    });
+
+    it('does not show a time when none was seen', async () => {
+      store.seenAtText.set('');
+      await toggle();
+      expect(panel()?.querySelector('.time')).toBeNull();
+    });
+
+    it('touching the dot again closes it', async () => {
+      await toggle();
+      await toggle();
+      expect(panel()).toBeNull();
+    });
+
+    it('Esc closes it and gives the focus back to the dot', async () => {
+      await toggle();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await render();
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+    });
+
+    it('a touch outside closes it, a touch inside does not', async () => {
+      await toggle();
+      panel()!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+      await render();
+      expect(panel()).not.toBeNull();
+      document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+      await render();
+      expect(panel()).toBeNull();
+    });
+
+    it('sleeping offers "Acordar o controle", which wakes it and closes the panel', async () => {
+      await setStatus('hibernating');
+      await toggle();
+      expect(panel()?.querySelector('strong')?.textContent).toBe('Dormindo');
+      const action = panel()!.querySelector<HTMLButtonElement>('.action')!;
+      expect(action.textContent?.trim()).toBe('Acordar o controle');
+      action.click();
+      await render();
+      expect(store.wake).toHaveBeenCalledTimes(1);
+      expect(store.refresh).not.toHaveBeenCalled();
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+    });
+
+    it('without the agent it offers "Tentar de novo", which reads the state again and then tries to wake', async () => {
+      await setStatus('agent-off');
+      await toggle();
+      const action = panel()!.querySelector<HTMLButtonElement>('.action')!;
+      expect(action.textContent?.trim()).toBe('Tentar de novo');
+      action.click();
+      await render();
+      expect(store.refresh).toHaveBeenCalledTimes(1);
+      expect(store.wake).toHaveBeenCalledTimes(1);
+      expect(panel()).toBeNull();
+    });
+
+    it('blocks the action while it works, so a double touch asks once', async () => {
+      let release!: () => void;
+      store.wake.mockReturnValueOnce(new Promise<void>((resolve) => (release = resolve)));
+      await setStatus('hibernating');
+      await toggle();
+      const action = panel()!.querySelector<HTMLButtonElement>('.action')!;
+      action.click();
+      fixture.detectChanges();
+      expect(action.disabled).toBe(true);
+      action.click();
+      release();
+      await render();
+      expect(store.wake).toHaveBeenCalledTimes(1);
+    });
+
+    it('has no action where nothing can be done from here', async () => {
+      await setStatus('offline');
+      await toggle();
+      expect(panel()?.querySelector('.action')).toBeNull();
+      expect(panel()?.textContent).toContain('sem internet');
+    });
+
+    it('offline shows when the last state was seen and what it was', async () => {
+      store.seenAtText.set('13:07');
+      await setStatus('offline', 'hibernating');
+      await toggle();
+      expect(panel()?.querySelector('.time')?.textContent).toBe(
+        'Visto às 13:07 · controle dormindo',
+      );
+    });
+
+    it('gathers the watchdog note and the reconnecting notice that used to be chips', async () => {
+      store.watchdogNote.set('controle religado às 14:02');
+      store.streamStatus.set('reconnecting');
+      await toggle();
+      const notes = [...panel()!.querySelectorAll('.note:not(.time)')].map((el) =>
+        el.textContent?.trim(),
+      );
+      expect(notes).toEqual(['controle religado às 14:02', 'Reconectando ao servidor…']);
+    });
+
+    it('does not say "reconectando" when the whole network is down', async () => {
+      store.streamStatus.set('reconnecting');
+      store.link.set('offline');
+      await setStatus('offline');
+      await toggle();
+      expect(panel()?.textContent).not.toContain('Reconectando');
+    });
+  });
+
+  it('never says the TV is switched off, in any state', async () => {
+    for (const status of [
+      'hot',
+      'hibernating',
+      'loading',
+      'waking',
+      'agent-off',
+      'offline',
+      'unconfigured',
+    ] as const) {
+      await setStatus(status);
+      trigger().click();
+      await render();
+      expect(root.textContent, status).not.toMatch(/tv desligada/i);
+      trigger().click();
+      await render();
+    }
+  });
+});

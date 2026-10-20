@@ -32,11 +32,13 @@ describe('LiveTextSync', () => {
     calls = [];
     sync = new LiveTextSync({
       debounceMs: DEBOUNCE,
-      isValid: isValidTvText,
-      send: (text) =>
-        new Promise<TvFailure | null>((resolve) => {
-          calls.push({ text, resolve: (result = null) => resolve(result) });
-        }),
+      sender: {
+        isValid: isValidTvText,
+        send: (text) =>
+          new Promise<TvFailure | null>((resolve) => {
+            calls.push({ text, resolve: (result = null) => resolve(result) });
+          }),
+      },
     });
   });
 
@@ -231,8 +233,7 @@ describe('LiveTextSync', () => {
   it('turns an unexpected throw into an error status instead of an unhandled rejection', async () => {
     const throwing = new LiveTextSync({
       debounceMs: DEBOUNCE,
-      isValid: isValidTvText,
-      send: () => Promise.reject(new Error('boom')),
+      sender: { isValid: isValidTvText, send: () => Promise.reject(new Error('boom')) },
     });
     throwing.change('abc');
     await pause();
