@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.handle_command import Handler
 from uniover_agent.core.tv.session import TvSessionError
+from uniover_agent.core.tv.text_edit import TextReconciler
 
 _log = logging.getLogger(__name__)
 
@@ -21,6 +22,13 @@ DEFAULT_LINK_SCHEMES: Final = frozenset({"https", "http", "market", "vnd.youtube
 KEY_BLOCKED: Final = "key_blocked"
 UNSUPPORTED: Final = "unsupported"
 LINK_SCHEME_BLOCKED: Final = "link_scheme_not_allowed"
+INVALID_TARGET: Final = "invalid_target"
+
+
+class PackageLauncher(Protocol):
+    """Abre um app pelo nome do pacote (o canal ADB; sem ele o pedido é recusado)."""
+
+    async def launch_package(self, package: str) -> None: ...
 
 
 class TvControl(Protocol):
@@ -35,7 +43,7 @@ class TvControl(Protocol):
     async def wake(self) -> None: ...
 
 
-def _failed(command: Command, exc: TvSessionError) -> CommandResult:
+def failed_result(command: Command, exc: TvSessionError) -> CommandResult:
     return CommandResult(command.id, ResultStatus.FAILED, exc.message, exc.code)
 
 
@@ -58,23 +66,25 @@ def tv_key_handler(tv: TvControl, *, blocked_keys: frozenset[str] = POWER_KEYS) 
         try:
             await tv.send_key(key, str(direction))
         except TvSessionError as exc:
-            return _failed(command, exc)
+            return failed_result(command, exc)
         return CommandResult(command.id, ResultStatus.OK)
 
     return handle
 
 
-def tv_text_handler(tv: TvControl) -> Handler:
-    """`tv.text.v1`: o campo de texto em foco na TV passa a ter exatamente este texto.
+def tv_text_handler(tv: TvControl, *, reconciler: TextReconciler | None = None) -> Handler:
+    """`tv.text.v1`: o campo de texto em foco na TV passa a ter este texto.
 
-    O app manda o texto completo a cada pausa de digitação, então cada mensagem **substitui** a
-    anterior (nunca se acrescenta). As mensagens são atendidas uma a uma, na ordem de chegada, e
-    se uma mais nova já chegou enquanto a anterior esperava a vez (a TV acordando, por exemplo),
-    a antiga é descartada: só o último texto interessa e a TV não pisca por estados intermediários.
+    O app manda o texto completo a cada pausa de digitação. O agente não reenvia o campo inteiro (o
+    controle remoto insere, então duplicava letras): o `TextReconciler` compara com o que ele
+    mesmo digitou, apaga o excedente com `DEL` e digita só o acréscimo. Texto vazio apaga tudo o
+    que o agente digitou.
 
-    Texto vazio não é enviado: o protocolo do controle remoto não limpa o campo. O contrato já o
-    recusa, esta guarda só evita que um corpo fora do contrato chegue à biblioteca.
+    As mensagens são atendidas uma a uma, na ordem de chegada, e se uma mais nova já chegou enquanto
+    a anterior esperava a vez (a TV acordando, por exemplo), a antiga é descartada: o diff é sempre
+    contra o último texto pedido, então pular um estado intermediário é seguro.
     """
+    editor = reconciler or TextReconciler(tv)
     turn = asyncio.Lock()
     latest = 0
 
@@ -83,9 +93,6 @@ def tv_text_handler(tv: TvControl) -> Handler:
         text = command.body.get("text")
         if not isinstance(text, str):
             return CommandResult(command.id, ResultStatus.REJECTED, "campo 'text' ausente")
-        if not text:
-            _log.info("texto vazio ignorado: o controle remoto não consegue limpar o campo")
-            return CommandResult(command.id, ResultStatus.OK)
         latest += 1
         mine = latest
         async with turn:
@@ -93,9 +100,9 @@ def tv_text_handler(tv: TvControl) -> Handler:
                 # Já existe um texto mais novo na fila; ele é quem vai para a TV.
                 return CommandResult(command.id, ResultStatus.OK)
             try:
-                await tv.send_text(text)
+                await editor.set_text(text)
             except TvSessionError as exc:
-                return _failed(command, exc)
+                return failed_result(command, exc)
         return CommandResult(command.id, ResultStatus.OK)
 
     return handle
@@ -108,22 +115,66 @@ def tv_wake_handler(tv: TvControl) -> Handler:
         try:
             await tv.wake()
         except TvSessionError as exc:
-            return _failed(command, exc)
+            return failed_result(command, exc)
         return CommandResult(command.id, ResultStatus.OK)
 
     return handle
 
 
+async def _launch_package(
+    command: Command, packages: PackageLauncher, value: object
+) -> CommandResult:
+    if not isinstance(value, str) or not value:
+        return CommandResult(command.id, ResultStatus.REJECTED, "alvo inválido")
+    try:
+        await packages.launch_package(value)
+    except ValueError:
+        return CommandResult(
+            command.id, ResultStatus.REJECTED, "nome de pacote inválido", INVALID_TARGET
+        )
+    except TvSessionError as exc:
+        return failed_result(command, exc)
+    return CommandResult(command.id, ResultStatus.OK)
+
+
+async def _launch_link(
+    command: Command, tv: TvControl, allowed_schemes: frozenset[str], kind: object, value: object
+) -> CommandResult:
+    if kind != "link" or not isinstance(value, str) or not value:
+        return CommandResult(command.id, ResultStatus.REJECTED, "alvo inválido")
+    scheme = urlsplit(value).scheme.lower()
+    if scheme not in allowed_schemes:
+        return CommandResult(
+            command.id,
+            ResultStatus.REJECTED,
+            f"esquema de link não permitido: {scheme or '(nenhum)'}",
+            LINK_SCHEME_BLOCKED,
+        )
+    try:
+        await tv.launch_link(value)
+    except TvSessionError as exc:
+        return failed_result(command, exc)
+    return CommandResult(command.id, ResultStatus.OK)
+
+
 def tv_app_launch_handler(
-    tv: TvControl, *, allowed_schemes: frozenset[str] = DEFAULT_LINK_SCHEMES
+    tv: TvControl,
+    *,
+    allowed_schemes: frozenset[str] = DEFAULT_LINK_SCHEMES,
+    packages: PackageLauncher | None = None,
 ) -> Handler:
-    """`tv.app.launch.v1`: só `kind=link` aqui; abrir por pacote exige o canal ADB."""
+    """`tv.app.launch.v1`: link pelo controle remoto; pacote pelo canal ADB (`packages`).
+
+    Sem o canal ADB, abrir por pacote é recusado com `unsupported`.
+    """
 
     async def handle(command: Command) -> CommandResult:
         target = command.body.get("target")
         if not isinstance(target, dict):
             return CommandResult(command.id, ResultStatus.REJECTED, "campo 'target' ausente")
         kind, value = target.get("kind"), target.get("value")
+        if kind == "package" and packages is not None:
+            return await _launch_package(command, packages, value)
         if kind == "package":
             return CommandResult(
                 command.id,
@@ -131,20 +182,6 @@ def tv_app_launch_handler(
                 "abrir app por pacote precisa do canal ADB, que não está habilitado",
                 UNSUPPORTED,
             )
-        if kind != "link" or not isinstance(value, str) or not value:
-            return CommandResult(command.id, ResultStatus.REJECTED, "alvo inválido")
-        scheme = urlsplit(value).scheme.lower()
-        if scheme not in allowed_schemes:
-            return CommandResult(
-                command.id,
-                ResultStatus.REJECTED,
-                f"esquema de link não permitido: {scheme or '(nenhum)'}",
-                LINK_SCHEME_BLOCKED,
-            )
-        try:
-            await tv.launch_link(value)
-        except TvSessionError as exc:
-            return _failed(command, exc)
-        return CommandResult(command.id, ResultStatus.OK)
+        return await _launch_link(command, tv, allowed_schemes, kind, value)
 
     return handle

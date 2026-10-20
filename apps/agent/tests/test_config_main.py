@@ -39,6 +39,25 @@ def test_config_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.allow_insecure is False
 
 
+def test_adb_settings_have_defaults_and_read_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("UNIOVER_ADB_PATH")
+    settings = Settings()
+    assert (settings.adb_path, settings.tv_adb_port, settings.adb_timeout_seconds) == (
+        None,
+        5555,
+        5.0,
+    )
+    monkeypatch.setenv("UNIOVER_ADB_PATH", "C:/ferramentas/adb.exe")
+    monkeypatch.setenv("UNIOVER_TV_ADB_PORT", "5556")
+    monkeypatch.setenv("UNIOVER_ADB_TIMEOUT_SECONDS", "8")
+    settings = Settings()
+    assert settings.adb_path == "C:/ferramentas/adb.exe"
+    assert (settings.tv_adb_port, settings.adb_timeout_seconds) == (5556, 8.0)
+    monkeypatch.setenv("UNIOVER_TV_ADB_PORT", "70000")
+    with pytest.raises(ValueError, match="tv_adb_port"):
+        Settings()
+
+
 def test_config_file_is_read_and_env_wins(
     monkeypatch: pytest.MonkeyPatch, isolated_env: Path
 ) -> None:

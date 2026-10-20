@@ -5,7 +5,14 @@ from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from uniover_agent.ports import PairingInfo, PairingTicket, PollResult, TvUnreachable
+from uniover_agent.ports import (
+    AdbError,
+    LaunchableApp,
+    PairingInfo,
+    PairingTicket,
+    PollResult,
+    TvUnreachable,
+)
 
 
 class FakeClock:
@@ -143,6 +150,49 @@ class FakeTvChannel:
     async def disconnect(self) -> None:
         self.disconnects += 1
         self._connected = False
+
+
+class FakeTvAdb:
+    """Canal ADB roteirizado: registra o que recebe. `errors` é consumido, um por operação."""
+
+    def __init__(self, apps: list[LaunchableApp] | None = None) -> None:
+        self.apps = list(apps or [])
+        self.launched: list[tuple[str, str | None]] = []
+        self.typed: list[str] = []
+        self.connects = 0
+        self.disconnects = 0
+        self.errors: list[AdbError] = []
+        self._connected = False
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
+
+    def _fail_if_scripted(self) -> None:
+        if self.errors:
+            raise self.errors.pop(0)
+
+    async def connect(self) -> None:
+        self.connects += 1
+        self._connected = False
+        self._fail_if_scripted()
+        self._connected = True
+
+    async def disconnect(self) -> None:
+        self.disconnects += 1
+        self._connected = False
+
+    async def list_apps(self) -> list[LaunchableApp]:
+        self._fail_if_scripted()
+        return list(self.apps)
+
+    async def launch_package(self, package: str, activity: str | None = None) -> None:
+        self._fail_if_scripted()
+        self.launched.append((package, activity))
+
+    async def input_text(self, text: str) -> None:
+        self._fail_if_scripted()
+        self.typed.append(text)
 
 
 class FakeSecretStore:

@@ -4,13 +4,21 @@ import { TvFailure } from './tv-errors';
 /** `sent` só vale enquanto o campo é igual ao que a TV recebeu; ao digitar de novo volta a `idle`. */
 export type LiveTextStatus = 'idle' | 'sending' | 'sent' | 'error';
 
+/**
+ * A parte que fala com a TV, isolada atrás desta interface: o que muda quando a forma de enviar o texto muda (texto
+ * completo, só o acréscimo, apagar). O resto (pausa, uma requisição por vez, coalescência) não depende dela.
+ */
+export interface LiveTextSender {
+  /** Manda o texto; devolve a falha ou `null` se a TV confirmou. Nunca deve lançar. */
+  send(text: string): Promise<TvFailure | null>;
+  /** Texto que pode ir para a TV (o vazio e o que passa do limite nunca são enviados). */
+  isValid(text: string): boolean;
+}
+
 export interface LiveTextOptions {
   /** Pausa de digitação que dispara o envio. */
   readonly debounceMs: number;
-  /** Manda o texto completo; devolve a falha ou `null` se a TV confirmou. Nunca deve lançar. */
-  readonly send: (text: string) => Promise<TvFailure | null>;
-  /** Texto que pode ir para a TV (o vazio e o que passa do limite nunca são enviados). */
-  readonly isValid: (text: string) => boolean;
+  readonly sender: LiveTextSender;
 }
 
 /**
@@ -44,7 +52,7 @@ export class LiveTextSync {
     clearTimeout(this.timer);
     this.timer = undefined;
     if (this.status() === 'sent') this.status.set('idle');
-    if (!this.options.isValid(text)) {
+    if (!this.options.sender.isValid(text)) {
       this.queued = false;
       return;
     }
@@ -78,7 +86,7 @@ export class LiveTextSync {
   }
 
   private fire(): void {
-    if (!this.options.isValid(this.latest) || this.latest === this.lastSent) return;
+    if (!this.options.sender.isValid(this.latest) || this.latest === this.lastSent) return;
     const wait = this.blockedUntil - Date.now();
     if (wait > 0) {
       this.arm(wait);
@@ -98,7 +106,7 @@ export class LiveTextSync {
     this.status.set('sending');
     let failure: TvFailure | null;
     try {
-      failure = await this.options.send(text);
+      failure = await this.options.sender.send(text);
     } catch {
       failure = { kind: 'unknown', message: '', retryAfterSeconds: null };
     }

@@ -1,0 +1,56 @@
+<form class="keyboard" (submit)="submit($event)" novalidate>
+  <label class="sr-only" for="tv-text" i18n="@@tv.keyboard.label">Texto para a TV</label>
+  <input
+    id="tv-text"
+    type="text"
+    #field
+    autocomplete="off"
+    [attr.autocapitalize]="'off'"
+    [attr.autocorrect]="'off'"
+    spellcheck="false"
+    [attr.enterkeyhint]="'done'"
+    placeholder="Digite o texto para a TV"
+    i18n-placeholder="@@tv.keyboard.placeholder"
+    aria-describedby="tv-text-hint tv-text-status"
+    [value]="text()"
+    [attr.aria-invalid]="tooLong() ? 'true' : null"
+    (input)="onInput($event)"
+  />
+
+  <div class="meta">
+    <p id="tv-text-status" class="status" [attr.data-status]="status()" role="status">
+      @switch (status()) {
+        @case ('sending') {
+          <span i18n="@@tv.keyboard.sending">Enviando para a TV…</span>
+        }
+        @case ('sent') {
+          <span i18n="@@tv.keyboard.in-sync">Texto na TV.</span>
+        }
+        @case ('error') {
+          <span>{{ failure()?.message || fallbackFailure }}</span>
+          <span i18n="@@tv.keyboard.retry-hint">Continue digitando para tentar de novo.</span>
+        }
+      }
+    </p>
+    @if (showCount()) {
+      <p class="count" [class.over]="tooLong()">{{ length() }} / {{ max }}</p>
+    }
+  </div>
+  @if (tooLong()) {
+    <p class="over-note" i18n="@@tv.keyboard.too-long">
+      A TV recebe no máximo 200 caracteres: enquanto passar disso, nada é enviado.
+    </p>
+  }
+  <p id="tv-text-hint" class="hint" i18n="@@tv.keyboard.hint">
+    O texto aparece no campo aberto na TV enquanto você digita.
+  </p>
+
+  <div class="actions">
+    <button type="button" class="secondary" [disabled]="length() === 0" (click)="clear()">
+      <ng-container i18n="@@tv.keyboard.clear">Limpar</ng-container>
+    </button>
+    <button type="button" class="primary" (click)="close()">
+      <ng-container i18n="@@tv.keyboard.close">Fechar</ng-container>
+    </button>
+  </div>
+</form>

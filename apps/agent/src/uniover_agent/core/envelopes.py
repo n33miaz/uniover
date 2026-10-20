@@ -17,6 +17,10 @@ class EnvelopeFactory:
         self._gate = gate
         self._clock = clock
 
+    def _utc_now(self) -> str:
+        # O contrato exige UTC com sufixo Z.
+        return self._clock.now().isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
     def _build(
         self, message_type: str, body: dict[str, Any], correlation_id: str | None
     ) -> dict[str, Any]:
@@ -26,8 +30,7 @@ class EnvelopeFactory:
             "type": message_type,
             "source": f"agent:{self._agent_id}",
             "target": "api",
-            # O contrato exige UTC com sufixo Z.
-            "ts": self._clock.now().isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            "ts": self._utc_now(),
             "correlationId": correlation_id,
             "body": body,
         }
@@ -54,3 +57,13 @@ class EnvelopeFactory:
             "connection": state.connection,
         }
         return self._build("tv.state.v1", body, None)
+
+    def tv_apps(
+        self, apps: Sequence[tuple[str, str]], correlation_id: str | None = None
+    ) -> dict[str, Any]:
+        """`tv.apps.v1`: pares (pacote, nome), pedidos pela API ou enviados pelo agente."""
+        body: dict[str, Any] = {
+            "apps": [{"package": package, "label": label} for package, label in apps],
+            "at": self._utc_now(),
+        }
+        return self._build("tv.apps.v1", body, correlation_id)

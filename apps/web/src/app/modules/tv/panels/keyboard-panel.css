@@ -1,0 +1,103 @@
+:host {
+  display: block;
+}
+
+.keyboard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+input {
+  width: 100%;
+  min-height: 54px;
+  padding: 0 14px;
+  border: 1px solid var(--a-ink3);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  font-size: 1.1rem;
+}
+
+/* Estado do envio (discreto) à esquerda e o contador, quando perto do limite, à direita. */
+.meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 1.4em;
+}
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: 0.9rem;
+}
+.status[data-status='error'] {
+  color: var(--a-bad);
+}
+.count {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: 0.9rem;
+  text-align: right;
+}
+.count.over,
+.over-note {
+  color: var(--a-bad);
+  font-weight: 600;
+}
+
+.hint,
+.over-note {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.hint {
+  color: var(--a-ink2);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+.actions button {
+  flex: 1 1 0;
+  min-height: 48px;
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.secondary {
+  border: 1px solid var(--a-line);
+  background: var(--a-surface);
+  color: var(--a-ink);
+}
+.primary {
+  border: 0;
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

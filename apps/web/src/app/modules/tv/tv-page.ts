@@ -1,64 +1,83 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
-import { filter, map, startWith } from 'rxjs';
-import { TV_CONFIG } from './data/tv-config';
-import { StatusTone, statusLabel, statusTone } from './data/tv-status';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ControlPage } from './pages/control.page';
+import { TV_PANEL_PARAM, TvPanelName, panelFromParam } from './data/tv-panels';
 import { TvStore } from './data/tv-store';
+import { AppsPanel } from './panels/apps-panel';
+import { KeyboardPanel } from './panels/keyboard-panel';
 import { PowerSheet } from './ui/power-sheet';
+import { StatusIndicator } from './ui/status-indicator';
 import { TvIcon } from './ui/tv-icon';
+import { TvPanel } from './ui/tv-panel';
 
 /**
- * Casca do módulo da TV: cabeçalho (voltar ao Início, nome com a bolinha de estado, energia), chips de estado e a
- * rota filha da aba aberta (Controle, Apps ou Teclado). O estado da TV (`TvStore`) é um só e as três abas o
- * compartilham; ele só fala com o servidor enquanto esta tela existe (ao sair, o fluxo e o "aquecer" param). Fica
- * na raiz, e não nos `providers` do componente, porque o recurso de providers de componente puxaria código do
- * Angular para o pacote inicial.
+ * Tela única do módulo da TV: cabeçalho (voltar ao Início, nome com o ponto de estado e energia), o controle e, por
+ * cima dele, os painéis flutuantes de Apps e Teclado. O estado da TV (`TvStore`) é um só; ele só fala com o
+ * servidor enquanto esta tela existe (ao sair, o fluxo e o "aquecer" param). Fica na raiz, e não nos `providers`
+ * do componente, porque o recurso de providers de componente puxaria código do Angular para o pacote inicial.
+ *
+ * Os endereços antigos `/tv/apps` e `/tv/teclado` redirecionam para `/tv?painel=...`: ao chegar com esse
+ * parâmetro a tela abre o painel e tira o parâmetro do endereço (recarregar não reabre).
  */
 @Component({
   selector: 'app-tv-page',
-  imports: [RouterLink, RouterOutlet, TvIcon, PowerSheet],
+  imports: [
+    RouterLink,
+    ControlPage,
+    StatusIndicator,
+    TvIcon,
+    PowerSheet,
+    TvPanel,
+    AppsPanel,
+    KeyboardPanel,
+  ],
   templateUrl: './tv-page.html',
   styleUrl: './tv-page.css',
 })
 export class TvPage {
   protected readonly store = inject(TvStore);
-  protected readonly hibernateMinutes = inject(TV_CONFIG).hibernateMinutes;
 
   protected readonly powerOpen = signal(false);
+  /** Painel flutuante aberto no momento (um por vez). */
+  protected readonly panel = signal<TvPanelName | null>(null);
+  /** O botão que abriu o painel (vazio quando o painel abriu pelo endereço). */
+  protected readonly panelOpener = signal<HTMLElement | null>(null);
+
+  protected readonly appsTitle = $localize`:@@tv.apps.title:Apps da TV`;
+  protected readonly keyboardTitle = $localize`:@@tv.keyboard.title:Teclado`;
+
+  /** O aviso flutuante some enquanto há um painel aberto: o painel mostra o aviso dentro dele. */
+  protected readonly showToast = computed(() => this.panel() === null && !this.powerOpen());
 
   private readonly router = inject(Router);
-  /** Na aba Controle a tela ocupa a altura toda; Apps e Teclado crescem com o conteúdo. */
-  protected readonly onControl = toSignal(
-    this.router.events.pipe(
-      filter((event) => event instanceof NavigationEnd),
-      map(() => isControlUrl(this.router.url)),
-      startWith(isControlUrl(this.router.url)),
-    ),
-    { requireSync: true },
-  );
-
-  protected readonly label = computed(() => statusLabel(this.store.status()));
-  protected readonly tone = computed<StatusTone>(() => statusTone(this.store.status()));
-
-  /** Sem rede, o último estado recebido continua à vista com a hora ("visto às 14:02: controle dormindo"). */
-  protected readonly lastSeen = computed<string | null>(() => {
-    if (this.store.status() !== 'offline') return null;
-    const known = this.store.lastKnownStatus();
-    const time = this.store.seenAtText();
-    if (known === null || !time) return null;
-    const text = statusLabel(known);
-    return $localize`:@@tv.chip.last-seen:visto às ${time}:time: · ${text}:text:`;
-  });
+  private readonly route = inject(ActivatedRoute);
 
   constructor() {
     // O store só abre o fluxo e começa a "aquecer" quando a tela nasce e para quando ela é destruída.
     this.store.start();
     inject(DestroyRef).onDestroy(() => this.store.stop());
-  }
-}
 
-/** Controle é a aba padrão: tudo que não é uma das outras duas abas (`apps`, `teclado`). */
-function isControlUrl(url: string): boolean {
-  return !/\/(apps|teclado)$/.test(url.split(/[?#]/)[0]);
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const requested = panelFromParam(params.get(TV_PANEL_PARAM));
+      if (requested === null) return;
+      this.panelOpener.set(null);
+      this.panel.set(requested);
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { [TV_PANEL_PARAM]: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+    });
+  }
+
+  protected open(panel: TvPanelName, opener: HTMLElement): void {
+    this.panelOpener.set(opener);
+    this.panel.set(panel);
+  }
+
+  protected closePanel(): void {
+    this.panel.set(null);
+  }
 }

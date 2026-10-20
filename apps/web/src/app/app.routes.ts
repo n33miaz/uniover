@@ -36,6 +36,12 @@ export const routes: Routes = [
         loadComponent: () => import('./modules/devices/devices.page').then((m) => m.DevicesPage),
       },
       {
+        path: 'ajustes/creditos',
+        data: { title: $localize`:@@credits.route.title:Créditos` },
+        loadComponent: () =>
+          import('./modules/training/credits/credits.page').then((m) => m.CreditsPage),
+      },
+      {
         path: 'ajustes',
         data: { title: $localize`:@@settings.title:Ajustes` },
         loadComponent: () => import('./modules/settings/settings.page').then((m) => m.SettingsPage),

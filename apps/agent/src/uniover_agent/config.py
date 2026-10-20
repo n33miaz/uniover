@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     tv_name: str = "tv"
     # Sem comando e sem aviso de "app aberto" por este tempo, a sessão com a TV hiberna.
     tv_hibernate_seconds: int = Field(default=300, ge=1)
+    # ADB: caminho do `adb` (padrão: procura no PATH e no Android SDK), porta e tempo por comando.
+    adb_path: str | None = None
+    tv_adb_port: int = Field(default=5555, ge=1, le=65535)
+    adb_timeout_seconds: float = Field(default=5.0, gt=0)
 
     @classmethod
     def settings_customise_sources(

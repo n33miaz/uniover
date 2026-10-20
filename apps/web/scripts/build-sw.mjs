@@ -46,7 +46,14 @@ try {
     swDest: join(distDir, 'sw.js'),
     globDirectory: distDir,
     globPatterns: ['**/*.{js,css,woff2,woff,ico,png,svg,webmanifest,json}'],
-    globIgnores: ['**/index.html', '**/*.map', '**/3rdpartylicenses.txt', 'sw.js'],
+    // A arte dos exercícios fica fora do precache (são centenas de arquivos): o worker a guarda sob demanda.
+    globIgnores: [
+      '**/index.html',
+      '**/*.map',
+      '**/3rdpartylicenses.txt',
+      'sw.js',
+      'exercise-art/**',
+    ],
     additionalManifestEntries: pages.map((url) => ({ url, revision })),
     maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
   });

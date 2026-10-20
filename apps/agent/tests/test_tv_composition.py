@@ -121,8 +121,9 @@ async def test_run_declares_the_capability_and_serves_tv_commands(
         await connection.send(
             dump(envelope("tv.text.v1", {"text": "matrix"}, id=ids["text_final"]))
         )
-        # Vazio fica fora do contrato: o envelope recusa antes de chegar ao handler.
-        await connection.send(dump(envelope("tv.text.v1", {"text": ""}, id=ids["text_invalid"])))
+        # Texto longo demais fica fora do contrato: o envelope recusa antes de chegar ao handler.
+        too_long = {"text": "x" * 201}
+        await connection.send(dump(envelope("tv.text.v1", too_long, id=ids["text_invalid"])))
         await asyncio.sleep(0.4)
         await connection.close(4403, "revoked")
 
@@ -165,8 +166,9 @@ async def test_run_declares_the_capability_and_serves_tv_commands(
 
     # Só a tecla permitida chegou ao controle; POWER nunca saiu do agente.
     assert remote.sent == [("HOME", "SHORT")]
-    # Os textos chegam em ordem e o último é o que fica no campo; o vazio nem chega ao controle.
-    assert remote.texts == ["mat", "matrix"]
+    # Só o acréscimo vai à TV (nada de reenviar o campo inteiro): "mat" e depois "matrix" = "rix".
+    # O vazio nem chega ao handler.
+    assert remote.texts == ["mat", "rix"]
     # Ao encerrar, a sessão com a TV é fechada.
     assert not remote.connected
     assert remote.disconnects >= 1

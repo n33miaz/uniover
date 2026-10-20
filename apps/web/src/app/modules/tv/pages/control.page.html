@@ -1,65 +1,35 @@
-<section class="remote" [attr.data-mode]="mode()">
-  @if (mode() === 'buttons') {
-    <div class="top">
-      <ul class="shortcuts" aria-label="Atalhos de apps" i18n-aria-label="@@tv.shortcuts.label">
-        @for (shortcut of shortcuts(); track shortcut.id) {
-          <li>
-            <button
-              type="button"
-              class="shortcut"
-              [attr.aria-disabled]="store.canSend() ? null : 'true'"
-              (click)="openShortcut(shortcut)"
-            >
-              <app-tv-icon name="apps" />
-              <span class="name">{{ label(shortcut) }}</span>
-            </button>
-          </li>
-        }
-        @if (shortcutsLoaded() && shortcuts().length === 0) {
-          <li class="none">
-            <a routerLink="/tv/apps" i18n="@@tv.shortcuts.none"
-              >Sem atalhos ainda. Veja a aba Apps.</a
-            >
-          </li>
-        }
-      </ul>
-      <button
-        type="button"
-        class="square"
-        aria-label="Trocar para o modo touchpad"
-        i18n-aria-label="@@tv.mode.switch-to-touchpad"
-        (click)="setMode('touchpad')"
-      >
-        <app-tv-icon name="touchpad" />
-        <span i18n="@@tv.mode.touchpad">Touchpad</span>
-      </button>
-    </div>
-  } @else {
-    <div class="modes" role="group" aria-label="Modo do controle" i18n-aria-label="@@tv.mode.label">
-      <button
-        type="button"
-        class="chip"
-        [attr.aria-pressed]="false"
-        (click)="setMode('buttons')"
-        i18n="@@tv.mode.buttons"
-      >
-        Botões
-      </button>
-      <button
-        type="button"
-        class="chip"
-        [attr.aria-pressed]="true"
-        (click)="setMode('touchpad')"
-        i18n="@@tv.mode.touchpad-chip"
-      >
-        Touchpad
-      </button>
-    </div>
-  }
+<section class="remote">
+  <div class="top">
+    <button
+      type="button"
+      class="apps-chip"
+      [attr.aria-haspopup]="'dialog'"
+      aria-label="Apps da TV"
+      i18n-aria-label="@@tv.apps.open"
+      (click)="askApps($event)"
+    >
+      <app-tv-icon name="apps" />
+      <span i18n="@@tv.apps.chip">Apps</span>
+    </button>
+    <ul class="shortcuts" aria-label="Atalhos de apps" i18n-aria-label="@@tv.shortcuts.label">
+      @for (shortcut of shortcuts(); track shortcut.id) {
+        <li>
+          <button
+            type="button"
+            class="shortcut"
+            [attr.aria-disabled]="store.canSend() ? null : 'true'"
+            (click)="openShortcut(shortcut)"
+          >
+            <span class="name">{{ label(shortcut) }}</span>
+          </button>
+        </li>
+      }
+    </ul>
+  </div>
 
   <!--
-    Só este bloco troca de página: de um lado as direções com o OK (ou o touchpad), do outro os números. Tudo o
-    mais (atalhos, pílulas, botões redondos) fica parado, dentro e fora do gesto.
+    Só este bloco troca de página: as direções com o OK, o touchpad e os números. Tudo o mais (atalhos, pílulas,
+    botões redondos) fica parado, dentro e fora do gesto.
   -->
   <div class="stage">
     <div class="viewport">
@@ -68,7 +38,7 @@
         class="pager"
         tabindex="0"
         role="group"
-        aria-label="Direções e teclado numérico"
+        aria-label="Direções, touchpad e números"
         i18n-aria-label="@@tv.stage.label"
         (scroll)="onScroll()"
       >
@@ -78,25 +48,30 @@
           [attr.aria-label]="pageLabel(0)"
           [attr.inert]="page() === 0 ? null : ''"
         >
-          @if (mode() === 'buttons') {
-            <app-directional-ring />
-          } @else {
-            <app-touchpad-surface />
-          }
+          <app-directional-ring />
+        </div>
+
+        <div
+          class="panel touch"
+          role="group"
+          [attr.aria-label]="pageLabel(1)"
+          [attr.inert]="page() === 1 ? null : ''"
+        >
+          <app-touchpad-surface />
         </div>
 
         <div
           class="panel"
           role="group"
-          [attr.aria-label]="pageLabel(1)"
-          [attr.inert]="page() === 1 ? null : ''"
+          [attr.aria-label]="pageLabel(2)"
+          [attr.inert]="page() === 2 ? null : ''"
         >
           <app-number-pad />
         </div>
       </div>
     </div>
 
-    <app-page-dots [current]="page()" (choose)="goTo($event)" />
+    <app-page-dots [current]="page()" [count]="pageCount" (choose)="goTo($event)" />
   </div>
 
   <div class="bottom">
@@ -161,14 +136,16 @@
       >
         <app-tv-icon name="menu" />
       </button>
-      <a
-        routerLink="/tv/teclado"
+      <button
+        type="button"
         class="round"
+        [attr.aria-haspopup]="'dialog'"
         aria-label="Teclado"
         i18n-aria-label="@@tv.key.keyboard"
+        (click)="askKeyboard($event)"
       >
         <app-tv-icon name="keyboard" />
-      </a>
+      </button>
       <button
         type="button"
         class="round"

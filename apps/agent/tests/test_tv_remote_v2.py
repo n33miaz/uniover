@@ -196,6 +196,22 @@ async def test_every_non_power_key_goes_on_the_wire(tmp_path: Path) -> None:
     assert [code for code, _ in server.keys] == expected
 
 
+async def test_the_edit_key_that_erases_goes_on_the_wire_as_the_androids_del(
+    tmp_path: Path,
+) -> None:
+    # `DEL` não é do contrato de teclas (a API não o envia); só o agente o usa para apagar.
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        await adapter.connect()
+        try:
+            await adapter.send_key("DEL")
+            await eventually(lambda: len(server.keys) == 1)
+        finally:
+            await adapter.disconnect()
+    assert [code for code, _ in server.keys] == [RemoteKeyCode.Value("KEYCODE_DEL")]
+    assert "DEL" not in KEY_CODES
+
+
 async def test_a_dropped_connection_is_detected_and_keys_are_refused(tmp_path: Path) -> None:
     availability: list[bool] = []
     async with FakeTvServer(tmp_path) as server:

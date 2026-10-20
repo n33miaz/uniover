@@ -1,12 +1,12 @@
 :host {
   display: block;
   /*
-   * Altura útil que a casca deixa para o módulo: a tela menos a barra de abas (56 + 1 px da borda) e o respiro do
-   * `main` (uma margem em cima e outra embaixo, mais as áreas seguras do aparelho). O controle principal usa
-   * esta altura inteira, sem rolar a página; abaixo de `--tv-min` ele prefere rolar a espremer os botões.
+   * Altura útil que a casca deixa para o módulo: a tela menos o respiro do `main` (uma margem em cima e outra
+   * embaixo, mais as áreas seguras do aparelho). Sem barra de abas, o controle usa esta altura inteira, sem
+   * rolar a página; abaixo de `--tv-min` ele prefere rolar a espremer os botões.
    */
   --tv-avail: calc(
-    100dvh - 57px - 2 * var(--gutter) - env(safe-area-inset-top) - 2 * env(safe-area-inset-bottom)
+    100dvh - 2 * var(--gutter) - env(safe-area-inset-top) - env(safe-area-inset-bottom)
   );
   --tv-min: 500px;
 }
@@ -18,21 +18,11 @@
   gap: 8px;
   width: 100%;
   max-width: 36rem;
-  min-height: var(--tv-avail);
+  height: max(var(--tv-avail), var(--tv-min));
   margin-inline: auto;
 }
 
-/* Só a aba Controle (`fill`) ocupa a altura toda; Apps e Teclado crescem com o conteúdo. */
-.tv.fill {
-  height: max(var(--tv-avail), var(--tv-min));
-  min-height: 0;
-}
-
-router-outlet {
-  display: none;
-}
-
-/* Voltar, nome com a bolinha e energia numa linha só. */
+/* Voltar, nome com o ponto de estado e energia numa linha só. */
 .head {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -53,24 +43,10 @@ router-outlet {
 .name {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
+}
+h1 {
   font-size: 1.35rem;
-}
-
-.dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--a-ink3);
-}
-.dot[data-tone='ok'] {
-  background: var(--a-ok);
-}
-.dot[data-tone='warn'] {
-  background: var(--a-warn);
-}
-.dot[data-tone='bad'] {
-  background: var(--a-bad);
 }
 
 .power {
@@ -93,41 +69,6 @@ router-outlet {
   cursor: default;
 }
 
-/* Chips de estado: o texto diz o estado, a cor só reforça. */
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  min-height: 28px;
-}
-.chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 12px;
-  border: 1px solid var(--a-line);
-  border-radius: 999px;
-  background: var(--a-elev);
-  color: var(--a-ink);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-.chip.soft {
-  background: transparent;
-  color: var(--a-ink2);
-  font-weight: 500;
-}
-.chip[data-tone='ok'] {
-  border-color: var(--a-ok);
-}
-.chip[data-tone='warn'] {
-  border-color: var(--a-warn);
-}
-.chip[data-tone='bad'] {
-  border-color: var(--a-bad);
-}
-
 /* A linha do motivo entra no fluxo: o palco do controle encolhe o que ela ocupa. */
 .reason {
   margin: 0;
@@ -136,14 +77,15 @@ router-outlet {
   text-align: center;
 }
 
-/* Aviso passageiro: flutua acima da barra de abas para não empurrar o controle. */
+/* Aviso passageiro: flutua sobre a fileira de baixo sem pegar o toque, para o controle seguir usável. */
 .toast {
   position: fixed;
   right: var(--gutter);
-  bottom: calc(72px + env(safe-area-inset-bottom));
+  bottom: calc(var(--gutter) + env(safe-area-inset-bottom));
   left: var(--gutter);
   z-index: 5;
-  margin: 0;
+  max-width: 36rem;
+  margin: 0 auto;
   padding: 12px 14px;
   border: 1px solid var(--a-line);
   border-left: 4px solid var(--a-accent);
@@ -152,6 +94,7 @@ router-outlet {
   box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
   color: var(--a-ink);
   font-size: 0.95rem;
+  pointer-events: none;
 }
 .toast.error {
   border-left-color: var(--a-bad);
@@ -167,33 +110,26 @@ router-outlet {
   }
 }
 
-/* Celular deitado: pouca altura, então no controle o cabeçalho e os chips dividem a mesma linha. */
+/* Celular deitado: pouca altura, então o cabeçalho cabe numa linha só, junto do nome e da energia. */
 @media (min-aspect-ratio: 6/5) and (max-height: 500px) {
   :host {
     --tv-min: 300px;
   }
-  .tv.fill {
+  .tv {
     display: grid;
     grid-template-columns: auto auto minmax(0, 1fr) auto;
     grid-template-rows: auto auto minmax(0, 1fr);
     column-gap: 8px;
     row-gap: 4px;
   }
-  .tv.fill .head {
+  .head {
     display: contents;
   }
-  .tv.fill .chips {
-    grid-column: 3;
-    grid-row: 1;
-    justify-content: flex-start;
-    flex-wrap: nowrap;
-    overflow: hidden;
-  }
-  .tv.fill .power {
+  .power {
     grid-column: 4;
     grid-row: 1;
   }
-  .tv.fill .reason {
+  .reason {
     grid-column: 1 / -1;
     grid-row: 2;
   }
