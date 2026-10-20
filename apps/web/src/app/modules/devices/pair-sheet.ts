@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { ApiProblem, isStepUpRequired, problemOf } from '../../core/auth/api-problem';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
+import { leaveDialog } from '../../shared/ui/dialog-motion';
 import { DevicesApi } from './devices-api';
 import { MAX_DEVICE_NAME, formatCodeInput, isValidDeviceName, normalizeCode } from './pairing-code';
 
@@ -20,7 +21,8 @@ export type PairOutcome =
 /**
  * Folha de pareamento: sobe de baixo, sem botão de fechar (a saída é "Cancelar", Esc ou "Aprovar"). O dono digita
  * o código que o agente mostrou e, se quiser, dá um nome ao aparelho. Aprovar pede a passkey (o interceptador abre
- * o diálogo); recusar o código é uma ação secundária e não pede.
+ * o diálogo); recusar o código é uma ação secundária e não pede. A folha desce antes de avisar a página, que a tira
+ * do DOM.
  */
 @Component({
   selector: 'app-pair-sheet',
@@ -39,16 +41,23 @@ export class PairSheet {
   protected readonly code = signal('');
   protected readonly name = signal($localize`:@@devices.pair.name-suggestion:PC de casa`);
   protected readonly busy = signal(false);
+  /** A folha já está descendo: nada mais vale (nem aprovar, nem recusar, nem cancelar de novo). */
+  protected readonly leaving = signal(false);
   protected readonly error = signal<string | null>(null);
 
   protected readonly online = this.connectivity.online;
   protected readonly normalized = computed(() => normalizeCode(this.code()));
   protected readonly nameValid = computed(() => isValidDeviceName(this.name()));
   protected readonly canApprove = computed(
-    () => this.online() && !this.busy() && this.normalized() !== null && this.nameValid(),
+    () =>
+      this.online() &&
+      !this.busy() &&
+      !this.leaving() &&
+      this.normalized() !== null &&
+      this.nameValid(),
   );
   protected readonly canDeny = computed(
-    () => this.online() && !this.busy() && this.normalized() !== null,
+    () => this.online() && !this.busy() && !this.leaving() && this.normalized() !== null,
   );
 
   constructor() {
@@ -73,7 +82,7 @@ export class PairSheet {
 
   protected cancel(event?: Event): void {
     event?.preventDefault(); // quem tira a folha do DOM é a página; evita o fechamento duplo do navegador
-    if (!this.busy()) this.closed.emit();
+    if (!this.busy()) this.leave(() => this.closed.emit());
   }
 
   protected async approve(event: Event): Promise<void> {
@@ -85,7 +94,7 @@ export class PairSheet {
     const name = this.name().trim() || null;
     try {
       await this.api.approve(code, name);
-      this.done.emit({ kind: 'approved', name });
+      this.leave(() => this.done.emit({ kind: 'approved', name }));
     } catch (error) {
       this.error.set(this.approveError(error));
     } finally {
@@ -100,12 +109,19 @@ export class PairSheet {
     this.error.set(null);
     try {
       await this.api.deny(code);
-      this.done.emit({ kind: 'denied' });
+      this.leave(() => this.done.emit({ kind: 'denied' }));
     } catch (error) {
       this.error.set(this.denyError(error));
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /** Toca a descida da folha e só então avisa a página. */
+  private leave(then: () => void): void {
+    if (this.leaving()) return;
+    this.leaving.set(true);
+    leaveDialog(this.dialog().nativeElement, then);
   }
 
   private approveError(error: unknown): string {

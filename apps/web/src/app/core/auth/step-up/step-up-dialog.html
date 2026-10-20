@@ -1,6 +1,6 @@
 <dialog
   #dialog
-  class="box"
+  class="box ui-dialog"
   aria-labelledby="step-up-title"
   aria-describedby="step-up-text"
   (cancel)="onCancel($event)"
@@ -13,25 +13,29 @@
 
   <div class="messages">
     @if (errorMessage(); as message) {
-      <p class="error" role="alert">{{ message }}</p>
+      <p class="error ui-notice bad ui-rise" role="alert">{{ message }}</p>
     }
     @switch (service.phase()) {
       @case ('preparing') {
-        <p class="note" role="status" i18n="@@auth.step-up.preparing">Preparando a confirmação…</p>
+        <p class="note ui-notice ui-rise" role="status">
+          <span class="ui-spinner" aria-hidden="true"></span>
+          <span i18n="@@auth.step-up.preparing">Preparando a confirmação…</span>
+        </p>
       }
       @case ('confirming') {
-        <p class="note" role="status" i18n="@@auth.step-up.confirming">
-          Aguardando a passkey do aparelho…
+        <p class="note ui-notice ui-rise" role="status">
+          <span class="ui-spinner" aria-hidden="true"></span>
+          <span i18n="@@auth.step-up.confirming">Aguardando a passkey do aparelho…</span>
         </p>
       }
       @case ('unavailable') {
-        <p class="error" role="alert" i18n="@@auth.step-up.unavailable">
+        <p class="error ui-notice bad ui-rise" role="alert" i18n="@@auth.step-up.unavailable">
           Este aparelho ou navegador não oferece passkeys, então a ação não pode ser confirmada.
         </p>
       }
       @case ('blocked') {
         @if (!errorMessage()) {
-          <p class="error" role="alert" i18n="@@auth.step-up.no-passkey">
+          <p class="error ui-notice bad ui-rise" role="alert" i18n="@@auth.step-up.no-passkey">
             Nenhuma passkey cadastrada. Cadastre uma em Ajustes, na seção Segurança.
           </p>
         }
@@ -40,7 +44,12 @@
   </div>
 
   <div class="footer">
-    <button type="button" class="secondary" (click)="service.cancel()" i18n="@@auth.step-up.cancel">
+    <button
+      type="button"
+      class="secondary ui-btn"
+      (click)="service.cancel()"
+      i18n="@@auth.step-up.cancel"
+    >
       Cancelar
     </button>
     @switch (service.phase()) {
@@ -48,7 +57,7 @@
         @if (service.error() === 'network') {
           <button
             type="button"
-            class="primary"
+            class="primary ui-btn"
             (click)="service.retry()"
             i18n="@@auth.step-up.retry"
           >
@@ -60,7 +69,7 @@
       @default {
         <button
           type="button"
-          class="primary"
+          class="primary ui-btn"
           [disabled]="service.phase() !== 'ready'"
           (click)="service.submit()"
           i18n="@@auth.step-up.confirm"

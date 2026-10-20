@@ -34,6 +34,84 @@ const GLYPHS = {
       ],
     ],
   },
+  // Módulos planejados: coração com pulso (saúde e eventos), pilha de servidores (monitor), ondas de rede,
+  // nuvem com seta (backup), sino (avisos) e tela com ponteiro (controle do PC).
+  health: {
+    box: '0 0 24 24',
+    layers: [
+      [
+        'fill',
+        'M12 20.2C5.6 16.1 3.5 12.6 3.5 9.6A4.6 4.6 0 0 1 12 7.4a4.6 4.6 0 0 1 8.5 2.2c0 3-2.1 6.5-8.5 10.6z',
+      ],
+      [
+        'line',
+        'M12 20.2C5.6 16.1 3.5 12.6 3.5 9.6A4.6 4.6 0 0 1 12 7.4a4.6 4.6 0 0 1 8.5 2.2c0 3-2.1 6.5-8.5 10.6z',
+      ],
+      ['line', 'M7 12.5h2.6l1.6-3.2 2.4 5.6 1.5-2.4H17'],
+    ],
+  },
+  monitor: {
+    box: '0 0 24 24',
+    layers: [
+      [
+        'fill',
+        'M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v3.5A1.5 1.5 0 0 1 19 11H5A1.5 1.5 0 0 1 3.5 9.5V6A1.5 1.5 0 0 1 5 4.5z',
+      ],
+      [
+        'line',
+        'M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v3.5A1.5 1.5 0 0 1 19 11H5A1.5 1.5 0 0 1 3.5 9.5V6A1.5 1.5 0 0 1 5 4.5z M5 13.5h14a1.5 1.5 0 0 1 1.5 1.5v3.5A1.5 1.5 0 0 1 19 20H5a1.5 1.5 0 0 1-1.5-1.5V15A1.5 1.5 0 0 1 5 13.5z M12 7.75h4.5 M12 16.75h4.5',
+      ],
+      [
+        'solid',
+        'M7.5 7.75m-1 0a1 1 0 1 0 2 0a1 1 0 1 0-2 0 M7.5 16.75m-1 0a1 1 0 1 0 2 0a1 1 0 1 0-2 0',
+      ],
+    ],
+  },
+  network: {
+    box: '0 0 24 24',
+    layers: [
+      ['fill', 'M3.5 9.5a12 12 0 0 1 17 0L12 19z'],
+      [
+        'line',
+        'M3.5 9.5a12 12 0 0 1 17 0 M6.6 12.6a7.7 7.7 0 0 1 10.8 0 M9.5 15.6a3.6 3.6 0 0 1 5 0',
+      ],
+      ['solid', 'M12 19m-1.4 0a1.4 1.4 0 1 0 2.8 0a1.4 1.4 0 1 0-2.8 0'],
+    ],
+  },
+  backup: {
+    box: '0 0 24 24',
+    layers: [
+      ['fill', 'M7.5 18.5a4 4 0 0 1-.7-7.9 5.5 5.5 0 0 1 10.6-.5A4.2 4.2 0 0 1 17 18.5z'],
+      [
+        'line',
+        'M7.5 18.5a4 4 0 0 1-.7-7.9 5.5 5.5 0 0 1 10.6-.5A4.2 4.2 0 0 1 17 18.5z M12 16v-5 M9.7 13.2L12 10.9l2.3 2.3',
+      ],
+    ],
+  },
+  bell: {
+    box: '0 0 24 24',
+    layers: [
+      ['fill', 'M18 9a6 6 0 0 0-12 0c0 6.5-2.5 8.5-2.5 8.5h17S18 15.5 18 9z'],
+      [
+        'line',
+        'M18 9a6 6 0 0 0-12 0c0 6.5-2.5 8.5-2.5 8.5h17S18 15.5 18 9z M10.2 20.5a2 2 0 0 0 3.6 0',
+      ],
+    ],
+  },
+  desktop: {
+    box: '0 0 24 24',
+    layers: [
+      [
+        'fill',
+        'M4 4.5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 15V6A1.5 1.5 0 0 1 4 4.5z',
+      ],
+      [
+        'line',
+        'M4 4.5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 15V6A1.5 1.5 0 0 1 4 4.5z M9.5 20.5h5 M12 16.5v4',
+      ],
+      ['solid', 'M9 6.4l5.2 2.4-2.2.8-.9 2.2z'],
+    ],
+  },
   grid: {
     box: '0 0 24 24',
     layers: [
@@ -131,6 +209,12 @@ export type HomeGlyphName = keyof typeof GLYPHS;
 const MODULE_GLYPHS: Record<ModuleIconName, HomeGlyphName> = {
   tv: 'tv',
   activity: 'dumbbell',
+  health: 'health',
+  monitor: 'monitor',
+  network: 'network',
+  backup: 'backup',
+  bell: 'bell',
+  desktop: 'desktop',
 };
 
 export function moduleGlyph(icon: ModuleIconName): HomeGlyphName {

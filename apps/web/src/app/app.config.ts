@@ -18,6 +18,9 @@ import { LiveHomeStatus } from './core/status/live-home-status';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
+    // Sem `withViewTransitions`: no WebKit do Playwright (Windows), a transição nativa de tela junto das animações de
+    // entrada (`ui-rise`) derrubava a página em cerca de 1 a cada 4 execuções do mesmo fluxo; sem uma das duas, nunca.
+    // A tela nova entra pelas animações de entrada dela mesma (`ui-rise` e `ui-stagger`, em styles.css).
     provideRouter(routes),
     // A Início lê o estado da casa pela porta; o adaptador real fala com a API e com o fluxo em tempo real.
     { provide: HomeStatusPort, useExisting: LiveHomeStatus },

@@ -1,5 +1,6 @@
-/* Folha que sobe de baixo: o <dialog> modal ocupa a largura toda e cola no rodapé. */
+/* Folha que sobe de baixo: o <dialog> modal ocupa a largura toda e cola no rodapé. A subida e a descida vêm da classe ui-dialog (styles.css). */
 .sheet {
+  --dialog-shift: 40px;
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
@@ -23,35 +24,8 @@
   }
 }
 
-.sheet[open] {
-  animation: sheet-up var(--dur-slow) var(--ease-out);
-}
-
-.sheet[open]::backdrop {
-  animation: backdrop-in var(--dur-base) linear;
-}
-
 .sheet::backdrop {
   background: rgb(8 16 10 / 0.52);
-}
-
-@keyframes sheet-up {
-  from {
-    transform: translateY(40px);
-  }
-}
-
-@keyframes backdrop-in {
-  from {
-    opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sheet[open],
-  .sheet[open]::backdrop {
-    animation: none;
-  }
 }
 
 .grabber {
@@ -170,7 +144,12 @@ h2 {
   cursor: pointer;
   transition:
     background-color var(--dur-fast) linear,
-    color var(--dur-fast) linear;
+    color var(--dur-fast) linear,
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.size:active {
+  transform: scale(0.96);
 }
 
 .size[aria-pressed='true'] {
@@ -237,7 +216,8 @@ h2 {
     transition: none;
   }
 
-  .icon-button:active:not(:disabled) {
+  .icon-button:active:not(:disabled),
+  .size:active {
     transform: none;
   }
 }

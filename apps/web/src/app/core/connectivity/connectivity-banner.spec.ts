@@ -26,6 +26,20 @@ describe('ConnectivityBanner', () => {
     expect(text(fixture)).toContain('aguardando há 12 s');
   });
 
+  it('opens and closes each notice inside a collapsible track, so the page below does not jump', async () => {
+    const service = TestBed.inject(ConnectivityService);
+    service.serverState.set('waking');
+    const waking = (await render()).nativeElement as HTMLElement;
+    expect(
+      waking.querySelector('.slot > .ui-collapse > .ui-collapse-inner > .banner.waking'),
+    ).not.toBeNull();
+    service.serverState.set('offline');
+    const offline = (await render()).nativeElement as HTMLElement;
+    expect(
+      offline.querySelector('.slot > .ui-collapse > .ui-collapse-inner > .banner.offline'),
+    ).not.toBeNull();
+  });
+
   it('shows the offline notice without the curtain', async () => {
     TestBed.inject(ConnectivityService).serverState.set('offline');
     const fixture = await render();

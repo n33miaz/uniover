@@ -12,11 +12,12 @@ import {
 } from '@angular/core';
 import { WidgetPref, moveWidget, moveWidgetTo } from '../../core/modules/module-prefs';
 import { ModuleRegistry, WidgetSize } from '../../core/modules/module-registry';
+import { leaveDialog } from '../../shared/ui/dialog-motion';
 import { HomeGlyph, HomeGlyphName, moduleGlyph } from './home-glyph';
 
 /**
  * Folha de edição da Início: sobe de baixo, sem botão de fechar (a saída é "Cancelar" ou "Aplicar").
- * Trabalha numa cópia; só "Aplicar" devolve a nova disposição.
+ * Trabalha numa cópia; só "Aplicar" devolve a nova disposição. A folha desce antes de avisar o pai, que a tira do DOM.
  */
 @Component({
   selector: 'app-home-edit-sheet',
@@ -36,6 +37,7 @@ export class HomeEditSheet implements OnInit {
   protected readonly draft = signal<readonly WidgetPref[]>([]);
   protected readonly dragging = signal<string | null>(null);
   protected readonly sizes: readonly WidgetSize[] = ['small', 'wide'];
+  private leaving = false;
 
   ngOnInit(): void {
     this.draft.set(this.widgets());
@@ -118,11 +120,18 @@ export class HomeEditSheet implements OnInit {
   }
 
   protected apply(): void {
-    this.applied.emit(this.draft());
+    this.leave(() => this.applied.emit(this.draft()));
   }
 
   protected cancel(event?: Event): void {
     event?.preventDefault(); // o pai tira a folha do DOM; evita o fechamento duplo do navegador
-    this.cancelled.emit();
+    this.leave(() => this.cancelled.emit());
+  }
+
+  /** Toca a descida da folha e só então avisa o pai; um segundo toque durante a descida não repete o aviso. */
+  private leave(then: () => void): void {
+    if (this.leaving) return;
+    this.leaving = true;
+    leaveDialog(this.dialog().nativeElement, then);
   }
 }

@@ -43,12 +43,22 @@ describe('AppShell', () => {
     expect(el.querySelector('main .content')).not.toBeNull();
   });
 
-  it('shows the header with a link to Início and the title inside a module', async () => {
+  it('shows the header with the arrow back to Início and the title inside a module', async () => {
     const harness = await RouterTestingHarness.create('/mod');
     const el = root(harness);
     expect(el.querySelector('h1')?.textContent).toBe('Módulo');
-    expect(el.querySelector('header a')?.getAttribute('href')).toBe('/');
-    expect(el.querySelector('header a')?.textContent).toContain('Início');
+    const back = el.querySelector('header a.back')!;
+    expect(back.getAttribute('href')).toBe('/');
+    expect(back.getAttribute('aria-label')).toBe('Voltar ao Início');
+    // Só a seta: sem texto visível, e o desenho é decorativo (o nome acessível está no link).
+    expect(back.textContent?.trim()).toBe('');
+    expect(back.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    expect(back.querySelectorAll('svg path').length).toBe(2);
+    // Seta e título na mesma linha do cabeçalho, nessa ordem.
+    expect(Array.from(el.querySelector('header')!.children).map((c) => c.tagName)).toEqual([
+      'A',
+      'H1',
+    ]);
   });
 
   it('hides the way back to Início for a guest (single view, no navigation out of the TV)', async () => {

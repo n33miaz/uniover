@@ -75,6 +75,58 @@ describe('HomeEditSheet', () => {
     expect(second.host.cancelled).toBe(true);
   });
 
+  it('lists the planned modules too, each with its name and its own glyph', async () => {
+    // A folha copia a lista ao abrir: a lista completa tem de estar pronta antes da primeira renderização.
+    const fixture = TestBed.createComponent(Host);
+    fixture.componentInstance.widgets.set([
+      ...initial,
+      ...['health', 'monitor', 'network', 'backup', 'notifications', 'pc'].map((id) => ({
+        id,
+        size: 'small' as const,
+        enabled: true,
+      })),
+    ]);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const names = Array.from(el.querySelectorAll('.row .name')).map((n) => n.textContent?.trim());
+    expect(names).toEqual([
+      'TV',
+      'Treino',
+      'Saúde e eventos',
+      'Monitor dos serviços',
+      'Rede da casa',
+      'Backup de fotos',
+      'Avisos',
+      'Controle do PC',
+    ]);
+    const drawings = Array.from(el.querySelectorAll('.row .ico')).map((icon) =>
+      Array.from(icon.querySelectorAll('path'))
+        .map((path) => path.getAttribute('d'))
+        .join('|'),
+    );
+    expect(new Set(drawings).size).toBe(8);
+  });
+
+  it('goes down before telling the parent, and a second tap during the exit changes nothing', async () => {
+    const { host, el } = await render();
+    let end!: () => void;
+    const finished = new Promise<void>((resolve) => (end = resolve));
+    const dialog = el.querySelector('dialog')!;
+    dialog.getAnimations = () =>
+      [
+        { finished, effect: { getComputedTiming: () => ({ iterations: 1 }) } },
+      ] as unknown as Animation[];
+
+    el.querySelector<HTMLButtonElement>('.primary')!.click();
+    expect(dialog.classList.contains('closing')).toBe(true);
+    expect(host.applied).toBeNull();
+
+    el.querySelector<HTMLButtonElement>('.secondary')!.click(); // tarde demais para cancelar
+    end();
+    await vi.waitFor(() => expect(host.applied).not.toBeNull());
+    expect(host.cancelled).toBe(false);
+  });
+
   it('reorders by dragging the handle over another row', async () => {
     const { host, el, fixture } = await render();
     const rows = el.querySelectorAll<HTMLElement>('.row');

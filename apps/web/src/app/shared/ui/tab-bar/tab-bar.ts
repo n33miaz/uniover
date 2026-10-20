@@ -54,10 +54,22 @@ export interface TabItem {
       font-weight: 600;
       text-decoration: none;
       border-top: 3px solid transparent;
+      /* Sem transição de cor do texto: ao trocar o tema ele não pode ficar a meio caminho sobre o fundo novo. */
+      transition:
+        border-color var(--dur-base) var(--ease-out),
+        background-color var(--dur-fast) linear;
+    }
+    a:active {
+      background: var(--a-elev);
     }
     a.active {
       color: var(--a-accent);
       border-top-color: var(--a-accent);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      a {
+        transition: none;
+      }
     }
   `,
 })
