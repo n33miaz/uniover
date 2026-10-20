@@ -119,16 +119,9 @@ const appsDialog = (page: Page) => page.getByRole('dialog', { name: 'Apps da TV'
 const keyboardDialog = (page: Page) => page.getByRole('dialog', { name: 'Teclado' });
 const keyboardField = (page: Page) => page.getByLabel('Texto para a TV');
 
-/**
- * Abre o painel Apps pelo endereço que a tela já atende (`/tv?painel=apps`), sem recarregar: o estado do fluxo e do
- * teste continua. É o mesmo painel que o botão do cabeçalho abre; só o foco devolvido ao botão depende de ele ter
- * aberto o painel (provado à parte).
- */
+/** Abre o painel Apps pelo botão "Apps da TV" do cabeçalho, o caminho de quem usa a tela. */
 async function openApps(page: Page) {
-  await page.evaluate(() => {
-    history.pushState(history.state, '', '/tv?painel=apps');
-    window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
-  });
+  await button(page, 'Apps da TV').click();
   await expect(appsDialog(page)).toBeVisible();
 }
 
@@ -209,6 +202,7 @@ test.describe('controle: tela única, sem abas', () => {
     await expect(statusDot(page, 'Conectada')).toBeVisible();
     await expect(page.getByRole('img', { name: 'Volume 22' })).toBeVisible();
     await expect(button(page, 'Atalho 1')).toBeVisible();
+    await expect(button(page, 'Apps da TV')).toBeVisible();
 
     // Sem a barra de abas de baixo e sem as pílulas de estado de antes.
     await expect(page.getByRole('navigation', { name: 'Abas do módulo' })).toHaveCount(0);
@@ -238,6 +232,7 @@ test.describe('controle: tela única, sem abas', () => {
     await expect(page).toHaveURL(/\/tv$/);
     // Recarregar não reabre o painel: o parâmetro saiu do endereço.
     await page.reload();
+    await expect(button(page, 'Apps da TV')).toBeVisible();
     await expect(button(page, 'Atalho 1')).toBeVisible();
     await expect(keyboardDialog(page)).toHaveCount(0);
   });
@@ -258,6 +253,7 @@ test.describe('controle: tela única, sem abas', () => {
       'Próxima',
       'Teclado',
       'Desligar a TV',
+      'Apps da TV',
       'Atalho 1',
       'Página 1 de 3',
       'Página 2 de 3',
@@ -273,27 +269,32 @@ test.describe('controle: tela única, sem abas', () => {
     }
   });
 
-  test('os botões de baixo cresceram: redondos maiores e pílulas que não ficaram mais estreitas', async ({
+  test('os botões de baixo cresceram: círculos maiores e pílulas estreitas, de botões de 50 x 52 px ou mais', async ({
     page,
   }, info) => {
     await openTv(page);
-    // Medidas da versão anterior nestes dois aparelhos (largura da pílula e diâmetro do botão redondo, em px).
-    const before = {
-      'iphone-12': { pill: 54.4, round: 52.8 },
-      's23-fe': { pill: 65.6, round: 52.4 },
-    }[info.project.name as 'iphone-12' | 's23-fe'];
+    // No 390 (358 úteis) cabem círculos de 59,25 px; no 411 (379 úteis), 64,5 px. A pílula ficou estreita (52 px) de
+    // propósito: é a largura que ela devolve que dá o círculo maior.
+    const minRound = info.project.name === 'iphone-12' ? 59 : 62;
     const round = (await button(page, 'Voltar').boundingBox())!;
     const pill = (await page.getByRole('group', { name: 'Volume' }).boundingBox())!;
     const channel = (await page.getByRole('group', { name: 'Canal' }).boundingBox())!;
     expect(round.width, 'botão redondo é círculo').toBeCloseTo(round.height, 0);
-    expect(round.width, 'botão redondo maior que antes').toBeGreaterThanOrEqual(before.round + 3);
-    expect(pill.width, 'pílula de volume não encolheu').toBeGreaterThanOrEqual(before.pill - 0.6);
-    expect(channel.width, 'pílula de canal não encolheu').toBeGreaterThanOrEqual(before.pill - 0.6);
+    expect(round.width, 'círculo maior que antes').toBeGreaterThanOrEqual(minRound);
+    expect(pill.width, 'pílula de volume de 52 px').toBeCloseTo(52, 0);
+    expect(channel.width, 'pílula de canal de 52 px').toBeCloseTo(52, 0);
     expect(pill.height, 'pílula de volume não ficou mais baixa').toBeGreaterThanOrEqual(127);
-    // Cada botão da pílula continua sendo um alvo confortável para o polegar.
-    for (const name of ['Aumentar o volume', 'Diminuir o volume']) {
+    expect(pill.height, 'e o bloco de baixo não passa de 142 px').toBeLessThanOrEqual(142.5);
+    // Cada botão da pílula é um alvo confortável para o polegar: 50 px de toque por 52 de altura.
+    for (const name of [
+      'Aumentar o volume',
+      'Diminuir o volume',
+      'Próximo canal',
+      'Canal anterior',
+    ]) {
       const box = (await button(page, name).boundingBox())!;
-      expect(box.height, name).toBeGreaterThanOrEqual(46);
+      expect(box.width, name).toBeGreaterThanOrEqual(49.5);
+      expect(box.height, name).toBeGreaterThanOrEqual(51.5);
     }
     await expectNoVerticalScroll(page);
     await expectNoHorizontalScroll(page);
@@ -1130,7 +1131,6 @@ test.describe('painel flutuante: comportamento comum', () => {
     await expect(appsDialog(page)).toHaveCount(0);
   });
 
-  // Depende do botão "Apps da TV" do cabeçalho (outro componente da mesma rodada): sem ele este teste não tem onde clicar.
   test('o painel Apps devolve o foco ao botão do cabeçalho que o abriu', async ({ page }) => {
     await openTv(page);
     const opener = button(page, 'Apps da TV');
@@ -1667,7 +1667,7 @@ test.describe('acessibilidade e tema', () => {
     }
   });
 
-  test('o foco do teclado é visível nos botões, nos setores do anel e nos atalhos', async ({
+  test('o foco do teclado é visível nos botões, nos setores do anel, no botão Apps e nos atalhos', async ({
     page,
   }) => {
     await openTv(page);
@@ -1676,7 +1676,7 @@ test.describe('acessibilidade e tema', () => {
       .locator('.glyph')
       .evaluate((el) => getComputedStyle(el).outlineStyle);
     expect(outline).toBe('solid');
-    for (const name of ['Menu', 'Atalho 1']) {
+    for (const name of ['Menu', 'Apps da TV', 'Atalho 1']) {
       await button(page, name).focus();
       const style = await button(page, name).evaluate((el) => getComputedStyle(el).outlineStyle);
       expect(style, name).toBe('solid');
@@ -1768,6 +1768,7 @@ for (const screen of SCREENS) {
         'Próxima',
         'Teclado',
         'Desligar a TV',
+        'Apps da TV',
         'Atalho 1',
         'Página 1 de 3',
         'Página 2 de 3',
@@ -2166,6 +2167,7 @@ test.describe('ícones dos apps', () => {
     // A imagem que não carrega cai no azulejo de reserva, sem quebrar a fileira.
     await expect(chips.nth(5).locator('.fallback')).toHaveText('Y');
     await expect(chips.nth(5).locator('img')).toHaveCount(0);
+    await expect(button(page, 'Apps da TV')).toBeVisible();
     await expectNoHorizontalScroll(page);
     await expectNoVerticalScroll(page);
   });

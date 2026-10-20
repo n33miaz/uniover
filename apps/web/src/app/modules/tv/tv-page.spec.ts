@@ -216,6 +216,59 @@ describe('TvPage', () => {
       await render();
       expect(dialogs()).toHaveLength(1);
     });
+
+    describe('with the exit animation on', () => {
+      const tick = async (ms = 0) => {
+        fixture.detectChanges();
+        await vi.advanceTimersByTimeAsync(ms);
+        fixture.detectChanges();
+      };
+
+      beforeEach(() => {
+        // O jsdom não tem `matchMedia`: com ele dizendo "movimento permitido" o painel espera a saída (até 300 ms).
+        Object.defineProperty(window, 'matchMedia', {
+          value: () => ({ matches: false }),
+          configurable: true,
+        });
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+        Reflect.deleteProperty(window, 'matchMedia');
+      });
+
+      it('opening an app lets the panel finish its exit before it leaves the screen', async () => {
+        appsButton().click();
+        await tick();
+        root.querySelector<HTMLButtonElement>('app-tv-apps .launch')!.click();
+        await tick();
+        expect(store.launch).toHaveBeenCalledTimes(1);
+        // A saída está rolando: o painel ainda está na tela, marcado como saindo.
+        expect(dialogs()).toHaveLength(1);
+        expect(dialogs()[0].classList.contains('leaving')).toBe(true);
+
+        await tick(300);
+        expect(dialogs()).toHaveLength(0);
+      });
+
+      it('Fechar of the keyboard goes through the same exit', async () => {
+        root
+          .querySelector<HTMLButtonElement>('app-tv-control button[aria-label="Teclado"]')!
+          .click();
+        await tick();
+        const close = [...root.querySelectorAll<HTMLButtonElement>('app-tv-keyboard button')].find(
+          (b) => b.textContent?.trim() === 'Fechar',
+        )!;
+        close.click();
+        await tick();
+        expect(dialogs()).toHaveLength(1);
+        expect(dialogs()[0].classList.contains('leaving')).toBe(true);
+
+        await tick(300);
+        expect(dialogs()).toHaveLength(0);
+      });
+    });
   });
 
   describe('power', () => {

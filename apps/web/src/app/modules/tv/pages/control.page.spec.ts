@@ -34,14 +34,15 @@ describe('ControlPage', () => {
   });
 
   describe('top row', () => {
-    it('starts with the fixed Apps chip, then the favourite shortcuts as chips', () => {
-      const chip = root.querySelector<HTMLButtonElement>('.top > .apps-chip')!;
-      expect(chip.textContent?.trim()).toBe('Apps');
-      expect(chip.getAttribute('aria-label')).toBe('Apps da TV');
-      expect(chip.getAttribute('aria-haspopup')).toBe('dialog');
-      expect(chip.nextElementSibling?.matches('ul.shortcuts')).toBe(true);
-      // O chip não rola junto com os atalhos.
-      expect(chip.closest('.shortcuts')).toBeNull();
+    it('has only the favourite shortcuts in the top row: the Apps button lives in the page header', () => {
+      const row = root.querySelector('.top')!;
+      expect(row.firstElementChild?.matches('ul.shortcuts')).toBe(true);
+      expect(root.querySelector('.apps-chip')).toBeNull();
+      expect(root.querySelector('button[aria-label="Apps da TV"]')).toBeNull();
+      // Nada além da lista de atalhos: nem o chip antigo, nem a dica (que só aparece com a fileira vazia).
+      expect([...row.children].map((child) => child.tagName)).toEqual(['UL']);
+      expect(row.querySelector('.hint')).toBeNull();
+      expect(row.querySelectorAll('.shortcut')).toHaveLength(3);
     });
 
     it('shows the enabled shortcuts as "Atalho n" when nothing else names them, never the package', () => {
@@ -114,20 +115,23 @@ describe('ControlPage', () => {
       }
     });
 
-    it('with no shortcuts there is no error text: only the Apps chip', () => {
+    it('with no shortcuts the row shows a quiet hint where to pin apps, not an error and not a button', () => {
       store.shortcuts.set([]);
       render();
       expect(root.querySelectorAll('.shortcut')).toHaveLength(0);
-      expect(root.querySelector('.apps-chip')).not.toBeNull();
-      expect(root.querySelector('.top')?.textContent?.trim()).toBe('Apps');
+      expect(root.querySelector('.shortcuts')).toBeNull();
+      expect(root.querySelector('.top .hint')?.textContent?.trim()).toBe(
+        'Fixe apps aqui: abra Apps, no topo.',
+      );
+      expect(root.querySelector('.top .hint')!.closest('button, a')).toBeNull();
       expect(root.textContent).not.toMatch(/sem atalhos/i);
-      expect(root.querySelector('.none, .top a')).toBeNull();
     });
 
     it('says nothing while the list is still loading', () => {
       store.shortcuts.set(null);
       render();
-      expect(root.querySelector('.top')?.textContent?.trim()).toBe('Apps');
+      expect(root.querySelector('.top')?.textContent?.trim()).toBe('');
+      expect(root.querySelector('.top .hint')).toBeNull();
     });
 
     it('no touchpad chip or button is left in the top row', () => {
@@ -157,7 +161,6 @@ describe('ControlPage', () => {
     it('keeps everything that is not directions, touchpad or numbers outside the part that slides', () => {
       const fixed = [
         '.top',
-        '.apps-chip',
         '.shortcuts',
         '.pill.volume',
         '.round-grid',
@@ -170,7 +173,7 @@ describe('ControlPage', () => {
         expect(element!.closest('.pager'), selector).toBeNull();
       }
       expect(
-        root.querySelectorAll('.pager .pill, .pager .round, .pager .shortcut, .pager .apps-chip'),
+        root.querySelectorAll('.pager .pill, .pager .round, .pager .shortcut, .pager .top'),
       ).toHaveLength(0);
       // O que desliza: as direções, o touchpad e os números.
       expect(root.querySelectorAll('.pager .seg')).toHaveLength(4);

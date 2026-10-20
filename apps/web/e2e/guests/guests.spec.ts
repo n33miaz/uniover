@@ -189,12 +189,13 @@ test.describe('convidado: só o controle da TV', () => {
       ],
     ).toBe('web');
 
-    // No painel Apps o convidado abre apps, mas não renomeia nem oculta (isso é só do dono).
+    // No painel Apps o convidado abre apps, mas não edita (renomear, fixar e tirar do controle são só do dono).
     await page.getByRole('button', { name: 'Apps da TV', exact: true }).click();
     const apps = page.getByRole('dialog', { name: 'Apps da TV' });
     await expect(apps).toBeVisible();
     await expect(apps.getByRole('button', { name: /^Renomear / })).toHaveCount(0);
-    await expect(apps.getByRole('button', { name: /^Ocultar / })).toHaveCount(0);
+    await expect(apps.getByRole('button', { name: /^(Fixar|Tirar) / })).toHaveCount(0);
+    await expect(apps.getByRole('button', { name: 'Editar', exact: true })).toHaveCount(0);
     await expect(apps.locator('.launch')).toHaveCount(SHORTCUTS.length);
     await page.keyboard.press('Escape');
     await expect(apps).toHaveCount(0);
