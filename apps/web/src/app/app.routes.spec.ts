@@ -1,11 +1,32 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from './app.routes';
 import { AuthApi } from './core/auth/auth-api';
+import { HomeStatus, HomeStatusPort } from './core/status/home-status.port';
 
 describe('app routes', () => {
-  beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter(routes)] }));
+  beforeEach(() =>
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter(routes),
+        // A Início lê o estado da casa pela porta; aqui só interessa que a rota a desenha.
+        {
+          provide: HomeStatusPort,
+          useValue: {
+            status: signal<HomeStatus>({
+              userName: null,
+              agent: 'unknown',
+              watcher: 'unknown',
+              serviceDown: false,
+            }),
+            watch: () => () => undefined,
+          },
+        },
+      ],
+    }),
+  );
 
   it.each([
     ['/', 'app-home-page'],

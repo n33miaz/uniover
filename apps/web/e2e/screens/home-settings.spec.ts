@@ -1,7 +1,8 @@
-import AxeBuilder from '@axe-core/playwright';
 import { Page, Route, TestInfo } from '@playwright/test';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import { IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
+import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
+import { expectNoA11yViolations, settle, smallTargets } from './screen-helpers';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -17,6 +18,10 @@ test.beforeEach(async ({ context, page }) => {
   await stubWebAuthn(page);
   mock = await mockIdentityApi(context);
   mock.loggedIn = true;
+  // A Início consulta o estado da casa e abre o fluxo de eventos: sem a TV simulada as telas dependeriam do que a
+  // API real responderia (aqui, nada).
+  await mockTvApi(context, mock);
+  await installFakeEventSource(page);
 });
 
 /** Passkeys, um convite pendente e dois convidados (um com acesso revogado): as listas aparecem cheias. */
@@ -108,56 +113,6 @@ async function stubWebAuthn(page: Page) {
   });
 }
 
-/** Espera as animações de entrada terminarem para o print e o axe verem a tela parada. */
-async function settle(page: Page) {
-  await page.evaluate(() =>
-    Promise.all(
-      document
-        .getAnimations()
-        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
-        .map((a) => a.finished),
-    ),
-  );
-}
-
-/** Falha com qualquer violação do axe (inclusive leve e moderada), não só as graves. */
-async function expectNoA11yViolations(page: Page) {
-  const { violations } = await new AxeBuilder({ page }).analyze();
-  expect(
-    violations.map(
-      (v) => `${v.impact} ${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`,
-    ),
-  ).toEqual([]);
-}
-
-/** Alvos de toque com menos de 44 px (interruptores e opções ganham a área do rótulo ou da linha). */
-async function smallTargets(page: Page): Promise<string[]> {
-  return page.evaluate(() => {
-    const found: string[] = [];
-    const selector = 'a[href], button, input, select, textarea, [role="switch"], [role="radio"]';
-    for (const element of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
-      const style = getComputedStyle(element);
-      if (style.display === 'none' || style.visibility === 'hidden') continue;
-      let box = element.getBoundingClientRect();
-      if (
-        element instanceof HTMLInputElement &&
-        (element.type === 'checkbox' || element.type === 'radio')
-      ) {
-        const host = element.closest('label, li');
-        if (host) box = host.getBoundingClientRect();
-      }
-      if (box.width === 0 || box.height === 0) continue;
-      if (Math.min(box.width, box.height) < 43.5) {
-        const label = element.getAttribute('aria-label') ?? element.textContent?.trim() ?? '';
-        found.push(
-          `${element.tagName.toLowerCase()} "${label.slice(0, 30)}" ${Math.round(box.width)}x${Math.round(box.height)}`,
-        );
-      }
-    }
-    return found;
-  });
-}
-
 test.describe('Início', () => {
   for (const scheme of SCHEMES) {
     test(`prints e acessibilidade no tema ${scheme}`, async ({ page }, info) => {
@@ -208,32 +163,6 @@ test.describe('Início', () => {
       await screenshot(page, `test-results/screens/home-${part}-${info.project.name}-light.png`);
     }
     expect(new Set(scenes).size).toBe(3);
-  });
-
-  test('faixa e cartões com os estados "sem dados", "bom" e "atenção" passam no axe nos dois temas', async ({
-    page,
-  }) => {
-    for (const scheme of SCHEMES) {
-      await openHome(page, scheme);
-      // O estado real do agente ainda não chega à Início; força as classes de tom para provar o contraste.
-      await page.evaluate(() => {
-        const chips = document.querySelectorAll('.chips .chip');
-        chips[0]?.classList.add('ok');
-        chips[1]?.classList.add('warn');
-        const badges = document.querySelector('article[data-module="tv"] .badges');
-        badges?.insertAdjacentHTML(
-          'beforeend',
-          '<span class="chip ui-chip ok"><span class="dot ui-dot"></span>Pronto para usar</span>',
-        );
-        document
-          .querySelector('article[data-module="training"] .badges')
-          ?.insertAdjacentHTML(
-            'beforeend',
-            '<span class="chip ui-chip warn"><span class="dot ui-dot"></span>Sem agente em casa</span>',
-          );
-      });
-      await expectNoA11yViolations(page);
-    }
   });
 
   test('estado vazio da Início com todos os módulos ocultos', async ({ page }, info) => {

@@ -1,4 +1,12 @@
-import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  ElementRef,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ModulePrefs, WidgetPref } from '../../core/modules/module-prefs';
 import { ModuleDefinition, ModuleRegistry } from '../../core/modules/module-registry';
@@ -55,11 +63,17 @@ export function greetingFor(hour: number): string {
 })
 export class HomePage {
   private readonly clock = inject(ClockService);
-  private readonly status = inject(HomeStatusPort).status;
+  private readonly statusPort = inject(HomeStatusPort);
+  private readonly status = this.statusPort.status;
   private readonly prefs = inject(ModulePrefs);
   protected readonly registry = inject(ModuleRegistry);
 
   private readonly editButton = viewChild<ElementRef<HTMLButtonElement>>('editButton');
+
+  constructor() {
+    // O estado da casa só é consultado enquanto a Início está na tela: o acompanhamento acaba com o componente.
+    inject(DestroyRef).onDestroy(this.statusPort.watch());
+  }
 
   protected readonly editing = signal(false);
   /**
