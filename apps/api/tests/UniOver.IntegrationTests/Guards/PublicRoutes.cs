@@ -38,6 +38,10 @@ internal static class PublicRoutes
         // O refresh se autentica pelo cookie HttpOnly próprio, não pelo JWT de acesso (que já expirou).
         new("POST", "/api/v1/identity/auth/refresh", "renovação por cookie de refresh rotativo"),
 
+        // Quem recebeu o link do dono ainda não tem conta nem sessão. A credencial é o segredo do convite (32 bytes aleatórios,
+        // uso único, validade curta, só o hash no banco), no corpo e nunca na URL; o limite por IP é próprio (balde separado do login).
+        new("POST", "/api/v1/identity/guest-invites/accept", "convidado aceita o convite do dono e define a própria senha: ainda não existe sessão"),
+
         // O PWA é público: o navegador precisa do HTML antes de qualquer login.
         new("GET", "/", "página inicial do PWA"),
         new("GET", "/index.html", "página inicial do PWA pelo nome do arquivo"),

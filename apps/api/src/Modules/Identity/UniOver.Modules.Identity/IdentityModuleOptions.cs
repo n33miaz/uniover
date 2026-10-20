@@ -38,11 +38,27 @@ public sealed class IdentityModuleOptions
 
     public int StreamTicketSeconds { get; set; } = 120;
 
+    /// <summary>Validade do convite de convidado (padrão 48 h, escolha do dono).</summary>
+    public int GuestInviteHours { get; set; } = 48;
+
+    /// <summary>Convites pendentes ao mesmo tempo: segura o dono de acumular links soltos por aí.</summary>
+    public int MaxPendingGuestInvites { get; set; } = 10;
+
+    /// <summary>
+    /// Por quanto tempo a TV confia na resposta "esta conta de convidado está ativa" (padrão 30 s): é o pior caso para
+    /// uma revogação valer em outra instância; na mesma instância ela vale na hora.
+    /// </summary>
+    public int GuestStatusCacheSeconds { get; set; } = 30;
+
     public IdentityCookieOptions Cookies { get; set; } = new();
 
     public TimeSpan AccessLifetime => TimeSpan.FromMinutes(AccessMinutes);
 
     public TimeSpan StreamTicketLifetime => TimeSpan.FromSeconds(StreamTicketSeconds);
+
+    public TimeSpan GuestStatusCacheLifetime => TimeSpan.FromSeconds(GuestStatusCacheSeconds);
+
+    public TimeSpan GuestInviteLifetime => TimeSpan.FromHours(GuestInviteHours);
 
     public LockoutPolicy Lockout => new(
         LockoutThreshold, TimeSpan.FromSeconds(LockoutBaseSeconds), TimeSpan.FromMinutes(LockoutMaxMinutes));
@@ -60,5 +76,8 @@ public sealed class IdentityModuleOptions
         && o.LockoutBaseSeconds >= 1
         && o.LockoutMaxMinutes >= 1
         && o.MinPasswordLength >= 1
-        && o.StreamTicketSeconds >= 1;
+        && o.StreamTicketSeconds >= 1
+        && o.GuestInviteHours is >= 1 and <= 24 * 30
+        && o.MaxPendingGuestInvites >= 1
+        && o.GuestStatusCacheSeconds is >= 1 and <= 600;
 }

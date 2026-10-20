@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ControlPage } from './pages/control.page';
 import { TV_PANEL_PARAM, TvPanelName, panelFromParam } from './data/tv-panels';
+import { SessionState } from '../../core/session/session-state';
 import { TvStore } from './data/tv-store';
 import { AppsPanel } from './panels/apps-panel';
 import { KeyboardPanel } from './panels/keyboard-panel';
@@ -37,6 +38,8 @@ import { TvPanel } from './ui/tv-panel';
 })
 export class TvPage {
   protected readonly store = inject(TvStore);
+  /** Convidado vê só o controle: sem o retorno ao Início (as outras telas nem existem para ele). */
+  protected readonly isGuest = inject(SessionState).isGuest;
 
   protected readonly powerOpen = signal(false);
   /** Painel flutuante aberto no momento (um por vez). */

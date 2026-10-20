@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Persistence;
+using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity.Domain;
 
 namespace UniOver.Modules.Identity.Persistence;
@@ -23,6 +24,8 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<StepUpConfirmation> StepUpConfirmations => Set<StepUpConfirmation>();
 
+    public DbSet<GuestInvite> GuestInvites => Set<GuestInvite>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -30,13 +33,16 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
         modelBuilder.Entity<User>(e =>
         {
-            e.ToTable("users");
+            e.ToTable("users", t => t.HasCheckConstraint("ck_users_role", "role IN ('owner', 'guest')"));
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.Email).HasMaxLength(EmailRules.MaximumLength).IsRequired();
             e.HasIndex(x => x.Email).IsUnique();
             e.Property(x => x.DisplayName).HasMaxLength(100).IsRequired();
             e.Property(x => x.PasswordHash).HasMaxLength(500).IsRequired();
+
+            // A linha que já existia antes dos convidados é a do dono: o padrão do banco é `owner`.
+            e.Property(x => x.Role).HasMaxLength(20).IsRequired().HasDefaultValue(AccountRoles.Owner);
         });
 
         modelBuilder.Entity<RefreshToken>(e =>
@@ -109,6 +115,20 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             e.HasIndex(x => new { x.SessionFamilyId, x.Action });
             e.HasIndex(x => x.ExpiresAt);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<GuestInvite>(e =>
+        {
+            e.ToTable("guest_invites");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.TokenHash).HasColumnType("bytea").IsRequired();
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.Property(x => x.Role).HasMaxLength(20).IsRequired();
+            e.Property(x => x.Label).HasMaxLength(GuestInvite.LabelMaxLength).IsRequired();
+            e.HasIndex(x => x.CreatedBy);
+
+            // Sem FK de propósito: quem criou e quem aceitou são contas, e a trilha do convite sobrevive à exclusão manual delas.
         });
     }
 }

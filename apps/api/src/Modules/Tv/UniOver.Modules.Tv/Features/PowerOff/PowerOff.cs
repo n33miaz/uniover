@@ -29,7 +29,7 @@ internal sealed class PowerOffHandler(TvCommandRunner runner)
 internal static class PowerOffEndpoint
 {
     public static void MapPowerOff(this IEndpointRouteBuilder group) =>
-        group.MapPost("/power/off", HandleAsync).RequireAuthorization()
+        group.MapPost("/power/off", HandleAsync).RequireAuthorization(TvAuth.ControlPolicy)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces<TvCommandOk>()
             .ProducesProblem(StatusCodes.Status401Unauthorized)

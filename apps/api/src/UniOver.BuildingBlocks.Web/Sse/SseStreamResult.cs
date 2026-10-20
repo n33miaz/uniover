@@ -9,7 +9,8 @@ namespace UniOver.BuildingBlocks.Web;
 /// Escreve um <see cref="SseSubscription{T}"/> como <c>text/event-stream</c>. Termina quando o cliente sai, quando
 /// a aplicação vai parar ou quando a duração máxima passa. O keep-alive é um comentário SSE (linha iniciada por
 /// dois pontos), que o navegador ignora; o <c>SseItem</c> do .NET não tem como emitir comentário, por isso a
-/// escrita é feita aqui. Todo o tempo passa pelo <see cref="TimeProvider"/>, para os testes controlarem.
+/// escrita é feita aqui. Com <c>stillAllowed</c> o acesso é conferido a cada keep-alive e o fluxo fecha se deixou de valer.
+/// Todo o tempo passa pelo <see cref="TimeProvider"/>, para os testes controlarem.
 /// </summary>
 public static class SseResults
 {
@@ -20,12 +21,22 @@ public static class SseResults
         SseStreamOptions options,
         TimeProvider time,
         CancellationToken applicationStopping) =>
-        new SseStreamResult<T>(subscription, options, time, applicationStopping);
+        new SseStreamResult<T>(subscription, options, time, null, applicationStopping);
+
+    /// <param name="stillAllowed">Conferida a cada keep-alive: se devolver <c>false</c> o fluxo é encerrado (acesso revogado).</param>
+    public static IResult Stream<T>(
+        SseSubscription<T> subscription,
+        SseStreamOptions options,
+        TimeProvider time,
+        Func<CancellationToken, Task<bool>>? stillAllowed,
+        CancellationToken applicationStopping) =>
+        new SseStreamResult<T>(subscription, options, time, stillAllowed, applicationStopping);
 
     private sealed class SseStreamResult<T>(
         SseSubscription<T> subscription,
         SseStreamOptions options,
         TimeProvider time,
+        Func<CancellationToken, Task<bool>>? stillAllowed,
         CancellationToken applicationStopping) : IResult
     {
         public async Task ExecuteAsync(HttpContext httpContext)
@@ -92,6 +103,12 @@ public static class SseResults
                 }
                 else
                 {
+                    // Acesso revogado com o fluxo aberto: encerra no próximo ciclo do keep-alive.
+                    if (stillAllowed is not null && !await stillAllowed(token))
+                    {
+                        return;
+                    }
+
                     await response.WriteAsync(": keep-alive\n\n", Utf8, token);
                     await response.Body.FlushAsync(token);
                 }

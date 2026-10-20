@@ -270,9 +270,20 @@ internal sealed class IdentityApp : IAsyncDisposable
         string audience = UniOverAuth.ApiAudience,
         string issuer = UniOverAuth.Issuer,
         Guid? subject = null,
-        string algorithm = SecurityAlgorithms.HmacSha256)
+        string algorithm = SecurityAlgorithms.HmacSha256,
+        string? role = null)
     {
         var key = new SymmetricSecurityKey(Convert.FromBase64String(base64Key));
+        var claims = new Dictionary<string, object>
+        {
+            [UniOverAuth.SubjectClaim] = (subject ?? Guid.NewGuid()).ToString(),
+            [UniOverAuth.SessionClaim] = Guid.NewGuid().ToString(),
+        };
+        if (role is not null)
+        {
+            claims[UniOverAuth.RoleClaim] = role;
+        }
+
         var descriptor = new SecurityTokenDescriptor
         {
             Issuer = issuer,
@@ -280,11 +291,7 @@ internal sealed class IdentityApp : IAsyncDisposable
             NotBefore = notBefore.UtcDateTime,
             Expires = expires.UtcDateTime,
             SigningCredentials = new SigningCredentials(key, algorithm),
-            Claims = new Dictionary<string, object>
-            {
-                [UniOverAuth.SubjectClaim] = (subject ?? Guid.NewGuid()).ToString(),
-                [UniOverAuth.SessionClaim] = Guid.NewGuid().ToString(),
-            },
+            Claims = claims,
         };
         return new JsonWebTokenHandler().CreateToken(descriptor);
     }

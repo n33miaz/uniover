@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Tv;
 
 namespace UniOver.IntegrationTests.Guards;
 
@@ -51,7 +52,7 @@ internal static partial class RouteInspector
     public static RouteKind Classify(RouteEndpoint endpoint)
     {
         var authorize = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>();
-        if (authorize.Any(a => a.Policy == UniOverAuth.StreamPolicy))
+        if (authorize.Any(a => a.Policy is UniOverAuth.StreamPolicy or TvAuth.StreamPolicy))
         {
             return RouteKind.Stream;
         }

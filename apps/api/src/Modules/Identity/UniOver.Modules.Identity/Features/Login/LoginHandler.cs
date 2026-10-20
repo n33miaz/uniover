@@ -59,6 +59,14 @@ internal sealed class LoginHandler(
             return new LoginResult(LoginStatus.InvalidCredentials);
         }
 
+        // Convidado revogado falha igual a senha errada (a senha já foi conferida, então o tempo não revela nada).
+        if (user.IsDisabled)
+        {
+            audit.Add(user.Id, AuditEvents.LoginFailed, command.Client, "account-disabled");
+            await db.SaveChangesAsync(cancellationToken);
+            return new LoginResult(LoginStatus.InvalidCredentials);
+        }
+
         user.RegisterSuccess();
         if (check == PasswordCheck.SuccessRehashNeeded)
         {
@@ -71,7 +79,7 @@ internal sealed class LoginHandler(
         db.RefreshTokens.Add(RefreshToken.Create(
             user.Id, familyId, hash, now, expiresAt, command.Client.Ip, command.Client.UserAgent));
 
-        var access = tokens.Issue(user.Id, familyId, UniOverAuth.ApiAudience, settings.AccessLifetime, now);
+        var access = tokens.Issue(user.Id, familyId, user.Role, UniOverAuth.ApiAudience, settings.AccessLifetime, now);
         audit.Add(user.Id, AuditEvents.LoginSucceeded, command.Client);
         await db.SaveChangesAsync(cancellationToken);
 

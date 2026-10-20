@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { collectShellData } from '../../core/layout/route-data';
+import { SessionState } from '../../core/session/session-state';
 import { TvStore } from './data/tv-store';
 import { TvPage } from './tv-page';
 import { FakeTvStore, createFakeTvStore } from './tv-test-kit';
@@ -263,5 +264,34 @@ describe('TV_ROUTES', () => {
     await open('/tv/apps');
     expect(store.start).toHaveBeenCalledTimes(1);
     expect(store.stop).not.toHaveBeenCalled();
+  });
+});
+
+describe('TvPage for a guest', () => {
+  afterEach(() => localStorage.clear());
+
+  it('has no way back to Início (single view of the control), but keeps name, state and power', async () => {
+    const store = createFakeTvStore();
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), { provide: TvStore, useValue: store }],
+    });
+    TestBed.inject(SessionState).setUser({
+      id: '1',
+      email: 'a@b.c',
+      displayName: 'Alice',
+      role: 'guest',
+    });
+    const fixture = TestBed.createComponent(TvPage);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+
+    expect(root.querySelector('a.back')).toBeNull();
+    expect(root.querySelector('a[href="/"]')).toBeNull();
+    expect(root.textContent).not.toContain('Início');
+    expect(root.querySelector('h1')?.textContent?.trim()).toBe('TV');
+    expect(root.querySelector('button[aria-label="Desligar a TV"]')).not.toBeNull();
+    expect(root.querySelector('app-tv-control')).not.toBeNull();
   });
 });

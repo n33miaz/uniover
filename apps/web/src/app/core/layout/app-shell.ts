@@ -2,6 +2,7 @@ import { Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
+import { SessionState } from '../session/session-state';
 import { TabBar } from '../../shared/ui/tab-bar/tab-bar';
 import { collectShellData } from './route-data';
 
@@ -15,7 +16,9 @@ import { collectShellData } from './route-data';
   template: `
     @if (data().title; as title) {
       <header class="bar">
-        <a routerLink="/" class="back" i18n="@@shell.back-home">&larr; Início</a>
+        @if (!isGuest()) {
+          <a routerLink="/" class="back" i18n="@@shell.back-home">&larr; Início</a>
+        }
         <h1>{{ title }}</h1>
       </header>
     }
@@ -67,6 +70,9 @@ import { collectShellData } from './route-data';
 })
 export class AppShell {
   private readonly router = inject(Router);
+
+  /** Convidado: sem navegação para fora da TV (o retorno ao Início some). */
+  protected readonly isGuest = inject(SessionState).isGuest;
 
   protected readonly data = toSignal(
     this.router.events.pipe(

@@ -8,6 +8,8 @@ export function actionLabel(action: string | null): string {
       return $localize`:@@auth.step-up.action.pair-approve:aprovar o pareamento de um aparelho`;
     case 'identity.passkey-remove':
       return $localize`:@@auth.step-up.action.passkey-remove:remover uma passkey`;
+    case 'identity.guest-invite':
+      return $localize`:@@auth.step-up.action.guest-invite:criar um convite de convidado`;
     case 'identity.password-change':
       return $localize`:@@auth.step-up.action.password-change:trocar a senha`;
     default:

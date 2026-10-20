@@ -1,6 +1,8 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Tv.Adapters;
@@ -32,16 +34,18 @@ internal sealed class StreamEventsHandler(TvStateProvider provider, ITvShortcutR
 internal static class StreamEventsEndpoint
 {
     /// <summary>
-    /// Fluxo SSE do estado da TV. Só o cookie de bilhete de stream vale (política <c>StreamAccess</c>, só GET): token
+    /// Fluxo SSE do estado da TV. Só o cookie de bilhete de stream vale (política <c>TvStream</c>: só GET, dono ou convidado): token
     /// na URL nunca é aceito. O servidor encerra o fluxo a cada 10 minutos e a tela reabre.
     /// </summary>
     public static void MapStreamEvents(this IEndpointRouteBuilder group) =>
-        group.MapGet("/events", HandleAsync).RequireAuthorization(UniOverAuth.StreamPolicy)
+        group.MapGet("/events", HandleAsync).RequireAuthorization(TvAuth.StreamPolicy)
             .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 
     private static async Task<IResult> HandleAsync(
         ICurrentUser current,
+        ClaimsPrincipal principal,
+        IServiceProvider services,
         StreamEventsHandler handler,
         SseBroadcaster<object> broadcaster,
         TimeProvider time,
@@ -55,6 +59,16 @@ internal static class StreamEventsEndpoint
         }
 
         var subscription = await handler.OpenAsync(userId, cancellationToken);
-        return SseResults.Stream(subscription, broadcaster.Options, time, lifetime.ApplicationStopping);
+
+        // Convidado revogado com o fluxo aberto: a cada keep-alive o acesso é conferido (cache curto) e o fluxo fecha.
+        // O dono não paga a consulta.
+        Func<CancellationToken, Task<bool>>? stillAllowed = null;
+        if (AccountRoles.Of(principal) == AccountRoles.Guest)
+        {
+            var status = services.GetService<IAccountStatus>();
+            stillAllowed = async ct => status is not null && await status.IsActiveAsync(userId, ct);
+        }
+
+        return SseResults.Stream(subscription, broadcaster.Options, time, stillAllowed, lifetime.ApplicationStopping);
     }
 }

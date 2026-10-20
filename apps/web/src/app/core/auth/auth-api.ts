@@ -10,12 +10,15 @@ export const FETCH_FN = new InjectionToken<typeof fetch>('FETCH_FN', {
   factory: () => (input, init) => globalThis.fetch(input, init),
 });
 
-/** Cabeçalho que a API exige em todo POST para `/identity/auth/*` (defesa extra contra CSRF). */
+/** Cabeçalho que a API exige em todo POST para `/identity/auth/*` e no aceite do convite (defesa extra contra CSRF). */
 export const CLIENT_HEADER = 'X-UniOver-Client';
 export const CLIENT_HEADER_VALUE = 'web';
 
 /** Tipos gerados do OpenAPI da API (`npm --prefix contracts run generate`): nunca editados à mão. */
 type Schemas = components['schemas'];
+
+/** Única rota pública além do login e do refresh que também exige o cabeçalho do cliente. */
+const ACCEPT_INVITE_PATH = '/guest-invites/accept';
 
 const IDENTITY_BASE = `${APP_CONFIG.apiBase}/v1/identity`;
 
@@ -28,6 +31,9 @@ export type WebAuthnChallenge = Readonly<Schemas['RequestStepUpResponse']>;
 export type StepUpConfirmation = Readonly<Schemas['ConfirmStepUpResponse']>;
 export type StreamTicket = Readonly<Schemas['StreamTicketResponse']>;
 export type ModuleInfo = Readonly<Schemas['IdentityModuleInfo']>;
+export type GuestInviteSummary = Readonly<Schemas['GuestInviteSummary']>;
+export type GuestInviteCreated = Readonly<Schemas['CreateGuestInviteResponse']>;
+export type GuestSummary = Readonly<Schemas['GuestSummary']>;
 
 interface RequestOptions {
   readonly token?: string | null;
@@ -65,6 +71,37 @@ export class AuthApi {
   /** Troca o JWT por um bilhete curto em cookie, para abrir o SSE sem token na URL. */
   streamTicket(token: string): Promise<StreamTicket> {
     return this.send('POST', '/auth/stream-ticket', { token });
+  }
+
+  /**
+   * Aceita o convite do dono: a pessoa escolhe e-mail e senha e já sai com a sessão aberta (como no login). Rota
+   * pública; o segredo do convite viaja só no corpo, nunca na URL.
+   */
+  acceptInvite(token: string, email: string, password: string): Promise<TokenResponse> {
+    const body: Schemas['AcceptGuestInviteRequest'] = { token, email, password };
+    return this.send('POST', '/guest-invites/accept', { body });
+  }
+
+  guestInvites(token: string): Promise<readonly GuestInviteSummary[]> {
+    return this.send('GET', '/guest-invites', { token });
+  }
+
+  /** Gerar o convite concede acesso: a API pede a confirmação com a passkey (o `AuthService` abre o diálogo e repete). */
+  createGuestInvite(token: string, displayName: string): Promise<GuestInviteCreated> {
+    const body: Schemas['CreateGuestInviteRequest'] = { displayName };
+    return this.send('POST', '/guest-invites', { token, body });
+  }
+
+  revokeGuestInvite(token: string, id: string): Promise<void> {
+    return this.send('POST', `/guest-invites/${encodeURIComponent(id)}/revoke`, { token });
+  }
+
+  guests(token: string): Promise<readonly GuestSummary[]> {
+    return this.send('GET', '/guests', { token });
+  }
+
+  revokeGuest(token: string, id: string): Promise<void> {
+    return this.send('POST', `/guests/${encodeURIComponent(id)}/revoke`, { token });
   }
 
   info(): Promise<ModuleInfo> {
@@ -120,7 +157,7 @@ export class AuthApi {
       Accept: 'application/json, application/problem+json',
     };
     if (options.token) headers['Authorization'] = `Bearer ${options.token}`;
-    if (method === 'POST' && path.startsWith('/auth/'))
+    if (method === 'POST' && (path.startsWith('/auth/') || path === ACCEPT_INVITE_PATH))
       headers[CLIENT_HEADER] = CLIENT_HEADER_VALUE;
     let body: string | undefined;
     if (options.body !== undefined) {

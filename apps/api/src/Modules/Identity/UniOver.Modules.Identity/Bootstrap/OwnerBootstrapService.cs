@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -12,7 +13,7 @@ using UniOver.Modules.Identity.Security;
 namespace UniOver.Modules.Identity.Bootstrap;
 
 /// <summary>
-/// Cria a conta do dono na partida, só se <c>identity.users</c> está vazia e as duas variáveis de ambiente
+/// Cria a conta do dono na partida, só se <c>identity.users</c> não tem nenhum dono e as duas variáveis de ambiente
 /// existem. Não há endpoint de cadastro: este é o único caminho para a conta nascer.
 /// <para>
 /// Roda em segundo plano e engole qualquer falha: as migrations só entram pela esteira de publicação e o banco
@@ -144,7 +145,8 @@ internal sealed partial class OwnerBootstrapService(
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
 
-        if (await db.Users.AnyAsync(cancellationToken))
+        // Só a conta do dono conta: convidados não impedem o seed de recriar o dono se a linha dele for apagada à mão.
+        if (await db.Users.AnyAsync(u => u.Role == AccountRoles.Owner, cancellationToken))
         {
             if (hasPassword)
             {

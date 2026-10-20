@@ -28,7 +28,8 @@ internal sealed class GetOnlyHandler(IHttpContextAccessor accessor) : Authorizat
 }
 
 /// <summary>
-/// Política padrão: usuário autenticado. Fica de fora só o que o roteador resolve sozinho (rota inexistente e
+/// Política de reserva (fallback): usuário autenticado <b>e dono</b>. Quem esquece de declarar política cai aqui e o
+/// convidado nunca alcança a rota. Fica de fora só o que o roteador resolve sozinho (rota inexistente e
 /// método não permitido): ali não há endpoint de negócio a proteger, e exigir login mascararia o 404 e o 405
 /// legítimos com um 401. Todo endpoint real, sem exceção, continua exigindo autenticação.
 /// </summary>
@@ -42,7 +43,9 @@ internal sealed class AuthenticatedByDefaultHandler(IHttpContextAccessor accesso
 
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, AuthenticatedByDefaultRequirement requirement)
     {
-        if (context.User.Identity?.IsAuthenticated == true || IsRouterGenerated(accessor.HttpContext?.GetEndpoint()))
+        var owner = context.User.Identity?.IsAuthenticated == true
+            && string.Equals(AccountRoles.Of(context.User), AccountRoles.Owner, StringComparison.Ordinal);
+        if (owner || IsRouterGenerated(accessor.HttpContext?.GetEndpoint()))
         {
             context.Succeed(requirement);
         }
@@ -137,7 +140,7 @@ public static class AuthenticationExtensions
 {
     /// <summary>
     /// Validação do JWT de acesso e do bilhete de stream, política padrão "autenticado" (rota pública é exceção
-    /// explícita com <c>AllowAnonymous</c>) e a política <see cref="UniOverAuth.StreamPolicy"/>. Mora aqui, e não
+    /// explícita com <c>AllowAnonymous</c>), a política padrão "dono" e a política <see cref="UniOverAuth.StreamPolicy"/> (só dono). Mora aqui, e não
     /// no Identity, para que um módulo extraído valide o mesmo JWT sem referenciar o Identity.
     /// </summary>
     public static IServiceCollection AddUniOverAuthentication(this IServiceCollection services, IConfiguration configuration)
@@ -161,12 +164,19 @@ public static class AuthenticationExtensions
 
         services.AddSingleton<IAuthorizationHandler, GetOnlyHandler>();
         services.AddSingleton<IAuthorizationHandler, AuthenticatedByDefaultHandler>();
+        services.AddSingleton<IAuthorizationHandler, AccountRoleHandler>();
+        services.AddSingleton<IAuthorizationHandler, ActiveAccountHandler>();
         services.AddAuthorizationBuilder()
             .SetFallbackPolicy(new AuthorizationPolicyBuilder().AddRequirements(new AuthenticatedByDefaultRequirement()).Build())
+
+            // Quem escreve só `.RequireAuthorization()` chega aqui: a política padrão é "dono". O convidado entra apenas
+            // onde o módulo declara uma política própria, então um módulo novo nasce fechado para ele.
+            .SetDefaultPolicy(new AuthorizationPolicyBuilder().RequireAccountRole(AccountRoles.Owner).Build())
+            .AddPolicy(UniOverAuth.OwnerPolicy, policy => policy.RequireAccountRole(AccountRoles.Owner))
             .AddPolicy(UniOverAuth.StreamPolicy, policy => policy
                 .AddAuthenticationSchemes(UniOverAuth.StreamScheme)
-                .RequireAuthenticatedUser()
-                .AddRequirements(new GetOnlyRequirement()));
+                .RequireAccountRole(AccountRoles.Owner)
+                .RequireGetOnly());
         return services;
     }
 

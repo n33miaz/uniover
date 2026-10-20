@@ -9,7 +9,7 @@ namespace UniOver.Modules.Identity.Features.Logout;
 internal static class LogoutEndpoint
 {
     public static void MapLogout(this IEndpointRouteBuilder group) =>
-        group.MapPost("/auth/logout", HandleAsync).RequireAuthorization()
+        group.MapPost("/auth/logout", HandleAsync).RequireAuthorization(IdentityAuth.AccountSessionPolicy)
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 

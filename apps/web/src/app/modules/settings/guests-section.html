@@ -1,0 +1,193 @@
+<section class="section" aria-labelledby="guests-title">
+  <h2 id="guests-title" i18n="@@settings.guests.title">Convidados</h2>
+  <p class="hint" i18n="@@settings.guests.hint">
+    O convidado usa o controle da TV, como se você entregasse o controle de verdade, e mais nada.
+    Você gera um link e o entrega a ele; ele escolhe a própria senha, que você nunca vê.
+  </p>
+
+  <form class="add" (submit)="create($event)">
+    <label for="guest-name" i18n="@@settings.guests.name">Nome do convidado</label>
+    <input
+      id="guest-name"
+      type="text"
+      autocomplete="off"
+      [attr.maxlength]="maxName"
+      required
+      [value]="newName()"
+      (input)="newName.set(value($event))"
+    />
+    <button
+      type="submit"
+      class="primary add-button"
+      [disabled]="busy() || newName().trim().length === 0"
+      i18n="@@settings.guests.create"
+    >
+      Gerar convite
+    </button>
+  </form>
+
+  @if (created(); as link) {
+    <div class="link-box" role="group" aria-labelledby="guests-link-title">
+      <p id="guests-link-title" class="question" i18n="@@settings.guests.link-title">
+        Convite para {{ link.name }}
+      </p>
+      <input
+        class="link"
+        type="text"
+        readonly
+        aria-label="Link do convite"
+        i18n-aria-label="@@settings.guests.link-label"
+        [value]="link.url"
+        (focus)="$any($event.target).select()"
+      />
+      <p class="hint">{{ linkExpires(link) }}</p>
+      <div class="actions">
+        <button type="button" class="primary" (click)="copy()" i18n="@@settings.guests.copy">
+          Copiar link
+        </button>
+        @if (canShare()) {
+          <button type="button" class="secondary" (click)="share()" i18n="@@settings.guests.share">
+            Compartilhar
+          </button>
+        }
+        <button
+          type="button"
+          class="secondary"
+          (click)="closeLink()"
+          i18n="@@settings.guests.close"
+        >
+          Fechar
+        </button>
+      </div>
+    </div>
+  }
+
+  <div class="messages" [attr.aria-live]="'polite'">
+    @if (message(); as text) {
+      <p
+        class="message"
+        [class.error]="messageIsError()"
+        [attr.role]="messageIsError() ? 'alert' : null"
+      >
+        {{ text }}
+      </p>
+    }
+  </div>
+
+  @if (invites() !== null) {
+    <h3 i18n="@@settings.guests.pending-title">Convites pendentes</h3>
+    @if (pending().length === 0) {
+      <p class="empty" i18n="@@settings.guests.pending-empty">Nenhum convite pendente.</p>
+    } @else {
+      <ul class="list">
+        @for (invite of pending(); track invite.id) {
+          <li class="item">
+            <div class="info">
+              <strong class="name">{{ invite.displayName }}</strong>
+              <span class="meta">{{ expires(invite) }}</span>
+            </div>
+            @if (revokingInviteId() === invite.id) {
+              <div class="actions">
+                <button
+                  type="button"
+                  class="secondary"
+                  (click)="revokingInviteId.set(null)"
+                  i18n="@@settings.cancel"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  class="danger"
+                  [disabled]="busy()"
+                  (click)="revokeInvite(invite)"
+                  i18n="@@settings.guests.revoke"
+                >
+                  Revogar
+                </button>
+              </div>
+            } @else {
+              <div class="actions">
+                <button
+                  type="button"
+                  class="secondary"
+                  [attr.aria-label]="revokeInviteLabel(invite)"
+                  (click)="revokingInviteId.set(invite.id)"
+                  i18n="@@settings.guests.revoke"
+                >
+                  Revogar
+                </button>
+              </div>
+            }
+          </li>
+        }
+      </ul>
+    }
+  }
+
+  @if (guests(); as list) {
+    <h3 i18n="@@settings.guests.active-title">Convidados com acesso</h3>
+    @if (list.length === 0) {
+      <p class="empty" i18n="@@settings.guests.active-empty">Nenhum convidado ainda.</p>
+    } @else {
+      <ul class="list">
+        @for (guest of list; track guest.id) {
+          <li class="item">
+            <div class="info">
+              <strong class="name">{{ guest.displayName }}</strong>
+              <span class="meta">{{ guest.email }}</span>
+              <span class="meta">{{ since(guest) }}</span>
+              @if (guest.disabledAt) {
+                <span class="meta revoked" i18n="@@settings.guests.revoked">Acesso revogado</span>
+              }
+            </div>
+            @if (!guest.disabledAt) {
+              @if (revokingGuestId() === guest.id) {
+                <div class="confirm" role="group" [attr.aria-label]="revokeGuestQuestion(guest)">
+                  <p class="question">{{ revokeGuestQuestion(guest) }}</p>
+                  <div class="actions">
+                    <button
+                      type="button"
+                      class="secondary"
+                      (click)="revokingGuestId.set(null)"
+                      i18n="@@settings.cancel"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      class="danger"
+                      [disabled]="busy()"
+                      (click)="revokeGuest(guest)"
+                      i18n="@@settings.guests.revoke-access"
+                    >
+                      Revogar acesso
+                    </button>
+                  </div>
+                </div>
+              } @else {
+                <div class="actions">
+                  <button
+                    type="button"
+                    class="secondary"
+                    [attr.aria-label]="revokeGuestLabel(guest)"
+                    (click)="revokingGuestId.set(guest.id)"
+                    i18n="@@settings.guests.revoke-access"
+                  >
+                    Revogar acesso
+                  </button>
+                </div>
+              }
+            }
+          </li>
+        }
+      </ul>
+    }
+  } @else if (loadFailed()) {
+    <p class="empty" i18n="@@settings.guests.load-failed">
+      Não foi possível carregar os convidados agora. Eles aparecem quando a sessão for confirmada.
+    </p>
+  } @else {
+    <p class="empty" role="status" i18n="@@settings.guests.loading">Carregando os convidados…</p>
+  }
+</section>

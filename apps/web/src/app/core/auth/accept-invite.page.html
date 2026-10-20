@@ -1,0 +1,94 @@
+<main class="invite">
+  <h1 i18n="@@auth.invite.title">Criar sua conta</h1>
+
+  @if (hasInvite) {
+    <p class="lead" i18n="@@auth.invite.lead">
+      Você foi convidado para usar o controle da TV. Escolha o e-mail e a senha que vai usar para
+      entrar.
+    </p>
+
+    <form (submit)="submit($event)" novalidate>
+      <div class="field">
+        <label for="invite-email" i18n="@@auth.invite.email">E-mail</label>
+        <input
+          #emailField
+          id="invite-email"
+          name="email"
+          type="email"
+          autocomplete="username"
+          [attr.inputmode]="'email'"
+          [attr.autocapitalize]="'none'"
+          spellcheck="false"
+          required
+          [value]="email()"
+          (input)="setEmail($event)"
+        />
+      </div>
+
+      <div class="field">
+        <label for="invite-password" i18n="@@auth.invite.password">Senha</label>
+        <div class="password">
+          <input
+            id="invite-password"
+            name="password"
+            [type]="showPassword() ? 'text' : 'password'"
+            autocomplete="new-password"
+            aria-describedby="invite-password-hint"
+            required
+            [value]="password()"
+            (input)="setPassword($event)"
+          />
+          <button
+            type="button"
+            class="toggle"
+            [attr.aria-pressed]="showPassword()"
+            (click)="toggleShowPassword()"
+            i18n="@@auth.invite.show-password"
+          >
+            Mostrar senha
+          </button>
+        </div>
+        <p id="invite-password-hint" class="hint" i18n="@@auth.invite.password-hint">
+          Ao menos {{ minLength }} caracteres. Não existe recuperação de senha: guarde esta senha.
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="invite-confirmation" i18n="@@auth.invite.confirmation">Repita a senha</label>
+        <input
+          id="invite-confirmation"
+          name="confirmation"
+          [type]="showPassword() ? 'text' : 'password'"
+          autocomplete="new-password"
+          required
+          [value]="confirmation()"
+          (input)="setConfirmation($event)"
+        />
+      </div>
+
+      <div class="messages" [attr.aria-live]="'polite'">
+        @if (errorText(); as message) {
+          <p #errorBox class="error" role="alert" tabindex="-1">
+            {{ message }}
+            @if (error() === 'rate-limited' && waitSeconds(); as seconds) {
+              <span i18n="@@auth.invite.wait">Tente de novo em {{ seconds }} s.</span>
+            }
+          </p>
+        }
+      </div>
+
+      <button type="submit" class="submit" [disabled]="busy()">
+        @if (busy()) {
+          <span i18n="@@auth.invite.busy">Criando…</span>
+        } @else {
+          <span i18n="@@auth.invite.submit">Criar conta e entrar</span>
+        }
+      </button>
+    </form>
+  } @else {
+    <p class="lead" role="alert" i18n="@@auth.invite.missing">
+      Abra o link do convite que você recebeu. Este endereço não traz um convite.
+    </p>
+    <a class="other" routerLink="/entrar" i18n="@@auth.invite.to-login">Já tenho conta: entrar</a>
+  }
+</main>
