@@ -146,8 +146,9 @@ button:disabled {
   border-radius: var(--radius);
   background: var(--a-surface);
 }
-.item.off .text {
-  opacity: 0.6;
+.item.off .text,
+.item.off app-tv-app-icon {
+  opacity: 0.55;
 }
 .item.editing {
   grid-column: 1 / -1;
@@ -160,15 +161,38 @@ button:disabled {
 [data-view='grid'] .launch {
   flex-direction: column;
   justify-content: center;
-  min-height: 84px;
+  gap: 8px;
+  padding: 10px 6px 6px;
   text-align: center;
 }
 [data-view='grid'] .text {
   align-items: center;
   width: 100%;
 }
+/* Na grade o nome cabe em até duas linhas, com reticências, sem estourar o cartão. */
+[data-view='grid'] .name {
+  display: -webkit-box;
+  max-width: 100%;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+[data-view='grid'] .package {
+  max-width: 100%;
+}
 [data-view='grid'] .tools {
   justify-content: center;
+}
+
+/* O tamanho do azulejo: 44 px ao lado do nome na lista; 56 px (o banner 16:9 fica mais largo) em cima do nome na grade. */
+.launch app-tv-app-icon,
+.edit-head app-tv-app-icon {
+  --tile: 44px;
+}
+[data-view='grid'] .launch app-tv-app-icon {
+  --tile: 56px;
 }
 
 .launch {
@@ -226,6 +250,29 @@ button:disabled {
   flex-direction: column;
   gap: 6px;
   padding: 4px;
+}
+.edit-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.edit-head .text {
+  align-items: flex-start;
+  width: auto;
+}
+.edit-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-package {
+  color: var(--a-ink2);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .edit label {
   font-weight: 600;

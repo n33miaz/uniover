@@ -14,6 +14,8 @@ export interface MockShortcut {
   tvLabel: string | null;
   customLabel: string | null;
   enabled: boolean;
+  /** Ausente nos atalhos antigos (o mock não preenche): a tela trata como "sem ícone". */
+  iconDataUri?: string | null;
 }
 
 export interface MockTvState {

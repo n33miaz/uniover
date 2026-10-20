@@ -2,6 +2,7 @@ import { Component, computed, inject, output, signal } from '@angular/core';
 import { SessionState } from '../../../core/session/session-state';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut, shortcutLabel } from '../data/tv-types';
+import { AppIcon } from '../ui/app-icon';
 import { TvIcon } from '../ui/tv-icon';
 
 /** Tamanho máximo do nome próprio, o mesmo da API. */
@@ -30,11 +31,12 @@ function storedView(): AppsView {
  * Painel Apps: a lista completa dos atalhos que a TV informou, com busca por texto, grade ou lista, toque para
  * abrir, renomear e ocultar. Sem lista ainda, mostra um estado vazio com o botão que pede a lista à TV. Nenhum nome
  * de app vem do código: o nome é o do dono, o que o agente publicou para o app ou, por último, "Atalho" mais a
- * posição; o pacote aparece só como texto pequeno e a busca também o enxerga.
+ * posição; o pacote aparece só como texto pequeno e a busca também o enxerga. Cada app aparece com o ícone que a TV
+ * deu (ou o azulejo com a inicial): grande, com o nome embaixo, na grade; ao lado do nome, na lista e na edição.
  */
 @Component({
   selector: 'app-tv-apps',
-  imports: [TvIcon],
+  imports: [AppIcon, TvIcon],
   templateUrl: './apps-panel.html',
   styleUrl: './apps-panel.css',
 })

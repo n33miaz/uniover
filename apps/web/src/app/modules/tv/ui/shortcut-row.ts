@@ -1,15 +1,17 @@
 import { Component, input, output } from '@angular/core';
 import { TvShortcut, shortcutLabel } from '../data/tv-types';
+import { AppIcon } from './app-icon';
 import { TvIcon } from './tv-icon';
 
 /**
  * Fileira de cima do controle: o chip fixo "Apps" e, ao lado, os atalhos favoritos como chips que abrem o app (a faixa
- * deles rola na horizontal e o chip Apps fica parado). Só apresenta: quem decide o que fazer com o toque é o controle.
+ * deles rola na horizontal e o chip Apps fica parado). Cada atalho é o ícone do app; o nome vai no nome acessível do
+ * botão e na dica de quem passa o mouse. Só apresenta: quem decide o que fazer com o toque é o controle.
  * O chip Apps devolve o próprio botão, porque o painel que ele abre devolve o foco a ele ao fechar.
  */
 @Component({
   selector: 'app-tv-shortcut-row',
-  imports: [TvIcon],
+  imports: [AppIcon, TvIcon],
   templateUrl: './shortcut-row.html',
   styleUrl: './shortcut-row.css',
 })

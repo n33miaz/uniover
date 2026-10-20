@@ -27,6 +27,54 @@ export function makeShortcut(position: number, overrides: Partial<TvShortcut> = 
   };
 }
 
+function toBase64(bytes: number[]): string {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+const u32be = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+const u16le = (n: number) => [n & 255, (n >>> 8) & 255];
+const u24le = (n: number) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255];
+const text = (value: string) => [...value].map((char) => char.charCodeAt(0));
+
+/**
+ * Ícones sintéticos só com o cabeçalho (o jsdom não decodifica imagem; o e2e usa PNGs de verdade): o suficiente para a
+ * tela ler a forma. Nada vem de app real.
+ */
+export function pngIcon(width: number, height: number): string {
+  const header = [
+    ...[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+    ...u32be(13),
+    ...text('IHDR'),
+    ...u32be(width),
+    ...u32be(height),
+    ...[8, 6, 0, 0, 0, 0, 0, 0, 0],
+  ];
+  return `data:image/png;base64,${toBase64(header)}`;
+}
+
+export type WebpKind = 'lossy' | 'lossless' | 'extended';
+
+export function webpIcon(kind: WebpKind, width: number, height: number): string {
+  const riff = [...text('RIFF'), 0, 0, 0, 0, ...text('WEBP')];
+  let body: number[];
+  if (kind === 'extended') {
+    body = [...text('VP8X'), 10, 0, 0, 0, 0, 0, 0, 0, ...u24le(width - 1), ...u24le(height - 1)];
+  } else if (kind === 'lossless') {
+    const bits = ((width - 1) | ((height - 1) << 14)) >>> 0;
+    body = [...text('VP8L'), 5, 0, 0, 0, 0x2f, ...u32be(bits).reverse()];
+  } else {
+    body = [
+      ...text('VP8 '),
+      ...[10, 0, 0, 0, 0, 0, 0, 0x9d, 0x01, 0x2a],
+      ...u16le(width),
+      ...u16le(height),
+    ];
+  }
+  const bytes = [...riff, ...body];
+  while (bytes.length < 36) bytes.push(0);
+  return `data:image/webp;base64,${toBase64(bytes)}`;
+}
+
 /**
  * `TvStore` de mentira para as telas: só signals que o teste liga e desliga, e métodos que registram a chamada.
  * Assim cada tela é testada sem rede, sem fluxo e sem relógio.
