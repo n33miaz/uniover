@@ -85,8 +85,15 @@ class Aapt2Inspector:
         self._run: Runner = runner or run_process
 
     async def dump_badging(self, apk: Path) -> str:
+        return await self._dump("badging", apk)
+
+    async def dump_resources(self, apk: Path) -> str:
+        # Sem `--no-values`: ele tira justamente as linhas `(file)` de onde sai o ícone legado.
+        return await self._dump("resources", apk)
+
+    async def _dump(self, what: str, apk: Path) -> str:
         try:
-            output = await self._run([self._aapt, "dump", "badging", str(apk)], self._timeout)
+            output = await self._run([self._aapt, "dump", what, str(apk)], self._timeout)
         except TimeoutError:
             raise IconToolError("o aapt2 demorou demais") from None
         except OSError as exc:
@@ -126,10 +133,14 @@ def default_icons_dir() -> Path:
 _MIME_BY_SUFFIX: Final = {".png": "image/png", ".webp": "image/webp"}
 _SUFFIX_BY_MIME: Final = {mime: suffix for suffix, mime in _MIME_BY_SUFFIX.items()}
 _NONE_SUFFIX: Final = ".none"
+# Versão da regra que escolhe o ícone, gravada no nome do arquivo. Quem muda a regra sobe este
+# número: o que foi guardado pela regra antiga (um banner, ou um "sem ícone" que a regra nova
+# talvez resolva) deixa de ser lido e é apagado quando o app for resolvido de novo.
+_SELECTION_RULE: Final = 2
 
 
 class FileIconCache:
-    """Cache em disco: `<pacote>-<versionCode>.png|.webp`, ou `.none` para "sem ícone útil"."""
+    """Cache em disco: `<pacote>-<versionCode>.r<regra>.png|.webp`, ou `.none` (sem ícone útil)."""
 
     def __init__(self, directory: Path) -> None:
         self._dir = directory
@@ -138,7 +149,7 @@ class FileIconCache:
         # Defesa em profundidade: o nome do arquivo só nasce de pacote no formato do Android.
         if not is_valid_package(package) or version < 0:
             raise ValueError("pacote ou versão inválidos para o cache")
-        return f"{package}-{version}"
+        return f"{package}-{version}.r{_SELECTION_RULE}"
 
     def load(self, package: str, version: int) -> CachedIcon | None:
         stem = self._stem(package, version)

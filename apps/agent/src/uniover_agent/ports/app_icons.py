@@ -19,7 +19,11 @@ class IconToolError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class AppIcon:
-    """Imagem pronta para a API: `mime` (`image/png` ou `image/webp`) e os bytes."""
+    """Imagem pronta para a API: `mime` (`image/png` ou `image/webp`) e os bytes.
+
+    O núcleo só publica imagem **quadrada** (largura igual à altura) e dentro do teto do contrato:
+    o que vem do cache em disco é conferido de novo antes de seguir para a mensagem.
+    """
 
     mime: str
     data: bytes
@@ -60,6 +64,14 @@ class ApkInspector(Protocol):
 
     async def dump_badging(self, apk: Path) -> str:
         """Saída de `aapt2 dump badging`. Levanta `IconToolError`."""
+        ...
+
+    async def dump_resources(self, apk: Path) -> str:
+        """Saída de `aapt2 dump resources` (com as linhas `(file)`). Levanta `IconToolError`.
+
+        É a única fonte da imagem legada de um ícone adaptativo; pesa até alguns MB de texto, por
+        isso só se pede quando o `badging` não deu uma imagem quadrada.
+        """
         ...
 
     async def read_member(self, apk: Path, name: str, max_bytes: int) -> bytes | None:

@@ -100,16 +100,28 @@ async def test_dump_badging_runs_aapt2_without_a_shell_and_with_a_timeout(tmp_pa
     assert runner.calls == [(["aapt2-falso", "dump", "badging", str(apk)], 12.0)]
 
 
+async def test_dump_resources_keeps_the_file_lines_so_it_never_uses_no_values(
+    tmp_path: Path,
+) -> None:
+    # `--no-values` tiraria as linhas `(file)`, de onde sai o ícone legado do ícone adaptativo.
+    runner = Runner(AdbOutput(0, "Package name=a.b id=7f\n"))
+    inspector = Aapt2Inspector(Path("aapt2-falso"), timeout=12.0, runner=runner)
+    apk = tmp_path / "app.apk"
+    assert "a.b" in await inspector.dump_resources(apk)
+    assert runner.calls == [(["aapt2-falso", "dump", "resources", str(apk)], 12.0)]
+
+
+@pytest.mark.parametrize("what", ["dump_badging", "dump_resources"])
 @pytest.mark.parametrize(
     "reply",
     [AdbOutput(1, "ERROR: dump failed"), TimeoutError(), FileNotFoundError(), PermissionError()],
 )
 async def test_aapt2_failures_become_one_tool_error_with_a_fixed_message(
-    reply: AdbOutput | BaseException, tmp_path: Path
+    reply: AdbOutput | BaseException, what: str, tmp_path: Path
 ) -> None:
     inspector = Aapt2Inspector(Path("segredo/aapt2"), runner=Runner(reply))
     with pytest.raises(IconToolError) as caught:
-        await inspector.dump_badging(tmp_path / "x.apk")
+        await getattr(inspector, what)(tmp_path / "x.apk")
     assert "segredo" not in str(caught.value)
     assert str(tmp_path) not in str(caught.value)
 
@@ -169,14 +181,14 @@ def test_cache_round_trip_for_png_and_webp(tmp_path: Path) -> None:
     assert cache.load("com.a.b", 3) == CachedIcon(AppIcon("image/png", png_bytes()))
     cache.store("com.c.d", 1, AppIcon("image/webp", webp_bytes()))
     assert cache.load("com.c.d", 1) == CachedIcon(AppIcon("image/webp", webp_bytes()))
-    assert (tmp_path / "icons" / "com.a.b-3.png").is_file()
+    assert (tmp_path / "icons" / "com.a.b-3.r2.png").is_file()
 
 
 def test_the_no_icon_marker_is_remembered(tmp_path: Path) -> None:
     cache = FileIconCache(tmp_path)
     cache.store("com.a.b", 3, None)
     assert cache.load("com.a.b", 3) == CachedIcon(None)
-    assert (tmp_path / "com.a.b-3.none").is_file()
+    assert (tmp_path / "com.a.b-3.r2.none").is_file()
 
 
 def test_a_new_version_deletes_the_old_files_of_that_package_only(tmp_path: Path) -> None:
@@ -185,8 +197,8 @@ def test_a_new_version_deletes_the_old_files_of_that_package_only(tmp_path: Path
     cache.store("com.a.b2", 1, AppIcon("image/png", png_bytes()))
     cache.store("com.a.b", 2, AppIcon("image/webp", webp_bytes()))
     assert sorted(path.name for path in tmp_path.iterdir()) == [
-        "com.a.b-2.webp",
-        "com.a.b2-1.png",
+        "com.a.b-2.r2.webp",
+        "com.a.b2-1.r2.png",
     ]
     assert cache.load("com.a.b", 1) is None
 
@@ -195,7 +207,25 @@ def test_same_version_with_another_type_replaces_the_entry(tmp_path: Path) -> No
     cache = FileIconCache(tmp_path)
     cache.store("com.a.b", 1, AppIcon("image/png", png_bytes()))
     cache.store("com.a.b", 1, None)
-    assert [path.name for path in tmp_path.iterdir()] == ["com.a.b-1.none"]
+    assert [path.name for path in tmp_path.iterdir()] == ["com.a.b-1.r2.none"]
+
+
+def test_entries_written_by_an_older_selection_rule_are_ignored_and_then_replaced(
+    tmp_path: Path,
+) -> None:
+    # Antes da regra do quadrado o cache guardava o banner (e "sem ícone" para quem só tinha XML).
+    # Nada disso pode valer: o app tem de ser resolvido de novo pela regra atual.
+    (tmp_path / "com.cnvs.apptv-50.png").write_bytes(png_bytes(32, 18))
+    (tmp_path / "com.a.b-7.none").write_bytes(b"")
+    cache = FileIconCache(tmp_path)
+    assert cache.load("com.cnvs.apptv", 50) is None
+    assert cache.load("com.a.b", 7) is None
+    cache.store("com.cnvs.apptv", 50, AppIcon("image/webp", webp_bytes(192)))
+    cache.store("com.a.b", 7, None)
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "com.a.b-7.r2.none",
+        "com.cnvs.apptv-50.r2.webp",
+    ]
 
 
 @pytest.mark.parametrize("package", ["../fora", "a/b.c", "com.a b.c", "", "sem_ponto"])
@@ -227,7 +257,7 @@ def test_a_cache_folder_that_cannot_be_written_only_logs(
 def test_an_unreadable_cache_file_is_treated_as_missing(tmp_path: Path) -> None:
     cache = FileIconCache(tmp_path)
     cache.store("com.a.b", 1, AppIcon("image/png", png_bytes()))
-    target = tmp_path / "com.a.b-1.png"
+    target = tmp_path / "com.a.b-1.r2.png"
     target.chmod(0)
     try:
         if os.access(target, os.R_OK):

@@ -58,7 +58,7 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_ADB_TIMEOUT_SECONDS` | tempo máximo de cada comando `adb` (padrão `5`) |
 | `UNIOVER_ADB_PULL_TIMEOUT_SECONDS` | tempo máximo para copiar o APK de um app da TV (padrão `120`) |
 | `UNIOVER_AAPT_PATH` | caminho do `aapt2` (padrão: o mais novo em `%LOCALAPPDATA%\Android\Sdk\build-tools`, ou em `ANDROID_HOME`); sem ele a lista de apps segue sem ícones |
-| `UNIOVER_ICONS_DIR` | pasta do cache de ícones (padrão `%LOCALAPPDATA%\UniOver\icons`; um arquivo por pacote e versão do app) |
+| `UNIOVER_ICONS_DIR` | pasta do cache de ícones (padrão `%LOCALAPPDATA%\UniOver\icons`; um arquivo por pacote e versão do app, e o nome leva a versão da regra de escolha do ícone: ao mudar a regra, o que a antiga guardou é ignorado e refeito) |
 
 Arquivo local (fora do repositório): `%LOCALAPPDATA%\UniOver\agent.toml`, com `api_url` e `agent_id`. Nunca
 guarda segredo.
@@ -104,6 +104,29 @@ Comportamentos que valem saber:
 - Medições na TV real (`tools/measure_tv_session.py`, somente leitura): mortes do serviço por hora com e sem
   sessão, memória e tempo de religação. Nunca envia tecla de energia. **Pare o agente e o vigia antigo antes de
   medir**: a ferramenta usa o mesmo certificado e o ADB aceita um cliente por vez.
+
+## Ícones dos apps da TV
+
+Com o `aapt2` do Android SDK no PC, a lista de apps (`tv.apps.v2`) leva o ícone de cada app: o agente copia o
+APK pelo ADB (sem a trava dos comandos curtos), lê só a imagem de dentro dele e a manda em `data:` URI. Sem
+`aapt2` a lista segue sem ícones. Regras da escolha:
+
+- **Só ícone quadrado.** Largura igual à altura, PNG ou WebP, até 32 KB: a tela mostra azulejos quadrados. O
+  `banner` 16:9 do lançador da TV **nunca** é usado. App sem imagem quadrada fica sem ícone (a tela mostra a
+  inicial) e o motivo vai ao log em `INFO` (`app <pacote> ficou sem ícone: ...`), sem o conteúdo da imagem.
+- **Onde procurar.** Nas linhas `application-icon-*` do `aapt2 dump badging`. Ícone adaptativo (XML), que a tela
+  não desenha, quase sempre traz o ícone legado em PNG/WebP no **mesmo recurso**, e ele só aparece em
+  `aapt2 dump resources` (pedido só quando o `badging` não deu uma imagem quadrada). As camadas do adaptativo
+  (`foreground`/`background`) nunca entram: são quadradas, mas não são o ícone.
+- **Tamanho padronizado.** Não há biblioteca de imagem para reduzir; por isso, entre as imagens quadradas do APK
+  que cabem no teto, vale a **maior de até 192 px** de lado (o ícone de lançador `xxxhdpi`). Se todas passam de
+  192 px, vale a menor delas.
+- **APK dividido.** O ícone sai do `base.apk` (ou do único APK de um app de sistema). Só se o principal não tiver a
+  imagem o agente olha o APK de densidade (`split_config.<densidade>.apk`); os de idioma e de arquitetura não são
+  copiados.
+- **Cache** por pacote e versão do app, inclusive "esta versão não tem ícone" (para não baixar dezenas de MB a
+  cada atualização da lista). Uma mensagem sem `icon` quer dizer "mantenha o que já tem": app que ficou sem ícone
+  não apaga o que a API já guardava.
 
 ## Conexão
 
