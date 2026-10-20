@@ -1,4 +1,28 @@
-import { TouchGesture } from './touch-gesture';
+import { DEFAULT_GESTURE, STEP_PX_BY_SPEED, TouchGesture } from './touch-gesture';
+
+describe('STEP_PX_BY_SPEED', () => {
+  it('goes from slow to fast, keeps the normal one as the default and stays above the tap limit', () => {
+    expect(STEP_PX_BY_SPEED.normal).toBe(DEFAULT_GESTURE.stepPx);
+    expect(STEP_PX_BY_SPEED.slow).toBeGreaterThan(STEP_PX_BY_SPEED.normal);
+    expect(STEP_PX_BY_SPEED.fast).toBeLessThan(STEP_PX_BY_SPEED.normal);
+    // Se o passo fosse menor que o limite do toque, um toque parado viraria seta.
+    expect(STEP_PX_BY_SPEED.fast).toBeGreaterThan(DEFAULT_GESTURE.tapMaxPx);
+  });
+
+  it('is read live: a config whose step changes is followed by the gesture without a new one', () => {
+    let step = 24;
+    const gesture = new TouchGesture({
+      ...DEFAULT_GESTURE,
+      get stepPx() {
+        return step;
+      },
+    });
+    gesture.start(100, 100, 0);
+    expect(gesture.move(120, 100)).toBeNull();
+    step = 16;
+    expect(gesture.move(120, 100)).toBe('RIGHT');
+  });
+});
 
 describe('TouchGesture', () => {
   let gesture: TouchGesture;

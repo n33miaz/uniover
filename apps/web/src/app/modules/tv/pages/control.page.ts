@@ -9,6 +9,7 @@ import {
   output,
   viewChild,
 } from '@angular/core';
+import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut } from '../data/tv-types';
 import { KeyButton, vibrate } from '../input/key-button';
@@ -36,8 +37,9 @@ const DRAG_SLOP_PX = 6;
  * e, por último, o touchpad (que engole o deslize dentro dele, então a volta é pela margem, pelos pontos ou pelo
  * teclado). O palco é um carrossel de rolagem com encaixe: o gesto é do próprio navegador e a `StagePager` cuida do
  * que ele não garante (indicador, página presa no meio, tamanho, abas, recarga). A rolagem horizontal da tela nunca
- * aparece. Apps e Teclado não são telas: esta tela só avisa a página (`openApps`,
- * `openKeyboard`) para abrir o painel flutuante.
+ * aparece. O Teclado não é tela: esta tela só avisa a página (`openKeyboard`) para abrir o painel flutuante. O que
+ * Personalizar escolhe chega daqui: o tamanho dos botões de baixo (`--key-scale`), se as teclas de mídia e o canal
+ * aparecem e com que página o palco abre.
  */
 @Component({
   selector: 'app-tv-control',
@@ -47,10 +49,10 @@ const DRAG_SLOP_PX = 6;
 })
 export class ControlPage {
   protected readonly store = inject(TvStore);
+  protected readonly prefs = inject(TvPrefs);
   private readonly pager = viewChild.required<ElementRef<HTMLElement>>('pager');
 
-  /** Os dois avisos levam o botão tocado: o painel devolve o foco a ele ao fechar (o Safari não foca botão ao toque). */
-  readonly openApps = output<HTMLElement>();
+  /** Leva o botão tocado: o painel devolve o foco a ele ao fechar (o Safari não foca botão ao toque). */
   readonly openKeyboard = output<HTMLElement>();
 
   protected readonly pageCount = PAGE_COUNT;
@@ -71,6 +73,15 @@ export class ControlPage {
   protected readonly shortcuts = computed(() =>
     (this.store.shortcuts() ?? []).filter((shortcut) => shortcut.enabled),
   );
+
+  /**
+   * Disposição dos botões redondos: quatro colunas em duas fileiras; no tamanho grande, quebra em três por fileira (não
+   * cabem mais quatro numa tela estreita); sem as teclas de mídia sobram quatro botões, em duas colunas.
+   */
+  protected readonly roundColumns = computed(() => {
+    if (!this.prefs.showMedia()) return 2;
+    return this.prefs.buttonSize() === 'large' ? 3 : 4;
+  });
 
   protected readonly volumeText = computed(() => {
     const volume = this.store.state()?.volume;
@@ -133,7 +144,7 @@ export class ControlPage {
   }
 
   constructor() {
-    const restored = readSavedPage();
+    const restored = this.startPage();
     effect(() => writeSavedPage(this.page()));
 
     afterNextRender(() => {
@@ -185,6 +196,20 @@ export class ControlPage {
   }
 
   private cleanup: () => void = () => undefined;
+
+  /** A página com que o palco abre: a escolhida em Personalizar ou, em "última usada", a que ficou nesta aba. */
+  private startPage(): number {
+    switch (this.prefs.startPage()) {
+      case 'directions':
+        return 0;
+      case 'numbers':
+        return 1;
+      case 'touchpad':
+        return 2;
+      case 'last':
+        return readSavedPage();
+    }
+  }
 }
 
 function readSavedPage(): number {

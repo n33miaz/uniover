@@ -18,7 +18,10 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Flutua logo abaixo do ponto, centrado nele, sem passar das bordas da tela. */
+/*
+ * Flutua logo abaixo do ponto, centrado nele. O ponto fica junto do fim do nome, e não no meio da tela: ao abrir, o
+ * componente põe `--shift` para empurrar o painel para dentro quando ele passaria da borda.
+ */
 .panel {
   position: absolute;
   top: calc(100% + 6px);
@@ -34,7 +37,7 @@
   background: var(--a-surface);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.22);
   color: var(--a-ink);
-  transform: translateX(-50%);
+  transform: translateX(calc(-50% + var(--shift, 0px)));
 }
 
 .panel p {

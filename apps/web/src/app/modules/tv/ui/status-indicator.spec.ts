@@ -95,6 +95,59 @@ describe('StatusIndicator', () => {
       expect(panel()?.querySelector('.time')).toBeNull();
     });
 
+    describe('when the dot is near the edge of the screen', () => {
+      /** A tela tem 390 px; o jsdom não mede, então o painel "mede" o que o teste disser. */
+      const measure = (left: number, width = 320) => {
+        Object.defineProperty(document.documentElement, 'clientWidth', {
+          value: 390,
+          configurable: true,
+        });
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+          this: HTMLElement,
+        ) {
+          const own = this.classList.contains('panel');
+          return {
+            left: own ? left : 0,
+            right: own ? left + width : 0,
+            width: own ? width : 0,
+            top: 0,
+            bottom: 0,
+            height: 0,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+          };
+        });
+      };
+      afterEach(() => {
+        vi.restoreAllMocks();
+        Reflect.deleteProperty(document.documentElement, 'clientWidth');
+      });
+
+      it('slides in from the right edge, keeping a margin', async () => {
+        measure(75); // termina em 395, depois dos 390 da tela
+        await toggle();
+        expect(panel()?.style.getPropertyValue('--shift')).toBe('-17px'); // 390 - 12 - 395
+      });
+
+      it('slides in from the left edge too', async () => {
+        measure(-20);
+        await toggle();
+        expect(panel()?.style.getPropertyValue('--shift')).toBe('32px'); // 12 - (-20)
+      });
+
+      it('does not move when it already fits', async () => {
+        measure(35);
+        await toggle();
+        expect(panel()?.style.getPropertyValue('--shift')).toBe('0px');
+      });
+
+      it('does nothing when nothing can be measured', async () => {
+        await toggle();
+        expect(panel()?.style.getPropertyValue('--shift')).toBe('');
+      });
+    });
+
     it('touching the dot again closes it', async () => {
       await toggle();
       await toggle();
