@@ -149,3 +149,13 @@
   color: var(--a-ink3);
   cursor: default;
 }
+
+/* O OK afunda um pouco ao toque; quem pediu menos movimento só vê a cor mudar. */
+@media (prefers-reduced-motion: no-preference) {
+  .ok {
+    transition: transform 90ms ease-out;
+  }
+  .ok.pressed {
+    transform: scale(0.95);
+  }
+}

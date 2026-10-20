@@ -1,27 +1,47 @@
-import { Component, ElementRef, computed, inject, output, signal, viewChild } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  ElementRef,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
+  output,
+  viewChild,
+} from '@angular/core';
 import { TvStore } from '../data/tv-store';
-import { TvShortcut, shortcutLabel } from '../data/tv-types';
-import { KeyButton } from '../input/key-button';
+import { TvShortcut } from '../data/tv-types';
+import { KeyButton, vibrate } from '../input/key-button';
+import { StagePager } from '../input/stage-pager';
 import { TouchpadSurface } from '../input/touchpad-surface';
 import { DirectionalRing } from '../ui/directional-ring';
 import { NumberPad } from '../ui/number-pad';
 import { PageDots } from '../ui/page-dots';
+import { ShortcutRow } from '../ui/shortcut-row';
 import { TvIcon } from '../ui/tv-icon';
 
-/** Páginas do palco central: direções com o OK, touchpad e números. */
+/** Páginas do palco central, nesta ordem: direções com o OK, números e, por último, o touchpad. */
 const PAGE_COUNT = 3;
+
+/** Onde a página do palco fica guardada enquanto a aba do navegador existir (recarregar não volta ao começo). */
+const PAGE_KEY = 'uniover.tv.stage-page';
+
+/** Deslocamento do dedo (px) a partir do qual o gesto é arrasto, e não toque. */
+const DRAG_SLOP_PX = 6;
 
 /**
  * Controle principal (a tela única do módulo). Em cima, o chip fixo "Apps" e os atalhos favoritos da TV (chips que
  * abrem o app ao toque); embaixo, as pílulas de volume e canal e os botões redondos. No meio fica o palco, e só ele
- * troca de página, deslizando ou pelos pontos: direções com o OK no centro, touchpad e teclado numérico. O palco é um
- * carrossel de rolagem com encaixe, então o deslize é do próprio navegador, só a janela do palco se mexe e a
- * rolagem horizontal da tela nunca aparece. Apps e Teclado não são telas: esta tela só avisa a página (`openApps`,
+ * troca de página, deslizando, pelos pontos ou pelas setas do teclado: direções com o OK no centro, teclado numérico
+ * e, por último, o touchpad (que engole o deslize dentro dele, então a volta é pela margem, pelos pontos ou pelo
+ * teclado). O palco é um carrossel de rolagem com encaixe: o gesto é do próprio navegador e a `StagePager` cuida do
+ * que ele não garante (indicador, página presa no meio, tamanho, abas, recarga). A rolagem horizontal da tela nunca
+ * aparece. Apps e Teclado não são telas: esta tela só avisa a página (`openApps`,
  * `openKeyboard`) para abrir o painel flutuante.
  */
 @Component({
   selector: 'app-tv-control',
-  imports: [KeyButton, TouchpadSurface, DirectionalRing, NumberPad, PageDots, TvIcon],
+  imports: [KeyButton, TouchpadSurface, DirectionalRing, NumberPad, PageDots, ShortcutRow, TvIcon],
   templateUrl: './control.page.html',
   styleUrl: './control.page.css',
 })
@@ -34,7 +54,18 @@ export class ControlPage {
   readonly openKeyboard = output<HTMLElement>();
 
   protected readonly pageCount = PAGE_COUNT;
-  protected readonly page = signal(0);
+  private readonly stage = new StagePager(
+    {
+      width: () => this.pager().nativeElement.clientWidth,
+      left: () => this.pager().nativeElement.scrollLeft,
+      scrollTo: (left, smooth) =>
+        this.pager().nativeElement.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' }),
+      reducedMotion: () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+    },
+    PAGE_COUNT,
+  );
+  protected readonly page = this.stage.page;
+  protected readonly progress = this.stage.progress;
 
   /** Só os atalhos ativos, na ordem da posição; o número do "Atalho n" é o da posição, que não muda. */
   protected readonly shortcuts = computed(() =>
@@ -57,20 +88,13 @@ export class ControlPage {
       : $localize`:@@tv.volume.level:Volume ${volume}:level:`;
   });
 
-  protected label(shortcut: TvShortcut): string {
-    return shortcutLabel(shortcut);
-  }
-
-  protected askApps(event: Event): void {
-    this.openApps.emit(event.currentTarget as HTMLElement);
-  }
-
   protected askKeyboard(event: Event): void {
     this.openKeyboard.emit(event.currentTarget as HTMLElement);
   }
 
   protected openShortcut(shortcut: TvShortcut): void {
     if (!this.store.canSend()) return;
+    vibrate();
     void this.store.launch(shortcut);
   }
 
@@ -80,17 +104,102 @@ export class ControlPage {
     return $localize`:@@tv.pager.page:Página ${number}:number: de ${total}:total:`;
   }
 
-  /** Acompanha o encaixe do carrossel para marcar o ponto da página que está à vista. */
+  /** Acompanha a rolagem (gesto, inércia, encaixe ou pedido) para o ponto e o indicador. */
   protected onScroll(): void {
-    const element = this.pager().nativeElement;
-    if (element.clientWidth === 0) return;
-    this.page.set(Math.round(element.scrollLeft / element.clientWidth));
+    this.stage.scrolled();
   }
 
   protected goTo(index: number): void {
-    const element = this.pager().nativeElement;
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-    element.scrollTo({ left: index * element.clientWidth, behavior: reduced ? 'auto' : 'smooth' });
-    this.page.set(index);
+    this.stage.goTo(index);
+  }
+
+  /** Setas, Início e Fim com o foco no próprio palco trocam a página; com o foco num botão ou no touchpad, não. */
+  protected onKey(event: KeyboardEvent): void {
+    if (event.target !== event.currentTarget) return;
+    const page = this.page();
+    const target =
+      event.key === 'ArrowRight'
+        ? page + 1
+        : event.key === 'ArrowLeft'
+          ? page - 1
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? PAGE_COUNT - 1
+              : null;
+    if (target === null) return;
+    event.preventDefault();
+    this.goTo(target);
+  }
+
+  constructor() {
+    const restored = readSavedPage();
+    effect(() => writeSavedPage(this.page()));
+
+    afterNextRender(() => {
+      const element = this.pager().nativeElement;
+      if (restored > 0) this.stage.restore(restored);
+
+      // Ouvintes passivos: um ouvinte de toque que pudesse bloquear seguraria a rolagem do carrossel.
+      let startX = 0;
+      const down = (event: TouchEvent) => {
+        startX = event.touches[0]?.clientX ?? 0;
+        this.stage.touchStart(startX, event.timeStamp);
+      };
+      const move = (event: TouchEvent) => {
+        const x = event.touches[0]?.clientX ?? startX;
+        if (Math.abs(x - startX) > DRAG_SLOP_PX) this.stage.touchDragged(x, event.timeStamp);
+      };
+      const up = (event: TouchEvent) => this.stage.touchEnd(event.timeStamp);
+      const options = { passive: true } as const;
+      element.addEventListener('touchstart', down, options);
+      element.addEventListener('touchmove', move, options);
+      element.addEventListener('touchend', up, options);
+      element.addEventListener('touchcancel', up, options);
+
+      // A página escolhida tem de continuar à vista depois de girar a tela, redimensionar e voltar de outra aba.
+      const realign = () => this.stage.realign();
+      const onVisible = () => {
+        if (document.visibilityState === 'visible') realign();
+      };
+      const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(realign) : null;
+      observer?.observe(element);
+      document.addEventListener('visibilitychange', onVisible);
+      window.addEventListener('pageshow', realign);
+
+      this.cleanup = () => {
+        element.removeEventListener('touchstart', down);
+        element.removeEventListener('touchmove', move);
+        element.removeEventListener('touchend', up);
+        element.removeEventListener('touchcancel', up);
+        observer?.disconnect();
+        document.removeEventListener('visibilitychange', onVisible);
+        window.removeEventListener('pageshow', realign);
+      };
+    });
+
+    inject(DestroyRef).onDestroy(() => {
+      this.cleanup();
+      this.stage.destroy();
+    });
+  }
+
+  private cleanup: () => void = () => undefined;
+}
+
+function readSavedPage(): number {
+  try {
+    const saved = Number(sessionStorage.getItem(PAGE_KEY));
+    return Number.isInteger(saved) && saved > 0 && saved < PAGE_COUNT ? saved : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeSavedPage(page: number): void {
+  try {
+    sessionStorage.setItem(PAGE_KEY, String(page));
+  } catch {
+    // sem armazenamento (modo privado, bloqueado): a página só não é lembrada
   }
 }
