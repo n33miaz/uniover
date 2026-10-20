@@ -150,8 +150,9 @@ test.describe('folhas e avisos', () => {
     });
     expect(exit.sawClosing).toBe(true);
     expect(exit.gone).toBe(true);
+    // Só o piso vale como prova de que a folha esperou o esmaecer. O teto não é afirmado: o tempo-limite de segurança é de
+    // 300 ms, mas um executor lento atrasa os quadros (724 ms na CI); `gone` já garante que ela saiu dentro de 1,5 s.
     expect(exit.ms).toBeGreaterThan(100);
-    expect(exit.ms).toBeLessThan(500); // o tempo-limite de segurança é 300 ms
     await expect(sheet).toBeHidden();
   });
 
