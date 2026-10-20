@@ -1,0 +1,17 @@
+<div class="keypad">
+  @for (item of digits; track item.key) {
+    <button
+      type="button"
+      class="num"
+      [class.zero]="item.digit === '0'"
+      [appKey]="item.key"
+      [attr.aria-label]="label(item.digit)"
+    >
+      {{ item.digit }}
+    </button>
+  }
+  <button type="button" class="source" [appKey]="'INPUT'">
+    <app-tv-icon name="input" />
+    <span i18n="@@tv.key.input">Origem</span>
+  </button>
+</div>

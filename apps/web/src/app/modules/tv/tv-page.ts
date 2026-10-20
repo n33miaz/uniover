@@ -1,5 +1,7 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { RouterLink, RouterOutlet } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
+import { filter, map, startWith } from 'rxjs';
 import { TV_CONFIG } from './data/tv-config';
 import { StatusTone, statusLabel, statusTone } from './data/tv-status';
 import { TvStore } from './data/tv-store';
@@ -25,6 +27,17 @@ export class TvPage {
 
   protected readonly powerOpen = signal(false);
 
+  private readonly router = inject(Router);
+  /** Na aba Controle a tela ocupa a altura toda; Apps e Teclado crescem com o conteúdo. */
+  protected readonly onControl = toSignal(
+    this.router.events.pipe(
+      filter((event) => event instanceof NavigationEnd),
+      map(() => isControlUrl(this.router.url)),
+      startWith(isControlUrl(this.router.url)),
+    ),
+    { requireSync: true },
+  );
+
   protected readonly label = computed(() => statusLabel(this.store.status()));
   protected readonly tone = computed<StatusTone>(() => statusTone(this.store.status()));
 
@@ -43,4 +56,9 @@ export class TvPage {
     this.store.start();
     inject(DestroyRef).onDestroy(() => this.store.stop());
   }
+}
+
+/** Controle é a aba padrão: tudo que não é uma das outras duas abas (`apps`, `teclado`). */
+function isControlUrl(url: string): boolean {
+  return !/\/(apps|teclado)$/.test(url.split(/[?#]/)[0]);
 }

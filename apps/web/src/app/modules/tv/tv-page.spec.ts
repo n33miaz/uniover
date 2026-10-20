@@ -178,6 +178,17 @@ describe('TV_ROUTES', () => {
     expect(root.querySelector(selector)).not.toBeNull();
   });
 
+  it.each([
+    ['/', true],
+    ['/apps', false],
+    ['/teclado', false],
+  ])('%s fills the height only on the Controle tab (%s)', async (url, fills) => {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl(url);
+    const root = harness.routeNativeElement as HTMLElement;
+    expect(root.querySelector('.tv')?.classList.contains('fill')).toBe(fills);
+  });
+
   it('declares the three tabs and takes over the header from the shell', async () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/');

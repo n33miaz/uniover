@@ -75,7 +75,13 @@ def test_host_with_certificate_builds_the_session(monkeypatch: pytest.MonkeyPatc
     assert built == [(TV_HOST, "Casa", tv_cert_dir("tv"))]
     assert setup.manager.snapshot().connection == "hibernating"
     assert setup.capabilities == ["tv.remote"]
-    assert set(setup.handlers) == {"tv.key.v1", "tv.key.v2", "tv.wake.v1", "tv.app.launch.v1"}
+    assert set(setup.handlers) == {
+        "tv.key.v1",
+        "tv.key.v2",
+        "tv.text.v1",
+        "tv.wake.v1",
+        "tv.app.launch.v1",
+    }
     assert setup.background == []
     assert setup.after_hello == []
 
@@ -96,6 +102,9 @@ async def test_run_declares_the_capability_and_serves_tv_commands(
         "key": "0192f1e4-0000-7000-8000-0000000000a2",
         "power": "0192f1e4-0000-7000-8000-0000000000a3",
         "package": "0192f1e4-0000-7000-8000-0000000000a4",
+        "text": "0192f1e4-0000-7000-8000-0000000000a5",
+        "text_final": "0192f1e4-0000-7000-8000-0000000000a6",
+        "text_invalid": "0192f1e4-0000-7000-8000-0000000000a7",
     }
 
     async def script(connection: ServerConnection) -> None:
@@ -108,6 +117,12 @@ async def test_run_declares_the_capability_and_serves_tv_commands(
         await connection.send(dump(envelope("tv.key.v1", {"key": "POWER"}, id=ids["power"])))
         package = {"target": {"kind": "package", "value": "com.netflix.ninja"}}
         await connection.send(dump(envelope("tv.app.launch.v1", package, id=ids["package"])))
+        await connection.send(dump(envelope("tv.text.v1", {"text": "mat"}, id=ids["text"])))
+        await connection.send(
+            dump(envelope("tv.text.v1", {"text": "matrix"}, id=ids["text_final"]))
+        )
+        # Vazio fica fora do contrato: o envelope recusa antes de chegar ao handler.
+        await connection.send(dump(envelope("tv.text.v1", {"text": ""}, id=ids["text_invalid"])))
         await asyncio.sleep(0.4)
         await connection.close(4403, "revoked")
 
@@ -144,9 +159,14 @@ async def test_run_declares_the_capability_and_serves_tv_commands(
     assert results[ids["key"]] == {"ok": True}
     assert results[ids["power"]]["error"]["code"] == "key_blocked"
     assert results[ids["package"]]["error"]["code"] == "unsupported"
+    assert results[ids["text"]] == {"ok": True}
+    assert results[ids["text_final"]] == {"ok": True}
+    assert results[ids["text_invalid"]]["ok"] is False
 
     # Só a tecla permitida chegou ao controle; POWER nunca saiu do agente.
     assert remote.sent == [("HOME", "SHORT")]
+    # Os textos chegam em ordem e o último é o que fica no campo; o vazio nem chega ao controle.
+    assert remote.texts == ["mat", "matrix"]
     # Ao encerrar, a sessão com a TV é fechada.
     assert not remote.connected
     assert remote.disconnects >= 1
@@ -181,14 +201,14 @@ async def test_later_deliveries_extend_the_composition_with_one_line_each(
     pair_fake_tv(monkeypatch, remote)
     original = main_module.build_tv
     ran: list[str] = []
-    text_id = "0192f1e4-0000-7000-8000-0000000000b1"
+    refresh_id = "0192f1e4-0000-7000-8000-0000000000b1"
 
     def extended(*args: Any) -> TvSetup | None:
         setup = original(*args)
         assert setup is not None
 
-        async def type_text(command: Command) -> CommandResult:
-            ran.append(command.body["text"])
+        async def refresh_apps(command: Command) -> CommandResult:
+            ran.append("apps")
             return CommandResult(command.id, ResultStatus.OK)
 
         async def loop_forever() -> None:
@@ -200,7 +220,7 @@ async def test_later_deliveries_extend_the_composition_with_one_line_each(
             state = TvState("unknown", None, None, "hibernating")
             await setup.transport.send(setup.envelopes.tv_state(state))
 
-        setup.handlers["tv.text.v1"] = type_text
+        setup.handlers["tv.apps.refresh.v1"] = refresh_apps
         setup.capabilities.append("tv.adb")
         setup.background.append(loop_forever)
         setup.after_hello.append(event_after_hello)
@@ -209,7 +229,7 @@ async def test_later_deliveries_extend_the_composition_with_one_line_each(
     monkeypatch.setattr(main_module, "build_tv", extended)
 
     async def script(connection: ServerConnection) -> None:
-        await connection.send(dump(envelope("tv.text.v1", {"text": "oi"}, id=text_id)))
+        await connection.send(dump(envelope("tv.apps.refresh.v1", {}, id=refresh_id)))
         await asyncio.sleep(0.3)
         await connection.close(4403, "revoked")
 
@@ -222,11 +242,11 @@ async def test_later_deliveries_extend_the_composition_with_one_line_each(
         assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
 
     assert api.received[0]["body"]["capabilities"] == ["tv.remote", "tv.adb"]
-    assert sorted(ran) == ["fundo", "oi"]
+    assert sorted(ran) == ["apps", "fundo"]
     # O estado inicial (anunciado pela composição) e o evento da extensão saem depois do `hello`.
     states = [m for m in api.received if m["type"] == "tv.state.v1"]
     assert len(states) >= 2
     results = {
         m["correlationId"]: m["body"] for m in api.received if m["type"] == "command.result.v1"
     }
-    assert results[text_id] == {"ok": True}
+    assert results[refresh_id] == {"ok": True}

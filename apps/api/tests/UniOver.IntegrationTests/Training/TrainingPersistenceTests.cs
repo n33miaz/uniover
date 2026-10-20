@@ -39,7 +39,8 @@ public sealed class TrainingPersistenceTests(PostgresFixture postgres)
         var inPublic = await SchemaGuardQueries.RunAsync(database.OwnerConnection, SchemaGuardQueries.PublicObjects, Ct);
 
         tables.Should().Equal(
-            "__ef_migrations_history", "catalog_meta", "exercise_overrides", "exercises", "idempotency_keys");
+            "__ef_migrations_history", "catalog_meta", "exercise_overrides", "exercises", "goals", "idempotency_keys", "routine_items", "routines",
+            "session_sets", "sessions");
         inPublic.Should().BeEmpty();
     }
 
@@ -62,7 +63,9 @@ public sealed class TrainingPersistenceTests(PostgresFixture postgres)
             """, Ct);
 
         crossing.Should().BeEmpty("o usuário é de outro módulo e entra só como UUID");
-        inside.Should().Equal("exercise_overrides -> exercises");
+        inside.Should().Equal(
+            "exercise_overrides -> exercises", "goals -> exercises", "routine_items -> exercises", "routine_items -> routines",
+            "session_sets -> exercises", "session_sets -> sessions", "sessions -> routines");
     }
 
     [Fact]

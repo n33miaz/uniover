@@ -291,6 +291,387 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                     b.ToTable("exercise_overrides", "training");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Goals.Goal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ClientUpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("client_updated_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("ExerciseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("exercise_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<decimal?>("Value")
+                        .HasPrecision(9, 2)
+                        .HasColumnType("numeric(9,2)")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id")
+                        .HasName("pk_goals");
+
+                    b.HasIndex("ExerciseId")
+                        .HasDatabaseName("ix_goals_exercise_id");
+
+                    b.HasIndex("UserId", "Kind", "ExerciseId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_goals_user_id_kind_exercise_id");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("UserId", "Kind", "ExerciseId"), false);
+
+                    b.HasIndex("UserId", "UpdatedAt", "Id")
+                        .HasDatabaseName("ix_goals_user_id_updated_at_id");
+
+                    b.ToTable("goals", "training", t =>
+                        {
+                            t.HasCheckConstraint("ck_goals_exercise", "(kind = 'exercise_e1rm') = (exercise_id IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_goals_kind", "kind IN ('exercise_e1rm', 'weekly_sessions', 'daily_kcal')");
+
+                            t.HasCheckConstraint("ck_goals_value", "(value IS NOT NULL AND ((kind = 'exercise_e1rm' AND value BETWEEN 1 AND 1000) OR (kind = 'weekly_sessions' AND value BETWEEN 1 AND 14) OR (kind = 'daily_kcal' AND value BETWEEN 500 AND 10000))) OR (value IS NULL AND deleted_at IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Routines.Routine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean")
+                        .HasColumnName("active");
+
+                    b.Property<DateTimeOffset>("ClientUpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("client_updated_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("note");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_routines");
+
+                    b.HasIndex("UserId", "UpdatedAt", "Id")
+                        .HasDatabaseName("ix_routines_user_id_updated_at_id");
+
+                    b.ToTable("routines", "training", t =>
+                        {
+                            t.HasCheckConstraint("ck_routines_name", "char_length(name) BETWEEN 1 AND 80");
+
+                            t.HasCheckConstraint("ck_routines_position", "position BETWEEN 0 AND 1000");
+                        });
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Routines.RoutineItem", b =>
+                {
+                    b.Property<Guid>("RoutineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("routine_id");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ExerciseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("exercise_id");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("note");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<int>("RepMax")
+                        .HasColumnType("integer")
+                        .HasColumnName("rep_max");
+
+                    b.Property<int>("RepMin")
+                        .HasColumnType("integer")
+                        .HasColumnName("rep_min");
+
+                    b.Property<int>("RestSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("rest_seconds");
+
+                    b.Property<int?>("SupersetGroup")
+                        .HasColumnType("integer")
+                        .HasColumnName("superset_group");
+
+                    b.Property<int>("TargetSets")
+                        .HasColumnType("integer")
+                        .HasColumnName("target_sets");
+
+                    b.HasKey("RoutineId", "Id")
+                        .HasName("pk_routine_items");
+
+                    b.HasIndex("ExerciseId")
+                        .HasDatabaseName("ix_routine_items_exercise_id");
+
+                    b.ToTable("routine_items", "training", t =>
+                        {
+                            t.HasCheckConstraint("ck_routine_items_position", "position >= 0");
+
+                            t.HasCheckConstraint("ck_routine_items_reps", "rep_min BETWEEN 1 AND 100 AND rep_max BETWEEN 1 AND 100 AND rep_min <= rep_max");
+
+                            t.HasCheckConstraint("ck_routine_items_rest", "rest_seconds BETWEEN 0 AND 1800");
+
+                            t.HasCheckConstraint("ck_routine_items_sets", "target_sets BETWEEN 1 AND 20");
+
+                            t.HasCheckConstraint("ck_routine_items_superset", "superset_group IS NULL OR superset_group BETWEEN 1 AND 100");
+                        });
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Sessions.Session", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ClientUpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("client_updated_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("DeviceId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("device_id");
+
+                    b.Property<int?>("Feeling")
+                        .HasColumnType("integer")
+                        .HasColumnName("feeling");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("note");
+
+                    b.Property<Guid?>("RoutineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("routine_id");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_sessions");
+
+                    b.HasIndex("RoutineId")
+                        .HasDatabaseName("ix_sessions_routine_id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_sessions_user_id")
+                        .HasFilter("finished_at IS NULL AND deleted_at IS NULL");
+
+                    b.HasIndex("UserId", "UpdatedAt", "Id")
+                        .HasDatabaseName("ix_sessions_user_id_updated_at_id");
+
+                    b.ToTable("sessions", "training", t =>
+                        {
+                            t.HasCheckConstraint("ck_sessions_device", "char_length(device_id) BETWEEN 1 AND 64");
+
+                            t.HasCheckConstraint("ck_sessions_feeling", "feeling IS NULL OR feeling BETWEEN 1 AND 5");
+
+                            t.HasCheckConstraint("ck_sessions_finish", "finished_at IS NULL OR finished_at >= started_at");
+
+                            t.HasCheckConstraint("ck_sessions_note", "note IS NULL OR char_length(note) <= 500");
+                        });
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Sessions.SessionSet", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ClientUpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("client_updated_at");
+
+                    b.Property<DateTimeOffset>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<int?>("DurationS")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_s");
+
+                    b.Property<Guid>("ExerciseId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("exercise_id");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("note");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<int?>("Reps")
+                        .HasColumnType("integer")
+                        .HasColumnName("reps");
+
+                    b.Property<int?>("Rir")
+                        .HasColumnType("integer")
+                        .HasColumnName("rir");
+
+                    b.Property<decimal?>("Rpe")
+                        .HasPrecision(3, 1)
+                        .HasColumnType("numeric(3,1)")
+                        .HasColumnName("rpe");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("session_id");
+
+                    b.Property<string>("SetType")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("set_type");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<decimal?>("WeightKg")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("numeric(7,2)")
+                        .HasColumnName("weight_kg");
+
+                    b.HasKey("Id")
+                        .HasName("pk_session_sets");
+
+                    b.HasIndex("ExerciseId")
+                        .HasDatabaseName("ix_session_sets_exercise_id");
+
+                    b.HasIndex("SessionId")
+                        .HasDatabaseName("ix_session_sets_session_id");
+
+                    b.HasIndex("UserId", "ExerciseId", "CompletedAt")
+                        .HasDatabaseName("ix_session_sets_user_id_exercise_id_completed_at");
+
+                    b.HasIndex("UserId", "UpdatedAt", "Id")
+                        .HasDatabaseName("ix_session_sets_user_id_updated_at_id");
+
+                    b.ToTable("session_sets", "training", t =>
+                        {
+                            t.HasCheckConstraint("ck_session_sets_duration", "duration_s IS NULL OR duration_s BETWEEN 0 AND 86400");
+
+                            t.HasCheckConstraint("ck_session_sets_note", "note IS NULL OR char_length(note) <= 300");
+
+                            t.HasCheckConstraint("ck_session_sets_position", "position BETWEEN 0 AND 100000");
+
+                            t.HasCheckConstraint("ck_session_sets_reps", "reps IS NULL OR reps BETWEEN 0 AND 999");
+
+                            t.HasCheckConstraint("ck_session_sets_rir", "rir IS NULL OR rir BETWEEN 0 AND 10");
+
+                            t.HasCheckConstraint("ck_session_sets_rpe", "rpe IS NULL OR (rpe BETWEEN 1 AND 10 AND rpe * 2 = trunc(rpe * 2))");
+
+                            t.HasCheckConstraint("ck_session_sets_type", "set_type IN ('warmup', 'work', 'failure', 'drop')");
+
+                            t.HasCheckConstraint("ck_session_sets_weight", "weight_kg IS NULL OR weight_kg >= 0");
+                        });
+                });
+
             modelBuilder.Entity("UniOver.Modules.Training.Domain.ExerciseOverride", b =>
                 {
                     b.HasOne("UniOver.Modules.Training.Domain.Exercise", null)
@@ -299,6 +680,63 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_exercise_overrides_exercises_exercise_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Goals.Goal", b =>
+                {
+                    b.HasOne("UniOver.Modules.Training.Domain.Exercise", null)
+                        .WithMany()
+                        .HasForeignKey("ExerciseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_goals_exercises_exercise_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Routines.RoutineItem", b =>
+                {
+                    b.HasOne("UniOver.Modules.Training.Domain.Exercise", null)
+                        .WithMany()
+                        .HasForeignKey("ExerciseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_routine_items_exercises_exercise_id");
+
+                    b.HasOne("UniOver.Modules.Training.Domain.Routines.Routine", null)
+                        .WithMany("Items")
+                        .HasForeignKey("RoutineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_routine_items_routines_routine_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Sessions.Session", b =>
+                {
+                    b.HasOne("UniOver.Modules.Training.Domain.Routines.Routine", null)
+                        .WithMany()
+                        .HasForeignKey("RoutineId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_sessions_routines_routine_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Sessions.SessionSet", b =>
+                {
+                    b.HasOne("UniOver.Modules.Training.Domain.Exercise", null)
+                        .WithMany()
+                        .HasForeignKey("ExerciseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_session_sets_exercises_exercise_id");
+
+                    b.HasOne("UniOver.Modules.Training.Domain.Sessions.Session", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_session_sets_sessions_session_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Routines.Routine", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

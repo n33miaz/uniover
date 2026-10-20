@@ -45,4 +45,22 @@ describe('PageDots', () => {
     expect(dots()).toHaveLength(3);
     expect(dots()[2].getAttribute('aria-label')).toBe('Página 3 de 3');
   });
+
+  it('the arrow keys move to the neighbour page and stop at the ends', () => {
+    const group = root.querySelector('[role="group"]')!;
+    const press = (key: string) =>
+      group.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    press('ArrowLeft');
+    expect(selected).not.toHaveBeenCalled();
+    press('ArrowRight');
+    expect(selected).toHaveBeenLastCalledWith(1);
+    fixture.componentRef.setInput('current', 1);
+    fixture.detectChanges();
+    press('ArrowRight');
+    expect(selected).toHaveBeenCalledTimes(1);
+    press('ArrowLeft');
+    expect(selected).toHaveBeenLastCalledWith(0);
+    press('Enter');
+    expect(selected).toHaveBeenCalledTimes(2);
+  });
 });

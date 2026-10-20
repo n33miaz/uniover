@@ -72,6 +72,7 @@ class FakeTvServer:
         self.port = 0
         self.keys: list[tuple[int, int]] = []
         self.links: list[str] = []
+        self.texts: list[str] = []
         self.connections = 0
         self._writers: list[asyncio.StreamWriter] = []
         self._server: asyncio.Server | None = None
@@ -157,3 +158,6 @@ class FakeTvServer:
                     self.keys.append((int(inject.key_code), int(inject.direction)))
                 elif message.HasField("remote_app_link_launch_request"):
                     self.links.append(message.remote_app_link_launch_request.app_link)
+                elif message.HasField("remote_ime_batch_edit"):
+                    for edit in message.remote_ime_batch_edit.edit_info:
+                        self.texts.append(edit.text_field_status.value)

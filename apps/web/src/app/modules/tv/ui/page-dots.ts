@@ -2,8 +2,7 @@ import { Component, input, output } from '@angular/core';
 
 /**
  * Pontos de paginação do controle. Cada ponto é pequeno (10 px) e a área de toque tem 44 px. O ponto da página à
- * vista leva `aria-current`; a cor sozinha não informa. Cada página do carrossel mostra o seu grupo, para quem está
- * na segunda ter o caminho de volta ao lado do conteúdo.
+ * vista leva `aria-current`; a cor sozinha não informa. Um grupo só, parado embaixo do palco que troca de página.
  */
 @Component({
   selector: 'app-page-dots',
@@ -13,6 +12,7 @@ import { Component, input, output } from '@angular/core';
       role="group"
       aria-label="Páginas do controle"
       i18n-aria-label="@@tv.pager.label"
+      (keydown)="onKey($event)"
     >
       @for (index of indexes(); track index) {
         <button
@@ -65,6 +65,16 @@ export class PageDots {
   readonly current = input.required<number>();
   readonly count = input(2);
   readonly choose = output<number>();
+
+  /** Setas esquerda e direita trocam de página com o foco nos pontos (a alternativa ao gesto de deslizar). */
+  protected onKey(event: KeyboardEvent): void {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (step === 0) return;
+    const target = this.current() + step;
+    if (target < 0 || target >= this.count()) return;
+    event.preventDefault();
+    this.choose.emit(target);
+  }
 
   protected indexes(): number[] {
     return Array.from({ length: this.count() }, (_, index) => index);

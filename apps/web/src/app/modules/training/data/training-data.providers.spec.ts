@@ -4,6 +4,17 @@ import { CatalogRepository } from './catalog/catalog-repository';
 import { CatalogStore } from './catalog/catalog-store';
 import { CatalogWriter } from './catalog/catalog-writer';
 import { ExercisesResourceSync } from './catalog/exercises-resource-sync';
+import { GoalRepository } from './goals/goal-repository';
+import { GoalsResourceSync } from './goals/goals-resource-sync';
+import { ExportService } from './export/export-service';
+import { ProgressRepository } from './progress/progress-repository';
+import { RoutineRepository } from './routines/routine-repository';
+import { RoutinesResourceSync } from './routines/routines-resource-sync';
+import { SessionRepository } from './sessions/session-repository';
+import { SessionsResourceSync, SetsResourceSync } from './sessions/sessions-resource-sync';
+import { RestAlert } from './session-live/rest-alert';
+import { RestTimerService } from './session-live/rest-timer.service';
+import { WakeLockService } from './session-live/wake-lock.service';
 import { TRAINING_RESOURCE_SYNCS } from './sync/resource-sync';
 import { TrainingSync } from './sync/training-sync';
 import { exerciseDto, setupTraining } from './sync/training-test-kit';
@@ -16,14 +27,36 @@ describe('provideTrainingData', () => {
     expect(TestBed.inject(CatalogRepository)).toBeInstanceOf(CatalogRepository);
     expect(TestBed.inject(CatalogStore)).toBeInstanceOf(CatalogStore);
     expect(TestBed.inject(CatalogWriter)).toBeInstanceOf(CatalogWriter);
+    expect(TestBed.inject(RoutineRepository)).toBeInstanceOf(RoutineRepository);
+    expect(TestBed.inject(SessionRepository)).toBeInstanceOf(SessionRepository);
+    expect(TestBed.inject(RestTimerService)).toBeInstanceOf(RestTimerService);
+    expect(TestBed.inject(RestAlert)).toBeInstanceOf(RestAlert);
+    expect(TestBed.inject(WakeLockService)).toBeInstanceOf(WakeLockService);
+    expect(TestBed.inject(GoalRepository)).toBeInstanceOf(GoalRepository);
+    expect(TestBed.inject(ProgressRepository)).toBeInstanceOf(ProgressRepository);
+    expect(TestBed.inject(ExportService)).toBeInstanceOf(ExportService);
 
     const resources = TestBed.inject(TRAINING_RESOURCE_SYNCS);
-    expect(resources).toHaveLength(1);
+    expect(resources).toHaveLength(5);
     expect(resources[0]).toBeInstanceOf(ExercisesResourceSync);
     expect(resources[0]).toMatchObject({
       resource: 'exercises',
       path: '/api/v1/training/exercises',
     });
+    expect(resources[1]).toBeInstanceOf(RoutinesResourceSync);
+    expect(resources[1]).toMatchObject({
+      resource: 'routines',
+      path: '/api/v1/training/routines',
+    });
+    expect(resources[2]).toBeInstanceOf(SessionsResourceSync);
+    expect(resources[2]).toMatchObject({
+      resource: 'sessions',
+      path: '/api/v1/training/sessions',
+    });
+    expect(resources[3]).toBeInstanceOf(SetsResourceSync);
+    expect(resources[3]).toMatchObject({ resource: 'sets', path: '/api/v1/training/sets' });
+    expect(resources[4]).toBeInstanceOf(GoalsResourceSync);
+    expect(resources[4]).toMatchObject({ resource: 'goals', path: '/api/v1/training/goals' });
   });
 });
 
@@ -54,6 +87,11 @@ describe('catalog pull, end to end', () => {
     expect(t.pull.calls).toEqual([
       { path: '/api/v1/training/exercises', after: null, limit: 200 },
       { path: '/api/v1/training/exercises', after: 'cursor-1', limit: 200 },
+      // Depois do catálogo o puxador passa pelos recursos seguintes (rotinas, treinos e séries), que aqui vêm vazios.
+      { path: '/api/v1/training/routines', after: null, limit: 200 },
+      { path: '/api/v1/training/sessions', after: null, limit: 200 },
+      { path: '/api/v1/training/sets', after: null, limit: 200 },
+      { path: '/api/v1/training/goals', after: null, limit: 200 },
     ]);
     expect(await t.trainingDb.exercises.count()).toBe(203);
     expect(await t.trainingDb.syncState.get('exercises')).toMatchObject({ cursor: 'cursor-2' });

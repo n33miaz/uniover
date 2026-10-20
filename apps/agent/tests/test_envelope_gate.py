@@ -43,6 +43,19 @@ def test_value_outside_enum_is_rejected() -> None:
     assert rejected(dump(tv_key("SELF_DESTRUCT"))).reason == "fora_do_contrato"
 
 
+def test_valid_text_command_is_accepted() -> None:
+    outcome = gate.check_inbound(dump(envelope("tv.text.v1", {"text": "matrix"})))
+    assert isinstance(outcome, Accepted)
+    assert outcome.command.body == {"text": "matrix"}
+
+
+@pytest.mark.parametrize("text", ["", "a\nb", "a\x07", "a" * 201])
+def test_text_command_outside_the_contract_is_rejected(text: str) -> None:
+    outcome = rejected(dump(envelope("tv.text.v1", {"text": text})))
+    assert outcome.reason == "fora_do_contrato"
+    assert outcome.message_type == "tv.text.v1"
+
+
 def test_unknown_type_is_rejected() -> None:
     outcome = rejected(dump(envelope("tv.explode.v1", {})))
     assert outcome.reason == "tipo_desconhecido"

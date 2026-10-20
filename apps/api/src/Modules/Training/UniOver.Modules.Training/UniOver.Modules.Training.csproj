@@ -21,6 +21,8 @@
          em ".pt-br.json" e o MSBuild o trataria como recurso de idioma (assembly satélite): WithCulture="false" o mantém no
          assembly principal. -->
     <EmbeddedResource Include="Catalog\Seed\exercises.pt-br.json" WithCulture="false" LogicalName="UniOver.Modules.Training.Catalog.Seed.exercises.pt-br.json" />
+    <!-- Modelos de rotina prontos: também embutidos no assembly, lidos só quando alguém os pede. -->
+    <EmbeddedResource Include="Catalog\Seed\routine-templates.json" LogicalName="UniOver.Modules.Training.Catalog.Seed.routine-templates.json" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="UniOver.Modules.Training.Tests" />
