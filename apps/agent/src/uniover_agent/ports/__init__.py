@@ -3,6 +3,15 @@
 from datetime import datetime
 from typing import Protocol
 
+from uniover_agent.ports.app_icons import (
+    ApkInspector,
+    ApkScratch,
+    ApkSource,
+    AppIcon,
+    CachedIcon,
+    IconCache,
+    IconToolError,
+)
 from uniover_agent.ports.pairing import (
     PairingClient,
     PairingDenied,
@@ -74,9 +83,16 @@ __all__ = [
     "AdbUnauthorized",
     "AdbUnavailable",
     "AdbUnreachable",
+    "ApkInspector",
+    "ApkScratch",
+    "ApkSource",
+    "AppIcon",
+    "CachedIcon",
     "Clock",
     "ConnectionReplaced",
     "CredentialRejected",
+    "IconCache",
+    "IconToolError",
     "LaunchableApp",
     "PairingClient",
     "PairingDenied",

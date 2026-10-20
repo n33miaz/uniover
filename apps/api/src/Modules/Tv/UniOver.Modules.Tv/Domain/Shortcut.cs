@@ -12,6 +12,8 @@ public sealed class Shortcut
     public const int PackageMax = 255;
     public const int TvLabelMax = 100;
     public const int CustomLabelMax = 40;
+    public const int IconMimeMax = 20;
+    public const int IconSha256Length = 64;
 
     // Para o EF Core materializar a linha.
     private Shortcut()
@@ -39,6 +41,15 @@ public sealed class Shortcut
     /// </summary>
     public bool Installed { get; private set; } = true;
 
+    /// <summary>Tipo da imagem do ícone (<c>image/png</c> ou <c>image/webp</c>); nulo enquanto o agente não mandou nenhum.</summary>
+    public string? IconMime { get; private set; }
+
+    /// <summary>Bytes da imagem do ícone (até <see cref="ShortcutIcon.MaxBytes"/>).</summary>
+    public byte[]? IconData { get; private set; }
+
+    /// <summary>SHA-256 (hexadecimal) da imagem: permite regravar o ícone só quando ele mudou.</summary>
+    public string? IconSha256 { get; private set; }
+
     public DateTimeOffset UpdatedAt { get; private set; }
 
     /// <summary>O que a tela e o lançamento enxergam como "ativo": escolhido pelo dono e ainda instalado.</summary>
@@ -65,6 +76,27 @@ public sealed class Shortcut
 
         TvLabel = label;
         Installed = true;
+        UpdatedAt = now;
+        return true;
+    }
+
+    /// <summary>
+    /// Guarda o ícone que o agente mandou, sem tocar em rótulo próprio, posição nem ocultação. Imagem igual à que já
+    /// está guardada não regrava nada (devolve <c>false</c>). Quem nunca manda ícone (<c>tv.apps.v1</c>) nunca passa por
+    /// aqui, então um ícone guardado não é apagado por uma lista sem ícones.
+    /// </summary>
+    internal bool SetIcon(ShortcutIcon icon, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(icon);
+        var hash = icon.Sha256();
+        if (string.Equals(IconSha256, hash, StringComparison.Ordinal) && string.Equals(IconMime, icon.Mime, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        IconMime = icon.Mime;
+        IconData = icon.Data;
+        IconSha256 = hash;
         UpdatedAt = now;
         return true;
     }
@@ -98,8 +130,8 @@ public sealed class Shortcut
         value is null ? null : value.Length <= max ? value : value[..max];
 }
 
-/// <summary>Um app que o agente informou (<c>tv.apps.v1</c>).</summary>
-public sealed record IncomingApp(string Package, string? Label);
+/// <summary>Um app que o agente informou (<c>tv.apps.v1</c> ou <c>tv.apps.v2</c>); sem <see cref="Icon"/>, o ícone guardado fica.</summary>
+public sealed record IncomingApp(string Package, string? Label, ShortcutIcon? Icon = null);
 
 /// <summary>Atalho como a tela o recebe.</summary>
 public sealed record TvShortcut(
@@ -108,12 +140,15 @@ public sealed record TvShortcut(
     string Package,
     string? TvLabel,
     string? CustomLabel,
-    bool Enabled)
+    bool Enabled,
+    string? IconDataUri)
 {
     public static TvShortcut From(Shortcut shortcut)
     {
         ArgumentNullException.ThrowIfNull(shortcut);
-        return new TvShortcut(shortcut.Id, shortcut.Position, shortcut.Package, shortcut.TvLabel, shortcut.CustomLabel, shortcut.IsActive);
+        return new TvShortcut(shortcut.Id, shortcut.Position, shortcut.Package, shortcut.TvLabel, shortcut.CustomLabel, shortcut.IsActive, shortcut.IconData is { Length: > 0 } && shortcut.IconMime is { } mime
+            ? new ShortcutIcon(mime, shortcut.IconData).ToDataUri()
+            : null);
     }
 }
 
@@ -123,7 +158,8 @@ public static class ShortcutCatalog
     /// <summary>
     /// Funde por <c>package</c>: quem já existe mantém rótulo próprio e posição (só o rótulo da TV é atualizado);
     /// quem sumiu da lista fica fora de uso mas não é apagado (se voltar, volta na mesma posição); quem é novo entra
-    /// no fim, na ordem em que a TV informou. Devolve os atalhos novos (o chamador os persiste) e se algo mudou.
+    /// no fim, na ordem em que a TV informou. O ícone só é gravado quando a lista traz um (e muda); app sem ícone na
+    /// lista mantém o que já tem. Devolve os atalhos novos (o chamador os persiste) e se algo mudou.
     /// </summary>
     public static (IReadOnlyList<Shortcut> Added, bool Changed) Merge(
         IReadOnlyCollection<Shortcut> existing, IReadOnlyList<IncomingApp> incoming, DateTimeOffset now)
@@ -148,10 +184,20 @@ public static class ShortcutCatalog
             if (byPackage.TryGetValue(app.Package, out var current))
             {
                 changed |= current.ApplyFromTv(app.Label, now);
+                if (app.Icon is { } icon)
+                {
+                    changed |= current.SetIcon(icon, now);
+                }
             }
             else
             {
-                added.Add(Shortcut.Create(app.Package, app.Label, next++, now));
+                var created = Shortcut.Create(app.Package, app.Label, next++, now);
+                if (app.Icon is { } icon)
+                {
+                    created.SetIcon(icon, now);
+                }
+
+                added.Add(created);
                 changed = true;
             }
         }

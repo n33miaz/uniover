@@ -27,11 +27,19 @@ MAX_PACKAGE_LENGTH: Final = 255
 ACTIVITY_PATTERN: Final = re.compile(r"\.?[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)*")
 MAX_ACTIVITY_LENGTH: Final = 255
 
+# Caminho de APK na TV (`pm path`): só os caracteres que a TV realmente usa (`~~`, `==`, `-`, `_`).
+# Sem espaço, aspas, `$` nem `..`. Vai ao `adb pull` (sem shell), mas segue validado.
+REMOTE_APK_PATTERN: Final = re.compile(r"/(?:[A-Za-z0-9_.@+=~-]+/)*[A-Za-z0-9_.@+=~-]+\.apk")
+MAX_REMOTE_PATH_LENGTH: Final = 512
+
 # Linhas que a TV imprime antes da resposta de verdade; ignoradas em qualquer leitor.
 NOISE_PREFIXES: Final = ("Init wrapper sys mutex", "open mma dev failed")
 
 # Componente como `pacote/atividade` numa linha sozinha (formato de `query-activities --brief`).
 _COMPONENT_LINE: Final = re.compile(r"^([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+)/(\S+)$")
+
+
+_PACKAGE_VERSION_LINE: Final = re.compile(r"^package:(\S+)\s+versionCode:(\d+)")
 
 
 class DeviceState(StrEnum):
@@ -115,6 +123,39 @@ def parse_package_list(text: str) -> set[str]:
             if is_valid_package(name):
                 packages.add(name)
     return packages
+
+
+def is_valid_remote_apk_path(path: str) -> bool:
+    return (
+        len(path) <= MAX_REMOTE_PATH_LENGTH
+        and REMOTE_APK_PATTERN.fullmatch(path) is not None
+        and ".." not in path.split("/")
+    )
+
+
+def parse_package_paths(text: str) -> list[str]:
+    """Caminhos de `pm path` (linhas `package:/data/app/.../base.apk`), o `base.apk` primeiro.
+
+    Apps com APKs divididos devolvem várias linhas. Linha com caminho fora do formato é ignorada.
+    """
+    paths: list[str] = []
+    for line in clean_lines(text):
+        if line.startswith("package:"):
+            path = line.removeprefix("package:").strip()
+            if is_valid_remote_apk_path(path) and path not in paths:
+                paths.append(path)
+    paths.sort(key=lambda path: not path.endswith("/base.apk"))
+    return paths
+
+
+def parse_package_versions(text: str) -> dict[str, int]:
+    """`pm list packages --show-versioncode`: linhas `package:com.exemplo.app versionCode:123`."""
+    versions: dict[str, int] = {}
+    for line in clean_lines(text):
+        match = _PACKAGE_VERSION_LINE.match(line)
+        if match and is_valid_package(match.group(1)):
+            versions[match.group(1)] = int(match.group(2))
+    return versions
 
 
 def am_start_succeeded(text: str) -> bool:

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/tv.apps.v2.schema.json",
+  "title": "tv.apps.v2",
+  "description": "Agente para API: lista de apps da TV com o ícone de cada um (imagem pequena em base64). A lista é sempre completa; o ícone é opcional por app e, quando falta, a API mantém o que já guarda. Como o transporte limita o tamanho de cada mensagem, o agente pode mandar a mesma lista várias vezes, cada uma levando só uma parte dos ícones. tv.apps.v1 continua válido.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "type", "source", "target", "ts", "correlationId", "body"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+    "type": { "const": "tv.apps.v2" },
+    "source": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "target": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "ts": { "$ref": "../envelope.schema.json#/$defs/timestamp" },
+    "correlationId": { "oneOf": [{ "$ref": "../envelope.schema.json#/$defs/uuid" }, { "type": "null" }] },
+    "body": {
+      "type": "object", "additionalProperties": false,
+      "required": ["apps", "at"],
+      "properties": {
+        "apps": {
+          "type": "array", "maxItems": 500,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["package", "label"],
+            "properties": {
+              "package": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[A-Za-z][A-Za-z0-9_]*([.][A-Za-z][A-Za-z0-9_]*)+$" },
+              "label": { "type": ["string", "null"], "minLength": 1, "maxLength": 100 },
+              "icon": {
+                "type": "object", "additionalProperties": false,
+                "required": ["mime", "data"],
+                "properties": {
+                  "mime": { "enum": ["image/png", "image/webp"] },
+                  "data": {
+                    "description": "Imagem em base64 padrão com preenchimento. No máximo 32768 bytes (43692 caracteres).",
+                    "type": "string", "minLength": 8, "maxLength": 43692,
+                    "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "at": { "$ref": "../envelope.schema.json#/$defs/timestamp" }
+      }
+    }
+  }
+}

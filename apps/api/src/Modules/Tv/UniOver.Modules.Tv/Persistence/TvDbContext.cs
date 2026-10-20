@@ -52,6 +52,11 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             e.Property(x => x.CustomLabel).HasMaxLength(Shortcut.CustomLabelMax);
             e.HasIndex(x => x.Position);
             e.Ignore(x => x.IsActive);
+
+            // Ícone do app: imagem pequena (até 32 KB) tirada do APK pelo agente. Colunas anuláveis e só aditivas.
+            e.Property(x => x.IconMime).HasMaxLength(Shortcut.IconMimeMax);
+            e.Property(x => x.IconData).HasColumnType("bytea");
+            e.Property(x => x.IconSha256).HasMaxLength(Shortcut.IconSha256Length);
         });
 
         modelBuilder.Entity<TvStateRecord>(e =>

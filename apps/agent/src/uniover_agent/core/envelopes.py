@@ -1,14 +1,25 @@
 """Montagem das mensagens que o agente envia; sempre validadas pelo portão antes de sair."""
 
+import base64
+import json
 import uuid
 from collections.abc import Sequence
 from typing import Any
 
 from uniover_agent.core.domain import TvState
 from uniover_agent.core.envelope_gate import EnvelopeGate
-from uniover_agent.ports import Clock
+from uniover_agent.ports import AppIcon, Clock
 
 INVALID_MESSAGE = "invalid_message"
+
+
+def serialized_size(envelope: dict[str, Any]) -> int:
+    """Bytes que a mensagem ocupa no fio (a mesma serialização do transporte WebSocket).
+
+    O servidor fecha a conexão de quem manda mensagem acima do limite dele, então quem monta
+    mensagens grandes precisa medir antes de enviar.
+    """
+    return len(json.dumps(envelope, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
 
 class EnvelopeFactory:
@@ -67,3 +78,21 @@ class EnvelopeFactory:
             "at": self._utc_now(),
         }
         return self._build("tv.apps.v1", body, correlation_id)
+
+    def tv_apps_v2(
+        self,
+        apps: Sequence[tuple[str, str, AppIcon | None]],
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """`tv.apps.v2`: (pacote, nome, ícone). Sem ícone o campo some e a API mantém o dela."""
+        items: list[dict[str, Any]] = []
+        for package, label, icon in apps:
+            item: dict[str, Any] = {"package": package, "label": label}
+            if icon is not None:
+                item["icon"] = {
+                    "mime": icon.mime,
+                    "data": base64.b64encode(icon.data).decode("ascii"),
+                }
+            items.append(item)
+        body: dict[str, Any] = {"apps": items, "at": self._utc_now()}
+        return self._build("tv.apps.v2", body, correlation_id)
