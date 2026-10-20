@@ -210,8 +210,22 @@ public sealed class CommandTests(PostgresFixture postgres)
         app.Logs.Lines.Should().NotContain(l => l.Contains(secret, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task Text_Empty_IsSentToTheAgent_ToClearWhatWasTyped()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+
+        var request = app.PostAsync("/api/v1/tv/text", new { text = string.Empty });
+        var command = await TvApp.NextCommandAsync(agent);
+        command.GetProperty("type").GetString().Should().Be("tv.text.v1");
+        command.GetProperty("body").GetProperty("text").GetString().Should().BeEmpty();
+        await TvApp.ReplyAsync(agent, command);
+        using var response = await Within(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Theory]
-    [InlineData("""{"text":""}""")]
     [InlineData("""{"text":"linha\nnova"}""")]
     [InlineData("""{}""")]
     public async Task Text_Invalid_Returns400(string json)
