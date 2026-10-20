@@ -1,0 +1,168 @@
+/* O azulejo preenche o item da grade (que é quem faz o cartão da edição): coluna, centralizada, com o fundo livre. */
+:host {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Texto só para leitor de tela: a marca "No controle", lida como descrição do botão. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/*
+ * O azulejo do app: ícone quadrado e grande em cima, o nome embaixo (até duas linhas, com reticências). Fora da edição
+ * o azulejo todo (ícone e nome) é o botão, com mais de 44 px de alvo.
+ */
+.launch,
+.face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 0 6px;
+  border: 0;
+  border-radius: var(--radius-sm, 12px);
+  background: transparent;
+  color: var(--a-ink);
+  text-align: center;
+}
+/* Na edição o azulejo é um cartão (feito pelo item): o app cresce e os botões ficam sempre no fundo, na mesma altura. */
+.face {
+  flex: 1 1 auto;
+}
+
+/*
+ * O app fora do controle fica apagado: a API não o abre enquanto ninguém o fixa. Só o ícone e, no botão desabilitado, o
+ * nome; na edição o nome fica inteiro (ali não é um botão apagado, e o texto precisa do contraste todo).
+ */
+:host(.off) .art,
+:host(.off) .launch .name {
+  opacity: 0.5;
+}
+
+.art {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+}
+.art app-tv-app-icon {
+  --tile: 60px;
+}
+
+/* Marca discreta de quem está no controle: um alfinete num disco no canto do ícone. */
+.mark {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--a-surface);
+  border-radius: 50%;
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+  font-size: 0.7rem;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+}
+.name {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  /* 11,5 px: "Configurações" cabe inteira numa coluna de ~76 px (celular em pé, quatro por linha). */
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+  /* Nome comprido em coluna estreita: separa por sílaba ("Configu-rações"); sem hifenização, quebra onde couber. */
+  hyphens: auto;
+  -webkit-hyphens: auto;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.package {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--a-ink2);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+.tool {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--a-line);
+  border-radius: 50%;
+  background: var(--a-surface);
+  color: var(--a-ink);
+}
+/* Fixado: o botão fica cheio (a forma do alfinete muda junto, então não depende só da cor). */
+.tool.pin.on {
+  border-color: var(--a-accent);
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+}
+.tool[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* O toque afunda o azulejo. Quem pediu menos movimento não vê a animação. */
+@media (prefers-reduced-motion: no-preference) {
+  .launch,
+  .tool {
+    transition: transform 90ms ease-out;
+  }
+  .launch:not(:disabled):active,
+  .tool:active {
+    transform: scale(0.94);
+  }
+}
+@media (hover: hover) {
+  .tool:not([aria-disabled='true']):hover {
+    border-color: var(--a-accent);
+  }
+}

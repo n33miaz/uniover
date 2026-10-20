@@ -1,0 +1,55 @@
+@let s = shortcut();
+@if (managing()) {
+  <div class="face">
+    <span class="art">
+      <app-tv-app-icon [shortcut]="s" [lazy]="true" />
+      @if (s.enabled) {
+        <span class="mark" aria-hidden="true"><app-tv-pin [filled]="true" /></span>
+      }
+    </span>
+    <span class="text">
+      <span class="name">{{ name() }}</span>
+      <span class="package">{{ s.package }}</span>
+    </span>
+  </div>
+  <div class="tools">
+    <button
+      type="button"
+      class="tool pin"
+      [class.on]="s.enabled"
+      [attr.aria-label]="toggleLabel()"
+      [attr.aria-disabled]="busy() ? 'true' : null"
+      (click)="pin.emit(s)"
+    >
+      <app-tv-pin [filled]="s.enabled" />
+    </button>
+    <button
+      type="button"
+      class="tool"
+      [attr.aria-label]="renameLabel()"
+      [attr.data-rename]="s.id"
+      (click)="rename.emit(s)"
+    >
+      <app-tv-icon name="rename" />
+    </button>
+  </div>
+} @else {
+  <button
+    type="button"
+    class="launch"
+    [disabled]="!canSend() || !s.enabled"
+    [attr.aria-describedby]="marked() && s.enabled ? describedBy() : null"
+    (click)="launch.emit(s)"
+  >
+    <span class="art">
+      <app-tv-app-icon [shortcut]="s" [lazy]="true" />
+      @if (marked() && s.enabled) {
+        <span class="mark" aria-hidden="true"><app-tv-pin [filled]="true" /></span>
+      }
+    </span>
+    <span class="name">{{ name() }}</span>
+  </button>
+  @if (marked() && s.enabled) {
+    <span class="sr" [id]="describedBy()" i18n="@@tv.apps.in-control">No controle</span>
+  }
+}
