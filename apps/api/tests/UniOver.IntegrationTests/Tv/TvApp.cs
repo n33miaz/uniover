@@ -202,6 +202,9 @@ internal sealed class TvApp : IAsyncDisposable
     /// <summary>Contexto com o papel dono, só para o teste inspecionar o banco.</summary>
     public TvDbContext Db() => CreateContext(Database.OwnerConnection);
 
+    /// <summary>Contexto do Identity com o papel dono, só para o teste inspecionar o banco.</summary>
+    public Modules.Identity.Persistence.IdentityDbContext Identity() => IdentityApp.CreateContext(Database.OwnerConnection);
+
     public Task<FakeAgent> ConnectAsync() => ConnectAsync(Agent);
 
     public Task<FakeAgent> ConnectAsync(PairedAgent agent) => FakeAgent.ConnectAsync(Server, agent.Slug, agent.Token);

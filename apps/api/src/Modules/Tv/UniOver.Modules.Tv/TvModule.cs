@@ -47,6 +47,18 @@ public static class TvModule
             .Validate(TvModuleOptions.IsValid, "Modules:Tv tem valor fora do permitido (tempos devem ser positivos).")
             .ValidateOnStart();
 
+        // A TV é a única área do convidado: ele usa o controle inteiro (comandos, estado, atalhos, histórico dele e o fluxo
+        // ao vivo) e nada mais. As demais rotas da API ficam na política padrão, que é só do dono.
+        services.AddAuthorizationBuilder()
+            .AddPolicy(TvAuth.ControlPolicy, policy => policy
+                .RequireAccountRole(AccountRoles.Owner, AccountRoles.Guest)
+                .RequireActiveAccount())
+            .AddPolicy(TvAuth.StreamPolicy, policy => policy
+                .AddAuthenticationSchemes(UniOverAuth.StreamScheme)
+                .RequireAccountRole(AccountRoles.Owner, AccountRoles.Guest)
+                .RequireActiveAccount()
+                .RequireGetOnly());
+
         services.TryAddSingleton(TimeProvider.System);
         services.AddModuleDbContext<TvDbContext>(configuration, TvDbContext.SchemaName, typeof(TvDbContext).Assembly);
 

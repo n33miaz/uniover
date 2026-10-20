@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { BrowserContext, Route } from '@playwright/test';
 
 /** Dados da conta de teste (só existem neste arquivo e nos testes; a API real não é usada). */
@@ -6,6 +7,32 @@ export const OWNER = {
   password: 'senha-de-teste-123',
   displayName: 'Dono da Casa',
 };
+
+/** A convidada que o dono convida nos testes: ela escolhe o próprio e-mail e a própria senha no aceite. */
+export const GUEST = {
+  email: 'convidada@exemplo.com',
+  password: 'senha-da-convidada-123',
+  displayName: 'Alice',
+};
+
+export interface MockInvite {
+  id: string;
+  displayName: string;
+  /** O segredo do link, que a API só devolve na criação. */
+  token: string;
+  status: 'pending' | 'used' | 'revoked' | 'expired';
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface MockGuest {
+  id: string;
+  displayName: string;
+  email: string;
+  password: string;
+  createdAt: string;
+  disabledAt: string | null;
+}
 
 export interface RecordedRequest {
   readonly method: string;
@@ -35,6 +62,12 @@ export interface IdentityMock {
   refreshCalls: number;
   maxRefreshInFlight: number;
   readonly passkeys: StoredPasskey[];
+  /** Papel da sessão aberta: o que `/me` devolve e o que decide os 403 das rotas só do dono. */
+  role: 'owner' | 'guest';
+  readonly invites: MockInvite[];
+  readonly guests: MockGuest[];
+  /** Cria um convite pendente já pronto (o segredo do link é o devolvido). */
+  seedInvite(displayName?: string): MockInvite;
   /** Tokens emitidos (todos começam com "eyJ", como um JWT). */
   readonly issuedTokens: string[];
 }
@@ -85,6 +118,21 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
     refreshCalls: 0,
     maxRefreshInFlight: 0,
     passkeys: [],
+    role: 'owner',
+    invites: [],
+    guests: [],
+    seedInvite: (displayName = GUEST.displayName) => {
+      const invite: MockInvite = {
+        id: '00000000-0000-4000-8000-0000000000' + String(mock.invites.length + 10),
+        displayName,
+        token: randomBytes(32).toString('base64url'),
+        status: 'pending',
+        createdAt: '2026-10-19T12:00:00Z',
+        expiresAt: '2026-10-21T12:00:00Z',
+      };
+      mock.invites.push(invite);
+      return invite;
+    },
     issuedTokens: [],
   };
 
@@ -121,9 +169,14 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
       if (body?.['email'] === 'bloqueado@exemplo.com') {
         return problem(route, 429, 'login-locked', 'Conta bloqueada.', {}, { 'retry-after': '3' });
       }
-      if (body?.['email'] !== OWNER.email || body?.['password'] !== OWNER.password) {
+      const guest = mock.guests.find(
+        (g) => g.email === body?.['email'] && g.password === body?.['password'] && !g.disabledAt,
+      );
+      const isOwner = body?.['email'] === OWNER.email && body?.['password'] === OWNER.password;
+      if (!isOwner && !guest) {
         return problem(route, 401, 'unauthenticated', 'E-mail ou senha inválidos.');
       }
+      mock.role = isOwner ? 'owner' : 'guest';
       mock.loggedIn = true;
       return json(route, 200, tokenBody());
     }
@@ -141,6 +194,30 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
       }
     }
 
+    // Rota pública: quem recebeu o link ainda não tem sessão. O segredo vai no corpo, nunca na URL.
+    if (method === 'POST' && path === '/guest-invites/accept') {
+      if (!hasClientHeader) return problem(route, 400, 'validation-failed', 'Cabeçalho ausente.');
+      const invite = mock.invites.find(
+        (i) => i.token === body?.['token'] && i.status === 'pending',
+      );
+      if (!invite) return problem(route, 410, 'invite-invalid', 'Este convite não vale mais.');
+      if (String(body?.['email']).toLowerCase() === OWNER.email) {
+        return problem(route, 409, 'email-unavailable', 'Este e-mail não pode ser usado.');
+      }
+      invite.status = 'used';
+      mock.guests.push({
+        id: '00000000-0000-4000-8000-0000000000' + String(mock.guests.length + 50),
+        displayName: invite.displayName,
+        email: String(body?.['email']),
+        password: String(body?.['password']),
+        createdAt: '2026-10-19T15:00:00Z',
+        disabledAt: null,
+      });
+      mock.role = 'guest';
+      mock.loggedIn = true;
+      return json(route, 200, tokenBody());
+    }
+
     if (method === 'POST' && path === '/auth/logout') {
       if (!authorized) return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
       mock.loggedIn = false;
@@ -153,7 +230,74 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
     if (method === 'POST' && path === '/auth/stream-ticket')
       return json(route, 200, { expiresIn: 120 });
     if (method === 'GET' && path === '/me') {
-      return json(route, 200, { id: 'u1', email: OWNER.email, displayName: OWNER.displayName });
+      const guest = mock.role === 'guest' ? mock.guests.at(-1) : undefined;
+      return json(route, 200, {
+        id: guest?.id ?? 'u1',
+        email: guest?.email ?? OWNER.email,
+        displayName: guest?.displayName ?? OWNER.displayName,
+        role: mock.role,
+      });
+    }
+
+    // Como a API: tudo o que é da conta e dos convites é só do dono.
+    if (mock.role === 'guest') return problem(route, 403, 'forbidden', 'Sem permissão.');
+
+    if (method === 'GET' && path === '/guest-invites') {
+      return json(
+        route,
+        200,
+        mock.invites.map((i) => ({
+          id: i.id,
+          displayName: i.displayName,
+          status: i.status,
+          createdAt: i.createdAt,
+          expiresAt: i.expiresAt,
+          usedAt: i.status === 'used' ? '2026-10-19T15:00:00Z' : null,
+          revokedAt: i.status === 'revoked' ? '2026-10-19T15:00:00Z' : null,
+        })),
+      );
+    }
+    if (method === 'GET' && path === '/guests') {
+      return json(
+        route,
+        200,
+        mock.guests.map(({ id, displayName, email, createdAt, disabledAt }) => ({
+          id,
+          displayName,
+          email,
+          createdAt,
+          disabledAt,
+        })),
+      );
+    }
+    if (method === 'POST' && path === '/guest-invites') {
+      if (!mock.stepUpValid) {
+        return problem(route, 403, 'step-up-required', 'Confirme com a passkey.', {
+          code: 'step_up_required',
+          action: 'identity.guest-invite',
+        });
+      }
+      const invite = mock.seedInvite(String(body?.['displayName']));
+      return json(route, 200, {
+        id: invite.id,
+        displayName: invite.displayName,
+        token: invite.token,
+        expiresAt: invite.expiresAt,
+      });
+    }
+    const inviteRevoke = /^\/guest-invites\/([^/]+)\/revoke$/.exec(path);
+    if (method === 'POST' && inviteRevoke) {
+      const found = mock.invites.find((i) => i.id === inviteRevoke[1]);
+      if (!found) return route.fulfill({ status: 404 });
+      found.status = 'revoked';
+      return route.fulfill({ status: 204 });
+    }
+    const guestRevoke = /^\/guests\/([^/]+)\/revoke$/.exec(path);
+    if (method === 'POST' && guestRevoke) {
+      const found = mock.guests.find((g) => g.id === guestRevoke[1]);
+      if (!found) return route.fulfill({ status: 404 });
+      found.disabledAt = '2026-10-19T16:00:00Z';
+      return route.fulfill({ status: 204 });
     }
     if (method === 'GET' && path === '/passkeys') {
       return json(

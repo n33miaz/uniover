@@ -8,6 +8,9 @@ public static class StepUpActions
 {
     public const string PasskeyRemove = "identity.passkey-remove";
 
+    /// <summary>Criar um convite de convidado: concede acesso a quem receber o link, então pede a passkey.</summary>
+    public const string GuestInvite = "identity.guest-invite";
+
     /// <summary>Reservada: o endpoint de trocar a senha ainda não existe, mas o nome já fica separado.</summary>
     public const string PasswordChange = "identity.password-change";
 }

@@ -30,6 +30,8 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/identity/passkeys/registration/complete", RateLimitPolicies.Login),
         ("POST", "/api/v1/identity/step-up/options", RateLimitPolicies.Login),
         ("POST", "/api/v1/identity/step-up/complete", RateLimitPolicies.Login),
+        ("POST", "/api/v1/identity/guest-invites", RateLimitPolicies.Login),
+        ("POST", "/api/v1/identity/guest-invites/accept", RateLimitPolicies.GuestInvite),
 
         // Pareamento de aparelhos: qualquer rota sob o prefixo (o '*' final significa "começa com").
         ("*", "/api/v1/devices/pairing/*", RateLimitPolicies.Pairing),

@@ -82,7 +82,7 @@ internal sealed class SendKeyHandler(TvCommandRunner runner)
 internal static class SendKeyEndpoint
 {
     public static void MapSendKey(this IEndpointRouteBuilder group) =>
-        group.MapPost("/keys", HandleAsync).RequireAuthorization()
+        group.MapPost("/keys", HandleAsync).RequireAuthorization(TvAuth.ControlPolicy)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces<TvCommandOk>()
             .ProducesProblem(StatusCodes.Status400BadRequest)

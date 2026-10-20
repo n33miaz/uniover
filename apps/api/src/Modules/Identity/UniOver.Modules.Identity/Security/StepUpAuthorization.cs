@@ -20,8 +20,10 @@ internal sealed class StepUpPolicyProvider(IOptions<AuthorizationOptions> option
     {
         if (StepUp.TryGetAction(policyName, out var action))
         {
+            // Só o dono: as ações perigosas (criar convite, remover passkey, aprovar pareamento) nunca são do convidado,
+            // que nem passkey tem.
             return Task.FromResult<AuthorizationPolicy?>(new AuthorizationPolicyBuilder()
-                .RequireAuthenticatedUser()
+                .RequireAccountRole(AccountRoles.Owner)
                 .AddRequirements(new StepUpRequirement(action))
                 .Build());
         }

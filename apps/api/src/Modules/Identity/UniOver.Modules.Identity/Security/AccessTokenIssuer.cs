@@ -16,9 +16,13 @@ internal sealed class AccessTokenIssuer(JwtKeySet keys, IHostEnvironment environ
 {
     private readonly JsonWebTokenHandler _handler = new();
 
-    public IssuedToken Issue(Guid userId, Guid sessionId, string audience, TimeSpan lifetime, DateTimeOffset now)
+    public IssuedToken Issue(Guid userId, Guid sessionId, string role, string audience, TimeSpan lifetime, DateTimeOffset now)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(audience);
+        if (!AccountRoles.IsKnown(role))
+        {
+            throw new ArgumentException("Papel desconhecido.", nameof(role));
+        }
 
         // Chave temporária só em desenvolvimento e teste: em produção seria uma sessão que morre a cada
         // reinício sem ninguém entender por quê. Melhor o login falhar de forma clara (o erro vai para o log).
@@ -41,6 +45,7 @@ internal sealed class AccessTokenIssuer(JwtKeySet keys, IHostEnvironment environ
             [
                 new Claim(UniOverAuth.SubjectClaim, userId.ToString()),
                 new Claim(UniOverAuth.SessionClaim, sessionId.ToString()),
+                new Claim(UniOverAuth.RoleClaim, role),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
             ]),
         };

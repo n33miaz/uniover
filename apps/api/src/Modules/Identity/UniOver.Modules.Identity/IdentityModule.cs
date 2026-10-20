@@ -5,17 +5,24 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using UniOver.BuildingBlocks.Persistence;
+using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity.Bootstrap;
+using UniOver.Modules.Identity.Features.AcceptGuestInvite;
 using UniOver.Modules.Identity.Features.BeginPasskeyRegistration;
 using UniOver.Modules.Identity.Features.CompletePasskeyRegistration;
 using UniOver.Modules.Identity.Features.ConfirmStepUp;
+using UniOver.Modules.Identity.Features.CreateGuestInvite;
 using UniOver.Modules.Identity.Features.GetMe;
 using UniOver.Modules.Identity.Features.GetModuleInfo;
+using UniOver.Modules.Identity.Features.ListGuestInvites;
+using UniOver.Modules.Identity.Features.ListGuests;
 using UniOver.Modules.Identity.Features.ListPasskeys;
 using UniOver.Modules.Identity.Features.Login;
 using UniOver.Modules.Identity.Features.Logout;
 using UniOver.Modules.Identity.Features.Refresh;
 using UniOver.Modules.Identity.Features.RemovePasskey;
+using UniOver.Modules.Identity.Features.RevokeGuest;
+using UniOver.Modules.Identity.Features.RevokeGuestInvite;
 using UniOver.Modules.Identity.Features.RenamePasskey;
 using UniOver.Modules.Identity.Features.RequestStepUp;
 using UniOver.Modules.Identity.Features.StreamTicket;
@@ -55,7 +62,22 @@ public static class IdentityModule
         services.AddScoped<LogoutHandler>();
         services.AddScoped<StreamTicketHandler>();
         services.AddScoped<GetMeHandler>();
+        services.AddScoped<CreateGuestInviteHandler>();
+        services.AddScoped<ListGuestInvitesHandler>();
+        services.AddScoped<RevokeGuestInviteHandler>();
+        services.AddScoped<AcceptGuestInviteHandler>();
+        services.AddScoped<ListGuestsHandler>();
+        services.AddScoped<RevokeGuestHandler>();
+
+        // Revogação imediata na TV: o status do convidado (cache curto) é uma porta usada pelas políticas dos módulos.
+        services.AddSingleton<GuestAccountStatus>();
+        services.AddSingleton<IAccountStatus>(sp => sp.GetRequiredService<GuestAccountStatus>());
         services.AddScoped(sp => new GetModuleInfoHandler(version, sp.GetRequiredService<ITvModule>()));
+
+        // Sair, "quem sou" e o bilhete de stream valem para o dono e para o convidado; o resto do módulo é só do dono.
+        services.AddAuthorizationBuilder().AddPolicy(
+            IdentityAuth.AccountSessionPolicy,
+            policy => policy.RequireAccountRole(AccountRoles.Owner, AccountRoles.Guest));
 
         // Singleton pelo tipo concreto também, para os testes esperarem o fim do seed sem adivinhar o tempo.
         services.AddSingleton<OwnerBootstrapService>();
@@ -75,6 +97,12 @@ public static class IdentityModule
         group.MapLogout();
         group.MapStreamTicket();
         group.MapGetMe();
+        group.MapCreateGuestInvite();
+        group.MapListGuestInvites();
+        group.MapRevokeGuestInvite();
+        group.MapAcceptGuestInvite();
+        group.MapListGuests();
+        group.MapRevokeGuest();
         group.MapBeginPasskeyRegistration();
         group.MapCompletePasskeyRegistration();
         group.MapListPasskeys();
