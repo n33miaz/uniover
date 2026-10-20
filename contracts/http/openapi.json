@@ -2039,6 +2039,12 @@
           "enabled": {
             "type": "boolean"
           },
+          "iconDataUri": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -2063,7 +2069,8 @@
           "package",
           "tvLabel",
           "customLabel",
-          "enabled"
+          "enabled",
+          "iconDataUri"
         ],
         "type": "object"
       },

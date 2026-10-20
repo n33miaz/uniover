@@ -1,0 +1,106 @@
+/* A casca do controle é quem dispõe a fileira (coluna única ou grade em paisagem): este componente não cria caixa. */
+:host {
+  display: contents;
+}
+
+.top {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Os atalhos ficam focáveis mesmo sem agente (aria-disabled), só apagados. */
+.shortcut[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.apps-chip,
+.shortcut {
+  display: inline-flex;
+  align-items: center;
+  height: var(--tv-top);
+  border: 1px solid var(--a-line);
+  border-radius: 999px;
+  background: var(--a-surface);
+  color: var(--a-ink);
+}
+.apps-chip {
+  flex: 0 0 auto;
+  gap: 8px;
+  min-width: 96px;
+  padding: 0 16px;
+  background: var(--a-accent-soft);
+  font-weight: 700;
+}
+.shortcut {
+  min-width: 96px;
+  max-width: 14rem;
+  padding: 0 18px;
+  font-weight: 600;
+}
+.shortcut .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Resposta imediata ao toque: o chip afunda um pouco. Quem pediu menos movimento não vê a animação. */
+@media (prefers-reduced-motion: no-preference) {
+  .apps-chip,
+  .shortcut {
+    transition:
+      transform 90ms ease-out,
+      border-color 120ms ease-out;
+  }
+  .apps-chip:active,
+  .shortcut:active {
+    transform: scale(0.93);
+  }
+}
+@media (hover: hover) {
+  .shortcut:not([aria-disabled='true']):hover,
+  .apps-chip:hover {
+    border-color: var(--a-accent);
+  }
+}
+
+/* A faixa dos atalhos rola na horizontal, com encaixe suave e sem barra. */
+.shortcuts {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.shortcuts::-webkit-scrollbar {
+  display: none;
+}
+.shortcuts li {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+/* Paisagem: o controle vira grade de duas colunas e esta fileira fica à direita, em cima, colada no bloco de baixo. */
+@media (min-aspect-ratio: 6/5) {
+  .top {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+  }
+}

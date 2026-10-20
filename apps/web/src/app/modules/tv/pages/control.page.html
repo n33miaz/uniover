@@ -1,34 +1,13 @@
 <section class="remote">
-  <div class="top">
-    <button
-      type="button"
-      class="apps-chip"
-      [attr.aria-haspopup]="'dialog'"
-      aria-label="Apps da TV"
-      i18n-aria-label="@@tv.apps.open"
-      (click)="askApps($event)"
-    >
-      <app-tv-icon name="apps" />
-      <span i18n="@@tv.apps.chip">Apps</span>
-    </button>
-    <ul class="shortcuts" aria-label="Atalhos de apps" i18n-aria-label="@@tv.shortcuts.label">
-      @for (shortcut of shortcuts(); track shortcut.id) {
-        <li>
-          <button
-            type="button"
-            class="shortcut"
-            [attr.aria-disabled]="store.canSend() ? null : 'true'"
-            (click)="openShortcut(shortcut)"
-          >
-            <span class="name">{{ label(shortcut) }}</span>
-          </button>
-        </li>
-      }
-    </ul>
-  </div>
+  <app-tv-shortcut-row
+    [shortcuts]="shortcuts()"
+    [canSend]="store.canSend()"
+    (apps)="openApps.emit($event)"
+    (open)="openShortcut($event)"
+  />
 
   <!--
-    Só este bloco troca de página: as direções com o OK, o touchpad e os números. Tudo o mais (atalhos, pílulas,
+    Só este bloco troca de página: as direções com o OK, os números e, por último, o touchpad. Tudo o mais (atalhos, pílulas,
     botões redondos) fica parado, dentro e fora do gesto.
   -->
   <div class="stage">
@@ -38,9 +17,10 @@
         class="pager"
         tabindex="0"
         role="group"
-        aria-label="Direções, touchpad e números"
+        aria-label="Direções, números e touchpad"
         i18n-aria-label="@@tv.stage.label"
         (scroll)="onScroll()"
+        (keydown)="onKey($event)"
       >
         <div
           class="panel"
@@ -52,26 +32,32 @@
         </div>
 
         <div
-          class="panel touch"
+          class="panel"
           role="group"
           [attr.aria-label]="pageLabel(1)"
           [attr.inert]="page() === 1 ? null : ''"
         >
-          <app-touchpad-surface />
+          <app-number-pad />
         </div>
 
         <div
-          class="panel"
+          class="panel touch"
           role="group"
           [attr.aria-label]="pageLabel(2)"
           [attr.inert]="page() === 2 ? null : ''"
         >
-          <app-number-pad />
+          <span class="edge" aria-hidden="true"></span>
+          <app-touchpad-surface />
         </div>
       </div>
     </div>
 
-    <app-page-dots [current]="page()" [count]="pageCount" (choose)="goTo($event)" />
+    <app-page-dots
+      [current]="page()"
+      [progress]="progress()"
+      [count]="pageCount"
+      (choose)="goTo($event)"
+    />
   </div>
 
   <div class="bottom">

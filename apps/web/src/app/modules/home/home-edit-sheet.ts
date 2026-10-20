@@ -12,7 +12,7 @@ import {
 } from '@angular/core';
 import { WidgetPref, moveWidget, moveWidgetTo } from '../../core/modules/module-prefs';
 import { ModuleRegistry, WidgetSize } from '../../core/modules/module-registry';
-import { Icon } from '../../shared/ui/icon/icon';
+import { HomeGlyph, HomeGlyphName, moduleGlyph } from './home-glyph';
 
 /**
  * Folha de edição da Início: sobe de baixo, sem botão de fechar (a saída é "Cancelar" ou "Aplicar").
@@ -20,7 +20,7 @@ import { Icon } from '../../shared/ui/icon/icon';
  */
 @Component({
   selector: 'app-home-edit-sheet',
-  imports: [Icon],
+  imports: [HomeGlyph],
   templateUrl: './home-edit-sheet.html',
   styleUrl: './home-edit-sheet.css',
 })
@@ -50,6 +50,11 @@ export class HomeEditSheet implements OnInit {
 
   protected title(id: string): string {
     return this.registry.find(id)?.title ?? id;
+  }
+
+  protected glyph(id: string): HomeGlyphName {
+    const module = this.registry.find(id);
+    return module ? moduleGlyph(module.icon) : 'grid';
   }
 
   protected upLabel(id: string): string {

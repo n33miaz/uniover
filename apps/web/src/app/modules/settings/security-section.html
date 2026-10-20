@@ -1,32 +1,42 @@
 <section class="section" aria-labelledby="security-title">
-  <h2 id="security-title" i18n="@@settings.security.title">Segurança</h2>
-  <p class="hint" i18n="@@settings.security.hint">
-    A passkey só confirma ações perigosas, como remover outra passkey. Ela não entra no app: o
-    acesso continua sendo por e-mail e senha.
-  </p>
+  <h2 id="security-title" class="ui-section-label" i18n="@@settings.security.title">Segurança</h2>
+
+  <div class="intro ui-card">
+    <span class="ui-tile"><app-settings-glyph name="shield" /></span>
+    <p class="hint" i18n="@@settings.security.hint">
+      A passkey só confirma ações perigosas, como remover outra passkey. Ela não entra no app: o
+      acesso continua sendo por e-mail e senha.
+    </p>
+  </div>
 
   @if (passkeys(); as list) {
     @if (list.length === 0) {
-      <p class="empty" i18n="@@settings.passkeys.empty">Nenhuma passkey cadastrada.</p>
+      <p class="empty">
+        <app-settings-glyph name="key" />
+        <span i18n="@@settings.passkeys.empty">Nenhuma passkey cadastrada.</span>
+      </p>
     } @else {
       <ul class="list">
         @for (passkey of list; track passkey.id) {
-          <li class="item">
+          <li class="item ui-card">
             @if (renamingId() === passkey.id) {
               <form class="inline" (submit)="saveRename($event, passkey)">
-                <label [for]="'rename-' + passkey.id" i18n="@@settings.passkeys.name">Nome</label>
-                <input
-                  [id]="'rename-' + passkey.id"
-                  type="text"
-                  [attr.maxlength]="maxName"
-                  required
-                  [value]="renameValue()"
-                  (input)="renameValue.set(value($event))"
-                />
+                <div class="ui-field">
+                  <label [for]="'rename-' + passkey.id" i18n="@@settings.passkeys.name">Nome</label>
+                  <input
+                    class="ui-input"
+                    [id]="'rename-' + passkey.id"
+                    type="text"
+                    [attr.maxlength]="maxName"
+                    required
+                    [value]="renameValue()"
+                    (input)="renameValue.set(value($event))"
+                  />
+                </div>
                 <div class="actions">
                   <button
                     type="button"
-                    class="secondary"
+                    class="secondary ui-btn"
                     (click)="renamingId.set(null)"
                     i18n="@@settings.cancel"
                   >
@@ -34,7 +44,7 @@
                   </button>
                   <button
                     type="submit"
-                    class="primary"
+                    class="primary ui-btn"
                     [disabled]="busy()"
                     i18n="@@settings.passkeys.save"
                   >
@@ -43,53 +53,63 @@
                 </div>
               </form>
             } @else {
-              <div class="info">
-                <strong class="name">{{ passkey.name }}</strong>
-                <span class="meta">{{ created(passkey) }}</span>
-                <span class="meta">{{ lastUsed(passkey) }}</span>
+              <div class="head">
+                <span class="ui-tile"><app-settings-glyph name="key" /></span>
+                <div class="info">
+                  <strong class="name">{{ passkey.name }}</strong>
+                  <span class="meta">{{ created(passkey) }}</span>
+                  <span class="meta">{{ lastUsed(passkey) }}</span>
+                </div>
               </div>
               @if (removingId() === passkey.id) {
-                <div class="confirm" role="group" [attr.aria-label]="removeQuestion(passkey)">
-                  <p class="question">{{ removeQuestion(passkey) }}</p>
-                  <div class="actions">
-                    <button
-                      type="button"
-                      class="secondary"
-                      (click)="removingId.set(null)"
-                      i18n="@@settings.cancel"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="button"
-                      class="danger"
-                      [disabled]="busy()"
-                      (click)="confirmRemove(passkey)"
-                      i18n="@@settings.passkeys.remove"
-                    >
-                      Remover
-                    </button>
+                <div
+                  class="confirm ui-notice bad"
+                  role="group"
+                  [attr.aria-label]="removeQuestion(passkey)"
+                >
+                  <app-settings-glyph name="alert" />
+                  <div class="confirm-body">
+                    <p class="question">{{ removeQuestion(passkey) }}</p>
+                    <div class="actions">
+                      <button
+                        type="button"
+                        class="secondary ui-btn"
+                        (click)="removingId.set(null)"
+                        i18n="@@settings.cancel"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        class="danger ui-btn"
+                        [disabled]="busy()"
+                        (click)="confirmRemove(passkey)"
+                        i18n="@@settings.passkeys.remove"
+                      >
+                        Remover
+                      </button>
+                    </div>
                   </div>
                 </div>
               } @else {
                 <div class="actions">
                   <button
                     type="button"
-                    class="secondary"
+                    class="secondary ui-btn"
                     [attr.aria-label]="renameLabel(passkey)"
                     (click)="startRename(passkey)"
-                    i18n="@@settings.passkeys.rename"
                   >
-                    Renomear
+                    <app-settings-glyph name="pencil" />
+                    <span i18n="@@settings.passkeys.rename">Renomear</span>
                   </button>
                   <button
                     type="button"
-                    class="secondary"
+                    class="secondary ui-btn"
                     [attr.aria-label]="removeLabel(passkey)"
                     (click)="askRemove(passkey)"
-                    i18n="@@settings.passkeys.remove"
                   >
-                    Remover
+                    <app-settings-glyph name="trash" />
+                    <span i18n="@@settings.passkeys.remove">Remover</span>
                   </button>
                 </div>
               }
@@ -99,62 +119,90 @@
       </ul>
     }
     @if (needsMore()) {
-      <p class="recommend" i18n="@@settings.passkeys.recommend">
-        Recomendamos ter pelo menos duas passkeys, por exemplo uma em cada aparelho.
+      <p class="recommend ui-notice warn">
+        <app-settings-glyph name="alert" />
+        <span i18n="@@settings.passkeys.recommend"
+          >Recomendamos ter pelo menos duas passkeys, por exemplo uma em cada aparelho.</span
+        >
       </p>
     }
   } @else if (loadFailed()) {
-    <p class="empty" i18n="@@settings.passkeys.load-failed">
-      Não foi possível carregar as passkeys agora. Elas aparecem quando a sessão for confirmada.
+    <p class="empty bad">
+      <app-settings-glyph name="alert" />
+      <span i18n="@@settings.passkeys.load-failed"
+        >Não foi possível carregar as passkeys agora. Elas aparecem quando a sessão for
+        confirmada.</span
+      >
     </p>
   } @else {
-    <p class="empty" role="status" i18n="@@settings.passkeys.loading">Carregando as passkeys…</p>
+    <p class="empty" role="status">
+      <span class="ui-spinner" aria-hidden="true"></span>
+      <span i18n="@@settings.passkeys.loading">Carregando as passkeys…</span>
+    </p>
+    <div class="skeleton-card ui-card" aria-hidden="true">
+      <span class="ui-skeleton bar wide"></span>
+      <span class="ui-skeleton bar"></span>
+    </div>
   }
 
   <div class="messages" [attr.aria-live]="'polite'">
     @if (message(); as text) {
       <p
-        class="message"
+        class="message ui-notice"
+        [class.bad]="messageIsError()"
+        [class.ok]="!messageIsError()"
         [class.error]="messageIsError()"
         [attr.role]="messageIsError() ? 'alert' : null"
       >
-        {{ text }}
+        <app-settings-glyph [name]="messageIsError() ? 'alert' : 'checkCircle'" />
+        <span>{{ text }}</span>
       </p>
     }
   </div>
 
   @if (adding()) {
-    <form class="add" (submit)="add($event)">
+    <form class="add panel ui-card" (submit)="add($event)">
       <p class="hint" i18n="@@settings.passkeys.add-hint">
         Por segurança, digite a senha de novo. Depois o aparelho vai pedir a sua digital, o rosto ou
         o PIN.
       </p>
-      <label for="passkey-password" i18n="@@settings.passkeys.password">Senha</label>
-      <input
-        id="passkey-password"
-        type="password"
-        autocomplete="current-password"
-        required
-        [value]="newPassword()"
-        (input)="newPassword.set(value($event))"
-      />
-      <label for="passkey-name" i18n="@@settings.passkeys.new-name"
-        >Nome da passkey (opcional)</label
-      >
-      <input
-        id="passkey-name"
-        type="text"
-        [attr.maxlength]="maxName"
-        [value]="newName()"
-        (input)="newName.set(value($event))"
-      />
+      <div class="ui-field">
+        <label for="passkey-password" i18n="@@settings.passkeys.password">Senha</label>
+        <input
+          class="ui-input"
+          id="passkey-password"
+          type="password"
+          autocomplete="current-password"
+          required
+          [value]="newPassword()"
+          (input)="newPassword.set(value($event))"
+        />
+      </div>
+      <div class="ui-field">
+        <label for="passkey-name" i18n="@@settings.passkeys.new-name"
+          >Nome da passkey (opcional)</label
+        >
+        <input
+          class="ui-input"
+          id="passkey-name"
+          type="text"
+          [attr.maxlength]="maxName"
+          [value]="newName()"
+          (input)="newName.set(value($event))"
+        />
+      </div>
       <div class="actions">
-        <button type="button" class="secondary" (click)="closeAdd()" i18n="@@settings.cancel">
+        <button
+          type="button"
+          class="secondary ui-btn"
+          (click)="closeAdd()"
+          i18n="@@settings.cancel"
+        >
           Cancelar
         </button>
         <button
           type="submit"
-          class="primary"
+          class="primary ui-btn"
           [disabled]="busy() || newPassword().length === 0"
           i18n="@@settings.passkeys.register"
         >
@@ -163,17 +211,16 @@
       </div>
     </form>
   } @else if (canAdd()) {
-    <button
-      type="button"
-      class="primary add-button"
-      (click)="openAdd()"
-      i18n="@@settings.passkeys.add"
-    >
-      Cadastrar passkey
+    <button type="button" class="primary ui-btn block add-button" (click)="openAdd()">
+      <app-settings-glyph name="plus" />
+      <span i18n="@@settings.passkeys.add">Cadastrar passkey</span>
     </button>
   } @else {
-    <p class="empty" i18n="@@settings.passkeys.unavailable">
-      Este aparelho ou navegador não oferece passkeys.
+    <p class="empty">
+      <app-settings-glyph name="info" />
+      <span i18n="@@settings.passkeys.unavailable"
+        >Este aparelho ou navegador não oferece passkeys.</span
+      >
     </p>
   }
 </section>

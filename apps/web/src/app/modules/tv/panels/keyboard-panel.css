@@ -60,6 +60,16 @@ input {
 .hint {
   color: var(--a-ink2);
 }
+/* Sem agente ou sem rede: o motivo aparece antes de a pessoa digitar e descobrir pela falha. */
+.blocked {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 4px solid var(--a-warn);
+  border-radius: 8px;
+  background: var(--a-elev);
+  color: var(--a-ink);
+  font-size: 0.9rem;
+}
 
 .actions {
   display: flex;

@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     adb_path: str | None = None
     tv_adb_port: int = Field(default=5555, ge=1, le=65535)
     adb_timeout_seconds: float = Field(default=5.0, gt=0)
+    # Tempo para copiar um APK da TV (bem maior que o de um comando curto).
+    adb_pull_timeout_seconds: float = Field(default=120.0, gt=0)
+    # Ícones dos apps: `aapt2` do Android SDK (padrão: o mais novo em `build-tools`; sem ele, sem
+    # ícones) e a pasta do cache (padrão: `%LOCALAPPDATA%\UniOver\icons`).
+    aapt_path: str | None = None
+    icons_dir: str | None = None
 
     @classmethod
     def settings_customise_sources(

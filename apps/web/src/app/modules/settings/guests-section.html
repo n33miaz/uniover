@@ -1,28 +1,35 @@
 <section class="section" aria-labelledby="guests-title">
-  <h2 id="guests-title" i18n="@@settings.guests.title">Convidados</h2>
-  <p class="hint" i18n="@@settings.guests.hint">
-    O convidado usa o controle da TV, como se você entregasse o controle de verdade, e mais nada.
-    Você gera um link e o entrega a ele; ele escolhe a própria senha, que você nunca vê.
-  </p>
+  <h2 id="guests-title" class="ui-section-label" i18n="@@settings.guests.title">Convidados</h2>
 
-  <form class="add" (submit)="create($event)">
-    <label for="guest-name" i18n="@@settings.guests.name">Nome do convidado</label>
-    <input
-      id="guest-name"
-      type="text"
-      autocomplete="off"
-      [attr.maxlength]="maxName"
-      required
-      [value]="newName()"
-      (input)="newName.set(value($event))"
-    />
+  <div class="intro ui-card">
+    <span class="ui-tile"><app-settings-glyph name="users" /></span>
+    <p class="hint" i18n="@@settings.guests.hint">
+      O convidado usa o controle da TV, como se você entregasse o controle de verdade, e mais nada.
+      Você gera um link e o entrega a ele; ele escolhe a própria senha, que você nunca vê.
+    </p>
+  </div>
+
+  <form class="add panel ui-card" (submit)="create($event)">
+    <div class="ui-field">
+      <label for="guest-name" i18n="@@settings.guests.name">Nome do convidado</label>
+      <input
+        class="ui-input"
+        id="guest-name"
+        type="text"
+        autocomplete="off"
+        [attr.maxlength]="maxName"
+        required
+        [value]="newName()"
+        (input)="newName.set(value($event))"
+      />
+    </div>
     <button
       type="submit"
-      class="primary add-button"
+      class="primary ui-btn block add-button"
       [disabled]="busy() || newName().trim().length === 0"
-      i18n="@@settings.guests.create"
     >
-      Gerar convite
+      <app-settings-glyph name="mail" />
+      <span i18n="@@settings.guests.create">Gerar convite</span>
     </button>
   </form>
 
@@ -32,7 +39,7 @@
         Convite para {{ link.name }}
       </p>
       <input
-        class="link"
+        class="link ui-input"
         type="text"
         readonly
         aria-label="Link do convite"
@@ -42,17 +49,19 @@
       />
       <p class="hint">{{ linkExpires(link) }}</p>
       <div class="actions">
-        <button type="button" class="primary" (click)="copy()" i18n="@@settings.guests.copy">
-          Copiar link
+        <button type="button" class="primary ui-btn" (click)="copy()">
+          <app-settings-glyph name="copy" />
+          <span i18n="@@settings.guests.copy">Copiar link</span>
         </button>
         @if (canShare()) {
-          <button type="button" class="secondary" (click)="share()" i18n="@@settings.guests.share">
-            Compartilhar
+          <button type="button" class="secondary ui-btn" (click)="share()">
+            <app-settings-glyph name="share" />
+            <span i18n="@@settings.guests.share">Compartilhar</span>
           </button>
         }
         <button
           type="button"
-          class="secondary"
+          class="secondary ui-btn"
           (click)="closeLink()"
           i18n="@@settings.guests.close"
         >
@@ -65,32 +74,41 @@
   <div class="messages" [attr.aria-live]="'polite'">
     @if (message(); as text) {
       <p
-        class="message"
+        class="message ui-notice"
+        [class.bad]="messageIsError()"
+        [class.ok]="!messageIsError()"
         [class.error]="messageIsError()"
         [attr.role]="messageIsError() ? 'alert' : null"
       >
-        {{ text }}
+        <app-settings-glyph [name]="messageIsError() ? 'alert' : 'checkCircle'" />
+        <span>{{ text }}</span>
       </p>
     }
   </div>
 
   @if (invites() !== null) {
-    <h3 i18n="@@settings.guests.pending-title">Convites pendentes</h3>
+    <h3 class="subhead" i18n="@@settings.guests.pending-title">Convites pendentes</h3>
     @if (pending().length === 0) {
-      <p class="empty" i18n="@@settings.guests.pending-empty">Nenhum convite pendente.</p>
+      <p class="empty">
+        <app-settings-glyph name="mail" />
+        <span i18n="@@settings.guests.pending-empty">Nenhum convite pendente.</span>
+      </p>
     } @else {
       <ul class="list">
         @for (invite of pending(); track invite.id) {
-          <li class="item">
-            <div class="info">
-              <strong class="name">{{ invite.displayName }}</strong>
-              <span class="meta">{{ expires(invite) }}</span>
+          <li class="item ui-card">
+            <div class="head">
+              <span class="ui-tile warn"><app-settings-glyph name="clock" /></span>
+              <div class="info">
+                <strong class="name">{{ invite.displayName }}</strong>
+                <span class="meta">{{ expires(invite) }}</span>
+              </div>
             </div>
             @if (revokingInviteId() === invite.id) {
               <div class="actions">
                 <button
                   type="button"
-                  class="secondary"
+                  class="secondary ui-btn"
                   (click)="revokingInviteId.set(null)"
                   i18n="@@settings.cancel"
                 >
@@ -98,7 +116,7 @@
                 </button>
                 <button
                   type="button"
-                  class="danger"
+                  class="danger ui-btn"
                   [disabled]="busy()"
                   (click)="revokeInvite(invite)"
                   i18n="@@settings.guests.revoke"
@@ -110,7 +128,7 @@
               <div class="actions">
                 <button
                   type="button"
-                  class="secondary"
+                  class="secondary ui-btn"
                   [attr.aria-label]="revokeInviteLabel(invite)"
                   (click)="revokingInviteId.set(invite.id)"
                   i18n="@@settings.guests.revoke"
@@ -126,50 +144,67 @@
   }
 
   @if (guests(); as list) {
-    <h3 i18n="@@settings.guests.active-title">Convidados com acesso</h3>
+    <h3 class="subhead" i18n="@@settings.guests.active-title">Convidados com acesso</h3>
     @if (list.length === 0) {
-      <p class="empty" i18n="@@settings.guests.active-empty">Nenhum convidado ainda.</p>
+      <p class="empty">
+        <app-settings-glyph name="users" />
+        <span i18n="@@settings.guests.active-empty">Nenhum convidado ainda.</span>
+      </p>
     } @else {
       <ul class="list">
         @for (guest of list; track guest.id) {
-          <li class="item">
-            <div class="info">
-              <strong class="name">{{ guest.displayName }}</strong>
-              <span class="meta">{{ guest.email }}</span>
-              <span class="meta">{{ since(guest) }}</span>
-              @if (guest.disabledAt) {
-                <span class="meta revoked" i18n="@@settings.guests.revoked">Acesso revogado</span>
-              }
+          <li class="item ui-card">
+            <div class="head">
+              <span class="ui-tile" [class.bad]="guest.disabledAt"
+                ><app-settings-glyph name="user"
+              /></span>
+              <div class="info">
+                <strong class="name">{{ guest.displayName }}</strong>
+                <span class="meta">{{ guest.email }}</span>
+                <span class="meta">{{ since(guest) }}</span>
+                @if (guest.disabledAt) {
+                  <span class="meta revoked ui-chip bad" i18n="@@settings.guests.revoked"
+                    >Acesso revogado</span
+                  >
+                }
+              </div>
             </div>
             @if (!guest.disabledAt) {
               @if (revokingGuestId() === guest.id) {
-                <div class="confirm" role="group" [attr.aria-label]="revokeGuestQuestion(guest)">
-                  <p class="question">{{ revokeGuestQuestion(guest) }}</p>
-                  <div class="actions">
-                    <button
-                      type="button"
-                      class="secondary"
-                      (click)="revokingGuestId.set(null)"
-                      i18n="@@settings.cancel"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="button"
-                      class="danger"
-                      [disabled]="busy()"
-                      (click)="revokeGuest(guest)"
-                      i18n="@@settings.guests.revoke-access"
-                    >
-                      Revogar acesso
-                    </button>
+                <div
+                  class="confirm ui-notice bad"
+                  role="group"
+                  [attr.aria-label]="revokeGuestQuestion(guest)"
+                >
+                  <app-settings-glyph name="alert" />
+                  <div class="confirm-body">
+                    <p class="question">{{ revokeGuestQuestion(guest) }}</p>
+                    <div class="actions">
+                      <button
+                        type="button"
+                        class="secondary ui-btn"
+                        (click)="revokingGuestId.set(null)"
+                        i18n="@@settings.cancel"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        class="danger ui-btn"
+                        [disabled]="busy()"
+                        (click)="revokeGuest(guest)"
+                        i18n="@@settings.guests.revoke-access"
+                      >
+                        Revogar acesso
+                      </button>
+                    </div>
                   </div>
                 </div>
               } @else {
                 <div class="actions">
                   <button
                     type="button"
-                    class="secondary"
+                    class="secondary ui-btn"
                     [attr.aria-label]="revokeGuestLabel(guest)"
                     (click)="revokingGuestId.set(guest.id)"
                     i18n="@@settings.guests.revoke-access"
@@ -184,10 +219,21 @@
       </ul>
     }
   } @else if (loadFailed()) {
-    <p class="empty" i18n="@@settings.guests.load-failed">
-      Não foi possível carregar os convidados agora. Eles aparecem quando a sessão for confirmada.
+    <p class="empty bad">
+      <app-settings-glyph name="alert" />
+      <span i18n="@@settings.guests.load-failed"
+        >Não foi possível carregar os convidados agora. Eles aparecem quando a sessão for
+        confirmada.</span
+      >
     </p>
   } @else {
-    <p class="empty" role="status" i18n="@@settings.guests.loading">Carregando os convidados…</p>
+    <p class="empty" role="status">
+      <span class="ui-spinner" aria-hidden="true"></span>
+      <span i18n="@@settings.guests.loading">Carregando os convidados…</span>
+    </p>
+    <div class="skeleton-card ui-card" aria-hidden="true">
+      <span class="ui-skeleton bar wide"></span>
+      <span class="ui-skeleton bar"></span>
+    </div>
   }
 </section>

@@ -68,6 +68,21 @@ describe('KeyboardPanel', () => {
     expect(root.textContent).not.toContain('Texto vazio não é enviado');
   });
 
+  it('says why typing will not reach the TV before anyone types, and only then', async () => {
+    expect(root.querySelector('.blocked')).toBeNull();
+    store.canSend.set(false);
+    store.disabledReason.set('O agente da TV está desligado, então os botões não funcionam agora.');
+    await render();
+    expect(root.querySelector('.blocked')?.textContent?.trim()).toBe(
+      'O agente da TV está desligado, então os botões não funcionam agora.',
+    );
+    expect(root.querySelector('.blocked')?.getAttribute('role')).toBe('status');
+    store.canSend.set(true);
+    store.disabledReason.set(null);
+    await render();
+    expect(root.querySelector('.blocked')).toBeNull();
+  });
+
   it('has no Enviar and no OK button: only Limpar and Fechar', () => {
     const labels = [...root.querySelectorAll('button')].map((el) => el.textContent?.trim());
     expect(labels).toEqual(['Limpar', 'Fechar']);

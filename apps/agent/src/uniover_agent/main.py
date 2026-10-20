@@ -11,8 +11,16 @@ import sys
 from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
 from importlib import metadata
+from pathlib import Path
 from typing import Any
 
+from uniover_agent.adapters.apk_tools import (
+    Aapt2Inspector,
+    FileIconCache,
+    TempApkScratch,
+    default_icons_dir,
+    locate_aapt2,
+)
 from uniover_agent.adapters.local_config import save_agent_config
 from uniover_agent.adapters.pairing_http import HttpPairingClient, probe_api
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
@@ -31,12 +39,14 @@ from uniover_agent.config import (
 )
 from uniover_agent.core import (
     POWER_KEYS,
+    AppIconPublisher,
     AppsAnnouncer,
     ConnectionSupervisor,
     EnvelopeFactory,
     EnvelopeGate,
     HandleCommand,
     Handler,
+    IconResolver,
     PairAgent,
     ProcessMessage,
     TextReconciler,
@@ -177,11 +187,13 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
         host,
         settings.tv_adb_port,
         timeout=settings.adb_timeout_seconds,
+        pull_timeout=settings.adb_pull_timeout_seconds,
         monotonic=clock.monotonic,
     )
     manager = setup.manager
     manager.add_channel(adb)
-    apps = TvApps(manager, adb, setup.transport, setup.envelopes)
+    icons = compose_icons(setup, settings, adb, clock)
+    apps = TvApps(manager, adb, setup.transport, setup.envelopes, icons)
     announcer = AppsAnnouncer(apps, lambda: manager.snapshot().connection == "hot")
     # O handler de `tv.text.v1` continua sendo um só: ele recebe o ADB, não é substituído.
     if setup.text is not None:
@@ -209,6 +221,36 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
         setup.capabilities.append("tv.adb")
 
     setup.prepare.append(declare_when_usable)
+
+
+def compose_icons(
+    setup: TvSetup, settings: Settings, adb: AdbTv, clock: Clock
+) -> AppIconPublisher | None:
+    """Liga os ícones dos apps (extraídos do APK na TV). Sem `aapt2` neste PC, segue sem ícones.
+
+    O publicador roda em tarefa de fundo: a lista sem ícones sai como sempre e os ícones chegam
+    depois, um APK por vez, sem passar pela trava dos comandos curtos do ADB.
+    """
+    aapt = locate_aapt2(settings.aapt_path)
+    if aapt is None:
+        _log.info("aapt2 não encontrado (UNIOVER_AAPT_PATH ou Android SDK): sem ícones dos apps")
+        return None
+    scratch = TempApkScratch()
+    scratch.purge()
+    cache = FileIconCache(Path(settings.icons_dir) if settings.icons_dir else default_icons_dir())
+    resolver = IconResolver(adb, Aapt2Inspector(aapt), cache, scratch)
+    manager = setup.manager
+    publisher = AppIconPublisher(
+        resolver,
+        adb,
+        setup.transport,
+        setup.envelopes,
+        lambda: manager.snapshot().connection == "hot",
+        clock.sleep,
+    )
+    manager.subscribe(publisher.on_state)
+    setup.background.append(publisher.run)
+    return publisher
 
 
 def build_handler(clock: Clock, tv: TvSetup | None = None) -> HandleCommand:

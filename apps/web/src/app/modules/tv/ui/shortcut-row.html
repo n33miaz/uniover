@@ -1,0 +1,27 @@
+<div class="top">
+  <button
+    type="button"
+    class="apps-chip"
+    [attr.aria-haspopup]="'dialog'"
+    aria-label="Apps da TV"
+    i18n-aria-label="@@tv.apps.open"
+    (click)="askApps($event)"
+  >
+    <app-tv-icon name="apps" />
+    <span i18n="@@tv.apps.chip">Apps</span>
+  </button>
+  <ul class="shortcuts" aria-label="Atalhos de apps" i18n-aria-label="@@tv.shortcuts.label">
+    @for (shortcut of shortcuts(); track shortcut.id) {
+      <li>
+        <button
+          type="button"
+          class="shortcut"
+          [attr.aria-disabled]="canSend() ? null : 'true'"
+          (click)="open.emit(shortcut)"
+        >
+          <span class="name">{{ label(shortcut) }}</span>
+        </button>
+      </li>
+    }
+  </ul>
+</div>

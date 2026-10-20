@@ -44,6 +44,9 @@
   <p id="tv-text-hint" class="hint" i18n="@@tv.keyboard.hint">
     O texto aparece no campo aberto na TV enquanto você digita.
   </p>
+  @if (!store.canSend() && status() !== 'error') {
+    <p class="blocked" role="status">{{ store.disabledReason() }}</p>
+  }
 
   <div class="actions">
     <button type="button" class="secondary" [disabled]="length() === 0" (click)="clear()">
