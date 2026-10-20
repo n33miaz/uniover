@@ -3,6 +3,17 @@ import { expect, test as base, Page } from '@playwright/test';
 // Páginas cujo registro de violações está silenciado (ver `screenshot`).
 const muted = new WeakSet<Page>();
 
+// Até quando, depois de um print, ainda se descarta a folha em linha que a ferramenta injetou. O aviso do navegador
+// chega por um caminho diferente do da resposta do print e, num executor lento, pode desembarcar depois dela.
+const toolStyleUntil = new WeakMap<Page, number>();
+const TOOL_STYLE_GRACE_MS = 1500;
+const TOOL_STYLE_EVENT = /^style-src-elem inline\b/;
+const TOOL_STYLE_CONSOLE = /stylesheet|style-src/i;
+
+function lateToolStyle(page: Page, pattern: RegExp, detail: string): boolean {
+  return pattern.test(detail) && Date.now() < (toolStyleUntil.get(page) ?? 0);
+}
+
 /**
  * Todo teste falha se a página violar a CSP, online ou offline. Escuta o evento do navegador e as mensagens
  * de console (o WebKit nem sempre dispara o evento para tudo que bloqueia).
@@ -12,7 +23,8 @@ export const test = base.extend<{ cspViolations: string[] }>({
     async ({ page }, use) => {
       const violations: string[] = [];
       await page.exposeFunction('__reportCsp', (detail: string) => {
-        if (!muted.has(page)) violations.push(detail);
+        if (muted.has(page) || lateToolStyle(page, TOOL_STYLE_EVENT, detail)) return;
+        violations.push(detail);
       });
       await page.addInitScript(() => {
         document.addEventListener('securitypolicyviolation', (event) => {
@@ -23,8 +35,9 @@ export const test = base.extend<{ cspViolations: string[] }>({
       });
       page.on('console', (message) => {
         if (muted.has(page)) return;
-        if (/Content Security Policy|Refused to (apply|execute|load)/i.test(message.text())) {
-          violations.push(message.text());
+        const text = message.text();
+        if (/Content Security Policy|Refused to (apply|execute|load)/i.test(text)) {
+          if (!lateToolStyle(page, TOOL_STYLE_CONSOLE, text)) violations.push(text);
         }
       });
       await use(violations);
@@ -59,7 +72,8 @@ export async function waitForServiceWorkerControl(page: Page): Promise<void> {
 
 /**
  * Print da tela. No WebKit o Playwright injeta uma folha de estilo em linha para tirar o print, e a CSP a
- * bloqueia: isso é da ferramenta, não do app. Só durante o print o registro de violações fica silenciado.
+ * bloqueia: isso é da ferramenta, não do app. Durante o print o registro de violações fica silenciado; logo depois,
+ * por uma janela curta, só se descarta o aviso dessa folha em linha (qualquer outra violação continua valendo).
  */
 export async function screenshot(
   page: Page,
@@ -72,5 +86,6 @@ export async function screenshot(
     await page.evaluate(() => undefined); // deixa chegarem as mensagens pendentes antes de voltar a registrar
   } finally {
     muted.delete(page);
+    toolStyleUntil.set(page, Date.now() + TOOL_STYLE_GRACE_MS);
   }
 }
