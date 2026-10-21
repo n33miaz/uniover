@@ -1,6 +1,7 @@
 import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import {
   ApiProblem,
+  isPermissionDenied,
   isStepUpRequired,
   networkProblem,
   parseRetryAfter,
@@ -56,6 +57,38 @@ describe('isStepUpRequired', () => {
     expect(isStepUpRequired(new ApiProblem(403, 'invalid-password', 'x'))).toBe(false);
     expect(isStepUpRequired(new ApiProblem(403, 'step-up-failed', 'x'))).toBe(false);
     expect(isStepUpRequired(new ApiProblem(401, 'step-up-required', 'x'))).toBe(false);
+  });
+});
+
+describe('isPermissionDenied', () => {
+  it('is the plain 403 of an access policy, as the API types it', () => {
+    const denied = problemFrom(
+      403,
+      { type: 'https://uniover.app/problems/forbidden', title: 'Sem permissão.' },
+      null,
+    );
+    expect(isPermissionDenied(denied)).toBe(true);
+  });
+
+  it('leaves out the passkey and the other 403s that have a type of their own', () => {
+    for (const kind of [
+      'step-up-required',
+      'step-up-failed',
+      'invalid-password',
+      'catalog-row-readonly',
+      'pairing-denied',
+    ]) {
+      expect(isPermissionDenied(new ApiProblem(403, kind, 'x'))).toBe(false);
+    }
+    expect(isPermissionDenied(new ApiProblem(403, 'x', 'x', 'step_up_required', 'a.b'))).toBe(
+      false,
+    );
+  });
+
+  it('leaves out every status other than 403', () => {
+    expect(isPermissionDenied(new ApiProblem(401, 'forbidden', 'x'))).toBe(false);
+    expect(isPermissionDenied(new ApiProblem(404, 'not-found', 'x'))).toBe(false);
+    expect(isPermissionDenied(networkProblem())).toBe(false);
   });
 });
 

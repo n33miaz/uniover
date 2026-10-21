@@ -1,3 +1,4 @@
+import { effect } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from './session-state';
 
@@ -177,6 +178,62 @@ describe('SessionState', () => {
       TestBed.resetTestingModule();
       state().setUser({ ...user, role: 'guest', permissions: ['module:training'] });
       expect(state().knownPermissions()).toEqual(['module:training']);
+    });
+  });
+
+  describe('reading the same account again', () => {
+    const guest = {
+      id: '1',
+      email: 'a@b.c',
+      displayName: 'A',
+      role: 'guest',
+      permissions: ['module:tv', 'tv:control', 'tv:power'],
+    };
+
+    it('reports whether the account changed, comparing by content and not by reference', () => {
+      expect(state().setUser(guest)).toBe(true);
+      expect(state().setUser({ ...guest, permissions: [...guest.permissions] })).toBe(false);
+      expect(state().setUser({ ...guest, permissions: ['module:tv', 'tv:control'] })).toBe(true);
+      expect(state().setUser({ ...guest, displayName: 'B' })).toBe(true);
+    });
+
+    it('keeps the very same permissions value when the set did not change', () => {
+      state().setUser(guest);
+      const before = state().permissions();
+      // Lista nova, mesma coisa (até com outra ordem): o valor lido continua sendo o mesmo objeto.
+      state().setUser({ ...guest, permissions: ['tv:power', 'module:tv', 'tv:control'] });
+      expect(state().permissions()).toBe(before);
+      // Só o nome mudou: quem lê permissões não é avisado.
+      state().setUser({ ...guest, displayName: 'B', permissions: [...guest.permissions] });
+      expect(state().permissions()).toBe(before);
+    });
+
+    it('notifies readers once when the permissions change, and not at all when they do not', () => {
+      state().setUser(guest);
+      const seen: string[] = [];
+      TestBed.runInInjectionContext(() =>
+        effect(() => {
+          seen.push(state().permissions().join(','));
+        }),
+      );
+      TestBed.tick();
+      expect(seen).toEqual(['module:tv,tv:control,tv:power']);
+
+      state().setUser({ ...guest, permissions: [...guest.permissions] });
+      state().setUser({ ...guest, displayName: 'B' });
+      TestBed.tick();
+      expect(seen).toHaveLength(1);
+
+      state().setUser({ ...guest, permissions: ['module:tv', 'tv:control'] });
+      TestBed.tick();
+      expect(seen).toEqual(['module:tv,tv:control,tv:power', 'module:tv,tv:control']);
+    });
+
+    it('does not rebuild the user for readers when nothing in it changed', () => {
+      state().setUser(guest);
+      const before = state().user();
+      state().setUser({ ...guest, permissions: [...guest.permissions] });
+      expect(state().user()).toBe(before);
     });
   });
 });

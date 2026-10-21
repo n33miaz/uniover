@@ -1,4 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
+import { samePermissions, sameUser } from './user-equality';
 
 /**
  * `unknown`: ainda não se sabe (início do app) · `anonymous`: sem sessão · `authenticated`: sessão renovada com
@@ -96,7 +97,8 @@ export class SessionState {
   #accessToken: string | null = null;
 
   private readonly _status = signal<SessionStatus>('unknown');
-  private readonly _user = signal<SessionUser | null>(null);
+  // Comparação por conteúdo: reler `/me` sem mudança de verdade não troca o valor, então nenhuma tela é refeita à toa.
+  private readonly _user = signal<SessionUser | null>(null, { equal: sameUser });
   private readonly _expiresAt = signal<number | null>(null);
   private readonly _roleHint = signal<AccountRole | null>(readRoleHint());
   private readonly _permissionsHint = signal<readonly string[] | null>(readPermissionsHint());
@@ -123,8 +125,13 @@ export class SessionState {
    */
   readonly needsWelcome = computed(() => this._user()?.displayNameConfirmed === false);
 
-  /** As permissões da conta carregada; vazio enquanto não se sabe (ou numa resposta antiga, sem a lista). */
-  readonly permissions = computed<readonly string[]>(() => this._user()?.permissions ?? []);
+  /**
+   * As permissões da conta carregada; vazio enquanto não se sabe (ou numa resposta antiga, sem a lista). Só troca de
+   * valor quando o conjunto muda (a ordem e a lista nova da mesma resposta não contam): quem lê não refaz a tela à toa.
+   */
+  readonly permissions = computed<readonly string[]>(() => this._user()?.permissions ?? [], {
+    equal: samePermissions,
+  });
 
   /**
    * A lista de permissões, ou `null` se NÃO se sabe: usuário ainda não carregado e sem dica da última sessão, ou resposta
@@ -154,7 +161,9 @@ export class SessionState {
     this._status.set('authenticated');
   }
 
-  setUser(user: SessionUser): void {
+  /** Guarda a conta lida. Devolve se ela mudou de verdade (comparação por conteúdo): igual não avisa ninguém. */
+  setUser(user: SessionUser): boolean {
+    const changed = !sameUser(this._user(), user);
     this._user.set(user);
     const role: AccountRole = user.role === 'guest' ? 'guest' : 'owner';
     this._roleHint.set(role);
@@ -162,6 +171,7 @@ export class SessionState {
     const permissions = user.permissions ?? null;
     this._permissionsHint.set(permissions);
     writePermissionsHint(permissions);
+    return changed;
   }
 
   /** Sessão não confirmada: mantém usuário e token vencido de lado, sem apagar nada do aparelho. */

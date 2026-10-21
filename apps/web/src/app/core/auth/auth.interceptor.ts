@@ -26,6 +26,8 @@ function sameOriginApiPath(url: string, origin: string): string | null {
  * - `Authorization: Bearer` só em pedidos para `/api/` da mesma origem, nunca em `login` e `refresh`;
  * - `X-UniOver-Client: web` em todo POST para `/api/v1/identity/auth/*` (o login também);
  * - 401 → uma renovação e **uma** repetição; 403 de confirmação pendente → passkey e **uma** repetição;
+ * - 403 de acesso (papel ou permissão que a conta não tem): o erro segue para quem chamou e o `AuthService` relê a conta
+ *   uma vez, em segundo plano, para a tela parar de oferecer o que a API recusa (sem repetir o pedido);
  * - falha de rede não mexe na sessão (quem classifica offline/servidor dormindo é o `ConnectivityService`).
  *
  * Só põe cabeçalho que ainda não existe, então registrá-lo junto de outro dono do mesmo cabeçalho é inofensivo.

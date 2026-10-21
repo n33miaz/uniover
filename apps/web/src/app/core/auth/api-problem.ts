@@ -48,6 +48,18 @@ export function isStepUpRequired(problem: ApiProblem): boolean {
   );
 }
 
+/** `type` (sufixo) que a API dá ao 403 de uma política de acesso: o papel ou a permissão que a rota exige a conta não tem. */
+export const FORBIDDEN_PROBLEM = 'forbidden';
+
+/**
+ * Recusa por falta de acesso (papel ou permissão): o 403 sem tipo próprio da API. Fica de fora tudo o que também é 403
+ * mas tem tipo específico e nada a ver com o que a conta pode usar: confirmação com a passkey (pedida ou recusada), senha
+ * errada, exercício do catálogo, pareamento recusado.
+ */
+export function isPermissionDenied(problem: ApiProblem): boolean {
+  return problem.status === 403 && problem.kind === FORBIDDEN_PROBLEM && !isStepUpRequired(problem);
+}
+
 /** `Retry-After` em segundos inteiros ou em data HTTP; devolve segundos (mínimo 1) ou `null` se ausente/ilegível. */
 export function parseRetryAfter(value: string | null, nowMs: number = Date.now()): number | null {
   if (!value) return null;
