@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/n33miaz/uniover/compare/v0.3.0...v0.4.0) (2026-10-21)
+
+
+### Features
+
+* **tv:** show only what permissions allow ([3dbed6f](https://github.com/n33miaz/uniover/commit/3dbed6fb69b66d137952a2149d8235d60126342e))
+
+
+### Bug Fixes
+
+* **training:** require v7 ids for new exercises ([9a5a310](https://github.com/n33miaz/uniover/commit/9a5a3108d1edb4ee8b32c3141445fa4d9b03dbde))
+* **tv:** rate limit the shortcut update ([98eca6f](https://github.com/n33miaz/uniover/commit/98eca6fd90ba62d1a2e5f22e6a833bd0bbbb3ace))
+* **web:** refresh session permissions in place ([2301257](https://github.com/n33miaz/uniover/commit/2301257296bb1114ecd4c9f8dfa030148a0be489))
+* **web:** tell a missing permission list from none ([d02a602](https://github.com/n33miaz/uniover/commit/d02a602d68c0d810637fd5ab079f4dc09ddb8c47))
+
 ## [0.3.0](https://github.com/n33miaz/uniover/compare/v0.2.0...v0.3.0) (2026-10-21)
 
 
