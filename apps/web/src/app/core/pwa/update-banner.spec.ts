@@ -14,6 +14,7 @@ describe('UpdateBanner', () => {
     service.updateReady.set(true);
     await fixture.whenStable();
     expect(el.textContent).toContain('Nova versão disponível');
+    expect(el.querySelector('.ui-collapse > .ui-collapse-inner > .banner')).not.toBeNull();
     el.querySelector('button')!.click();
     expect(apply).toHaveBeenCalled();
   });

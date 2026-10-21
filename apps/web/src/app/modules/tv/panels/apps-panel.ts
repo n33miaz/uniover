@@ -1,15 +1,26 @@
-import { Component, computed, inject, output, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  computed,
+  inject,
+  output,
+  signal,
+} from '@angular/core';
 import { SessionState } from '../../../core/session/session-state';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut, shortcutLabel } from '../data/tv-types';
 import { AppIcon } from '../ui/app-icon';
 import { TvIcon } from '../ui/tv-icon';
+import { AppsTile } from './apps-tile';
 
 /** Tamanho máximo do nome próprio, o mesmo da API. */
 const LABEL_MAX = 40;
-const VIEW_KEY = 'uniover.tv.apps-view';
 
-export type AppsView = 'grid' | 'list';
+/** Quantos azulejos do começo entram em escalonado; o resto já está parado quando alguém rolar até ele. */
+const STAGGER_TILES = 12;
 
 /** Minúsculas e sem acento: "Câmera" é achada por "camera". */
 function plain(text: string): string {
@@ -19,42 +30,43 @@ function plain(text: string): string {
     .toLowerCase();
 }
 
-function storedView(): AppsView {
-  try {
-    return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid';
-  } catch {
-    return 'grid';
-  }
-}
-
 /**
- * Painel Apps: a lista completa dos atalhos que a TV informou, com busca por texto, grade ou lista, toque para
- * abrir, renomear e ocultar. Sem lista ainda, mostra um estado vazio com o botão que pede a lista à TV. Nenhum nome
- * de app vem do código: o nome é o do dono, o que o agente publicou para o app ou, por último, "Atalho" mais a
- * posição; o pacote aparece só como texto pequeno e a busca também o enxerga. Cada app aparece com o ícone que a TV
- * deu (ou o azulejo com a inicial): grande, com o nome embaixo, na grade; ao lado do nome, na lista e na edição.
+ * Painel Apps: o lançador dos apps instalados na TV, em grade de azulejos quadrados com o ícone grande e o nome
+ * embaixo. Tocar em qualquer azulejo abre o app, esteja ele no controle ou não: "fixar no controle" só decide quem
+ * aparece na fileira de atalhos de cima. Sem busca, a grade vem em duas seções, os que estão no controle e os que
+ * ficaram de fora. Com busca, uma lista só, com os do controle marcados. App que saiu da TV some da grade (não há o que
+ * abrir nem o que fixar). O dono tem o modo Editar: uma lista só com todos os apps, e em cada azulejo os botões de
+ * fixar no controle (ou tirar de lá) e de renomear; nesse modo tocar no azulejo não abre nada, para um dedo errado não
+ * ligar app na TV. O pacote só aparece nesse modo. Sem lista ainda, um estado vazio com o botão que a pede à TV. Nenhum
+ * nome de app vem do código: o nome é o do dono, o que o agente publicou para o app ou, por último, "Atalho" mais a
+ * posição.
  */
 @Component({
   selector: 'app-tv-apps',
-  imports: [AppIcon, TvIcon],
+  imports: [AppIcon, AppsTile, NgTemplateOutlet, TvIcon],
   templateUrl: './apps-panel.html',
   styleUrl: './apps-panel.css',
 })
 export class AppsPanel {
   protected readonly store = inject(TvStore);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
 
-  /** Renomear e ocultar atalhos é só do dono (a API recusa o convidado com 403): o convidado só abre os apps. */
+  /** Renomear e fixar atalhos é só do dono (a API recusa o convidado com 403): o convidado só abre os apps. */
   protected readonly isGuest = inject(SessionState).isGuest;
 
   /** O app foi aberto na TV: o painel pode fechar e devolver o controle. */
   readonly done = output<void>();
 
   protected readonly maxLabel = LABEL_MAX;
-  protected readonly all = computed(() => this.store.shortcuts() ?? []);
+  protected readonly stagger = STAGGER_TILES;
+  /** Só o que está instalado na TV: quem saiu da lista dela não tem o que abrir, então some (da busca e da edição também). */
+  protected readonly all = computed(() =>
+    (this.store.shortcuts() ?? []).filter((item) => item.installed),
+  );
   protected readonly loaded = computed(() => this.store.shortcuts() !== null);
 
   protected readonly query = signal('');
-  protected readonly view = signal<AppsView>(storedView());
   protected readonly visible = computed(() => {
     const needle = plain(this.query().trim());
     if (!needle) return this.all();
@@ -62,6 +74,15 @@ export class AppsPanel {
       plain(`${shortcutLabel(item)} ${item.tvLabel ?? ''} ${item.package}`).includes(needle),
     );
   });
+  protected readonly searching = computed(() => this.query().trim() !== '');
+
+  /** Modo Editar (só do dono): todos os apps numa lista só, com os botões de fixar e renomear em cada um. */
+  protected readonly editMode = signal(false);
+  /** Uma lista só, sem seções: na busca e na edição (onde o azulejo não pode mudar de lugar ao ser fixado). */
+  protected readonly flat = computed(() => this.searching() || this.editMode());
+  /** Os atalhos ativos (os da fileira de cima) e os que ficaram de fora, na ordem da posição. */
+  protected readonly pinned = computed(() => this.visible().filter((item) => item.enabled));
+  protected readonly unpinned = computed(() => this.visible().filter((item) => !item.enabled));
 
   protected readonly editing = signal<string | null>(null);
   protected readonly draft = signal('');
@@ -71,33 +92,23 @@ export class AppsPanel {
   /** Já pediu a lista à TV pelo menos uma vez, com sucesso (para dizer que ela segue vazia). */
   protected readonly asked = signal(false);
 
+  protected readonly searchingText = $localize`:@@tv.apps.searching-short:Buscando…`;
+  /** O botão de atualizar é só um ícone: o nome acessível diz também o que está acontecendo. */
+  protected readonly refreshLabel = computed(() =>
+    this.refreshing() ? this.searchingText : $localize`:@@tv.apps.refresh:Atualizar lista`,
+  );
+
   protected label(shortcut: TvShortcut): string {
     return shortcutLabel(shortcut);
   }
 
-  protected renameLabel(shortcut: TvShortcut): string {
-    const name = shortcutLabel(shortcut);
-    return $localize`:@@tv.apps.rename-label:Renomear ${name}:name:`;
-  }
-
-  protected toggleLabel(shortcut: TvShortcut): string {
-    const name = shortcutLabel(shortcut);
-    return shortcut.enabled
-      ? $localize`:@@tv.apps.hide-label:Ocultar ${name}:name:`
-      : $localize`:@@tv.apps.show-label:Mostrar ${name}:name:`;
-  }
-
-  protected setView(view: AppsView): void {
-    this.view.set(view);
-    try {
-      localStorage.setItem(VIEW_KEY, view);
-    } catch {
-      // sem armazenamento: a escolha vale só até fechar o painel
-    }
-  }
-
   protected onQuery(event: Event): void {
     this.query.set((event.target as HTMLInputElement).value);
+  }
+
+  protected toggleEdit(): void {
+    this.editMode.update((on) => !on);
+    this.editing.set(null);
   }
 
   protected async launch(shortcut: TvShortcut): Promise<void> {
@@ -105,6 +116,8 @@ export class AppsPanel {
   }
 
   protected async refresh(): Promise<void> {
+    // Sem `disabled` durante o pedido (o botão perderia o foco): o segundo toque é que não faz nada.
+    if (this.refreshing()) return;
     this.refreshing.set(true);
     try {
       if (await this.store.refreshShortcuts()) this.asked.set(true);
@@ -116,10 +129,12 @@ export class AppsPanel {
   protected startRename(shortcut: TvShortcut): void {
     this.editing.set(shortcut.id);
     this.draft.set(shortcut.customLabel ?? '');
+    this.focusAfterRender('.edit input');
   }
 
-  protected cancelRename(): void {
+  protected cancelRename(shortcut: TvShortcut): void {
     this.editing.set(null);
+    this.focusRenameButton(shortcut);
   }
 
   protected onDraft(event: Event): void {
@@ -130,18 +145,33 @@ export class AppsPanel {
     event.preventDefault();
     this.busy.set(true);
     try {
-      if (await this.store.renameShortcut(shortcut.id, this.draft().trim())) this.editing.set(null);
+      if (await this.store.renameShortcut(shortcut.id, this.draft().trim())) {
+        this.editing.set(null);
+        this.focusRenameButton(shortcut);
+      }
     } finally {
       this.busy.set(false);
     }
   }
 
   protected async toggle(shortcut: TvShortcut): Promise<void> {
+    if (this.busy()) return;
     this.busy.set(true);
     try {
       await this.store.setShortcutEnabled(shortcut.id, !shortcut.enabled);
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /** O campo de renomear entra e sai no lugar do azulejo: o foco acompanha, em vez de se perder no painel. */
+  private focusRenameButton(shortcut: TvShortcut): void {
+    this.focusAfterRender(`[data-rename="${shortcut.id}"]`);
+  }
+
+  private focusAfterRender(selector: string): void {
+    afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(selector)?.focus(), {
+      injector: this.injector,
+    });
   }
 }

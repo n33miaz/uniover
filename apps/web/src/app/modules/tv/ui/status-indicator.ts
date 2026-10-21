@@ -1,4 +1,13 @@
-import { Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import {
   TvIndicatorAction,
   deriveIndicator,
@@ -10,6 +19,9 @@ import { TvStore } from '../data/tv-store';
 import { StatusDot } from './status-dot';
 
 let nextIndicatorId = 0;
+
+/** Folga mínima (px) entre o painelzinho e a borda da tela. */
+const PANEL_MARGIN_PX = 12;
 
 /**
  * Indicador de estado do cabeçalho: um ponto que é um botão (alvo de 44 px). Tocar abre um painelzinho, sem fundo
@@ -31,6 +43,7 @@ let nextIndicatorId = 0;
 export class StatusIndicator {
   protected readonly store = inject(TvStore);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly trigger = viewChild.required<ElementRef<HTMLButtonElement>>('trigger');
 
   protected readonly panelId = `tv-status-panel-${nextIndicatorId++}`;
@@ -80,7 +93,28 @@ export class StatusIndicator {
   });
 
   protected toggle(): void {
-    this.open.update((value) => !value);
+    const opening = !this.open();
+    this.open.set(opening);
+    if (opening) afterNextRender(() => this.keepOnScreen(), { injector: this.injector });
+  }
+
+  /**
+   * O painelzinho é centrado no ponto, e o ponto fica junto do fim do nome (não no meio da tela): se o painel passaria
+   * da borda, desliza para dentro, sem sair da largura da tela nem criar rolagem.
+   */
+  private keepOnScreen(): void {
+    const panel = this.host.nativeElement.querySelector<HTMLElement>('.panel');
+    if (!panel) return;
+    const { left, right, width } = panel.getBoundingClientRect();
+    const view = panel.ownerDocument.documentElement.clientWidth;
+    if (width === 0 || view === 0) return;
+    const shift =
+      left < PANEL_MARGIN_PX
+        ? PANEL_MARGIN_PX - left
+        : right > view - PANEL_MARGIN_PX
+          ? view - PANEL_MARGIN_PX - right
+          : 0;
+    panel.style.setProperty('--shift', shift + 'px');
   }
 
   protected close(returnFocus: boolean): void {

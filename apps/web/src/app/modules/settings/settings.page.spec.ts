@@ -112,6 +112,12 @@ describe('SettingsPage', () => {
       expect(rows(el)).toEqual([
         { name: 'TV', chip: 'Disponível', on: true },
         { name: 'Treino', chip: 'Em breve', on: true },
+        { name: 'Saúde e eventos', chip: 'Em breve', on: true },
+        { name: 'Monitor dos serviços', chip: 'Em breve', on: true },
+        { name: 'Rede da casa', chip: 'Em breve', on: true },
+        { name: 'Backup de fotos', chip: 'Em breve', on: true },
+        { name: 'Avisos', chip: 'Em breve', on: true },
+        { name: 'Controle do PC', chip: 'Em breve', on: true },
       ]);
       expect(el.querySelector('input[role="switch"]')).not.toBeNull();
       expect(el.querySelector('label.module')?.getAttribute('for')).toBe('module-tv');
@@ -132,7 +138,25 @@ describe('SettingsPage', () => {
         TestBed.inject(ModulePrefs)
           .visible()
           .map((w) => w.definition.id),
-      ).toEqual(['training']);
+      ).toEqual(['training', 'health', 'monitor', 'network', 'backup', 'notifications', 'pc']);
+    });
+
+    it('lets a planned module be turned off and on again from here', async () => {
+      const { fixture, el } = await render();
+      const toggle = (checked: boolean) => {
+        const input = el.querySelector<HTMLInputElement>('#module-network')!;
+        input.checked = checked;
+        input.dispatchEvent(new Event('change'));
+        fixture.detectChanges();
+      };
+      const visible = () =>
+        TestBed.inject(ModulePrefs)
+          .visible()
+          .map((w) => w.definition.id);
+      toggle(false);
+      expect(visible()).not.toContain('network');
+      toggle(true);
+      expect(visible()).toContain('network');
     });
   });
 

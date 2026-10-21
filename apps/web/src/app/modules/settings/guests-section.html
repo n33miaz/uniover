@@ -73,30 +73,34 @@
 
   <div class="messages" [attr.aria-live]="'polite'">
     @if (message(); as text) {
-      <p
-        class="message ui-notice"
-        [class.bad]="messageIsError()"
-        [class.ok]="!messageIsError()"
-        [class.error]="messageIsError()"
-        [attr.role]="messageIsError() ? 'alert' : null"
-      >
-        <app-settings-glyph [name]="messageIsError() ? 'alert' : 'checkCircle'" />
-        <span>{{ text }}</span>
-      </p>
+      <div class="ui-collapse" [animate.leave]="'leaving'">
+        <div class="ui-collapse-inner">
+          <p
+            class="message ui-notice"
+            [class.bad]="messageIsError()"
+            [class.ok]="!messageIsError()"
+            [class.error]="messageIsError()"
+            [attr.role]="messageIsError() ? 'alert' : null"
+          >
+            <app-settings-glyph [name]="messageIsError() ? 'alert' : 'checkCircle'" />
+            <span>{{ text }}</span>
+          </p>
+        </div>
+      </div>
     }
   </div>
 
   @if (invites() !== null) {
     <h3 class="subhead" i18n="@@settings.guests.pending-title">Convites pendentes</h3>
     @if (pending().length === 0) {
-      <p class="empty">
+      <p class="empty ui-rise">
         <app-settings-glyph name="mail" />
         <span i18n="@@settings.guests.pending-empty">Nenhum convite pendente.</span>
       </p>
     } @else {
-      <ul class="list">
+      <ul class="list ui-stagger">
         @for (invite of pending(); track invite.id) {
-          <li class="item ui-card">
+          <li class="item ui-card ui-rise">
             <div class="head">
               <span class="ui-tile warn"><app-settings-glyph name="clock" /></span>
               <div class="info">
@@ -146,14 +150,14 @@
   @if (guests(); as list) {
     <h3 class="subhead" i18n="@@settings.guests.active-title">Convidados com acesso</h3>
     @if (list.length === 0) {
-      <p class="empty">
+      <p class="empty ui-rise">
         <app-settings-glyph name="users" />
         <span i18n="@@settings.guests.active-empty">Nenhum convidado ainda.</span>
       </p>
     } @else {
-      <ul class="list">
+      <ul class="list ui-stagger">
         @for (guest of list; track guest.id) {
-          <li class="item ui-card">
+          <li class="item ui-card ui-rise">
             <div class="head">
               <span class="ui-tile" [class.bad]="guest.disabledAt"
                 ><app-settings-glyph name="user"
@@ -172,7 +176,7 @@
             @if (!guest.disabledAt) {
               @if (revokingGuestId() === guest.id) {
                 <div
-                  class="confirm ui-notice bad"
+                  class="confirm ui-notice bad ui-rise"
                   role="group"
                   [attr.aria-label]="revokeGuestQuestion(guest)"
                 >
@@ -219,7 +223,7 @@
       </ul>
     }
   } @else if (loadFailed()) {
-    <p class="empty bad">
+    <p class="empty bad ui-rise">
       <app-settings-glyph name="alert" />
       <span i18n="@@settings.guests.load-failed"
         >Não foi possível carregar os convidados agora. Eles aparecem quando a sessão for

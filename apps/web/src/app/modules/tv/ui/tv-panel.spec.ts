@@ -145,6 +145,109 @@ describe('TvPanel', () => {
     });
   });
 
+  describe('closing with an exit animation', () => {
+    const stubMotion = (reduced: boolean) =>
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        writable: true,
+        value: vi.fn(() => ({ matches: reduced })),
+      });
+    const endTransition = (property: string, target: Element = card()) =>
+      target.dispatchEvent(
+        Object.assign(new Event('transitionend', { bubbles: true }), { propertyName: property }),
+      );
+
+    afterEach(() => {
+      vi.useRealTimers();
+      Reflect.deleteProperty(window, 'matchMedia');
+    });
+
+    it('says it closed only when the sheet finishes fading out, and meanwhile leaves and ignores touch', async () => {
+      stubMotion(false);
+      await open();
+      root.querySelector<HTMLButtonElement>('.x')!.click();
+      fixture.detectChanges();
+      expect(host.closes).toBe(0);
+      expect(dialog().classList.contains('leaving')).toBe(true);
+
+      endTransition('transform');
+      expect(host.closes).toBe(0);
+      endTransition('opacity', root.querySelector('.body')!);
+      expect(host.closes).toBe(0);
+      endTransition('opacity');
+      expect(host.closes).toBe(1);
+    });
+
+    it('closes by itself after a short limit when the transition never ends', async () => {
+      stubMotion(false);
+      await open();
+      vi.useFakeTimers();
+      root.querySelector<HTMLButtonElement>('.x')!.click();
+      vi.advanceTimersByTime(299);
+      expect(host.closes).toBe(0);
+      vi.advanceTimersByTime(1);
+      expect(host.closes).toBe(1);
+    });
+
+    it('asks once, whatever mix of Esc, taps outside and the button comes during the exit', async () => {
+      stubMotion(false);
+      await open();
+      vi.useFakeTimers();
+      dialog().dispatchEvent(new Event('cancel', { cancelable: true }));
+      root.querySelector<HTMLButtonElement>('.x')!.click();
+      dialog().dispatchEvent(pointer('pointerdown'));
+      dialog().click();
+      endTransition('opacity');
+      vi.advanceTimersByTime(1000);
+      expect(host.closes).toBe(1);
+    });
+
+    it('closes at once, with no waiting, for whoever asked for less motion', async () => {
+      stubMotion(true);
+      await open();
+      root.querySelector<HTMLButtonElement>('.x')!.click();
+      expect(host.closes).toBe(1);
+    });
+
+    it('closes at once when the browser has already closed the dialog by itself', async () => {
+      stubMotion(false);
+      await open();
+      dialog().dispatchEvent(new Event('close'));
+      expect(host.closes).toBe(1);
+    });
+
+    it('slides out downwards by a short step when closed without dragging', async () => {
+      stubMotion(false);
+      await open();
+      vi.useFakeTimers();
+      root.querySelector<HTMLButtonElement>('.x')!.click();
+      fixture.detectChanges();
+      expect(card().style.transform).toBe('translateY(24px)');
+    });
+
+    it('keeps going down from the dragged position instead of coming back', async () => {
+      stubMotion(false);
+      await open();
+      vi.useFakeTimers();
+      grab().dispatchEvent(pointer('pointerdown', { clientY: 100 }));
+      grab().dispatchEvent(pointer('pointermove', { clientY: 210 }));
+      grab().dispatchEvent(pointer('pointerup'));
+      fixture.detectChanges();
+      expect(card().style.transform).toBe('translateY(110px)');
+      expect(dialog().classList.contains('leaving')).toBe(true);
+    });
+
+    it('a top panel slides out upwards', async () => {
+      stubMotion(false);
+      host.placement.set('top');
+      await open();
+      vi.useFakeTimers();
+      root.querySelector<HTMLButtonElement>('.x')!.click();
+      fixture.detectChanges();
+      expect(card().style.transform).toBe('translateY(-24px)');
+    });
+  });
+
   it('has no close button when the content brings its own', async () => {
     host.closable.set(false);
     await open();

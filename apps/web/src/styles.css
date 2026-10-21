@@ -54,6 +54,12 @@
   --dur-fast: 120ms;
   --dur-base: 200ms;
   --dur-slow: 360ms;
+  /* Saída: um pouco mais curta que a entrada, para o app não parecer arrastado. */
+  --dur-exit: 160ms;
+  /* Deslocamento das entradas (sempre na vertical, curto): do detalhe ao diálogo. */
+  --shift-1: 6px;
+  --shift-2: 12px;
+  --shift-3: 24px;
 
   /* Cor de sombra e força dela: o escuro precisa de mais intensidade para ainda ler como elevação. */
   --a-shadow: 23 32 26;
@@ -599,7 +605,13 @@ button.ui-row:active {
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
   transition:
     transform var(--dur-base) var(--ease-out),
+    scale var(--dur-fast) var(--ease-out),
     background-color var(--dur-base) var(--ease-out);
+}
+
+/* Ao tocar, o botão do interruptor cresce um pouco: a resposta ao toque vem antes de a escolha mudar. */
+.ui-switch:active:not(:disabled)::before {
+  scale: 1.1;
 }
 
 .ui-switch:checked {
@@ -620,6 +632,10 @@ button.ui-row:active {
   .ui-switch,
   .ui-switch::before {
     transition: none;
+  }
+
+  .ui-switch:active:not(:disabled)::before {
+    scale: none;
   }
 }
 
@@ -662,6 +678,151 @@ button.ui-row:active {
   .ui-press:active {
     transform: none;
   }
+}
+
+/*
+ * Movimento compartilhado (só CSS): entrada e saída de avisos e diálogos. Tudo curto (120 a 360 ms),
+ * com --ease-out, sem rebote, e cada regra tem a sua saída em prefers-reduced-motion logo abaixo.
+ */
+
+/* Resposta ao toque para controles pequenos (o ui-press é para cartões). */
+.ui-tap {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.ui-tap:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+/*
+ * Faixa que abre e fecha empurrando o que está abaixo, sem salto: a trilha da grade vai de 0fr a 1fr. O conteúdo
+ * fica dentro de .ui-collapse-inner (sem margem nem espaçamento no próprio contêiner, senão a trilha não
+ * fecha). A saída vem do animate.leave="leaving" do Angular, que só tira o elemento do DOM depois dela.
+ */
+.ui-collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: ui-collapse-in var(--dur-base) var(--ease-out);
+}
+
+.ui-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ui-collapse.leaving {
+  animation: ui-collapse-out var(--dur-exit) var(--ease-out) forwards;
+}
+
+@keyframes ui-collapse-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+@keyframes ui-collapse-out {
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+
+/*
+ * Diálogo e folha (<dialog class="ui-dialog">): entra por @starting-style (sobe e esmaece, o fundo esmaece junto).
+ * A saída é a classe "closing", posta por leaveDialog (shared/ui/dialog-motion.ts) com o diálogo ainda aberto:
+ * assim ele segue no topo da tela durante o esmaecer, em qualquer navegador. Cada diálogo ajusta só --dialog-shift.
+ */
+.ui-dialog {
+  --dialog-shift: var(--shift-3);
+  opacity: 1;
+  translate: 0 0;
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    translate var(--dur-slow) var(--ease-out),
+    overlay var(--dur-slow) allow-discrete,
+    display var(--dur-slow) allow-discrete;
+}
+
+.ui-dialog::backdrop {
+  opacity: 1;
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    overlay var(--dur-slow) allow-discrete,
+    display var(--dur-slow) allow-discrete;
+}
+
+@starting-style {
+  .ui-dialog[open] {
+    opacity: 0;
+    translate: 0 var(--dialog-shift);
+  }
+
+  .ui-dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+.ui-dialog.closing {
+  opacity: 0;
+  translate: 0 var(--dialog-shift);
+  /* Já está saindo: toques extras não valem (evita aplicar ou cancelar duas vezes). */
+  pointer-events: none;
+  transition:
+    opacity var(--dur-exit) var(--ease-out),
+    translate var(--dur-exit) var(--ease-out);
+}
+
+.ui-dialog.closing::backdrop {
+  opacity: 0;
+  transition: opacity var(--dur-exit) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-tap {
+    transition: none;
+  }
+
+  .ui-tap:active:not(:disabled) {
+    transform: none;
+  }
+
+  .ui-collapse,
+  .ui-collapse.leaving {
+    animation: none;
+  }
+
+  .ui-dialog,
+  .ui-dialog::backdrop,
+  .ui-dialog.closing,
+  .ui-dialog.closing::backdrop {
+    transition: none;
+  }
+}
+
+/* Cartão calmo (módulo que ainda não tem tela): afundado, sem sombra e com o ladrilho em tom neutro. */
+.ui-card.calm {
+  background: var(--a-surface-2);
+  box-shadow: none;
+}
+
+.ui-card.calm .ui-tile {
+  background: var(--a-elev);
+  color: var(--a-ink2);
+}
+
+/* Rodapé que só avisa ("Em breve"): ocupa o lugar de uma ação, com a mesma altura, mas não é controle. */
+.ui-quiet {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  margin: 0;
+  padding: 0 14px;
+  border: 1px dashed var(--a-line);
+  border-radius: var(--radius);
+  color: var(--a-ink2);
+  font-weight: 650;
 }
 
 /* Variações: chip com contorno (faixa de informações) e ladrilho grande (cartão de módulo). */

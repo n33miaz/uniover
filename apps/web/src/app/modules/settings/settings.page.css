@@ -143,7 +143,13 @@ legend {
   border-radius: var(--radius);
   background: var(--a-surface-2);
   cursor: pointer;
-  transition: border-color var(--dur-fast) linear;
+  transition:
+    border-color var(--dur-fast) linear,
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.theme:active {
+  transform: scale(0.97);
 }
 
 /* O botão de opção de verdade cobre o cartão inteiro, invisível: o toque cai nele. */
@@ -264,5 +270,9 @@ legend {
 @media (prefers-reduced-motion: reduce) {
   .theme {
     transition: none;
+  }
+
+  .theme:active {
+    transform: none;
   }
 }

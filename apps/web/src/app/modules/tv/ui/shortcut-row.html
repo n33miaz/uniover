@@ -1,30 +1,27 @@
 <div class="top">
-  <button
-    type="button"
-    class="apps-chip"
-    [attr.aria-haspopup]="'dialog'"
-    aria-label="Apps da TV"
-    i18n-aria-label="@@tv.apps.open"
-    (click)="askApps($event)"
-  >
-    <app-tv-icon name="apps" />
-    <span i18n="@@tv.apps.chip">Apps</span>
-  </button>
-  <ul class="shortcuts" aria-label="Atalhos de apps" i18n-aria-label="@@tv.shortcuts.label">
-    @for (shortcut of shortcuts(); track shortcut.id) {
-      @let name = label(shortcut);
-      <li>
-        <button
-          type="button"
-          class="shortcut"
-          [attr.aria-label]="name"
-          [attr.title]="name"
-          [attr.aria-disabled]="canSend() ? null : 'true'"
-          (click)="open.emit(shortcut)"
-        >
-          <app-tv-app-icon [shortcut]="shortcut" />
-        </button>
-      </li>
+  @if (shortcuts().length > 0) {
+    <ul class="shortcuts" aria-label="Atalhos de apps" i18n-aria-label="@@tv.shortcuts.label">
+      @for (shortcut of shortcuts(); track shortcut.id) {
+        @let name = label(shortcut);
+        <li>
+          <button
+            type="button"
+            class="shortcut"
+            [attr.aria-label]="name"
+            [attr.title]="name"
+            [attr.aria-disabled]="canSend() ? null : 'true'"
+            (click)="open.emit(shortcut)"
+          >
+            <app-tv-app-icon [shortcut]="shortcut" />
+          </button>
+        </li>
+      }
+    </ul>
+  } @else if (showHint()) {
+    @if (isGuest()) {
+      <p class="hint" i18n="@@tv.shortcuts.empty-guest">Nenhum app fixado no controle.</p>
+    } @else {
+      <p class="hint" i18n="@@tv.shortcuts.empty-owner">Fixe apps aqui: abra Apps, no topo.</p>
     }
-  </ul>
+  }
 </div>

@@ -1,13 +1,19 @@
 <dialog
   #dialog
   class="panel"
+  [class.leaving]="leaving()"
   [attr.data-placement]="placement()"
   aria-modal="true"
   [attr.aria-labelledby]="titleId"
   (cancel)="onCancel($event)"
   (close)="onNativeClose()"
 >
-  <div class="card" [class.dragging]="dragging()" [style.transform]="transform()">
+  <div
+    class="card"
+    [class.dragging]="dragging()"
+    [style.transform]="transform()"
+    (transitionend)="onCardTransitionEnd($event)"
+  >
     <div
       class="grab"
       (pointerdown)="onGrabDown($event)"

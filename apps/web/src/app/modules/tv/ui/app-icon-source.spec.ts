@@ -1,12 +1,5 @@
 import { pngIcon, webpIcon } from '../tv-test-kit';
-import {
-  FALLBACK_HUES,
-  fallbackGlyph,
-  fallbackHue,
-  iconShape,
-  iconSource,
-  imageSize,
-} from './app-icon-source';
+import { FALLBACK_HUES, fallbackGlyph, fallbackHue, iconSource } from './app-icon-source';
 
 describe('iconSource', () => {
   it('accepts a PNG or a WebP as a data URI', () => {
@@ -30,43 +23,6 @@ describe('iconSource', () => {
     ]) {
       expect(iconSource(value), String(value)).toBeNull();
     }
-  });
-});
-
-describe('imageSize', () => {
-  it('reads a PNG from its header', () => {
-    expect(imageSize(pngIcon(96, 96))).toEqual({ width: 96, height: 96 });
-    expect(imageSize(pngIcon(320, 180))).toEqual({ width: 320, height: 180 });
-  });
-
-  it('reads the three kinds of WebP from their headers', () => {
-    expect(imageSize(webpIcon('lossy', 320, 180))).toEqual({ width: 320, height: 180 });
-    expect(imageSize(webpIcon('lossless', 320, 180))).toEqual({ width: 320, height: 180 });
-    expect(imageSize(webpIcon('extended', 320, 180))).toEqual({ width: 320, height: 180 });
-    expect(imageSize(webpIcon('lossless', 64, 64))).toEqual({ width: 64, height: 64 });
-  });
-
-  it('gives up (null) on what it cannot read: other bytes, a cut header, a size of zero, broken base64', () => {
-    expect(imageSize('data:image/png;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')).toBeNull();
-    expect(imageSize('data:image/png;base64,iVBORw0K')).toBeNull();
-    expect(imageSize(pngIcon(0, 0))).toBeNull();
-    expect(imageSize('data:image/png;base64,@@@@')).toBeNull();
-    expect(imageSize('data:image/webp;base64,UklGRg==')).toBeNull();
-  });
-});
-
-describe('iconShape', () => {
-  it('treats a 16:9 banner as wide and squares, near-squares and portraits as square', () => {
-    expect(iconShape(pngIcon(320, 180))).toBe('wide');
-    expect(iconShape(webpIcon('extended', 640, 360))).toBe('wide');
-    expect(iconShape(pngIcon(160, 100))).toBe('wide');
-    expect(iconShape(pngIcon(96, 96))).toBe('square');
-    expect(iconShape(pngIcon(128, 100))).toBe('square');
-    expect(iconShape(pngIcon(90, 120))).toBe('square');
-  });
-
-  it('is square when the header cannot be read (the image still shows whole, never cropped)', () => {
-    expect(iconShape('data:image/png;base64,AAAA')).toBe('square');
   });
 });
 

@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { Page } from '@playwright/test';
 import { IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
+import { settle } from '../screens/screen-helpers';
 import { DevicesMock, RATE_LIMITED_CODE, mockDevicesApi } from './devices-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -74,6 +75,8 @@ test.describe('aparelhos', () => {
       ),
     ).toBeVisible();
     await expectNoHorizontalScroll(page);
+    // A tela chega com a entrada escalonada: o print só vale depois dela.
+    await settle(page);
     await screenshot(page, `test-results/devices-empty-${info.project.name}.png`);
     const { violations } = await new AxeBuilder({ page }).analyze();
     expect(seriousViolations(violations)).toEqual([]);
@@ -100,6 +103,7 @@ test.describe('aparelhos', () => {
     await code.fill('bcdf2345');
     await expect(code).toHaveValue('BCDF-2345');
     await expectNoHorizontalScroll(page);
+    await settle(page);
     await screenshot(page, `test-results/devices-sheet-${info.project.name}.png`);
     const { violations } = await new AxeBuilder({ page }).analyze();
     expect(seriousViolations(violations)).toEqual([]);

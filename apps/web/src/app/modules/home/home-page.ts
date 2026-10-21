@@ -179,18 +179,6 @@ export class HomePage {
     return moduleGlyph(module.icon);
   }
 
-  /** Uma linha que diz para que serve o módulo. */
-  protected describe(module: ModuleDefinition): string {
-    switch (module.id) {
-      case 'tv':
-        return $localize`:@@home.module.tv-hint:Ligar, volume, canais e apps`;
-      case 'training':
-        return $localize`:@@home.module.training-hint:Fichas, séries e progresso`;
-      default:
-        return '';
-    }
-  }
-
   /**
    * Estado ao vivo do módulo, só quando já existe no que a Início conhece: o controle da TV depende do agente.
    * Sem dado (agente desconhecido) não mostra nada, em vez de inventar.

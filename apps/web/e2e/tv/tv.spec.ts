@@ -70,6 +70,28 @@ async function expectTargetSize(locator: Locator, min = 44) {
   expect(box!.height, 'altura do alvo').toBeGreaterThanOrEqual(min - 0.5);
 }
 
+/**
+ * Todos os azulejos têm exatamente o mesmo tamanho e são quadrados (largura = altura), com a caixa medida no navegador:
+ * ícone quadrado, banner, sem ícone e imagem quebrada ficam iguais. Devolve a medida comum.
+ */
+async function expectSameSquares(tiles: Locator): Promise<number> {
+  const sizes = await tiles.evaluateAll((els) =>
+    els.map((el) => {
+      const box = el.getBoundingClientRect();
+      return { width: box.width, height: box.height };
+    }),
+  );
+  expect(sizes.length, 'azulejos medidos').toBeGreaterThan(0);
+  for (const [index, size] of sizes.entries()) {
+    expect(size.width, `azulejo ${index + 1}: largura = altura`).toBeCloseTo(size.height, 1);
+    expect(size.width, `azulejo ${index + 1}: o mesmo tamanho do primeiro`).toBeCloseTo(
+      sizes[0].width,
+      1,
+    );
+  }
+  return sizes[0].width;
+}
+
 const button = (root: Page | Locator, name: string) =>
   root.getByRole('button', { name, exact: true });
 /** Os três pontos do palco, nesta ordem: direções com o OK, números e touchpad. */
@@ -97,9 +119,25 @@ const appsDialog = (page: Page) => page.getByRole('dialog', { name: 'Apps da TV'
 const keyboardDialog = (page: Page) => page.getByRole('dialog', { name: 'Teclado' });
 const keyboardField = (page: Page) => page.getByLabel('Texto para a TV');
 
+/** Abre o painel Apps pelo botão "Apps da TV" do cabeçalho, o caminho de quem usa a tela. */
 async function openApps(page: Page) {
   await button(page, 'Apps da TV').click();
   await expect(appsDialog(page)).toBeVisible();
+}
+
+/**
+ * Espera as animações e transições que têm fim acabarem (o painel sobe e os azulejos entram em escalonado): axe e print
+ * só valem com tudo parado, porque a opacidade a meio caminho muda o contraste medido e o desenho.
+ */
+async function settleMotion(page: Page) {
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
+  );
 }
 
 async function openKeyboard(page: Page) {
@@ -195,6 +233,7 @@ test.describe('controle: tela única, sem abas', () => {
     // Recarregar não reabre o painel: o parâmetro saiu do endereço.
     await page.reload();
     await expect(button(page, 'Apps da TV')).toBeVisible();
+    await expect(button(page, 'Atalho 1')).toBeVisible();
     await expect(keyboardDialog(page)).toHaveCount(0);
   });
 
@@ -230,27 +269,32 @@ test.describe('controle: tela única, sem abas', () => {
     }
   });
 
-  test('os botões de baixo cresceram: redondos maiores e pílulas que não ficaram mais estreitas', async ({
+  test('os botões de baixo cresceram: círculos maiores e pílulas estreitas, de botões de 50 x 52 px ou mais', async ({
     page,
   }, info) => {
     await openTv(page);
-    // Medidas da versão anterior nestes dois aparelhos (largura da pílula e diâmetro do botão redondo, em px).
-    const before = {
-      'iphone-12': { pill: 54.4, round: 52.8 },
-      's23-fe': { pill: 65.6, round: 52.4 },
-    }[info.project.name as 'iphone-12' | 's23-fe'];
+    // No 390 (358 úteis) cabem círculos de 59,25 px; no 411 (379 úteis), 64,5 px. A pílula ficou estreita (52 px) de
+    // propósito: é a largura que ela devolve que dá o círculo maior.
+    const minRound = info.project.name === 'iphone-12' ? 59 : 62;
     const round = (await button(page, 'Voltar').boundingBox())!;
     const pill = (await page.getByRole('group', { name: 'Volume' }).boundingBox())!;
     const channel = (await page.getByRole('group', { name: 'Canal' }).boundingBox())!;
     expect(round.width, 'botão redondo é círculo').toBeCloseTo(round.height, 0);
-    expect(round.width, 'botão redondo maior que antes').toBeGreaterThanOrEqual(before.round + 3);
-    expect(pill.width, 'pílula de volume não encolheu').toBeGreaterThanOrEqual(before.pill - 0.6);
-    expect(channel.width, 'pílula de canal não encolheu').toBeGreaterThanOrEqual(before.pill - 0.6);
+    expect(round.width, 'círculo maior que antes').toBeGreaterThanOrEqual(minRound);
+    expect(pill.width, 'pílula de volume de 52 px').toBeCloseTo(52, 0);
+    expect(channel.width, 'pílula de canal de 52 px').toBeCloseTo(52, 0);
     expect(pill.height, 'pílula de volume não ficou mais baixa').toBeGreaterThanOrEqual(127);
-    // Cada botão da pílula continua sendo um alvo confortável para o polegar.
-    for (const name of ['Aumentar o volume', 'Diminuir o volume']) {
+    expect(pill.height, 'e o bloco de baixo não passa de 142 px').toBeLessThanOrEqual(142.5);
+    // Cada botão da pílula é um alvo confortável para o polegar: 50 px de toque por 52 de altura.
+    for (const name of [
+      'Aumentar o volume',
+      'Diminuir o volume',
+      'Próximo canal',
+      'Canal anterior',
+    ]) {
       const box = (await button(page, name).boundingBox())!;
-      expect(box.height, name).toBeGreaterThanOrEqual(46);
+      expect(box.width, name).toBeGreaterThanOrEqual(49.5);
+      expect(box.height, name).toBeGreaterThanOrEqual(51.5);
     }
     await expectNoVerticalScroll(page);
     await expectNoHorizontalScroll(page);
@@ -337,14 +381,16 @@ test.describe('controle: tela única, sem abas', () => {
   });
 });
 
-test.describe('controle: fileira de atalhos e chip Apps', () => {
-  test('os atalhos são chips que abrem o app ao toque, como "Atalho n" quando nada os nomeia', async ({
+test.describe('controle: fileira de atalhos', () => {
+  test('os atalhos são azulejos que abrem o app ao toque, como "Atalho n" quando nada os nomeia', async ({
     page,
   }) => {
     await openTv(page);
     for (const n of [1, 2, 3]) await expect(button(page, `Atalho ${n}`)).toBeVisible();
     // O pacote não aparece na tela de controle.
     await expect(page.getByText('exemplo.pacote')).toHaveCount(0);
+    // O chip "Apps" saiu da fileira: o painel abre por um botão do cabeçalho.
+    await expect(page.locator('.apps-chip')).toHaveCount(0);
 
     await button(page, 'Atalho 2').click();
     await expect.poll(() => tv.count(`/shortcuts/${tv.shortcuts[1].id}/launch`)).toBe(1);
@@ -360,7 +406,7 @@ test.describe('controle: fileira de atalhos e chip Apps', () => {
     await expect(button(page, 'Atalho 2')).toHaveCount(0);
   });
 
-  test('o nome do chip é o do dono, depois o que o agente publica para o app, só então "Atalho n"', async ({
+  test('o nome do atalho é o do dono, depois o que o agente publica para o app, só então "Atalho n"', async ({
     page,
   }) => {
     tv.shortcuts = tv.shortcuts.map((s) => ({
@@ -371,45 +417,65 @@ test.describe('controle: fileira de atalhos e chip Apps', () => {
     await openTv(page);
     await expectChipNames(page, ['Sala', 'Spotify', 'Atalho 3']);
 
-    // O mesmo nome na grade e na lista do painel Apps, e a busca acha pelo nome que o agente publicou.
+    // O mesmo nome nos azulejos do painel Apps, e a busca acha pelo nome que o agente publicou.
     await openApps(page);
     const names = appsDialog(page).locator('.item .name');
     await expect(names).toHaveText(['Sala', 'Spotify', 'Atalho 3']);
-    await appsDialog(page).getByRole('button', { name: 'Lista', exact: true }).click();
-    await expect(names).toHaveText(['Sala', 'Spotify', 'Atalho 3']);
     await appsDialog(page).getByRole('searchbox', { name: 'Buscar app' }).fill('spot');
     await expect(names).toHaveText(['Spotify']);
+    await button(appsDialog(page), 'Editar').click();
     await button(appsDialog(page), 'Renomear Spotify').click();
     await expect(appsDialog(page).getByLabel('Nome do atalho')).toHaveValue('');
   });
 
-  test('os chips seguem a ordem de posição da API e o chip Apps fica fixo à esquerda', async ({
-    page,
-  }) => {
+  test('os atalhos seguem a ordem de posição da API', async ({ page }) => {
     tv.shortcuts = [3, 1, 2].map((position) => ({
       ...tv.shortcuts[position - 1],
       customLabel: `App ${position}`,
     }));
     await openTv(page);
-    const chips = page.locator('.shortcuts .shortcut');
     // A API entrega por posição e o app mantém essa ordem (aqui a lista chega embaralhada e sai por posição).
     await expectChipNames(page, ['App 1', 'App 2', 'App 3']);
-    const apps = (await button(page, 'Apps da TV').boundingBox())!;
-    const first = (await chips.first().boundingBox())!;
-    expect(apps.x).toBeLessThan(first.x);
   });
 
-  test('sem atalhos não há texto de erro: só o chip Apps', async ({ page }) => {
-    tv.shortcuts = [];
+  test('sem atalho ativo não há texto de erro: só uma dica discreta da altura de um azulejo, sem salto', async ({
+    page,
+  }) => {
     await openTv(page);
-    await expect(button(page, 'Apps da TV')).toBeVisible();
-    await expect(page.locator('.shortcuts .shortcut')).toHaveCount(0);
+    const tile = (await page.locator('.shortcuts .shortcut').first().boundingBox())!;
+    const stageTop = (await page.locator('.viewport').boundingBox())!.y;
+
+    await emitSse(page, 'tv.shortcuts', []);
+    const hint = page.getByText('Fixe apps aqui: abra Apps, no topo.');
+    await expect(hint).toBeVisible();
+    await expect(page.locator('.shortcuts')).toHaveCount(0);
+    // A dica não é um botão nem um aviso, e tem a altura de um azulejo: o palco não sobe nem desce.
+    expect(await hint.evaluate((el) => el.closest('button, a, [role="alert"]') === null)).toBe(
+      true,
+    );
+    const box = (await hint.boundingBox())!;
+    expect(Math.abs(box.height - tile.height), 'altura da dica').toBeLessThanOrEqual(1);
+    expect((await page.locator('.viewport').boundingBox())!.y, 'o palco não salta').toBeCloseTo(
+      stageTop,
+      0,
+    );
     await expect(page.getByText(/sem atalhos/i)).toHaveCount(0);
-    await expect(page.getByRole('link', { name: /Veja a aba Apps/ })).toHaveCount(0);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expectNoHorizontalScroll(page);
     await expectNoVerticalScroll(page);
   });
 
-  test('muitos atalhos rolam na faixa, sem rolagem da tela e com o chip Apps parado', async ({
+  test('a fileira vazia já na abertura mostra a dica, e o convidado não é mandado fixar nada', async ({
+    page,
+  }) => {
+    tv.shortcuts = [];
+    await openTv(page);
+    await expect(page.getByText('Fixe apps aqui: abra Apps, no topo.')).toBeVisible();
+    await expect(page.locator('.shortcuts .shortcut')).toHaveCount(0);
+    await expectNoVerticalScroll(page);
+  });
+
+  test('muitos atalhos rolam na faixa, todos do mesmo tamanho, sem rolagem da tela', async ({
     page,
   }) => {
     tv.shortcuts = Array.from({ length: 9 }, (_, index) => ({
@@ -419,11 +485,15 @@ test.describe('controle: fileira de atalhos e chip Apps', () => {
       tvLabel: null,
       customLabel: `Aplicativo número ${index + 1}`,
       enabled: true,
+      installed: true,
     }));
     await openTv(page);
-    const before = (await button(page, 'Apps da TV').boundingBox())!;
-    await page.locator('.shortcuts').evaluate((el) => el.scrollTo({ left: 400 }));
-    expect(await button(page, 'Apps da TV').boundingBox()).toEqual(before);
+    const strip = page.locator('.shortcuts');
+    expect(await strip.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    expect(await strip.evaluate((el) => getComputedStyle(el).scrollSnapType)).toContain('x');
+    await strip.evaluate((el) => el.scrollTo({ left: 400 }));
+    await expect.poll(() => strip.evaluate((el) => el.scrollLeft)).toBeGreaterThan(100);
+    await expectSameSquares(page.locator('.shortcuts .shortcut'));
     await expectNoHorizontalScroll(page);
     await expectNoVerticalScroll(page);
   });
@@ -1015,7 +1085,7 @@ test.describe('painel flutuante: comportamento comum', () => {
 
     // Arrastar o puxador para baixo.
     await openApps(page);
-    await page.waitForTimeout(250); // fim da animação de entrada
+    await settleMotion(page);
     const grab = (await appsDialog(page).locator('.grab').boundingBox())!;
     const x = grab.x + grab.width / 2;
     const y = grab.y + 12;
@@ -1029,7 +1099,7 @@ test.describe('painel flutuante: comportamento comum', () => {
   test('arrastar pouco e soltar não fecha: o cartão volta ao lugar', async ({ page }) => {
     await openTv(page);
     await openApps(page);
-    await page.waitForTimeout(250);
+    await settleMotion(page);
     const card = appsDialog(page).locator('.card');
     const rest = (await card.boundingBox())!;
     const grab = (await appsDialog(page).locator('.grab').boundingBox())!;
@@ -1043,15 +1113,14 @@ test.describe('painel flutuante: comportamento comum', () => {
     await expect.poll(async () => (await card.boundingBox())!.y).toBeCloseTo(rest.y, 0);
   });
 
-  test('o foco entra no painel, fica preso nele e volta ao botão que o abriu', async ({ page }) => {
+  test('o foco entra no painel Apps e fica preso nele (o resto da tela fica inerte)', async ({
+    page,
+  }) => {
     await openTv(page);
-    const chip = button(page, 'Apps da TV');
-    await chip.focus();
-    await page.keyboard.press('Enter');
-    await expect(appsDialog(page)).toBeVisible();
+    await openApps(page);
     await expect(appsDialog(page).locator(':focus')).toHaveCount(1);
 
-    // Tab nunca chega a um controle de trás do painel (o resto da tela fica inerte).
+    // Tab nunca chega a um controle de trás do painel.
     for (let step = 0; step < 14; step++) {
       await page.keyboard.press('Tab');
       const behind = await page.evaluate(
@@ -1059,11 +1128,23 @@ test.describe('painel flutuante: comportamento comum', () => {
       );
       expect(behind, `Tab ${step + 1}`).toBeNull();
     }
-
     await page.keyboard.press('Escape');
     await expect(appsDialog(page)).toHaveCount(0);
-    await expect(chip).toBeFocused();
+  });
 
+  test('o painel Apps devolve o foco ao botão do cabeçalho que o abriu', async ({ page }) => {
+    await openTv(page);
+    const opener = button(page, 'Apps da TV');
+    await opener.focus();
+    await page.keyboard.press('Enter');
+    await expect(appsDialog(page)).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(appsDialog(page)).toHaveCount(0);
+    await expect(opener).toBeFocused();
+  });
+
+  test('o foco do Teclado entra no campo e volta ao botão que o abriu', async ({ page }) => {
+    await openTv(page);
     const keyboard = button(page, 'Teclado');
     await keyboard.focus();
     await page.keyboard.press('Enter');
@@ -1074,75 +1155,195 @@ test.describe('painel flutuante: comportamento comum', () => {
     await expect(keyboard).toBeFocused();
   });
 
-  test('a animação de entrada some para quem pediu menos movimento', async ({ page }) => {
+  test('o painel sai por transição: a saída espera o fim dela antes de tirar o painel', async ({
+    page,
+  }) => {
     await openTv(page);
     await openApps(page);
-    const animation = () =>
-      appsDialog(page)
-        .locator('.card')
-        .evaluate((el) => getComputedStyle(el).animationName);
-    expect(await animation()).not.toBe('none');
+    const card = appsDialog(page).locator('.card');
+    expect(await card.evaluate((el) => getComputedStyle(el).transitionDuration)).not.toBe('0s');
+    await settleMotion(page);
+    expect(await card.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+
+    const started = Date.now();
     await page.keyboard.press('Escape');
+    // Logo depois do pedido o painel ainda está na tela, saindo (a folha desce e o fundo esmaece).
+    await expect(page.locator('dialog.panel.leaving')).toHaveCount(1);
+    await expect(appsDialog(page)).toHaveCount(0);
+    const elapsed = Date.now() - started;
+    expect(elapsed, 'esperou a transição').toBeGreaterThanOrEqual(120);
+    expect(elapsed, 'não ficou preso na saída').toBeLessThan(1500);
+  });
+
+  test('ao entrar, a folha parte transparente e termina opaca, com o fundo escurecido', async ({
+    page,
+  }) => {
+    await openTv(page);
+    // Acompanha a opacidade do cartão quadro a quadro desde o pedido de abrir (o `@starting-style` parte de zero).
+    const seen = await page.evaluate(async () => {
+      history.pushState(history.state, '', '/tv?painel=apps');
+      window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+      const values: number[] = [];
+      const deadline = performance.now() + 2000;
+      while (performance.now() < deadline) {
+        const card = document.querySelector('dialog.panel .card');
+        if (card) values.push(Number(getComputedStyle(card).opacity));
+        if (values.at(-1) === 1) break;
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+      return values;
+    });
+    expect(Math.min(...seen), 'começou transparente').toBeLessThan(1);
+    expect(seen.at(-1), 'terminou opaco').toBe(1);
+    await settleMotion(page);
+    expect(
+      await page
+        .locator('dialog.panel')
+        .evaluate((el) => getComputedStyle(el, '::backdrop').backgroundColor),
+    ).toMatch(/rgba?\(0, 0, 0, 0\.4\d*\)/);
+  });
+
+  test('a animação some para quem pediu menos movimento: sem transição, sem escalonado, e o painel sai na hora', async ({
+    page,
+  }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openTv(page);
     await openApps(page);
-    expect(await animation()).toBe('none');
+    const dialog = appsDialog(page);
+    expect(
+      await dialog.locator('.card').evaluate((el) => getComputedStyle(el).transitionDuration),
+    ).toBe('0s');
+    expect(
+      await dialog
+        .locator('.item')
+        .first()
+        .evaluate((el) => getComputedStyle(el).animationName),
+    ).toBe('none');
+    expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('dialog.panel.leaving')).toHaveCount(0);
+    await expect(dialog).toHaveCount(0);
+  });
+
+  test('sem pedir menos movimento os primeiros azulejos entram em escalonado curto, só os 12 primeiros', async ({
+    page,
+  }) => {
+    tv.shortcuts = Array.from({ length: 30 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-00000000${String(2000 + index)}`,
+      position: index + 1,
+      package: `exemplo.pacote.app${index + 1}`,
+      tvLabel: `Aplicativo ${index + 1}`,
+      customLabel: null,
+      enabled: true,
+      installed: true,
+    }));
+    await openTv(page);
+    await openApps(page);
+    const items = appsDialog(page).locator('.item');
+    await expect(items).toHaveCount(30);
+    const delays = await items.evaluateAll((els) =>
+      els.map((el) => {
+        const style = getComputedStyle(el);
+        return {
+          name: style.animationName,
+          delay: parseFloat(style.animationDelay),
+        };
+      }),
+    );
+    // O Angular acrescenta ao nome da animação o prefixo do componente (`ng-c123_tile-in`).
+    expect(delays.filter((d) => d.name.endsWith('tile-in'))).toHaveLength(12);
+    expect(delays.slice(12).every((d) => d.name === 'none')).toBe(true);
+    // Escalonado crescente e curto: o último entra antes de meio segundo.
+    const starts = delays.slice(0, 12).map((d) => d.delay);
+    expect([...starts].sort((a, b) => a - b)).toEqual(starts);
+    expect(starts[11] + 0.2, 'fim do escalonado, em segundos').toBeLessThan(0.5);
+    await settleMotion(page);
+    expect(await items.first().evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
   });
 });
 
 test.describe('painel Apps', () => {
-  test('lista os atalhos, abre, renomeia, esconde e atualiza a lista', async ({ page }, info) => {
+  test('lista os apps em azulejos, abre, edita (renomear e fixar) e atualiza a lista', async ({
+    page,
+  }, info) => {
     await openTv(page);
     await openApps(page);
     const dialog = appsDialog(page);
     await expect(dialog.getByRole('heading', { level: 2, name: 'Apps da TV' })).toBeVisible();
+    await expect(dialog.getByRole('heading', { level: 3, name: 'No controle' })).toBeVisible();
     await expect(dialog.locator('.item .name')).toHaveText(['Atalho 1', 'Atalho 2', 'Atalho 3']);
-    await expect(dialog.locator('.item .package').first()).toHaveText('exemplo.pacote.app1');
+    // O pacote só aparece no modo Editar.
+    await expect(dialog.locator('.package')).toHaveCount(0);
     await expectNoHorizontalScroll(page);
-    await page.waitForTimeout(250);
+    await settleMotion(page);
     await screenshot(page, `test-results/tv-apps-grid-${info.project.name}.png`);
     await expectNoSeriousViolations(page);
 
-    // Renomear (a grade deixa a linha do campo ocupar a largura toda).
+    // Editar: todos os apps numa lista só, com o pacote e os botões de fixar e renomear em cada azulejo.
+    await button(dialog, 'Editar').click();
+    await expect(dialog.getByRole('heading', { level: 3, name: 'Todos os apps' })).toBeVisible();
+    await expect(dialog.locator('.item .package').first()).toHaveText('exemplo.pacote.app1');
+    await expect(dialog.locator('.launch')).toHaveCount(0);
+    await settleMotion(page);
+    await screenshot(page, `test-results/tv-apps-edit-${info.project.name}.png`);
+    await expectNoSeriousViolations(page);
+
+    // Renomear: o foco vai para o campo e volta ao botão depois.
     await button(dialog, 'Renomear Atalho 2').click();
+    await expect(dialog.getByLabel('Nome do atalho')).toBeFocused();
     await dialog.getByLabel('Nome do atalho').fill('Sala');
     await dialog.getByRole('button', { name: 'Salvar' }).click();
     await expect(dialog.locator('.item .name').nth(1)).toHaveText('Sala');
+    await expect(button(dialog, 'Renomear Sala')).toBeFocused();
     expect(tv.requests.find((r) => r.method === 'PATCH')?.body).toEqual({
       customLabel: 'Sala',
       enabled: null,
     });
 
-    await button(dialog, 'Ocultar Atalho 3').click();
-    await expect(button(dialog, 'Mostrar Atalho 3')).toBeVisible();
-    await expect(dialog.getByRole('button', { name: /^Atalho 3 / })).toBeDisabled();
+    // Tirar do controle: o azulejo fica onde está e o botão passa a oferecer "Fixar".
+    await button(dialog, 'Tirar Atalho 3 do controle').click();
+    await expect(button(dialog, 'Fixar Atalho 3 no controle')).toBeVisible();
+    await expect(dialog.locator('.item .name')).toHaveText(['Atalho 1', 'Sala', 'Atalho 3']);
 
-    await dialog.getByRole('button', { name: 'Atualizar lista' }).click();
+    // Concluir: volta às seções, e o que saiu do controle fica na de baixo, igual aos outros e podendo abrir.
+    await button(dialog, 'Concluir').click();
+    await expect(dialog.getByRole('heading', { level: 3, name: 'Fora do controle' })).toBeVisible();
+    await expect(button(dialog, 'Atalho 3')).toBeEnabled();
+
+    await button(dialog, 'Atualizar lista').click();
     await expect.poll(() => tv.count('/shortcuts/refresh')).toBe(1);
     // Com o painel aberto, o aviso aparece dentro dele (o aviso da tela ficaria atrás do fundo).
     await expect(dialog.getByText('Lista de apps atualizada.')).toBeVisible();
 
     // Abrir um app: o pedido sai, o painel fecha e o aviso aparece na tela do controle.
-    await dialog.getByRole('button', { name: /^Atalho 1 / }).click();
+    await button(dialog, 'Atalho 1').click();
     await expect.poll(() => tv.count(`/shortcuts/${tv.shortcuts[0].id}/launch`)).toBe(1);
     await expect(dialog).toHaveCount(0);
     await expect(page.getByText('Atalho 1 aberto na TV.')).toBeVisible();
 
-    // O atalho escondido some da fileira de cima; o renomeado aparece com o nome novo.
+    // O atalho tirado do controle some da fileira de cima; o renomeado aparece com o nome novo.
     await expect(button(page, 'Atalho 1')).toBeVisible();
     await expect(button(page, 'Sala')).toBeVisible();
     await expect(button(page, 'Atalho 3')).toHaveCount(0);
   });
 
-  test('busca por texto, grade e lista', async ({ page }, info) => {
+  test('busca por texto numa lista só, com a marca de quem está no controle', async ({
+    page,
+  }, info) => {
     tv.shortcuts = tv.shortcuts.map((s) => ({
       ...s,
       customLabel: ['Câmera da sala', 'Filmes', 'Jogos'][s.position - 1],
+      enabled: s.position !== 3,
     }));
     await openTv(page);
     await openApps(page);
     const dialog = appsDialog(page);
     const names = dialog.locator('.item .name');
     await expect(names).toHaveText(['Câmera da sala', 'Filmes', 'Jogos']);
+    await expect(dialog.getByRole('heading', { level: 3 })).toHaveText([
+      'No controle',
+      'Fora do controle',
+    ]);
 
     const search = dialog.getByRole('searchbox', { name: 'Buscar app' });
     await search.fill('CAMERA');
@@ -1151,28 +1352,101 @@ test.describe('painel Apps', () => {
     await expect(names).toHaveText(['Jogos']);
     await search.fill('zzz');
     await expect(dialog.getByText('Nenhum app encontrado para essa busca.')).toBeVisible();
-    await search.fill('');
-    await expect(names).toHaveCount(3);
 
-    // Lista em vez de grade, e a escolha fica para a próxima vez.
-    await dialog.getByRole('button', { name: 'Lista', exact: true }).click();
-    await expect(dialog.getByRole('button', { name: 'Lista', exact: true })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await expect(dialog.locator('.list')).toHaveAttribute('data-view', 'list');
-    await page.waitForTimeout(250);
-    await screenshot(page, `test-results/tv-apps-list-${info.project.name}.png`);
+    // A busca é uma lista só, sem seções; quem está no controle leva a marca (lida como descrição, o nome não muda).
+    await search.fill('exemplo');
+    await expect(dialog.getByRole('heading', { level: 3 })).toHaveCount(0);
+    await expect(names).toHaveText(['Câmera da sala', 'Filmes', 'Jogos']);
+    await expect(dialog.locator('.mark')).toHaveCount(2);
+    await expect(button(dialog, 'Filmes')).toHaveAccessibleDescription('No controle');
+    await expect(button(dialog, 'Jogos')).toHaveAccessibleDescription('');
+    await expect(button(dialog, 'Jogos')).toBeEnabled();
+    await settleMotion(page);
+    await screenshot(page, `test-results/tv-apps-search-${info.project.name}.png`);
     await expectNoSeriousViolations(page);
-    await page.keyboard.press('Escape');
-    await openApps(page);
-    await expect(appsDialog(page).locator('.list')).toHaveAttribute('data-view', 'list');
 
-    // Na lista, abrir um app continua valendo.
-    await appsDialog(page)
-      .getByRole('button', { name: /^Filmes / })
-      .click();
+    await search.fill('');
+    await expect(dialog.getByRole('heading', { level: 3 })).toHaveCount(2);
+
+    // Nada de Grade | Lista: o painel é sempre uma grade.
+    await expect(dialog.getByRole('button', { name: 'Lista', exact: true })).toHaveCount(0);
+
+    // Abrir um app continua valendo, e o que está fora do controle abre do mesmo jeito.
+    await button(dialog, 'Filmes').click();
     await expect.poll(() => tv.count(`/shortcuts/${tv.shortcuts[1].id}/launch`)).toBe(1);
+  });
+
+  test('app instalado fora do controle abre ao toque, e app que saiu da TV não aparece', async ({
+    page,
+  }, info) => {
+    // CineVS e Spotify no controle; Configurações, Play Store e "Atalho 5" instalados mas fora dele; YouTube saiu da TV.
+    tv.shortcuts = iconShortcuts().map((s, index) => ({
+      ...s,
+      enabled: index < 2,
+      installed: index !== 5,
+    }));
+    const [, , , playStore, , youtube] = tv.shortcuts;
+    await openTv(page);
+    // A fileira de cima segue só com os do controle.
+    await expectChipNames(page, ['CineVS', 'Spotify']);
+
+    await openApps(page);
+    const dialog = appsDialog(page);
+    await expect(dialog.getByRole('heading', { level: 3 })).toHaveText([
+      'No controle',
+      'Fora do controle',
+    ]);
+    await expect(dialog.locator('.item .name')).toHaveText([
+      'CineVS',
+      'Spotify',
+      'Configurações',
+      'Play Store',
+      'Atalho 5',
+    ]);
+    await expect(
+      dialog.getByText('Toque para abrir. Para ter no controle, fixe em Editar.'),
+    ).toBeVisible();
+
+    // Fora do controle não é apagado nem desabilitado: o azulejo é igual ao dos outros.
+    await expect(dialog.locator('.launch:disabled')).toHaveCount(0);
+    const opacities = await dialog
+      .locator('.item .launch')
+      .evaluateAll((els) => els.map((el) => getComputedStyle(el.querySelector('.art')!).opacity));
+    expect(new Set(opacities.map(Number)).size, 'a mesma opacidade em todos os azulejos').toBe(1);
+
+    // O app que saiu da TV não existe para o painel: nem na busca, nem na edição.
+    const search = dialog.getByRole('searchbox', { name: 'Buscar app' });
+    await search.fill('youtube');
+    await expect(dialog.getByText('Nenhum app encontrado para essa busca.')).toBeVisible();
+    await search.fill('');
+    await button(dialog, 'Editar').click();
+    await expect(dialog.locator('.item .name')).toHaveText([
+      'CineVS',
+      'Spotify',
+      'Configurações',
+      'Play Store',
+      'Atalho 5',
+    ]);
+    await button(dialog, 'Concluir').click();
+
+    for (const index of [0, 1, 2]) {
+      await expect
+        .poll(() => imageLoaded(dialog.locator('.item').nth(index).locator('img')))
+        .toBe(true);
+    }
+    await expectNoHorizontalScroll(page);
+    await settleMotion(page);
+    await screenshot(page, `test-results/apps-launch-sections-${info.project.name}.png`);
+    await expectNoSeriousViolations(page);
+
+    // Tocar num app que está fora do controle o abre: o pedido sai com o id certo, e o painel fecha.
+    await button(dialog, 'Play Store').click();
+    await expect.poll(() => tv.count(`/shortcuts/${playStore.id}/launch`)).toBe(1);
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText('Play Store aberto na TV.')).toBeVisible();
+    // Nenhum pedido de abrir saiu para o que não está mais na TV, e a fileira não ganhou o app aberto.
+    expect(tv.count(`/shortcuts/${youtube.id}/launch`)).toBe(0);
+    await expectChipNames(page, ['CineVS', 'Spotify']);
   });
 
   test('sem a lista da TV: estado vazio amigável e "Buscar apps da TV" que mostra o resultado', async ({
@@ -1186,7 +1460,7 @@ test.describe('painel Apps', () => {
     await expect(dialog.getByRole('searchbox')).toHaveCount(0);
     await expect(dialog.getByRole('alert')).toHaveCount(0);
     await expect(dialog.getByText(/sem atalhos|nenhum atalho/i)).toHaveCount(0);
-    await page.waitForTimeout(250);
+    await settleMotion(page);
     await screenshot(page, `test-results/tv-apps-empty-${info.project.name}.png`);
     await expectNoSeriousViolations(page);
 
@@ -1426,13 +1700,13 @@ test.describe('acessibilidade e tema', () => {
 
       await openApps(page);
       await expect(appsDialog(page).locator('.item')).toHaveCount(3);
-      await page.waitForTimeout(250);
+      await settleMotion(page);
       await screenshot(page, `test-results/tv-apps-${scheme}-${info.project.name}.png`);
       await expectNoSeriousViolations(page);
       await page.keyboard.press('Escape');
 
       await openKeyboard(page);
-      await page.waitForTimeout(250);
+      await settleMotion(page);
       await screenshot(page, `test-results/tv-keyboard-${scheme}-${info.project.name}.png`);
       await expectNoSeriousViolations(page);
     });
@@ -1468,7 +1742,7 @@ test.describe('acessibilidade e tema', () => {
     }
   });
 
-  test('o foco do teclado é visível nos botões, nos setores do anel e no chip Apps', async ({
+  test('o foco do teclado é visível nos botões, nos setores do anel, no botão Apps e nos atalhos', async ({
     page,
   }) => {
     await openTv(page);
@@ -1622,7 +1896,7 @@ for (const screen of SCREENS) {
         [openKeyboard, keyboardDialog, 'keyboard'],
       ] as const) {
         await open(page);
-        await page.waitForTimeout(250);
+        await settleMotion(page);
         const card = (await dialog(page).locator('.card').boundingBox())!;
         expect(card.x, `${label} x`).toBeGreaterThanOrEqual(0);
         expect(card.y, `${label} y`).toBeGreaterThanOrEqual(0);
@@ -1910,6 +2184,7 @@ function iconShortcuts(): MockShortcut[] {
     position: index + 1,
     customLabel: null,
     enabled: true,
+    installed: true,
     ...row,
   }));
 }
@@ -1973,60 +2248,120 @@ test.describe('ícones dos apps', () => {
     await expectNoVerticalScroll(page);
   });
 
-  test('o banner 16:9 ganha um chip mais largo e aparece inteiro; o ícone quadrado enche o chip', async ({
+  test('todos os azulejos são quadrados do mesmo tamanho: ícone quadrado, banner, sem ícone e imagem quebrada', async ({
     page,
   }) => {
     tv.shortcuts = iconShortcuts();
     await openTv(page);
     const chips = page.locator('.shortcuts .shortcut');
-    await expect.poll(() => imageLoaded(chips.nth(0).locator('img'))).toBe(true);
-    await expect.poll(() => imageLoaded(chips.nth(1).locator('img'))).toBe(true);
-
-    const banner = (await chips.nth(0).boundingBox())!;
-    const square = (await chips.nth(1).boundingBox())!;
-    const fallback = (await chips.nth(3).boundingBox())!;
-    expect(banner.height, 'mesma altura').toBeCloseTo(square.height, 0);
-    expect(fallback.height, 'mesma altura').toBeCloseTo(square.height, 0);
-    expect(square.width, 'ícone quadrado, chip quadrado').toBeCloseTo(square.height, 0);
-    expect(banner.width / banner.height, 'banner, chip mais largo').toBeGreaterThan(1.6);
-    expect(banner.width / banner.height).toBeLessThan(1.9);
-
-    // Nem cortado nem esticado: a imagem inteira cabe na caixa, com a proporção que ela tem.
-    for (const index of [0, 1]) {
-      const fit = await chips
-        .nth(index)
-        .locator('img')
-        .evaluate((el) => {
-          const image = el as HTMLImageElement;
-          const box = image.getBoundingClientRect();
-          return {
-            objectFit: getComputedStyle(image).objectFit,
-            boxRatio: box.width / box.height,
-            naturalRatio: image.naturalWidth / image.naturalHeight,
-          };
-        });
-      expect(fit.objectFit).toBe('contain');
-      expect(
-        Math.abs(fit.boxRatio - fit.naturalRatio),
-        `proporção do chip ${index + 1}`,
-      ).toBeLessThan(0.06);
+    for (const index of [0, 1, 2]) {
+      await expect.poll(() => imageLoaded(chips.nth(index).locator('img'))).toBe(true);
     }
+    // A imagem quebrada já caiu no azulejo de reserva: a medida vale para os seis casos.
+    await expect(chips.nth(5).locator('.fallback')).toBeVisible();
+    await expect(chips).toHaveCount(6);
+
+    const side = await expectSameSquares(chips);
+    // O lado é a altura que a fileira já tinha (a variável `--tv-top`, lida na altura mínima da fileira).
+    const rowHeight = await page
+      .locator('.top')
+      .evaluate((el) => parseFloat(getComputedStyle(el).minHeight));
+    expect(side, 'lado do azulejo = altura da fileira').toBeCloseTo(rowHeight, 0);
+    await expectSameSquares(chips.locator('app-tv-app-icon'));
+
+    // Cantos arredondados iguais em todos.
+    const radii = await chips.evaluateAll((els) =>
+      els.map((el) => getComputedStyle(el).borderTopLeftRadius),
+    );
+    expect(new Set(radii).size, 'um só raio de canto').toBe(1);
+    expect(parseFloat(radii[0])).toBeGreaterThan(8);
+
+    // A imagem fica contida e centralizada, nunca esticada nem cortada, com a mesma folga em volta em qualquer formato.
+    const fits = await chips.evaluateAll((els) =>
+      els.flatMap((el) => {
+        const image = el.querySelector('img');
+        if (!image) return [];
+        const tile = el.getBoundingClientRect();
+        const box = image.getBoundingClientRect();
+        const style = getComputedStyle(image);
+        const [left, top, right, bottom] = [
+          style.paddingLeft,
+          style.paddingTop,
+          style.paddingRight,
+          style.paddingBottom,
+        ].map(parseFloat);
+        const inner = { width: box.width - left - right, height: box.height - top - bottom };
+        const scale = Math.min(
+          inner.width / image.naturalWidth,
+          inner.height / image.naturalHeight,
+        );
+        const drawn = { width: image.naturalWidth * scale, height: image.naturalHeight * scale };
+        const x = box.left + left + (inner.width - drawn.width) / 2;
+        const y = box.top + top + (inner.height - drawn.height) / 2;
+        return [
+          {
+            objectFit: style.objectFit,
+            objectPosition: style.objectPosition,
+            padding: style.padding,
+            naturalRatio: image.naturalWidth / image.naturalHeight,
+            drawnRatio: drawn.width / drawn.height,
+            gapLeft: x - tile.left,
+            gapRight: tile.right - (x + drawn.width),
+            gapTop: y - tile.top,
+            gapBottom: tile.bottom - (y + drawn.height),
+          },
+        ];
+      }),
+    );
+    expect(fits).toHaveLength(3);
+    const [banner, square] = fits;
+    for (const fit of fits) {
+      expect(fit.objectFit).toBe('contain');
+      expect(fit.objectPosition).toBe('50% 50%');
+      expect(fit.padding, 'a mesma folga interna').toBe(fits[0].padding);
+      expect(fit.drawnRatio, 'a proporção da imagem se mantém').toBeCloseTo(fit.naturalRatio, 1);
+      expect(fit.gapLeft, 'centralizada na horizontal').toBeCloseTo(fit.gapRight, 0);
+      expect(fit.gapTop, 'centralizada na vertical').toBeCloseTo(fit.gapBottom, 0);
+      expect(Math.min(fit.gapLeft, fit.gapTop), 'dentro do azulejo, com folga').toBeGreaterThan(1);
+    }
+    // O banner é 16:9 e o quadrado não: a forma da imagem muda, a do azulejo e a folga dos lados não.
+    expect(banner.naturalRatio).toBeGreaterThan(1.6);
+    expect(square.naturalRatio).toBeCloseTo(1, 1);
+    expect(banner.gapLeft).toBeCloseTo(square.gapLeft, 0);
+    expect(banner.gapTop, 'o banner deixa faixas em cima e embaixo').toBeGreaterThan(
+      square.gapTop + 4,
+    );
     for (const index of [0, 1, 2, 3, 4, 5]) await expectTargetSize(chips.nth(index));
   });
 
-  test('a faixa rola com o chip Apps parado, e nada passa da largura da tela', async ({ page }) => {
-    tv.shortcuts = iconShortcuts();
+  test('a faixa rola alinhada ao início, e nada passa da largura da tela', async ({ page }) => {
+    // Seis azulejos quadrados cabem na largura do celular: mais quatro para a faixa passar dela.
+    tv.shortcuts = [
+      ...iconShortcuts(),
+      ...[7, 8, 9, 10].map((position) => ({
+        id: `00000000-0000-4000-8000-${String(300 + position).padStart(12, '0')}`,
+        position,
+        package: `exemplo.extra${position}`,
+        tvLabel: null,
+        customLabel: `Extra ${position}`,
+        enabled: true,
+        installed: true,
+        iconDataUri: ICONS.square,
+      })),
+    ];
     await openTv(page);
-    const apps = (await button(page, 'Apps da TV').boundingBox())!;
     const strip = page.locator('.shortcuts');
     expect(await strip.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    expect(await strip.evaluate((el) => el.scrollLeft)).toBe(0);
+    // O primeiro azulejo começa no início da faixa (a folga de 5 px do anel de foco é devolvida pela margem).
+    const stripBox = (await strip.boundingBox())!;
+    const first = (await page.locator('.shortcuts .shortcut').first().boundingBox())!;
+    expect(first.x - stripBox.x).toBeCloseTo(5, 0);
     await strip.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
     await expect
       .poll(() => strip.evaluate((el) => el.scrollLeft + el.clientWidth >= el.scrollWidth - 1))
       .toBe(true);
-    expect(await button(page, 'Apps da TV').boundingBox()).toEqual(apps);
-    const last = (await button(page, 'YouTube').boundingBox())!;
-    const stripBox = (await strip.boundingBox())!;
+    const last = (await button(page, 'Extra 10').boundingBox())!;
     const viewport = page.viewportSize()!;
     expect(last.x + last.width).toBeLessThanOrEqual(stripBox.x + stripBox.width + 0.5);
     expect(stripBox.x + stripBox.width).toBeLessThanOrEqual(viewport.width);
@@ -2040,7 +2375,7 @@ test.describe('ícones dos apps', () => {
     await button(page, 'Spotify').click();
     await expect.poll(() => tv.count(`/shortcuts/${tv.shortcuts[1].id}/launch`)).toBe(1);
     await expect(page.getByText('Spotify aberto na TV.')).toBeVisible();
-    // O banner também: o toque na própria imagem chega ao chip (a imagem não recebe o toque, quem recebe é o botão).
+    // O banner também: o toque na própria imagem chega ao azulejo (a imagem não recebe o toque, quem recebe é o botão).
     const picture = (await button(page, 'CineVS').locator('img').boundingBox())!;
     await page.mouse.click(picture.x + picture.width / 2, picture.y + picture.height / 2);
     await expect.poll(() => tv.count(`/shortcuts/${tv.shortcuts[0].id}/launch`)).toBe(1);
@@ -2141,7 +2476,7 @@ test.describe('ícones dos apps', () => {
   test.describe('painel Apps', () => {
     const LONG = 'Aplicativo com um nome bem comprido que passa de duas linhas na grade';
 
-    test('na grade o ícone fica grande com o nome embaixo, em até duas linhas, sem estourar', async ({
+    test('na grade todo azulejo é um quadrado do mesmo tamanho, com o ícone grande e o nome embaixo em até duas linhas', async ({
       page,
     }) => {
       tv.shortcuts = [
@@ -2153,73 +2488,143 @@ test.describe('ícones dos apps', () => {
           tvLabel: null,
           customLabel: LONG,
           enabled: true,
+          installed: true,
           iconDataUri: ICONS.square,
         },
       ];
       await openTv(page);
       await openApps(page);
       const dialog = appsDialog(page);
-      await expect(dialog.locator('.list')).toHaveAttribute('data-view', 'grid');
       const items = dialog.locator('.item');
       await expect(items).toHaveCount(7);
+      await settleMotion(page);
       const dialogBox = (await dialog.boundingBox())!;
+
+      // Banner, quadrado, transparente, sem ícone, "Atalho n", imagem quebrada e o de nome longo: todos iguais.
+      for (const index of [0, 1, 2, 6]) {
+        await items.nth(index).scrollIntoViewIfNeeded();
+        await expect.poll(() => imageLoaded(items.nth(index).locator('img'))).toBe(true);
+      }
+      await items.nth(5).scrollIntoViewIfNeeded();
+      await expect(items.nth(5).locator('.fallback')).toBeVisible();
+      const side = await expectSameSquares(dialog.locator('.item .art app-tv-app-icon'));
+      expect(side, 'ícone grande').toBeGreaterThanOrEqual(55);
 
       for (let index = 0; index < 7; index++) {
         const item = items.nth(index);
         await item.scrollIntoViewIfNeeded();
         const tile = (await item.locator('app-tv-app-icon').boundingBox())!;
         const name = (await item.locator('.name').boundingBox())!;
-        const card = (await item.boundingBox())!;
-        expect(tile.height, `ícone ${index + 1}`).toBeGreaterThanOrEqual(55);
+        const launch = (await item.locator('.launch').boundingBox())!;
         expect(name.y, `nome ${index + 1} embaixo do ícone`).toBeGreaterThanOrEqual(
           tile.y + tile.height - 1,
         );
-        expect(tile.x + tile.width, 'ícone dentro do cartão').toBeLessThanOrEqual(
-          card.x + card.width + 0.5,
+        expect(tile.x + tile.width, 'ícone dentro do azulejo').toBeLessThanOrEqual(
+          launch.x + launch.width + 0.5,
         );
-        expect(card.x + card.width, 'cartão dentro do painel').toBeLessThanOrEqual(
+        expect(launch.x + launch.width, 'azulejo dentro do painel').toBeLessThanOrEqual(
           dialogBox.x + dialogBox.width + 0.5,
         );
+        expect(launch.width, `alvo ${index + 1}`).toBeGreaterThanOrEqual(43.5);
+        expect(launch.height, `alvo ${index + 1}`).toBeGreaterThanOrEqual(43.5);
         const lines = await item.locator('.name').evaluate((el) => {
           const style = getComputedStyle(el);
           const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
           return Math.round(el.getBoundingClientRect().height / line);
         });
         expect(lines, `linhas do nome ${index + 1}`).toBeLessThanOrEqual(2);
+        // Nenhuma palavra do nome é partida no meio (sem hifenização nem quebra dentro da palavra): cada palavra tem uma
+        // única caixa de linha. Quantas linhas o nome usa depende da fonte do sistema, e isto não.
+        const broken = await item.locator('.name').evaluate((el) => {
+          const node = el.firstChild as Text;
+          return [...node.data.matchAll(/\S+/g)]
+            .filter((match) => {
+              const range = document.createRange();
+              range.setStart(node, match.index);
+              range.setEnd(node, match.index + match[0].length);
+              return (
+                new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size > 1
+              );
+            })
+            .map((match) => match[0]);
+        });
+        expect(broken, `palavras partidas no meio no nome ${index + 1}`).toEqual([]);
       }
-      // O banner ocupa um azulejo mais largo, o quadrado não.
-      const banner = (await items.nth(0).locator('app-tv-app-icon').boundingBox())!;
-      const square = (await items.nth(1).locator('app-tv-app-icon').boundingBox())!;
-      expect(banner.width / banner.height).toBeGreaterThan(1.6);
-      expect(square.width / square.height).toBeCloseTo(1, 1);
-      // Cada imagem carrega (a lista carrega a imagem só perto da tela; cada cartão foi trazido à vista acima).
-      for (const index of [0, 1, 2, 6]) {
-        await expect.poll(() => imageLoaded(items.nth(index).locator('img'))).toBe(true);
-      }
+      // "Configurações", a palavra mais comprida de um app comum, cabe no rótulo com folga de pelo menos 8%. A largura do
+      // texto depende da fonte do sistema (a do Linux é bem mais larga que a do Windows), então a medida usa uma fonte de
+      // referência que os dois têm, com as mesmas métricas: Arial (no Linux, a Liberation Sans). O rótulo dispõe da coluna
+      // mais 4 px de cada folga (apps-tile.css).
+      const slack = await items
+        .nth(2)
+        .locator('.name')
+        .evaluate((el) => {
+          const css = getComputedStyle(el);
+          const context = document.createElement('canvas').getContext('2d')!;
+          context.font = `${css.fontWeight} ${css.fontSize} Arial, "Liberation Sans", sans-serif`;
+          const text = el.textContent!.trim();
+          const natural =
+            context.measureText(text).width + (parseFloat(css.letterSpacing) || 0) * text.length;
+          return 1 - natural / (el.parentElement!.clientWidth + 8);
+        });
+      expect(slack, 'folga da palavra mais comprida no rótulo').toBeGreaterThanOrEqual(0.08);
+
+      // O de nome longo corta com reticências (nunca estoura o azulejo).
+      expect(
+        await items
+          .nth(6)
+          .locator('.name')
+          .evaluate((el) => el.scrollHeight > el.clientHeight),
+      ).toBe(true);
+
+      // Colunas automáticas: no celular em pé são cerca de quatro por linha.
+      await dialog.locator('.body').evaluate((el) => (el.scrollTop = 0));
+      const rows = await items.evaluateAll((els) => {
+        const tops = els.map((el) => Math.round(el.getBoundingClientRect().top));
+        return tops.filter((top) => top === tops[0]).length;
+      });
+      expect(rows, 'azulejos na primeira linha').toBeGreaterThanOrEqual(4);
+      const overflow = await dialog
+        .locator('.body')
+        .evaluate((el) => el.scrollWidth - el.clientWidth);
+      expect(overflow, 'sem rolagem horizontal no painel').toBeLessThanOrEqual(0);
       await expectNoHorizontalScroll(page);
     });
 
-    test('na lista o ícone fica à esquerda do nome; a busca, o renomear e o ocultar seguem valendo', async ({
+    test('na edição cada azulejo mostra o pacote e os dois botões de 44 px, e a busca e o renomear seguem valendo', async ({
       page,
     }) => {
       tv.shortcuts = iconShortcuts();
       await openTv(page);
       await openApps(page);
       const dialog = appsDialog(page);
-      await dialog.getByRole('button', { name: 'Lista', exact: true }).click();
+      await button(dialog, 'Editar').click();
+      await expect(dialog.getByRole('heading', { level: 3, name: 'Todos os apps' })).toBeVisible();
       const items = dialog.locator('.item');
       await expect(items).toHaveCount(6);
+      await settleMotion(page);
       for (let index = 0; index < 6; index++) {
         const item = items.nth(index);
-        const tile = (await item.locator('app-tv-app-icon').boundingBox())!;
-        const name = (await item.locator('.name').boundingBox())!;
-        expect(tile.x + tile.width, `ícone ${index + 1} antes do nome`).toBeLessThanOrEqual(
-          name.x + 0.5,
-        );
-        expect(tile.height).toBeGreaterThanOrEqual(43);
-        expect(tile.height).toBeLessThanOrEqual(45);
+        await item.scrollIntoViewIfNeeded();
+        const card = (await item.boundingBox())!;
+        const tools = item.locator('.tool');
+        await expect(tools).toHaveCount(2);
+        for (const tool of [tools.nth(0), tools.nth(1)]) {
+          await expectTargetSize(tool);
+          const box = (await tool.boundingBox())!;
+          expect(box.x, 'botão dentro do cartão').toBeGreaterThanOrEqual(card.x - 0.5);
+          expect(box.x + box.width, 'botão dentro do cartão').toBeLessThanOrEqual(
+            card.x + card.width + 0.5,
+          );
+        }
+        await expect(item.locator('.package')).toBeVisible();
       }
-      // Busca pelo nome, ordem, renomear (o ícone aparece no campo) e ocultar.
+      await expectSameSquares(dialog.locator('.item .art app-tv-app-icon'));
+      const overflow = await dialog
+        .locator('.body')
+        .evaluate((el) => el.scrollWidth - el.clientWidth);
+      expect(overflow, 'sem rolagem horizontal no painel').toBeLessThanOrEqual(0);
+
+      // Busca pelo nome, ordem, renomear (o ícone aparece no campo) e tirar do controle.
       await dialog.getByRole('searchbox', { name: 'Buscar app' }).fill('spot');
       await expect(dialog.locator('.item .name')).toHaveText(['Spotify']);
       await expect(items.first().locator('img')).toHaveCount(1);
@@ -2229,8 +2634,9 @@ test.describe('ícones dos apps', () => {
       await expect(head.locator('.edit-name')).toHaveText('Spotify');
       await expect.poll(() => imageLoaded(head.locator('img'))).toBe(true);
       await dialog.getByRole('button', { name: 'Cancelar' }).click();
-      await button(dialog, 'Ocultar Spotify').click();
-      await expect(button(dialog, 'Mostrar Spotify')).toBeVisible();
+      await expect(button(dialog, 'Renomear Spotify')).toBeFocused();
+      await button(dialog, 'Tirar Spotify do controle').click();
+      await expect(button(dialog, 'Fixar Spotify no controle')).toBeVisible();
       await expectNoHorizontalScroll(page);
     });
   });
@@ -2264,6 +2670,7 @@ test.describe('ícones dos apps', () => {
       tvLabel: `Aplicativo ${index + 1}`,
       customLabel: null,
       enabled: true,
+      installed: true,
       iconDataUri: toDataUri(noisyIcon(index)),
     }));
     const chars = tv.shortcuts.reduce((sum, s) => sum + (s.iconDataUri?.length ?? 0), 0);
@@ -2277,7 +2684,7 @@ test.describe('ícones dos apps', () => {
     await openApps(page);
     const dialog = appsDialog(page);
     await expect(dialog.locator('.item')).toHaveCount(100);
-    await page.waitForTimeout(250);
+    await settleMotion(page);
 
     // Rola a lista inteira, um passo por quadro, e mede o maior intervalo entre dois quadros seguidos.
     const frames = await dialog.locator('.body').evaluate(async (body) => {
@@ -2372,24 +2779,56 @@ test.describe('ícones dos apps', () => {
       for (const ratio of await fallbackContrasts(page)) {
         expect(ratio, `contraste da letra no painel (${scheme})`).toBeGreaterThanOrEqual(4.5);
       }
-      await page.waitForTimeout(250);
+      await settleMotion(page);
       await print('apps-grid');
       await expectNoSeriousViolations(page);
       await expectNoHorizontalScroll(page);
 
-      await dialog.getByRole('button', { name: 'Lista', exact: true }).click();
-      await expect(dialog.locator('.list')).toHaveAttribute('data-view', 'list');
-      await page.waitForTimeout(150);
-      await print('apps-list');
+      await button(dialog, 'Editar').click();
+      await expect(dialog.getByRole('heading', { level: 3, name: 'Todos os apps' })).toBeVisible();
+      await settleMotion(page);
+      await print('apps-edit');
       await expectNoSeriousViolations(page);
       await expectNoHorizontalScroll(page);
 
       await button(dialog, 'Renomear CineVS').click();
       await expect(dialog.locator('.edit-head img')).toHaveCount(1);
-      await page.waitForTimeout(150);
-      await print('apps-edit');
+      await settleMotion(page);
+      await print('apps-rename');
       await expectNoSeriousViolations(page);
       await dialog.getByRole('button', { name: 'Cancelar' }).click();
+
+      // Tirar um app do controle e voltar: as duas seções, com o de fora igual aos outros.
+      await button(dialog, 'Tirar Atalho 5 do controle').click();
+      await expect(button(dialog, 'Fixar Atalho 5 no controle')).toBeVisible();
+      await button(dialog, 'Concluir').click();
+      await expect(
+        dialog.getByRole('heading', { level: 3, name: 'Fora do controle' }),
+      ).toBeVisible();
+      await settleMotion(page);
+      await print('apps-sections');
+      await expectNoSeriousViolations(page);
+
+      await dialog.getByRole('searchbox', { name: 'Buscar app' }).fill('o');
+      await expect(dialog.getByRole('heading', { level: 3 })).toHaveCount(0);
+      await settleMotion(page);
+      await print('apps-search');
+      await expectNoSeriousViolations(page);
+      await dialog.getByRole('searchbox', { name: 'Buscar app' }).fill('');
+
+      // Sem lista: o estado vazio com o botão que pede a lista à TV.
+      await emitSse(page, 'tv.shortcuts', []);
+      await expect(dialog.getByText('Ainda não temos a lista de apps da TV')).toBeVisible();
+      await settleMotion(page);
+      await print('apps-empty');
+      await expectNoSeriousViolations(page);
+
+      // Fechado o painel, a fileira vazia mostra a dica no lugar dos azulejos.
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(page.getByText('Fixe apps aqui: abra Apps, no topo.')).toBeVisible();
+      await print('row-empty');
+      await expectNoSeriousViolations(page);
     });
   }
 });

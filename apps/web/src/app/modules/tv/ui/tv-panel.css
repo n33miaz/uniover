@@ -29,9 +29,23 @@
   align-items: flex-start;
 }
 .panel::backdrop {
-  background: rgb(0 0 0 / 0.45);
+  background-color: rgb(0 0 0 / 0.45);
+  transition: background-color var(--dur-base) var(--ease-out);
+}
+/* Saindo: o fundo esmaece e o painel deixa de receber toque até o fim da saída. */
+.panel.leaving {
+  pointer-events: none;
+}
+.panel.leaving::backdrop {
+  background-color: rgb(0 0 0 / 0);
 }
 
+/*
+ * Entrada e saída por transição: a folha sobe (ou desce, ancorada no topo) enquanto aparece, e o fundo esmaece junto.
+ * A entrada parte do `@starting-style`, o estado de antes de o diálogo existir na tela; na saída a página espera o fim
+ * desta transição antes de tirar o painel (`TvPanel.close`). O deslocamento da saída vem em linha, do componente,
+ * porque parte de onde o dedo largou o puxador. Arrastando não há transição, para a folha não ficar atrás do dedo.
+ */
 .card {
   display: flex;
   flex-direction: column;
@@ -43,29 +57,32 @@
   background: var(--a-surface);
   box-shadow: 0 12px 36px rgb(0 0 0 / 0.3);
   overflow: hidden;
-  animation: panel-in 180ms ease-out;
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
 }
 .card.dragging {
-  animation: none;
+  transition: none;
 }
-@keyframes panel-in {
-  from {
+.leaving .card {
+  opacity: 0;
+}
+@starting-style {
+  .panel[open]::backdrop {
+    background-color: rgb(0 0 0 / 0);
+  }
+  .panel[open] .card {
     transform: translateY(24px);
     opacity: 0;
   }
-}
-[data-placement='top'] .card {
-  animation-name: panel-in-top;
-}
-@keyframes panel-in-top {
-  from {
+  .panel[open][data-placement='top'] .card {
     transform: translateY(-24px);
-    opacity: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .panel::backdrop,
   .card {
-    animation: none;
+    transition: none;
   }
 }
 

@@ -6,7 +6,14 @@ export default defineConfig({
   testDir: './e2e',
   outputDir: './test-results',
   reporter: [['list'], ['html', { open: 'never' }]],
-  use: { baseURL: `http://localhost:${PORT}` },
+  // Na CI uma segunda tentativa absorve o tropeço de tempo do executor (o teste que só passa na segunda vira "flaky" no
+  // relatório, não some). Refazer a esteira inteira por um teste custava mais de 10 minutos.
+  retries: process.env['CI'] ? 1 : 0,
+  // Na CI cada teste é uma unidade do `--shard`: sem isso o Playwright reparte por arquivo e o spec da TV no WebKit
+  // (4 min de testes) deixava uma parte com 9 minutos e as outras com 3. Os mocks são por teste (`context.route`), então
+  // a ordem e o trabalhador não importam. Local continua como antes (um arquivo por vez dentro de cada trabalhador).
+  fullyParallel: Boolean(process.env['CI']),
+  use: { baseURL: `http://localhost:${PORT}`, trace: 'on-first-retry' },
   // Serve o build de produção (o mesmo que a imagem Docker copia para o wwwroot).
   webServer: {
     command: `npm run build && node e2e/server/static-server.mjs ${PORT}`,

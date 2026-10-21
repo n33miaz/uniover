@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { FakeTvStore, HOT, createFakeTvStore, makeShortcut, pngIcon } from '../tv-test-kit';
 import { ControlPage } from './control.page';
@@ -19,6 +20,7 @@ describe('ControlPage', () => {
 
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
     store = createFakeTvStore();
     scrollTo.mockReset();
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
@@ -32,14 +34,15 @@ describe('ControlPage', () => {
   });
 
   describe('top row', () => {
-    it('starts with the fixed Apps chip, then the favourite shortcuts as chips', () => {
-      const chip = root.querySelector<HTMLButtonElement>('.top > .apps-chip')!;
-      expect(chip.textContent?.trim()).toBe('Apps');
-      expect(chip.getAttribute('aria-label')).toBe('Apps da TV');
-      expect(chip.getAttribute('aria-haspopup')).toBe('dialog');
-      expect(chip.nextElementSibling?.matches('ul.shortcuts')).toBe(true);
-      // O chip não rola junto com os atalhos.
-      expect(chip.closest('.shortcuts')).toBeNull();
+    it('has only the favourite shortcuts in the top row: the Apps button lives in the page header', () => {
+      const row = root.querySelector('.top')!;
+      expect(row.firstElementChild?.matches('ul.shortcuts')).toBe(true);
+      expect(root.querySelector('.apps-chip')).toBeNull();
+      expect(root.querySelector('button[aria-label="Apps da TV"]')).toBeNull();
+      // Nada além da lista de atalhos: nem o chip antigo, nem a dica (que só aparece com a fileira vazia).
+      expect([...row.children].map((child) => child.tagName)).toEqual(['UL']);
+      expect(row.querySelector('.hint')).toBeNull();
+      expect(row.querySelectorAll('.shortcut')).toHaveLength(3);
     });
 
     it('shows the enabled shortcuts as "Atalho n" when nothing else names them, never the package', () => {
@@ -112,31 +115,23 @@ describe('ControlPage', () => {
       }
     });
 
-    it('with no shortcuts there is no error text: only the Apps chip', () => {
+    it('with no shortcuts the row shows a quiet hint where to pin apps, not an error and not a button', () => {
       store.shortcuts.set([]);
       render();
       expect(root.querySelectorAll('.shortcut')).toHaveLength(0);
-      expect(root.querySelector('.apps-chip')).not.toBeNull();
-      expect(root.querySelector('.top')?.textContent?.trim()).toBe('Apps');
+      expect(root.querySelector('.shortcuts')).toBeNull();
+      expect(root.querySelector('.top .hint')?.textContent?.trim()).toBe(
+        'Fixe apps aqui: abra Apps, no topo.',
+      );
+      expect(root.querySelector('.top .hint')!.closest('button, a')).toBeNull();
       expect(root.textContent).not.toMatch(/sem atalhos/i);
-      expect(root.querySelector('.none, .top a')).toBeNull();
     });
 
     it('says nothing while the list is still loading', () => {
       store.shortcuts.set(null);
       render();
-      expect(root.querySelector('.top')?.textContent?.trim()).toBe('Apps');
-    });
-
-    it('the Apps chip asks the page to open the Apps panel, and it works without a remote link', () => {
-      const opened = vi.fn();
-      fixture.componentInstance.openApps.subscribe(opened);
-      store.canSend.set(false);
-      render();
-      const chip = root.querySelector<HTMLButtonElement>('.apps-chip')!;
-      chip.click();
-      // Leva o próprio botão, para o painel devolver o foco a ele ao fechar.
-      expect(opened).toHaveBeenCalledExactlyOnceWith(chip);
+      expect(root.querySelector('.top')?.textContent?.trim()).toBe('');
+      expect(root.querySelector('.top .hint')).toBeNull();
     });
 
     it('no touchpad chip or button is left in the top row', () => {
@@ -166,7 +161,6 @@ describe('ControlPage', () => {
     it('keeps everything that is not directions, touchpad or numbers outside the part that slides', () => {
       const fixed = [
         '.top',
-        '.apps-chip',
         '.shortcuts',
         '.pill.volume',
         '.round-grid',
@@ -179,7 +173,7 @@ describe('ControlPage', () => {
         expect(element!.closest('.pager'), selector).toBeNull();
       }
       expect(
-        root.querySelectorAll('.pager .pill, .pager .round, .pager .shortcut, .pager .apps-chip'),
+        root.querySelectorAll('.pager .pill, .pager .round, .pager .shortcut, .pager .top'),
       ).toHaveLength(0);
       // O que desliza: as direções, o touchpad e os números.
       expect(root.querySelectorAll('.pager .seg')).toHaveLength(4);
@@ -470,5 +464,106 @@ describe('ControlPage', () => {
     store.canSend.set(false);
     render();
     expect(byLabel('Teclado').hasAttribute('disabled')).toBe(false);
+  });
+
+  describe('what Personalizar chooses', () => {
+    const prefs = () => TestBed.inject(TvPrefs);
+    const remote = () => root.querySelector<HTMLElement>('.remote')!;
+    const roundLabels = () =>
+      [...root.querySelectorAll('.round-grid .round')].map((el) => el.getAttribute('aria-label'));
+
+    afterEach(() => localStorage.clear());
+
+    it('gives the bottom keys the comfortable scale by default, and follows the size at once', () => {
+      expect(remote().style.getPropertyValue('--key-scale')).toBe('1');
+      prefs().set({ buttonSize: 'compact' });
+      render();
+      expect(remote().style.getPropertyValue('--key-scale')).toBe('0.9');
+      prefs().set({ buttonSize: 'large' });
+      render();
+      expect(remote().style.getPropertyValue('--key-scale')).toBe('1.15');
+    });
+
+    it('lays the round keys out in four columns, three for the large size and two without the media keys', () => {
+      const cols = () => root.querySelector('.round-grid')!.getAttribute('data-cols');
+      expect(cols()).toBe('4');
+      prefs().set({ buttonSize: 'large' });
+      render();
+      expect(cols()).toBe('3');
+      prefs().set({ showMedia: false });
+      render();
+      expect(cols()).toBe('2');
+      prefs().set({ buttonSize: 'comfortable' });
+      render();
+      expect(cols()).toBe('2');
+    });
+
+    it('hides the four media keys, keeping the first four, and brings them back', () => {
+      prefs().set({ showMedia: false });
+      render();
+      expect(roundLabels()).toEqual(['Voltar', 'Início da TV', 'Menu', 'Teclado']);
+      for (const label of ['Anterior', 'Reproduzir ou pausar', 'Próxima', 'Mudo']) {
+        expect(byLabel(label)).toBeNull();
+      }
+
+      prefs().set({ showMedia: true });
+      render();
+      expect(roundLabels()).toHaveLength(8);
+    });
+
+    it('hides the channel pill, and the volume pill stays', () => {
+      prefs().set({ showChannel: false });
+      render();
+      expect(root.querySelectorAll('.pill')).toHaveLength(1);
+      expect(root.querySelector('.pill.volume')).not.toBeNull();
+      expect(root.querySelector('[aria-label="Canal"]')).toBeNull();
+      expect(byLabel('Próximo canal')).toBeNull();
+      expect(root.querySelector('.bottom')!.classList.contains('no-channel')).toBe(true);
+
+      prefs().set({ showChannel: true });
+      render();
+      expect(root.querySelectorAll('.pill')).toHaveLength(2);
+      expect(root.querySelector('.bottom')!.classList.contains('no-channel')).toBe(false);
+    });
+
+    it('keeps the ring, the numbers, the touchpad and the dots whatever is hidden', () => {
+      prefs().set({ showMedia: false, showChannel: false, buttonSize: 'large' });
+      render();
+      expect(panels()).toHaveLength(3);
+      expect(root.querySelectorAll('app-page-dots .dot')).toHaveLength(3);
+      expect(root.querySelector('.ok')).not.toBeNull();
+    });
+
+    describe('page the stage opens on', () => {
+      const marks = (host: HTMLElement) =>
+        [...host.querySelectorAll('app-page-dots .dot')].map((d) => d.getAttribute('aria-current'));
+      const reopen = () => {
+        const again = TestBed.createComponent(ControlPage);
+        again.detectChanges();
+        return again.nativeElement as HTMLElement;
+      };
+
+      it.each([
+        ['directions', [true, false, false]],
+        ['numbers', [false, true, false]],
+        ['touchpad', [false, false, true]],
+      ] as const)('"%s" opens on that page, whatever the tab remembers', (startPage, expected) => {
+        sessionStorage.setItem('uniover.tv.stage-page', '2');
+        prefs().set({ startPage });
+        expect(marks(reopen())).toEqual(expected.map((on) => (on ? 'true' : null)));
+      });
+
+      it('"last" opens on the page the tab remembers, and on the first one when it remembers none', () => {
+        prefs().set({ startPage: 'last' });
+        expect(marks(reopen())).toEqual(['true', null, null]);
+        sessionStorage.setItem('uniover.tv.stage-page', '1');
+        expect(marks(reopen())).toEqual([null, 'true', null]);
+      });
+
+      it('is the last used page by default, as the control always did', () => {
+        sessionStorage.setItem('uniover.tv.stage-page', '2');
+        expect(marks(reopen())).toEqual([null, null, 'true']);
+      });
+    });
   });
 });

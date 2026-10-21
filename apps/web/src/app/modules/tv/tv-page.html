@@ -4,57 +4,110 @@
       <!-- Convidado: visão única do controle, sem Início nem voltar. O espaço fica para o nome seguir centralizado. -->
       <span aria-hidden="true"></span>
     } @else {
-      <a routerLink="/" class="back" i18n="@@tv.header.back">&larr; Início</a>
+      <a
+        routerLink="/"
+        class="circle back"
+        aria-label="Voltar ao Início"
+        i18n-aria-label="@@tv.header.back"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          width="22"
+          height="22"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path [attr.d]="'M19 12H5'" />
+          <path [attr.d]="'M11 18l-6-6 6-6'" />
+        </svg>
+      </a>
     }
-    <div class="name">
-      <h1 i18n="@@tv.header.name">TV</h1>
+    <!--
+      O nome é o único item em fluxo desta caixa: o ponto de estado fica solto ao lado do fim do texto (posição
+      absoluta), então um nome mais comprido o empurra para fora e o nome continua no meio da tela.
+    -->
+    <div class="name" [attr.data-size]="titleSize()">
+      <h1>
+        <button
+          #titleButton
+          type="button"
+          class="title"
+          [attr.aria-haspopup]="'dialog'"
+          [attr.aria-label]="titleLabel()"
+          (click)="openCustomize(titleButton)"
+        >
+          <span class="title-text">{{ prefs.title() }}</span>
+        </button>
+      </h1>
       <app-status-indicator />
     </div>
-    <button
-      type="button"
-      class="power"
-      aria-label="Desligar a TV"
-      i18n-aria-label="@@tv.power.label"
-      [disabled]="!store.canSend()"
-      (click)="powerOpen.set(true)"
-    >
-      <app-tv-icon name="power" />
-    </button>
+    <div class="actions">
+      <button
+        #appsButton
+        type="button"
+        class="circle"
+        [attr.aria-haspopup]="'dialog'"
+        aria-label="Apps da TV"
+        i18n-aria-label="@@tv.apps.open"
+        (click)="open('apps', appsButton)"
+      >
+        <app-tv-icon name="apps" />
+      </button>
+      <button
+        type="button"
+        class="circle power"
+        aria-label="Desligar a TV"
+        i18n-aria-label="@@tv.power.label"
+        [disabled]="!store.canSend()"
+        (click)="powerOpen.set(true)"
+      >
+        <app-tv-icon name="power" />
+      </button>
+    </div>
   </header>
 
   @if (store.disabledReason(); as reason) {
     <p class="reason">{{ reason }}</p>
   }
 
-  <app-tv-control (openApps)="open('apps', $event)" (openKeyboard)="open('keyboard', $event)" />
+  <app-tv-control (openKeyboard)="open('keyboard', $event)" />
 </div>
 
 @if (showToast() && store.notice(); as notice) {
   @if (notice.kind === 'error') {
-    <p class="toast error" role="alert">{{ notice.text }}</p>
+    <p class="toast error" role="alert" [animate.leave]="'toast-leave'">{{ notice.text }}</p>
   } @else {
-    <p class="toast" role="status">{{ notice.text }}</p>
+    <p class="toast" role="status" [animate.leave]="'toast-leave'">{{ notice.text }}</p>
   }
 }
 
 @if (panel() === 'apps') {
-  <app-tv-panel [heading]="appsTitle" [opener]="panelOpener()" (closed)="closePanel()">
-    <app-tv-apps (done)="closePanel()" />
+  <app-tv-panel #appsPanel [heading]="appsTitle" [opener]="panelOpener()" (closed)="closePanel()">
+    <app-tv-apps (done)="appsPanel.close()" />
   </app-tv-panel>
 }
 
 @if (panel() === 'keyboard') {
   <app-tv-panel
+    #keyboardPanel
     [heading]="keyboardTitle"
     [placement]="'top'"
     [closable]="false"
     [opener]="panelOpener()"
     (closed)="closePanel()"
   >
-    <app-tv-keyboard (done)="closePanel()" />
+    <app-tv-keyboard (done)="keyboardPanel.close()" />
   </app-tv-panel>
 }
 
 @if (powerOpen()) {
   <app-power-sheet (closed)="powerOpen.set(false)" />
+}
+
+@if (customizeOpen()) {
+  <app-tv-customize-sheet (closed)="closeCustomize()" />
 }

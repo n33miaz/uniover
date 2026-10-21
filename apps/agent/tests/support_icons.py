@@ -36,13 +36,35 @@ def png_bytes(width: int = 4, height: int = 4, *, pad_to: int = 0) -> bytes:
     return b"".join(parts)
 
 
-def webp_bytes(size: int = 64) -> bytes:
-    return b"RIFF" + struct.pack("<I", size - 8) + b"WEBP" + b"VP8 " + b"\x00" * (size - 16)
+def webp_bytes(
+    width: int = 64, height: int | None = None, *, kind: str = "VP8L", animated: bool = False
+) -> bytes:
+    """WebP sintético com cabeçalho de verdade: é o que o núcleo lê para saber o tamanho.
+
+    `kind` escolhe o tipo (`VP8L` sem perda, `VP8 ` com perda, `VP8X` estendido).
+    """
+    high = width if height is None else height
+    if kind == "VP8L":
+        bits = (width - 1) | ((high - 1) << 14)
+        payload = b"\x2f" + bits.to_bytes(4, "little") + b"\x00" * 8
+    elif kind == "VP8 ":
+        payload = b"\x00\x00\x00\x9d\x01\x2a" + struct.pack("<HH", width, high) + b"\x00" * 8
+    elif kind == "VP8X":
+        flags = 0x02 if animated else 0x10
+        payload = bytes([flags, 0, 0, 0]) + (width - 1).to_bytes(3, "little")
+        payload += (high - 1).to_bytes(3, "little")
+    else:
+        raise ValueError(kind)
+    chunk = kind.encode() + struct.pack("<I", len(payload)) + payload
+    if len(payload) % 2:
+        chunk += b"\x00"
+    return b"RIFF" + struct.pack("<I", len(chunk) + 4) + b"WEBP" + chunk
 
 
 # Saída real de `aapt2 dump badging` do CineVS na TV (só as linhas que importam; o resto do arquivo
-# repete rótulos por idioma). Todo `application-icon-*` é XML: só o `banner` é PNG.
-BADGING_BANNER_ONLY = """\
+# repete rótulos por idioma). Todo `application-icon-*` é XML (ícone adaptativo) e o único PNG que o
+# `badging` mostra é o `banner` 16:9, que nunca serve de ícone.
+BADGING_ADAPTIVE_WITH_BANNER = """\
 package: name='com.cnvs.apptv' versionCode='50' versionName='5.0' platformBuildVersionName='16'
 minSdkVersion:'23'
 application-label:'CineVS TV'
@@ -70,6 +92,67 @@ application-icon-480:'res/mipmap-xxhdpi-v4/ic_launcher.png'
 application-icon-65534:'res/mipmap-anydpi-v26/ic_launcher.xml'
 application: label='Player' icon='res/mipmap-anydpi-v26/ic_launcher.xml'
 launchable-activity: name='com.exemplo.player.Main'  label='' icon=''
+"""
+
+# `aapt2 dump resources` do CineVS (só os blocos que importam): o mesmo recurso do XML adaptativo
+# (`res/BW.xml`) traz o ícone legado em WebP nas cinco densidades; o bloco vizinho é a camada da
+# frente (`ic_launcher_foreground`), que também é WebP quadrado e não pode virar ícone.
+RESOURCES_CINEVS = """\
+Package name=com.cnvs.apptv id=7f
+  type drawable id=08 entryCount=1
+    resource 0x7f080001 drawable/ic_banner
+      (xhdpi) (file) res/Ec.png type=PNG
+  type mipmap id=0f entryCount=2
+    resource 0x7f0f0000 mipmap/ic_launcher
+      (mdpi) (file) res/d2.webp
+      (hdpi) (file) res/MO.webp
+      (xhdpi) (file) res/qs.webp
+      (xxhdpi) (file) res/Sn.webp
+      (xxxhdpi) (file) res/sK.webp
+      (anydpi-v26) (file) res/BW.xml type=XML
+    resource 0x7f0f0001 mipmap/ic_launcher_foreground
+      (mdpi) (file) res/Nt.webp
+      (hdpi) (file) res/13.webp
+      (xhdpi) (file) res/9Q.webp
+      (xxhdpi) (file) res/iE.webp
+      (xxxhdpi) (file) res/5c.webp
+  type plurals id=10 entryCount=1
+    resource 0x7f100000 plurals/exo_controls_fastforward_by_amount_description
+      () (plurals) size=2
+        one="Fast forward %d second"
+"""
+
+# Spotify: ícone adaptativo em todas as densidades; o legado em PNG está no mesmo recurso.
+BADGING_SPOTIFY = """\
+package: name='com.spotify.tv.android' versionCode='2340200' versionName='1.134.2'
+application-label:'Spotify'
+application-icon-160:'res/mipmap-anydpi-v26/spotify_icon.xml'
+application-icon-320:'res/mipmap-anydpi-v26/spotify_icon.xml'
+application-icon-640:'res/mipmap-anydpi-v26/spotify_icon.xml'
+application-icon-65534:'res/mipmap-anydpi-v26/spotify_icon.xml'
+application: label='Spotify' icon='res/mipmap-anydpi-v26/spotify_icon.xml' banner='res/banner.png'
+launchable-activity: name='com.spotify.tv.android.TvActivity'  label='Spotify' icon=''
+leanback-launchable-activity: name='com.spotify.tv.android.TvActivity'  icon='' banner=''
+"""
+
+RESOURCES_SPOTIFY = """\
+Package name=com.spotify.tv.android id=7f
+  type drawable id=08 entryCount=2
+    resource 0x7f080056 drawable/banner
+      (xhdpi) (file) res/banner.png type=PNG
+    resource 0x7f080195 drawable/spotify_icon_background
+      (anydpi) (file) res/drawable-anydpi-v21/spotify_icon_background.png type=PNG
+  type mipmap id=0e entryCount=2
+    resource 0x7f0e0000 mipmap/spotify_icon
+      (mdpi) (file) res/mipmap-mdpi-v4/spotify_icon.png type=PNG
+      (hdpi) (file) res/mipmap-hdpi-v4/spotify_icon.png type=PNG
+      (xhdpi) (file) res/mipmap-xhdpi-v4/spotify_icon.png type=PNG
+      (xxhdpi) (file) res/mipmap-xxhdpi-v4/spotify_icon.png type=PNG
+      (xxxhdpi) (file) res/mipmap-xxxhdpi-v4/spotify_icon.png type=PNG
+      (anydpi-v26) (file) res/mipmap-anydpi-v26/spotify_icon.xml type=XML
+    resource 0x7f0e0002 mipmap/spotify_icon_foreground
+      (mdpi) (file) res/mipmap-mdpi-v4/spotify_icon_foreground.png type=PNG
+      (xxxhdpi) (file) res/mipmap-xxxhdpi-v4/spotify_icon_foreground.png type=PNG
 """
 
 BADGING_ALL_XML = """\
@@ -120,11 +203,20 @@ class FakeInspector:
         self.members: dict[tuple[bytes, str], bytes] = {}
         self.read: list[str] = []
         self.badging_error: IconToolError | None = None
+        self.resources: dict[bytes, str] = {}
+        self.resources_dumped = 0
+        self.resources_error: IconToolError | None = None
 
     async def dump_badging(self, apk: Path) -> str:
         if self.badging_error is not None:
             raise self.badging_error
         return self.badging.get(apk.read_bytes(), "")  # noqa: ASYNC240
+
+    async def dump_resources(self, apk: Path) -> str:
+        self.resources_dumped += 1
+        if self.resources_error is not None:
+            raise self.resources_error
+        return self.resources.get(apk.read_bytes(), "")  # noqa: ASYNC240
 
     async def read_member(self, apk: Path, name: str, max_bytes: int) -> bytes | None:
         self.read.append(name)

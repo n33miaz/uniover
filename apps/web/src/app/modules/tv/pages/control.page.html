@@ -1,8 +1,7 @@
-<section class="remote">
+<section class="remote" [style.--key-scale]="prefs.keyScale()">
   <app-tv-shortcut-row
     [shortcuts]="shortcuts()"
     [canSend]="store.canSend()"
-    (apps)="openApps.emit($event)"
     (open)="openShortcut($event)"
   />
 
@@ -60,7 +59,7 @@
     />
   </div>
 
-  <div class="bottom">
+  <div class="bottom" [class.no-channel]="!prefs.showChannel()">
     <div
       class="pill volume"
       role="group"
@@ -94,7 +93,7 @@
       </button>
     </div>
 
-    <div class="round-grid">
+    <div class="round-grid" [attr.data-cols]="roundColumns()">
       <button
         type="button"
         class="round"
@@ -132,66 +131,70 @@
       >
         <app-tv-icon name="keyboard" />
       </button>
-      <button
-        type="button"
-        class="round"
-        [appKey]="'MEDIA_PREVIOUS'"
-        aria-label="Anterior"
-        i18n-aria-label="@@tv.key.previous"
-      >
-        <app-tv-icon name="previous" />
-      </button>
-      <button
-        type="button"
-        class="round"
-        [appKey]="'PLAY_PAUSE'"
-        aria-label="Reproduzir ou pausar"
-        i18n-aria-label="@@tv.key.play-pause"
-      >
-        <app-tv-icon name="play-pause" />
-      </button>
-      <button
-        type="button"
-        class="round"
-        [appKey]="'MEDIA_NEXT'"
-        aria-label="Próxima"
-        i18n-aria-label="@@tv.key.next"
-      >
-        <app-tv-icon name="next" />
-      </button>
-      <button
-        type="button"
-        class="round"
-        [appKey]="'MUTE'"
-        aria-label="Mudo"
-        i18n-aria-label="@@tv.key.mute"
-      >
-        <app-tv-icon name="mute" />
-      </button>
+      @if (prefs.showMedia()) {
+        <button
+          type="button"
+          class="round"
+          [appKey]="'MEDIA_PREVIOUS'"
+          aria-label="Anterior"
+          i18n-aria-label="@@tv.key.previous"
+        >
+          <app-tv-icon name="previous" />
+        </button>
+        <button
+          type="button"
+          class="round"
+          [appKey]="'PLAY_PAUSE'"
+          aria-label="Reproduzir ou pausar"
+          i18n-aria-label="@@tv.key.play-pause"
+        >
+          <app-tv-icon name="play-pause" />
+        </button>
+        <button
+          type="button"
+          class="round"
+          [appKey]="'MEDIA_NEXT'"
+          aria-label="Próxima"
+          i18n-aria-label="@@tv.key.next"
+        >
+          <app-tv-icon name="next" />
+        </button>
+        <button
+          type="button"
+          class="round"
+          [appKey]="'MUTE'"
+          aria-label="Mudo"
+          i18n-aria-label="@@tv.key.mute"
+        >
+          <app-tv-icon name="mute" />
+        </button>
+      }
     </div>
 
-    <div class="pill" role="group" aria-label="Canal" i18n-aria-label="@@tv.channel.label">
-      <button
-        type="button"
-        class="pill-btn"
-        [appKey]="'CHANNEL_UP'"
-        aria-label="Próximo canal"
-        i18n-aria-label="@@tv.key.channel-up"
-      >
-        <app-tv-icon name="up" />
-      </button>
-      <span class="level" aria-hidden="true">
-        <span class="cap" i18n="@@tv.channel.cap">CH</span>
-      </span>
-      <button
-        type="button"
-        class="pill-btn"
-        [appKey]="'CHANNEL_DOWN'"
-        aria-label="Canal anterior"
-        i18n-aria-label="@@tv.key.channel-down"
-      >
-        <app-tv-icon name="down" />
-      </button>
-    </div>
+    @if (prefs.showChannel()) {
+      <div class="pill" role="group" aria-label="Canal" i18n-aria-label="@@tv.channel.label">
+        <button
+          type="button"
+          class="pill-btn"
+          [appKey]="'CHANNEL_UP'"
+          aria-label="Próximo canal"
+          i18n-aria-label="@@tv.key.channel-up"
+        >
+          <app-tv-icon name="up" />
+        </button>
+        <span class="level" aria-hidden="true">
+          <span class="cap" i18n="@@tv.channel.cap">CH</span>
+        </span>
+        <button
+          type="button"
+          class="pill-btn"
+          [appKey]="'CHANNEL_DOWN'"
+          aria-label="Canal anterior"
+          i18n-aria-label="@@tv.key.channel-down"
+        >
+          <app-tv-icon name="down" />
+        </button>
+      </div>
+    }
   </div>
 </section>

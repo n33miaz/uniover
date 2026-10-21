@@ -1,38 +1,43 @@
 import { TestBed } from '@angular/core/testing';
+import { SessionState } from '../../../core/session/session-state';
+import { TvStore } from '../data/tv-store';
 import { TvShortcut } from '../data/tv-types';
-import { makeShortcut, pngIcon } from '../tv-test-kit';
+import { FakeTvStore, createFakeTvStore, makeShortcut, pngIcon } from '../tv-test-kit';
 import { ShortcutRow } from './shortcut-row';
 
 describe('ShortcutRow', () => {
+  let store: FakeTvStore;
   let fixture: ReturnType<typeof TestBed.createComponent<ShortcutRow>>;
   let root: HTMLElement;
-  let askedApps: ReturnType<typeof vi.fn<(button: HTMLElement) => void>>;
   let opened: ReturnType<typeof vi.fn<(shortcut: TvShortcut) => void>>;
 
-  const chips = () => [...root.querySelectorAll<HTMLButtonElement>('.shortcut')];
-  const names = () => chips().map((el) => el.getAttribute('aria-label'));
+  const tiles = () => [...root.querySelectorAll<HTMLButtonElement>('.shortcut')];
+  const names = () => tiles().map((el) => el.getAttribute('aria-label'));
+  const hint = () => root.querySelector('.hint')?.textContent?.trim();
+
+  // O papel fica guardado no navegador (dica da sessão): um teste de convidado não pode vazar para o seguinte.
+  afterEach(() => localStorage.clear());
 
   beforeEach(() => {
+    store = createFakeTvStore();
+    TestBed.configureTestingModule({ providers: [{ provide: TvStore, useValue: store }] });
     fixture = TestBed.createComponent(ShortcutRow);
     fixture.componentRef.setInput('shortcuts', [
       makeShortcut(1),
       makeShortcut(2, { customLabel: 'Sala' }),
     ]);
-    askedApps = vi.fn<(button: HTMLElement) => void>();
     opened = vi.fn<(shortcut: TvShortcut) => void>();
-    fixture.componentInstance.apps.subscribe(askedApps);
     fixture.componentInstance.open.subscribe(opened);
     fixture.detectChanges();
     root = fixture.nativeElement;
   });
 
-  it('puts the fixed Apps chip first and the shortcuts, named by position or by the owner, after it', () => {
-    const chip = root.querySelector<HTMLButtonElement>('.top > .apps-chip')!;
-    expect(chip.textContent?.trim()).toBe('Apps');
-    expect(chip.getAttribute('aria-label')).toBe('Apps da TV');
-    expect(chip.getAttribute('aria-haspopup')).toBe('dialog');
-    expect(chip.closest('.shortcuts')).toBeNull();
+  it('is only the shortcuts, named by position or by the owner: no Apps chip and no output for it', () => {
+    expect(root.querySelector('.apps-chip')).toBeNull();
+    expect(root.querySelector('.top > ul.shortcuts')).not.toBeNull();
+    expect(root.querySelector('.hint')).toBeNull();
     expect(names()).toEqual(['Atalho 1', 'Sala']);
+    expect('apps' in fixture.componentInstance).toBe(false);
   });
 
   it('shows the app icon instead of the name, and keeps the name as the accessible name and the hover hint', () => {
@@ -42,15 +47,25 @@ describe('ShortcutRow', () => {
     ]);
     fixture.detectChanges();
     expect(names()).toEqual(['CineVS', 'Spotify']);
-    expect(chips().map((el) => el.getAttribute('title'))).toEqual(['CineVS', 'Spotify']);
-    for (const chip of chips()) {
-      expect(chip.querySelectorAll('app-tv-app-icon img')).toHaveLength(1);
-      expect(chip.querySelector('img')!.getAttribute('alt')).toBe('');
-      expect(chip.textContent?.trim()).toBe('');
-      expect(chip.querySelector('.name')).toBeNull();
+    expect(tiles().map((el) => el.getAttribute('title'))).toEqual(['CineVS', 'Spotify']);
+    for (const tile of tiles()) {
+      expect(tile.querySelectorAll('app-tv-app-icon img')).toHaveLength(1);
+      expect(tile.querySelector('img')!.getAttribute('alt')).toBe('');
+      expect(tile.textContent?.trim()).toBe('');
+      expect(tile.querySelector('.name')).toBeNull();
     }
-    expect(chips()[0].querySelector('app-tv-app-icon')!.classList.contains('wide')).toBe(true);
-    expect(chips()[1].querySelector('app-tv-app-icon')!.classList.contains('wide')).toBe(false);
+  });
+
+  it('gives every tile the same square shape, a banner included: none is marked as wide', () => {
+    fixture.componentRef.setInput('shortcuts', [
+      makeShortcut(1, { tvLabel: 'CineVS', iconDataUri: pngIcon(320, 180) }),
+      makeShortcut(2, { tvLabel: 'Spotify', iconDataUri: pngIcon(96, 96) }),
+      makeShortcut(3),
+    ]);
+    fixture.detectChanges();
+    for (const icon of root.querySelectorAll('.shortcut app-tv-app-icon')) {
+      expect(icon.classList.contains('wide')).toBe(false);
+    }
   });
 
   it('shows a tile with the initial (or the position, for "Atalho n") for an app without an icon, hidden from readers', () => {
@@ -60,13 +75,13 @@ describe('ShortcutRow', () => {
       makeShortcut(3, { tvLabel: 'YouTube', iconDataUri: null }),
     ]);
     fixture.detectChanges();
-    const tiles = [...root.querySelectorAll<HTMLElement>('.shortcut .fallback')];
-    expect(tiles.map((tile) => tile.textContent?.trim())).toEqual(['1', 'S', 'Y']);
-    expect(tiles.every((tile) => tile.getAttribute('aria-hidden') === 'true')).toBe(true);
+    const fallbacks = [...root.querySelectorAll<HTMLElement>('.shortcut .fallback')];
+    expect(fallbacks.map((tile) => tile.textContent?.trim())).toEqual(['1', 'S', 'Y']);
+    expect(fallbacks.every((tile) => tile.getAttribute('aria-hidden') === 'true')).toBe(true);
     expect(names()).toEqual(['Atalho 1', 'Sala', 'YouTube']);
   });
 
-  it('keeps the chips in the order they were given, whatever they show', () => {
+  it('keeps the tiles in the order they were given, whatever they show', () => {
     fixture.componentRef.setInput('shortcuts', [
       makeShortcut(1, { tvLabel: 'Um', iconDataUri: pngIcon(96, 96) }),
       makeShortcut(2, { tvLabel: 'Dois' }),
@@ -76,14 +91,8 @@ describe('ShortcutRow', () => {
     expect(names()).toEqual(['Um', 'Dois', 'Três']);
   });
 
-  it('hands over the Apps button itself, so the panel can give the focus back to it', () => {
-    const chip = root.querySelector<HTMLButtonElement>('.apps-chip')!;
-    chip.click();
-    expect(askedApps).toHaveBeenCalledWith(chip);
-  });
-
   it('tells which shortcut was tapped', () => {
-    chips()[1].click();
+    tiles()[1].click();
     expect(opened).toHaveBeenCalledWith(expect.objectContaining({ id: 's2' }));
   });
 
@@ -96,18 +105,55 @@ describe('ShortcutRow', () => {
     expect(opened).toHaveBeenCalledWith(expect.objectContaining({ id: 's1' }));
   });
 
-  it('dims the chips without taking them out of the tab order when it cannot send', () => {
-    expect(chips()[0].hasAttribute('aria-disabled')).toBe(false);
+  it('dims the tiles without taking them out of the tab order when it cannot send', () => {
+    expect(tiles()[0].hasAttribute('aria-disabled')).toBe(false);
     fixture.componentRef.setInput('canSend', false);
     fixture.detectChanges();
-    expect(chips()[0].getAttribute('aria-disabled')).toBe('true');
-    expect(chips()[0].disabled).toBe(false);
+    expect(tiles()[0].getAttribute('aria-disabled')).toBe('true');
+    expect(tiles()[0].disabled).toBe(false);
   });
 
-  it('shows only the Apps chip when there are no shortcuts', () => {
-    fixture.componentRef.setInput('shortcuts', []);
-    fixture.detectChanges();
-    expect(chips()).toHaveLength(0);
-    expect(root.querySelector('.top')?.textContent?.trim()).toBe('Apps');
+  describe('with no active shortcut', () => {
+    const empty = () => {
+      fixture.componentRef.setInput('shortcuts', []);
+      fixture.detectChanges();
+    };
+
+    it('shows a quiet hint where to pin apps, not a button and not an error', () => {
+      empty();
+      expect(tiles()).toHaveLength(0);
+      expect(root.querySelector('ul')).toBeNull();
+      expect(hint()).toBe('Fixe apps aqui: abra Apps, no topo.');
+      expect(root.querySelector('.hint')!.closest('button, a')).toBeNull();
+      expect(root.querySelector('[role="alert"]')).toBeNull();
+    });
+
+    it('does not tell a guest to pin anything (only the owner can)', () => {
+      TestBed.inject(SessionState).setUser({
+        id: '1',
+        email: 'a@b.c',
+        displayName: 'Alice',
+        role: 'guest',
+      });
+      empty();
+      expect(hint()).toBe('Nenhum app fixado no controle.');
+    });
+
+    it('says nothing while the list has not arrived yet, and the hint takes over once it is known to be empty', () => {
+      store.shortcuts.set(null);
+      empty();
+      expect(root.querySelector('.hint')).toBeNull();
+      store.shortcuts.set([]);
+      fixture.detectChanges();
+      expect(hint()).toBe('Fixe apps aqui: abra Apps, no topo.');
+    });
+
+    it('gives way to the tiles when a shortcut is pinned', () => {
+      empty();
+      fixture.componentRef.setInput('shortcuts', [makeShortcut(1)]);
+      fixture.detectChanges();
+      expect(root.querySelector('.hint')).toBeNull();
+      expect(names()).toEqual(['Atalho 1']);
+    });
   });
 });

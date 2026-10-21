@@ -1,7 +1,8 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
-import { KeyButton } from './key-button';
+import { KeyButton, vibrate } from './key-button';
 
 @Component({
   imports: [KeyButton],
@@ -171,5 +172,47 @@ describe('KeyButton', () => {
     fixture.destroy();
     await vi.advanceTimersByTimeAsync(2_000);
     expect(sendKey).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('vibrate', () => {
+  const vibrateSpy = vi.fn();
+
+  beforeEach(() => {
+    localStorage.clear();
+    vibrateSpy.mockReset();
+    Object.defineProperty(navigator, 'vibrate', { value: vibrateSpy, configurable: true });
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+  });
+
+  afterEach(() => {
+    TestBed.inject(TvPrefs).reset();
+    localStorage.clear();
+    vi.unstubAllGlobals();
+    Reflect.deleteProperty(navigator, 'vibrate');
+  });
+
+  it('gives a short vibration by default', () => {
+    TestBed.inject(TvPrefs);
+    vibrate();
+    expect(vibrateSpy).toHaveBeenCalledExactlyOnceWith(8);
+  });
+
+  it('stays quiet once the owner turns the vibration off in Personalizar, and comes back when turned on', () => {
+    const prefs = TestBed.inject(TvPrefs);
+    prefs.set({ vibration: false });
+    vibrate();
+    expect(vibrateSpy).not.toHaveBeenCalled();
+
+    prefs.set({ vibration: true });
+    vibrate();
+    expect(vibrateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays quiet for who asked for less motion, even with the vibration on', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    TestBed.inject(TvPrefs);
+    vibrate();
+    expect(vibrateSpy).not.toHaveBeenCalled();
   });
 });

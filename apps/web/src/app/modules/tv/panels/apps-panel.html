@@ -1,3 +1,63 @@
+<!--
+  Um azulejo, usado nas três listas (seções, busca e edição). `i` é a posição na lista, para o escalonado da entrada;
+  `flat` é a lista única (busca ou edição), onde quem está no controle ganha uma marca.
+-->
+<ng-template #tile let-shortcut let-i="i" let-flat="flat">
+  <li
+    class="item"
+    [class.editing]="editing() === shortcut.id"
+    [class.cardlike]="editMode() && editing() !== shortcut.id"
+    [class.enter]="i < stagger"
+    [style.--i]="i"
+  >
+    @if (editing() === shortcut.id) {
+      <form class="edit" (submit)="saveRename(shortcut, $event)">
+        <div class="edit-head">
+          <app-tv-app-icon [shortcut]="shortcut" />
+          <span class="text">
+            <span class="edit-name">{{ label(shortcut) }}</span>
+            <span class="edit-package">{{ shortcut.package }}</span>
+          </span>
+        </div>
+        <label [for]="'rename-' + shortcut.id" i18n="@@tv.apps.rename-field">Nome do atalho</label>
+        <input
+          [id]="'rename-' + shortcut.id"
+          type="text"
+          autocomplete="off"
+          [attr.maxlength]="maxLabel"
+          [value]="draft()"
+          (input)="onDraft($event)"
+        />
+        <p class="note" i18n="@@tv.apps.rename-help">Deixe em branco para voltar ao nome padrão.</p>
+        <div class="actions">
+          <button
+            type="button"
+            class="secondary"
+            (click)="cancelRename(shortcut)"
+            i18n="@@tv.apps.cancel"
+          >
+            Cancelar
+          </button>
+          <button type="submit" class="primary" [disabled]="busy()" i18n="@@tv.apps.save">
+            Salvar
+          </button>
+        </div>
+      </form>
+    } @else {
+      <app-tv-apps-tile
+        [shortcut]="shortcut"
+        [managing]="editMode()"
+        [marked]="flat"
+        [canSend]="store.canSend()"
+        [busy]="busy()"
+        (launch)="launch($event)"
+        (pin)="toggle($event)"
+        (rename)="startRename($event)"
+      />
+    }
+  </li>
+</ng-template>
+
 @if (!loaded()) {
   <p class="note" role="status" i18n="@@tv.apps.loading">Carregando os apps…</p>
 } @else if (all().length === 0) {
@@ -29,133 +89,110 @@
     }
   </div>
 } @else {
-  <div class="search">
-    <app-tv-icon name="search" />
-    <input
-      type="search"
-      autocomplete="off"
-      spellcheck="false"
-      aria-label="Buscar app"
-      i18n-aria-label="@@tv.apps.search-label"
-      placeholder="Buscar app"
-      i18n-placeholder="@@tv.apps.search-placeholder"
-      [value]="query()"
-      (input)="onQuery($event)"
-    />
-  </div>
-
-  <div class="tools-row">
-    <div class="seg" role="group" aria-label="Como mostrar" i18n-aria-label="@@tv.apps.view-label">
-      <button type="button" [attr.aria-pressed]="view() === 'grid'" (click)="setView('grid')">
-        <app-tv-icon name="apps" />
-        <span i18n="@@tv.apps.view-grid">Grade</span>
-      </button>
-      <button type="button" [attr.aria-pressed]="view() === 'list'" (click)="setView('list')">
-        <app-tv-icon name="list" />
-        <span i18n="@@tv.apps.view-list">Lista</span>
-      </button>
+  <div class="bar">
+    <div class="search">
+      <app-tv-icon name="search" />
+      <input
+        type="search"
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Buscar app"
+        i18n-aria-label="@@tv.apps.search-label"
+        placeholder="Buscar app"
+        i18n-placeholder="@@tv.apps.search-placeholder"
+        [value]="query()"
+        (input)="onQuery($event)"
+      />
     </div>
     <button
       type="button"
-      class="refresh"
-      [disabled]="!store.canSend() || refreshing()"
+      class="icon-btn refresh"
+      [attr.aria-label]="refreshLabel()"
+      [attr.aria-disabled]="refreshing() ? 'true' : null"
+      [disabled]="!store.canSend()"
       (click)="refresh()"
     >
-      <app-tv-icon name="refresh" />
-      @if (refreshing()) {
-        <span i18n="@@tv.apps.searching-short">Buscando…</span>
-      } @else {
-        <span i18n="@@tv.apps.refresh">Atualizar lista</span>
-      }
+      <app-tv-icon name="refresh" [class.spin]="refreshing()" />
     </button>
+    @if (!isGuest()) {
+      <button type="button" class="edit-toggle" [class.on]="editMode()" (click)="toggleEdit()">
+        @if (editMode()) {
+          <span i18n="@@tv.apps.edit-done">Concluir</span>
+        } @else {
+          <span i18n="@@tv.apps.edit">Editar</span>
+        }
+      </button>
+    }
   </div>
+  <!-- Quem usa leitor de tela ouve o andamento do pedido; a região fica sempre no lugar para o aviso ser lido. -->
+  <span class="sr" role="status">{{ refreshing() ? searchingText : '' }}</span>
 
   @if (visible().length === 0) {
     <p class="note" role="status" i18n="@@tv.apps.no-match">
       Nenhum app encontrado para essa busca.
     </p>
-  } @else {
-    <ul class="list" [attr.data-view]="view()">
-      @for (shortcut of visible(); track shortcut.id) {
-        <li
-          class="item"
-          [class.off]="!shortcut.enabled"
-          [class.editing]="editing() === shortcut.id"
-        >
-          @if (editing() === shortcut.id) {
-            <form class="edit" (submit)="saveRename(shortcut, $event)">
-              <div class="edit-head">
-                <app-tv-app-icon [shortcut]="shortcut" />
-                <span class="text">
-                  <span class="edit-name">{{ label(shortcut) }}</span>
-                  <span class="edit-package">{{ shortcut.package }}</span>
-                </span>
-              </div>
-              <label [for]="'rename-' + shortcut.id" i18n="@@tv.apps.rename-field">
-                Nome do atalho
-              </label>
-              <input
-                [id]="'rename-' + shortcut.id"
-                type="text"
-                autocomplete="off"
-                [attr.maxlength]="maxLabel"
-                [value]="draft()"
-                (input)="onDraft($event)"
-              />
-              <p class="note" i18n="@@tv.apps.rename-help">
-                Deixe em branco para voltar ao nome padrão.
-              </p>
-              <div class="actions">
-                <button
-                  type="button"
-                  class="secondary"
-                  (click)="cancelRename()"
-                  i18n="@@tv.apps.cancel"
-                >
-                  Cancelar
-                </button>
-                <button type="submit" class="primary" [disabled]="busy()" i18n="@@tv.apps.save">
-                  Salvar
-                </button>
-              </div>
-            </form>
-          } @else {
-            <button
-              type="button"
-              class="launch"
-              [disabled]="!store.canSend() || !shortcut.enabled"
-              (click)="launch(shortcut)"
-            >
-              <app-tv-app-icon [shortcut]="shortcut" [lazy]="true" />
-              <span class="text">
-                <span class="name">{{ label(shortcut) }}</span>
-                <span class="package">{{ shortcut.package }}</span>
-              </span>
-            </button>
-            @if (!isGuest()) {
-              <div class="tools">
-                <button
-                  type="button"
-                  class="tool"
-                  [attr.aria-label]="renameLabel(shortcut)"
-                  (click)="startRename(shortcut)"
-                >
-                  <app-tv-icon name="rename" />
-                </button>
-                <button
-                  type="button"
-                  class="tool"
-                  [attr.aria-label]="toggleLabel(shortcut)"
-                  [disabled]="busy()"
-                  (click)="toggle(shortcut)"
-                >
-                  <app-tv-icon [name]="shortcut.enabled ? 'hide' : 'show'" />
-                </button>
-              </div>
-            }
-          }
-        </li>
+  } @else if (flat()) {
+    <section class="group">
+      @if (editMode()) {
+        <h3 class="ui-section-label" i18n="@@tv.apps.group-all">Todos os apps</h3>
       }
-    </ul>
+      <ul class="grid" [class.roomy]="editMode()">
+        @for (shortcut of visible(); track shortcut.id; let i = $index) {
+          <ng-container
+            [ngTemplateOutlet]="tile"
+            [ngTemplateOutletContext]="{ $implicit: shortcut, i: i, flat: true }"
+          />
+        }
+      </ul>
+    </section>
+  } @else {
+    @if (pinned().length > 0 || !isGuest()) {
+      <section class="group" aria-labelledby="apps-group-pinned">
+        <h3 id="apps-group-pinned" class="ui-section-label" i18n="@@tv.apps.group-pinned">
+          No controle
+        </h3>
+        @if (pinned().length === 0) {
+          <p class="note" i18n="@@tv.apps.pinned-empty">
+            Nenhum app no controle. Toque em Editar para fixar.
+          </p>
+        } @else {
+          <ul class="grid">
+            @for (shortcut of pinned(); track shortcut.id; let i = $index) {
+              <ng-container
+                [ngTemplateOutlet]="tile"
+                [ngTemplateOutletContext]="{ $implicit: shortcut, i: i, flat: false }"
+              />
+            }
+          </ul>
+        }
+      </section>
+    }
+    @if (unpinned().length > 0) {
+      <section class="group" aria-labelledby="apps-group-rest">
+        <h3 id="apps-group-rest" class="ui-section-label" i18n="@@tv.apps.group-rest">
+          Fora do controle
+        </h3>
+        <!-- O convidado não vê o Editar: para ele a dica não o cita. -->
+        @if (isGuest()) {
+          <p class="note" i18n="@@tv.apps.rest-hint-guest">Toque para abrir.</p>
+        } @else {
+          <p class="note" i18n="@@tv.apps.rest-hint">
+            Toque para abrir. Para ter no controle, fixe em Editar.
+          </p>
+        }
+        <ul class="grid">
+          @for (shortcut of unpinned(); track shortcut.id; let i = $index) {
+            <ng-container
+              [ngTemplateOutlet]="tile"
+              [ngTemplateOutletContext]="{
+                $implicit: shortcut,
+                i: pinned().length + i,
+                flat: false,
+              }"
+            />
+          }
+        </ul>
+      </section>
+    }
   }
 }

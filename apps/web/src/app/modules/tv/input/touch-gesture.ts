@@ -1,3 +1,5 @@
+import type { TvPadSpeed } from '../data/tv-prefs';
+
 export type PadDirection = 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
 
 export interface GestureConfig {
@@ -10,6 +12,16 @@ export interface GestureConfig {
 }
 
 export const DEFAULT_GESTURE: GestureConfig = { stepPx: 24, tapMaxMs: 200, tapMaxPx: 10 };
+
+/**
+ * Sensibilidade escolhida em Personalizar: o deslocamento que vira seta. Menor é mais sensível. Fica sempre acima do
+ * limite do toque (`tapMaxPx`), senão um toque parado viraria seta.
+ */
+export const STEP_PX_BY_SPEED: Readonly<Record<TvPadSpeed, number>> = {
+  slow: 36,
+  normal: DEFAULT_GESTURE.stepPx,
+  fast: 16,
+};
 
 /**
  * Leitura de um dedo no touchpad, sem tocar no DOM (para testar com números). O dedo funciona como uma alavanca:

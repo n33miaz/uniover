@@ -4,16 +4,20 @@ import { SessionState } from './session-state';
 /**
  * Aviso "sessão a confirmar": aparece enquanto o app não conseguiu confirmar a sessão (sem rede, servidor
  * dormindo). A casca segue disponível e nada local é apagado. Fica na raiz do app; a tela de Ajustes mostra
- * o mesmo estado.
+ * o mesmo estado. A faixa abre e fecha empurrando a tela (ver `ui-collapse` em styles.css), sem salto.
  */
 @Component({
   selector: 'app-session-notice',
   template: `
     <div role="status">
       @if (session.status() === 'pending') {
-        <p class="notice" i18n="@@session.pending">
-          Sessão a confirmar. Assim que houver conexão o app confirma sozinho; nada foi apagado.
-        </p>
+        <div class="ui-collapse" [animate.leave]="'leaving'">
+          <div class="ui-collapse-inner">
+            <p class="notice" i18n="@@session.pending">
+              Sessão a confirmar. Assim que houver conexão o app confirma sozinho; nada foi apagado.
+            </p>
+          </div>
+        </div>
       }
     </div>
   `,

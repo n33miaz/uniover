@@ -10,6 +10,28 @@
     Sem o emissor infravermelho, a TV só volta com o controle original.
   </p>
 
+  <!-- Ainda não existe no agente: é só um aviso do que vem, por isso não é botão. -->
+  <div
+    class="ui-group schedule"
+    role="group"
+    aria-labelledby="power-schedule-title"
+    aria-describedby="power-schedule-note"
+    aria-disabled="true"
+  >
+    <div class="ui-row">
+      <span class="ui-tile"><app-tv-icon name="clock" /></span>
+      <span class="ui-row-text">
+        <span id="power-schedule-title" class="ui-row-title" i18n="@@tv.power.schedule"
+          >Agendar desligamento</span
+        >
+      </span>
+      <span class="ui-chip" i18n="@@tv.power.soon">Em breve</span>
+    </div>
+    <span id="power-schedule-note" class="sr-only" i18n="@@tv.power.schedule-note"
+      >Ainda não disponível.</span
+    >
+  </div>
+
   @if (error(); as text) {
     <p class="error" role="alert">{{ text }}</p>
   }

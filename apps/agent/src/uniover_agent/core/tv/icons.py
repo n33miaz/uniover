@@ -4,7 +4,9 @@ Duas peças:
 
 * `IconResolver`: para um app, devolve o ícone (do cache, ou trazendo o APK da TV, perguntando ao
   `aapt2` e lendo só o arquivo de imagem de dentro do ZIP). Guarda o resultado por versão do app,
-  inclusive o "esta versão não tem ícone útil", para não baixar dezenas de MB à toa;
+  inclusive o "esta versão não tem ícone útil", para não baixar dezenas de MB à toa. Só publica
+  imagem **quadrada**: o banner 16:9 da TV nunca vira ícone, e um app sem imagem quadrada fica
+  sem ícone (a tela mostra a inicial) em vez de ganhar um azulejo largo;
 * `AppIconPublisher`: tarefa de fundo, um APK por vez, que publica os ícones **depois** da lista
   sem ícones (`tv.apps.v1`). A cópia do APK não passa pela trava dos comandos curtos do ADB, então
   uma tecla ou um texto digitado nunca esperam um download.
@@ -19,12 +21,20 @@ import hashlib
 import logging
 import re
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Final, Protocol
 
 from uniover_agent.core.domain import TvState
 from uniover_agent.core.envelopes import EnvelopeFactory, serialized_size
 from uniover_agent.core.tv.apps import AppEntry
-from uniover_agent.core.tv.icon_badging import MAX_ICON_BYTES, detect_mime, parse_badging
+from uniover_agent.core.tv.icon_badging import (
+    MAX_ICON_BYTES,
+    PREFERRED_MAX_SIDE,
+    image_info,
+    parse_badging,
+)
+from uniover_agent.core.tv.icon_resources import parse_icon_fallbacks
 from uniover_agent.ports import (
     AdbError,
     AdbNotReady,
@@ -49,6 +59,7 @@ PAUSE_BETWEEN_APKS_SECONDS: Final = 0.5
 _ICON_FRAMING_BYTES: Final = 48
 # APKs de configuração por densidade (onde os PNG de alta resolução costumam ficar).
 _DENSITY_SPLIT: Final = re.compile(r"/split_config\.(?P<density>[a-z]*dpi)\.apk$")
+_SPLIT_NAME: Final = re.compile(r"/split_[^/]*\.apk$")
 _DENSITY_RANK: Final = {
     "xxxhdpi": 0,
     "xxhdpi": 1,
@@ -61,11 +72,14 @@ _DENSITY_RANK: Final = {
 
 
 def validate_icon(data: bytes | None) -> AppIcon | None:
-    """O ícone se os bytes são PNG/WebP de verdade e cabem no limite do contrato; senão `None`."""
+    """O ícone se os bytes são PNG/WebP **quadrado** de verdade e cabem no limite do contrato.
+
+    Também vale para o que sai do cache: um banner guardado antes da regra do quadrado não passa.
+    """
     if not data or len(data) > MAX_ICON_BYTES:
         return None
-    mime = detect_mime(data)
-    return AppIcon(mime, data) if mime else None
+    info = image_info(data)
+    return AppIcon(info.mime, data) if info is not None and info.is_square else None
 
 
 def _density_splits(paths: Sequence[str]) -> list[str]:
@@ -75,6 +89,72 @@ def _density_splits(paths: Sequence[str]) -> list[str]:
         if match and match.group("density") in _DENSITY_RANK:
             found.append((_DENSITY_RANK[match.group("density")], path))
     return [path for _, path in sorted(found)]
+
+
+def _split_paths(paths: Sequence[str]) -> tuple[str, list[str]]:
+    """O APK principal (`base.apk`) e os demais.
+
+    Sem `base.apk` (app de sistema, por exemplo), vale o primeiro que não seja `split_*.apk`: o
+    ícone fica sempre no principal, nunca num APK de idioma.
+    """
+    main = next((path for path in paths if path.endswith("/base.apk")), None)
+    if main is None:
+        main = next((path for path in paths if not _SPLIT_NAME.search(path)), paths[0])
+    return main, [path for path in paths if path != main]
+
+
+@dataclass(frozen=True, slots=True)
+class _Square:
+    """Uma imagem quadrada aceita: o lado em pixels e o arquivo de onde veio (para o registro)."""
+
+    icon: AppIcon
+    side: int
+    name: str
+
+
+def _pick(found: Sequence[_Square]) -> _Square | None:
+    """A maior imagem de até `PREFERRED_MAX_SIDE` px; se todas passam disso, a menor delas.
+
+    Sem biblioteca de imagem não há como reduzir, então o tamanho padronizado vem da escolha: o
+    ícone fica nítido e leve, sem passar do necessário. Empate no lado vale a primeira da lista
+    (a de maior densidade).
+    """
+    small = [item for item in found if item.side <= PREFERRED_MAX_SIDE]
+    if small:
+        return max(small, key=lambda item: item.side)
+    return min(found, key=lambda item: item.side, default=None)
+
+
+@dataclass(slots=True)
+class _Tally:
+    """O que foi tentado em um app, para explicar no registro por que ficou sem ícone."""
+
+    tried: int = 0
+    absent: int = 0  # fora do APK, ou acima do limite de tamanho
+    unusable: int = 0  # não é PNG/WebP legível
+    non_square: int = 0  # imagem de verdade, mas largura diferente da altura (banner)
+    adaptive: bool = False  # o app declara o ícone em XML adaptativo
+
+    def reason(self) -> str:
+        """Texto fixo: nunca o conteúdo da imagem nem caminho do computador."""
+        if self.non_square:
+            return f"só há imagem não quadrada ({self.non_square} de {self.tried} testadas)"
+        if self.tried == 0:
+            if self.adaptive:
+                return "ícone adaptativo (XML) sem imagem PNG/WebP de reserva"
+            return "o APK não declara imagem PNG/WebP de ícone"
+        if self.absent:
+            return "as imagens de ícone não estão no APK ou passam do limite de tamanho"
+        return "nenhuma imagem de ícone legível"
+
+
+@dataclass(frozen=True, slots=True)
+class _Look:
+    """Resultado de olhar um APK: o ícone achado (ou não), os nomes tentados e a versão."""
+
+    square: _Square | None
+    candidates: tuple[str, ...]
+    version: int | None
 
 
 class IconResolver:
@@ -110,44 +190,81 @@ class IconResolver:
         paths = await self._source.apk_paths(package)
         if not paths:
             return None
-        icon, badging_version = await self._icon_from(paths)
+        tally = _Tally()
+        square, badging_version = await self._icon_from(paths, tally)
+        icon = None if square is None else square.icon
+        if square is None:
+            _log.info("app %s ficou sem ícone: %s", package, tally.reason())
+        else:
+            _log.debug(
+                "ícone de %s: %s, %dx%d, %d bytes",
+                package,
+                square.name,
+                square.side,
+                square.side,
+                len(square.icon.data),
+            )
         effective = version if version is not None else badging_version
         if effective is not None:
             self._cache.store(package, effective, icon)
         return icon
 
-    async def _icon_from(self, paths: Sequence[str]) -> tuple[AppIcon | None, int | None]:
-        base_icon, candidates, version = await self._look_in(paths[0], None)
-        if base_icon is not None or not candidates:
-            return base_icon, version
-        # O base não tinha imagem utilizável: os PNG podem estar no APK da densidade.
-        for split in _density_splits(paths[1:]):
-            icon, _, _ = await self._look_in(split, candidates)
-            if icon is not None:
-                return icon, version
-        return None, version
+    async def _icon_from(
+        self, paths: Sequence[str], tally: _Tally
+    ) -> tuple[_Square | None, int | None]:
+        main, others = _split_paths(paths)
+        first = await self._look_in(main, None, tally)
+        if first.square is not None or not first.candidates:
+            return first.square, first.version
+        # O principal não tinha imagem utilizável: os PNG podem estar no APK da densidade.
+        for split in _density_splits(others):
+            look = await self._look_in(split, first.candidates, tally)
+            if look.square is not None:
+                return look.square, first.version
+        return None, first.version
 
-    async def _look_in(
-        self, remote: str, known: Sequence[str] | None
-    ) -> tuple[AppIcon | None, tuple[str, ...], int | None]:
+    async def _look_in(self, remote: str, known: Sequence[str] | None, tally: _Tally) -> _Look:
         """Copia o APK, lê os candidatos (os do `badging` ou os já conhecidos) e apaga a cópia."""
         local = self._scratch.new_path()
         try:
             await self._source.pull_apk(remote, local)
-            candidates: tuple[str, ...]
-            version: int | None = None
-            if known is None:
-                info = parse_badging(await self._inspector.dump_badging(local))
-                candidates, version = info.candidates, info.version_code
-            else:
-                candidates = tuple(known)
-            for name in candidates:
-                icon = validate_icon(await self._inspector.read_member(local, name, MAX_ICON_BYTES))
-                if icon is not None:
-                    return icon, candidates, version
-            return None, candidates, version
+            if known is not None:
+                return _Look(_pick(await self._scan(local, known, tally)), tuple(known), None)
+            info = parse_badging(await self._inspector.dump_badging(local))
+            tally.adaptive = bool(info.adaptive)
+            candidates = list(info.candidates)
+            found = await self._scan(local, candidates, tally)
+            if not found and info.adaptive:
+                # Ícone adaptativo (XML): a imagem quadrada de reserva só consta nos recursos.
+                table = await self._inspector.dump_resources(local)
+                fallbacks = [
+                    name
+                    for name in parse_icon_fallbacks(table, info.adaptive)
+                    if name not in candidates
+                ]
+                candidates.extend(fallbacks)
+                found = await self._scan(local, fallbacks, tally)
+            return _Look(_pick(found), tuple(candidates), info.version_code)
         finally:
             self._scratch.discard(local)
+
+    async def _scan(self, apk: Path, names: Sequence[str], tally: _Tally) -> list[_Square]:
+        """Lê cada candidato e fica só com as imagens quadradas que cabem no limite."""
+        found: list[_Square] = []
+        for name in names:
+            tally.tried += 1
+            data = await self._inspector.read_member(apk, name, MAX_ICON_BYTES)
+            if data is None or len(data) > MAX_ICON_BYTES:
+                tally.absent += 1
+                continue
+            info = image_info(data)
+            if info is None:
+                tally.unusable += 1
+            elif not info.is_square:
+                tally.non_square += 1
+            else:
+                found.append(_Square(AppIcon(info.mime, data), info.width, name))
+        return found
 
 
 class IconRequests(Protocol):

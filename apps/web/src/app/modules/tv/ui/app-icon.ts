@@ -1,23 +1,18 @@
 import { Component, computed, input, signal } from '@angular/core';
-import {
-  AppIconSubject,
-  fallbackGlyph,
-  fallbackHue,
-  iconShape,
-  iconSource,
-} from './app-icon-source';
+import { AppIconSubject, fallbackGlyph, fallbackHue, iconSource } from './app-icon-source';
 
 /**
- * Azulejo de cantos arredondados com o ícone de um app da TV. Com ícone, mostra a imagem inteira (sem cortar nem
- * esticar): o ícone quadrado enche o azulejo e o banner 16:9 ganha um azulejo mais largo, de mesma altura. Sem ícone
- * (ou se a imagem falhar), mostra a inicial do app sobre uma cor estável do pacote. É decorativo: quem o usa dá o
- * nome ao botão (`aria-label` ou o texto ao lado). O tamanho vem da variável `--tile`, definida por quem o usa.
+ * Azulejo quadrado de cantos arredondados com o ícone de um app da TV. Todos têm o mesmo tamanho e o mesmo formato:
+ * a imagem fica inteira e centralizada dentro do quadrado (sem cortar nem esticar), com a mesma folga em volta. O
+ * que não é quadrado (o CineVS chega como banner 16:9) ganha faixas neutras em cima e embaixo, em vez de alargar o
+ * azulejo. Sem ícone (ou se a imagem falhar), mostra a inicial do app sobre uma cor estável do pacote. É decorativo:
+ * quem o usa dá o nome ao botão (`aria-label` ou o texto ao lado). O tamanho vem da variável `--tile`, definida por
+ * quem o usa.
  */
 @Component({
   selector: 'app-tv-app-icon',
   templateUrl: './app-icon.html',
   styleUrl: './app-icon.css',
-  host: { '[class.wide]': 'wide()' },
 })
 export class AppIcon {
   readonly shortcut = input.required<AppIconSubject>();
@@ -33,11 +28,6 @@ export class AppIcon {
     return uri && uri !== this.failed() ? uri : null;
   });
 
-  /** A forma sai do cabeçalho da imagem, antes de ela carregar: o azulejo já nasce do tamanho certo, sem salto. */
-  protected readonly wide = computed(() => {
-    const uri = this.source();
-    return uri !== null && iconShape(uri) === 'wide';
-  });
   protected readonly hue = computed(() => `hue-${fallbackHue(this.shortcut().package)}`);
   protected readonly glyph = computed(() => fallbackGlyph(this.shortcut()));
 
