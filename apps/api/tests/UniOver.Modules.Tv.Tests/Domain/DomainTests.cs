@@ -177,6 +177,136 @@ public class DomainTests
         list[0].CustomLabel.Should().BeNull();
     }
 
+    private static List<Shortcut> Catalog(params string[] packages)
+    {
+        var (list, _) = ShortcutCatalog.Merge([], [.. packages.Select(p => new IncomingApp(p, p))], Now);
+        return [.. list];
+    }
+
+    private static Guid[] IdsOf(IReadOnlyList<Shortcut> list, params string[] packagesInOrder) =>
+        [.. packagesInOrder.Select(p => list.Single(s => s.Package == p).Id)];
+
+    private static string[] InOrder(IEnumerable<Shortcut> list) => [.. list.OrderBy(s => s.Position).Select(s => s.Package)];
+
+    [Fact]
+    public void Reorder_PutsEveryShortcutInTheGivenOrder_NumberedFromOneToN()
+    {
+        var list = Catalog("a.um", "b.dois", "c.tres", "d.quatro");
+        var later = Now.AddMinutes(5);
+
+        var ok = ShortcutCatalog.TryReorder(list, IdsOf(list, "c.tres", "a.um", "d.quatro", "b.dois"), later, out var changed);
+
+        ok.Should().BeTrue();
+        changed.Should().BeTrue();
+        InOrder(list).Should().Equal("c.tres", "a.um", "d.quatro", "b.dois");
+        list.OrderBy(s => s.Position).Select(s => s.Position).Should().Equal(1, 2, 3, 4);
+    }
+
+    [Fact]
+    public void Reorder_TouchesOnlyTheShortcutsThatMoved()
+    {
+        var list = Catalog("a.um", "b.dois", "c.tres");
+        var later = Now.AddMinutes(5);
+
+        // Só o "c" e o "b" trocam de lugar: o "a" fica como estava, inclusive no UpdatedAt.
+        ShortcutCatalog.TryReorder(list, IdsOf(list, "a.um", "c.tres", "b.dois"), later, out _);
+
+        list.Single(s => s.Package == "a.um").UpdatedAt.Should().Be(Now);
+        list.Single(s => s.Package == "b.dois").UpdatedAt.Should().Be(later);
+        list.Single(s => s.Package == "c.tres").UpdatedAt.Should().Be(later);
+    }
+
+    [Fact]
+    public void Reorder_WithTheOrderThatAlreadyExists_IsValidButChangesNothing()
+    {
+        var list = Catalog("a.um", "b.dois");
+
+        var ok = ShortcutCatalog.TryReorder(list, IdsOf(list, "a.um", "b.dois"), Now.AddMinutes(5), out var changed);
+
+        ok.Should().BeTrue();
+        changed.Should().BeFalse();
+        list.Should().OnlyContain(s => s.UpdatedAt == Now);
+    }
+
+    [Fact]
+    public void Reorder_IncludesTheOnesOutOfTheControlAndTheOnesThatLeftTheTv()
+    {
+        var list = Catalog("a.um", "b.dois", "c.tres");
+        list[1].SetEnabled(false, Now);
+        ShortcutCatalog.Merge(list, [new IncomingApp("a.um", "a.um"), new IncomingApp("b.dois", "b.dois")], Now);
+        list[2].IsActive.Should().BeFalse("o c saiu da TV");
+
+        ShortcutCatalog.TryReorder(list, IdsOf(list, "c.tres", "b.dois", "a.um"), Now.AddMinutes(1), out _).Should().BeTrue();
+
+        InOrder(list).Should().Equal("c.tres", "b.dois", "a.um");
+        list.Single(s => s.Package == "b.dois").IsActive.Should().BeFalse("a ordem não muda quem está no controle");
+    }
+
+    [Fact]
+    public void Reorder_NormalizesPositionsThatHadGaps()
+    {
+        // Mesmo com a ordem igual, posições 1 e 3 passam a ser 1 e 2.
+        List<Shortcut> list = [Shortcut.Create("a.um", "a.um", 1, Now), Shortcut.Create("b.dois", "b.dois", 3, Now)];
+
+        ShortcutCatalog.TryReorder(list, IdsOf(list, "a.um", "b.dois"), Now.AddMinutes(1), out var changed).Should().BeTrue();
+
+        changed.Should().BeTrue();
+        list.Select(s => s.Position).Should().Equal(1, 2);
+    }
+
+    [Fact]
+    public void Reorder_RefusesAnythingThatIsNotAnExactPermutation_AndTouchesNothing()
+    {
+        var list = Catalog("a.um", "b.dois", "c.tres");
+        var all = IdsOf(list, "a.um", "b.dois", "c.tres");
+        var before = list.Select(s => (s.Id, s.Position, s.UpdatedAt)).ToList();
+        var later = Now.AddMinutes(5);
+
+        var invalid = new (string Why, Guid[] Ids)[]
+        {
+            ("falta um", [all[2], all[0]]),
+            ("sobra um desconhecido", [all[2], all[0], all[1], Guid.NewGuid()]),
+            ("um desconhecido no lugar de um", [all[2], Guid.NewGuid(), all[0]]),
+            ("repetido", [all[2], all[2], all[0]]),
+            ("vazia", []),
+        };
+
+        foreach (var (why, ids) in invalid)
+        {
+            ShortcutCatalog.TryReorder(list, ids, later, out var changed).Should().BeFalse(why);
+            changed.Should().BeFalse(why);
+        }
+
+        list.Select(s => (s.Id, s.Position, s.UpdatedAt)).Should().Equal(before, "nenhuma recusa grava meia ordem");
+    }
+
+    [Fact]
+    public void Reorder_OnAnEmptyCatalog_AcceptsTheEmptyList()
+    {
+        ShortcutCatalog.TryReorder([], [], Now, out var changed).Should().BeTrue();
+        changed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ANewListFromTheAgent_KeepsTheOwnersOrder_PutsNewAppsAtTheEnd_AndAnAppThatCameBackKeepsItsSlot()
+    {
+        var list = Catalog("a.um", "b.dois", "c.tres");
+        ShortcutCatalog.TryReorder(list, IdsOf(list, "c.tres", "a.um", "b.dois"), Now.AddMinutes(1), out _);
+
+        // "a.um" sai da TV, e chega uma lista com um app novo e os outros dois em outra ordem.
+        var (added, _) = ShortcutCatalog.Merge(
+            list, [new IncomingApp("z.novo", "Novo"), new IncomingApp("b.dois", "b.dois"), new IncomingApp("c.tres", "c.tres")], Now.AddMinutes(2));
+        list.AddRange(added);
+
+        added.Should().ContainSingle().Which.Position.Should().Be(4);
+        InOrder(list).Should().Equal("c.tres", "a.um", "b.dois", "z.novo");
+
+        // "a.um" volta: no mesmo lugar que o dono lhe deu, não no fim.
+        ShortcutCatalog.Merge(list, [.. list.Select(s => new IncomingApp(s.Package, s.Package))], Now.AddMinutes(3));
+        InOrder(list).Should().Equal("c.tres", "a.um", "b.dois", "z.novo");
+        list.Single(s => s.Package == "a.um").IsActive.Should().BeTrue();
+    }
+
     [Fact]
     public void Audit_TruncatesWhatTheClientControls()
     {

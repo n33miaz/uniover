@@ -12,6 +12,32 @@
       <span class="package">{{ s.package }}</span>
     </span>
   </div>
+  @if (rank()) {
+    <div class="moves">
+      <button
+        type="button"
+        class="move"
+        [attr.data-move]="'left'"
+        [attr.data-for]="s.id"
+        [attr.aria-label]="moveLeftLabel()"
+        [attr.aria-disabled]="atStart() ? 'true' : null"
+        (click)="onMove(-1)"
+      >
+        <app-tv-icon name="left" />
+      </button>
+      <button
+        type="button"
+        class="move"
+        [attr.data-move]="'right'"
+        [attr.data-for]="s.id"
+        [attr.aria-label]="moveRightLabel()"
+        [attr.aria-disabled]="atEnd() ? 'true' : null"
+        (click)="onMove(1)"
+      >
+        <app-tv-icon name="right" />
+      </button>
+    </div>
+  }
   <div class="tools">
     <button
       type="button"

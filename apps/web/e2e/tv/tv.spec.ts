@@ -1345,6 +1345,166 @@ test.describe('painel Apps', () => {
     await expect(button(page, 'Atalho 3')).toHaveCount(0);
   });
 
+  /**
+   * Cinco apps com nome: Alfa, Gama e Sigma estão no controle (a fileira de cima); Beta está fora dele; Delta saiu da
+   * TV (o painel nem o mostra, mas a API o guarda e a ordem tem de levá-lo junto).
+   */
+  function orderShortcuts(): MockShortcut[] {
+    const apps: [string, boolean, boolean][] = [
+      ['Alfa', true, true],
+      ['Beta', false, true],
+      ['Gama', true, true],
+      ['Delta', false, false],
+      ['Sigma', true, true],
+    ];
+    return apps.map(([name, enabled, installed], index) => ({
+      id: `00000000-0000-4000-8000-00000000${String(3000 + index)}`,
+      position: index + 1,
+      package: `exemplo.ordem.app${index + 1}`,
+      tvLabel: name,
+      customLabel: null,
+      enabled,
+      installed,
+    }));
+  }
+  const putRequests = () => tv.requests.filter((r) => r.method === 'PUT');
+  const orderStatus = (dialog: Locator) => dialog.locator('[data-reorder-status]');
+
+  test('o dono muda a ordem dos atalhos: a fileira acompanha, o PUT leva a lista completa e recarregar mantém', async ({
+    page,
+  }, info) => {
+    tv.shortcuts = orderShortcuts();
+    const [alfa, beta, gama, delta, sigma] = tv.shortcuts.map((s) => s.id);
+    await openTv(page);
+    await expectChipNames(page, ['Alfa', 'Gama', 'Sigma']);
+    await openApps(page);
+    const dialog = appsDialog(page);
+    await button(dialog, 'Editar').click();
+
+    // Só quem está no controle tem as setas, e os dois botões são alvos de 44 px (medidos com a entrada dos azulejos parada).
+    await expect(dialog.locator('[data-move]')).toHaveCount(6);
+    await expect(dialog.getByRole('button', { name: /^Mover Beta / })).toHaveCount(0);
+    await settleMotion(page);
+    await expectTargetSize(button(dialog, 'Mover Gama para a esquerda'));
+    await expectTargetSize(button(dialog, 'Mover Gama para a direita'));
+    await expectNoHorizontalScroll(page);
+    await screenshot(page, `test-results/tv-apps-reorder-${info.project.name}.png`);
+    await expectNoSeriousViolations(page);
+
+    await button(dialog, 'Mover Gama para a esquerda').click();
+
+    // A fileira do controle, atrás do painel, já está na ordem nova.
+    await expectChipNames(page, ['Gama', 'Alfa', 'Sigma']);
+    // O foco fica no botão usado (que seguiu o app) e, na ponta, ele só fica apagado; quem ouve o leitor sabe onde o app ficou.
+    const used = button(dialog, 'Mover Gama para a esquerda');
+    await expect(used).toBeFocused();
+    await expect(used).toHaveAttribute('aria-disabled', 'true');
+    await expect(orderStatus(dialog)).toHaveText('Gama, posição 1 de 3');
+
+    // O pedido leva a lista inteira (Beta e Delta incluídos) com Gama no lugar de Alfa; os outros não se mexem.
+    await expect.poll(() => putRequests().length).toBe(1);
+    expect(putRequests()[0]).toMatchObject({
+      path: '/shortcuts/order',
+      body: { ids: [gama, beta, alfa, delta, sigma] },
+    });
+    // O eco do servidor pelo fluxo não desfaz nada.
+    await emitSse(page, 'tv.shortcuts', tv.shortcuts);
+    await expectChipNames(page, ['Gama', 'Alfa', 'Sigma']);
+
+    // Acionar de novo, pelo teclado, o botão apagado da ponta não pede nada ao servidor e não tira o foco dele.
+    await used.focus();
+    await page.keyboard.press('Enter');
+    await expect(used).toBeFocused();
+    expect(putRequests()).toHaveLength(1);
+
+    // Outro passo: Sigma sobe uma casa.
+    await button(dialog, 'Mover Sigma para a esquerda').click();
+    await expectChipNames(page, ['Gama', 'Sigma', 'Alfa']);
+    await expect(orderStatus(dialog)).toHaveText('Sigma, posição 2 de 3');
+    await expect.poll(() => putRequests().length).toBe(2);
+    expect(putRequests()[1].body).toEqual({ ids: [gama, beta, sigma, delta, alfa] });
+    await expectNoHorizontalScroll(page);
+
+    // Recarregar a tela mantém a ordem: ela vem do servidor, não da memória da página.
+    await page.reload();
+    await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
+    await emitSse(page, 'tv.state', tv.state);
+    await expectChipNames(page, ['Gama', 'Sigma', 'Alfa']);
+  });
+
+  test('a ordem muda na tela antes de o servidor responder, e o que ele devolve a confirma sem piscar', async ({
+    page,
+  }) => {
+    tv.shortcuts = orderShortcuts();
+    let release!: () => void;
+    tv.orderGate = new Promise<void>((resolve) => (release = resolve));
+    await openTv(page);
+    await openApps(page);
+    const dialog = appsDialog(page);
+    await button(dialog, 'Editar').click();
+
+    await button(dialog, 'Mover Sigma para a esquerda').click();
+    await button(dialog, 'Mover Sigma para a esquerda').click();
+
+    // O servidor ainda não respondeu e a fileira já mudou (duas vezes, num pedido só quando ele responder).
+    await expectChipNames(page, ['Sigma', 'Alfa', 'Gama']);
+    await expect(orderStatus(dialog)).toHaveText('Sigma, posição 1 de 3');
+    expect(tv.shortcuts.map((s) => s.tvLabel)).toEqual(['Alfa', 'Beta', 'Gama', 'Delta', 'Sigma']);
+
+    release();
+    tv.orderGate = null;
+    await expect
+      .poll(() => tv.shortcuts.map((s) => s.tvLabel))
+      .toEqual(['Sigma', 'Beta', 'Alfa', 'Delta', 'Gama']);
+    await expectChipNames(page, ['Sigma', 'Alfa', 'Gama']);
+    // Toques seguidos viram no máximo dois pedidos, e o último já tem a ordem final.
+    expect(putRequests().length).toBeLessThanOrEqual(2);
+    expect(putRequests().at(-1)?.body?.['ids']).toEqual(tv.shortcuts.map((s) => s.id));
+  });
+
+  test('se o servidor recusa a ordem, a fileira volta ao que era e o aviso diz que não foi salvo', async ({
+    page,
+  }) => {
+    tv.shortcuts = orderShortcuts();
+    tv.orderFailure = { status: 400, kind: 'validation-failed' };
+    await openTv(page);
+    await expectChipNames(page, ['Alfa', 'Gama', 'Sigma']);
+    await openApps(page);
+    const dialog = appsDialog(page);
+    await button(dialog, 'Editar').click();
+
+    await button(dialog, 'Mover Gama para a esquerda').click();
+
+    await expect(
+      dialog.getByText('Não foi possível salvar a nova ordem. Ela voltou ao que era.'),
+    ).toBeVisible();
+    await expectChipNames(page, ['Alfa', 'Gama', 'Sigma']);
+    expect(tv.shortcuts.map((s) => s.tvLabel)).toEqual(['Alfa', 'Beta', 'Gama', 'Delta', 'Sigma']);
+    // O que o leitor tinha ouvido ("posição 1") deixou de valer: o aviso de erro fala e a frase some.
+    await expect(orderStatus(dialog)).toHaveText('');
+    // O que o servidor tem continua valendo: tentar de novo depois funciona.
+    tv.orderFailure = null;
+    await button(dialog, 'Mover Gama para a esquerda').click();
+    await expectChipNames(page, ['Gama', 'Alfa', 'Sigma']);
+    await expect
+      .poll(() => tv.shortcuts.map((s) => s.tvLabel))
+      .toEqual(['Gama', 'Beta', 'Alfa', 'Delta', 'Sigma']);
+  });
+
+  test('a busca esconde as setas, porque o filtro esconderia os vizinhos', async ({ page }) => {
+    tv.shortcuts = orderShortcuts();
+    await openTv(page);
+    await openApps(page);
+    const dialog = appsDialog(page);
+    await button(dialog, 'Editar').click();
+    await expect(dialog.locator('[data-move]')).toHaveCount(6);
+
+    await dialog.getByRole('searchbox', { name: 'Buscar app' }).fill('gama');
+    await expect(dialog.locator('[data-move]')).toHaveCount(0);
+    await dialog.getByRole('searchbox', { name: 'Buscar app' }).fill('');
+    await expect(dialog.locator('[data-move]')).toHaveCount(6);
+  });
+
   test('busca por texto numa lista só, com a marca de quem está no controle', async ({
     page,
   }, info) => {

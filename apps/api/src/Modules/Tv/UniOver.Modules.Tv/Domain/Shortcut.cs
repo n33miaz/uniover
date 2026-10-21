@@ -29,7 +29,10 @@ public sealed class Shortcut
 
     public string? CustomLabel { get; private set; }
 
-    /// <summary>Posição estável (1, 2, 3...): quem entra depois vai para o fim e ninguém é renumerado.</summary>
+    /// <summary>
+    /// Posição na ordem do dono (1, 2, 3...): quem entra depois vai para o fim, e uma lista nova do agente não mexe em
+    /// ninguém. Só o dono muda a ordem, e ao fazê-lo todos os atalhos são renumerados de 1 a n (<see cref="ShortcutCatalog.TryReorder"/>).
+    /// </summary>
     public int Position { get; private set; }
 
     /// <summary>Escolha do dono: <c>false</c> tira o app da fileira de atalhos do controle (ele segue podendo ser aberto pelo painel Apps).</summary>
@@ -113,6 +116,19 @@ public sealed class Shortcut
         return true;
     }
 
+    /// <summary>Muda o lugar na ordem do dono; sem mudança (mesma posição) nada é tocado. Devolve se mudou.</summary>
+    internal bool SetPosition(int position, DateTimeOffset now)
+    {
+        if (Position == position)
+        {
+            return false;
+        }
+
+        Position = position;
+        UpdatedAt = now;
+        return true;
+    }
+
     /// <summary>Texto vazio ou só espaços apaga o rótulo próprio e a tela volta a "Atalho n".</summary>
     public void SetCustomLabel(string? label, DateTimeOffset now)
     {
@@ -156,9 +172,53 @@ public sealed record TvShortcut(
     }
 }
 
-/// <summary>Regra de como uma lista nova de apps se funde com os atalhos que já existem.</summary>
+/// <summary>Regra de como uma lista nova de apps se funde com os atalhos que já existem, e de como o dono muda a ordem deles.</summary>
 public static class ShortcutCatalog
 {
+    /// <summary>
+    /// Teto de ids numa lista de reordenação. A lista que o agente manda tem até 500 apps, mas os atalhos nunca são
+    /// apagados (um app que saiu da TV só fica fora de uso), então o total guardado pode passar de 500 com o tempo.
+    /// </summary>
+    public const int MaxReorderIds = 2000;
+
+    /// <summary>
+    /// Põe os atalhos na ordem de <paramref name="ids"/> (posições 1 a n). A lista precisa ser uma permutação exata dos
+    /// atalhos que existem (todos, cada um uma vez, nenhum desconhecido): é o que garante que a ordem inteira vem do dono
+    /// e que ninguém some da fileira por uma lista velha. Se não for, devolve <c>false</c> sem tocar em nada. Os que
+    /// não estão no controle ou saíram da TV entram na ordem como qualquer outro: ela só não aparece para eles.
+    /// </summary>
+    /// <param name="changed"><c>true</c> se alguma posição mudou (nada a gravar quando a ordem já era essa).</param>
+    public static bool TryReorder(
+        IReadOnlyCollection<Shortcut> existing, IReadOnlyList<Guid> ids, DateTimeOffset now, out bool changed)
+    {
+        ArgumentNullException.ThrowIfNull(existing);
+        ArgumentNullException.ThrowIfNull(ids);
+
+        changed = false;
+        if (ids.Count != existing.Count)
+        {
+            return false;
+        }
+
+        var byId = existing.ToDictionary(s => s.Id);
+        var seen = new HashSet<Guid>();
+        foreach (var id in ids)
+        {
+            if (!byId.ContainsKey(id) || !seen.Add(id))
+            {
+                return false;
+            }
+        }
+
+        var position = 1;
+        foreach (var id in ids)
+        {
+            changed |= byId[id].SetPosition(position++, now);
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// Funde por <c>package</c>: quem já existe mantém rótulo próprio e posição (só o rótulo da TV é atualizado);
     /// quem sumiu da lista fica fora de uso mas não é apagado (se voltar, volta na mesma posição); quem é novo entra

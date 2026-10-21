@@ -50,9 +50,11 @@
         [marked]="flat"
         [canSend]="store.canSend()"
         [busy]="busy()"
+        [rank]="reorderable() ? (ranks().get(shortcut.id) ?? null) : null"
         (launch)="launch($event)"
         (pin)="toggle($event)"
         (rename)="startRename($event)"
+        (move)="move($event)"
       />
     }
   </li>
@@ -126,6 +128,10 @@
   </div>
   <!-- Quem usa leitor de tela ouve o andamento do pedido; a região fica sempre no lugar para o aviso ser lido. -->
   <span class="sr" role="status">{{ refreshing() ? searchingText : '' }}</span>
+  <!-- Onde o app ficou depois de mover: região própria, para um aviso não apagar o outro. -->
+  <span class="sr" role="status" [attr.aria-live]="'polite'" data-reorder-status>{{
+    announcement()
+  }}</span>
 
   @if (visible().length === 0) {
     <p class="note" role="status" i18n="@@tv.apps.no-match">
@@ -135,6 +141,11 @@
     <section class="group">
       @if (editMode()) {
         <h3 class="ui-section-label" i18n="@@tv.apps.group-all">Todos os apps</h3>
+        @if (reorderable() && pinnedCount() > 1) {
+          <p class="note" i18n="@@tv.apps.reorder-hint">
+            Os apps no controle têm setas: elas mudam a ordem da fileira de atalhos.
+          </p>
+        }
       }
       <ul class="grid" [class.roomy]="editMode()">
         @for (shortcut of visible(); track shortcut.id; let i = $index) {

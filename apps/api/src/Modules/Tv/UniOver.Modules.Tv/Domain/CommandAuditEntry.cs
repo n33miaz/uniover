@@ -13,6 +13,9 @@ public static class TvCommandNames
     public const string AppLaunch = "tv.app.launch";
     public const string Wake = "tv.wake";
     public const string AppsRefresh = "tv.apps.refresh";
+
+    /// <summary>O dono mudou a ordem dos atalhos: não vai à TV, mas é uma ação dele que a trilha guarda.</summary>
+    public const string ShortcutsReorder = "tv.shortcuts.reorder";
     public const string PowerOff = "tv.power-off";
 }
 

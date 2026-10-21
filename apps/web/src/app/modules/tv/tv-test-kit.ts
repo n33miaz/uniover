@@ -2,6 +2,7 @@ import { vi } from 'vitest';
 import { signal } from '@angular/core';
 import { TvFailure } from './data/tv-errors';
 import { TvLink, TvNotice, TvStatus, TvStreamStatus } from './data/tv-store';
+import { withOrder } from './data/tv-order';
 import { TvShortcut, TvState, TvWatchdog } from './data/tv-types';
 
 /** Estado quente padrão dos testes de tela. */
@@ -81,9 +82,14 @@ export function webpIcon(kind: WebpKind, width: number, height: number): string 
  * Assim cada tela é testada sem rede, sem fluxo e sem relógio.
  */
 export function createFakeTvStore() {
+  const shortcuts = signal<TvShortcut[] | null>([
+    makeShortcut(1),
+    makeShortcut(2),
+    makeShortcut(3),
+  ]);
   return {
     state: signal<TvState | null>(HOT),
-    shortcuts: signal<TvShortcut[] | null>([makeShortcut(1), makeShortcut(2), makeShortcut(3)]),
+    shortcuts,
     status: signal<TvStatus>('hot'),
     lastKnownStatus: signal<TvStatus | null>('hot'),
     link: signal<TvLink>('ok'),
@@ -112,6 +118,15 @@ export function createFakeTvStore() {
     setShortcutEnabled: vi
       .fn<(id: string, enabled: boolean) => Promise<boolean>>()
       .mockResolvedValue(true),
+    // Como o de verdade, a tela muda na hora: a lista do fake passa a ter a ordem pedida.
+    reorder: vi
+      .fn<(ids: readonly string[]) => Promise<boolean>>()
+      .mockImplementation(async (ids) => {
+        const current = shortcuts();
+        const next = current ? withOrder(current, ids) : null;
+        if (next) shortcuts.set(next);
+        return next !== null;
+      }),
     clearNotice: vi.fn(),
   };
 }

@@ -11,6 +11,9 @@ internal sealed class EfShortcutReader(TvDbContext db) : ITvShortcutReader
     {
         var shortcuts = await db.Shortcuts.AsNoTracking()
             .OrderBy(s => s.Position)
+
+            // Desempate fixo: uma lista nova do agente chegando junto de uma reordenação pode repetir uma posição por um instante.
+            .ThenBy(s => s.Id)
             .ToListAsync(cancellationToken);
         return [.. shortcuts.Select(TvShortcut.From)];
     }
