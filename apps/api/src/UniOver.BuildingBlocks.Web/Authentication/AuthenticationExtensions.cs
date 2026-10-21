@@ -166,7 +166,8 @@ public static class AuthenticationExtensions
         services.AddSingleton<IAuthorizationHandler, AuthenticatedByDefaultHandler>();
         services.AddSingleton<IAuthorizationHandler, AccountRoleHandler>();
         services.AddSingleton<IAuthorizationHandler, ActiveAccountHandler>();
-        services.AddAuthorizationBuilder()
+        services.AddSingleton<IAuthorizationHandler, PermissionHandler>();
+        var authorization = services.AddAuthorizationBuilder()
             .SetFallbackPolicy(new AuthorizationPolicyBuilder().AddRequirements(new AuthenticatedByDefaultRequirement()).Build())
 
             // Quem escreve só `.RequireAuthorization()` chega aqui: a política padrão é "dono". O convidado entra apenas
@@ -177,6 +178,15 @@ public static class AuthenticationExtensions
                 .AddAuthenticationSchemes(UniOverAuth.StreamScheme)
                 .RequireAccountRole(AccountRoles.Owner)
                 .RequireGetOnly());
+
+        // Uma política nomeada por permissão do catálogo (`AccessPermissions.Policy(...)`): o catálogo é fechado, então
+        // o conjunto é fixo e não precisa de um provedor de políticas próprio (que substituiria o da confirmação).
+        foreach (var permission in AccessPermissions.All)
+        {
+            var captured = permission;
+            authorization.AddPolicy(AccessPermissions.Policy(captured), policy => policy.RequirePermission(captured));
+        }
+
         return services;
     }
 

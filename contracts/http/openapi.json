@@ -503,6 +503,15 @@
               "null",
               "string"
             ]
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           }
         },
         "required": [
@@ -523,6 +532,12 @@
             "format": "uuid",
             "type": "string"
           },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "token": {
             "type": "string"
           }
@@ -530,6 +545,7 @@
         "required": [
           "id",
           "displayName",
+          "permissions",
           "token",
           "expiresAt"
         ],
@@ -823,6 +839,12 @@
             "format": "uuid",
             "type": "string"
           },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "revokedAt": {
             "format": "date-time",
             "type": [
@@ -848,7 +870,8 @@
           "createdAt",
           "expiresAt",
           "usedAt",
-          "revokedAt"
+          "revokedAt",
+          "permissions"
         ],
         "type": "object"
       },
@@ -874,6 +897,12 @@
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -881,7 +910,8 @@
           "displayName",
           "email",
           "createdAt",
-          "disabledAt"
+          "disabledAt",
+          "permissions"
         ],
         "type": "object"
       },
@@ -1042,12 +1072,21 @@
           "displayName": {
             "type": "string"
           },
+          "displayNameConfirmed": {
+            "type": "boolean"
+          },
           "email": {
             "type": "string"
           },
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "role": {
             "type": "string"
@@ -1057,7 +1096,9 @@
           "id",
           "email",
           "displayName",
-          "role"
+          "role",
+          "displayNameConfirmed",
+          "permissions"
         ],
         "type": "object"
       },
@@ -1389,6 +1430,24 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "ReorderShortcutsRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "ids"
         ],
         "type": "object"
       },
@@ -1831,6 +1890,23 @@
         ],
         "type": "object"
       },
+      "SetGuestPermissionsRequest": {
+        "properties": {
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "permissions"
+        ],
+        "type": "object"
+      },
       "SetResponse": {
         "properties": {
           "clientUpdatedAt": {
@@ -2119,6 +2195,20 @@
           "connection",
           "agentOnline",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "UpdateProfileRequest": {
+        "properties": {
+          "displayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "displayName"
         ],
         "type": "object"
       },
@@ -3555,6 +3645,112 @@
         ]
       }
     },
+    "/api/v1/identity/guests/{id}/permissions": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SetGuestPermissionsRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestSummary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "SetGuestPermissionsEndpoint"
+        ]
+      }
+    },
     "/api/v1/identity/guests/{id}/revoke": {
       "post": {
         "parameters": [
@@ -3653,6 +3849,79 @@
         },
         "tags": [
           "GetMeEndpoint"
+        ]
+      },
+      "patch": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UpdateProfileRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "UpdateProfileEndpoint"
         ]
       }
     },
@@ -5432,6 +5701,84 @@
         ]
       }
     },
+    "/api/v1/tv/shortcuts/order": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReorderShortcutsRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TvShortcut"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "ReorderShortcutsEndpoint"
+        ]
+      }
+    },
     "/api/v1/tv/shortcuts/refresh": {
       "post": {
         "responses": {
@@ -5905,6 +6252,9 @@
       "name": "UpdateShortcutEndpoint"
     },
     {
+      "name": "ReorderShortcutsEndpoint"
+    },
+    {
       "name": "RefreshShortcutsEndpoint"
     },
     {
@@ -5968,6 +6318,9 @@
       "name": "GetMeEndpoint"
     },
     {
+      "name": "UpdateProfileEndpoint"
+    },
+    {
       "name": "CreateGuestInviteEndpoint"
     },
     {
@@ -5984,6 +6337,9 @@
     },
     {
       "name": "RevokeGuestEndpoint"
+    },
+    {
+      "name": "SetGuestPermissionsEndpoint"
     },
     {
       "name": "BeginPasskeyRegistrationEndpoint"

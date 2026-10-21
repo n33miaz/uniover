@@ -4,6 +4,7 @@ import { ApiProblem, networkProblem } from '../../core/auth/api-problem';
 import { AuthApi } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { MODULE_PREFS_KEY, ModulePrefs } from '../../core/modules/module-prefs';
+import { INSTALL_ENV, InstallHintService } from '../../core/pwa/install-hint.service';
 import { THEME_PREFERENCE_KEY } from '../../core/session/appearance.service';
 import { version } from '../../../../package.json';
 import { SettingsPage } from './settings.page';
@@ -191,6 +192,29 @@ describe('SettingsPage', () => {
       expect(localStorage.getItem(THEME_PREFERENCE_KEY)).toBe('dark');
       expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
       expect(dark.checked).toBe(true);
+    });
+  });
+
+  describe('shortcut on the home screen', () => {
+    const IPHONE =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+
+    it('has no row where there is nothing to offer (computer, or the app already installed)', async () => {
+      const { el } = await render();
+      expect(el.querySelector<HTMLElement>('app-install-hint-row')?.hidden).toBe(true);
+    });
+
+    it('has one row in Aparência on an iPhone, that opens the shared sheet', async () => {
+      TestBed.configureTestingModule({
+        providers: [{ provide: INSTALL_ENV, useValue: { userAgent: IPHONE } }],
+      });
+      const { el } = await render();
+      const row = el.querySelector<HTMLElement>('app-install-hint-row')!;
+      expect(row.hidden).toBe(false);
+      expect(row.closest('section')?.querySelector('h2')?.textContent?.trim()).toBe('Aparência');
+      expect(row.querySelector('.ui-tile')).not.toBeNull();
+      row.querySelector('button')!.click();
+      expect(TestBed.inject(InstallHintService).sheet()).toBe('manual');
     });
   });
 

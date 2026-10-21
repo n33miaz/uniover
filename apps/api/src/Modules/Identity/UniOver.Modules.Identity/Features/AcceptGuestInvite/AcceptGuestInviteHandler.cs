@@ -64,6 +64,14 @@ internal sealed class AcceptGuestInviteHandler(
             return new AcceptGuestInviteResult(AcceptGuestInviteStatus.InvalidInvite);
         }
 
+        // As permissões do convite entram na conta como estão, mas só se ainda passam nas regras (uma lista adulterada no
+        // banco, ou com permissão que já saiu do catálogo, não vira conta). Falha fechada, igual a um convite inválido.
+        var permissions = PermissionRules.Validate(invite.Permissions);
+        if (!permissions.IsValid)
+        {
+            return new AcceptGuestInviteResult(AcceptGuestInviteStatus.InvalidInvite);
+        }
+
         var passwordHash = passwords.Hash(command.Password);
 
         var user = User.CreateGuest(command.Email, invite.Label, passwordHash, now);
@@ -93,6 +101,10 @@ internal sealed class AcceptGuestInviteHandler(
         var (secret, hash) = SecretTokens.Generate();
         var expiresAt = settings.Refresh.ExpiryFor(now, now);
         db.Users.Add(user);
+
+        // As concessões nascem na MESMA transação da conta e da marca de uso do convite: nunca existe uma conta sem as
+        // permissões que o convite prometia, nem permissões sem a conta.
+        db.UserGrants.AddRange(permissions.Permissions.Select(p => UserGrant.Create(user.Id, p, invite.CreatedBy, now)));
         db.RefreshTokens.Add(RefreshToken.Create(
             user.Id, familyId, hash, now, expiresAt, command.Client.Ip, command.Client.UserAgent));
         audit.Add(user.Id, AuditEvents.GuestInviteAccepted, command.Client, inviteId.ToString("N"));

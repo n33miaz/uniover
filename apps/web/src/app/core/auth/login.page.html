@@ -1,68 +1,77 @@
-<main class="login">
+<app-auth-layout>
   <h1 i18n="@@auth.login.title">Entrar</h1>
   <p class="lead" i18n="@@auth.login.lead">Entre com o e-mail e a senha da sua conta UniOver.</p>
 
   <form (submit)="submit($event)" novalidate>
-    <div class="field">
-      <label for="login-email" i18n="@@auth.login.email">E-mail</label>
-      <input
-        #emailField
-        id="login-email"
-        name="email"
-        type="email"
-        autocomplete="username"
-        [attr.inputmode]="'email'"
-        [attr.autocapitalize]="'none'"
-        spellcheck="false"
-        required
-        [value]="email()"
-        (input)="setEmail($event)"
-      />
-    </div>
+    <app-auth-field
+      #emailField
+      [fieldId]="'login-email'"
+      [name]="'email'"
+      label="E-mail"
+      i18n-label="@@auth.login.email"
+      [kind]="'email'"
+      [autocomplete]="'username'"
+      [enterKeyHint]="'next'"
+      [error]="emailError()"
+      [(value)]="email"
+      (blurred)="emailTouched.set(true)"
+    />
 
-    <div class="field">
-      <label for="login-password" i18n="@@auth.login.password">Senha</label>
-      <div class="password">
-        <input
-          id="login-password"
-          name="password"
-          [type]="showPassword() ? 'text' : 'password'"
-          autocomplete="current-password"
-          required
-          [value]="password()"
-          (input)="setPassword($event)"
-        />
-        <button
-          type="button"
-          class="toggle"
-          [attr.aria-pressed]="showPassword()"
-          (click)="toggleShowPassword()"
-          i18n="@@auth.login.show-password"
-        >
-          Mostrar senha
-        </button>
-      </div>
-    </div>
+    <app-auth-field
+      #passwordField
+      [fieldId]="'login-password'"
+      [name]="'password'"
+      label="Senha"
+      i18n-label="@@auth.login.password"
+      [kind]="'password'"
+      [autocomplete]="'current-password'"
+      [enterKeyHint]="'go'"
+      toggleLabel="Mostrar senha"
+      i18n-toggleLabel="@@auth.login.show-password"
+      [error]="passwordError()"
+      [(value)]="password"
+      (blurred)="passwordTouched.set(true)"
+    />
 
     <div class="messages" [attr.aria-live]="'polite'">
-      @if (errorText(); as message) {
-        <p #errorBox class="error" role="alert" tabindex="-1">
-          {{ message }}
-          @if (blocked()) {
-            <span aria-hidden="true" i18n="@@auth.login.wait"
-              >Tente de novo em {{ waitSeconds() }} s.</span
-            >
-          }
-        </p>
+      @if (banner(); as notice) {
+        <!-- Um elemento novo a cada troca de papel: o "pronto" que fecha uma espera também é anunciado. -->
+        @if (notice.role === 'alert') {
+          <app-auth-notice
+            [tone]="notice.tone"
+            [role]="'alert'"
+            [icon]="notice.icon"
+            [heading]="notice.heading"
+            [detail]="notice.detail"
+            [countdown]="notice.waiting ? countdown() : null"
+          />
+        } @else {
+          <app-auth-notice
+            [tone]="notice.tone"
+            [role]="'status'"
+            [icon]="notice.icon"
+            [heading]="notice.heading"
+          />
+        }
       }
     </div>
 
-    <button type="submit" class="submit" [disabled]="busy() || blocked()">
-      @if (busy()) {
+    <!--
+          Sem roubar o foco do campo no toque: se o campo em foco tinha um aviso para sumir ou aparecer ao perder o foco
+          (Caps Lock, "senhas diferentes"), a tela se deslocava entre apertar e soltar e o clique se perdia.
+        -->
+    <button
+      type="submit"
+      class="submit ui-btn primary block"
+      (mousedown)="$event.preventDefault()"
+      [disabled]="sending() || blocked()"
+    >
+      @if (sending()) {
+        <span class="ui-spinner" aria-hidden="true"></span>
         <span i18n="@@auth.login.busy">Entrando…</span>
       } @else {
         <span i18n="@@auth.login.submit">Entrar</span>
       }
     </button>
   </form>
-</main>
+</app-auth-layout>

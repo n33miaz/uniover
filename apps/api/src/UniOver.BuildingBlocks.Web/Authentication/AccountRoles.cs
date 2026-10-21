@@ -4,8 +4,10 @@ using Microsoft.AspNetCore.Authorization;
 namespace UniOver.BuildingBlocks.Web;
 
 /// <summary>
-/// Papéis de uma conta. O dono usa tudo; o convidado usa só o controle da TV. O papel viaja no JWT (claim
-/// <see cref="UniOverAuth.RoleClaim"/>) para que cada módulo decida sozinho, sem consultar o Identity.
+/// Papéis de uma conta. <c>owner</c> é o Administrador (todas as permissões, implícitas); <c>guest</c> é a pessoa cujo
+/// acesso é o que as permissões concedidas a ela dizem (<see cref="AccessPermissions"/>). O papel viaja no JWT (claim
+/// <see cref="UniOverAuth.RoleClaim"/>) para que cada módulo decida sozinho, sem consultar o Identity; as permissões
+/// NÃO viajam: vêm do banco, com cache curto (<see cref="IAccessGrants"/>).
 /// </summary>
 public static class AccountRoles
 {
@@ -13,18 +15,11 @@ public static class AccountRoles
     public const string Guest = "guest";
 
     /// <summary>
-    /// Papel do usuário autenticado. Token sem a claim vem de antes dos convidados existirem, quando só havia o dono:
-    /// vale como dono. Um convidado sempre recebe <c>guest</c> explícito, e o token é assinado, então a regra é segura.
-    /// Claim presente e desconhecida não vira dono: devolve o valor como está (e nenhuma política o aceita).
+    /// Papel do usuário autenticado: o valor da claim como está, ou <c>null</c> se ela não existe. Token sem a claim
+    /// NÃO é dono (esse atalho de compatibilidade acabou: todo token emitido hoje já traz o papel), e uma claim
+    /// desconhecida também não: nenhuma política aceita <c>null</c> nem um valor fora de <see cref="IsKnown"/>.
     /// </summary>
-    /// <remarks>
-    /// Compatibilidade temporária: o "sem claim = dono" existe só para os JWT de antes do papel, que vivem até 15 min
-    /// depois do deploy. Passado esse tempo, trocar por "sem claim = sem papel" (nenhuma política o aceita). Não fazer
-    /// rollback do código para antes do papel enquanto houver convidados no banco: o código antigo emite token sem a
-    /// claim, e este teria o convidado como dono.
-    /// </remarks>
-    public static string Of(ClaimsPrincipal? user) =>
-        user?.FindFirst(UniOverAuth.RoleClaim)?.Value ?? Owner;
+    public static string? Of(ClaimsPrincipal? user) => user?.FindFirst(UniOverAuth.RoleClaim)?.Value;
 
     public static bool IsKnown(string? role) =>
         string.Equals(role, Owner, StringComparison.Ordinal) || string.Equals(role, Guest, StringComparison.Ordinal);
@@ -40,7 +35,10 @@ internal sealed class AccountRoleHandler : AuthorizationHandler<AccountRoleRequi
 {
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, AccountRoleRequirement requirement)
     {
-        if (context.User.Identity?.IsAuthenticated == true && requirement.Roles.Contains(AccountRoles.Of(context.User)))
+        // Sem a claim de papel (ou com papel que a política não lista) ninguém passa: não há papel padrão.
+        if (context.User.Identity?.IsAuthenticated == true
+            && AccountRoles.Of(context.User) is { } role
+            && requirement.Roles.Contains(role))
         {
             context.Succeed(requirement);
         }

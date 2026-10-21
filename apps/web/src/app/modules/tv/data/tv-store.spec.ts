@@ -53,6 +53,7 @@ describe('TvStore', () => {
     launch: vi.fn(),
     refreshShortcuts: vi.fn(),
     updateShortcut: vi.fn(),
+    reorderShortcuts: vi.fn(),
   };
   let store: TvStore;
 
@@ -598,12 +599,20 @@ describe('TvStore', () => {
   describe('text', () => {
     it('validates before calling the API, without a toast', async () => {
       await started();
-      for (const text of ['', 'a\nb', 'a'.repeat(201)]) {
+      for (const text of ['a\nb', 'a'.repeat(201)]) {
         const failure = await store.sendText(text);
         expect(failure?.kind).toBe('invalid');
-        expect(failure?.message).toContain('de 1 a 200 caracteres');
+        expect(failure?.message).toContain('até 200 caracteres');
       }
       expect(api.sendText).not.toHaveBeenCalled();
+      expect(store.notice()).toBeNull();
+    });
+
+    it('sends the empty text: it erases what the agent typed on the TV', async () => {
+      await started();
+      expect(isValidTvText('')).toBe(true);
+      await expect(store.sendText('')).resolves.toBeNull();
+      expect(api.sendText).toHaveBeenCalledWith('');
       expect(store.notice()).toBeNull();
     });
 
@@ -695,6 +704,235 @@ describe('TvStore', () => {
       await expect(store.renameShortcut('s1', 'Sala')).resolves.toBe(false);
       expect(api.updateShortcut).not.toHaveBeenCalled();
       expect(store.notice()?.kind).toBe('error');
+    });
+  });
+
+  describe('reordering the shortcuts', () => {
+    const STATE_KEY = 'uniover.tv.last-state';
+    const ICONS_KEY = 'uniover.tv.app-icons';
+    const order = () => store.shortcuts()?.map((item) => item.id);
+    /** A lista como o servidor a devolve depois de gravar a ordem: os mesmos atalhos, renumerados de 1 a n. */
+    const confirmed = (...ids: string[]) =>
+      ids.map((id, index) => shortcut(Number(id.slice(1)), { position: index + 1 }));
+    const pending = () => {
+      let settle!: (list: TvShortcut[]) => void;
+      const promise = new Promise<TvShortcut[]>((resolve) => {
+        settle = resolve;
+      });
+      return { promise, settle };
+    };
+
+    beforeEach(async () => {
+      api.shortcuts.mockResolvedValue([shortcut(1), shortcut(2), shortcut(3)]);
+      await started();
+    });
+
+    it('shows the new order at once, before the server answers, with the positions renumbered', async () => {
+      const send = pending();
+      api.reorderShortcuts.mockReturnValueOnce(send.promise);
+
+      const done = store.reorder(['s3', 's1', 's2']);
+
+      expect(order()).toEqual(['s3', 's1', 's2']);
+      expect(store.shortcuts()?.map((item) => item.position)).toEqual([1, 2, 3]);
+      expect(api.reorderShortcuts).toHaveBeenCalledWith(['s3', 's1', 's2']);
+      send.settle(confirmed('s3', 's1', 's2'));
+      await expect(done).resolves.toBe(true);
+      expect(order()).toEqual(['s3', 's1', 's2']);
+      expect(store.notice()).toBeNull();
+    });
+
+    it('keeps everything else about a shortcut (name, icon, whether it is in the control)', async () => {
+      api.shortcuts.mockResolvedValue([
+        shortcut(1, { customLabel: 'Sala', iconDataUri: 'data:image/png;base64,AAAA' }),
+        shortcut(2, { enabled: false }),
+      ]);
+      await store.refresh();
+      api.reorderShortcuts.mockReturnValueOnce(pending().promise);
+
+      void store.reorder(['s2', 's1']);
+
+      expect(store.shortcuts()?.[1]).toMatchObject({
+        id: 's1',
+        customLabel: 'Sala',
+        iconDataUri: 'data:image/png;base64,AAAA',
+      });
+      expect(store.shortcuts()?.[0]).toMatchObject({ id: 's2', enabled: false });
+    });
+
+    it('goes back to the last order the server confirmed, says it was not saved, and reads the list again', async () => {
+      api.reorderShortcuts.mockRejectedValueOnce(problem(400, 'validation-failed'));
+      // A leitura de conferência não volta (ainda): a volta da ordem não pode depender dela.
+      api.shortcuts.mockReturnValueOnce(new Promise(() => undefined));
+
+      const done = store.reorder(['s3', 's1', 's2']);
+      expect(order()).toEqual(['s3', 's1', 's2']);
+
+      await expect(done).resolves.toBe(false);
+      expect(order()).toEqual(['s1', 's2', 's3']);
+      expect(store.shortcuts()?.map((item) => item.position)).toEqual([1, 2, 3]);
+      expect(store.notice()).toEqual({
+        kind: 'error',
+        text: 'Não foi possível salvar a nova ordem. Ela voltou ao que era.',
+      });
+      await flush();
+      expect(api.shortcuts).toHaveBeenCalledTimes(2);
+    });
+
+    it('says the real cause when it is the network, the session or the limit', async () => {
+      for (const [error, text] of [
+        [problem(0), 'Sem conexão com o servidor. Confira a internet.'],
+        [problem(401), 'Sua sessão acabou. Entre de novo para controlar a TV.'],
+        [problem(429), 'Comandos demais em pouco tempo. Aguarde um pouco.'],
+      ] as const) {
+        api.reorderShortcuts.mockRejectedValueOnce(error);
+        await expect(store.reorder(['s2', 's1', 's3'])).resolves.toBe(false);
+        expect(store.notice()?.text).toBe(text);
+        expect(order()).toEqual(['s1', 's2', 's3']);
+      }
+    });
+
+    it('joins the taps made while a send is going: the newest order goes out right after, and once', async () => {
+      const first = pending();
+      api.reorderShortcuts
+        .mockReturnValueOnce(first.promise)
+        .mockResolvedValueOnce(confirmed('s3', 's2', 's1'));
+
+      const a = store.reorder(['s2', 's1', 's3']);
+      const b = store.reorder(['s2', 's3', 's1']);
+      const c = store.reorder(['s3', 's2', 's1']);
+
+      expect(api.reorderShortcuts).toHaveBeenCalledTimes(1);
+      expect(order()).toEqual(['s3', 's2', 's1']);
+      first.settle(confirmed('s2', 's1', 's3'));
+      await expect(Promise.all([a, b, c])).resolves.toEqual([true, true, true]);
+
+      expect(api.reorderShortcuts).toHaveBeenCalledTimes(2);
+      expect(api.reorderShortcuts).toHaveBeenLastCalledWith(['s3', 's2', 's1']);
+      expect(order()).toEqual(['s3', 's2', 's1']);
+    });
+
+    it('does not flash back to an older order while the newest is still on its way', async () => {
+      const first = pending();
+      const second = pending();
+      api.reorderShortcuts.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+      const done = store.reorder(['s2', 's1', 's3']);
+      void store.reorder(['s3', 's2', 's1']);
+      first.settle(confirmed('s2', 's1', 's3'));
+      await flush();
+
+      // O primeiro envio voltou, o segundo ainda não: a tela fica no pedido mais novo.
+      expect(order()).toEqual(['s3', 's2', 's1']);
+      second.settle(confirmed('s3', 's2', 's1'));
+      await done;
+      expect(order()).toEqual(['s3', 's2', 's1']);
+    });
+
+    it('goes back to what the earlier send confirmed when a later one in the chain is refused', async () => {
+      const first = pending();
+      api.reorderShortcuts
+        .mockReturnValueOnce(first.promise)
+        .mockRejectedValueOnce(problem(400, 'validation-failed'));
+
+      // A leitura que vem depois da recusa já traz o que o servidor guardou: a ordem do primeiro envio.
+      api.shortcuts.mockResolvedValue(confirmed('s2', 's1', 's3'));
+
+      const done = store.reorder(['s2', 's1', 's3']);
+      void store.reorder(['s3', 's2', 's1']);
+      first.settle(confirmed('s2', 's1', 's3'));
+
+      await expect(done).resolves.toBe(false);
+      expect(order()).toEqual(['s2', 's1', 's3']);
+      await flush();
+      expect(order()).toEqual(['s2', 's1', 's3']);
+    });
+
+    it('holds a list that arrives from the stream while sending, so it does not undo the new order', async () => {
+      const send = pending();
+      api.reorderShortcuts.mockReturnValueOnce(send.promise);
+      api.shortcuts.mockResolvedValue(confirmed('s3', 's1', 's2'));
+
+      const done = store.reorder(['s3', 's1', 's2']);
+      emit('tv.shortcuts', [shortcut(1), shortcut(2), shortcut(3)]);
+
+      expect(order()).toEqual(['s3', 's1', 's2']);
+      send.settle(confirmed('s3', 's1', 's2'));
+      await done;
+      await flush();
+      expect(order()).toEqual(['s3', 's1', 's2']);
+      // O que chegou não era o que o servidor acabou de confirmar: a lista certa foi buscada de novo.
+      expect(api.shortcuts).toHaveBeenCalledTimes(2);
+    });
+
+    it('needs no second read when the held list is exactly what the server confirmed (its own echo)', async () => {
+      const send = pending();
+      api.reorderShortcuts.mockReturnValueOnce(send.promise);
+
+      const done = store.reorder(['s3', 's1', 's2']);
+      emit('tv.shortcuts', confirmed('s3', 's1', 's2'));
+      send.settle(confirmed('s3', 's1', 's2'));
+      await done;
+      await flush();
+
+      expect(order()).toEqual(['s3', 's1', 's2']);
+      expect(api.shortcuts).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies a list from the stream as usual when nothing is being sent', () => {
+      emit('tv.shortcuts', confirmed('s2', 's3', 's1'));
+      expect(order()).toEqual(['s2', 's3', 's1']);
+    });
+
+    it('refuses a list that is not an exact permutation of the shortcuts it has, without calling the API', async () => {
+      for (const ids of [['s1', 's2'], ['s1', 's1', 's2'], ['s1', 's2', 's9'], []]) {
+        await expect(store.reorder(ids)).resolves.toBe(false);
+      }
+      expect(api.reorderShortcuts).not.toHaveBeenCalled();
+      expect(order()).toEqual(['s1', 's2', 's3']);
+    });
+
+    it('does not reorder without network, and says why', async () => {
+      online.set(false);
+
+      await expect(store.reorder(['s3', 's1', 's2'])).resolves.toBe(false);
+
+      expect(api.reorderShortcuts).not.toHaveBeenCalled();
+      expect(order()).toEqual(['s1', 's2', 's3']);
+      expect(store.notice()?.kind).toBe('error');
+    });
+
+    it('does not need the agent: it works with the agent off', async () => {
+      emit('tv.state', { ...hot, agentOnline: false, connection: 'disconnected' });
+      api.reorderShortcuts.mockResolvedValueOnce(confirmed('s2', 's1', 's3'));
+
+      await expect(store.reorder(['s2', 's1', 's3'])).resolves.toBe(true);
+    });
+
+    it('keeps the new order in the cache the offline view reads', async () => {
+      api.reorderShortcuts.mockResolvedValueOnce(confirmed('s3', 's1', 's2'));
+
+      await store.reorder(['s3', 's1', 's2']);
+
+      const cached = JSON.parse(localStorage.getItem(STATE_KEY)!);
+      expect(cached.shortcuts.map((item: TvShortcut) => item.id)).toEqual(['s3', 's1', 's2']);
+    });
+
+    it('does not rewrite the cached icons just because the order changed', async () => {
+      const withIcons = (...ids: string[]) =>
+        confirmed(...ids).map((item) => ({
+          ...item,
+          iconDataUri: item.id === 's3' ? null : `data:image/png;base64,${item.id}`,
+        }));
+      api.shortcuts.mockResolvedValue(withIcons('s1', 's2', 's3'));
+      await store.refresh();
+      const set = vi.spyOn(Storage.prototype, 'setItem');
+      api.reorderShortcuts.mockResolvedValueOnce(withIcons('s3', 's2', 's1'));
+
+      await store.reorder(['s3', 's2', 's1']);
+
+      expect(set.mock.calls.filter(([key]) => key === ICONS_KEY)).toHaveLength(0);
+      set.mockRestore();
     });
   });
 });

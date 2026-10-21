@@ -62,7 +62,9 @@ public sealed class AuthorizationTests(PostgresFixture postgres)
         body.GetProperty("email").GetString().Should().Be("dono@uniover.test");
         body.GetProperty("displayName").GetString().Should().Be("dono");
         body.GetProperty("id").GetGuid().Should().NotBeEmpty();
-        body.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(["id", "email", "displayName", "role"], "nada de hash nem contador");
+        body.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
+            ["id", "email", "displayName", "role", "displayNameConfirmed", "permissions"], "nada de hash nem contador");
+        body.GetProperty("displayNameConfirmed").GetBoolean().Should().BeFalse("o dono ainda não escolheu o nome");
     }
 
     [Fact]

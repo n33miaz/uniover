@@ -106,7 +106,8 @@ export function parseWatchdog(value: unknown): TvWatchdog | null {
 
 /**
  * Nome mostrado de um atalho: o nome próprio do dono, depois o nome que o agente publica para o app (`tvLabel`) e só
- * então "Atalho n", com a posição que a API deu (estável, nunca renumerada).
+ * então "Atalho n", com a posição que a API deu (a ordem do dono: quando ele muda a ordem, as posições são renumeradas e esse
+ * nome acompanha).
  */
 export function shortcutLabel(
   shortcut: Pick<TvShortcut, 'customLabel' | 'tvLabel' | 'position'>,

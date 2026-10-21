@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import time
+from collections.abc import Callable
 from typing import Final, Protocol
 from urllib.parse import urlsplit
 
@@ -12,9 +14,6 @@ from uniover_agent.core.tv.text_edit import TextReconciler
 
 _log = logging.getLogger(__name__)
 
-# Teclas que desligam a TV. Sem emissor infravermelho ela não volta do standby e não tem botão
-# físico: o desligamento só deve existir com confirmação forte, e até lá o agente o recusa.
-POWER_KEYS: Final = frozenset({"POWER"})
 # Esquemas de link que podem ser abertos na TV. `intent://` e afins ficam de fora de propósito: o
 # contrato só fixa o formato do link, quem decide o que pode ser aberto é este agente.
 DEFAULT_LINK_SCHEMES: Final = frozenset({"https", "http", "market", "vnd.youtube"})
@@ -47,19 +46,25 @@ def failed_result(command: Command, exc: TvSessionError) -> CommandResult:
     return CommandResult(command.id, ResultStatus.FAILED, exc.message, exc.code)
 
 
-def tv_key_handler(tv: TvControl, *, blocked_keys: frozenset[str] = POWER_KEYS) -> Handler:
-    """Trata `tv.key.v1` e `tv.key.v2` (a direção só existe na v2; o padrão é `SHORT`)."""
+def tv_key_handler(tv: TvControl, *, blocked_keys: frozenset[str] = frozenset()) -> Handler:
+    """Trata `tv.key.v1` e `tv.key.v2` (a direção só existe na v2; o padrão é `SHORT`).
+
+    Nenhuma tecla é recusada por padrão, nem `POWER`: quem decide o desligamento é o app (a folha
+    de confirmação) e a API (a rota própria, que a rota genérica de teclas recusa). Quem montar o
+    agente pode ainda bloquear teclas por `blocked_keys`; elas voltam como `KEY_BLOCKED` sem sequer
+    abrir a sessão com a TV.
+    """
 
     async def handle(command: Command) -> CommandResult:
         key = command.body.get("key")
         if not isinstance(key, str) or not key:
             return CommandResult(command.id, ResultStatus.REJECTED, "campo 'key' ausente")
         if key in blocked_keys:
-            _log.warning("tecla %s recusada: desligar a TV não está habilitado", key)
+            _log.warning("tecla %s recusada: bloqueada neste agente", key)
             return CommandResult(
                 command.id,
                 ResultStatus.REJECTED,
-                "desligar a TV não está habilitado neste agente",
+                f"a tecla {key} está bloqueada neste agente",
                 KEY_BLOCKED,
             )
         direction = command.body.get("direction") or "SHORT"
@@ -72,7 +77,12 @@ def tv_key_handler(tv: TvControl, *, blocked_keys: frozenset[str] = POWER_KEYS) 
     return handle
 
 
-def tv_text_handler(tv: TvControl, *, reconciler: TextReconciler | None = None) -> Handler:
+def tv_text_handler(
+    tv: TvControl,
+    *,
+    reconciler: TextReconciler | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> Handler:
     """`tv.text.v1`: o campo de texto em foco na TV passa a ter este texto.
 
     O app manda o texto completo a cada pausa de digitação. O agente não reenvia o campo inteiro (o
@@ -82,7 +92,8 @@ def tv_text_handler(tv: TvControl, *, reconciler: TextReconciler | None = None) 
 
     As mensagens são atendidas uma a uma, na ordem de chegada, e se uma mais nova já chegou enquanto
     a anterior esperava a vez (a TV acordando, por exemplo), a antiga é descartada: o diff é sempre
-    contra o último texto pedido, então pular um estado intermediário é seguro.
+    contra o último texto pedido, então pular um estado intermediário é seguro. Quanto cada
+    mensagem esperou a vez entra no resumo do log (nunca o texto).
     """
     editor = reconciler or TextReconciler(tv)
     turn = asyncio.Lock()
@@ -93,14 +104,17 @@ def tv_text_handler(tv: TvControl, *, reconciler: TextReconciler | None = None) 
         text = command.body.get("text")
         if not isinstance(text, str):
             return CommandResult(command.id, ResultStatus.REJECTED, "campo 'text' ausente")
+        arrived = monotonic()
         latest += 1
         mine = latest
         async with turn:
+            queued = monotonic() - arrived
             if mine != latest:
                 # Já existe um texto mais novo na fila; ele é quem vai para a TV.
+                _log.info("texto descartado: chegou um mais novo | ms vez=%d", round(queued * 1000))
                 return CommandResult(command.id, ResultStatus.OK)
             try:
-                await editor.set_text(text)
+                await editor.set_text(text, queued=queued)
             except TvSessionError as exc:
                 return failed_result(command, exc)
         return CommandResult(command.id, ResultStatus.OK)

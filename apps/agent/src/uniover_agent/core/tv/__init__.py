@@ -4,7 +4,6 @@ from uniover_agent.core.tv.adb_commands import AppsAnnouncer, TvApps, tv_apps_re
 from uniover_agent.core.tv.apps import AppEntry, describe_apps
 from uniover_agent.core.tv.handlers import (
     DEFAULT_LINK_SCHEMES,
-    POWER_KEYS,
     PackageLauncher,
     TvControl,
     tv_app_launch_handler,
@@ -25,7 +24,6 @@ from uniover_agent.core.tv.text_edit import AdbTyping, TextReconciler
 
 __all__ = [
     "DEFAULT_LINK_SCHEMES",
-    "POWER_KEYS",
     "TV_NOT_PAIRED",
     "TV_UNREACHABLE",
     "AdbTyping",

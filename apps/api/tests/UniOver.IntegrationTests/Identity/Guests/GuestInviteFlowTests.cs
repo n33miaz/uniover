@@ -95,8 +95,10 @@ public sealed class GuestInviteFlowTests(PostgresFixture postgres)
         stored.Label.Should().Be("Alice");
         stored.Role.Should().Be(AccountRoles.Guest);
         var audit = await db.LoginAudit.SingleAsync(a => a.Event == AuditEvents.GuestInviteCreated, Ct);
-        audit.Detail.Should().Be(created.Id.ToString("N"));
-        audit.Detail.Should().NotContain(created.Token);
+
+        // O detalhe leva o id do convite e a lista de permissões (não é dado sensível), nunca o segredo nem o nome.
+        audit.Detail.Should().Be($"{created.Id:N}|module:tv,tv:control,tv:power,tv:launch,tv:history");
+        audit.Detail.Should().NotContain(created.Token).And.NotContain("Alice");
     }
 
     [Theory]

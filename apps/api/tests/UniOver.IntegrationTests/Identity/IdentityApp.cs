@@ -262,7 +262,11 @@ internal sealed class IdentityApp : IAsyncDisposable
     public static async Task<JsonElement> JsonAsync(HttpResponseMessage response) =>
         await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
 
-    /// <summary>Assina um JWT com uma chave do teste (a mesma que o módulo usa ou outra), para os cenários de validação.</summary>
+    /// <summary>
+    /// Assina um JWT com uma chave do teste (a mesma que o módulo usa ou outra), para os cenários de validação. O papel
+    /// padrão é o dono, como em todo token que o servidor emite hoje; <c>role: null</c> assina um token SEM a claim de
+    /// papel (o formato antigo, que já não vale como nada).
+    /// </summary>
     public static string CraftToken(
         string base64Key,
         DateTimeOffset notBefore,
@@ -271,7 +275,8 @@ internal sealed class IdentityApp : IAsyncDisposable
         string issuer = UniOverAuth.Issuer,
         Guid? subject = null,
         string algorithm = SecurityAlgorithms.HmacSha256,
-        string? role = null)
+        string? role = AccountRoles.Owner,
+        IReadOnlyDictionary<string, object>? extraClaims = null)
     {
         var key = new SymmetricSecurityKey(Convert.FromBase64String(base64Key));
         var claims = new Dictionary<string, object>
@@ -282,6 +287,11 @@ internal sealed class IdentityApp : IAsyncDisposable
         if (role is not null)
         {
             claims[UniOverAuth.RoleClaim] = role;
+        }
+
+        foreach (var (name, value) in extraClaims ?? new Dictionary<string, object>())
+        {
+            claims[name] = value;
         }
 
         var descriptor = new SecurityTokenDescriptor

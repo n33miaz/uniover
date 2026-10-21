@@ -38,7 +38,6 @@ from uniover_agent.config import (
     tv_cert_dir,
 )
 from uniover_agent.core import (
-    POWER_KEYS,
     AppIconPublisher,
     AppsAnnouncer,
     ConnectionSupervisor,
@@ -145,9 +144,21 @@ def build_tv(
         return None
     remote = AndroidTvRemoteV2(host, settings.tv_client_name, cert_dir)
     manager = TvSessionManager(clock, remote, hibernate_seconds=settings.tv_hibernate_seconds)
-    # `POWER` fica recusado: sem infravermelho a TV não volta do standby e não tem botão físico.
-    keys = tv_key_handler(manager, blocked_keys=POWER_KEYS)
-    text = TextReconciler(manager, monotonic=clock.monotonic)
+    # `POWER` passa como as outras teclas: o app só o manda depois da folha de confirmação e a API
+    # só o aceita pela rota própria de desligar. Sem emissor infravermelho a TV só volta com o
+    # controle original, então o gerenciador de sessão não repete um `POWER` e nada aqui o reenvia.
+    keys = tv_key_handler(manager)
+    text = TextReconciler(
+        manager,
+        monotonic=clock.monotonic,
+        keys=settings.tv_text_by_keys,
+        key_pause_seconds=settings.tv_text_key_pause_ms / 1000,
+        sleep=clock.sleep,
+    )
+    _log.info(
+        "digitação na TV: teclas do controle remoto %s",
+        "ligadas" if settings.tv_text_by_keys else "desligadas (padrão)",
+    )
     setup = TvSetup(
         manager,
         transport,
@@ -155,7 +166,7 @@ def build_tv(
         handlers={
             "tv.key.v1": keys,
             "tv.key.v2": keys,
-            "tv.text.v1": tv_text_handler(manager, reconciler=text),
+            "tv.text.v1": tv_text_handler(manager, reconciler=text, monotonic=clock.monotonic),
             "tv.wake.v1": tv_wake_handler(manager),
             "tv.app.launch.v1": tv_app_launch_handler(manager),
         },

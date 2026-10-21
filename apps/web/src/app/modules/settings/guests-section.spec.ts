@@ -14,6 +14,7 @@ const invite = (id: string, name: string, status = 'pending'): GuestInviteSummar
   expiresAt: '2026-10-21T12:00:00Z',
   usedAt: null,
   revokedAt: null,
+  permissions: ['module:tv', 'tv:control', 'tv:power', 'tv:launch', 'tv:history'],
 });
 const guest = (id: string, name: string, disabledAt: string | null = null): GuestSummary => ({
   id,
@@ -21,6 +22,7 @@ const guest = (id: string, name: string, disabledAt: string | null = null): Gues
   email: `${name.toLowerCase()}@exemplo.com`,
   createdAt: '2026-10-19T15:00:00Z',
   disabledAt,
+  permissions: ['module:tv', 'tv:control', 'tv:power', 'tv:launch', 'tv:history'],
 });
 
 const SECRET = 'SegredoDoConvite0123456789abcdefghijklmnopq';

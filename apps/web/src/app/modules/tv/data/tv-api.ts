@@ -90,4 +90,16 @@ export class TvApi {
     );
     return normalizeShortcut(updated);
   }
+
+  /**
+   * Grava a ordem dos atalhos (só o dono). `ids` é a lista COMPLETA, na ordem desejada: a API recusa (400) tudo que
+   * não for uma permutação exata dos atalhos que ela tem. Devolve a lista como ficou, já renumerada.
+   */
+  async reorderShortcuts(ids: readonly string[]): Promise<TvShortcut[]> {
+    const body: components['schemas']['ReorderShortcutsRequest'] = { ids: [...ids] };
+    const dto = await firstValueFrom(this.http.put<TvShortcut[]>(`${BASE}/shortcuts/order`, body));
+    const list = parseShortcuts(dto);
+    if (!list) throw new Error('Lista de atalhos em formato inesperado.');
+    return list;
+  }
 }

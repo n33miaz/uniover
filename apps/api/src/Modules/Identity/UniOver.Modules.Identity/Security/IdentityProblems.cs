@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Domain;
 
 namespace UniOver.Modules.Identity.Security;
 
@@ -120,6 +121,59 @@ internal static class IdentityProblems
             statusCode: StatusCodes.Status409Conflict,
             title: "Este convite já foi aceito: revogue a conta do convidado.",
             type: ProblemDetailsExtensions.TypeBase + InviteNotPendingType);
+
+    public const string GuestRevokedType = "guest-revoked";
+    public const string PermissionsConflictType = "permissions-conflict";
+
+    /// <summary>O convidado já foi revogado: mudar permissões de uma conta sem acesso não faz sentido.</summary>
+    public static IResult GuestRevoked() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: "O acesso deste convidado foi revogado.",
+            type: ProblemDetailsExtensions.TypeBase + GuestRevokedType);
+
+    /// <summary>Duas mudanças de permissão ao mesmo tempo na mesma conta: a segunda tenta de novo.</summary>
+    public static IResult PermissionsConflict() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: "As permissões acabaram de ser alteradas por outra requisição. Tente de novo.",
+            type: ProblemDetailsExtensions.TypeBase + PermissionsConflictType);
+
+    /// <summary>
+    /// 400 por lista de permissões fora das regras, com o texto de cada erro (em português) sob <c>permissions</c>. Os
+    /// textos nunca repetem o que foi enviado.
+    /// </summary>
+    public static IResult InvalidPermissions(IEnumerable<string> errorCodes)
+    {
+        ArgumentNullException.ThrowIfNull(errorCodes);
+
+        var messages = errorCodes.Select(code => code switch
+        {
+            PermissionRules.ErrorRequired => "Informe a lista de permissões.",
+            PermissionRules.ErrorTooMany => "Há permissões demais na lista.",
+            PermissionRules.ErrorUnknown => "A lista tem uma permissão que não existe.",
+            PermissionRules.ErrorNoModule => "Escolha ao menos um módulo (TV ou Treino) para dar acesso.",
+            PermissionRules.ErrorMissingModule => "Uma permissão da TV precisa do módulo da TV na lista.",
+            _ => "A lista de permissões é inválida.",
+        }).Distinct().ToArray();
+
+        return ProblemDetailsExtensions.ValidationProblem(new Dictionary<string, string[]> { ["permissions"] = messages });
+    }
+
+    /// <summary>400 por nome fora das regras, com o texto sob <c>displayName</c> (sem repetir o que foi enviado).</summary>
+    public static IResult InvalidDisplayName(DisplayNameError error) =>
+        ProblemDetailsExtensions.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["displayName"] =
+            [
+                error switch
+                {
+                    DisplayNameError.Empty => "Informe seu nome.",
+                    DisplayNameError.TooLong => $"O nome pode ter até {DisplayNameRules.MaxLength} caracteres.",
+                    _ => "Use só letras, números, espaços e emojis comuns, sem caracteres invisíveis ou de controle.",
+                },
+            ],
+        });
 
     public static IResult Conflict() =>
         Results.Problem(

@@ -10,6 +10,7 @@ namespace UniOver.Modules.Identity.Features.ListGuestInvites;
 
 /// <summary>Um convite como o dono o vê. Nunca leva o segredo do link (ele só aparece na criação).</summary>
 /// <param name="Status"><c>pending</c>, <c>used</c>, <c>revoked</c> ou <c>expired</c>.</param>
+/// <param name="Permissions">O que o convite concede quando for aceito (identificadores do catálogo).</param>
 internal sealed record GuestInviteSummary(
     Guid Id,
     string DisplayName,
@@ -17,7 +18,8 @@ internal sealed record GuestInviteSummary(
     DateTimeOffset CreatedAt,
     DateTimeOffset ExpiresAt,
     DateTimeOffset? UsedAt,
-    DateTimeOffset? RevokedAt);
+    DateTimeOffset? RevokedAt,
+    IReadOnlyList<string> Permissions);
 
 internal sealed class ListGuestInvitesHandler(IdentityDbContext db, TimeProvider time)
 {
@@ -32,7 +34,8 @@ internal sealed class ListGuestInvitesHandler(IdentityDbContext db, TimeProvider
             .ToListAsync(cancellationToken);
 
         return [.. invites.Select(i => new GuestInviteSummary(
-            i.Id, i.Label, StatusText(i.StatusAt(now)), i.CreatedAt, i.ExpiresAt, i.UsedAt, i.RevokedAt))];
+            i.Id, i.Label, StatusText(i.StatusAt(now)), i.CreatedAt, i.ExpiresAt, i.UsedAt, i.RevokedAt,
+            PermissionRules.Effective(i.Permissions)))];
     }
 
     internal static string StatusText(InviteStatus status) => status switch

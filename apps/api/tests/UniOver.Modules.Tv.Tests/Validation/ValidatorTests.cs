@@ -1,5 +1,7 @@
 using AwesomeAssertions;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
+using UniOver.Modules.Tv.Domain;
+using UniOver.Modules.Tv.Features.ReorderShortcuts;
 using UniOver.Modules.Tv.Features.SendKey;
 using UniOver.Modules.Tv.Features.SendText;
 using UniOver.Modules.Tv.Features.UpdateShortcut;
@@ -103,5 +105,30 @@ public class ValidatorTests
         UpdateShortcutValidator.Validate(new UpdateShortcutRequest(new string('n', 40), null)).Should().BeEmpty();
         UpdateShortcutValidator.Validate(new UpdateShortcutRequest(new string('n', 41), null)).Should().ContainKey("customLabel");
         UpdateShortcutValidator.Validate(new UpdateShortcutRequest("com\nquebra", null)).Should().ContainKey("customLabel");
+    }
+
+    [Fact]
+    public void ReorderShortcuts_NeedsTheListOfIds()
+    {
+        ReorderShortcutsValidator.Validate(null).Should().ContainKey("ids");
+        ReorderShortcutsValidator.Validate(new ReorderShortcutsRequest(null)).Should().ContainKey("ids");
+        ReorderShortcutsValidator.Validate(new ReorderShortcutsRequest([Guid.NewGuid(), Guid.NewGuid()])).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ReorderShortcuts_RefusesARepeatedId()
+    {
+        var id = Guid.NewGuid();
+
+        ReorderShortcutsValidator.Validate(new ReorderShortcutsRequest([id, Guid.NewGuid(), id])).Should().ContainKey("ids");
+    }
+
+    [Fact]
+    public void ReorderShortcuts_LimitsTheSizeOfTheList()
+    {
+        static Guid[] Of(int count) => [.. Enumerable.Range(0, count).Select(_ => Guid.NewGuid())];
+
+        ReorderShortcutsValidator.Validate(new ReorderShortcutsRequest(Of(ShortcutCatalog.MaxReorderIds))).Should().BeEmpty();
+        ReorderShortcutsValidator.Validate(new ReorderShortcutsRequest(Of(ShortcutCatalog.MaxReorderIds + 1))).Should().ContainKey("ids");
     }
 }

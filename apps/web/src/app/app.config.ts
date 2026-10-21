@@ -11,6 +11,8 @@ import { routes } from './app.routes';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { AuthService } from './core/auth/auth.service';
 import { connectivityInterceptor } from './core/connectivity/connectivity.interceptor';
+import { InstallHintService } from './core/pwa/install-hint.service';
+import { ModuleHeadService } from './core/pwa/module-head.service';
 import { PwaUpdateService } from './core/pwa/pwa-update.service';
 import { HomeStatusPort } from './core/status/home-status.port';
 import { LiveHomeStatus } from './core/status/live-home-status';
@@ -27,6 +29,10 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(withFetch(), withInterceptors([connectivityInterceptor, authInterceptor])),
     // Registra o service worker sem segurar a primeira tela (só em produção).
     provideAppInitializer(() => inject(PwaUpdateService).start()),
+    // Guarda o pedido de instalação do navegador (Chromium o entrega uma vez, cedo, antes de a sessão confirmar).
+    provideAppInitializer(() => inject(InstallHintService).start()),
+    // Acerta manifest, ícone e nome do <head> pelo módulo aberto (o servidor só os escolhe ao entregar a página).
+    provideAppInitializer(() => inject(ModuleHeadService).start()),
     // Confirma a sessão pelo cookie de refresh sem segurar a primeira tela (o guarda espera, com limite de tempo).
     provideAppInitializer(() => {
       void inject(AuthService).init();

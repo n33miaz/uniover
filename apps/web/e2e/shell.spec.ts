@@ -138,13 +138,16 @@ test.describe('início e navegação', () => {
 
   for (const scheme of ['light', 'dark'] as const) {
     test(`acessibilidade (axe) no tema ${scheme}`, async ({ page }) => {
-      await page.emulateMedia({ colorScheme: scheme });
+      // Movimento reduzido: as animações de entrada (`ui-rise`, avisos) saem do caminho e o axe mede cores finais. Com
+      // animação, no executor lento o contraste era medido com o elemento ainda semitransparente (`.notice` na `/tv`).
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
       await page.goto('/');
       await expect(blocks(page)).toHaveCount(MODULE_COUNT);
       await settle(page);
       await expectNoSeriousA11yViolations(page);
       await page.goto('/tv');
       await expect(page.getByRole('heading', { level: 1, name: 'TV' })).toBeVisible();
+      await settle(page);
       await expectNoSeriousA11yViolations(page);
     });
   }

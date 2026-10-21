@@ -56,15 +56,35 @@ async def test_key_v2_without_direction_is_a_short_press() -> None:
     assert remote.sent == [("OK", "SHORT")]
 
 
-async def test_power_key_is_refused_and_nothing_is_sent_to_the_tv() -> None:
+@pytest.mark.parametrize("message_type", ["tv.key.v1", "tv.key.v2"])
+async def test_power_key_goes_to_the_tv_by_default(message_type: str) -> None:
     handler, remote = make()
+    result = await handler(Command("1", message_type, {"key": "POWER"}))
+    assert result.status is ResultStatus.OK
+    assert remote.sent == [("POWER", "SHORT")]
+
+
+async def test_a_blocked_key_is_refused_and_nothing_is_sent_to_the_tv() -> None:
+    clock, remote = FakeClock(), FakeTvRemote()
+    keys = tv_key_handler(TvSessionManager(clock, remote), blocked_keys=frozenset({"POWER"}))
     for message_type in ("tv.key.v1", "tv.key.v2"):
-        result = await handler(Command("1", message_type, {"key": "POWER"}))
+        result = await keys(Command("1", message_type, {"key": "POWER"}))
         assert result.status is ResultStatus.REJECTED
         assert result.code == KEY_BLOCKED
+        assert "POWER" in result.detail
     # Nem a sessão foi aberta: o pedido morre antes de tocar na TV.
     assert remote.connects == 0
     assert remote.sent == []
+
+
+async def test_blocking_one_key_leaves_the_others_alone() -> None:
+    clock, remote = FakeClock(), FakeTvRemote()
+    keys = tv_key_handler(TvSessionManager(clock, remote), blocked_keys=frozenset({"MUTE"}))
+    muted = await keys(Command("1", "tv.key.v1", {"key": "MUTE"}))
+    power = await keys(Command("2", "tv.key.v1", {"key": "POWER"}))
+    assert (muted.status, muted.code) == (ResultStatus.REJECTED, KEY_BLOCKED)
+    assert power.status is ResultStatus.OK
+    assert remote.sent == [("POWER", "SHORT")]
 
 
 async def test_unreachable_tv_is_reported_with_its_code() -> None:

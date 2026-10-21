@@ -41,6 +41,12 @@ DEFAULT_BACKOFF: Final = (1.0, 2.0, 4.0)
 # De quanto em quanto tempo o vigia de inatividade confere; a hibernação atrasa no máximo isso.
 DEFAULT_POLL_SECONDS: Final = 5.0
 _WARMUP_HISTORY: Final = 100
+POWER_KEY: Final = "POWER"
+# `POWER` é um interruptor: a primeira tecla desliga a TV e a segunda a liga de volta. Um segundo
+# pedido logo depois do primeiro (toque duplo, o dono repetindo depois de um erro de tempo esgotado
+# enquanto o agente ainda abria a sessão) quase sempre é repetição, e enviá-lo desfaria o
+# desligamento. Passado esse tempo é um pedido novo e vale como qualquer outro.
+POWER_REPEAT_SECONDS: Final = 10.0
 
 
 class SessionState(StrEnum):
@@ -90,6 +96,11 @@ class TvSessionManager:
         self._last_activity = clock.monotonic()
         # Serializa abrir e fechar: dois comandos chegando juntos esperam o mesmo aquecimento.
         self._lock = asyncio.Lock()
+        # Quando o último `POWER` chegou à TV (relógio monotônico) e a fila de quem o repete.
+        self._power_sent_at: float | None = None
+        self._power_lock = asyncio.Lock()
+        # A recuperação em segundo plano já reabriu a sessão e ninguém usou o controle desde então.
+        self._reopened_unattended = False
         self._listeners: list[Callable[[TvState], None]] = []
         self._repair_callbacks: list[Callable[[], None]] = []
         self._last_emitted: TvState | None = None
@@ -156,7 +167,25 @@ class TvSessionManager:
         self._set_connection("hibernating")
 
     async def send_key(self, key: str, direction: str = "SHORT") -> None:
+        if key == POWER_KEY and direction == "SHORT":
+            await self._send_power()
+            return
         await self._run(lambda remote: remote.send_key(key, direction))
+
+    async def _send_power(self) -> None:
+        """`POWER` com um toque só: repetido em `POWER_REPEAT_SECONDS` do anterior, não é enviado.
+
+        O tempo conta da chegada à TV (e não do pedido): o pedido pode ter esperado a sessão abrir
+        por quase meio minuto. Se o envio falha, nada é marcado e o dono pode tentar de novo.
+        Pressão longa (`START_LONG` e `END_LONG`) é um gesto só em dois envios: não passa por aqui.
+        """
+        async with self._power_lock:
+            sent_at = self._power_sent_at
+            if sent_at is not None and self._clock.monotonic() - sent_at < POWER_REPEAT_SECONDS:
+                _log.info("POWER repetido logo após o anterior; não enviado para não religar a TV")
+                return
+            await self._run(lambda remote: remote.send_key(POWER_KEY, "SHORT"))
+            self._power_sent_at = self._clock.monotonic()
 
     async def launch_link(self, link: str) -> None:
         await self._run(lambda remote: remote.launch_link(link))
@@ -166,8 +195,14 @@ class TvSessionManager:
         await self._run(lambda remote: remote.send_text(text))
 
     async def wake(self) -> None:
-        """Pré-aquece: abre a sessão (se preciso) e renova o relógio."""
+        """Pré-aquece: abre a sessão (se preciso) e renova o relógio.
+
+        Nunca envia tecla (nem `POWER`, nem a que acorda a TV): o app pede isto de tempos em tempos
+        enquanto a tela do controle está aberta, inclusive com a TV recém-desligada, e uma tecla
+        aqui a ligaria de volta. Abrir a sessão só troca a configuração do protocolo com a TV.
+        """
         self.touch()
+        self._reopened_unattended = False
         await self._ensure_hot()
 
     async def hibernate_if_idle(self) -> bool:
@@ -213,6 +248,7 @@ class TvSessionManager:
 
     async def _run(self, action: Callable[[TvRemote], Awaitable[None]]) -> None:
         self.touch()
+        self._reopened_unattended = False
         await self._ensure_hot()
         try:
             await action(self._remote)
@@ -350,6 +386,8 @@ class TvSessionManager:
         self._spawn(self._recover())
 
     async def _recover(self) -> None:
+        # Também é o caminho de uma TV recém-desligada (o standby derruba a sessão): reabre, com a
+        # espera de sempre, e nunca envia tecla. Se a TV não responde, desiste.
         if self._state is not SessionState.HIBERNATING:
             return
         if self._is_idle():
@@ -359,10 +397,21 @@ class TvSessionManager:
                     await self._close_channels()
                     self._set_connection("hibernating")
             return
+        if self._reopened_unattended:
+            # A TV aceitou a sessão que reabri sozinho e a derrubou de novo, sem ninguém ter usado o
+            # controle: insistir viraria um laço de aberturas (uma TV em standby pode fazer isso).
+            # A sessão fica fechada e o próximo comando ou aquecimento a reabre.
+            _log.info("a TV derrubou de novo a sessão reaberta sozinha; espero o próximo uso")
+            async with self._lock:
+                if self._state is SessionState.HIBERNATING:
+                    await self._close_channels()
+            return
         try:
             await self._ensure_hot()
         except TvSessionError as exc:
             _log.warning("TV não voltou sozinha: %s", exc.message)
+        else:
+            self._reopened_unattended = True
 
     def _spawn(self, coroutine: Coroutine[Any, Any, None]) -> None:
         task = asyncio.get_running_loop().create_task(coroutine)

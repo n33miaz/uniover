@@ -152,6 +152,9 @@ class AdbTv:
         self._connected = False
         self._blocked_until = 0.0
         self._blocked_error: AdbError | None = None
+        # Quanto o último `input_text` esperou a trava (a lista de apps e as consultas de ícones a
+        # seguram): entra no resumo da digitação para separar "trava ocupada" de "TV lenta".
+        self.last_input_wait_seconds = 0.0
 
     @property
     def connected(self) -> bool:
@@ -253,7 +256,9 @@ class AdbTv:
         if len(text) > _MAX_TEXT_LENGTH:
             raise ValueError("texto longo demais para o ADB")
         command = input_text_command(text)
+        asked = self._monotonic()
         async with self._lock:
+            self.last_input_wait_seconds = self._monotonic() - asked
             await self._ensure_connected_locked()
             await self._shell(command)
 

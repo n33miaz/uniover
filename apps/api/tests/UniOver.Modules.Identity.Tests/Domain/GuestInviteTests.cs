@@ -76,6 +76,75 @@ public class GuestInviteTests
     }
 
     [Fact]
+    public void TheInviteNameFollowsTheSameRuleAsTheAccountName_BecauseItBecomesIt()
+    {
+        GuestInvite.LabelMaxLength.Should().Be(DisplayNameRules.MaxLength);
+
+        // Um nome com caractere invisível ou de direção de texto não entra pelo convite.
+        GuestInvite.NormalizeLabel("Ali\u200Bce").Should().BeNull();
+        GuestInvite.NormalizeLabel("\u202EAlice").Should().BeNull();
+        GuestInvite.NormalizeLabel("A   lice").Should().Be("A lice");
+    }
+
+    [Fact]
+    public void Create_WithoutAList_GrantsTheTvControlModel_ExactlyWhatTheExistingGuestHasToday()
+    {
+        var invite = NewInvite();
+
+        invite.Permissions.Should().Equal(
+            "module:tv", "tv:control", "tv:power", "tv:launch", "tv:history");
+        invite.Permissions.Should().NotContain("tv:edit-shortcuts", "hoje o PATCH de atalhos é só do dono");
+    }
+
+    [Fact]
+    public void Create_WithAList_StoresItNormalized_InCatalogOrder_WithoutRepeats()
+    {
+        var invite = GuestInvite.Create(
+            Guid.NewGuid(), "Raphael", SecretTokens.Generate().Hash, Now, Validity,
+            ["tv:power", "module:training", "module:tv", "tv:power"]);
+
+        invite.Permissions.Should().Equal("module:tv", "tv:power", "module:training");
+    }
+
+    [Theory]
+    [InlineData("tv:control")]
+    [InlineData("module:tv", "nao-existe")]
+    [InlineData("MODULE:TV")]
+    public void Create_WithAListOutsideTheRules_Throws(params string[] permissions)
+    {
+        var act = () => GuestInvite.Create(Guid.NewGuid(), "Alice", SecretTokens.Generate().Hash, Now, Validity, permissions);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Create_WithAnEmptyList_Throws_ItIsNotTheDefault()
+    {
+        var act = () => GuestInvite.Create(Guid.NewGuid(), "Alice", SecretTokens.Generate().Hash, Now, Validity, []);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void InviteAuditDetail_WithTheWholeCatalog_FitsTheAuditColumn_SoNothingIsTruncatedSilently()
+    {
+        var invite = GuestInvite.Create(
+            Guid.NewGuid(), "Alice", SecretTokens.Generate().Hash, Now, Validity, [.. UniOver.BuildingBlocks.Web.AccessPermissions.All]);
+
+        var detail = Features.CreateGuestInvite.CreateGuestInviteHandler.InviteAuditDetail(invite);
+        // Pior caso real de uma edição: cada permissão ou entra ou sai (nunca as duas), então juntas somam o catálogo uma vez só.
+        var all = UniOver.BuildingBlocks.Web.AccessPermissions.All;
+        var change = Features.SetGuestPermissions.SetGuestPermissionsHandler.ChangeAuditDetail(invite.Id, all.Take(3), all.Skip(3));
+
+        detail.Length.Should().BeLessThan(AuditText.DetailMax);
+        change.Length.Should().BeLessThan(AuditText.DetailMax);
+        foreach (var permission in UniOver.BuildingBlocks.Web.AccessPermissions.All)
+        {
+            detail.Should().Contain(permission);
+        }
+    }
+
+    [Fact]
     public void Create_WithANonPositiveValidity_Throws()
     {
         var act = () => GuestInvite.Create(Guid.NewGuid(), "Alice", SecretTokens.Generate().Hash, Now, TimeSpan.Zero);
@@ -158,10 +227,11 @@ public class AccountRolesTests
     }
 
     [Fact]
-    public void Of_WithoutTheClaim_IsTheOwner_BecauseOlderTokensCameFromTheOnlyAccountThatExisted()
+    public void Of_WithoutTheClaim_IsNoRoleAtAll_ItIsNeverTheOwner()
     {
-        AccountRoles.Of(With()).Should().Be("owner");
-        AccountRoles.Of(null).Should().Be("owner");
+        AccountRoles.Of(With()).Should().BeNull();
+        AccountRoles.Of(null).Should().BeNull();
+        AccountRoles.IsKnown(AccountRoles.Of(With())).Should().BeFalse();
     }
 
     [Fact]

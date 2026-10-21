@@ -26,7 +26,11 @@ public enum InviteStatus
 /// </summary>
 public sealed class GuestInvite
 {
-    public const int LabelMaxLength = 100;
+    /// <summary>
+    /// O nome do convite vira o nome inicial da conta, então segue a mesma regra do nome de exibição
+    /// (<see cref="DisplayNameRules"/>): um nome com caractere invisível não entra por aqui.
+    /// </summary>
+    public const int LabelMaxLength = DisplayNameRules.MaxLength;
 
     // Para o EF Core materializar a linha.
     private GuestInvite()
@@ -57,7 +61,22 @@ public sealed class GuestInvite
 
     public DateTimeOffset? RevokedAt { get; private set; }
 
-    public static GuestInvite Create(Guid createdBy, string label, byte[] tokenHash, DateTimeOffset now, TimeSpan validFor)
+    /// <summary>
+    /// O que a conta recebe ao aceitar: copiado para <see cref="UserGrant"/> na mesma transação que cria a conta. Já
+    /// conferido por <see cref="PermissionRules.Validate"/> (sem repetidas, na ordem do catálogo). Convites criados antes
+    /// das permissões existirem ficam com o modelo "só controle da TV" (o padrão da coluna no banco).
+    /// </summary>
+    public string[] Permissions { get; private set; } = [];
+
+    /// <param name="permissions">Nulo = o modelo "só controle da TV" (<see cref="PermissionRules.TvControlOnly"/>).</param>
+    /// <exception cref="ArgumentException">Nome ou lista de permissões fora das regras.</exception>
+    public static GuestInvite Create(
+        Guid createdBy,
+        string label,
+        byte[] tokenHash,
+        DateTimeOffset now,
+        TimeSpan validFor,
+        IReadOnlyCollection<string>? permissions = null)
     {
         ArgumentNullException.ThrowIfNull(tokenHash);
         if (validFor <= TimeSpan.Zero)
@@ -66,6 +85,12 @@ public sealed class GuestInvite
         }
 
         var name = NormalizeLabel(label) ?? throw new ArgumentException("Informe o nome do convidado.", nameof(label));
+        var checkedPermissions = PermissionRules.Validate(permissions ?? PermissionRules.TvControlOnly);
+        if (!checkedPermissions.IsValid)
+        {
+            throw new ArgumentException("Permissões fora das regras.", nameof(permissions));
+        }
+
         return new GuestInvite
         {
             Id = IdGenerator.NewId(),
@@ -75,20 +100,12 @@ public sealed class GuestInvite
             CreatedBy = createdBy,
             CreatedAt = now,
             ExpiresAt = now + validFor,
+            Permissions = [.. checkedPermissions.Permissions],
         };
     }
 
-    /// <summary>Nome sem espaços nas pontas e sem controle; nulo se vazio ou grande demais.</summary>
-    public static string? NormalizeLabel(string? label)
-    {
-        var trimmed = label?.Trim();
-        if (string.IsNullOrEmpty(trimmed) || trimmed.Length > LabelMaxLength || trimmed.Any(char.IsControl))
-        {
-            return null;
-        }
-
-        return trimmed;
-    }
+    /// <summary>O nome já normalizado pelas regras do nome de exibição; nulo se vazio, grande demais ou com caractere proibido.</summary>
+    public static string? NormalizeLabel(string? label) => DisplayNameRules.Normalize(label).Value;
 
     /// <summary>
     /// A ordem importa: usado e revogado vencem o prazo (um convite aceito não "expira" depois). No instante exato

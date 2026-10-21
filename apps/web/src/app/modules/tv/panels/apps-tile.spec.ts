@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { TvShortcut } from '../data/tv-types';
 import { makeShortcut, pngIcon } from '../tv-test-kit';
-import { AppsTile } from './apps-tile';
+import { AppsTile, TileMove } from './apps-tile';
 
 describe('AppsTile', () => {
   let fixture: ReturnType<typeof TestBed.createComponent<AppsTile>>;
@@ -134,6 +134,91 @@ describe('AppsTile', () => {
       expect(pin().disabled).toBe(false);
       update({ busy: false });
       expect(pin().hasAttribute('aria-disabled')).toBe(false);
+    });
+  });
+
+  describe('to change the order (edit mode, app in the control)', () => {
+    let moved: ReturnType<typeof vi.fn<(move: TileMove) => void>>;
+    const showRanked = (index: number, count: number, overrides: Partial<TvShortcut> = {}) => {
+      show(makeShortcut(2, { tvLabel: 'Spotify', ...overrides }), {
+        managing: true,
+        rank: { index, count },
+      });
+      moved = vi.fn<(move: TileMove) => void>();
+      fixture.componentInstance.move.subscribe(moved);
+    };
+    const left = () => root.querySelector<HTMLButtonElement>('[data-move="left"]')!;
+    const right = () => root.querySelector<HTMLButtonElement>('[data-move="right"]')!;
+
+    it('has no move buttons unless the panel says where the app is in the row', () => {
+      show(makeShortcut(1), { managing: true });
+      expect(root.querySelector('.moves')).toBeNull();
+      expect(root.querySelector('[data-move]')).toBeNull();
+    });
+
+    it('has two buttons named by the app and the direction, in a row of their own above pin and rename', () => {
+      showRanked(1, 3);
+      expect(left().getAttribute('aria-label')).toBe('Mover Spotify para a esquerda');
+      expect(right().getAttribute('aria-label')).toBe('Mover Spotify para a direita');
+      expect(left().getAttribute('data-for')).toBe('s2');
+      // Fora de `.tool`: os que contam "fixar e renomear" seguem sendo dois por azulejo.
+      expect(left().classList.contains('tool')).toBe(false);
+      expect(root.querySelectorAll('.moves button')).toHaveLength(2);
+      // Nenhuma linha passa de dois botões: a coluna do azulejo é estreita.
+      expect(root.querySelectorAll('.tools button')).toHaveLength(2);
+    });
+
+    it('tells the panel which way, with the app', () => {
+      showRanked(1, 3);
+      left().click();
+      expect(moved).toHaveBeenLastCalledWith({
+        shortcut: expect.objectContaining({ id: 's2' }),
+        delta: -1,
+      });
+      right().click();
+      expect(moved).toHaveBeenLastCalledWith({
+        shortcut: expect.objectContaining({ id: 's2' }),
+        delta: 1,
+      });
+    });
+
+    it('at the start the left one is only dimmed (aria-disabled, still a focusable button) and does nothing', () => {
+      showRanked(0, 3);
+      expect(left().getAttribute('aria-disabled')).toBe('true');
+      expect(left().disabled).toBe(false);
+      expect(right().hasAttribute('aria-disabled')).toBe(false);
+      left().click();
+      expect(moved).not.toHaveBeenCalled();
+      right().click();
+      expect(moved).toHaveBeenCalledTimes(1);
+    });
+
+    it('at the end the right one is only dimmed and does nothing', () => {
+      showRanked(2, 3);
+      expect(right().getAttribute('aria-disabled')).toBe('true');
+      expect(right().disabled).toBe(false);
+      expect(left().hasAttribute('aria-disabled')).toBe(false);
+      right().click();
+      expect(moved).not.toHaveBeenCalled();
+    });
+
+    it('alone in the row, both are dimmed', () => {
+      showRanked(0, 1);
+      expect(left().getAttribute('aria-disabled')).toBe('true');
+      expect(right().getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('follows the rank when the panel moves the app', () => {
+      showRanked(1, 3);
+      expect(left().hasAttribute('aria-disabled')).toBe(false);
+      update({ rank: { index: 0, count: 3 } });
+      expect(left().getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('is named by the new name when the app is renamed', () => {
+      showRanked(1, 3);
+      update({ shortcut: makeShortcut(2, { customLabel: 'Sala' }) });
+      expect(left().getAttribute('aria-label')).toBe('Mover Sala para a esquerda');
     });
   });
 });

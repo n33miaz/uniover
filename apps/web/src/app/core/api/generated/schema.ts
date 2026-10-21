@@ -1115,6 +1115,101 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/identity/guests/{id}/permissions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['SetGuestPermissionsRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['GuestSummary'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/identity/guests/{id}/revoke': {
     parameters: {
       query?: never;
@@ -1253,7 +1348,66 @@ export interface paths {
     delete?: never;
     options?: never;
     head?: never;
-    patch?: never;
+    patch: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['UpdateProfileRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['MeResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
     trace?: never;
   };
   '/api/v1/identity/passkeys': {
@@ -3216,6 +3370,81 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/tv/shortcuts/order': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['ReorderShortcutsRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvShortcut'][];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/shortcuts/refresh': {
     parameters: {
       query?: never;
@@ -3651,6 +3880,7 @@ export interface components {
     };
     CreateGuestInviteRequest: {
       displayName: null | string;
+      permissions?: null | string[];
     };
     CreateGuestInviteResponse: {
       displayName: string;
@@ -3658,6 +3888,7 @@ export interface components {
       expiresAt: string;
       /** Format: uuid */
       id: string;
+      permissions: string[];
       token: string;
     };
     CredentialPropertiesOutput: {
@@ -3735,6 +3966,7 @@ export interface components {
       expiresAt: string;
       /** Format: uuid */
       id: string;
+      permissions: string[];
       /** Format: date-time */
       revokedAt: null | string;
       status: string;
@@ -3750,6 +3982,7 @@ export interface components {
       email: string;
       /** Format: uuid */
       id: string;
+      permissions: string[];
     };
     IdentityModuleInfo: {
       dependsOn: string[];
@@ -3789,9 +4022,11 @@ export interface components {
     };
     MeResponse: {
       displayName: string;
+      displayNameConfirmed: boolean;
       email: string;
       /** Format: uuid */
       id: string;
+      permissions: string[];
       role: string;
     };
     ModuleInfo: {
@@ -3869,6 +4104,9 @@ export interface components {
     };
     RenamePasskeyRequest: {
       name: null | string;
+    };
+    ReorderShortcutsRequest: {
+      ids: null | string[];
     };
     RequestStepUpRequest: {
       action: null | string;
@@ -3978,6 +4216,9 @@ export interface components {
       /** Format: double */
       stepKg: null | number | string;
     };
+    SetGuestPermissionsRequest: {
+      permissions: null | string[];
+    };
     SetResponse: {
       /** Format: date-time */
       clientUpdatedAt: string;
@@ -4052,6 +4293,9 @@ export interface components {
       updatedAt: null | string;
       /** Format: int32 */
       volume: null | number | string;
+    };
+    UpdateProfileRequest: {
+      displayName: null | string;
     };
     UpdateShortcutRequest: {
       customLabel: null | string;

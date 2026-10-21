@@ -32,6 +32,8 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/identity/step-up/complete", RateLimitPolicies.Login),
         ("POST", "/api/v1/identity/guest-invites", RateLimitPolicies.Login),
         ("POST", "/api/v1/identity/guest-invites/accept", RateLimitPolicies.GuestInvite),
+        ("PUT", "/api/v1/identity/guests/{id:guid}/permissions", RateLimitPolicies.Login),
+        ("PATCH", "/api/v1/identity/me", RateLimitPolicies.Profile),
 
         // Pareamento de aparelhos: qualquer rota sob o prefixo (o '*' final significa "começa com").
         ("*", "/api/v1/devices/pairing/*", RateLimitPolicies.Pairing),
@@ -46,6 +48,7 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/tv/wake", RateLimitPolicies.Commands),
         ("POST", "/api/v1/tv/shortcuts/refresh", RateLimitPolicies.Commands),
         ("POST", "/api/v1/tv/shortcuts/{id:guid}/launch", RateLimitPolicies.Commands),
+        ("PUT", "/api/v1/tv/shortcuts/order", RateLimitPolicies.Commands),
     ];
 
     /// <summary>Production é o que vai para o ar; Development acrescenta o OpenAPI e também não pode vazar rota.</summary>

@@ -1,9 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-<!-- Símbolo tv sobre o verde-sálvia; o fundo vai até as bordas (o sistema aplica a máscara). -->
+<!-- Símbolo tv: controle remoto inclinado de contorno, com duas ondas de sinal saindo da ponta. O fundo vai até as bordas (o sistema aplica a máscara). -->
   <rect width="512" height="512" fill="#3B6B4B"/>
   <g fill="none" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="116" y="170" width="220" height="150" rx="24"/>
-    <path d="M186 375H266"/>
-    <circle cx="380" cy="132" r="22" fill="#FFFFFF" stroke="none"/>
+    <g transform="translate(-8 -22) rotate(26 256 300)">
+      <rect x="186" y="204" width="140" height="244" rx="42"/>
+      <circle cx="256" cy="282" r="32" stroke-width="18"/>
+      <circle cx="256" cy="282" r="12" fill="#FFFFFF" stroke="none"/>
+      <circle cx="256" cy="374" r="14" fill="#FFFFFF" stroke="none"/>
+      <path d="M228.91 143.33A44 44 0 0 1 283.09 143.33" stroke-width="20"/>
+      <path d="M201.82 108.66A88 88 0 0 1 310.18 108.66" stroke-width="20"/>
+    </g>
   </g>
 </svg>

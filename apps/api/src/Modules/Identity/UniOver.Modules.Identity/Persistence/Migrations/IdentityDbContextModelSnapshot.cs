@@ -47,6 +47,11 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("label");
 
+                    b.PrimitiveCollection<string[]>("Permissions")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("permissions");
+
                     b.Property<DateTimeOffset?>("RevokedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("revoked_at");
@@ -80,7 +85,10 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_guest_invites_token_hash");
 
-                    b.ToTable("guest_invites", "identity");
+                    b.ToTable("guest_invites", "identity", t =>
+                        {
+                            t.HasCheckConstraint("ck_guest_invites_permissions", "cardinality(permissions) > 0 AND permissions <@ ARRAY['module:tv', 'tv:control', 'tv:power', 'tv:launch', 'tv:edit-shortcuts', 'tv:history', 'module:training']::text[]");
+                        });
                 });
 
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.LoginAuditEntry", b =>
@@ -323,6 +331,10 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("display_name");
 
+                    b.Property<DateTimeOffset?>("DisplayNameConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("display_name_confirmed_at");
+
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(254)
@@ -365,6 +377,34 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                     b.ToTable("users", "identity", t =>
                         {
                             t.HasCheckConstraint("ck_users_role", "role IN ('owner', 'guest')");
+                        });
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.UserGrant", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("Permission")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("permission");
+
+                    b.Property<DateTimeOffset>("GrantedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("granted_at");
+
+                    b.Property<Guid>("GrantedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("granted_by");
+
+                    b.HasKey("UserId", "Permission")
+                        .HasName("pk_user_grants");
+
+                    b.ToTable("user_grants", "identity", t =>
+                        {
+                            t.HasCheckConstraint("ck_user_grants_permission", "permission IN ('module:tv', 'tv:control', 'tv:power', 'tv:launch', 'tv:edit-shortcuts', 'tv:history', 'module:training')");
                         });
                 });
 
@@ -438,6 +478,16 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_step_up_confirmations_users_user_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.UserGrant", b =>
+                {
+                    b.HasOne("UniOver.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_grants_users_user_id");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.WebAuthnChallenge", b =>

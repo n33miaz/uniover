@@ -14,11 +14,40 @@ function lateToolStyle(page: Page, pattern: RegExp, detail: string): boolean {
   return pattern.test(detail) && Date.now() < (toolStyleUntil.get(page) ?? 0);
 }
 
+/** Chave onde o app guarda a escolha de "Não mostrar de novo" da folha do atalho na tela de início. */
+const INSTALL_HINT_KEY = 'uniover.install-hint.v1';
+
 /**
  * Todo teste falha se a página violar a CSP, online ou offline. Escuta o evento do navegador e as mensagens
  * de console (o WebKit nem sempre dispara o evento para tudo que bloqueia).
  */
-export const test = base.extend<{ cspViolations: string[] }>({
+export const test = base.extend<{
+  cspViolations: string[];
+  installHintSilenced: boolean;
+  _silenceInstallHint: void;
+}>({
+  /**
+   * A folha "Atalho na tela de início" abre sozinha ~3 s depois da tela pronta num celular (e o projeto `iphone-12`
+   * tem agente de iPhone), tornando a página inerte no meio de qualquer teste. Por padrão todo teste começa com
+   * "Não mostrar de novo" já escolhido; quem testa a dica desliga com `test.use({ installHintSilenced: false })`.
+   */
+  installHintSilenced: [true, { option: true }],
+  _silenceInstallHint: [
+    async ({ context, installHintSilenced }, use) => {
+      if (installHintSilenced) {
+        // No contexto (e não na página): uma segunda aba aberta pelo teste também nasce silenciada.
+        await context.addInitScript((key) => {
+          try {
+            localStorage.setItem(key, JSON.stringify({ never: true }));
+          } catch {
+            // Sem armazenamento: a dica também não se lembra de nada, mas aí nada a silenciar.
+          }
+        }, INSTALL_HINT_KEY);
+      }
+      await use(undefined);
+    },
+    { auto: true },
+  ],
   cspViolations: [
     async ({ page }, use) => {
       const violations: string[] = [];

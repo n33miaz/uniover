@@ -11,7 +11,7 @@ from pathlib import Path
 from types import TracebackType
 
 from androidtvremote2.certificate_generator import generate_selfsigned_cert
-from androidtvremote2.remotemessage_pb2 import RemoteMessage
+from androidtvremote2.remotemessage_pb2 import RemoteKeyCode, RemoteMessage
 
 # PING | KEY | POWER | VOLUME | APP_LINK, as capacidades que a TV real anuncia.
 FEATURES = 1 | 2 | 32 | 64 | 512
@@ -67,8 +67,16 @@ def _read_frames(buffer: bytearray) -> list[RemoteMessage]:
 
 
 class FakeTvServer:
-    def __init__(self, tmp_path: Path, *, send_start: bool = True) -> None:
+    """`standby_on_power`: ao receber `POWER` a TV avisa que desligou (`remote_start` com
+    `started=False`) e fecha a conexão que o recebeu; as novas conexões seguem aceitas e já nascem
+    avisando "desligada", como uma TV em standby que ainda atende o serviço do controle."""
+
+    def __init__(
+        self, tmp_path: Path, *, send_start: bool = True, standby_on_power: bool = False
+    ) -> None:
         self._send_start = send_start
+        self._standby_on_power = standby_on_power
+        self._started = True
         self.port = 0
         self.keys: list[tuple[int, int]] = []
         self.links: list[str] = []
@@ -126,6 +134,17 @@ class FakeTvServer:
             writer.close()
             self._tasks.discard(task)
 
+    async def _go_standby(self, writer: asyncio.StreamWriter) -> None:
+        self._started = False
+        # A conexão que vai fechar não pode continuar na lista de quem recebe os avisos da TV.
+        if writer in self._writers:
+            self._writers.remove(writer)
+        off = RemoteMessage()
+        off.remote_start.started = False
+        writer.write(frame(off))
+        await writer.drain()
+        writer.close()
+
     async def _conversation(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
@@ -140,7 +159,7 @@ class FakeTvServer:
         writer.write(frame(active))
         if self._send_start:
             start = RemoteMessage()
-            start.remote_start.started = True
+            start.remote_start.started = self._started
             writer.write(frame(start))
             app = RemoteMessage()
             app.remote_ime_key_inject.app_info.app_package = "com.exemplo.video"
@@ -156,6 +175,9 @@ class FakeTvServer:
                 if message.HasField("remote_key_inject"):
                     inject = message.remote_key_inject
                     self.keys.append((int(inject.key_code), int(inject.direction)))
+                    if self._standby_on_power and inject.key_code == RemoteKeyCode.KEYCODE_POWER:
+                        await self._go_standby(writer)
+                        return
                 elif message.HasField("remote_app_link_launch_request"):
                     self.links.append(message.remote_app_link_launch_request.app_link)
                 elif message.HasField("remote_ime_batch_edit"):

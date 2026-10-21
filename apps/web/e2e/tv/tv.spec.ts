@@ -1179,22 +1179,40 @@ test.describe('painel flutuante: comportamento comum', () => {
     page,
   }) => {
     await openTv(page);
-    // Acompanha a opacidade do cartão quadro a quadro desde o pedido de abrir (o `@starting-style` parte de zero).
-    const seen = await page.evaluate(async () => {
+    const startingStyle = await page.evaluate(
+      () =>
+        typeof (window as unknown as { CSSStartingStyleRule?: unknown }).CSSStartingStyleRule !==
+        'undefined',
+    );
+    test.skip(!startingStyle, 'este navegador não tem @starting-style: a folha só aparece');
+
+    // O observador é armado ANTES de pedir o painel: a transição que sai do `@starting-style` (opacidade e deslocamento
+    // do cartão, que parte de zero) dispara `transitionrun` assim que nasce, não importa em que quadro o teste olhe.
+    // Amostrar a opacidade quadro a quadro depois do pedido perdia a janela num executor lento, e a primeira amostra
+    // já vinha opaca.
+    await page.evaluate(() => {
+      const w = window as unknown as { __cardRuns: string[] };
+      w.__cardRuns = [];
+      document.addEventListener(
+        'transitionrun',
+        (event) => {
+          const target = event.target as HTMLElement;
+          if (target.classList?.contains('card') && target.closest('dialog.panel')) {
+            w.__cardRuns.push(event.propertyName);
+          }
+        },
+        true,
+      );
       history.pushState(history.state, '', '/tv?painel=apps');
       window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
-      const values: number[] = [];
-      const deadline = performance.now() + 2000;
-      while (performance.now() < deadline) {
-        const card = document.querySelector('dialog.panel .card');
-        if (card) values.push(Number(getComputedStyle(card).opacity));
-        if (values.at(-1) === 1) break;
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-      }
-      return values;
     });
-    expect(Math.min(...seen), 'começou transparente').toBeLessThan(1);
-    expect(seen.at(-1), 'terminou opaco').toBe(1);
+    await expect(appsDialog(page)).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __cardRuns: string[] }).__cardRuns))
+      .toEqual(expect.arrayContaining(['opacity', 'transform']));
+    await expect
+      .poll(() => page.locator('dialog.panel .card').evaluate((el) => getComputedStyle(el).opacity))
+      .toBe('1');
     await settleMotion(page);
     expect(
       await page
@@ -1325,6 +1343,166 @@ test.describe('painel Apps', () => {
     await expect(button(page, 'Atalho 1')).toBeVisible();
     await expect(button(page, 'Sala')).toBeVisible();
     await expect(button(page, 'Atalho 3')).toHaveCount(0);
+  });
+
+  /**
+   * Cinco apps com nome: Alfa, Gama e Sigma estão no controle (a fileira de cima); Beta está fora dele; Delta saiu da
+   * TV (o painel nem o mostra, mas a API o guarda e a ordem tem de levá-lo junto).
+   */
+  function orderShortcuts(): MockShortcut[] {
+    const apps: [string, boolean, boolean][] = [
+      ['Alfa', true, true],
+      ['Beta', false, true],
+      ['Gama', true, true],
+      ['Delta', false, false],
+      ['Sigma', true, true],
+    ];
+    return apps.map(([name, enabled, installed], index) => ({
+      id: `00000000-0000-4000-8000-00000000${String(3000 + index)}`,
+      position: index + 1,
+      package: `exemplo.ordem.app${index + 1}`,
+      tvLabel: name,
+      customLabel: null,
+      enabled,
+      installed,
+    }));
+  }
+  const putRequests = () => tv.requests.filter((r) => r.method === 'PUT');
+  const orderStatus = (dialog: Locator) => dialog.locator('[data-reorder-status]');
+
+  test('o dono muda a ordem dos atalhos: a fileira acompanha, o PUT leva a lista completa e recarregar mantém', async ({
+    page,
+  }, info) => {
+    tv.shortcuts = orderShortcuts();
+    const [alfa, beta, gama, delta, sigma] = tv.shortcuts.map((s) => s.id);
+    await openTv(page);
+    await expectChipNames(page, ['Alfa', 'Gama', 'Sigma']);
+    await openApps(page);
+    const dialog = appsDialog(page);
+    await button(dialog, 'Editar').click();
+
+    // Só quem está no controle tem as setas, e os dois botões são alvos de 44 px (medidos com a entrada dos azulejos parada).
+    await expect(dialog.locator('[data-move]')).toHaveCount(6);
+    await expect(dialog.getByRole('button', { name: /^Mover Beta / })).toHaveCount(0);
+    await settleMotion(page);
+    await expectTargetSize(button(dialog, 'Mover Gama para a esquerda'));
+    await expectTargetSize(button(dialog, 'Mover Gama para a direita'));
+    await expectNoHorizontalScroll(page);
+    await screenshot(page, `test-results/tv-apps-reorder-${info.project.name}.png`);
+    await expectNoSeriousViolations(page);
+
+    await button(dialog, 'Mover Gama para a esquerda').click();
+
+    // A fileira do controle, atrás do painel, já está na ordem nova.
+    await expectChipNames(page, ['Gama', 'Alfa', 'Sigma']);
+    // O foco fica no botão usado (que seguiu o app) e, na ponta, ele só fica apagado; quem ouve o leitor sabe onde o app ficou.
+    const used = button(dialog, 'Mover Gama para a esquerda');
+    await expect(used).toBeFocused();
+    await expect(used).toHaveAttribute('aria-disabled', 'true');
+    await expect(orderStatus(dialog)).toHaveText('Gama, posição 1 de 3');
+
+    // O pedido leva a lista inteira (Beta e Delta incluídos) com Gama no lugar de Alfa; os outros não se mexem.
+    await expect.poll(() => putRequests().length).toBe(1);
+    expect(putRequests()[0]).toMatchObject({
+      path: '/shortcuts/order',
+      body: { ids: [gama, beta, alfa, delta, sigma] },
+    });
+    // O eco do servidor pelo fluxo não desfaz nada.
+    await emitSse(page, 'tv.shortcuts', tv.shortcuts);
+    await expectChipNames(page, ['Gama', 'Alfa', 'Sigma']);
+
+    // Acionar de novo, pelo teclado, o botão apagado da ponta não pede nada ao servidor e não tira o foco dele.
+    await used.focus();
+    await page.keyboard.press('Enter');
+    await expect(used).toBeFocused();
+    expect(putRequests()).toHaveLength(1);
+
+    // Outro passo: Sigma sobe uma casa.
+    await button(dialog, 'Mover Sigma para a esquerda').click();
+    await expectChipNames(page, ['Gama', 'Sigma', 'Alfa']);
+    await expect(orderStatus(dialog)).toHaveText('Sigma, posição 2 de 3');
+    await expect.poll(() => putRequests().length).toBe(2);
+    expect(putRequests()[1].body).toEqual({ ids: [gama, beta, sigma, delta, alfa] });
+    await expectNoHorizontalScroll(page);
+
+    // Recarregar a tela mantém a ordem: ela vem do servidor, não da memória da página.
+    await page.reload();
+    await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
+    await emitSse(page, 'tv.state', tv.state);
+    await expectChipNames(page, ['Gama', 'Sigma', 'Alfa']);
+  });
+
+  test('a ordem muda na tela antes de o servidor responder, e o que ele devolve a confirma sem piscar', async ({
+    page,
+  }) => {
+    tv.shortcuts = orderShortcuts();
+    let release!: () => void;
+    tv.orderGate = new Promise<void>((resolve) => (release = resolve));
+    await openTv(page);
+    await openApps(page);
+    const dialog = appsDialog(page);
+    await button(dialog, 'Editar').click();
+
+    await button(dialog, 'Mover Sigma para a esquerda').click();
+    await button(dialog, 'Mover Sigma para a esquerda').click();
+
+    // O servidor ainda não respondeu e a fileira já mudou (duas vezes, num pedido só quando ele responder).
+    await expectChipNames(page, ['Sigma', 'Alfa', 'Gama']);
+    await expect(orderStatus(dialog)).toHaveText('Sigma, posição 1 de 3');
+    expect(tv.shortcuts.map((s) => s.tvLabel)).toEqual(['Alfa', 'Beta', 'Gama', 'Delta', 'Sigma']);
+
+    release();
+    tv.orderGate = null;
+    await expect
+      .poll(() => tv.shortcuts.map((s) => s.tvLabel))
+      .toEqual(['Sigma', 'Beta', 'Alfa', 'Delta', 'Gama']);
+    await expectChipNames(page, ['Sigma', 'Alfa', 'Gama']);
+    // Toques seguidos viram no máximo dois pedidos, e o último já tem a ordem final.
+    expect(putRequests().length).toBeLessThanOrEqual(2);
+    expect(putRequests().at(-1)?.body?.['ids']).toEqual(tv.shortcuts.map((s) => s.id));
+  });
+
+  test('se o servidor recusa a ordem, a fileira volta ao que era e o aviso diz que não foi salvo', async ({
+    page,
+  }) => {
+    tv.shortcuts = orderShortcuts();
+    tv.orderFailure = { status: 400, kind: 'validation-failed' };
+    await openTv(page);
+    await expectChipNames(page, ['Alfa', 'Gama', 'Sigma']);
+    await openApps(page);
+    const dialog = appsDialog(page);
+    await button(dialog, 'Editar').click();
+
+    await button(dialog, 'Mover Gama para a esquerda').click();
+
+    await expect(
+      dialog.getByText('Não foi possível salvar a nova ordem. Ela voltou ao que era.'),
+    ).toBeVisible();
+    await expectChipNames(page, ['Alfa', 'Gama', 'Sigma']);
+    expect(tv.shortcuts.map((s) => s.tvLabel)).toEqual(['Alfa', 'Beta', 'Gama', 'Delta', 'Sigma']);
+    // O que o leitor tinha ouvido ("posição 1") deixou de valer: o aviso de erro fala e a frase some.
+    await expect(orderStatus(dialog)).toHaveText('');
+    // O que o servidor tem continua valendo: tentar de novo depois funciona.
+    tv.orderFailure = null;
+    await button(dialog, 'Mover Gama para a esquerda').click();
+    await expectChipNames(page, ['Gama', 'Alfa', 'Sigma']);
+    await expect
+      .poll(() => tv.shortcuts.map((s) => s.tvLabel))
+      .toEqual(['Gama', 'Beta', 'Alfa', 'Delta', 'Sigma']);
+  });
+
+  test('a busca esconde as setas, porque o filtro esconderia os vizinhos', async ({ page }) => {
+    tv.shortcuts = orderShortcuts();
+    await openTv(page);
+    await openApps(page);
+    const dialog = appsDialog(page);
+    await button(dialog, 'Editar').click();
+    await expect(dialog.locator('[data-move]')).toHaveCount(6);
+
+    await dialog.getByRole('searchbox', { name: 'Buscar app' }).fill('gama');
+    await expect(dialog.locator('[data-move]')).toHaveCount(0);
+    await dialog.getByRole('searchbox', { name: 'Buscar app' }).fill('');
+    await expect(dialog.locator('[data-move]')).toHaveCount(6);
   });
 
   test('busca por texto numa lista só, com a marca de quem está no controle', async ({
@@ -1555,12 +1733,19 @@ test.describe('painel Teclado', () => {
     await openTv(page);
     await openKeyboard(page);
     const field = keyboardField(page);
-    // Digitação seguida: uma pausa só no fim, então um único envio com o texto completo.
+    // Digitação seguida: a primeira letra vai na hora e o resto se junta; o último envio tem o texto completo.
     await page.keyboard.type('batman', { delay: 40 });
-    await expect.poll(() => texts()).toEqual(['batman']);
+    await expect.poll(() => texts().at(-1)).toBe('batman');
     await expect(page.getByText('Texto na TV.')).toBeVisible();
+    // Cada envio é um prefixo do que se digitou, cada vez maior: nunca um pedaço solto, nem o mesmo texto de novo.
+    const sent = texts() as string[];
+    expect(sent[0]).toBe('b');
+    sent.forEach((text, index) => {
+      expect('batman'.startsWith(text)).toBe(true);
+      if (index > 0) expect(text.length).toBeGreaterThan(sent[index - 1].length);
+    });
     await page.waitForTimeout(700);
-    expect(texts()).toEqual(['batman']);
+    expect(texts()).toEqual(sent);
     await expect(field).toHaveValue('batman');
     await page.waitForTimeout(250);
     await screenshot(page, `test-results/tv-keyboard-typed-${info.project.name}.png`);
@@ -1582,19 +1767,58 @@ test.describe('painel Teclado', () => {
     await expect.poll(() => texts()).toEqual(['b', 'ba', 'bat', 'ba']);
   });
 
-  test('o texto vazio nunca é enviado', async ({ page }) => {
+  test('apagar até esvaziar manda o texto vazio para a TV, que apaga o que o agente digitou', async ({
+    page,
+  }) => {
+    await openTv(page);
+    await openKeyboard(page);
+    const field = keyboardField(page);
+    await field.fill('bat');
+    await expect.poll(() => texts()).toEqual(['bat']);
+    for (let i = 0; i < 3; i++) await page.keyboard.press('Backspace');
+    await expect(field).toHaveValue('');
+    // O último pedido é o vazio (os do meio podem ter se juntado), e o app avisa que o campo da TV foi limpo.
+    await expect.poll(() => texts().at(-1)).toBe('');
+    await expect(page.getByText('Campo da TV limpo.')).toBeVisible();
+    const sent = texts() as string[];
+    sent.forEach((text) => expect('bat'.startsWith(text)).toBe(true));
+    await page.waitForTimeout(700);
+    expect(texts()).toEqual(sent);
+  });
+
+  test('apagar tudo de uma vez também manda o texto vazio', async ({ page }) => {
     await openTv(page);
     await openKeyboard(page);
     const field = keyboardField(page);
     await field.fill('bat');
     await expect.poll(() => texts()).toEqual(['bat']);
     await field.fill('');
+    await expect.poll(() => texts()).toEqual(['bat', '']);
     await page.waitForTimeout(700);
-    expect(texts()).toEqual(['bat']);
-    expect(tv.requests.some((r) => r.path === '/text' && !r.body?.['text'])).toBe(false);
+    expect(texts()).toEqual(['bat', '']);
   });
 
-  test('Limpar esvazia só o campo do celular e Fechar fecha o painel, enviando o que faltava', async ({
+  test('uma rajada de letras sai em poucas requisições, a primeira na hora e a última com o texto final', async ({
+    page,
+  }) => {
+    await openTv(page);
+    await openKeyboard(page);
+    const field = keyboardField(page);
+    // Tudo dentro de uma tarefa só do navegador: nenhuma resposta chega no meio, então o resultado não depende de tempo.
+    await field.evaluate((element: HTMLInputElement) => {
+      for (const text of ['a', 'ab', 'abc', 'abcd', 'abcde', 'abcdef']) {
+        element.value = text;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    await expect.poll(() => texts().at(-1)).toBe('abcdef');
+    // A primeira letra foi na hora; as outras cinco viraram uma requisição só (uma em voo por vez).
+    expect(texts()).toEqual(['a', 'abcdef']);
+    await page.waitForTimeout(700);
+    expect(texts()).toEqual(['a', 'abcdef']);
+  });
+
+  test('Limpar esvazia o campo do celular e o da TV, e Fechar fecha o painel, enviando o que faltava', async ({
     page,
   }) => {
     await openTv(page);
@@ -1604,16 +1828,33 @@ test.describe('painel Teclado', () => {
     await expect.poll(() => texts()).toEqual(['bat']);
     await button(keyboardDialog(page), 'Limpar').click();
     await expect(field).toHaveValue('');
+    await expect.poll(() => texts()).toEqual(['bat', '']);
+    await expect(page.getByText('Campo da TV limpo.')).toBeVisible();
     await page.waitForTimeout(600);
-    expect(texts()).toEqual(['bat']);
+    expect(texts()).toEqual(['bat', '']);
 
-    await field.fill('x');
+    // Duas mudanças seguidas e o painel fecha: o que ainda esperava a cauda não se perde.
+    await field.evaluate((element: HTMLInputElement) => {
+      for (const text of ['x', 'xy']) {
+        element.value = text;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
     await button(keyboardDialog(page), 'Fechar').click();
     await expect(keyboardDialog(page)).toHaveCount(0);
     await expect(page).toHaveURL(/\/tv$/);
     await expect(button(page, 'Teclado')).toBeFocused();
-    // O que ainda estava dentro da pausa de digitação não se perde ao fechar.
-    await expect.poll(() => texts()).toEqual(['bat', 'x']);
+    await expect.poll(() => texts().at(-1)).toBe('xy');
+    expect(texts()).toEqual(['bat', '', 'x', 'xy']);
+  });
+
+  test('abrir e fechar o painel sem digitar não manda nada', async ({ page }) => {
+    await openTv(page);
+    await openKeyboard(page);
+    await page.keyboard.press('Escape');
+    await expect(keyboardDialog(page)).toHaveCount(0);
+    await page.waitForTimeout(400);
+    expect(texts()).toEqual([]);
   });
 
   test('o painel fica aberto sobre o controle: dá para digitar e fechar sem trocar de tela', async ({
@@ -2276,39 +2517,23 @@ test.describe('ícones dos apps', () => {
     expect(new Set(radii).size, 'um só raio de canto').toBe(1);
     expect(parseFloat(radii[0])).toBeGreaterThan(8);
 
-    // A imagem fica contida e centralizada, nunca esticada nem cortada, com a mesma folga em volta em qualquer formato.
+    // O ícone enche o azulejo de ponta a ponta (`cover`, sem folga interna), em qualquer formato: o banner 16:9 perde um
+    // pouco dos lados em vez de deixar faixas, e a caixa da imagem é a do azulejo (o recorte da margem do próprio ícone
+    // é um `transform`, que não muda a caixa de layout).
     const fits = await chips.evaluateAll((els) =>
       els.flatMap((el) => {
         const image = el.querySelector('img');
         if (!image) return [];
-        const tile = el.getBoundingClientRect();
-        const box = image.getBoundingClientRect();
+        const tile = el.querySelector('app-tv-app-icon')!.getBoundingClientRect();
         const style = getComputedStyle(image);
-        const [left, top, right, bottom] = [
-          style.paddingLeft,
-          style.paddingTop,
-          style.paddingRight,
-          style.paddingBottom,
-        ].map(parseFloat);
-        const inner = { width: box.width - left - right, height: box.height - top - bottom };
-        const scale = Math.min(
-          inner.width / image.naturalWidth,
-          inner.height / image.naturalHeight,
-        );
-        const drawn = { width: image.naturalWidth * scale, height: image.naturalHeight * scale };
-        const x = box.left + left + (inner.width - drawn.width) / 2;
-        const y = box.top + top + (inner.height - drawn.height) / 2;
         return [
           {
             objectFit: style.objectFit,
             objectPosition: style.objectPosition,
             padding: style.padding,
             naturalRatio: image.naturalWidth / image.naturalHeight,
-            drawnRatio: drawn.width / drawn.height,
-            gapLeft: x - tile.left,
-            gapRight: tile.right - (x + drawn.width),
-            gapTop: y - tile.top,
-            gapBottom: tile.bottom - (y + drawn.height),
+            widthGap: image.offsetWidth - tile.width,
+            heightGap: image.offsetHeight - tile.height,
           },
         ];
       }),
@@ -2316,26 +2541,21 @@ test.describe('ícones dos apps', () => {
     expect(fits).toHaveLength(3);
     const [banner, square] = fits;
     for (const fit of fits) {
-      expect(fit.objectFit).toBe('contain');
+      expect(fit.objectFit).toBe('cover');
       expect(fit.objectPosition).toBe('50% 50%');
-      expect(fit.padding, 'a mesma folga interna').toBe(fits[0].padding);
-      expect(fit.drawnRatio, 'a proporção da imagem se mantém').toBeCloseTo(fit.naturalRatio, 1);
-      expect(fit.gapLeft, 'centralizada na horizontal').toBeCloseTo(fit.gapRight, 0);
-      expect(fit.gapTop, 'centralizada na vertical').toBeCloseTo(fit.gapBottom, 0);
-      expect(Math.min(fit.gapLeft, fit.gapTop), 'dentro do azulejo, com folga').toBeGreaterThan(1);
+      expect(fit.padding, 'sem folga interna').toBe('0px');
+      for (const gap of [fit.widthGap, fit.heightGap]) {
+        expect(Math.abs(gap), 'a imagem tem a caixa do azulejo').toBeLessThanOrEqual(1);
+      }
     }
-    // O banner é 16:9 e o quadrado não: a forma da imagem muda, a do azulejo e a folga dos lados não.
+    // O banner é 16:9 e o quadrado não: a forma da imagem muda, a do azulejo não.
     expect(banner.naturalRatio).toBeGreaterThan(1.6);
     expect(square.naturalRatio).toBeCloseTo(1, 1);
-    expect(banner.gapLeft).toBeCloseTo(square.gapLeft, 0);
-    expect(banner.gapTop, 'o banner deixa faixas em cima e embaixo').toBeGreaterThan(
-      square.gapTop + 4,
-    );
     for (const index of [0, 1, 2, 3, 4, 5]) await expectTargetSize(chips.nth(index));
   });
 
   test('a faixa rola alinhada ao início, e nada passa da largura da tela', async ({ page }) => {
-    // Seis azulejos quadrados cabem na largura do celular: mais quatro para a faixa passar dela.
+    // Cinco azulejos de 60 px cabem na largura do celular (seis já passam dela): mais quatro garantem a rolagem.
     tv.shortcuts = [
       ...iconShortcuts(),
       ...[7, 8, 9, 10].map((position) => ({
@@ -2755,14 +2975,22 @@ test.describe('ícones dos apps', () => {
       for (const ratio of ratios)
         expect(ratio, `contraste da letra (${scheme})`).toBeGreaterThanOrEqual(4.5);
 
-      // Atrás da imagem há o mesmo neutro claro nos dois temas, para o ícone de fundo transparente não sumir no escuro.
-      const backdrops = await page.evaluate(() =>
-        [...document.querySelectorAll<HTMLElement>('.shortcut app-tv-app-icon')]
-          .filter((el) => el.querySelector('img'))
-          .map((el) => getComputedStyle(el).backgroundColor),
-      );
-      expect(new Set(backdrops).size, 'um só fundo atrás das imagens').toBe(1);
-      expect(backdrops[0]).toMatch(/238,\s*242,\s*238/);
+      // Atrás de um ícone de desenho solto (fundo transparente) há o mesmo neutro claro nos dois temas, para ele não sumir
+      // no escuro. O ícone que é uma placa de uma cor (o banner preto, o quadrado) leva a cor das próprias bordas, e o
+      // neutro não aparece nele.
+      const neutral = /238,\s*242,\s*238/;
+      const backdrop = (index: number) =>
+        chips
+          .nth(index)
+          .locator('app-tv-app-icon')
+          .evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(await backdrop(2), 'desenho solto: o neutro claro').toMatch(neutral);
+      await expect
+        .poll(() => backdrop(0), { message: 'banner preto: a cor da borda' })
+        .not.toMatch(neutral);
+      await expect
+        .poll(() => backdrop(1), { message: 'quadrado: a cor da borda' })
+        .not.toMatch(neutral);
 
       await openApps(page);
       const dialog = appsDialog(page);
