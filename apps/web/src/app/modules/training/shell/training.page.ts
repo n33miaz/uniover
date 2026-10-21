@@ -1,10 +1,4 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  ViewEncapsulation,
-  inject,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { TrainingSync } from '../data/sync/training-sync';
 import { SyncIssuesSheet } from './sync-issues-sheet';
@@ -26,23 +20,11 @@ import { TrainingSyncLine } from './training-sync-line';
       <app-sync-issues-sheet (closed)="issuesOpen.set(false)" />
     }
   `,
-  // Sem encapsulamento de propósito: a segunda regra mira o documento (html e body), que o estilo encapsulado não alcança.
-  encapsulation: ViewEncapsulation.None,
   styles: `
-    app-training-page {
+    :host {
       display: flex;
       flex-direction: column;
       gap: var(--space-3);
-    }
-
-    /*
-     * A barra de abas da casca é "sticky", mas o estilo global põe "overflow-x: hidden" em html e body: o body vira o
-     * contêiner de rolagem (que nunca rola, pois cresce com o conteúdo) e a barra não gruda na tela. Com "clip" o corte
-     * lateral continua e o body deixa de ser contêiner de rolagem. Vale só enquanto uma tela do Treino está aberta.
-     */
-    html:has(app-training-page),
-    body:has(app-training-page) {
-      overflow-x: clip;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -79,7 +79,7 @@ describe('AppearancePage', () => {
       const { el } = await render();
       expect(rows(el)).toEqual([
         { name: 'TV', chip: 'Disponível', on: true },
-        { name: 'Treino', chip: 'Em breve', on: true },
+        { name: 'Treino', chip: 'Disponível', on: true },
         { name: 'Saúde e eventos', chip: 'Em breve', on: true },
         { name: 'Monitor dos serviços', chip: 'Em breve', on: true },
         { name: 'Rede da casa', chip: 'Em breve', on: true },
