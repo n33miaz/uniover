@@ -45,6 +45,40 @@ describe('describeFailure', () => {
     );
   });
 
+  it('maps the ADB codes of the agent to one clear message', () => {
+    for (const code of ['adb_unreachable', 'adb_unavailable', 'adb_timeout']) {
+      const failure = describeFailure(http(502, 'command-failed', { agentError: code }));
+      expect(failure.kind).toBe('command-failed');
+      expect(failure.message).toBe(
+        'A TV não respondeu pelo ADB agora. Tente de novo com a TV ligada.',
+      );
+    }
+    const unauthorized = describeFailure(
+      http(502, 'command-failed', { agentError: 'adb_unauthorized' }),
+    );
+    expect(unauthorized.message).toContain('Aceite o aviso na tela da TV');
+    const missing = describeFailure(
+      http(502, 'command-failed', { agentError: 'cleanup_report_missing' }),
+    );
+    expect(missing.message).toContain('não deu para confirmar o que foi limpo');
+  });
+
+  it('a timeout while cleaning admits the TV may have finished', () => {
+    const failure = describeFailure(http(504, 'agent-timeout'), 'cleanup');
+    expect(failure.kind).toBe('timeout');
+    expect(failure.message).toContain('a TV pode ter terminado');
+    expect(describeFailure(http(504, 'agent-timeout')).message).toBe(
+      'A TV não respondeu a tempo. Tente de novo.',
+    );
+  });
+
+  it('tells a cleanup already running (409) from an app that left the TV (409)', () => {
+    const busy = describeFailure(http(409, 'cleanup-in-progress'));
+    expect(busy.kind).toBe('cleanup-busy');
+    expect(busy.message).toBe('Já há uma limpeza da TV em andamento. Aguarde ela terminar.');
+    expect(describeFailure(http(409, 'shortcut-disabled')).kind).toBe('shortcut-disabled');
+  });
+
   it('maps 429 with the Retry-After seconds, or without them', () => {
     const withWait = describeFailure(http(429, 'rate-limited', {}, { 'Retry-After': '7' }));
     expect(withWait.kind).toBe('rate-limited');

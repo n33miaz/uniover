@@ -27,13 +27,18 @@ internal sealed partial class TvCommandRunner(
     /// <param name="command">Um valor de <see cref="TvCommandNames"/>.</param>
     /// <param name="detail">A tecla ou o pacote; do texto digitado, nunca o conteúdo.</param>
     /// <param name="waitForReply"><c>false</c> envia e segue (o <c>wake</c> não espera resposta).</param>
+    /// <param name="replyTimeout">
+    /// Tempo próprio de espera (a limpeza leva vários segundos); sem ele vale o padrão do módulo, que depende de a
+    /// sessão com a TV estar dormindo ou não.
+    /// </param>
     public async Task<TvSendOutcome> RunAsync(
         TvCommandOrigin origin,
         string command,
         string? detail,
         TvMessage message,
         bool waitForReply,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? replyTimeout = null)
     {
         ArgumentNullException.ThrowIfNull(origin);
         ArgumentNullException.ThrowIfNull(message);
@@ -48,7 +53,8 @@ internal sealed partial class TvCommandRunner(
         }
         else if (waitForReply)
         {
-            outcome = await sender.RequestAsync(agentId, message, TimeoutFor(agentId, settings), cancellationToken);
+            outcome = await sender.RequestAsync(
+                agentId, message, replyTimeout ?? TimeoutFor(agentId, settings), cancellationToken);
         }
         else
         {

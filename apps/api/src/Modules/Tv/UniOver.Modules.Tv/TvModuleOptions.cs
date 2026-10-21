@@ -21,12 +21,20 @@ public sealed class TvModuleOptions
     /// <summary>Maior, para quando a sessão com a TV está dormindo: o agente reconecta (1, 2, 4 s) antes de responder.</summary>
     public int HibernatingTimeoutSeconds { get; set; } = 15;
 
+    /// <summary>
+    /// Tempo que a API espera a limpeza da TV. É maior que o dos outros comandos: o agente fecha apps e mede a memória
+    /// uma vez antes e outra depois, e se dá cerca de 25 s para isso.
+    /// </summary>
+    public int CleanupTimeoutSeconds { get; set; } = 30;
+
     /// <summary>Espera antes de gravar uma mudança de estado, para juntar oscilações rápidas numa escrita só.</summary>
     public int StateDebounceSeconds { get; set; } = 2;
 
     public SseStreamOptions Sse { get; set; } = new();
 
     public TimeSpan CommandTimeout => TimeSpan.FromSeconds(CommandTimeoutSeconds);
+
+    public TimeSpan CleanupTimeout => TimeSpan.FromSeconds(CleanupTimeoutSeconds);
 
     public TimeSpan HibernatingTimeout => TimeSpan.FromSeconds(HibernatingTimeoutSeconds);
 
@@ -38,6 +46,7 @@ public sealed class TvModuleOptions
         ArgumentNullException.ThrowIfNull(options);
         return options.CommandTimeoutSeconds > 0
             && options.HibernatingTimeoutSeconds > 0
+            && options.CleanupTimeoutSeconds > 0
             && options.StateDebounceSeconds >= 0
             && options.Sse.IsValid()
             && options.AgentId.Length <= 40;

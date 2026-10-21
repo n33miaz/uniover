@@ -28,6 +28,24 @@ describe('TvApi', () => {
 
   afterEach(() => http.verify());
 
+  it('asks for the cleanup with a POST without body and returns what the agent reported', async () => {
+    const result = api.cleanup();
+    const request = http.expectOne('/api/v1/tv/cleanup');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toBeNull();
+    const report = {
+      ok: true,
+      latencyMs: 8000,
+      closedApps: 6,
+      freedMb: 382,
+      memoryBeforeMb: 214,
+      memoryAfterMb: 596,
+      failedSteps: ['force-stop:com.exemplo.player'],
+    };
+    request.flush(report);
+    expect(await result).toEqual(report);
+  });
+
   it('reads and normalizes the state', async () => {
     const state = api.state();
     const request = http.expectOne('/api/v1/tv/state');

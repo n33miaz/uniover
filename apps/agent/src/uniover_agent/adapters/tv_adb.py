@@ -28,18 +28,23 @@ from uniover_agent.adapters.tv_adb_parsing import (
     AdbOutput,
     DeviceState,
     am_start_succeeded,
+    command_succeeded,
     connect_was_refused_for_auth,
     input_text_command,
     is_valid_activity,
     is_valid_package,
     is_valid_remote_apk_path,
     monkey_succeeded,
+    parse_component_packages,
     parse_connect,
     parse_device_state,
     parse_launchable,
+    parse_mem_available_mb,
     parse_package_list,
     parse_package_paths,
     parse_package_versions,
+    parse_running_packages,
+    parse_setting_value,
     quote_for_device_shell,
 )
 from uniover_agent.ports import (
@@ -65,6 +70,7 @@ DEFAULT_PULL_TIMEOUT_SECONDS: Final = 120.0
 _ADB_EXECUTABLE: Final = "adb.exe" if sys.platform == "win32" else "adb"
 _LEANBACK: Final = "android.intent.category.LEANBACK_LAUNCHER"
 _LAUNCHER: Final = "android.intent.category.LAUNCHER"
+_HOME: Final = "android.intent.category.HOME"
 _MAX_TEXT_LENGTH: Final = 200
 # No Windows o `adb` não pode abrir (e piscar) uma janela de console a cada comando.
 _NO_WINDOW: Final = 0x08000000 if sys.platform == "win32" else 0
@@ -262,6 +268,59 @@ class AdbTv:
             await self._ensure_connected_locked()
             await self._shell(command)
 
+    # --- limpeza da TV ------------------------------------------------------------------------
+    # Todos são comandos fixos (o único dado variável, o pacote, é validado e vai entre aspas). Um
+    # por vez, na mesma trava dos demais: a limpeza não segura o canal entre um passo e outro.
+
+    async def memory_available_mb(self) -> int | None:
+        return parse_mem_available_mb(
+            (await self._locked_shell("grep MemAvailable /proc/meminfo")).text
+        )
+
+    async def home_packages(self) -> frozenset[str]:
+        output = await self._locked_shell(
+            f"cmd package query-activities --brief -a android.intent.action.MAIN -c {_HOME}"
+        )
+        packages = frozenset(app.package for app in parse_launchable(output.text))
+        if not packages:
+            # Sem saber quem é o lançador a limpeza não pode decidir o que poupar.
+            raise AdbCommandFailed("a TV não informou qual é a tela inicial")
+        return packages
+
+    async def input_method_package(self) -> str | None:
+        output = await self._locked_shell("settings get secure default_input_method")
+        self._require_success(output, "a TV não informou o teclado em uso")
+        packages = parse_component_packages(parse_setting_value(output.text))
+        return next(iter(packages), None)
+
+    async def accessibility_packages(self) -> frozenset[str]:
+        output = await self._locked_shell("settings get secure enabled_accessibility_services")
+        self._require_success(output, "a TV não informou os serviços de acessibilidade")
+        return parse_component_packages(parse_setting_value(output.text))
+
+    async def running_packages(self) -> frozenset[str]:
+        output = await self._locked_shell("ps -A")
+        self._require_success(output, "a TV não informou os processos")
+        packages = parse_running_packages(output.text)
+        if not packages:
+            # Uma TV ligada sempre tem processo de app: lista vazia é leitura que não deu certo.
+            raise AdbCommandFailed("a TV não informou os processos")
+        return packages
+
+    async def go_home(self) -> None:
+        output = await self._locked_shell("input keyevent KEYCODE_HOME")
+        self._require_success(output, "a TV não foi para a tela inicial")
+
+    async def kill_background(self) -> None:
+        output = await self._locked_shell("am kill-all")
+        self._require_success(output, "a TV não encerrou os processos de fundo")
+
+    async def force_stop(self, package: str) -> None:
+        if not is_valid_package(package):
+            raise ValueError("nome de pacote inválido")
+        output = await self._locked_shell(f"am force-stop {quote_for_device_shell(package)}")
+        self._require_success(output, "a TV não fechou o app")
+
     # --- APKs (para os ícones) ----------------------------------------------------------------
 
     async def package_versions(self) -> dict[str, int]:
@@ -325,6 +384,16 @@ class AdbTv:
             return apps
         user = parse_package_list(output.text)
         return [replace(app, user_installed=app.package in user) for app in apps]
+
+    async def _locked_shell(self, command: str) -> AdbOutput:
+        async with self._lock:
+            await self._ensure_connected_locked()
+            return await self._shell(command)
+
+    @staticmethod
+    def _require_success(output: AdbOutput, message: str) -> None:
+        if not command_succeeded(output):
+            raise AdbCommandFailed(message)
 
     async def _shell(self, command: str) -> AdbOutput:
         """Um comando fixo no shell da TV. Se o canal caiu, marca e avisa (o próximo reconecta)."""

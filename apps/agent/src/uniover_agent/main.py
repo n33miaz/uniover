@@ -34,6 +34,7 @@ from uniover_agent.config import (
     Settings,
     config_path,
     require_api_url,
+    require_cleanup_keep,
     require_tv_host,
     tv_cert_dir,
 )
@@ -50,10 +51,12 @@ from uniover_agent.core import (
     ProcessMessage,
     TextReconciler,
     TvApps,
+    TvCleanup,
     TvSessionManager,
     TvStatePublisher,
     tv_app_launch_handler,
     tv_apps_refresh_handler,
+    tv_cleanup_handler,
     tv_key_handler,
     tv_text_handler,
     tv_wake_handler,
@@ -124,6 +127,8 @@ class TvSetup:
     prepare: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
     # A digitação (uma só, ligada ao handler de `tv.text.v1`): o canal ADB se pluga nela.
     text: TextReconciler | None = None
+    # Comandos longos, atendidos em tarefa própria para não segurar as teclas atrás deles.
+    background_commands: set[str] = field(default_factory=set)
 
 
 def build_tv(
@@ -186,6 +191,8 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
     sessão como opcional (abre e hiberna junto, mas a falta dele não derruba as teclas) e os
     handlers dele são os únicos que o usam.
     """
+    # Valida a lista do dono antes de qualquer coisa: lista errada para o agente com o motivo.
+    keep = require_cleanup_keep(settings)
     path = locate_adb(settings.adb_path)
     if path is None:
         _log.warning(
@@ -211,6 +218,11 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
         setup.text.use_adb(adb)
     setup.handlers["tv.apps.refresh.v1"] = tv_apps_refresh_handler(apps)
     setup.handlers["tv.app.launch.v1"] = tv_app_launch_handler(manager, packages=apps)
+    # A limpeza só mexe no ADB (nunca na sessão do controle remoto) e leva vários segundos: roda
+    # fora do laço de mensagens, e as teclas seguem enquanto ela trabalha.
+    cleanup = TvCleanup(adb, clock, keep=keep)
+    setup.handlers["tv.cleanup.v1"] = tv_cleanup_handler(cleanup, setup.transport, setup.envelopes)
+    setup.background_commands.add("tv.cleanup.v1")
     manager.subscribe(announcer.on_state)
     setup.after_hello.append(announcer.after_hello)
     setup.background.append(announcer.run)
@@ -351,7 +363,14 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
     if tv is not None:
         for step in tv.prepare:
             await step()
-    process = ProcessMessage(agent_id, gate, build_handler(clock, tv), envelopes, transport)
+    process = ProcessMessage(
+        agent_id,
+        gate,
+        build_handler(clock, tv),
+        envelopes,
+        transport,
+        background_types=tv.background_commands if tv is not None else (),
+    )
     publisher: TvStatePublisher | None = None
     after_hello: list[Callable[[], Awaitable[None]]] = []
     if tv is not None:
@@ -391,6 +410,7 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
         for task in background:
             task.cancel()
         await asyncio.gather(*background, return_exceptions=True)
+        await process.aclose()
         if tv is not None:
             await tv.manager.aclose()
         if publisher is not None:

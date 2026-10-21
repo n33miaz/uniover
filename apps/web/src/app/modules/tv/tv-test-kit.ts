@@ -102,6 +102,7 @@ export function createFakeTvStore() {
     watchdog: signal<TvWatchdog | null>(null),
     notConfigured: signal(false),
     inFlightKeys: signal(0),
+    cleaning: signal(false),
     hibernateMinutes: 5,
     start: vi.fn(),
     stop: vi.fn(),
@@ -110,6 +111,7 @@ export function createFakeTvStore() {
     sendKey: vi.fn<(key: string) => Promise<boolean>>().mockResolvedValue(true),
     sendText: vi.fn<(text: string) => Promise<TvFailure | null>>().mockResolvedValue(null),
     powerOff: vi.fn<() => Promise<TvFailure | null>>().mockResolvedValue(null),
+    cleanup: vi.fn<() => Promise<boolean>>().mockResolvedValue(true),
     launch: vi.fn<(shortcut: TvShortcut) => Promise<boolean>>().mockResolvedValue(true),
     refreshShortcuts: vi.fn<() => Promise<boolean>>().mockResolvedValue(true),
     renameShortcut: vi

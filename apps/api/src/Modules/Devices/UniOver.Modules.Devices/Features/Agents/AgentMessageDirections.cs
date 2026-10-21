@@ -18,6 +18,7 @@ internal static class AgentMessageDirections
         AgentMessageTypes.CommandResultV1,
         AgentMessageTypes.TvAppsV1,
         AgentMessageTypes.TvAppsV2,
+        AgentMessageTypes.TvCleanupResultV1,
         AgentMessageTypes.TvStateV1,
         AgentMessageTypes.TvWatchdogV1,
     }.ToFrozenSet(StringComparer.Ordinal);
@@ -27,6 +28,7 @@ internal static class AgentMessageDirections
     {
         AgentMessageTypes.TvAppLaunchV1,
         AgentMessageTypes.TvAppsRefreshV1,
+        AgentMessageTypes.TvCleanupV1,
         AgentMessageTypes.TvKeyV1,
         AgentMessageTypes.TvKeyV2,
         AgentMessageTypes.TvTextV1,

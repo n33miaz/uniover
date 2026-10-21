@@ -116,6 +116,18 @@
     >
       <app-tv-icon name="refresh" [class.spin]="refreshing()" />
     </button>
+    <button
+      type="button"
+      class="icon-btn clean"
+      [class.off]="!store.canSend()"
+      [attr.aria-label]="cleanLabel()"
+      [attr.title]="cleanLabel()"
+      [attr.aria-haspopup]="'dialog'"
+      [attr.aria-disabled]="!store.canSend() || store.cleaning() ? 'true' : null"
+      (click)="openCleanup()"
+    >
+      <app-tv-icon name="clean" [class.spin]="store.cleaning()" />
+    </button>
     @if (!isGuest()) {
       <button type="button" class="edit-toggle" [class.on]="editMode()" (click)="toggleEdit()">
         @if (editMode()) {
@@ -132,6 +144,11 @@
   <span class="sr" role="status" [attr.aria-live]="'polite'" data-reorder-status>{{
     announcement()
   }}</span>
+  @if (store.cleaning()) {
+    <p class="note cleaning" role="status" i18n="@@tv.cleanup.running-note">
+      Limpando a TV… pode levar até meio minuto. O controle continua funcionando.
+    </p>
+  }
 
   @if (visible().length === 0) {
     <p class="note" role="status" i18n="@@tv.apps.no-match">
@@ -206,4 +223,8 @@
       </section>
     }
   }
+}
+
+@if (cleanupOpen()) {
+  <app-tv-cleanup-sheet (closed)="closeCleanup()" />
 }
