@@ -1,0 +1,29 @@
+<section class="list" aria-labelledby="muscle-list-title">
+  <h3 id="muscle-list-title" class="title ui-section-label" i18n="@@training.map.list-title">
+    Ou escolha pela lista
+  </h3>
+  @for (group of groups(); track group.id) {
+    <div class="group" role="group" [attr.aria-label]="group.label">
+      <span class="group-name" aria-hidden="true">{{ group.label }}</span>
+      <div class="chips">
+        @for (muscle of group.muscles; track muscle.id) {
+          <button
+            type="button"
+            class="chip"
+            [attr.data-muscle]="muscle.id"
+            [attr.aria-pressed]="muscle.selected"
+            (click)="picked.emit(muscle.id)"
+          >
+            <span class="face">
+              <span>{{ muscle.label }}</span
+              >&ngsp;
+              <span class="count"
+                >{{ muscle.count }}<span class="ui-visually-hidden"> {{ muscle.unit }}</span></span
+              >
+            </span>
+          </button>
+        }
+      </div>
+    </div>
+  }
+</section>
