@@ -1,94 +1,224 @@
-<main class="invite">
-  <h1 i18n="@@auth.invite.title">Criar sua conta</h1>
+<app-auth-layout>
+  @switch (view()) {
+    @case ('form') {
+      <h1 i18n="@@auth.invite.title">Criar sua conta</h1>
+      <p class="lead" i18n="@@auth.invite.lead">
+        Você recebeu um convite para o UniOver. Escolha o e-mail e a senha que vai usar para entrar.
+      </p>
 
-  @if (hasInvite) {
-    <p class="lead" i18n="@@auth.invite.lead">
-      Você foi convidado para usar o controle da TV. Escolha o e-mail e a senha que vai usar para
-      entrar.
-    </p>
-
-    <form (submit)="submit($event)" novalidate>
-      <div class="field">
-        <label for="invite-email" i18n="@@auth.invite.email">E-mail</label>
-        <input
+      <form (submit)="submit($event)" novalidate>
+        <app-auth-field
           #emailField
-          id="invite-email"
-          name="email"
-          type="email"
-          autocomplete="username"
-          [attr.inputmode]="'email'"
-          [attr.autocapitalize]="'none'"
-          spellcheck="false"
-          required
-          [value]="email()"
-          (input)="setEmail($event)"
+          [fieldId]="'invite-email'"
+          [name]="'email'"
+          label="E-mail"
+          i18n-label="@@auth.invite.email"
+          [kind]="'email'"
+          [autocomplete]="'username'"
+          [enterKeyHint]="'next'"
+          [error]="emailError()"
+          [(value)]="email"
+          (valueChange)="editEmail()"
+          (blurred)="emailTouched.set(true)"
         />
-      </div>
 
-      <div class="field">
-        <label for="invite-password" i18n="@@auth.invite.password">Senha</label>
-        <div class="password">
-          <input
-            id="invite-password"
-            name="password"
-            [type]="showPassword() ? 'text' : 'password'"
-            autocomplete="new-password"
-            aria-describedby="invite-password-hint"
-            required
-            [value]="password()"
-            (input)="setPassword($event)"
-          />
-          <button
-            type="button"
-            class="toggle"
-            [attr.aria-pressed]="showPassword()"
-            (click)="toggleShowPassword()"
-            i18n="@@auth.invite.show-password"
-          >
-            Mostrar senha
-          </button>
-        </div>
-        <p id="invite-password-hint" class="hint" i18n="@@auth.invite.password-hint">
-          Ao menos {{ minLength }} caracteres. Não existe recuperação de senha: guarde esta senha.
-        </p>
-      </div>
-
-      <div class="field">
-        <label for="invite-confirmation" i18n="@@auth.invite.confirmation">Repita a senha</label>
-        <input
-          id="invite-confirmation"
-          name="confirmation"
-          [type]="showPassword() ? 'text' : 'password'"
-          autocomplete="new-password"
-          required
-          [value]="confirmation()"
-          (input)="setConfirmation($event)"
-        />
-      </div>
-
-      <div class="messages" [attr.aria-live]="'polite'">
-        @if (errorText(); as message) {
-          <p #errorBox class="error" role="alert" tabindex="-1">
-            {{ message }}
-            @if (error() === 'rate-limited' && waitSeconds(); as seconds) {
-              <span i18n="@@auth.invite.wait">Tente de novo em {{ seconds }} s.</span>
+        <app-auth-field
+          #passwordField
+          [fieldId]="'invite-password'"
+          [name]="'password'"
+          label="Senha"
+          i18n-label="@@auth.invite.password"
+          [kind]="'password'"
+          [autocomplete]="'new-password'"
+          [enterKeyHint]="'next'"
+          toggleLabel="Mostrar senha"
+          i18n-toggleLabel="@@auth.invite.show-password"
+          [invalid]="lengthRule() === 'invalid'"
+          [describedBy]="'invite-password-rules invite-password-hint'"
+          [(value)]="password"
+          (valueChange)="scheduleAnnouncement()"
+        >
+          <!-- A força é só um conselho (comprimento e variedade): quem barra o envio é o requisito abaixo. -->
+          <div class="strength" [attr.data-level]="check().level">
+            <span class="segments" aria-hidden="true">
+              <span></span><span></span><span></span><span></span>
+            </span>
+            @if (strengthLabel(); as label) {
+              <span class="strength-text" i18n="@@auth.invite.strength">Força: {{ label }}</span>
+            } @else {
+              <span class="strength-text" i18n="@@auth.invite.strength-idle">Força da senha</span>
             }
-          </p>
-        }
-      </div>
+          </div>
 
-      <button type="submit" class="submit" [disabled]="busy()">
-        @if (busy()) {
-          <span i18n="@@auth.invite.busy">Criando…</span>
-        } @else {
-          <span i18n="@@auth.invite.submit">Criar conta e entrar</span>
-        }
-      </button>
-    </form>
-  } @else {
-    <p class="lead" role="alert" i18n="@@auth.invite.missing">
-      Abra o link do convite que você recebeu. Este endereço não traz um convite.
-    </p>
-    <a class="other" routerLink="/entrar" i18n="@@auth.invite.to-login">Já tenho conta: entrar</a>
+          <ul
+            id="invite-password-rules"
+            class="rules ui-plain"
+            aria-label="Requisitos da senha"
+            i18n-aria-label="@@auth.invite.rules-label"
+          >
+            <li class="rule" [attr.data-state]="lengthRule()">
+              <app-auth-glyph [name]="lengthRule() === 'met' ? 'check-circle' : 'circle'" />
+              <span i18n="@@auth.invite.rule-length">Ao menos {{ minLength }} caracteres</span>
+              <!-- O estado também em texto: quem não vê o ícone nem a cor ouve "cumprido" ou "pendente". -->
+              @if (lengthRule() === 'met') {
+                <span class="ui-visually-hidden" i18n="@@auth.invite.rule-met">: cumprido</span>
+              } @else {
+                <span class="ui-visually-hidden" i18n="@@auth.invite.rule-pending">: pendente</span>
+              }
+            </li>
+          </ul>
+
+          <p id="invite-password-hint" class="hint" i18n="@@auth.invite.password-hint">
+            Não existe recuperação de senha: guarde esta senha.
+          </p>
+        </app-auth-field>
+
+        <app-auth-field
+          #confirmationField
+          [fieldId]="'invite-confirmation'"
+          [name]="'confirmation'"
+          label="Repita a senha"
+          i18n-label="@@auth.invite.confirmation"
+          [kind]="'password'"
+          [autocomplete]="'new-password'"
+          [enterKeyHint]="'go'"
+          toggleLabel="Mostrar a senha repetida"
+          i18n-toggleLabel="@@auth.invite.show-confirmation"
+          [invalid]="confirmationStatus()?.tone === 'warn'"
+          [describedBy]="confirmationStatus() ? 'invite-confirmation-status' : null"
+          [(value)]="confirmation"
+          (valueChange)="scheduleAnnouncement()"
+          (blurred)="confirmationTouched.set(true)"
+        >
+          @if (confirmationStatus(); as status) {
+            <p id="invite-confirmation-status" class="status" [attr.data-tone]="status.tone">
+              <app-auth-glyph [name]="status.icon" />
+              <span>{{ status.text }}</span>
+            </p>
+          }
+        </app-auth-field>
+
+        <div class="messages" [attr.aria-live]="'polite'">
+          @if (banner(); as notice) {
+            <!-- Um elemento novo a cada troca de papel: o "pronto" que fecha uma espera também é anunciado. -->
+            @if (notice.role === 'alert') {
+              <app-auth-notice
+                [tone]="notice.tone"
+                [role]="'alert'"
+                [icon]="notice.icon"
+                [heading]="notice.heading"
+                [detail]="notice.detail"
+                [countdown]="notice.waiting ? countdown() : null"
+              />
+            } @else {
+              <app-auth-notice
+                [tone]="notice.tone"
+                [role]="'status'"
+                [icon]="notice.icon"
+                [heading]="notice.heading"
+              />
+            }
+          }
+        </div>
+
+        <!--
+          Sem roubar o foco do campo no toque: se o campo em foco tinha um aviso para sumir ou aparecer ao perder o foco
+          (Caps Lock, "senhas diferentes"), a tela se deslocava entre apertar e soltar e o clique se perdia.
+        -->
+        <button
+          type="submit"
+          class="submit ui-btn primary block"
+          (mousedown)="$event.preventDefault()"
+          [disabled]="busy() || blocked()"
+        >
+          @if (busy()) {
+            <span class="ui-spinner" aria-hidden="true"></span>
+            <span i18n="@@auth.invite.busy">Criando…</span>
+          } @else {
+            <span i18n="@@auth.invite.submit">Criar conta e entrar</span>
+          }
+        </button>
+
+        <p class="audit">
+          <app-auth-glyph name="shield" />
+          <span i18n="@@auth.invite.audit"
+            >Este acesso fica registrado (data, IP e aparelho) para a segurança do sistema.</span
+          >
+        </p>
+
+        <!-- Estado da senha para o leitor de tela: só o que mudou, depois que a digitação para. -->
+        <p class="ui-visually-hidden" role="status">{{ announcement() }}</p>
+      </form>
+    }
+
+    @case ('missing') {
+      <app-auth-state
+        [tone]="'warn'"
+        [icon]="'link-off'"
+        [role]="'alert'"
+        heading="Convite não encontrado"
+        i18n-heading="@@auth.invite.missing.title"
+        detail="Abra o link do convite que você recebeu. Este endereço não traz um convite."
+        i18n-detail="@@auth.invite.missing.detail"
+        advice="Se o link foi cortado ao ser copiado, peça que o enviem de novo."
+        i18n-advice="@@auth.invite.missing.advice"
+      >
+        <a class="ui-btn secondary block" routerLink="/entrar" i18n="@@auth.invite.to-login"
+          >Já tenho conta: entrar</a
+        >
+      </app-auth-state>
+    }
+
+    @case ('incomplete') {
+      <app-auth-state
+        [tone]="'warn'"
+        [icon]="'link-off'"
+        [role]="'alert'"
+        heading="Link do convite incompleto"
+        i18n-heading="@@auth.invite.incomplete.title"
+        detail="O link do convite parece cortado ou foi alterado. Abra o link que você recebeu, do começo ao fim."
+        i18n-detail="@@auth.invite.incomplete.detail"
+        advice="Se continuar assim, peça que enviem o convite de novo."
+        i18n-advice="@@auth.invite.incomplete.advice"
+      >
+        <a class="ui-btn secondary block" routerLink="/entrar" i18n="@@auth.invite.to-login"
+          >Já tenho conta: entrar</a
+        >
+      </app-auth-state>
+    }
+
+    @case ('gone') {
+      <app-auth-state
+        [tone]="'bad'"
+        [icon]="'mail-off'"
+        [role]="'alert'"
+        heading="Este convite não vale mais"
+        i18n-heading="@@auth.invite.gone.title"
+        detail="Ele já foi usado, expirou ou foi cancelado por quem o enviou."
+        i18n-detail="@@auth.invite.gone.detail"
+        advice="Peça um novo link a quem convidou você."
+        i18n-advice="@@auth.invite.gone.advice"
+      >
+        <a class="ui-btn secondary block" routerLink="/entrar" i18n="@@auth.invite.to-login"
+          >Já tenho conta: entrar</a
+        >
+      </app-auth-state>
+    }
+
+    @case ('welcome') {
+      <app-auth-state
+        [tone]="'ok'"
+        [icon]="'check-circle'"
+        [role]="'status'"
+        heading="Tudo pronto"
+        i18n-heading="@@auth.invite.welcome.title"
+        detail="Sua conta foi criada e você já está dentro. Abrindo o UniOver…"
+        i18n-detail="@@auth.invite.welcome.detail"
+      >
+        <button type="button" class="ui-btn primary block" (click)="continueToApp()">
+          <span i18n="@@auth.invite.welcome.continue">Continuar</span>
+        </button>
+      </app-auth-state>
+    }
   }
-</main>
+</app-auth-layout>

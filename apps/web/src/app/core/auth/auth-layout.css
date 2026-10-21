@@ -1,0 +1,123 @@
+:host {
+  display: block;
+}
+
+/*
+ * Tela inteira, conteúdo centrado. O espaço de baixo cresce com o teclado virtual (--kb-inset, posto pelo
+ * componente): é ele que permite rolar o botão de enviar para cima do teclado. O fundo leva um clarão suave do
+ * acento no alto, só para a tela não ser uma folha lisa.
+ */
+.stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  min-height: 100dvh;
+  padding-block: calc(var(--space-6) + env(safe-area-inset-top))
+    calc(var(--space-6) + env(safe-area-inset-bottom) + var(--kb-inset, 0px));
+  padding-inline: max(var(--gutter), env(safe-area-inset-left))
+    max(var(--gutter), env(safe-area-inset-right));
+  background: radial-gradient(
+    ellipse 90% 46% at 50% 0%,
+    color-mix(in srgb, var(--a-accent) 13%, transparent),
+    transparent 72%
+  );
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+.mark {
+  width: 60px;
+  height: 60px;
+  margin-bottom: var(--space-2);
+  border-radius: 22%;
+  box-shadow:
+    0 10px 24px -10px rgb(var(--a-shadow) / calc(0.5 * var(--shadow-k))),
+    0 0 0 1px color-mix(in srgb, var(--a-accent) 30%, transparent);
+}
+
+.waves {
+  stroke-linecap: round;
+}
+
+.name {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.tagline {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.card {
+  box-sizing: border-box;
+  width: min(100%, 26rem);
+  padding: var(--space-6);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-xl);
+  background: var(--a-surface);
+  box-shadow:
+    var(--shadow-2),
+    inset 0 1px 0 var(--a-highlight);
+}
+
+/* Telas baixas (celular em pé com pouco espaço): a marca encolhe para o formulário ter lugar. */
+@media (max-height: 700px) {
+  .stage {
+    gap: var(--space-4);
+  }
+
+  .mark {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 0;
+  }
+
+  .name {
+    font-size: 1.25rem;
+  }
+
+  .card {
+    padding: var(--space-5);
+  }
+}
+
+/*
+ * Paisagem curta (larga e baixa): marca de um lado, cartão do outro, em vez de empilhar o que não cabe na altura.
+ * Medido por largura e altura, não por `orientation`: num celular em pé com o teclado aberto o navegador pode encolher
+ * a janela até ficar mais larga que alta, e a tela não pode virar de lado no meio da digitação.
+ */
+@media (min-width: 560px) and (max-height: 520px) {
+  .stage {
+    flex-direction: row;
+    gap: var(--space-8);
+  }
+
+  .brand {
+    flex: 0 1 14rem;
+  }
+
+  .card {
+    flex: 0 1 26rem;
+    width: auto;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+  }
+}
