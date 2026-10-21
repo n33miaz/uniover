@@ -84,6 +84,9 @@ describe('AuthService', () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     Object.defineProperty(navigator, 'locks', { value: undefined, configurable: true });
+    // Os arquivos de teste dividem o mesmo `localStorage` (o executor não isola o ambiente entre eles): a dica do papel
+    // ("convidado") que uma leitura de `/me` deixa aqui não pode chegar ao arquivo seguinte.
+    localStorage.clear();
   });
 
   const service = () => TestBed.inject(AuthService);

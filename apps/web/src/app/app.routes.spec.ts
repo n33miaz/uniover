@@ -8,6 +8,11 @@ import { AuthApi } from './core/auth/auth-api';
 import { HomeStatus, HomeStatusPort } from './core/status/home-status.port';
 
 describe('app routes', () => {
+  // Aqui não há sessão nem mock da API: o papel vem só da dica guardada no `localStorage`, que os arquivos de teste
+  // dividem. Sem limpar, uma dica de "convidado" deixada por outro arquivo manda toda rota do administrador para a TV.
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
   beforeEach(() =>
     TestBed.configureTestingModule({
       providers: [

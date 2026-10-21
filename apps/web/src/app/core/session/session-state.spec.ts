@@ -182,6 +182,10 @@ describe('SessionState', () => {
   });
 
   describe('reading the same account again', () => {
+    // Guardar uma conta de convidado grava a dica do papel no `localStorage`, que os arquivos de teste dividem.
+    beforeEach(() => localStorage.clear());
+    afterEach(() => localStorage.clear());
+
     const guest = {
       id: '1',
       email: 'a@b.c',
