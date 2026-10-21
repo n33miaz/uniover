@@ -1,0 +1,27 @@
+.search {
+  position: relative;
+}
+
+.search-icon {
+  position: absolute;
+  top: 50%;
+  left: var(--space-3);
+  translate: 0 -50%;
+  color: var(--a-ink2);
+  pointer-events: none;
+}
+
+.search .ui-input {
+  padding-left: calc(var(--space-3) + 20px + var(--space-2));
+}
+
+.list {
+  margin: 0;
+}
+
+.none {
+  margin: 0;
+  padding: var(--space-4) var(--space-1);
+  color: var(--a-ink2);
+  text-align: center;
+}

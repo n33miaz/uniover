@@ -1,0 +1,209 @@
+<section class="evo" aria-labelledby="evo-title">
+  <h2 id="evo-title" class="ui-visually-hidden" i18n="@@training.progress.evolution.title">
+    Evolução
+  </h2>
+
+  <app-training-chips
+    [options]="chips()"
+    [selected]="exercise().id"
+    [label]="chipsLabel"
+    (selectedChange)="onChip($event)"
+  />
+
+  <div class="card ui-card">
+    <app-progress-seg
+      [options]="metricOptions"
+      [selected]="metric()"
+      [label]="metricLabel"
+      (selectedChange)="setMetric($event)"
+    />
+
+    @switch (view()) {
+      @case ('loading') {
+        <div class="loading ui-skeleton" aria-hidden="true"></div>
+      }
+      @case ('chart') {
+        @if (readout(); as read) {
+          <div class="read">
+            <div class="headline">
+              <strong class="value">{{ read.value }}</strong>
+              @if (delta(); as change) {
+                <span class="delta ui-chip" [class.ok]="change.up">{{ change.text }}</span>
+              }
+            </div>
+            <span class="when">{{ read.when }}</span>
+            <div class="steps">
+              <button
+                type="button"
+                class="step ui-btn secondary"
+                [attr.aria-label]="previousLabel"
+                [disabled]="!canStepBack()"
+                (click)="step(-1)"
+              >
+                <app-progress-glyph name="prev" />
+              </button>
+              <button
+                type="button"
+                class="step ui-btn secondary"
+                [attr.aria-label]="nextLabel"
+                [disabled]="!canStepForward()"
+                (click)="step(1)"
+              >
+                <app-progress-glyph name="next" />
+              </button>
+            </div>
+            <!-- O que o leitor de tela ouve a cada ponto: o valor e quando foi, sem repetir a variação. -->
+            <p class="ui-visually-hidden" role="status">{{ read.spoken }}</p>
+          </div>
+        }
+
+        @if (chartFailed()) {
+          <p class="ui-notice warn" role="status">
+            <app-training-glyph name="alert" />
+            <span i18n="@@training.progress.chart.failed"
+              >Não foi possível carregar o gráfico agora. Os mesmos dados estão na tabela.</span
+            >
+          </p>
+        } @else if (spec(); as chartSpec) {
+          <figure class="figure" role="img" [attr.aria-label]="chartLabel()">
+            <app-progress-line-chart
+              [spec]="chartSpec"
+              (picked)="picked.set($event)"
+              (failed)="onChartFailed()"
+            />
+          </figure>
+        }
+
+        @if (pointCount() === 1) {
+          <p class="hint" i18n="@@training.progress.chart.one-point">
+            Só um treino neste período: ainda faltam dados para traçar uma linha.
+          </p>
+        }
+      }
+      @case ('none') {
+        <div class="empty">
+          <p i18n="@@training.progress.chart.none">
+            Sem registro deste exercício ainda. Depois do primeiro treino, o gráfico aparece aqui.
+          </p>
+          <a class="secondary ui-btn" routerLink="/treino">
+            <app-training-glyph name="dumbbell" />
+            <span i18n="@@training.progress.chart.go-today">Ir para Hoje</span>
+          </a>
+        </div>
+      }
+      @case ('period') {
+        <div class="empty">
+          <p i18n="@@training.progress.chart.period-empty">
+            Nenhum treino deste exercício neste período.
+          </p>
+          <button type="button" class="secondary ui-btn" (click)="setPeriod('all')">
+            <span i18n="@@training.progress.chart.show-all">Ver tudo</span>
+          </button>
+        </div>
+      }
+      @case ('estimate') {
+        <div class="empty">
+          <p i18n="@@training.progress.chart.no-estimate">
+            Nenhuma série de 1 a 10 repetições neste período: o 1RM não pode ser estimado.
+          </p>
+          <button type="button" class="secondary ui-btn" (click)="setMetric('topWeight')">
+            <span i18n="@@training.progress.chart.show-load">Ver a carga máxima</span>
+          </button>
+        </div>
+      }
+    }
+
+    @if (view() !== 'none') {
+      <app-progress-seg
+        [options]="periodOptions"
+        [selected]="period()"
+        [label]="periodLabel"
+        (selectedChange)="setPeriod($event)"
+      />
+    }
+
+    @if (view() === 'chart') {
+      <div class="actions">
+        <button
+          type="button"
+          class="secondary ui-btn"
+          [attr.aria-expanded]="tableOpen()"
+          [attr.aria-controls]="tableId"
+          (click)="tableOpen.set(!tableOpen())"
+        >
+          <app-training-glyph name="list" />
+          @if (tableOpen()) {
+            <span i18n="@@training.progress.table.hide">Ocultar dados</span>
+          } @else {
+            <span i18n="@@training.progress.table.show">Ver dados</span>
+          }
+        </button>
+        @if (metric() === 'oneRepMax') {
+          <button
+            type="button"
+            class="secondary ui-btn"
+            [attr.aria-label]="goalButton() ? goalEditLabel() : null"
+            (click)="goalOpen.set(true)"
+          >
+            <app-training-glyph name="target" />
+            @if (goalButton(); as goal) {
+              <span i18n="@@training.progress.goal.button-set">Meta: {{ goal }}</span>
+            } @else {
+              <span i18n="@@training.progress.goal.button-define">Definir meta</span>
+            }
+          </button>
+        }
+      </div>
+
+      @if (tableOpen()) {
+        <div class="data" [id]="tableId">
+          <table>
+            <caption class="ui-visually-hidden">
+              {{
+                tableCaption()
+              }}
+            </caption>
+            <thead>
+              <tr>
+                <th [attr.scope]="'col'" i18n="@@training.progress.table.day">Dia</th>
+                <th [attr.scope]="'col'">{{ metricName() }}</th>
+                <th [attr.scope]="'col'">{{ extraHeader() }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of tableRows(); track row.key) {
+                <tr>
+                  <th [attr.scope]="'row'">{{ row.day }}</th>
+                  <td>{{ row.value }}</td>
+                  <td>{{ row.extra }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+
+      @if (metric() === 'oneRepMax') {
+        <p class="note" i18n="@@training.progress.note.one-rep-max">
+          Epley, só séries de 1 a 10 repetições. É estimativa e tendência, nunca carga para tentar
+          um máximo.
+        </p>
+      } @else {
+        <p class="note" i18n="@@training.progress.note.top-weight">
+          Maior carga de cada dia, em séries de trabalho. Aquecimento não conta.
+        </p>
+      }
+    }
+  </div>
+</section>
+
+@if (goalOpen()) {
+  <app-goal-sheet
+    [kind]="'exercise_e1rm'"
+    [exerciseId]="exercise().id"
+    [heading]="goalHeading()"
+    [fieldLabel]="goalField"
+    [current]="goalValue()"
+    (closed)="goalOpen.set(false)"
+  />
+}

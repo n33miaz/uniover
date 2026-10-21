@@ -1,0 +1,45 @@
+<div class="progress">
+  @if (!ready()) {
+    <div class="loading ui-skeleton" aria-hidden="true"></div>
+  } @else if (exercise(); as current) {
+    <app-progress-evolution
+      [exercise]="current"
+      [chips]="chips()"
+      (exerciseChange)="picked.set($event)"
+      (pickOther)="sheetOpen.set(true)"
+    />
+
+    <h2 class="ui-visually-hidden" i18n="@@training.progress.details">
+      Mais detalhes do progresso
+    </h2>
+    <div class="sections ui-group">
+      <app-progress-records [exerciseId]="current.id" />
+      <app-progress-week />
+      <app-progress-frequency />
+      <app-progress-export />
+    </div>
+
+    @if (sheetOpen()) {
+      <app-exercise-history-sheet
+        [choices]="choices()"
+        (picked)="choose($event)"
+        (closed)="sheetOpen.set(false)"
+      />
+    }
+  } @else {
+    <section class="empty ui-card" aria-labelledby="progress-empty-title">
+      <span class="ui-tile lg"><app-training-glyph name="chart" /></span>
+      <h2 id="progress-empty-title" i18n="@@training.progress.empty.title">
+        Registre um treino para ver o progresso
+      </h2>
+      <p i18n="@@training.progress.empty.text">
+        Depois do primeiro treino, aqui aparecem a evolução da carga, os recordes, o volume da
+        semana e a frequência.
+      </p>
+      <a class="primary ui-btn" routerLink="/treino">
+        <app-training-glyph name="dumbbell" />
+        <span i18n="@@training.progress.empty.go">Ir para Hoje</span>
+      </a>
+    </section>
+  }
+</div>
