@@ -12,11 +12,18 @@ describe('FullTextSender', () => {
     expect(sendText.mock.calls.map((call) => call[0])).toEqual(['batman', 'batman 2']);
   });
 
-  it('accepts 1 to 200 characters without control characters, and nothing else', () => {
+  it('sends the empty text like any other: it is the request to erase everything', async () => {
+    const sendText = vi.fn<(text: string) => Promise<TvFailure | null>>().mockResolvedValue(null);
+    const sender = new FullTextSender({ sendText });
+    expect(await sender.send('')).toBeNull();
+    expect(sendText).toHaveBeenCalledWith('');
+  });
+
+  it('accepts 0 to 200 characters without control characters, and nothing else', () => {
     const sender = new FullTextSender({ sendText: vi.fn() });
     expect(sender.isValid('bat')).toBe(true);
     expect(sender.isValid('😀'.repeat(200))).toBe(true);
-    expect(sender.isValid('')).toBe(false);
+    expect(sender.isValid('')).toBe(true);
     expect(sender.isValid('a'.repeat(201))).toBe(false);
     expect(sender.isValid('linha\noutra')).toBe(false);
   });

@@ -39,6 +39,20 @@ def test_config_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.allow_insecure is False
 
 
+def test_typing_by_keys_is_off_by_default_and_read_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings()
+    assert (settings.tv_text_by_keys, settings.tv_text_key_pause_ms) == (False, 0)
+    monkeypatch.setenv("UNIOVER_TV_TEXT_BY_KEYS", "1")
+    monkeypatch.setenv("UNIOVER_TV_TEXT_KEY_PAUSE_MS", "15")
+    settings = Settings()
+    assert (settings.tv_text_by_keys, settings.tv_text_key_pause_ms) == (True, 15)
+    monkeypatch.setenv("UNIOVER_TV_TEXT_KEY_PAUSE_MS", "-1")
+    with pytest.raises(ValueError, match="tv_text_key_pause_ms"):
+        Settings()
+
+
 def test_adb_settings_have_defaults_and_read_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("UNIOVER_ADB_PATH")
     settings = Settings()

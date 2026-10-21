@@ -1573,12 +1573,19 @@ test.describe('painel Teclado', () => {
     await openTv(page);
     await openKeyboard(page);
     const field = keyboardField(page);
-    // Digitação seguida: uma pausa só no fim, então um único envio com o texto completo.
+    // Digitação seguida: a primeira letra vai na hora e o resto se junta; o último envio tem o texto completo.
     await page.keyboard.type('batman', { delay: 40 });
-    await expect.poll(() => texts()).toEqual(['batman']);
+    await expect.poll(() => texts().at(-1)).toBe('batman');
     await expect(page.getByText('Texto na TV.')).toBeVisible();
+    // Cada envio é um prefixo do que se digitou, cada vez maior: nunca um pedaço solto, nem o mesmo texto de novo.
+    const sent = texts() as string[];
+    expect(sent[0]).toBe('b');
+    sent.forEach((text, index) => {
+      expect('batman'.startsWith(text)).toBe(true);
+      if (index > 0) expect(text.length).toBeGreaterThan(sent[index - 1].length);
+    });
     await page.waitForTimeout(700);
-    expect(texts()).toEqual(['batman']);
+    expect(texts()).toEqual(sent);
     await expect(field).toHaveValue('batman');
     await page.waitForTimeout(250);
     await screenshot(page, `test-results/tv-keyboard-typed-${info.project.name}.png`);
@@ -1600,19 +1607,58 @@ test.describe('painel Teclado', () => {
     await expect.poll(() => texts()).toEqual(['b', 'ba', 'bat', 'ba']);
   });
 
-  test('o texto vazio nunca é enviado', async ({ page }) => {
+  test('apagar até esvaziar manda o texto vazio para a TV, que apaga o que o agente digitou', async ({
+    page,
+  }) => {
+    await openTv(page);
+    await openKeyboard(page);
+    const field = keyboardField(page);
+    await field.fill('bat');
+    await expect.poll(() => texts()).toEqual(['bat']);
+    for (let i = 0; i < 3; i++) await page.keyboard.press('Backspace');
+    await expect(field).toHaveValue('');
+    // O último pedido é o vazio (os do meio podem ter se juntado), e o app avisa que o campo da TV foi limpo.
+    await expect.poll(() => texts().at(-1)).toBe('');
+    await expect(page.getByText('Campo da TV limpo.')).toBeVisible();
+    const sent = texts() as string[];
+    sent.forEach((text) => expect('bat'.startsWith(text)).toBe(true));
+    await page.waitForTimeout(700);
+    expect(texts()).toEqual(sent);
+  });
+
+  test('apagar tudo de uma vez também manda o texto vazio', async ({ page }) => {
     await openTv(page);
     await openKeyboard(page);
     const field = keyboardField(page);
     await field.fill('bat');
     await expect.poll(() => texts()).toEqual(['bat']);
     await field.fill('');
+    await expect.poll(() => texts()).toEqual(['bat', '']);
     await page.waitForTimeout(700);
-    expect(texts()).toEqual(['bat']);
-    expect(tv.requests.some((r) => r.path === '/text' && !r.body?.['text'])).toBe(false);
+    expect(texts()).toEqual(['bat', '']);
   });
 
-  test('Limpar esvazia só o campo do celular e Fechar fecha o painel, enviando o que faltava', async ({
+  test('uma rajada de letras sai em poucas requisições, a primeira na hora e a última com o texto final', async ({
+    page,
+  }) => {
+    await openTv(page);
+    await openKeyboard(page);
+    const field = keyboardField(page);
+    // Tudo dentro de uma tarefa só do navegador: nenhuma resposta chega no meio, então o resultado não depende de tempo.
+    await field.evaluate((element: HTMLInputElement) => {
+      for (const text of ['a', 'ab', 'abc', 'abcd', 'abcde', 'abcdef']) {
+        element.value = text;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    await expect.poll(() => texts().at(-1)).toBe('abcdef');
+    // A primeira letra foi na hora; as outras cinco viraram uma requisição só (uma em voo por vez).
+    expect(texts()).toEqual(['a', 'abcdef']);
+    await page.waitForTimeout(700);
+    expect(texts()).toEqual(['a', 'abcdef']);
+  });
+
+  test('Limpar esvazia o campo do celular e o da TV, e Fechar fecha o painel, enviando o que faltava', async ({
     page,
   }) => {
     await openTv(page);
@@ -1622,16 +1668,33 @@ test.describe('painel Teclado', () => {
     await expect.poll(() => texts()).toEqual(['bat']);
     await button(keyboardDialog(page), 'Limpar').click();
     await expect(field).toHaveValue('');
+    await expect.poll(() => texts()).toEqual(['bat', '']);
+    await expect(page.getByText('Campo da TV limpo.')).toBeVisible();
     await page.waitForTimeout(600);
-    expect(texts()).toEqual(['bat']);
+    expect(texts()).toEqual(['bat', '']);
 
-    await field.fill('x');
+    // Duas mudanças seguidas e o painel fecha: o que ainda esperava a cauda não se perde.
+    await field.evaluate((element: HTMLInputElement) => {
+      for (const text of ['x', 'xy']) {
+        element.value = text;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
     await button(keyboardDialog(page), 'Fechar').click();
     await expect(keyboardDialog(page)).toHaveCount(0);
     await expect(page).toHaveURL(/\/tv$/);
     await expect(button(page, 'Teclado')).toBeFocused();
-    // O que ainda estava dentro da pausa de digitação não se perde ao fechar.
-    await expect.poll(() => texts()).toEqual(['bat', 'x']);
+    await expect.poll(() => texts().at(-1)).toBe('xy');
+    expect(texts()).toEqual(['bat', '', 'x', 'xy']);
+  });
+
+  test('abrir e fechar o painel sem digitar não manda nada', async ({ page }) => {
+    await openTv(page);
+    await openKeyboard(page);
+    await page.keyboard.press('Escape');
+    await expect(keyboardDialog(page)).toHaveCount(0);
+    await page.waitForTimeout(400);
+    expect(texts()).toEqual([]);
   });
 
   test('o painel fica aberto sobre o controle: dá para digitar e fechar sem trocar de tela', async ({

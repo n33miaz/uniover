@@ -13,10 +13,20 @@ export interface TvConfig {
   /** Quanto tempo um aviso fica na tela. */
   readonly noticeMs: number;
   /**
-   * Pausa de digitação que dispara o envio do texto da aba Teclado. Com uma requisição em voo por vez, o pior caso é
-   * cerca de 4 por segundo (240 por minuto), abaixo do limite de comandos do servidor (300 por minuto).
+   * Cauda do envio do texto da aba Teclado: a primeira mudança depois de uma pausa vai na hora, e daí em diante dois
+   * envios nunca começam com menos que isto de intervalo (o que se digita nesse meio tempo vai junto, só o mais
+   * recente). Menor é mais rápido e manda mais requisições; maior junta mais letras por requisição.
    */
-  readonly textDebounceMs: number;
+  readonly textTailMs: number;
+  /**
+   * Freio do ritmo do texto: no máximo `textMaxRequests` envios em qualquer janela deslizante de `textWindowMs`.
+   * O servidor aceita 300 comandos por minuto por pessoa, num balde só para teclas, aquecer e abrir app, e a cauda
+   * sozinha deixaria uma digitação contínua com a TV respondendo rápido chegar a 10 por segundo (600 por minuto).
+   * 40 a cada 10 s dá no máximo 240 por minuto de texto, sobrando 60 por minuto para o resto, e ainda deixa uma
+   * rajada de 40 envios sair sem esperar.
+   */
+  readonly textMaxRequests: number;
+  readonly textWindowMs: number;
   /** Quantas teclas sem resposta ainda cabem antes de a repetição esperar. */
   readonly maxKeysInFlight: number;
 }
@@ -29,7 +39,9 @@ export const TV_CONFIG = new InjectionToken<TvConfig>('TV_CONFIG', {
     repeatDelayMs: 400,
     repeatIntervalMs: 250,
     noticeMs: 6_000,
-    textDebounceMs: 250,
+    textTailMs: 100,
+    textMaxRequests: 40,
+    textWindowMs: 10_000,
     maxKeysInFlight: 3,
   }),
 });

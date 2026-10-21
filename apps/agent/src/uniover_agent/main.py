@@ -148,7 +148,17 @@ def build_tv(
     # só o aceita pela rota própria de desligar. Sem emissor infravermelho a TV só volta com o
     # controle original, então o gerenciador de sessão não repete um `POWER` e nada aqui o reenvia.
     keys = tv_key_handler(manager)
-    text = TextReconciler(manager, monotonic=clock.monotonic)
+    text = TextReconciler(
+        manager,
+        monotonic=clock.monotonic,
+        keys=settings.tv_text_by_keys,
+        key_pause_seconds=settings.tv_text_key_pause_ms / 1000,
+        sleep=clock.sleep,
+    )
+    _log.info(
+        "digitação na TV: teclas do controle remoto %s",
+        "ligadas" if settings.tv_text_by_keys else "desligadas (padrão)",
+    )
     setup = TvSetup(
         manager,
         transport,
@@ -156,7 +166,7 @@ def build_tv(
         handlers={
             "tv.key.v1": keys,
             "tv.key.v2": keys,
-            "tv.text.v1": tv_text_handler(manager, reconciler=text),
+            "tv.text.v1": tv_text_handler(manager, reconciler=text, monotonic=clock.monotonic),
             "tv.wake.v1": tv_wake_handler(manager),
             "tv.app.launch.v1": tv_app_launch_handler(manager),
         },

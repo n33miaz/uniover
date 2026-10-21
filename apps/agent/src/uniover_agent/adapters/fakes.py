@@ -42,10 +42,13 @@ class FakeClock:
 class FakeTvRemote:
     """Controle remoto roteirizado: registra o que recebe e deixa o teste empurrar estado da TV.
 
-    `connect_errors` é consumido em ordem (um item por `connect`); sem itens, conecta.
+    `connect_errors` é consumido em ordem (um item por `connect`); sem itens, conecta. `events`
+    guarda, na ordem, tudo o que chegou como `("tecla", ...)` ou `("texto", ...)`; passando a mesma
+    lista ao `FakeTvAdb` a ordem entre os dois canais também fica registrada.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, events: list[tuple[str, str]] | None = None) -> None:
+        self.events: list[tuple[str, str]] = events if events is not None else []
         self.keys: list[str] = []
         self.sent: list[tuple[str, str]] = []
         self.links: list[str] = []
@@ -84,6 +87,7 @@ class FakeTvRemote:
             raise TvUnreachable("canal fechado")
         self.keys.append(key)
         self.sent.append((key, direction))
+        self.events.append(("tecla", key))
 
     async def launch_link(self, link: str) -> None:
         if not self._connected:
@@ -94,6 +98,7 @@ class FakeTvRemote:
         if not self._connected:
             raise TvUnreachable("canal fechado")
         self.texts.append(text)
+        self.events.append(("texto", text))
 
     def on_power(self, callback: Callable[[bool], None]) -> None:
         self._power.append(callback)
@@ -153,9 +158,18 @@ class FakeTvChannel:
 
 
 class FakeTvAdb:
-    """Canal ADB roteirizado: registra o que recebe. `errors` é consumido, um por operação."""
+    """Canal ADB roteirizado: registra o que recebe. `errors` é consumido, um por operação.
 
-    def __init__(self, apps: list[LaunchableApp] | None = None) -> None:
+    `events` recebe `("adb", texto)` a cada digitação (a mesma lista do `FakeTvRemote` registra a
+    ordem entre os canais).
+    """
+
+    def __init__(
+        self,
+        apps: list[LaunchableApp] | None = None,
+        events: list[tuple[str, str]] | None = None,
+    ) -> None:
+        self.events: list[tuple[str, str]] = events if events is not None else []
         self.apps = list(apps or [])
         self.launched: list[tuple[str, str | None]] = []
         self.typed: list[str] = []
@@ -193,6 +207,7 @@ class FakeTvAdb:
     async def input_text(self, text: str) -> None:
         self._fail_if_scripted()
         self.typed.append(text)
+        self.events.append(("adb", text))
 
 
 class FakeSecretStore:

@@ -598,12 +598,20 @@ describe('TvStore', () => {
   describe('text', () => {
     it('validates before calling the API, without a toast', async () => {
       await started();
-      for (const text of ['', 'a\nb', 'a'.repeat(201)]) {
+      for (const text of ['a\nb', 'a'.repeat(201)]) {
         const failure = await store.sendText(text);
         expect(failure?.kind).toBe('invalid');
-        expect(failure?.message).toContain('de 1 a 200 caracteres');
+        expect(failure?.message).toContain('até 200 caracteres');
       }
       expect(api.sendText).not.toHaveBeenCalled();
+      expect(store.notice()).toBeNull();
+    });
+
+    it('sends the empty text: it erases what the agent typed on the TV', async () => {
+      await started();
+      expect(isValidTvText('')).toBe(true);
+      await expect(store.sendText('')).resolves.toBeNull();
+      expect(api.sendText).toHaveBeenCalledWith('');
       expect(store.notice()).toBeNull();
     });
 

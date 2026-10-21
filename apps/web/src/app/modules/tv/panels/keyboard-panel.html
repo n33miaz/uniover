@@ -24,7 +24,11 @@
           <span i18n="@@tv.keyboard.sending">Enviando para a TV…</span>
         }
         @case ('sent') {
-          <span i18n="@@tv.keyboard.in-sync">Texto na TV.</span>
+          @if (length() === 0) {
+            <span i18n="@@tv.keyboard.cleared">Campo da TV limpo.</span>
+          } @else {
+            <span i18n="@@tv.keyboard.in-sync">Texto na TV.</span>
+          }
         }
         @case ('error') {
           <span>{{ failure()?.message || fallbackFailure }}</span>
