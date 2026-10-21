@@ -291,6 +291,7 @@ test.describe('Ajustes', () => {
 
       // Link de convite gerado (com a confirmação já válida).
       mock.stepUpValid = true;
+      await page.getByRole('button', { name: 'Convidar alguém' }).click();
       await page.getByLabel('Nome do convidado').fill('Diego');
       await page.getByRole('button', { name: 'Gerar convite' }).click();
       await expect(page.getByLabel('Link do convite')).toBeVisible();
@@ -315,7 +316,7 @@ test.describe('Ajustes', () => {
       path: '/ajustes/pessoas',
       title: 'Pessoas',
       route: '**/api/v1/identity/guests',
-      empty: 'Nenhum convidado ainda.',
+      empty: 'Ninguém foi convidado ainda.',
       loading: 'Carregando os convidados…',
       error: 'Não foi possível carregar os convidados agora.',
     },

@@ -1,6 +1,12 @@
 import AxeBuilder from '@axe-core/playwright';
 import { Page } from '@playwright/test';
-import { GUEST, IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
+import {
+  GUEST,
+  IdentityMock,
+  OWNER,
+  TV_CONTROL_ONLY,
+  mockIdentityApi,
+} from '../auth/identity-mock';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import {
   HOT_STATE,
@@ -96,7 +102,8 @@ test.describe('convite do dono (passkey)', () => {
     await page.goto('/ajustes/pessoas');
     await expect(page.getByRole('heading', { level: 1, name: 'Pessoas' })).toBeVisible();
     await expect(page.getByRole('heading', { level: 2, name: 'Convidados' })).toBeVisible();
-    await expect(page.getByText('Nenhum convite pendente.')).toBeVisible();
+    await expect(page.getByText('Ninguém foi convidado ainda.')).toBeVisible();
+    await page.getByRole('button', { name: 'Convidar alguém' }).click();
     await page.getByLabel('Nome do convidado').fill(GUEST.displayName);
     await page.getByRole('button', { name: 'Gerar convite' }).click();
 
@@ -118,12 +125,18 @@ test.describe('convite do dono (passkey)', () => {
     expect(order.indexOf('POST /step-up/complete')).toBeGreaterThan(
       order.indexOf('POST /guest-invites'),
     );
-    expect(
-      identity.requests.filter((r) => r.path === '/guest-invites' && r.method === 'POST'),
-    ).toHaveLength(2);
+    const posts = identity.requests.filter(
+      (r) => r.path === '/guest-invites' && r.method === 'POST',
+    );
+    expect(posts).toHaveLength(2);
+    // O padrão do convite é o modelo "só controlar a TV", enviado por extenso nas duas tentativas.
+    expect(posts.map((r) => r.body)).toEqual([
+      { displayName: GUEST.displayName, permissions: [...TV_CONTROL_ONLY] },
+      { displayName: GUEST.displayName, permissions: [...TV_CONTROL_ONLY] },
+    ]);
 
     // O dono vê o pendente na lista (sem segredo) e o revoga.
-    await expect(page.locator('app-guests-section .item .name')).toHaveText([GUEST.displayName]);
+    await expect(page.locator('app-guests-section .person .name')).toHaveText([GUEST.displayName]);
     await screenshot(page, `test-results/guests-owner-${info.project.name}.png`);
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme });
@@ -134,7 +147,7 @@ test.describe('convite do dono (passkey)', () => {
     await page.getByRole('button', { name: `Revogar o convite de ${GUEST.displayName}` }).click();
     await page.getByRole('button', { name: 'Revogar', exact: true }).click();
     await expect(page.getByText('Convite revogado.')).toBeVisible();
-    await expect(page.getByText('Nenhum convite pendente.')).toBeVisible();
+    await expect(page.getByText('Ninguém foi convidado ainda.')).toBeVisible();
     expect(identity.invites[0].status).toBe('revoked');
   });
 });

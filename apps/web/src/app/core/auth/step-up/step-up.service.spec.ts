@@ -81,6 +81,18 @@ describe('StepUpService', () => {
     await result;
   });
 
+  it('titles and words the dialog for a permissions change, asking the API for that very action', async () => {
+    const result = open('identity.permissions-change');
+    await vi.waitFor(() => expect(button('Confirmar')?.disabled).toBe(false));
+    expect(dialog()!.querySelector('#step-up-title')?.textContent).toBe(
+      'Confirmar a mudança de permissões',
+    );
+    expect(dialog()!.textContent).toContain('Para mudar as permissões de uma pessoa, confirme');
+    expect(api.stepUpOptions).toHaveBeenCalledWith('tok', 'identity.permissions-change');
+    service().cancel();
+    await result;
+  });
+
   it('fetches the challenge when the dialog opens, not when Confirmar is pressed', async () => {
     const result = open();
     await vi.waitFor(() =>

@@ -31,7 +31,10 @@ test.beforeEach(async ({ context, page }) => {
   await installFakeEventSource(page);
 });
 
-/** Passkeys, um convite pendente e dois convidados (um com acesso revogado): as listas aparecem cheias. */
+/**
+ * Passkeys, dois convites pendentes (a TV de sempre e uma lista misturada) e três convidados (a TV de sempre, só o
+ * Treino e um com acesso revogado): as listas aparecem cheias e com resumos diferentes.
+ */
 function seedAccount(): void {
   mock.passkeys.push(
     {
@@ -44,6 +47,7 @@ function seedAccount(): void {
     { id: 'p2', name: 'Celular', rawId: 'b', createdAt: '2026-10-01T12:00:00Z', lastUsedAt: null },
   );
   mock.seedInvite('Alice');
+  mock.seedInvite('Dani', ['module:tv', 'tv:edit-shortcuts', 'module:training']);
   mock.guests.push(
     {
       id: 'g1',
@@ -52,6 +56,15 @@ function seedAccount(): void {
       password: 'x',
       createdAt: '2026-10-10T10:00:00Z',
       disabledAt: null,
+    },
+    {
+      id: 'g3',
+      displayName: 'Raphael',
+      email: 'raphael@exemplo.com',
+      password: 'x',
+      createdAt: '2026-10-12T10:00:00Z',
+      disabledAt: null,
+      permissions: ['module:training'],
     },
     {
       id: 'g2',
@@ -93,10 +106,22 @@ async function open(page: Page, path: string, title: string, scheme: Scheme) {
   await settle(page);
 }
 
-/** O mesmo roteiro para toda tela nova: sem rolagem de lado, print, alvos de 44 px e o axe sem nenhuma violação. */
-async function check(page: Page, info: TestInfo, name: string, scheme: Scheme) {
+/**
+ * O mesmo roteiro para toda tela nova: sem rolagem de lado, print, alvos de 44 px e o axe sem nenhuma violação.
+ * Folha e diálogo saem no print da janela (como aparecem no aparelho), não da página inteira.
+ */
+async function check(
+  page: Page,
+  info: TestInfo,
+  name: string,
+  scheme: Scheme,
+  options: { fullPage?: boolean; dir?: string } = {},
+) {
   await expectNoHorizontalScroll(page);
-  await screenshot(page, shot(info, name, scheme), { fullPage: true });
+  const file = options.dir
+    ? `test-results/${options.dir}/${name}-${info.project.name}-${scheme}.png`
+    : shot(info, name, scheme);
+  await screenshot(page, file, { fullPage: options.fullPage ?? true });
   expect(await smallTargets(page)).toEqual([]);
   await expectNoA11yViolations(page);
 }
@@ -228,4 +253,94 @@ test.describe('navegação dentro de Ajustes', () => {
     await page.goto('/ajustes/nada');
     await expect(page).toHaveURL(/\/$/);
   });
+});
+
+/** Cada estado da tela Pessoas, nos dois temas: convite novo, link, folha de permissões, erro e passkey. */
+test.describe('Pessoas: cada estado', () => {
+  const people = (page: Page, scheme: Scheme) => open(page, '/ajustes/pessoas', 'Pessoas', scheme);
+  const sheet = (page: Page, name: string) =>
+    page.getByRole('dialog', { name: `Permissões de ${name}` });
+  const here = { dir: 'people-ui' };
+  const overlay = { fullPage: false, dir: 'people-ui' };
+
+  for (const scheme of SCHEMES) {
+    test(`convite novo: recolhido, aberto e sem nenhum módulo, no tema ${scheme}`, async ({
+      page,
+    }, info) => {
+      seedAccount();
+      mock.stepUpValid = true;
+      await people(page, scheme);
+      await expect(page.getByText('Bruno', { exact: true })).toBeVisible();
+      await check(page, info, 'people-list', scheme, here);
+
+      await page.getByRole('button', { name: 'Convidar alguém' }).click();
+      await page.getByLabel('Nome do convidado').fill('Raphael');
+      await settle(page);
+      await check(page, info, 'people-invite-folded', scheme, here);
+
+      await page.getByRole('button', { name: /O que essa pessoa poderá fazer/ }).click();
+      await settle(page);
+      await check(page, info, 'people-invite-open', scheme, here);
+
+      await page.getByRole('switch', { name: 'Ver a TV' }).uncheck();
+      await expect(page.getByRole('button', { name: 'Gerar convite' })).toBeDisabled();
+      await check(page, info, 'people-invite-none', scheme, here);
+    });
+
+    test(`link do convite, no tema ${scheme}`, async ({ page }, info) => {
+      seedAccount();
+      mock.stepUpValid = true;
+      await people(page, scheme);
+      await page.getByRole('button', { name: 'Convidar alguém' }).click();
+      await page.getByLabel('Nome do convidado').fill('Raphael');
+      await page.getByRole('button', { name: /O que essa pessoa poderá fazer/ }).click();
+      await page.locator('label.model', { hasText: 'Só o Treino' }).click();
+      await page.getByRole('button', { name: 'Gerar convite' }).click();
+      await expect(page.getByLabel('Link do convite')).toBeVisible();
+      await page.getByRole('button', { name: 'Copiar link' }).click();
+      await settle(page);
+      await check(page, info, 'people-link', scheme, here);
+    });
+
+    test(`folha de permissões: aberta, com a passkey e com erro, no tema ${scheme}`, async ({
+      page,
+    }, info) => {
+      seedAccount();
+      await people(page, scheme);
+      await page.getByRole('button', { name: 'Permissões de Bruno' }).click();
+      await expect(sheet(page, 'Bruno')).toBeVisible();
+      await settle(page);
+      await check(page, info, 'people-sheet', scheme, overlay);
+
+      await sheet(page, 'Bruno')
+        .getByRole('switch', { name: 'Editar e reordenar atalhos' })
+        .check();
+      await sheet(page, 'Bruno').getByRole('button', { name: 'Salvar' }).click();
+      const confirm = page.getByRole('dialog', { name: 'Confirmar a mudança de permissões' });
+      await expect(confirm).toBeVisible();
+      await settle(page);
+      await check(page, info, 'people-step-up', scheme, overlay);
+
+      // Cancelar a confirmação deixa a folha com o aviso e o que a pessoa tinha marcado.
+      await confirm.getByRole('button', { name: 'Cancelar' }).click();
+      await expect(sheet(page, 'Bruno').getByRole('alert')).toBeVisible();
+      await settle(page);
+      await check(page, info, 'people-sheet-error', scheme, overlay);
+    });
+
+    test(`folha de uma pessoa só do Treino, e sem nenhum módulo, no tema ${scheme}`, async ({
+      page,
+    }, info) => {
+      seedAccount();
+      await people(page, scheme);
+      await page.getByRole('button', { name: 'Permissões de Raphael' }).click();
+      await expect(sheet(page, 'Raphael')).toBeVisible();
+      await settle(page);
+      await check(page, info, 'people-sheet-training', scheme, overlay);
+
+      await sheet(page, 'Raphael').getByRole('switch', { name: 'Usar o Treino' }).uncheck();
+      await expect(sheet(page, 'Raphael').getByRole('button', { name: 'Salvar' })).toBeDisabled();
+      await check(page, info, 'people-sheet-none', scheme, overlay);
+    });
+  }
 });

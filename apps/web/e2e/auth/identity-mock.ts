@@ -23,6 +23,8 @@ export interface MockInvite {
   status: 'pending' | 'used' | 'revoked' | 'expired';
   createdAt: string;
   expiresAt: string;
+  /** O que o convite concede (ausente vale o modelo "só controle da TV", como na API). */
+  permissions?: string[];
 }
 
 export interface MockGuest {
@@ -34,6 +36,8 @@ export interface MockGuest {
   disabledAt: string | null;
   /** O nome já foi escolhido pela pessoa (o `displayNameConfirmed` do `/me`); ausente vale como escolhido. */
   nameConfirmed?: boolean;
+  /** O que a pessoa pode fazer (ausente vale `guestPermissions` do simulador). */
+  permissions?: string[];
 }
 
 /** Todas as permissões do catálogo da API, na ordem em que ela as devolve (é o que o administrador tem). */
@@ -101,12 +105,40 @@ export interface IdentityMock {
   readonly invites: MockInvite[];
   readonly guests: MockGuest[];
   /** Cria um convite pendente já pronto (o segredo do link é o devolvido). */
-  seedInvite(displayName?: string): MockInvite;
+  seedInvite(displayName?: string, permissions?: string[]): MockInvite;
   /** Tokens emitidos (todos começam com "eyJ", como um JWT). */
   readonly issuedTokens: string[];
 }
 
 const PROBLEM_BASE = 'https://uniover.app/problems/';
+
+/** As ações da TV: cada uma só vale com o módulo da TV. */
+const TV_ACTIONS: readonly string[] = ALL_PERMISSIONS.filter((p) => p.startsWith('tv:'));
+
+/**
+ * As regras da API para uma lista de permissões (criar convite e mudar as de um convidado), com os mesmos textos:
+ * obrigatória, só do catálogo, ao menos um módulo e toda ação da TV com o módulo dela. Devolve os erros ou `null`.
+ */
+function permissionErrors(requested: unknown): string[] | null {
+  if (!Array.isArray(requested)) return ['Informe a lista de permissões.'];
+  const errors: string[] = [];
+  const list = requested as string[];
+  if (list.some((p) => !(ALL_PERMISSIONS as readonly string[]).includes(p))) {
+    errors.push('A lista tem uma permissão que não existe.');
+  }
+  if (!list.some((p) => p === 'module:tv' || p === 'module:training')) {
+    errors.push('Escolha ao menos um módulo (TV ou Treino) para dar acesso.');
+  }
+  if (list.some((p) => TV_ACTIONS.includes(p)) && !list.includes('module:tv')) {
+    errors.push('Uma permissão da TV precisa do módulo da TV na lista.');
+  }
+  return errors.length > 0 ? errors : null;
+}
+
+/** A lista na ordem do catálogo e sem repetidas, como a API a grava e devolve. */
+function inCatalogOrder(list: string[]): string[] {
+  return ALL_PERMISSIONS.filter((p) => list.includes(p));
+}
 
 function base64url(input: string | Buffer): string {
   return Buffer.from(input).toString('base64url');
@@ -185,7 +217,7 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
     patchForbidden: false,
     invites: [],
     guests: [],
-    seedInvite: (displayName = GUEST.displayName) => {
+    seedInvite: (displayName = GUEST.displayName, permissions) => {
       const invite: MockInvite = {
         id: '00000000-0000-4000-8000-0000000000' + String(mock.invites.length + 10),
         displayName,
@@ -193,6 +225,7 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
         status: 'pending',
         createdAt: '2026-10-19T12:00:00Z',
         expiresAt: '2026-10-21T12:00:00Z',
+        permissions,
       };
       mock.invites.push(invite);
       return invite;
@@ -217,7 +250,7 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
       displayName: guest?.displayName ?? mock.owner.displayName,
       role: mock.role,
       displayNameConfirmed: guest ? guest.nameConfirmed !== false : mock.owner.confirmed,
-      permissions: guest ? [...mock.guestPermissions] : [...ALL_PERMISSIONS],
+      permissions: guest ? [...(guest.permissions ?? mock.guestPermissions)] : [...ALL_PERMISSIONS],
     };
   };
 
@@ -289,6 +322,9 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
         createdAt: '2026-10-19T15:00:00Z',
         disabledAt: null,
         nameConfirmed: !mock.guestsStartUnconfirmed,
+        // Só leva as permissões do convite quando ele as tem: convite semeado sem lista deixa a conta com
+        // `guestPermissions`, como antes (testes que ajustam esse valor seguem valendo).
+        ...(invite.permissions ? { permissions: [...invite.permissions] } : {}),
       });
       mock.role = 'guest';
       mock.loggedIn = true;
@@ -353,6 +389,7 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
           expiresAt: i.expiresAt,
           usedAt: i.status === 'used' ? '2026-10-19T15:00:00Z' : null,
           revokedAt: i.status === 'revoked' ? '2026-10-19T15:00:00Z' : null,
+          permissions: i.permissions ?? [...TV_CONTROL_ONLY],
         })),
       );
     }
@@ -360,12 +397,13 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
       return json(
         route,
         200,
-        mock.guests.map(({ id, displayName, email, createdAt, disabledAt }) => ({
+        mock.guests.map(({ id, displayName, email, createdAt, disabledAt, permissions }) => ({
           id,
           displayName,
           email,
           createdAt,
           disabledAt,
+          permissions: permissions ?? [...mock.guestPermissions],
         })),
       );
     }
@@ -376,12 +414,24 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
           action: 'identity.guest-invite',
         });
       }
-      const invite = mock.seedInvite(String(body?.['displayName']));
+      // Sem lista vale o modelo "só controle da TV"; lista vazia, desconhecida ou incompleta é 400, com os textos da API.
+      const requested = body && 'permissions' in body ? body['permissions'] : [...TV_CONTROL_ONLY];
+      const errors = permissionErrors(requested);
+      if (errors) {
+        return problem(route, 400, 'validation-failed', 'Um ou mais campos são inválidos.', {
+          errors: { permissions: errors },
+        });
+      }
+      const invite = mock.seedInvite(
+        String(body?.['displayName']),
+        inCatalogOrder(requested as string[]),
+      );
       return json(route, 200, {
         id: invite.id,
         displayName: invite.displayName,
         token: invite.token,
         expiresAt: invite.expiresAt,
+        permissions: invite.permissions,
       });
     }
     const inviteRevoke = /^\/guest-invites\/([^/]+)\/revoke$/.exec(path);
@@ -390,6 +440,37 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
       if (!found) return route.fulfill({ status: 404 });
       found.status = 'revoked';
       return route.fulfill({ status: 204 });
+    }
+    // Mudar as permissões de um convidado: só o dono e com a passkey; a lista vai COMPLETA e a resposta é o convidado.
+    const permissionsRoute = /^\/guests\/([^/]+)\/permissions$/.exec(path);
+    if (method === 'PUT' && permissionsRoute) {
+      if (!mock.stepUpValid) {
+        return problem(route, 403, 'step-up-required', 'Confirme com a passkey.', {
+          code: 'step_up_required',
+          action: 'identity.permissions-change',
+        });
+      }
+      const errors = permissionErrors(body?.['permissions']);
+      if (errors) {
+        return problem(route, 400, 'validation-failed', 'Um ou mais campos são inválidos.', {
+          errors: { permissions: errors },
+        });
+      }
+      const found = mock.guests.find((g) => g.id === permissionsRoute[1]);
+      if (!found) return route.fulfill({ status: 404 });
+      if (found.disabledAt) {
+        return problem(route, 409, 'guest-revoked', 'O acesso deste convidado foi revogado.');
+      }
+      found.permissions = inCatalogOrder(body?.['permissions'] as string[]);
+      const { id, displayName, email, createdAt, disabledAt } = found;
+      return json(route, 200, {
+        id,
+        displayName,
+        email,
+        createdAt,
+        disabledAt,
+        permissions: found.permissions,
+      });
     }
     const guestRevoke = /^\/guests\/([^/]+)\/revoke$/.exec(path);
     if (method === 'POST' && guestRevoke) {

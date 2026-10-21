@@ -5,7 +5,7 @@
 .section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 .hint {
@@ -14,30 +14,22 @@
   font-size: var(--fs-small);
 }
 
-/* Apresentação da seção: o que o convidado pode fazer e como o convite funciona. */
-.intro {
+/* Cada lugar de aviso só ocupa espaço quando há um aviso. */
+.messages:empty {
+  display: none;
+}
+
+/* Quem tem acesso e os convites abertos: um cartão por lista, as pessoas separadas por um fio. */
+.people {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
+  flex-direction: column;
+}
+
+.person {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-}
-
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.item,
-.panel,
-.skeleton-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
 }
 
 .head {
@@ -46,18 +38,17 @@
   gap: var(--space-3);
 }
 
-.info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
 .name {
   overflow-wrap: anywhere;
 }
 
 .meta {
+  overflow-wrap: anywhere;
+}
+
+/* O resumo do que a pessoa pode fazer: uma frase, na largura toda do cartão. */
+.abilities {
+  margin: 0;
   color: var(--a-ink2);
   font-size: var(--fs-small);
 }
@@ -66,6 +57,14 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+.person .actions .ui-btn {
+  flex: 1 1 8rem;
+}
+
+.person .actions.single .ui-btn {
+  flex: 0 1 auto;
 }
 
 /* Confirmação: aviso em tom de perigo com a pergunta e as duas saídas. */
@@ -99,15 +98,11 @@
   color: var(--a-bad-ink);
 }
 
-.inline,
-.add {
+.skeleton-card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-}
-
-.panel {
-  gap: var(--space-4);
+  gap: 10px;
+  padding: var(--space-4);
 }
 
 .bar {
@@ -120,11 +115,6 @@
   width: 70%;
 }
 
-.skeleton-card {
-  gap: 10px;
-}
-
-.recommend app-settings-glyph,
 .message app-settings-glyph,
 .confirm app-settings-glyph {
   --glyph-size: 20px;
@@ -136,11 +126,84 @@
 }
 
 .subhead {
-  margin: var(--space-2) 0 0;
+  margin: var(--space-1) 0 calc(-1 * var(--space-1));
   padding: 0 var(--space-1);
   color: var(--a-ink2);
   font-size: var(--fs-small);
   font-weight: 700;
+}
+
+.revoked {
+  align-self: flex-start;
+}
+
+/* Convite novo: o cartão só abre depois de "Convidar alguém"; fechado, é um botão e mais nada. */
+.invite {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.form-title {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+
+.form-actions .ui-btn {
+  flex: 1 1 0;
+}
+
+/* "O que essa pessoa poderá fazer": fechado mostra o resumo; aberto, o seletor logo abaixo. */
+.perms {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.perms-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface-2);
+  color: var(--a-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .perms-toggle:hover {
+    background: var(--a-elev);
+  }
+}
+
+.warn-text {
+  color: var(--a-warn-ink);
+  font-weight: 650;
+}
+
+.chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--a-ink2);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.chevron.open {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
 }
 
 /* O link do convite aparece uma vez: cartão com faixa de destaque na lateral. */
@@ -156,11 +219,16 @@
   box-shadow: var(--shadow-2);
 }
 
+.link-box:focus {
+  outline: none;
+}
+
+.link-box:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
 .link {
   font-size: var(--fs-small);
   overflow-wrap: anywhere;
-}
-
-.revoked {
-  align-self: flex-start;
 }
