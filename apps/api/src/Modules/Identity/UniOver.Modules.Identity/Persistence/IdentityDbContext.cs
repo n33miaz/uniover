@@ -26,6 +26,15 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<GuestInvite> GuestInvites => Set<GuestInvite>();
 
+    public DbSet<UserGrant> UserGrants => Set<UserGrant>();
+
+    /// <summary>
+    /// A lista do catálogo como texto SQL (<c>'module:tv', 'tv:control', ...</c>) para as restrições do banco. Só
+    /// constantes do código entram aqui (nenhum dado de usuário). Quando o catálogo muda, o modelo muda e o EF exige uma
+    /// migration nova: é assim que "permissão nova entra por migration".
+    /// </summary>
+    private static string CatalogSqlList() => string.Join(", ", AccessPermissions.All.Select(p => $"'{p}'"));
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -40,6 +49,9 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             e.HasIndex(x => x.Email).IsUnique();
             e.Property(x => x.DisplayName).HasMaxLength(100).IsRequired();
             e.Property(x => x.PasswordHash).HasMaxLength(500).IsRequired();
+
+            // Nula para toda conta que já existia: o app pergunta o nome no próximo acesso.
+            e.Property(x => x.DisplayNameConfirmedAt);
 
             // A linha que já existia antes dos convidados é a do dono: o padrão do banco é `owner`.
             e.Property(x => x.Role).HasMaxLength(20).IsRequired().HasDefaultValue(AccountRoles.Owner);
@@ -119,16 +131,35 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
         modelBuilder.Entity<GuestInvite>(e =>
         {
-            e.ToTable("guest_invites");
+            e.ToTable("guest_invites", t => t.HasCheckConstraint(
+                "ck_guest_invites_permissions",
+                $"cardinality(permissions) > 0 AND permissions <@ ARRAY[{CatalogSqlList()}]::text[]"));
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.TokenHash).HasColumnType("bytea").IsRequired();
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.Property(x => x.Role).HasMaxLength(20).IsRequired();
-            e.Property(x => x.Label).HasMaxLength(GuestInvite.LabelMaxLength).IsRequired();
+
+            // Largura da coluna maior que o limite do nome (60): convites antigos já gravados não ficam fora do esquema.
+            e.Property(x => x.Label).HasMaxLength(100).IsRequired();
+
+            // O padrão da coluna (o modelo "só controle da TV") só existe no banco, na migration: serve aos convites que já
+            // existiam e ao código antigo durante a publicação. O código novo sempre grava a lista de forma explícita.
+            e.Property(x => x.Permissions).HasColumnType("text[]").IsRequired();
             e.HasIndex(x => x.CreatedBy);
 
             // Sem FK de propósito: quem criou e quem aceitou são contas, e a trilha do convite sobrevive à exclusão manual delas.
+        });
+
+        modelBuilder.Entity<UserGrant>(e =>
+        {
+            e.ToTable("user_grants", t => t.HasCheckConstraint("ck_user_grants_permission", $"permission IN ({CatalogSqlList()})"));
+            e.HasKey(x => new { x.UserId, x.Permission });
+            e.Property(x => x.Permission).HasMaxLength(64).IsRequired();
+
+            // `granted_by` é só o id de quem concedeu: sem FK (a trilha sobrevive à exclusão manual da conta do dono).
+            // Apagar a conta (recuperação manual) leva as concessões junto, dentro do mesmo schema.
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

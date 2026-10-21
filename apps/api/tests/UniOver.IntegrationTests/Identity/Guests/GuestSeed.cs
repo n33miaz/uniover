@@ -21,14 +21,18 @@ internal static class GuestSeed
 
     /// <summary>Cria um convite pendente em nome do dono semeado e devolve o id e o segredo do link.</summary>
     public static async Task<(Guid InviteId, string Token)> InsertInviteAsync(
-        TestDatabase database, DateTimeOffset now, string label = "Convidada", TimeSpan? validFor = null)
+        TestDatabase database,
+        DateTimeOffset now,
+        string label = "Convidada",
+        TimeSpan? validFor = null,
+        IReadOnlyCollection<string>? permissions = null)
     {
         ArgumentNullException.ThrowIfNull(database);
 
         await using var db = IdentityApp.CreateContext(database.OwnerConnection);
         var owner = await db.Users.SingleAsync(u => u.Role == AccountRoles.Owner, TestContext.Current.CancellationToken);
         var (secret, hash) = SecretTokens.Generate();
-        var invite = GuestInvite.Create(owner.Id, label, hash, now, validFor ?? TimeSpan.FromHours(48));
+        var invite = GuestInvite.Create(owner.Id, label, hash, now, validFor ?? TimeSpan.FromHours(48), permissions);
         db.GuestInvites.Add(invite);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         return (invite.Id, secret);
@@ -68,9 +72,13 @@ internal static class GuestSeed
 
     /// <summary>Aceita um convite novo e devolve a sessão da pessoa e as credenciais que ela escolheu.</summary>
     public static async Task<GuestSession> CreateGuestAsync(
-        HttpClient client, TestDatabase database, DateTimeOffset now, string label = "Alice")
+        HttpClient client,
+        TestDatabase database,
+        DateTimeOffset now,
+        string label = "Alice",
+        IReadOnlyCollection<string>? permissions = null)
     {
-        var (_, token) = await InsertInviteAsync(database, now, label);
+        var (_, token) = await InsertInviteAsync(database, now, label, permissions: permissions);
         var email = NewEmail();
         var password = NewPassword();
         using var response = await AcceptAsync(client, token, email, password);

@@ -10,7 +10,7 @@ using UniOver.Modules.Identity.Security;
 namespace UniOver.Modules.Identity.Features.RevokeGuest;
 
 internal sealed class RevokeGuestHandler(
-    IdentityDbContext db, LoginAuditWriter audit, GuestAccountStatus status, TimeProvider time)
+    IdentityDbContext db, LoginAuditWriter audit, GuestAccountStatus status, AccessGrantsService grants, TimeProvider time)
 {
     /// <summary>
     /// Revoga a conta do convidado e derruba as sessões dele. O JWT de acesso já emitido vale até o prazo curto dele
@@ -45,8 +45,10 @@ internal sealed class RevokeGuestHandler(
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        // Só depois do commit: a TV passa a recusar o convidado nesta instância na mesma hora.
+        // Só depois do commit: a TV passa a recusar o convidado nesta instância na mesma hora, e as permissões dele
+        // também deixam de valer (o cache de permissões é esquecido; a leitura seguinte vê a conta revogada).
         status.MarkRevoked(guestId);
+        grants.Invalidate(guestId);
         return true;
     }
 }

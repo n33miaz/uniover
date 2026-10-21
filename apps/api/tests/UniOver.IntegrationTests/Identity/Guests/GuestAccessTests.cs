@@ -10,6 +10,7 @@ using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Guards;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.IntegrationTests.Tv;
+using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Tv;
 
 namespace UniOver.IntegrationTests.Identity.Guests;
@@ -120,9 +121,9 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
                 failures.Add($"{label}: o dono não alcança");
             }
 
-            if (asLegacy != asOwner)
+            if (asLegacy)
             {
-                failures.Add($"{label}: token sem papel deveria valer como dono");
+                failures.Add($"{label}: token sem a claim de papel não vale como ninguém (nem como dono)");
             }
 
             if (asInvented || unknown)
@@ -204,6 +205,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
             (HttpMethod.Get, "/api/v1/identity/guests", null),
             (HttpMethod.Post, $"/api/v1/identity/guests/{guest.UserId}/revoke", null),
             (HttpMethod.Post, $"/api/v1/identity/guest-invites/{Guid.NewGuid()}/revoke", null),
+            (HttpMethod.Put, $"/api/v1/identity/guests/{guest.UserId}/permissions", new { permissions = new[] { "module:tv", "module:training" } }),
         };
         foreach (var (method, url, body) in forbidden)
         {
@@ -214,6 +216,8 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         // E o convidado não se revogou nem se promoveu por tentativa.
         await using var db = app.Identity();
         (await db.Users.SingleAsync(u => u.Id == guest.UserId, Ct)).DisabledAt.Should().BeNull();
+        (await db.UserGrants.Where(g => g.UserId == guest.UserId).Select(g => g.Permission).ToListAsync(Ct))
+            .Should().BeEquivalentTo(PermissionRules.TvControlOnly, "o convidado não ampliou as próprias permissões");
 
         foreach (var url in new[] { "/api/v1/tv/state", "/api/v1/tv/shortcuts", "/api/v1/tv/commands/recent", "/api/v1/identity/me" })
         {
@@ -240,8 +244,33 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task OwnerTokenWithoutTheRoleClaim_StillWorks_BecauseItCameFromBeforeGuestsExisted()
+    public async Task TokenWithoutTheRoleClaim_IsDeniedEverywhere_ItIsNoLongerTheOwner()
     {
+        await using var app = await TvApp.StartAsync(postgres);
+        var now = app.Time.GetUtcNow();
+        var roleless = IdentityApp.CraftToken(app.SigningKey, now.AddMinutes(-1), now.AddHours(1), role: null);
+
+        // O token está assinado e dentro da validade: a autenticação passa, mas nenhuma política aceita quem não tem papel.
+        foreach (var (method, url) in new[]
+        {
+            (HttpMethod.Get, "/api/v1/devices/agents"),
+            (HttpMethod.Get, "/api/v1/tv/state"),
+            (HttpMethod.Get, "/api/v1/identity/me"),
+            (HttpMethod.Patch, "/api/v1/identity/me"),
+            (HttpMethod.Get, "/api/v1/identity/guests"),
+            (HttpMethod.Get, "/api/v1/training/exercises"),
+            (HttpMethod.Post, "/api/v1/identity/auth/stream-ticket"),
+        })
+        {
+            using var response = await app.SendAsync(method, url, method == HttpMethod.Patch ? new { displayName = "Nome" } : null, bearer: roleless);
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{method} {url} com token sem papel");
+        }
+    }
+
+    [Fact]
+    public async Task TokenWithAnOwnerRole_FromAnotherAccount_StillReachesTheOwnerRoutes()
+    {
+        // O papel explícito de dono (o que o servidor sempre emite) continua valendo: só o "sem papel" deixou de valer.
         await using var app = await TvApp.StartAsync(postgres);
 
         using var devices = await app.GetAsync("/api/v1/devices/agents", bearer: app.OtherUserToken());

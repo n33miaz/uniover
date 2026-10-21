@@ -24,10 +24,18 @@ internal sealed class ActiveAccountHandler(IServiceProvider services) : Authoriz
 {
     protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, ActiveAccountRequirement requirement)
     {
-        if (!string.Equals(AccountRoles.Of(context.User), AccountRoles.Guest, StringComparison.Ordinal))
+        var role = AccountRoles.Of(context.User);
+        if (string.Equals(role, AccountRoles.Owner, StringComparison.Ordinal))
         {
-            // Dono: sem consulta. Papel desconhecido já foi barrado pelo requisito de papel.
+            // Dono explícito: sem consulta.
             context.Succeed(requirement);
+            return;
+        }
+
+        // Só o convidado passa pela conferência; sem papel ou com papel desconhecido este requisito também falha
+        // (não depende de o requisito de papel vir junto para negar).
+        if (!string.Equals(role, AccountRoles.Guest, StringComparison.Ordinal))
+        {
             return;
         }
 
