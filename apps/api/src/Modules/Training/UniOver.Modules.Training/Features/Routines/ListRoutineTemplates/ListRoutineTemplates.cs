@@ -55,7 +55,8 @@ internal static class ListRoutineTemplatesEndpoint
 {
     public static void MapListRoutineTemplates(this IEndpointRouteBuilder group) =>
         group.MapGet("/routine-templates", (RoutineTemplateSource source) => TypedResults.Ok(source.Document))
-            .RequireAuthorization()
+            .RequireAuthorization(TrainingAuth.Module)
             .Produces<RoutineTemplatesResponse>()
-            .ProducesProblem(StatusCodes.Status401Unauthorized);
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 }
