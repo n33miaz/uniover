@@ -50,9 +50,14 @@ export class SecuritySection {
   protected readonly dateFormat = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium' });
 
   constructor() {
-    // Carrega quando há sessão confirmada (também quando uma sessão pendente é confirmada depois).
+    // Carrega quando há sessão confirmada (também quando uma sessão pendente é confirmada depois) e se sabe que a conta é
+    // do administrador: as passkeys são rota de administrador, e quem não é nunca deve gerar essa chamada (nem um 403).
     effect(() => {
-      if (this.session.status() === 'authenticated' && untracked(() => this.passkeys()) === null) {
+      if (
+        this.session.status() === 'authenticated' &&
+        this.session.role() === 'owner' &&
+        untracked(() => this.passkeys()) === null
+      ) {
         untracked(() => void this.load());
       }
     });

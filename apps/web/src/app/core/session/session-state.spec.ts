@@ -108,4 +108,36 @@ describe('SessionState', () => {
       set.mockRestore();
     });
   });
+
+  describe('name and permissions', () => {
+    const user = { id: '1', email: 'a@b.c', displayName: 'A' };
+
+    it('only an explicit "name not chosen" asks the question', () => {
+      expect(state().needsWelcome()).toBe(false);
+      state().setUser({ ...user, displayNameConfirmed: false });
+      expect(state().needsWelcome()).toBe(true);
+      state().setUser({ ...user, displayNameConfirmed: true });
+      expect(state().needsWelcome()).toBe(false);
+    });
+
+    it('an answer without the field (an older server) never asks, and no user never asks', () => {
+      expect(state().needsWelcome()).toBe(false);
+      state().setUser(user);
+      expect(state().needsWelcome()).toBe(false);
+    });
+
+    it('forgetting the session forgets the question too', () => {
+      state().setUser({ ...user, displayNameConfirmed: false });
+      state().clear();
+      expect(state().needsWelcome()).toBe(false);
+    });
+
+    it('keeps the permissions of the account, empty while unknown', () => {
+      expect(state().permissions()).toEqual([]);
+      state().setUser({ ...user, permissions: ['module:tv', 'tv:power'] });
+      expect(state().permissions()).toEqual(['module:tv', 'tv:power']);
+      state().setUser(user);
+      expect(state().permissions()).toEqual([]);
+    });
+  });
 });

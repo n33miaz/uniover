@@ -129,6 +129,28 @@ describe('AuthApi', () => {
     expect(lastCall().headers['Authorization']).toBe('Bearer jwt');
   });
 
+  it('updating the profile is a PATCH on /me with the Bearer token and only the name in the body', async () => {
+    fetchFn.mockResolvedValue(
+      reply(200, {
+        id: 'u1',
+        email: 'a@b.c',
+        displayName: 'Ana',
+        role: 'owner',
+        displayNameConfirmed: true,
+        permissions: [],
+      }),
+    );
+    await expect(api().updateMe('jwt', 'Ana')).resolves.toMatchObject({
+      displayName: 'Ana',
+      displayNameConfirmed: true,
+    });
+    expect([lastCall().init.method, lastCall().url]).toEqual(['PATCH', '/api/v1/identity/me']);
+    expect(lastCall().headers['Authorization']).toBe('Bearer jwt');
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({ displayName: 'Ana' });
+    // Não é rota de autenticação: sem o cabeçalho do cliente (só os POST de /auth/* o levam).
+    expect(lastCall().headers['X-UniOver-Client']).toBeUndefined();
+  });
+
   it('turns an error response into an ApiProblem with kind and Retry-After', async () => {
     fetchFn.mockResolvedValue(
       reply(429, { type: 'https://uniover.app/problems/login-locked' }, { 'Retry-After': '90' }),

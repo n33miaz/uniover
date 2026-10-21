@@ -7,7 +7,7 @@ import { Injectable, computed, signal } from '@angular/core';
  */
 export type SessionStatus = 'unknown' | 'anonymous' | 'authenticated' | 'pending';
 
-/** Papel da conta: o dono usa tudo; o convidado usa só o controle da TV. */
+/** Papel da conta: o dono (mostrado como "Administrador") usa tudo; o convidado usa o que as permissões dele liberam. */
 export type AccountRole = 'owner' | 'guest';
 
 export interface SessionUser {
@@ -16,6 +16,13 @@ export interface SessionUser {
   readonly displayName: string;
   /** Ausente em respostas antigas: vale como dono (a API também trata assim um token sem papel). */
   readonly role?: string;
+  /**
+   * Falso enquanto a pessoa não escolheu o próprio nome (a tela de boas-vindas o pergunta). Ausente em respostas
+   * antigas: vale como confirmado, para nunca prender ninguém numa pergunta que o servidor não faz.
+   */
+  readonly displayNameConfirmed?: boolean;
+  /** O que a conta pode usar, na ordem do catálogo da API (para o administrador, tudo). Só serve para a tela explicar. */
+  readonly permissions?: readonly string[];
 }
 
 /**
@@ -73,6 +80,15 @@ export class SessionState {
 
   /** Só é verdadeiro quando se sabe que é convidado: papel desconhecido nunca tranca o dono para fora. */
   readonly isGuest = computed(() => this.role() === 'guest');
+
+  /**
+   * Só é verdadeiro quando o servidor disse, expressamente, que o nome ainda não foi escolhido (`false`): resposta sem o
+   * campo, usuário ainda não carregado (sem rede) ou nome já confirmado nunca levam à tela de boas-vindas.
+   */
+  readonly needsWelcome = computed(() => this._user()?.displayNameConfirmed === false);
+
+  /** As permissões da conta carregada; vazio enquanto não se sabe (ou numa resposta antiga, sem a lista). */
+  readonly permissions = computed<readonly string[]>(() => this._user()?.permissions ?? []);
 
   /** Token para o cabeçalho `Authorization`, ou `null` se não houver um ainda utilizável. */
   bearer(nowMs: number = Date.now()): string | null {

@@ -54,6 +54,7 @@ describe('AuthService', () => {
     refresh: vi.fn(),
     logout: vi.fn(),
     me: vi.fn(),
+    updateMe: vi.fn(),
   };
   const stepUp = { confirm: vi.fn() };
 
@@ -286,6 +287,96 @@ describe('AuthService', () => {
       api.logout.mockRejectedValue(networkProblem());
       expect(await service().logout()).toBe(false);
       expect(service().status()).toBe('anonymous');
+    });
+  });
+
+  describe('name and first access', () => {
+    const UNCONFIRMED = {
+      ...ME,
+      role: 'guest',
+      displayNameConfirmed: false,
+      permissions: ['module:tv', 'tv:control'],
+    };
+
+    it('keeps whether the name was chosen and the permissions the API reported', async () => {
+      api.refresh.mockResolvedValue(tokens('jwt'));
+      api.me.mockResolvedValue(UNCONFIRMED);
+      await service().init();
+      expect(session().needsWelcome()).toBe(true);
+      expect(session().permissions()).toEqual(['module:tv', 'tv:control']);
+    });
+
+    it('saving the name sends the token, replaces the user and clears the pending question', async () => {
+      api.refresh.mockResolvedValue(tokens('jwt'));
+      api.me.mockResolvedValue(UNCONFIRMED);
+      await service().init();
+      api.updateMe.mockResolvedValue({
+        ...UNCONFIRMED,
+        displayName: 'Ana',
+        displayNameConfirmed: true,
+      });
+      await service().updateDisplayName('Ana');
+      expect(api.updateMe).toHaveBeenCalledWith('jwt', 'Ana');
+      expect(service().user()?.displayName).toBe('Ana');
+      expect(session().needsWelcome()).toBe(false);
+    });
+
+    it('lets the failure reach the caller and keeps the name and the question as they were', async () => {
+      api.refresh.mockResolvedValue(tokens('jwt'));
+      api.me.mockResolvedValue(UNCONFIRMED);
+      await service().init();
+      api.updateMe.mockRejectedValue(problem(400));
+      await expect(service().updateDisplayName('')).rejects.toBeInstanceOf(ApiProblem);
+      expect(service().user()?.displayName).toBe('Dono');
+      expect(session().needsWelcome()).toBe(true);
+    });
+
+    it('never asks the passkey for the name (a plain write of the own profile)', async () => {
+      api.refresh.mockResolvedValue(tokens('jwt'));
+      await service().init();
+      api.updateMe.mockRejectedValue(stepUpProblem());
+      await expect(service().updateDisplayName('Ana')).rejects.toBeInstanceOf(ApiProblem);
+      expect(stepUp.confirm).not.toHaveBeenCalled();
+    });
+
+    it('ensureUser reads the user again when the first read after sign-in failed', async () => {
+      api.refresh.mockResolvedValue(tokens('jwt'));
+      api.me.mockRejectedValueOnce(networkProblem());
+      await service().init();
+      expect(service().user()).toBeNull();
+      api.me.mockResolvedValue(UNCONFIRMED);
+      await service().ensureUser();
+      expect(service().user()?.displayNameConfirmed).toBe(false);
+    });
+
+    it('ensureUser does not call the API when the user is already known or there is no session', async () => {
+      api.refresh.mockResolvedValue(tokens('jwt'));
+      await service().init();
+      api.me.mockClear();
+      await service().ensureUser();
+      expect(api.me).not.toHaveBeenCalled();
+
+      session().clear('anonymous');
+      await service().ensureUser();
+      expect(api.me).not.toHaveBeenCalled();
+    });
+
+    it('ensureUser swallows a second failure (a bad network never traps anyone)', async () => {
+      api.refresh.mockResolvedValue(tokens('jwt'));
+      api.me.mockRejectedValue(networkProblem());
+      await service().init();
+      await expect(service().ensureUser()).resolves.toBeUndefined();
+      expect(service().user()).toBeNull();
+    });
+
+    it('builds the first-access address with a safe next, and without one for the home page or an unsafe path', () => {
+      const router = TestBed.inject(Router);
+      expect(router.serializeUrl(service().welcomeUrlTree('/tv?painel=apps'))).toBe(
+        '/boas-vindas?next=%2Ftv%3Fpainel%3Dapps',
+      );
+      expect(router.serializeUrl(service().welcomeUrlTree('/'))).toBe('/boas-vindas');
+      expect(router.serializeUrl(service().welcomeUrlTree('//evil.example'))).toBe('/boas-vindas');
+      expect(router.serializeUrl(service().welcomeUrlTree('/boas-vindas'))).toBe('/boas-vindas');
     });
   });
 

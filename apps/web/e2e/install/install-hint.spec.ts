@@ -298,7 +298,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await expectSheetClosed(page);
 
     // A linha permanente continua lá e abre a folha (sem "Não mostrar de novo": a pessoa pediu para ver).
-    await page.goto('/ajustes');
+    await page.goto('/ajustes/aparencia');
     await expect(rowOf(page)).toBeVisible();
     await rowOf(page).click();
     const sheet = sheetOf(page);
@@ -443,8 +443,8 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await page.waitForTimeout(AFTER_DELAY_MS);
     await expectSheetClosed(page);
 
-    await page.goto('/ajustes');
-    await expect(page.getByRole('heading', { level: 2, name: 'Aparência' })).toBeVisible();
+    await page.goto('/ajustes/aparencia');
+    await expect(page.getByRole('heading', { level: 1, name: 'Aparência' })).toBeVisible();
     await expect(rowOf(page)).toHaveCount(0);
 
     await showTv(page);
@@ -482,7 +482,7 @@ for (const mode of MODES) {
       }, info) => {
         if (mode.native) await simulateInstallPrompt(page);
         await signInAsOwner();
-        await page.goto('/ajustes');
+        await page.goto('/ajustes/aparencia');
         await expect(rowOf(page)).toBeVisible();
         await expect(page.locator('app-install-hint-row .ui-tile')).toBeVisible();
         // A linha tem 44 px ou mais nos dois lados (sem rolar a tela: o clique abaixo já leva a linha à vista).
@@ -557,7 +557,8 @@ test.describe('modo native: o botão Instalar', () => {
     // Aceito: o pedido do navegador valeu uma vez e a linha de Ajustes some. A navegação é por dentro do app: recarregar
     // a página faria o script de teste disparar o pedido de novo, o que um navegador real não faz depois de instalar.
     await page.getByRole('link', { name: /Ajustes/ }).click();
-    await expect(page.getByRole('heading', { level: 2, name: 'Aparência' })).toBeVisible();
+    await page.getByRole('link', { name: /^Aparência/ }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Aparência' })).toBeVisible();
     await expect(rowOf(page)).toHaveCount(0);
   });
 });
@@ -574,7 +575,7 @@ test.describe('modo ios-in-app: copiar o endereço', () => {
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     }
     await signInAsOwner();
-    await page.goto('/ajustes');
+    await page.goto('/ajustes/aparencia');
     await rowOf(page).click();
     const sheet = sheetOf(page);
     await expect(sheet).toBeVisible();
@@ -586,7 +587,7 @@ test.describe('modo ios-in-app: copiar o endereço', () => {
     if (browserName === 'chromium') {
       await expect(status).toContainText('Endereço copiado');
       expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-        new URL('/ajustes', page.url()).href,
+        new URL('/ajustes/aparencia', page.url()).href,
       );
     }
     await settleAnimations(page);

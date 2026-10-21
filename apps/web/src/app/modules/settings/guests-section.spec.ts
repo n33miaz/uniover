@@ -259,4 +259,33 @@ describe('GuestsSection', () => {
     const { el } = await render();
     expect(el.textContent).toContain('Não foi possível carregar os convidados');
   });
+
+  describe('who may load it', () => {
+    async function mount() {
+      await TestBed.inject(AuthService).init();
+      const fixture = TestBed.createComponent(GuestsSection);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      // Dá tempo de qualquer carregamento (indevido) acontecer antes de conferir.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return fixture;
+    }
+
+    it('never calls the administrator route for a guest', async () => {
+      api.me.mockResolvedValue({ id: '2', email: 'a@b.c', displayName: 'Alice', role: 'guest' });
+      await mount();
+      expect(api.guests).not.toHaveBeenCalled();
+    });
+
+    it('waits for the role while it is unknown (session to confirm) and loads when it arrives', async () => {
+      api.refresh.mockRejectedValueOnce(new ApiProblem(0, 'network', 'x'));
+      const fixture = await mount();
+      expect(api.guests).not.toHaveBeenCalled();
+      // A sessão é confirmada depois: o papel chega e só então a lista é pedida.
+      api.refresh.mockResolvedValue({ accessToken: 't', expiresIn: 600 });
+      await TestBed.inject(AuthService).renew();
+      await fixture.whenStable();
+      await vi.waitFor(() => expect(api.guests).toHaveBeenCalled());
+    });
+  });
 });

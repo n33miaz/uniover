@@ -7,6 +7,7 @@ import {
   test,
   waitForServiceWorkerControl,
 } from '../fixtures';
+import { settle } from '../screens/screen-helpers';
 import { expectNoA11yViolations } from './entry-helpers';
 import { IdentityMock, OWNER, mockIdentityApi } from './identity-mock';
 
@@ -141,7 +142,7 @@ test.describe('entrada e sessão', () => {
     await expect(page).toHaveURL(/\/$/);
     expect(mock.refreshCalls).toBe(before + 1);
 
-    await page.goto('/ajustes');
+    await page.goto('/ajustes/perfil');
     await expect(page.getByText('Sessão ativa.')).toBeVisible();
     await page.getByRole('button', { name: 'Sair' }).click();
     await expect(page).toHaveURL(/\/entrar$/);
@@ -224,7 +225,7 @@ test.describe('entrada e sessão', () => {
     // Entrar e sair também não mexem nos dados locais.
     await signIn(page);
     await expect(page).toHaveURL(/\/$/);
-    await page.goto('/ajustes');
+    await page.goto('/ajustes/perfil');
     await page.getByRole('button', { name: 'Sair' }).click();
     await expect(page).toHaveURL(/\/entrar$/);
     expect(await page.evaluate((key) => localStorage.getItem(key), MODULE_PREFS_KEY)).toContain(
@@ -268,9 +269,9 @@ test.describe('entrada e sessão', () => {
     await page.reload();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Bom dia|Boa tarde|Boa noite/);
-    await page.goto('/ajustes');
-    await expect(page).toHaveURL(/\/ajustes$/);
-    // O aviso global (raiz do app) e o texto de Ajustes mostram o mesmo estado.
+    await page.goto('/ajustes/perfil');
+    await expect(page).toHaveURL(/\/ajustes\/perfil$/);
+    // O aviso global (raiz do app) e o texto do Perfil mostram o mesmo estado.
     await expect(page.locator('app-session-notice .notice')).toBeVisible();
     await expect(page.locator('.session')).toContainText('Sessão a confirmar');
     expect(await page.evaluate((key) => localStorage.getItem(key), MODULE_PREFS_KEY)).toBe('[]');
@@ -291,39 +292,94 @@ test.describe('ajustes', () => {
     await expect(page.getByRole('heading', { level: 2, name: 'Conta' })).toBeVisible();
   });
 
-  test('mostra a conta, os módulos com chip e as demais seções', async ({ page }, info) => {
-    await expect(page.getByText(OWNER.displayName)).toBeVisible();
-    await expect(page.getByText(OWNER.email)).toBeVisible();
-    for (const name of ['Módulos', 'Aparência', 'Segurança', 'Sobre']) {
-      await expect(page.getByRole('heading', { level: 2, name })).toBeVisible();
+  test('é uma lista: cada tela de Ajustes tem a sua linha, com resumo e o caminho', async ({
+    page,
+  }, info) => {
+    const rows = page.locator('a.ui-row');
+    await expect(rows.locator('.ui-row-title')).toHaveText([
+      'Perfil',
+      'Aparência',
+      'Segurança',
+      'Pessoas',
+      'Aparelhos',
+      'Sobre',
+    ]);
+    await expect(rows).toHaveCount(6);
+    for (const [name, href] of [
+      ['Perfil', '/ajustes/perfil'],
+      ['Aparência', '/ajustes/aparencia'],
+      ['Segurança', '/ajustes/seguranca'],
+      ['Pessoas', '/ajustes/pessoas'],
+      ['Aparelhos', '/ajustes/aparelhos'],
+      ['Sobre', '/ajustes/sobre'],
+    ]) {
+      await expect(page.getByRole('link', { name: new RegExp('^' + name) })).toHaveAttribute(
+        'href',
+        href,
+      );
     }
+    await expect(page.getByText(`${OWNER.displayName} · Administrador`)).toBeVisible();
+    // Auditoria e Sistema ainda não existem: cartões calmos, sem link nem botão.
+    const soon = page.locator('ul.soon');
+    await expect(soon.locator('.ui-row-title')).toHaveText(['Auditoria', 'Sistema']);
+    await expect(soon.locator('a, button, [tabindex]')).toHaveCount(0);
+    await expectNoHorizontalScroll(page);
+    await screenshot(page, `test-results/settings-${info.project.name}.png`);
+  });
+
+  test('o Perfil mostra a conta e o papel, e a seta volta para a lista', async ({ page }) => {
+    await page.getByRole('link', { name: /^Perfil/ }).click();
+    await expect(page).toHaveURL(/\/ajustes\/perfil$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Perfil' })).toBeVisible();
+    await expect(page.getByText(OWNER.displayName, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(OWNER.email)).toBeVisible();
+    await expect(page.getByText('Administrador', { exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
+    await expect(page).toHaveURL(/\/ajustes$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeVisible();
+  });
+
+  test('a Aparência tem o tema e os módulos com chip', async ({ page }) => {
+    await page.getByRole('link', { name: /^Aparência/ }).click();
+    await expect(page).toHaveURL(/\/ajustes\/aparencia$/);
+    await expect(page.getByRole('heading', { level: 2, name: 'Módulos' })).toBeVisible();
     await expect(page.locator('.module', { hasText: 'TV' }).locator('.chip')).toHaveText(
       'Disponível',
     );
     await expect(page.locator('.module', { hasText: 'Treino' }).locator('.chip')).toHaveText(
       'Em breve',
     );
+  });
+
+  test('o Sobre mostra as versões e leva aos Créditos', async ({ page }) => {
+    await page.getByRole('link', { name: /^Sobre/ }).click();
+    await expect(page).toHaveURL(/\/ajustes\/sobre$/);
     await expect(page.getByText('0.9.0-teste')).toBeVisible();
     await expect(page.getByRole('link', { name: /^Créditos/ })).toHaveAttribute(
       'href',
       '/ajustes/creditos',
     );
+  });
+
+  test('a Segurança mostra as passkeys', async ({ page }) => {
+    await page.getByRole('link', { name: /^Segurança/ }).click();
+    await expect(page).toHaveURL(/\/ajustes\/seguranca$/);
     await expect(page.getByText('A passkey só confirma ações perigosas')).toBeVisible();
-    await expectNoHorizontalScroll(page);
-    await screenshot(page, `test-results/settings-${info.project.name}.png`);
   });
 
   test('módulo desligado some da grade do Início', async ({ page }) => {
+    await page.goto('/ajustes/aparencia');
     await page.getByRole('switch', { name: /TV/ }).uncheck();
     await page.goto('/');
     await expect(page.locator('article.card h3')).toHaveText(['Treino', ...PLANNED_MODULES]);
-    await page.goto('/ajustes');
+    await page.goto('/ajustes/aparencia');
     await page.getByRole('switch', { name: /TV/ }).check();
     await page.goto('/');
     await expect(page.locator('article.card h3')).toHaveText(['TV', 'Treino', ...PLANNED_MODULES]);
   });
 
   test('tema escuro fica salvo no aparelho e volta ao recarregar', async ({ page }) => {
+    await page.goto('/ajustes/aparencia');
     await page.emulateMedia({ colorScheme: 'light' });
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await page.getByRole('radio', { name: 'Escuro' }).check();
@@ -335,11 +391,19 @@ test.describe('ajustes', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   });
 
-  test('acessibilidade (axe) em Ajustes, nos temas claro e escuro', async ({ page }) => {
+  test('acessibilidade (axe) na lista e em cada tela, nos temas claro e escuro', async ({
+    page,
+  }) => {
+    // Movimento reduzido: as animações de entrada saem do caminho e o axe mede as cores finais.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     for (const scheme of ['light', 'dark'] as const) {
-      await page.emulateMedia({ colorScheme: scheme });
-      await page.getByRole('radio', { name: /Automático/ }).check();
-      await expectNoSeriousA11yViolations(page);
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+      for (const path of ['/ajustes', '/ajustes/perfil', '/ajustes/aparencia', '/ajustes/sobre']) {
+        await page.goto(path);
+        await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        await settle(page);
+        await expectNoSeriousA11yViolations(page);
+      }
     }
   });
 });
@@ -373,8 +437,8 @@ test.describe('casca offline com o service worker', () => {
     await page.evaluate((key) => localStorage.setItem(key, '[]'), MODULE_PREFS_KEY);
 
     await context.setOffline(true);
-    await page.goto('/ajustes');
-    await expect(page).toHaveURL(/\/ajustes$/);
+    await page.goto('/ajustes/perfil');
+    await expect(page).toHaveURL(/\/ajustes\/perfil$/);
     await expect(page.locator('app-session-notice .notice')).toBeVisible();
     await expect(page.locator('.session')).toContainText('Sessão a confirmar');
     await expect(page.getByRole('heading', { level: 2, name: 'Conta' })).toBeVisible();

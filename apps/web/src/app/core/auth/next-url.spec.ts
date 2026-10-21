@@ -3,10 +3,15 @@ import { safeNextUrl } from './next-url';
 const ORIGIN = 'https://uniover.exemplo.app';
 
 describe('safeNextUrl', () => {
-  it.each(['/', '/tv', '/tv/', '/ajustes?aba=seguranca', '/treino#topo', '/a/b/c'])(
-    'accepts the same-origin path %s',
-    (path) => expect(safeNextUrl(path, ORIGIN)).toBe(path),
-  );
+  it.each([
+    '/',
+    '/tv',
+    '/tv/',
+    '/ajustes?aba=seguranca',
+    '/treino#topo',
+    '/a/b/c',
+    '/boas-vindasx',
+  ])('accepts the same-origin path %s', (path) => expect(safeNextUrl(path, ORIGIN)).toBe(path));
 
   it.each([
     ['null', null],
@@ -31,6 +36,9 @@ describe('safeNextUrl', () => {
     ['broken encoding', '/%E0%A4%A'],
     ['the sign-in page itself', '/entrar'],
     ['the sign-in page with query', '/entrar?next=/tv'],
+    ['the first-access name page itself', '/boas-vindas'],
+    ['the first-access name page with query', '/boas-vindas?next=%2Ftv'],
+    ['below the first-access name page', '/boas-vindas/x'],
     ['too long', '/' + 'a'.repeat(600)],
   ])('rejects %s', (_label, candidate) => {
     expect(safeNextUrl(candidate, ORIGIN)).toBeNull();

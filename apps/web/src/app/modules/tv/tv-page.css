@@ -71,7 +71,8 @@
     border-color: var(--a-accent);
   }
 }
-.back {
+.back,
+.settings {
   justify-self: start;
 }
 .power {

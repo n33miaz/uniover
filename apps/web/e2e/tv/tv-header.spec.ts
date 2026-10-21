@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { Locator, Page } from '@playwright/test';
-import { IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
+import { GUEST, IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import { expectNoA11yViolations, settle, smallTargets } from '../screens/screen-helpers';
 import { TvMock, emitSse, installFakeEventSource, mockTvApi, sseUrls } from './tv-mock';
@@ -922,6 +922,141 @@ test.describe('paisagem curta (844x390)', () => {
   test('nome longo em paisagem também fica no meio, sem tocar nos botões', async ({ page }) => {
     await openTv(page, { name: LONG_NAME });
     await expectTitleCentered(page);
+    await expectNoHorizontalScroll(page);
+  });
+});
+
+/** A convidada com a sessão aberta, direto no controle (o mesmo que o aceite do convite deixa pronto). */
+async function openTvAsGuest(page: Page) {
+  identity.guests.push({
+    id: '00000000-0000-4000-8000-000000000051',
+    displayName: GUEST.displayName,
+    email: GUEST.email,
+    password: GUEST.password,
+    createdAt: '2026-10-19T15:00:00Z',
+    disabledAt: null,
+  });
+  identity.role = 'guest';
+  identity.loggedIn = true;
+  await page.goto('/tv');
+  await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
+  await emitSse(page, 'tv.state', tv.state);
+  await emitSse(page, 'tv.shortcuts', tv.shortcuts);
+  await expect(page.getByRole('button', { name: 'OK', exact: true })).toBeVisible();
+  await settle(page);
+}
+
+const settingsButton = (page: Page) => header(page).getByRole('link', { name: 'Ajustes' });
+
+test.describe('cabeçalho da convidada: botão redondo de configurações no lugar da seta', () => {
+  test('é um círculo de 44 px do mesmo visual da seta, no canto esquerdo, e o nome segue no meio', async ({
+    page,
+  }, info) => {
+    await openTvAsGuest(page);
+    const gear = settingsButton(page);
+    await expect(gear).toBeVisible();
+    await expect(gear).toHaveText('');
+    await expect(gear).toHaveAttribute('href', '/ajustes');
+    // Sem Início para a convidada: nada de seta de voltar.
+    await expect(header(page).getByRole('link', { name: 'Voltar ao Início' })).toHaveCount(0);
+    await expect(page.locator('a[href="/"]')).toHaveCount(0);
+
+    // O desenho é o traço da seta (2,2, pontas redondas, 22 px) e é decorativo.
+    const svg = await gear.locator('svg').evaluate((el) => ({
+      attributes: Object.fromEntries([...el.attributes].map((a) => [a.name, a.value])),
+      paths: el.querySelectorAll('path').length,
+    }));
+    expect(svg.attributes).toMatchObject({
+      viewBox: '0 0 24 24',
+      width: '22',
+      height: '22',
+      fill: 'none',
+      stroke: 'currentColor',
+      'stroke-width': '2.2',
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      'aria-hidden': 'true',
+    });
+    expect(svg.paths).toBeGreaterThan(0);
+
+    for (const target of [gear, appsButton(page), powerButton(page)]) {
+      const size = await box(target);
+      expect(size.width).toBeCloseTo(44, 0);
+      expect(size.height).toBeCloseTo(44, 0);
+    }
+    const style = (target: Locator) =>
+      target.evaluate((el) => {
+        const css = getComputedStyle(el);
+        return {
+          border: css.borderTopColor,
+          width: css.borderTopWidth,
+          background: css.backgroundColor,
+          radius: css.borderTopLeftRadius,
+        };
+      });
+    expect(await style(gear)).toEqual(await style(appsButton(page)));
+
+    // Na ponta esquerda do cabeçalho (onde a seta ficaria), antes do nome, e o nome no meio da TELA.
+    const head = await box(header(page));
+    const place = await box(gear);
+    expect(Math.abs(place.x - head.x)).toBeLessThanOrEqual(1);
+    const viewport = await page.evaluate(() => window.innerWidth);
+    const title = await box(header(page).locator('h1'));
+    expect(
+      Math.abs(title.x + title.width / 2 - viewport / 2),
+      'centro do nome',
+    ).toBeLessThanOrEqual(2);
+    expect(title.x, 'o nome não encosta no botão').toBeGreaterThanOrEqual(place.x + place.width);
+
+    await screenshot(page, `test-results/tv-header-guest-${info.project.name}.png`);
+  });
+
+  test('tocar nele abre os Ajustes da convidada, e a seta volta ao controle', async ({ page }) => {
+    await openTvAsGuest(page);
+    await settingsButton(page).click();
+    await expect(page).toHaveURL(/\/ajustes$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeVisible();
+    await expect(page.locator('a.ui-row .ui-row-title')).toHaveText([
+      'Perfil',
+      'Aparência',
+      'Sobre',
+    ]);
+    await page.getByRole('link', { name: 'Voltar ao controle' }).click();
+    await expect(page).toHaveURL(/\/tv$/);
+    await expect(settingsButton(page)).toBeVisible();
+  });
+
+  test('o dono continua com a seta e não ganha o botão de configurações no controle', async ({
+    page,
+  }) => {
+    await openTv(page);
+    await expect(backLink(page)).toBeVisible();
+    await expect(settingsButton(page)).toHaveCount(0);
+  });
+
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`sem violações de acessibilidade e com alvos de 44 px no tema ${scheme}`, async ({
+      page,
+    }, info) => {
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+      await openTvAsGuest(page);
+      await expectNoA11yViolations(page);
+      expect(
+        (await smallTargets(page)).filter((found) => found.includes('Ajustes')),
+        'o botão de configurações tem 44 px',
+      ).toEqual([]);
+      await screenshot(page, `test-results/tv-header-guest-${scheme}-${info.project.name}.png`);
+    });
+  }
+
+  test('em paisagem curta o botão continua no canto, inteiro e sem rolagem horizontal', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 844, height: 390 });
+    await openTvAsGuest(page);
+    const place = await box(settingsButton(page));
+    expect(place.width).toBeCloseTo(44, 0);
+    expect(place.x).toBeGreaterThanOrEqual(0);
     await expectNoHorizontalScroll(page);
   });
 });

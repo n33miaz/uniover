@@ -58,9 +58,14 @@ export class GuestsSection {
   });
 
   constructor() {
-    // Carrega quando há sessão confirmada (também quando uma sessão pendente é confirmada depois).
+    // Carrega quando há sessão confirmada (também quando uma sessão pendente é confirmada depois) e se sabe que a conta é
+    // do administrador: convites e convidados são rota de administrador, e quem não é nunca deve gerar essa chamada.
     effect(() => {
-      if (this.session.status() === 'authenticated' && untracked(() => this.invites()) === null) {
+      if (
+        this.session.status() === 'authenticated' &&
+        this.session.role() === 'owner' &&
+        untracked(() => this.invites()) === null
+      ) {
         untracked(() => void this.load());
       }
     });
