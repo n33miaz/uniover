@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using UniOver.BuildingBlocks.Web;
 using UniOver.IntegrationTests.Identity;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.IntegrationTests.Tv;
 
 namespace UniOver.IntegrationTests.Guards;
 
@@ -215,6 +216,84 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         var publicRoute = Endpoint("/api/v1/identity/info", new HttpMethodMetadata(["GET"]), new Anonymous());
 
         RouteInspector.Violations([protectedRoute, publicRoute]).Should().BeEmpty();
+    }
+
+    // A TV: cada rota declara a permissão da tabela (rota -> permissão), e a varredura morde quando não declara.
+
+    [Theory]
+    [MemberData(nameof(Environments))]
+    public async Task EveryTvRoute_DeclaresItsPermission_AsInTheMap(string environment)
+    {
+        await using var factory = await StartAsync(environment);
+        var routes = RoutesOf(factory);
+        var policies = factory.Services.GetRequiredService<IAuthorizationPolicyProvider>();
+
+        routes.Count(r => RouteInspector.Pattern(r).StartsWith("/api/v1/tv/", StringComparison.Ordinal))
+            .Should().BeGreaterThan(TvPermissionMap.Routes.Count, "a varredura precisa ter visto as rotas da TV (e a pública /info)");
+        (await TvPermissionMap.ViolationsAsync(routes, policies)).Should().BeEmpty(
+            "toda rota da TV cita a política da sua permissão e está na tabela, e nenhuma rota de outro módulo carrega permissão da TV");
+    }
+
+    /// <summary>As políticas por permissão do catálogo, como o Host as registra, para avaliar rotas montadas à mão.</summary>
+    private static DefaultAuthorizationPolicyProvider PermissionPolicies()
+    {
+        var options = new AuthorizationOptions();
+        foreach (var permission in AccessPermissions.All)
+        {
+            var captured = permission;
+            options.AddPolicy(AccessPermissions.Policy(captured), policy => policy.RequirePermission(captured));
+        }
+
+        options.AddPolicy(UniOverAuth.OwnerPolicy, policy => policy.RequireAccountRole(AccountRoles.Owner));
+        return new DefaultAuthorizationPolicyProvider(Microsoft.Extensions.Options.Options.Create(options));
+    }
+
+    private static Task<List<string>> TvViolationsOfAsync(RouteEndpoint route) =>
+        TvPermissionMap.ViolationsAsync([route], PermissionPolicies());
+
+    [Fact]
+    public async Task TvScan_RejectsATvRouteOnTheOwnerOnlyDefault_WhichWouldHideItFromTheTable()
+    {
+        var route = Endpoint("/api/v1/tv/keys", new HttpMethodMetadata(["POST"]), new Authorize { Policy = UniOverAuth.OwnerPolicy });
+
+        (await TvViolationsOfAsync(route)).Should().Contain(v => v.StartsWith("POST /api/v1/tv/keys:", StringComparison.Ordinal) && v.Contains("tv:control", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TvScan_RejectsATvRouteThatDeclaresAnotherPermission()
+    {
+        var route = Endpoint(
+            "/api/v1/tv/keys", new HttpMethodMetadata(["POST"]), new Authorize { Policy = AccessPermissions.Policy(AccessPermissions.TvPower) });
+
+        (await TvViolationsOfAsync(route)).Should().Contain(v => v.Contains("declara [tv:power]", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TvScan_RejectsANewTvRouteThatIsNotInTheTable()
+    {
+        var route = Endpoint(
+            "/api/v1/tv/novidade", new HttpMethodMetadata(["POST"]), new Authorize { Policy = AccessPermissions.Policy(AccessPermissions.TvControl) });
+
+        (await TvViolationsOfAsync(route)).Should().Contain(v => v.Contains("POST /api/v1/tv/novidade", StringComparison.Ordinal) && v.Contains("fora do mapa", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TvScan_RejectsATvPermissionOnARouteOutsideTheTv()
+    {
+        var route = Endpoint(
+            "/api/v1/training/exercises", new HttpMethodMetadata(["GET"]), new Authorize { Policy = AccessPermissions.Policy(AccessPermissions.TvControl) });
+
+        (await TvViolationsOfAsync(route)).Should().Contain(v => v.Contains("rota fora da TV com a permissão da TV 'tv:control'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TvScan_AcceptsARouteThatDeclaresExactlyThePermissionOfItsLine()
+    {
+        var route = Endpoint(
+            "/api/v1/tv/keys", new HttpMethodMetadata(["POST"]), new Authorize { Policy = AccessPermissions.Policy(AccessPermissions.TvControl) });
+
+        // As demais linhas da tabela ficam sem rota (só há uma montada), mas a rota certa não gera nenhuma violação própria.
+        (await TvViolationsOfAsync(route)).Should().NotContain(v => v.StartsWith("POST /api/v1/tv/keys:", StringComparison.Ordinal));
     }
 
     [Fact]

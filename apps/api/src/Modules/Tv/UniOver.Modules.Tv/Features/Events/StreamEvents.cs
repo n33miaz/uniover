@@ -34,8 +34,9 @@ internal sealed class StreamEventsHandler(TvStateProvider provider, ITvShortcutR
 internal static class StreamEventsEndpoint
 {
     /// <summary>
-    /// Fluxo SSE do estado da TV. Só o cookie de bilhete de stream vale (política <c>TvStream</c>: só GET, dono ou convidado): token
-    /// na URL nunca é aceito. O servidor encerra o fluxo a cada 10 minutos e a tela reabre.
+    /// Fluxo SSE do estado da TV. Só o cookie de bilhete de stream vale (política <c>TvStream</c>: só GET e a permissão
+    /// <c>module:tv</c>): token na URL nunca é aceito. O servidor encerra o fluxo a cada 10 minutos e a tela reabre; quem
+    /// não é administrador é reavaliado durante o fluxo e o perde assim que a permissão sai.
     /// </summary>
     public static void MapStreamEvents(this IEndpointRouteBuilder group) =>
         group.MapGet("/events", HandleAsync).RequireAuthorization(TvAuth.StreamPolicy)
@@ -60,15 +61,25 @@ internal static class StreamEventsEndpoint
 
         var subscription = await handler.OpenAsync(userId, cancellationToken);
 
-        // Convidado revogado com o fluxo aberto: a cada keep-alive o acesso é conferido (cache curto) e o fluxo fecha.
-        // O dono não paga a consulta.
-        Func<CancellationToken, Task<bool>>? stillAllowed = null;
-        if (AccountRoles.Of(principal) == AccountRoles.Guest)
+        // O administrador não paga a consulta. Quem não é administrador tem a permissão da TV reavaliada com o fluxo
+        // aberto, pelo mesmo caminho da política da rota (banco com cache curto, nunca o JWT): conta revogada ou sem
+        // module:tv fecha o fluxo. Sem a porta registrada, nega (falha fechada), nunca "sem conferência".
+        if (string.Equals(AccountRoles.Of(principal), AccountRoles.Owner, StringComparison.Ordinal))
         {
-            var status = services.GetService<IAccountStatus>();
-            stillAllowed = async ct => status is not null && await status.IsActiveAsync(userId, ct);
+            return SseResults.Stream(subscription, broadcaster.Options, time, lifetime.ApplicationStopping);
         }
 
-        return SseResults.Stream(subscription, broadcaster.Options, time, stillAllowed, lifetime.ApplicationStopping);
+        var grants = services.GetService<IAccessGrants>();
+        Func<CancellationToken, Task<bool>> stillAllowed =
+            async ct => grants is not null && await grants.HasAsync(userId, AccessPermissions.TvModule, ct);
+
+        // Duas conferências com o mesmo critério: no keep-alive do fluxo ocioso (antes de escrever qualquer coisa) e por
+        // relógio próprio, para o fluxo movimentado em que o keep-alive nunca chega a disparar.
+        return new RecheckedStream<object>(
+            SseResults.Stream(subscription, broadcaster.Options, time, stillAllowed, lifetime.ApplicationStopping),
+            subscription,
+            stillAllowed,
+            broadcaster.Options.KeepAlive,
+            time);
     }
 }

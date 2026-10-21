@@ -49,16 +49,13 @@ public static class TvModule
             .Validate(TvModuleOptions.IsValid, "Modules:Tv tem valor fora do permitido (tempos devem ser positivos).")
             .ValidateOnStart();
 
-        // A TV é a única área do convidado: ele usa o controle inteiro (comandos, estado, atalhos, histórico dele e o fluxo
-        // ao vivo) e nada mais. As demais rotas da API ficam na política padrão, que é só do dono.
+        // Cada rota da TV cita a política da sua permissão (catálogo do BuildingBlocks, lida do banco com cache curto); só o
+        // fluxo ao vivo tem política própria, por causa do cookie de bilhete. A política por permissão já inclui o papel
+        // conhecido e a conta ativa. As demais rotas da API ficam na política padrão, que é só do administrador.
         services.AddAuthorizationBuilder()
-            .AddPolicy(TvAuth.ControlPolicy, policy => policy
-                .RequireAccountRole(AccountRoles.Owner, AccountRoles.Guest)
-                .RequireActiveAccount())
             .AddPolicy(TvAuth.StreamPolicy, policy => policy
                 .AddAuthenticationSchemes(UniOverAuth.StreamScheme)
-                .RequireAccountRole(AccountRoles.Owner, AccountRoles.Guest)
-                .RequireActiveAccount()
+                .RequirePermission(AccessPermissions.TvModule)
                 .RequireGetOnly());
 
         services.TryAddSingleton(TimeProvider.System);

@@ -16,8 +16,10 @@ using UniOver.Modules.Tv;
 namespace UniOver.IntegrationTests.Identity.Guests;
 
 /// <summary>
-/// O convidado usa a TV inteira e nada mais. A varredura vem das rotas do Host real (vale para módulo futuro sem editar
-/// o teste); as chamadas HTTP provam o 403 de fato e o que o convidado consegue fazer na TV.
+/// O convidado alcança só a TV e a própria sessão, e na TV só o que as permissões dele cobrem. A varredura vem das rotas
+/// do Host real (vale para módulo futuro sem editar o teste): por papel o convidado entra em toda rota da TV, e é a
+/// permissão nomeada de cada rota (tabela em <see cref="TvPermissionMap"/>) que decide; as chamadas HTTP provam o 403 de
+/// fato e o que o convidado de hoje (a TV inteira, sem editar atalhos) consegue fazer.
 /// </summary>
 [Collection(PostgresGroup.Name)]
 public sealed class GuestAccessTests(PostgresFixture postgres)
@@ -40,16 +42,12 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         "/api/v1/devices/agents/{agentId}/ws",
     ];
 
-    /// <summary>Renomear e ocultar atalhos (PATCH) e mudar a ordem deles (PUT) são só do dono; o resto da TV é do convidado.</summary>
-    private const string ShortcutEditRoute = "/api/v1/tv/shortcuts/{id:guid}";
-
-    private const string ShortcutOrderRoute = "/api/v1/tv/shortcuts/order";
-
-    private static bool IsGuestRoute(string pattern, IReadOnlyList<string> methods) =>
-        (pattern == ShortcutEditRoute && methods.Contains("PATCH", StringComparer.OrdinalIgnoreCase))
-        || (pattern == ShortcutOrderRoute && methods.Contains("PUT", StringComparer.OrdinalIgnoreCase))
-            ? false
-            : pattern.StartsWith("/api/v1/tv/", StringComparison.Ordinal) || GuestSessionRoutes.Contains(pattern);
+    /// <summary>
+    /// Por papel o convidado entra em toda rota da TV (inclusive renomear e reordenar atalhos): o que o barra é a
+    /// permissão da rota, que a tabela de <see cref="TvPermissionMap"/> confere e as chamadas HTTP provam.
+    /// </summary>
+    private static bool IsGuestRoute(string pattern) =>
+        pattern.StartsWith("/api/v1/tv/", StringComparison.Ordinal) || GuestSessionRoutes.Contains(pattern);
 
     private static ClaimsPrincipal Principal(string? role)
     {
@@ -131,10 +129,16 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
                 failures.Add($"{label}: aceita um papel que não existe");
             }
 
-            var guestExpected = IsGuestRoute(pattern, RouteInspector.Methods(endpoint));
+            var guestExpected = IsGuestRoute(pattern);
             if (asGuest != guestExpected)
             {
                 failures.Add($"{label}: convidado {(asGuest ? "alcança" : "não alcança")} e deveria {(guestExpected ? "alcançar" : "ser barrado")}");
+            }
+
+            // O convidado que entra por papel numa rota da TV só passa se a rota também exige uma permissão nomeada.
+            if (asGuest && !GuestSessionRoutes.Contains(pattern) && !policy.Requirements.OfType<PermissionRequirement>().Any())
+            {
+                failures.Add($"{label}: o convidado alcança por papel sem exigir uma permissão nomeada");
             }
 
             // Toda rota que o convidado alcança (fora as da própria sessão) confere também que a conta não foi revogada.
@@ -172,8 +176,11 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         allowed.Where(p => !p.StartsWith("/api/v1/tv/", StringComparison.Ordinal)).Distinct().Should().BeEquivalentTo(GuestSessionRoutes);
         allowed.Count(p => p.StartsWith("/api/v1/tv/", StringComparison.Ordinal)).Should().BeGreaterThanOrEqualTo(10);
 
-        // Só o PATCH usa esse padrão e ele é do dono: o padrão nem aparece entre os do convidado.
-        allowed.Should().NotContain(ShortcutEditRoute);
+        // Renomear e reordenar atalhos entram por papel como o resto da TV: a barreira é a permissão tv:edit-shortcuts, e a
+        // tabela abaixo prova que cada rota da TV (e só a TV) exige exatamente a permissão da sua linha.
+        allowed.Should().Contain(["/api/v1/tv/shortcuts/{id:guid}", "/api/v1/tv/shortcuts/order"]);
+        var routes = app.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>().ToList();
+        (await TvPermissionMap.ViolationsAsync(routes, policies)).Should().BeEmpty();
     }
 
     [Fact]
@@ -185,6 +192,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
 
         var forbidden = new (HttpMethod Method, string Url, object? Body)[]
         {
+            // O convidado de hoje não tem tv:edit-shortcuts: renomear, ocultar e reordenar atalhos seguem recusados.
             (HttpMethod.Patch, $"/api/v1/tv/shortcuts/{Guid.NewGuid()}", new { customLabel = "Meu app" }),
             (HttpMethod.Put, "/api/v1/tv/shortcuts/order", new { ids = new[] { Guid.NewGuid() } }),
             (HttpMethod.Get, "/api/v1/devices/agents", null),

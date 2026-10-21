@@ -76,7 +76,7 @@ internal sealed class UpdateShortcutHandler(TvDbContext db, ITvShortcutReader re
 internal static class UpdateShortcutEndpoint
 {
     public static void MapUpdateShortcut(this IEndpointRouteBuilder group) =>
-        group.MapPatch("/shortcuts/{id:guid}", HandleAsync).RequireAuthorization(UniOverAuth.OwnerPolicy)
+        group.MapPatch("/shortcuts/{id:guid}", HandleAsync).RequireAuthorization(TvAuth.EditShortcuts)
             .Produces<TvShortcut>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
