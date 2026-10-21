@@ -24,15 +24,17 @@ import { TvIcon } from './ui/tv-icon';
 import { TvPanel } from './ui/tv-panel';
 
 /**
- * Até quantas letras o nome cabe numa linha no tamanho inteiro (curto) e no médio. A coluna do meio do cabeçalho é
- * estreita (os botões dos lados e o ponto de estado ficam com o resto), então o nome vai encolhendo e passa a usar até
- * duas linhas. A escolha é só pelo número de letras, sem medir a tela.
+ * Até quantas letras o nome cabe numa linha no tamanho inteiro (curto) e no médio. A coluna do meio do cabeçalho é a
+ * tela menos duas colunas iguais (os botões dos lados e o ponto de estado ficam com elas), então o nome vai encolhendo
+ * e, se preciso, passa a usar até duas linhas. Os limites são os de antes de o Apps ir para a esquerda, quando a coluna
+ * era mais estreita; seguem valendo porque só dependem do número de letras, sem medir a tela.
  */
 const TITLE_SHORT_MAX = 6;
 const TITLE_MEDIUM_MAX = 12;
 
 /**
- * Tela única do módulo da TV: cabeçalho (voltar ao Início, nome com o ponto de estado, Apps e energia), o controle e,
+ * Tela única do módulo da TV: cabeçalho (à esquerda voltar ao Início e os três pontos do painel Apps, no meio o nome com
+ * o ponto de estado e à direita a energia), o controle e,
  * por cima dele, os painéis flutuantes de Apps e Teclado e as folhas de Personalizar e de desligar. O nome é o apelido
  * que a pessoa deu à TV (tocar nele abre Personalizar). O estado da TV (`TvStore`) é um só; ele só fala com o
  * servidor enquanto esta tela existe (ao sair, o fluxo e o "aquecer" param). Fica na raiz, e não nos `providers`

@@ -249,6 +249,45 @@ button:disabled {
 }
 
 /*
+ * Pílulas em fileira (Personalizar): as pílulas de volume e de canal viram uma fileira de duas pílulas deitadas, lado a
+ * lado e acima dos botões redondos, que ficam com a largura toda e por isso crescem (uns 72 px no 390x664, quatro
+ * colunas). O preço é a altura: o palco, e com ele o anel, encolhe o que o bloco de baixo ganha. O canal desligado
+ * deixa a pílula de volume com a fileira inteira. Vem depois de `.no-channel`, que tem a mesma força, para o tamanho
+ * dos botões valer também sem o canal.
+ */
+.bottom[data-pills='row'] {
+  --tv-round: calc(var(--key-scale) * clamp(64px, 10.8dvh, 84px));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.bottom[data-pills='row'].no-channel {
+  grid-template-columns: minmax(0, 1fr);
+}
+.bottom[data-pills='row'] .round-grid {
+  grid-column: 1 / -1;
+  gap: 8px 6px;
+}
+.bottom[data-pills='row'] .pill {
+  flex-direction: row;
+}
+/* O nível do volume enche a pílula da esquerda para a direita. */
+.bottom[data-pills='row'] .pill.volume {
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--a-accent) 40%, var(--a-elev)) var(--level, 0%),
+    var(--a-surface) var(--level, 0%)
+  );
+}
+/* Deitada, a pílula é mais baixa (48 px, nunca menos que o alvo de toque) e os botões dividem a largura com o nível. */
+.bottom[data-pills='row'] .pill-btn {
+  min-height: max(var(--tap), calc(48px * var(--key-scale)));
+}
+.bottom[data-pills='row'] .level {
+  flex: 1.2 1 0;
+  min-height: 0;
+}
+
+/*
  * Paisagem (celular deitado, tablet, computador): o palco fica à esquerda e o resto à direita, em duas colunas,
  * para o anel e o teclado não ficarem espremidos numa faixa baixa.
  */

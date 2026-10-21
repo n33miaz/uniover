@@ -7,10 +7,16 @@ export type TvButtonSize = 'compact' | 'comfortable' | 'large';
 export type TvStartPage = 'directions' | 'numbers' | 'touchpad' | 'last';
 /** Quanto o dedo precisa andar no touchpad para valer como uma seta. */
 export type TvPadSpeed = 'slow' | 'normal' | 'fast';
+/**
+ * Onde ficam as pílulas de volume e de canal: `sides` põe uma de cada lado dos botões redondos (em pé, o padrão de
+ * sempre); `row` junta as duas numa fileira deitada acima dos botões redondos, que então crescem.
+ */
+export type TvPillLayout = 'sides' | 'row';
 
 export const TV_BUTTON_SIZES: readonly TvButtonSize[] = ['compact', 'comfortable', 'large'];
 export const TV_START_PAGES: readonly TvStartPage[] = ['directions', 'numbers', 'touchpad', 'last'];
 export const TV_PAD_SPEEDS: readonly TvPadSpeed[] = ['slow', 'normal', 'fast'];
+export const TV_PILL_LAYOUTS: readonly TvPillLayout[] = ['sides', 'row'];
 
 /** O "confortável" é 1: os outros dois são relativos a ele (a medida base mora no CSS do controle). */
 export const KEY_SCALE: Readonly<Record<TvButtonSize, number>> = {
@@ -21,8 +27,10 @@ export const KEY_SCALE: Readonly<Record<TvButtonSize, number>> = {
 
 export const TV_PREFS_KEY = 'uniover.tv.prefs.v1';
 /**
- * O que cabe no cabeçalho: a coluna do nome mede 94 px no 390 (os botões dos lados e o ponto de estado ficam com o
- * resto) e o nome usa até duas linhas. Medido nesse aparelho, 20 letras cabem inteiras; 21 já passam de duas linhas.
+ * O que cabe no cabeçalho: o nome usa até duas linhas na coluna do meio, que no 390 é a tela menos duas colunas
+ * iguais de 94 px (os dois botões da esquerda; à direita o desligar e o ponto de estado cabem na mesma largura). O
+ * limite de 20 letras vem de quando a coluna era mais estreita (medido então: 20 cabiam inteiras, 21 passavam de duas
+ * linhas); com a coluna de agora sobra espaço, e o limite foi mantido para não mudar o que a pessoa pode digitar.
  */
 export const TV_NAME_MAX = 20;
 
@@ -35,6 +43,8 @@ export interface TvPrefsValue {
   readonly vibration: boolean;
   readonly startPage: TvStartPage;
   readonly padSpeed: TvPadSpeed;
+  /** Ausente nas escolhas guardadas antes de existir: lê-se como `sides`, a disposição que sempre foi. */
+  readonly pillLayout: TvPillLayout;
 }
 
 export const TV_PREFS_DEFAULTS: TvPrefsValue = {
@@ -46,6 +56,7 @@ export const TV_PREFS_DEFAULTS: TvPrefsValue = {
   // A última vista na aba é o que o controle sempre fez; quem quer outra página fixa escolhe.
   startPage: 'last',
   padSpeed: 'normal',
+  pillLayout: 'sides',
 };
 
 /**
@@ -78,12 +89,13 @@ function parsePrefs(raw: unknown): TvPrefsValue {
     vibration: flag(stored['vibration'], defaults.vibration),
     startPage: oneOf(stored['startPage'], TV_START_PAGES, defaults.startPage),
     padSpeed: oneOf(stored['padSpeed'], TV_PAD_SPEEDS, defaults.padSpeed),
+    pillLayout: oneOf(stored['pillLayout'], TV_PILL_LAYOUTS, defaults.pillLayout),
   };
 }
 
 /**
- * Preferências do controle da TV: apelido, tamanho dos botões, que grupos de teclas aparecem, vibração, página
- * inicial do palco e sensibilidade do touchpad. Ficam só neste aparelho (`localStorage`, como as da Início): o
+ * Preferências do controle da TV: apelido, tamanho dos botões, disposição das pílulas de volume e canal, que grupos
+ * de teclas aparecem, vibração, página inicial do palco e sensibilidade do touchpad. Ficam só neste aparelho (`localStorage`, como as da Início): o
  * convidado tem as dele, e sincronizar na conta depende de um endpoint de preferências que ainda não existe.
  * Nunca guarda dado sensível; sem armazenamento (modo privado) a escolha vale até recarregar.
  */
@@ -106,6 +118,7 @@ export class TvPrefs {
   readonly vibration = computed(() => this.value().vibration);
   readonly startPage = computed(() => this.value().startPage);
   readonly padSpeed = computed(() => this.value().padSpeed);
+  readonly pillLayout = computed(() => this.value().pillLayout);
   /** Alguma escolha difere do padrão (liga o "Restaurar padrão"). */
   readonly customized = computed(() => !sameAsDefaults(this.value()));
 
@@ -162,6 +175,7 @@ function sameAsDefaults(value: TvPrefsValue): boolean {
     value.showChannel === defaults.showChannel &&
     value.vibration === defaults.vibration &&
     value.startPage === defaults.startPage &&
-    value.padSpeed === defaults.padSpeed
+    value.padSpeed === defaults.padSpeed &&
+    value.pillLayout === defaults.pillLayout
   );
 }

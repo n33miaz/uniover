@@ -526,6 +526,119 @@ describe('ControlPage', () => {
       expect(root.querySelector('.bottom')!.classList.contains('no-channel')).toBe(false);
     });
 
+    describe('layout of the volume and channel pills', () => {
+      const bottom = () => root.querySelector<HTMLElement>('.bottom')!;
+      /** As peças do bloco de baixo na ordem do documento, que tem de ser a da tela. */
+      const bottomOrder = () =>
+        [...bottom().children].map((el) =>
+          el.matches('.round-grid') ? 'round' : (el.getAttribute('aria-label') ?? el.tagName),
+        );
+      const pillLabels = (name: string) =>
+        [...root.querySelectorAll(`[aria-label="${name}"] > *`)].map((el) =>
+          el.matches('.level') ? 'level' : el.getAttribute('aria-label'),
+        );
+
+      it('has the pills on the sides by default: volume, round keys and channel, in that order', () => {
+        expect(bottom().getAttribute('data-pills')).toBe('sides');
+        expect(bottomOrder()).toEqual(['Volume', 'round', 'Canal']);
+        expect(pillLabels('Volume')).toEqual(['Aumentar o volume', 'level', 'Diminuir o volume']);
+        expect(pillLabels('Canal')).toEqual(['Próximo canal', 'level', 'Canal anterior']);
+      });
+
+      it('puts the two pills in a row above the round keys, in the document too, so Tab follows the screen', () => {
+        prefs().set({ pillLayout: 'row' });
+        render();
+        expect(bottom().getAttribute('data-pills')).toBe('row');
+        expect(bottomOrder()).toEqual(['Volume', 'Canal', 'round']);
+        // Deitada a pílula lê-se da esquerda para a direita: menos, o nível, mais.
+        expect(pillLabels('Volume')).toEqual(['Diminuir o volume', 'level', 'Aumentar o volume']);
+        expect(pillLabels('Canal')).toEqual(['Canal anterior', 'level', 'Próximo canal']);
+      });
+
+      it('has the same buttons, with the same accessible names, in both layouts', () => {
+        const names = () =>
+          [...bottom().querySelectorAll('button')]
+            .map((el) => el.getAttribute('aria-label'))
+            .sort();
+        const before = names();
+        expect(before).toHaveLength(12);
+        prefs().set({ pillLayout: 'row' });
+        render();
+        expect(names()).toEqual(before);
+        prefs().set({ pillLayout: 'sides' });
+        render();
+        expect(names()).toEqual(before);
+      });
+
+      it.each(['sides', 'row'] as const)(
+        'still sends the volume and channel keys with the pills in "%s"',
+        async (pillLayout) => {
+          prefs().set({ pillLayout });
+          render();
+          for (const [label, key] of [
+            ['Aumentar o volume', 'VOLUME_UP'],
+            ['Diminuir o volume', 'VOLUME_DOWN'],
+            ['Próximo canal', 'CHANNEL_UP'],
+            ['Canal anterior', 'CHANNEL_DOWN'],
+          ]) {
+            store.sendKey.mockClear();
+            byLabel(label).click();
+            await fixture.whenStable();
+            expect(store.sendKey, label).toHaveBeenCalledWith(key);
+          }
+        },
+      );
+
+      it('keeps the volume level, spoken and shown, in the row layout too', () => {
+        prefs().set({ pillLayout: 'row' });
+        render();
+        const level = root.querySelector('.pill.volume .level[role="img"]')!;
+        expect(level.getAttribute('aria-label')).toBe('Volume 22');
+        expect(level.textContent).toContain('22');
+        expect(
+          root.querySelector<HTMLElement>('.pill.volume')!.style.getPropertyValue('--level'),
+        ).toBe('22%');
+      });
+
+      it('lays the round keys out in four columns whatever the size or the media keys, since they have the whole width', () => {
+        prefs().set({ pillLayout: 'row' });
+        const cols = () => root.querySelector('.round-grid')!.getAttribute('data-cols');
+        render();
+        expect(cols()).toBe('4');
+        prefs().set({ buttonSize: 'large' });
+        render();
+        expect(cols()).toBe('4');
+        prefs().set({ showMedia: false });
+        render();
+        expect(cols()).toBe('4');
+        expect(roundLabels()).toEqual(['Voltar', 'Início da TV', 'Menu', 'Teclado']);
+      });
+
+      it('with the channel hidden the volume pill stays alone above the round keys, in the row layout', () => {
+        prefs().set({ pillLayout: 'row', showChannel: false });
+        render();
+        expect(bottomOrder()).toEqual(['Volume', 'round']);
+        expect(root.querySelectorAll('.pill')).toHaveLength(1);
+        expect(bottom().classList.contains('no-channel')).toBe(true);
+        expect(byLabel('Próximo canal')).toBeNull();
+        // E o canal volta no lugar certo da fileira.
+        prefs().set({ showChannel: true });
+        render();
+        expect(bottomOrder()).toEqual(['Volume', 'Canal', 'round']);
+      });
+
+      it('switches back to the sides at once, with the same elements and no leftovers', () => {
+        prefs().set({ pillLayout: 'row' });
+        render();
+        prefs().set({ pillLayout: 'sides' });
+        render();
+        expect(bottom().getAttribute('data-pills')).toBe('sides');
+        expect(bottomOrder()).toEqual(['Volume', 'round', 'Canal']);
+        expect(root.querySelectorAll('.pill')).toHaveLength(2);
+        expect(root.querySelectorAll('.round-grid .round')).toHaveLength(8);
+      });
+    });
+
     it('keeps the ring, the numbers, the touchpad and the dots whatever is hidden', () => {
       prefs().set({ showMedia: false, showChannel: false, buttonSize: 'large' });
       render();

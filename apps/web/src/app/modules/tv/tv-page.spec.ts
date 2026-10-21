@@ -52,7 +52,7 @@ describe('TvPage', () => {
   });
 
   describe('header', () => {
-    it('has back to Início, the name TV as the h1, the state dot beside it, Apps and power', () => {
+    it('has back to Início and the three dots of Apps on the left, the name TV as the h1 with the state dot beside it, and power on the right', () => {
       const back = root.querySelector('a.back')!;
       expect(back.getAttribute('href')).toBe('/');
       expect(back.getAttribute('aria-label')).toBe('Voltar ao Início');
@@ -62,11 +62,36 @@ describe('TvPage', () => {
       expect(h1.querySelector('app-status-indicator')).toBeNull();
       expect(h1.nextElementSibling?.matches('app-status-indicator')).toBe(true);
       expect(byLabel('Desligar a TV')).not.toBeNull();
+      // Só o desligar fica à direita; a saída e o Apps formam o grupo da esquerda, nessa ordem.
       expect(
         [...root.querySelectorAll('.head .actions button')].map((b) =>
           b.getAttribute('aria-label'),
         ),
-      ).toEqual(['Apps da TV', 'Desligar a TV']);
+      ).toEqual(['Desligar a TV']);
+      expect(
+        [...root.querySelectorAll('.head .lead > *')].map((b) => b.getAttribute('aria-label')),
+      ).toEqual(['Voltar ao Início', 'Apps da TV']);
+    });
+
+    it('lays the header out as the left group, the name and the right group, in that order', () => {
+      const head = root.querySelector('.head')!;
+      expect([...head.children].map((el) => el.className.split(' ')[0])).toEqual([
+        'lead',
+        'name',
+        'actions',
+      ]);
+    });
+
+    it('draws Apps as three dots, not as the old grid, with the same accessible name', () => {
+      const apps = appsButton();
+      expect(apps.getAttribute('aria-label')).toBe('Apps da TV');
+      expect(apps.classList.contains('circle')).toBe(true);
+      expect(apps.textContent?.trim()).toBe('');
+      // Três pontos: três círculos no traço do ícone, e não os quatro quadrados da grade.
+      const path = apps.querySelector('app-tv-icon path')!.getAttribute('d')!;
+      expect(path.match(/M/g)).toHaveLength(3);
+      expect(path).toContain('a1.2 1.2');
+      expect(path).not.toContain('h7v7');
     });
 
     it('shows the owner the arrow back, never the settings button of the guest', () => {
@@ -544,11 +569,22 @@ describe('TvPage for a guest', () => {
     expect(root.querySelector('app-tv-control')).not.toBeNull();
   });
 
+  it('keeps the three dots beside the settings button, on the left, and only power on the right', async () => {
+    await open();
+    expect(
+      [...root.querySelectorAll('.head .lead > *')].map((el) => el.getAttribute('aria-label')),
+    ).toEqual(['Ajustes', 'Apps da TV']);
+    expect(
+      [...root.querySelectorAll('.head .actions > *')].map((el) => el.getAttribute('aria-label')),
+    ).toEqual(['Desligar a TV']);
+  });
+
   it('puts the round settings button where back was, so the name stays in the middle', async () => {
     await open();
     const head = root.querySelector('.head')!;
     expect(head.children).toHaveLength(3);
-    const settings = head.children[0];
+    expect(head.children[0].classList.contains('lead')).toBe(true);
+    const settings = head.children[0].children[0];
     expect(settings.tagName).toBe('A');
     expect(settings.classList.contains('circle')).toBe(true);
     expect(settings.getAttribute('href')).toBe('/ajustes');

@@ -302,6 +302,26 @@ test.describe('convidado: só o controle da TV', () => {
 
     const settings = page.locator('header.head').getByRole('link', { name: 'Ajustes' });
     await expect(settings).toBeVisible();
+
+    // Os três pontos do Apps ficam ao lado da engrenagem, na esquerda e antes do nome; à direita só o desligar.
+    const apps = page
+      .locator('header.head')
+      .getByRole('button', { name: 'Apps da TV', exact: true });
+    const gearBox = (await settings.boundingBox())!;
+    const appsBox = (await apps.boundingBox())!;
+    const nameBox = (await page.locator('header.head h1').boundingBox())!;
+    const powerBox = (await page
+      .locator('header.head')
+      .getByRole('button', { name: 'Desligar a TV' })
+      .boundingBox())!;
+    expect(Math.abs(appsBox.y - gearBox.y), 'na mesma linha da engrenagem').toBeLessThanOrEqual(1);
+    expect(appsBox.x, 'depois da engrenagem').toBeGreaterThanOrEqual(gearBox.x + gearBox.width);
+    expect(nameBox.x, 'antes do nome').toBeGreaterThanOrEqual(appsBox.x + appsBox.width);
+    expect(powerBox.x, 'o desligar depois do nome').toBeGreaterThanOrEqual(
+      nameBox.x + nameBox.width - 1,
+    );
+    await expect(page.locator('header.head .actions').getByRole('button')).toHaveCount(1);
+
     await settings.click();
     await expect(page).toHaveURL(/\/ajustes$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeVisible();
