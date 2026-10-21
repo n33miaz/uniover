@@ -145,7 +145,9 @@ async function settleAnimations(page: Page) {
  * sair no esquema anterior, principalmente no WebKit.
  */
 async function useScheme(page: Page, scheme: 'light' | 'dark') {
-  await page.emulateMedia({ colorScheme: scheme });
+  // Movimento reduzido junto: o axe e o print medem as cores finais; com a folha ainda entrando (opacidade parcial) o
+  // contraste do botão primário saía abaixo do mínimo só no executor lento do WebKit do Linux.
+  await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
   await expect
     .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), {
       timeout: 10_000,
