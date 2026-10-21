@@ -347,8 +347,11 @@ test.describe('ajustes', () => {
       'Disponível',
     );
     await expect(page.locator('.module', { hasText: 'Treino' }).locator('.chip')).toHaveText(
-      'Em breve',
+      'Disponível',
     );
+    await expect(
+      page.locator('.module', { hasText: 'Saúde e eventos' }).locator('.chip'),
+    ).toHaveText('Em breve');
   });
 
   test('o Sobre mostra as versões e leva aos Créditos', async ({ page }) => {

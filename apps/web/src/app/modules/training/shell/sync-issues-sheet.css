@@ -1,0 +1,53 @@
+.intro {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.list {
+  margin: 0;
+}
+
+.issue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.what {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.name {
+  font-weight: 650;
+}
+
+.why {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.destructive {
+  border-color: color-mix(in srgb, var(--a-bad) 38%, var(--a-line));
+  color: var(--a-bad-ink);
+}
+
+.confirm-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+}

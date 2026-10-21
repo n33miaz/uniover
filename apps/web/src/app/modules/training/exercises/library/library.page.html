@@ -1,0 +1,171 @@
+<div class="library">
+  <app-exercises-switch [current]="'catalog'" />
+
+  <div class="tools">
+    <div class="search">
+      <label for="library-search" class="ui-visually-hidden" i18n="@@training.library.search-label"
+        >Buscar exercício</label
+      >
+      <app-training-glyph class="search-icon" name="search" />
+      <input
+        id="library-search"
+        class="ui-input"
+        type="search"
+        [attr.enterkeyhint]="'search'"
+        autocomplete="off"
+        [attr.autocapitalize]="'off'"
+        spellcheck="false"
+        placeholder="Buscar exercício"
+        i18n-placeholder="@@training.library.search-placeholder"
+        [value]="text()"
+        (input)="onSearch($any($event.target).value)"
+      />
+    </div>
+    <button
+      type="button"
+      class="filters ui-btn secondary"
+      [attr.aria-controls]="'equipment-filter'"
+      [attr.aria-expanded]="equipmentOpen()"
+      [class.on]="equipment() !== ''"
+      [attr.aria-label]="equipmentToggleLabel()"
+      (click)="toggleEquipment()"
+    >
+      <app-training-glyph name="sliders" />
+      @if (equipment() !== '') {
+        <span class="dot ui-dot" aria-hidden="true"></span>
+      }
+    </button>
+  </div>
+
+  <app-training-chips
+    [options]="groupOptions()"
+    [selected]="group()"
+    [label]="groupFilterLabel"
+    (selectedChange)="pickGroup($event)"
+  />
+
+  @if (equipmentOpen()) {
+    <div id="equipment-filter">
+      <app-training-chips
+        [options]="equipmentOptions()"
+        [selected]="equipment()"
+        [label]="equipmentFilterLabel"
+        (selectedChange)="pickEquipment($event)"
+      />
+    </div>
+  }
+
+  @if (muscle() !== '') {
+    <div class="muscle">
+      <button
+        type="button"
+        class="muscle-chip"
+        [attr.aria-label]="muscleRemoveLabel()"
+        (click)="clearMuscle()"
+      >
+        <span>{{ muscleChipText() }}</span>
+        <app-training-glyph name="close" />
+      </button>
+    </div>
+  }
+
+  <div class="meta">
+    <div class="count">
+      <h2 class="eyebrow ui-section-label" i18n="@@training.library.heading">
+        Catálogo em português
+      </h2>
+      <p class="number" role="status">{{ countText() }}</p>
+    </div>
+    <div class="actions">
+      <a
+        class="ui-btn secondary compact"
+        routerLink="/treino/exercicios/novo"
+        aria-label="Novo exercício"
+        i18n-aria-label="@@training.library.new-label"
+      >
+        <app-training-glyph name="plus" />
+        <span i18n="@@training.library.new">Novo</span>
+      </a>
+      <a
+        class="ui-btn secondary compact"
+        routerLink="/treino/exercicios/mapa"
+        aria-label="Mapa do corpo"
+        i18n-aria-label="@@training.library.map-label"
+      >
+        <app-training-glyph name="target" />
+        <span i18n="@@training.library.map">Mapa</span>
+      </a>
+    </div>
+  </div>
+
+  @if (!ready()) {
+    <ul class="ui-group ui-plain skeleton" aria-hidden="true">
+      @for (row of [1, 2, 3, 4]; track row) {
+        <li class="ui-skeleton-row"><span class="ui-skeleton"></span></li>
+      }
+    </ul>
+  } @else if (catalogEmpty()) {
+    <section class="empty ui-card" aria-labelledby="empty-title">
+      <span class="ui-tile lg"><app-training-glyph name="dumbbell" /></span>
+      @if (downloading()) {
+        <h3 id="empty-title" i18n="@@training.library.loading-title">Baixando o catálogo…</h3>
+        <p i18n="@@training.library.loading-text">
+          Os exercícios chegam em instantes e ficam guardados no aparelho.
+        </p>
+      } @else {
+        <h3 id="empty-title" i18n="@@training.library.empty-title">O catálogo ainda não chegou</h3>
+        @if (online()) {
+          <p i18n="@@training.library.empty-online">
+            Na primeira abertura o aparelho baixa os exercícios. Depois disso eles funcionam sem
+            rede.
+          </p>
+        } @else {
+          <p i18n="@@training.library.empty-offline">
+            Sem rede, o aparelho ainda não tem os exercícios. Conecte-se uma vez para baixar; depois
+            disso eles funcionam sem rede.
+          </p>
+        }
+        <button type="button" class="primary ui-btn block" (click)="retryDownload()">
+          <app-training-glyph name="refresh" />
+          <span i18n="@@training.library.retry">Tentar baixar</span>
+        </button>
+      }
+    </section>
+  } @else if (results().length === 0) {
+    <section class="empty ui-card" aria-labelledby="none-title">
+      <h3 id="none-title" i18n="@@training.library.none-title">Nenhum exercício achado</h3>
+      <p i18n="@@training.library.none-text">Tente outra palavra ou tire algum filtro.</p>
+      <div class="empty-actions">
+        <button type="button" class="secondary ui-btn" (click)="clearFilters()">
+          <span i18n="@@training.library.clear">Limpar filtros</span>
+        </button>
+        @if (text().trim() !== '') {
+          <a
+            class="ui-btn secondary"
+            routerLink="/treino/exercicios/novo"
+            [queryParams]="createParams()"
+          >
+            <app-training-glyph name="plus" />
+            <span i18n="@@training.library.create-from-search">Criar “{{ text().trim() }}”</span>
+          </a>
+        }
+      </div>
+    </section>
+  } @else {
+    <ul class="list ui-group ui-plain">
+      @for (exercise of shown(); track exercise.id) {
+        <li>
+          <a class="ui-row" [routerLink]="['/treino/exercicios', exercise.id]" (click)="flush()">
+            <app-exercise-row-body [exercise]="exercise" [last]="labels().get(exercise.id)" />
+            <app-training-glyph class="chevron" name="next" />
+          </a>
+        </li>
+      }
+    </ul>
+    @if (hidden() > 0) {
+      <button type="button" class="more secondary ui-btn block" (click)="showMore()">
+        <span i18n="@@training.library.more">Mostrar mais ({{ hidden() }})</span>
+      </button>
+    }
+  }
+</div>

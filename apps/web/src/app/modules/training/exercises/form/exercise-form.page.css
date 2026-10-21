@@ -1,0 +1,206 @@
+:host {
+  display: block;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 40rem;
+  margin-inline: auto;
+  border: 0;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Voltar da tela de segundo nível: só a seta (o círculo é do cabeçalho do módulo, que leva à Início). */
+.back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  margin-left: calc(-1 * var(--space-2));
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--a-ink);
+  cursor: pointer;
+}
+
+.back:active {
+  background: var(--a-elev);
+}
+
+.title {
+  min-width: 0;
+  font-size: 1.375rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.lead {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.ui-field {
+  min-width: 0;
+}
+
+textarea.ui-input {
+  min-height: 96px;
+  padding: var(--space-3);
+  resize: vertical;
+}
+
+.error {
+  margin: 0;
+  color: var(--a-bad-ink);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+/* Tipo de registro: três opções de escolha única, como botões de rádio de verdade (teclado e leitor de tela). */
+.kind {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.kind legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.radios {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.radio {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: var(--space-2);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  font-size: var(--fs-small);
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+}
+
+.radio input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.radio.on {
+  border-color: var(--a-accent);
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+}
+
+.radio:has(input:focus-visible) {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+/* Instruções: opcionais, então ficam fechadas até alguém querer escrever. */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.leave-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.title-skeleton {
+  width: 60%;
+  height: 28px;
+}
+
+.block-skeleton {
+  height: 140px;
+}
+
+/* Músculo principal: um campo que abre a lista por grupo. Não é o seletor nativo: o formulário fica igual em qualquer aparelho. */
+.picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker .placeholder {
+  color: var(--a-ink2);
+}
+
+.field-label {
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.muscle-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.chosen {
+  color: var(--a-accent-ink);
+}

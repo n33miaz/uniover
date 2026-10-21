@@ -1,0 +1,312 @@
+@if (state() === 'loading') {
+  <section class="editor" aria-hidden="true">
+    <div class="ui-skeleton title-skeleton"></div>
+    <div class="ui-skeleton block-skeleton"></div>
+  </section>
+} @else if (state() === 'missing') {
+  <section class="editor">
+    <p class="ui-notice" role="status">
+      <app-training-glyph name="info" />
+      <span i18n="@@training.editor.missing"
+        >Esta rotina não existe mais. Pode ter sido apagada.</span
+      >
+    </p>
+    <button type="button" class="secondary ui-btn block" (click)="leave()">
+      <app-training-glyph name="back" />
+      <span i18n="@@training.editor.missing-back">Voltar às rotinas</span>
+    </button>
+  </section>
+} @else if (state() === 'ready') {
+  <form class="editor" novalidate (submit)="$event.preventDefault(); save()">
+    <header class="head">
+      <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="cancel()">
+        <app-training-glyph name="back" />
+      </button>
+      <h2 class="title">{{ title }}</h2>
+    </header>
+
+    <div class="ui-field">
+      <label for="routine-name" i18n="@@training.editor.name">Nome da rotina</label>
+      <input
+        id="routine-name"
+        class="ui-input"
+        type="text"
+        maxlength="80"
+        autocomplete="off"
+        placeholder="Ex.: Treino A, peito e tríceps"
+        i18n-placeholder="@@training.editor.name-placeholder"
+        [value]="draft().name"
+        [attr.aria-invalid]="errors().name ? 'true' : null"
+        [attr.aria-describedby]="errors().name ? 'routine-name-error' : null"
+        (input)="setName($any($event.target).value)"
+      />
+      @if (errors().name === 'missing') {
+        <p id="routine-name-error" class="error" role="alert" i18n="@@training.editor.name-missing">
+          Dê um nome à rotina.
+        </p>
+      } @else if (errors().name === 'too-long') {
+        <p id="routine-name-error" class="error" role="alert" i18n="@@training.editor.name-long">
+          O nome pode ter até 80 caracteres.
+        </p>
+      }
+    </div>
+
+    @if (draft().items.length > 1) {
+      <p class="hint">{{ dragHint }}</p>
+    }
+
+    <ul class="items ui-plain" [attr.aria-label]="itemsLabel">
+      @for (
+        item of draft().items;
+        track item.id;
+        let i = $index;
+        let first = $first;
+        let last = $last
+      ) {
+        <li class="entry" [attr.data-id]="item.id">
+          <div
+            class="item ui-card"
+            [class.open]="expandedId() === item.id"
+            [class.dragging]="draggingId() === item.id"
+            [class.invalid]="errors().reps.has(item.id)"
+          >
+            <div class="top">
+              <span
+                class="grip"
+                aria-hidden="true"
+                (pointerdown)="startDrag($event, item.id)"
+                (pointermove)="dragOver($event)"
+                (pointerup)="endDrag()"
+                (pointercancel)="endDrag()"
+                ><app-training-glyph name="grip"
+              /></span>
+              <button
+                type="button"
+                class="summary"
+                [attr.aria-expanded]="expandedId() === item.id"
+                [attr.aria-controls]="'item-panel-' + item.id"
+                (click)="toggle(item.id)"
+              >
+                <span class="num">{{ i + 1 }}</span>
+                <span class="info">
+                  <span class="name">{{ nameOf(item) }}</span>
+                  <span class="meta">{{ summaryOf(item) }}</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                class="move up ui-tap"
+                [disabled]="first"
+                [attr.aria-label]="upLabel(item)"
+                (click)="shift(item.id, -1)"
+              >
+                <app-training-glyph name="up" />
+              </button>
+              <button
+                type="button"
+                class="move down ui-tap"
+                [disabled]="last"
+                [attr.aria-label]="downLabel(item)"
+                (click)="shift(item.id, 1)"
+              >
+                <app-training-glyph name="down" />
+              </button>
+            </div>
+
+            @if (expandedId() === item.id) {
+              <div class="panel" [id]="'item-panel-' + item.id">
+                <div class="fields">
+                  @for (field of fields; track field.key) {
+                    <div class="field" role="group" [attr.aria-label]="field.label">
+                      <span class="lbl" aria-hidden="true">{{ field.label }}</span>
+                      <div class="stepper">
+                        <button
+                          type="button"
+                          class="sb ui-tap"
+                          [attr.aria-label]="field.less"
+                          (click)="step(item.id, field.key, -1)"
+                        >
+                          <app-training-glyph name="minus" />
+                        </button>
+                        <output class="val">{{ fieldValue(item, field) }}</output>
+                        <button
+                          type="button"
+                          class="sb ui-tap"
+                          [attr.aria-label]="field.more"
+                          (click)="step(item.id, field.key, 1)"
+                        >
+                          <app-training-glyph name="plus" />
+                        </button>
+                      </div>
+                    </div>
+                  }
+                </div>
+                @if (errors().reps.has(item.id)) {
+                  <p class="error" role="alert" i18n="@@training.editor.reps-invalid">
+                    A repetição mínima não pode passar da máxima.
+                  </p>
+                }
+                <label class="switch-row">
+                  <span i18n="@@training.editor.superset">Juntar com o próximo (supersérie)</span>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    class="ui-switch"
+                    [checked]="isLinked(i)"
+                    [disabled]="last"
+                    (change)="link(item.id)"
+                  />
+                </label>
+                @if (removingId() === item.id) {
+                  <div class="ui-notice bad confirm" role="alert">
+                    <span class="confirm-text">
+                      <span i18n="@@training.editor.remove-ask"
+                        >Remover este exercício da rotina?</span
+                      >
+                      <span class="pair">
+                        <button
+                          type="button"
+                          class="danger ui-btn"
+                          [attr.aria-label]="removeLabel(item)"
+                          (click)="removeItemNow(item.id)"
+                        >
+                          <span i18n="@@training.editor.remove-yes">Remover</span>
+                        </button>
+                        <button type="button" class="secondary ui-btn" (click)="keepItem()">
+                          <span i18n="@@training.editor.remove-no">Manter</span>
+                        </button>
+                      </span>
+                    </span>
+                  </div>
+                } @else {
+                  <button
+                    type="button"
+                    class="destructive secondary ui-btn block"
+                    [attr.aria-label]="removeLabel(item)"
+                    (click)="askRemove(item.id)"
+                  >
+                    <app-training-glyph name="trash" />
+                    <span i18n="@@training.editor.remove">Remover da rotina</span>
+                  </button>
+                }
+              </div>
+            }
+          </div>
+          @if (isLinked(i)) {
+            <p class="link-note">
+              <app-training-glyph name="link" />
+              <span i18n="@@training.editor.superset-note"
+                >supersérie: sem descanso entre o par</span
+              >
+            </p>
+          }
+        </li>
+      }
+    </ul>
+
+    @if (errors().items === 'missing') {
+      <p class="error" role="alert" i18n="@@training.editor.items-missing">
+        Adicione pelo menos um exercício.
+      </p>
+    } @else if (errors().items === 'too-many') {
+      <p class="error" role="alert" i18n="@@training.editor.items-many">
+        A rotina pode ter até 40 exercícios.
+      </p>
+    } @else if (errors().items === 'superset') {
+      <p class="error" role="alert" i18n="@@training.editor.items-superset">
+        Uma supersérie só junta exercícios que estão um ao lado do outro.
+      </p>
+    }
+
+    <button type="button" class="secondary ui-btn block" (click)="openPicker()">
+      <app-training-glyph name="plus" />
+      <span i18n="@@training.editor.add">Adicionar exercício</span>
+    </button>
+
+    @if (editing) {
+      <div class="ui-group options">
+        <label class="ui-row option">
+          <span class="ui-row-text">
+            <span class="ui-row-title" i18n="@@training.editor.active"
+              >Na sequência de treinos</span
+            >
+            <span class="ui-row-sub" i18n="@@training.editor.active-hint"
+              >Desligada, não é sugerida.</span
+            >
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            class="ui-switch"
+            [checked]="draft().active"
+            (change)="setActive($any($event.target).checked)"
+          />
+        </label>
+      </div>
+    }
+
+    @if (saveError(); as message) {
+      <p class="ui-notice bad" role="alert">
+        <app-training-glyph name="alert" />
+        <span>{{ message }}</span>
+      </p>
+    }
+
+    @if (confirmingLeave()) {
+      <div class="ui-notice warn" role="alert">
+        <span class="confirm-text">
+          <span i18n="@@training.editor.leave-ask"
+            >Sair sem salvar? O que você mudou aqui será perdido.</span
+          >
+          <span class="pair">
+            <button type="button" class="secondary ui-btn" (click)="leave()">
+              <span i18n="@@training.editor.leave-yes">Sair sem salvar</span>
+            </button>
+            <button type="button" class="primary ui-btn" (click)="keepEditing()">
+              <span i18n="@@training.editor.leave-no">Continuar editando</span>
+            </button>
+          </span>
+        </span>
+      </div>
+    }
+
+    <div class="actions">
+      <button type="button" class="secondary ui-btn" (click)="cancel()">
+        <span i18n="@@training.editor.cancel">Cancelar</span>
+      </button>
+      <button type="submit" class="primary ui-btn" [disabled]="saving()">
+        <span i18n="@@training.editor.save">Salvar rotina</span>
+      </button>
+    </div>
+
+    @if (editing) {
+      @if (confirmingDelete()) {
+        <div class="ui-notice bad" role="alert">
+          <span class="confirm-text">
+            <span i18n="@@training.editor.delete-ask"
+              >Apagar esta rotina? Ela some de todos os seus aparelhos; os treinos já feitos
+              ficam.</span
+            >
+            <span class="pair">
+              <button type="button" class="danger ui-btn" (click)="deleteRoutine()">
+                <span i18n="@@training.editor.delete-yes">Apagar</span>
+              </button>
+              <button type="button" class="secondary ui-btn" (click)="keepRoutine()">
+                <span i18n="@@training.editor.delete-no">Manter</span>
+              </button>
+            </span>
+          </span>
+        </div>
+      } @else {
+        <button type="button" class="destructive secondary ui-btn block" (click)="askDelete()">
+          <app-training-glyph name="trash" />
+          <span i18n="@@training.editor.delete">Apagar rotina</span>
+        </button>
+      }
+    }
+  </form>
+
+  @if (pickerOpen()) {
+    <app-exercise-picker-sheet (picked)="onPicked($event)" (closed)="closePicker()" />
+  }
+}

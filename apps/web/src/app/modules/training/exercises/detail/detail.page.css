@@ -1,0 +1,285 @@
+:host {
+  display: block;
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+/* Voltar e nome na mesma linha: o nome pode quebrar sem empurrar a seta. */
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Voltar da tela de segundo nível: só a seta (o círculo é do cabeçalho do módulo, que leva à Início). */
+.back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  margin-left: calc(-1 * var(--space-2));
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--a-ink);
+  cursor: pointer;
+}
+
+.back:active {
+  background: var(--a-elev);
+}
+
+.name {
+  min-width: 0;
+  font-size: 1.375rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+/* Cabeçalho da ficha: a ilustração (quando há) ao lado dos músculos e do equipamento, para a ficha caber na tela. */
+.hero {
+  display: block;
+}
+
+.hero.with-art {
+  display: grid;
+  grid-template-columns: minmax(0, 148px) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+/* Ao lado da ilustração, os chips e o crédito dela: a ficha não gasta uma faixa inteira só com o crédito. */
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chips .ui-chip {
+  min-height: 28px;
+}
+
+.main-action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.added {
+  align-items: center;
+}
+
+.added-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--space-3);
+}
+
+.added-text a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  font-weight: 650;
+}
+
+.part {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.quiet-text {
+  margin: 0;
+  padding: 0 var(--space-1);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+/* Como fazer: passos numerados num cartão só. */
+.steps-card {
+  padding: var(--space-4);
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.steps li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--space-3);
+  counter-increment: step;
+  overflow-wrap: anywhere;
+}
+
+.steps li::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.more-steps {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  margin-top: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a-accent-ink);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+/* Histórico: valores em linhas curtas (44 px), com o valor à direita. */
+.facts {
+  margin: 0;
+}
+
+.fact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  padding: var(--space-2) var(--space-4);
+}
+
+.fact + .fact {
+  border-top: 1px solid var(--a-line);
+}
+
+.fact dt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.fact dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.step-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.compact {
+  padding: 0 var(--space-3);
+  font-size: var(--fs-small);
+}
+
+.step-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--a-line);
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.reset {
+  align-self: flex-start;
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a-accent-ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.destructive {
+  border-color: color-mix(in srgb, var(--a-bad) 38%, var(--a-line));
+  color: var(--a-bad-ink);
+}
+
+.confirm-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.error {
+  margin: 0;
+  color: var(--a-bad-ink);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.origin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-3);
+  margin: 0;
+  padding: 0 var(--space-1);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.origin-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+}
+
+.title-skeleton {
+  width: 60%;
+  height: 28px;
+}
+
+.block-skeleton {
+  height: 140px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .back {
+    transition: none;
+  }
+}
