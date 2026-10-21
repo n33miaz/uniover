@@ -368,7 +368,7 @@ test.describe('convite: acessibilidade (axe, qualquer gravidade)', () => {
       await expectNoA11yViolations(page);
       await fill(page);
       await page.getByRole('button', { name: 'Mostrar senha', exact: true }).click();
-      await expect(page.getByText('As senhas conferem.')).toBeVisible();
+      await expect(page.getByText('As senhas conferem.', { exact: true })).toBeVisible();
       await expectNoA11yViolations(page);
     });
 
