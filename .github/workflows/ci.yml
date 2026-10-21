@@ -117,19 +117,19 @@ jobs:
       - name: Build de produção
         run: npm run build
 
-  # E2E em três partes que rodam ao mesmo tempo: o Playwright reparte os grupos (arquivo por navegador) entre elas.
-  # Era um passo só do job web (~11 min); o tempo somado dos testes é o mesmo, mas a espera cai a perto de um terço.
+  # E2E em quatro partes que rodam ao mesmo tempo: o Playwright reparte os testes entre elas (na CI cada teste é uma unidade; ver playwright.config.ts).
+  # Era um passo só do job web (~11 min); o tempo somado dos testes é o mesmo, mas a espera cai a perto de um quarto mais o custo de montar cada parte (~2 min).
   # Fica de fora o PR de versão do release-please: ele só muda número de versão e o mesmo código já passou
   # inteiro no PR da develop para a main e no push na main.
   e2e:
-    name: e2e (${{ matrix.shard }}/3)
+    name: e2e (${{ matrix.shard }}/4)
     needs: changes
     if: needs.changes.outputs.web == 'true' && !startsWith(github.head_ref || '', 'release-please--')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     defaults:
       run:
         working-directory: apps/web
@@ -146,8 +146,8 @@ jobs:
       - name: Instalar navegadores do Playwright
         run: npx playwright install --with-deps chromium webkit
       # O build de produção vem do webServer do próprio Playwright (playwright.config.ts).
-      - name: E2E (parte ${{ matrix.shard }} de 3)
-        run: npx playwright test --shard=${{ matrix.shard }}/3
+      - name: E2E (parte ${{ matrix.shard }} de 4)
+        run: npx playwright test --shard=${{ matrix.shard }}/4
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
