@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { SessionState } from '../../../core/session/session-state';
 import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { FakeTvStore, HOT, createFakeTvStore, makeShortcut, pngIcon } from '../tv-test-kit';
@@ -96,6 +97,24 @@ describe('ControlPage', () => {
       expect(first.disabled).toBe(false); // continua focável: a faixa rolável precisa de algo que o teclado alcance
       first.click();
       expect(store.launch).toHaveBeenCalledTimes(1);
+    });
+
+    it('without tv:launch the shortcuts are figures: no button, nothing opens, no vibration', () => {
+      TestBed.inject(SessionState).setUser({
+        id: '1',
+        email: 'a@b.c',
+        displayName: 'Alice',
+        role: 'guest',
+        permissions: ['module:tv', 'tv:control'],
+      });
+      render();
+      expect(root.querySelectorAll('button.shortcut')).toHaveLength(0);
+      const figures = root.querySelectorAll<HTMLElement>('.shortcut.still');
+      expect(figures).toHaveLength(3);
+      figures[0].click();
+      expect(store.launch).not.toHaveBeenCalled();
+      // O controle em si segue inteiro: só os atalhos perderam o toque.
+      expect(byLabel('Mudo')).not.toBeNull();
     });
 
     it('gives a short vibration when a shortcut opens an app, and none when it cannot send', () => {

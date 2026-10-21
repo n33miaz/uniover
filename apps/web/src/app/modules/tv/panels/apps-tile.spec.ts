@@ -30,6 +30,32 @@ describe('AppsTile', () => {
   const launch = () => root.querySelector<HTMLButtonElement>('.launch')!;
   const pin = () => root.querySelector<HTMLButtonElement>('.tool.pin')!;
 
+  describe('without permission to open apps', () => {
+    it('is the same icon and name, but not a button, with nothing to focus or tap', () => {
+      show(makeShortcut(1, { tvLabel: 'Spotify' }), { launchable: false });
+      expect(root.querySelectorAll('button')).toHaveLength(0);
+      const figure = root.querySelector<HTMLElement>('.launch.still')!;
+      expect(figure.tagName).toBe('DIV');
+      expect(figure.querySelector('.name')?.textContent?.trim()).toBe('Spotify');
+      expect(figure.querySelector('app-tv-app-icon')).not.toBeNull();
+      expect(figure.hasAttribute('tabindex')).toBe(false);
+      figure.click();
+      expect(launched).not.toHaveBeenCalled();
+    });
+
+    it('keeps the mark of "No controle" for the reader, next to the figure', () => {
+      show(makeShortcut(1, { tvLabel: 'Spotify' }), { launchable: false, marked: true });
+      expect(root.querySelector('.mark')).not.toBeNull();
+      expect(root.querySelector('.sr')?.textContent?.trim()).toBe('No controle');
+    });
+
+    it('does not change the edit mode, which has its own buttons', () => {
+      show(makeShortcut(1), { launchable: false, managing: true });
+      expect(root.querySelector('.launch')).toBeNull();
+      expect(pin()).not.toBeNull();
+    });
+  });
+
   describe('to open the app', () => {
     it('is one button: the icon on top and the name under it, named by the name alone', () => {
       show(makeShortcut(1, { tvLabel: 'Spotify', iconDataUri: pngIcon(96, 96) }));

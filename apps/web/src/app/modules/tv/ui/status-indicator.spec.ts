@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { SessionState } from '../../../core/session/session-state';
 import { TvStatus, TvStore } from '../data/tv-store';
 import { FakeTvStore, createFakeTvStore } from '../tv-test-kit';
 import { StatusIndicator } from './status-indicator';
@@ -184,6 +185,67 @@ describe('StatusIndicator', () => {
       expect(store.refresh).not.toHaveBeenCalled();
       expect(panel()).toBeNull();
       expect(document.activeElement).toBe(trigger());
+    });
+
+    describe('by permission', () => {
+      const grant = (...permissions: string[]) =>
+        TestBed.inject(SessionState).setUser({
+          id: '1',
+          email: 'a@b.c',
+          displayName: 'A',
+          role: 'guest',
+          permissions,
+        });
+      afterEach(() => localStorage.clear());
+
+      it('without tv:control "Acordar o controle" is not offered (it is a command), only the explanation', async () => {
+        grant('module:tv');
+        await setStatus('hibernating');
+        await toggle();
+        expect(panel()?.querySelector('strong')?.textContent).toBe('Dormindo');
+        expect(panel()?.querySelector('.action')).toBeNull();
+        expect(store.wake).not.toHaveBeenCalled();
+      });
+
+      it('without tv:control the explanation does not tell to tap or wake: it only says the state', async () => {
+        grant('module:tv');
+        await setStatus('hibernating');
+        await toggle();
+        expect(panel()?.textContent).toContain(
+          'Só o controle está dormindo para poupar a TV; ela continua como estava.',
+        );
+        expect(panel()?.textContent).not.toContain('toque');
+        expect(panel()?.textContent).not.toContain('acorda');
+
+        await setStatus('hot');
+        expect(panel()?.textContent).toContain('Depois de 5 min sem uso ele dorme sozinho.');
+        expect(panel()?.textContent).not.toContain('toque');
+      });
+
+      it('with tv:control the explanation keeps the tap that wakes it', async () => {
+        grant('module:tv', 'tv:control');
+        await setStatus('hibernating');
+        await toggle();
+        expect(panel()?.textContent).toContain('O primeiro toque acorda.');
+      });
+
+      it('"Tentar de novo" stays for who only views: reading the state is allowed', async () => {
+        grant('module:tv');
+        await setStatus('agent-off');
+        await toggle();
+        const action = panel()!.querySelector<HTMLButtonElement>('.action')!;
+        expect(action.textContent?.trim()).toBe('Tentar de novo');
+        action.click();
+        await render();
+        expect(store.refresh).toHaveBeenCalledTimes(1);
+      });
+
+      it('with tv:control the wake action is there', async () => {
+        grant('module:tv', 'tv:control');
+        await setStatus('hibernating');
+        await toggle();
+        expect(panel()?.querySelector('.action')?.textContent?.trim()).toBe('Acordar o controle');
+      });
     });
 
     it('without the agent it offers "Tentar de novo", which reads the state again and then tries to wake', async () => {

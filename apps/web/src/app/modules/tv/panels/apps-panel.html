@@ -49,6 +49,7 @@
         [managing]="editMode()"
         [marked]="flat"
         [canSend]="store.canSend()"
+        [launchable]="access.launch()"
         [busy]="busy()"
         [rank]="reorderable() ? (ranks().get(shortcut.id) ?? null) : null"
         (launch)="launch($event)"
@@ -60,34 +61,77 @@
   </li>
 </ng-template>
 
-@if (!loaded()) {
+<!--
+  O aviso de que a limpeza está rodando é o mesmo na grade e no painel curto de quem só controla.
+-->
+<ng-template #cleaningNote>
+  <p class="note cleaning" role="status" i18n="@@tv.cleanup.running-note">
+    Limpando a TV… pode levar até meio minuto. O controle continua funcionando.
+  </p>
+</ng-template>
+
+@if (!access.appList()) {
+  <!--
+    Quem só controla (não abre apps nem edita atalhos) tem neste painel uma coisa só: limpar a TV. Nada de grade, busca,
+    atualizar lista nem Editar, que ele não pode usar.
+  -->
+  <div class="options">
+    <p class="note" i18n="@@tv.options.clean-help">
+      Fecha os apps abertos na TV e libera memória, sem derrubar o controle.
+    </p>
+    <button
+      type="button"
+      class="secondary clean"
+      [class.off]="!store.canSend()"
+      [attr.aria-haspopup]="'dialog'"
+      [attr.aria-disabled]="!store.canSend() || store.cleaning() ? 'true' : null"
+      (click)="openCleanup()"
+    >
+      <app-tv-icon name="clean" [class.spin]="store.cleaning()" />
+      <span>{{ cleanLabel() }}</span>
+    </button>
+    @if (store.cleaning()) {
+      <ng-container [ngTemplateOutlet]="cleaningNote" />
+    }
+    @if (!store.canSend()) {
+      <p class="note">{{ store.disabledReason() }}</p>
+    }
+  </div>
+} @else if (!loaded()) {
   <p class="note" role="status" i18n="@@tv.apps.loading">Carregando os apps…</p>
 } @else if (all().length === 0) {
   <div class="empty">
     <app-tv-icon name="apps" />
     <p class="empty-title" i18n="@@tv.apps.empty-title">Ainda não temos a lista de apps da TV</p>
-    <p class="note" i18n="@@tv.apps.empty-text">
-      A TV precisa informar quais apps tem instalados. É só pedir aqui.
-    </p>
-    <button
-      type="button"
-      class="primary"
-      [disabled]="!store.canSend() || refreshing()"
-      (click)="refresh()"
-    >
-      @if (refreshing()) {
-        <span i18n="@@tv.apps.searching">Buscando apps…</span>
-      } @else {
-        <span i18n="@@tv.apps.search-tv">Buscar apps da TV</span>
-      }
-    </button>
-    @if (asked() && !refreshing()) {
-      <p class="note" role="status" i18n="@@tv.apps.asked-empty">
-        A TV ainda não informou nenhum app. Tente de novo em instantes.
+    <!-- Pedir a lista à TV é de quem pode abrir apps; os demais só sabem que ela ainda não chegou. -->
+    @if (access.launch()) {
+      <p class="note" i18n="@@tv.apps.empty-text">
+        A TV precisa informar quais apps tem instalados. É só pedir aqui.
       </p>
-    }
-    @if (!store.canSend()) {
-      <p class="note">{{ store.disabledReason() }}</p>
+      <button
+        type="button"
+        class="primary"
+        [disabled]="!store.canSend() || refreshing()"
+        (click)="refresh()"
+      >
+        @if (refreshing()) {
+          <span i18n="@@tv.apps.searching">Buscando apps…</span>
+        } @else {
+          <span i18n="@@tv.apps.search-tv">Buscar apps da TV</span>
+        }
+      </button>
+      @if (asked() && !refreshing()) {
+        <p class="note" role="status" i18n="@@tv.apps.asked-empty">
+          A TV ainda não informou nenhum app. Tente de novo em instantes.
+        </p>
+      }
+      @if (!store.canSend()) {
+        <p class="note">{{ store.disabledReason() }}</p>
+      }
+    } @else {
+      <p class="note" i18n="@@tv.apps.empty-text-view">
+        Peça a quem cuida da TV para atualizar a lista de apps.
+      </p>
     }
   </div>
 } @else {
@@ -106,29 +150,34 @@
         (input)="onQuery($event)"
       />
     </div>
-    <button
-      type="button"
-      class="icon-btn refresh"
-      [attr.aria-label]="refreshLabel()"
-      [attr.aria-disabled]="refreshing() ? 'true' : null"
-      [disabled]="!store.canSend()"
-      (click)="refresh()"
-    >
-      <app-tv-icon name="refresh" [class.spin]="refreshing()" />
-    </button>
-    <button
-      type="button"
-      class="icon-btn clean"
-      [class.off]="!store.canSend()"
-      [attr.aria-label]="cleanLabel()"
-      [attr.title]="cleanLabel()"
-      [attr.aria-haspopup]="'dialog'"
-      [attr.aria-disabled]="!store.canSend() || store.cleaning() ? 'true' : null"
-      (click)="openCleanup()"
-    >
-      <app-tv-icon name="clean" [class.spin]="store.cleaning()" />
-    </button>
-    @if (!isGuest()) {
+    <!-- Cada botão da barra só existe para quem pode usá-lo: atualizar a lista, limpar a TV e editar os atalhos. -->
+    @if (access.launch()) {
+      <button
+        type="button"
+        class="icon-btn refresh"
+        [attr.aria-label]="refreshLabel()"
+        [attr.aria-disabled]="refreshing() ? 'true' : null"
+        [disabled]="!store.canSend()"
+        (click)="refresh()"
+      >
+        <app-tv-icon name="refresh" [class.spin]="refreshing()" />
+      </button>
+    }
+    @if (access.control()) {
+      <button
+        type="button"
+        class="icon-btn clean"
+        [class.off]="!store.canSend()"
+        [attr.aria-label]="cleanLabel()"
+        [attr.title]="cleanLabel()"
+        [attr.aria-haspopup]="'dialog'"
+        [attr.aria-disabled]="!store.canSend() || store.cleaning() ? 'true' : null"
+        (click)="openCleanup()"
+      >
+        <app-tv-icon name="clean" [class.spin]="store.cleaning()" />
+      </button>
+    }
+    @if (access.editShortcuts()) {
       <button type="button" class="edit-toggle" [class.on]="editMode()" (click)="toggleEdit()">
         @if (editMode()) {
           <span i18n="@@tv.apps.edit-done">Concluir</span>
@@ -145,9 +194,7 @@
     announcement()
   }}</span>
   @if (store.cleaning()) {
-    <p class="note cleaning" role="status" i18n="@@tv.cleanup.running-note">
-      Limpando a TV… pode levar até meio minuto. O controle continua funcionando.
-    </p>
+    <ng-container [ngTemplateOutlet]="cleaningNote" />
   }
 
   @if (visible().length === 0) {
@@ -174,7 +221,7 @@
       </ul>
     </section>
   } @else {
-    @if (pinned().length > 0 || !isGuest()) {
+    @if (pinned().length > 0 || access.editShortcuts()) {
       <section class="group" aria-labelledby="apps-group-pinned">
         <h3 id="apps-group-pinned" class="ui-section-label" i18n="@@tv.apps.group-pinned">
           No controle
@@ -200,13 +247,15 @@
         <h3 id="apps-group-rest" class="ui-section-label" i18n="@@tv.apps.group-rest">
           Fora do controle
         </h3>
-        <!-- O convidado não vê o Editar: para ele a dica não o cita. -->
-        @if (isGuest()) {
-          <p class="note" i18n="@@tv.apps.rest-hint-guest">Toque para abrir.</p>
-        } @else {
+        <!-- A dica só cita o que a pessoa tem: abrir (toque) e, se ela edita, fixar em Editar. -->
+        @if (access.launch() && access.editShortcuts()) {
           <p class="note" i18n="@@tv.apps.rest-hint">
             Toque para abrir. Para ter no controle, fixe em Editar.
           </p>
+        } @else if (access.launch()) {
+          <p class="note" i18n="@@tv.apps.rest-hint-guest">Toque para abrir.</p>
+        } @else if (access.editShortcuts()) {
+          <p class="note" i18n="@@tv.apps.rest-hint-edit">Para ter no controle, fixe em Editar.</p>
         }
         <ul class="grid">
           @for (shortcut of unpinned(); track shortcut.id; let i = $index) {
@@ -225,6 +274,6 @@
   }
 }
 
-@if (cleanupOpen()) {
+@if (cleanupOpen() && access.control()) {
   <app-tv-cleanup-sheet (closed)="closeCleanup()" />
 }

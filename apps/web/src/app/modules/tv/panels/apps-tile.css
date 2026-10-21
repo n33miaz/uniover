@@ -157,7 +157,7 @@ button:disabled {
   .move {
     transition: transform 90ms ease-out;
   }
-  .launch:not(:disabled):active,
+  .launch:not(:disabled, .still):active,
   .tool:active,
   .move:active {
     transform: scale(0.94);

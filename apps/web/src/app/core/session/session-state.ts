@@ -21,7 +21,10 @@ export interface SessionUser {
    * antigas: vale como confirmado, para nunca prender ninguém numa pergunta que o servidor não faz.
    */
   readonly displayNameConfirmed?: boolean;
-  /** O que a conta pode usar, na ordem do catálogo da API (para o administrador, tudo). Só serve para a tela explicar. */
+  /**
+   * O que a conta pode usar, na ordem do catálogo da API (para o administrador, tudo). A tela a usa para explicar o que
+   * a pessoa pode fazer e para não mostrar o que a API recusaria (`userCan`); quem decide de verdade é a API.
+   */
   readonly permissions?: readonly string[];
 }
 

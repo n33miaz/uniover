@@ -102,21 +102,33 @@ export interface TvIndicatorText {
 
 const NO_ACTION = '';
 
-/** Nome do estado em linguagem simples, uma frase do que ele significa e a ação possível (se houver). */
-export function indicatorText(indicator: TvIndicator, hibernateMinutes: number): TvIndicatorText {
+/**
+ * Nome do estado em linguagem simples, uma frase do que ele significa e a ação possível (se houver). Para quem não pode
+ * controlar a TV (`canControl` falso) as frases só contam o estado: nada manda tocar, acordar ou usar botões, que essa
+ * pessoa não tem.
+ */
+export function indicatorText(
+  indicator: TvIndicator,
+  hibernateMinutes: number,
+  canControl = true,
+): TvIndicatorText {
   const retry = $localize`:@@tv.indicator.retry:Tentar de novo`;
   switch (indicator) {
     case 'connected':
       return {
         title: $localize`:@@tv.indicator.connected.title:Conectada`,
-        meaning: $localize`:@@tv.indicator.connected.meaning:O controle está falando com a TV. Depois de ${hibernateMinutes}:minutes: min sem uso ele dorme sozinho e acorda no primeiro toque.`,
+        meaning: canControl
+          ? $localize`:@@tv.indicator.connected.meaning:O controle está falando com a TV. Depois de ${hibernateMinutes}:minutes: min sem uso ele dorme sozinho e acorda no primeiro toque.`
+          : $localize`:@@tv.indicator.connected.meaning-view:O controle está falando com a TV. Depois de ${hibernateMinutes}:minutes: min sem uso ele dorme sozinho.`,
         action: null,
         actionLabel: NO_ACTION,
       };
     case 'sleeping':
       return {
         title: $localize`:@@tv.indicator.sleeping.title:Dormindo`,
-        meaning: $localize`:@@tv.indicator.sleeping.meaning:Só o controle está dormindo para poupar a TV; ela continua como estava. O primeiro toque acorda.`,
+        meaning: canControl
+          ? $localize`:@@tv.indicator.sleeping.meaning:Só o controle está dormindo para poupar a TV; ela continua como estava. O primeiro toque acorda.`
+          : $localize`:@@tv.indicator.sleeping.meaning-view:Só o controle está dormindo para poupar a TV; ela continua como estava.`,
         action: 'wake',
         actionLabel: $localize`:@@tv.indicator.wake:Acordar o controle`,
       };
@@ -130,7 +142,9 @@ export function indicatorText(indicator: TvIndicator, hibernateMinutes: number):
     case 'server-waking':
       return {
         title: $localize`:@@tv.indicator.server-waking.title:Servidor acordando`,
-        meaning: $localize`:@@tv.indicator.server-waking.meaning:O servidor estava descansando e está voltando. Os botões voltam em instantes.`,
+        meaning: canControl
+          ? $localize`:@@tv.indicator.server-waking.meaning:O servidor estava descansando e está voltando. Os botões voltam em instantes.`
+          : $localize`:@@tv.indicator.server-waking.meaning-view:O servidor estava descansando e está voltando.`,
         action: null,
         actionLabel: NO_ACTION,
       };
@@ -158,7 +172,9 @@ export function indicatorText(indicator: TvIndicator, hibernateMinutes: number):
     default:
       return {
         title: $localize`:@@tv.indicator.repair-failed.title:Atenção`,
-        meaning: $localize`:@@tv.indicator.repair-failed.meaning:O reparo automático do controle não deu certo. Os botões podem não funcionar.`,
+        meaning: canControl
+          ? $localize`:@@tv.indicator.repair-failed.meaning:O reparo automático do controle não deu certo. Os botões podem não funcionar.`
+          : $localize`:@@tv.indicator.repair-failed.meaning-view:O reparo automático do controle não deu certo.`,
         action: 'retry',
         actionLabel: retry,
       };

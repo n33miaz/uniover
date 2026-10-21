@@ -89,6 +89,12 @@ describe('describeFailure', () => {
     expect(without.retryAfterSeconds).toBeNull();
   });
 
+  it('says plainly that the account lacks the permission (403), not that the TV failed', () => {
+    const failure = describeFailure(http(403, 'forbidden'));
+    expect(failure.kind).toBe('forbidden');
+    expect(failure.message).toBe('Você não tem permissão para fazer isso na TV.');
+  });
+
   it('maps the remaining statuses', () => {
     expect(describeFailure(http(400, 'validation-failed')).kind).toBe('invalid');
     expect(describeFailure(http(401)).kind).toBe('session');

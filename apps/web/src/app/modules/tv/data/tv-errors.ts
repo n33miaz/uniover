@@ -4,6 +4,7 @@ import { problemOf } from '../../../core/auth/api-problem';
 export type TvFailureKind =
   | 'network'
   | 'session'
+  | 'forbidden'
   | 'agent-offline'
   | 'not-configured'
   | 'timeout'
@@ -52,6 +53,14 @@ function commandFailedMessage(code: string | null): string {
     : $localize`:@@tv.error.command-failed:A TV não executou o comando.`;
 }
 
+/**
+ * A conta não tem a permissão do que foi pedido. A tela já não oferece o que a pessoa não pode, então isto só chega
+ * quando o administrador tirou a permissão há pouco (a tela ainda não soube) ou por um atalho antigo.
+ */
+export function forbiddenMessage(): string {
+  return $localize`:@@tv.error.forbidden:Você não tem permissão para fazer isso na TV.`;
+}
+
 /** O que se estava fazendo: a limpeza leva até ~25 s, então "tempo esgotado" não quer dizer "não aconteceu". */
 export type TvFailureContext = 'cleanup';
 
@@ -90,6 +99,8 @@ export function describeFailure(error: unknown, context?: TvFailureContext): TvF
         'session',
         $localize`:@@tv.error.session:Sua sessão acabou. Entre de novo para controlar a TV.`,
       );
+    case 403:
+      return make('forbidden', forbiddenMessage());
     case 404:
       return make(
         'not-found',

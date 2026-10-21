@@ -122,6 +122,10 @@ h1 {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
+/* Sem o controle o nome é só texto: a mesma caixa do botão (altura do alvo, centralizado), sem a mão do cursor. */
+.title.plain {
+  cursor: default;
+}
 /*
  * O nome nunca é cortado por reticências enquanto couber em duas linhas: nome curto fica numa linha no tamanho de
  * sempre, o médio encolhe um pouco e o longo encolhe mais e quebra em até duas linhas (o alvo de 44 px comporta as
@@ -170,6 +174,27 @@ h1 {
   color: var(--a-ink2);
   font-size: 0.9rem;
   text-align: center;
+}
+
+/* Conta sem acesso à TV: uma frase no meio do que sobra da altura, discreta (não é um erro). */
+.blocked {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 24px;
+  color: var(--a-ink2);
+  text-align: center;
+  text-wrap: balance;
+}
+.blocked app-tv-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+.blocked p {
+  margin: 0;
 }
 
 /* Aviso passageiro: flutua sobre a fileira de baixo sem pegar o toque, para o controle seguir usável. */

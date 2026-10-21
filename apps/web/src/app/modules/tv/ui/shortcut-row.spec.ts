@@ -113,6 +113,40 @@ describe('ShortcutRow', () => {
     expect(tiles()[0].disabled).toBe(false);
   });
 
+  describe('without permission to open apps', () => {
+    beforeEach(() => {
+      fixture.componentRef.setInput('launchable', false);
+      fixture.detectChanges();
+    });
+
+    it('draws the same tiles as figures: no button, still named by the app, and no way to open anything', () => {
+      expect(root.querySelectorAll('button')).toHaveLength(0);
+      const figures = [...root.querySelectorAll<HTMLElement>('.shortcut.still')];
+      expect(figures.map((el) => el.getAttribute('aria-label'))).toEqual(['Atalho 1', 'Sala']);
+      expect(figures.map((el) => el.getAttribute('role'))).toEqual(['img', 'img']);
+      expect(figures.map((el) => el.getAttribute('title'))).toEqual(['Atalho 1', 'Sala']);
+      figures[0].click();
+      expect(opened).not.toHaveBeenCalled();
+    });
+
+    it('gives the strip itself the keyboard focus, since it scrolls and nothing inside can take it', () => {
+      expect(root.querySelector('ul.shortcuts')!.getAttribute('tabindex')).toBe('0');
+    });
+
+    it('keeps the tile size, so the row does not change height or width', () => {
+      expect(root.querySelectorAll('.top > ul.shortcuts > li')).toHaveLength(2);
+      expect(root.querySelectorAll('.shortcut app-tv-app-icon')).toHaveLength(2);
+    });
+
+    it('goes back to buttons, and the strip leaves the tab order, when the permission comes', () => {
+      fixture.componentRef.setInput('launchable', true);
+      fixture.detectChanges();
+      expect(tiles()).toHaveLength(2);
+      expect(root.querySelectorAll('.shortcut.still')).toHaveLength(0);
+      expect(root.querySelector('ul.shortcuts')!.hasAttribute('tabindex')).toBe(false);
+    });
+  });
+
   describe('with no active shortcut', () => {
     const empty = () => {
       fixture.componentRef.setInput('shortcuts', []);
@@ -134,6 +168,7 @@ describe('ShortcutRow', () => {
         email: 'a@b.c',
         displayName: 'Alice',
         role: 'guest',
+        permissions: ['module:tv', 'tv:control', 'tv:launch'],
       });
       empty();
       expect(hint()).toBe('Nenhum app fixado no controle.');

@@ -10,6 +10,7 @@ import {
   output,
   viewChild,
 } from '@angular/core';
+import { TvAccess } from '../data/tv-access';
 import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut } from '../data/tv-types';
@@ -64,6 +65,8 @@ const DRAG_SLOP_PX = 6;
 export class ControlPage {
   protected readonly store = inject(TvStore);
   protected readonly prefs = inject(TvPrefs);
+  /** Abrir apps pelos atalhos de cima é de quem tem `tv:launch` (esta tela só existe para quem tem `tv:control`). */
+  protected readonly canLaunch = inject(TvAccess).launch;
   private readonly pager = viewChild.required<ElementRef<HTMLElement>>('pager');
 
   /** Leva o botão tocado: o painel devolve o foco a ele ao fechar (o Safari não foca botão ao toque). */
@@ -132,7 +135,7 @@ export class ControlPage {
   }
 
   protected openShortcut(shortcut: TvShortcut): void {
-    if (!this.store.canSend()) return;
+    if (!this.store.canSend() || !this.canLaunch()) return;
     vibrate();
     void this.store.launch(shortcut);
   }
