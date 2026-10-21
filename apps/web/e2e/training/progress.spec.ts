@@ -340,6 +340,36 @@ test.describe('exercício, poucos dados e sem dados', () => {
 });
 
 test.describe('sem rede', () => {
+  test('se o pedaço do gráfico não chega, a tela avisa, mantém os dados na tabela e desenha ao tentar de novo', async ({
+    page,
+    context,
+  }) => {
+    // Só o pedaço da biblioteca de gráficos é barrado (o resto da tela vem normal): reconhece-se pelo conteúdo, que tem as
+    // classes `u-` dela (o pedaço da tela também cita `u-wrap`, nos estilos do componente, por isso o marcador é uma classe
+    // que só a biblioteca tem). É a mesma falha de uma rede que cai no meio do download.
+    let blocked = true;
+    await page.route(/\/chunk-[\w-]+\.js$/, async (route) => {
+      const response = await route.fetch();
+      const body = await response.text();
+      if (blocked && body.includes('u-cursor-pt')) return route.abort('failed');
+      return route.fulfill({ response, body });
+    });
+    await startProgress(context, page);
+    await openProgress(page);
+
+    await expect(page.getByText('Não foi possível carregar o gráfico agora.')).toBeVisible();
+    await expect(value(page)).toHaveText('54 kg');
+    await expect(chart(page)).toHaveCount(0);
+    // Os mesmos pontos estão na tabela, que a tela abre sozinha nesse caso.
+    expect(await tableRows(page)).toHaveLength(8);
+
+    blocked = false;
+    await page.getByRole('button', { name: 'Tentar de novo' }).click();
+    await expect(chart(page)).toBeVisible();
+    await expectChartDrawn(page);
+    await expect(page.getByText('Não foi possível carregar o gráfico agora.')).toHaveCount(0);
+  });
+
   test('o gráfico, os períodos e a tabela funcionam depois de a tela abrir, porque tudo vem do aparelho', async ({
     page,
     context,
@@ -347,6 +377,10 @@ test.describe('sem rede', () => {
     const server = await startProgress(context, page);
     await openProgress(page);
     await expect(value(page)).toHaveText('54 kg');
+    // A biblioteca do gráfico é um pedaço à parte, baixado quando o gráfico é desenhado. Sem o service worker (este teste o
+    // bloqueia) a rede é a única fonte dele: só depois de o desenho aparecer vale cortar a rede, senão o teste mede a
+    // corrida entre o pedaço chegar e a rede cair, e não o que ele diz (o dado e o gráfico já abertos não precisam dela).
+    await expectChartDrawn(page);
 
     server.offline = true;
     await context.setOffline(true);

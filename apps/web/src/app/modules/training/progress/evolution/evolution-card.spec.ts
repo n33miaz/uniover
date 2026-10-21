@@ -283,6 +283,33 @@ describe('ProgressEvolution', () => {
     expect(text(el.querySelector('.value'))).toBe('53,8 kg');
   });
 
+  it('draws the chart after "Tentar de novo" once the library can be loaded again', async () => {
+    const { fixture, el, engine } = await open(
+      'supino-reto',
+      'Supino reto com barra',
+      (db) => seedHistory(db, 'supino-reto', BENCH_HISTORY),
+      (engine) => (engine.failWith = new Error('sem rede')),
+    );
+    await eventually(fixture, () =>
+      expect(text(el)).toContain('Não foi possível carregar o gráfico agora'),
+    );
+    expect(engine.created).toBe(0);
+
+    // Ainda sem a biblioteca: tentar de novo avisa de novo, sem travar a tela.
+    button(el, 'Tentar de novo').click();
+    await eventually(fixture, () =>
+      expect(text(el)).toContain('Não foi possível carregar o gráfico agora'),
+    );
+
+    // A rede voltou: o desenho nasce no mesmo lugar e o aviso some.
+    engine.failWith = null;
+    button(el, 'Tentar de novo').click();
+    await eventually(fixture, () => expect(el.querySelector('figure')).not.toBeNull());
+    await vi.waitFor(() => expect(engine.created).toBe(1));
+    expect(engine.last.xs).toHaveLength(6);
+    expect(text(el)).not.toContain('Não foi possível carregar o gráfico agora');
+  });
+
   it('tells the page which exercise was tapped, and when "Outro exercício" was', async () => {
     const { fixture, el } = await open();
     const chosen: string[] = [];
