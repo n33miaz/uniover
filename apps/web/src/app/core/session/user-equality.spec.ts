@@ -40,6 +40,13 @@ describe('sameUser', () => {
     expect(sameUser(null, null)).toBe(true);
   });
 
+  it('tells a missing list (not known) from an empty one (known: nothing allowed)', () => {
+    const noList = { ...user, permissions: undefined };
+    expect(sameUser(noList, { ...user, permissions: [] })).toBe(false);
+    expect(sameUser({ ...user, permissions: [] }, noList)).toBe(false);
+    expect(sameUser(noList, { ...noList })).toBe(true);
+  });
+
   it('notices each field that changes', () => {
     expect(sameUser(user, { ...user, id: '2' })).toBe(false);
     expect(sameUser(user, { ...user, email: 'x@y.z' })).toBe(false);
@@ -47,6 +54,7 @@ describe('sameUser', () => {
     expect(sameUser(user, { ...user, role: 'owner' })).toBe(false);
     expect(sameUser(user, { ...user, displayNameConfirmed: false })).toBe(false);
     expect(sameUser(user, { ...user, permissions: [] })).toBe(false);
+    expect(sameUser(user, { ...user, permissions: undefined })).toBe(false);
     expect(sameUser(user, null)).toBe(false);
     expect(sameUser(null, user)).toBe(false);
   });
