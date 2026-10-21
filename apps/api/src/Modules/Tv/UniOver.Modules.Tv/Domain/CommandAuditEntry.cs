@@ -16,6 +16,9 @@ public static class TvCommandNames
 
     /// <summary>Alguém com a permissão de editar atalhos mudou a ordem deles: não vai à TV, mas é uma ação que a trilha guarda.</summary>
     public const string ShortcutsReorder = "tv.shortcuts.reorder";
+
+    /// <summary>Alguém com a permissão de editar atalhos renomeou ou escondeu um: o detalhe leva só os códigos dos campos, nunca o nome novo.</summary>
+    public const string ShortcutUpdate = "tv.shortcut.update";
     public const string PowerOff = "tv.power-off";
     public const string Cleanup = "tv.cleanup";
 

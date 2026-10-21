@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
@@ -6,37 +5,12 @@ using UniOver.Modules.Tv.Ports;
 namespace UniOver.Modules.Tv.Adapters;
 
 /// <summary>
-/// Retenção oportunista da auditoria: nenhuma tarefa periódica (um laço manteria o Neon acordado). A limpeza roda
-/// junto de uma gravação, no máximo uma vez a cada dez minutos, para um "volume +" repetido não pagar duas
-/// consultas extras por tecla.
+/// Só inclui. A retenção NÃO mora aqui: o papel da aplicação não tem <c>DELETE</c> em <c>command_audit</c> (a trilha é só
+/// de inclusão no banco) e quem apaga o que passou de 30 dias é a função <c>tv.purge_audit</c>, chamada de tempos em
+/// tempos pelo serviço de retenção. A trilha também não tem mais teto de linhas: um teto deixaria quem inunda a rota de
+/// comandos empurrar para fora, em minutos, o que a trilha existe para guardar.
 /// </summary>
-internal sealed class AuditRetention(TimeProvider time)
-{
-    public static readonly TimeSpan MaxAge = TimeSpan.FromDays(30);
-    public const int MaxRows = 5000;
-    private static readonly TimeSpan MinimumGap = TimeSpan.FromMinutes(10);
-
-    private readonly object _gate = new();
-    private DateTimeOffset? _lastRun;
-
-    /// <summary><c>true</c> quando é hora de limpar (e já marca a hora, para o próximo pedido esperar).</summary>
-    public bool TryBegin()
-    {
-        var now = time.GetUtcNow();
-        lock (_gate)
-        {
-            if (_lastRun is { } last && now - last < MinimumGap)
-            {
-                return false;
-            }
-
-            _lastRun = now;
-            return true;
-        }
-    }
-}
-
-internal sealed class EfCommandAudit(TvDbContext db, AuditRetention retention, TimeProvider time) : ITvCommandAudit
+internal sealed class EfCommandAudit(TvDbContext db) : ITvCommandAudit
 {
     public async Task RecordAsync(CommandAuditEntry entry, CancellationToken cancellationToken)
     {
@@ -44,24 +18,5 @@ internal sealed class EfCommandAudit(TvDbContext db, AuditRetention retention, T
 
         db.CommandAudit.Add(entry);
         await db.SaveChangesAsync(cancellationToken);
-
-        if (!retention.TryBegin())
-        {
-            return;
-        }
-
-        var cutoff = time.GetUtcNow() - AuditRetention.MaxAge;
-        await db.CommandAudit.Where(a => a.OccurredAt < cutoff).ExecuteDeleteAsync(cancellationToken);
-
-        // Acima do teto, apaga o que passou da linha de número MaxRows (da mais nova para a mais antiga).
-        var boundary = await db.CommandAudit
-            .OrderByDescending(a => a.OccurredAt)
-            .Skip(AuditRetention.MaxRows)
-            .Select(a => (DateTimeOffset?)a.OccurredAt)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (boundary is { } oldest)
-        {
-            await db.CommandAudit.Where(a => a.OccurredAt <= oldest).ExecuteDeleteAsync(cancellationToken);
-        }
     }
 }
