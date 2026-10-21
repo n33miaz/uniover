@@ -145,3 +145,21 @@ tbody th {
 tbody tr + tr > * {
   border-top: 1px solid var(--a-line);
 }
+
+/* O aviso de que o gráfico não carregou: o texto e o "Tentar de novo" logo abaixo dele. */
+.notice-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.retry {
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a-accent-ink);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}

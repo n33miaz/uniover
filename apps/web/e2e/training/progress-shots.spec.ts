@@ -54,6 +54,8 @@ const EXTRAS: readonly ExtraShot[] = [
       await sheet.getByLabel('Meta de 1RM, em kg').fill('55');
       await sheet.getByRole('button', { name: 'Salvar' }).click();
       await expect(page.getByRole('button', { name: /^Meta: 55 kg/ })).toBeVisible();
+      // O pedaço do gráfico só vem da rede: o desenho tem de existir antes de cortá-la.
+      await expectChartDrawn(page);
       server.offline = true;
       await context.setOffline(true);
       await page.evaluate(() => window.dispatchEvent(new Event('offline')));

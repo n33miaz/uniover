@@ -330,6 +330,14 @@ export class ProgressEvolution {
     this.picked.set(Math.min(count - 1, Math.max(0, index + direction)));
   }
 
+  /**
+   * Tenta carregar o gráfico de novo (a rede pode ter voltado): uma importação dinâmica que falhou não fica guardada com o
+   * erro, então a segunda tentativa baixa o pedaço outra vez.
+   */
+  protected retryChart(): void {
+    this.chartFailed.set(false);
+  }
+
   protected onChartFailed(): void {
     this.chartFailed.set(true);
     this.tableOpen.set(true);

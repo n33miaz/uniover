@@ -58,12 +58,17 @@
         }
 
         @if (chartFailed()) {
-          <p class="ui-notice warn" role="status">
+          <div class="ui-notice warn" role="status">
             <app-training-glyph name="alert" />
-            <span i18n="@@training.progress.chart.failed"
-              >Não foi possível carregar o gráfico agora. Os mesmos dados estão na tabela.</span
-            >
-          </p>
+            <span class="notice-text">
+              <span i18n="@@training.progress.chart.failed"
+                >Não foi possível carregar o gráfico agora. Os mesmos dados estão na tabela.</span
+              >
+              <button type="button" class="retry" (click)="retryChart()">
+                <span i18n="@@training.progress.chart.retry">Tentar de novo</span>
+              </button>
+            </span>
+          </div>
         } @else if (spec(); as chartSpec) {
           <figure class="figure" role="img" [attr.aria-label]="chartLabel()">
             <app-progress-line-chart
