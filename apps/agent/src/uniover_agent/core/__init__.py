@@ -14,7 +14,6 @@ from uniover_agent.core.pair_agent import PairAgent, PairedAgent
 from uniover_agent.core.process_message import ProcessMessage
 from uniover_agent.core.tv import (
     DEFAULT_LINK_SCHEMES,
-    POWER_KEYS,
     TV_NOT_PAIRED,
     TV_UNREACHABLE,
     AdbTyping,
@@ -41,7 +40,6 @@ from uniover_agent.core.tv import (
 __all__ = [
     "DEFAULT_LINK_SCHEMES",
     "INVALID_MESSAGE",
-    "POWER_KEYS",
     "REVOKED_MESSAGE",
     "TV_NOT_PAIRED",
     "TV_UNREACHABLE",

@@ -86,6 +86,25 @@ def test_host_with_certificate_builds_the_session(monkeypatch: pytest.MonkeyPatc
     assert setup.after_hello == []
 
 
+@pytest.mark.parametrize("message_type", ["tv.key.v1", "tv.key.v2"])
+async def test_the_composed_key_handler_accepts_power_and_blocks_nothing(
+    monkeypatch: pytest.MonkeyPatch, message_type: str
+) -> None:
+    remote = FakeTvRemote()
+    pair_fake_tv(monkeypatch, remote)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None
+    handler = build_handler(FakeClock(), setup)
+    result = await handler(Command("1", message_type, {"key": "POWER"}))
+    assert result.status is ResultStatus.OK
+    assert remote.sent == [("POWER", "SHORT")]
+    # Nenhuma tecla vem recusada de fábrica: o mecanismo de bloqueio existe, mas a lista é vazia.
+    for key in ("HOME", "MUTE", "VOLUME_DOWN"):
+        result = await handler(Command("2", message_type, {"key": key}))
+        assert result.status is ResultStatus.OK
+    assert [key for key, _ in remote.sent] == ["POWER", "HOME", "MUTE", "VOLUME_DOWN"]
+
+
 async def test_without_a_tv_the_tv_commands_are_refused() -> None:
     handler = build_handler(FakeClock())
     result = await handler(Command("1", "tv.wake.v1", {}))
@@ -158,14 +177,14 @@ async def test_run_declares_the_capability_and_serves_tv_commands(
     }
     assert results[ids["wake"]] == {"ok": True}
     assert results[ids["key"]] == {"ok": True}
-    assert results[ids["power"]]["error"]["code"] == "key_blocked"
+    assert results[ids["power"]] == {"ok": True}
     assert results[ids["package"]]["error"]["code"] == "unsupported"
     assert results[ids["text"]] == {"ok": True}
     assert results[ids["text_final"]] == {"ok": True}
     assert results[ids["text_invalid"]]["ok"] is False
 
-    # Só a tecla permitida chegou ao controle; POWER nunca saiu do agente.
-    assert remote.sent == [("HOME", "SHORT")]
+    # As duas teclas chegaram ao controle, na ordem: POWER não é mais recusado pelo agente.
+    assert remote.sent == [("HOME", "SHORT"), ("POWER", "SHORT")]
     # Só o acréscimo vai à TV (nada de reenviar o campo inteiro): "mat" e depois "matrix" = "rix".
     # O vazio nem chega ao handler.
     assert remote.texts == ["mat", "rix"]

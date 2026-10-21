@@ -12,9 +12,6 @@ from uniover_agent.core.tv.text_edit import TextReconciler
 
 _log = logging.getLogger(__name__)
 
-# Teclas que desligam a TV. Sem emissor infravermelho ela não volta do standby e não tem botão
-# físico: o desligamento só deve existir com confirmação forte, e até lá o agente o recusa.
-POWER_KEYS: Final = frozenset({"POWER"})
 # Esquemas de link que podem ser abertos na TV. `intent://` e afins ficam de fora de propósito: o
 # contrato só fixa o formato do link, quem decide o que pode ser aberto é este agente.
 DEFAULT_LINK_SCHEMES: Final = frozenset({"https", "http", "market", "vnd.youtube"})
@@ -47,19 +44,25 @@ def failed_result(command: Command, exc: TvSessionError) -> CommandResult:
     return CommandResult(command.id, ResultStatus.FAILED, exc.message, exc.code)
 
 
-def tv_key_handler(tv: TvControl, *, blocked_keys: frozenset[str] = POWER_KEYS) -> Handler:
-    """Trata `tv.key.v1` e `tv.key.v2` (a direção só existe na v2; o padrão é `SHORT`)."""
+def tv_key_handler(tv: TvControl, *, blocked_keys: frozenset[str] = frozenset()) -> Handler:
+    """Trata `tv.key.v1` e `tv.key.v2` (a direção só existe na v2; o padrão é `SHORT`).
+
+    Nenhuma tecla é recusada por padrão, nem `POWER`: quem decide o desligamento é o app (a folha
+    de confirmação) e a API (a rota própria, que a rota genérica de teclas recusa). Quem montar o
+    agente pode ainda bloquear teclas por `blocked_keys`; elas voltam como `KEY_BLOCKED` sem sequer
+    abrir a sessão com a TV.
+    """
 
     async def handle(command: Command) -> CommandResult:
         key = command.body.get("key")
         if not isinstance(key, str) or not key:
             return CommandResult(command.id, ResultStatus.REJECTED, "campo 'key' ausente")
         if key in blocked_keys:
-            _log.warning("tecla %s recusada: desligar a TV não está habilitado", key)
+            _log.warning("tecla %s recusada: bloqueada neste agente", key)
             return CommandResult(
                 command.id,
                 ResultStatus.REJECTED,
-                "desligar a TV não está habilitado neste agente",
+                f"a tecla {key} está bloqueada neste agente",
                 KEY_BLOCKED,
             )
         direction = command.body.get("direction") or "SHORT"

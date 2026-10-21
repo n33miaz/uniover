@@ -180,9 +180,9 @@ async def test_empty_text_is_a_programming_error_and_nothing_is_sent(tmp_path: P
     assert server.texts == []
 
 
-async def test_every_non_power_key_goes_on_the_wire(tmp_path: Path) -> None:
-    # `POWER` nem é enviada, nem à TV falsa: o mapeamento dela é conferido só por valor acima.
-    keys = [key for key in KEY_CODES if key != "POWER"]
+async def test_every_key_goes_on_the_wire(tmp_path: Path) -> None:
+    # `POWER` inclusive: o agente a envia como as demais (a TV aqui é a falsa, em loopback).
+    keys = list(KEY_CODES)
     async with FakeTvServer(tmp_path) as server:
         adapter = make_adapter(tmp_path, server.port)
         await adapter.connect()
@@ -310,6 +310,39 @@ async def test_session_manager_recovers_by_itself_when_the_tv_drops_the_service(
         assert not adapter.connected
         assert manager.snapshot().power == "unknown"
         assert manager.snapshot().connection == "hibernating"
+
+
+async def test_after_power_the_tv_reports_standby_and_the_agent_sends_no_other_key(
+    tmp_path: Path,
+) -> None:
+    """A TV avisa que desligou e fecha a sessão (ainda atende o serviço), sem TV real."""
+    power = (RemoteKeyCode.Value("KEYCODE_POWER"), RemoteDirection.Value("SHORT"))
+    async with FakeTvServer(tmp_path, standby_on_power=True) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        manager = TvSessionManager(SystemClock(), adapter, backoff=(0.01, 0.01, 0.01))
+        states: list[tuple[str, str]] = []
+        manager.subscribe(lambda state: states.append((state.power, state.connection)))
+        await manager.wake()
+        await eventually(lambda: manager.snapshot().power == "on")
+
+        await manager.send_key("POWER")
+        # A TV disse "desligada" com a sessão aberta, derrubou a sessão, e o agente reabriu uma vez.
+        await eventually(lambda: server.connections == 2 and adapter.connected)
+        await manager.settle()
+        await eventually(
+            lambda: (manager.snapshot().power, manager.snapshot().connection) == ("off", "hot")
+        )
+        assert states.index(("off", "hot")) < states.index(("unknown", "disconnected"))
+
+        # O app segue pedindo para aquecer e chega um toque duplo: nem tecla nem conexão nova.
+        for _ in range(3):
+            await manager.wake()
+        await manager.send_key("POWER")
+        await asyncio.sleep(0.2)
+        assert server.keys == [power]
+        assert server.connections == 2
+        assert manager.state is SessionState.HOT
+        await manager.aclose()
 
 
 # --- contra um duplo da biblioteca --------------------------------------------------------------

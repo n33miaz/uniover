@@ -92,8 +92,21 @@ Comportamentos que valem saber:
   do PC que religa o serviço do controle por ADB) **precisa ser desligado quando este agente assumir**: dois
   clientes na mesma TV derrubam um ao outro. O nome da tarefa se descobre no PC de casa com
   `Get-ScheduledTask`, e quem decide quando desligar é o dono.
-- **`POWER` é recusado** (`key_blocked`): sem infravermelho a TV não volta do standby e não tem botão físico.
-  O desligamento só existirá com confirmação forte, em outra entrega.
+- **`POWER` passa como as outras teclas.** Quem confirma o desligamento é o app (a folha "Desligar a TV?"); a
+  API só o envia pela rota própria de desligar. Sem emissor infravermelho a TV só volta com o controle original,
+  então o agente **nunca** a liga sozinho: nada nele envia tecla por conta própria (reabrir a sessão, `tv.wake.v1`
+  e a recuperação de uma queda só abrem a conexão; teclas só saem de um comando). Como `POWER` é um interruptor, o
+  gerenciador de sessão **não repete** um `POWER` que chega em até 10 s do anterior (toque duplo, ou nova
+  tentativa depois de um tempo esgotado): o segundo religaria a TV. Falha de envio não conta, e pressão longa
+  (`START_LONG`/`END_LONG`) não passa por essa regra. O mecanismo `blocked_keys` de `tv_key_handler` continua
+  disponível para bloquear teclas (resposta `key_blocked`), mas a lista padrão é vazia.
+- **Depois do `POWER`** a TV em standby derruba a sessão: se ela avisou antes (`power: off` com `connection: hot`)
+  o estado sai assim; em seguida a sessão cai (`disconnected`, `power: unknown`) e o agente tenta reabrir com a
+  espera de 1, 2 e 4 s, uma vez, sem laço. A reabertura em segundo plano acontece **uma vez por uso**: se a TV
+  aceitar a sessão e a derrubar de novo sem que ninguém tenha usado o controle desde então, o agente não insiste
+  e espera o próximo comando ou `tv.wake.v1` (que reabre a sessão e volta a permitir a recuperação). O app pede
+  `tv.wake.v1` de tempos em tempos enquanto a tela do controle está aberta: ele só reabre a sessão (a TV em
+  standby, sem rede, dá `tv_unreachable`).
 - **Links:** `tv.app.launch.v1` com `kind=link` só abre os esquemas `https`, `http`, `market` e `vnd.youtube`
   (`intent://`, `file://` e afins são recusados). `kind=package` abre o app pelo ADB; sem `adb` neste PC responde `unsupported`.
 - A biblioteca não avisa quando a conexão cai e **descarta em silêncio** a tecla enviada depois da queda; por
