@@ -9,7 +9,7 @@ namespace UniOver.Modules.Identity.Features.CreateGuestInvite;
 
 internal static class CreateGuestInviteEndpoint
 {
-    /// <summary>Só o dono, com a confirmação da passkey: o link concede acesso à TV a quem o receber.</summary>
+    /// <summary>Só o dono, com a confirmação da passkey: o link concede acesso a quem o receber.</summary>
     public static void MapCreateGuestInvite(this IEndpointRouteBuilder group) =>
         group.MapPost("/guest-invites", HandleAsync)
             .RequireAuthorization(StepUp.Policy(StepUpActions.GuestInvite))
@@ -33,15 +33,22 @@ internal static class CreateGuestInviteEndpoint
             return IdentityProblems.Unauthenticated();
         }
 
-        if (GuestInvite.NormalizeLabel(request?.DisplayName) is not { } label)
+        var name = DisplayNameRules.Normalize(request?.DisplayName);
+        if (name.Value is not { } label)
         {
-            return ProblemDetailsExtensions.ValidationProblem(new Dictionary<string, string[]>
-            {
-                ["displayName"] = [$"Informe o nome do convidado (até {GuestInvite.LabelMaxLength} caracteres)."],
-            });
+            return IdentityProblems.InvalidDisplayName(name.Error ?? DisplayNameError.Empty);
         }
 
-        var result = await handler.HandleAsync(new CreateGuestInviteCommand(userId, label, ClientInfo.From(http)), cancellationToken);
+        // Sem lista, o convite é o modelo "só controle da TV". Com lista (mesmo vazia), ela passa pelas regras: o
+        // padrão nunca preenche o que o dono mandou errado.
+        var permissions = PermissionRules.Validate(request?.Permissions ?? PermissionRules.TvControlOnly);
+        if (!permissions.IsValid)
+        {
+            return IdentityProblems.InvalidPermissions(permissions.Errors);
+        }
+
+        var result = await handler.HandleAsync(
+            new CreateGuestInviteCommand(userId, label, permissions.Permissions, ClientInfo.From(http)), cancellationToken);
 
         // O segredo só existe nesta resposta: nada de cache em intermediário.
         http.Response.Headers.CacheControl = "no-store";

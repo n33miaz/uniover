@@ -22,7 +22,10 @@ public static class RateLimitPolicies
     /// <summary>Aceite de convite de convidado: balde próprio, para não dividir o do login (5 por minuto).</summary>
     public const string GuestInvite = "guest-invite";
 
-    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite];
+    /// <summary>Mudanças do próprio perfil (o nome): por conta, para não dividir o balde do login nem o dos comandos.</summary>
+    public const string Profile = "profile";
+
+    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile];
 }
 
 /// <summary>Uma política configurável em <c>RateLimiting:&lt;política&gt;</c>.</summary>
@@ -47,6 +50,7 @@ public static class RateLimitingExtensions
         [RateLimitPolicies.Pairing] = new() { Permitted = 10, WindowSeconds = 60, Partition = "ip" },
         [RateLimitPolicies.Commands] = new() { Permitted = 300, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.GuestInvite] = new() { Permitted = 10, WindowSeconds = 60, Partition = "ip" },
+        [RateLimitPolicies.Profile] = new() { Permitted = 10, WindowSeconds = 60, Partition = "user" },
     };
 
     /// <summary>

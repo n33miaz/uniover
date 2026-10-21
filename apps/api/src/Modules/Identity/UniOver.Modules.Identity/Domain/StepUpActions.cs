@@ -11,6 +11,9 @@ public static class StepUpActions
     /// <summary>Criar um convite de convidado: concede acesso a quem receber o link, então pede a passkey.</summary>
     public const string GuestInvite = "identity.guest-invite";
 
+    /// <summary>Mudar as permissões de um convidado: concede (ou amplia) acesso, então pede a passkey.</summary>
+    public const string PermissionsChange = "identity.permissions-change";
+
     /// <summary>Reservada: o endpoint de trocar a senha ainda não existe, mas o nome já fica separado.</summary>
     public const string PasswordChange = "identity.password-change";
 }

@@ -39,10 +39,18 @@ public sealed class User
 
     public bool IsDisabled => DisabledAt is not null;
 
+    /// <summary>
+    /// Quando a própria pessoa escolheu o nome (<see cref="DisplayNameRules"/>). Nulo = nunca escolheu: o nome é o que veio
+    /// do seed ou do convite, e o app pergunta no próximo acesso.
+    /// </summary>
+    public DateTimeOffset? DisplayNameConfirmedAt { get; private set; }
+
+    public bool IsDisplayNameConfirmed => DisplayNameConfirmedAt is not null;
+
     public static User Create(string email, string displayName, string passwordHash, DateTimeOffset now) =>
         Build(email, displayName, passwordHash, now, AccountRoles.Owner);
 
-    /// <summary>Conta de convidado: usa o controle da TV e nada mais.</summary>
+    /// <summary>Conta de convidado: só faz o que as permissões concedidas a ela (<see cref="UserGrant"/>) dizem.</summary>
     public static User CreateGuest(string email, string displayName, string passwordHash, DateTimeOffset now) =>
         Build(email, displayName, passwordHash, now, AccountRoles.Guest);
 
@@ -72,6 +80,23 @@ public sealed class User
         }
 
         DisabledAt ??= now;
+    }
+
+    /// <summary>
+    /// A pessoa escolheu o nome. Confere de novo as regras (o endpoint já conferiu e mostra o erro; aqui é a trava do
+    /// domínio) e grava o texto normalizado.
+    /// </summary>
+    /// <exception cref="ArgumentException">Nome fora das regras.</exception>
+    public void SetDisplayName(string name, DateTimeOffset now)
+    {
+        var result = DisplayNameRules.Normalize(name);
+        if (result.Value is not { } normalized)
+        {
+            throw new ArgumentException("Nome fora das regras.", nameof(name));
+        }
+
+        DisplayName = normalized;
+        DisplayNameConfirmedAt = now;
     }
 
     public bool IsLockedOut(DateTimeOffset now) => LockoutUntil is { } until && until > now;

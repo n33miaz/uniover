@@ -6,12 +6,17 @@ using UniOver.Modules.Identity.Security;
 
 namespace UniOver.Modules.Identity.Features.CreateGuestInvite;
 
-internal sealed record CreateGuestInviteRequest(string? DisplayName);
+/// <param name="DisplayName">O nome que o dono dá ao convidado (vira o nome inicial da conta).</param>
+/// <param name="Permissions">O que a pessoa poderá fazer. Ausente = o modelo "só controle da TV"; presente, precisa passar nas regras de permissão.</param>
+internal sealed record CreateGuestInviteRequest(string? DisplayName, IReadOnlyList<string>? Permissions = null);
 
-internal sealed record CreateGuestInviteCommand(Guid OwnerId, string DisplayName, ClientInfo Client);
+/// <param name="Permissions">Já conferidas e normalizadas.</param>
+internal sealed record CreateGuestInviteCommand(
+    Guid OwnerId, string DisplayName, IReadOnlyList<string> Permissions, ClientInfo Client);
 
 /// <param name="Token">O segredo do link: aparece só aqui, uma vez. O banco guarda apenas o hash dele.</param>
-internal sealed record CreateGuestInviteResponse(Guid Id, string DisplayName, string Token, DateTimeOffset ExpiresAt);
+internal sealed record CreateGuestInviteResponse(
+    Guid Id, string DisplayName, IReadOnlyList<string> Permissions, string Token, DateTimeOffset ExpiresAt);
 
 internal sealed class CreateGuestInviteHandler(
     IdentityDbContext db,
@@ -35,13 +40,21 @@ internal sealed class CreateGuestInviteHandler(
         }
 
         var (secret, hash) = SecretTokens.Generate();
-        var invite = GuestInvite.Create(command.OwnerId, command.DisplayName, hash, now, settings.GuestInviteLifetime);
+        var invite = GuestInvite.Create(
+            command.OwnerId, command.DisplayName, hash, now, settings.GuestInviteLifetime, command.Permissions);
         db.GuestInvites.Add(invite);
 
-        // Na auditoria vai só o id do convite: o segredo e o nome do convidado ficam de fora.
-        audit.Add(command.OwnerId, AuditEvents.GuestInviteCreated, command.Client, invite.Id.ToString("N"));
+        // Na auditoria vão o id do convite e a lista de permissões (não é dado sensível); o segredo e o nome do convidado ficam de fora.
+        audit.Add(command.OwnerId, AuditEvents.GuestInviteCreated, command.Client, InviteAuditDetail(invite));
         await db.SaveChangesAsync(cancellationToken);
 
-        return new CreateGuestInviteResponse(invite.Id, invite.Label, secret, invite.ExpiresAt);
+        return new CreateGuestInviteResponse(invite.Id, invite.Label, [.. invite.Permissions], secret, invite.ExpiresAt);
     }
+
+    /// <summary>
+    /// <c>id|perm1,perm2,...</c>. A coluna de detalhe trunca em 200 caracteres: o id (32) mais o catálogo inteiro cabe com
+    /// folga, e um teste vigia isso para uma permissão nova não ser cortada em silêncio.
+    /// </summary>
+    internal static string InviteAuditDetail(GuestInvite invite) =>
+        $"{invite.Id:N}|{string.Join(',', invite.Permissions)}";
 }

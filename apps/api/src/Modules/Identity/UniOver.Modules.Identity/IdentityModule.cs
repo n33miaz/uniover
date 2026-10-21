@@ -25,7 +25,9 @@ using UniOver.Modules.Identity.Features.RevokeGuest;
 using UniOver.Modules.Identity.Features.RevokeGuestInvite;
 using UniOver.Modules.Identity.Features.RenamePasskey;
 using UniOver.Modules.Identity.Features.RequestStepUp;
+using UniOver.Modules.Identity.Features.SetGuestPermissions;
 using UniOver.Modules.Identity.Features.StreamTicket;
+using UniOver.Modules.Identity.Features.UpdateProfile;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
 using UniOver.Modules.Tv.Contracts;
@@ -68,16 +70,27 @@ public static class IdentityModule
         services.AddScoped<AcceptGuestInviteHandler>();
         services.AddScoped<ListGuestsHandler>();
         services.AddScoped<RevokeGuestHandler>();
+        services.AddScoped<SetGuestPermissionsHandler>();
+        services.AddScoped<UpdateProfileHandler>();
 
         // Revogação imediata na TV: o status do convidado (cache curto) é uma porta usada pelas políticas dos módulos.
         services.AddSingleton<GuestAccountStatus>();
         services.AddSingleton<IAccountStatus>(sp => sp.GetRequiredService<GuestAccountStatus>());
+
+        // O que cada conta pode fazer: lido do banco (nunca do JWT), com cache de 30 s e invalidação ao mudar ou revogar.
+        services.AddSingleton<AccessGrantsService>();
+        services.AddSingleton<IAccessGrants>(sp => sp.GetRequiredService<AccessGrantsService>());
         services.AddScoped(sp => new GetModuleInfoHandler(version, sp.GetRequiredService<ITvModule>()));
 
         // Sair, "quem sou" e o bilhete de stream valem para o dono e para o convidado; o resto do módulo é só do dono.
-        services.AddAuthorizationBuilder().AddPolicy(
-            IdentityAuth.AccountSessionPolicy,
-            policy => policy.RequireAccountRole(AccountRoles.Owner, AccountRoles.Guest));
+        // Escrever no próprio perfil também é dos dois, mas só de convidado ativo (revogado não escreve mais nada).
+        services.AddAuthorizationBuilder()
+            .AddPolicy(
+                IdentityAuth.AccountSessionPolicy,
+                policy => policy.RequireAccountRole(AccountRoles.Owner, AccountRoles.Guest))
+            .AddPolicy(
+                IdentityAuth.ActiveAccountSessionPolicy,
+                policy => policy.RequireAccountRole(AccountRoles.Owner, AccountRoles.Guest).RequireActiveAccount());
 
         // Singleton pelo tipo concreto também, para os testes esperarem o fim do seed sem adivinhar o tempo.
         services.AddSingleton<OwnerBootstrapService>();
@@ -97,12 +110,14 @@ public static class IdentityModule
         group.MapLogout();
         group.MapStreamTicket();
         group.MapGetMe();
+        group.MapUpdateProfile();
         group.MapCreateGuestInvite();
         group.MapListGuestInvites();
         group.MapRevokeGuestInvite();
         group.MapAcceptGuestInvite();
         group.MapListGuests();
         group.MapRevokeGuest();
+        group.MapSetGuestPermissions();
         group.MapBeginPasskeyRegistration();
         group.MapCompletePasskeyRegistration();
         group.MapListPasskeys();

@@ -44,6 +44,9 @@ internal sealed class PasskeyApp : IAsyncDisposable
     public const string OtherDangerousRoute = "/api/test/other-dangerous";
     public const string DangerousAction = "teste.acao";
     public const string OtherAction = "teste.outra";
+    public const string TvControlRoute = "/api/test/permission/tv-control";
+    public const string TvEditShortcutsRoute = "/api/test/permission/tv-edit-shortcuts";
+    public const string TrainingRoute = "/api/test/permission/training";
 
     private readonly EdgeFactory _root;
     private readonly WebApplicationFactory<Program> _factory;
@@ -78,6 +81,11 @@ internal sealed class PasskeyApp : IAsyncDisposable
 
     public HttpClient Client { get; }
 
+    public IServiceProvider Services => _factory.Services;
+
+    /// <summary>A chave com que o servidor assina os tokens, para fabricar um token como um atacante com a chave faria.</summary>
+    public string SigningKey { get; private init; } = string.Empty;
+
     public static async Task<PasskeyApp> StartAsync(PostgresFixture postgres, PasskeyAppOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(postgres);
@@ -94,11 +102,12 @@ internal sealed class PasskeyApp : IAsyncDisposable
         var time = new FakeTimeProvider(
             new DateTimeOffset(DateTimeOffset.UtcNow.Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond, TimeSpan.Zero));
         var logs = new CapturingLoggerProvider();
+        var signingKey = IdentityApp.NewKey();
 
         var settings = new Dictionary<string, string?>
         {
             ["ConnectionStrings:Default"] = database.RuntimeConnection,
-            ["Modules:Identity:Jwt:SigningKey"] = IdentityApp.NewKey(),
+            ["Modules:Identity:Jwt:SigningKey"] = signingKey,
             ["RateLimiting:login:Permitted"] = "100000",
             ["RateLimiting:refresh:Permitted"] = "100000",
             ["Logging:LogLevel:Default"] = "Debug",
@@ -130,7 +139,7 @@ internal sealed class PasskeyApp : IAsyncDisposable
             services.AddSingleton<IStartupFilter, TestRoutesFilter>();
         }));
 
-        var app = new PasskeyApp(root, factory, database, time, logs, ownerEmail, password);
+        var app = new PasskeyApp(root, factory, database, time, logs, ownerEmail, password) { SigningKey = signingKey };
         await factory.Services.GetRequiredService<OwnerBootstrapService>().Completion;
         return app;
     }
@@ -235,6 +244,12 @@ internal sealed class PasskeyApp : IAsyncDisposable
             var routes = (IEndpointRouteBuilder)app.Properties[RouteBuilderKey]!;
             routes.MapPost(DangerousRoute, () => Results.Ok("feito")).RequireAuthorization(StepUp.Policy(DangerousAction));
             routes.MapPost(OtherDangerousRoute, () => Results.Ok("feito")).RequireAuthorization(StepUp.Policy(OtherAction));
+
+            // Rotas de módulo fictícias: usam a política por permissão do jeito que a TV e o Treino vão usar (só pelo
+            // helper do BuildingBlocks), para provar o motor de autorização sem tocar em rota de outro módulo.
+            routes.MapGet(TvControlRoute, () => Results.Ok("ok")).RequireAuthorization(AccessPermissions.Policy(AccessPermissions.TvControl));
+            routes.MapGet(TvEditShortcutsRoute, () => Results.Ok("ok")).RequireAuthorization(AccessPermissions.Policy(AccessPermissions.TvEditShortcuts));
+            routes.MapGet(TrainingRoute, () => Results.Ok("ok")).RequireAuthorization(AccessPermissions.Policy(AccessPermissions.TrainingModule));
         };
     }
 }
