@@ -771,11 +771,14 @@ describe('AuthService', () => {
         expect(service().status()).toBe('anonymous');
       });
 
-      it('never keeps the permissions in the browser storage', async () => {
+      it('keeps the permissions in the browser storage only as the hint of the last session', async () => {
         await advance(31_000);
         await comeBack();
-        const stored = JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage });
-        expect(stored).not.toContain('tv:power');
+        const { 'uniover.account-permissions': hint, ...rest } = { ...localStorage };
+        expect(hint).toContain('tv:power');
+        expect(JSON.stringify(rest) + JSON.stringify({ ...sessionStorage })).not.toContain(
+          'tv:power',
+        );
       });
     });
   });

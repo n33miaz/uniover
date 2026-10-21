@@ -16,7 +16,11 @@ export function samePermissions(
   return right.every((permission) => unique.has(permission));
 }
 
-/** Mesma conta, campo a campo (as permissões pelo conteúdo): reler `/me` sem mudança não deve avisar ninguém. */
+/**
+ * Mesma conta, campo a campo (as permissões pelo conteúdo): reler `/me` sem mudança não deve avisar ninguém. Lista
+ * ausente e lista vazia só valem o mesmo para `samePermissions`: aqui diferem, porque "não sei o que a conta pode" e
+ * "a conta não pode nada" levam a telas diferentes (a primeira nunca manda a pessoa para "sem acesso").
+ */
 export function sameUser(a: SessionUser | null, b: SessionUser | null): boolean {
   if (a === b) return true;
   if (!a || !b) return false;
@@ -26,6 +30,7 @@ export function sameUser(a: SessionUser | null, b: SessionUser | null): boolean 
     a.displayName === b.displayName &&
     a.role === b.role &&
     a.displayNameConfirmed === b.displayNameConfirmed &&
+    (a.permissions == null) === (b.permissions == null) &&
     samePermissions(a.permissions, b.permissions)
   );
 }
