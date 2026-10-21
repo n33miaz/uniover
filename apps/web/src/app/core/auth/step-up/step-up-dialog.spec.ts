@@ -1,4 +1,4 @@
-import { actionLabel } from './step-up-dialog';
+import { actionLabel, actionTitle } from './step-up-dialog';
 
 describe('actionLabel', () => {
   it.each([
@@ -7,6 +7,7 @@ describe('actionLabel', () => {
     ['identity.guest-invite', 'criar um convite de convidado'],
     ['identity.password-change', 'trocar a senha'],
     ['tv.bind-agent', 'trocar o computador que controla a TV'],
+    ['identity.permissions-change', 'mudar as permissões de uma pessoa'],
   ])('names %s in plain words', (action, text) => {
     expect(actionLabel(action)).toBe(text);
   });
@@ -15,4 +16,17 @@ describe('actionLabel', () => {
     expect(actionLabel('outra.coisa')).toBe('fazer uma ação protegida');
     expect(actionLabel(null)).toBe('fazer uma ação protegida');
   });
+});
+
+describe('actionTitle', () => {
+  it('says what is being confirmed when permissions change', () => {
+    expect(actionTitle('identity.permissions-change')).toBe('Confirmar a mudança de permissões');
+  });
+
+  it.each(['identity.passkey-remove', 'identity.guest-invite', 'outra.coisa', null])(
+    'keeps the usual title for %s',
+    (action) => {
+      expect(actionTitle(action)).toBe('Confirmar com passkey');
+    },
+  );
 });

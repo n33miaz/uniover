@@ -1,0 +1,59 @@
+<dialog
+  #dialog
+  class="sheet ui-dialog"
+  aria-labelledby="people-sheet-title"
+  aria-describedby="people-sheet-hint"
+  (cancel)="cancel($event)"
+>
+  <span class="grabber" aria-hidden="true"></span>
+  <form (submit)="save($event)" novalidate>
+    <h2 id="people-sheet-title" tabindex="-1" autofocus>{{ title() }}</h2>
+    <p id="people-sheet-hint" class="hint">{{ hint() }}</p>
+
+    <app-people-permission-picker [(permissions)]="draft" [showSummary]="false" />
+
+    <!-- O rodapé fica sempre à vista, com a lista rolando: o resumo, o aviso de cada tentativa e as duas saídas. -->
+    <div class="footer">
+      <p class="summary" [class.warn]="!valid()" role="status">
+        @if (valid()) {
+          <strong i18n="@@settings.people.summary-label">Poderá:</strong> {{ summary() }}
+        } @else {
+          {{ summary() }}
+        }
+      </p>
+
+      <div class="messages" [attr.aria-live]="'polite'">
+        @if (error(); as text) {
+          <p class="error ui-notice bad ui-rise" role="alert">
+            <app-settings-glyph name="alert" />
+            <span>{{ text }}</span>
+          </p>
+        }
+        @if (busy()) {
+          <p class="note ui-notice ui-rise" role="status">
+            <span class="ui-spinner" aria-hidden="true"></span>
+            <span i18n="@@settings.people.sheet.saving">Salvando…</span>
+          </p>
+        }
+      </div>
+
+      <div class="buttons">
+        <button
+          type="button"
+          class="secondary ui-btn"
+          [disabled]="busy() || leaving()"
+          (click)="cancel()"
+        >
+          @if (gone()) {
+            <span i18n="@@settings.people.sheet.close">Fechar</span>
+          } @else {
+            <span i18n="@@settings.people.sheet.cancel">Cancelar</span>
+          }
+        </button>
+        <button type="submit" class="primary ui-btn" [disabled]="!canSave()">
+          <span i18n="@@settings.people.sheet.save">Salvar</span>
+        </button>
+      </div>
+    </div>
+  </form>
+</dialog>
