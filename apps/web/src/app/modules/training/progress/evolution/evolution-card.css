@@ -1,0 +1,147 @@
+:host {
+  display: block;
+}
+
+.evo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+/*
+ * O ponto em destaque: em cima o valor e quanto mudou no período; embaixo quando foi, com as setas que andam de ponto em
+ * ponto à direita. Duas linhas só, para o gráfico e o período caberem na primeira tela do celular.
+ */
+.read {
+  display: grid;
+  grid-template-areas:
+    'headline headline'
+    'when steps';
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 var(--space-3);
+}
+
+.headline {
+  display: flex;
+  flex-wrap: wrap;
+  grid-area: headline;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+}
+
+.value {
+  font-size: var(--fs-display);
+  font-weight: 750;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.when {
+  grid-area: when;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.steps {
+  display: flex;
+  grid-area: steps;
+  gap: var(--space-2);
+}
+
+.step {
+  padding: 0;
+}
+
+/* O gráfico é uma figura sem margem do navegador, colada nas bordas internas do cartão. */
+.figure {
+  margin: 0 calc(-1 * var(--space-2));
+}
+
+.delta {
+  min-height: 28px;
+}
+
+.hint,
+.note {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.note {
+  font-size: var(--fs-label);
+}
+
+.loading {
+  min-height: 172px;
+}
+
+/* Sem gráfico: o motivo e o caminho (um botão só). */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.empty p {
+  margin: 0;
+  color: var(--a-ink2);
+}
+
+.actions {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  gap: var(--space-2);
+}
+
+.actions .ui-btn {
+  padding: 0 var(--space-2);
+  font-size: var(--fs-small);
+}
+
+/* A tabela dos mesmos dados do gráfico: leitura rápida, números alinhados. */
+.data {
+  overflow: hidden;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+}
+
+thead th {
+  background: var(--a-elev);
+  color: var(--a-ink2);
+  font-size: var(--fs-label);
+  font-weight: 700;
+}
+
+tbody th {
+  color: var(--a-ink2);
+  font-weight: 600;
+}
+
+tbody tr + tr > * {
+  border-top: 1px solid var(--a-line);
+}

@@ -1,0 +1,71 @@
+<app-progress-section
+  [heading]="heading"
+  [summary]="summary()"
+  [glyph]="'calendar'"
+  [(open)]="open"
+>
+  <div class="nav">
+    <button
+      type="button"
+      class="arrow ui-btn secondary"
+      [attr.aria-label]="previousLabel"
+      (click)="move(-1)"
+    >
+      <app-progress-glyph name="prev" />
+    </button>
+    <div class="range" [attr.aria-live]="'polite'">
+      <b>{{ label() }}</b>
+      <span>{{ monthLine() }}</span>
+    </div>
+    <button
+      type="button"
+      class="arrow ui-btn secondary"
+      [attr.aria-label]="nextLabel"
+      [disabled]="isCurrent()"
+      (click)="move(1)"
+    >
+      <app-progress-glyph name="next" />
+    </button>
+  </div>
+
+  <table class="cal">
+    <caption class="ui-visually-hidden">
+      {{
+        caption()
+      }}
+    </caption>
+    <thead>
+      <tr>
+        @for (weekday of weekdays; track weekday.long) {
+          <th [attr.scope]="'col'">
+            <abbr [title]="weekday.long">{{ weekday.short }}</abbr>
+          </th>
+        }
+      </tr>
+    </thead>
+    <tbody>
+      @for (week of weeks(); track $index) {
+        <tr>
+          @for (cell of week; track $index) {
+            @if (cell) {
+              <td [attr.aria-label]="cell.label" [attr.aria-current]="cell.today ? 'date' : null">
+                <span class="day" [class.on]="cell.trained" [class.today]="cell.today">{{
+                  cell.day
+                }}</span>
+              </td>
+            } @else {
+              <td></td>
+            }
+          }
+        </tr>
+      }
+    </tbody>
+  </table>
+
+  @if (constancy()) {
+    <p class="note">{{ constancy() }}</p>
+  }
+  @if (goal() === null) {
+    <p class="note">{{ noGoal }}</p>
+  }
+</app-progress-section>
