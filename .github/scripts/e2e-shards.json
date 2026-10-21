@@ -1,0 +1,4 @@
+[
+  { "project": "iphone-12", "browser": "webkit", "shards": 5 },
+  { "project": "s23-fe", "browser": "chromium", "shards": 2 }
+]
