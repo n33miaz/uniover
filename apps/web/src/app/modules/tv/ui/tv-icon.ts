@@ -19,6 +19,7 @@ export type TvIconName =
   | 'next'
   | 'input'
   | 'apps'
+  | 'more'
   | 'refresh'
   | 'rename'
   | 'close'
@@ -46,6 +47,8 @@ const PATHS: Record<TvIconName, string> = {
   next: 'M17 5v14 M5 5l9 7-9 7z',
   input: 'M4 12h12 M12 7l5 5-5 5 M20 4v16',
   apps: 'M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z',
+  // Três pontos na horizontal: cada um é um círculo de raio 1,2 que o traço de 2 enche, e vira um disco de uns 4,4 px.
+  more: 'M3.8 12a1.2 1.2 0 1 0 2.4 0 1.2 1.2 0 1 0-2.4 0 M10.8 12a1.2 1.2 0 1 0 2.4 0 1.2 1.2 0 1 0-2.4 0 M17.8 12a1.2 1.2 0 1 0 2.4 0 1.2 1.2 0 1 0-2.4 0',
   refresh: 'M20 12a8 8 0 1 1-2.3-5.7 M20 4v5h-5',
   rename: 'M4 20h4L19 9l-4-4L4 16z M13 7l4 4',
   close: 'M6 6l12 12 M18 6L6 18',

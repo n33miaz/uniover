@@ -218,6 +218,40 @@ test.describe('controle: tela única, sem abas', () => {
     await expectNoSeriousViolations(page);
   });
 
+  test('o Apps é o botão de três pontos à esquerda, depois da seta, e o Tab segue a ordem da tela', async ({
+    page,
+  }) => {
+    await openTv(page);
+    const head = page.locator('header.head');
+    await expect(head.locator('.lead').getByRole('button', { name: 'Apps da TV' })).toBeVisible();
+    // À direita fica só o desligar.
+    await expect(head.locator('.actions').getByRole('button')).toHaveCount(1);
+    await expect(
+      head.locator('.actions').getByRole('button', { name: 'Desligar a TV' }),
+    ).toBeVisible();
+
+    // Do começo para o fim da linha: seta, três pontos, nome, ponto de estado e desligar.
+    await head.getByRole('link', { name: 'Voltar ao Início' }).focus();
+    const seen: string[] = [];
+    for (let step = 0; step < 4; step++) {
+      await page.keyboard.press('Tab');
+      seen.push(
+        await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? ''),
+      );
+    }
+    expect(seen[0]).toBe('Apps da TV');
+    expect(seen[1]).toBe('TV, personalizar');
+    expect(seen[2]).toMatch(/^Estado do controle:/);
+    expect(seen[3]).toBe('Desligar a TV');
+
+    // O botão abre o painel e devolve o foco a ele ao fechar.
+    await button(page, 'Apps da TV').click();
+    await expect(appsDialog(page)).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(appsDialog(page)).toHaveCount(0);
+    await expect(button(page, 'Apps da TV')).toBeFocused();
+  });
+
   test('o endereço antigo /tv/apps e /tv/teclado leva ao controle com o painel aberto', async ({
     page,
   }) => {

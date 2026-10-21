@@ -71,8 +71,9 @@ describe('CustomizeSheet', () => {
       expect(field().type).toBe('text');
     });
 
-    it('shows the defaults: comfortable, media and channel on, vibration on, last used page, normal speed', () => {
+    it('shows the defaults: comfortable, pills on the sides, media and channel on, vibration on, last used page, normal speed', () => {
       expect(pressed('tv-custom-size-label')).toEqual(['Confortável']);
+      expect(pressed('tv-custom-layout-label')).toEqual(['Nas laterais']);
       expect(toggle('tv-custom-media').checked).toBe(true);
       expect(toggle('tv-custom-channel').checked).toBe(true);
       expect(toggle('tv-custom-vibration').checked).toBe(true);
@@ -85,6 +86,10 @@ describe('CustomizeSheet', () => {
         'Compacto',
         'Confortável',
         'Grande',
+      ]);
+      expect(choices('tv-custom-layout-label').map((b) => b.textContent?.trim())).toEqual([
+        'Nas laterais',
+        'Em fileira, acima',
       ]);
       expect(choices('tv-custom-page-label').map((b) => b.textContent?.trim())).toEqual([
         'Direções',
@@ -155,6 +160,41 @@ describe('CustomizeSheet', () => {
       expect(pressed('tv-custom-speed-label')).toEqual(['Rápida']);
     });
 
+    it('has the layout of the volume and channel buttons right after the size, with its own label', () => {
+      const label = root.querySelector('#tv-custom-layout-label')!;
+      expect(label.textContent?.trim()).toBe('Disposição dos botões de volume e canal');
+      const sizeBlock = root.querySelector('#tv-custom-size-label')!.closest('.block')!;
+      expect(sizeBlock.nextElementSibling).toBe(label.closest('.block'));
+      expect(
+        root.querySelector('[aria-labelledby="tv-custom-layout-label"]')!.getAttribute('role'),
+      ).toBe('group');
+    });
+
+    it('applies the layout at once, marking only the chosen one, and goes back', () => {
+      choices('tv-custom-layout-label')[1].click();
+      fixture.detectChanges();
+      expect(prefs().pillLayout()).toBe('row');
+      expect(pressed('tv-custom-layout-label')).toEqual(['Em fileira, acima']);
+      expect(JSON.parse(localStorage.getItem(TV_PREFS_KEY) ?? 'null').pillLayout).toBe('row');
+      expect(button('Restaurar padrão').disabled).toBe(false);
+
+      choices('tv-custom-layout-label')[0].click();
+      fixture.detectChanges();
+      expect(prefs().pillLayout()).toBe('sides');
+      expect(pressed('tv-custom-layout-label')).toEqual(['Nas laterais']);
+    });
+
+    it('keeps the layout when the size changes, and the size when the layout changes', () => {
+      choices('tv-custom-layout-label')[1].click();
+      choices('tv-custom-size-label')[2].click();
+      fixture.detectChanges();
+      expect(prefs().pillLayout()).toBe('row');
+      expect(prefs().buttonSize()).toBe('large');
+      choices('tv-custom-layout-label')[0].click();
+      fixture.detectChanges();
+      expect(prefs().buttonSize()).toBe('large');
+    });
+
     it('turns the media keys, the channel and the vibration off and on', () => {
       for (const [id, read] of [
         ['tv-custom-media', () => prefs().showMedia()],
@@ -178,6 +218,7 @@ describe('CustomizeSheet', () => {
     it('puts every choice back, empties the field and leaves the focus on Concluir', () => {
       type('Sala');
       choices('tv-custom-size-label')[0].click();
+      choices('tv-custom-layout-label')[1].click();
       toggle('tv-custom-media').click();
       choices('tv-custom-speed-label')[0].click();
       fixture.detectChanges();
@@ -190,7 +231,9 @@ describe('CustomizeSheet', () => {
       expect(prefs().buttonSize()).toBe('comfortable');
       expect(prefs().showMedia()).toBe(true);
       expect(prefs().padSpeed()).toBe('normal');
+      expect(prefs().pillLayout()).toBe('sides');
       expect(pressed('tv-custom-size-label')).toEqual(['Confortável']);
+      expect(pressed('tv-custom-layout-label')).toEqual(['Nas laterais']);
       expect(toggle('tv-custom-media').checked).toBe(true);
       expect(button('Restaurar padrão').disabled).toBe(true);
       expect(document.activeElement).toBe(button('Concluir'));

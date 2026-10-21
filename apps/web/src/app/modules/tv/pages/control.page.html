@@ -59,142 +59,193 @@
     />
   </div>
 
-  <div class="bottom" [class.no-channel]="!prefs.showChannel()">
-    <div
-      class="pill volume"
-      role="group"
-      aria-label="Volume"
-      i18n-aria-label="@@tv.volume.label"
-      [style.--level]="volumePercent() + '%'"
-    >
-      <button
-        type="button"
-        class="pill-btn"
-        [appKey]="'VOLUME_UP'"
-        [repeat]="true"
-        aria-label="Aumentar o volume"
-        i18n-aria-label="@@tv.key.volume-up"
-      >
-        <app-tv-icon name="plus" />
-      </button>
-      <span class="level" role="img" [attr.aria-label]="volumeLabel()">
-        <span class="cap" aria-hidden="true" i18n="@@tv.volume.cap">VOL</span>
-        <strong aria-hidden="true">{{ volumeText() }}</strong>
-      </span>
-      <button
-        type="button"
-        class="pill-btn"
-        [appKey]="'VOLUME_DOWN'"
-        [repeat]="true"
-        aria-label="Diminuir o volume"
-        i18n-aria-label="@@tv.key.volume-down"
-      >
-        <app-tv-icon name="minus" />
-      </button>
-    </div>
-
-    <div class="round-grid" [attr.data-cols]="roundColumns()">
-      <button
-        type="button"
-        class="round"
-        [appKey]="'BACK'"
-        aria-label="Voltar"
-        i18n-aria-label="@@tv.key.back"
-      >
-        <app-tv-icon name="back" />
-      </button>
-      <button
-        type="button"
-        class="round"
-        [appKey]="'HOME'"
-        aria-label="Início da TV"
-        i18n-aria-label="@@tv.key.home"
-      >
-        <app-tv-icon name="home" />
-      </button>
-      <button
-        type="button"
-        class="round"
-        [appKey]="'MENU'"
-        aria-label="Menu"
-        i18n-aria-label="@@tv.key.menu"
-      >
-        <app-tv-icon name="menu" />
-      </button>
-      <button
-        type="button"
-        class="round"
-        [attr.aria-haspopup]="'dialog'"
-        aria-label="Teclado"
-        i18n-aria-label="@@tv.key.keyboard"
-        (click)="askKeyboard($event)"
-      >
-        <app-tv-icon name="keyboard" />
-      </button>
-      @if (prefs.showMedia()) {
-        <button
-          type="button"
-          class="round"
-          [appKey]="'MEDIA_PREVIOUS'"
-          aria-label="Anterior"
-          i18n-aria-label="@@tv.key.previous"
-        >
-          <app-tv-icon name="previous" />
-        </button>
-        <button
-          type="button"
-          class="round"
-          [appKey]="'PLAY_PAUSE'"
-          aria-label="Reproduzir ou pausar"
-          i18n-aria-label="@@tv.key.play-pause"
-        >
-          <app-tv-icon name="play-pause" />
-        </button>
-        <button
-          type="button"
-          class="round"
-          [appKey]="'MEDIA_NEXT'"
-          aria-label="Próxima"
-          i18n-aria-label="@@tv.key.next"
-        >
-          <app-tv-icon name="next" />
-        </button>
-        <button
-          type="button"
-          class="round"
-          [appKey]="'MUTE'"
-          aria-label="Mudo"
-          i18n-aria-label="@@tv.key.mute"
-        >
-          <app-tv-icon name="mute" />
-        </button>
+  <!--
+    Por baixo: as pílulas de volume e de canal e os botões redondos. As três peças são as mesmas nas duas disposições
+    (Personalizar escolhe); o que muda é a ordem delas no documento, que acompanha a ordem na tela: nas laterais,
+    volume, botões e canal; em fileira, volume, canal e botões. Assim o Tab nunca anda contra o que se vê.
+  -->
+  <div
+    class="bottom"
+    [class.no-channel]="!prefs.showChannel()"
+    [attr.data-pills]="prefs.pillLayout()"
+  >
+    @if (rowPills()) {
+      <ng-container [ngTemplateOutlet]="volumePill" />
+      @if (prefs.showChannel()) {
+        <ng-container [ngTemplateOutlet]="channelPill" />
       }
-    </div>
-
-    @if (prefs.showChannel()) {
-      <div class="pill" role="group" aria-label="Canal" i18n-aria-label="@@tv.channel.label">
-        <button
-          type="button"
-          class="pill-btn"
-          [appKey]="'CHANNEL_UP'"
-          aria-label="Próximo canal"
-          i18n-aria-label="@@tv.key.channel-up"
-        >
-          <app-tv-icon name="up" />
-        </button>
-        <span class="level" aria-hidden="true">
-          <span class="cap" i18n="@@tv.channel.cap">CH</span>
-        </span>
-        <button
-          type="button"
-          class="pill-btn"
-          [appKey]="'CHANNEL_DOWN'"
-          aria-label="Canal anterior"
-          i18n-aria-label="@@tv.key.channel-down"
-        >
-          <app-tv-icon name="down" />
-        </button>
-      </div>
+      <ng-container [ngTemplateOutlet]="roundButtons" />
+    } @else {
+      <ng-container [ngTemplateOutlet]="volumePill" />
+      <ng-container [ngTemplateOutlet]="roundButtons" />
+      @if (prefs.showChannel()) {
+        <ng-container [ngTemplateOutlet]="channelPill" />
+      }
     }
   </div>
 </section>
+
+<!--
+  As partes de cada pílula seguem `pillParts()`: em pé, de cima para baixo (mais, nível, menos); deitada, da esquerda
+  para a direita (menos, nível, mais), como um controle de passo. O foco anda na mesma ordem em que se vê.
+-->
+<ng-template #volumePill>
+  <div
+    class="pill volume"
+    role="group"
+    aria-label="Volume"
+    i18n-aria-label="@@tv.volume.label"
+    [style.--level]="volumePercent() + '%'"
+  >
+    @for (part of pillParts(); track part) {
+      @switch (part) {
+        @case ('more') {
+          <button
+            type="button"
+            class="pill-btn"
+            [appKey]="'VOLUME_UP'"
+            [repeat]="true"
+            aria-label="Aumentar o volume"
+            i18n-aria-label="@@tv.key.volume-up"
+          >
+            <app-tv-icon name="plus" />
+          </button>
+        }
+        @case ('level') {
+          <span class="level" role="img" [attr.aria-label]="volumeLabel()">
+            <span class="cap" aria-hidden="true" i18n="@@tv.volume.cap">VOL</span>
+            <strong aria-hidden="true">{{ volumeText() }}</strong>
+          </span>
+        }
+        @case ('less') {
+          <button
+            type="button"
+            class="pill-btn"
+            [appKey]="'VOLUME_DOWN'"
+            [repeat]="true"
+            aria-label="Diminuir o volume"
+            i18n-aria-label="@@tv.key.volume-down"
+          >
+            <app-tv-icon name="minus" />
+          </button>
+        }
+      }
+    }
+  </div>
+</ng-template>
+
+<ng-template #channelPill>
+  <div class="pill" role="group" aria-label="Canal" i18n-aria-label="@@tv.channel.label">
+    @for (part of pillParts(); track part) {
+      @switch (part) {
+        @case ('more') {
+          <button
+            type="button"
+            class="pill-btn"
+            [appKey]="'CHANNEL_UP'"
+            aria-label="Próximo canal"
+            i18n-aria-label="@@tv.key.channel-up"
+          >
+            <app-tv-icon name="up" />
+          </button>
+        }
+        @case ('level') {
+          <span class="level" aria-hidden="true">
+            <span class="cap" i18n="@@tv.channel.cap">CH</span>
+          </span>
+        }
+        @case ('less') {
+          <button
+            type="button"
+            class="pill-btn"
+            [appKey]="'CHANNEL_DOWN'"
+            aria-label="Canal anterior"
+            i18n-aria-label="@@tv.key.channel-down"
+          >
+            <app-tv-icon name="down" />
+          </button>
+        }
+      }
+    }
+  </div>
+</ng-template>
+
+<ng-template #roundButtons>
+  <div class="round-grid" [attr.data-cols]="roundColumns()">
+    <button
+      type="button"
+      class="round"
+      [appKey]="'BACK'"
+      aria-label="Voltar"
+      i18n-aria-label="@@tv.key.back"
+    >
+      <app-tv-icon name="back" />
+    </button>
+    <button
+      type="button"
+      class="round"
+      [appKey]="'HOME'"
+      aria-label="Início da TV"
+      i18n-aria-label="@@tv.key.home"
+    >
+      <app-tv-icon name="home" />
+    </button>
+    <button
+      type="button"
+      class="round"
+      [appKey]="'MENU'"
+      aria-label="Menu"
+      i18n-aria-label="@@tv.key.menu"
+    >
+      <app-tv-icon name="menu" />
+    </button>
+    <button
+      type="button"
+      class="round"
+      [attr.aria-haspopup]="'dialog'"
+      aria-label="Teclado"
+      i18n-aria-label="@@tv.key.keyboard"
+      (click)="askKeyboard($event)"
+    >
+      <app-tv-icon name="keyboard" />
+    </button>
+    @if (prefs.showMedia()) {
+      <button
+        type="button"
+        class="round"
+        [appKey]="'MEDIA_PREVIOUS'"
+        aria-label="Anterior"
+        i18n-aria-label="@@tv.key.previous"
+      >
+        <app-tv-icon name="previous" />
+      </button>
+      <button
+        type="button"
+        class="round"
+        [appKey]="'PLAY_PAUSE'"
+        aria-label="Reproduzir ou pausar"
+        i18n-aria-label="@@tv.key.play-pause"
+      >
+        <app-tv-icon name="play-pause" />
+      </button>
+      <button
+        type="button"
+        class="round"
+        [appKey]="'MEDIA_NEXT'"
+        aria-label="Próxima"
+        i18n-aria-label="@@tv.key.next"
+      >
+        <app-tv-icon name="next" />
+      </button>
+      <button
+        type="button"
+        class="round"
+        [appKey]="'MUTE'"
+        aria-label="Mudo"
+        i18n-aria-label="@@tv.key.mute"
+      >
+        <app-tv-icon name="mute" />
+      </button>
+    }
+  </div>
+</ng-template>

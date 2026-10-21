@@ -27,6 +27,7 @@ describe('TvPrefs', () => {
     expect(prefs.vibration()).toBe(true);
     expect(prefs.startPage()).toBe('last');
     expect(prefs.padSpeed()).toBe('normal');
+    expect(prefs.pillLayout()).toBe('sides');
     expect(prefs.customized()).toBe(false);
     expect(localStorage.getItem(TV_PREFS_KEY)).toBeNull();
   });
@@ -41,6 +42,7 @@ describe('TvPrefs', () => {
       vibration: false,
       startPage: 'numbers',
       padSpeed: 'fast',
+      pillLayout: 'row',
     });
     expect(saved()).toEqual({
       name: 'Sala',
@@ -50,6 +52,7 @@ describe('TvPrefs', () => {
       vibration: false,
       startPage: 'numbers',
       padSpeed: 'fast',
+      pillLayout: 'row',
     });
 
     const again = fresh();
@@ -61,7 +64,80 @@ describe('TvPrefs', () => {
     expect(again.vibration()).toBe(false);
     expect(again.startPage()).toBe('numbers');
     expect(again.padSpeed()).toBe('fast');
+    expect(again.pillLayout()).toBe('row');
     expect(again.customized()).toBe(true);
+  });
+
+  describe('layout of the volume and channel pills', () => {
+    it('is "sides" by default, as the control always was', () => {
+      expect(fresh().pillLayout()).toBe('sides');
+    });
+
+    it('reads a choice saved before the field existed as "sides", keeping everything else', () => {
+      // O formato de antes: sem o campo novo.
+      localStorage.setItem(
+        TV_PREFS_KEY,
+        JSON.stringify({
+          name: 'Sala',
+          buttonSize: 'large',
+          showMedia: false,
+          showChannel: true,
+          vibration: false,
+          startPage: 'numbers',
+          padSpeed: 'fast',
+        }),
+      );
+      const prefs = fresh();
+      expect(prefs.pillLayout()).toBe('sides');
+      expect(prefs.title()).toBe('Sala');
+      expect(prefs.buttonSize()).toBe('large');
+      expect(prefs.showMedia()).toBe(false);
+      expect(prefs.vibration()).toBe(false);
+      expect(prefs.startPage()).toBe('numbers');
+      expect(prefs.padSpeed()).toBe('fast');
+      expect(prefs.customized()).toBe(true);
+    });
+
+    it('does not make an old, all-default choice look customized just because the field is missing', () => {
+      localStorage.setItem(TV_PREFS_KEY, JSON.stringify({ name: '', buttonSize: 'comfortable' }));
+      const prefs = fresh();
+      expect(prefs.pillLayout()).toBe('sides');
+      expect(prefs.customized()).toBe(false);
+    });
+
+    it('is "sides" for a stored value that is not one of the two', () => {
+      for (const stored of ['top', 3, null, true]) {
+        localStorage.setItem(TV_PREFS_KEY, JSON.stringify({ pillLayout: stored }));
+        expect(fresh().pillLayout(), String(stored)).toBe('sides');
+      }
+    });
+
+    it('keeps "row" for the next visit, under the same key as the other choices', () => {
+      const prefs = fresh();
+      prefs.set({ pillLayout: 'row' });
+      expect(prefs.pillLayout()).toBe('row');
+      expect(saved().pillLayout).toBe('row');
+      expect(TV_PREFS_KEY).toBe('uniover.tv.prefs.v1');
+      expect(fresh().pillLayout()).toBe('row');
+    });
+
+    it('counts as customized, and "reset" brings it back to "sides"', () => {
+      const prefs = fresh();
+      prefs.set({ pillLayout: 'row' });
+      expect(prefs.customized()).toBe(true);
+      prefs.reset();
+      expect(prefs.pillLayout()).toBe('sides');
+      expect(prefs.customized()).toBe(false);
+      expect(fresh().pillLayout()).toBe('sides');
+    });
+
+    it('does not disturb the other choices when it changes', () => {
+      const prefs = fresh();
+      prefs.set({ buttonSize: 'compact', showChannel: false });
+      prefs.set({ pillLayout: 'row' });
+      expect(prefs.buttonSize()).toBe('compact');
+      expect(prefs.showChannel()).toBe(false);
+    });
   });
 
   it('changes one choice without touching the others', () => {

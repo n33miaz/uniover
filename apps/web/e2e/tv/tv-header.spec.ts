@@ -104,7 +104,11 @@ async function expectNoVerticalScroll(page: Page) {
   expect(overflow, 'a tela não pode rolar na vertical').toBeLessThanOrEqual(0);
 }
 
-/** O centro do nome (o <h1>) tem de coincidir com o centro da TELA, e o ponto de estado não pode tocar nos botões. */
+/**
+ * O centro do nome (o <h1>) tem de coincidir com o centro da TELA, e o ponto de estado não pode tocar nos botões. Vale
+ * para o administrador e para a convidada: o botão da esquerda é a seta ou a engrenagem, e depois dele vêm sempre os
+ * três pontos do Apps; à direita fica só o desligar.
+ */
 async function expectTitleCentered(page: Page) {
   const viewport = await page.evaluate(() => window.innerWidth);
   const title = await box(header(page).locator('h1'));
@@ -115,10 +119,10 @@ async function expectTitleCentered(page: Page) {
   const dot = await box(statusDot(page));
   expect(dot.x, 'o ponto fica depois do começo do nome').toBeGreaterThanOrEqual(title.x);
   expect(dot.x + dot.width, 'o ponto cabe na tela').toBeLessThanOrEqual(viewport);
+  const power = await box(powerButton(page));
+  expect(dot.x + dot.width, 'o ponto não encosta no desligar').toBeLessThanOrEqual(power.x + 0.5);
   const apps = await box(appsButton(page));
-  expect(dot.x + dot.width, 'o ponto não encosta no botão Apps').toBeLessThanOrEqual(apps.x + 0.5);
-  const back = await box(backLink(page));
-  expect(title.x, 'o nome não encosta no voltar').toBeGreaterThanOrEqual(back.x + back.width);
+  expect(title.x, 'o nome não encosta nos três pontos').toBeGreaterThanOrEqual(apps.x + apps.width);
   await expect(statusDot(page)).toBeVisible();
 }
 
@@ -235,6 +239,50 @@ test.describe('cabeçalho: voltar, nome, Apps e energia', () => {
     await screenshot(page, `test-results/tv-header-default-${info.project.name}.png`);
   });
 
+  test('os três pontos do Apps ficam à esquerda, logo depois da seta, e à direita só o desligar', async ({
+    page,
+  }) => {
+    await openTv(page);
+    const head = await box(header(page));
+    const back = await box(backLink(page));
+    const apps = await box(appsButton(page));
+    const power = await box(powerButton(page));
+    const title = await box(header(page).locator('h1'));
+
+    // A seta na ponta esquerda; os três pontos logo ao lado, na mesma linha, com o respiro de 6 px entre os dois.
+    expect(Math.abs(back.x - head.x), 'a seta na ponta esquerda').toBeLessThanOrEqual(1);
+    expect(Math.abs(apps.y - back.y), 'mesma linha').toBeLessThanOrEqual(1);
+    expect(
+      apps.x - (back.x + back.width),
+      'os três pontos logo depois da seta',
+    ).toBeGreaterThanOrEqual(4);
+    expect(apps.x - (back.x + back.width), 'e perto dela').toBeLessThanOrEqual(10);
+    // O nome vem depois dos dois e o desligar fica sozinho, na ponta direita.
+    expect(title.x).toBeGreaterThanOrEqual(apps.x + apps.width);
+    expect(power.x).toBeGreaterThanOrEqual(title.x + title.width - 1);
+    expect(
+      Math.abs(power.x + power.width - (head.x + head.width)),
+      'desligar na ponta direita',
+    ).toBeLessThanOrEqual(1);
+    await expect(header(page).locator('.actions').getByRole('button')).toHaveCount(1);
+    await expect(header(page).locator('.lead').getByRole('button')).toHaveCount(1);
+    await expect(header(page).locator('.lead').getByRole('link')).toHaveCount(1);
+
+    // O desenho são três pontos na horizontal (um traço mais largo que alto), não a grade de antes.
+    const shape = await appsButton(page)
+      .locator('svg path')
+      .evaluate((el) => {
+        const bounds = (el as SVGGraphicsElement).getBBox();
+        return {
+          width: bounds.width,
+          height: bounds.height,
+          parts: (el.getAttribute('d') ?? '').match(/M/g)?.length,
+        };
+      });
+    expect(shape.parts, 'três pontos').toBe(3);
+    expect(shape.width, 'na horizontal').toBeGreaterThan(shape.height * 4);
+  });
+
   test('o nome é o da TV, no meio da tela, com o ponto de estado ao lado', async ({ page }) => {
     await openTv(page);
     await expect(header(page).getByRole('heading', { level: 1 })).toHaveText('TV');
@@ -299,6 +347,24 @@ test.describe('cabeçalho: voltar, nome, Apps e energia', () => {
     await screenshot(page, `test-results/tv-header-long-status-${info.project.name}.png`);
     await page.keyboard.press('Escape');
     await expect(panel).toHaveCount(0);
+  });
+
+  test('apelido curto, médio e longo: a classe do tamanho muda e o nome fica no meio, longe dos botões', async ({
+    page,
+  }, info) => {
+    await openTv(page);
+    for (const [size, name] of [
+      ['short', 'Sala 1'],
+      ['medium', 'Sala de TV'],
+      ['long', LONG_NAME],
+    ] as const) {
+      await reloadWith(page, { name });
+      await expect(header(page).locator('.name')).toHaveAttribute('data-size', size);
+      await expectTitleCentered(page);
+      await expectTitleContained(page);
+      await expectNoHorizontalScroll(page);
+      await screenshot(page, `test-results/tv-header-name-${size}-owner-${info.project.name}.png`);
+    }
   });
 
   test('o painelzinho do ponto cabe na tela também com o nome padrão', async ({ page }) => {
@@ -366,8 +432,10 @@ test.describe('cabeçalho: voltar, nome, Apps e energia', () => {
   }, info) => {
     await openTv(page, { name: LONG_NAME });
     for (const scheme of ['light', 'dark'] as const) {
-      await page.emulateMedia({ colorScheme: scheme });
+      // Sem movimento: o axe não pode ler uma cor no meio de uma transição.
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
       await expectNoA11yViolations(page);
+      await screenshot(page, `test-results/tv-header-owner-${scheme}-${info.project.name}.png`);
 
       await titleButton(page).click();
       await expect(customizeDialog(page)).toBeVisible();
@@ -669,6 +737,273 @@ test.describe('botões de baixo e o tamanho escolhido', () => {
   });
 });
 
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * O que o bloco de baixo mede, nas duas disposições das pílulas: anel, palco, bloco, as duas pílulas, os botões delas e
+ * os redondos. É o que o relatório da rodada cita (em test-results, em JSON).
+ */
+async function layoutMetrics(page: Page) {
+  return page.evaluate(() => {
+    const rect = (el: Element | null): Rect | null => {
+      const r = el?.getBoundingClientRect();
+      return r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null;
+    };
+    const group = (name: string) =>
+      document.querySelector(`.bottom [role="group"][aria-label="${name}"]`);
+    return {
+      ring: rect(document.querySelector('.ring')),
+      stage: rect(document.querySelector('.viewport')),
+      bottom: rect(document.querySelector('.bottom')),
+      volume: rect(group('Volume')),
+      channel: rect(group('Canal')),
+      pillButtons: [...document.querySelectorAll('.bottom .pill-btn')].map((el) => rect(el)!),
+      rounds: [...document.querySelectorAll('.round-grid .round')].map((el) => rect(el)!),
+      scrollOverflow: document.documentElement.scrollHeight - window.innerHeight,
+    };
+  });
+}
+
+const PILLS_LABEL = 'Disposição dos botões de volume e canal';
+const distinct = (values: number[]) => new Set(values.map((v) => Math.round(v / 4))).size;
+
+test.describe('disposição das pílulas de volume e canal', () => {
+  test('Personalizar oferece as duas disposições; a escolha vale atrás da folha, fica depois de recarregar e volta ao padrão', async ({
+    page,
+  }, info) => {
+    await openTv(page);
+    const sides = await layoutMetrics(page);
+    await expect(page.locator('.bottom')).toHaveAttribute('data-pills', 'sides');
+
+    await titleButton(page).click();
+    const sheet = customizeDialog(page);
+    const group = sheet.getByRole('group', { name: PILLS_LABEL });
+    await expect(group.getByRole('button')).toHaveText(['Nas laterais', 'Em fileira, acima']);
+    await expect(group.getByRole('button', { name: 'Nas laterais' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await group.getByRole('button', { name: 'Em fileira, acima' }).click();
+    await expect(group.getByRole('button', { name: 'Em fileira, acima' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    // Vale na hora, com a folha ainda aberta: o controle por trás já mudou.
+    await expect(page.locator('.bottom')).toHaveAttribute('data-pills', 'row');
+    await closeCustomize(page);
+    await settle(page);
+
+    const row = await layoutMetrics(page);
+    const narrow = info.project.name === 'iphone-12';
+    // Em pé nas laterais; deitadas e lado a lado na fileira, as duas na mesma altura e acima dos botões redondos.
+    expect(sides.volume!.height).toBeGreaterThan(sides.volume!.width);
+    expect(row.volume!.width).toBeGreaterThan(row.volume!.height * 2);
+    expect(
+      Math.abs(row.volume!.y - row.channel!.y),
+      'as pílulas na mesma altura',
+    ).toBeLessThanOrEqual(1);
+    expect(row.volume!.x + row.volume!.width, 'volume à esquerda do canal').toBeLessThanOrEqual(
+      row.channel!.x,
+    );
+    expect(
+      Math.abs(row.volume!.width - row.channel!.width),
+      'pílulas do mesmo tamanho',
+    ).toBeLessThanOrEqual(1);
+    expect(row.volume!.y + row.volume!.height, 'as pílulas acima dos redondos').toBeLessThanOrEqual(
+      Math.min(...row.rounds.map((r) => r.y)),
+    );
+    // Quatro colunas por duas fileiras de botões redondos, maiores que nas laterais; o anel cede a altura.
+    expect(distinct(row.rounds.map((r) => r.x))).toBe(4);
+    expect(distinct(row.rounds.map((r) => r.y))).toBe(2);
+    expect(row.rounds[0].width, 'círculos maiores').toBeGreaterThanOrEqual(narrow ? 70 : 80);
+    expect(row.rounds[0].width).toBeGreaterThan(sides.rounds[0].width + 8);
+    expect(row.ring!.width, 'o anel encolhe').toBeLessThan(sides.ring!.width);
+    expect(row.scrollOverflow, 'sem rolagem').toBeLessThanOrEqual(0);
+    await expectNoHorizontalScroll(page);
+    expect(await smallTargets(page)).toEqual([]);
+
+    // Fica depois de recarregar, na mesma chave das outras escolhas.
+    await page.reload();
+    await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
+    await expect(page.locator('.bottom')).toHaveAttribute('data-pills', 'row');
+    expect(
+      await page.evaluate(
+        (key) => JSON.parse(localStorage.getItem(key) ?? '{}').pillLayout,
+        PREFS_KEY,
+      ),
+    ).toBe('row');
+
+    // Restaurar padrão traz as pílulas de volta às laterais.
+    await titleButton(page).click();
+    await sheet.getByRole('button', { name: 'Restaurar padrão' }).click();
+    await expect(page.locator('.bottom')).toHaveAttribute('data-pills', 'sides');
+    await expect(sheet.getByRole('button', { name: 'Restaurar padrão' })).toBeDisabled();
+    await expect(
+      sheet.getByRole('group', { name: PILLS_LABEL }).getByRole('button', { name: 'Nas laterais' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('uma escolha guardada antes de existir a disposição abre com as pílulas nas laterais', async ({
+    page,
+  }) => {
+    await openTv(page, { buttonSize: 'large', showMedia: false });
+    await expect(page.locator('.bottom')).toHaveAttribute('data-pills', 'sides');
+    const metrics = await layoutMetrics(page);
+    expect(metrics.volume!.height).toBeGreaterThan(metrics.volume!.width);
+    // O que estava guardado segue valendo: tamanho grande e sem as teclas de mídia.
+    await expect(keyButton(page, 'Mudo')).toHaveCount(0);
+  });
+
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`as duas disposições nos três tamanhos: medidas, sem rolagem de lado e alvos de 44 px (tema ${scheme})`, async ({
+      page,
+    }, info) => {
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+      await openTv(page);
+      const measured: Record<string, Awaited<ReturnType<typeof layoutMetrics>>> = {};
+      for (const pillLayout of ['sides', 'row'] as const) {
+        for (const buttonSize of ['compact', 'comfortable', 'large'] as const) {
+          await reloadWith(page, { pillLayout, buttonSize });
+          const key = `${pillLayout}-${buttonSize}`;
+          measured[key] = await layoutMetrics(page);
+          await expectNoHorizontalScroll(page);
+          expect(await smallTargets(page), key).toEqual([]);
+          await screenshot(
+            page,
+            `test-results/tv-layout-${key}-${scheme}-${info.project.name}.png`,
+          );
+        }
+      }
+      // Fica em test-results para quem for ler os números (o relatório da rodada cita estes).
+      writeFileSync(
+        `test-results/tv-layout-metrics-${scheme}-${info.project.name}.json`,
+        JSON.stringify(measured, null, 2),
+      );
+
+      for (const [key, found] of Object.entries(measured)) {
+        expect(found.scrollOverflow, `${key} não rola`).toBeLessThanOrEqual(0);
+        for (const part of found.pillButtons) {
+          expect(part.width, `${key}: botão da pílula`).toBeGreaterThanOrEqual(43.5);
+          expect(part.height, `${key}: botão da pílula`).toBeGreaterThanOrEqual(43.5);
+        }
+      }
+      // Cada tamanho é maior que o anterior, nas duas disposições.
+      for (const pillLayout of ['sides', 'row']) {
+        const [compact, comfortable, large] = ['compact', 'comfortable', 'large'].map(
+          (size) => measured[`${pillLayout}-${size}`].rounds[0].width,
+        );
+        expect(compact, pillLayout).toBeLessThan(comfortable);
+        expect(comfortable, pillLayout).toBeLessThan(large);
+      }
+    });
+  }
+
+  test('sem o canal a pílula de volume ocupa a fileira inteira e os círculos não encolhem', async ({
+    page,
+  }, info) => {
+    await openTv(page, { pillLayout: 'row', showChannel: false });
+    const found = await layoutMetrics(page);
+    expect(found.channel).toBeNull();
+    const grid = await box(page.locator('.round-grid'));
+    expect(
+      Math.abs(found.volume!.width - grid.width),
+      'a pílula tem a largura dos botões',
+    ).toBeLessThanOrEqual(2);
+    expect(found.volume!.x).toBeGreaterThanOrEqual(0);
+    expect(found.volume!.y + found.volume!.height).toBeLessThanOrEqual(
+      Math.min(...found.rounds.map((r) => r.y)),
+    );
+    expect(found.rounds[0].width, 'sem o canal os círculos seguem grandes').toBeGreaterThanOrEqual(
+      info.project.name === 'iphone-12' ? 70 : 80,
+    );
+    expect(found.scrollOverflow).toBeLessThanOrEqual(0);
+    await expectNoHorizontalScroll(page);
+    expect(await smallTargets(page)).toEqual([]);
+    await screenshot(page, `test-results/tv-layout-row-channel-off-${info.project.name}.png`);
+  });
+
+  test('sem as teclas de mídia os quatro botões redondos ficam numa fileira só', async ({
+    page,
+  }) => {
+    await openTv(page, { pillLayout: 'row', showMedia: false });
+    const found = await layoutMetrics(page);
+    expect(found.rounds).toHaveLength(4);
+    expect(distinct(found.rounds.map((r) => r.y))).toBe(1);
+    expect(found.scrollOverflow).toBeLessThanOrEqual(0);
+    await expectNoHorizontalScroll(page);
+  });
+
+  test('em fileira o Tab anda na ordem em que se vê: volume, canal e os botões redondos', async ({
+    page,
+  }) => {
+    await openTv(page, { pillLayout: 'row' });
+    const order = await page.locator('.bottom').evaluate((el) =>
+      [...el.querySelectorAll('button')].map((button) => {
+        const r = button.getBoundingClientRect();
+        return { name: button.getAttribute('aria-label'), x: r.x, y: r.y };
+      }),
+    );
+    expect(order.slice(0, 4).map((b) => b.name)).toEqual([
+      'Diminuir o volume',
+      'Aumentar o volume',
+      'Canal anterior',
+      'Próximo canal',
+    ]);
+    // Cada botão vem depois do anterior na leitura: numa linha mais abaixo, ou na mesma linha mais à direita.
+    for (let index = 1; index < order.length; index++) {
+      const before = order[index - 1];
+      const now = order[index];
+      const nextLine = now.y > before.y + 8;
+      const sameLineToTheRight = Math.abs(now.y - before.y) <= 8 && now.x > before.x;
+      expect(nextLine || sameLineToTheRight, `${before.name} -> ${now.name}`).toBe(true);
+    }
+  });
+
+  test('os botões de volume e canal seguem mandando as mesmas teclas, nas duas disposições', async ({
+    page,
+  }) => {
+    await openTv(page, { pillLayout: 'row' });
+    for (const [name, key] of [
+      ['Aumentar o volume', 'VOLUME_UP'],
+      ['Diminuir o volume', 'VOLUME_DOWN'],
+      ['Próximo canal', 'CHANNEL_UP'],
+      ['Canal anterior', 'CHANNEL_DOWN'],
+    ] as const) {
+      const before = tv.keysSent().length;
+      await keyButton(page, name).click();
+      await expect.poll(() => tv.keysSent().slice(before), name).toEqual([key]);
+    }
+  });
+
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`em fileira, o controle e a folha Personalizar passam no axe (tema ${scheme})`, async ({
+      page,
+    }, info) => {
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+      await openTv(page, { pillLayout: 'row' });
+      await expectNoA11yViolations(page);
+
+      await titleButton(page).click();
+      await expect(customizeDialog(page)).toBeVisible();
+      await settle(page);
+      await expectNoA11yViolations(page);
+      await screenshot(page, `test-results/tv-customize-top-${scheme}-${info.project.name}.png`);
+      // O bloco novo à vista: a folha rola por dentro quando não cabe.
+      await customizeDialog(page)
+        .getByRole('group', { name: PILLS_LABEL })
+        .scrollIntoViewIfNeeded();
+      await screenshot(page, `test-results/tv-customize-layout-${scheme}-${info.project.name}.png`);
+      expect(await smallTargets(page)).toEqual([]);
+      await expectNoHorizontalScroll(page);
+    });
+  }
+});
+
 test.describe('folha de desligar', () => {
   test('tem a linha "Agendar desligamento" marcada "Em breve", que não é um botão', async ({
     page,
@@ -924,7 +1259,63 @@ test.describe('paisagem curta (844x390)', () => {
     await expectTitleCentered(page);
     await expectNoHorizontalScroll(page);
   });
+
+  test('com as pílulas em fileira o bloco de baixo segue na coluna da direita, sem sobrepor e sem rolar', async ({
+    page,
+  }, info) => {
+    await openTv(page, { pillLayout: 'row' });
+    const measured: Record<string, Awaited<ReturnType<typeof layoutMetrics>>> = {};
+    for (const buttonSize of ['compact', 'comfortable', 'large']) {
+      await reloadWith(page, { pillLayout: 'row', buttonSize });
+      measured[buttonSize] = await layoutMetrics(page);
+      await expectNoHorizontalScroll(page);
+      expect(await smallTargets(page), buttonSize).toEqual([]);
+      const tvBox = await box(page.locator('.tv'));
+      const bottom = await box(page.locator('.bottom'));
+      const top = await box(page.locator('.top'));
+      expect(bottom.y + bottom.height, `${buttonSize}: dentro da tela`).toBeLessThanOrEqual(
+        tvBox.y + tvBox.height + 0.5,
+      );
+      expect(top.y + top.height, `${buttonSize}: sem sobrepor os atalhos`).toBeLessThanOrEqual(
+        bottom.y + 0.5,
+      );
+      expect(measured[buttonSize].scrollOverflow, `${buttonSize}: não rola`).toBeLessThanOrEqual(0);
+      await screenshot(
+        page,
+        `test-results/tv-layout-landscape-row-${buttonSize}-${info.project.name}.png`,
+      );
+    }
+    writeFileSync(
+      `test-results/tv-layout-landscape-metrics-${info.project.name}.json`,
+      JSON.stringify(measured, null, 2),
+    );
+  });
 });
+
+for (const screen of [
+  { name: 'tablet', width: 768, height: 1024 },
+  { name: 'desktop', width: 1280, height: 800 },
+] as const) {
+  test.describe(`pílulas em fileira em ${screen.name} (${screen.width}x${screen.height})`, () => {
+    test.use({ viewport: { width: screen.width, height: screen.height } });
+
+    test('cabe sem rolagem, com alvos de 44 px e os círculos sem estourar', async ({
+      page,
+    }, info) => {
+      await openTv(page, { pillLayout: 'row' });
+      await expectNoHorizontalScroll(page);
+      await expectNoVerticalScroll(page);
+      expect(await smallTargets(page)).toEqual([]);
+      const found = await layoutMetrics(page);
+      const tvBox = await box(page.locator('.tv'));
+      for (const round of found.rounds) {
+        expect(round.x).toBeGreaterThanOrEqual(tvBox.x - 0.5);
+        expect(round.x + round.width).toBeLessThanOrEqual(tvBox.x + tvBox.width + 0.5);
+      }
+      await screenshot(page, `test-results/tv-layout-row-${screen.name}-${info.project.name}.png`);
+    });
+  });
+}
 
 /** A convidada com a sessão aberta, direto no controle (o mesmo que o aceite do convite deixa pronto). */
 async function openTvAsGuest(page: Page) {
@@ -1006,9 +1397,43 @@ test.describe('cabeçalho da convidada: botão redondo de configurações no lug
       Math.abs(title.x + title.width / 2 - viewport / 2),
       'centro do nome',
     ).toBeLessThanOrEqual(2);
-    expect(title.x, 'o nome não encosta no botão').toBeGreaterThanOrEqual(place.x + place.width);
+    expect(title.x, 'o nome não encosta nos botões').toBeGreaterThanOrEqual(place.x + place.width);
+
+    // Os três pontos do Apps ficam ao lado da engrenagem, na mesma linha, e antes do nome; à direita só o desligar.
+    const apps = await box(appsButton(page));
+    const power = await box(powerButton(page));
+    expect(Math.abs(apps.y - place.y), 'mesma linha').toBeLessThanOrEqual(1);
+    expect(apps.x - (place.x + place.width), 'logo depois da engrenagem').toBeGreaterThanOrEqual(4);
+    expect(apps.x - (place.x + place.width), 'e perto dela').toBeLessThanOrEqual(10);
+    expect(title.x, 'o nome vem depois dos três pontos').toBeGreaterThanOrEqual(
+      apps.x + apps.width,
+    );
+    expect(
+      Math.abs(power.x + power.width - (head.x + head.width)),
+      'desligar na ponta direita',
+    ).toBeLessThanOrEqual(1);
+    await expect(header(page).locator('.actions').getByRole('button')).toHaveCount(1);
 
     await screenshot(page, `test-results/tv-header-guest-${info.project.name}.png`);
+  });
+
+  test('o nome fica no meio da tela, curto, médio ou longo, com a engrenagem e os três pontos à esquerda', async ({
+    page,
+  }, info) => {
+    await openTvAsGuest(page);
+    for (const [size, name] of [
+      ['short', 'TV'],
+      ['medium', 'Sala de TV'],
+      ['long', LONG_NAME],
+    ] as const) {
+      await reloadWith(page, { name });
+      await expect(header(page).getByRole('heading', { level: 1 })).toHaveText(name);
+      await expectTitleCentered(page);
+      await expectTitleContained(page);
+      await expectNoHorizontalScroll(page);
+      expect(await smallTargets(page), name).toEqual([]);
+      await screenshot(page, `test-results/tv-header-name-${size}-guest-${info.project.name}.png`);
+    }
   });
 
   test('tocar nele abre os Ajustes da convidada, e a seta volta ao controle', async ({ page }) => {
@@ -1057,6 +1482,8 @@ test.describe('cabeçalho da convidada: botão redondo de configurações no lug
     const place = await box(settingsButton(page));
     expect(place.width).toBeCloseTo(44, 0);
     expect(place.x).toBeGreaterThanOrEqual(0);
+    // E o nome segue no meio da tela, com os três pontos ao lado da engrenagem e só o desligar à direita.
+    await expectTitleCentered(page);
     await expectNoHorizontalScroll(page);
   });
 });

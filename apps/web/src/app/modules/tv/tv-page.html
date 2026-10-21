@@ -1,41 +1,59 @@
-<div class="tv">
+<div class="tv" [attr.data-pills]="prefs.pillLayout()">
   <header class="head">
-    @if (isGuest()) {
-      <!--
-        Convidado: visão única do controle, sem Início nem voltar. No lugar da seta fica o botão redondo das configurações do
-        sistema (Perfil, Aparência e Sobre), do mesmo tamanho: o nome continua no centro da tela.
-      -->
-      <a
-        routerLink="/ajustes"
-        class="circle settings"
-        aria-label="Ajustes"
-        i18n-aria-label="@@tv.header.settings"
-      >
-        <app-gear-icon />
-      </a>
-    } @else {
-      <a
-        routerLink="/"
-        class="circle back"
-        aria-label="Voltar ao Início"
-        i18n-aria-label="@@tv.header.back"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          width="22"
-          height="22"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
+    <!--
+      Grupo da esquerda: o botão de saída (a seta de voltar do administrador ou a engrenagem do convidado) e, logo depois,
+      os três pontos que abrem o painel Apps. À direita fica só o de desligar; as duas colunas dos lados têm a mesma
+      largura, então o nome continua no meio da tela.
+    -->
+    <div class="lead">
+      @if (isGuest()) {
+        <!--
+          Convidado: visão única do controle, sem Início nem voltar. No lugar da seta fica o botão redondo das configurações
+          do sistema (Perfil, Aparência e Sobre), do mesmo tamanho.
+        -->
+        <a
+          routerLink="/ajustes"
+          class="circle settings"
+          aria-label="Ajustes"
+          i18n-aria-label="@@tv.header.settings"
         >
-          <path [attr.d]="'M19 12H5'" />
-          <path [attr.d]="'M11 18l-6-6 6-6'" />
-        </svg>
-      </a>
-    }
+          <app-gear-icon />
+        </a>
+      } @else {
+        <a
+          routerLink="/"
+          class="circle back"
+          aria-label="Voltar ao Início"
+          i18n-aria-label="@@tv.header.back"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path [attr.d]="'M19 12H5'" />
+            <path [attr.d]="'M11 18l-6-6 6-6'" />
+          </svg>
+        </a>
+      }
+      <button
+        #appsButton
+        type="button"
+        class="circle"
+        [attr.aria-haspopup]="'dialog'"
+        aria-label="Apps da TV"
+        i18n-aria-label="@@tv.apps.open"
+        (click)="open('apps', appsButton)"
+      >
+        <app-tv-icon name="more" />
+      </button>
+    </div>
     <!--
       O nome é o único item em fluxo desta caixa: o ponto de estado fica solto ao lado do fim do texto (posição
       absoluta), então um nome mais comprido o empurra para fora e o nome continua no meio da tela.
@@ -56,17 +74,6 @@
       <app-status-indicator />
     </div>
     <div class="actions">
-      <button
-        #appsButton
-        type="button"
-        class="circle"
-        [attr.aria-haspopup]="'dialog'"
-        aria-label="Apps da TV"
-        i18n-aria-label="@@tv.apps.open"
-        (click)="open('apps', appsButton)"
-      >
-        <app-tv-icon name="apps" />
-      </button>
       <button
         type="button"
         class="circle power"
