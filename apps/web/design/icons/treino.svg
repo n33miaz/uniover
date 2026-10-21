@@ -1,8 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-<!-- Símbolo treino sobre o verde-sálvia; o fundo vai até as bordas (o sistema aplica a máscara). -->
+<!-- Símbolo treino: haltere com anilhas cheias e tampas, e no lugar da barra o traço de pulso do ícone atual (acompanhamento). O fundo vai até as bordas (o sistema aplica a máscara). -->
   <rect width="512" height="512" fill="#3B6B4B"/>
   <g fill="none" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M396 256H340L298 382L214 130L172 256H116"/>
-    <circle cx="380" cy="132" r="22" fill="#FFFFFF" stroke="none"/>
+    <g transform="translate(0 3)">
+      <path d="M81 228V284"/>
+      <rect x="108" y="176" width="48" height="160" rx="16" fill="#FFFFFF" stroke="none"/>
+      <rect x="356" y="176" width="48" height="160" rx="16" fill="#FFFFFF" stroke="none"/>
+      <path d="M431 228V284"/>
+      <path d="M156 256H196L222 320L262 184L290 256H356"/>
+    </g>
   </g>
 </svg>
