@@ -38,7 +38,6 @@ from uniover_agent.config import (
     tv_cert_dir,
 )
 from uniover_agent.core import (
-    POWER_KEYS,
     AppIconPublisher,
     AppsAnnouncer,
     ConnectionSupervisor,
@@ -145,8 +144,10 @@ def build_tv(
         return None
     remote = AndroidTvRemoteV2(host, settings.tv_client_name, cert_dir)
     manager = TvSessionManager(clock, remote, hibernate_seconds=settings.tv_hibernate_seconds)
-    # `POWER` fica recusado: sem infravermelho a TV não volta do standby e não tem botão físico.
-    keys = tv_key_handler(manager, blocked_keys=POWER_KEYS)
+    # `POWER` passa como as outras teclas: o app só o manda depois da folha de confirmação e a API
+    # só o aceita pela rota própria de desligar. Sem emissor infravermelho a TV só volta com o
+    # controle original, então o gerenciador de sessão não repete um `POWER` e nada aqui o reenvia.
+    keys = tv_key_handler(manager)
     text = TextReconciler(manager, monotonic=clock.monotonic)
     setup = TvSetup(
         manager,

@@ -44,8 +44,9 @@ CONNECT_TIMEOUT_SECONDS: Final = 5.0
 
 DIRECTIONS: Final = frozenset({"SHORT", "START_LONG", "END_LONG"})
 
-# Tecla do contrato -> código do Android (`KEYCODE_*`). `POWER` está mapeada porque faz parte do
-# contrato, mas o agente a recusa antes de chegar aqui (ver `POWER_KEYS`).
+# Tecla do contrato -> código do Android (`KEYCODE_*`). `POWER` é um interruptor (desliga e, na
+# segunda vez, liga): o agente a envia como as demais, mas o gerenciador de sessão não a repete
+# logo em seguida (ver `POWER_REPEAT_SECONDS`).
 KEY_CODES: Final[Mapping[str, str]] = {
     "POWER": "KEYCODE_POWER",
     "HOME": "KEYCODE_HOME",
