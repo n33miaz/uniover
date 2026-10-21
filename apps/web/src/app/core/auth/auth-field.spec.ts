@@ -12,6 +12,7 @@ import { AuthField } from './auth-field';
       label="Senha"
       i18n-label
       [kind]="kind()"
+      [maxChars]="limit()"
       [autocomplete]="'current-password'"
       [enterKeyHint]="'go'"
       toggleLabel="Mostrar senha"
@@ -28,7 +29,8 @@ import { AuthField } from './auth-field';
 })
 class Host {
   readonly field = viewChild.required<AuthField>('field');
-  readonly kind = signal<'email' | 'password'>('password');
+  readonly kind = signal<'email' | 'password' | 'text'>('password');
+  readonly limit = signal<number | null>(null);
   readonly error = signal<string | null>(null);
   readonly invalid = signal(false);
   readonly value = signal('');
@@ -36,7 +38,7 @@ class Host {
 }
 
 describe('AuthField', () => {
-  function setup(kind: 'email' | 'password' = 'password') {
+  function setup(kind: 'email' | 'password' | 'text' = 'password') {
     const fixture = TestBed.createComponent(Host);
     fixture.componentInstance.kind.set(kind);
     fixture.detectChanges();
@@ -168,5 +170,43 @@ describe('AuthField', () => {
     expect(document.activeElement).toBe(input);
     expect(input.selectionStart).toBe(0);
     expect(input.selectionEnd).toBe('segredo-antigo'.length);
+  });
+
+  describe('free text (a name)', () => {
+    it('is a plain text field: no e-mail keyboard, words capitalized, no spelling squiggles', () => {
+      const { input } = setup('text');
+      expect(input.type).toBe('text');
+      expect(input.getAttribute('inputmode')).toBeNull();
+      expect(input.getAttribute('autocapitalize')).toBe('words');
+      expect(input.getAttribute('autocorrect')).toBe('off');
+      expect(input.spellcheck).toBe(false);
+    });
+
+    it('has no show-password button and no Caps Lock warning', () => {
+      const { fixture, el, input } = setup('text');
+      expect(toggle(el)).toBeNull();
+      capsKey(input, true);
+      fixture.detectChanges();
+      expect(el.querySelector('.caps')).toBeNull();
+    });
+
+    it('takes the typing limit from the owner, and falls back to the e-mail limit without one', () => {
+      const { fixture, host, input } = setup('text');
+      expect(input.getAttribute('maxlength')).toBe('254');
+      host.limit.set(120);
+      fixture.detectChanges();
+      expect(input.getAttribute('maxlength')).toBe('120');
+    });
+
+    it('keeps the e-mail and password hints exactly as they were', () => {
+      const { fixture, host, input } = setup('email');
+      expect(input.type).toBe('email');
+      expect(input.getAttribute('inputmode')).toBe('email');
+      expect(input.getAttribute('autocapitalize')).toBe('none');
+      host.kind.set('password');
+      fixture.detectChanges();
+      expect(input.getAttribute('autocapitalize')).toBe('none');
+      expect(input.getAttribute('inputmode')).toBeNull();
+    });
   });
 });

@@ -6,22 +6,29 @@ import { CreditsPage } from './credits.page';
 
 describe('credits route', () => {
   const shell = routes.find((route) => route.path === '')!;
-  const children = shell.children ?? [];
+  const settings = (shell.children ?? []).find((child) => child.path === 'ajustes')!;
+  const children = settings.children ?? [];
 
-  it('sits right before the Ajustes route, so the longer path wins', () => {
-    const paths = children.map((route) => route.path);
-    expect(paths.indexOf('ajustes/creditos')).toBeGreaterThan(-1);
-    expect(paths.indexOf('ajustes/creditos')).toBeLessThan(paths.indexOf('ajustes'));
+  it('is one of the screens of Ajustes, next to the others', () => {
+    expect(children.map((route) => route.path)).toContain('creditos');
   });
 
-  it('is inside the shell, behind the same guard, with its own title', () => {
+  it('is inside the shell, behind the same guard, with its own title and the way back to Ajustes', () => {
     expect(shell.canMatch).toBeDefined();
-    const route = children.find((child) => child.path === 'ajustes/creditos')!;
-    expect((route.data as { title: string }).title).toBe('Créditos');
+    const route = children.find((child) => child.path === 'creditos')!;
+    const data = route.data as { title: string; back: { link: string } };
+    expect(data.title).toBe('Créditos');
+    expect(data.back.link).toBe('/ajustes');
+  });
+
+  it('is a screen of the administrator only (the guest is sent to the control)', () => {
+    const route = children.find((child) => child.path === 'creditos')!;
+    expect(route.canMatch).toBeDefined();
+    expect(route.canMatch).toHaveLength(1);
   });
 
   it('lazy-loads the credits page', async () => {
-    const route = children.find((child) => child.path === 'ajustes/creditos')!;
+    const route = children.find((child) => child.path === 'creditos')!;
     expect(await (route.loadComponent as () => Promise<unknown>)()).toBe(CreditsPage);
   });
 

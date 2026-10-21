@@ -1,0 +1,210 @@
+:host {
+  display: block;
+}
+
+/* Uma coluna legível; em tablet e computador ela não estica. */
+.profile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hint {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+/* Quem é a pessoa: avatar, nome, e-mail e o papel. */
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+  font-size: 1.5rem;
+  font-weight: 750;
+  box-shadow: 0 0 0 4px var(--a-accent-soft);
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.person {
+  font-size: 1.125rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.mail {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.role {
+  margin: 0;
+}
+
+.role-chip app-settings-glyph {
+  --glyph-size: 16px;
+}
+
+/* Nome: campo, dica e contador, aviso do campo, resultado e o botão. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.ui-input[aria-invalid='true'] {
+  border-color: var(--a-bad);
+}
+
+.meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.meta .hint {
+  flex: 1 1 auto;
+}
+
+.counter {
+  flex: none;
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Passou do limite: o número fica na cor de erro (a mensagem do campo explica o que fazer). */
+.counter.over {
+  color: var(--a-bad-ink);
+  font-weight: 650;
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--a-bad-ink);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.error app-settings-glyph,
+.ui-notice app-settings-glyph {
+  --glyph-size: 20px;
+  margin-top: 1px;
+}
+
+.error app-settings-glyph {
+  --glyph-size: 16px;
+  margin-top: 2px;
+}
+
+.notice-title,
+.notice-detail {
+  display: block;
+}
+
+.notice-detail {
+  margin-top: 2px;
+  font-weight: 500;
+}
+
+/* O resultado só ocupa espaço quando há o que mostrar (a região em si fica sempre no lugar). */
+.result:empty {
+  display: none;
+}
+
+.panel .ui-btn.primary:disabled:has(.ui-spinner) {
+  opacity: 1;
+  cursor: progress;
+}
+
+.panel .ui-spinner {
+  border-color: color-mix(in srgb, var(--a-on-accent) 35%, transparent);
+  border-top-color: var(--a-on-accent);
+}
+
+/* O que a pessoa pode fazer: lista de itens com visto, ou uma frase para o administrador. */
+.abilities {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.abilities-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.abilities-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-weight: 600;
+}
+
+.abilities-list app-settings-glyph {
+  --glyph-size: 20px;
+  color: var(--a-ok-ink);
+}
+
+.all {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* Sessão: o estado e a saída. */
+.session-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}

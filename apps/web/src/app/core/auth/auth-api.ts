@@ -68,6 +68,12 @@ export class AuthApi {
     return this.send('GET', '/me', { token });
   }
 
+  /** O nome que a própria pessoa escolheu; a API o normaliza, confirma e devolve a conta como ficou. */
+  updateMe(token: string, displayName: string): Promise<MeResponse> {
+    const body: Schemas['UpdateProfileRequest'] = { displayName };
+    return this.send('PATCH', '/me', { token, body });
+  }
+
   /** Troca o JWT por um bilhete curto em cookie, para abrir o SSE sem token na URL. */
   streamTicket(token: string): Promise<StreamTicket> {
     return this.send('POST', '/auth/stream-ticket', { token });

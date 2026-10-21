@@ -46,8 +46,8 @@ test.describe('passkeys e confirmação', () => {
     await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
     await page.getByRole('button', { name: 'Entrar', exact: true }).click();
     await expect(page).toHaveURL(/\/$/);
-    await page.goto('/ajustes');
-    await expect(page.getByRole('heading', { level: 2, name: 'Segurança' })).toBeVisible();
+    await page.goto('/ajustes/seguranca');
+    await expect(page.getByRole('heading', { level: 2, name: 'Passkeys' })).toBeVisible();
   });
 
   test('cadastra duas passkeys pedindo a senha de novo', async ({ page }) => {

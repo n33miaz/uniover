@@ -1,0 +1,185 @@
+:host {
+  display: block;
+}
+
+/* Uma coluna legível; em tablet e computador ela não estica. */
+.appearance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hint {
+  margin: 0;
+  padding: 0 var(--space-1);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+/* Módulos: ladrilho, nome, chip e o interruptor; a linha toda liga e desliga pelo rótulo. */
+.list .row {
+  min-height: 64px;
+}
+
+.module {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: var(--tap);
+  cursor: pointer;
+}
+
+.module-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.module-name {
+  font-weight: 650;
+}
+
+/* Tema: três cartões com uma amostra do que cada escolha mostra. */
+.themes {
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-4);
+}
+
+legend {
+  float: left;
+  width: 100%;
+  margin-bottom: var(--space-3);
+  padding: 0;
+  font-weight: 650;
+}
+
+.choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  clear: both;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.theme {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  padding: var(--space-2);
+  border: 2px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface-2);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) linear,
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.theme:active {
+  transform: scale(0.97);
+}
+
+/* O botão de opção de verdade cobre o cartão inteiro, invisível: o toque cai nele. */
+.theme input {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.theme:has(input:checked) {
+  border-color: var(--a-accent);
+  background: var(--a-accent-soft);
+  box-shadow: var(--a-ring);
+}
+
+.theme:has(input:focus-visible) {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 3px;
+}
+
+.theme-label {
+  font-size: var(--fs-small);
+  font-weight: 650;
+  text-align: center;
+}
+
+/* Amostras: cores fixas de propósito (mostram o tema, não obedecem a ele). */
+.preview {
+  position: relative;
+  display: block;
+  height: 60px;
+  overflow: hidden;
+  border: 1px solid rgb(0 0 0 / 0.16);
+  border-radius: 10px;
+  background: var(--p-bg);
+}
+
+.preview::before,
+.preview::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  border-radius: 5px;
+}
+
+.preview::before {
+  top: 8px;
+  right: 8px;
+  height: 12px;
+  background: var(--p-card);
+}
+
+.preview::after {
+  bottom: 8px;
+  width: 52%;
+  height: 16px;
+  background: var(--p-accent);
+}
+
+.preview.light {
+  --p-bg: #f2f5f1;
+  --p-card: #ffffff;
+  --p-accent: #3b6b4b;
+}
+
+.preview.dark {
+  --p-bg: #101512;
+  --p-card: #2a352d;
+  --p-accent: #98c4a3;
+}
+
+.preview.auto {
+  --p-card: #9aa99e;
+  --p-accent: #4f8260;
+  background: linear-gradient(115deg, #f2f5f1 50%, #101512 50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme {
+    transition: none;
+  }
+
+  .theme:active {
+    transform: none;
+  }
+}

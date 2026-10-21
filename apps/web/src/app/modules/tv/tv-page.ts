@@ -11,6 +11,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ControlPage } from './pages/control.page';
 import { TV_PANEL_PARAM, TvPanelName, panelFromParam } from './data/tv-panels';
+import { GearIcon } from '../../core/layout/gear-icon';
 import { SessionState } from '../../core/session/session-state';
 import { TvPrefs } from './data/tv-prefs';
 import { TvStore } from './data/tv-store';
@@ -44,6 +45,7 @@ const TITLE_MEDIUM_MAX = 12;
   selector: 'app-tv-page',
   imports: [
     RouterLink,
+    GearIcon,
     ControlPage,
     StatusIndicator,
     TvIcon,
@@ -59,7 +61,7 @@ const TITLE_MEDIUM_MAX = 12;
 export class TvPage {
   protected readonly store = inject(TvStore);
   protected readonly prefs = inject(TvPrefs);
-  /** Convidado vê só o controle: sem o retorno ao Início (as outras telas nem existem para ele). */
+  /** Convidado vê só o controle: sem o retorno ao Início (ele não tem Início); no lugar, o botão de configurações. */
   protected readonly isGuest = inject(SessionState).isGuest;
 
   protected readonly powerOpen = signal(false);

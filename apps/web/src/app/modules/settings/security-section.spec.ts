@@ -251,4 +251,33 @@ describe('SecuritySection', () => {
       await vi.waitFor(() => expect(el.textContent).toContain('última passkey'));
     });
   });
+
+  describe('who may load it', () => {
+    async function mount() {
+      await TestBed.inject(AuthService).init();
+      const fixture = TestBed.createComponent(SecuritySection);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      // Dá tempo de qualquer carregamento (indevido) acontecer antes de conferir.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return fixture;
+    }
+
+    it('never calls the administrator route for a guest', async () => {
+      api.me.mockResolvedValue({ id: '2', email: 'a@b.c', displayName: 'Alice', role: 'guest' });
+      await mount();
+      expect(api.passkeys).not.toHaveBeenCalled();
+    });
+
+    it('waits for the role while it is unknown (session to confirm) and loads when it arrives', async () => {
+      api.refresh.mockRejectedValueOnce(new ApiProblem(0, 'network', 'x'));
+      const fixture = await mount();
+      expect(api.passkeys).not.toHaveBeenCalled();
+      // A sessão é confirmada depois: o papel chega e só então a lista é pedida.
+      api.refresh.mockResolvedValue({ accessToken: 't', expiresIn: 600 });
+      await TestBed.inject(AuthService).renew();
+      await fixture.whenStable();
+      await vi.waitFor(() => expect(api.passkeys).toHaveBeenCalled());
+    });
+  });
 });

@@ -193,6 +193,40 @@ export class AuthService {
     });
   }
 
+  /** Mesmo caminho do login, para a pergunta do nome: o destino original vai em `next` e a pessoa volta a ele depois. */
+  welcomeUrlTree(returnTo: string): UrlTree {
+    const next = safeNextUrl(returnTo, this.origin());
+    return this.router.createUrlTree(['/boas-vindas'], {
+      queryParams: next && next !== '/' ? { next } : {},
+    });
+  }
+
+  /**
+   * O nome que a pessoa escolheu (a API o confirma). O usuário da sessão passa a ser o devolvido pela API: o nome novo
+   * aparece na saudação da Início sem recarregar. Erro (400 por campo, 403, 429, sem rede) sobe para a tela mostrar; nada
+   * é navegado nem guardado quando falha.
+   */
+  async updateDisplayName(displayName: string): Promise<void> {
+    const me = await this.authorized((token) => this.api.updateMe(token, displayName), {
+      stepUp: false,
+    });
+    this.session.setUser(me);
+  }
+
+  /**
+   * Garante que o usuário da sessão esteja carregado quando há sessão confirmada: se a leitura logo depois do login
+   * falhou (o servidor oscilou), tenta de novo uma vez. Falhar de novo não é erro: sem usuário, o guarda deixa a pessoa
+   * seguir (rede ruim nunca a prende) e a pergunta do nome vem na próxima vez.
+   */
+  async ensureUser(): Promise<void> {
+    if (this.session.user() || this.session.status() !== 'authenticated') return;
+    try {
+      this.session.setUser(await this.authorized((token) => this.api.me(token), { stepUp: false }));
+    } catch {
+      // Sem usuário a sessão vale do mesmo jeito (ver acima).
+    }
+  }
+
   private origin(): string {
     return this.win?.location.origin ?? 'http://localhost';
   }

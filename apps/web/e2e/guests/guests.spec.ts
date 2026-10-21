@@ -83,15 +83,18 @@ test.describe('convite do dono (passkey)', () => {
   }, info) => {
     await addVirtualAuthenticator(page);
     await signInAsOwner(page);
-    await page.goto('/ajustes');
+    await page.goto('/ajustes/seguranca');
 
     // Sem passkey cadastrada não há como confirmar: cadastra uma, como o dono faz em Segurança.
     await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
     await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
     await page.getByLabel('Nome da passkey (opcional)').fill('Notebook');
     await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
-    await expect(page.getByText('Passkey cadastrada.')).toBeVisible();
+    await expect(page.getByText('Passkey cadastrada.', { exact: true })).toBeVisible();
 
+    // O convite mora em Pessoas.
+    await page.goto('/ajustes/pessoas');
+    await expect(page.getByRole('heading', { level: 1, name: 'Pessoas' })).toBeVisible();
     await expect(page.getByRole('heading', { level: 2, name: 'Convidados' })).toBeVisible();
     await expect(page.getByText('Nenhum convite pendente.')).toBeVisible();
     await page.getByLabel('Nome do convidado').fill(GUEST.displayName);
@@ -250,7 +253,7 @@ test.describe('convidado: só o controle da TV', () => {
     }
   });
 
-  test('qualquer outra tela o devolve ao controle, e nenhuma chamada fora da TV é feita', async ({
+  test('as telas do dono o devolvem ao controle, e nenhuma chamada fora da TV é feita', async ({
     page,
   }) => {
     const invite = identity.seedInvite();
@@ -263,7 +266,8 @@ test.describe('convidado: só o controle da TV', () => {
     for (const path of [
       '/',
       '/treino',
-      '/ajustes',
+      '/ajustes/seguranca',
+      '/ajustes/pessoas',
       '/ajustes/aparelhos',
       '/ajustes/creditos',
       '/nao-existe',
@@ -286,6 +290,101 @@ test.describe('convidado: só o controle da TV', () => {
     );
     expect(outside).toEqual([]);
     expect(identity.requests.map((r) => r.path)).not.toContain('/passkeys');
+  });
+
+  test('o botão redondo do cabeçalho leva aos Ajustes da convidada: só Perfil, Aparência e Sobre', async ({
+    page,
+  }) => {
+    const invite = identity.seedInvite();
+    await acceptInvite(page, invite.token);
+    await expect(page).toHaveURL(/\/tv$/);
+    await showTv(page);
+
+    const settings = page.locator('header.head').getByRole('link', { name: 'Ajustes' });
+    await expect(settings).toBeVisible();
+    await settings.click();
+    await expect(page).toHaveURL(/\/ajustes$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeVisible();
+    await expect(page.locator('a.ui-row .ui-row-title')).toHaveText([
+      'Perfil',
+      'Aparência',
+      'Sobre',
+    ]);
+    for (const name of ['Segurança', 'Pessoas', 'Aparelhos', 'Auditoria', 'Sistema']) {
+      await expect(page.getByText(name, { exact: true })).toHaveCount(0);
+    }
+    await expect(page.getByText(`${GUEST.displayName} · Convidado`)).toBeVisible();
+
+    // A seta leva de volta ao controle (a convidada não tem Início).
+    await page.getByRole('link', { name: 'Voltar ao controle' }).click();
+    await expect(page).toHaveURL(/\/tv$/);
+  });
+
+  test('a sessão da convidada nunca chama rota de administrador nos Ajustes, e o servidor recusa se ela chamar à mão', async ({
+    page,
+  }) => {
+    const invite = identity.seedInvite();
+    await acceptInvite(page, invite.token);
+    await expect(page).toHaveURL(/\/tv$/);
+    await showTv(page);
+
+    const urls: string[] = [];
+    page.on('request', (request) => urls.push(new URL(request.url()).pathname));
+    const before = identity.requests.length;
+    for (const path of ['/ajustes', '/ajustes/perfil', '/ajustes/aparencia', '/ajustes/sobre']) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    }
+    // Salvar o nome também é só da própria conta.
+    await page.goto('/ajustes/perfil');
+    await page.getByLabel('Como devemos te chamar').fill('Alice Souza');
+    await page.getByRole('button', { name: 'Salvar' }).click();
+    await expect(page.getByText('Nome salvo.')).toBeVisible();
+
+    const adminRoute =
+      /\/api\/v1\/(devices|training)|\/api\/v1\/identity\/(passkeys|guests|guest-invites|step-up)/;
+    expect(urls.filter((path) => adminRoute.test(path))).toEqual([]);
+    const sent = identity.requests.slice(before).map((r) => `${r.method} ${r.path}`);
+    expect(sent.filter((request) => /passkeys|guests|guest-invites|step-up/.test(request))).toEqual(
+      [],
+    );
+    // Só a leitura pública da versão, o renovar da sessão, a própria conta e o salvar do nome.
+    expect(new Set(sent.map((request) => request.replace(/^(GET|POST|PATCH) /, '')))).toEqual(
+      new Set(['/info', '/auth/refresh', '/me']),
+    );
+
+    // O servidor recusa o que ela chamar à mão: o papel dela não passa nessas rotas (a API tem o teste dela; aqui o
+    // simulador reproduz o mesmo contrato).
+    const token = identity.issuedTokens.at(-1)!;
+    const statuses = await page.evaluate(async (bearer) => {
+      const out: number[] = [];
+      for (const path of ['/passkeys', '/guests', '/guest-invites']) {
+        const response = await fetch('/api/v1/identity' + path, {
+          headers: { Authorization: 'Bearer ' + bearer },
+        });
+        out.push(response.status);
+      }
+      return out;
+    }, token);
+    expect(statuses).toEqual([403, 403, 403]);
+  });
+
+  test('o Perfil da convidada mostra o que ela pode fazer, pelas permissões da conta', async ({
+    page,
+  }) => {
+    const invite = identity.seedInvite();
+    await acceptInvite(page, invite.token);
+    await expect(page).toHaveURL(/\/tv$/);
+    await showTv(page);
+    await page.goto('/ajustes/perfil');
+    await expect(page.getByText('Convidado', { exact: true })).toBeVisible();
+    await expect(page.locator('.abilities-list li')).toHaveText([
+      'Controlar a TV',
+      'Desligar a TV',
+      'Abrir apps',
+      'Ver o histórico',
+    ]);
+    await expect(page.getByText('Editar atalhos')).toHaveCount(0);
   });
 
   test('convite que não vale mais, ou endereço sem convite, explica o que fazer', async ({

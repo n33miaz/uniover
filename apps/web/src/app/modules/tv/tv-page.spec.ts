@@ -69,6 +69,11 @@ describe('TvPage', () => {
       ).toEqual(['Apps da TV', 'Desligar a TV']);
     });
 
+    it('shows the owner the arrow back, never the settings button of the guest', () => {
+      expect(root.querySelector('.head a.settings')).toBeNull();
+      expect(root.querySelector('.head a[href="/ajustes"]')).toBeNull();
+    });
+
     it('draws back as a plain arrow in a 44 px circle, with no text beside it', () => {
       const back = root.querySelector('a.back')!;
       expect(back.classList.contains('circle')).toBe(true);
@@ -528,7 +533,7 @@ describe('TvPage for a guest', () => {
     localStorage.clear();
   });
 
-  it('has no way back to Início (single view of the control), but keeps name, state, Apps and power', async () => {
+  it('has no way back to Início (the guest has none), but keeps name, state, Apps and power', async () => {
     await open();
     expect(root.querySelector('a.back')).toBeNull();
     expect(root.querySelector('a[href="/"]')).toBeNull();
@@ -539,13 +544,30 @@ describe('TvPage for a guest', () => {
     expect(root.querySelector('app-tv-control')).not.toBeNull();
   });
 
-  it('keeps an empty cell where back was, so the name stays in the middle', async () => {
+  it('puts the round settings button where back was, so the name stays in the middle', async () => {
     await open();
     const head = root.querySelector('.head')!;
     expect(head.children).toHaveLength(3);
-    expect(head.children[0].getAttribute('aria-hidden')).toBe('true');
+    const settings = head.children[0];
+    expect(settings.tagName).toBe('A');
+    expect(settings.classList.contains('circle')).toBe(true);
+    expect(settings.getAttribute('href')).toBe('/ajustes');
+    expect(settings.getAttribute('aria-label')).toBe('Ajustes');
     expect(head.children[1].classList.contains('name')).toBe(true);
     expect(head.children[2].classList.contains('actions')).toBe(true);
+  });
+
+  it('draws the settings button like the other round buttons of the header: a decorative gear, no visible text', async () => {
+    await open();
+    const settings = root.querySelector('.head a.settings')!;
+    const apps = root.querySelector('.head button[aria-label="Apps da TV"]')!;
+    expect(settings.classList.contains('circle')).toBe(true);
+    expect(apps.classList.contains('circle')).toBe(true);
+    expect(settings.textContent?.trim()).toBe('');
+    const svg = settings.querySelector('svg')!;
+    expect(svg.getAttribute('aria-hidden')).toBe('true');
+    expect(svg.getAttribute('stroke-width')).toBe('2.2');
+    expect(svg.getAttribute('width')).toBe('22');
   });
 
   it('can name the TV for itself: the nickname is kept on this device, with no server involved', async () => {

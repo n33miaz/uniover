@@ -1,8 +1,18 @@
 <div class="tv">
   <header class="head">
     @if (isGuest()) {
-      <!-- Convidado: visão única do controle, sem Início nem voltar. O espaço fica para o nome seguir centralizado. -->
-      <span aria-hidden="true"></span>
+      <!--
+        Convidado: visão única do controle, sem Início nem voltar. No lugar da seta fica o botão redondo das configurações do
+        sistema (Perfil, Aparência e Sobre), do mesmo tamanho: o nome continua no centro da tela.
+      -->
+      <a
+        routerLink="/ajustes"
+        class="circle settings"
+        aria-label="Ajustes"
+        i18n-aria-label="@@tv.header.settings"
+      >
+        <app-gear-icon />
+      </a>
     } @else {
       <a
         routerLink="/"

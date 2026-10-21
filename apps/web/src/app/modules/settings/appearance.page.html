@@ -1,0 +1,60 @@
+<div class="appearance ui-stagger">
+  <section class="section ui-rise" aria-labelledby="theme-title">
+    <h2 id="theme-title" class="ui-section-label" i18n="@@settings.appearance.title">Tema</h2>
+    <fieldset class="themes ui-card">
+      <legend i18n="@@settings.appearance.legend">Como o app aparece</legend>
+      <div class="choices">
+        @for (choice of themeChoices; track choice.value) {
+          <label class="theme">
+            <input
+              type="radio"
+              name="theme"
+              [value]="choice.value"
+              [checked]="themePreference() === choice.value"
+              (change)="chooseTheme(choice.value)"
+            />
+            <span [class]="'preview ' + choice.value" aria-hidden="true"></span>
+            <span class="theme-label">{{ choice.label }}</span>
+          </label>
+        }
+      </div>
+      <p class="hint" i18n="@@settings.appearance.auto-hint">
+        Automático acompanha o tema claro ou escuro do aparelho.
+      </p>
+    </fieldset>
+  </section>
+
+  <app-install-hint-row class="ui-rise" [tile]="true" />
+
+  @if (hasHome()) {
+    <section class="section ui-rise" aria-labelledby="modules-title">
+      <h2 id="modules-title" class="ui-section-label" i18n="@@settings.modules.title">Módulos</h2>
+      <ul class="list ui-group">
+        @for (module of registry.modules; track module.id) {
+          <li class="row ui-row">
+            <label class="module" [for]="'module-' + module.id">
+              <span class="ui-tile"><app-settings-glyph [name]="glyphFor(module)" /></span>
+              <span class="module-text">
+                <span class="module-name">{{ module.title }}</span>
+                <span class="chip ui-chip" [class.accent]="module.status === 'available'">{{
+                  statusLabel(module)
+                }}</span>
+              </span>
+            </label>
+            <input
+              type="checkbox"
+              role="switch"
+              class="switch ui-switch"
+              [id]="'module-' + module.id"
+              [checked]="enabled(module)"
+              (change)="toggleModule(module, $event)"
+            />
+          </li>
+        }
+      </ul>
+      <p class="hint" i18n="@@settings.modules.hint">
+        Módulo desligado some da Início. A escolha vale só neste aparelho.
+      </p>
+    </section>
+  }
+</div>
