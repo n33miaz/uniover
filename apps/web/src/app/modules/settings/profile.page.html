@@ -1,0 +1,169 @@
+<div class="profile ui-stagger">
+  <section class="section ui-rise" aria-labelledby="identity-title">
+    <h2 id="identity-title" class="ui-section-label" i18n="@@settings.profile.identity">Conta</h2>
+    <div class="identity ui-card">
+      <div class="who">
+        <span class="avatar" aria-hidden="true">{{ initial() }}</span>
+        <dl class="facts">
+          <div>
+            <dt class="ui-visually-hidden" i18n="@@settings.account.name">Nome</dt>
+            <dd class="person">{{ user()?.displayName }}</dd>
+          </div>
+          <div>
+            <dt class="ui-visually-hidden" i18n="@@settings.account.email">E-mail</dt>
+            <dd class="mail">{{ user()?.email }}</dd>
+          </div>
+        </dl>
+      </div>
+      @if (roleText(); as text) {
+        <p class="role">
+          <span class="ui-chip accent role-chip">
+            <app-settings-glyph [name]="isGuest() ? 'user' : 'shield'" />
+            <span class="role-text">{{ text }}</span>
+          </span>
+        </p>
+      }
+    </div>
+  </section>
+
+  <section class="section ui-rise" aria-labelledby="name-title">
+    <h2 id="name-title" class="ui-section-label" i18n="@@settings.profile.name-title">Seu nome</h2>
+    <form class="panel ui-card" (submit)="save($event)" novalidate>
+      <div class="ui-field">
+        <label for="profile-name" i18n="@@settings.profile.name-label"
+          >Como devemos te chamar</label
+        >
+        <input
+          #nameInput
+          class="ui-input"
+          id="profile-name"
+          type="text"
+          name="displayName"
+          autocomplete="nickname"
+          [attr.autocapitalize]="'words'"
+          [attr.autocorrect]="'off'"
+          [spellcheck]="false"
+          [attr.enterkeyhint]="'done'"
+          [attr.maxlength]="inputLimit"
+          required
+          [value]="name()"
+          [attr.aria-invalid]="nameError() ? 'true' : null"
+          [attr.aria-describedby]="
+            nameError() ? 'profile-name-error profile-name-hint' : 'profile-name-hint'
+          "
+          (input)="edit($any($event.target).value)"
+          (blur)="touched.set(true)"
+        />
+        <div class="meta">
+          <p id="profile-name-hint" class="hint" i18n="@@settings.profile.name-hint">
+            Aparece na saudação do app. Dá para mudar quando quiser.
+          </p>
+          <p class="counter" [class.over]="overLimit()">{{ counter() }}</p>
+        </div>
+        @if (nameError(); as text) {
+          <p id="profile-name-error" class="error">
+            <app-settings-glyph name="alert" />
+            <span>{{ text }}</span>
+          </p>
+        }
+      </div>
+
+      @if (banner(); as problem) {
+        <p class="ui-notice warn" role="alert">
+          <app-settings-glyph name="alert" />
+          <span>
+            <strong class="notice-title">{{ problem.heading }}</strong>
+            @if (problem.detail; as detail) {
+              <span class="notice-detail">{{ detail }}</span>
+            }
+          </span>
+        </p>
+      }
+
+      <!-- Sempre no lugar, para o leitor de tela anunciar o resultado quando ele chega. -->
+      <div class="result" role="status">
+        @if (saved()) {
+          <p class="ui-notice ok saved">
+            <app-settings-glyph name="checkCircle" />
+            <span i18n="@@settings.profile.saved">Nome salvo.</span>
+          </p>
+        }
+      </div>
+
+      <button type="submit" class="primary ui-btn block" [disabled]="saving() || !dirty()">
+        @if (saving()) {
+          <span class="ui-spinner" aria-hidden="true"></span>
+          <span i18n="@@settings.profile.saving">Salvando…</span>
+        } @else {
+          <span i18n="@@settings.profile.save">Salvar</span>
+        }
+      </button>
+    </form>
+  </section>
+
+  <section class="section ui-rise" aria-labelledby="abilities-title">
+    <h2 id="abilities-title" class="ui-section-label" i18n="@@settings.profile.abilities-title">
+      O que você pode fazer
+    </h2>
+    <div class="abilities ui-card">
+      @if (isGuest()) {
+        @if (abilities().length > 0) {
+          <ul class="abilities-list">
+            @for (label of abilities(); track label) {
+              <li>
+                <app-settings-glyph name="check" />
+                <span>{{ label }}</span>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="hint" i18n="@@settings.profile.abilities-none">
+            Nenhuma permissão liberada por enquanto. Quem administra o app pode liberar.
+          </p>
+        }
+        <p class="hint" i18n="@@settings.profile.abilities-hint">
+          Quem administra o app decide o que fica liberado para você.
+        </p>
+      } @else {
+        <p class="all" i18n="@@settings.profile.abilities-admin">
+          Você administra o UniOver: tem acesso a tudo.
+        </p>
+      }
+    </div>
+  </section>
+
+  <section class="section ui-rise" aria-labelledby="session-title">
+    <h2 id="session-title" class="ui-section-label" i18n="@@settings.profile.session-title">
+      Sessão
+    </h2>
+    <div class="session-card ui-card">
+      <p
+        class="session ui-notice"
+        role="status"
+        [class.ok]="status() === 'authenticated'"
+        [class.warn]="status() === 'pending'"
+      >
+        <app-settings-glyph [name]="status() === 'pending' ? 'clock' : 'checkCircle'" />
+        <span>{{ sessionText() }}</span>
+      </p>
+      <button
+        type="button"
+        class="secondary ui-btn block"
+        [disabled]="loggingOut()"
+        (click)="logout()"
+      >
+        <app-settings-glyph name="logout" />
+        <span i18n="@@settings.account.logout">Sair</span>
+      </button>
+      @if (logoutUnconfirmed()) {
+        <p class="note ui-notice warn" role="status">
+          <app-settings-glyph name="alert" />
+          <span i18n="@@settings.account.logout-unconfirmed"
+            >Sem conexão: a sessão foi encerrada neste aparelho, mas o servidor ainda não
+            soube.</span
+          >
+        </p>
+      }
+    </div>
+  </section>
+</div>

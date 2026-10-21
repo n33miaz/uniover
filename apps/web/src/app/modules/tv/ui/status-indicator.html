@@ -25,8 +25,8 @@
     @if (seen(); as seenText) {
       <p class="note time">{{ seenText }}</p>
     }
-    @if (text().action; as action) {
-      <button type="button" class="action" [disabled]="busy()" (click)="run(action)">
+    @if (action(); as kind) {
+      <button type="button" class="action" [disabled]="busy()" (click)="run(kind)">
         {{ text().actionLabel }}
       </button>
     }

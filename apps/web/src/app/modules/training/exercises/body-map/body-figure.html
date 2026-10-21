@@ -1,0 +1,37 @@
+<svg class="figure" [attr.viewBox]="viewBox" role="group" [attr.aria-label]="label()">
+  <g class="line" aria-hidden="true">
+    @for (d of outline; track $index) {
+      <path [attr.d]="d" />
+    }
+  </g>
+  <g class="skin" aria-hidden="true">
+    @for (d of outline; track $index) {
+      <path [attr.d]="d" />
+    }
+  </g>
+  @for (zone of zones(); track zone.muscle) {
+    <g
+      class="zone"
+      role="button"
+      tabindex="0"
+      [attr.data-muscle]="zone.muscle"
+      [attr.data-level]="zone.level"
+      [attr.aria-label]="zone.label"
+      [attr.aria-pressed]="zone.selected"
+      [class.on]="zone.selected"
+      (click)="picked.emit(zone.muscle)"
+      (keydown.enter)="activate($event, zone.muscle)"
+      (keydown.space)="activate($event, zone.muscle)"
+    >
+      @for (d of zone.tiles; track $index) {
+        <path class="tile" [attr.d]="d" />
+      }
+      @for (d of zone.shapes; track $index) {
+        <path class="halo" [attr.d]="d" />
+      }
+      @for (d of zone.shapes; track $index) {
+        <path class="shape" [attr.d]="d" />
+      }
+    </g>
+  }
+</svg>

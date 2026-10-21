@@ -6,7 +6,7 @@ import { SessionState } from '../session/session-state';
 import { ApiProblem, networkProblem } from './api-problem';
 import { AuthApi } from './auth-api';
 import { authGuard } from './auth.guard';
-import { ownerOnlyGuard } from './role.guard';
+import { moduleGuard, noAccessGuard, ownerOnlyGuard } from './role.guard';
 
 @Component({ template: '' })
 class Screen {}
@@ -88,5 +88,140 @@ describe('ownerOnlyGuard', () => {
     api.refresh.mockRejectedValue(new ApiProblem(401, '', 'x'));
     expect(await go('/treino')).toBe('/entrar?next=%2Ftreino');
     expect(localStorage.getItem('uniover.account-role')).toBeNull();
+  });
+});
+
+describe('the guest goes to the first module the account can use', () => {
+  const api = { refresh: vi.fn(), me: vi.fn() };
+  const guest = (permissions?: string[]) => ({
+    id: '1',
+    email: 'a@b.c',
+    displayName: 'A',
+    role: 'guest',
+    permissions,
+  });
+  const TV = ['module:tv', 'tv:control'];
+  const TRAINING = ['module:training'];
+
+  beforeEach(() => {
+    localStorage.clear();
+    api.refresh.mockReset().mockResolvedValue({ accessToken: 't', expiresIn: 600 });
+    api.me.mockReset();
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([
+          { path: 'entrar', component: Screen },
+          {
+            path: '',
+            canMatch: [authGuard],
+            children: [
+              { path: 'tv', component: Screen },
+              { path: 'treino', component: Screen, canMatch: [moduleGuard('training')] },
+              { path: 'sem-acesso', component: Screen, canMatch: [noAccessGuard] },
+              { path: 'ajustes', component: Screen, canMatch: [ownerOnlyGuard] },
+              { path: '', pathMatch: 'full', component: Screen, canMatch: [ownerOnlyGuard] },
+            ],
+          },
+          { path: '**', redirectTo: '' },
+        ]),
+        { provide: AuthApi, useValue: api },
+      ],
+    });
+  });
+
+  afterEach(() => localStorage.clear());
+
+  // O roteador de teste só aceita um "harness" por teste: vários caminhos no mesmo teste reaproveitam o primeiro.
+  let harness: RouterTestingHarness | undefined;
+  beforeEach(() => (harness = undefined));
+  const go = async (url: string) => {
+    harness ??= await RouterTestingHarness.create();
+    await harness.navigateByUrl(url);
+    return TestBed.inject(Router).url;
+  };
+
+  it.each(['/', '/ajustes', '/nada-aqui'])(
+    'sends a guest who only has the Treino from %s straight to the Treino, never through the TV',
+    async (url) => {
+      api.me.mockResolvedValue(guest(TRAINING));
+      expect(await go(url)).toBe('/treino');
+    },
+  );
+
+  it('lets the guest who has the Treino stay in it', async () => {
+    api.me.mockResolvedValue(guest(TRAINING));
+    expect(await go('/treino')).toBe('/treino');
+  });
+
+  it.each(['/', '/treino', '/ajustes'])(
+    'sends a guest who only has the TV from %s to the TV',
+    async (url) => {
+      api.me.mockResolvedValue(guest(TV));
+      expect(await go(url)).toBe('/tv');
+    },
+  );
+
+  it('prefers the TV to the Treino when the guest has both (the order of the registry)', async () => {
+    api.me.mockResolvedValue(guest([...TV, ...TRAINING]));
+    expect(await go('/')).toBe('/tv');
+    expect(await go('/treino')).toBe('/treino');
+  });
+
+  it.each(['/', '/treino', '/ajustes'])(
+    'sends a guest without any module from %s to the "no access" screen, which stays put',
+    async (url) => {
+      api.me.mockResolvedValue(guest([]));
+      expect(await go(url)).toBe('/sem-acesso');
+    },
+  );
+
+  it('does not leave a guest with a module parked on the "no access" screen', async () => {
+    api.me.mockResolvedValue(guest(TRAINING));
+    expect(await go('/sem-acesso')).toBe('/treino');
+  });
+
+  it('sends the owner away from the "no access" screen, to the Início', async () => {
+    api.me.mockResolvedValue({ ...guest(), role: 'owner' });
+    expect(await go('/sem-acesso')).toBe('/');
+  });
+
+  it.each([
+    ['without any module', []],
+    ['with the TV', TV],
+    ['with the Treino', TRAINING],
+    ['with both', [...TV, ...TRAINING]],
+  ])(
+    'never redirects a guest %s to a place that would send the same account away again (no loops)',
+    async (_name, permissions) => {
+      api.me.mockResolvedValue(guest(permissions));
+      const first = await go('/');
+      expect(await go(first)).toBe(first);
+    },
+  );
+
+  it('keeps the TV for a guest whose list is unknown (an answer without the list)', async () => {
+    api.me.mockResolvedValue(guest(undefined));
+    expect(await go('/')).toBe('/tv');
+    expect(await go('/treino')).toBe('/treino');
+  });
+
+  it('uses the remembered list while offline: the guest of the Treino stays in the Treino', async () => {
+    localStorage.setItem('uniover.account-role', 'guest');
+    localStorage.setItem('uniover.account-permissions', JSON.stringify(TRAINING));
+    api.refresh.mockRejectedValue(networkProblem());
+    expect(await go('/')).toBe('/treino');
+    expect(await go('/treino')).toBe('/treino');
+  });
+
+  it('never sends a guest to "no access" just because the network failed (list unknown)', async () => {
+    localStorage.setItem('uniover.account-role', 'guest');
+    api.refresh.mockRejectedValue(networkProblem());
+    expect(await go('/treino')).toBe('/treino');
+    expect(await go('/')).toBe('/tv');
+  });
+
+  it('lets the owner into every module', async () => {
+    api.me.mockResolvedValue({ ...guest(), role: 'owner' });
+    expect(await go('/treino')).toBe('/treino');
   });
 });

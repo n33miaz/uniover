@@ -32,7 +32,10 @@ export class AuthField {
   readonly fieldId = input.required<string>();
   readonly name = input.required<string>();
   readonly label = input.required<string>();
-  readonly kind = input<'email' | 'password'>('email');
+  /** `text`: texto livre, como o nome da pessoa (sem as dicas de e-mail, com maiúscula nas palavras). */
+  readonly kind = input<'email' | 'password' | 'text'>('email');
+  /** Teto de digitação do campo; sem ele valem os de e-mail e de senha. */
+  readonly maxChars = input<number | null>(null);
   readonly autocomplete = input.required<string>();
   readonly enterKeyHint = input<'next' | 'go' | 'done'>('next');
   /** Rótulo do botão de mostrar a senha (só no tipo `password`). */
@@ -51,11 +54,13 @@ export class AuthField {
   protected readonly capsLock = signal(false);
 
   protected readonly isPassword = computed(() => this.kind() === 'password');
-  protected readonly inputType = computed(() =>
-    this.isPassword() ? (this.shown() ? 'text' : 'password') : 'email',
-  );
-  protected readonly maxLength = computed(() =>
-    this.isPassword() ? MAX_PASSWORD_LENGTH : MAX_EMAIL_LENGTH,
+  protected readonly isEmail = computed(() => this.kind() === 'email');
+  protected readonly inputType = computed(() => {
+    if (this.isPassword()) return this.shown() ? 'text' : 'password';
+    return this.isEmail() ? 'email' : 'text';
+  });
+  protected readonly maxLength = computed(
+    () => this.maxChars() ?? (this.isPassword() ? MAX_PASSWORD_LENGTH : MAX_EMAIL_LENGTH),
   );
   protected readonly isInvalid = computed(() => this.invalid() || !!this.error());
   protected readonly errorId = computed(() => `${this.fieldId()}-error`);

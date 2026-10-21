@@ -1,0 +1,136 @@
+@if (data(); as summary) {
+  <section class="summary" aria-labelledby="summary-title">
+    <header class="hero">
+      <span class="ui-tile ok lg"><app-training-glyph name="check" /></span>
+      <h1 id="summary-title" #title class="title" tabindex="-1" i18n="@@training.summary.title">
+        Treino concluído
+      </h1>
+      <p class="sub">
+        {{ summary.routineName ?? freeName }}
+        @if (minutes() !== null) {
+          · <span i18n="@@training.summary.minutes">{{ minutes() }} min</span>
+        }
+      </p>
+      <p class="saved">
+        <app-training-glyph name="check" />
+        <span i18n="@@training.summary.saved">Salvo no aparelho · {{ sendText() }}</span>
+      </p>
+    </header>
+
+    <dl class="stats">
+      <div class="stat">
+        <dt i18n="@@training.summary.volume">Volume (carga × repetições)</dt>
+        <dd>{{ volume() }}</dd>
+      </div>
+      <div class="stat">
+        <dt i18n="@@training.summary.duration">Duração</dt>
+        <dd>
+          @if (minutes() !== null) {
+            <span i18n="@@training.summary.duration-value">{{ minutes() }} min</span>
+          } @else {
+            —
+          }
+        </dd>
+      </div>
+      <div class="stat">
+        <dt i18n="@@training.summary.sets">Séries de trabalho</dt>
+        <dd>{{ summary.summary.workingSets }}</dd>
+      </div>
+      <div class="stat">
+        <dt i18n="@@training.summary.records">Recordes</dt>
+        <dd>{{ summary.records.length }}</dd>
+      </div>
+    </dl>
+
+    @if (summary.records.length > 0) {
+      <section class="records" aria-labelledby="records-title">
+        <h2 id="records-title" class="ui-section-label" i18n="@@training.summary.records-title">
+          Recordes de hoje
+        </h2>
+        <ul class="ui-group ui-plain">
+          @for (record of summary.records; track record.exerciseName + record.kind) {
+            <li class="ui-row">
+              <span class="ui-tile warn"><app-today-glyph name="star" /></span>
+              <span class="ui-row-text">
+                <span class="ui-row-title">{{ recordTitle(record) }}</span>
+                <span class="ui-row-sub">{{ recordDetail(record) }}</span>
+              </span>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    <button
+      type="button"
+      class="secondary ui-btn block edit"
+      [attr.aria-expanded]="editing()"
+      (click)="editing.set(!editing())"
+    >
+      <app-training-glyph name="pencil" />
+      <span i18n="@@training.summary.edit">Editar treino</span>
+    </button>
+
+    @if (editing()) {
+      <section class="sets" aria-labelledby="sets-title">
+        <h2 id="sets-title" class="ui-section-label" i18n="@@training.summary.sets-title">
+          Séries do treino
+        </h2>
+        @if (summary.sets.length === 0) {
+          <p class="none" i18n="@@training.summary.sets-none">Nenhuma série neste treino.</p>
+        } @else {
+          <ul class="ui-group ui-plain">
+            @for (set of summary.sets; track set.id) {
+              <li>
+                <button type="button" class="ui-row" (click)="editSet.set(set)">
+                  <span class="ui-row-text">
+                    <span class="ui-row-title">{{ rowName(set) }}</span>
+                    <span class="ui-row-sub">{{ rowText(set) }}</span>
+                  </span>
+                  <app-training-glyph class="pencil" name="pencil" />
+                </button>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+
+    <p class="note" i18n="@@training.summary.note">
+      Volume: carga × repetições das séries de trabalho (aquecimento não entra; nos halteres vale a
+      carga de um halter).
+    </p>
+  </section>
+
+  <div class="dock">
+    <button type="button" class="primary ui-btn block go" (click)="done.emit()">
+      <span i18n="@@training.summary.done">Concluir treino</span>
+    </button>
+  </div>
+
+  @if (editSet(); as set) {
+    <app-set-edit-sheet
+      [set]="set"
+      [exercise]="summary.exercises.get(set.exerciseId)"
+      (closed)="editSet.set(null)"
+    />
+  }
+} @else if (data() === null) {
+  <section class="summary missing ui-card" aria-labelledby="missing-title">
+    <h1
+      id="missing-title"
+      #title
+      class="title"
+      tabindex="-1"
+      i18n="@@training.summary.missing-title"
+    >
+      Treino não encontrado
+    </h1>
+    <p class="sub" i18n="@@training.summary.missing-text">
+      Ele pode ter sido apagado ou ainda estar aberto.
+    </p>
+    <button type="button" class="primary ui-btn" (click)="done.emit()">
+      <span i18n="@@training.summary.missing-back">Voltar a Hoje</span>
+    </button>
+  </section>
+}

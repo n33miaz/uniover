@@ -1,0 +1,11 @@
+{
+  "project": "tests/UniOver.IntegrationTests/UniOver.IntegrationTests.csproj",
+  "parts": [
+    { "name": "training", "namespaces": ["UniOver.IntegrationTests.Training*"] },
+    { "name": "identity", "namespaces": ["UniOver.IntegrationTests.Identity*"] },
+    {
+      "name": "tv-devices",
+      "namespaces": ["UniOver.IntegrationTests.Tv*", "UniOver.IntegrationTests.Devices*"]
+    }
+  ]
+}

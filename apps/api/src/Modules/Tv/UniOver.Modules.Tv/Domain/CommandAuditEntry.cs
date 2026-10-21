@@ -14,10 +14,16 @@ public static class TvCommandNames
     public const string Wake = "tv.wake";
     public const string AppsRefresh = "tv.apps.refresh";
 
-    /// <summary>O dono mudou a ordem dos atalhos: não vai à TV, mas é uma ação dele que a trilha guarda.</summary>
+    /// <summary>Alguém com a permissão de editar atalhos mudou a ordem deles: não vai à TV, mas é uma ação que a trilha guarda.</summary>
     public const string ShortcutsReorder = "tv.shortcuts.reorder";
+
+    /// <summary>Alguém com a permissão de editar atalhos renomeou ou escondeu um: o detalhe leva só os códigos dos campos, nunca o nome novo.</summary>
+    public const string ShortcutUpdate = "tv.shortcut.update";
     public const string PowerOff = "tv.power-off";
     public const string Cleanup = "tv.cleanup";
+
+    /// <summary>O administrador trocou o computador que controla a TV: não vai à TV, mas redireciona o controle e a trilha guarda quem fez. O detalhe é o computador novo.</summary>
+    public const string ConfigBind = "tv.config.bind";
 }
 
 /// <summary>

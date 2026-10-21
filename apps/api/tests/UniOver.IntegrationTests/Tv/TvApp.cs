@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -8,6 +9,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -17,11 +20,14 @@ using UniOver.BuildingBlocks.Persistence;
 using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Identity;
+using UniOver.IntegrationTests.Identity.Guests;
+using UniOver.IntegrationTests.Identity.Passkeys;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.IntegrationTests.Messaging;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Persistence;
 using UniOver.Modules.Identity.Bootstrap;
+using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Tv.Contracts;
 using UniOver.Modules.Tv.Persistence;
 
@@ -34,6 +40,15 @@ internal sealed record TvAppOptions
 
     /// <summary>Slug do agente que controla a TV. O pareamento de "PC Casa" produz exatamente <c>pc-casa</c>.</summary>
     public string AgentId { get; init; } = TvApp.AgentSlug;
+
+    /// <summary>
+    /// Quando informado, o banco do Identity é migrado só até a versão anterior às permissões, este gancho grava os dados
+    /// "de antes" (convidados que já existiam) e só então as demais migrations rodam: o backfill é exercitado de verdade.
+    /// </summary>
+    public Func<Modules.Identity.Persistence.IdentityDbContext, Task>? SeedBeforeGrants { get; init; }
+
+    /// <summary>Troca ou acrescenta serviços do host de teste (por exemplo, uma auditoria que falha de propósito).</summary>
+    public Action<IServiceCollection>? ConfigureServices { get; init; }
 }
 
 /// <summary>Os eventos de integração que um assinante de teste recebeu da outbox do módulo Tv.</summary>
@@ -72,6 +87,9 @@ internal sealed class TvApp : IAsyncDisposable
     public const string AgentSlug = "pc-casa";
     public const string ClientIp = "198.51.100.9";
     public const string UserAgentText = "pwa-teste/1.0";
+
+    /// <summary>A última migration do Identity que existia antes das permissões (ver <see cref="TvAppOptions.SeedBeforeGrants"/>).</summary>
+    private const string MigrationBeforeGrants = "20261020095337_AddGuestRoleAndInvites";
 
     private readonly EdgeFactory _root;
     private readonly WebApplicationFactory<Program> _factory;
@@ -134,6 +152,12 @@ internal sealed class TvApp : IAsyncDisposable
         var database = await postgres.CreateDatabaseAsync();
         await using (var identity = IdentityApp.CreateContext(database.OwnerConnection))
         {
+            if (options.SeedBeforeGrants is { } seed)
+            {
+                await identity.GetService<IMigrator>().MigrateAsync(MigrationBeforeGrants, TestContext.Current.CancellationToken);
+                await seed(identity);
+            }
+
             await identity.Database.MigrateAsync(TestContext.Current.CancellationToken);
         }
 
@@ -183,6 +207,7 @@ internal sealed class TvApp : IAsyncDisposable
             services.AddSingleton<TvEventsProbe>();
             services.AddScoped<IIntegrationEventHandler<TvStateChanged>, StateChangedProbeHandler>();
             services.AddScoped<IIntegrationEventHandler<TvWatchdogRecorded>, WatchdogProbeHandler>();
+            options.ConfigureServices?.Invoke(services);
         }));
 
         var app = new TvApp(root, factory, database, time, logs, ownerEmail, password) { SigningKey = signingKey };
@@ -291,11 +316,79 @@ internal sealed class TvApp : IAsyncDisposable
 
     // ---- SSE ----
 
-    public async Task<string> StreamTicketAsync()
+    /// <summary>Bilhete do fluxo ao vivo; <paramref name="bearer"/> vazio é o dono logado, ou o JWT de um convidado.</summary>
+    public async Task<string> StreamTicketAsync(string? bearer = "")
     {
-        using var response = await PostAsync("/api/v1/identity/auth/stream-ticket");
+        using var response = await PostAsync("/api/v1/identity/auth/stream-ticket", bearer: bearer);
         response.EnsureSuccessStatusCode();
         return IdentityApp.Cookies(response).Single(c => c.Name == "uo_st").Value;
+    }
+
+    // ---- convidados e permissões ----
+
+    /// <summary>
+    /// Convidado novo, com as permissões dadas (sem lista, o modelo "só controle da TV" de hoje). Cada um aceita o convite
+    /// vindo de um IP próprio: o limite do aceite é por IP (dez por minuto), e uma matriz de testes cria vários.
+    /// </summary>
+    public async Task<GuestSession> NewGuestAsync(string label, IReadOnlyCollection<string>? permissions, int ipSuffix)
+    {
+        var (_, token) = await GuestSeed.InsertInviteAsync(Database, Time.GetUtcNow(), label, permissions: permissions);
+        var email = GuestSeed.NewEmail();
+        var password = GuestSeed.NewPassword();
+        using var response = await GuestSeed.AcceptAsync(
+            Client, token, email, password, forwardedFor: $"203.0.113.{ipSuffix}");
+        var login = await GuestSeed.ReadLoginAsync(response);
+
+        await using var db = this.Identity();
+        var user = await db.Users.SingleAsync(u => u.Email == email, TestContext.Current.CancellationToken);
+        return new GuestSession(user.Id, email, password, login);
+    }
+
+    /// <summary>Cadastra a passkey do dono num autenticador virtual (pré-requisito de toda ação que pede confirmação).</summary>
+    public async Task RegisterOwnerPasskeyAsync(VirtualAuthenticator authenticator)
+    {
+        using var options = await SendAsync(
+            HttpMethod.Post, "/api/v1/identity/passkeys/registration/options", new { password = OwnerPassword });
+        options.EnsureSuccessStatusCode();
+        var body = await JsonAsync(options);
+
+        using var complete = await SendAsync(
+            HttpMethod.Post,
+            "/api/v1/identity/passkeys/registration/complete",
+            new
+            {
+                challengeId = body.GetProperty("challengeId").GetGuid(),
+                name = "teste",
+                credential = authenticator.CreateAttestation(body.GetProperty("options")),
+            });
+        complete.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>Confirmação por passkey de uma ação do dono (vale por poucos minutos e só para essa ação).</summary>
+    public async Task ConfirmOwnerActionAsync(VirtualAuthenticator authenticator, string action)
+    {
+        using var options = await SendAsync(HttpMethod.Post, "/api/v1/identity/step-up/options", new { action });
+        options.EnsureSuccessStatusCode();
+        var body = await JsonAsync(options);
+
+        using var complete = await SendAsync(
+            HttpMethod.Post,
+            "/api/v1/identity/step-up/complete",
+            new
+            {
+                challengeId = body.GetProperty("challengeId").GetGuid(),
+                credential = authenticator.CreateAssertion(body.GetProperty("options")),
+            });
+        complete.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>O dono troca as permissões de um convidado pela API, com a confirmação por passkey que a rota exige.</summary>
+    public async Task<HttpStatusCode> ChangeGuestPermissionsAsync(
+        VirtualAuthenticator authenticator, Guid guestId, IReadOnlyCollection<string> permissions)
+    {
+        await ConfirmOwnerActionAsync(authenticator, StepUpActions.PermissionsChange);
+        using var response = await SendAsync(HttpMethod.Put, $"/api/v1/identity/guests/{guestId}/permissions", new { permissions });
+        return response.StatusCode;
     }
 
     public async Task<HttpResponseMessage> OpenEventsAsync(string? cookieTicket, string query = "")

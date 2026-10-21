@@ -1,9 +1,24 @@
-import { DOCUMENT } from '@angular/common';
-import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { problemOf } from '../../core/auth/api-problem';
 import { AuthApi, GuestInviteSummary, GuestSummary } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { SessionState } from '../../core/session/session-state';
+import { GuestPermissions, PeopleApi } from './people-api';
+import { PeoplePermissionPicker } from './people-permission-picker';
+import { PeoplePermissionsSheet } from './people-permissions-sheet';
+import { TV_CONTROL_ONLY, hasModule, permissionSummary } from './people-permissions';
 import { SettingsGlyph } from './settings-glyph';
 
 /** Limite de caracteres do nome do convidado na API. */
@@ -14,40 +29,77 @@ interface CreatedLink {
   readonly name: string;
   readonly url: string;
   readonly expiresAt: string;
+  readonly permissions: readonly string[];
+}
+
+/** Um aviso curto: o texto e se é um erro (o erro vira alerta para o leitor de tela). */
+interface Note {
+  readonly text: string;
+  readonly isError: boolean;
 }
 
 /**
- * Convidados: o dono gera um link de convite (com a confirmação da passkey), entrega a quem quiser e acompanha quem
- * já entrou. O convidado usa o controle da TV e nada mais; ele define a própria senha, que o dono nunca vê. O sistema
- * não envia e-mail: o dono entrega o link. O segredo do link só aparece aqui, uma vez.
+ * Pessoas: quem já entrou, os convites ainda abertos e o convite de uma nova pessoa. O dono decide, ao convidar, o que a
+ * pessoa poderá ver e fazer (e muda isso depois, em "Permissões"); o convite sai com a confirmação da passkey. O sistema
+ * não envia e-mail: o dono entrega o link, e quem o recebe escolhe a própria senha, que o dono nunca vê. O segredo do
+ * link só aparece aqui, uma vez.
+ *
+ * Só esconde o que o servidor também recusa: toda ação daqui (criar, revogar, mudar permissões) é rota de
+ * administrador e a API a confere.
  */
 @Component({
   selector: 'app-guests-section',
-  imports: [SettingsGlyph],
+  imports: [NgTemplateOutlet, PeoplePermissionPicker, PeoplePermissionsSheet, SettingsGlyph],
   templateUrl: './guests-section.html',
   styleUrl: './guests-section.css',
 })
 export class GuestsSection {
   private readonly auth = inject(AuthService);
   private readonly api = inject(AuthApi);
+  private readonly people = inject(PeopleApi);
   private readonly session = inject(SessionState);
   private readonly doc = inject(DOCUMENT);
+  private readonly injector = inject(Injector);
+
+  private readonly nameInput = viewChild<ElementRef<HTMLInputElement>>('nameInput');
+  private readonly inviteButton = viewChild<ElementRef<HTMLButtonElement>>('inviteButton');
+  private readonly linkBox = viewChild<ElementRef<HTMLElement>>('linkBox');
+  /** Quem abriu a folha de permissões: o foco volta para o botão quando ela fecha. */
+  private sheetOpener: HTMLElement | null = null;
 
   protected readonly maxName = MAX_NAME;
   protected readonly invites = signal<readonly GuestInviteSummary[] | null>(null);
   protected readonly guests = signal<readonly GuestSummary[] | null>(null);
   protected readonly loadFailed = signal(false);
   protected readonly busy = signal(false);
-  protected readonly message = signal<string | null>(null);
-  protected readonly messageIsError = signal(false);
+  /** Avisos de cada lugar, perto de onde a pessoa acabou de agir: a lista (no alto), o formulário e o link. */
+  protected readonly listNote = signal<Note | null>(null);
+  protected readonly formNote = signal<Note | null>(null);
+  protected readonly linkNote = signal<Note | null>(null);
 
+  protected readonly inviteOpen = signal(false);
   protected readonly newName = signal('');
+  /** O que o convite novo concede: começa no modelo "só controlar a TV" (o mínimo que o dono já entregava). */
+  protected readonly permissions = signal<readonly string[]>([...TV_CONTROL_ONLY]);
+  protected readonly permissionsOpen = signal(false);
   protected readonly created = signal<CreatedLink | null>(null);
+  protected readonly editing = signal<GuestSummary | null>(null);
   protected readonly revokingInviteId = signal<string | null>(null);
   protected readonly revokingGuestId = signal<string | null>(null);
 
   protected readonly pending = computed(() =>
     (this.invites() ?? []).filter((invite) => invite.status === 'pending'),
+  );
+  /** Quem tem acesso primeiro; quem foi revogado vai para o fim, sem mexer na ordem do resto. */
+  protected readonly sortedGuests = computed(() =>
+    [...(this.guests() ?? [])].sort(
+      (a, b) => Number(a.disabledAt !== null) - Number(b.disabledAt !== null),
+    ),
+  );
+  protected readonly permissionsValid = computed(() => hasModule(this.permissions()));
+  protected readonly permissionsText = computed(() => permissionSummary(this.permissions()));
+  protected readonly canCreate = computed(
+    () => !this.busy() && this.newName().trim().length > 0 && this.permissionsValid(),
   );
   protected readonly canShare = computed(
     () => typeof this.doc.defaultView?.navigator?.share === 'function',
@@ -58,12 +110,21 @@ export class GuestsSection {
   });
 
   constructor() {
-    // Carrega quando há sessão confirmada (também quando uma sessão pendente é confirmada depois).
+    // Carrega quando há sessão confirmada (também quando uma sessão pendente é confirmada depois) e se sabe que a conta é
+    // do administrador: convites e convidados são rota de administrador, e quem não é nunca deve gerar essa chamada.
     effect(() => {
-      if (this.session.status() === 'authenticated' && untracked(() => this.invites()) === null) {
+      if (
+        this.session.status() === 'authenticated' &&
+        this.session.role() === 'owner' &&
+        untracked(() => this.invites()) === null
+      ) {
         untracked(() => void this.load());
       }
     });
+  }
+
+  protected summary(permissions: readonly string[]): string {
+    return permissionSummary(permissions);
   }
 
   protected expires(invite: GuestInviteSummary): string {
@@ -74,10 +135,6 @@ export class GuestsSection {
     return $localize`:@@settings.guests.link-expires:O link vale até ${this.dateFormat.format(new Date(link.expiresAt))}:date:, serve uma vez só e aparece apenas agora.`;
   }
 
-  protected since(guest: GuestSummary): string {
-    return $localize`:@@settings.guests.since:Entrou em ${this.dateFormat.format(new Date(guest.createdAt))}:date:`;
-  }
-
   protected revokeInviteLabel(invite: GuestInviteSummary): string {
     return $localize`:@@settings.guests.revoke-invite-label:Revogar o convite de ${invite.displayName}:name:`;
   }
@@ -86,32 +143,51 @@ export class GuestsSection {
     return $localize`:@@settings.guests.revoke-guest-label:Revogar acesso de ${guest.displayName}:name:`;
   }
 
+  protected permissionsLabel(guest: GuestSummary): string {
+    return $localize`:@@settings.guests.permissions-label:Permissões de ${guest.displayName}:name:`;
+  }
+
   protected revokeGuestQuestion(guest: GuestSummary): string {
-    return $localize`:@@settings.guests.revoke-guest-question:Revogar o acesso de ${guest.displayName}:name:? Ele sai do controle da TV em poucos minutos.`;
+    return $localize`:@@settings.guests.revoke-guest-question:Revogar o acesso de ${guest.displayName}:name:? A pessoa deixa de ter acesso em poucos minutos.`;
   }
 
   protected value(event: Event): string {
     return (event.target as HTMLInputElement).value;
   }
 
+  protected openInvite(): void {
+    this.listNote.set(null);
+    this.formNote.set(null);
+    this.inviteOpen.set(true);
+    this.focusLater(() => this.nameInput()?.nativeElement);
+  }
+
+  protected cancelInvite(): void {
+    this.resetInvite();
+    this.focusLater(() => this.inviteButton()?.nativeElement);
+  }
+
   protected async create(event: Event): Promise<void> {
     event.preventDefault();
     const name = this.newName().trim();
-    if (this.busy() || name.length === 0) return;
+    if (!this.canCreate()) return;
     this.busy.set(true);
-    this.say(null);
+    this.formNote.set(null);
     try {
-      // Sem a confirmação recente com a passkey a API recusa (403) e o `AuthService` abre o diálogo e repete.
-      const invite = await this.auth.authorized((token) => this.api.createGuestInvite(token, name));
+      // Sem a confirmação recente com a passkey a API recusa (403) e o interceptador abre o diálogo e repete.
+      const invite = await this.people.createInvite(name, this.permissions());
       this.created.set({
         name: invite.displayName,
         url: `${this.origin()}/convite#${invite.token}`,
         expiresAt: invite.expiresAt,
+        permissions: invite.permissions,
       });
-      this.newName.set('');
+      this.linkNote.set(null);
+      this.resetInvite();
+      this.focusLater(() => this.linkBox()?.nativeElement);
       await this.load();
     } catch (error) {
-      this.say(this.createError(error), true);
+      this.formNote.set({ text: this.createError(error), isError: true });
     } finally {
       this.busy.set(false);
     }
@@ -124,12 +200,15 @@ export class GuestsSection {
     try {
       if (!clipboard) throw new Error('sem área de transferência');
       await clipboard.writeText(link.url);
-      this.say($localize`:@@settings.guests.copied:Link copiado.`, false);
+      this.linkNote.set({
+        text: $localize`:@@settings.guests.copied:Link copiado.`,
+        isError: false,
+      });
     } catch {
-      this.say(
-        $localize`:@@settings.guests.copy-failed:Não deu para copiar sozinho: toque no link, selecione e copie.`,
-        true,
-      );
+      this.linkNote.set({
+        text: $localize`:@@settings.guests.copy-failed:Não deu para copiar sozinho: toque no link, selecione e copie.`,
+        isError: true,
+      });
     }
   }
 
@@ -149,7 +228,8 @@ export class GuestsSection {
 
   protected closeLink(): void {
     this.created.set(null);
-    this.say(null);
+    this.linkNote.set(null);
+    this.focusLater(() => this.inviteButton()?.nativeElement);
   }
 
   protected async revokeInvite(invite: GuestInviteSummary): Promise<void> {
@@ -182,6 +262,53 @@ export class GuestsSection {
     }
   }
 
+  /** Abre a folha de permissões; ao fechar, o foco volta para o botão que a abriu. */
+  protected editPermissions(guest: GuestSummary, event: Event): void {
+    this.sheetOpener = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    this.revokingGuestId.set(null);
+    this.listNote.set(null);
+    this.editing.set(guest);
+  }
+
+  protected closeSheet(): void {
+    this.editing.set(null);
+    const opener = this.sheetOpener;
+    this.sheetOpener = null;
+    // Só depois de a folha sair do DOM: enquanto ela está lá, a página é inerte e o foco não entra.
+    afterNextRender(() => (opener?.isConnected ? opener.focus() : undefined), {
+      injector: this.injector,
+    });
+  }
+
+  /** Salvou: a linha já mostra o que a API devolveu, sem esperar outra leitura da lista. */
+  protected onPermissionsSaved(updated: GuestPermissions): void {
+    this.guests.update((list) =>
+      (list ?? []).map((guest) => (guest.id === updated.id ? { ...guest, ...updated } : guest)),
+    );
+    this.closeSheet();
+    this.say(
+      $localize`:@@settings.guests.permissions-saved:Permissões de ${updated.displayName}:name: salvas. A mudança pode levar até 30 segundos para valer.`,
+      false,
+    );
+  }
+
+  /** A pessoa já não pode ser editada (saiu ou foi revogada em outro lugar): a lista aqui está velha. */
+  protected onPermissionsOutdated(): void {
+    void this.load();
+  }
+
+  private resetInvite(): void {
+    this.inviteOpen.set(false);
+    this.permissionsOpen.set(false);
+    this.newName.set('');
+    this.permissions.set([...TV_CONTROL_ONLY]);
+    this.formNote.set(null);
+  }
+
+  private focusLater(target: () => HTMLElement | undefined): void {
+    afterNextRender(() => target()?.focus(), { injector: this.injector });
+  }
+
   private origin(): string {
     return this.doc.defaultView?.location.origin ?? '';
   }
@@ -201,8 +328,7 @@ export class GuestsSection {
   }
 
   private say(text: string | null, isError = false): void {
-    this.message.set(text);
-    this.messageIsError.set(isError);
+    this.listNote.set(text === null ? null : { text, isError });
   }
 
   private createError(error: unknown): string {
@@ -212,6 +338,9 @@ export class GuestsSection {
     }
     if (problem?.status === 403) {
       return $localize`:@@settings.guests.unconfirmed:O convite não foi criado: falta a confirmação com a passkey. Cadastre uma passkey em Segurança e tente de novo.`;
+    }
+    if (problem?.status === 400) {
+      return $localize`:@@settings.guests.invalid:O convite não foi criado: confira o nome e o que a pessoa poderá fazer.`;
     }
     if (problem?.status === 429) {
       return $localize`:@@settings.guests.rate-limited:Muitas tentativas seguidas. Espere um pouco.`;

@@ -37,7 +37,7 @@ test.describe('créditos', () => {
     page,
   }, info) => {
     await signIn(page);
-    await page.goto('/ajustes');
+    await page.goto('/ajustes/sobre');
     await page.getByRole('link', { name: /^Créditos/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/creditos$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Créditos' })).toBeVisible();
@@ -65,7 +65,11 @@ test.describe('créditos', () => {
     await expectNoHorizontalScroll(page);
     await screenshot(page, `test-results/credits-${info.project.name}.png`);
 
-    await page.getByRole('link', { name: /Ajustes/ }).click();
+    // A seta do cabeçalho e o botão da própria tela levam à lista de Ajustes.
+    await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
+    await expect(page).toHaveURL(/\/ajustes$/);
+    await page.goBack();
+    await page.getByRole('link', { name: '← Ajustes' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
   });
 

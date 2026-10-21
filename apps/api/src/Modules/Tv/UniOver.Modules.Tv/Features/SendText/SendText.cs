@@ -64,7 +64,7 @@ internal sealed class SendTextHandler(TvCommandRunner runner)
 internal static class SendTextEndpoint
 {
     public static void MapSendText(this IEndpointRouteBuilder group) =>
-        group.MapPost("/text", HandleAsync).RequireAuthorization(TvAuth.ControlPolicy)
+        group.MapPost("/text", HandleAsync).RequireAuthorization(TvAuth.Control)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces<TvCommandOk>()
             .ProducesProblem(StatusCodes.Status400BadRequest)

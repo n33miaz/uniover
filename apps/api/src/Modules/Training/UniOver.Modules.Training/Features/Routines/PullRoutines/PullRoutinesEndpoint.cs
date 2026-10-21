@@ -80,10 +80,11 @@ internal sealed class PullRoutinesHandler(TrainingDbContext db)
 internal static class PullRoutinesEndpoint
 {
     public static void MapPullRoutines(this IEndpointRouteBuilder group) =>
-        group.MapGet("/routines", HandleAsync).RequireAuthorization()
+        group.MapGet("/routines", HandleAsync).RequireAuthorization(TrainingAuth.Module)
             .Produces<PullRoutinesResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
-            .ProducesProblem(StatusCodes.Status401Unauthorized);
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
     private static async Task<IResult> HandleAsync(
         ICurrentUser current,

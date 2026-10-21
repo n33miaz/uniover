@@ -9,10 +9,12 @@ using UniOver.BuildingBlocks.Persistence;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Tv.Adapters;
+using UniOver.Modules.Tv.Audit;
 using UniOver.Modules.Tv.Contracts;
 using UniOver.Modules.Tv.Features.Agents;
 using UniOver.Modules.Tv.Features.Cleanup;
 using UniOver.Modules.Tv.Features.Commands;
+using UniOver.Modules.Tv.Features.Config;
 using UniOver.Modules.Tv.Features.Events;
 using UniOver.Modules.Tv.Features.GetModuleInfo;
 using UniOver.Modules.Tv.Features.GetState;
@@ -28,6 +30,7 @@ using UniOver.Modules.Tv.Features.UpdateShortcut;
 using UniOver.Modules.Tv.Features.Wake;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
+using UniOver.SharedKernel.Audit;
 
 namespace UniOver.Modules.Tv;
 
@@ -49,16 +52,13 @@ public static class TvModule
             .Validate(TvModuleOptions.IsValid, "Modules:Tv tem valor fora do permitido (tempos devem ser positivos).")
             .ValidateOnStart();
 
-        // A TV é a única área do convidado: ele usa o controle inteiro (comandos, estado, atalhos, histórico dele e o fluxo
-        // ao vivo) e nada mais. As demais rotas da API ficam na política padrão, que é só do dono.
+        // Cada rota da TV cita a política da sua permissão (catálogo do BuildingBlocks, lida do banco com cache curto); só o
+        // fluxo ao vivo tem política própria, por causa do cookie de bilhete. A política por permissão já inclui o papel
+        // conhecido e a conta ativa. As demais rotas da API ficam na política padrão, que é só do administrador.
         services.AddAuthorizationBuilder()
-            .AddPolicy(TvAuth.ControlPolicy, policy => policy
-                .RequireAccountRole(AccountRoles.Owner, AccountRoles.Guest)
-                .RequireActiveAccount())
             .AddPolicy(TvAuth.StreamPolicy, policy => policy
                 .AddAuthenticationSchemes(UniOverAuth.StreamScheme)
-                .RequireAccountRole(AccountRoles.Owner, AccountRoles.Guest)
-                .RequireActiveAccount()
+                .RequirePermission(AccessPermissions.TvModule)
                 .RequireGetOnly());
 
         services.TryAddSingleton(TimeProvider.System);
@@ -71,17 +71,24 @@ public static class TvModule
 
         // Em memória e atrás de portas, sempre como instância do contêiner (nada estático).
         services.AddSingleton<ITvStateStore, InMemoryTvStateStore>();
+
+        // Qual agente controla a TV: a linha salva no app, depois a variável de ambiente (reserva), depois nenhum.
+        services.AddSingleton<ISavedTvReader, EfSavedTvReader>();
+        services.AddSingleton<ITvAgentResolver, TvAgentResolver>();
         services.AddSingleton<ITvAgentPresence, DevicesAgentPresence>();
         services.AddSingleton<IAgentPresenceListener, TvPresenceListener>();
         services.AddSingleton<ITvCommandSender, DevicesGatewayCommandSender>();
         services.AddSingleton<ITvCleanupReports, InMemoryTvCleanupReports>();
         services.AddSingleton<TvStatePersister>();
-        services.AddSingleton<AuditRetention>();
         services.AddSingleton<TvStateProvider>();
         services.AddSingleton(sp => new SseBroadcaster<object>(sp.GetRequiredService<IOptions<TvModuleOptions>>().Value.Sse));
         services.AddSingleton<ITvStreamPublisher, TvStreamPublisher>();
 
         services.AddScoped<ITvCommandAudit, EfCommandAudit>();
+
+        // Auditoria: os comandos da TV são uma fonte da trilha do administrador. A retenção (30 dias) roda no banco; a aplicação só chama a função.
+        services.AddScoped<IAuditSource, TvAuditSource>();
+        services.AddAuditPurge<TvDbContext>(configuration, TvDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.CommandDays);
         services.AddScoped<ITvShortcutReader, EfShortcutReader>();
         services.AddScoped<TvCommandRunner>();
         services.AddScoped<IAgentMessageHandler, TvAgentMessageHandler>();
@@ -101,6 +108,9 @@ public static class TvModule
         services.AddScoped<CleanupHandler>();
         services.AddScoped<RecentCommandsHandler>();
         services.AddScoped<StreamEventsHandler>();
+        services.AddScoped<TvConfigView>();
+        services.AddScoped<GetConfigHandler>();
+        services.AddScoped<BindAgentHandler>();
         return services;
     }
 
@@ -125,6 +135,8 @@ public static class TvModule
         group.MapCleanup();
         group.MapRecentCommands();
         group.MapStreamEvents();
+        group.MapGetConfig();
+        group.MapBindAgent();
         return endpoints;
     }
 }

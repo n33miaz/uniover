@@ -10,11 +10,12 @@ internal static class UpsertRoutineEndpoint
 {
     public static void MapUpsertRoutine(this IEndpointRouteBuilder group) =>
         group.MapPut("/routines/{id:guid}", HandleAsync)
-            .RequireAuthorization()
+            .RequireAuthorization(TrainingAuth.Module)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces<RoutineResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)

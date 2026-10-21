@@ -8,6 +8,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { TvAccess } from '../data/tv-access';
 import {
   TvIndicatorAction,
   deriveIndicator,
@@ -42,6 +43,7 @@ const PANEL_MARGIN_PX = 12;
 })
 export class StatusIndicator {
   protected readonly store = inject(TvStore);
+  private readonly access = inject(TvAccess);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
   private readonly trigger = viewChild.required<ElementRef<HTMLButtonElement>>('trigger');
@@ -56,8 +58,17 @@ export class StatusIndicator {
   );
   protected readonly phase = computed(() => indicatorPhase(this.indicator()));
   protected readonly text = computed(() =>
-    indicatorText(this.indicator(), this.store.hibernateMinutes),
+    indicatorText(this.indicator(), this.store.hibernateMinutes, this.access.control()),
   );
+
+  /**
+   * A ação que o painelzinho oferece. "Acordar o controle" é um comando (`tv:control`): para quem só vê a TV ela não
+   * aparece. "Tentar de novo" só lê o estado e fica para todos.
+   */
+  protected readonly action = computed<TvIndicatorAction | null>(() => {
+    const action = this.text().action;
+    return action === 'wake' && !this.access.control() ? null : action;
+  });
 
   protected readonly triggerLabel = computed(() => {
     const title = this.text().title;

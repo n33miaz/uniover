@@ -8,14 +8,15 @@ namespace UniOver.Modules.Tv.Features.GetState;
 
 internal sealed class GetStateHandler(TvStateProvider provider)
 {
-    public TvState Handle() => provider.Current();
+    public ValueTask<TvState> HandleAsync(CancellationToken cancellationToken) => provider.CurrentAsync(cancellationToken);
 }
 
 internal static class GetStateEndpoint
 {
     public static void MapGetState(this IEndpointRouteBuilder group) =>
-        group.MapGet("/state", (GetStateHandler handler) => TypedResults.Ok(handler.Handle()))
-            .RequireAuthorization(TvAuth.ControlPolicy)
+        group.MapGet("/state", async (GetStateHandler handler, CancellationToken cancellationToken) =>
+                TypedResults.Ok(await handler.HandleAsync(cancellationToken)))
+            .RequireAuthorization(TvAuth.Module)
             .Produces<TvState>()
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 }

@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import {
   Component,
   DestroyRef,
@@ -9,6 +10,7 @@ import {
   output,
   viewChild,
 } from '@angular/core';
+import { TvAccess } from '../data/tv-access';
 import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut } from '../data/tv-types';
@@ -27,6 +29,9 @@ const PAGE_COUNT = 3;
 /** Onde a página do palco fica guardada enquanto a aba do navegador existir (recarregar não volta ao começo). */
 const PAGE_KEY = 'uniover.tv.stage-page';
 
+/** As partes de uma pílula: o botão que aumenta, o nível (ou o rótulo) e o botão que diminui. */
+type PillPart = 'more' | 'level' | 'less';
+
 /** Deslocamento do dedo (px) a partir do qual o gesto é arrasto, e não toque. */
 const DRAG_SLOP_PX = 6;
 
@@ -38,18 +43,30 @@ const DRAG_SLOP_PX = 6;
  * teclado). O palco é um carrossel de rolagem com encaixe: o gesto é do próprio navegador e a `StagePager` cuida do
  * que ele não garante (indicador, página presa no meio, tamanho, abas, recarga). A rolagem horizontal da tela nunca
  * aparece. O Teclado não é tela: esta tela só avisa a página (`openKeyboard`) para abrir o painel flutuante. O que
- * Personalizar escolhe chega daqui: o tamanho dos botões de baixo (`--key-scale`), se as teclas de mídia e o canal
- * aparecem e com que página o palco abre.
+ * Personalizar escolhe chega daqui: o tamanho dos botões de baixo (`--key-scale`), onde ficam as pílulas de volume e
+ * canal (uma de cada lado dos botões redondos ou numa fileira acima deles), se as teclas de mídia e o canal aparecem
+ * e com que página o palco abre.
  */
 @Component({
   selector: 'app-tv-control',
-  imports: [KeyButton, TouchpadSurface, DirectionalRing, NumberPad, PageDots, ShortcutRow, TvIcon],
+  imports: [
+    NgTemplateOutlet,
+    KeyButton,
+    TouchpadSurface,
+    DirectionalRing,
+    NumberPad,
+    PageDots,
+    ShortcutRow,
+    TvIcon,
+  ],
   templateUrl: './control.page.html',
   styleUrl: './control.page.css',
 })
 export class ControlPage {
   protected readonly store = inject(TvStore);
   protected readonly prefs = inject(TvPrefs);
+  /** Abrir apps pelos atalhos de cima é de quem tem `tv:launch` (esta tela só existe para quem tem `tv:control`). */
+  protected readonly canLaunch = inject(TvAccess).launch;
   private readonly pager = viewChild.required<ElementRef<HTMLElement>>('pager');
 
   /** Leva o botão tocado: o painel devolve o foco a ele ao fechar (o Safari não foca botão ao toque). */
@@ -74,11 +91,25 @@ export class ControlPage {
     (this.store.shortcuts() ?? []).filter((shortcut) => shortcut.enabled),
   );
 
+  /** As pílulas de volume e canal numa fileira deitada, acima dos botões redondos (Personalizar). */
+  protected readonly rowPills = computed(() => this.prefs.pillLayout() === 'row');
+
   /**
-   * Disposição dos botões redondos: quatro colunas em duas fileiras; no tamanho grande, quebra em três por fileira (não
-   * cabem mais quatro numa tela estreita); sem as teclas de mídia sobram quatro botões, em duas colunas.
+   * As três partes de uma pílula na ordem em que aparecem (e em que o foco passa): em pé, mais em cima e menos embaixo;
+   * deitada, menos à esquerda e mais à direita.
+   */
+  protected readonly pillParts = computed<readonly PillPart[]>(() =>
+    this.rowPills() ? ['less', 'level', 'more'] : ['more', 'level', 'less'],
+  );
+
+  /**
+   * Disposição dos botões redondos. Com as pílulas nas laterais: quatro colunas em duas fileiras; no tamanho grande,
+   * quebra em três por fileira (não cabem mais quatro entre as pílulas numa tela estreita); sem as teclas de mídia
+   * sobram quatro botões, em duas colunas. Com as pílulas em fileira os botões têm a largura toda: sempre quatro
+   * colunas (uma fileira só, sem as teclas de mídia), até no tamanho grande.
    */
   protected readonly roundColumns = computed(() => {
+    if (this.rowPills()) return 4;
     if (!this.prefs.showMedia()) return 2;
     return this.prefs.buttonSize() === 'large' ? 3 : 4;
   });
@@ -104,7 +135,7 @@ export class ControlPage {
   }
 
   protected openShortcut(shortcut: TvShortcut): void {
-    if (!this.store.canSend()) return;
+    if (!this.store.canSend() || !this.canLaunch()) return;
     vibrate();
     void this.store.launch(shortcut);
   }

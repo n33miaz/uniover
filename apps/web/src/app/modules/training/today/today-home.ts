@@ -1,0 +1,220 @@
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  output,
+  signal,
+  untracked,
+} from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
+import { QUEUE_RUNTIME } from '../../../core/offline-queue/queue-ports';
+import { CatalogRepository } from '../data/catalog/catalog-repository';
+import { RoutineRepository } from '../data/routines/routine-repository';
+import { SessionRepository } from '../data/sessions/session-repository';
+import { TrainingSync } from '../data/sync/training-sync';
+import { IllustrationPrefetcher } from '../illustrations/illustration-prefetcher';
+import type { RoutineEntry } from '../routines/routine-stats';
+import { formatKg } from '../shell/format';
+import { TrainingGlyph } from '../shell/training-glyph';
+import { RoutinePickerSheet } from './routine-picker-sheet';
+import { TodayGlyph } from './today-glyph';
+import { type RoutineLine, TodayStore } from './today-store';
+import { ageLabel, dayLabel, repsRangeText, routineSummary, weekRangeLabel } from './today-text';
+
+/**
+ * A aba Hoje antes (e fora) do treino ao vivo: o resumo da semana em cima e, embaixo, a rotina do dia com uma ação
+ * principal ("Iniciar treino"). Também é onde se continua um treino aberto, se escolhe outra rotina, se começa um treino
+ * livre e onde aparecem os avisos que importam (treino aberto em outro aparelho, treino recusado pelo servidor).
+ * Lê tudo do banco local: sem rede não há erro, só o que está guardado no aparelho.
+ */
+@Component({
+  selector: 'app-today-home',
+  imports: [RouterLink, TrainingGlyph, TodayGlyph, RoutinePickerSheet],
+  templateUrl: './today-home.html',
+  styleUrl: './today-home.css',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class TodayHome {
+  protected readonly store = inject(TodayStore);
+  private readonly sessions = inject(SessionRepository);
+  private readonly routines = inject(RoutineRepository);
+  private readonly catalog = inject(CatalogRepository);
+  private readonly sync = inject(TrainingSync);
+  private readonly prefetcher = inject(IllustrationPrefetcher);
+  private readonly runtime = inject(QUEUE_RUNTIME);
+  protected readonly online = inject(ConnectivityService).online;
+
+  /** O treino abriu (ou já estava aberto): a página mostra o treino ao vivo. */
+  readonly started = output<void>();
+
+  private warmedKey = '';
+
+  protected readonly pickerOpen = signal(false);
+  protected readonly starting = signal(false);
+  protected readonly confirmingClose = signal(false);
+  protected readonly message = signal<{
+    readonly text: string;
+    readonly tone: 'ok' | 'warn';
+  } | null>(null);
+
+  protected readonly freeName = $localize`:@@training.today.free-name:Treino livre`;
+  protected readonly confirmLabel = $localize`:@@training.today.forgotten-label:Confirmar o encerramento do treino do outro aparelho`;
+  protected readonly linesLabel = $localize`:@@training.today.lines-label:Exercícios da rotina`;
+  protected readonly missingName = $localize`:@@training.today.missing-name:Exercício removido`;
+
+  protected readonly entry = this.store.selected;
+  protected readonly today = computed(() => dayLabel(this.runtime.now()));
+  protected readonly summary = computed(() => {
+    const entry = this.entry();
+    return entry === undefined ? '' : routineSummary(entry);
+  });
+  protected readonly weekRange = computed(() => {
+    const week = this.store.week();
+    return week === null ? '' : weekRangeLabel(week.week.startKey, week.week.endKey);
+  });
+  protected readonly weekVolume = computed(() => formatKg(this.store.week()?.volumeKg ?? 0));
+  protected readonly weekRecords = computed(() => this.store.week()?.records.length ?? 0);
+
+  protected readonly catalogMissing = computed(() => this.store.catalogCount() === 0);
+  protected readonly progressText = computed(() => {
+    const progress = this.store.activeProgress();
+    if (progress === null) return '';
+    const done = progress.done;
+    const planned = progress.planned;
+    return planned > 0
+      ? $localize`:@@training.today.running-progress:${done}:done: de ${planned}:planned: séries`
+      : done === 1
+        ? $localize`:@@training.today.running-one:1 série feita`
+        : $localize`:@@training.today.running-many:${done}:done: séries feitas`;
+  });
+  protected readonly awaitingText = computed(() => {
+    const count = this.store.awaitingSets();
+    if (count === 0) return '';
+    return count === 1
+      ? $localize`:@@training.today.awaiting-one:1 série aguardando envio`
+      : $localize`:@@training.today.awaiting-many:${count}:count: séries aguardando envio`;
+  });
+  protected readonly otherAge = computed(() => {
+    const other = this.store.otherDevice();
+    return other === undefined ? '' : ageLabel(other.ageMs);
+  });
+
+  constructor() {
+    // Relê ao abrir e a cada gravação (o fim de um treino muda a rotina do dia e o resumo da semana).
+    effect(() => {
+      this.sessions.revision();
+      this.routines.revision();
+      untracked(() => void this.store.loadHome());
+    });
+    // Com rede, as ilustrações das rotinas ativas vão para o cache: na academia, sem sinal, elas aparecem do mesmo jeito.
+    effect(() => {
+      const entries = this.store.entries();
+      untracked(() => void this.warmIllustrations(entries));
+    });
+  }
+
+  protected lineSub(line: RoutineLine): string {
+    const sets = line.sets;
+    const range = repsRangeText(line.repMin, line.repMax);
+    const plan = $localize`:@@training.today.line-plan:${sets}:sets: × ${range}:range:`;
+    const parts = [plan];
+    if (line.last !== null) {
+      const last = line.last;
+      parts.push($localize`:@@training.today.line-last:última vez ${last}:last:`);
+    }
+    if (line.superset) parts.push($localize`:@@training.today.line-superset:supersérie`);
+    return parts.join(' · ');
+  }
+
+  protected tryText(line: RoutineLine): string {
+    const kg = formatKg(line.tryKg ?? 0);
+    return $localize`:@@training.today.line-try:tente ${kg}:kg:`;
+  }
+
+  protected async start(routineId: string | null): Promise<void> {
+    if (this.starting()) return;
+    this.starting.set(true);
+    this.message.set(null);
+    try {
+      const outcome = await this.store.start(routineId);
+      if (outcome === 'started' || outcome === 'resumed') {
+        // A página só abre o treino ao vivo com o treino já lido: sem isto ela voltaria a Hoje por um instante.
+        await this.store.loadCore();
+        this.started.emit();
+      } else if (outcome === 'blocked') {
+        await this.store.loadCore();
+      } else {
+        this.message.set({
+          tone: 'warn',
+          text: $localize`:@@training.today.storage-full:O aparelho está sem espaço: o treino não foi aberto.`,
+        });
+      }
+    } finally {
+      this.starting.set(false);
+    }
+  }
+
+  protected async closeForgotten(): Promise<void> {
+    const other = this.store.otherDevice();
+    if (other === undefined) return;
+    this.confirmingClose.set(false);
+    const closed = await this.store.closeForgotten(other.session.id);
+    this.message.set(
+      closed
+        ? {
+            tone: 'ok',
+            text: $localize`:@@training.today.closed-forgotten:Treino esquecido encerrado. Agora você pode começar o de hoje.`,
+          }
+        : {
+            tone: 'warn',
+            text: $localize`:@@training.today.close-failed:Não foi possível encerrar o treino do outro aparelho.`,
+          },
+    );
+  }
+
+  protected async resend(): Promise<void> {
+    const sent = await this.store.resendFailed();
+    this.message.set(
+      sent
+        ? {
+            tone: 'ok',
+            text: $localize`:@@training.today.resent:Reenviamos o treino. Se o servidor recusar de novo, o aviso volta.`,
+          }
+        : {
+            tone: 'warn',
+            text: $localize`:@@training.today.resend-failed:Não foi possível reenviar agora. O treino continua guardado no aparelho.`,
+          },
+    );
+  }
+
+  protected retryDownload(): void {
+    void this.sync.pullNow();
+  }
+
+  private async warmIllustrations(entries: readonly RoutineEntry[]): Promise<void> {
+    try {
+      await this.warm(entries);
+    } catch {
+      // Aquecer o cache é só uma gentileza: sem banco local ou sem rede, nada a fazer.
+    }
+  }
+
+  private async warm(entries: readonly RoutineEntry[]): Promise<void> {
+    if (!this.online() || entries.length === 0) return;
+    const slugs: string[] = [];
+    for (const entry of entries) {
+      for (const item of entry.routine.items) {
+        const exercise = await this.catalog.get(item.exerciseId);
+        if (exercise) slugs.push(exercise.slug);
+      }
+    }
+    // A mesma lista não é buscada de novo a cada gravação: o aquecimento é uma vez por conjunto de exercícios.
+    const key = [...new Set(slugs)].sort().join('|');
+    if (key === this.warmedKey) return;
+    this.warmedKey = key;
+    await this.prefetcher.warm(slugs);
+  }
+}

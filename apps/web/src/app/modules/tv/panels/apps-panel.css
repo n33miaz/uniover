@@ -83,6 +83,22 @@ app-tv-cleanup-sheet {
   color: var(--a-ink);
 }
 
+/* O painel curto de quem só controla: a explicação e um botão da largura toda, sem grade nem busca. */
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.options .secondary {
+  width: 100%;
+}
+.secondary[aria-disabled='true'] {
+  cursor: default;
+}
+.secondary.off {
+  opacity: 0.5;
+}
+
 /* Em cima: a busca, o botão de atualizar (só o ícone) e, para o dono, o de editar. Tudo com 48 px de altura. */
 .bar {
   display: flex;

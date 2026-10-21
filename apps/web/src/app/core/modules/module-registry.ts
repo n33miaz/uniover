@@ -48,7 +48,7 @@ export class ModuleRegistry {
       description: $localize`:@@home.module.training-hint:Fichas, séries e progresso`,
       actionLabel: $localize`:@@module.training.action:Ver treino`,
       icon: 'activity',
-      status: 'soon',
+      status: 'available',
       defaultSize: 'wide',
     },
     {

@@ -1,0 +1,29 @@
+:host {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.name {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+/* Uma linha só: a lista é para escanear, o detalhe fica na ficha. */
+.sub {
+  overflow: hidden;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

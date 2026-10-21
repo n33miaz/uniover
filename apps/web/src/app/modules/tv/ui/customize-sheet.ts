@@ -4,6 +4,7 @@ import {
   TV_NAME_MAX,
   TvButtonSize,
   TvPadSpeed,
+  TvPillLayout,
   TvPrefs,
   TvPrefsValue,
   TvStartPage,
@@ -16,10 +17,11 @@ interface Choice<T extends string> {
 }
 
 /**
- * Folha "Personalizar": o apelido da TV, o tamanho dos botões, que grupos de teclas aparecem, a vibração, a página com
- * que o palco abre e a sensibilidade do touchpad. Sobe de baixo como a de desligar. Cada mudança vale na hora (o
- * controle fica atrás da folha, com a escolha à vista) e é guardada neste aparelho pelo `TvPrefs`; por isso não há
- * "Aplicar", só "Concluir". "Restaurar padrão" volta tudo ao que o controle era.
+ * Folha "Personalizar": o apelido da TV, o tamanho dos botões, a disposição das pílulas de volume e canal, que grupos
+ * de teclas aparecem, a vibração, a página com que o palco abre e a sensibilidade do touchpad. Sobe de baixo como a de
+ * desligar. Cada mudança vale na hora (o controle fica atrás da folha, com a escolha à vista) e é guardada neste
+ * aparelho pelo `TvPrefs`; por isso não há "Aplicar", só "Concluir". "Restaurar padrão" volta tudo ao que o controle
+ * era.
  */
 @Component({
   selector: 'app-tv-customize-sheet',
@@ -46,6 +48,10 @@ export class CustomizeSheet {
     { value: 'compact', label: $localize`:@@tv.custom.size.compact:Compacto` },
     { value: 'comfortable', label: $localize`:@@tv.custom.size.comfortable:Confortável` },
     { value: 'large', label: $localize`:@@tv.custom.size.large:Grande` },
+  ];
+  protected readonly layouts: readonly Choice<TvPillLayout>[] = [
+    { value: 'sides', label: $localize`:@@tv.custom.layout.sides:Nas laterais` },
+    { value: 'row', label: $localize`:@@tv.custom.layout.row:Em fileira, acima` },
   ];
   protected readonly pages: readonly Choice<TvStartPage>[] = [
     { value: 'directions', label: $localize`:@@tv.custom.page.directions:Direções` },

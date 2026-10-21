@@ -81,12 +81,20 @@ async function openHome(page: Page, scheme: Scheme) {
   await settle(page);
 }
 
+/** A lista de Ajustes (as telas de cada assunto abrem por `openScreen`). */
 async function openSettings(page: Page, scheme: Scheme) {
   await page.emulateMedia({ colorScheme: scheme });
   await page.goto('/ajustes');
   await expect(page.getByRole('heading', { level: 2, name: 'Conta' })).toBeVisible();
-  await expect(page.getByText('Notebook', { exact: true })).toBeVisible();
-  await expect(page.getByText('Bruno', { exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: /^Pessoas/ })).toBeVisible();
+  await settle(page);
+}
+
+/** Uma tela de Ajustes pelo endereço, esperando o título dela. */
+async function openScreen(page: Page, path: string, title: string, scheme: Scheme) {
+  await page.emulateMedia({ colorScheme: scheme });
+  await page.goto(path);
+  await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   await settle(page);
 }
 
@@ -216,7 +224,7 @@ test.describe('Início', () => {
 
 test.describe('Ajustes', () => {
   for (const scheme of SCHEMES) {
-    test(`prints e acessibilidade no tema ${scheme}`, async ({ page }, info) => {
+    test(`a lista: prints e acessibilidade no tema ${scheme}`, async ({ page }, info) => {
       seedAccount();
       await openSettings(page, scheme);
       await expectNoHorizontalScroll(page);
@@ -225,7 +233,7 @@ test.describe('Ajustes', () => {
       await expectNoA11yViolations(page);
     });
 
-    test(`tablet e celular deitado no tema ${scheme}`, async ({ page }, info) => {
+    test(`a lista: tablet e celular deitado no tema ${scheme}`, async ({ page }, info) => {
       seedAccount();
       for (const [name, size] of [
         ['tablet', TABLET],
@@ -239,14 +247,14 @@ test.describe('Ajustes', () => {
       }
     });
 
-    test(`confirmações, formulários e avisos no tema ${scheme}`, async ({ page }, info) => {
-      // Cenário longo (quatro telas, quatro varreduras do axe e cinco prints): no executor lento do WebKit do Linux ele
-      // chegou a 30,1 s contra o limite de 30 s, sem nenhum passo travado. O limite triplicado só cobre essa soma.
-      test.slow();
+    test(`Segurança: confirmação e formulário de passkey no tema ${scheme}`, async ({
+      page,
+    }, info) => {
       seedAccount();
-      await openSettings(page, scheme);
+      await openScreen(page, '/ajustes/seguranca', 'Segurança', scheme);
+      await expect(page.getByText('Notebook', { exact: true })).toBeVisible();
 
-      // Confirmação de remover passkey e de revogar acesso, uma de cada vez.
+      // Confirmação de remover passkey.
       await page.getByRole('button', { name: 'Remover Notebook' }).click();
       await expect(page.getByText('Remover a passkey Notebook?')).toBeVisible();
       await settle(page);
@@ -254,13 +262,6 @@ test.describe('Ajustes', () => {
         .getByRole('group', { name: 'Remover a passkey Notebook?' })
         .scrollIntoViewIfNeeded();
       await screenshot(page, printPath(info, 'settings-confirm-passkey', scheme));
-      await expectNoA11yViolations(page);
-      await page.getByRole('button', { name: 'Cancelar' }).click();
-
-      await page.getByRole('button', { name: 'Revogar acesso de Bruno' }).click();
-      await expect(page.getByText('poucos minutos')).toBeVisible();
-      await page.getByRole('group', { name: /Revogar o acesso de Bruno/ }).scrollIntoViewIfNeeded();
-      await screenshot(page, printPath(info, 'settings-confirm-guest', scheme));
       await expectNoA11yViolations(page);
       await page.getByRole('button', { name: 'Cancelar' }).click();
 
@@ -273,10 +274,24 @@ test.describe('Ajustes', () => {
       await screenshot(page, printPath(info, 'settings-passkey-form', scheme));
       expect(await smallTargets(page)).toEqual([]);
       await expectNoA11yViolations(page);
+    });
+
+    test(`Pessoas: revogar acesso e link de convite no tema ${scheme}`, async ({ page }, info) => {
+      seedAccount();
+      await openScreen(page, '/ajustes/pessoas', 'Pessoas', scheme);
+      await expect(page.getByText('Bruno', { exact: true })).toBeVisible();
+
+      // Confirmação de revogar acesso.
+      await page.getByRole('button', { name: 'Revogar acesso de Bruno' }).click();
+      await expect(page.getByText('poucos minutos')).toBeVisible();
+      await page.getByRole('group', { name: /Revogar o acesso de Bruno/ }).scrollIntoViewIfNeeded();
+      await screenshot(page, printPath(info, 'settings-confirm-guest', scheme));
+      await expectNoA11yViolations(page);
       await page.getByRole('button', { name: 'Cancelar' }).click();
 
       // Link de convite gerado (com a confirmação já válida).
       mock.stepUpValid = true;
+      await page.getByRole('button', { name: 'Convidar alguém' }).click();
       await page.getByLabel('Nome do convidado').fill('Diego');
       await page.getByRole('button', { name: 'Gerar convite' }).click();
       await expect(page.getByLabel('Link do convite')).toBeVisible();
@@ -287,56 +302,75 @@ test.describe('Ajustes', () => {
     });
   }
 
-  test('carregando, vazio e erro das listas', async ({ page }, info) => {
-    // Um só tratador por lista: segura a resposta enquanto `gate` não abre e, com `failing`, responde 500.
-    // Assim nenhuma requisição fica pendurada quando a página recarrega.
-    let gate: Promise<void> = Promise.resolve();
-    let failing = false;
-    const lists = async (route: Route) => {
-      await gate;
-      if (failing) return route.fulfill({ status: 500 });
-      return route.fallback();
-    };
-    await page.route('**/api/v1/identity/passkeys', lists);
-    await page.route('**/api/v1/identity/guests', lists);
+  // Cada lista tem a sua tela: vazia, carregando e com erro.
+  for (const screen of [
+    {
+      path: '/ajustes/seguranca',
+      title: 'Segurança',
+      route: '**/api/v1/identity/passkeys',
+      empty: 'Nenhuma passkey cadastrada.',
+      loading: 'Carregando as passkeys…',
+      error: 'Não foi possível carregar as passkeys agora.',
+    },
+    {
+      path: '/ajustes/pessoas',
+      title: 'Pessoas',
+      route: '**/api/v1/identity/guests',
+      empty: 'Ninguém foi convidado ainda.',
+      loading: 'Carregando os convidados…',
+      error: 'Não foi possível carregar os convidados agora.',
+    },
+  ]) {
+    test(`${screen.title}: carregando, vazio e erro da lista`, async ({ page }, info) => {
+      // Um só tratador: segura a resposta enquanto `gate` não abre e, com `failing`, responde 500.
+      // Assim nenhuma requisição fica pendurada quando a página recarrega.
+      let gate: Promise<void> = Promise.resolve();
+      let failing = false;
+      await page.route(screen.route, async (route: Route) => {
+        await gate;
+        if (failing) return route.fulfill({ status: 500 });
+        return route.fallback();
+      });
+      const name = screen.path.split('/').pop()!;
 
-    // Sem dados: listas vazias e as dicas.
-    await page.emulateMedia({ colorScheme: 'light' });
-    await page.goto('/ajustes');
-    await expect(page.getByText('Nenhuma passkey cadastrada.')).toBeVisible();
-    await expect(page.getByText('Nenhum convidado ainda.')).toBeVisible();
-    await settle(page);
-    await screenshot(page, printPath(info, 'settings-empty', 'light'), { fullPage: true });
-    await expectNoA11yViolations(page);
+      // Sem dados: lista vazia e a dica.
+      await openScreen(page, screen.path, screen.title, 'light');
+      await expect(page.getByText(screen.empty)).toBeVisible();
+      await screenshot(page, printPath(info, `settings-${name}-empty`, 'light'), {
+        fullPage: true,
+      });
+      await expectNoA11yViolations(page);
 
-    // Carregando: a resposta das listas demora até o teste soltar.
-    let release!: () => void;
-    gate = new Promise<void>((resolve) => (release = resolve));
-    await page.reload();
-    await expect(page.getByText('Carregando as passkeys…')).toBeVisible();
-    await expect(page.getByText('Carregando os convidados…')).toBeVisible();
-    await screenshot(page, printPath(info, 'settings-loading', 'light'), { fullPage: true });
-    await expectNoA11yViolations(page);
-    release();
-    await expect(page.getByText('Nenhuma passkey cadastrada.')).toBeVisible();
-    await expect(page.getByText('Nenhum convidado ainda.')).toBeVisible();
+      // Carregando: a resposta demora até o teste soltar.
+      let release!: () => void;
+      gate = new Promise<void>((resolve) => (release = resolve));
+      await page.reload();
+      await expect(page.getByText(screen.loading)).toBeVisible();
+      await screenshot(page, printPath(info, `settings-${name}-loading`, 'light'), {
+        fullPage: true,
+      });
+      await expectNoA11yViolations(page);
+      release();
+      await expect(page.getByText(screen.empty)).toBeVisible();
 
-    // Erro: o servidor responde 500.
-    failing = true;
-    await page.emulateMedia({ colorScheme: 'dark' });
-    await page.reload();
-    await expect(page.getByText('Não foi possível carregar as passkeys agora.')).toBeVisible();
-    await expect(page.getByText('Não foi possível carregar os convidados agora.')).toBeVisible();
-    await settle(page);
-    await screenshot(page, printPath(info, 'settings-error', 'dark'), { fullPage: true });
-    await expectNoA11yViolations(page);
-  });
+      // Erro: o servidor responde 500.
+      failing = true;
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await page.reload();
+      await expect(page.getByText(screen.error)).toBeVisible();
+      await settle(page);
+      await screenshot(page, printPath(info, `settings-${name}-error`, 'dark'), {
+        fullPage: true,
+      });
+      await expectNoA11yViolations(page);
+    });
+  }
 
-  test('sessão a confirmar (sem conexão com o servidor) aparece em tom de atenção', async ({
+  test('sessão a confirmar (sem conexão com o servidor) aparece em tom de atenção no Perfil', async ({
     page,
   }, info) => {
     mock.offline = true;
-    await page.goto('/ajustes');
+    await page.goto('/ajustes/perfil');
     await expect(page.locator('.session')).toContainText('Sessão a confirmar');
     await settle(page);
     await screenshot(page, printPath(info, 'settings-pending', 'light'), { fullPage: true });
@@ -348,7 +382,7 @@ test.describe('Ajustes', () => {
     browserName,
   }) => {
     seedAccount();
-    await openSettings(page, 'light');
+    await openScreen(page, '/ajustes/aparencia', 'Aparência', 'light');
     await page.getByRole('radio', { name: 'Escuro' }).check();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expect(page.locator('label.theme', { hasText: 'Escuro' })).toHaveCSS(
@@ -356,18 +390,6 @@ test.describe('Ajustes', () => {
       /.+/,
     );
     await page.getByRole('radio', { name: /Automático/ }).check();
-
-    const logout = page.getByRole('button', { name: 'Sair' });
-    await logout.focus();
-    await page.keyboard.press('Shift+Tab');
-    await page.keyboard.press('Tab');
-    await expect(logout).toBeFocused();
-    const outline = await logout.evaluate((el) => {
-      const style = getComputedStyle(el);
-      return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
-    });
-    expect(outline.style).not.toBe('none');
-    expect(outline.width).toBeGreaterThanOrEqual(2);
 
     // O cartão de tema mostra o foco quando o teclado chega nele. Entra pelo teclado (Tab e Shift+Tab): o WebKit
     // não conta como foco de teclado o que um script focou antes da primeira tecla.
@@ -382,9 +404,25 @@ test.describe('Ajustes', () => {
     await page.keyboard.press('ArrowRight');
     await expect(focusedCard).toHaveCount(1);
     if (browserName === 'chromium') {
+      await expect(focusedCard.first()).toBeVisible();
       expect(await focusedCard.evaluate((el) => getComputedStyle(el).outlineStyle)).not.toBe(
         'none',
       );
     }
+  });
+
+  test('o botão Sair do Perfil mostra o foco por teclado', async ({ page }) => {
+    await openScreen(page, '/ajustes/perfil', 'Perfil', 'light');
+    const logout = page.getByRole('button', { name: 'Sair' });
+    await logout.focus();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab');
+    await expect(logout).toBeFocused();
+    const outline = await logout.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
+    });
+    expect(outline.style).not.toBe('none');
+    expect(outline.width).toBeGreaterThanOrEqual(2);
   });
 });

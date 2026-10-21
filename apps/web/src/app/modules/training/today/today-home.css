@@ -1,0 +1,228 @@
+:host {
+  display: block;
+}
+
+.home {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+/* Resumo da semana: um cartão baixo, os números em uma linha. */
+.week {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+.week-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.week-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 750;
+}
+
+.range {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.none {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.stats {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stat dt {
+  color: var(--a-ink2);
+  font-size: var(--fs-label);
+}
+
+.stat dd {
+  margin: 0;
+  overflow: hidden;
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A rotina do dia: o nome, o resumo e UMA ação principal logo abaixo, antes da lista. */
+.routine {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.routine-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.routine-id {
+  min-width: 0;
+}
+
+.letter {
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.routine-name {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.go {
+  min-height: 56px;
+  font-size: 1.0625rem;
+}
+
+.lines {
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.actions > * {
+  flex: 1 1 10rem;
+}
+
+/* Treino aberto em outro aparelho. */
+.blocked-text {
+  margin: 0;
+}
+
+.blocked-hint {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.confirm p {
+  margin: 0;
+}
+
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.confirm-actions .ui-btn {
+  flex: 1 1 8rem;
+}
+
+.failed {
+  align-items: flex-start;
+}
+
+.failed-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.failed-text p {
+  margin: 0;
+  font-weight: 500;
+}
+
+.failed-text .failed-title {
+  font-weight: 750;
+}
+
+.failed-text .ui-btn {
+  align-self: flex-start;
+}
+
+/* Estados calmos: sem rotinas, catálogo ainda não baixado. */
+.calm {
+  align-items: center;
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.calm h3 {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.calm p {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.skeleton {
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  padding: var(--space-4);
+}
+
+.skeleton .ui-skeleton {
+  width: 62%;
+  height: 18px;
+}
+
+.skeleton .ui-skeleton.big {
+  height: 56px;
+  width: 100%;
+}

@@ -79,10 +79,11 @@ internal sealed class PullGoalsHandler(TrainingDbContext db)
 internal static class PullGoalsEndpoint
 {
     public static void MapPullGoals(this IEndpointRouteBuilder group) =>
-        group.MapGet("/goals", HandleAsync).RequireAuthorization()
+        group.MapGet("/goals", HandleAsync).RequireAuthorization(TrainingAuth.Module)
             .Produces<PullGoalsResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
-            .ProducesProblem(StatusCodes.Status401Unauthorized);
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
     private static async Task<IResult> HandleAsync(
         ICurrentUser current,

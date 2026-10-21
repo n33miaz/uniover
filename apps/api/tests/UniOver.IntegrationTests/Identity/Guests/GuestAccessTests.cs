@@ -9,6 +9,7 @@ using UniOver.BuildingBlocks.Web;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Guards;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.IntegrationTests.Training;
 using UniOver.IntegrationTests.Tv;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Tv;
@@ -16,8 +17,11 @@ using UniOver.Modules.Tv;
 namespace UniOver.IntegrationTests.Identity.Guests;
 
 /// <summary>
-/// O convidado usa a TV inteira e nada mais. A varredura vem das rotas do Host real (vale para módulo futuro sem editar
-/// o teste); as chamadas HTTP provam o 403 de fato e o que o convidado consegue fazer na TV.
+/// O convidado alcança só a TV, o Treino e a própria sessão, e em cada módulo só o que as permissões dele cobrem. A
+/// varredura vem das rotas do Host real (vale para módulo futuro sem editar o teste): por papel o convidado entra em toda
+/// rota da TV e do Treino (menos a importação do catálogo, que é só do administrador), e é a permissão nomeada de cada
+/// rota (tabelas em <see cref="TvPermissionMap"/> e <see cref="TrainingPermissionMap"/>) que decide; as chamadas HTTP
+/// provam o 403 de fato e o que o convidado de hoje (a TV inteira, sem editar atalhos) consegue fazer.
 /// </summary>
 [Collection(PostgresGroup.Name)]
 public sealed class GuestAccessTests(PostgresFixture postgres)
@@ -40,16 +44,17 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         "/api/v1/devices/agents/{agentId}/ws",
     ];
 
-    /// <summary>Renomear e ocultar atalhos (PATCH) e mudar a ordem deles (PUT) são só do dono; o resto da TV é do convidado.</summary>
-    private const string ShortcutEditRoute = "/api/v1/tv/shortcuts/{id:guid}";
-
-    private const string ShortcutOrderRoute = "/api/v1/tv/shortcuts/order";
-
-    private static bool IsGuestRoute(string pattern, IReadOnlyList<string> methods) =>
-        (pattern == ShortcutEditRoute && methods.Contains("PATCH", StringComparer.OrdinalIgnoreCase))
-        || (pattern == ShortcutOrderRoute && methods.Contains("PUT", StringComparer.OrdinalIgnoreCase))
-            ? false
-            : pattern.StartsWith("/api/v1/tv/", StringComparison.Ordinal) || GuestSessionRoutes.Contains(pattern);
+    /// <summary>
+    /// Por papel o convidado entra em toda rota da TV (inclusive renomear e reordenar atalhos) e do Treino: o que o barra é
+    /// a permissão da rota, que as tabelas de <see cref="TvPermissionMap"/> e <see cref="TrainingPermissionMap"/> conferem e
+    /// as chamadas HTTP provam. As rotas de configuração da TV (<see cref="TvPermissionMap.AdminRoutes"/>) e a importação do
+    /// catálogo do Treino (<see cref="TrainingPermissionMap.AdminRoutes"/>) são só do administrador, e o convidado nunca as
+    /// alcança.
+    /// </summary>
+    private static bool IsGuestRoute(string pattern) =>
+        (pattern.StartsWith("/api/v1/tv/", StringComparison.Ordinal) && !TvPermissionMap.AdminRoutes.Any(r => r.Pattern == pattern))
+        || (pattern.StartsWith("/api/v1/training/", StringComparison.Ordinal) && !TrainingPermissionMap.AdminRoutes.Any(r => r.Pattern == pattern))
+        || GuestSessionRoutes.Contains(pattern);
 
     private static ClaimsPrincipal Principal(string? role)
     {
@@ -77,7 +82,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task EveryRouteOfTheHost_ObeysTheRolePolicy_GuestOnlyOnTheTvAndTheOwnSession()
+    public async Task EveryRouteOfTheHost_ObeysTheRolePolicy_GuestOnlyOnTheTvTheTrainingAndTheOwnSession()
     {
         await using var app = await TvApp.StartAsync(postgres);
         var endpoints = app.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
@@ -131,10 +136,16 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
                 failures.Add($"{label}: aceita um papel que não existe");
             }
 
-            var guestExpected = IsGuestRoute(pattern, RouteInspector.Methods(endpoint));
+            var guestExpected = IsGuestRoute(pattern);
             if (asGuest != guestExpected)
             {
                 failures.Add($"{label}: convidado {(asGuest ? "alcança" : "não alcança")} e deveria {(guestExpected ? "alcançar" : "ser barrado")}");
+            }
+
+            // O convidado que entra por papel numa rota da TV só passa se a rota também exige uma permissão nomeada.
+            if (asGuest && !GuestSessionRoutes.Contains(pattern) && !policy.Requirements.OfType<PermissionRequirement>().Any())
+            {
+                failures.Add($"{label}: o convidado alcança por papel sem exigir uma permissão nomeada");
             }
 
             // Toda rota que o convidado alcança (fora as da própria sessão) confere também que a conta não foi revogada.
@@ -149,7 +160,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task GuestRoutesSeenByTheScan_AreExactlyTheTvAndTheOwnSession()
+    public async Task GuestRoutesSeenByTheScan_AreExactlyTheTvTheTrainingAndTheOwnSession()
     {
         await using var app = await TvApp.StartAsync(postgres);
         var policies = app.Services.GetRequiredService<IAuthorizationPolicyProvider>();
@@ -168,12 +179,23 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
             }
         }
 
-        allowed.Should().NotContain(p => p.Contains("/devices/", StringComparison.Ordinal) || p.Contains("/training/", StringComparison.Ordinal));
-        allowed.Where(p => !p.StartsWith("/api/v1/tv/", StringComparison.Ordinal)).Distinct().Should().BeEquivalentTo(GuestSessionRoutes);
+        allowed.Should().NotContain(p => p.Contains("/devices/", StringComparison.Ordinal));
+        allowed.Where(p => !p.StartsWith("/api/v1/tv/", StringComparison.Ordinal) && !p.StartsWith("/api/v1/training/", StringComparison.Ordinal))
+            .Distinct().Should().BeEquivalentTo(GuestSessionRoutes);
         allowed.Count(p => p.StartsWith("/api/v1/tv/", StringComparison.Ordinal)).Should().BeGreaterThanOrEqualTo(10);
 
-        // Só o PATCH usa esse padrão e ele é do dono: o padrão nem aparece entre os do convidado.
-        allowed.Should().NotContain(ShortcutEditRoute);
+        // No Treino o convidado entra por papel em todas as rotas de dado da conta e em nenhuma de dado global: a importação
+        // do catálogo do wger (e qualquer rota fora da tabela) não está entre as que ele alcança.
+        allowed.Where(p => p.StartsWith("/api/v1/training/", StringComparison.Ordinal)).Distinct()
+            .Should().BeEquivalentTo(TrainingPermissionMap.Routes.Select(r => r.Pattern).Distinct());
+        allowed.Should().NotContain(TrainingPermissionMap.AdminRoutes.Select(r => r.Pattern));
+
+        // Renomear e reordenar atalhos entram por papel como o resto da TV: a barreira é a permissão tv:edit-shortcuts, e a
+        // tabela abaixo prova que cada rota da TV (e só a TV) exige exatamente a permissão da sua linha.
+        allowed.Should().Contain(["/api/v1/tv/shortcuts/{id:guid}", "/api/v1/tv/shortcuts/order"]);
+        var routes = app.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>().ToList();
+        (await TvPermissionMap.ViolationsAsync(routes, policies)).Should().BeEmpty();
+        (await TrainingPermissionMap.ViolationsAsync(routes, policies)).Should().BeEmpty();
     }
 
     [Fact]
@@ -185,9 +207,12 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
 
         var forbidden = new (HttpMethod Method, string Url, object? Body)[]
         {
+            // O convidado de hoje não tem tv:edit-shortcuts: renomear, ocultar e reordenar atalhos seguem recusados.
             (HttpMethod.Patch, $"/api/v1/tv/shortcuts/{Guid.NewGuid()}", new { customLabel = "Meu app" }),
             (HttpMethod.Put, "/api/v1/tv/shortcuts/order", new { ids = new[] { Guid.NewGuid() } }),
             (HttpMethod.Get, "/api/v1/devices/agents", null),
+            (HttpMethod.Get, "/api/v1/tv/config", null),
+            (HttpMethod.Put, "/api/v1/tv/config/agent", new { agentSlug = "pc-casa" }),
             (HttpMethod.Post, $"/api/v1/devices/agents/{Guid.NewGuid()}/revoke", null),
             (HttpMethod.Post, "/api/v1/devices/pairing/approve", new { userCode = "ABCD-EFGH" }),
             (HttpMethod.Post, "/api/v1/devices/pairing/deny", new { userCode = "ABCD-EFGH" }),
@@ -211,6 +236,13 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         {
             using var response = await app.SendAsync(method, url, body, bearer: token);
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{method} {url}");
+        }
+
+        // E o Treino inteiro (as rotas de dado e a importação do catálogo): o convidado de hoje só tem a TV.
+        foreach (var (method, pattern, url, body) in TrainingPermissionMap.AllCalls())
+        {
+            using var response = await app.SendAsync(new HttpMethod(method), url, body, bearer: token);
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{method} {pattern} para quem só tem a TV");
         }
 
         // E o convidado não se revogou nem se promoveu por tentativa.
@@ -288,7 +320,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         foreach (var url in new[]
         {
             "/api/v1/devices/agents", "/api/v1/identity/passkeys", "/api/v1/identity/guests", "/api/v1/identity/guest-invites",
-            "/api/v1/tv/state", "/api/v1/identity/me",
+            "/api/v1/tv/state", "/api/v1/tv/config", "/api/v1/identity/me",
         })
         {
             using var response = await app.GetAsync(url);

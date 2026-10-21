@@ -78,7 +78,8 @@ public static class TrainingModule
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        // Sem AllowAnonymous no grupo: a política padrão é "autenticado" e cada rota declara RequireAuthorization.
+        // Sem AllowAnonymous nem política no grupo: cada rota declara a sua (TrainingAuth), então uma rota nova sem política
+        // cai na padrão (só administrador) em vez de ficar aberta a quem tem o módulo.
         var group = endpoints.MapGroup($"/api/v1/{Name}");
         group.MapPullExercises();
         group.MapUpsertCustomExercise();

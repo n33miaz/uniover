@@ -1,0 +1,106 @@
+:host {
+  display: block;
+}
+
+/* Semana anterior, o intervalo e a próxima: as setas têm 44 px de toque. */
+.nav {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.arrow {
+  padding: 0;
+}
+
+.range {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.range span {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.totals {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.totals span {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+/* Nome, barra e o número real: a barra compara os grupos, o número é a informação. */
+.bar {
+  display: grid;
+  grid-template-columns: 4.75rem minmax(0, 1fr) 1.75rem;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 28px;
+}
+
+.name {
+  font-size: var(--fs-small);
+}
+
+.track {
+  display: block;
+  width: 100%;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.back {
+  fill: var(--a-elev);
+}
+
+.fill {
+  fill: var(--a-accent);
+}
+
+.count {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.note {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+/* A meta de treinos por semana: o texto e um botão só (Definir ou Mudar). */
+.goal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--a-line);
+}
+
+.goal-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.goal-text span {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}

@@ -19,12 +19,14 @@ export type TvIconName =
   | 'next'
   | 'input'
   | 'apps'
+  | 'more'
   | 'refresh'
   | 'rename'
   | 'close'
   | 'search'
   | 'clean'
-  | 'clock';
+  | 'clock'
+  | 'tv';
 
 // Traços simples (24x24, contorno) só do controle. Decorativos: o texto do botão é que informa.
 const PATHS: Record<TvIconName, string> = {
@@ -46,6 +48,8 @@ const PATHS: Record<TvIconName, string> = {
   next: 'M17 5v14 M5 5l9 7-9 7z',
   input: 'M4 12h12 M12 7l5 5-5 5 M20 4v16',
   apps: 'M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z',
+  // Três pontos na horizontal: cada um é um círculo de raio 1,2 que o traço de 2 enche, e vira um disco de uns 4,4 px.
+  more: 'M3.8 12a1.2 1.2 0 1 0 2.4 0 1.2 1.2 0 1 0-2.4 0 M10.8 12a1.2 1.2 0 1 0 2.4 0 1.2 1.2 0 1 0-2.4 0 M17.8 12a1.2 1.2 0 1 0 2.4 0 1.2 1.2 0 1 0-2.4 0',
   refresh: 'M20 12a8 8 0 1 1-2.3-5.7 M20 4v5h-5',
   rename: 'M4 20h4L19 9l-4-4L4 16z M13 7l4 4',
   close: 'M6 6l12 12 M18 6L6 18',
@@ -53,6 +57,8 @@ const PATHS: Record<TvIconName, string> = {
   clean:
     'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z M19 16l.9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9z',
   clock: 'M12 7v5l3 2 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
+  // Uma tela com o pé: serve aos estados em que a TV só é vista (sem controle) ou nem isso (sem acesso).
+  tv: 'M3 5h18v12H3z M8 21h8 M12 17v4',
 };
 
 @Component({

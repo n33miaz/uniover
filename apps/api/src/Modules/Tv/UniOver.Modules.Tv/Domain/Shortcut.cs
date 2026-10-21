@@ -31,7 +31,8 @@ public sealed class Shortcut
 
     /// <summary>
     /// Posição na ordem do dono (1, 2, 3...): quem entra depois vai para o fim, e uma lista nova do agente não mexe em
-    /// ninguém. Só o dono muda a ordem, e ao fazê-lo todos os atalhos são renumerados de 1 a n (<see cref="ShortcutCatalog.TryReorder"/>).
+    /// ninguém. Só quem edita atalhos (o administrador, ou quem recebeu essa permissão) muda a ordem, e ao fazê-lo todos
+    /// os atalhos são renumerados de 1 a n (<see cref="ShortcutCatalog.TryReorder"/>).
     /// </summary>
     public int Position { get; private set; }
 

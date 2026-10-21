@@ -44,6 +44,24 @@
     </div>
   </div>
 
+  <div class="block">
+    <span id="tv-custom-layout-label" class="label" i18n="@@tv.custom.layout"
+      >Disposição dos botões de volume e canal</span
+    >
+    <div class="choices two" role="group" aria-labelledby="tv-custom-layout-label">
+      @for (layout of layouts; track layout.value) {
+        <button
+          type="button"
+          class="choice"
+          [attr.aria-pressed]="prefs.pillLayout() === layout.value"
+          (click)="change({ pillLayout: layout.value })"
+        >
+          {{ layout.label }}
+        </button>
+      }
+    </div>
+  </div>
+
   <div class="ui-group">
     <label class="ui-row">
       <span class="ui-row-text">

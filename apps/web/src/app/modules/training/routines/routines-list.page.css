@@ -1,0 +1,89 @@
+:host {
+  display: block;
+}
+
+.routines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  justify-content: center;
+  min-height: var(--tap);
+}
+
+.meta h2 {
+  padding: 0;
+}
+
+.count {
+  margin: 0;
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.chevron {
+  color: var(--a-ink3);
+}
+
+.ui-tile.off {
+  opacity: 0.55;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: var(--space-2);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.empty h2 {
+  font-size: var(--fs-title);
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.empty p {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.skeleton li {
+  display: flex;
+  align-items: center;
+  min-height: 60px;
+  padding: var(--space-3) var(--space-4);
+}
+
+.skeleton .ui-skeleton {
+  width: 62%;
+  height: 18px;
+}
+
+/* Marca da rotina: uma linha pequena em cima do nome, para o nome e o resumo ficarem com a largura toda. */
+.eyebrow {
+  color: var(--a-ink3);
+  font-size: 0.6875rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.eyebrow.next {
+  color: var(--a-accent-ink);
+}

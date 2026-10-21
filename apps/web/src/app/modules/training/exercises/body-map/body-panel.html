@@ -1,0 +1,31 @@
+<section class="panel ui-card" [attr.aria-labelledby]="titleId">
+  <header class="head">
+    <h3 [id]="titleId" class="name">{{ name() }}</h3>
+    <span class="ui-chip" [class.accent]="weekSets() > 0">{{ setsText() }}</span>
+  </header>
+  @if (shown().length > 0) {
+    <ul class="list ui-plain">
+      @for (exercise of shown(); track exercise.id) {
+        <li>
+          <a class="ui-row" [routerLink]="['/treino/exercicios', exercise.id]">
+            <span class="text">
+              <span class="row-name">{{ exercise.name }}</span>
+              <span class="sub">{{ support(exercise) }}</span>
+            </span>
+            <app-training-glyph class="chevron" name="next" />
+          </a>
+        </li>
+      }
+    </ul>
+    <div class="foot">
+      <a
+        class="ui-btn primary block"
+        routerLink="/treino/exercicios"
+        [queryParams]="queryParams()"
+        >{{ allText() }}</a
+      >
+    </div>
+  } @else {
+    <p class="none" i18n="@@training.map.none">Nenhum exercício deste músculo no catálogo.</p>
+  }
+</section>

@@ -18,35 +18,44 @@
   gap: 8px;
   width: 100%;
   max-width: 36rem;
-  height: max(var(--tv-avail), var(--tv-min));
+  height: max(var(--tv-avail), var(--tv-min), var(--tv-pills-min, 0px));
   margin-inline: auto;
+}
+/*
+ * Com as pílulas em fileira o bloco de baixo é bem mais alto (a fileira mais dois andares de botões redondos maiores):
+ * o mínimo da altura sobe para o palco não ser espremido, e abaixo dele a página rola. Deitado há duas colunas, e o
+ * mínimo de lá basta (vale o do paisagem, mais abaixo).
+ */
+.tv[data-pills='row'] {
+  --tv-pills-min: 600px;
 }
 
 /*
- * Cabeçalho numa linha só: voltar à esquerda, o nome no meio e, à direita, Apps e energia. O nome fica no meio da
- * TELA: as duas colunas dos lados são iguais (o mesmo mínimo, e o que sobra dividido por igual), então nada que mude
- * dentro de um lado (convidado sem voltar, nome mais comprido) desloca o centro. Cada lado reserva, além dos botões
- * da direita (Apps e energia), a folga do ponto de estado, que mora à direita do texto do nome; sem essa folga um nome
- * comprido empurraria o ponto para cima dos botões. O que não cabe no nome vira reticências.
+ * Cabeçalho numa linha só: à esquerda a saída (voltar ou ajustes) e os três pontos do painel Apps, o nome no meio e, à
+ * direita, o desligar. O nome fica no meio da TELA: as duas colunas dos lados são iguais (o mesmo mínimo, e o que sobra
+ * dividido por igual), então nada que mude dentro de um lado nem um nome mais comprido desloca o centro. O mínimo é o do
+ * lado maior, o grupo da esquerda (dois botões); o lado direito reserva, além do desligar, a folga do ponto de estado,
+ * que mora à direita do texto do nome, e cabe nessa mesma largura. Sem essa folga um nome comprido empurraria o ponto
+ * para cima do desligar. O que não cabe no nome vira reticências.
  * A largura do texto depende da fonte do sistema (a do Linux é bem mais larga que a do Windows): o pior caso é um nome
  * de 20 letras, que então usa as duas linhas inteiras e, passando delas, termina em reticências; nunca passa da
  * coluna nem dos 44 px, e o nome completo continua no nome acessível do botão e na folha Personalizar.
  */
 .head {
-  /* Os dois botões da direita e o espaço entre eles. */
+  /* Os dois botões da esquerda e o espaço entre eles. */
   --gap: 6px;
-  --side: calc(2 * var(--tap) + var(--gap));
   /* O alvo de 44 px do ponto começa 8 px antes do fim do nome: sobram 36 px à direita do texto. */
   --dot-room: 36px;
+  /* A coluna de cada lado: a do grupo da esquerda ou a do desligar com a folga do ponto, a que for maior. */
+  --side: max(calc(2 * var(--tap) + var(--gap)), calc(var(--tap) + var(--dot-room)));
   display: grid;
-  grid-template-columns:
-    minmax(calc(var(--side) + var(--dot-room)), 1fr)
-    minmax(0, auto)
-    minmax(calc(var(--side) + var(--dot-room)), 1fr);
+  grid-template-columns: minmax(var(--side), 1fr) minmax(0, auto) minmax(var(--side), 1fr);
+  /* Um respiro entre o nome e os botões dos lados (igual nos dois: o centro não se mexe). */
+  column-gap: 4px;
   align-items: center;
 }
 
-/* Os três botões do cabeçalho (voltar, Apps e energia) têm o mesmo visual: um círculo de 44 px. */
+/* Os botões do cabeçalho (voltar ou ajustes, Apps e energia) têm o mesmo visual: um círculo de 44 px. */
 .circle {
   display: grid;
   place-items: center;
@@ -71,7 +80,9 @@
     border-color: var(--a-accent);
   }
 }
-.back {
+.lead {
+  display: flex;
+  gap: var(--gap);
   justify-self: start;
 }
 .power {
@@ -79,7 +90,6 @@
 }
 .actions {
   display: flex;
-  gap: var(--gap);
   justify-self: end;
 }
 
@@ -111,6 +121,10 @@ h1 {
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+}
+/* Sem o controle o nome é só texto: a mesma caixa do botão (altura do alvo, centralizado), sem a mão do cursor. */
+.title.plain {
+  cursor: default;
 }
 /*
  * O nome nunca é cortado por reticências enquanto couber em duas linhas: nome curto fica numa linha no tamanho de
@@ -160,6 +174,27 @@ h1 {
   color: var(--a-ink2);
   font-size: 0.9rem;
   text-align: center;
+}
+
+/* Conta sem acesso à TV: uma frase no meio do que sobra da altura, discreta (não é um erro). */
+.blocked {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 24px;
+  color: var(--a-ink2);
+  text-align: center;
+  text-wrap: balance;
+}
+.blocked app-tv-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+.blocked p {
+  margin: 0;
 }
 
 /* Aviso passageiro: flutua sobre a fileira de baixo sem pegar o toque, para o controle seguir usável. */
@@ -224,6 +259,9 @@ h1 {
   }
   .tv {
     max-width: 60rem;
+  }
+  .tv[data-pills='row'] {
+    --tv-pills-min: 0px;
   }
 }
 

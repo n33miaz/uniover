@@ -1,179 +1,74 @@
+<!-- Um aviso curto no tom certo: confirmação em verde, erro em vermelho (e alerta para o leitor de tela). -->
+<ng-template #noteTemplate let-note>
+  <div class="ui-collapse" [animate.leave]="'leaving'">
+    <div class="ui-collapse-inner">
+      <p
+        class="message ui-notice"
+        [class.bad]="note.isError"
+        [class.ok]="!note.isError"
+        [class.error]="note.isError"
+        [attr.role]="note.isError ? 'alert' : null"
+      >
+        <app-settings-glyph [name]="note.isError ? 'alert' : 'checkCircle'" />
+        <span>{{ note.text }}</span>
+      </p>
+    </div>
+  </div>
+</ng-template>
+
 <section class="section" aria-labelledby="guests-title">
   <h2 id="guests-title" class="ui-section-label" i18n="@@settings.guests.title">Convidados</h2>
 
-  <div class="intro ui-card">
-    <span class="ui-tile"><app-settings-glyph name="users" /></span>
-    <p class="hint" i18n="@@settings.guests.hint">
-      O convidado usa o controle da TV, como se você entregasse o controle de verdade, e mais nada.
-      Você gera um link e o entrega a ele; ele escolhe a própria senha, que você nunca vê.
-    </p>
-  </div>
-
-  <form class="add panel ui-card" (submit)="create($event)">
-    <div class="ui-field">
-      <label for="guest-name" i18n="@@settings.guests.name">Nome do convidado</label>
-      <input
-        class="ui-input"
-        id="guest-name"
-        type="text"
-        autocomplete="off"
-        [attr.maxlength]="maxName"
-        required
-        [value]="newName()"
-        (input)="newName.set(value($event))"
-      />
-    </div>
-    <button
-      type="submit"
-      class="primary ui-btn block add-button"
-      [disabled]="busy() || newName().trim().length === 0"
-    >
-      <app-settings-glyph name="mail" />
-      <span i18n="@@settings.guests.create">Gerar convite</span>
-    </button>
-  </form>
-
-  @if (created(); as link) {
-    <div class="link-box" role="group" aria-labelledby="guests-link-title">
-      <p id="guests-link-title" class="question" i18n="@@settings.guests.link-title">
-        Convite para {{ link.name }}
-      </p>
-      <input
-        class="link ui-input"
-        type="text"
-        readonly
-        aria-label="Link do convite"
-        i18n-aria-label="@@settings.guests.link-label"
-        [value]="link.url"
-        (focus)="$any($event.target).select()"
-      />
-      <p class="hint">{{ linkExpires(link) }}</p>
-      <div class="actions">
-        <button type="button" class="primary ui-btn" (click)="copy()">
-          <app-settings-glyph name="copy" />
-          <span i18n="@@settings.guests.copy">Copiar link</span>
-        </button>
-        @if (canShare()) {
-          <button type="button" class="secondary ui-btn" (click)="share()">
-            <app-settings-glyph name="share" />
-            <span i18n="@@settings.guests.share">Compartilhar</span>
-          </button>
-        }
-        <button
-          type="button"
-          class="secondary ui-btn"
-          (click)="closeLink()"
-          i18n="@@settings.guests.close"
-        >
-          Fechar
-        </button>
-      </div>
-    </div>
-  }
-
   <div class="messages" [attr.aria-live]="'polite'">
-    @if (message(); as text) {
-      <div class="ui-collapse" [animate.leave]="'leaving'">
-        <div class="ui-collapse-inner">
-          <p
-            class="message ui-notice"
-            [class.bad]="messageIsError()"
-            [class.ok]="!messageIsError()"
-            [class.error]="messageIsError()"
-            [attr.role]="messageIsError() ? 'alert' : null"
-          >
-            <app-settings-glyph [name]="messageIsError() ? 'alert' : 'checkCircle'" />
-            <span>{{ text }}</span>
-          </p>
-        </div>
-      </div>
+    @if (listNote(); as note) {
+      <ng-container *ngTemplateOutlet="noteTemplate; context: { $implicit: note }" />
     }
   </div>
 
-  @if (invites() !== null) {
-    <h3 class="subhead" i18n="@@settings.guests.pending-title">Convites pendentes</h3>
-    @if (pending().length === 0) {
-      <p class="empty ui-rise">
-        <app-settings-glyph name="mail" />
-        <span i18n="@@settings.guests.pending-empty">Nenhum convite pendente.</span>
+  @if (guests() === null) {
+    @if (loadFailed()) {
+      <p class="empty bad ui-rise">
+        <app-settings-glyph name="alert" />
+        <span i18n="@@settings.guests.load-failed"
+          >Não foi possível carregar os convidados agora. Eles aparecem quando a sessão for
+          confirmada.</span
+        >
       </p>
     } @else {
-      <ul class="list ui-stagger">
-        @for (invite of pending(); track invite.id) {
-          <li class="item ui-card ui-rise">
-            <div class="head">
-              <span class="ui-tile warn"><app-settings-glyph name="clock" /></span>
-              <div class="info">
-                <strong class="name">{{ invite.displayName }}</strong>
-                <span class="meta">{{ expires(invite) }}</span>
-              </div>
-            </div>
-            @if (revokingInviteId() === invite.id) {
-              <div class="actions">
-                <button
-                  type="button"
-                  class="secondary ui-btn"
-                  (click)="revokingInviteId.set(null)"
-                  i18n="@@settings.cancel"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  class="danger ui-btn"
-                  [disabled]="busy()"
-                  (click)="revokeInvite(invite)"
-                  i18n="@@settings.guests.revoke"
-                >
-                  Revogar
-                </button>
-              </div>
-            } @else {
-              <div class="actions">
-                <button
-                  type="button"
-                  class="secondary ui-btn"
-                  [attr.aria-label]="revokeInviteLabel(invite)"
-                  (click)="revokingInviteId.set(invite.id)"
-                  i18n="@@settings.guests.revoke"
-                >
-                  Revogar
-                </button>
-              </div>
-            }
-          </li>
-        }
-      </ul>
+      <p class="empty" role="status">
+        <span class="ui-spinner" aria-hidden="true"></span>
+        <span i18n="@@settings.guests.loading">Carregando os convidados…</span>
+      </p>
+      <div class="skeleton-card ui-card" aria-hidden="true">
+        <span class="ui-skeleton bar wide"></span>
+        <span class="ui-skeleton bar"></span>
+      </div>
     }
-  }
-
-  @if (guests(); as list) {
-    <h3 class="subhead" i18n="@@settings.guests.active-title">Convidados com acesso</h3>
-    @if (list.length === 0) {
-      <p class="empty ui-rise">
-        <app-settings-glyph name="users" />
-        <span i18n="@@settings.guests.active-empty">Nenhum convidado ainda.</span>
-      </p>
-    } @else {
-      <ul class="list ui-stagger">
-        @for (guest of list; track guest.id) {
-          <li class="item ui-card ui-rise">
+  } @else {
+    @if (sortedGuests().length > 0) {
+      <ul
+        class="people ui-group ui-stagger"
+        aria-label="Convidados com acesso"
+        i18n-aria-label="@@settings.guests.active-label"
+      >
+        @for (guest of sortedGuests(); track guest.id) {
+          <li class="person ui-rise">
             <div class="head">
               <span class="ui-tile" [class.bad]="guest.disabledAt"
                 ><app-settings-glyph name="user"
               /></span>
-              <div class="info">
-                <strong class="name">{{ guest.displayName }}</strong>
-                <span class="meta">{{ guest.email }}</span>
-                <span class="meta">{{ since(guest) }}</span>
-                @if (guest.disabledAt) {
-                  <span class="meta revoked ui-chip bad" i18n="@@settings.guests.revoked"
-                    >Acesso revogado</span
-                  >
-                }
+              <div class="ui-row-text">
+                <strong class="name ui-row-title">{{ guest.displayName }}</strong>
+                <span class="meta ui-row-sub">{{ guest.email }}</span>
               </div>
+              @if (guest.disabledAt) {
+                <span class="revoked ui-chip bad" i18n="@@settings.guests.revoked"
+                  >Acesso revogado</span
+                >
+              }
             </div>
             @if (!guest.disabledAt) {
+              <p class="abilities">{{ summary(guest.permissions) }}</p>
               @if (revokingGuestId() === guest.id) {
                 <div
                   class="confirm ui-notice bad ui-rise"
@@ -209,6 +104,15 @@
                   <button
                     type="button"
                     class="secondary ui-btn"
+                    [attr.aria-label]="permissionsLabel(guest)"
+                    (click)="editPermissions(guest, $event)"
+                    i18n="@@settings.guests.permissions"
+                  >
+                    Permissões
+                  </button>
+                  <button
+                    type="button"
+                    class="secondary ui-btn"
                     [attr.aria-label]="revokeGuestLabel(guest)"
                     (click)="revokingGuestId.set(guest.id)"
                     i18n="@@settings.guests.revoke-access"
@@ -221,23 +125,197 @@
           </li>
         }
       </ul>
+    } @else if (pending().length === 0) {
+      <p class="empty ui-rise">
+        <app-settings-glyph name="users" />
+        <span i18n="@@settings.guests.empty">Ninguém foi convidado ainda.</span>
+      </p>
     }
-  } @else if (loadFailed()) {
-    <p class="empty bad ui-rise">
-      <app-settings-glyph name="alert" />
-      <span i18n="@@settings.guests.load-failed"
-        >Não foi possível carregar os convidados agora. Eles aparecem quando a sessão for
-        confirmada.</span
-      >
-    </p>
-  } @else {
-    <p class="empty" role="status">
-      <span class="ui-spinner" aria-hidden="true"></span>
-      <span i18n="@@settings.guests.loading">Carregando os convidados…</span>
-    </p>
-    <div class="skeleton-card ui-card" aria-hidden="true">
-      <span class="ui-skeleton bar wide"></span>
-      <span class="ui-skeleton bar"></span>
+
+    @if (pending().length > 0) {
+      <h3 class="subhead" i18n="@@settings.guests.pending-title">Convites pendentes</h3>
+      <ul class="people ui-group ui-stagger">
+        @for (invite of pending(); track invite.id) {
+          <li class="person ui-rise">
+            <div class="head">
+              <span class="ui-tile warn"><app-settings-glyph name="clock" /></span>
+              <div class="ui-row-text">
+                <strong class="name ui-row-title">{{ invite.displayName }}</strong>
+                <span class="meta ui-row-sub">{{ expires(invite) }}</span>
+              </div>
+            </div>
+            <p class="abilities">{{ summary(invite.permissions) }}</p>
+            @if (revokingInviteId() === invite.id) {
+              <div class="actions">
+                <button
+                  type="button"
+                  class="secondary ui-btn"
+                  (click)="revokingInviteId.set(null)"
+                  i18n="@@settings.cancel"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  class="danger ui-btn"
+                  [disabled]="busy()"
+                  (click)="revokeInvite(invite)"
+                  i18n="@@settings.guests.revoke"
+                >
+                  Revogar
+                </button>
+              </div>
+            } @else {
+              <div class="actions single">
+                <button
+                  type="button"
+                  class="secondary ui-btn"
+                  [attr.aria-label]="revokeInviteLabel(invite)"
+                  (click)="revokingInviteId.set(invite.id)"
+                  i18n="@@settings.guests.revoke"
+                >
+                  Revogar
+                </button>
+              </div>
+            }
+          </li>
+        }
+      </ul>
+    }
+  }
+
+  @if (created(); as link) {
+    <div #linkBox class="link-box" role="group" tabindex="-1" aria-labelledby="guests-link-title">
+      <p id="guests-link-title" class="question" i18n="@@settings.guests.link-title">
+        Convite para {{ link.name }}
+      </p>
+      <p class="hint">
+        <strong i18n="@@settings.people.summary-label">Poderá:</strong>
+        {{ summary(link.permissions) }}
+      </p>
+      <input
+        class="link ui-input"
+        type="text"
+        readonly
+        aria-label="Link do convite"
+        i18n-aria-label="@@settings.guests.link-label"
+        [value]="link.url"
+        (focus)="$any($event.target).select()"
+      />
+      <p class="hint">{{ linkExpires(link) }}</p>
+      <div class="messages" [attr.aria-live]="'polite'">
+        @if (linkNote(); as note) {
+          <ng-container *ngTemplateOutlet="noteTemplate; context: { $implicit: note }" />
+        }
+      </div>
+      <div class="actions">
+        <button type="button" class="primary ui-btn" (click)="copy()">
+          <app-settings-glyph name="copy" />
+          <span i18n="@@settings.guests.copy">Copiar link</span>
+        </button>
+        @if (canShare()) {
+          <button type="button" class="secondary ui-btn" (click)="share()">
+            <app-settings-glyph name="share" />
+            <span i18n="@@settings.guests.share">Compartilhar</span>
+          </button>
+        }
+        <button
+          type="button"
+          class="secondary ui-btn"
+          (click)="closeLink()"
+          i18n="@@settings.guests.close"
+        >
+          Fechar
+        </button>
+      </div>
     </div>
+  } @else if (inviteOpen()) {
+    <form class="invite ui-card" aria-labelledby="invite-title" (submit)="create($event)">
+      <h3 id="invite-title" class="form-title" i18n="@@settings.guests.invite-title">
+        Convidar alguém
+      </h3>
+      <div class="ui-field">
+        <label for="guest-name" i18n="@@settings.guests.name">Nome do convidado</label>
+        <input
+          #nameInput
+          class="ui-input"
+          id="guest-name"
+          type="text"
+          autocomplete="off"
+          [attr.maxlength]="maxName"
+          required
+          [value]="newName()"
+          (input)="newName.set(value($event))"
+        />
+      </div>
+
+      <div class="perms">
+        <button
+          type="button"
+          class="perms-toggle"
+          [attr.aria-expanded]="permissionsOpen()"
+          (click)="permissionsOpen.set(!permissionsOpen())"
+        >
+          <span class="ui-row-text">
+            <span class="ui-row-title" i18n="@@settings.guests.permissions-title"
+              >O que essa pessoa poderá fazer</span
+            >
+            @if (!permissionsOpen()) {
+              <span class="ui-row-sub" [class.warn-text]="!permissionsValid()">{{
+                permissionsText()
+              }}</span>
+            }
+          </span>
+          <span class="chevron" [class.open]="permissionsOpen()" aria-hidden="true">
+            <app-settings-glyph name="chevron" />
+          </span>
+        </button>
+        @if (permissionsOpen()) {
+          <div class="perms-body ui-rise">
+            <app-people-permission-picker [(permissions)]="permissions" />
+          </div>
+        }
+      </div>
+
+      <p class="hint" i18n="@@settings.guests.invite-hint">
+        Você entrega o link; a pessoa escolhe a própria senha, que você nunca vê.
+      </p>
+
+      <div class="messages" [attr.aria-live]="'polite'">
+        @if (formNote(); as note) {
+          <ng-container *ngTemplateOutlet="noteTemplate; context: { $implicit: note }" />
+        }
+      </div>
+
+      <div class="actions form-actions">
+        <button
+          type="button"
+          class="secondary ui-btn"
+          [disabled]="busy()"
+          (click)="cancelInvite()"
+          i18n="@@settings.cancel"
+        >
+          Cancelar
+        </button>
+        <button type="submit" class="primary ui-btn" [disabled]="!canCreate()">
+          <app-settings-glyph name="mail" />
+          <span i18n="@@settings.guests.create">Gerar convite</span>
+        </button>
+      </div>
+    </form>
+  } @else {
+    <button #inviteButton type="button" class="primary ui-btn block" (click)="openInvite()">
+      <app-settings-glyph name="mail" />
+      <span i18n="@@settings.guests.invite">Convidar alguém</span>
+    </button>
   }
 </section>
+
+@if (editing(); as guest) {
+  <app-people-permissions-sheet
+    [guest]="guest"
+    (saved)="onPermissionsSaved($event)"
+    (outdated)="onPermissionsOutdated()"
+    (closed)="closeSheet()"
+  />
+}

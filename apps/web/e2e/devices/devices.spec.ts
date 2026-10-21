@@ -43,14 +43,15 @@ async function signIn(page: Page) {
 async function openDevices(page: Page, browserName: string) {
   if (browserName === 'chromium') await addVirtualAuthenticator(page);
   await signIn(page);
-  await page.goto('/ajustes');
   if (browserName === 'chromium') {
+    await page.goto('/ajustes/seguranca');
     await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
     await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
     await page.getByLabel('Nome da passkey (opcional)').fill('Notebook');
     await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
-    await expect(page.getByText('Passkey cadastrada.')).toBeVisible();
+    await expect(page.getByText('Passkey cadastrada.', { exact: true })).toBeVisible();
   }
+  await page.goto('/ajustes');
   await page.getByRole('link', { name: /^Aparelhos/ }).click();
   await expect(page).toHaveURL(/\/ajustes\/aparelhos$/);
   await expect(page.getByRole('heading', { level: 2, name: 'Aparelhos pareados' })).toBeVisible();

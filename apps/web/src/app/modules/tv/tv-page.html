@@ -1,80 +1,131 @@
-<div class="tv">
+<div class="tv" [attr.data-pills]="prefs.pillLayout()">
   <header class="head">
-    @if (isGuest()) {
-      <!-- Convidado: visão única do controle, sem Início nem voltar. O espaço fica para o nome seguir centralizado. -->
-      <span aria-hidden="true"></span>
-    } @else {
-      <a
-        routerLink="/"
-        class="circle back"
-        aria-label="Voltar ao Início"
-        i18n-aria-label="@@tv.header.back"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          width="22"
-          height="22"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
+    <!--
+      Grupo da esquerda: o botão de saída (a seta de voltar do administrador ou a engrenagem do convidado) e, logo depois,
+      os três pontos que abrem o painel Apps. À direita fica só o de desligar; as duas colunas dos lados têm a mesma
+      largura, então o nome continua no meio da tela. Cada um deles só existe para quem pode usá-lo (três pontos: abrir
+      apps, editar os atalhos ou limpar a TV; desligar: `tv:power`): as colunas seguem do mesmo tamanho com um botão a
+      menos, e o nome não se mexe.
+    -->
+    <div class="lead">
+      @if (isGuest()) {
+        <!--
+          Convidado: visão única do controle, sem Início nem voltar. No lugar da seta fica o botão redondo das configurações
+          do sistema (Perfil, Aparência e Sobre), do mesmo tamanho.
+        -->
+        <a
+          routerLink="/ajustes"
+          class="circle settings"
+          aria-label="Ajustes"
+          i18n-aria-label="@@tv.header.settings"
         >
-          <path [attr.d]="'M19 12H5'" />
-          <path [attr.d]="'M11 18l-6-6 6-6'" />
-        </svg>
-      </a>
-    }
+          <app-gear-icon />
+        </a>
+      } @else {
+        <a
+          routerLink="/"
+          class="circle back"
+          aria-label="Voltar ao Início"
+          i18n-aria-label="@@tv.header.back"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path [attr.d]="'M19 12H5'" />
+            <path [attr.d]="'M11 18l-6-6 6-6'" />
+          </svg>
+        </a>
+      }
+      @if (access.apps()) {
+        <button
+          #appsButton
+          type="button"
+          class="circle"
+          [attr.aria-haspopup]="'dialog'"
+          [attr.aria-label]="appsLabel()"
+          (click)="open('apps', appsButton)"
+        >
+          <app-tv-icon name="more" />
+        </button>
+      }
+    </div>
     <!--
       O nome é o único item em fluxo desta caixa: o ponto de estado fica solto ao lado do fim do texto (posição
       absoluta), então um nome mais comprido o empurra para fora e o nome continua no meio da tela.
     -->
     <div class="name" [attr.data-size]="titleSize()">
       <h1>
-        <button
-          #titleButton
-          type="button"
-          class="title"
-          [attr.aria-haspopup]="'dialog'"
-          [attr.aria-label]="titleLabel()"
-          (click)="openCustomize(titleButton)"
-        >
-          <span class="title-text">{{ prefs.title() }}</span>
-        </button>
+        <!--
+          O nome é um botão só para quem controla a TV: tocar nele abre Personalizar (tamanho e disposição dos botões, que
+          só existem com o controle). Sem o controle ele é só o nome, com a mesma caixa (altura do alvo e centralizado),
+          para o cabeçalho não mudar de altura nem o nome sair do meio.
+        -->
+        @if (access.control()) {
+          <button
+            #titleButton
+            type="button"
+            class="title"
+            [attr.aria-haspopup]="'dialog'"
+            [attr.aria-label]="titleLabel()"
+            (click)="openCustomize(titleButton)"
+          >
+            <span class="title-text">{{ prefs.title() }}</span>
+          </button>
+        } @else {
+          <span class="title plain"
+            ><span class="title-text">{{ prefs.title() }}</span></span
+          >
+        }
       </h1>
-      <app-status-indicator />
+      <!-- Sem ver a TV não há estado nenhum para mostrar. -->
+      @if (access.view()) {
+        <app-status-indicator />
+      }
     </div>
     <div class="actions">
-      <button
-        #appsButton
-        type="button"
-        class="circle"
-        [attr.aria-haspopup]="'dialog'"
-        aria-label="Apps da TV"
-        i18n-aria-label="@@tv.apps.open"
-        (click)="open('apps', appsButton)"
-      >
-        <app-tv-icon name="apps" />
-      </button>
-      <button
-        type="button"
-        class="circle power"
-        aria-label="Desligar a TV"
-        i18n-aria-label="@@tv.power.label"
-        [disabled]="!store.canSend()"
-        (click)="powerOpen.set(true)"
-      >
-        <app-tv-icon name="power" />
-      </button>
+      @if (access.power()) {
+        <button
+          type="button"
+          class="circle power"
+          aria-label="Desligar a TV"
+          i18n-aria-label="@@tv.power.label"
+          [disabled]="!store.canSend()"
+          (click)="powerOpen.set(true)"
+        >
+          <app-tv-icon name="power" />
+        </button>
+      }
     </div>
   </header>
 
-  @if (store.disabledReason(); as reason) {
-    <p class="reason">{{ reason }}</p>
+  @if (!access.view()) {
+    <!-- Conta sem acesso à TV (por exemplo, só o Treino): nenhuma chamada é feita e a tela diz isso em uma frase. -->
+    <div class="blocked">
+      <app-tv-icon name="tv" />
+      <p i18n="@@tv.no-access">Esta conta não tem acesso à TV.</p>
+    </div>
+  } @else {
+    <!-- O motivo dos botões apagados é de quem tem algum botão: o controle, o desligar ou os atalhos que abrem apps. -->
+    @if (
+      (access.control() || access.power() || access.launch()) && store.disabledReason();
+      as reason
+    ) {
+      <p class="reason">{{ reason }}</p>
+    }
+    @if (access.control()) {
+      <app-tv-control (openKeyboard)="open('keyboard', $event)" />
+    } @else {
+      <app-tv-view-only />
+    }
   }
-
-  <app-tv-control (openKeyboard)="open('keyboard', $event)" />
 </div>
 
 @if (showToast() && store.notice(); as notice) {
@@ -85,13 +136,13 @@
   }
 }
 
-@if (panel() === 'apps') {
-  <app-tv-panel #appsPanel [heading]="appsTitle" [opener]="panelOpener()" (closed)="closePanel()">
+@if (panel() === 'apps' && access.apps()) {
+  <app-tv-panel #appsPanel [heading]="appsTitle()" [opener]="panelOpener()" (closed)="closePanel()">
     <app-tv-apps (done)="appsPanel.close()" />
   </app-tv-panel>
 }
 
-@if (panel() === 'keyboard') {
+@if (panel() === 'keyboard' && access.control()) {
   <app-tv-panel
     #keyboardPanel
     [heading]="keyboardTitle"
@@ -104,10 +155,10 @@
   </app-tv-panel>
 }
 
-@if (powerOpen()) {
+@if (powerOpen() && access.power()) {
   <app-power-sheet (closed)="powerOpen.set(false)" />
 }
 
-@if (customizeOpen()) {
+@if (customizeOpen() && access.control()) {
   <app-tv-customize-sheet (closed)="closeCustomize()" />
 }

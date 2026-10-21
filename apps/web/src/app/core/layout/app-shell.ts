@@ -1,30 +1,64 @@
-import { Component, computed, inject } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
+  untracked,
+  viewChild,
+} from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
+import { AuthService } from '../auth/auth.service';
+import { guestHome } from '../auth/role.guard';
+import { ModuleRegistry } from '../modules/module-registry';
 import { InstallHint } from '../pwa/install-hint';
 import { SessionState } from '../session/session-state';
 import { TabBar } from '../../shared/ui/tab-bar/tab-bar';
-import { collectShellData } from './route-data';
+import { GearIcon } from './gear-icon';
+import { ShellBack, collectShellData } from './route-data';
+
+/** Para onde a seta leva por padrão: o dono volta ao Início; o convidado, que não tem Início, volta ao módulo dele. */
+const OWNER_BACK: ShellBack = {
+  link: '/',
+  label: $localize`:@@shell.back-home-label:Voltar ao Início`,
+};
+
+/** A seta do convidado dentro de Ajustes: leva à tela inicial dele (o controle da TV, o Treino ou "sem acesso"). */
+function guestBack(link: string): ShellBack {
+  switch (link) {
+    case '/treino':
+      return { link, label: $localize`:@@shell.back-training-label:Voltar ao Treino` };
+    case '/tv':
+      return { link, label: $localize`:@@shell.back-control-label:Voltar ao controle` };
+    default:
+      return { link, label: $localize`:@@shell.back-label:Voltar` };
+  }
+}
+
+/** O que ocupa o primeiro lugar do cabeçalho: a seta de voltar ou, para quem não tem Início, o botão de configurações. */
+type ShellLead = ({ readonly kind: 'back' } & ShellBack) | { readonly kind: 'settings' };
 
 /**
  * Casca de tela: na Início só o conteúdo; dentro de um módulo, cabeçalho com a seta de voltar ao Início e o
- * título, e a barra de abas embaixo. Quem decide é o `data` da rota (`title` e `tabs`). Hospeda também a folha
- * do atalho na tela de início (`app-install-hint`), que vale para dono e convidado.
+ * título, e a barra de abas embaixo. Quem decide é o `data` da rota (`title`, `tabs` e `back`). Hospeda também a
+ * folha do atalho na tela de início (`app-install-hint`), que vale para dono e convidado.
+ *
+ * Quem não tem Início (o convidado) não ganha seta ali: no lugar dela fica um botão redondo de configurações do
+ * sistema. Dentro de Ajustes ele tem a seta (para o controle, ou para a lista), porque ali o botão não levaria a lugar nenhum.
  */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, TabBar, InstallHint],
+  imports: [RouterOutlet, RouterLink, TabBar, InstallHint, GearIcon],
   template: `
     @if (data().title; as title) {
       <header class="bar">
-        @if (!isGuest()) {
-          <a
-            routerLink="/"
-            class="back ui-tap"
-            aria-label="Voltar ao Início"
-            i18n-aria-label="@@shell.back-home-label"
-          >
+        @let current = lead();
+        @if (current.kind === 'back') {
+          <a [routerLink]="current.link" class="back ui-tap" [attr.aria-label]="current.label">
             <svg
               viewBox="0 0 24 24"
               width="22"
@@ -41,8 +75,17 @@ import { collectShellData } from './route-data';
               }
             </svg>
           </a>
+        } @else {
+          <a
+            routerLink="/ajustes"
+            class="back settings ui-tap"
+            aria-label="Ajustes"
+            i18n-aria-label="@@shell.settings-label"
+          >
+            <app-gear-icon />
+          </a>
         }
-        <h1>{{ title }}</h1>
+        <h1 #pageTitle tabindex="-1">{{ title }}</h1>
       </header>
     }
     <main [class.no-header]="!data().title">
@@ -93,6 +136,10 @@ import { collectShellData } from './route-data';
     .back:active {
       background: var(--a-elev);
     }
+    /* A engrenagem gira um pouco, no lugar do deslize da seta. */
+    .settings app-gear-icon {
+      transition: rotate var(--dur-slow) var(--ease-out);
+    }
     @media (hover: hover) {
       .back:hover {
         background: var(--a-surface-2);
@@ -100,20 +147,34 @@ import { collectShellData } from './route-data';
       .back:hover svg {
         translate: -2px 0;
       }
+      .settings:hover app-gear-icon {
+        rotate: 45deg;
+      }
+      .settings:hover svg {
+        translate: none;
+      }
     }
     @media (prefers-reduced-motion: reduce) {
       .back,
-      .back svg {
+      .back svg,
+      .settings app-gear-icon {
         transition: none;
       }
       .back:hover svg {
         translate: none;
+      }
+      .settings:hover app-gear-icon {
+        rotate: none;
       }
     }
     h1 {
       min-width: 0;
       font-size: 1.5rem;
       overflow-wrap: anywhere;
+    }
+    /* O título recebe o foco ao navegar dentro de Ajustes (para leitor de tela e teclado): sem contorno, não é controle. */
+    h1:focus {
+      outline: none;
     }
     main {
       flex: 1 1 auto;
@@ -130,12 +191,16 @@ import { collectShellData } from './route-data';
 })
 export class AppShell {
   private readonly router = inject(Router);
+  private readonly auth = inject(AuthService);
+  private readonly session = inject(SessionState);
+  private readonly registry = inject(ModuleRegistry);
+  private readonly injector = inject(Injector);
 
   /** Traços da seta de voltar (a mesma seta da tela da TV): a haste e a ponta. */
   protected readonly backArrow = ['M19 12H5', 'M11 18l-6-6 6-6'] as const;
 
-  /** Convidado: sem navegação para fora da TV (o retorno ao Início some). */
-  protected readonly isGuest = inject(SessionState).isGuest;
+  /** Convidado: sem Início, então sem a seta para ele (no lugar vai o botão de configurações). */
+  protected readonly isGuest = this.session.isGuest;
 
   protected readonly data = toSignal(
     this.router.events.pipe(
@@ -147,4 +212,50 @@ export class AppShell {
   );
 
   protected readonly tabs = computed(() => this.data().tabs ?? []);
+
+  /** A seta (para o destino da rota, ou o Início, ou o controle) ou, para quem não tem Início, o botão de configurações. */
+  protected readonly lead = computed<ShellLead>(() => {
+    const data = this.data();
+    if (data.back) return { kind: 'back', ...data.back };
+    if (!this.isGuest()) return { kind: 'back', ...OWNER_BACK };
+    return data.settings
+      ? { kind: 'back', ...guestBack(guestHome(this.session, this.registry)) }
+      : { kind: 'settings' };
+  });
+
+  private readonly pageTitle = viewChild<ElementRef<HTMLElement>>('pageTitle');
+
+  constructor() {
+    // Dentro de Ajustes cada tela nova leva o foco ao título: sem isso o foco ficaria num link que já não existe (e quem
+    // usa leitor de tela não ouviria a tela nova). A primeira tela da casca fica de fora: o foco de uma página recém
+    // aberta é do navegador.
+    let first = true;
+    this.router.events
+      .pipe(
+        filter((event) => event instanceof NavigationEnd),
+        takeUntilDestroyed(),
+      )
+      .subscribe(() => {
+        if (first) {
+          first = false;
+          return;
+        }
+        if (!collectShellData(this.router.routerState.snapshot.root).settings) return;
+        afterNextRender(() => this.pageTitle()?.nativeElement.focus({ preventScroll: true }), {
+          injector: this.injector,
+        });
+      });
+
+    // Rede de segurança do guarda de boas-vindas: se o usuário só chega depois de a casca abrir (servidor acordando) e o
+    // nome ainda não foi escolhido, a pergunta vem na hora, guardando onde a pessoa estava.
+    effect(() => {
+      if (!this.session.needsWelcome()) return;
+      untracked(
+        () =>
+          void this.router.navigateByUrl(this.auth.welcomeUrlTree(this.router.url), {
+            replaceUrl: true,
+          }),
+      );
+    });
+  }
 }

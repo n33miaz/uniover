@@ -50,6 +50,24 @@ public sealed class CustomExerciseTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task NewIdThatIsNotV7_IsRefused_SoItCannotTakeAFutureCatalogId()
+    {
+        await using var app = await TrainingApp.StartAsync(postgres);
+        var login = await app.LoginAsync();
+        var futureCatalogId = ExerciseIds.ForCatalog(ExerciseSources.Wger, "uuid-que-ainda-nao-foi-importado");
+
+        foreach (var id in new[] { futureCatalogId, Guid.NewGuid() })
+        {
+            using var response = await app.PutCustomAsync(login, id, TrainingApp.CustomBody(DateTimeOffset.UtcNow, "Ocupando o catálogo"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await TrainingApp.JsonAsync(response)).GetProperty("errors").TryGetProperty("id", out _).Should().BeTrue();
+            await using var db = app.Db();
+            (await db.Exercises.AnyAsync(e => e.Id == id, Ct)).Should().BeFalse();
+        }
+    }
+
+    [Fact]
     public async Task SameKey_SameBody_ReturnsTheStoredResponse_WithoutExecutingAgain()
     {
         await using var app = await TrainingApp.StartAsync(postgres);

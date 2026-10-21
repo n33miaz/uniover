@@ -10,6 +10,7 @@ using UniOver.BuildingBlocks.Web;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Guards;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.Modules.Tv;
 
 namespace UniOver.IntegrationTests.Tv;
 
@@ -279,7 +280,7 @@ public sealed class CommandTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task NoTvRoute_AsksForAPasskeyConfirmation()
+    public async Task OnlyTheComputerSwitch_AsksForAPasskeyConfirmation_NoTvCommandDoes()
     {
         await using var app = await TvApp.StartAsync(postgres);
 
@@ -288,8 +289,16 @@ public sealed class CommandTests(PostgresFixture postgres)
             .ToList();
 
         tvRoutes.Should().NotBeEmpty();
-        tvRoutes.SelectMany(r => r.Metadata.GetOrderedMetadata<IAuthorizeData>())
+
+        // Comandar a TV nunca pede a passkey; trocar o computador que a controla (rota de administrador) pede.
+        var adminPatterns = TvPermissionMap.AdminRoutes.Select(r => r.Pattern).ToHashSet(StringComparer.Ordinal);
+        tvRoutes.Where(r => !adminPatterns.Contains(r.RoutePattern.RawText!))
+            .SelectMany(r => r.Metadata.GetOrderedMetadata<IAuthorizeData>())
             .Should().NotContain(a => a.Policy != null && a.Policy.StartsWith(StepUp.PolicyPrefix, StringComparison.Ordinal));
+        tvRoutes.SelectMany(r => r.Metadata.GetOrderedMetadata<IAuthorizeData>())
+            .Where(a => a.Policy != null && a.Policy.StartsWith(StepUp.PolicyPrefix, StringComparison.Ordinal))
+            .Select(a => a.Policy)
+            .Should().Equal(StepUp.Policy(TvAuth.BindAgentAction));
         RouteInspector.Violations(tvRoutes).Should().BeEmpty();
     }
 
@@ -404,7 +413,7 @@ public sealed class CommandTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task AuditRetention_DropsOldRowsAndTheOverflow_WhenAnotherRowIsWritten()
+    public async Task CommandAudit_IsOnlyAppendedByTheApplication_AndTheRetentionIsTheDatabaseFunction()
     {
         await using var app = await TvApp.StartAsync(postgres);
         await app.ExecuteSqlAsync(
@@ -416,10 +425,21 @@ public sealed class CommandTests(PostgresFixture postgres)
 
         (await app.PostAsync("/api/v1/tv/keys", new { key = "HOME" })).Dispose();
 
-        await using var db = app.Db();
-        (await db.CommandAudit.CountAsync(a => a.OccurredAt < DateTimeOffset.UtcNow.AddDays(-30), Ct)).Should().Be(0);
-        (await db.CommandAudit.CountAsync(Ct)).Should().BeLessThanOrEqualTo(5000);
-        (await db.CommandAudit.CountAsync(a => a.Detail == "HOME", Ct)).Should().Be(1, "a linha nova nunca é a que sai");
+        // Gravar um comando não apaga nada: a aplicação não tem DELETE, e a trilha também não tem mais teto de linhas.
+        await using (var db = app.Db())
+        {
+            (await db.CommandAudit.CountAsync(a => a.OccurredAt < DateTimeOffset.UtcNow.AddDays(-30), Ct)).Should().Be(20, "só a função de retenção apaga");
+            (await db.CommandAudit.CountAsync(Ct)).Should().Be(20 + 5010 + 1);
+            (await db.CommandAudit.CountAsync(a => a.Detail == "HOME", Ct)).Should().Be(1);
+        }
+
+        // A função (chamada pelo serviço de retenção, com o papel da aplicação) apaga só o que passou do prazo.
+        var removed = await UniOver.IntegrationTests.Audit.AuditKit.ScalarAsync(app.Database.RuntimeConnection, "SELECT tv.purge_audit(30)");
+
+        removed.Should().Be(20);
+        await using var after = app.Db();
+        (await after.CommandAudit.CountAsync(a => a.OccurredAt < DateTimeOffset.UtcNow.AddDays(-30), Ct)).Should().Be(0);
+        (await after.CommandAudit.CountAsync(Ct)).Should().Be(5010 + 1, "o recente fica, sem teto de linhas");
     }
 
     private static async Task<Guid> UserIdAsync(TvApp app)

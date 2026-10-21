@@ -60,21 +60,34 @@
     </button>
   </div>
 } @else {
-  <button
-    type="button"
-    class="launch"
-    [disabled]="!canSend() || !s.installed"
-    [attr.aria-describedby]="marked() && s.enabled ? describedBy() : null"
-    (click)="launch.emit(s)"
-  >
-    <span class="art">
-      <app-tv-app-icon [shortcut]="s" [lazy]="true" />
-      @if (marked() && s.enabled) {
-        <span class="mark" aria-hidden="true"><app-tv-pin [filled]="true" /></span>
-      }
-    </span>
-    <span class="name">{{ name() }}</span>
-  </button>
+  @if (launchable()) {
+    <button
+      type="button"
+      class="launch"
+      [disabled]="!canSend() || !s.installed"
+      [attr.aria-describedby]="marked() && s.enabled ? describedBy() : null"
+      (click)="launch.emit(s)"
+    >
+      <span class="art">
+        <app-tv-app-icon [shortcut]="s" [lazy]="true" />
+        @if (marked() && s.enabled) {
+          <span class="mark" aria-hidden="true"><app-tv-pin [filled]="true" /></span>
+        }
+      </span>
+      <span class="name">{{ name() }}</span>
+    </button>
+  } @else {
+    <!-- Sem permissão para abrir apps: a mesma figura e o mesmo nome, sem botão (a marca "No controle" é lida logo depois). -->
+    <div class="launch still">
+      <span class="art">
+        <app-tv-app-icon [shortcut]="s" [lazy]="true" />
+        @if (marked() && s.enabled) {
+          <span class="mark" aria-hidden="true"><app-tv-pin [filled]="true" /></span>
+        }
+      </span>
+      <span class="name">{{ name() }}</span>
+    </div>
+  }
   @if (marked() && s.enabled) {
     <span class="sr" [id]="describedBy()" i18n="@@tv.apps.in-control">No controle</span>
   }

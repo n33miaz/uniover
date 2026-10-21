@@ -1,0 +1,54 @@
+:host {
+  display: block;
+}
+
+/* Uma coluna legível; em tablet e computador ela não estica. */
+.about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Versões: pares nome e valor. */
+.facts.ui-group {
+  display: block;
+}
+
+.facts.ui-group > .ui-row {
+  justify-content: space-between;
+  min-height: 52px;
+}
+
+.facts.ui-group dt {
+  color: var(--a-ink2);
+}
+
+.facts.ui-group dd {
+  margin: 0;
+  font-weight: 650;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* Linha que leva a outra tela. */
+.link-row {
+  color: inherit;
+}
+
+.ui-row-title {
+  font-weight: 650;
+}
+
+.chev {
+  --glyph-size: 20px;
+  margin-left: auto;
+  color: var(--a-ink3);
+}

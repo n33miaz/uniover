@@ -174,7 +174,7 @@ public sealed class ShortcutOrderTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Reorder_IsOnlyForTheOwner_AGuestGets403_AndNoOneAnonymousGets401()
+    public async Task Reorder_WithoutTheEditShortcutsPermission_AGuestGets403_AndAnonymousGets401()
     {
         await using var app = await TvApp.StartAsync(postgres);
         await using var agent = await app.ConnectAndWaitAsync();

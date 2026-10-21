@@ -1,0 +1,96 @@
+<div class="map">
+  <header class="head">
+    <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="goBack()">
+      <app-training-glyph name="back" />
+    </button>
+    <h2 class="title" i18n="@@training.map.title">Mapa do corpo</h2>
+    @if (!catalogEmpty()) {
+      <div class="faces" role="group" [attr.aria-label]="facesLabel">
+        <button
+          type="button"
+          [attr.aria-pressed]="face() === 'front'"
+          (click)="showFace('front')"
+          i18n="@@training.map.face-front"
+        >
+          Frente
+        </button>
+        <button
+          type="button"
+          [attr.aria-pressed]="face() === 'back'"
+          (click)="showFace('back')"
+          i18n="@@training.map.face-back"
+        >
+          Costas
+        </button>
+      </div>
+    }
+  </header>
+
+  @if (!data.ready()) {
+    <div class="stage ui-card skeleton" aria-hidden="true">
+      <span class="ui-skeleton"></span>
+    </div>
+  } @else if (catalogEmpty()) {
+    <section class="empty ui-card" aria-labelledby="map-empty-title">
+      <span class="ui-tile lg"><app-training-glyph name="dumbbell" /></span>
+      @if (downloading()) {
+        <h3 id="map-empty-title" i18n="@@training.map.loading-title">Baixando o catálogo…</h3>
+        <p i18n="@@training.map.loading-text">
+          Os exercícios chegam em instantes e ficam guardados no aparelho.
+        </p>
+      } @else {
+        <h3 id="map-empty-title" i18n="@@training.map.empty-title">O catálogo ainda não chegou</h3>
+        @if (online()) {
+          <p i18n="@@training.map.empty-online">
+            Na primeira abertura o aparelho baixa os exercícios. Depois disso eles funcionam sem
+            rede.
+          </p>
+        } @else {
+          <p i18n="@@training.map.empty-offline">
+            Sem rede, o aparelho ainda não tem os exercícios. Conecte-se uma vez para baixar; depois
+            disso eles funcionam sem rede.
+          </p>
+        }
+        <button type="button" class="primary ui-btn block" (click)="retryDownload()">
+          <app-training-glyph name="refresh" />
+          <span i18n="@@training.map.retry">Tentar baixar</span>
+        </button>
+      }
+    </section>
+  } @else {
+    <section class="stage ui-card">
+      <app-body-figure [zones]="zones()" [label]="figureLabel()" (picked)="pick($event)" />
+      <div class="legend">
+        <span id="map-legend-title" class="legend-title">{{ legendLabel }}</span>
+        <ul class="steps ui-plain" aria-labelledby="map-legend-title">
+          @for (step of legend; track step.level) {
+            <li class="step">
+              <span class="swatch" [attr.data-level]="step.level" aria-hidden="true"></span>
+              <span>{{ step.range }}</span>
+            </li>
+          }
+        </ul>
+      </div>
+    </section>
+
+    @if (selected(); as current) {
+      <app-body-panel
+        #panel
+        [muscle]="current"
+        [exercises]="data.exercises(current)"
+        [weekSets]="data.weekSets(current)"
+      />
+    } @else {
+      <p class="hint ui-notice">
+        <app-training-glyph name="info" />
+        <span i18n="@@training.map.hint"
+          >Toque num músculo para ver os exercícios e as séries da semana.</span
+        >
+      </p>
+    }
+
+    <app-muscle-list [groups]="listGroups()" (picked)="pick($event)" />
+  }
+
+  <p class="ui-visually-hidden" role="status">{{ announcement() }}</p>
+</div>

@@ -55,7 +55,8 @@ export interface TileMove {
  * no controle não muda o azulejo nem o impede de abrir (a API abre todo app instalado); o painel é quem só mostra os
  * instalados. Quando o painel diz o lugar do app na fileira (`rank`), o azulejo de edição ganha dois botões que o movem
  * um passo para a esquerda ou para a direita; nas pontas o botão fica `aria-disabled` (e não `disabled`), para o foco
- * de quem acabou de empurrar o app até lá não se perder.
+ * de quem acabou de empurrar o app até lá não se perder. Sem permissão para abrir apps (`launchable` falso) o azulejo é só a
+ * figura com o nome: não é botão, não tem foco nem resposta ao toque.
  */
 @Component({
   selector: 'app-tv-apps-tile',
@@ -65,11 +66,13 @@ export interface TileMove {
 })
 export class AppsTile {
   readonly shortcut = input.required<TvShortcut>();
-  /** Modo de edição (só do dono): em vez de abrir, o azulejo mostra o pacote e os botões de fixar e renomear. */
+  /** Modo de edição (só de quem edita os atalhos): em vez de abrir, o azulejo mostra o pacote e os botões de fixar e renomear. */
   readonly managing = input(false);
   /** Lista única (busca ou edição): quem está no controle leva uma marca, já que nenhuma seção diz isso. */
   readonly marked = input(false);
   readonly canSend = input(true);
+  /** A pessoa pode abrir apps (`tv:launch`); sem isso, fora da edição, o azulejo não é um botão. */
+  readonly launchable = input(true);
   /** Um pedido de fixar ou tirar está em curso: o botão fica apagado, mas segue focável. */
   readonly busy = input(false);
   /** Lugar do app na fileira do controle; só vem quando dá para mudar a ordem (edição, sem busca, app no controle). */

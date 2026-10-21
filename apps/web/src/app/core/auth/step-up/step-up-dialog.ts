@@ -12,8 +12,25 @@ export function actionLabel(action: string | null): string {
       return $localize`:@@auth.step-up.action.guest-invite:criar um convite de convidado`;
     case 'identity.password-change':
       return $localize`:@@auth.step-up.action.password-change:trocar a senha`;
+    case 'tv.bind-agent':
+      return $localize`:@@auth.step-up.action.tv-bind-agent:trocar o computador que controla a TV`;
+    case 'identity.permissions-change':
+      return $localize`:@@auth.step-up.action.permissions-change:mudar as permissões de uma pessoa`;
     default:
       return $localize`:@@auth.step-up.action.generic:fazer uma ação protegida`;
+  }
+}
+
+/**
+ * Título do diálogo. Quase toda ação usa o mesmo ("Confirmar com passkey"); mudar permissões diz o que está sendo
+ * confirmado, porque amplia o que uma pessoa pode fazer e merece o aviso já no título.
+ */
+export function actionTitle(action: string | null): string {
+  switch (action) {
+    case 'identity.permissions-change':
+      return $localize`:@@auth.step-up.title.permissions-change:Confirmar a mudança de permissões`;
+    default:
+      return $localize`:@@auth.step-up.title:Confirmar com passkey`;
   }
 }
 
@@ -44,6 +61,7 @@ export class StepUpDialog {
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
   protected readonly action = computed(() => actionLabel(this.service.action()));
+  protected readonly title = computed(() => actionTitle(this.service.action()));
   protected readonly errorMessage = computed(() => {
     const error = this.service.error();
     return error ? errorText(error) : null;

@@ -1,3 +1,4 @@
+import { effect } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from './session-state';
 
@@ -106,6 +107,137 @@ describe('SessionState', () => {
       expect(TestBed.inject(SessionState).isGuest()).toBe(true);
       get.mockRestore();
       set.mockRestore();
+    });
+  });
+
+  describe('name and permissions', () => {
+    const user = { id: '1', email: 'a@b.c', displayName: 'A' };
+    beforeEach(() => localStorage.clear());
+    afterEach(() => localStorage.clear());
+
+    it('only an explicit "name not chosen" asks the question', () => {
+      expect(state().needsWelcome()).toBe(false);
+      state().setUser({ ...user, displayNameConfirmed: false });
+      expect(state().needsWelcome()).toBe(true);
+      state().setUser({ ...user, displayNameConfirmed: true });
+      expect(state().needsWelcome()).toBe(false);
+    });
+
+    it('an answer without the field (an older server) never asks, and no user never asks', () => {
+      expect(state().needsWelcome()).toBe(false);
+      state().setUser(user);
+      expect(state().needsWelcome()).toBe(false);
+    });
+
+    it('forgetting the session forgets the question too', () => {
+      state().setUser({ ...user, displayNameConfirmed: false });
+      state().clear();
+      expect(state().needsWelcome()).toBe(false);
+    });
+
+    it('keeps the permissions of the account, empty while unknown', () => {
+      expect(state().permissions()).toEqual([]);
+      state().setUser({ ...user, permissions: ['module:tv', 'tv:power'] });
+      expect(state().permissions()).toEqual(['module:tv', 'tv:power']);
+      state().setUser(user);
+      expect(state().permissions()).toEqual([]);
+    });
+
+    it('tells "empty" from "not known": no list is null, an empty list is a real answer', () => {
+      expect(state().knownPermissions()).toBeNull();
+      state().setUser({ ...user, permissions: [] });
+      expect(state().knownPermissions()).toEqual([]);
+      state().setUser(user);
+      expect(state().knownPermissions()).toBeNull();
+    });
+
+    it('remembers the list as a hint for the next start without network, and forgets it on exit', () => {
+      state().setUser({ ...user, role: 'guest', permissions: ['module:training'] });
+      expect(JSON.parse(localStorage.getItem('uniover.account-permissions')!)).toEqual([
+        'module:training',
+      ]);
+      TestBed.resetTestingModule();
+      // Reinício sem rede: ainda não há usuário, e a dica diz o que a conta podia.
+      expect(TestBed.inject(SessionState).knownPermissions()).toEqual(['module:training']);
+      TestBed.inject(SessionState).clear();
+      expect(localStorage.getItem('uniover.account-permissions')).toBeNull();
+      expect(TestBed.inject(SessionState).knownPermissions()).toBeNull();
+    });
+
+    it('ignores a remembered list that is not a list of texts', () => {
+      localStorage.setItem('uniover.account-permissions', JSON.stringify({ a: 1 }));
+      TestBed.resetTestingModule();
+      expect(TestBed.inject(SessionState).knownPermissions()).toBeNull();
+      localStorage.setItem('uniover.account-permissions', JSON.stringify([1, 2]));
+      TestBed.resetTestingModule();
+      expect(TestBed.inject(SessionState).knownPermissions()).toBeNull();
+    });
+
+    it('the list from the server replaces the remembered one as soon as it arrives', () => {
+      localStorage.setItem('uniover.account-permissions', JSON.stringify(['module:tv']));
+      TestBed.resetTestingModule();
+      state().setUser({ ...user, role: 'guest', permissions: ['module:training'] });
+      expect(state().knownPermissions()).toEqual(['module:training']);
+    });
+  });
+
+  describe('reading the same account again', () => {
+    // Guardar uma conta de convidado grava a dica do papel no `localStorage`, que os arquivos de teste dividem.
+    beforeEach(() => localStorage.clear());
+    afterEach(() => localStorage.clear());
+
+    const guest = {
+      id: '1',
+      email: 'a@b.c',
+      displayName: 'A',
+      role: 'guest',
+      permissions: ['module:tv', 'tv:control', 'tv:power'],
+    };
+
+    it('reports whether the account changed, comparing by content and not by reference', () => {
+      expect(state().setUser(guest)).toBe(true);
+      expect(state().setUser({ ...guest, permissions: [...guest.permissions] })).toBe(false);
+      expect(state().setUser({ ...guest, permissions: ['module:tv', 'tv:control'] })).toBe(true);
+      expect(state().setUser({ ...guest, displayName: 'B' })).toBe(true);
+    });
+
+    it('keeps the very same permissions value when the set did not change', () => {
+      state().setUser(guest);
+      const before = state().permissions();
+      // Lista nova, mesma coisa (até com outra ordem): o valor lido continua sendo o mesmo objeto.
+      state().setUser({ ...guest, permissions: ['tv:power', 'module:tv', 'tv:control'] });
+      expect(state().permissions()).toBe(before);
+      // Só o nome mudou: quem lê permissões não é avisado.
+      state().setUser({ ...guest, displayName: 'B', permissions: [...guest.permissions] });
+      expect(state().permissions()).toBe(before);
+    });
+
+    it('notifies readers once when the permissions change, and not at all when they do not', () => {
+      state().setUser(guest);
+      const seen: string[] = [];
+      TestBed.runInInjectionContext(() =>
+        effect(() => {
+          seen.push(state().permissions().join(','));
+        }),
+      );
+      TestBed.tick();
+      expect(seen).toEqual(['module:tv,tv:control,tv:power']);
+
+      state().setUser({ ...guest, permissions: [...guest.permissions] });
+      state().setUser({ ...guest, displayName: 'B' });
+      TestBed.tick();
+      expect(seen).toHaveLength(1);
+
+      state().setUser({ ...guest, permissions: ['module:tv', 'tv:control'] });
+      TestBed.tick();
+      expect(seen).toEqual(['module:tv,tv:control,tv:power', 'module:tv,tv:control']);
+    });
+
+    it('does not rebuild the user for readers when nothing in it changed', () => {
+      state().setUser(guest);
+      const before = state().user();
+      state().setUser({ ...guest, permissions: [...guest.permissions] });
+      expect(state().user()).toBe(before);
     });
   });
 });

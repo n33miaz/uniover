@@ -152,6 +152,141 @@ describe('WakeLockService', () => {
     expect(service.active()).toBe(true);
   });
 
+  describe('refused: the device did not keep the screen on', () => {
+    const notAllowed = () => Object.assign(new Error('recusado'), { name: 'NotAllowedError' });
+
+    it('is false while everything goes well and before anyone asks', async () => {
+      const lock = new FakeWakeLock();
+      installWakeLock(lock);
+      const service = setupSessions().wakeLock();
+      expect(service.refused()).toBe(false);
+      await service.request();
+      expect(service.refused()).toBe(false);
+    });
+
+    it('turns true when the browser refuses (NotAllowedError), and the workout is not touched', async () => {
+      const lock = new FakeWakeLock();
+      lock.failWith = notAllowed();
+      installWakeLock(lock);
+      const service = setupSessions().wakeLock();
+
+      await expect(service.request()).resolves.toBe(false);
+
+      expect(service.refused()).toBe(true);
+      expect(service.supported()).toBe(true);
+    });
+
+    it('goes back to false when a later try works (the page comes back and the device lets it)', async () => {
+      const lock = new FakeWakeLock();
+      lock.failWith = notAllowed();
+      installWakeLock(lock);
+      const service = setupSessions().wakeLock();
+      await service.request();
+      expect(service.refused()).toBe(true);
+
+      lock.failWith = null;
+      document.dispatchEvent(new Event('visibilitychange'));
+      await flush();
+
+      expect(service.active()).toBe(true);
+      expect(service.refused()).toBe(false);
+    });
+
+    it('stays false when the system releases the lock with the page hidden and gives it back on return', async () => {
+      const lock = new FakeWakeLock();
+      installWakeLock(lock);
+      const service = setupSessions().wakeLock();
+      await service.request();
+
+      visibility = 'hidden';
+      lock.sentinels[0].systemRelease();
+      expect(service.active()).toBe(false);
+      expect(service.refused()).toBe(false);
+
+      visibility = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      await flush();
+      expect(service.active()).toBe(true);
+      expect(service.refused()).toBe(false);
+    });
+
+    it('turns true when the system takes the lock with the page in view (iOS installed app)', async () => {
+      const lock = new FakeWakeLock();
+      installWakeLock(lock);
+      const service = setupSessions().wakeLock();
+      await service.request();
+
+      lock.sentinels[0].systemRelease();
+
+      expect(service.active()).toBe(false);
+      expect(service.refused()).toBe(true);
+    });
+
+    it('turns true when the lock was lost and asking again on return fails', async () => {
+      const lock = new FakeWakeLock();
+      installWakeLock(lock);
+      const service = setupSessions().wakeLock();
+      await service.request();
+
+      visibility = 'hidden';
+      lock.sentinels[0].systemRelease();
+      lock.failWith = notAllowed();
+      visibility = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      await flush();
+
+      expect(service.active()).toBe(false);
+      expect(service.refused()).toBe(true);
+    });
+
+    it('does not ask again in a loop when the system keeps taking the lock back', async () => {
+      const lock = new FakeWakeLock();
+      installWakeLock(lock);
+      const service = setupSessions().wakeLock();
+      await service.request();
+
+      lock.sentinels[0].systemRelease();
+      await flush();
+
+      expect(lock.requests).toBe(1);
+      expect(service.refused()).toBe(true);
+    });
+
+    it('is cleared when the workout ends', async () => {
+      const lock = new FakeWakeLock();
+      lock.failWith = notAllowed();
+      installWakeLock(lock);
+      const service = setupSessions().wakeLock();
+      await service.request();
+      expect(service.refused()).toBe(true);
+
+      await service.release();
+
+      expect(service.refused()).toBe(false);
+    });
+
+    it('does not count a refusal that arrives after the workout already ended', async () => {
+      const lock = new FakeWakeLock();
+      lock.failWith = notAllowed();
+      installWakeLock(lock);
+      const service = setupSessions().wakeLock();
+
+      const pending = service.request();
+      await service.release();
+      await pending;
+
+      expect(service.refused()).toBe(false);
+    });
+
+    it('is not a refusal when the browser has no API at all (old iOS): "unsupported" already says it', async () => {
+      installWakeLock(undefined);
+      const service = setupSessions().wakeLock();
+      await service.request();
+      expect(service.supported()).toBe(false);
+      expect(service.refused()).toBe(false);
+    });
+  });
+
   it('is unsupported without the API (old iOS) and every call is harmless', async () => {
     installWakeLock(undefined);
     const service = setupSessions().wakeLock();

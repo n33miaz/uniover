@@ -1,0 +1,87 @@
+:host {
+  display: block;
+}
+
+/* Uma linha fina: o estado de sincronização não compete com o conteúdo da tela. */
+.line {
+  --a-muted: var(--a-ink2);
+  --a-danger: var(--a-bad-ink);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  padding: 0 var(--space-1);
+  color: var(--a-ink2);
+}
+
+.line.empty {
+  display: none;
+}
+
+.line.warn {
+  color: var(--a-warn-ink);
+}
+
+.line.bad {
+  color: var(--a-bad-ink);
+}
+
+.text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+  min-width: 0;
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.note {
+  font-weight: 650;
+}
+
+/* O botão só existe quando há o que fazer; aí a linha ganha a altura de um alvo de toque. */
+.act {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: center;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--a-accent-ink);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.act:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* A sugestão de instalar fica numa fileira própria, abaixo da linha, e o texto inteiro é o botão (alvo de 44 px). */
+.advice {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--a-warn-ink);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.how {
+  color: var(--a-accent-ink);
+  font-weight: 700;
+}

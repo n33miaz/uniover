@@ -177,6 +177,73 @@ describe('authInterceptor', () => {
     expect(stepUp.confirm).toHaveBeenCalledTimes(2);
   });
 
+  describe('403 of access', () => {
+    const forbiddenBody = {
+      type: 'https://uniover.app/problems/forbidden',
+      title: 'Sem permissão.',
+    };
+    const forbidden = { status: 403, statusText: 'Forbidden' };
+
+    // Uma convidada com a sessão aberta e a conta já lida (o administrador nunca relê por 403).
+    beforeEach(() => {
+      TestBed.inject(SessionState).setUser({
+        id: '1',
+        email: 'a@b.c',
+        displayName: 'A',
+        role: 'guest',
+        permissions: ['module:tv', 'tv:power'],
+      });
+    });
+    afterEach(() => localStorage.clear());
+
+    it('re-reads the account once so the screen follows, and the call still fails', async () => {
+      const session = TestBed.inject(SessionState);
+      api.me.mockResolvedValue({
+        id: '1',
+        email: 'a@b.c',
+        displayName: 'A',
+        role: 'guest',
+        permissions: ['module:tv'],
+      });
+      const first = firstValueFrom(http.post('/api/v1/tv/power', {})).catch((e: unknown) => e);
+      (await pending('/api/v1/tv/power')).flush(forbiddenBody, forbidden);
+      expect(await first).toMatchObject({ status: 403 });
+      await vi.waitFor(() => expect(session.permissions()).toEqual(['module:tv']));
+      expect(api.me).toHaveBeenCalledTimes(1);
+      expect(api.me).toHaveBeenCalledWith('jwt-1');
+
+      // A recusa seguinte, logo depois, não gera outra leitura.
+      const second = firstValueFrom(http.post('/api/v1/tv/power', {})).catch((e: unknown) => e);
+      (await pending('/api/v1/tv/power')).flush(forbiddenBody, forbidden);
+      expect(await second).toMatchObject({ status: 403 });
+      expect(api.me).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not re-read for the 403 of the passkey, nor for a typed refusal of another subject', async () => {
+      stepUp.confirm.mockResolvedValue(false);
+      const declined = firstValueFrom(http.delete('/api/v1/x/1')).catch((e: unknown) => e);
+      (await pending('/api/v1/x/1')).flush(
+        {
+          type: 'https://uniover.app/problems/step-up-required',
+          code: 'step_up_required',
+          action: 'a.b',
+        },
+        forbidden,
+      );
+      expect(await declined).toMatchObject({ status: 403 });
+
+      const typed = firstValueFrom(http.post('/api/v1/identity/step-up/options', {})).catch(
+        (e: unknown) => e,
+      );
+      (await pending('/api/v1/identity/step-up/options')).flush(
+        { type: 'https://uniover.app/problems/invalid-password', title: 'Senha incorreta.' },
+        forbidden,
+      );
+      expect(await typed).toMatchObject({ status: 403 });
+      expect(api.me).not.toHaveBeenCalled();
+    });
+  });
+
   it('a network failure does not touch the session', async () => {
     const session = TestBed.inject(SessionState);
     const result = firstValueFrom(http.get('/api/v1/tv/state')).catch((e: unknown) => e);

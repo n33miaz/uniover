@@ -5,7 +5,7 @@
   aria-describedby="step-up-text"
   (cancel)="onCancel($event)"
 >
-  <h2 id="step-up-title" i18n="@@auth.step-up.title">Confirmar com passkey</h2>
+  <h2 id="step-up-title">{{ title() }}</h2>
   <p id="step-up-text" class="text" i18n="@@auth.step-up.text">
     Para {{ action() }}, confirme com a passkey deste aparelho. A confirmação vale por alguns
     minutos.

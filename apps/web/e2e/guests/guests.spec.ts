@@ -1,6 +1,12 @@
 import AxeBuilder from '@axe-core/playwright';
 import { Page } from '@playwright/test';
-import { GUEST, IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
+import {
+  GUEST,
+  IdentityMock,
+  OWNER,
+  TV_CONTROL_ONLY,
+  mockIdentityApi,
+} from '../auth/identity-mock';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import {
   HOT_STATE,
@@ -83,17 +89,21 @@ test.describe('convite do dono (passkey)', () => {
   }, info) => {
     await addVirtualAuthenticator(page);
     await signInAsOwner(page);
-    await page.goto('/ajustes');
+    await page.goto('/ajustes/seguranca');
 
     // Sem passkey cadastrada não há como confirmar: cadastra uma, como o dono faz em Segurança.
     await page.getByRole('button', { name: 'Cadastrar passkey' }).click();
     await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
     await page.getByLabel('Nome da passkey (opcional)').fill('Notebook');
     await page.getByRole('button', { name: 'Cadastrar', exact: true }).click();
-    await expect(page.getByText('Passkey cadastrada.')).toBeVisible();
+    await expect(page.getByText('Passkey cadastrada.', { exact: true })).toBeVisible();
 
+    // O convite mora em Pessoas.
+    await page.goto('/ajustes/pessoas');
+    await expect(page.getByRole('heading', { level: 1, name: 'Pessoas' })).toBeVisible();
     await expect(page.getByRole('heading', { level: 2, name: 'Convidados' })).toBeVisible();
-    await expect(page.getByText('Nenhum convite pendente.')).toBeVisible();
+    await expect(page.getByText('Ninguém foi convidado ainda.')).toBeVisible();
+    await page.getByRole('button', { name: 'Convidar alguém' }).click();
     await page.getByLabel('Nome do convidado').fill(GUEST.displayName);
     await page.getByRole('button', { name: 'Gerar convite' }).click();
 
@@ -115,12 +125,18 @@ test.describe('convite do dono (passkey)', () => {
     expect(order.indexOf('POST /step-up/complete')).toBeGreaterThan(
       order.indexOf('POST /guest-invites'),
     );
-    expect(
-      identity.requests.filter((r) => r.path === '/guest-invites' && r.method === 'POST'),
-    ).toHaveLength(2);
+    const posts = identity.requests.filter(
+      (r) => r.path === '/guest-invites' && r.method === 'POST',
+    );
+    expect(posts).toHaveLength(2);
+    // O padrão do convite é o modelo "só controlar a TV", enviado por extenso nas duas tentativas.
+    expect(posts.map((r) => r.body)).toEqual([
+      { displayName: GUEST.displayName, permissions: [...TV_CONTROL_ONLY] },
+      { displayName: GUEST.displayName, permissions: [...TV_CONTROL_ONLY] },
+    ]);
 
     // O dono vê o pendente na lista (sem segredo) e o revoga.
-    await expect(page.locator('app-guests-section .item .name')).toHaveText([GUEST.displayName]);
+    await expect(page.locator('app-guests-section .person .name')).toHaveText([GUEST.displayName]);
     await screenshot(page, `test-results/guests-owner-${info.project.name}.png`);
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme });
@@ -131,7 +147,7 @@ test.describe('convite do dono (passkey)', () => {
     await page.getByRole('button', { name: `Revogar o convite de ${GUEST.displayName}` }).click();
     await page.getByRole('button', { name: 'Revogar', exact: true }).click();
     await expect(page.getByText('Convite revogado.')).toBeVisible();
-    await expect(page.getByText('Nenhum convite pendente.')).toBeVisible();
+    await expect(page.getByText('Ninguém foi convidado ainda.')).toBeVisible();
     expect(identity.invites[0].status).toBe('revoked');
   });
 });
@@ -250,7 +266,7 @@ test.describe('convidado: só o controle da TV', () => {
     }
   });
 
-  test('qualquer outra tela o devolve ao controle, e nenhuma chamada fora da TV é feita', async ({
+  test('as telas do dono o devolvem ao controle, e nenhuma chamada fora da TV é feita', async ({
     page,
   }) => {
     const invite = identity.seedInvite();
@@ -263,8 +279,10 @@ test.describe('convidado: só o controle da TV', () => {
     for (const path of [
       '/',
       '/treino',
-      '/ajustes',
+      '/ajustes/seguranca',
+      '/ajustes/pessoas',
       '/ajustes/aparelhos',
+      '/ajustes/sistema',
       '/ajustes/creditos',
       '/nao-existe',
     ]) {
@@ -282,10 +300,126 @@ test.describe('convidado: só o controle da TV', () => {
       (path) =>
         path.startsWith('/api/v1/devices') ||
         path.startsWith('/api/v1/training') ||
+        path.startsWith('/api/v1/tv/config') ||
         /\/api\/v1\/identity\/(passkeys|guests|guest-invites|step-up)/.test(path),
     );
     expect(outside).toEqual([]);
     expect(identity.requests.map((r) => r.path)).not.toContain('/passkeys');
+  });
+
+  test('o botão redondo do cabeçalho leva aos Ajustes da convidada: só Perfil, Aparência e Sobre', async ({
+    page,
+  }) => {
+    const invite = identity.seedInvite();
+    await acceptInvite(page, invite.token);
+    await expect(page).toHaveURL(/\/tv$/);
+    await showTv(page);
+
+    const settings = page.locator('header.head').getByRole('link', { name: 'Ajustes' });
+    await expect(settings).toBeVisible();
+
+    // Os três pontos do Apps ficam ao lado da engrenagem, na esquerda e antes do nome; à direita só o desligar.
+    const apps = page
+      .locator('header.head')
+      .getByRole('button', { name: 'Apps da TV', exact: true });
+    const gearBox = (await settings.boundingBox())!;
+    const appsBox = (await apps.boundingBox())!;
+    const nameBox = (await page.locator('header.head h1').boundingBox())!;
+    const powerBox = (await page
+      .locator('header.head')
+      .getByRole('button', { name: 'Desligar a TV' })
+      .boundingBox())!;
+    expect(Math.abs(appsBox.y - gearBox.y), 'na mesma linha da engrenagem').toBeLessThanOrEqual(1);
+    expect(appsBox.x, 'depois da engrenagem').toBeGreaterThanOrEqual(gearBox.x + gearBox.width);
+    expect(nameBox.x, 'antes do nome').toBeGreaterThanOrEqual(appsBox.x + appsBox.width);
+    expect(powerBox.x, 'o desligar depois do nome').toBeGreaterThanOrEqual(
+      nameBox.x + nameBox.width - 1,
+    );
+    await expect(page.locator('header.head .actions').getByRole('button')).toHaveCount(1);
+
+    await settings.click();
+    await expect(page).toHaveURL(/\/ajustes$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeVisible();
+    await expect(page.locator('a.ui-row .ui-row-title')).toHaveText([
+      'Perfil',
+      'Aparência',
+      'Sobre',
+    ]);
+    for (const name of ['Segurança', 'Pessoas', 'Aparelhos', 'Auditoria', 'Sistema']) {
+      await expect(page.getByText(name, { exact: true })).toHaveCount(0);
+    }
+    await expect(page.getByText(`${GUEST.displayName} · Convidado`)).toBeVisible();
+
+    // A seta leva de volta ao controle (a convidada não tem Início).
+    await page.getByRole('link', { name: 'Voltar ao controle' }).click();
+    await expect(page).toHaveURL(/\/tv$/);
+  });
+
+  test('a sessão da convidada nunca chama rota de administrador nos Ajustes, e o servidor recusa se ela chamar à mão', async ({
+    page,
+  }) => {
+    const invite = identity.seedInvite();
+    await acceptInvite(page, invite.token);
+    await expect(page).toHaveURL(/\/tv$/);
+    await showTv(page);
+
+    const urls: string[] = [];
+    page.on('request', (request) => urls.push(new URL(request.url()).pathname));
+    const before = identity.requests.length;
+    for (const path of ['/ajustes', '/ajustes/perfil', '/ajustes/aparencia', '/ajustes/sobre']) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    }
+    // Salvar o nome também é só da própria conta.
+    await page.goto('/ajustes/perfil');
+    await page.getByLabel('Como devemos te chamar').fill('Alice Souza');
+    await page.getByRole('button', { name: 'Salvar' }).click();
+    await expect(page.getByText('Nome salvo.')).toBeVisible();
+
+    const adminRoute =
+      /\/api\/v1\/(devices|training)|\/api\/v1\/identity\/(passkeys|guests|guest-invites|step-up)/;
+    expect(urls.filter((path) => adminRoute.test(path))).toEqual([]);
+    const sent = identity.requests.slice(before).map((r) => `${r.method} ${r.path}`);
+    expect(sent.filter((request) => /passkeys|guests|guest-invites|step-up/.test(request))).toEqual(
+      [],
+    );
+    // Só a leitura pública da versão, o renovar da sessão, a própria conta e o salvar do nome.
+    expect(new Set(sent.map((request) => request.replace(/^(GET|POST|PATCH) /, '')))).toEqual(
+      new Set(['/info', '/auth/refresh', '/me']),
+    );
+
+    // O servidor recusa o que ela chamar à mão: o papel dela não passa nessas rotas (a API tem o teste dela; aqui o
+    // simulador reproduz o mesmo contrato).
+    const token = identity.issuedTokens.at(-1)!;
+    const statuses = await page.evaluate(async (bearer) => {
+      const out: number[] = [];
+      for (const path of ['/passkeys', '/guests', '/guest-invites']) {
+        const response = await fetch('/api/v1/identity' + path, {
+          headers: { Authorization: 'Bearer ' + bearer },
+        });
+        out.push(response.status);
+      }
+      return out;
+    }, token);
+    expect(statuses).toEqual([403, 403, 403]);
+  });
+
+  test('o Perfil da convidada mostra o que ela pode fazer, pelas permissões da conta', async ({
+    page,
+  }) => {
+    const invite = identity.seedInvite();
+    await acceptInvite(page, invite.token);
+    await expect(page).toHaveURL(/\/tv$/);
+    await showTv(page);
+    await page.goto('/ajustes/perfil');
+    await expect(page.getByText('Convidado', { exact: true })).toBeVisible();
+    await expect(page.locator('.abilities-list li')).toHaveText([
+      'Controlar a TV',
+      'Desligar a TV',
+      'Abrir apps',
+      'Ver o histórico',
+    ]);
+    await expect(page.getByText('Editar atalhos')).toHaveCount(0);
   });
 
   test('convite que não vale mais, ou endereço sem convite, explica o que fazer', async ({

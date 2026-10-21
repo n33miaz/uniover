@@ -28,6 +28,7 @@
     "dexie": "^4.4.6",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
+    "uplot": "^1.6.32",
     "workbox-core": "^7.4.1",
     "workbox-expiration": "^7.4.1",
     "workbox-precaching": "^7.4.1",

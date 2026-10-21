@@ -1,0 +1,58 @@
+app-progress-line-chart {
+  display: block;
+}
+
+/* O espaço do desenho fica reservado desde o começo: a tela não pula quando a biblioteca termina de carregar. */
+app-progress-line-chart .plot {
+  min-height: 172px;
+  border-radius: var(--radius-sm);
+}
+
+/*
+ * O mínimo do CSS da biblioteca (a estrutura do desenho, não as cores). As cores e as fontes saem do tema do app dentro do
+ * canvas (chart-theme), por isso a folha de estilo dela não é carregada.
+ */
+app-progress-line-chart .uplot,
+app-progress-line-chart .uplot *,
+app-progress-line-chart .uplot *::before,
+app-progress-line-chart .uplot *::after {
+  box-sizing: border-box;
+}
+
+app-progress-line-chart .uplot {
+  width: min-content;
+  line-height: 1.5;
+}
+
+app-progress-line-chart .u-wrap {
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+app-progress-line-chart .u-over,
+app-progress-line-chart .u-under {
+  position: absolute;
+}
+
+app-progress-line-chart .u-under {
+  overflow: hidden;
+}
+
+app-progress-line-chart .uplot canvas {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+app-progress-line-chart .u-axis {
+  position: absolute;
+}
+
+/* A camada que recebe o toque: rolar a página na vertical por cima do gráfico continua funcionando. */
+app-progress-line-chart .u-over {
+  cursor: pointer;
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+}

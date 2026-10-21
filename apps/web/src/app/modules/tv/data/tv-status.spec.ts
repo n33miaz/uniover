@@ -143,6 +143,33 @@ describe('indicatorText', () => {
     expect(indicatorText('connected', 9).meaning).toContain('9 min');
   });
 
+  describe('for who cannot control the TV (only watches it)', () => {
+    it('never tells to tap, to wake it up or to use buttons, which that person does not have', () => {
+      for (const indicator of INDICATORS) {
+        const text = indicatorText(indicator, 5, false);
+        expect(text.meaning, indicator).not.toMatch(/toque|botões|botão|acord/i);
+        expect(text.meaning.length, indicator).toBeGreaterThan(20);
+      }
+    });
+
+    it('still says what the state is, and how long until the connected remote sleeps', () => {
+      expect(indicatorText('sleeping', 5, false).title).toBe('Dormindo');
+      expect(indicatorText('sleeping', 5, false).meaning).toBe(
+        'Só o controle está dormindo para poupar a TV; ela continua como estava.',
+      );
+      expect(indicatorText('connected', 9, false).meaning).toBe(
+        'O controle está falando com a TV. Depois de 9 min sem uso ele dorme sozinho.',
+      );
+    });
+
+    it('keeps the full text for who controls (the default), tap included', () => {
+      expect(indicatorText('sleeping', 5).meaning).toContain('O primeiro toque acorda.');
+      expect(indicatorText('sleeping', 5, true).meaning).toContain('O primeiro toque acorda.');
+      expect(indicatorText('connected', 5).meaning).toContain('acorda no primeiro toque');
+      expect(indicatorText('server-waking', 5).meaning).toContain('Os botões voltam em instantes.');
+    });
+  });
+
   it('never says the TV is switched off', () => {
     for (const indicator of INDICATORS) {
       const text = indicatorText(indicator, 5);

@@ -1,0 +1,61 @@
+<app-auth-layout>
+  <h1 i18n="@@auth.welcome.title">Como devemos te chamar?</h1>
+  <p class="lead" i18n="@@auth.welcome.lead">
+    É o nome que o app usa para te cumprimentar e que aparece nas telas de quem administra.
+  </p>
+
+  <form (submit)="submit($event)" novalidate>
+    <app-auth-field
+      #nameField
+      [fieldId]="'welcome-name'"
+      [name]="'displayName'"
+      label="Seu nome"
+      i18n-label="@@auth.welcome.name"
+      [kind]="'text'"
+      [maxChars]="inputLimit"
+      [autocomplete]="'nickname'"
+      [enterKeyHint]="'go'"
+      [error]="nameError()"
+      [describedBy]="'welcome-name-hint welcome-name-counter'"
+      [(value)]="name"
+      (valueChange)="edit()"
+      (blurred)="touched.set(true)"
+    >
+      <div class="meta">
+        <p id="welcome-name-hint" class="hint" i18n="@@auth.welcome.hint">
+          Dá para mudar depois, em Ajustes.
+        </p>
+        <p id="welcome-name-counter" class="counter" [class.over]="overLimit()">
+          {{ counter() }}
+        </p>
+      </div>
+    </app-auth-field>
+
+    <div class="messages" [attr.aria-live]="'polite'">
+      @if (banner(); as notice) {
+        <app-auth-notice
+          [tone]="notice.tone"
+          [role]="'alert'"
+          [icon]="notice.icon"
+          [heading]="notice.heading"
+          [detail]="notice.detail"
+        />
+      }
+    </div>
+
+    <!-- Sem roubar o foco do campo no toque, como no login: o clique não se perde se um aviso do campo mudar o layout. -->
+    <button
+      type="submit"
+      class="submit ui-btn primary block"
+      (mousedown)="$event.preventDefault()"
+      [disabled]="sending()"
+    >
+      @if (sending()) {
+        <span class="ui-spinner" aria-hidden="true"></span>
+        <span i18n="@@auth.welcome.busy">Salvando…</span>
+      } @else {
+        <span i18n="@@auth.welcome.submit">Continuar</span>
+      }
+    </button>
+  </form>
+</app-auth-layout>
