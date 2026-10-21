@@ -120,6 +120,7 @@ internal static class UpdateShortcutEndpoint
 {
     public static void MapUpdateShortcut(this IEndpointRouteBuilder group) =>
         group.MapPatch("/shortcuts/{id:guid}", HandleAsync).RequireAuthorization(TvAuth.EditShortcuts)
+            .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces<TvShortcut>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
