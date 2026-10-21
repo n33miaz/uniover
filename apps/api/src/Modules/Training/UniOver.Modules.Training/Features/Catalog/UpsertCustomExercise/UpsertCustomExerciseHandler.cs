@@ -31,6 +31,14 @@ internal sealed class UpsertCustomExerciseHandler(TrainingDbContext db, TimeProv
             var row = await db.Exercises.SingleOrDefaultAsync(e => e.Id == command.Id, cancellationToken);
             if (row is null)
             {
+                // Os ids do catálogo são UUID v5 calculados sobre dados públicos (semente e wger). Se um id v5 ainda sem linha
+                // pudesse virar exercício próprio, um membro tomaria o lugar do catálogo antes da semente ou da importação
+                // chegarem e travaria as duas para todo mundo. Linha que já existe segue as regras abaixo (catálogo = 403).
+                if (command.Id.Version != 7)
+                {
+                    return new UpsertCustomExerciseResult(UpsertOutcome.InvalidId);
+                }
+
                 row = Create(command, now);
                 db.Exercises.Add(row);
             }
