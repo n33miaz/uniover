@@ -493,4 +493,287 @@ describe('AuthService', () => {
       expect(call).toHaveBeenCalledWith('jwt-2');
     });
   });
+
+  // As permissões vêm de `/me` e o servidor as reavalia a cada 30 s: a tela precisa se corrigir sozinha, sem recarregar,
+  // com leituras raras (nunca polling curto) e nunca em tempestade.
+  describe('account refresh (permissions follow the server)', () => {
+    const POWER = ['module:tv', 'tv:control', 'tv:power'];
+    const NO_POWER = ['module:tv', 'tv:control'];
+    const guest = (permissions: string[]) => ({ ...ME, role: 'guest', permissions });
+    const forbidden = () => problem(403, 'forbidden');
+
+    beforeEach(async () => {
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+      api.me.mockResolvedValue(guest(POWER));
+      api.refresh.mockResolvedValue(tokens('jwt-1', 600));
+      await service().init();
+      api.me.mockClear();
+    });
+
+    afterEach(() => {
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    });
+
+    const advance = (ms: number) => vi.advanceTimersByTimeAsync(ms);
+    const comeBack = async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await advance(0);
+    };
+    /** Uma chamada que a API recusa por falta de acesso: o erro sobe, e a leitura da conta segue em segundo plano. */
+    const denied = async () => {
+      await expect(service().authorized(() => Promise.reject(forbidden()))).rejects.toBeInstanceOf(
+        ApiProblem,
+      );
+      await advance(0);
+    };
+
+    describe('on renewal', () => {
+      it('re-reads the account with the new token and the permissions follow', async () => {
+        api.me.mockResolvedValue(guest(NO_POWER));
+        api.refresh.mockResolvedValue(tokens('jwt-2', 600));
+        await advance(481_000);
+        expect(api.refresh).toHaveBeenCalledTimes(2);
+        expect(api.me).toHaveBeenCalledTimes(1);
+        expect(api.me).toHaveBeenCalledWith('jwt-2');
+        expect(session().permissions()).toEqual(NO_POWER);
+      });
+
+      it('a failed re-read keeps the last permissions and the session', async () => {
+        api.me.mockRejectedValue(networkProblem());
+        await advance(481_000);
+        expect(api.me).toHaveBeenCalledTimes(1);
+        expect(service().status()).toBe('authenticated');
+        expect(session().permissions()).toEqual(POWER);
+      });
+
+      it('does not make the renewal wait for the re-read (a user is already loaded)', async () => {
+        api.me.mockReturnValue(new Promise(() => undefined));
+        api.refresh.mockResolvedValue(tokens('jwt-2', 600));
+        expect(await service().renew()).toBe('renewed');
+      });
+    });
+
+    describe('on return to the tab', () => {
+      it('does not read again within 30 s of the last read', async () => {
+        await advance(29_000);
+        await comeBack();
+        expect(api.me).not.toHaveBeenCalled();
+      });
+
+      it('reads once after 30 s, the permissions follow and the ceiling restarts from that read', async () => {
+        api.me.mockResolvedValue(guest(NO_POWER));
+        await advance(30_000);
+        await comeBack();
+        expect(api.me).toHaveBeenCalledTimes(1);
+        expect(session().permissions()).toEqual(NO_POWER);
+
+        await advance(20_000);
+        await comeBack();
+        expect(api.me).toHaveBeenCalledTimes(1);
+        await advance(10_000);
+        await comeBack();
+        expect(api.me).toHaveBeenCalledTimes(2);
+      });
+
+      it('also reads on a page restored from the back-forward cache, but not on a plain pageshow', async () => {
+        await advance(31_000);
+        window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: false }));
+        await advance(0);
+        expect(api.me).not.toHaveBeenCalled();
+        window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+        await advance(0);
+        expect(api.me).toHaveBeenCalledTimes(1);
+      });
+
+      it('does nothing while the tab is hidden or when there is no session', async () => {
+        await advance(31_000);
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        await comeBack();
+        expect(api.me).not.toHaveBeenCalled();
+
+        Object.defineProperty(document, 'visibilityState', {
+          value: 'visible',
+          configurable: true,
+        });
+        session().clear('anonymous');
+        await comeBack();
+        expect(api.me).not.toHaveBeenCalled();
+      });
+
+      it('leaves the renewal to do the reading when the token is about to expire', async () => {
+        api.me.mockResolvedValue(guest(NO_POWER));
+        api.refresh.mockResolvedValue(tokens('jwt-2', 600));
+        await advance(31_000);
+        vi.setSystemTime(Date.now() + 520_000);
+        await comeBack();
+        expect(api.refresh).toHaveBeenCalledTimes(2);
+        expect(api.me).toHaveBeenCalledTimes(1);
+        expect(session().permissions()).toEqual(NO_POWER);
+      });
+
+      it('a failed read keeps the permissions, and the failed try counts for the ceiling', async () => {
+        api.me.mockRejectedValueOnce(networkProblem()).mockResolvedValue(guest(NO_POWER));
+        await advance(31_000);
+        await comeBack();
+        expect(api.me).toHaveBeenCalledTimes(1);
+        expect(session().permissions()).toEqual(POWER);
+        expect(service().status()).toBe('authenticated');
+
+        await advance(10_000);
+        await comeBack();
+        expect(api.me).toHaveBeenCalledTimes(1);
+        await advance(20_000);
+        await comeBack();
+        expect(api.me).toHaveBeenCalledTimes(2);
+        expect(session().permissions()).toEqual(NO_POWER);
+      });
+    });
+
+    describe('on a 403 of access', () => {
+      it('re-reads the account once, the permissions follow and the call still fails', async () => {
+        api.me.mockResolvedValue(guest(NO_POWER));
+        await advance(6_000);
+        await denied();
+        expect(api.me).toHaveBeenCalledTimes(1);
+        expect(session().permissions()).toEqual(NO_POWER);
+      });
+
+      it('does not read when the last read was less than 5 s ago', async () => {
+        await advance(4_000);
+        await denied();
+        expect(api.me).not.toHaveBeenCalled();
+      });
+
+      it('repeated 403s with an unchanged answer fall back to the 30 s ceiling (no storm)', async () => {
+        await advance(6_000);
+        await denied();
+        expect(api.me).toHaveBeenCalledTimes(1);
+
+        await denied();
+        await denied();
+        expect(api.me).toHaveBeenCalledTimes(1);
+        await advance(10_000);
+        await denied();
+        expect(api.me).toHaveBeenCalledTimes(1);
+
+        await advance(20_000);
+        await denied();
+        expect(api.me).toHaveBeenCalledTimes(2);
+      });
+
+      it('after a 403 whose read did bring a change, the next 403 can read again after 5 s', async () => {
+        api.me.mockResolvedValueOnce(guest(NO_POWER)).mockResolvedValue(guest(['module:tv']));
+        await advance(6_000);
+        await denied();
+        await advance(6_000);
+        await denied();
+        expect(api.me).toHaveBeenCalledTimes(2);
+        expect(session().permissions()).toEqual(['module:tv']);
+      });
+
+      it('ignores the 403 of the passkey, of a wrong password and of other typed refusals, and any other error', async () => {
+        await advance(6_000);
+        stepUp.confirm.mockResolvedValue(false);
+        for (const error of [
+          stepUpProblem(),
+          problem(403, 'invalid-password'),
+          problem(403, 'step-up-failed'),
+          problem(404, 'not-found'),
+          problem(500),
+          networkProblem(),
+        ]) {
+          await expect(service().authorized(() => Promise.reject(error))).rejects.toBeInstanceOf(
+            ApiProblem,
+          );
+        }
+        await advance(0);
+        expect(api.me).not.toHaveBeenCalled();
+      });
+
+      it('never reads for the administrator, who already has everything', async () => {
+        session().setUser({ ...ME, role: 'owner' });
+        await advance(6_000);
+        await denied();
+        expect(api.me).not.toHaveBeenCalled();
+      });
+
+      it('does not trigger itself: a 403 on the read of the account itself is not read again', async () => {
+        api.me.mockRejectedValue(forbidden());
+        await advance(6_000);
+        await denied();
+        expect(api.me).toHaveBeenCalledTimes(1);
+        // Leitura sem resposta útil também não é mudança: o próximo 403 espera o teto de 30 s.
+        await advance(10_000);
+        await denied();
+        expect(api.me).toHaveBeenCalledTimes(1);
+        await advance(30_000);
+        await denied();
+        // Uma leitura por 403 que passou do teto; as duas falharam com 403 e nenhuma gerou outra.
+        expect(api.me).toHaveBeenCalledTimes(2);
+      });
+
+      it('a 401 on the read after a 403 follows the normal expired-session flow', async () => {
+        const router = TestBed.inject(Router);
+        await router.navigateByUrl('/tv');
+        api.me.mockRejectedValue(problem(401));
+        api.refresh.mockRejectedValue(problem(401));
+        await advance(6_000);
+        await denied();
+        await advance(0);
+        expect(service().status()).toBe('anonymous');
+        expect(session().bearer()).toBeNull();
+        expect(router.url).toBe('/entrar?next=%2Ftv');
+      });
+    });
+
+    describe('every trigger goes through the same read', () => {
+      it('simultaneous triggers share one read in flight', async () => {
+        let answer!: (me: unknown) => void;
+        api.me.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+        await advance(31_000);
+        const all = Promise.all([
+          service().refreshUser('foreground'),
+          service().refreshUser('forbidden'),
+          service().refreshUser('renewal'),
+          service().refreshUser('foreground'),
+        ]);
+        await advance(0);
+        answer(guest(NO_POWER));
+        await all;
+        expect(api.me).toHaveBeenCalledTimes(1);
+        expect(session().permissions()).toEqual(NO_POWER);
+      });
+
+      it('an answer with the same permissions (new list, other order) changes nothing readers see', async () => {
+        const permissions = session().permissions();
+        const user = session().user();
+        api.me.mockResolvedValue(guest([...POWER].reverse()));
+        await advance(31_000);
+        await comeBack();
+        expect(api.me).toHaveBeenCalledTimes(1);
+        expect(session().permissions()).toBe(permissions);
+        expect(session().user()).toBe(user);
+      });
+
+      it('discards an answer that arrives after the session ended', async () => {
+        let answer!: (me: unknown) => void;
+        api.me.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+        await advance(31_000);
+        const read = service().refreshUser('foreground');
+        await advance(0);
+        await service().logout();
+        answer(guest(NO_POWER));
+        await read;
+        expect(service().user()).toBeNull();
+        expect(service().status()).toBe('anonymous');
+      });
+
+      it('never keeps the permissions in the browser storage', async () => {
+        await advance(31_000);
+        await comeBack();
+        const stored = JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage });
+        expect(stored).not.toContain('tv:power');
+      });
+    });
+  });
 });
