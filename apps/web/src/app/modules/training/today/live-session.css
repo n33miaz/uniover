@@ -1,0 +1,323 @@
+:host {
+  display: block;
+}
+
+/* O botão principal fica fixo embaixo da tela (ao alcance do polegar): o conteúdo ganha a folga da altura dele. */
+.live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 40rem;
+  margin-inline: auto;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 1px solid var(--a-line);
+  border-radius: 50%;
+  background: var(--a-surface);
+  color: var(--a-ink);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+}
+
+.icon.small {
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.titles {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.title {
+  font-size: 1.25rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.title:focus {
+  outline: none;
+}
+
+.sub {
+  margin: 2px 0 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.bar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--a-elev);
+}
+
+.fill {
+  display: block;
+  width: var(--progress, 0%);
+  height: 100%;
+  background: var(--a-accent);
+  transition: width var(--dur-base) var(--ease-out);
+}
+
+/* Séries gravadas no aparelho que ainda não chegaram ao servidor (sem rede, é o estado normal). */
+.sending {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: calc(-1 * var(--space-1)) 0 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* O exercício: a miniatura (toque amplia, com o passo a passo) ao lado do nome. */
+.exercise {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.thumb {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-sm);
+  /* O desenho é preto sobre branco e não se recolore (nem no tema escuro). */
+  background: #fff;
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+}
+
+.thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.who {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.name {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Recorde: um aviso quente e curto, sem festa. */
+.record {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1) var(--space-2) var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--a-warn) 45%, var(--a-line));
+  border-radius: var(--radius);
+  background: var(--a-warn-soft);
+  color: var(--a-ink);
+}
+
+.star {
+  --glyph-size: 24px;
+  color: var(--a-warn-ink);
+}
+
+.record-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.record p {
+  margin: 0;
+}
+
+.record-title {
+  flex: 1 1 auto;
+  font-weight: 800;
+}
+
+.record-line {
+  padding-right: var(--space-2);
+  font-weight: 650;
+}
+
+/* A série atual: o cartão onde a mão trabalha. */
+.setcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.setcard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.set-id {
+  display: flex;
+  flex-direction: column;
+}
+
+.set-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 750;
+}
+
+.range {
+  color: var(--a-ink2);
+  font-size: var(--fs-label);
+}
+
+.warm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.done {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.done .ui-group {
+  margin: 0;
+}
+
+.ui-tile.off {
+  opacity: 0.6;
+}
+
+.medal {
+  gap: 4px;
+}
+
+.medal app-today-glyph {
+  --glyph-size: 14px;
+}
+
+.pencil {
+  color: var(--a-ink3);
+}
+
+/* Plano concluído, treino livre sem exercício e treino encerrado em outro lugar: um cartão calmo. */
+.calm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.calm h2 {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.calm p {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.calm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+/* A única ação principal: fixa embaixo, larga e alta. O recado de "gravado" aparece logo acima dela. */
+.dock {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: var(--space-3) var(--gutter) calc(var(--space-3) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--a-line);
+  background: var(--a-surface);
+}
+
+.dock > .go {
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+.go {
+  min-height: 64px;
+  font-size: 1.125rem;
+}
+
+.notice {
+  position: absolute;
+  inset-inline: var(--gutter);
+  bottom: calc(100% + var(--space-2));
+  max-width: 40rem;
+  margin-inline: auto;
+  box-shadow: var(--shadow-2);
+}
+
+@media (hover: hover) {
+  .icon:hover {
+    background: var(--a-surface-2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    transition: none;
+  }
+}

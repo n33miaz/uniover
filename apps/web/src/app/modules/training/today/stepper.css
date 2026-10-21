@@ -1,0 +1,93 @@
+:host {
+  display: block;
+}
+
+/* Nome e apoio à esquerda, depois − valor +. Os botões têm 56 px: o toque é com a mão suada, em pé. */
+.stepper {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px minmax(64px, 80px) 56px;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.label {
+  font-weight: 700;
+}
+
+.hint {
+  color: var(--a-ink2);
+  font-size: var(--fs-label);
+  line-height: 1.25;
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+}
+
+.step app-training-glyph {
+  --glyph-size: 26px;
+}
+
+.step:active {
+  background: var(--a-elev);
+}
+
+.value {
+  width: 100%;
+  min-width: 0;
+  height: 56px;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--a-ink3);
+  border-radius: var(--radius);
+  background: var(--a-surface-2);
+  color: var(--a-ink);
+  font: inherit;
+  font-size: 1.5rem;
+  font-weight: 750;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.value::placeholder {
+  color: var(--a-ink3);
+  font-weight: 500;
+}
+
+.value:focus {
+  border-color: var(--a-accent);
+  box-shadow: var(--a-ring);
+}
+
+.value[aria-invalid='true'] {
+  border-color: var(--a-bad);
+}
+
+@media (hover: hover) {
+  .step:hover {
+    background: var(--a-elev);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step {
+    transition: none;
+  }
+}
