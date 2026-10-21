@@ -14,7 +14,7 @@ public static class TvCommandNames
     public const string Wake = "tv.wake";
     public const string AppsRefresh = "tv.apps.refresh";
 
-    /// <summary>O dono mudou a ordem dos atalhos: não vai à TV, mas é uma ação dele que a trilha guarda.</summary>
+    /// <summary>Alguém com a permissão de editar atalhos mudou a ordem deles: não vai à TV, mas é uma ação que a trilha guarda.</summary>
     public const string ShortcutsReorder = "tv.shortcuts.reorder";
     public const string PowerOff = "tv.power-off";
     public const string Cleanup = "tv.cleanup";

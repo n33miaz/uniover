@@ -106,7 +106,7 @@ internal sealed partial class ReorderShortcutsHandler(
 internal static class ReorderShortcutsEndpoint
 {
     public static void MapReorderShortcuts(this IEndpointRouteBuilder group) =>
-        group.MapPut("/shortcuts/order", HandleAsync).RequireAuthorization(UniOverAuth.OwnerPolicy)
+        group.MapPut("/shortcuts/order", HandleAsync).RequireAuthorization(TvAuth.EditShortcuts)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces<IReadOnlyList<TvShortcut>>()
             .ProducesProblem(StatusCodes.Status400BadRequest)

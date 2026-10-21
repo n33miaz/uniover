@@ -15,7 +15,7 @@ internal static class GetStateEndpoint
 {
     public static void MapGetState(this IEndpointRouteBuilder group) =>
         group.MapGet("/state", (GetStateHandler handler) => TypedResults.Ok(handler.Handle()))
-            .RequireAuthorization(TvAuth.ControlPolicy)
+            .RequireAuthorization(TvAuth.Module)
             .Produces<TvState>()
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 }

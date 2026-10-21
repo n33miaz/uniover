@@ -26,7 +26,7 @@ internal sealed class RefreshShortcutsHandler(TvCommandRunner runner)
 internal static class RefreshShortcutsEndpoint
 {
     public static void MapRefreshShortcuts(this IEndpointRouteBuilder group) =>
-        group.MapPost("/shortcuts/refresh", HandleAsync).RequireAuthorization(TvAuth.ControlPolicy)
+        group.MapPost("/shortcuts/refresh", HandleAsync).RequireAuthorization(TvAuth.Launch)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces<TvCommandOk>()
             .ProducesProblem(StatusCodes.Status401Unauthorized)

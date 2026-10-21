@@ -28,7 +28,7 @@ internal sealed class WakeHandler(TvCommandRunner runner)
 internal static class WakeEndpoint
 {
     public static void MapWake(this IEndpointRouteBuilder group) =>
-        group.MapPost("/wake", HandleAsync).RequireAuthorization(TvAuth.ControlPolicy)
+        group.MapPost("/wake", HandleAsync).RequireAuthorization(TvAuth.Control)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces(StatusCodes.Status202Accepted)
             .ProducesProblem(StatusCodes.Status401Unauthorized)

@@ -46,7 +46,7 @@ internal sealed class RecentCommandsHandler(TvDbContext db)
 internal static class RecentCommandsEndpoint
 {
     public static void MapRecentCommands(this IEndpointRouteBuilder group) =>
-        group.MapGet("/commands/recent", HandleAsync).RequireAuthorization(TvAuth.ControlPolicy)
+        group.MapGet("/commands/recent", HandleAsync).RequireAuthorization(TvAuth.History)
             .Produces<IReadOnlyList<RecentCommand>>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)

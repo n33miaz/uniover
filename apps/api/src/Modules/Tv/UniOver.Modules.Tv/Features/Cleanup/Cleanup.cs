@@ -78,7 +78,7 @@ internal static class CleanupEndpoint
     public const string ReportMissingCode = "cleanup_report_missing";
 
     public static void MapCleanup(this IEndpointRouteBuilder group) =>
-        group.MapPost("/cleanup", HandleAsync).RequireAuthorization(TvAuth.ControlPolicy)
+        group.MapPost("/cleanup", HandleAsync).RequireAuthorization(TvAuth.Control)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces<TvCleanupOk>()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
