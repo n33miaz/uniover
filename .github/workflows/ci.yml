@@ -26,6 +26,8 @@ jobs:
       agent: ${{ steps.filter.outputs.agent }}
       contracts: ${{ steps.filter.outputs.contracts }}
       image: ${{ steps.filter.outputs.image }}
+      api_matrix: ${{ steps.plan.outputs.api_matrix }}
+      e2e_matrix: ${{ steps.plan.outputs.e2e_matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,19 +35,33 @@ jobs:
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
+          # Mexer no próprio fluxo (ci.yml e .github/scripts) roda tudo que ele define: sem isso, um PR que só altera a
+          # esteira passaria sem exercitar nenhuma das mudanças.
           filters: |
             api:
               - 'apps/api/**'
+              - '.github/workflows/ci.yml'
+              - '.github/scripts/**'
             web:
               - 'apps/web/**'
+              - '.github/workflows/ci.yml'
+              - '.github/scripts/**'
             agent:
               - 'apps/agent/**'
+              - '.github/workflows/ci.yml'
             contracts:
               - 'contracts/**'
+              - '.github/workflows/ci.yml'
             image:
               - 'Dockerfile'
               - 'apps/api/**'
               - 'apps/web/**'
+              - '.github/workflows/ci.yml'
+              - '.github/zap/**'
+      # As partes do teste da API e do E2E saem de arquivos em .github/scripts: uma fonte só para o job e para a conferência.
+      - name: Montar as matrizes de api e e2e
+        id: plan
+        run: bash .github/scripts/plan-matrices.sh >> "$GITHUB_OUTPUT"
 
   commits:
     name: commits
@@ -66,11 +82,21 @@ jobs:
           ALLOWED_EMAIL: ncormino@gmail.com
         run: bash .github/scripts/check-commits.sh "$BASE_SHA" "$HEAD_SHA"
 
+  # Testes da API em partes que rodam ao mesmo tempo. Quase todo o tempo (8 min dos ~9) é o projeto de integração:
+  # um container de Postgres e todas as classes na mesma coleção do xUnit, ou seja, em fila. Cada parte roda um recorte
+  # dele por namespace (.github/scripts/api-partitions.json); a parte "rest" é o complemento (os demais projetos de teste e
+  # qualquer namespace novo) e é ela quem compila a solução inteira com avisos como erro e confere, antes de testar, que
+  # as partes somam a suíte inteira. As outras compilam só o que o projeto de integração puxa: um artefato de build
+  # compartilhado custaria mais (subir e baixar ~100 MB por parte) do que os ~50 s que cada parte gasta compilando.
   api:
-    name: api
+    name: api (${{ matrix.name }})
     needs: changes
     if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.api_matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -78,19 +104,24 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: apps/api/global.json
-      # Roda de dentro de apps/api: o global.json de lá liga o Microsoft.Testing.Platform no dotnet test.
-      - name: Compilar
+      # Os scripts rodam de dentro de apps/api: o global.json de lá liga o Microsoft.Testing.Platform no dotnet test.
+      - name: Compilar a solução inteira (avisos como erro)
+        if: matrix.name == 'rest'
         working-directory: apps/api
         run: dotnet build UniOver.slnx -warnaserror
-      - name: Testar com cobertura
-        working-directory: apps/api
-        run: dotnet test --solution UniOver.slnx --coverage --coverage-output-format cobertura
+      - name: Conferir que as partes somam a suíte inteira
+        if: matrix.name == 'rest'
+        run: bash .github/scripts/check-api-parts.sh
+      - name: Testar com cobertura (${{ matrix.name }})
+        env:
+          PART: ${{ matrix.name }}
+        run: bash .github/scripts/run-api-tests.sh "$PART"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: api-coverage
+          name: api-coverage-${{ matrix.name }}
           path: apps/api/TestResults/*.cobertura.xml
-          if-no-files-found: warn
+          if-no-files-found: error
 
   web:
     name: web
@@ -110,6 +141,8 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
+      - name: Conferir que o E2E cobre todos os projetos do Playwright
+        run: bash ../../.github/scripts/check-e2e-projects.sh
       - name: Lint
         run: npm run lint
       - name: Testes com cobertura
@@ -117,19 +150,26 @@ jobs:
       - name: Build de produção
         run: npm run build
 
-  # E2E em quatro partes que rodam ao mesmo tempo: o Playwright reparte os testes entre elas (na CI cada teste é uma unidade; ver playwright.config.ts).
-  # Era um passo só do job web (~11 min); o tempo somado dos testes é o mesmo, mas a espera cai a perto de um quarto mais o custo de montar cada parte (~2 min).
+  # E2E em partes que rodam ao mesmo tempo (na CI cada teste é uma unidade do --shard; ver playwright.config.ts): um
+  # projeto do Playwright (e, portanto, um navegador) por parte, e cada projeto repartido com --shard k/n
+  # (.github/scripts/e2e-shards.json; o job web confere que nenhum projeto ficou de fora).
+  # Antes o --shard repartia os dois projetos juntos, por quantidade de testes: as duas primeiras partes caíam no
+  # WebKit (iphone-12) e as duas últimas no Chromium (s23-fe), e o WebKit leva quase o dobro por teste (medido: 288 a
+  # 350 s contra 165 a 196 s), então a parte mais lenta ditava o tempo de todas. Dentro de um projeto o custo por teste
+  # é parecido. Cada parte instala só o navegador que usa: o apt do --with-deps (~50 s no WebKit) é o que pesa; o download
+  # do navegador leva ~5 s e por isso não vale cache. O build de produção vem do webServer do próprio Playwright
+  # (~8 s): um job de build à parte custaria mais do que economiza.
   # Fica de fora o PR de versão do release-please: ele só muda número de versão e o mesmo código já passou
   # inteiro no PR da develop para a main e no push na main.
   e2e:
-    name: e2e (${{ matrix.shard }}/4)
+    name: e2e (${{ matrix.project }} ${{ matrix.shard }}/${{ matrix.total }})
     needs: changes
     if: needs.changes.outputs.web == 'true' && !startsWith(github.head_ref || '', 'release-please--')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
+      matrix: ${{ fromJSON(needs.changes.outputs.e2e_matrix) }}
     defaults:
       run:
         working-directory: apps/web
@@ -143,15 +183,20 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
-      - name: Instalar navegadores do Playwright
-        run: npx playwright install --with-deps chromium webkit
+      - name: Instalar o navegador do Playwright
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: npx playwright install --with-deps "$BROWSER"
       # O build de produção vem do webServer do próprio Playwright (playwright.config.ts).
-      - name: E2E (parte ${{ matrix.shard }} de 4)
-        run: npx playwright test --shard=${{ matrix.shard }}/4
+      - name: E2E (${{ matrix.project }}, parte ${{ matrix.shard }} de ${{ matrix.total }})
+        env:
+          PROJECT: ${{ matrix.project }}
+          SHARD: ${{ matrix.shard }}/${{ matrix.total }}
+        run: npx playwright test --project "$PROJECT" --shard "$SHARD"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: web-e2e-report-${{ matrix.shard }}
+          name: web-e2e-report-${{ matrix.project }}-${{ matrix.shard }}
           path: |
             apps/web/test-results
             apps/web/playwright-report
@@ -252,6 +297,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          # O runner é descartável: remover o builder no fim do job leva até ~20 s (medido) e não protege nada.
+          cleanup: false
       - name: Construir a imagem (sem publicar)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -260,7 +308,10 @@ jobs:
           load: true
           tags: uniover:ci
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Só o push (develop e main) grava o cache. Gravar em todo PR custava ~30 s por execução (medido) e o cache de
+          # um PR só serve a ele mesmo: 8,8 GB dos 10 GB do repositório eram desses blobs, expulsando os caches úteis.
+          # Os PRs continuam lendo o cache que a develop gravou.
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max' || '' }}
       - name: Trivy (relatório SARIF)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
