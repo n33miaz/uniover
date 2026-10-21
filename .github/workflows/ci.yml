@@ -116,24 +116,54 @@ jobs:
         run: npm run test:coverage
       - name: Build de produção
         run: npm run build
+
+  # E2E em três partes que rodam ao mesmo tempo: o Playwright reparte os grupos (arquivo por navegador) entre elas.
+  # Era um passo só do job web (~11 min); o tempo somado dos testes é o mesmo, mas a espera cai a perto de um terço.
+  # Fica de fora o PR de versão do release-please: ele só muda número de versão e o mesmo código já passou
+  # inteiro no PR da develop para a main e no push na main.
+  e2e:
+    name: e2e (${{ matrix.shard }}/3)
+    needs: changes
+    if: needs.changes.outputs.web == 'true' && !startsWith(github.head_ref || '', 'release-please--')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
       - name: Instalar navegadores do Playwright
         run: npx playwright install --with-deps chromium webkit
-      - name: E2E
-        run: npm run e2e
+      # O build de produção vem do webServer do próprio Playwright (playwright.config.ts).
+      - name: E2E (parte ${{ matrix.shard }} de 3)
+        run: npx playwright test --shard=${{ matrix.shard }}/3
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: web-e2e-report
+          name: web-e2e-report-${{ matrix.shard }}
           path: |
             apps/web/test-results
             apps/web/playwright-report
           if-no-files-found: ignore
 
   # Auditoria de PWA: Lighthouse sobre o build servido pelo servidor de teste (mesma CSP da API) e, quando
-  # existir, a conferência dos manifests por módulo. Roda só se o job web rodou e passou.
+  # existir, a conferência dos manifests por módulo. Constrói por conta própria, então não espera o job web: roda ao
+  # mesmo tempo que ele e o e2e. Pelo mesmo motivo do e2e, não roda no PR de versão do release-please.
   audit-pwa:
     name: audit-pwa
-    needs: web
+    needs: changes
+    if: needs.changes.outputs.web == 'true' && !startsWith(github.head_ref || '', 'release-please--')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -302,7 +332,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, commits, api, web, audit-pwa, agent, contracts, image]
+    needs: [changes, commits, api, web, e2e, audit-pwa, agent, contracts, image]
     runs-on: ubuntu-latest
     steps:
       - name: Resumir
