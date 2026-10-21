@@ -19,6 +19,18 @@ describe('training routes', () => {
     ]);
   });
 
+  it('lets Exercícios cover its child screens and the routines, and only it', () => {
+    const tabs = (root.data as { tabs: { link: string; nested?: boolean; also?: string[] }[] })
+      .tabs;
+    const exercises = tabs.find((tab) => tab.link === '/treino/exercicios')!;
+    expect(exercises.nested).toBe(true);
+    expect(exercises.also).toEqual(['/treino/rotinas']);
+    for (const tab of tabs.filter((candidate) => candidate !== exercises)) {
+      expect(tab.nested, tab.link).toBeUndefined();
+      expect(tab.also, tab.link).toBeUndefined();
+    }
+  });
+
   it('declares every screen of the module, fixed paths before the ones with an id', () => {
     const paths = children.map((child) => child.path);
     expect(paths).toEqual([

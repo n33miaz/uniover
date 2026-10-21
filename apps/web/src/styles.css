@@ -162,7 +162,14 @@ body {
   font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.4;
+  /*
+   * `clip` corta o que passa da largura como `hidden`, mas não cria contêiner de rolagem. Com `hidden` em html e body, o
+   * body virava o contêiner de rolagem (que nunca rola, pois cresce com o conteúdo) e nada `sticky` da casca, como a barra
+   * de abas, grudava na tela. O `hidden` antes dele é a reserva dos navegadores que ainda não conhecem `clip` (Safari
+   * anterior ao 16): eles ignoram a segunda linha e ficam como estavam.
+   */
   overflow-x: hidden;
+  overflow-x: clip;
   -webkit-text-size-adjust: 100%;
 }
 

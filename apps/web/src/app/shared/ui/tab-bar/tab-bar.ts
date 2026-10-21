@@ -1,16 +1,43 @@
-import { Component, input } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
+import { Component, inject, input } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink } from '@angular/router';
+import { filter, map, startWith } from 'rxjs';
 
 export interface TabItem {
   /** Caminho absoluto da aba, por exemplo `/tv`. */
   readonly link: string;
   readonly label: string;
+  /**
+   * Por padrão a aba só fica marcada no próprio caminho (`link`). Com `nested`, fica marcada também nas telas filhas
+   * dele (`link/...`), por exemplo a ficha de um exercício dentro de `/treino/exercicios`.
+   */
+  readonly nested?: boolean;
+  /**
+   * Outros caminhos que também marcam a aba, com as telas filhas deles. Serve para uma tela que mora em outro
+   * caminho mas pertence à aba (as rotinas, dentro de Exercícios).
+   */
+  readonly also?: readonly string[];
 }
 
-/** Barra de abas de um módulo, embaixo da tela. Cada módulo entrega as suas pelo `data.tabs` da rota. */
+/** Caminho sem consulta, sem fragmento e sem a barra do fim (a raiz continua `/`). */
+function pathOf(url: string): string {
+  const path = url.split(/[?#]/)[0];
+  return path.length > 1 ? path.replace(/\/+$/, '') : path;
+}
+
+/** `path` é `base` ou uma tela filha dele (`base/...`)? Prefixo por segmento: `/treino/rotinas2` não é filho de `/treino/rotinas`. */
+function isWithin(path: string, base: string): boolean {
+  return path === base || path.startsWith(base === '/' ? '/' : `${base}/`);
+}
+
+/**
+ * Barra de abas de um módulo, embaixo da tela. Cada módulo entrega as suas pelo `data.tabs` da rota. A aba marcada sai do
+ * caminho da tela aberta (a consulta não conta): o caminho exato por padrão, e as telas filhas quando a aba pede
+ * (`nested`, `also`). Marcação só por caminho exato deixava a aba apagada na ficha de um exercício e na lista filtrada.
+ */
 @Component({
   selector: 'app-tab-bar',
-  imports: [RouterLink, RouterLinkActive],
+  imports: [RouterLink],
   template: `
     <nav aria-label="Abas do módulo" i18n-aria-label="@@shared.tabs">
       <ul>
@@ -18,9 +45,8 @@ export interface TabItem {
           <li>
             <a
               [routerLink]="tab.link"
-              routerLinkActive="active"
-              ariaCurrentWhenActive="page"
-              [routerLinkActiveOptions]="{ exact: true }"
+              [class.active]="isActive(tab)"
+              [attr.aria-current]="isActive(tab) ? 'page' : null"
               >{{ tab.label }}</a
             >
           </li>
@@ -74,5 +100,23 @@ export interface TabItem {
   `,
 })
 export class TabBar {
+  private readonly router = inject(Router);
+
   readonly tabs = input.required<readonly TabItem[]>();
+
+  /** O endereço da tela aberta, lido do roteador (o navegador pode ter filtros na consulta que o roteador não vê). */
+  private readonly url = toSignal(
+    this.router.events.pipe(
+      filter((event) => event instanceof NavigationEnd),
+      map(() => this.router.url),
+      startWith(this.router.url),
+    ),
+    { requireSync: true },
+  );
+
+  protected isActive(tab: TabItem): boolean {
+    const path = pathOf(this.url());
+    if (tab.nested ? isWithin(path, tab.link) : path === pathOf(tab.link)) return true;
+    return (tab.also ?? []).some((base) => isWithin(path, pathOf(base)));
+  }
 }

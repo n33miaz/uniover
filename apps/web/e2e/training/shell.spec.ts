@@ -1,4 +1,5 @@
 import { expect, expectNoHorizontalScroll, test, waitForServiceWorkerControl } from '../fixtures';
+import { SEED_EXERCISE_IDS, SEED_ROUTINE_IDS } from './support/training-seed';
 import { openTraining, startTraining, waitForCatalog } from './support/training-pages';
 
 test.describe('casca do Treino', () => {
@@ -37,6 +38,64 @@ test.describe('casca do Treino', () => {
 
     await tabs.getByRole('link', { name: 'Hoje' }).click();
     await expect(page).toHaveURL(/\/treino$/);
+  });
+
+  test('a aba Exercícios fica marcada na ficha, na lista filtrada e nas rotinas, e só ela', async ({
+    page,
+    context,
+  }) => {
+    await startTraining(context, page);
+    const tabs = page.getByRole('navigation', { name: 'Abas do módulo' });
+    const marked = tabs.locator('a[aria-current="page"]');
+    for (const url of [
+      '/treino/exercicios',
+      '/treino/exercicios?q=supino&group=chest',
+      `/treino/exercicios/${SEED_EXERCISE_IDS.bench}`,
+      '/treino/rotinas',
+    ]) {
+      await openTraining(page, url);
+      await expect(tabs).toBeVisible();
+      await expect(marked, url).toHaveText(['Exercícios']);
+    }
+    for (const [url, label] of [
+      ['/treino', 'Hoje'],
+      ['/treino/progresso', 'Progresso'],
+      ['/treino/corpo', 'Corpo'],
+    ]) {
+      await openTraining(page, url);
+      await expect(marked, url).toHaveText([label]);
+    }
+  });
+
+  test('a aba segue marcada ao filtrar a lista e ao voltar da ficha para a lista filtrada', async ({
+    page,
+    context,
+  }) => {
+    await startTraining(context, page);
+    await openTraining(page, '/treino/exercicios');
+    await waitForCatalog(page);
+    const marked = page
+      .getByRole('navigation', { name: 'Abas do módulo' })
+      .locator('a[aria-current="page"]');
+    await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('halteres');
+    await expect(page.locator('.list .ui-row')).toHaveCount(4);
+    await expect(marked).toHaveText(['Exercícios']);
+    await page.locator('.list .ui-row').first().click();
+    await expect(page).toHaveURL(/\/treino\/exercicios\/[0-9a-f-]{36}$/);
+    await expect(marked).toHaveText(['Exercícios']);
+    await page.goBack();
+    await expect(page).toHaveURL(/q=halteres/);
+    await expect(marked).toHaveText(['Exercícios']);
+  });
+
+  test('o editor de rotina não tem barra de abas (nem como sair sem a confirmação)', async ({
+    page,
+    context,
+  }) => {
+    await startTraining(context, page);
+    await openTraining(page, `/treino/rotinas/${SEED_ROUTINE_IDS.a}`);
+    await expect(page.getByRole('heading', { name: 'Editar rotina' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Abas do módulo' })).toHaveCount(0);
   });
 
   test('o seletor Catálogo | Rotinas troca de tela sem sair da aba Exercícios', async ({
