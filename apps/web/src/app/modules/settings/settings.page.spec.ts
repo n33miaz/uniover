@@ -93,6 +93,11 @@ describe('SettingsPage (a list of screens)', () => {
           summary: 'Parear o agente do PC de casa',
           href: '/ajustes/aparelhos',
         },
+        {
+          title: 'Sistema',
+          summary: 'Qual computador controla a TV',
+          href: '/ajustes/sistema',
+        },
         { title: 'Sobre', summary: 'Versão do app e da API', href: '/ajustes/sobre' },
       ]);
     });
@@ -103,13 +108,12 @@ describe('SettingsPage (a list of screens)', () => {
       expect(link?.textContent?.trim().startsWith('Aparelhos')).toBe(true);
     });
 
-    it('shows Auditoria and Sistema as calm "Em breve" cards: no link, no button, no focus', async () => {
+    it('shows only Auditoria as a calm "Em breve" card: no link, no button, no focus', async () => {
       const { el } = await render();
       const soon = el.querySelector('ul.soon')!;
       const cards = Array.from(soon.querySelectorAll('li'));
       expect(cards.map((c) => c.querySelector('.ui-row-title')?.textContent?.trim())).toEqual([
         'Auditoria',
-        'Sistema',
       ]);
       for (const card of cards) {
         expect(card.querySelector('.ui-chip')?.textContent?.trim()).toBe('Em breve');

@@ -16,6 +16,13 @@ public static class TvAuth
     /// </summary>
     public const string StreamPolicy = "TvStream";
 
+    /// <summary>
+    /// Ação de confirmação de trocar o computador que controla a TV. Redireciona o controle para outra máquina, então só
+    /// o administrador, e só com a passkey (a política <c>stepup:</c> já inclui o papel de administrador). Mora aqui,
+    /// como a do pareamento mora no Devices: o Identity não precisa conhecer as ações dos outros módulos.
+    /// </summary>
+    public const string BindAgentAction = "tv.bind-agent";
+
     /// <summary>Ver a TV: estado, lista de atalhos e o fluxo ao vivo (<c>module:tv</c>).</summary>
     internal static readonly string Module = AccessPermissions.Policy(AccessPermissions.TvModule);
 

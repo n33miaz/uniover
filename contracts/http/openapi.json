@@ -400,6 +400,27 @@
         ],
         "type": "object"
       },
+      "BindAgentRequest": {
+        "properties": {
+          "agentSlug": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "agentSlug",
+          "name"
+        ],
+        "type": "object"
+      },
       "CatalogCreditsResponse": {
         "properties": {
           "sources": {
@@ -2088,6 +2109,29 @@
         ],
         "type": "object"
       },
+      "TvAgentChoice": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "platform",
+          "online"
+        ],
+        "type": "object"
+      },
       "TvCleanupOk": {
         "properties": {
           "closedApps": {
@@ -2159,6 +2203,46 @@
         "required": [
           "ok",
           "latencyMs"
+        ],
+        "type": "object"
+      },
+      "TvConfigResponse": {
+        "properties": {
+          "agentName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "agentSlug": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "agentStatus": {
+            "type": "string"
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/TvAgentChoice"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "agentSlug",
+          "agentName",
+          "source",
+          "agentStatus",
+          "agents"
         ],
         "type": "object"
       },
@@ -5617,6 +5701,120 @@
         ]
       }
     },
+    "/api/v1/tv/config": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvConfigResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "UniOver.Host"
+        ]
+      }
+    },
+    "/api/v1/tv/config/agent": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BindAgentRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvConfigResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "BindAgentEndpoint"
+        ]
+      }
+    },
     "/api/v1/tv/events": {
       "get": {
         "responses": {
@@ -6415,6 +6613,9 @@
     },
     {
       "name": "StreamEventsEndpoint"
+    },
+    {
+      "name": "BindAgentEndpoint"
     },
     {
       "name": "PullExercisesEndpoint"

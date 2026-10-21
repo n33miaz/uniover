@@ -18,6 +18,9 @@ public static class TvCommandNames
     public const string ShortcutsReorder = "tv.shortcuts.reorder";
     public const string PowerOff = "tv.power-off";
     public const string Cleanup = "tv.cleanup";
+
+    /// <summary>O administrador trocou o computador que controla a TV: não vai à TV, mas redireciona o controle e a trilha guarda quem fez. O detalhe é o computador novo.</summary>
+    public const string ConfigBind = "tv.config.bind";
 }
 
 /// <summary>

@@ -302,15 +302,17 @@ test.describe('ajustes', () => {
       'Segurança',
       'Pessoas',
       'Aparelhos',
+      'Sistema',
       'Sobre',
     ]);
-    await expect(rows).toHaveCount(6);
+    await expect(rows).toHaveCount(7);
     for (const [name, href] of [
       ['Perfil', '/ajustes/perfil'],
       ['Aparência', '/ajustes/aparencia'],
       ['Segurança', '/ajustes/seguranca'],
       ['Pessoas', '/ajustes/pessoas'],
       ['Aparelhos', '/ajustes/aparelhos'],
+      ['Sistema', '/ajustes/sistema'],
       ['Sobre', '/ajustes/sobre'],
     ]) {
       await expect(page.getByRole('link', { name: new RegExp('^' + name) })).toHaveAttribute(
@@ -319,9 +321,9 @@ test.describe('ajustes', () => {
       );
     }
     await expect(page.getByText(`${OWNER.displayName} · Administrador`)).toBeVisible();
-    // Auditoria e Sistema ainda não existem: cartões calmos, sem link nem botão.
+    // A Auditoria ainda não existe: cartão calmo, sem link nem botão.
     const soon = page.locator('ul.soon');
-    await expect(soon.locator('.ui-row-title')).toHaveText(['Auditoria', 'Sistema']);
+    await expect(soon.locator('.ui-row-title')).toHaveText(['Auditoria']);
     await expect(soon.locator('a, button, [tabindex]')).toHaveCount(0);
     await expectNoHorizontalScroll(page);
     await screenshot(page, `test-results/settings-${info.project.name}.png`);

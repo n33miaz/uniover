@@ -269,6 +269,7 @@ test.describe('convidado: só o controle da TV', () => {
       '/ajustes/seguranca',
       '/ajustes/pessoas',
       '/ajustes/aparelhos',
+      '/ajustes/sistema',
       '/ajustes/creditos',
       '/nao-existe',
     ]) {
@@ -286,6 +287,7 @@ test.describe('convidado: só o controle da TV', () => {
       (path) =>
         path.startsWith('/api/v1/devices') ||
         path.startsWith('/api/v1/training') ||
+        path.startsWith('/api/v1/tv/config') ||
         /\/api\/v1\/identity\/(passkeys|guests|guest-invites|step-up)/.test(path),
     );
     expect(outside).toEqual([]);

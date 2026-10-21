@@ -1,0 +1,148 @@
+<section class="section" aria-labelledby="system-tv-title">
+  <h2 id="system-tv-title" class="ui-section-label" i18n="@@settings.system.tv.title">TV</h2>
+
+  @if (config(); as current) {
+    <div class="current ui-card ui-rise">
+      <div class="head">
+        <span class="ui-tile" [class.bad]="broken()"><app-settings-glyph name="tv" /></span>
+        <div class="info">
+          <span class="caption" i18n="@@settings.system.tv.caption"
+            >Computador que controla a TV</span
+          >
+          <strong class="name">{{ currentName() }}</strong>
+        </div>
+        @if (statusView(); as view) {
+          <span
+            class="chip ui-chip"
+            [class.accent]="view.tone === 'accent'"
+            [class.warn]="view.tone === 'warn'"
+            [class.bad]="view.tone === 'bad'"
+            >{{ view.label }}</span
+          >
+        }
+      </div>
+      @if (originText(); as text) {
+        <p class="meta">{{ text }}</p>
+      }
+      @if (offlineHint(); as text) {
+        <p class="meta">{{ text }}</p>
+      }
+    </div>
+
+    @if (warning(); as text) {
+      <p class="warning ui-notice warn ui-rise" role="status">
+        <app-settings-glyph name="alert" />
+        <span>{{ text }}</span>
+      </p>
+    }
+
+    @if (computers().length === 0) {
+      <div class="empty ui-rise">
+        <app-settings-glyph name="laptop" />
+        <p i18n="@@settings.system.tv.empty">
+          Nenhum computador pareado. Pareie o computador de casa em Aparelhos para ele poder
+          controlar a TV.
+        </p>
+      </div>
+      <a
+        routerLink="/ajustes/aparelhos"
+        class="devices-link primary ui-btn block"
+        i18n="@@settings.system.tv.go-devices"
+        >Ir para Aparelhos</a
+      >
+    } @else {
+      <fieldset class="choices">
+        <legend class="ui-section-label" i18n="@@settings.system.tv.choose">
+          Escolher o computador
+        </legend>
+        <ul class="ui-group">
+          @for (computer of computers(); track computer.slug) {
+            <li>
+              <label class="choice ui-row">
+                <input
+                  type="radio"
+                  name="tv-computer"
+                  [value]="computer.slug"
+                  [checked]="selected() === computer.slug"
+                  (change)="choose(computer.slug)"
+                />
+                <span class="ui-row-text">
+                  <span class="ui-row-title">{{ computer.name }}</span>
+                  <span class="ui-row-sub">{{ platform(computer) }}</span>
+                </span>
+                <span class="chip ui-chip" [class.accent]="computer.online">{{
+                  computerState(computer)
+                }}</span>
+              </label>
+            </li>
+          }
+        </ul>
+      </fieldset>
+
+      @if (!online()) {
+        <p class="ui-notice warn ui-rise" role="status" i18n="@@settings.system.tv.offline">
+          Sem conexão: salvar precisa de rede.
+        </p>
+      }
+
+      <button
+        type="button"
+        class="save primary ui-btn block"
+        [disabled]="!canSave() || busy() || !online()"
+        (click)="save()"
+      >
+        @if (busy()) {
+          <span class="ui-spinner" aria-hidden="true"></span>
+          <span i18n="@@settings.system.tv.saving">Salvando…</span>
+        } @else {
+          <span i18n="@@settings.system.tv.save">Salvar</span>
+        }
+      </button>
+      <a
+        routerLink="/ajustes/aparelhos"
+        class="devices-link secondary ui-btn block"
+        i18n="@@settings.system.tv.pair-other"
+        >Parear outro computador</a
+      >
+    }
+  } @else if (loadFailed()) {
+    <p class="empty bad ui-rise" role="alert" i18n="@@settings.system.tv.load-failed">
+      Não foi possível carregar a configuração da TV agora.
+    </p>
+    <button
+      type="button"
+      class="retry secondary ui-btn"
+      (click)="load()"
+      i18n="@@settings.system.tv.retry"
+    >
+      Tentar de novo
+    </button>
+  } @else {
+    <p class="loading" role="status">
+      <span class="ui-spinner" aria-hidden="true"></span>
+      <span i18n="@@settings.system.tv.loading">Carregando…</span>
+    </p>
+    <div class="skeleton-card ui-card" aria-hidden="true">
+      <span class="ui-skeleton bar wide"></span>
+      <span class="ui-skeleton bar"></span>
+    </div>
+  }
+
+  <div class="messages" [attr.aria-live]="'polite'">
+    @if (message(); as text) {
+      <div class="ui-collapse" [animate.leave]="'leaving'">
+        <div class="ui-collapse-inner">
+          <p
+            class="message ui-notice"
+            [class.bad]="messageIsError()"
+            [class.ok]="!messageIsError()"
+            [attr.role]="messageIsError() ? 'alert' : null"
+          >
+            <app-settings-glyph [name]="messageIsError() ? 'alert' : 'checkCircle'" />
+            <span>{{ text }}</span>
+          </p>
+        </div>
+      </div>
+    }
+  </div>
+</section>

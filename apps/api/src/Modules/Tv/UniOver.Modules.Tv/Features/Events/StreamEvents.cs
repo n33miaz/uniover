@@ -19,7 +19,7 @@ internal sealed class StreamEventsHandler(TvStateProvider provider, ITvShortcutR
     /// </summary>
     public async Task<SseSubscription<object>> OpenAsync(Guid userId, CancellationToken cancellationToken)
     {
-        var state = provider.Current();
+        var state = await provider.CurrentAsync(cancellationToken);
         var list = await shortcuts.ListAsync(cancellationToken);
         return broadcaster.Subscribe(
             userId.ToString(),

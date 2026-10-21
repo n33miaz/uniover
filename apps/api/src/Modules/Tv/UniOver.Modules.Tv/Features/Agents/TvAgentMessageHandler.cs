@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.Modules.Devices.Contracts.Agents;
@@ -18,10 +17,11 @@ namespace UniOver.Modules.Tv.Features.Agents;
 /// Trata o que o agente manda por iniciativa própria: o estado da TV, a lista de apps, os eventos do vigia e o relatório
 /// da limpeza (que a requisição HTTP em espera recolhe pelo <c>requestId</c>). O
 /// Devices já validou a mensagem contra o contrato, então os campos existem e têm o tipo certo. Só vale o agente
-/// configurado para controlar a TV: mensagem de outro agente pareado é ignorada.
+/// que controla a TV agora (o salvo no app, ou a variável de reserva): mensagem de outro agente pareado é ignorada,
+/// inclusive a do computador que foi trocado.
 /// </summary>
 internal sealed partial class TvAgentMessageHandler(
-    IOptions<TvModuleOptions> options,
+    ITvAgentResolver agents,
     ITvStateStore state,
     TvStatePersister persister,
     ITvStreamPublisher stream,
@@ -44,8 +44,8 @@ internal sealed partial class TvAgentMessageHandler(
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        var configured = options.Value.AgentId;
-        if (string.IsNullOrWhiteSpace(configured) || !string.Equals(configured, message.AgentId, StringComparison.Ordinal))
+        var binding = await agents.ResolveAsync(cancellationToken);
+        if (!binding.IsConfigured || !string.Equals(binding.AgentSlug, message.AgentId, StringComparison.Ordinal))
         {
             LogIgnored(message.AgentId, message.Type);
             return;

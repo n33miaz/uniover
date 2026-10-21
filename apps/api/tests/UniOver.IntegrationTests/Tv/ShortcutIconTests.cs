@@ -273,7 +273,7 @@ public sealed class ShortcutIconTests(PostgresFixture postgres) : IDisposable
             applied.Add(rows.GetString(0));
         }
 
-        applied.Should().HaveCount(2);
+        applied.Should().HaveCountGreaterThanOrEqualTo(2, "as migrations seguintes só acrescentam");
         applied[0].Should().Be("20261019125652_InitialCreate");
         applied[1].Should().EndWith("_AddShortcutIcons");
     }

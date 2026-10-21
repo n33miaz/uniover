@@ -24,9 +24,22 @@ internal sealed record TvRoute(string Method, string Pattern, string Permission,
 }
 
 /// <summary>
+/// Uma rota da TV que é só do administrador (configuração): sem permissão da TV, papel exatamente administrador e, quando
+/// <paramref name="StepUpAction"/> existe, a confirmação com a passkey dessa ação. Fica fora de <see cref="TvPermissionMap.Routes"/>
+/// de propósito: aquela tabela alimenta a matriz de permissões do convidado, e o convidado nunca passa por aqui.
+/// </summary>
+internal sealed record TvAdminRoute(string Method, string Pattern, string? StepUpAction = null, object? Body = null)
+{
+    public HttpMethod HttpMethod => new(Method);
+
+    public override string ToString() => $"{Method} {Pattern}";
+}
+
+/// <summary>
 /// A tabela rota → permissão da TV, escrita por extenso de propósito (não vem das constantes do código): os testes provam
 /// o que o produto promete, e quem muda uma permissão de rota precisa mudar esta linha de propósito. A rota pública
-/// <c>/tv/info</c> não entra. As varreduras exigem que toda rota da TV esteja aqui e que toda linha tenha a sua rota.
+/// <c>/tv/info</c> não entra. As varreduras exigem que toda rota da TV esteja aqui (ou em <see cref="AdminRoutes"/>) e que
+/// toda linha tenha a sua rota.
 /// </summary>
 internal static class TvPermissionMap
 {
@@ -57,6 +70,16 @@ internal static class TvPermissionMap
         new("GET", "/api/v1/tv/commands/recent", "tv:history"),
     ];
 
+    /// <summary>
+    /// As rotas da TV que só o administrador alcança: ler a configuração (o computador que controla a TV) e trocá-lo, esta
+    /// última com a passkey. Nenhuma delas é de convidado, qualquer que seja a permissão que ele tenha.
+    /// </summary>
+    public static IReadOnlyList<TvAdminRoute> AdminRoutes { get; } =
+    [
+        new("GET", "/api/v1/tv/config"),
+        new("PUT", "/api/v1/tv/config/agent", "tv.bind-agent", new { agentSlug = TvApp.AgentSlug }),
+    ];
+
     /// <summary>A chamada chegou à rota: a autorização deixou passar (o que veio depois é assunto do tratamento dela).</summary>
     public static bool Reached(HttpStatusCode status) => status is not (HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden);
 
@@ -72,6 +95,7 @@ internal static class TvPermissionMap
 
         var found = new List<string>();
         var covered = new HashSet<TvRoute>();
+        var coveredAdmin = new HashSet<TvAdminRoute>();
         foreach (var endpoint in endpoints)
         {
             var pattern = RouteInspector.Pattern(endpoint);
@@ -102,6 +126,15 @@ internal static class TvPermissionMap
 
             foreach (var method in methods)
             {
+                var admin = AdminRoutes.SingleOrDefault(r =>
+                    string.Equals(r.Method, method, StringComparison.OrdinalIgnoreCase) && r.Pattern == pattern);
+                if (admin is not null)
+                {
+                    coveredAdmin.Add(admin);
+                    found.AddRange(AdminViolations(admin, policy, permissions));
+                    continue;
+                }
+
                 var rule = Routes.SingleOrDefault(r =>
                     string.Equals(r.Method, method, StringComparison.OrdinalIgnoreCase) && r.Pattern == pattern);
                 if (rule is null)
@@ -142,6 +175,37 @@ internal static class TvPermissionMap
         }
 
         found.AddRange(Routes.Where(r => !covered.Contains(r)).Select(r => $"{r}: linha da tabela sem rota correspondente"));
+        found.AddRange(AdminRoutes.Where(r => !coveredAdmin.Contains(r)).Select(r => $"{r}: linha de administrador sem rota correspondente"));
         return found;
+    }
+
+    /// <summary>
+    /// Uma rota de administrador: política presente, nenhuma permissão da TV (não é de quem usa a TV), papel exatamente
+    /// administrador, conta ativa não exigida aqui (a política do papel já cobre) e a confirmação da ação quando a linha manda.
+    /// </summary>
+    private static IEnumerable<string> AdminViolations(TvAdminRoute rule, AuthorizationPolicy? policy, List<string> permissions)
+    {
+        if (policy is null)
+        {
+            yield return $"{rule}: sem política";
+            yield break;
+        }
+
+        if (permissions.Count != 0)
+        {
+            yield return $"{rule}: rota de administrador declara a permissão [{string.Join(", ", permissions)}]";
+        }
+
+        var roles = policy.Requirements.OfType<AccountRoleRequirement>().SelectMany(r => r.Roles).ToList();
+        if (roles.Count != 1 || roles[0] != AccountRoles.Owner)
+        {
+            yield return $"{rule}: o papel aceito deveria ser exatamente administrador (aceita [{string.Join(", ", roles)}])";
+        }
+
+        var actions = policy.Requirements.OfType<StepUpRequirement>().Select(r => r.Action).ToList();
+        if (rule.StepUpAction is null ? actions.Count != 0 : !actions.SequenceEqual([rule.StepUpAction]))
+        {
+            yield return $"{rule}: a confirmação com a passkey deveria ser {(rule.StepUpAction is null ? "nenhuma" : $"'{rule.StepUpAction}'")} (a rota exige [{string.Join(", ", actions)}])";
+        }
     }
 }

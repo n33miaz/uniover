@@ -46,6 +46,9 @@ internal sealed record TvAppOptions
     /// "de antes" (convidados que já existiam) e só então as demais migrations rodam: o backfill é exercitado de verdade.
     /// </summary>
     public Func<Modules.Identity.Persistence.IdentityDbContext, Task>? SeedBeforeGrants { get; init; }
+
+    /// <summary>Troca ou acrescenta serviços do host de teste (por exemplo, uma auditoria que falha de propósito).</summary>
+    public Action<IServiceCollection>? ConfigureServices { get; init; }
 }
 
 /// <summary>Os eventos de integração que um assinante de teste recebeu da outbox do módulo Tv.</summary>
@@ -204,6 +207,7 @@ internal sealed class TvApp : IAsyncDisposable
             services.AddSingleton<TvEventsProbe>();
             services.AddScoped<IIntegrationEventHandler<TvStateChanged>, StateChangedProbeHandler>();
             services.AddScoped<IIntegrationEventHandler<TvWatchdogRecorded>, WatchdogProbeHandler>();
+            options.ConfigureServices?.Invoke(services);
         }));
 
         var app = new TvApp(root, factory, database, time, logs, ownerEmail, password) { SigningKey = signingKey };

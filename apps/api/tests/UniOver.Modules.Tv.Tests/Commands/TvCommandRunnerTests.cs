@@ -76,7 +76,7 @@ public class TvCommandRunnerTests
         var stream = new FakeStream();
         var state = new InMemoryTvStateStore();
         var options = Options.Create(new TvModuleOptions { AgentId = agentId, CommandTimeoutSeconds = 8, HibernatingTimeoutSeconds = 15 });
-        var runner = new TvCommandRunner(options, sender, state, audit, stream, TimeProvider.System, NullLogger<TvCommandRunner>.Instance);
+        var runner = new TvCommandRunner(options, new FixedAgentResolver(agentId), sender, state, audit, stream, TimeProvider.System, NullLogger<TvCommandRunner>.Instance);
         return (runner, sender, audit, stream, state);
     }
 

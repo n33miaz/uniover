@@ -10,8 +10,11 @@ public sealed class TvModuleOptions
     public string Version { get; set; } = "0.0.0";
 
     /// <summary>
-    /// Slug do agente que controla a TV. Uma TV tem um dono só: com dois PCs pareados, só este comanda e só as
-    /// mensagens dele valem. Vazio = ninguém configurado (os comandos respondem 503 e a API sobe normalmente).
+    /// Valor de reserva do agente que controla a TV (variável <c>Modules__Tv__AgentId</c>). O que vale é o computador
+    /// que o administrador escolhe em Ajustes, guardado no banco: este valor só entra quando nada foi salvo lá. Uma TV
+    /// tem um dono só: com dois PCs pareados, só o escolhido comanda e só as mensagens dele valem. Vazio e nada salvo =
+    /// ninguém configurado (os comandos respondem 503 e a API sobe normalmente). Quem lê o valor é o
+    /// <c>ITvAgentResolver</c>, nunca esta opção direto.
     /// </summary>
     public string AgentId { get; set; } = string.Empty;
 
