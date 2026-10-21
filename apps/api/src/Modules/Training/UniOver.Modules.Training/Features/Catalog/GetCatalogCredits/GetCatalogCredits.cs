@@ -65,7 +65,8 @@ internal static class GetCatalogCreditsEndpoint
     public static void MapGetCatalogCredits(this IEndpointRouteBuilder group) =>
         group.MapGet("/catalog/credits", async (GetCatalogCreditsHandler handler, CancellationToken cancellationToken) =>
             TypedResults.Ok(await handler.HandleAsync(cancellationToken)))
-            .RequireAuthorization()
+            .RequireAuthorization(TrainingAuth.Module)
             .Produces<CatalogCreditsResponse>()
-            .ProducesProblem(StatusCodes.Status401Unauthorized);
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 }

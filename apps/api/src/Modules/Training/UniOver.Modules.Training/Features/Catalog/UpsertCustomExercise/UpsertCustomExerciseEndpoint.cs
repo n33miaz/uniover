@@ -10,7 +10,7 @@ internal static class UpsertCustomExerciseEndpoint
 {
     public static void MapUpsertCustomExercise(this IEndpointRouteBuilder group) =>
         group.MapPut("/exercises/{id:guid}", HandleAsync)
-            .RequireAuthorization()
+            .RequireAuthorization(TrainingAuth.Module)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces<ExerciseResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)

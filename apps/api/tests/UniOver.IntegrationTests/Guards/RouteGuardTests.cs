@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using UniOver.BuildingBlocks.Web;
 using UniOver.IntegrationTests.Identity;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.IntegrationTests.Training;
 using UniOver.IntegrationTests.Tv;
 
 namespace UniOver.IntegrationTests.Guards;
@@ -345,6 +346,120 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
 
         (await TvViolationsOfAsync(route)).Should().Contain(v =>
             v.StartsWith("GET /api/v1/tv/config:", StringComparison.Ordinal) && v.Contains("deveria ser nenhuma", StringComparison.Ordinal));
+    }
+
+    // O Treino: cada rota declara uma política NOMEADA e a permissão da tabela (rota -> permissão); a varredura morde quando não.
+
+    [Theory]
+    [MemberData(nameof(Environments))]
+    public async Task EveryTrainingRoute_DeclaresANamedPolicyAndItsPermission_AsInTheMap(string environment)
+    {
+        await using var factory = await StartAsync(environment);
+        var routes = RoutesOf(factory);
+        var policies = factory.Services.GetRequiredService<IAuthorizationPolicyProvider>();
+
+        routes.Count(r => RouteInspector.Pattern(r).StartsWith("/api/v1/training/", StringComparison.Ordinal))
+            .Should().BeGreaterThanOrEqualTo(TrainingPermissionMap.Routes.Count + TrainingPermissionMap.AdminRoutes.Count, "a varredura precisa ter visto as 14 rotas do Treino");
+        (await TrainingPermissionMap.ViolationsAsync(routes, policies)).Should().BeEmpty(
+            "toda rota do Treino cita uma política nomeada, com a permissão da sua linha (ou a do dono, na importação), e nenhuma rota de outro módulo carrega a permissão do Treino");
+    }
+
+    private static Task<List<string>> TrainingViolationsOfAsync(params RouteEndpoint[] routes) =>
+        TrainingPermissionMap.ViolationsAsync(routes, PermissionPolicies());
+
+    [Fact]
+    public async Task TrainingScan_RejectsATrainingRouteWithABareRequireAuthorization_ThatFallsOnTheOwnerOnlyDefault()
+    {
+        var route = Endpoint("/api/v1/training/routines", new HttpMethodMetadata(["GET"]), new Authorize());
+
+        (await TrainingViolationsOfAsync(route)).Should().Contain(v => v.Contains("GET /api/v1/training/routines", StringComparison.Ordinal) && v.Contains("sem política nomeada", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TrainingScan_RejectsATrainingRouteWithoutAnyPolicy()
+    {
+        var route = Endpoint("/api/v1/training/routines", new HttpMethodMetadata(["GET"]));
+
+        (await TrainingViolationsOfAsync(route)).Should().Contain(v => v.Contains("sem política nomeada", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TrainingScan_RejectsATrainingRouteOnTheOwnerOnlyPolicy_WhichWouldShutTheMembersOut()
+    {
+        var route = Endpoint("/api/v1/training/routines", new HttpMethodMetadata(["GET"]), new Authorize { Policy = UniOverAuth.OwnerPolicy });
+
+        (await TrainingViolationsOfAsync(route)).Should().Contain(v =>
+            v.StartsWith("GET /api/v1/training/routines:", StringComparison.Ordinal) && v.Contains("module:training", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TrainingScan_RejectsATrainingRouteThatDeclaresAnotherPermission()
+    {
+        var route = Endpoint(
+            "/api/v1/training/routines", new HttpMethodMetadata(["GET"]), new Authorize { Policy = AccessPermissions.Policy(AccessPermissions.TvControl) });
+
+        (await TrainingViolationsOfAsync(route)).Should().Contain(v => v.Contains("declara [tv:control]", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TrainingScan_RejectsANewTrainingRouteThatIsNotInTheTable()
+    {
+        var route = Endpoint(
+            "/api/v1/training/medidas", new HttpMethodMetadata(["PUT"]), new Authorize { Policy = AccessPermissions.Policy(AccessPermissions.TrainingModule) });
+
+        (await TrainingViolationsOfAsync(route)).Should().Contain(v => v.Contains("PUT /api/v1/training/medidas", StringComparison.Ordinal) && v.Contains("fora do mapa", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TrainingScan_RejectsTheCatalogImportOpenToTheMembers()
+    {
+        var route = Endpoint(
+            "/api/v1/training/catalog/imports/wger", new HttpMethodMetadata(["POST"]), new Authorize { Policy = AccessPermissions.Policy(AccessPermissions.TrainingModule) });
+
+        var violations = await TrainingViolationsOfAsync(route);
+
+        violations.Should().Contain(v => v.StartsWith("POST /api/v1/training/catalog/imports/wger:", StringComparison.Ordinal) && v.Contains("permissão [module:training]", StringComparison.Ordinal));
+        violations.Should().Contain(v => v.StartsWith("POST /api/v1/training/catalog/imports/wger:", StringComparison.Ordinal) && v.Contains("exatamente administrador", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TrainingScan_RejectsTheCatalogImportWithoutTheNamedOwnerPolicy()
+    {
+        var route = Endpoint("/api/v1/training/catalog/imports/wger", new HttpMethodMetadata(["POST"]), new Authorize());
+
+        (await TrainingViolationsOfAsync(route)).Should().Contain(v => v.Contains("sem política nomeada", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TrainingScan_RejectsTheTrainingPermissionOnARouteOutsideTheTraining()
+    {
+        var route = Endpoint(
+            "/api/v1/tv/state", new HttpMethodMetadata(["GET"]), new Authorize { Policy = AccessPermissions.Policy(AccessPermissions.TrainingModule) });
+
+        (await TrainingViolationsOfAsync(route)).Should().Contain(v => v.Contains("rota fora do Treino com a permissão do Treino 'module:training'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TrainingScan_AcceptsTheRoutesDeclaredAsTheTableSays()
+    {
+        var read = Endpoint(
+            "/api/v1/training/routines", new HttpMethodMetadata(["GET"]), new Authorize { Policy = AccessPermissions.Policy(AccessPermissions.TrainingModule) });
+        var import = Endpoint("/api/v1/training/catalog/imports/wger", new HttpMethodMetadata(["POST"]), new Authorize { Policy = UniOverAuth.OwnerPolicy });
+
+        var violations = await TrainingViolationsOfAsync(read, import);
+
+        // As demais linhas da tabela ficam sem rota (só há duas montadas), mas as rotas certas não geram violação própria.
+        violations.Should().NotContain(v => v.StartsWith("GET /api/v1/training/routines:", StringComparison.Ordinal));
+        violations.Should().NotContain(v => v.StartsWith("POST /api/v1/training/catalog/imports/wger:", StringComparison.Ordinal));
+        violations.Should().OnlyContain(v => v.Contains("sem rota correspondente", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TrainingScan_FlagsEveryTableRowThatHasNoRoute()
+    {
+        var violations = await TrainingPermissionMap.ViolationsAsync([], PermissionPolicies());
+
+        violations.Should().HaveCount(TrainingPermissionMap.Routes.Count + TrainingPermissionMap.AdminRoutes.Count);
     }
 
     [Fact]

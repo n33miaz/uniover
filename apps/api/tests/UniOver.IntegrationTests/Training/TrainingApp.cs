@@ -13,7 +13,10 @@ using Npgsql;
 using UniOver.BuildingBlocks.Persistence;
 using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Identity;
+using UniOver.IntegrationTests.Identity.Guests;
+using UniOver.IntegrationTests.Identity.Passkeys;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.IntegrationTests.Messaging;
 using UniOver.Modules.Identity.Bootstrap;
 using UniOver.Modules.Training.Persistence;
 using UniOver.Modules.Training.Ports;
@@ -38,6 +41,12 @@ internal sealed record TrainingAppOptions
 
     /// <summary>Registra o SQL do EF no log capturado (para provar quando o módulo consulta o banco).</summary>
     public bool CaptureSql { get; init; }
+
+    /// <summary>
+    /// Relógio falso no lugar do relógio do sistema (<see cref="TrainingApp.Time"/>), para os testes que andam o tempo
+    /// (o cache curto das permissões). Desligado por padrão: os testes de dados do Treino usam o relógio de verdade.
+    /// </summary>
+    public bool FakeClock { get; init; }
 }
 
 /// <summary>
@@ -51,12 +60,13 @@ internal sealed class TrainingApp : IAsyncDisposable
 
     private TrainingApp(
         EdgeFactory root, WebApplicationFactory<Program> factory, TestDatabase database, CapturingLoggerProvider logs,
-        string ownerEmail, string ownerPassword)
+        string ownerEmail, string ownerPassword, FakeTimeProvider? time)
     {
         _root = root;
         _factory = factory;
         Database = database;
         Logs = logs;
+        Time = time;
         OwnerEmail = ownerEmail;
         OwnerPassword = ownerPassword;
         Client = factory.CreateClient(new WebApplicationFactoryClientOptions
@@ -68,6 +78,9 @@ internal sealed class TrainingApp : IAsyncDisposable
     }
 
     public TestDatabase Database { get; }
+
+    /// <summary>O relógio falso, só quando <see cref="TrainingAppOptions.FakeClock"/> está ligado.</summary>
+    public FakeTimeProvider? Time { get; }
 
     public CapturingLoggerProvider Logs { get; }
 
@@ -105,6 +118,10 @@ internal sealed class TrainingApp : IAsyncDisposable
         var password = IdentityApp.NewPassword();
         var ownerEmail = "dono@uniover.test";
         var logs = new CapturingLoggerProvider();
+        var time = options.FakeClock
+            ? new FakeTimeProvider(
+                new DateTimeOffset(DateTimeOffset.UtcNow.Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond, TimeSpan.Zero))
+            : null;
 
         var settings = new Dictionary<string, string?>
         {
@@ -130,6 +147,12 @@ internal sealed class TrainingApp : IAsyncDisposable
         var factory = root.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<ILoggerProvider>(logs);
+            if (time is not null)
+            {
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton<TimeProvider>(time);
+            }
+
             if (options.Wger is { } wger)
             {
                 services.RemoveAll<IWgerClient>();
@@ -137,7 +160,7 @@ internal sealed class TrainingApp : IAsyncDisposable
             }
         }));
 
-        var app = new TrainingApp(root, factory, database, logs, ownerEmail, password);
+        var app = new TrainingApp(root, factory, database, logs, ownerEmail, password, time);
         await factory.Services.GetRequiredService<OwnerBootstrapService>().Completion;
         return app;
     }
@@ -174,6 +197,71 @@ internal sealed class TrainingApp : IAsyncDisposable
         payload = payload.PadRight(payload.Length + ((4 - (payload.Length % 4)) % 4), '=');
         using var json = JsonDocument.Parse(Convert.FromBase64String(payload));
         return Guid.Parse(json.RootElement.GetProperty("sub").GetString()!);
+    }
+
+    /// <summary>
+    /// Pessoa convidada nova com as permissões dadas (convite gravado direto no banco, aceite pelo HTTP de verdade). Cada
+    /// uma aceita vinda de um IP próprio: o limite do aceite é por IP, e uma matriz de testes cria várias pessoas.
+    /// </summary>
+    public async Task<GuestSession> NewGuestAsync(string label, IReadOnlyCollection<string>? permissions, int ipSuffix)
+    {
+        var (_, token) = await GuestSeed.InsertInviteAsync(
+            Database, Time?.GetUtcNow() ?? DateTimeOffset.UtcNow, label, permissions: permissions);
+        return await AcceptInviteAsync(token, ipSuffix);
+    }
+
+    /// <summary>Aceita um convite (o segredo do link) com e-mail e senha novos e devolve a sessão da pessoa.</summary>
+    public async Task<GuestSession> AcceptInviteAsync(string inviteToken, int ipSuffix)
+    {
+        var email = GuestSeed.NewEmail();
+        var password = GuestSeed.NewPassword();
+        using var response = await GuestSeed.AcceptAsync(
+            Client, inviteToken, email, password, forwardedFor: $"203.0.113.{ipSuffix}");
+        var login = await GuestSeed.ReadLoginAsync(response);
+
+        await using var identity = IdentityApp.CreateContext(Database.OwnerConnection);
+        var user = await identity.Users.SingleAsync(u => u.Email == email, TestContext.Current.CancellationToken);
+        return new GuestSession(user.Id, email, password, login);
+    }
+
+    /// <summary>Cadastra a passkey do administrador num autenticador virtual (pré-requisito das ações que pedem confirmação).</summary>
+    public async Task RegisterPasskeyAsync(LoggedIn owner, VirtualAuthenticator authenticator)
+    {
+        using var options = await SendAsync(
+            HttpMethod.Post, "/api/v1/identity/passkeys/registration/options", new { password = OwnerPassword }, owner.AccessToken);
+        options.EnsureSuccessStatusCode();
+        var body = await JsonAsync(options);
+
+        using var complete = await SendAsync(
+            HttpMethod.Post,
+            "/api/v1/identity/passkeys/registration/complete",
+            new
+            {
+                challengeId = body.GetProperty("challengeId").GetGuid(),
+                name = "teste",
+                credential = authenticator.CreateAttestation(body.GetProperty("options")),
+            },
+            owner.AccessToken);
+        complete.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>Confirmação por passkey de uma ação do administrador (vale por poucos minutos e só para essa ação).</summary>
+    public async Task ConfirmAsync(LoggedIn owner, VirtualAuthenticator authenticator, string action)
+    {
+        using var options = await SendAsync(HttpMethod.Post, "/api/v1/identity/step-up/options", new { action }, owner.AccessToken);
+        options.EnsureSuccessStatusCode();
+        var body = await JsonAsync(options);
+
+        using var complete = await SendAsync(
+            HttpMethod.Post,
+            "/api/v1/identity/step-up/complete",
+            new
+            {
+                challengeId = body.GetProperty("challengeId").GetGuid(),
+                credential = authenticator.CreateAssertion(body.GetProperty("options")),
+            },
+            owner.AccessToken);
+        complete.EnsureSuccessStatusCode();
     }
 
     public async Task<HttpResponseMessage> SendAsync(

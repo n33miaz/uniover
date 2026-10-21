@@ -1902,6 +1902,15 @@ export interface paths {
             'application/problem+json': components['schemas']['ProblemDetails'];
           };
         };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
       };
     };
     put?: never;
@@ -1943,6 +1952,15 @@ export interface paths {
         };
         /** @description Unauthorized */
         401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
           headers: {
             [name: string]: unknown;
           };
@@ -2024,6 +2042,15 @@ export interface paths {
         };
         /** @description Unauthorized */
         401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
           headers: {
             [name: string]: unknown;
           };
@@ -2186,6 +2213,15 @@ export interface paths {
             'application/problem+json': components['schemas']['ProblemDetails'];
           };
         };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
         /** @description Not Found */
         404: {
           headers: {
@@ -2268,6 +2304,15 @@ export interface paths {
             'application/problem+json': components['schemas']['ProblemDetails'];
           };
         };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
       };
     };
     put?: never;
@@ -2321,6 +2366,15 @@ export interface paths {
         };
         /** @description Unauthorized */
         401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
           headers: {
             [name: string]: unknown;
           };
@@ -2389,6 +2443,15 @@ export interface paths {
             'application/problem+json': components['schemas']['ProblemDetails'];
           };
         };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
       };
     };
     put?: never;
@@ -2438,6 +2501,15 @@ export interface paths {
         };
         /** @description Unauthorized */
         401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
           headers: {
             [name: string]: unknown;
           };
@@ -2498,6 +2570,15 @@ export interface paths {
         };
         /** @description Unauthorized */
         401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
           headers: {
             [name: string]: unknown;
           };
@@ -2587,6 +2668,15 @@ export interface paths {
             'application/problem+json': components['schemas']['ProblemDetails'];
           };
         };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
       };
     };
     put?: never;
@@ -2640,6 +2730,15 @@ export interface paths {
         };
         /** @description Unauthorized */
         401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
           headers: {
             [name: string]: unknown;
           };
@@ -2743,6 +2842,15 @@ export interface paths {
             'application/problem+json': components['schemas']['ProblemDetails'];
           };
         };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
         /** @description Not Found */
         404: {
           headers: {
@@ -2818,6 +2926,15 @@ export interface paths {
         };
         /** @description Unauthorized */
         401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
           headers: {
             [name: string]: unknown;
           };

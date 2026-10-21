@@ -51,10 +51,11 @@ internal sealed class PullSetsHandler(TrainingDbContext db)
 internal static class PullSetsEndpoint
 {
     public static void MapPullSets(this IEndpointRouteBuilder group) =>
-        group.MapGet("/sets", HandleAsync).RequireAuthorization()
+        group.MapGet("/sets", HandleAsync).RequireAuthorization(TrainingAuth.Module)
             .Produces<PullSetsResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
-            .ProducesProblem(StatusCodes.Status401Unauthorized);
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
     private static async Task<IResult> HandleAsync(
         ICurrentUser current,

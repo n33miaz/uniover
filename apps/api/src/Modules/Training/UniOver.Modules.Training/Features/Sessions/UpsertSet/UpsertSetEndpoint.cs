@@ -10,11 +10,12 @@ internal static class UpsertSetEndpoint
 {
     public static void MapUpsertSet(this IEndpointRouteBuilder group) =>
         group.MapPut("/sessions/{sessionId:guid}/sets/{id:guid}", HandleAsync)
-            .RequireAuthorization()
+            .RequireAuthorization(TrainingAuth.Module)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces<SetResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)

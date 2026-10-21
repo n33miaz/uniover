@@ -9,10 +9,11 @@ namespace UniOver.Modules.Training.Features.Catalog.PullExercises;
 internal static class PullExercisesEndpoint
 {
     public static void MapPullExercises(this IEndpointRouteBuilder group) =>
-        group.MapGet("/exercises", HandleAsync).RequireAuthorization()
+        group.MapGet("/exercises", HandleAsync).RequireAuthorization(TrainingAuth.Module)
             .Produces<PullExercisesResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
-            .ProducesProblem(StatusCodes.Status401Unauthorized);
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
 
     private static async Task<IResult> HandleAsync(
         ICurrentUser current,

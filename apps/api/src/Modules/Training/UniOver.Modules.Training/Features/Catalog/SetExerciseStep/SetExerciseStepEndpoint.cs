@@ -51,11 +51,12 @@ internal static class SetExerciseStepEndpoint
 {
     public static void MapSetExerciseStep(this IEndpointRouteBuilder group) =>
         group.MapPut("/exercises/{id:guid}/step", HandleAsync)
-            .RequireAuthorization()
+            .RequireAuthorization(TrainingAuth.Module)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces<ExerciseResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status429TooManyRequests)
