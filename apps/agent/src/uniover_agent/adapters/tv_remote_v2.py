@@ -69,9 +69,23 @@ KEY_CODES: Final[Mapping[str, str]] = {
     **{f"NUM_{digit}": f"KEYCODE_{digit}" for digit in range(10)},
 }
 
+# Teclas de digitação (`TYPE_*`): letras minúsculas, espaço e pontuação simples, para o agente
+# digitar sem passar pelo ADB. Os dígitos usam as teclas `NUM_*` do contrato. São só as teclas
+# **sem SHIFT**: a biblioteca aceita `SHIFT_LEFT` com `START_LONG` e `END_LONG`, mas ninguém mediu
+# se o serviço da TV aplica o SHIFT à tecla seguinte, então maiúsculas ficam de fora (ver
+# `core/tv/text_edit.py`, que decide quais caracteres usam estas teclas).
+TYPING_KEY_CODES: Final[Mapping[str, str]] = {
+    **{f"TYPE_{letter}": f"KEYCODE_{letter}" for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"},
+    "TYPE_SPACE": "KEYCODE_SPACE",
+    "TYPE_PERIOD": "KEYCODE_PERIOD",
+    "TYPE_COMMA": "KEYCODE_COMMA",
+    "TYPE_MINUS": "KEYCODE_MINUS",
+    "TYPE_SLASH": "KEYCODE_SLASH",
+}
+
 # Teclas de edição de texto: não fazem parte do contrato de teclas (a API não as envia); só o
-# agente as usa, para apagar o que ele mesmo digitou.
-EDIT_KEY_CODES: Final[Mapping[str, str]] = {"DEL": "KEYCODE_DEL"}
+# agente as usa, para apagar e digitar o que o dono escreve.
+EDIT_KEY_CODES: Final[Mapping[str, str]] = {"DEL": "KEYCODE_DEL", **TYPING_KEY_CODES}
 
 
 class RemoteClient(Protocol):
@@ -208,7 +222,10 @@ class AndroidTvRemoteV2:
     async def send_key(self, key: str, direction: str = "SHORT") -> None:
         code = KEY_CODES.get(key) or EDIT_KEY_CODES.get(key)
         if code is None:
-            raise ValueError(f"tecla desconhecida: {key}")
+            # Uma tecla `TYPE_*` desconhecida é um caractere do que o dono digita (pode ser uma
+            # senha): a mensagem não a repete.
+            hint = "" if key.startswith("TYPE_") else f": {key}"
+            raise ValueError(f"tecla desconhecida{hint}")
         if direction not in DIRECTIONS:
             raise ValueError(f"direção desconhecida: {direction}")
         client = self._require()
@@ -225,9 +242,10 @@ class AndroidTvRemoteV2:
             raise TvUnreachable("a conexão com a TV fechou") from None
 
     async def send_text(self, text: str) -> None:
-        # A biblioteca manda o campo inteiro (`value=text`, cursor no fim): o texto substitui o que
-        # a TV tem no campo em foco. Vazio ela recusa com `ValueError`, e o protocolo não oferece
-        # outro jeito de limpar o campo; por isso aqui também é erro de programação.
+        # A TV **insere** o trecho no campo em foco (observado: reenviar o campo inteiro duplicava
+        # as letras), então quem chama manda só o acréscimo. A biblioteca usa os contadores que a TV
+        # empurra a cada edição. Vazio ela recusa com `ValueError`, e o protocolo não oferece outro
+        # jeito de limpar o campo (apagar é com `DEL`); por isso aqui também é erro de programação.
         if not text:
             raise ValueError("texto vazio não pode ser enviado à TV")
         client = self._require()

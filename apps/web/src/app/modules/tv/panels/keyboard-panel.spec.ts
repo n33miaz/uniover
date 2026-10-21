@@ -4,8 +4,8 @@ import { TvStore } from '../data/tv-store';
 import { FakeTvStore, createFakeTvStore } from '../tv-test-kit';
 import { KeyboardPanel } from './keyboard-panel';
 
-/** Pausa de digitação padrão do módulo (`TV_CONFIG.textDebounceMs`). */
-const PAUSE_MS = 250;
+/** Cauda padrão do módulo (`TV_CONFIG.textTailMs`): o intervalo mínimo entre dois envios. */
+const TAIL_MS = 100;
 
 describe('KeyboardPanel', () => {
   let store: FakeTvStore;
@@ -18,7 +18,7 @@ describe('KeyboardPanel', () => {
     await vi.advanceTimersByTimeAsync(0);
     fixture.detectChanges();
   };
-  const pause = async (ms = PAUSE_MS) => {
+  const pause = async (ms = TAIL_MS) => {
     await vi.advanceTimersByTimeAsync(ms);
     fixture.detectChanges();
   };
@@ -96,13 +96,18 @@ describe('KeyboardPanel', () => {
     expect(store.sendText).not.toHaveBeenCalled();
   });
 
-  it('sends the whole text after a pause, without anyone pressing anything, and keeps the field', async () => {
+  it('sends the first letter at once, then the whole text after the tail, and keeps the field', async () => {
+    await type('b');
+    // Primeira mudança: vai na hora, sem pausa e sem apertar nada.
+    expect(store.sendText).toHaveBeenCalledTimes(1);
+    expect(store.sendText).toHaveBeenLastCalledWith('b');
+    await type('ba');
     await type('bat');
     await type('batman');
-    expect(store.sendText).not.toHaveBeenCalled();
-    await pause();
     expect(store.sendText).toHaveBeenCalledTimes(1);
-    expect(store.sendText).toHaveBeenCalledWith('batman');
+    await pause();
+    expect(store.sendText).toHaveBeenCalledTimes(2);
+    expect(store.sendText).toHaveBeenLastCalledWith('batman');
     await render();
     expect(input().value).toBe('batman');
     expect(status()).toBe('Texto na TV.');
@@ -121,7 +126,6 @@ describe('KeyboardPanel', () => {
     let finish: (failure: TvFailure | null) => void = () => undefined;
     store.sendText.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
     await type('bat');
-    await pause();
     expect(status()).toBe('Enviando para a TV…');
     finish(null);
     await render();
@@ -157,12 +161,21 @@ describe('KeyboardPanel', () => {
     expect(status()).toBe('Texto na TV.');
   });
 
-  it('never sends an empty field and does not clear the TV', async () => {
+  it('erasing down to empty sends the empty text, so the TV field empties too', async () => {
     await type('bat');
     await pause();
+    await type('ba');
+    await pause();
     await type('');
-    await pause(2000);
-    expect(store.sendText).toHaveBeenCalledTimes(1);
+    await pause();
+    expect(store.sendText.mock.calls.map((call) => call[0])).toEqual(['bat', 'ba', '']);
+    await render();
+    expect(status()).toBe('Campo da TV limpo.');
+  });
+
+  it('opening and closing the panel without typing sends nothing', () => {
+    fixture.destroy();
+    expect(store.sendText).not.toHaveBeenCalled();
   });
 
   it('refuses more than 200 characters, counting characters and not UTF-16 units', async () => {
@@ -176,32 +189,52 @@ describe('KeyboardPanel', () => {
     await type('😀'.repeat(200));
     expect(root.querySelector('.count')?.textContent?.trim()).toBe('200 / 200');
     expect(input().getAttribute('aria-invalid')).toBeNull();
-    await pause();
     expect(store.sendText).toHaveBeenCalledTimes(1);
   });
 
-  it('Enter sends right away, without waiting for the pause', async () => {
+  it('Enter sends right away, without waiting for the tail', async () => {
+    await type('b');
     await type('bat');
+    expect(store.sendText).toHaveBeenCalledTimes(1);
     root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
-    expect(store.sendText).toHaveBeenCalledWith('bat');
+    expect(store.sendText).toHaveBeenLastCalledWith('bat');
   });
 
-  it('Limpar empties only the phone field, sends nothing and drops the pending text', async () => {
+  it('Limpar empties the phone field and the TV field too, at once', async () => {
     await type('bat');
+    await pause();
+    expect(store.sendText).toHaveBeenCalledTimes(1);
     buttonByText('Limpar').click();
     await render();
     expect(input().value).toBe('');
+    expect(store.sendText.mock.calls.map((call) => call[0])).toEqual(['bat', '']);
+    await render();
+    expect(status()).toBe('Campo da TV limpo.');
     await pause(2000);
-    expect(store.sendText).not.toHaveBeenCalled();
+    expect(store.sendText).toHaveBeenCalledTimes(2);
     expect(buttonByText('Limpar').disabled).toBe(true);
   });
 
-  it('Fechar asks the panel to close, and what was still pending is sent when it goes away', async () => {
+  it('Limpar while the text is still going out sends the empty text right after it', async () => {
+    let finish: (failure: TvFailure | null) => void = () => undefined;
+    store.sendText.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
     await type('bat');
+    buttonByText('Limpar').click();
+    await render();
+    expect(store.sendText).toHaveBeenCalledTimes(1);
+    finish(null);
+    await render();
+    expect(store.sendText.mock.calls.map((call) => call[0])).toEqual(['bat', '']);
+  });
+
+  it('Fechar asks the panel to close, and what was still pending is sent when it goes away', async () => {
+    await type('b');
+    await type('bat');
+    expect(store.sendText).toHaveBeenCalledTimes(1);
     buttonByText('Fechar').click();
     expect(done).toHaveBeenCalledTimes(1);
     fixture.destroy();
-    expect(store.sendText).toHaveBeenCalledWith('bat');
+    expect(store.sendText).toHaveBeenLastCalledWith('bat');
   });
 
   it('turns off autocorrect and capitalization for a field that goes to a TV', () => {

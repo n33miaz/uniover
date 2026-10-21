@@ -59,9 +59,12 @@ interface CachedTv {
   readonly shortcuts: TvShortcut[] | null;
 }
 
-/** Texto digitado válido para a API: 1 a 200 caracteres, sem quebra de linha nem outros caracteres de controle. */
+/**
+ * Texto digitado válido para a API: 0 a 200 caracteres, sem quebra de linha nem outros caracteres de controle. O vazio
+ * é válido: significa "apague o que o agente digitou", e é como o campo da TV esvazia quando se apaga o texto.
+ */
 export function isValidTvText(text: string): boolean {
-  if (text.length === 0 || [...text].length > TV_TEXT_MAX) return false;
+  if ([...text].length > TV_TEXT_MAX) return false;
   // eslint-disable-next-line no-control-regex
   return !/[\u0000-\u001f\u007f-\u009f]/.test(text);
 }
@@ -251,10 +254,10 @@ export class TvStore {
   }
 
   /**
-   * Põe `text` no campo que estiver aberto na TV (o agente trata cada envio como "o campo passa a ser este texto").
-   * Sem aviso flutuante, nem de sucesso nem de falha: a aba Teclado manda a cada pausa de digitação e mostra o
-   * resultado dentro da própria tela. Devolve `null` se a TV confirmou, ou a falha (que também atualiza o que se sabe
-   * do agente, como `agent-offline`).
+   * Põe `text` no campo que estiver aberto na TV (o agente trata cada envio como "o campo passa a ser este texto";
+   * vazio apaga tudo o que ele digitou). Sem aviso flutuante, nem de sucesso nem de falha: a aba Teclado manda a
+   * cada mudança do campo e mostra o resultado dentro da própria tela. Devolve `null` se a TV confirmou, ou a falha
+   * (que também atualiza o que se sabe do agente, como `agent-offline`).
    */
   async sendText(text: string): Promise<TvFailure | null> {
     if (!this.canSend()) {
@@ -267,7 +270,7 @@ export class TvStore {
     if (!isValidTvText(text)) {
       return {
         kind: 'invalid',
-        message: $localize`:@@tv.keyboard.invalid:Escreva de 1 a 200 caracteres, sem quebra de linha.`,
+        message: $localize`:@@tv.keyboard.invalid:Escreva até 200 caracteres, sem quebra de linha.`,
         retryAfterSeconds: null,
       };
     }

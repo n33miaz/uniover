@@ -21,10 +21,11 @@ class TvRemote(TvChannel, Protocol):
         ...
 
     async def send_text(self, text: str) -> None:
-        """Define o conteúdo do campo de texto em foco na TV: o texto **substitui** o que havia.
+        """Digita `text` no campo de texto em foco na TV: a TV **insere** o trecho (não substitui).
 
-        Não acrescenta ao campo. Texto vazio não é aceito (o protocolo não tem como limpar o campo
-        por este canal). Sem campo em foco a TV ignora o envio em silêncio.
+        Quem chama manda só o acréscimo; reenviar o campo inteiro duplicaria as letras. Texto vazio
+        não é aceito (o protocolo não tem como limpar o campo por este canal: apagar é com a tecla
+        `DEL`). Sem campo em foco a TV ignora o envio em silêncio.
 
         Levanta `TvUnreachable` se o canal não está aberto.
         """

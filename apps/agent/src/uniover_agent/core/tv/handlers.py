@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import time
+from collections.abc import Callable
 from typing import Final, Protocol
 from urllib.parse import urlsplit
 
@@ -75,7 +77,12 @@ def tv_key_handler(tv: TvControl, *, blocked_keys: frozenset[str] = frozenset())
     return handle
 
 
-def tv_text_handler(tv: TvControl, *, reconciler: TextReconciler | None = None) -> Handler:
+def tv_text_handler(
+    tv: TvControl,
+    *,
+    reconciler: TextReconciler | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> Handler:
     """`tv.text.v1`: o campo de texto em foco na TV passa a ter este texto.
 
     O app manda o texto completo a cada pausa de digitação. O agente não reenvia o campo inteiro (o
@@ -85,7 +92,8 @@ def tv_text_handler(tv: TvControl, *, reconciler: TextReconciler | None = None) 
 
     As mensagens são atendidas uma a uma, na ordem de chegada, e se uma mais nova já chegou enquanto
     a anterior esperava a vez (a TV acordando, por exemplo), a antiga é descartada: o diff é sempre
-    contra o último texto pedido, então pular um estado intermediário é seguro.
+    contra o último texto pedido, então pular um estado intermediário é seguro. Quanto cada
+    mensagem esperou a vez entra no resumo do log (nunca o texto).
     """
     editor = reconciler or TextReconciler(tv)
     turn = asyncio.Lock()
@@ -96,14 +104,17 @@ def tv_text_handler(tv: TvControl, *, reconciler: TextReconciler | None = None) 
         text = command.body.get("text")
         if not isinstance(text, str):
             return CommandResult(command.id, ResultStatus.REJECTED, "campo 'text' ausente")
+        arrived = monotonic()
         latest += 1
         mine = latest
         async with turn:
+            queued = monotonic() - arrived
             if mine != latest:
                 # Já existe um texto mais novo na fila; ele é quem vai para a TV.
+                _log.info("texto descartado: chegou um mais novo | ms vez=%d", round(queued * 1000))
                 return CommandResult(command.id, ResultStatus.OK)
             try:
-                await editor.set_text(text)
+                await editor.set_text(text, queued=queued)
             except TvSessionError as exc:
                 return failed_result(command, exc)
         return CommandResult(command.id, ResultStatus.OK)

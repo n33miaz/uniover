@@ -105,6 +105,32 @@ async def test_the_composed_key_handler_accepts_power_and_blocks_nothing(
     assert [key for key, _ in remote.sent] == ["POWER", "HOME", "MUTE", "VOLUME_DOWN"]
 
 
+async def test_typing_by_keys_is_off_unless_the_settings_turn_it_on(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    remote = FakeTvRemote()
+    pair_fake_tv(monkeypatch, remote)
+    with caplog.at_level(logging.INFO):
+        default = make_tv(Settings(tv_host=TV_HOST))
+    assert default is not None
+    assert default.text is not None
+    assert default.text.keys_enabled is False
+    assert "desligadas" in caplog.text
+    await default.handlers["tv.text.v1"](Command("1", "tv.text.v1", {"text": "mat"}))
+    assert (remote.keys, remote.texts) == ([], ["mat"])
+
+    remote.keys.clear()
+    remote.texts.clear()
+    with caplog.at_level(logging.INFO):
+        wired = make_tv(Settings(tv_host=TV_HOST, tv_text_by_keys=True, tv_text_key_pause_ms=20))
+    assert wired is not None
+    assert wired.text is not None
+    assert wired.text.keys_enabled is True
+    assert "teclas do controle remoto ligadas" in caplog.text
+    await wired.handlers["tv.text.v1"](Command("2", "tv.text.v1", {"text": "mat"}))
+    assert (remote.keys, remote.texts) == (["TYPE_M", "TYPE_A", "TYPE_T"], [])
+
+
 async def test_without_a_tv_the_tv_commands_are_refused() -> None:
     handler = build_handler(FakeClock())
     result = await handler(Command("1", "tv.wake.v1", {}))

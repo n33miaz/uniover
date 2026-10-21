@@ -246,6 +246,24 @@ async def test_command_timeout_is_typed_and_closes_the_channel_state() -> None:
 # --- um comando por vez -------------------------------------------------------------------------
 
 
+async def test_input_text_records_how_long_it_waited_for_the_lock() -> None:
+    clock = Clock()
+    runner = authorized()
+    runner.script[shell("input text 'a'")] = ok("")
+    adb = make(runner, clock)
+    await adb.connect()
+    assert adb.last_input_wait_seconds == 0.0
+    # A lista de apps (ou uma consulta de ícones) segurando a trava enquanto alguém digita.
+    async with adb._lock:
+        pending = asyncio.create_task(adb.input_text("a"))
+        await asyncio.sleep(0)
+        clock.now = 2.5
+    await pending
+    assert adb.last_input_wait_seconds == 2.5
+    await adb.input_text("a")
+    assert adb.last_input_wait_seconds == 0.0
+
+
 async def test_commands_never_overlap() -> None:
     runner = authorized()
     runner.delay = 0.01

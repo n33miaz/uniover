@@ -212,6 +212,46 @@ async def test_the_edit_key_that_erases_goes_on_the_wire_as_the_androids_del(
     assert "DEL" not in KEY_CODES
 
 
+async def test_the_typing_keys_go_on_the_wire_as_the_androids_letter_and_punctuation_keys(
+    tmp_path: Path,
+) -> None:
+    # `TYPE_*` não é do contrato de teclas: só o agente usa, para digitar sem o ADB.
+    names = [
+        "TYPE_A",
+        "TYPE_Z",
+        "TYPE_SPACE",
+        "TYPE_PERIOD",
+        "TYPE_COMMA",
+        "TYPE_MINUS",
+        "TYPE_SLASH",
+    ]
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        await adapter.connect()
+        try:
+            for name in names:
+                await adapter.send_key(name)
+            await eventually(lambda: len(server.keys) == len(names))
+        finally:
+            await adapter.disconnect()
+    assert [code for code, _ in server.keys] == [
+        RemoteKeyCode.Value(f"KEYCODE_{suffix}")
+        for suffix in ["A", "Z", "SPACE", "PERIOD", "COMMA", "MINUS", "SLASH"]
+    ]
+    assert not [name for name in names if name in KEY_CODES]
+
+
+async def test_an_unknown_typing_key_is_refused_without_naming_the_character(
+    tmp_path: Path,
+) -> None:
+    adapter = duplo_adapter(tmp_path, FakeLibrary())
+    await adapter.connect()
+    with pytest.raises(ValueError, match="tecla desconhecida") as caught:
+        await adapter.send_key("TYPE_SENHA")
+    assert "SENHA" not in str(caught.value)
+    await adapter.disconnect()
+
+
 async def test_a_dropped_connection_is_detected_and_keys_are_refused(tmp_path: Path) -> None:
     availability: list[bool] = []
     async with FakeTvServer(tmp_path) as server:

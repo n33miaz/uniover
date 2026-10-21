@@ -22,8 +22,9 @@ const COUNT_FROM = Math.floor(TV_TEXT_MAX * 0.8);
  * TV (a TV pode aceitar só em caixas de busca). O painel fica aberto sobre o controle, então dá para digitar e
  * apertar uma tecla sem trocar de tela. Não há "Enviar": a forma de mandar o texto fica toda atrás do
  * {@link FullTextSender} e da {@link LiveTextSync}, que esta tela só liga ao campo. O campo não limpa sozinho,
- * porque ele é o espelho do da TV. "Limpar" esvazia só o campo do celular; "Fechar" fecha (o que estiver pendente
- * é enviado antes, ao destruir o painel).
+ * porque ele é o espelho do da TV: apagar até esvaziar também esvazia o da TV. "Limpar" esvazia o campo do celular
+ * **e** o da TV (manda o texto vazio, sem esperar); "Fechar" fecha (o que estiver pendente é enviado antes, ao
+ * destruir o painel).
  */
 @Component({
   selector: 'app-tv-keyboard',
@@ -40,8 +41,11 @@ export class KeyboardPanel {
   protected readonly max = TV_TEXT_MAX;
   protected readonly text = signal('');
 
+  private readonly config = inject(TV_CONFIG);
   private readonly sync = new LiveTextSync({
-    debounceMs: inject(TV_CONFIG).textDebounceMs,
+    tailMs: this.config.textTailMs,
+    maxRequests: this.config.textMaxRequests,
+    windowMs: this.config.textWindowMs,
     sender: new FullTextSender(this.store),
   });
   protected readonly status = this.sync.status;
@@ -73,9 +77,11 @@ export class KeyboardPanel {
     this.sync.flush();
   }
 
+  /** Esvazia o campo do celular e o da TV: vazio é um texto como outro qualquer, e vai sem esperar a cauda. */
   protected clear(): void {
     this.text.set('');
-    this.sync.reset();
+    this.sync.change('');
+    this.sync.flush();
   }
 
   protected close(): void {

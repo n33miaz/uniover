@@ -57,6 +57,8 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_TV_ADB_PORT` | porta do ADB da TV (padrão `5555`) |
 | `UNIOVER_ADB_TIMEOUT_SECONDS` | tempo máximo de cada comando `adb` (padrão `5`) |
 | `UNIOVER_ADB_PULL_TIMEOUT_SECONDS` | tempo máximo para copiar o APK de um app da TV (padrão `120`) |
+| `UNIOVER_TV_TEXT_BY_KEYS` | `1` digita o acréscimo (só letras minúsculas, dígitos, espaço e `. , - /`) pelas **teclas do controle remoto**, sem o processo `adb` de cada trecho (padrão: desligado; ver "Texto" abaixo) |
+| `UNIOVER_TV_TEXT_KEY_PAUSE_MS` | pausa, em milissegundos, entre as teclas da digitação por teclas (padrão `0`; aumente se a TV perder letras) |
 | `UNIOVER_AAPT_PATH` | caminho do `aapt2` (padrão: o mais novo em `%LOCALAPPDATA%\Android\Sdk\build-tools`, ou em `ANDROID_HOME`); sem ele a lista de apps segue sem ícones |
 | `UNIOVER_ICONS_DIR` | pasta do cache de ícones (padrão `%LOCALAPPDATA%\UniOver\icons`; um arquivo por pacote e versão do app, e o nome leva a versão da regra de escolha do ícone: ao mudar a regra, o que a antiga guardou é ignorado e refeito) |
 
@@ -71,9 +73,33 @@ sem aviso de "app aberto"** (`tv.wake.v1`). O primeiro comando depois de hiberna
 aquecimento é medido e registrado no log. Se a TV não responder, tenta de novo com espera de 1, 2 e 4 s e
 então responde `tv_unreachable`: nunca fica num laço infinito.
 
-Texto (`tv.text.v1`): cada mensagem traz o texto completo e **substitui** o conteúdo do campo de texto em foco
-na TV (não acrescenta). Sem campo em foco a TV ignora em silêncio. Apagar o campo inteiro não é possível por este
-canal: o protocolo recusa texto vazio.
+Texto (`tv.text.v1`): cada mensagem traz o texto completo do campo (0 a 200 caracteres). A TV **insere** o que
+recebe, então o agente guarda o que ele mesmo digitou, apaga o excedente com `DEL` (uma tecla por caractere) e
+digita só o acréscimo. **Texto vazio apaga tudo o que o agente digitou.** Sem campo em foco a TV ignora em
+silêncio. O acréscimo vai por um canal só (nunca dividido, para a ordem não depender de dois caminhos):
+
+- **teclas do controle remoto**, se `UNIOVER_TV_TEXT_BY_KEYS=1` e **todos** os caracteres do acréscimo têm tecla
+  sem ambiguidade: `a`-`z` minúsculas, `0`-`9`, espaço e `. , - /`. Cada caractere é um pacote no mesmo fluxo do
+  `DEL`, sem processo novo. Maiúsculas e `_` precisariam de SHIFT (a biblioteca aceita `SHIFT_LEFT` com
+  `START_LONG`/`END_LONG`, mas ninguém mediu se a TV aplica o SHIFT à tecla seguinte, então não se inventa);
+  `@` e os demais símbolos dependem do mapa de teclas da TV e entram quando a medição provar;
+- **ADB** (`input text`) para ASCII imprimível sem `%`, quando o canal está pronto: um processo `adb` por trecho, e
+  no Android TV o `input text` sobe uma JVM a cada chamada (de ~300 ms a mais de 1 s);
+- **Remote v2** (`send_text`) para o resto (acentos, emoji, `%`) e quando o ADB não está pronto.
+
+Medir: cada comando de texto deixa **uma** linha `INFO` no log (`%LOCALAPPDATA%\UniOver\logs\agent.err.log`), sem o
+texto digitado (pode ser uma senha):
+
+```
+texto anterior=5 apagar=0 inserir=1 canal=adb resultado=ok | ms vez=0 adb=412 wake=1 apagar=0 digitar=418 total=420
+```
+
+`anterior`, `apagar` e `inserir` são tamanhos; `canal` é `teclas`, `adb`, `remote` ou `nenhum` (nada a fazer);
+`resultado` é `ok`, `falha:<código>` ou `interrompido`. Em milissegundos: `vez` é a espera pela vez (a fila das
+mensagens e a trava interna), `adb` é quanto o `input text` esperou a trava do ADB (que a lista de apps e as
+consultas de ícones também usam; `-` fora do canal ADB), `wake` é abrir a sessão, `apagar` são os `DEL`, `digitar`
+é o acréscimo e `total` é tudo. Uma mensagem que chegou e foi descartada porque já havia outra mais nova na fila
+deixa `texto descartado: chegou um mais novo | ms vez=<n>`.
 
 Pareamento (uma vez):
 
