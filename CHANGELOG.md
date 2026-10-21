@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/n33miaz/uniover/compare/v0.2.0...v0.3.0) (2026-10-21)
+
+
+### Features
+
+* **identity:** add grants and display name ([475b128](https://github.com/n33miaz/uniover/commit/475b12858d8f03401341d4d959baeb887a3f8ad8))
+* **tv:** add a clean-up action for the tv ([4f2ff0e](https://github.com/n33miaz/uniover/commit/4f2ff0e12792581e493c095c845039a8de918dec))
+* **tv:** fit app icons to the tile ([89aef8d](https://github.com/n33miaz/uniover/commit/89aef8d29e9e3c3372a0e207c2b411b0fcd387d1))
+* **tv:** reorder shortcuts ([fd780a8](https://github.com/n33miaz/uniover/commit/fd780a81ff6496bc8e9b2f5790ead9c4197e7f17))
+* **tv:** send empty text and type faster ([8d10673](https://github.com/n33miaz/uniover/commit/8d10673046685ccc0bf2c1ade4f110da0dcd4371))
+* **tv:** use the remote as the app icon ([80fc1c6](https://github.com/n33miaz/uniover/commit/80fc1c62c1093d26d3f31343be78f09bfdf67017))
+* **web:** keep icon and title per module ([adae822](https://github.com/n33miaz/uniover/commit/adae82240d1e151b24475b17c085431d213dc3c7))
+* **web:** redesign login and invite pages ([67f264c](https://github.com/n33miaz/uniover/commit/67f264cff5608a0e560a5295fa15886208ded17d))
+
 ## [0.2.0](https://github.com/n33miaz/uniover/compare/v0.1.0...v0.2.0) (2026-10-21)
 
 
