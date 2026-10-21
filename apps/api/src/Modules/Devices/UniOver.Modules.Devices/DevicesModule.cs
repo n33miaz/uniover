@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Persistence;
 using UniOver.Modules.Devices.Adapters;
+using UniOver.Modules.Devices.Audit;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Contracts.Pairing;
 using UniOver.Modules.Devices.Features.ApprovePairing;
@@ -18,6 +19,7 @@ using UniOver.Modules.Devices.Features.StartPairing;
 using UniOver.Modules.Devices.Features.Tokens;
 using UniOver.Modules.Devices.Persistence;
 using UniOver.Modules.Devices.Security;
+using UniOver.SharedKernel.Audit;
 
 namespace UniOver.Modules.Devices;
 
@@ -54,6 +56,11 @@ public static class DevicesModule
         services.AddSingleton<IDeviceTokenCache, InMemoryDeviceTokenCache>();
         services.AddScoped<IDeviceTokenValidator, DeviceTokenValidator>();
         services.AddScoped<PairingAuditWriter>();
+
+        // Auditoria: o pareamento é uma fonte da trilha do administrador. A retenção roda no banco; a aplicação só chama a função.
+        services.AddScoped<IAuditSource, DevicesAuditSource>();
+        services.AddAuditPurge<DevicesDbContext>(
+            configuration, DevicesDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.SecurityDays);
 
         services.AddSingleton(new GetModuleInfoHandler(version));
         services.AddScoped<StartPairingHandler>();

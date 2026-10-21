@@ -572,6 +572,197 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/identity/audit': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          action?: string[];
+          cursor?: string;
+          from?: string;
+          limit?: number | string;
+          module?: string[];
+          outcome?: string;
+          person?: string;
+          to?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AuditPage'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/identity/audit/export': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          action?: string[];
+          from?: string;
+          module?: string[];
+          outcome?: string;
+          person?: string;
+          to?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/identity/audit/sources': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AuditSourcesResponse'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/identity/auth/login': {
     parameters: {
       query?: never;
@@ -4146,6 +4337,40 @@ export interface components {
       /** Format: byte */
       clientDataJSON: unknown;
       transports: null | components['schemas']['AuthenticatorTransport'][];
+    };
+    AuditAccount: {
+      displayName: null | string;
+      /** Format: uuid */
+      id: string;
+    };
+    AuditItem: {
+      action: string;
+      actor: null | components['schemas']['AuditAccount'];
+      detail: null | string;
+      /** Format: uuid */
+      id: string;
+      ip: null | string;
+      module: string;
+      /** Format: date-time */
+      occurredAt: string;
+      outcome: string;
+      target: null | string;
+      targetAccount: null | components['schemas']['AuditAccount'];
+      userAgent: null | string;
+    };
+    AuditPage: {
+      items: components['schemas']['AuditItem'][];
+      nextCursor: null | string;
+    };
+    AuditSourcesResponse: {
+      outcomes: string[];
+      sources: components['schemas']['AuditSourceSummary'][];
+    };
+    AuditSourceSummary: {
+      actions: string[];
+      module: string;
+      /** Format: int32 */
+      retentionDays: number | string;
     };
     AuthenticationExtensionsClientOutputs: {
       appid?: boolean;

@@ -124,6 +124,33 @@ Módulo Identity, com a composição de autenticação em `UniOver.BuildingBlock
   chave). Fora de Development e Testing, sem chave válida o login recusa assinar (erro 500, explicado no log).
   Nunca versione a chave: ela vem do ambiente.
 
+## Auditoria
+
+Quem fez o quê, quando, de onde (IP e aparelho) e com que resultado. Só o administrador lê.
+
+- **Cada módulo é dono da sua tabela** (`identity.login_audit`, `devices.pairing_audit`, `tv.command_audit`) e a expõe pela
+  porta de leitura `IAuditSource` (`UniOver.SharedKernel.Audit`), que devolve o formato comum `AuditRecord`. O
+  módulo registra a sua fonte no contêiner (`AddScoped<IAuditSource, ...>`); o Identity junta todas as registradas em
+  `GET /api/v1/identity/audit` (filtros por pessoa, módulo, ação, resultado e período; paginação por cursor composto
+  `(instante, fonte, id)`), `GET /api/v1/identity/audit/sources` (módulos, prazos e ações, para montar os filtros) e
+  `GET /api/v1/identity/audit/export` (CSV da consulta, no máximo 5000 linhas; a exportação também fica registrada).
+  A resposta traz o nome de exibição atual da conta e o id, nunca o e-mail, e nunca o conteúdo de um texto digitado na TV.
+- **Só inclusão no banco.** O papel da aplicação não tem `UPDATE`, `DELETE` nem `TRUNCATE` nessas tabelas. A lista vive em
+  `AppendOnlyTables` e o `RuntimeRoleGrants.Sql("<schema>")` (que toda migration de tabela chama) aplica a exceção
+  **depois** dos `GRANT`, então nenhuma migration futura devolve o `DELETE`. Tabela de auditoria nova entra na lista; um
+  teste falha se existir tabela com "audit" no nome fora dela. Um direito HERDADO de outro papel (o provedor do banco pode
+  colocar o papel num grupo) não se desfaz com `REVOKE`: por isso o serviço de retenção confere no catálogo, a cada rodada,
+  se o papel ainda escreve nessas tabelas e avisa no log.
+- **Retenção por função do banco.** `<schema>.purge_audit(integer)` (uma por schema, `SECURITY DEFINER`, `search_path` fixo)
+  apaga só o que passou do prazo e tem um **piso** escrito dentro dela: a aplicação não consegue apagar o recente nem
+  encurtar o prazo, só estendê-lo. Prazos (constantes em `AuditRetentionPolicy`, o mesmo número é o piso nas funções): 180
+  dias para segurança (login, sessão, passkey, convite, permissão, pareamento) e 30 dias para comandos da TV. Mudar um
+  prazo é uma migration nova. O `AuditPurgeService` chama as funções a cada 24 h, a primeira 10 min depois da partida
+  (`AuditPurge:FirstRunDelayMinutes` e `AuditPurge:IntervalHours`); sem laço curto, para o banco gratuito poder dormir.
+  `tv.watchdog_events` fica de fora: é um buffer rotativo do que o agente relata, não o registro de uma ação de alguém.
+- **IP confiável.** Com `ForwardedHeaders:Enabled`, vale só a **última** entrada de `X-Forwarded-For` (`ForwardLimit = 1`), a
+  que o proxy da frente acrescentou; o que o cliente mandou antes dela é ignorado. Desligado (o padrão), o cabeçalho não vale nada.
+
 ## Como o `Program.cs` compõe os módulos
 
 O Host só compõe: cada módulo é chamado explicitamente (`Add<M>Module` e `Map<M>Endpoints`), sem descoberta

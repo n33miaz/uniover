@@ -212,7 +212,8 @@ public sealed class IdentityPersistenceTests(PostgresFixture postgres) : IDispos
 
         roles.Should().Equal("owner", "owner");
         applied.Should().StartWith("20261018215747_InitialCreate", "20261018223021_AddPasskeysAndStepUp");
-        applied.Should().HaveCount(4);
+        // Migrations posteriores se acrescentam com o tempo; o que este teste prova é que as duas primeiras seguem intactas, na ordem.
+        applied.Should().HaveCountGreaterThanOrEqualTo(4);
 
         // O banco recusa um papel inventado.
         await using var conn = new NpgsqlConnection(database.OwnerConnection);

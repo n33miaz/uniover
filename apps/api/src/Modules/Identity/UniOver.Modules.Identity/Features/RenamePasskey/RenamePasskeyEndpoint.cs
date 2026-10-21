@@ -21,6 +21,7 @@ internal static class RenamePasskeyEndpoint
 
     private static async Task<IResult> HandleAsync(
         Guid id,
+        HttpContext http,
         ICurrentUser current,
         RenamePasskeyRequest? request,
         RenamePasskeyHandler handler,
@@ -40,7 +41,7 @@ internal static class RenamePasskeyEndpoint
             });
         }
 
-        var summary = await handler.HandleAsync(userId, id, name, cancellationToken);
+        var summary = await handler.HandleAsync(userId, id, name, ClientInfo.From(http), cancellationToken);
         return summary is null ? TypedResults.NotFound() : TypedResults.Ok(summary);
     }
 }

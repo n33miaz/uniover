@@ -24,4 +24,34 @@ public static class AuditEvents
 
     /// <summary>A pessoa mudou o próprio perfil (o nome). O detalhe diz só QUAL campo mudou, nunca o valor.</summary>
     public const string ProfileUpdated = "profile_updated";
+
+    /// <summary>A pessoa renomeou uma passkey. O detalhe leva só o id da passkey, nunca o nome.</summary>
+    public const string PasskeyRenamed = "passkey_renamed";
+
+    /// <summary>O administrador exportou a trilha (IP e aparelho de terceiros saem do sistema). O detalhe leva só a quantidade de linhas.</summary>
+    public const string AuditExported = "audit_exported";
+
+    /// <summary>Todos os eventos que esta trilha grava, na ordem em que a tela os lista.</summary>
+    public static IReadOnlyList<string> All { get; } =
+    [
+        LoginSucceeded,
+        LoginFailed,
+        LoginLocked,
+        RefreshSucceeded,
+        RefreshReuseDetected,
+        Logout,
+        OwnerCreated,
+        PasskeyRegistered,
+        PasskeyRenamed,
+        PasskeyRemoved,
+        StepUpSucceeded,
+        StepUpFailed,
+        GuestInviteCreated,
+        GuestInviteAccepted,
+        GuestInviteRevoked,
+        GuestRevoked,
+        PermissionsChanged,
+        ProfileUpdated,
+        AuditExported,
+    ];
 }

@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using UniOver.BuildingBlocks.Persistence;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Audit;
 using UniOver.Modules.Identity.Bootstrap;
 using UniOver.Modules.Identity.Features.AcceptGuestInvite;
 using UniOver.Modules.Identity.Features.BeginPasskeyRegistration;
@@ -14,6 +15,7 @@ using UniOver.Modules.Identity.Features.ConfirmStepUp;
 using UniOver.Modules.Identity.Features.CreateGuestInvite;
 using UniOver.Modules.Identity.Features.GetMe;
 using UniOver.Modules.Identity.Features.GetModuleInfo;
+using UniOver.Modules.Identity.Features.ListAudit;
 using UniOver.Modules.Identity.Features.ListGuestInvites;
 using UniOver.Modules.Identity.Features.ListGuests;
 using UniOver.Modules.Identity.Features.ListPasskeys;
@@ -31,6 +33,7 @@ using UniOver.Modules.Identity.Features.UpdateProfile;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
 using UniOver.Modules.Tv.Contracts;
+using UniOver.SharedKernel.Audit;
 
 namespace UniOver.Modules.Identity;
 
@@ -58,6 +61,13 @@ public static class IdentityModule
         services.AddSingleton<AccessTokenIssuer>();
         services.AddSingleton<AuthCookieWriter>();
         services.AddScoped<LoginAuditWriter>();
+
+        // Auditoria: a trilha de login é uma fonte (cada módulo com tabela de auditoria registra a sua) e este módulo junta
+        // todas para o administrador. A retenção roda no banco; a aplicação só chama a função, periodicamente.
+        services.AddScoped<IAuditSource, IdentityAuditSource>();
+        services.AddScoped<AuditReader>();
+        services.AddAuditPurge<IdentityDbContext>(
+            configuration, IdentityDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.SecurityDays);
 
         services.AddScoped<LoginHandler>();
         services.AddScoped<RefreshHandler>();
@@ -111,6 +121,7 @@ public static class IdentityModule
         group.MapStreamTicket();
         group.MapGetMe();
         group.MapUpdateProfile();
+        group.MapListAudit();
         group.MapCreateGuestInvite();
         group.MapListGuestInvites();
         group.MapRevokeGuestInvite();

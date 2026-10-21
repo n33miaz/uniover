@@ -9,6 +9,7 @@ using UniOver.BuildingBlocks.Persistence;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Tv.Adapters;
+using UniOver.Modules.Tv.Audit;
 using UniOver.Modules.Tv.Contracts;
 using UniOver.Modules.Tv.Features.Agents;
 using UniOver.Modules.Tv.Features.Cleanup;
@@ -29,6 +30,7 @@ using UniOver.Modules.Tv.Features.UpdateShortcut;
 using UniOver.Modules.Tv.Features.Wake;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
+using UniOver.SharedKernel.Audit;
 
 namespace UniOver.Modules.Tv;
 
@@ -78,12 +80,15 @@ public static class TvModule
         services.AddSingleton<ITvCommandSender, DevicesGatewayCommandSender>();
         services.AddSingleton<ITvCleanupReports, InMemoryTvCleanupReports>();
         services.AddSingleton<TvStatePersister>();
-        services.AddSingleton<AuditRetention>();
         services.AddSingleton<TvStateProvider>();
         services.AddSingleton(sp => new SseBroadcaster<object>(sp.GetRequiredService<IOptions<TvModuleOptions>>().Value.Sse));
         services.AddSingleton<ITvStreamPublisher, TvStreamPublisher>();
 
         services.AddScoped<ITvCommandAudit, EfCommandAudit>();
+
+        // Auditoria: os comandos da TV são uma fonte da trilha do administrador. A retenção (30 dias) roda no banco; a aplicação só chama a função.
+        services.AddScoped<IAuditSource, TvAuditSource>();
+        services.AddAuditPurge<TvDbContext>(configuration, TvDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.CommandDays);
         services.AddScoped<ITvShortcutReader, EfShortcutReader>();
         services.AddScoped<TvCommandRunner>();
         services.AddScoped<IAgentMessageHandler, TvAgentMessageHandler>();
