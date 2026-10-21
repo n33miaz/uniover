@@ -359,8 +359,12 @@ export class AuthService {
 
   private async doRenew(): Promise<RenewOutcome> {
     const wasKnown = this.session.status() !== 'unknown';
+    // A renovação demora a voltar; se a sessão foi encerrada nesse meio-tempo (Sair), o resultado é de uma sessão que
+    // não existe mais e não pode recriá-la nem apagar o que veio depois.
+    const epoch = this.sessionEpoch;
     try {
       const tokens = await this.refreshOnce();
+      if (epoch !== this.sessionEpoch) return 'unauthenticated';
       this.session.setToken(tokens.accessToken, tokens.expiresIn);
       this.scheduleRenewal(tokens.expiresIn);
       this.stopPendingRetry();
@@ -370,6 +374,7 @@ export class AuthService {
       else void this.refreshUser('renewal', tokens.accessToken);
       return 'renewed';
     } catch (error) {
+      if (epoch !== this.sessionEpoch) return 'unauthenticated';
       if (error instanceof ApiProblem && error.status === 401) {
         this.stopTimers();
         this.sessionEpoch++;
