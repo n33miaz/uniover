@@ -183,7 +183,7 @@ for (const scheme of SCHEMES) {
         await page.getByLabel('Senha', { exact: true }).fill(STRONG);
         await page.getByLabel('Repita a senha').fill(STRONG);
         await page.getByRole('button', { name: 'Mostrar senha', exact: true }).click();
-        await expect(page.getByText('As senhas conferem.')).toBeVisible();
+        await expect(page.getByText('As senhas conferem.', { exact: true })).toBeVisible();
         await shoot(page, info, 'convite-senha-forte-conferem', scheme, orient);
       });
 
