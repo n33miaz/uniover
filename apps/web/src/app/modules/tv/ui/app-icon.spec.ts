@@ -1,7 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { makeShortcut, pngIcon, webpIcon } from '../tv-test-kit';
 import { AppIconSubject } from './app-icon-source';
-import { AppIcon } from './app-icon';
+import { AppIcon, ICON_PIXEL_READER } from './app-icon';
+import { IconPixelReader, resetIconFitCache } from './app-icon-fit';
 
 describe('AppIcon', () => {
   let fixture: ReturnType<typeof TestBed.createComponent<AppIcon>>;
@@ -114,5 +115,129 @@ describe('AppIcon', () => {
     update(makeShortcut(1, { customLabel: 'Sala', iconDataUri: null }));
     expect(image()).toBeNull();
     expect(fallback()).not.toBeNull();
+  });
+
+  describe('fitting the icon to the tile', () => {
+    /** Uma placa preta com 8 px de margem transparente (em 64): o que o CineVS traz. */
+    const plate = () => {
+      const data = new Uint8ClampedArray(64 * 64 * 4);
+      for (let y = 8; y < 56; y++) {
+        for (let x = 8; x < 56; x++) data.set([18, 18, 18, 255], (y * 64 + x) * 4);
+      }
+      return { data, width: 64, height: 64 };
+    };
+    const loaded = (el: HTMLImageElement = image()!) => {
+      el.dispatchEvent(new Event('load'));
+      fixture.detectChanges();
+    };
+    const withReader = (reader: IconPixelReader) =>
+      TestBed.configureTestingModule({
+        providers: [{ provide: ICON_PIXEL_READER, useValue: reader }],
+      });
+
+    beforeEach(() => resetIconFitCache());
+
+    it('shows a plain cover until the image has loaded, and trims the margin once it is measured', () => {
+      const reader = vi.fn<IconPixelReader>(() => plate());
+      withReader(reader);
+      show(makeShortcut(1, { iconDataUri: pngIcon(96, 96) }));
+      expect(image()!.style.transform).toBe('');
+      expect(host.style.backgroundColor).toBe('');
+      expect(reader).not.toHaveBeenCalled();
+
+      loaded();
+      expect(reader).toHaveBeenCalledTimes(1);
+      expect(image()!.style.transform).toBe('scale(1.333) translate(-12.5%, -12.5%)');
+      expect(host.style.backgroundColor).toBe('rgb(18, 18, 18)');
+    });
+
+    it('measures an icon once: the same icon in another tile comes already trimmed, with no new reading', () => {
+      const reader = vi.fn<IconPixelReader>(() => plate());
+      withReader(reader);
+      const uri = pngIcon(96, 96);
+      show(makeShortcut(1, { iconDataUri: uri }));
+      loaded();
+      const first = fixture;
+
+      show(makeShortcut(2, { iconDataUri: uri }));
+      expect(image()!.style.transform).toBe('scale(1.333) translate(-12.5%, -12.5%)');
+      loaded();
+      expect(reader).toHaveBeenCalledTimes(1);
+      expect(first).not.toBe(fixture);
+    });
+
+    it('trims both tiles that load the same new icon at the same time, with a single reading', () => {
+      const reader = vi.fn<IconPixelReader>(() => plate());
+      withReader(reader);
+      const uri = pngIcon(128, 128);
+      show(makeShortcut(1, { iconDataUri: uri }));
+      const firstImage = image()!;
+      const firstHost = host;
+      const firstFixture = fixture;
+      show(makeShortcut(2, { iconDataUri: uri }));
+      loaded(firstImage);
+      firstFixture.detectChanges();
+      loaded();
+      expect(reader).toHaveBeenCalledTimes(1);
+      expect(firstImage.style.transform).toBe('scale(1.333) translate(-12.5%, -12.5%)');
+      expect(image()!.style.transform).toBe('scale(1.333) translate(-12.5%, -12.5%)');
+      expect(firstHost.style.backgroundColor).toBe('rgb(18, 18, 18)');
+    });
+
+    it('measures a new icon of the same app again, and goes back to a plain cover while it loads', () => {
+      const reader = vi.fn<IconPixelReader>(() => plate());
+      withReader(reader);
+      show(makeShortcut(1, { iconDataUri: pngIcon(96, 96) }));
+      loaded();
+      update(makeShortcut(1, { iconDataUri: pngIcon(192, 192) }));
+      expect(image()!.style.transform).toBe('');
+      loaded();
+      expect(reader).toHaveBeenCalledTimes(2);
+    });
+
+    it('stays a plain cover, without error, when there is no canvas to read the pixels from', () => {
+      const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+      show(makeShortcut(1, { iconDataUri: pngIcon(96, 96) }));
+      Object.defineProperty(image()!, 'naturalWidth', { value: 96 });
+      Object.defineProperty(image()!, 'naturalHeight', { value: 96 });
+      expect(() => loaded()).not.toThrow();
+      expect(image()!.style.transform).toBe('');
+      expect(host.style.backgroundColor).toBe('');
+      expect(fallback()).toBeNull();
+      getContext.mockRestore();
+    });
+
+    it('stays a plain cover when the reading fails or throws, and does not try again for the same icon', () => {
+      const reader = vi.fn<IconPixelReader>(() => {
+        throw new Error('negado');
+      });
+      withReader(reader);
+      const uri = pngIcon(96, 96);
+      show(makeShortcut(1, { iconDataUri: uri }));
+      expect(() => loaded()).not.toThrow();
+      expect(image()!.style.transform).toBe('');
+      show(makeShortcut(2, { iconDataUri: uri }));
+      loaded();
+      expect(reader).toHaveBeenCalledTimes(1);
+      expect(image()!.style.transform).toBe('');
+    });
+
+    it('does not trim an icon with nothing to trim, but still gives the tile the color of its edge', () => {
+      withReader(() => {
+        const data = new Uint8ClampedArray(64 * 64 * 4);
+        for (let at = 0; at < data.length; at += 4) data.set([200, 60, 40, 255], at);
+        return { data, width: 64, height: 64 };
+      });
+      show(makeShortcut(1, { iconDataUri: pngIcon(96, 96) }));
+      loaded();
+      expect(image()!.style.transform).toBe('');
+      expect(host.style.backgroundColor).toBe('rgb(200, 60, 40)');
+    });
+
+    it('keeps the letter tile unchanged, with no background of its own', () => {
+      show(makeShortcut(1, { customLabel: 'Sala' }));
+      expect(fallback()).not.toBeNull();
+      expect(host.style.backgroundColor).toBe('');
+    });
   });
 });

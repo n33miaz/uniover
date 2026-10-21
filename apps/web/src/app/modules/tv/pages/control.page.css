@@ -21,7 +21,8 @@
   --key-scale: 1;
   --tv-round: calc(var(--key-scale) * clamp(60px, 8.2dvh, 84px));
   --tv-pill: calc(var(--key-scale) * 52px);
-  --tv-top: clamp(52px, 7dvh, 60px);
+  /* Lado do azulejo dos atalhos (a fileira de cima): 60 px, o mesmo do ícone grande do painel Apps. */
+  --tv-top: 60px;
   display: flex;
   flex: 1 1 0;
   flex-direction: column;

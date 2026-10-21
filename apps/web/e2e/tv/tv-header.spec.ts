@@ -584,8 +584,10 @@ test.describe('botões de baixo e o tamanho escolhido', () => {
       142.5,
     );
     if (narrow) {
-      expect(comfortable.ring!.width, 'anel de 320 px ou mais no 390x664').toBeGreaterThanOrEqual(
-        320,
+      // Os atalhos de cima passaram de 52 para 60 px (pedido do dono): os 8 px a mais saem da altura do anel, que ficou
+      // com 318 px no 390x664 (eram 326). O piso é 316.
+      expect(comfortable.ring!.width, 'anel de 316 px ou mais no 390x664').toBeGreaterThanOrEqual(
+        316,
       );
     }
     expect(comfortable.scrollOverflow, 'confortável não rola').toBeLessThanOrEqual(0);

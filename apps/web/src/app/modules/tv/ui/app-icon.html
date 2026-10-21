@@ -1,7 +1,8 @@
 <!--
   `decoding` vai por vínculo porque o lint de i18n trata o atributo fixo como texto de tela; o valor é sempre "async".
   A imagem decodifica fora do fio principal, então uma lista com dezenas de ícones não trava a rolagem. As dimensões
-  são as de um quadrado: o CSS é quem encaixa qualquer proporção dentro dele.
+  são as de um quadrado: o CSS é quem encaixa qualquer proporção dentro dele. O `transform` é o recorte da margem do
+  ícone (medido ao carregar, ver `app-icon-fit.ts`); sem medida, fica vazio e a imagem aparece em `cover` simples.
 -->
 @if (source(); as uri) {
   <img
@@ -12,7 +13,9 @@
     height="96"
     [attr.decoding]="'async'"
     [attr.loading]="lazy() ? 'lazy' : 'eager'"
+    [style.transform]="fit()?.transform ?? null"
     draggable="false"
+    (load)="measure($event, uri)"
     (error)="markFailed(uri)"
   />
 } @else {
