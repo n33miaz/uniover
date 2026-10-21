@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../../core/session/session-state';
+import { withOrder } from '../data/tv-order';
 import { TvStore } from '../data/tv-store';
 import { FakeTvStore, createFakeTvStore, makeShortcut, pngIcon } from '../tv-test-kit';
 import { AppsPanel } from './apps-panel';
@@ -450,6 +451,196 @@ describe('AppsPanel', () => {
     });
   });
 
+  describe('changing the order of the row (edit mode)', () => {
+    /** s1, s3 e s5 estão no controle (a fileira); s2 está fora dele; s4 saiu da TV e o painel nem o mostra. */
+    const row = () => [
+      makeShortcut(1, { tvLabel: 'Spotify' }),
+      makeShortcut(2, { tvLabel: 'YouTube', enabled: false }),
+      makeShortcut(3, { tvLabel: 'Netflix' }),
+      makeShortcut(4, { tvLabel: 'Jogos', enabled: false, installed: false }),
+      makeShortcut(5, { tvLabel: 'Disney' }),
+    ];
+    const mover = (name: string, direction: 'left' | 'right') =>
+      byLabel(`Mover ${name} para a ${direction === 'left' ? 'esquerda' : 'direita'}`);
+    const said = () => root.querySelector('[data-reorder-status]')!.textContent?.trim();
+
+    beforeEach(async () => {
+      store.shortcuts.set(row());
+      await render();
+    });
+
+    it('has no move buttons outside the edit mode', () => {
+      expect(root.querySelectorAll('[data-move]')).toHaveLength(0);
+    });
+
+    it('puts the buttons only on the apps in the control, and none on the others', async () => {
+      await startEditing();
+      expect(root.querySelectorAll('[data-move]')).toHaveLength(6);
+      for (const name of ['Spotify', 'Netflix', 'Disney']) {
+        expect(mover(name, 'left')).not.toBeNull();
+        expect(mover(name, 'right')).not.toBeNull();
+      }
+      expect(root.querySelector('button[aria-label="Mover YouTube para a esquerda"]')).toBeNull();
+      // A lista continua uma só e na ordem de sempre: mudar a ordem da fileira não embaralha a edição.
+      expect(headings()).toEqual(['Todos os apps']);
+      expect(names()).toEqual(['Spotify', 'YouTube', 'Netflix', 'Disney']);
+    });
+
+    it('explains the arrows, once there is more than one app in the row to put in order', async () => {
+      await startEditing();
+      expect(root.textContent).toContain('Os apps no controle têm setas');
+
+      store.shortcuts.set([
+        makeShortcut(1, { tvLabel: 'Spotify' }),
+        makeShortcut(2, { enabled: false }),
+      ]);
+      await render();
+      expect(root.textContent).not.toContain('Os apps no controle têm setas');
+    });
+
+    it('sends the whole list, the app that left the TV included, with the app swapped with its neighbour in the control', async () => {
+      await startEditing();
+      mover('Netflix', 'left').click();
+      await render();
+      // Netflix troca com o Spotify; YouTube e Jogos (que a fileira não mostra) ficam onde estavam.
+      expect(store.reorder).toHaveBeenCalledTimes(1);
+      expect(store.reorder).toHaveBeenCalledWith(['s3', 's2', 's1', 's4', 's5']);
+    });
+
+    it('shows the new order at once', async () => {
+      await startEditing();
+      mover('Disney', 'left').click();
+      await render();
+      expect(names()).toEqual(['Spotify', 'YouTube', 'Disney', 'Netflix']);
+      mover('Spotify', 'right').click();
+      await render();
+      expect(names()).toEqual(['Disney', 'YouTube', 'Spotify', 'Netflix']);
+    });
+
+    it('says where the app ended up, counting only the apps of the row, in a polite region of its own', async () => {
+      await startEditing();
+      const region = root.querySelector('[data-reorder-status]')!;
+      expect(region.getAttribute('role')).toBe('status');
+      expect(region.getAttribute('aria-live')).toBe('polite');
+      // Não é a região do "Buscando…": um aviso não apaga o outro.
+      expect(region).not.toBe(root.querySelector('.sr:not([data-reorder-status])'));
+
+      mover('Disney', 'left').click();
+      await render();
+      expect(said()).toBe('Disney, posição 2 de 3');
+      mover('Disney', 'left').click();
+      await render();
+      expect(said()).toBe('Disney, posição 1 de 3');
+    });
+
+    it('keeps the focus on the button the owner used, which follows the app to its new place', async () => {
+      await startEditing();
+      mover('Disney', 'left').click();
+      await render();
+      expect(document.activeElement).toBe(mover('Disney', 'left'));
+      expect(document.activeElement?.getAttribute('data-for')).toBe('s5');
+
+      mover('Disney', 'right').click();
+      await render();
+      expect(document.activeElement).toBe(mover('Disney', 'right'));
+    });
+
+    it('at the ends the button is only dimmed: the focus stays on it and a tap does nothing', async () => {
+      await startEditing();
+      mover('Netflix', 'left').click();
+      await render();
+      const first = mover('Netflix', 'left');
+      expect(first.getAttribute('aria-disabled')).toBe('true');
+      expect(first.disabled).toBe(false);
+      expect(document.activeElement).toBe(first);
+
+      store.reorder.mockClear();
+      first.click();
+      await render();
+      expect(store.reorder).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(first);
+      expect(said()).toBe('Netflix, posição 1 de 3');
+
+      // E o último da fileira não vai mais para a direita.
+      expect(mover('Disney', 'right').getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('says nothing and moves no focus when the order did not change (no network, for instance)', async () => {
+      store.reorder.mockImplementationOnce(async () => false);
+      await startEditing();
+      mover('Disney', 'left').click();
+      await render();
+      expect(names()).toEqual(['Spotify', 'YouTube', 'Netflix', 'Disney']);
+      expect(said()).toBe('');
+    });
+
+    it('drops the "where it ended up" phrase when the server refuses the order (the error notice speaks instead)', async () => {
+      let refuse!: (saved: boolean) => void;
+      store.reorder.mockImplementationOnce(async (ids) => {
+        store.shortcuts.set(withOrder(store.shortcuts() ?? [], ids) ?? []);
+        return new Promise<boolean>((resolve) => (refuse = resolve));
+      });
+      await startEditing();
+      mover('Disney', 'left').click();
+      await render();
+      expect(said()).toBe('Disney, posição 2 de 3');
+
+      refuse(false);
+      await new Promise((resolve) => setTimeout(resolve));
+      await render();
+      expect(said()).toBe('');
+    });
+
+    it('names an app with no name of its own by the position it now has ("Atalho n" follows the order)', async () => {
+      store.shortcuts.set([makeShortcut(1), makeShortcut(2)]);
+      await render();
+      await startEditing();
+      mover('Atalho 2', 'left').click();
+      await render();
+      expect(said()).toBe('Atalho 1, posição 1 de 2');
+    });
+
+    it('offers no buttons while searching, because the filter hides the neighbours', async () => {
+      await startEditing();
+      search('netflix');
+      await render();
+      expect(root.querySelectorAll('[data-move]')).toHaveLength(0);
+      expect(root.querySelectorAll('.tools')).toHaveLength(1);
+      expect(root.textContent).not.toContain('Os apps no controle têm setas');
+
+      search('');
+      await render();
+      expect(root.querySelectorAll('[data-move]')).toHaveLength(6);
+    });
+
+    it('leaving the edit mode takes the buttons and the last announcement away', async () => {
+      await startEditing();
+      mover('Disney', 'left').click();
+      await render();
+      buttonByText('Concluir').click();
+      await render();
+      expect(root.querySelectorAll('[data-move]')).toHaveLength(0);
+      expect(said()).toBe('');
+    });
+
+    it('does not open anything or ask the TV for anything when an app is moved', async () => {
+      await startEditing();
+      mover('Netflix', 'right').click();
+      await render();
+      expect(store.launch).not.toHaveBeenCalled();
+      expect(store.setShortcutEnabled).not.toHaveBeenCalled();
+      expect(done).not.toHaveBeenCalled();
+    });
+
+    it('works the same with the agent off: it is a list of the screen, not a command to the TV', async () => {
+      store.canSend.set(false);
+      await startEditing();
+      mover('Netflix', 'left').click();
+      await render();
+      expect(store.reorder).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('rename', () => {
     const startRename = async (label = 'Renomear Atalho 2') => {
       await startEditing();
@@ -681,6 +872,8 @@ describe('AppsPanel for a guest', () => {
     expect(root.querySelectorAll('.launch')).toHaveLength(3);
     expect(root.querySelector('.edit-toggle')).toBeNull();
     expect(root.querySelector('.tools')).toBeNull();
+    expect(root.querySelector('[data-move]')).toBeNull();
+    expect(root.querySelector('button[aria-label^="Mover"]')).toBeNull();
     expect(root.querySelector('button[aria-label^="Renomear"]')).toBeNull();
     expect(
       root.querySelector('button[aria-label^="Fixar"], button[aria-label^="Tirar"]'),

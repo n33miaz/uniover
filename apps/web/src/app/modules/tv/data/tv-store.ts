@@ -6,6 +6,7 @@ import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
 import { TV_EVENTS_PATH, TvApi } from './tv-api';
 import { TV_CONFIG } from './tv-config';
 import { TvFailure, describeFailure } from './tv-errors';
+import { withOrder } from './tv-order';
 import {
   TV_STREAM_EVENTS,
   TvKey,
@@ -72,7 +73,9 @@ export function isValidTvText(text: string): boolean {
 /**
  * Estado da tela da TV (signals). Um só para as três abas; a tela chama `start` ao nascer (abre o fluxo SSE, busca o
  * estado e os atalhos e, enquanto a página está visível, "aquece" a sessão com a TV a cada poucos minutos) e `stop`
- * ao ser destruída. Nenhum botão altera o estado de forma otimista: quem muda o estado é o que o servidor informa.
+ * ao ser destruída. Nenhum botão do controle altera o estado de forma otimista: quem muda o estado é o que o servidor
+ * informa. A única exceção é a ordem dos atalhos (`reorder`): ela só mexe numa lista da tela, não na TV, e volta ao que
+ * era se o servidor recusar.
  */
 @Injectable({ providedIn: 'root' })
 export class TvStore {
@@ -92,6 +95,14 @@ export class TvStore {
   private readonly _inFlightKeys = signal(0);
   /** O último texto gravado em `ICONS_KEY`, para não regravar o mesmo. */
   private iconsSaved = '';
+  /** A última lista que o servidor confirmou, guardada enquanto a ordem nova não é confirmada (volta para ela se for recusada). */
+  private reorderBase: TvShortcut[] | null = null;
+  /** A ordem mais nova pedida e ainda não enviada: toques em sequência viram um envio só, sempre com a última. */
+  private reorderWanted: string[] | null = null;
+  /** O envio em andamento; quem pede outra ordem durante ele se junta a ele. */
+  private reorderRun: Promise<boolean> | null = null;
+  /** A lista que chegou do servidor durante o envio, à espera: aplicada por cima, a tela piscaria de volta à ordem de um passo atrás. */
+  private heldShortcuts: TvShortcut[] | null = null;
 
   readonly state = this._state.asReadonly();
   readonly shortcuts = this._shortcuts.asReadonly();
@@ -220,7 +231,7 @@ export class TvStore {
     if (this.link() === 'offline') return;
     const [state, shortcuts] = await Promise.allSettled([this.api.state(), this.api.shortcuts()]);
     if (state.status === 'fulfilled') this.applyState(state.value);
-    if (shortcuts.status === 'fulfilled') this.applyShortcuts(shortcuts.value);
+    if (shortcuts.status === 'fulfilled') this.receiveShortcuts(shortcuts.value);
   }
 
   /** Pede ao agente que aqueça a sessão com a TV. Só com a tela visível e com rede; falha não vira aviso. */
@@ -332,7 +343,7 @@ export class TvStore {
     try {
       await this.api.refreshShortcuts();
       // A lista nova chega pelo fluxo; buscar de novo cobre o caso de o fluxo estar reconectando.
-      this.applyShortcuts(await this.api.shortcuts());
+      this.receiveShortcuts(await this.api.shortcuts());
       this.showNotice('info', $localize`:@@tv.apps.refreshed:Lista de apps atualizada.`);
       return true;
     } catch (error) {
@@ -348,6 +359,29 @@ export class TvStore {
 
   async setShortcutEnabled(id: string, enabled: boolean): Promise<boolean> {
     return this.updateShortcut(id, { enabled });
+  }
+
+  /**
+   * Muda a ordem dos atalhos (só o dono: a API recusa o convidado). `ids` é a lista COMPLETA, na ordem desejada. A tela
+   * muda na hora e o servidor confirma depois; se ele recusar, a lista volta à última ordem que ele confirmou e um aviso
+   * diz que não foi salvo. Toques em sequência não disparam um pedido por toque: enquanto um envio está em curso o
+   * seguinte espera, e só a ordem mais nova é enviada. Devolve `true` se o servidor aceitou. Não mexe na TV, então vale
+   * sem agente.
+   */
+  async reorder(ids: readonly string[]): Promise<boolean> {
+    if (this.link() !== 'ok') {
+      this.showNotice('error', this.disabledReason() ?? '');
+      return false;
+    }
+    const current = this._shortcuts();
+    const next = current ? withOrder(current, ids) : null;
+    if (!current || !next) return false;
+
+    this.reorderBase ??= current;
+    this.reorderWanted = [...ids];
+    this.applyShortcuts(next);
+    this.reorderRun ??= this.runReorder();
+    return this.reorderRun;
   }
 
   clearNotice(): void {
@@ -375,6 +409,68 @@ export class TvStore {
     }
   }
 
+  private async runReorder(): Promise<boolean> {
+    try {
+      while (this.reorderWanted) {
+        const ids = this.reorderWanted;
+        this.reorderWanted = null;
+        this.reorderBase = await this.api.reorderShortcuts(ids);
+      }
+      // Tudo confirmado: vale a lista que o servidor devolveu (renumerada por ele). Nada se espera entre aqui e o fim,
+      // então nenhum pedido novo entra no meio.
+      const confirmed = this.reorderBase;
+      const held = this.heldShortcuts;
+      this.reorderBase = null;
+      this.heldShortcuts = null;
+      if (confirmed) this.applyShortcuts(confirmed);
+      // O que chegou do servidor durante o envio só importa se não é o que acabou de ser confirmado (outra mudança, do
+      // agente ou do próprio dono, se cruzou com o envio): nesse caso a lista certa se busca de novo.
+      if (confirmed && held && !sameShortcuts(held, confirmed)) void this.resyncShortcuts();
+      return true;
+    } catch (error) {
+      const base = this.reorderBase;
+      this.reorderBase = null;
+      this.reorderWanted = null;
+      this.heldShortcuts = null;
+      if (base) this.applyShortcuts(base);
+      this.reportReorderFailure(error);
+      void this.resyncShortcuts();
+      return false;
+    } finally {
+      this.reorderRun = null;
+    }
+  }
+
+  /** Falha de rede, de sessão ou de limite diz a causa; qualquer outra diz só o que importa aqui: não foi salvo. */
+  private reportReorderFailure(error: unknown): void {
+    const failure = describeFailure(error);
+    const known =
+      failure.kind === 'network' || failure.kind === 'session' || failure.kind === 'rate-limited';
+    this.showNotice(
+      'error',
+      known
+        ? failure.message
+        : $localize`:@@tv.apps.reorder-failed:Não foi possível salvar a nova ordem. Ela voltou ao que era.`,
+    );
+  }
+
+  private async resyncShortcuts(): Promise<void> {
+    try {
+      this.receiveShortcuts(await this.api.shortcuts());
+    } catch {
+      // sem rede agora: o fluxo ou a próxima busca trazem a lista certa
+    }
+  }
+
+  /** Lista de atalhos vinda do servidor (fluxo ou busca): durante o envio de uma ordem ela espera a vez. */
+  private receiveShortcuts(list: TvShortcut[]): void {
+    if (this.reorderRun) {
+      this.heldShortcuts = list;
+      return;
+    }
+    this.applyShortcuts(list);
+  }
+
   private onEvent(event: StreamEvent): void {
     switch (event.type) {
       case 'open':
@@ -391,7 +487,7 @@ export class TvStore {
       }
       case TV_STREAM_EVENTS.shortcuts: {
         const list = parseShortcuts(parse(event.data));
-        if (list) this.applyShortcuts(list);
+        if (list) this.receiveShortcuts(list);
         return;
       }
       case TV_STREAM_EVENTS.watchdog: {
@@ -499,7 +595,10 @@ export class TvStore {
       icons[item.id] = uri;
       used += uri.length;
     }
-    const text = JSON.stringify(icons);
+    // Chaves em ordem fixa: mudar a ordem dos atalhos não deve regravar (até 1 MB) o que não mudou.
+    const text = JSON.stringify(
+      Object.fromEntries(Object.entries(icons).sort(([a], [b]) => (a < b ? -1 : 1))),
+    );
     if (text === this.iconsSaved) return;
     try {
       this.doc.defaultView?.localStorage.setItem(ICONS_KEY, text);
@@ -525,6 +624,25 @@ export class TvStore {
       return item.iconDataUri || typeof icon !== 'string' ? item : { ...item, iconDataUri: icon };
     });
   }
+}
+
+/** As duas listas dizem o mesmo, atalho por atalho e na mesma ordem. */
+function sameShortcuts(a: readonly TvShortcut[], b: readonly TvShortcut[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((item, index) => {
+      const other = b[index];
+      return (
+        item.id === other.id &&
+        item.position === other.position &&
+        item.enabled === other.enabled &&
+        item.installed === other.installed &&
+        item.customLabel === other.customLabel &&
+        item.tvLabel === other.tvLabel &&
+        item.iconDataUri === other.iconDataUri
+      );
+    })
+  );
 }
 
 function parse(data: string): unknown {

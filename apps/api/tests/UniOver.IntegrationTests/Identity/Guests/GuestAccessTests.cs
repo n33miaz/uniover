@@ -39,11 +39,14 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         "/api/v1/devices/agents/{agentId}/ws",
     ];
 
-    /// <summary>Renomear e ocultar atalhos (PATCH) é só do dono; o resto da TV é do convidado.</summary>
+    /// <summary>Renomear e ocultar atalhos (PATCH) e mudar a ordem deles (PUT) são só do dono; o resto da TV é do convidado.</summary>
     private const string ShortcutEditRoute = "/api/v1/tv/shortcuts/{id:guid}";
 
+    private const string ShortcutOrderRoute = "/api/v1/tv/shortcuts/order";
+
     private static bool IsGuestRoute(string pattern, IReadOnlyList<string> methods) =>
-        pattern == ShortcutEditRoute && methods.Contains("PATCH", StringComparer.OrdinalIgnoreCase)
+        (pattern == ShortcutEditRoute && methods.Contains("PATCH", StringComparer.OrdinalIgnoreCase))
+        || (pattern == ShortcutOrderRoute && methods.Contains("PUT", StringComparer.OrdinalIgnoreCase))
             ? false
             : pattern.StartsWith("/api/v1/tv/", StringComparison.Ordinal) || GuestSessionRoutes.Contains(pattern);
 
@@ -182,6 +185,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         var forbidden = new (HttpMethod Method, string Url, object? Body)[]
         {
             (HttpMethod.Patch, $"/api/v1/tv/shortcuts/{Guid.NewGuid()}", new { customLabel = "Meu app" }),
+            (HttpMethod.Put, "/api/v1/tv/shortcuts/order", new { ids = new[] { Guid.NewGuid() } }),
             (HttpMethod.Get, "/api/v1/devices/agents", null),
             (HttpMethod.Post, $"/api/v1/devices/agents/{Guid.NewGuid()}/revoke", null),
             (HttpMethod.Post, "/api/v1/devices/pairing/approve", new { userCode = "ABCD-EFGH" }),

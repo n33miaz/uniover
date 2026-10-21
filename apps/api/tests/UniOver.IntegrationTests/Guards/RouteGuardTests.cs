@@ -46,6 +46,7 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/tv/wake", RateLimitPolicies.Commands),
         ("POST", "/api/v1/tv/shortcuts/refresh", RateLimitPolicies.Commands),
         ("POST", "/api/v1/tv/shortcuts/{id:guid}/launch", RateLimitPolicies.Commands),
+        ("PUT", "/api/v1/tv/shortcuts/order", RateLimitPolicies.Commands),
     ];
 
     /// <summary>Production é o que vai para o ar; Development acrescenta o OpenAPI e também não pode vazar rota.</summary>

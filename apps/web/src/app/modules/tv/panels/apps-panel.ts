@@ -10,11 +10,12 @@ import {
   signal,
 } from '@angular/core';
 import { SessionState } from '../../../core/session/session-state';
+import { controlRanks, movedOrder } from '../data/tv-order';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut, shortcutLabel } from '../data/tv-types';
 import { AppIcon } from '../ui/app-icon';
 import { TvIcon } from '../ui/tv-icon';
-import { AppsTile } from './apps-tile';
+import { AppsTile, TileMove } from './apps-tile';
 
 /** Tamanho máximo do nome próprio, o mesmo da API. */
 const LABEL_MAX = 40;
@@ -37,7 +38,8 @@ function plain(text: string): string {
  * ficaram de fora. Com busca, uma lista só, com os do controle marcados. App que saiu da TV some da grade (não há o que
  * abrir nem o que fixar). O dono tem o modo Editar: uma lista só com todos os apps, e em cada azulejo os botões de
  * fixar no controle (ou tirar de lá) e de renomear; nesse modo tocar no azulejo não abre nada, para um dedo errado não
- * ligar app na TV. O pacote só aparece nesse modo. Sem lista ainda, um estado vazio com o botão que a pede à TV. Nenhum
+ * ligar app na TV. O pacote só aparece nesse modo. Nele, quem está no controle também ganha as setas que mudam a ordem da
+ * fileira de atalhos (só sem busca, que esconde os vizinhos). Sem lista ainda, um estado vazio com o botão que a pede à TV. Nenhum
  * nome de app vem do código: o nome é o do dono, o que o agente publicou para o app ou, por último, "Atalho" mais a
  * posição.
  */
@@ -82,6 +84,18 @@ export class AppsPanel {
   protected readonly flat = computed(() => this.searching() || this.editMode());
   /** Os atalhos ativos (os da fileira de cima) e os que ficaram de fora, na ordem da posição. */
   protected readonly pinned = computed(() => this.visible().filter((item) => item.enabled));
+  /**
+   * Mudar a ordem da fileira: só na edição, sem busca (o filtro esconderia os vizinhos e o app pareceria não sair do
+   * lugar). A ordem é a da fileira do controle, que mostra só os atalhos ativos: por isso conta a lista completa do
+   * servidor e não o que o painel exibe.
+   */
+  protected readonly reorderable = computed(() => this.editMode() && !this.searching());
+  /** Lugar de cada atalho do controle na fileira (só dele; os demais não têm lugar nenhum). */
+  protected readonly ranks = computed(() => controlRanks(this.store.shortcuts() ?? []));
+  /** Quantos atalhos há na fileira: o aviso de como mudar a ordem só faz sentido com mais de um. */
+  protected readonly pinnedCount = computed(() => this.ranks().size);
+  /** Frase lida pelo leitor de tela depois de mover um atalho ("Spotify, posição 2 de 6"); vazia quando não há o que dizer. */
+  protected readonly announcement = signal('');
   protected readonly unpinned = computed(() => this.visible().filter((item) => !item.enabled));
 
   protected readonly editing = signal<string | null>(null);
@@ -109,6 +123,7 @@ export class AppsPanel {
   protected toggleEdit(): void {
     this.editMode.update((on) => !on);
     this.editing.set(null);
+    this.announcement.set('');
   }
 
   protected async launch(shortcut: TvShortcut): Promise<void> {
@@ -162,6 +177,36 @@ export class AppsPanel {
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /**
+   * Move um atalho um passo na fileira. A tela já mostra a ordem nova quando o pedido volta do `reorder` (ele é
+   * otimista); o foco acompanha o botão que o dono usou, que muda de lugar na lista, e o leitor de tela ouve onde o app
+   * ficou. Se a ordem não mudou (sem rede, por exemplo, ou já na ponta), nada é dito nem refocado.
+   */
+  protected move(change: TileMove): void {
+    const { shortcut, delta } = change;
+    const before = this.ranks().get(shortcut.id);
+    const ids = movedOrder(this.store.shortcuts() ?? [], shortcut.id, delta);
+    if (!before || !ids) return;
+
+    void this.store.reorder(ids).then((saved) => {
+      // Recusada: a lista já voltou ao que era e o aviso de erro diz isso; "onde ficou" deixou de ser verdade.
+      if (!saved) this.announcement.set('');
+    });
+
+    const after = this.ranks().get(shortcut.id);
+    if (!after || after.index === before.index) return;
+    const moved = (this.store.shortcuts() ?? []).find((item) => item.id === shortcut.id);
+    const name = shortcutLabel(moved ?? shortcut);
+    const position = after.index + 1;
+    const count = after.count;
+    this.announcement.set(
+      $localize`:@@tv.apps.moved:${name}:name:, posição ${position}:position: de ${count}:count:`,
+    );
+    this.focusAfterRender(
+      `[data-move="${delta < 0 ? 'left' : 'right'}"][data-for="${shortcut.id}"]`,
+    );
   }
 
   /** O campo de renomear entra e sai no lugar do azulejo: o foco acompanha, em vez de se perder no painel. */

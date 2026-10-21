@@ -212,6 +212,8 @@ test.describe('convidado: só o controle da TV', () => {
     await expect(apps.getByRole('button', { name: /^Renomear / })).toHaveCount(0);
     await expect(apps.getByRole('button', { name: /^(Fixar|Tirar) / })).toHaveCount(0);
     await expect(apps.getByRole('button', { name: 'Editar', exact: true })).toHaveCount(0);
+    // Mudar a ordem da fileira de atalhos também é só do dono: o convidado não tem as setas.
+    await expect(apps.getByRole('button', { name: /^Mover / })).toHaveCount(0);
     // Abre todo app instalado, também o que está fora do controle; o que saiu da TV não aparece.
     await expect(apps.locator('.launch')).toHaveCount(SHORTCUTS.length + 1);
     await expect(apps.getByRole('button', { name: 'Atalho 5', exact: true })).toHaveCount(0);

@@ -20,6 +20,7 @@ using UniOver.Modules.Tv.Features.ListShortcuts;
 using UniOver.Modules.Tv.Features.PowerOff;
 using UniOver.Modules.Tv.Features.RecentCommands;
 using UniOver.Modules.Tv.Features.RefreshShortcuts;
+using UniOver.Modules.Tv.Features.ReorderShortcuts;
 using UniOver.Modules.Tv.Features.SendKey;
 using UniOver.Modules.Tv.Features.SendText;
 using UniOver.Modules.Tv.Features.UpdateShortcut;
@@ -92,6 +93,7 @@ public static class TvModule
         services.AddScoped<LaunchShortcutHandler>();
         services.AddScoped<ListShortcutsHandler>();
         services.AddScoped<UpdateShortcutHandler>();
+        services.AddScoped<ReorderShortcutsHandler>();
         services.AddScoped<RefreshShortcutsHandler>();
         services.AddScoped<WakeHandler>();
         services.AddScoped<RecentCommandsHandler>();
@@ -114,6 +116,7 @@ public static class TvModule
         group.MapLaunchShortcut();
         group.MapListShortcuts();
         group.MapUpdateShortcut();
+        group.MapReorderShortcuts();
         group.MapRefreshShortcuts();
         group.MapWake();
         group.MapRecentCommands();

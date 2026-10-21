@@ -46,6 +46,10 @@ export interface TvMock {
   commandFailure: MockFailure | null;
   /** Falha de `/wake`. */
   wakeFailure: MockFailure | null;
+  /** Falha de `PUT /shortcuts/order` (a ordem dos atalhos); nada é gravado enquanto ela estiver aqui. */
+  orderFailure: MockFailure | null;
+  /** Enquanto houver uma promessa aqui, `PUT /shortcuts/order` espera por ela (para ver a ordem antes de o servidor responder). */
+  orderGate: Promise<void> | null;
   /** Enquanto houver uma promessa aqui, `GET /state` espera por ela (para ver a tela "conectando"). */
   stateGate: Promise<void> | null;
   /** Pedidos de comando por rota (`/keys`, `/power/off`, ...). */
@@ -107,6 +111,8 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     shortcuts: SHORTCUTS.map((s) => ({ ...s })),
     commandFailure: null,
     wakeFailure: null,
+    orderFailure: null,
+    orderGate: null,
     stateGate: null,
     count: (path) => mock.requests.filter((r) => r.method === 'POST' && r.path === path).length,
     keysSent: () =>
@@ -152,6 +158,28 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
       }
       if (typeof body?.['enabled'] === 'boolean') found.enabled = body['enabled'];
       return json(route, 200, found);
+    }
+
+    // Como a API: só o dono muda a ordem (o mock não tem convidado), e a lista tem de ser uma permutação exata dos atalhos.
+    if (method === 'PUT' && path === '/shortcuts/order') {
+      if (mock.orderGate) await mock.orderGate;
+      if (mock.orderFailure) return problem(route, mock.orderFailure);
+      const ids = Array.isArray(body?.['ids']) ? (body['ids'] as string[]) : null;
+      const known = new Set(mock.shortcuts.map((s) => s.id));
+      if (
+        !ids ||
+        ids.length !== known.size ||
+        new Set(ids).size !== ids.length ||
+        ids.some((id) => !known.has(id))
+      ) {
+        return problem(route, { status: 400, kind: 'validation-failed' });
+      }
+      // Posições de 1 a n na ordem pedida, como a API; a lista guardada passa a ser essa (recarregar a tela a mantém).
+      mock.shortcuts = ids.map((id, index) => ({
+        ...mock.shortcuts.find((s) => s.id === id)!,
+        position: index + 1,
+      }));
+      return json(route, 200, mock.shortcuts);
     }
 
     // Daqui para baixo são comandos para a TV.
