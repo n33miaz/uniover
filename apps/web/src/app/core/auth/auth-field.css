@@ -1,0 +1,99 @@
+:host {
+  display: block;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+}
+
+label {
+  margin-bottom: 6px;
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.control {
+  position: relative;
+}
+
+/* Espaço para o botão de mostrar a senha, que fica dentro do campo. */
+.ui-input.has-toggle {
+  padding-inline-end: 52px;
+}
+
+.ui-input[aria-invalid='true'] {
+  border-color: var(--a-bad);
+}
+
+/* Foco: um contorno só, afastado da borda (o anel de sombra do campo padrão somado ao contorno global ficava pesado). */
+.ui-input:focus-visible {
+  outline: 2px solid var(--a-accent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.ui-input[aria-invalid='true']:focus-visible {
+  outline-color: var(--a-bad);
+}
+
+/* 44 px de toque dentro do campo de 48 px: sobra um fio de cada lado. */
+.toggle {
+  --glyph-size: 22px;
+  position: absolute;
+  inset-block: 2px;
+  inset-inline-end: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--a-ink2);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) linear;
+}
+
+.toggle[aria-pressed='true'] {
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
+}
+
+@media (hover: hover) {
+  .toggle:hover {
+    background: var(--a-elev);
+  }
+}
+
+.caps,
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.caps {
+  color: var(--a-warn-ink);
+}
+
+.error {
+  color: var(--a-bad-ink);
+}
+
+.caps app-auth-glyph,
+.error app-auth-glyph {
+  --glyph-size: 16px;
+  margin-top: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toggle {
+    transition: none;
+  }
+}

@@ -1,0 +1,110 @@
+:host {
+  --tone: var(--a-bad);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--tone) 34%, var(--a-line));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--tone) 9%, var(--a-surface));
+  color: var(--a-ink);
+  /* O foco por script (depois de um envio recusado) deixa folga em cima e embaixo ao rolar até aqui. */
+  scroll-margin-block: var(--space-6);
+}
+
+/*
+ * A faixa recebe foco por script depois de um envio recusado: o contorno segue o canto arredondado e usa o tom do
+ * aviso, em vez do contorno grosso padrão (que, num bloco de texto, pesa mais que a própria mensagem).
+ */
+:host(:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--tone) 70%, var(--a-ink));
+  outline-offset: 2px;
+}
+
+:host([data-tone='warn']) {
+  --tone: var(--a-warn);
+}
+
+:host([data-tone='ok']) {
+  --tone: var(--a-ok);
+}
+
+.icon {
+  --glyph-size: 22px;
+  display: inline-flex;
+  flex: none;
+  margin-top: 1px;
+  color: color-mix(in srgb, var(--tone) 78%, var(--a-ink));
+}
+
+.body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.heading,
+.detail {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.heading {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.detail {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+/* Contagem da espera: o número não balança (algarismos de mesma largura) e a barra esvazia no tempo certo. */
+.wait {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  margin: var(--space-1) 0 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.wait-time {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.bar {
+  display: block;
+  height: 4px;
+  margin-top: var(--space-2);
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--tone) 20%, transparent);
+}
+
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tone);
+  transform-origin: left center;
+  animation: auth-drain linear forwards;
+}
+
+@keyframes auth-drain {
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    display: none;
+  }
+}

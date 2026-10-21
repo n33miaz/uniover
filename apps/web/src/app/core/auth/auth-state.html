@@ -1,0 +1,14 @@
+<span class="mark" aria-hidden="true"><app-auth-glyph [name]="icon()" /></span>
+
+<div #copy class="copy" tabindex="-1" [attr.role]="role()">
+  <h1>{{ heading() }}</h1>
+  <p class="detail">{{ detail() }}</p>
+</div>
+
+@if (advice(); as text) {
+  <p class="advice">{{ text }}</p>
+}
+
+<div class="actions">
+  <ng-content />
+</div>

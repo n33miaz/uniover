@@ -1,98 +1,56 @@
-.login {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: min(100%, 420px);
-  min-height: 100dvh;
-  margin: 0 auto;
-  padding-top: calc(32px + env(safe-area-inset-top));
-}
-
 h1 {
   font-size: 1.75rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
 }
 
 .lead {
-  margin: 0 0 8px;
+  margin: var(--space-2) 0 var(--space-6);
   color: var(--a-ink2);
 }
 
 form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+app-auth-field {
+  margin-bottom: var(--space-4);
 }
 
-label {
-  font-weight: 600;
-}
-
-input {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 48px;
-  padding: 0 12px;
-  border: 1px solid var(--a-ink3);
-  border-radius: var(--radius);
-  background: var(--a-surface);
-  color: var(--a-ink);
-  font: inherit;
-}
-
-.password {
-  display: flex;
-  gap: 8px;
-}
-
-.toggle {
-  flex: 0 0 auto;
-  min-width: 44px;
-  min-height: 48px;
-  padding: 0 12px;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius);
-  background: var(--a-surface);
-  color: var(--a-ink);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.messages {
-  min-height: 1.5em;
-}
-
-.error {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin: 0;
-  padding: 10px 12px;
-  border-left: 4px solid var(--a-bad);
-  border-radius: 8px;
-  background: var(--a-elev);
-  color: var(--a-ink);
-  font-weight: 600;
+/* A região cortês fica sempre no lugar (para ser anunciada), mas só ocupa espaço quando há aviso. */
+.messages:not(:empty) {
+  margin-bottom: var(--space-4);
 }
 
 .submit {
   min-height: 48px;
-  border: 0;
-  border-radius: var(--radius);
-  background: var(--a-accent);
-  color: var(--a-on-accent);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
+  font-size: var(--fs-body);
 }
 
-.submit:disabled {
-  opacity: 0.55;
-  cursor: default;
+/* Enviando: o botão mantém a cor cheia (o anel precisa de contraste) e o mesmo tamanho. */
+.submit:disabled:has(.ui-spinner) {
+  opacity: 1;
+  cursor: progress;
+}
+
+.submit .ui-spinner {
+  border-color: color-mix(in srgb, var(--a-on-accent) 35%, transparent);
+  border-top-color: var(--a-on-accent);
+}
+
+/* Paisagem curta: o texto de apoio sai e o cartão aperta, para o formulário caber na altura. */
+@media (min-width: 560px) and (max-height: 520px) {
+  .lead {
+    display: none;
+  }
+
+  h1 {
+    margin-bottom: var(--space-4);
+    font-size: 1.5rem;
+  }
+
+  app-auth-field {
+    margin-bottom: var(--space-3);
+  }
 }

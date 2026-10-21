@@ -1,0 +1,19 @@
+<main class="stage">
+  <header class="brand">
+    <!-- O símbolo do app (o mesmo do favicon), desenhado aqui para não depender de uma requisição. -->
+    <svg class="mark" viewBox="0 0 512 512" aria-hidden="true" focusable="false">
+      <rect width="512" height="512" rx="112" fill="#3B6B4B" />
+      <g class="waves" fill="none" stroke="#FFFFFF" stroke-width="48">
+        <circle cx="256" cy="256" r="70" fill="#FFFFFF" stroke="none" />
+        <path [attr.d]="rightWave" />
+        <path [attr.d]="leftWave" />
+      </g>
+    </svg>
+    <p class="name" i18n="@@auth.layout.name">UniOver</p>
+    <p class="tagline" i18n="@@auth.layout.tagline">Um app só para a casa e o treino.</p>
+  </header>
+
+  <div class="card ui-rise">
+    <ng-content />
+  </div>
+</main>

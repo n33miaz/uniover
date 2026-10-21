@@ -7,6 +7,7 @@ import {
   test,
   waitForServiceWorkerControl,
 } from '../fixtures';
+import { expectNoA11yViolations } from './entry-helpers';
 import { IdentityMock, OWNER, mockIdentityApi } from './identity-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -77,7 +78,8 @@ test.describe('entrada e sessão', () => {
     await page.goto('/');
     await expect(page).toHaveURL(/\/entrar$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Entrar' })).toBeVisible();
-    await expect(page.getByLabel('E-mail')).toBeFocused();
+    // No celular o campo não ganha foco sozinho (o teclado cobriria a tela antes de ela ser lida).
+    await expect(page.getByLabel('E-mail')).not.toBeFocused();
     await expectNoHorizontalScroll(page);
     await screenshot(page, `test-results/login-${info.project.name}.png`);
 
@@ -155,17 +157,19 @@ test.describe('entrada e sessão', () => {
     await page.goto('/entrar');
     await signIn(page, OWNER.email, 'errada');
     const alert = page.getByRole('alert');
-    await expect(alert).toHaveText('E-mail ou senha inválidos.');
+    await expect(alert).toContainText('E-mail ou senha incorretos.');
     await expect(alert).toBeFocused();
     await expect(page).toHaveURL(/\/entrar$/);
 
     await signIn(page, 'bloqueado@exemplo.com', 'qualquer');
     await expect(alert).toContainText('Conta bloqueada');
-    await expect(alert).toContainText(/Tente de novo em [123] s\./);
+    // O número que anda não é lido: o que vale aqui é o formato m:ss e o botão trancado até a espera acabar.
+    await expect(page.locator('.wait-time')).toHaveText(/^0:0[1-3]$/);
     await expect(page.getByRole('button', { name: 'Entrar', exact: true })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Entrar', exact: true })).toBeEnabled({
-      timeout: 6_000,
+      timeout: 8_000,
     });
+    await expect(page.getByRole('status').filter({ hasText: 'Pronto' })).toBeVisible();
   });
 
   test('link direto sem sessão volta ao destino depois de entrar', async ({ page }) => {
@@ -342,15 +346,15 @@ test.describe('ajustes', () => {
 
 test.describe('acessibilidade da tela de entrada', () => {
   for (const scheme of ['light', 'dark'] as const) {
-    test(`axe sem violações sérias no tema ${scheme}`, async ({ page }) => {
+    test(`axe sem nenhuma violação no tema ${scheme}`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: scheme });
       await page.goto('/entrar');
       await expect(page.getByRole('heading', { level: 1, name: 'Entrar' })).toBeVisible();
-      await expectNoSeriousA11yViolations(page);
+      await expectNoA11yViolations(page);
       // Com o erro na tela também.
       await signIn(page, OWNER.email, 'errada');
       await expect(page.getByRole('alert')).toBeVisible();
-      await expectNoSeriousA11yViolations(page);
+      await expectNoA11yViolations(page);
     });
   }
 });

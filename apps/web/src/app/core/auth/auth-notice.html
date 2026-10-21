@@ -1,0 +1,19 @@
+<span class="icon"><app-auth-glyph [name]="icon()" /></span>
+<div class="body">
+  <p class="heading">{{ heading() }}</p>
+  @if (detail(); as text) {
+    <p class="detail">{{ text }}</p>
+  }
+  @if (countdown(); as wait) {
+    <p class="wait" aria-hidden="true">
+      <span i18n="@@auth.notice.wait-label">Tente de novo em</span>
+      <strong class="wait-time">{{ wait.label }}</strong>
+    </p>
+    <span class="ui-visually-hidden" i18n="@@auth.notice.wait-words"
+      >Tente de novo em {{ wait.words }}.</span
+    >
+    <span class="bar" aria-hidden="true">
+      <span class="bar-fill" [style.animation-duration.s]="wait.total"></span>
+    </span>
+  }
+</div>

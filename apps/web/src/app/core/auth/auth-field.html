@@ -1,0 +1,60 @@
+<div class="field">
+  <label [attr.for]="fieldId()">{{ label() }}</label>
+  <div class="control">
+    <input
+      #control
+      class="ui-input"
+      [class.has-toggle]="isPassword()"
+      [attr.id]="fieldId()"
+      [attr.name]="name()"
+      [type]="inputType()"
+      [attr.autocomplete]="autocomplete()"
+      [attr.inputmode]="isPassword() ? null : 'email'"
+      [attr.autocapitalize]="'none'"
+      [attr.autocorrect]="'off'"
+      [spellcheck]="false"
+      [attr.enterkeyhint]="enterKeyHint()"
+      [attr.maxlength]="maxLength()"
+      required
+      [value]="value()"
+      [attr.aria-invalid]="isInvalid() ? 'true' : null"
+      [attr.aria-describedby]="description()"
+      (input)="onInput($event)"
+      (keydown)="checkCapsLock($event)"
+      (keyup)="checkCapsLock($event)"
+      (blur)="onBlur()"
+    />
+    @if (isPassword()) {
+      <!-- Sem roubar o foco do campo: a tela do celular não fecha o teclado ao revelar a senha. -->
+      <button
+        type="button"
+        class="toggle ui-tap"
+        [attr.aria-pressed]="shown()"
+        [attr.aria-label]="toggleLabel()"
+        (mousedown)="$event.preventDefault()"
+        (click)="toggle()"
+      >
+        <app-auth-glyph [name]="shown() ? 'eye-off' : 'eye'" />
+      </button>
+    }
+  </div>
+
+  <!-- O aviso de Caps Lock é dica, não erro: região cortês que existe desde o início (para ser anunciada). -->
+  <div class="caps-slot" role="status">
+    @if (isPassword() && capsLock()) {
+      <p class="caps ui-rise">
+        <app-auth-glyph name="caps" />
+        <span i18n="@@auth.field.caps-lock">Caps Lock ligado: confira as maiúsculas.</span>
+      </p>
+    }
+  </div>
+
+  @if (error(); as text) {
+    <p class="error" [attr.id]="errorId()">
+      <app-auth-glyph name="alert-circle" />
+      <span>{{ text }}</span>
+    </p>
+  }
+
+  <ng-content />
+</div>
