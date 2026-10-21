@@ -326,7 +326,7 @@ public sealed class CommandTests(PostgresFixture postgres)
         foreach (var (method, url) in new[]
         {
             (HttpMethod.Post, "/api/v1/tv/keys"), (HttpMethod.Post, "/api/v1/tv/text"), (HttpMethod.Post, "/api/v1/tv/power/off"),
-            (HttpMethod.Post, "/api/v1/tv/wake"), (HttpMethod.Post, "/api/v1/tv/shortcuts/refresh"),
+            (HttpMethod.Post, "/api/v1/tv/wake"), (HttpMethod.Post, "/api/v1/tv/shortcuts/refresh"), (HttpMethod.Post, "/api/v1/tv/cleanup"),
             (HttpMethod.Post, $"/api/v1/tv/shortcuts/{Guid.NewGuid()}/launch"), (HttpMethod.Patch, $"/api/v1/tv/shortcuts/{Guid.NewGuid()}"),
             (HttpMethod.Get, "/api/v1/tv/state"), (HttpMethod.Get, "/api/v1/tv/shortcuts"), (HttpMethod.Get, "/api/v1/tv/commands/recent"),
         })

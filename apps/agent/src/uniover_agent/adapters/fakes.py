@@ -177,6 +177,14 @@ class FakeTvAdb:
         self.disconnects = 0
         self.errors: list[AdbError] = []
         self._connected = False
+        # Limpeza da TV: o que o dublê "lê" da TV e a ordem em que recebe os comandos.
+        self.memory_mb: list[int | None] = [300, 700]
+        self.home: frozenset[str] = frozenset({"com.google.android.tvlauncher"})
+        self.keyboard: str | None = None
+        self.accessibility: frozenset[str] = frozenset()
+        self.running: frozenset[str] = frozenset()
+        self.cleanup_log: list[str] = []
+        self.cleanup_errors: dict[str, AdbError] = {}
 
     @property
     def connected(self) -> bool:
@@ -198,6 +206,7 @@ class FakeTvAdb:
 
     async def list_apps(self) -> list[LaunchableApp]:
         self._fail_if_scripted()
+        self._cleanup_step("list-apps")
         return list(self.apps)
 
     async def launch_package(self, package: str, activity: str | None = None) -> None:
@@ -208,6 +217,43 @@ class FakeTvAdb:
         self._fail_if_scripted()
         self.typed.append(text)
         self.events.append(("adb", text))
+
+    # --- limpeza da TV: cada operação entra em `cleanup_log` e falha se `cleanup_errors` mandar ---
+
+    def _cleanup_step(self, step: str) -> None:
+        self.cleanup_log.append(step)
+        error = self.cleanup_errors.get(step)
+        if error is not None:
+            raise error
+
+    async def memory_available_mb(self) -> int | None:
+        self._cleanup_step("memory")
+        return self.memory_mb.pop(0) if len(self.memory_mb) > 1 else self.memory_mb[0]
+
+    async def home_packages(self) -> frozenset[str]:
+        self._cleanup_step("home-packages")
+        return self.home
+
+    async def input_method_package(self) -> str | None:
+        self._cleanup_step("keyboard")
+        return self.keyboard
+
+    async def accessibility_packages(self) -> frozenset[str]:
+        self._cleanup_step("accessibility")
+        return self.accessibility
+
+    async def running_packages(self) -> frozenset[str]:
+        self._cleanup_step("running")
+        return self.running
+
+    async def go_home(self) -> None:
+        self._cleanup_step("go-home")
+
+    async def kill_background(self) -> None:
+        self._cleanup_step("kill-background")
+
+    async def force_stop(self, package: str) -> None:
+        self._cleanup_step(f"force-stop:{package}")
 
 
 class FakeSecretStore:

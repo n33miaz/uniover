@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import type { components } from '../../../core/api/generated/schema';
 import { APP_CONFIG } from '../../../core/config/app-config';
 import {
+  TvCleanupResult,
   TvKey,
   TvShortcut,
   TvState,
@@ -64,6 +65,14 @@ export class TvApi {
   /** Sem passkey (decisão do dono): o freio é o limite de comandos e a trilha de auditoria da API. */
   async powerOff(): Promise<void> {
     await firstValueFrom(this.http.post(`${BASE}/power/off`, null));
+  }
+
+  /**
+   * Fecha os apps abertos na TV e libera memória, sem derrubar o controle. Leva alguns segundos (o servidor espera o
+   * agente por até 30 s), e devolve o que o agente relatou.
+   */
+  async cleanup(): Promise<TvCleanupResult> {
+    return firstValueFrom(this.http.post<TvCleanupResult>(`${BASE}/cleanup`, null));
   }
 
   async launch(id: string): Promise<void> {

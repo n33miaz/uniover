@@ -55,6 +55,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.text.v1.schema.json'
+      tvCleanup:
+        name: tv.cleanup.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.cleanup.v1.schema.json'
   agentEvents:
     address: uniover/{agentId}/evt
     description: Agente para API. No WebSocket é o mesmo socket; no MQTT, o tópico de eventos.
@@ -91,6 +96,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.watchdog.v1.schema.json'
+      tvCleanupResult:
+        name: tv.cleanup.result.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.cleanup.result.v1.schema.json'
 operations:
   sendTvKey:
     action: send
@@ -174,3 +184,17 @@ operations:
     summary: A API recebe um evento do vigia do controle remoto.
     messages:
       - $ref: '#/channels/agentEvents/messages/tvWatchdog'
+  sendTvCleanup:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API pede ao agente que feche os apps da TV e libere memória, sem derrubar o controle remoto.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvCleanup'
+  receiveTvCleanupResult:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe o que a limpeza da TV fez (apps fechados e memória antes e depois).
+    messages:
+      - $ref: '#/channels/agentEvents/messages/tvCleanupResult'

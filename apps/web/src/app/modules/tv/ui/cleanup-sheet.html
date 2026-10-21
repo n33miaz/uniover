@@ -1,0 +1,28 @@
+<dialog
+  #dialog
+  class="sheet"
+  aria-labelledby="cleanup-title"
+  aria-describedby="cleanup-text"
+  (cancel)="cancel($event)"
+>
+  <h2 id="cleanup-title" i18n="@@tv.cleanup.title">Limpar a TV?</h2>
+  <p id="cleanup-text" class="text" i18n="@@tv.cleanup.text">
+    Isso fecha todos os apps abertos, inclusive o que está passando agora, e libera memória. A
+    conexão com o controle continua.
+  </p>
+
+  <div class="footer">
+    <button type="button" class="secondary" (click)="cancel()" i18n="@@tv.cleanup.cancel">
+      Cancelar
+    </button>
+    <button
+      type="button"
+      class="primary"
+      [disabled]="!store.canSend()"
+      (click)="confirm()"
+      i18n="@@tv.cleanup.confirm"
+    >
+      Limpar
+    </button>
+  </div>
+</dialog>

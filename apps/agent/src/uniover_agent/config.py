@@ -8,16 +8,19 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import (
     BaseSettings,
+    NoDecode,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
     TomlConfigSettingsSource,
 )
+
+from uniover_agent.adapters.tv_adb_parsing import is_valid_package
 
 CONFIG_FILE_ENV = "UNIOVER_CONFIG_FILE"
 
@@ -80,6 +83,17 @@ class Settings(BaseSettings):
     # ícones) e a pasta do cache (padrão: `%LOCALAPPDATA%\UniOver\icons`).
     aapt_path: str | None = None
     icons_dir: str | None = None
+    # Limpeza da TV: pacotes que nunca são fechados, além dos protegidos de fábrica. Na variável de
+    # ambiente, separados por vírgula; no arquivo, uma lista TOML ou o mesmo texto. Sem `NoDecode` o
+    # pydantic-settings exigiria JSON na variável.
+    tv_cleanup_keep: Annotated[list[str], NoDecode] = Field(default_factory=list)
+
+    @field_validator("tv_cleanup_keep", mode="before")
+    @classmethod
+    def _split_cleanup_keep(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
 
     @classmethod
     def settings_customise_sources(
@@ -109,6 +123,17 @@ def require_tv_host(host: str | None) -> str:
                 "UNIOVER_TV_HOST precisa ser só o IP ou o nome da TV, sem http:// nem porta"
             ) from None
     return host
+
+
+def require_cleanup_keep(settings: Settings) -> frozenset[str]:
+    """Pacotes que o dono pediu para a limpeza da TV nunca fechar, já validados."""
+    for package in settings.tv_cleanup_keep:
+        if not is_valid_package(package):
+            raise ConfigError(
+                "UNIOVER_TV_CLEANUP_KEEP precisa ser uma lista de nomes de pacote do Android "
+                "separados por vírgula (por exemplo com.exemplo.app); um dos itens não é"
+            )
+    return frozenset(settings.tv_cleanup_keep)
 
 
 def require_api_url(settings: Settings) -> str:

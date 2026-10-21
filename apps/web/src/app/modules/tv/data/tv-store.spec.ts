@@ -51,6 +51,7 @@ describe('TvStore', () => {
     sendText: vi.fn(),
     powerOff: vi.fn(),
     launch: vi.fn(),
+    cleanup: vi.fn(),
     refreshShortcuts: vi.fn(),
     updateShortcut: vi.fn(),
     reorderShortcuts: vi.fn(),
@@ -99,6 +100,15 @@ describe('TvStore', () => {
     api.sendText.mockResolvedValue(undefined);
     api.powerOff.mockResolvedValue(undefined);
     api.launch.mockResolvedValue(undefined);
+    api.cleanup.mockResolvedValue({
+      ok: true,
+      latencyMs: 9000,
+      closedApps: 6,
+      freedMb: 383,
+      memoryBeforeMb: 214,
+      memoryAfterMb: 597,
+      failedSteps: [],
+    });
     api.refreshShortcuts.mockResolvedValue(undefined);
     TestBed.configureTestingModule({
       providers: [
@@ -643,6 +653,137 @@ describe('TvStore', () => {
       const failure = await store.sendText('batman');
       expect(failure?.kind).toBe('agent-offline');
       expect(api.sendText).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cleanup', () => {
+    it('asks the API once and says what was done, in the notice pattern of the module', async () => {
+      await started();
+      await expect(store.cleanup()).resolves.toBe(true);
+      expect(api.cleanup).toHaveBeenCalledTimes(1);
+      expect(store.notice()).toEqual({
+        kind: 'info',
+        text: 'Fechou 6 apps e liberou cerca de 380 MB.',
+      });
+      expect(store.cleaning()).toBe(false);
+    });
+
+    it('is "cleaning" while it waits and the rest of the control keeps working', async () => {
+      await started();
+      let finish: (value: unknown) => void = () => undefined;
+      api.cleanup.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+      const pending = store.cleanup();
+      expect(store.cleaning()).toBe(true);
+      // Uma tecla enviada no meio da limpeza passa normalmente (nada trava).
+      await expect(store.sendKey('HOME')).resolves.toBe(true);
+      expect(api.sendKey).toHaveBeenCalledTimes(1);
+      expect(store.canSend()).toBe(true);
+      finish({
+        ok: true,
+        latencyMs: 1,
+        closedApps: 0,
+        freedMb: null,
+        memoryBeforeMb: null,
+        memoryAfterMb: null,
+        failedSteps: [],
+      });
+      await expect(pending).resolves.toBe(true);
+      expect(store.cleaning()).toBe(false);
+    });
+
+    it('one request at a time: a second one while it runs does nothing', async () => {
+      await started();
+      let finish: (value: unknown) => void = () => undefined;
+      api.cleanup.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+      const first = store.cleanup();
+      await expect(store.cleanup()).resolves.toBe(false);
+      expect(api.cleanup).toHaveBeenCalledTimes(1);
+      finish({
+        ok: true,
+        latencyMs: 1,
+        closedApps: 1,
+        freedMb: null,
+        memoryBeforeMb: null,
+        memoryAfterMb: null,
+        failedSteps: [],
+      });
+      await first;
+      // Terminada a primeira, outra pode ser pedida.
+      await expect(store.cleanup()).resolves.toBe(true);
+      expect(api.cleanup).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not call the API while the remote cannot send', async () => {
+      await started();
+      online.set(false);
+      await expect(store.cleanup()).resolves.toBe(false);
+      expect(api.cleanup).not.toHaveBeenCalled();
+      expect(store.cleaning()).toBe(false);
+    });
+
+    it('does not call the API without an agent', async () => {
+      await started();
+      emit('tv.state', { ...hot, agentOnline: false, connection: 'disconnected' });
+      await flush();
+      expect(store.canSend()).toBe(false);
+      await expect(store.cleanup()).resolves.toBe(false);
+      expect(api.cleanup).not.toHaveBeenCalled();
+    });
+
+    it('says when there was nothing to close', async () => {
+      await started();
+      api.cleanup.mockResolvedValueOnce({
+        ok: true,
+        latencyMs: 1,
+        closedApps: 0,
+        freedMb: 3,
+        memoryBeforeMb: 500,
+        memoryAfterMb: 503,
+        failedSteps: [],
+      });
+      await store.cleanup();
+      expect(store.notice()?.text).toBe('Nada para fechar.');
+    });
+
+    it('shows each error with a useful message, once, and never repeats the request', async () => {
+      await started();
+      api.cleanup.mockRejectedValueOnce(
+        new HttpErrorResponse({
+          status: 502,
+          error: { type: PROBLEM + 'command-failed', status: 502, agentError: 'adb_unreachable' },
+        }),
+      );
+      await expect(store.cleanup()).resolves.toBe(false);
+      expect(store.notice()).toEqual({
+        kind: 'error',
+        text: 'A TV não respondeu pelo ADB agora. Tente de novo com a TV ligada.',
+      });
+
+      api.cleanup.mockRejectedValueOnce(problem(504, 'agent-timeout'));
+      await store.cleanup();
+      expect(store.notice()?.text).toContain('A limpeza demorou mais do que o esperado');
+
+      api.cleanup.mockRejectedValueOnce(problem(409, 'cleanup-in-progress'));
+      await store.cleanup();
+      expect(store.notice()?.text).toBe(
+        'Já há uma limpeza da TV em andamento. Aguarde ela terminar.',
+      );
+
+      api.cleanup.mockRejectedValueOnce(problem(429, 'rate-limited', { 'Retry-After': '4' }));
+      await store.cleanup();
+      expect(store.notice()?.text).toBe('Comandos demais em pouco tempo. Aguarde 4 s.');
+
+      expect(api.cleanup).toHaveBeenCalledTimes(4);
+      expect(store.cleaning()).toBe(false);
+    });
+
+    it('learns the agent is off when the server says so', async () => {
+      await started();
+      api.cleanup.mockRejectedValueOnce(problem(503, 'agent-offline'));
+      await store.cleanup();
+      expect(store.notice()?.text).toContain('O agente da TV está desligado');
+      expect(store.state()?.agentOnline).toBe(false);
+      expect(store.canSend()).toBe(false);
     });
   });
 

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/tv.cleanup.result.v1.schema.json",
+  "title": "tv.cleanup.result.v1",
+  "description": "Agente para API: o que a limpeza da TV fez. Sai antes do command.result.v1 do mesmo comando (correlationId = id do comando) e repete o requestId de tv.cleanup.v1. Só existe quando a limpeza rodou; se o ADB não respondeu, o agente só manda command.result.v1 com erro.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "type", "source", "target", "ts", "correlationId", "body"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+    "type": { "const": "tv.cleanup.result.v1" },
+    "source": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "target": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "ts": { "$ref": "../envelope.schema.json#/$defs/timestamp" },
+    "correlationId": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+    "body": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requestId", "closedApps", "memoryBeforeMb", "memoryAfterMb", "freedMb", "failedSteps", "at"],
+      "properties": {
+        "requestId": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+        "closedApps": { "type": "integer", "minimum": 0, "maximum": 500 },
+        "memoryBeforeMb": { "type": ["integer", "null"], "minimum": 0, "maximum": 1048576 },
+        "memoryAfterMb": { "type": ["integer", "null"], "minimum": 0, "maximum": 1048576 },
+        "freedMb": { "type": ["integer", "null"], "minimum": 0, "maximum": 1048576 },
+        "failedSteps": {
+          "type": "array", "maxItems": 50,
+          "items": { "type": "string", "minLength": 1, "maxLength": 300, "pattern": "^[a-z][a-z-]*(:[A-Za-z][A-Za-z0-9_]*([.][A-Za-z][A-Za-z0-9_]*)+)?$" }
+        },
+        "at": { "$ref": "../envelope.schema.json#/$defs/timestamp" }
+      }
+    }
+  }
+}

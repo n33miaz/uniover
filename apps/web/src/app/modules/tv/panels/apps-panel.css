@@ -15,6 +15,11 @@ button:disabled {
   cursor: default;
 }
 
+/* A folha mora aqui só para o foco voltar ao botão; ela própria é um diálogo modal, fora do fluxo. */
+app-tv-cleanup-sheet {
+  display: contents;
+}
+
 .note {
   margin: 0;
   color: var(--a-ink2);
@@ -88,9 +93,9 @@ button:disabled {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  padding: 0 12px;
+  padding: 0 10px;
   border: 1px solid var(--a-ink3);
   border-radius: var(--radius);
   background: var(--a-surface);
@@ -121,14 +126,19 @@ button:disabled {
   background: var(--a-surface);
   color: var(--a-ink);
 }
+/* 44 px de largura (e 48 de altura): com atualizar, limpar e Editar na barra, o campo de busca ainda mostra "Buscar app" inteiro em 390 px. */
 .icon-btn {
   display: grid;
   place-items: center;
-  width: 48px;
+  width: 44px;
   padding: 0;
 }
 .icon-btn[aria-disabled='true'] {
   cursor: default;
+}
+/* Sem agente: apagado, mas ainda focável (o motivo está no aviso da tela). */
+.icon-btn.off {
+  opacity: 0.5;
 }
 .edit-toggle {
   padding: 0 14px;

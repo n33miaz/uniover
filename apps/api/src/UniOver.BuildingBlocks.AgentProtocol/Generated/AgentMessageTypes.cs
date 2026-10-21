@@ -25,6 +25,12 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>tv.apps.v2</c>.</summary>
     public const string TvAppsV2 = "tv.apps.v2";
 
+    /// <summary>Tipo de mensagem <c>tv.cleanup.result.v1</c>.</summary>
+    public const string TvCleanupResultV1 = "tv.cleanup.result.v1";
+
+    /// <summary>Tipo de mensagem <c>tv.cleanup.v1</c>.</summary>
+    public const string TvCleanupV1 = "tv.cleanup.v1";
+
     /// <summary>Tipo de mensagem <c>tv.key.v1</c>.</summary>
     public const string TvKeyV1 = "tv.key.v1";
 
@@ -52,6 +58,8 @@ public static class AgentMessageTypes
         TvAppsRefreshV1,
         TvAppsV1,
         TvAppsV2,
+        TvCleanupResultV1,
+        TvCleanupV1,
         TvKeyV1,
         TvKeyV2,
         TvStateV1,

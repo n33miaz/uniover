@@ -52,6 +52,7 @@ from uniover_agent.ports.tv_channel import (
     TvPortClosed,
     TvUnreachable,
 )
+from uniover_agent.ports.tv_cleanup import TvAdbCleanup
 from uniover_agent.ports.tv_remote import TvRemote
 
 
@@ -111,6 +112,7 @@ __all__ = [
     "Transport",
     "TransportError",
     "TvAdb",
+    "TvAdbCleanup",
     "TvChannel",
     "TvChannelError",
     "TvNotPaired",

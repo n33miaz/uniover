@@ -5,7 +5,8 @@ import { ConnectivityService } from '../../../core/connectivity/connectivity.ser
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
 import { TV_EVENTS_PATH, TvApi } from './tv-api';
 import { TV_CONFIG } from './tv-config';
-import { TvFailure, describeFailure } from './tv-errors';
+import { describeCleanup } from './tv-cleanup';
+import { TvFailure, TvFailureContext, describeFailure } from './tv-errors';
 import { withOrder } from './tv-order';
 import {
   TV_STREAM_EVENTS,
@@ -93,6 +94,7 @@ export class TvStore {
   private readonly _streamStatus = signal<TvStreamStatus>('connecting');
   private readonly _notice = signal<TvNotice | null>(null);
   private readonly _inFlightKeys = signal(0);
+  private readonly _cleaning = signal(false);
   /** O último texto gravado em `ICONS_KEY`, para não regravar o mesmo. */
   private iconsSaved = '';
   /** A última lista que o servidor confirmou, guardada enquanto a ordem nova não é confirmada (volta para ela se for recusada). */
@@ -111,6 +113,8 @@ export class TvStore {
   readonly streamStatus = this._streamStatus.asReadonly();
   readonly notice = this._notice.asReadonly();
   readonly inFlightKeys = this._inFlightKeys.asReadonly();
+  /** Há uma limpeza da TV em andamento (leva alguns segundos): um pedido por vez, e o resto do controle segue. */
+  readonly cleaning = this._cleaning.asReadonly();
 
   readonly hibernateMinutes = this.config.hibernateMinutes;
 
@@ -338,6 +342,26 @@ export class TvStore {
     }
   }
 
+  /**
+   * Fecha os apps abertos na TV e libera memória, sem derrubar a conexão do controle. Um pedido por vez (um segundo
+   * toque enquanto roda não faz nada). Devolve `true` se a TV fez; o aviso com o que foi feito, ou o erro, já foi
+   * mostrado. Não trava o resto do controle: só `cleaning` muda enquanto espera.
+   */
+  async cleanup(): Promise<boolean> {
+    if (!this.canSend() || this._cleaning()) return false;
+    this._cleaning.set(true);
+    try {
+      const result = await this.api.cleanup();
+      this.showNotice('info', describeCleanup(result));
+      return true;
+    } catch (error) {
+      this.fail(error, 'cleanup');
+      return false;
+    } finally {
+      this._cleaning.set(false);
+    }
+  }
+
   async refreshShortcuts(): Promise<boolean> {
     if (!this.canSend()) return false;
     try {
@@ -521,8 +545,8 @@ export class TvStore {
     }
   }
 
-  private fail(error: unknown): TvFailure {
-    const failure = describeFailure(error);
+  private fail(error: unknown, context?: TvFailureContext): TvFailure {
+    const failure = describeFailure(error, context);
     this.absorb(failure);
     this.showNotice('error', failure.message);
     return failure;

@@ -7,6 +7,9 @@ export type TvKey = Exclude<TvKeyV2BodyKey, 'POWER'>;
 /** Atalho como a API entrega (tipo gerado do OpenAPI). */
 export type TvShortcut = components['schemas']['TvShortcut'];
 
+/** O que a limpeza da TV fez, como o agente relatou (tipo gerado do OpenAPI). */
+export type TvCleanupResult = components['schemas']['TvCleanupOk'];
+
 type TvStateDto = components['schemas']['TvState'];
 
 /** `hot`: sessão aberta · `hibernating`: controle dormindo (não é "TV desligada") · `disconnected`: sem sessão. */

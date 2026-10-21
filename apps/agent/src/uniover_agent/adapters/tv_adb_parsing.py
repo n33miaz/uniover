@@ -194,3 +194,67 @@ def input_text_command(text: str) -> str:
     if not is_adb_typable(text):
         raise ValueError("texto fora do que o ADB digita com fidelidade")
     return "input text " + quote_for_device_shell(text.replace(" ", "%s"))
+
+
+# --- limpeza da TV -----------------------------------------------------------------------------
+
+_MEM_AVAILABLE_LINE: Final = re.compile(r"^MemAvailable:\s+(\d+)\s*kB\b", re.IGNORECASE)
+# `settings get` escreve a palavra `null` quando o valor não existe.
+_SETTING_NULL: Final = "null"
+
+
+def parse_mem_available_mb(text: str) -> int | None:
+    """`MemAvailable` de `/proc/meminfo` (linha `MemAvailable:   262144 kB`), em MB inteiros."""
+    for line in clean_lines(text):
+        match = _MEM_AVAILABLE_LINE.match(line)
+        if match is not None:
+            return int(match.group(1)) // 1024
+    return None
+
+
+def parse_setting_value(text: str) -> str | None:
+    """Valor de `settings get`: a primeira linha útil, ou `None` para `null` e para saída vazia."""
+    lines = clean_lines(text)
+    if not lines or lines[0].lower() == _SETTING_NULL:
+        return None
+    return lines[0]
+
+
+def parse_component_packages(value: str | None) -> frozenset[str]:
+    """Pacotes de uma lista de componentes (`pacote/Classe:pacote2/Classe2`), validados um a um.
+
+    O IME vem como um componente só e os serviços de acessibilidade, separados por dois-pontos.
+    Parte fora do formato do Android é ignorada: nada vindo da TV vira argumento de comando.
+    """
+    if value is None:
+        return frozenset()
+    packages: set[str] = set()
+    for component in value.split(":"):
+        package = component.split("/", 1)[0].strip()
+        if is_valid_package(package):
+            packages.add(package)
+    return frozenset(packages)
+
+
+def parse_running_packages(text: str) -> frozenset[str]:
+    """Pacotes com processo vivo, de `ps -A`: o nome do processo é a última coluna de cada linha.
+
+    Processo secundário de app (`pacote:servico`) conta para o pacote. Threads do kernel
+    (`[kworker/0:1]`), executáveis (`/system/bin/...`) e o cabeçalho (`NAME`) não têm o formato de
+    um pacote e ficam de fora.
+    """
+    running: set[str] = set()
+    for line in clean_lines(text):
+        name = line.split()[-1].split(":", 1)[0]
+        if is_valid_package(name):
+            running.add(name)
+    return frozenset(running)
+
+
+def command_succeeded(output: AdbOutput) -> bool:
+    """`am` e `input` saem com 0 quando dão certo e escrevem `Error...` ou `Exception...` se não."""
+    if output.returncode != 0:
+        return False
+    return not any(
+        line.startswith("Error") or "Exception" in line for line in clean_lines(output.text)
+    )
