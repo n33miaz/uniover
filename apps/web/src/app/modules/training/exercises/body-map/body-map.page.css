@@ -1,0 +1,191 @@
+:host {
+  display: block;
+  /*
+   * Os degraus de intensidade, do vazio ao mais forte: a figura pinta as zonas com eles e a legenda os repete. Mistura
+   * do destaque com a superfície, então valem nos dois temas sem uma cor a mais.
+   */
+  --level-0: var(--a-surface);
+  --level-1: color-mix(in srgb, var(--a-accent) 24%, var(--a-surface));
+  --level-2: color-mix(in srgb, var(--a-accent) 50%, var(--a-surface));
+  --level-3: color-mix(in srgb, var(--a-accent) 80%, var(--a-surface));
+  /* A altura da figura acompanha a do celular: cresce até onde ainda sobra espaço para o painel logo abaixo. */
+  --figure-height: clamp(250px, 44dvh, 340px);
+}
+
+.map {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+/* Voltar, o título e o seletor Frente | Costas numa linha só (se faltar largura, o seletor desce). */
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  margin-left: calc(-1 * var(--space-2));
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--a-ink);
+  cursor: pointer;
+}
+
+.back:active {
+  background: var(--a-elev);
+}
+
+.title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+/* Controle segmentado, no mesmo desenho do "Catálogo | Rotinas" (aqui são botões: a face é estado da tela, não rota). */
+.faces {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1);
+  margin-left: auto;
+  padding: var(--space-1);
+  border-radius: var(--radius);
+  background: var(--a-elev);
+}
+
+.faces button {
+  min-height: var(--tap);
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--a-ink2);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) linear,
+    box-shadow var(--dur-fast) linear;
+}
+
+.faces button[aria-pressed='true'] {
+  border-color: var(--a-line);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  box-shadow: var(--shadow-1);
+}
+
+/* O cartão da figura: o desenho e, embaixo, a legenda das cores. */
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-3);
+}
+
+.skeleton {
+  min-height: calc(var(--figure-height) + 56px);
+}
+
+.skeleton .ui-skeleton {
+  flex: 1 1 auto;
+  border-radius: var(--radius);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1) var(--space-3);
+  color: var(--a-ink2);
+  font-size: var(--fs-label);
+  font-weight: 650;
+}
+
+.steps {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--a-accent);
+  border-radius: 4px;
+  background: var(--level-0);
+}
+
+.swatch[data-level='1'] {
+  background: var(--level-1);
+}
+
+.swatch[data-level='2'] {
+  background: var(--level-2);
+}
+
+.swatch[data-level='3'] {
+  background: var(--level-3);
+}
+
+app-body-panel {
+  scroll-margin-top: var(--space-3);
+}
+
+/* Primeira abertura sem catálogo: um cartão calmo que diz o que fazer (o mesmo texto da lista de Exercícios). */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.empty h3 {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.empty p {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.empty .ui-btn.block {
+  margin-top: var(--space-1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .faces button {
+    transition: none;
+  }
+}

@@ -1,0 +1,99 @@
+:host {
+  display: block;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* O nome do grupo à esquerda e os músculos dele ao lado, em quantas linhas precisarem. */
+.group {
+  display: grid;
+  grid-template-columns: 4.75rem minmax(0, 1fr);
+  align-items: start;
+}
+
+.group-name {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding-left: var(--space-1);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a-ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.face {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-pill);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-1);
+  white-space: nowrap;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) linear;
+}
+
+.count {
+  color: var(--a-ink2);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.chip:active .face {
+  transform: scale(0.96);
+}
+
+/* Escolhido: pílula cheia na cor de destaque e o número no tom do texto sobre ela (forma e contraste, não só o matiz). */
+.chip[aria-pressed='true'] .face {
+  border-color: var(--a-accent);
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+}
+
+.chip[aria-pressed='true'] .count {
+  color: inherit;
+}
+
+@media (hover: hover) {
+  .chip[aria-pressed='false']:hover .face {
+    border-color: color-mix(in srgb, var(--a-accent) 45%, var(--a-line));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .face {
+    transition: none;
+  }
+
+  .chip:active .face {
+    transform: none;
+  }
+}

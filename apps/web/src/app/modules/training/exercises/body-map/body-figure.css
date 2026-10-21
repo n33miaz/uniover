@@ -1,0 +1,110 @@
+:host {
+  display: block;
+}
+
+/* O SVG ocupa a largura e a altura que a tela der; o desenho fica centrado e nunca deforma. */
+.figure {
+  display: block;
+  width: 100%;
+  height: var(--figure-height, 300px);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* O contorno da silhueta: a forma inteira pintada na cor do fio e, por cima, a mesma forma na cor do corpo. As emendas entre
+   as peças somem e sobra um traço só em volta. */
+.line path {
+  fill: var(--a-line);
+  stroke: var(--a-line);
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
+
+.skin path {
+  fill: var(--a-elev);
+}
+
+.line,
+.skin {
+  pointer-events: none;
+}
+
+/* As cores dos degraus (`--level-0` a `--level-3`) vêm da tela, que as divide com a legenda. */
+.zone {
+  --fill: var(--level-0);
+  outline: none;
+  cursor: pointer;
+}
+
+.zone[data-level='1'] {
+  --fill: var(--level-1);
+}
+
+.zone[data-level='2'] {
+  --fill: var(--level-2);
+}
+
+.zone[data-level='3'] {
+  --fill: var(--level-3);
+}
+
+/* A área de toque não se vê; só ela recebe o dedo (as formas não pegam toque, para as áreas não disputarem). */
+.tile {
+  fill: transparent;
+  stroke: none;
+  pointer-events: all;
+}
+
+.shape,
+.halo {
+  pointer-events: none;
+  stroke-linejoin: round;
+}
+
+.shape {
+  fill: var(--fill);
+  stroke: var(--a-accent);
+  stroke-width: 1.4;
+  transition: fill var(--dur-fast) linear;
+}
+
+/* Anel de foco: a forma de novo, mais larga e na cor de destaque, por baixo da forma (o foco de teclado e de leitor de tela). */
+.halo {
+  fill: none;
+  stroke: var(--a-accent);
+  stroke-width: 8;
+  stroke-opacity: 0;
+}
+
+/* Selecionada: contorno grosso na cor do texto (vale por forma, não só por cor). */
+.zone.on .shape,
+.zone:focus-visible .shape {
+  stroke: var(--a-ink);
+  stroke-width: 3;
+}
+
+.zone:focus-visible .halo {
+  stroke-opacity: 0.4;
+}
+
+.zone:active .shape {
+  stroke-width: 2.6;
+}
+
+@media (hover: hover) {
+  .zone:hover .shape {
+    stroke-width: 2.4;
+  }
+
+  .zone.on:hover .shape {
+    stroke-width: 3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shape {
+    transition: none;
+  }
+}
