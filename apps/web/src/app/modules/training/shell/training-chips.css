@@ -1,0 +1,75 @@
+:host {
+  display: block;
+  /* A fileira vai até a borda da tela: o conteúdo da página tem margem lateral, a rolagem não precisa dela. */
+  margin-inline: calc(-1 * var(--gutter));
+}
+
+.row {
+  display: flex;
+  gap: var(--space-2);
+  padding-inline: var(--gutter);
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: var(--gutter);
+}
+
+.row::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a-ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.face {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-pill);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-1);
+  white-space: nowrap;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) linear;
+}
+
+.chip:active .face {
+  transform: scale(0.96);
+}
+
+.chip[aria-pressed='true'] .face {
+  border-color: var(--a-accent);
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+}
+
+@media (hover: hover) {
+  .chip[aria-pressed='false']:hover .face {
+    border-color: color-mix(in srgb, var(--a-accent) 45%, var(--a-line));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .face {
+    transition: none;
+  }
+
+  .chip:active .face {
+    transform: none;
+  }
+}

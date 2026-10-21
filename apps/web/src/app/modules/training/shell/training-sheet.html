@@ -1,0 +1,14 @@
+<dialog #dialog class="sheet ui-dialog" [attr.aria-labelledby]="titleId" (cancel)="close($event)">
+  <!-- O espaçamento fica neste miolo, e não no próprio diálogo: um toque na margem seria um toque no "fundo" e fecharia a folha. -->
+  <div class="inner">
+    <span class="grabber" aria-hidden="true"></span>
+    <h2 [id]="titleId" class="title">{{ heading() }}</h2>
+    <div class="body">
+      <ng-content />
+    </div>
+    <div class="footer">
+      <ng-content select="[sheetAction]" />
+      <button type="button" class="secondary ui-btn" (click)="close()">{{ dismissLabel() }}</button>
+    </div>
+  </div>
+</dialog>

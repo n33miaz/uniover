@@ -1,0 +1,298 @@
+@if (exercise() === undefined) {
+  <div class="detail" aria-hidden="true">
+    <div class="ui-skeleton title-skeleton"></div>
+    <div class="ui-skeleton block-skeleton"></div>
+  </div>
+} @else if (exercise() === null) {
+  <section class="detail missing">
+    <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="goBack()">
+      <app-training-glyph name="back" />
+    </button>
+    <p class="ui-notice" role="status">
+      <app-training-glyph name="info" />
+      <span i18n="@@training.detail.not-found"
+        >Exercício não encontrado. Pode ter sido apagado.</span
+      >
+    </p>
+  </section>
+} @else {
+  @let ex = exercise()!;
+  <article class="detail">
+    <header class="head">
+      <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="goBack()">
+        <app-training-glyph name="back" />
+      </button>
+      <h2 class="name">{{ ex.name }}</h2>
+    </header>
+
+    <section class="hero" [class.with-art]="hasArt()">
+      @if (hasArt()) {
+        <div class="art">
+          <app-exercise-illustration [slug]="ex.slug" [name]="ex.name" />
+        </div>
+      }
+      <div class="side">
+        <ul class="chips ui-plain" [attr.aria-label]="chipsLabel">
+          @for (chip of chips(); track chip.text) {
+            <li class="ui-chip" [class.accent]="chip.accent">{{ chip.text }}</li>
+          }
+          @if (own()) {
+            <li class="ui-chip accent" i18n="@@training.exercise.own">própria</li>
+          }
+        </ul>
+        @if (hasArt()) {
+          <app-exercise-credit-line />
+        }
+      </div>
+    </section>
+
+    <div class="main-action">
+      <button type="button" class="primary ui-btn block" (click)="openAdd()">
+        <app-training-glyph name="plus" />
+        <span i18n="@@training.detail.add">Adicionar a um treino</span>
+      </button>
+      @if (added(); as routine) {
+        <p class="added ui-notice ok" role="status">
+          <app-training-glyph name="check" />
+          <span class="added-text">
+            <span i18n="@@training.detail.added">Adicionado a {{ routine.name }}.</span>
+            <a [routerLink]="['/treino/rotinas', routine.id]" i18n="@@training.detail.open-routine"
+              >Abrir rotina</a
+            >
+          </span>
+        </p>
+      }
+    </div>
+
+    <section class="part" aria-labelledby="how-title">
+      <h3 id="how-title" class="ui-section-label" i18n="@@training.detail.how">Como fazer</h3>
+      @if (steps().length > 0) {
+        <div class="ui-card steps-card">
+          <ol class="steps">
+            @for (step of visibleSteps(); track $index) {
+              <li>{{ step }}</li>
+            }
+          </ol>
+          @if (steps().length > stepsPreview) {
+            <button
+              type="button"
+              class="more-steps"
+              [attr.aria-expanded]="stepsOpen()"
+              (click)="toggleSteps()"
+            >
+              @if (stepsOpen()) {
+                <span i18n="@@training.detail.steps-less">Ver menos</span>
+              } @else {
+                <span i18n="@@training.detail.steps-more"
+                  >Ver todos os {{ steps().length }} passos</span
+                >
+              }
+            </button>
+          }
+        </div>
+      } @else if (own()) {
+        <p class="quiet-text" i18n="@@training.detail.no-steps-own">
+          Exercício seu, sem passo a passo: só o que você digitar ao editar aparece aqui.
+        </p>
+      } @else {
+        <p class="quiet-text" i18n="@@training.detail.no-steps">
+          Este exercício ainda não tem passo a passo.
+        </p>
+      }
+    </section>
+
+    <section class="part" aria-labelledby="history-title">
+      <h3 id="history-title" class="ui-section-label" i18n="@@training.detail.history">
+        Seu histórico
+      </h3>
+      @if (hasHistory()) {
+        <dl class="ui-group facts">
+          @if (maxWeightText(); as value) {
+            <div class="fact">
+              <dt i18n="@@training.detail.max-weight">Carga máxima</dt>
+              <dd>{{ value }}</dd>
+            </div>
+          }
+          @if (oneRepMaxText(); as value) {
+            <div class="fact">
+              <dt i18n="@@training.detail.one-rep-max">1RM estimado</dt>
+              <dd>{{ value }}</dd>
+            </div>
+          }
+          @for (row of history(); track row.day + row.kg) {
+            <div class="fact">
+              <dt>
+                {{ row.day }}
+                @if (row.record) {
+                  <span class="ui-chip ok" i18n="@@training.detail.record">recorde</span>
+                }
+              </dt>
+              <dd>{{ rowText(row) }}</dd>
+            </div>
+          }
+        </dl>
+        <a
+          class="ui-btn secondary block"
+          routerLink="/treino/progresso"
+          [queryParams]="{ exercise: ex.id }"
+        >
+          <app-training-glyph name="chart" />
+          <span i18n="@@training.detail.see-progress">Ver no Progresso</span>
+        </a>
+      } @else {
+        <p class="ui-notice">
+          <app-training-glyph name="info" />
+          <span i18n="@@training.detail.no-history"
+            >Sem registro deste exercício ainda. Depois do primeiro treino, o histórico aparece
+            aqui.</span
+          >
+        </p>
+      }
+    </section>
+
+    <section class="part" aria-labelledby="settings-title">
+      <h3 id="settings-title" class="ui-section-label" i18n="@@training.detail.settings">
+        Ajustes
+      </h3>
+      <div class="ui-group step">
+        <div class="ui-row">
+          <span class="ui-row-text">
+            <span class="ui-row-title" i18n="@@training.detail.step">Salto de carga</span>
+            <span class="ui-row-sub">{{ stepSource() }}</span>
+          </span>
+          @if (stepText(); as value) {
+            <b class="step-value">{{ value }}</b>
+          }
+          <button
+            type="button"
+            class="secondary ui-btn compact"
+            [attr.aria-expanded]="stepEditing()"
+            (click)="stepEditing() ? cancelStepEdit() : startStepEdit()"
+          >
+            <span i18n="@@training.detail.step-edit">Editar</span>
+          </button>
+        </div>
+        @if (stepEditing()) {
+          <div class="step-edit">
+            <div class="ui-field">
+              <label for="step-input" i18n="@@training.detail.step-label">Salto, em kg</label>
+              <input
+                id="step-input"
+                class="ui-input"
+                type="text"
+                [attr.inputmode]="'decimal'"
+                autocomplete="off"
+                [value]="stepDraft()"
+                (input)="stepDraft.set($any($event.target).value)"
+              />
+            </div>
+            @if (stepError(); as message) {
+              <p class="error" role="alert">{{ message }}</p>
+            }
+            <div class="pair">
+              <button type="button" class="primary ui-btn" (click)="saveStepFromDraft()">
+                <span i18n="@@training.detail.step-save">Salvar</span>
+              </button>
+              <button type="button" class="secondary ui-btn" (click)="cancelStepEdit()">
+                <span i18n="@@training.detail.step-cancel">Cancelar</span>
+              </button>
+            </div>
+            @if (ex.stepKg !== null) {
+              <button type="button" class="reset" (click)="useDefaultStep()">
+                <span i18n="@@training.detail.step-reset">Voltar ao padrão do equipamento</span>
+              </button>
+            }
+          </div>
+        }
+      </div>
+
+      @if (own()) {
+        <div class="pair">
+          <a class="secondary ui-btn" [routerLink]="['/treino/exercicios', ex.id, 'editar']">
+            <app-training-glyph name="pencil" />
+            <span i18n="@@training.detail.edit">Editar</span>
+          </a>
+          <button type="button" class="destructive secondary ui-btn" (click)="askDelete()">
+            <app-training-glyph name="trash" />
+            <span i18n="@@training.detail.delete">Apagar</span>
+          </button>
+        </div>
+        @if (confirmingDelete()) {
+          <div class="ui-notice bad confirm" role="alert">
+            <span class="confirm-text">
+              <span i18n="@@training.detail.delete-ask"
+                >Apagar este exercício? Ele some da lista de todos os seus aparelhos.</span
+              >
+              <span class="pair">
+                <button type="button" class="danger ui-btn" (click)="deleteExercise()">
+                  <span i18n="@@training.detail.delete-yes">Apagar</span>
+                </button>
+                <button type="button" class="secondary ui-btn" (click)="keepExercise()">
+                  <span i18n="@@training.detail.delete-no">Manter</span>
+                </button>
+              </span>
+            </span>
+          </div>
+        }
+        @if (saveError(); as message) {
+          <p class="error" role="alert">{{ message }}</p>
+        }
+      }
+    </section>
+
+    <p class="origin">
+      <span>{{ originText() }}</span>
+      @if (ex.source === 'wger' && ex.license) {
+        @if (ex.licenseUrl; as url) {
+          <a class="origin-link" [href]="url" target="_blank" [attr.rel]="linkRel">{{
+            ex.license
+          }}</a>
+        } @else {
+          <span>{{ ex.license }}</span>
+        }
+      }
+      <a class="origin-link" routerLink="/ajustes/creditos" i18n="@@training.detail.credits"
+        >Créditos</a
+      >
+    </p>
+  </article>
+
+  @if (addOpen()) {
+    <app-training-sheet [heading]="addHeading" [dismissLabel]="cancelLabel" (closed)="closeAdd()">
+      @if (routineList().length > 0) {
+        <ul class="ui-group ui-plain">
+          @for (routine of routineList(); track routine.id; let i = $index) {
+            <li>
+              <button type="button" class="ui-row" (click)="addTo(routine)">
+                <span class="ui-tile">{{ routineLetter(i) }}</span>
+                <span class="ui-row-text">
+                  <span class="ui-row-title">{{ routine.name }}</span>
+                  <span class="ui-row-sub">{{ routineSummary(routine) }}</span>
+                </span>
+                <app-training-glyph name="plus" />
+              </button>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="quiet-text" i18n="@@training.detail.add-none">
+          Você ainda não tem rotinas. Crie a primeira com este exercício.
+        </p>
+      }
+      @if (addError(); as message) {
+        <p class="ui-notice bad" role="alert">
+          <app-training-glyph name="alert" />
+          <span>{{ message }}</span>
+        </p>
+      }
+      <a
+        class="secondary ui-btn block"
+        routerLink="/treino/rotinas/nova"
+        [queryParams]="{ exercicio: ex.id }"
+      >
+        <app-training-glyph name="plus" />
+        <span i18n="@@training.detail.add-new">Nova rotina com este exercício</span>
+      </a>
+    </app-training-sheet>
+  }
+}

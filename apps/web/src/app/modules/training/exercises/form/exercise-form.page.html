@@ -1,0 +1,215 @@
+@if (state() === 'loading') {
+  <section class="form" aria-hidden="true">
+    <div class="ui-skeleton title-skeleton"></div>
+    <div class="ui-skeleton block-skeleton"></div>
+  </section>
+} @else if (state() === 'missing') {
+  <section class="form">
+    <p class="ui-notice" role="status">
+      <app-training-glyph name="info" />
+      <span i18n="@@training.form.missing"
+        >Este exercício não existe mais ou não é um exercício seu.</span
+      >
+    </p>
+    <button type="button" class="secondary ui-btn block" (click)="leave()">
+      <app-training-glyph name="back" />
+      <span i18n="@@training.form.missing-back">Voltar</span>
+    </button>
+  </section>
+} @else if (state() === 'ready') {
+  <form class="form" novalidate (submit)="$event.preventDefault(); save()">
+    <header class="head">
+      <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="cancel()">
+        <app-training-glyph name="back" />
+      </button>
+      <h2 class="title">{{ title }}</h2>
+    </header>
+
+    @if (!editing) {
+      <p class="lead" i18n="@@training.form.lead">Para a máquina que nenhum catálogo tem.</p>
+    }
+
+    <div class="ui-field">
+      <label for="exercise-name" i18n="@@training.form.name">Nome</label>
+      <input
+        id="exercise-name"
+        class="ui-input"
+        type="text"
+        maxlength="120"
+        autocomplete="off"
+        placeholder="Ex.: Remada na máquina articulada"
+        i18n-placeholder="@@training.form.name-placeholder"
+        [value]="form().name"
+        [attr.aria-invalid]="nameError() ? 'true' : null"
+        [attr.aria-describedby]="nameError() ? 'exercise-name-error' : null"
+        (input)="setName($any($event.target).value)"
+      />
+      @if (nameError(); as message) {
+        <p id="exercise-name-error" class="error" role="alert">{{ message }}</p>
+      }
+      @if (duplicate()) {
+        <p class="ui-notice warn" role="status">
+          <app-training-glyph name="info" />
+          <span i18n="@@training.form.duplicate"
+            >Já existe um exercício com este nome. Você pode salvar assim mesmo.</span
+          >
+        </p>
+      }
+    </div>
+
+    <div class="ui-field">
+      <label for="exercise-muscle" i18n="@@training.form.muscle">Músculo principal</label>
+      <!-- Um botão que abre a lista de músculos por grupo (uma folha), em vez do seletor nativo. -->
+      <button
+        id="exercise-muscle"
+        type="button"
+        class="picker ui-input"
+        [attr.aria-haspopup]="'dialog'"
+        [attr.aria-label]="muscleButtonLabel()"
+        [attr.aria-invalid]="muscleError() ? 'true' : null"
+        [attr.aria-describedby]="muscleError() ? 'exercise-muscle-error' : null"
+        (click)="openMuscle()"
+      >
+        <span [class.placeholder]="!form().muscle">{{ muscleShown() }}</span>
+        <app-training-glyph name="next" />
+      </button>
+      @if (muscleError(); as message) {
+        <p id="exercise-muscle-error" class="error" role="alert">{{ message }}</p>
+      }
+    </div>
+
+    <div class="ui-field">
+      <span class="field-label" aria-hidden="true" i18n="@@training.form.equipment"
+        >Equipamento</span
+      >
+      <app-training-chips
+        [options]="equipments"
+        [selected]="form().equipment"
+        [label]="equipmentGroupLabel"
+        (selectedChange)="setEquipment($event)"
+      />
+    </div>
+
+    <fieldset class="ui-field kind">
+      <legend i18n="@@training.form.type">Tipo de registro</legend>
+      <div class="radios">
+        @for (type of recordTypes; track type.id) {
+          <label class="radio" [class.on]="form().recordType === type.id">
+            <input
+              type="radio"
+              name="record-type"
+              [value]="type.id"
+              [checked]="form().recordType === type.id"
+              (change)="setRecordType(type.id)"
+            />
+            <span>{{ type.label }}</span>
+          </label>
+        }
+      </div>
+    </fieldset>
+
+    <div class="steps">
+      <button
+        type="button"
+        class="disclosure"
+        [attr.aria-controls]="'exercise-steps'"
+        [attr.aria-expanded]="stepsOpen()"
+        (click)="toggleSteps()"
+      >
+        <span i18n="@@training.form.steps">Instruções (opcional)</span>
+        <app-training-glyph [name]="stepsOpen() ? 'up' : 'down'" />
+      </button>
+      @if (stepsOpen()) {
+        <div class="ui-field" id="exercise-steps">
+          <label
+            for="exercise-steps-text"
+            class="ui-visually-hidden"
+            i18n="@@training.form.steps-label"
+            >Instruções do exercício</label
+          >
+          <textarea
+            id="exercise-steps-text"
+            class="ui-input"
+            rows="4"
+            placeholder="Um passo por linha"
+            i18n-placeholder="@@training.form.steps-placeholder"
+            [value]="form().steps"
+            [attr.aria-invalid]="stepsError() ? 'true' : null"
+            [attr.aria-describedby]="stepsError() ? 'exercise-steps-error' : null"
+            (input)="setSteps($any($event.target).value)"
+          ></textarea>
+          @if (stepsError(); as message) {
+            <p id="exercise-steps-error" class="error" role="alert">{{ message }}</p>
+          }
+        </div>
+      }
+    </div>
+
+    @if (saveError(); as message) {
+      <p class="ui-notice bad" role="alert">
+        <app-training-glyph name="alert" />
+        <span>{{ message }}</span>
+      </p>
+    }
+
+    @if (confirmingLeave()) {
+      <div class="ui-notice warn leave" role="alert">
+        <span class="leave-text">
+          <span i18n="@@training.form.leave-ask"
+            >Sair sem salvar? O que você digitou aqui será perdido.</span
+          >
+          <span class="pair">
+            <button type="button" class="secondary ui-btn" (click)="leave()">
+              <span i18n="@@training.form.leave-yes">Sair sem salvar</span>
+            </button>
+            <button type="button" class="primary ui-btn" (click)="keepEditing()">
+              <span i18n="@@training.form.leave-no">Continuar editando</span>
+            </button>
+          </span>
+        </span>
+      </div>
+    }
+
+    <div class="actions">
+      <button type="button" class="secondary ui-btn" (click)="cancel()">
+        <span i18n="@@training.form.cancel">Cancelar</span>
+      </button>
+      <button type="submit" class="primary ui-btn" [disabled]="saving()">
+        <span i18n="@@training.form.save">Salvar exercício</span>
+      </button>
+    </div>
+  </form>
+
+  @if (muscleOpen()) {
+    <app-training-sheet
+      [heading]="muscleHeading"
+      [dismissLabel]="cancelLabel"
+      (closed)="closeMuscle()"
+    >
+      @for (group of muscleGroups; track group.id) {
+        <section class="muscle-group" [attr.aria-labelledby]="'muscle-group-' + group.id">
+          <h3 class="ui-section-label" [id]="'muscle-group-' + group.id">{{ group.label }}</h3>
+          <ul class="ui-group ui-plain">
+            @for (muscle of group.muscles; track muscle.id) {
+              <li>
+                <button
+                  type="button"
+                  class="ui-row"
+                  [attr.aria-pressed]="form().muscle === muscle.id"
+                  (click)="pickMuscle(muscle.id)"
+                >
+                  <span class="ui-row-text">
+                    <span class="ui-row-title">{{ muscle.label }}</span>
+                  </span>
+                  @if (form().muscle === muscle.id) {
+                    <app-training-glyph class="chosen" name="check" />
+                  }
+                </button>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+    </app-training-sheet>
+  }
+}

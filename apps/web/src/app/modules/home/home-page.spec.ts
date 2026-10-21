@@ -186,10 +186,11 @@ describe('HomePage', () => {
       ).toBeNull();
       expect(card.classList.contains('ui-press'), id).toBe(false);
     }
-    // Treino ainda tem tela: continua com o selo, mas com a ação de sempre.
+    // Treino já abre: sem o selo "Em breve" e com a ação do cartão levando à tela.
     const training = el.querySelector('article[data-module="training"]')!;
     expect(training.classList.contains('planned')).toBe(false);
-    expect(training.querySelector('.badges')?.textContent).toContain('Em breve');
+    expect(training.querySelector('.badges')?.textContent).not.toContain('Em breve');
+    expect(training.querySelector('a.action')?.textContent?.trim()).toBe('Ver treino');
     expect(training.querySelector('a.action')?.getAttribute('href')).toBe('/treino');
   });
 
@@ -289,9 +290,9 @@ describe('HomePage', () => {
     expect(
       online.querySelector('article[data-module="tv"] .badges .chip.ok')?.textContent,
     ).toContain('Pronto para usar');
-    expect(online.querySelector('article[data-module="training"] .badges')?.textContent).toContain(
-      'Em breve',
-    );
+    expect(
+      online.querySelector('article[data-module="training"] .badges')?.textContent,
+    ).not.toContain('Em breve');
     expect(online.querySelector('article[data-module="training"] .chip.ok')).toBeNull();
     expect(online.querySelector('article[data-module="health"] .chip.ok')).toBeNull();
 

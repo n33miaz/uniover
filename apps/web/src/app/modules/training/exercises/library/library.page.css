@@ -1,0 +1,177 @@
+:host {
+  display: block;
+}
+
+.library {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+/* Busca e o botão do bloco de equipamento, na mesma linha. */
+.tools {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.search {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.search-icon {
+  position: absolute;
+  top: 50%;
+  left: var(--space-3);
+  translate: 0 -50%;
+  color: var(--a-ink2);
+  pointer-events: none;
+}
+
+.search .ui-input {
+  padding-left: calc(var(--space-3) + 20px + var(--space-2));
+}
+
+.filters {
+  position: relative;
+  flex: none;
+  width: 48px;
+  min-height: 48px;
+  padding: 0;
+}
+
+.filters.on,
+.filters[aria-expanded='true'] {
+  border-color: var(--a-accent);
+  color: var(--a-accent-ink);
+}
+
+.filters .dot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 9px;
+  height: 9px;
+  color: var(--a-accent);
+  box-shadow: 0 0 0 2px var(--a-surface);
+}
+
+/* Filtro de músculo que veio do mapa do corpo: um chip que se tira com um toque. */
+.muscle {
+  display: flex;
+}
+
+.muscle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border: 1px solid var(--a-accent);
+  border-radius: var(--radius-pill);
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+/* O cabeçalho da lista: quantos exercícios, e as duas entradas que não são a lista (criar e mapa). */
+.meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--tap);
+}
+
+.count {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* O título da lista cabe numa linha: sem caixa alta nem espaçamento largo (a coluna é estreita ao lado dos dois botões). */
+.eyebrow {
+  padding: 0;
+  font-size: var(--fs-small);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.number {
+  margin: 0;
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+}
+
+.compact {
+  padding: 0 var(--space-3);
+  gap: 6px;
+  font-size: var(--fs-small);
+}
+
+.chevron {
+  color: var(--a-ink3);
+}
+
+.more {
+  margin-top: var(--space-1);
+}
+
+/* Primeira abertura sem catálogo, e busca sem resultado: um cartão calmo que diz o que fazer. */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.empty h3 {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.empty p {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.empty .ui-btn.block {
+  margin-top: var(--space-1);
+}
+
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.skeleton li {
+  display: flex;
+  align-items: center;
+  min-height: 60px;
+  padding: var(--space-3) var(--space-4);
+}
+
+.skeleton .ui-skeleton {
+  width: 62%;
+  height: 18px;
+}

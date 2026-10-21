@@ -5,10 +5,10 @@ import { SCOPED_MODULE_SLUGS } from './module-slugs';
 describe('ModuleRegistry', () => {
   const registry = () => TestBed.inject(ModuleRegistry);
 
-  it('lists TV first, then Treino, then the planned modules in the order of the plan', () => {
+  it('lists TV and Treino first, both with a screen, then the planned modules in the order of the plan', () => {
     expect(registry().modules.map((m) => [m.id, m.status])).toEqual([
       ['tv', 'available'],
-      ['training', 'soon'],
+      ['training', 'available'],
       ['health', 'soon'],
       ['monitor', 'soon'],
       ['network', 'soon'],
