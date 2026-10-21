@@ -1,5 +1,5 @@
 import { BrowserContext, Page, Route } from '@playwright/test';
-import { IdentityMock } from '../auth/identity-mock';
+import { ALL_PERMISSIONS, IdentityMock } from '../auth/identity-mock';
 
 export interface TvRequest {
   readonly method: string;
@@ -51,6 +51,11 @@ export interface MockFailure {
 
 export interface TvMock {
   readonly requests: TvRequest[];
+  /**
+   * Os pedidos que a API real recusaria com 403 por falta de permissão (o mock os recusa do mesmo jeito). A tela que
+   * esconde o que a pessoa não pode nunca os faz: os testes de permissão afirmam que esta lista fica vazia.
+   */
+  readonly denied: TvRequest[];
   state: MockTvState;
   shortcuts: MockShortcut[];
   /** Falha de `/keys`, `/text`, `/power/off`, `/launch`, `/refresh` e `/cleanup` (não de `/wake`). */
@@ -73,6 +78,36 @@ export interface TvMock {
 }
 
 const PROBLEM_BASE = 'https://uniover.app/problems/';
+
+/**
+ * A permissão que cada rota da API exige (a política por rota): ver a TV, controlar, desligar, abrir apps, editar os
+ * atalhos e ler o histórico. `null` é uma rota que o mock não conhece (cai no 404 de sempre).
+ */
+function requiredPermission(method: string, path: string): string | null {
+  if (method === 'GET' && (path === '/state' || path === '/shortcuts')) return 'module:tv';
+  if (method === 'GET' && path === '/commands/recent') return 'tv:history';
+  if (method === 'POST' && ['/wake', '/keys', '/text', '/cleanup'].includes(path))
+    return 'tv:control';
+  if (method === 'POST' && path === '/power/off') return 'tv:power';
+  if (
+    method === 'POST' &&
+    (path === '/shortcuts/refresh' || /^\/shortcuts\/[^/]+\/launch$/.test(path))
+  ) {
+    return 'tv:launch';
+  }
+  if (method === 'PATCH' && /^\/shortcuts\/[^/]+$/.test(path)) return 'tv:edit-shortcuts';
+  if (method === 'PUT' && path === '/shortcuts/order') return 'tv:edit-shortcuts';
+  return null;
+}
+
+/**
+ * O que a conta da sessão aberta pode fazer, pela mesma regra de `GET /me` no mock de identidade (os dois não podem
+ * divergir): o dono tudo; a convidada a lista dela, ou `guestPermissions`; sem linha de convidada, tudo.
+ */
+function permissionsOf(identity: IdentityMock): readonly string[] {
+  const guest = identity.role === 'guest' ? identity.guests.at(-1) : undefined;
+  return guest ? (guest.permissions ?? identity.guestPermissions) : ALL_PERMISSIONS;
+}
 
 export const HOT_STATE: MockTvState = {
   power: 'on',
@@ -116,12 +151,14 @@ function json(route: Route, status: number, body: unknown) {
 
 /**
  * Simula a API da TV no formato da real: login obrigatório, `POWER` recusado em `/keys` (400), todo POST com corpo
- * precisa de `Content-Type: application/json` (senão a API real responde 415) e desligar não pede passkey, então
- * o mock nunca responde 403.
+ * precisa de `Content-Type: application/json` (senão a API real responde 415) e desligar não pede passkey. Cada rota
+ * confere a permissão da conta da sessão aberta, como a política por rota da API: o dono pode tudo, a convidada o que a
+ * lista dela traz (e toda ação da TV exige ver a TV); o que falta é recusado com 403 e registrado em `denied`.
  */
 export async function mockTvApi(context: BrowserContext, identity: IdentityMock): Promise<TvMock> {
   const mock: TvMock = {
     requests: [],
+    denied: [],
     state: { ...HOT_STATE },
     shortcuts: SHORTCUTS.map((s) => ({ ...s })),
     commandFailure: null,
@@ -163,6 +200,16 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
       return problem(route, { status: 401, kind: 'unauthenticated' });
     }
 
+    // A política de cada rota: a permissão da rota, e toda ação da TV exige também ver a TV (como na API).
+    const needed = requiredPermission(method, path);
+    if (needed) {
+      const granted = permissionsOf(identity);
+      if (!granted.includes(needed) || (needed !== 'module:tv' && !granted.includes('module:tv'))) {
+        mock.denied.push({ method, path, body });
+        return problem(route, { status: 403, kind: 'forbidden' });
+      }
+    }
+
     if (method === 'GET' && path === '/state') {
       if (mock.stateGate) await mock.stateGate;
       return json(route, 200, mock.state);
@@ -185,7 +232,7 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
       return json(route, 200, found);
     }
 
-    // Como a API: só o dono muda a ordem (o mock não tem convidado), e a lista tem de ser uma permutação exata dos atalhos.
+    // Como a API: a lista tem de ser uma permutação exata dos atalhos (a permissão de editar já foi conferida acima).
     if (method === 'PUT' && path === '/shortcuts/order') {
       if (mock.orderGate) await mock.orderGate;
       if (mock.orderFailure) return problem(route, mock.orderFailure);

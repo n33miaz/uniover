@@ -930,10 +930,16 @@ describe('AppsPanel', () => {
   });
 });
 
+/** O que o convite "só controlar a TV" concede: a TV inteira, menos editar atalhos. */
+const TV_CONTROL_ONLY = ['module:tv', 'tv:control', 'tv:power', 'tv:launch', 'tv:history'];
+
 describe('AppsPanel for a guest', () => {
   afterEach(() => localStorage.clear());
 
-  const open = async (shortcuts = createFakeTvStore().shortcuts()) => {
+  const open = async (
+    shortcuts = createFakeTvStore().shortcuts(),
+    permissions: readonly string[] = TV_CONTROL_ONLY,
+  ) => {
     const store = createFakeTvStore();
     store.shortcuts.set(shortcuts);
     TestBed.configureTestingModule({ providers: [{ provide: TvStore, useValue: store }] });
@@ -942,6 +948,7 @@ describe('AppsPanel for a guest', () => {
       email: 'a@b.c',
       displayName: 'Alice',
       role: 'guest',
+      permissions,
     });
     const fixture = TestBed.createComponent(AppsPanel);
     fixture.detectChanges();
@@ -1002,5 +1009,148 @@ describe('AppsPanel for a guest', () => {
       'Fora do controle',
     ]);
     expect(root.textContent).not.toContain('Toque em Editar');
+  });
+
+  describe('by permission', () => {
+    const toolbar = (root: HTMLElement) => ({
+      refresh: root.querySelector('button.refresh') !== null,
+      clean: root.querySelector('button.clean') !== null,
+      edit: root.querySelector('.edit-toggle') !== null,
+    });
+    const shortcuts = [
+      makeShortcut(1, { tvLabel: 'Spotify' }),
+      makeShortcut(2, { tvLabel: 'YouTube', enabled: false }),
+    ];
+
+    it('with launch and edit (and no control) it opens and edits, but cannot clean the TV', async () => {
+      const root = await open(shortcuts, ['module:tv', 'tv:launch', 'tv:edit-shortcuts']);
+      expect(toolbar(root)).toEqual({ refresh: true, clean: false, edit: true });
+      expect(root.querySelectorAll('button.launch')).toHaveLength(2);
+      expect(root.querySelector('#apps-group-rest')!.parentElement!.textContent).toContain(
+        'Toque para abrir. Para ter no controle, fixe em Editar.',
+      );
+    });
+
+    it('with control only the panel is short: the cleaning and nothing else (no grid, no search, no refresh, no edit)', async () => {
+      const root = await open(shortcuts, ['module:tv', 'tv:control']);
+      expect(toolbar(root)).toEqual({ refresh: false, clean: true, edit: false });
+      for (const selector of [
+        '.grid',
+        '.launch',
+        '.item',
+        'input[type="search"]',
+        '.bar',
+        'h3',
+        '.empty',
+      ]) {
+        expect(root.querySelector(selector), selector).toBeNull();
+      }
+      const clean = root.querySelector<HTMLButtonElement>('button.clean')!;
+      expect(clean.textContent?.trim()).toBe('Limpar a TV');
+      expect(clean.hasAttribute('aria-disabled')).toBe(false);
+      expect(root.textContent).toContain(
+        'Fecha os apps abertos na TV e libera memória, sem derrubar o controle.',
+      );
+      expect(root.querySelectorAll('button')).toHaveLength(1);
+    });
+
+    it('with control only and no list yet, the panel is the same: it does not wait for the apps nor offer to ask for them', async () => {
+      const root = await open([], ['module:tv', 'tv:control']);
+      expect(root.textContent).not.toContain('Carregando');
+      expect(root.textContent).not.toContain('Buscar apps da TV');
+      expect(root.querySelector('button.clean')).not.toBeNull();
+    });
+
+    it('with control only the cleaning dims when the remote cannot send, and the reason is told', async () => {
+      const store = createFakeTvStore();
+      store.canSend.set(false);
+      store.disabledReason.set('Sem rede: o controle precisa de internet.');
+      TestBed.configureTestingModule({ providers: [{ provide: TvStore, useValue: store }] });
+      TestBed.inject(SessionState).setUser({
+        id: '1',
+        email: 'a@b.c',
+        displayName: 'Alice',
+        role: 'guest',
+        permissions: ['module:tv', 'tv:control'],
+      });
+      const fixture = TestBed.createComponent(AppsPanel);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const root = fixture.nativeElement as HTMLElement;
+      const clean = root.querySelector<HTMLButtonElement>('button.clean')!;
+      expect(clean.getAttribute('aria-disabled')).toBe('true');
+      expect(clean.disabled).toBe(false);
+      expect(root.textContent).toContain('Sem rede: o controle precisa de internet.');
+
+      // Rodando: o botão diz o que acontece, e o aviso é o mesmo do painel completo.
+      store.canSend.set(true);
+      store.disabledReason.set(null);
+      store.cleaning.set(true);
+      fixture.detectChanges();
+      expect(root.querySelector('button.clean')!.textContent?.trim()).toBe('Limpando a TV…');
+      expect(root.querySelector('.cleaning')?.textContent).toContain('Limpando a TV');
+    });
+
+    it('without launch the tiles are figures: no button, same name under the icon, nothing to tap', async () => {
+      const root = await open(shortcuts, ['module:tv', 'tv:edit-shortcuts']);
+      expect(root.querySelectorAll('button.launch')).toHaveLength(0);
+      expect(
+        [...root.querySelectorAll('.launch.still .name')].map((el) => el.textContent?.trim()),
+      ).toEqual(['Spotify', 'YouTube']);
+      for (const tile of root.querySelectorAll('.launch.still')) {
+        expect(tile.tagName).not.toBe('BUTTON');
+        expect(tile.hasAttribute('tabindex')).toBe(false);
+        expect(tile.getAttribute('role')).toBeNull();
+      }
+      expect(toolbar(root)).toEqual({ refresh: false, clean: false, edit: true });
+      // A dica só fala do que a pessoa tem: fixar em Editar, e nada de "toque para abrir".
+      const rest = root.querySelector('#apps-group-rest')!.parentElement!.textContent;
+      expect(rest).toContain('Para ter no controle, fixe em Editar.');
+      expect(rest).not.toContain('Toque para abrir');
+    });
+
+    it('without a list yet, only who can open apps is offered the button that asks the TV for it', async () => {
+      const withLaunch = await open([], ['module:tv', 'tv:launch']);
+      expect(withLaunch.textContent).toContain('Buscar apps da TV');
+      TestBed.resetTestingModule();
+      const withoutLaunch = await open([], ['module:tv', 'tv:edit-shortcuts']);
+      expect(withoutLaunch.textContent).not.toContain('Buscar apps da TV');
+      expect(withoutLaunch.textContent).toContain(
+        'Peça a quem cuida da TV para atualizar a lista de apps.',
+      );
+      expect(withoutLaunch.querySelector('.empty button')).toBeNull();
+    });
+
+    it('leaves the edit mode when the permission to edit goes away with the panel open', async () => {
+      const store = createFakeTvStore();
+      TestBed.configureTestingModule({ providers: [{ provide: TvStore, useValue: store }] });
+      const session = TestBed.inject(SessionState);
+      const grant = (...permissions: string[]) =>
+        session.setUser({
+          id: '1',
+          email: 'a@b.c',
+          displayName: 'Alice',
+          role: 'guest',
+          permissions,
+        });
+      grant('module:tv', 'tv:launch', 'tv:edit-shortcuts');
+      const fixture = TestBed.createComponent(AppsPanel);
+      const root = fixture.nativeElement as HTMLElement;
+      fixture.detectChanges();
+      await fixture.whenStable();
+      root.querySelector<HTMLButtonElement>('.edit-toggle')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(root.querySelector('.tools')).not.toBeNull();
+
+      grant('module:tv', 'tv:launch');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(root.querySelector('.tools')).toBeNull();
+      expect(root.querySelector('.edit-toggle')).toBeNull();
+      expect(root.querySelectorAll('button.launch').length).toBeGreaterThan(0);
+    });
   });
 });

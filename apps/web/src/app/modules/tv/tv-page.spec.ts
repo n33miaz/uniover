@@ -614,3 +614,306 @@ describe('TvPage for a guest', () => {
     expect(JSON.parse(localStorage.getItem(TV_PREFS_KEY) ?? 'null').name).toBe('Quarto da Alice');
   });
 });
+
+describe('TvPage by permission', () => {
+  let store: FakeTvStore;
+  let root: HTMLElement;
+  let fixture: ReturnType<typeof TestBed.createComponent<TvPage>>;
+
+  const ALL = [
+    'module:tv',
+    'tv:control',
+    'tv:power',
+    'tv:launch',
+    'tv:edit-shortcuts',
+    'tv:history',
+    'module:training',
+  ];
+  const grant = (role: 'guest' | 'owner', ...permissions: string[]) =>
+    TestBed.inject(SessionState).setUser({
+      id: '1',
+      email: 'a@b.c',
+      displayName: 'Alice',
+      role,
+      permissions,
+    });
+  const render = async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+  const open = async (role: 'guest' | 'owner', ...permissions: string[]) => {
+    store = createFakeTvStore();
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), { provide: TvStore, useValue: store }],
+    });
+    grant(role, ...permissions);
+    fixture = TestBed.createComponent(TvPage);
+    root = fixture.nativeElement as HTMLElement;
+    await render();
+  };
+  const head = () => [...root.querySelectorAll('.head .lead > *, .head .actions > *')];
+  const labels = () => head().map((el) => el.getAttribute('aria-label'));
+  const titleButton = () => root.querySelector('h1 button');
+  const message = () => root.querySelector('app-tv-view-only .message')?.textContent?.trim();
+  const buttonLabels = () =>
+    [...root.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'));
+
+  beforeEach(() => localStorage.clear());
+  afterEach(() => {
+    TestBed.inject(TvPrefs).reset();
+    localStorage.clear();
+  });
+
+  it('control only: the whole control and the name opens Personalizar; the three dots hold only the cleaning, and there is no power', async () => {
+    await open('guest', 'module:tv', 'tv:control');
+    expect(labels()).toEqual(['Ajustes', 'Opções da TV']);
+    expect(root.querySelector('app-tv-control')).not.toBeNull();
+    expect(root.querySelector('app-tv-view-only')).toBeNull();
+    expect(titleButton()?.getAttribute('aria-label')).toBe('TV, personalizar');
+    expect(root.querySelector('app-status-indicator')).not.toBeNull();
+    // Os atalhos de cima são figuras (sem tv:launch), e o resto do controle segue inteiro.
+    expect(root.querySelectorAll('button.shortcut')).toHaveLength(0);
+    expect(root.querySelector('button[aria-label="Mudo"]')).not.toBeNull();
+  });
+
+  it('control only: the three dots open a short panel with the cleaning and nothing of the app list', async () => {
+    await open('guest', 'module:tv', 'tv:control');
+    root.querySelector<HTMLButtonElement>('.head button[aria-label="Opções da TV"]')!.click();
+    await render();
+    expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Opções da TV');
+    const panel = root.querySelector('app-tv-panel')!;
+    expect(panel.querySelector('button.clean')?.textContent?.trim()).toBe('Limpar a TV');
+    for (const selector of [
+      '.grid',
+      '.launch',
+      'input[type="search"]',
+      'button.refresh',
+      '.edit-toggle',
+      '.empty',
+    ]) {
+      expect(panel.querySelector(selector), selector).toBeNull();
+    }
+    // O botão limpa de verdade: abre a folha de confirmação.
+    panel.querySelector<HTMLButtonElement>('button.clean')!.click();
+    await render();
+    expect(root.querySelector('app-tv-cleanup-sheet')).not.toBeNull();
+  });
+
+  it('launch and edit, no control: the message and the shortcuts, Apps in the header, no power, the name is only text', async () => {
+    await open('guest', 'module:tv', 'tv:launch', 'tv:edit-shortcuts');
+    expect(labels()).toEqual(['Ajustes', 'Apps da TV']);
+    expect(root.querySelector('app-tv-control')).toBeNull();
+    expect(message()).toBe('Você pode ver a TV, mas não controlá-la.');
+    expect(root.querySelectorAll('button.shortcut')).toHaveLength(3);
+    // O nome é só o nome: sem botão, sem "personalizar" no nome acessível, e a mesma caixa para a altura não mudar.
+    expect(titleButton()).toBeNull();
+    const h1 = root.querySelector('h1')!;
+    expect(h1.textContent?.trim()).toBe('TV');
+    expect(h1.querySelector('.title.plain')).not.toBeNull();
+    expect(h1.querySelector('[aria-haspopup]')).toBeNull();
+  });
+
+  it('view only: the state, the name and a single sentence; nothing to tap but the state dot', async () => {
+    await open('guest', 'module:tv');
+    expect(labels()).toEqual(['Ajustes']);
+    expect(message()).toBe('Você pode ver a TV, mas não controlá-la.');
+    expect(root.querySelector('app-tv-control')).toBeNull();
+    expect(root.querySelectorAll('.shortcut.still')).toHaveLength(3);
+    expect(buttonLabels()).toEqual(['Estado do controle: Conectada']);
+    expect(root.querySelector('.reason')).toBeNull();
+  });
+
+  it('everything, as the owner: the same page as always', async () => {
+    await open('owner', ...ALL);
+    expect(labels()).toEqual(['Voltar ao Início', 'Apps da TV', 'Desligar a TV']);
+    expect(root.querySelector('app-tv-control')).not.toBeNull();
+    expect(root.querySelector('app-tv-view-only')).toBeNull();
+    expect(titleButton()?.getAttribute('aria-label')).toBe('TV, personalizar');
+    expect(root.querySelectorAll('button.shortcut')).toHaveLength(3);
+  });
+
+  it('the owner whose response carries no list is not locked out of anything', async () => {
+    store = createFakeTvStore();
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), { provide: TvStore, useValue: store }],
+    });
+    TestBed.inject(SessionState).setUser({
+      id: '1',
+      email: 'a@b.c',
+      displayName: 'Dono',
+      role: 'owner',
+    });
+    fixture = TestBed.createComponent(TvPage);
+    root = fixture.nativeElement as HTMLElement;
+    await render();
+    expect(labels()).toEqual(['Voltar ao Início', 'Apps da TV', 'Desligar a TV']);
+  });
+
+  it('power alone shows the power button, and the header keeps its three groups', async () => {
+    await open('guest', 'module:tv', 'tv:power');
+    expect(labels()).toEqual(['Ajustes', 'Desligar a TV']);
+    expect(root.querySelector('.head')!.children).toHaveLength(3);
+  });
+
+  it('no module:tv: a short sentence instead of the control, no state dot, no Apps, no power', async () => {
+    await open('guest', 'module:training');
+    expect(root.querySelector('.blocked')?.textContent?.trim()).toBe(
+      'Esta conta não tem acesso à TV.',
+    );
+    expect(root.querySelector('app-tv-control, app-tv-view-only')).toBeNull();
+    expect(root.querySelector('app-status-indicator')).toBeNull();
+    expect(labels()).toEqual(['Ajustes']);
+  });
+
+  it('keeps the header in three groups whatever the buttons, so the name never leaves the middle', async () => {
+    for (const permissions of [['module:tv'], ['module:tv', 'tv:control', 'tv:power'], ALL]) {
+      TestBed.resetTestingModule();
+      await open('guest', ...permissions);
+      const header = root.querySelector('.head')!;
+      expect([...header.children].map((el) => el.className.split(' ')[0])).toEqual([
+        'lead',
+        'name',
+        'actions',
+      ]);
+    }
+  });
+
+  it('follows the session: the control, power and Apps appear and go away with the permissions', async () => {
+    await open('guest', 'module:tv');
+    expect(root.querySelector('app-tv-control')).toBeNull();
+
+    grant('guest', 'module:tv', 'tv:control', 'tv:power', 'tv:launch');
+    await render();
+    expect(root.querySelector('app-tv-control')).not.toBeNull();
+    expect(root.querySelector('app-tv-view-only')).toBeNull();
+    expect(labels()).toEqual(['Ajustes', 'Apps da TV', 'Desligar a TV']);
+
+    grant('guest', 'module:tv');
+    await render();
+    expect(root.querySelector('app-tv-control')).toBeNull();
+    expect(message()).toBe('Você pode ver a TV, mas não controlá-la.');
+    expect(labels()).toEqual(['Ajustes']);
+  });
+
+  it('closes a sheet or panel that was open when the permission to use it goes away', async () => {
+    await open('guest', ...ALL);
+    root.querySelector<HTMLButtonElement>('button[aria-label="Desligar a TV"]')!.click();
+    await render();
+    expect(root.querySelector('app-power-sheet')).not.toBeNull();
+    root.querySelector<HTMLButtonElement>('h1 button')!.click();
+    await render();
+
+    grant('guest', 'module:tv', 'tv:launch');
+    await render();
+    expect(root.querySelector('app-power-sheet')).toBeNull();
+    expect(root.querySelector('app-tv-customize-sheet')).toBeNull();
+
+    // E não volta sozinho se a permissão voltar.
+    grant('guest', ...ALL);
+    await render();
+    expect(root.querySelector('app-power-sheet')).toBeNull();
+    expect(root.querySelector('app-tv-customize-sheet')).toBeNull();
+  });
+
+  it('closes the keyboard panel when the control goes away', async () => {
+    await open('guest', 'module:tv', 'tv:control');
+    expect(root.querySelector('button[aria-label="Apps da TV"]')).toBeNull();
+    expect(root.querySelector('button[aria-label="Opções da TV"]')).not.toBeNull();
+    root.querySelector<HTMLButtonElement>('button[aria-label="Teclado"]')!.click();
+    await render();
+    expect(root.querySelector('app-tv-keyboard')).not.toBeNull();
+    grant('guest', 'module:tv');
+    await render();
+    expect(root.querySelector('app-tv-keyboard')).toBeNull();
+  });
+
+  it('the "reason" line goes to whoever still has a button that goes dim, and not to a viewer, who has none', async () => {
+    await open('guest', 'module:tv', 'tv:control');
+    store.canSend.set(false);
+    store.disabledReason.set('O agente da TV está desligado, então os botões não funcionam agora.');
+    await render();
+    expect(root.querySelector('.reason')).not.toBeNull();
+
+    // O desligar apaga sem o controle: o motivo continua à vista.
+    grant('guest', 'module:tv', 'tv:power');
+    await render();
+    expect(root.querySelector('.reason')).not.toBeNull();
+
+    // Os atalhos que abrem apps apagam sem o controle: idem.
+    grant('guest', 'module:tv', 'tv:launch');
+    await render();
+    expect(root.querySelector('.reason')).not.toBeNull();
+
+    // Só ver: nenhum botão para explicar.
+    grant('guest', 'module:tv');
+    await render();
+    expect(root.querySelector('.reason')).toBeNull();
+    grant('guest', 'module:tv', 'tv:edit-shortcuts');
+    await render();
+    expect(root.querySelector('.reason')).toBeNull();
+  });
+});
+
+describe('TV_ROUTES by permission', () => {
+  let store: FakeTvStore;
+
+  const open = async (url: string, ...permissions: string[]) => {
+    store = createFakeTvStore();
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([{ path: 'tv', children: TV_ROUTES }]),
+        { provide: TvStore, useValue: store },
+      ],
+    });
+    TestBed.inject(SessionState).setUser({
+      id: '1',
+      email: 'a@b.c',
+      displayName: 'Alice',
+      role: 'guest',
+      permissions,
+    });
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl(url);
+    harness.detectChanges();
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    return harness.routeNativeElement as HTMLElement;
+  };
+
+  beforeEach(() => localStorage.clear());
+  afterEach(() => {
+    TestBed.inject(TvPrefs).reset();
+    localStorage.clear();
+  });
+
+  it('the old Apps address opens nothing for who has no way to use it, and still leaves the address clean', async () => {
+    const root = await open('/tv/apps', 'module:tv', 'tv:power');
+    expect(root.querySelector('app-tv-panel')).toBeNull();
+    expect(TestBed.inject(Router).url).toBe('/tv');
+  });
+
+  it('the old Apps address opens the short panel of options for who only controls', async () => {
+    const root = await open('/tv/apps', 'module:tv', 'tv:control');
+    expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Opções da TV');
+    expect(root.querySelector('app-tv-panel .grid')).toBeNull();
+    expect(TestBed.inject(Router).url).toBe('/tv');
+  });
+
+  it('the old Apps address opens it for who can open apps', async () => {
+    const root = await open('/tv/apps', 'module:tv', 'tv:launch');
+    expect(root.querySelector('app-tv-panel app-tv-apps')).not.toBeNull();
+    expect(TestBed.inject(Router).url).toBe('/tv');
+  });
+
+  it('the old keyboard address opens nothing for who cannot control', async () => {
+    const root = await open('/tv/teclado', 'module:tv', 'tv:launch');
+    expect(root.querySelector('app-tv-panel')).toBeNull();
+    expect(TestBed.inject(Router).url).toBe('/tv');
+  });
+
+  it('the old keyboard address opens the keyboard for who can control', async () => {
+    const root = await open('/tv/teclado', 'module:tv', 'tv:control');
+    expect(root.querySelector('app-tv-panel app-tv-keyboard')).not.toBeNull();
+  });
+});

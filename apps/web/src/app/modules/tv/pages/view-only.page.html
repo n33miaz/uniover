@@ -1,0 +1,12 @@
+<section class="view">
+  <app-tv-shortcut-row
+    [shortcuts]="shortcuts()"
+    [canSend]="store.canSend()"
+    [launchable]="canLaunch()"
+    (open)="openShortcut($event)"
+  />
+  <div class="message">
+    <app-tv-icon name="tv" />
+    <p i18n="@@tv.view-only.message">Você pode ver a TV, mas não controlá-la.</p>
+  </div>
+</section>

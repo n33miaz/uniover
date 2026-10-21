@@ -1,27 +1,43 @@
 <div class="top">
   @if (shortcuts().length > 0) {
-    <ul class="shortcuts" aria-label="Atalhos de apps" i18n-aria-label="@@tv.shortcuts.label">
+    <!--
+      Sem permissão para abrir apps os azulejos são figuras (sem botão), e a faixa recebe o foco do teclado no lugar deles:
+      ela rola quando passa da largura e, sem nada focável dentro, o teclado não a alcançaria. O valor é por vínculo
+      porque o lint de acessibilidade lê o `tabindex` fixo como foco em elemento sem papel interativo.
+    -->
+    <ul
+      class="shortcuts"
+      aria-label="Atalhos de apps"
+      i18n-aria-label="@@tv.shortcuts.label"
+      [attr.tabindex]="launchable() ? null : 0"
+    >
       @for (shortcut of shortcuts(); track shortcut.id) {
         @let name = label(shortcut);
         <li>
-          <button
-            type="button"
-            class="shortcut"
-            [attr.aria-label]="name"
-            [attr.title]="name"
-            [attr.aria-disabled]="canSend() ? null : 'true'"
-            (click)="open.emit(shortcut)"
-          >
-            <app-tv-app-icon [shortcut]="shortcut" />
-          </button>
+          @if (launchable()) {
+            <button
+              type="button"
+              class="shortcut"
+              [attr.aria-label]="name"
+              [attr.title]="name"
+              [attr.aria-disabled]="canSend() ? null : 'true'"
+              (click)="open.emit(shortcut)"
+            >
+              <app-tv-app-icon [shortcut]="shortcut" />
+            </button>
+          } @else {
+            <span class="shortcut still" role="img" [attr.aria-label]="name" [attr.title]="name">
+              <app-tv-app-icon [shortcut]="shortcut" />
+            </span>
+          }
         </li>
       }
     </ul>
   } @else if (showHint()) {
-    @if (isGuest()) {
-      <p class="hint" i18n="@@tv.shortcuts.empty-guest">Nenhum app fixado no controle.</p>
-    } @else {
+    @if (canEdit()) {
       <p class="hint" i18n="@@tv.shortcuts.empty-owner">Fixe apps aqui: abra Apps, no topo.</p>
+    } @else {
+      <p class="hint" i18n="@@tv.shortcuts.empty-guest">Nenhum app fixado no controle.</p>
     }
   }
 </div>

@@ -101,7 +101,7 @@ export class TvApi {
   }
 
   /**
-   * Grava a ordem dos atalhos (só o dono). `ids` é a lista COMPLETA, na ordem desejada: a API recusa (400) tudo que
+   * Grava a ordem dos atalhos (exige `tv:edit-shortcuts`). `ids` é a lista COMPLETA, na ordem desejada: a API recusa (400) tudo que
    * não for uma permutação exata dos atalhos que ela tem. Devolve a lista como ficou, já renumerada.
    */
   async reorderShortcuts(ids: readonly string[]): Promise<TvShortcut[]> {

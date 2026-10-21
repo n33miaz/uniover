@@ -5,11 +5,12 @@ import {
   Injector,
   afterNextRender,
   computed,
+  effect,
   inject,
   output,
   signal,
 } from '@angular/core';
-import { SessionState } from '../../../core/session/session-state';
+import { TvAccess } from '../data/tv-access';
 import { controlRanks, movedOrder } from '../data/tv-order';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut, shortcutLabel } from '../data/tv-types';
@@ -37,14 +38,19 @@ function plain(text: string): string {
  * embaixo. Tocar em qualquer azulejo abre o app, esteja ele no controle ou não: "fixar no controle" só decide quem
  * aparece na fileira de atalhos de cima. Sem busca, a grade vem em duas seções, os que estão no controle e os que
  * ficaram de fora. Com busca, uma lista só, com os do controle marcados. App que saiu da TV some da grade (não há o que
- * abrir nem o que fixar). O dono tem o modo Editar: uma lista só com todos os apps, e em cada azulejo os botões de
+ * abrir nem o que fixar). Quem edita os atalhos tem o modo Editar: uma lista só com todos os apps, e em cada azulejo os botões de
  * fixar no controle (ou tirar de lá) e de renomear; nesse modo tocar no azulejo não abre nada, para um dedo errado não
  * ligar app na TV. O pacote só aparece nesse modo. Nele, quem está no controle também ganha as setas que mudam a ordem da
  * fileira de atalhos (só sem busca, que esconde os vizinhos). Sem lista ainda, um estado vazio com o botão que a pede à TV. Nenhum
  * nome de app vem do código: o nome é o do dono, o que o agente publicou para o app ou, por último, "Atalho" mais a
  * posição. Na barra de cima, ao lado de atualizar, fica "Limpar a TV": abre uma folha de confirmação e, confirmada, fecha
  * os apps e libera memória sem derrubar o controle. A limpeza leva alguns segundos; enquanto ela roda o botão mostra
- * "Limpando…" e o resto do painel segue normal. O convidado também a vê (como qualquer comando da TV).
+ * "Limpando…" e o resto do painel segue normal.
+ *
+ * Cada parte só aparece para quem pode usá-la (`TvAccess`): abrir apps e atualizar a lista são de `tv:launch`, o modo
+ * Editar (fixar, renomear e mudar a ordem) é de `tv:edit-shortcuts` e "Limpar a TV" é de `tv:control`. Sem
+ * `tv:launch` os azulejos são só figuras. O painel abre para quem pode abrir apps, editar os atalhos ou limpar a TV (ver
+ * `TvAccess.apps`); quem só controla vê nele uma coisa só, o "Limpar a TV", sem a grade.
  */
 @Component({
   selector: 'app-tv-apps',
@@ -57,8 +63,8 @@ export class AppsPanel {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
 
-  /** Renomear e fixar atalhos é só do dono (a API recusa o convidado com 403): o convidado só abre os apps. */
-  protected readonly isGuest = inject(SessionState).isGuest;
+  /** O que a conta pode fazer aqui: abrir apps, editar os atalhos e limpar a TV são permissões separadas. */
+  protected readonly access = inject(TvAccess);
 
   /** O app foi aberto na TV: o painel pode fechar e devolver o controle. */
   readonly done = output<void>();
@@ -81,7 +87,7 @@ export class AppsPanel {
   });
   protected readonly searching = computed(() => this.query().trim() !== '');
 
-  /** Modo Editar (só do dono): todos os apps numa lista só, com os botões de fixar e renomear em cada um. */
+  /** Modo Editar (só de quem edita os atalhos): todos os apps numa lista só, com os botões de fixar e renomear em cada um. */
   protected readonly editMode = signal(false);
   /** Uma lista só, sem seções: na busca e na edição (onde o azulejo não pode mudar de lugar ao ser fixado). */
   protected readonly flat = computed(() => this.searching() || this.editMode());
@@ -123,6 +129,15 @@ export class AppsPanel {
     this.refreshing() ? this.searchingText : $localize`:@@tv.apps.refresh:Atualizar lista`,
   );
 
+  constructor() {
+    // O administrador pode tirar a permissão de editar com o painel aberto: o modo Editar sai, em vez de ficar à vista.
+    effect(() => {
+      if (this.access.editShortcuts()) return;
+      this.editMode.set(false);
+      this.editing.set(null);
+    });
+  }
+
   protected label(shortcut: TvShortcut): string {
     return shortcutLabel(shortcut);
   }
@@ -155,7 +170,7 @@ export class AppsPanel {
   protected openCleanup(): void {
     // Apagado e focável, não `disabled`: sem agente (ou com uma limpeza em curso) o toque não faz nada, e o botão
     // continua achável por quem navega pelo teclado ou pelo leitor de tela.
-    if (!this.store.canSend() || this.store.cleaning()) return;
+    if (!this.store.canSend() || this.store.cleaning() || !this.access.control()) return;
     this.cleanupOpen.set(true);
   }
 

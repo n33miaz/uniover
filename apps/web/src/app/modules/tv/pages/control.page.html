@@ -2,6 +2,7 @@
   <app-tv-shortcut-row
     [shortcuts]="shortcuts()"
     [canSend]="store.canSend()"
+    [launchable]="canLaunch()"
     (open)="openShortcut($event)"
   />
 

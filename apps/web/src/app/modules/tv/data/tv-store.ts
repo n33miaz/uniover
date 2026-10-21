@@ -1,12 +1,13 @@
 import { DOCUMENT } from '@angular/common';
-import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
+import { TvAccess } from './tv-access';
 import { TV_EVENTS_PATH, TvApi } from './tv-api';
 import { TV_CONFIG } from './tv-config';
 import { describeCleanup } from './tv-cleanup';
-import { TvFailure, TvFailureContext, describeFailure } from './tv-errors';
+import { TvFailure, TvFailureContext, describeFailure, forbiddenMessage } from './tv-errors';
 import { withOrder } from './tv-order';
 import {
   TV_STREAM_EVENTS,
@@ -77,6 +78,10 @@ export function isValidTvText(text: string): boolean {
  * ao ser destruída. Nenhum botão do controle altera o estado de forma otimista: quem muda o estado é o que o servidor
  * informa. A única exceção é a ordem dos atalhos (`reorder`): ela só mexe numa lista da tela, não na TV, e volta ao que
  * era se o servidor recusar.
+ *
+ * Só faz o que a conta pode (`TvAccess`): sem `module:tv` não abre o fluxo nem busca nada, sem `tv:control` não aquece a
+ * sessão e cada comando confere a própria permissão antes de ir ao servidor. Assim nenhuma chamada que a API recusaria
+ * (403) sai daqui, e a tela, que já esconde o que a pessoa não pode, não depende só disso.
  */
 @Injectable({ providedIn: 'root' })
 export class TvStore {
@@ -85,6 +90,7 @@ export class TvStore {
   private readonly connectivity = inject(ConnectivityService);
   private readonly config = inject(TV_CONFIG);
   private readonly doc = inject(DOCUMENT);
+  private readonly access = inject(TvAccess);
 
   private readonly _state = signal<TvState | null>(null);
   private readonly _seenAt = signal<number | null>(null);
@@ -182,6 +188,10 @@ export class TvStore {
   });
 
   private started = false;
+  /** O fluxo está aberto e o aquecimento armado: só acontece com a tela viva E com permissão de ver a TV. */
+  private connected = false;
+  /** Se já se tinha o controle quando o aquecimento rodou pela última vez: ganhar o controle depois aquece na hora. */
+  private hadControl = false;
   private streamSub: Subscription | null = null;
   private wakeTimer: ReturnType<typeof setInterval> | undefined;
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -202,6 +212,19 @@ export class TvStore {
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.stop());
+    // A sessão pode trazer outra lista de permissões com a tela aberta: sem `module:tv` o fluxo fecha e as buscas
+    // param; com ele (de volta) reabre; ganhar `tv:control` aquece a sessão com a TV na hora, sem esperar a próxima rodada.
+    effect(() => {
+      const view = this.access.view();
+      const control = this.access.control();
+      untracked(() => {
+        if (!this.started) return;
+        if (!view) this.disconnect();
+        else if (!this.connected) this.connect();
+        else if (control && !this.hadControl) void this.wake();
+        this.hadControl = view && control;
+      });
+    });
   }
 
   start(): void {
@@ -209,38 +232,56 @@ export class TvStore {
     this.started = true;
     this._streamStatus.set('connecting');
     this.hydrate();
-    this.streamSub = this.stream.open(TV_EVENTS_PATH, STREAM_EVENTS).subscribe((event) => {
-      this.onEvent(event);
-    });
     this.doc.addEventListener('visibilitychange', this.onVisibility);
     this.doc.defaultView?.addEventListener('online', this.onOnline);
-    void this.refresh();
-    void this.wake();
-    this.armWake();
+    this.connect();
   }
 
   stop(): void {
     if (!this.started) return;
     this.started = false;
-    this.streamSub?.unsubscribe();
-    this.streamSub = null;
+    this.disconnect();
     this.doc.removeEventListener('visibilitychange', this.onVisibility);
     this.doc.defaultView?.removeEventListener('online', this.onOnline);
-    this.disarmWake();
     clearTimeout(this.noticeTimer);
+  }
+
+  /** Abre o fluxo, busca o estado e os atalhos e começa a aquecer. Sem permissão de ver a TV não faz nada. */
+  private connect(): void {
+    if (this.connected || !this.started || !this.access.view()) return;
+    this.connected = true;
+    this._streamStatus.set('connecting');
+    this.streamSub = this.stream.open(TV_EVENTS_PATH, STREAM_EVENTS).subscribe((event) => {
+      this.onEvent(event);
+    });
+    this.hadControl = this.access.control();
+    void this.refresh();
+    void this.wake();
+    this.armWake();
+  }
+
+  private disconnect(): void {
+    this.connected = false;
+    this.hadControl = false;
+    this.streamSub?.unsubscribe();
+    this.streamSub = null;
+    this.disarmWake();
   }
 
   /** Busca de novo o estado e os atalhos (abertura da tela, volta da rede, volta de aba oculta). */
   async refresh(): Promise<void> {
-    if (this.link() === 'offline') return;
+    if (this.link() === 'offline' || !this.access.view()) return;
     const [state, shortcuts] = await Promise.allSettled([this.api.state(), this.api.shortcuts()]);
     if (state.status === 'fulfilled') this.applyState(state.value);
     if (shortcuts.status === 'fulfilled') this.receiveShortcuts(shortcuts.value);
   }
 
-  /** Pede ao agente que aqueça a sessão com a TV. Só com a tela visível e com rede; falha não vira aviso. */
+  /**
+   * Pede ao agente que aqueça a sessão com a TV. Só com a tela visível, com rede e com permissão de controlar (a API
+   * recusa o pedido de quem não tem `tv:control`); falha não vira aviso.
+   */
   async wake(): Promise<void> {
-    if (!this.visible() || this.link() !== 'ok') return;
+    if (!this.visible() || this.link() !== 'ok' || !this.access.control()) return;
     // Com o agente fora do ar não há o que aquecer (e cada pedido recusado ocuparia a trilha de comandos): a volta
     // dele chega pelo fluxo, e a leitura periódica do estado cobre o fluxo caído.
     if (this._state()?.agentOnline === false) return;
@@ -254,7 +295,7 @@ export class TvStore {
 
   /** Manda uma tecla. Devolve `true` se a TV confirmou; em falha o aviso já foi mostrado e a repetição deve parar. */
   async sendKey(key: TvKey): Promise<boolean> {
-    if (!this.canSend()) return false;
+    if (!this.canSend() || !this.access.control()) return false;
     this._inFlightKeys.update((count) => count + 1);
     try {
       await this.api.sendKey(key);
@@ -275,6 +316,7 @@ export class TvStore {
    * (que também atualiza o que se sabe do agente, como `agent-offline`).
    */
   async sendText(text: string): Promise<TvFailure | null> {
+    if (!this.access.control()) return forbidden();
     if (!this.canSend()) {
       return {
         kind: 'agent-offline',
@@ -304,6 +346,7 @@ export class TvStore {
    * mostrar dentro dela. Depois disso a tela não promete que a TV volta: o estado vem do servidor.
    */
   async powerOff(): Promise<TvFailure | null> {
+    if (!this.access.power()) return forbidden();
     if (!this.canSend()) {
       return {
         kind: 'agent-offline',
@@ -330,7 +373,7 @@ export class TvStore {
    * aparece na fileira de atalhos. Um app que saiu da TV não tem o que abrir (a API também o recusa).
    */
   async launch(shortcut: TvShortcut): Promise<boolean> {
-    if (!this.canSend() || !shortcut.installed) return false;
+    if (!this.canSend() || !shortcut.installed || !this.access.launch()) return false;
     try {
       await this.api.launch(shortcut.id);
       const name = shortcutLabel(shortcut);
@@ -348,7 +391,7 @@ export class TvStore {
    * mostrado. Não trava o resto do controle: só `cleaning` muda enquanto espera.
    */
   async cleanup(): Promise<boolean> {
-    if (!this.canSend() || this._cleaning()) return false;
+    if (!this.canSend() || this._cleaning() || !this.access.control()) return false;
     this._cleaning.set(true);
     try {
       const result = await this.api.cleanup();
@@ -363,7 +406,7 @@ export class TvStore {
   }
 
   async refreshShortcuts(): Promise<boolean> {
-    if (!this.canSend()) return false;
+    if (!this.canSend() || !this.access.launch()) return false;
     try {
       await this.api.refreshShortcuts();
       // A lista nova chega pelo fluxo; buscar de novo cobre o caso de o fluxo estar reconectando.
@@ -386,13 +429,14 @@ export class TvStore {
   }
 
   /**
-   * Muda a ordem dos atalhos (só o dono: a API recusa o convidado). `ids` é a lista COMPLETA, na ordem desejada. A tela
+   * Muda a ordem dos atalhos (só com `tv:edit-shortcuts`: sem ela nada é feito, e a API também recusa). `ids` é a lista COMPLETA, na ordem desejada. A tela
    * muda na hora e o servidor confirma depois; se ele recusar, a lista volta à última ordem que ele confirmou e um aviso
    * diz que não foi salvo. Toques em sequência não disparam um pedido por toque: enquanto um envio está em curso o
    * seguinte espera, e só a ordem mais nova é enviada. Devolve `true` se o servidor aceitou. Não mexe na TV, então vale
    * sem agente.
    */
   async reorder(ids: readonly string[]): Promise<boolean> {
+    if (!this.access.editShortcuts()) return false;
     if (this.link() !== 'ok') {
       this.showNotice('error', this.disabledReason() ?? '');
       return false;
@@ -417,6 +461,7 @@ export class TvStore {
     id: string,
     change: { customLabel?: string; enabled?: boolean },
   ): Promise<boolean> {
+    if (!this.access.editShortcuts()) return false;
     if (this.link() !== 'ok') {
       this.showNotice('error', this.disabledReason() ?? '');
       return false;
@@ -564,7 +609,7 @@ export class TvStore {
 
   private armWake(): void {
     this.disarmWake();
-    if (!this.started || !this.visible()) return;
+    if (!this.started || !this.connected || !this.visible()) return;
     this.wakeTimer = setInterval(() => {
       void this.wake();
       // Rede de segurança: se o fluxo caiu sem aviso, o estado ainda se renova a cada rodada.
@@ -648,6 +693,11 @@ export class TvStore {
       return item.iconDataUri || typeof icon !== 'string' ? item : { ...item, iconDataUri: icon };
     });
   }
+}
+
+/** A conta não tem a permissão do comando (a tela não o oferece; isto cobre a troca de permissões com a tela aberta). */
+function forbidden(): TvFailure {
+  return { kind: 'forbidden', message: forbiddenMessage(), retryAfterSeconds: null };
 }
 
 /** As duas listas dizem o mesmo, atalho por atalho e na mesma ordem. */

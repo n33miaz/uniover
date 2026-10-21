@@ -3,6 +3,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Subject } from 'rxjs';
 import { ConnectivityService, ServerState } from '../../../core/connectivity/connectivity.service';
+import { SessionState } from '../../../core/session/session-state';
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
 import { TvApi } from './tv-api';
 import { ICONS_CACHE_MAX_CHARS, TvStore, isValidTvText } from './tv-store';
@@ -1074,6 +1075,166 @@ describe('TvStore', () => {
 
       expect(set.mock.calls.filter(([key]) => key === ICONS_KEY)).toHaveLength(0);
       set.mockRestore();
+    });
+  });
+
+  describe('permissions', () => {
+    const grant = (...permissions: string[]) => {
+      TestBed.inject(SessionState).setUser({
+        id: '1',
+        email: 'a@b.c',
+        displayName: 'A',
+        role: 'guest',
+        permissions,
+      });
+      TestBed.tick();
+    };
+    const noCallsToTheServer = () => {
+      for (const fn of Object.values(api)) expect(fn).not.toHaveBeenCalled();
+    };
+
+    afterEach(() => localStorage.clear());
+
+    it('without module:tv it opens nothing: no stream, no state, no shortcuts, no wake', async () => {
+      grant('module:training');
+      await started();
+      expect(open).not.toHaveBeenCalled();
+      noCallsToTheServer();
+      await vi.advanceTimersByTimeAsync(600_000);
+      setVisibility('hidden');
+      setVisibility('visible');
+      window.dispatchEvent(new Event('online'));
+      await flush();
+      expect(open).not.toHaveBeenCalled();
+      noCallsToTheServer();
+    });
+
+    it('with only module:tv it reads (stream, state, shortcuts) but never wakes, on any path', async () => {
+      grant('module:tv');
+      await started();
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(api.state).toHaveBeenCalledTimes(1);
+      expect(api.shortcuts).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(120_000);
+      setVisibility('hidden');
+      setVisibility('visible');
+      window.dispatchEvent(new Event('online'));
+      await flush();
+      // O fluxo e a leitura periódica continuam; o "aquecer", que a API recusaria, nunca sai.
+      expect(api.state.mock.calls.length).toBeGreaterThan(1);
+      expect(api.wake).not.toHaveBeenCalled();
+    });
+
+    it('with tv:control it wakes on opening, on every round and when the page is visible again', async () => {
+      grant('module:tv', 'tv:control');
+      await started();
+      expect(api.wake).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(api.wake).toHaveBeenCalledTimes(2);
+      setVisibility('hidden');
+      setVisibility('visible');
+      await flush();
+      expect(api.wake).toHaveBeenCalledTimes(3);
+    });
+
+    it('a guest with tv:control cannot power off, launch, refresh the list or edit the shortcuts', async () => {
+      grant('module:tv', 'tv:control');
+      await started();
+      await expect(store.sendKey('MUTE')).resolves.toBe(true);
+      await expect(store.sendText('oi')).resolves.toBeNull();
+      await expect(store.cleanup()).resolves.toBe(true);
+
+      const power = await store.powerOff();
+      expect(power?.kind).toBe('forbidden');
+      expect(power?.message).toBe('Você não tem permissão para fazer isso na TV.');
+      await expect(store.launch(shortcut(1))).resolves.toBe(false);
+      await expect(store.refreshShortcuts()).resolves.toBe(false);
+      await expect(store.renameShortcut('s1', 'Novo')).resolves.toBe(false);
+      await expect(store.setShortcutEnabled('s1', false)).resolves.toBe(false);
+      await expect(store.reorder(['s2', 's1'])).resolves.toBe(false);
+
+      expect(api.powerOff).not.toHaveBeenCalled();
+      expect(api.launch).not.toHaveBeenCalled();
+      expect(api.refreshShortcuts).not.toHaveBeenCalled();
+      expect(api.updateShortcut).not.toHaveBeenCalled();
+      expect(api.reorderShortcuts).not.toHaveBeenCalled();
+    });
+
+    it('a guest with only the view sends no key, no text and no cleanup, and says nothing about it', async () => {
+      grant('module:tv');
+      await started();
+      await expect(store.sendKey('MUTE')).resolves.toBe(false);
+      expect((await store.sendText('oi'))?.kind).toBe('forbidden');
+      await expect(store.cleanup()).resolves.toBe(false);
+      expect(api.sendKey).not.toHaveBeenCalled();
+      expect(api.sendText).not.toHaveBeenCalled();
+      expect(api.cleanup).not.toHaveBeenCalled();
+      // Recusar aqui é silencioso: nenhum aviso de erro por algo que a tela nem oferece.
+      expect(store.notice()).toBeNull();
+    });
+
+    it('launch, refresh and edit each need their own permission', async () => {
+      grant('module:tv', 'tv:launch', 'tv:edit-shortcuts');
+      await started();
+      await expect(store.launch(shortcut(1))).resolves.toBe(true);
+      await expect(store.refreshShortcuts()).resolves.toBe(true);
+      api.updateShortcut.mockResolvedValue(shortcut(1, { customLabel: 'Novo' }));
+      await expect(store.renameShortcut('s1', 'Novo')).resolves.toBe(true);
+      expect(api.launch).toHaveBeenCalledTimes(1);
+      expect(api.refreshShortcuts).toHaveBeenCalledTimes(1);
+      expect(api.updateShortcut).toHaveBeenCalledTimes(1);
+    });
+
+    it('power needs tv:power and nothing else', async () => {
+      grant('module:tv', 'tv:power');
+      await started();
+      await expect(store.powerOff()).resolves.toBeNull();
+      expect(api.powerOff).toHaveBeenCalledTimes(1);
+    });
+
+    it('the owner does everything, with no list needed', async () => {
+      TestBed.inject(SessionState).setUser({
+        id: '1',
+        email: 'a@b.c',
+        displayName: 'A',
+        role: 'owner',
+      });
+      TestBed.tick();
+      await started();
+      expect(api.wake).toHaveBeenCalledTimes(1);
+      await expect(store.powerOff()).resolves.toBeNull();
+    });
+
+    it('follows the session: gaining the control wakes at once, losing the view closes the stream, getting it back reopens', async () => {
+      grant('module:tv');
+      await started();
+      expect(api.wake).not.toHaveBeenCalled();
+
+      grant('module:tv', 'tv:control');
+      await flush();
+      expect(api.wake).toHaveBeenCalledTimes(1);
+      // Outra lista com o controle já ligado não aquece de novo.
+      grant('module:tv', 'tv:control', 'tv:power');
+      await flush();
+      expect(api.wake).toHaveBeenCalledTimes(1);
+
+      grant('module:training');
+      await flush();
+      expect(events.observed).toBe(false);
+      const reads = api.state.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(600_000);
+      setVisibility('hidden');
+      setVisibility('visible');
+      await flush();
+      expect(api.state.mock.calls.length).toBe(reads);
+      expect(api.wake).toHaveBeenCalledTimes(1);
+
+      grant('module:tv', 'tv:control');
+      await flush();
+      expect(open).toHaveBeenCalledTimes(2);
+      expect(events.observed).toBe(true);
+      expect(api.wake).toHaveBeenCalledTimes(2);
     });
   });
 });

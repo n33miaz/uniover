@@ -47,6 +47,15 @@ button {
   background: var(--a-surface);
   color: var(--a-ink);
 }
+/*
+ * Sem permissão para abrir apps o azulejo é só uma figura: mesmo tamanho (a fileira não muda de altura nem de largura),
+ * mas sem o fio e sem o fundo de botão, e sem nenhuma resposta ao toque ou ao mouse (o afundar e o realce, abaixo,
+ * excluem esta classe).
+ */
+.shortcut.still {
+  border-color: transparent;
+  background: transparent;
+}
 .shortcut app-tv-app-icon {
   --tile: calc(var(--tv-top) - 2px);
   --tile-radius: calc(var(--chip-radius) - 1px);
@@ -60,12 +69,12 @@ button {
       transform 90ms ease-out,
       border-color 120ms ease-out;
   }
-  .shortcut:active {
+  .shortcut:not(.still):active {
     transform: scale(0.93);
   }
 }
 @media (hover: hover) {
-  .shortcut:not([aria-disabled='true']):hover {
+  .shortcut:not([aria-disabled='true'], .still):hover {
     border-color: var(--a-accent);
   }
 }
