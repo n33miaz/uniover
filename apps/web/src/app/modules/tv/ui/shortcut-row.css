@@ -28,8 +28,8 @@ button {
 
 /*
  * O atalho é só o ícone do app: um azulejo QUADRADO da altura da fileira, igual para todos (a imagem que não é
- * quadrada fica contida dentro dele, nunca o alarga). O ícone enche o azulejo por dentro da borda; a borda do azulejo
- * já o separa do fundo, então o fio do ícone some aqui.
+ * quadrada é cortada pelos lados dentro dele, nunca o alarga). O ícone enche o azulejo por dentro da borda; a borda do
+ * azulejo já o separa do fundo, então o fio do ícone some aqui.
  */
 .shortcut {
   --chip-radius: 16px;
@@ -71,9 +71,9 @@ button {
 }
 
 /*
- * A faixa dos atalhos rola na horizontal, com encaixe suave e sem barra, alinhada ao início. Quem rola também corta na
- * vertical, e o anel de foco (3 px, a 2 px do botão) fica fora do azulejo: a faixa tem 5 px de folga em volta,
- * devolvidos pela margem negativa, para o anel aparecer inteiro sem mexer em nenhuma posição.
+ * A faixa dos atalhos rola na horizontal, com encaixe suave e sem barra. Quem rola também corta na vertical, e o anel de
+ * foco (3 px, a 2 px do botão) fica fora do azulejo: a faixa tem 5 px de folga em volta, devolvidos pela margem
+ * negativa, para o anel aparecer inteiro sem mexer em nenhuma posição.
  */
 .shortcuts {
   display: flex;
@@ -94,6 +94,17 @@ button {
 .shortcuts li {
   flex: 0 0 auto;
   scroll-snap-align: start;
+}
+/*
+ * Centralizada quando cabe, alinhada ao início quando passa da largura: a margem automática do primeiro e do último
+ * item divide a sobra e some quando não há sobra. `justify-content: center` cortaria o começo da faixa que rola, e
+ * esse trecho não se alcança rolando.
+ */
+.shortcuts li:first-child {
+  margin-inline-start: auto;
+}
+.shortcuts li:last-child {
+  margin-inline-end: auto;
 }
 
 /* Sem atalho ativo: só uma dica, discreta, que não é um botão. Tem a altura de um azulejo. */

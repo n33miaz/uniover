@@ -2357,39 +2357,23 @@ test.describe('ícones dos apps', () => {
     expect(new Set(radii).size, 'um só raio de canto').toBe(1);
     expect(parseFloat(radii[0])).toBeGreaterThan(8);
 
-    // A imagem fica contida e centralizada, nunca esticada nem cortada, com a mesma folga em volta em qualquer formato.
+    // O ícone enche o azulejo de ponta a ponta (`cover`, sem folga interna), em qualquer formato: o banner 16:9 perde um
+    // pouco dos lados em vez de deixar faixas, e a caixa da imagem é a do azulejo (o recorte da margem do próprio ícone
+    // é um `transform`, que não muda a caixa de layout).
     const fits = await chips.evaluateAll((els) =>
       els.flatMap((el) => {
         const image = el.querySelector('img');
         if (!image) return [];
-        const tile = el.getBoundingClientRect();
-        const box = image.getBoundingClientRect();
+        const tile = el.querySelector('app-tv-app-icon')!.getBoundingClientRect();
         const style = getComputedStyle(image);
-        const [left, top, right, bottom] = [
-          style.paddingLeft,
-          style.paddingTop,
-          style.paddingRight,
-          style.paddingBottom,
-        ].map(parseFloat);
-        const inner = { width: box.width - left - right, height: box.height - top - bottom };
-        const scale = Math.min(
-          inner.width / image.naturalWidth,
-          inner.height / image.naturalHeight,
-        );
-        const drawn = { width: image.naturalWidth * scale, height: image.naturalHeight * scale };
-        const x = box.left + left + (inner.width - drawn.width) / 2;
-        const y = box.top + top + (inner.height - drawn.height) / 2;
         return [
           {
             objectFit: style.objectFit,
             objectPosition: style.objectPosition,
             padding: style.padding,
             naturalRatio: image.naturalWidth / image.naturalHeight,
-            drawnRatio: drawn.width / drawn.height,
-            gapLeft: x - tile.left,
-            gapRight: tile.right - (x + drawn.width),
-            gapTop: y - tile.top,
-            gapBottom: tile.bottom - (y + drawn.height),
+            widthGap: image.offsetWidth - tile.width,
+            heightGap: image.offsetHeight - tile.height,
           },
         ];
       }),
@@ -2397,26 +2381,21 @@ test.describe('ícones dos apps', () => {
     expect(fits).toHaveLength(3);
     const [banner, square] = fits;
     for (const fit of fits) {
-      expect(fit.objectFit).toBe('contain');
+      expect(fit.objectFit).toBe('cover');
       expect(fit.objectPosition).toBe('50% 50%');
-      expect(fit.padding, 'a mesma folga interna').toBe(fits[0].padding);
-      expect(fit.drawnRatio, 'a proporção da imagem se mantém').toBeCloseTo(fit.naturalRatio, 1);
-      expect(fit.gapLeft, 'centralizada na horizontal').toBeCloseTo(fit.gapRight, 0);
-      expect(fit.gapTop, 'centralizada na vertical').toBeCloseTo(fit.gapBottom, 0);
-      expect(Math.min(fit.gapLeft, fit.gapTop), 'dentro do azulejo, com folga').toBeGreaterThan(1);
+      expect(fit.padding, 'sem folga interna').toBe('0px');
+      for (const gap of [fit.widthGap, fit.heightGap]) {
+        expect(Math.abs(gap), 'a imagem tem a caixa do azulejo').toBeLessThanOrEqual(1);
+      }
     }
-    // O banner é 16:9 e o quadrado não: a forma da imagem muda, a do azulejo e a folga dos lados não.
+    // O banner é 16:9 e o quadrado não: a forma da imagem muda, a do azulejo não.
     expect(banner.naturalRatio).toBeGreaterThan(1.6);
     expect(square.naturalRatio).toBeCloseTo(1, 1);
-    expect(banner.gapLeft).toBeCloseTo(square.gapLeft, 0);
-    expect(banner.gapTop, 'o banner deixa faixas em cima e embaixo').toBeGreaterThan(
-      square.gapTop + 4,
-    );
     for (const index of [0, 1, 2, 3, 4, 5]) await expectTargetSize(chips.nth(index));
   });
 
   test('a faixa rola alinhada ao início, e nada passa da largura da tela', async ({ page }) => {
-    // Seis azulejos quadrados cabem na largura do celular: mais quatro para a faixa passar dela.
+    // Cinco azulejos de 60 px cabem na largura do celular (seis já passam dela): mais quatro garantem a rolagem.
     tv.shortcuts = [
       ...iconShortcuts(),
       ...[7, 8, 9, 10].map((position) => ({
@@ -2836,14 +2815,22 @@ test.describe('ícones dos apps', () => {
       for (const ratio of ratios)
         expect(ratio, `contraste da letra (${scheme})`).toBeGreaterThanOrEqual(4.5);
 
-      // Atrás da imagem há o mesmo neutro claro nos dois temas, para o ícone de fundo transparente não sumir no escuro.
-      const backdrops = await page.evaluate(() =>
-        [...document.querySelectorAll<HTMLElement>('.shortcut app-tv-app-icon')]
-          .filter((el) => el.querySelector('img'))
-          .map((el) => getComputedStyle(el).backgroundColor),
-      );
-      expect(new Set(backdrops).size, 'um só fundo atrás das imagens').toBe(1);
-      expect(backdrops[0]).toMatch(/238,\s*242,\s*238/);
+      // Atrás de um ícone de desenho solto (fundo transparente) há o mesmo neutro claro nos dois temas, para ele não sumir
+      // no escuro. O ícone que é uma placa de uma cor (o banner preto, o quadrado) leva a cor das próprias bordas, e o
+      // neutro não aparece nele.
+      const neutral = /238,\s*242,\s*238/;
+      const backdrop = (index: number) =>
+        chips
+          .nth(index)
+          .locator('app-tv-app-icon')
+          .evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(await backdrop(2), 'desenho solto: o neutro claro').toMatch(neutral);
+      await expect
+        .poll(() => backdrop(0), { message: 'banner preto: a cor da borda' })
+        .not.toMatch(neutral);
+      await expect
+        .poll(() => backdrop(1), { message: 'quadrado: a cor da borda' })
+        .not.toMatch(neutral);
 
       await openApps(page);
       const dialog = appsDialog(page);

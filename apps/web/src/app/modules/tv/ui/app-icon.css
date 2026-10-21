@@ -1,7 +1,13 @@
 /*
- * O azulejo é um quadrado de lado fixo (`--tile`): nasce do tamanho certo e a imagem não empurra nada ao carregar. Atrás
- * da imagem fica um neutro claro igual nos dois temas: ícones com fundo transparente são feitos para fundo claro e
- * sumiriam sobre o escuro. O fio de 1 px por cima separa o azulejo do fundo da tela.
+ * O azulejo é um quadrado de lado fixo (`--tile`): nasce do tamanho certo e a imagem não empurra nada ao carregar. O ícone
+ * enche o azulejo inteiro, sem folga, recortado pelo mesmo canto arredondado. O neutro claro de trás (igual nos dois
+ * temas) só aparece onde o ícone é transparente: ícones sem fundo são feitos para fundo claro e sumiriam sobre o
+ * escuro. Quando a análise acha uma placa de uma cor só, essa cor toma o lugar dele (estilo em linha no host). O fio de
+ * 1 px por cima separa o azulejo do fundo da tela.
+ *
+ * `isolation: isolate` e o `clip-path` garantem que o canto arredondado apare também a imagem transformada: o WebKit, em
+ * alguns casos, não apara no `border-radius` um filho com `transform` quando só há `overflow: hidden`. O e2e confere o
+ * canto no WebKit (projeto do iPhone).
  */
 :host {
   --tile: 44px;
@@ -12,24 +18,27 @@
   height: var(--tile);
   aspect-ratio: 1;
   overflow: hidden;
+  isolation: isolate;
   border-radius: var(--tile-radius, calc(var(--tile) * 0.22));
+  clip-path: inset(0 round var(--tile-radius, calc(var(--tile) * 0.22)));
   background: #eef2ee;
   outline: 1px solid var(--tile-edge, color-mix(in srgb, var(--a-ink) 16%, transparent));
   outline-offset: -1px;
 }
 
 /*
- * `contain`: a imagem aparece inteira, centralizada, com a mesma folga em qualquer tamanho de azulejo. O quadrado
- * enche o espaço; o que tiver outra proporção deixa uma faixa neutra nos lados que sobram.
+ * `cover`: a imagem enche o azulejo, centralizada. O quadrado cabe sem sobra; o que tiver outra proporção (um banner
+ * 16:9 antigo) perde um pouco dos lados, em vez de deixar faixas claras. A margem do próprio ícone sai pelo
+ * `transform` do componente, que parte do canto de cima à esquerda.
  */
 .image {
   display: block;
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  padding: calc(var(--tile) * 0.08);
-  object-fit: contain;
+  object-fit: cover;
   object-position: center;
+  transform-origin: 0 0;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
