@@ -14,6 +14,8 @@ from .tv_app_launch_v1 import TvAppLaunchV1Message
 from .tv_apps_refresh_v1 import TvAppsRefreshV1Message
 from .tv_apps_v1 import TvAppsV1Message
 from .tv_apps_v2 import TvAppsV2Message
+from .tv_cleanup_result_v1 import TvCleanupResultV1Message
+from .tv_cleanup_v1 import TvCleanupV1Message
 from .tv_key_v1 import TvKeyV1Message
 from .tv_key_v2 import TvKeyV2Message
 from .tv_state_v1 import TvStateV1Message
@@ -30,6 +32,8 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "tv.apps.refresh.v1": TvAppsRefreshV1Message,
     "tv.apps.v1": TvAppsV1Message,
     "tv.apps.v2": TvAppsV2Message,
+    "tv.cleanup.result.v1": TvCleanupResultV1Message,
+    "tv.cleanup.v1": TvCleanupV1Message,
     "tv.key.v1": TvKeyV1Message,
     "tv.key.v2": TvKeyV2Message,
     "tv.state.v1": TvStateV1Message,

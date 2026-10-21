@@ -43,6 +43,14 @@ internal static class TvMessages
     public static TvMessage AppsRefresh() =>
         new(AgentMessageTypes.TvAppsRefreshV1, BodyOf(new TvAppsRefreshV1Message { Body = new TvAppsRefreshV1Body() }.ToJson()));
 
+    /// <summary>
+    /// Pede a limpeza da TV. O <paramref name="requestId"/> é gerado pela API e volta no relatório do agente: é o que
+    /// liga as duas mensagens, porque o <c>id</c> do envelope é montado pelo Devices.
+    /// </summary>
+    public static TvMessage Cleanup(Guid requestId) =>
+        new(AgentMessageTypes.TvCleanupV1, BodyOf(
+            new TvCleanupV1Message { Body = new TvCleanupV1Body { RequestId = requestId } }.ToJson()));
+
     /// <summary>Nome do valor no contrato (o que viaja no JSON), descoberto pelo próprio conversor gerado.</summary>
     private static string WireName(TvKeyV2BodyKey key) =>
         BodyOf(new TvKeyV2Message { Body = new TvKeyV2Body { Key = key } }.ToJson()).GetProperty("key").GetString()!;

@@ -1060,6 +1060,173 @@ test.describe('desligar', () => {
   });
 });
 
+test.describe('limpar a TV', () => {
+  const cleanButton = (page: Page) => appsDialog(page).locator('button.clean');
+  const cleanSheet = (page: Page) => page.getByRole('dialog', { name: 'Limpar a TV?' });
+  const notice = (page: Page) => appsDialog(page).locator('.notice');
+
+  test('a folha confirma, o pedido sai uma vez e o resultado volta como aviso no painel', async ({
+    page,
+  }, info) => {
+    await openTv(page);
+    await openApps(page);
+    await expect(cleanButton(page)).toHaveAccessibleName('Limpar a TV');
+    await expectTargetSize(cleanButton(page));
+    await settleMotion(page);
+
+    await cleanButton(page).click();
+    const sheet = cleanSheet(page);
+    await expect(sheet).toBeVisible();
+    await expect(
+      sheet.getByText(
+        'Isso fecha todos os apps abertos, inclusive o que está passando agora, e libera memória. A conexão com o controle continua.',
+      ),
+    ).toBeVisible();
+    await expect(sheet.getByRole('button', { name: /fechar|close/i })).toHaveCount(0);
+    await expect(sheet.getByRole('button')).toHaveText(['Cancelar', 'Limpar']);
+    await page.waitForTimeout(300); // fim da animação de subida
+    await expectNoHorizontalScroll(page);
+    await expectNoSeriousViolations(page);
+    await screenshot(page, `test-results/tv-cleanup-sheet-${info.project.name}.png`);
+
+    // Cancelar e Esc não mandam nada, e o foco volta ao botão.
+    await sheet.getByRole('button', { name: 'Cancelar' }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(cleanButton(page)).toBeFocused();
+    await cleanButton(page).click();
+    await expect(sheet).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+    expect(tv.count('/cleanup')).toBe(0);
+
+    await cleanButton(page).click();
+    await sheet.getByRole('button', { name: 'Limpar', exact: true }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect.poll(() => tv.count('/cleanup')).toBe(1);
+    await expect(notice(page)).toHaveText('Fechou 6 apps e liberou cerca de 380 MB.');
+    await expect(notice(page)).toHaveAttribute('role', 'status');
+    await expect(appsDialog(page)).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    await screenshot(page, `test-results/tv-cleanup-result-${info.project.name}.png`);
+    expect(tv.keysSent()).toEqual([]);
+  });
+
+  test('enquanto limpa mostra "Limpando…", segue um pedido por vez e o resto do controle funciona', async ({
+    page,
+  }, info) => {
+    let release!: () => void;
+    tv.cleanupGate = new Promise<void>((resolve) => (release = resolve));
+    await openTv(page);
+    await openApps(page);
+    await settleMotion(page);
+    await cleanButton(page).click();
+    await cleanSheet(page).getByRole('button', { name: 'Limpar', exact: true }).click();
+    await expect(cleanSheet(page)).toHaveCount(0);
+
+    await expect(cleanButton(page)).toHaveAccessibleName('Limpando a TV…');
+    await expect(cleanButton(page)).toHaveAttribute('aria-disabled', 'true');
+    await expect(
+      appsDialog(page).getByText('Limpando a TV… pode levar até meio minuto.'),
+    ).toBeVisible();
+    await screenshot(page, `test-results/tv-cleanup-running-${info.project.name}.png`);
+
+    // Um segundo toque não abre a folha nem manda outro pedido (o Playwright trata aria-disabled como desabilitado e
+    // esperaria para sempre: o toque é forçado).
+    await cleanButton(page).click({ force: true });
+    await expect(cleanSheet(page)).toHaveCount(0);
+    expect(tv.count('/cleanup')).toBe(1);
+
+    // O controle de trás segue: fecha o painel e manda uma tecla com a limpeza ainda esperando.
+    await page.keyboard.press('Escape');
+    await expect(appsDialog(page)).toHaveCount(0);
+    await button(page, 'Aumentar o volume').click();
+    await expect.poll(() => tv.keysSent()).toContain('VOLUME_UP');
+
+    release();
+    await expect(page.getByText('Fechou 6 apps e liberou cerca de 380 MB.')).toBeVisible();
+    expect(tv.count('/cleanup')).toBe(1);
+  });
+
+  test('o resultado só diz o que foi medido: sem memória, só os apps; sem nada, "Nada para fechar."', async ({
+    page,
+  }) => {
+    await openTv(page);
+    await openApps(page);
+    tv.cleanupResult = { ...tv.cleanupResult, closedApps: 1, freedMb: null };
+    await cleanButton(page).click();
+    await cleanSheet(page).getByRole('button', { name: 'Limpar', exact: true }).click();
+    await expect(notice(page)).toHaveText('Fechou 1 app.');
+
+    tv.cleanupResult = { ...tv.cleanupResult, closedApps: 0, freedMb: 2, failedSteps: [] };
+    await cleanButton(page).click();
+    await cleanSheet(page).getByRole('button', { name: 'Limpar', exact: true }).click();
+    await expect(notice(page)).toHaveText('Nada para fechar.');
+    expect(tv.count('/cleanup')).toBe(2);
+  });
+
+  test('cada erro tem a sua mensagem, uma vez só e sem repetir o pedido', async ({ page }) => {
+    await openTv(page);
+    await openApps(page);
+    const clean = async () => {
+      await cleanButton(page).click();
+      await cleanSheet(page).getByRole('button', { name: 'Limpar', exact: true }).click();
+    };
+
+    tv.commandFailure = {
+      status: 502,
+      kind: 'command-failed',
+      extra: { agentError: 'adb_unreachable' },
+    };
+    await clean();
+    await expect(appsDialog(page).getByRole('alert')).toHaveText(
+      'A TV não respondeu pelo ADB agora. Tente de novo com a TV ligada.',
+    );
+
+    tv.commandFailure = { status: 504, kind: 'agent-timeout' };
+    await clean();
+    await expect(appsDialog(page).getByRole('alert')).toContainText(
+      'A limpeza demorou mais do que o esperado',
+    );
+
+    tv.commandFailure = { status: 409, kind: 'cleanup-in-progress' };
+    await clean();
+    await expect(appsDialog(page).getByRole('alert')).toHaveText(
+      'Já há uma limpeza da TV em andamento. Aguarde ela terminar.',
+    );
+
+    tv.commandFailure = { status: 429, kind: 'rate-limited', headers: { 'Retry-After': '5' } };
+    await clean();
+    await expect(appsDialog(page).getByRole('alert')).toHaveText(
+      'Comandos demais em pouco tempo. Aguarde 5 s.',
+    );
+    expect(tv.count('/cleanup')).toBe(4);
+
+    // Depois do erro dá para pedir de novo.
+    tv.commandFailure = null;
+    await clean();
+    await expect(notice(page)).toHaveText('Fechou 6 apps e liberou cerca de 380 MB.');
+    expect(tv.count('/cleanup')).toBe(5);
+  });
+
+  test('sem o agente o botão fica apagado mas focável, e o toque não abre nada nem pede nada', async ({
+    page,
+  }) => {
+    await openTv(page);
+    await sendState(page, { agentOnline: false, connection: 'disconnected', volume: null });
+    await openApps(page);
+    const clean = cleanButton(page);
+    await expect(clean).toHaveAttribute('aria-disabled', 'true');
+    // Apagado, não `disabled`: o atributo nativo segue ausente (o Playwright confunde os dois em toBeDisabled).
+    expect(await clean.evaluate((el) => (el as HTMLButtonElement).disabled)).toBe(false);
+    await expect(clean).toHaveCSS('opacity', '0.5');
+    await clean.focus();
+    await expect(clean).toBeFocused();
+    await clean.click({ force: true });
+    await expect(cleanSheet(page)).toHaveCount(0);
+    expect(tv.count('/cleanup')).toBe(0);
+  });
+});
+
 test.describe('painel flutuante: comportamento comum', () => {
   test('abre sobre o controle, que continua à vista, e fecha por Esc, toque fora, arrastar e botão', async ({
     page,

@@ -14,6 +14,7 @@ import { controlRanks, movedOrder } from '../data/tv-order';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut, shortcutLabel } from '../data/tv-types';
 import { AppIcon } from '../ui/app-icon';
+import { CleanupSheet } from '../ui/cleanup-sheet';
 import { TvIcon } from '../ui/tv-icon';
 import { AppsTile, TileMove } from './apps-tile';
 
@@ -41,11 +42,13 @@ function plain(text: string): string {
  * ligar app na TV. O pacote só aparece nesse modo. Nele, quem está no controle também ganha as setas que mudam a ordem da
  * fileira de atalhos (só sem busca, que esconde os vizinhos). Sem lista ainda, um estado vazio com o botão que a pede à TV. Nenhum
  * nome de app vem do código: o nome é o do dono, o que o agente publicou para o app ou, por último, "Atalho" mais a
- * posição.
+ * posição. Na barra de cima, ao lado de atualizar, fica "Limpar a TV": abre uma folha de confirmação e, confirmada, fecha
+ * os apps e libera memória sem derrubar o controle. A limpeza leva alguns segundos; enquanto ela roda o botão mostra
+ * "Limpando…" e o resto do painel segue normal. O convidado também a vê (como qualquer comando da TV).
  */
 @Component({
   selector: 'app-tv-apps',
-  imports: [AppIcon, AppsTile, NgTemplateOutlet, TvIcon],
+  imports: [AppIcon, AppsTile, CleanupSheet, NgTemplateOutlet, TvIcon],
   templateUrl: './apps-panel.html',
   styleUrl: './apps-panel.css',
 })
@@ -107,6 +110,14 @@ export class AppsPanel {
   protected readonly asked = signal(false);
 
   protected readonly searchingText = $localize`:@@tv.apps.searching-short:Buscando…`;
+  /** A folha "Limpar a TV?" está aberta. */
+  protected readonly cleanupOpen = signal(false);
+  protected readonly cleaningText = $localize`:@@tv.cleanup.running:Limpando a TV…`;
+  /** O botão de limpar é só um ícone: o nome acessível diz também o que está acontecendo. */
+  protected readonly cleanLabel = computed(() =>
+    this.store.cleaning() ? this.cleaningText : $localize`:@@tv.cleanup.open:Limpar a TV`,
+  );
+
   /** O botão de atualizar é só um ícone: o nome acessível diz também o que está acontecendo. */
   protected readonly refreshLabel = computed(() =>
     this.refreshing() ? this.searchingText : $localize`:@@tv.apps.refresh:Atualizar lista`,
@@ -139,6 +150,19 @@ export class AppsPanel {
     } finally {
       this.refreshing.set(false);
     }
+  }
+
+  protected openCleanup(): void {
+    // Apagado e focável, não `disabled`: sem agente (ou com uma limpeza em curso) o toque não faz nada, e o botão
+    // continua achável por quem navega pelo teclado ou pelo leitor de tela.
+    if (!this.store.canSend() || this.store.cleaning()) return;
+    this.cleanupOpen.set(true);
+  }
+
+  protected closeCleanup(): void {
+    this.cleanupOpen.set(false);
+    // Com a folha ainda no DOM o painel está inerte e o foco não entra: devolve-o depois que ela sair.
+    this.focusAfterRender('.clean');
   }
 
   protected startRename(shortcut: TvShortcut): void {

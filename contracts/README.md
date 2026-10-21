@@ -28,11 +28,18 @@ um `type` publicado. As duas versões convivem até o agente atualizar.
 | `tv.apps.v2` | agente para API | Como o `v1`, mais `icon` opcional por app: `{ mime: "image/png" | "image/webp", data }` (base64, até 32768 bytes). A lista é sempre completa; app sem `icon` mantém o que a API já guarda. O `v1` segue válido. |
 | `tv.text.v1` | API para agente | `text`: 1 a 200 caracteres, sem caracteres de controle. |
 | `tv.watchdog.v1` | agente para API | `kind`, `severity` (`info`, `warn`, `error`), `detail` (até 200), `attempts`, `at`. |
+| `tv.cleanup.v1` | API para agente | `requestId` (UUID gerado pela API): fecha os apps abertos na TV e libera memória pelo ADB, sem derrubar o controle remoto. |
+| `tv.cleanup.result.v1` | agente para API | O que a limpeza fez: `requestId` (o do pedido), `closedApps`, `memoryBeforeMb`, `memoryAfterMb` e `freedMb` (inteiros, ou `null` quando a memória não pôde ser lida; `freedMb` nunca é negativo), `failedSteps` (etapas que não deram certo, como `force-stop:com.exemplo.app`) e `at`. |
 
 O transporte recusa mensagens acima de 64 KB. Por isso o agente pode mandar a mesma lista de `tv.apps.v2` mais de uma vez, cada mensagem
 levando só parte dos ícones.
 
 Os resultados voltam em `command.result.v1` (com `correlationId` igual ao `id` do comando). Nenhum corpo traz segredo.
+
+A limpeza da TV é o único comando cujo resultado carrega dados: o agente manda `tv.cleanup.result.v1` **antes** do
+`command.result.v1` do mesmo comando (a API trata os quadros de um agente em ordem) e o `requestId` é o que liga os dois,
+porque a API não conhece o `id` do envelope que ela mesma monta. Se o ADB não responde, só sai `command.result.v1`
+com `ok: false`.
 O formato do `type` aceita dois ou mais segmentos antes da versão (`tv.app.launch.v1`). Os esquemas só fixam o
 formato; quem decide o que pode ser aberto (por exemplo, quais esquemas de link) é o agente.
 

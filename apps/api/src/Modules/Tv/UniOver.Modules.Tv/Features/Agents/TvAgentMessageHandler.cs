@@ -15,7 +15,8 @@ using UniOver.SharedKernel;
 namespace UniOver.Modules.Tv.Features.Agents;
 
 /// <summary>
-/// Trata o que o agente manda por iniciativa própria: o estado da TV, a lista de apps e os eventos do vigia. O
+/// Trata o que o agente manda por iniciativa própria: o estado da TV, a lista de apps, os eventos do vigia e o relatório
+/// da limpeza (que a requisição HTTP em espera recolhe pelo <c>requestId</c>). O
 /// Devices já validou a mensagem contra o contrato, então os campos existem e têm o tipo certo. Só vale o agente
 /// configurado para controlar a TV: mensagem de outro agente pareado é ignorada.
 /// </summary>
@@ -24,6 +25,7 @@ internal sealed partial class TvAgentMessageHandler(
     ITvStateStore state,
     TvStatePersister persister,
     ITvStreamPublisher stream,
+    ITvCleanupReports cleanupReports,
     ITvShortcutReader shortcutReader,
     TvDbContext db,
     IEventBus events,
@@ -33,7 +35,10 @@ internal sealed partial class TvAgentMessageHandler(
     public const int WatchdogMaxRows = 500;
 
     public IReadOnlyCollection<string> HandledTypes { get; } =
-        [AgentMessageTypes.TvStateV1, AgentMessageTypes.TvAppsV1, AgentMessageTypes.TvAppsV2, AgentMessageTypes.TvWatchdogV1];
+        [
+            AgentMessageTypes.TvStateV1, AgentMessageTypes.TvAppsV1, AgentMessageTypes.TvAppsV2, AgentMessageTypes.TvWatchdogV1,
+            AgentMessageTypes.TvCleanupResultV1,
+        ];
 
     public async Task HandleAsync(InboundMessage message, CancellationToken cancellationToken)
     {
@@ -58,8 +63,28 @@ internal sealed partial class TvAgentMessageHandler(
             case AgentMessageTypes.TvWatchdogV1:
                 await HandleWatchdogAsync(message, cancellationToken);
                 break;
+            case AgentMessageTypes.TvCleanupResultV1:
+                HandleCleanupResult(message);
+                break;
         }
     }
+
+    private void HandleCleanupResult(InboundMessage message)
+    {
+        var body = message.Body;
+        var steps = body.GetProperty("failedSteps").EnumerateArray().Select(s => s.GetString()!).ToList();
+        cleanupReports.Complete(
+            body.GetProperty("requestId").GetGuid(),
+            new TvCleanupReport(
+                body.GetProperty("closedApps").GetInt32(),
+                OptionalMegabytes(body, "memoryBeforeMb"),
+                OptionalMegabytes(body, "memoryAfterMb"),
+                OptionalMegabytes(body, "freedMb"),
+                steps));
+    }
+
+    private static int? OptionalMegabytes(JsonElement body, string name) =>
+        body.GetProperty(name) is { ValueKind: JsonValueKind.Number } value ? value.GetInt32() : null;
 
     private void HandleState(InboundMessage message)
     {

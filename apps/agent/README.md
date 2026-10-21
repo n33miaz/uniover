@@ -61,6 +61,7 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_TV_TEXT_KEY_PAUSE_MS` | pausa, em milissegundos, entre as teclas da digitação por teclas (padrão `0`; aumente se a TV perder letras) |
 | `UNIOVER_AAPT_PATH` | caminho do `aapt2` (padrão: o mais novo em `%LOCALAPPDATA%\Android\Sdk\build-tools`, ou em `ANDROID_HOME`); sem ele a lista de apps segue sem ícones |
 | `UNIOVER_ICONS_DIR` | pasta do cache de ícones (padrão `%LOCALAPPDATA%\UniOver\icons`; um arquivo por pacote e versão do app, e o nome leva a versão da regra de escolha do ícone: ao mudar a regra, o que a antiga guardou é ignorado e refeito) |
+| `UNIOVER_TV_CLEANUP_KEEP` | pacotes que a limpeza da TV **nunca** fecha, além dos protegidos de fábrica (ver "Limpeza da TV"): nomes de pacote do Android separados por vírgula (`com.exemplo.app,com.outro.app`); no `agent.toml`, `tv_cleanup_keep` como lista ou como esse mesmo texto. Item fora do formato de pacote é erro de configuração e o agente não sobe |
 
 Arquivo local (fora do repositório): `%LOCALAPPDATA%\UniOver\agent.toml`, com `api_url` e `agent_id`. Nunca
 guarda segredo.
@@ -144,6 +145,60 @@ Comportamentos que valem saber:
   sessão, memória e tempo de religação. Nunca envia tecla de energia. **Pare o agente e o vigia antigo antes de
   medir**: a ferramenta usa o mesmo certificado e o ADB aceita um cliente por vez.
 
+## Limpeza da TV
+
+`tv.cleanup.v1` fecha os apps abertos na TV e libera memória pelo ADB, **sem derrubar a conexão**: nada na
+sequência toca no serviço do controle remoto (a sessão Remote v2), no próprio ADB nem na rede. Sem `adb` neste PC o
+comando é recusado como qualquer outro que dependa dele. A TV da casa tem pouca RAM e o limpador do fabricante
+chegou a matar o serviço do controle quando faltava memória: liberar memória antes ajuda a mantê-lo de pé.
+
+O que o agente roda, nesta ordem, cada um por `argv` em lista (o único dado variável, o nome do pacote, é validado
+pelo mesmo padrão de `launch_package` e vai entre aspas simples), com tempo-limite de 5 s e a trava do ADB tomada só
+durante cada comando (digitar e abrir app continuam funcionando enquanto a limpeza trabalha):
+
+| # | Comando no shell da TV | Para quê |
+|---|---|---|
+| 1 | `grep MemAvailable /proc/meminfo` | memória disponível **antes**; também testa o ADB: se falhar, a resposta é um erro com código estável (`adb_unreachable`, `adb_unavailable`, `adb_unauthorized` ou `adb_timeout`) e nada mais roda |
+| 2 | `cmd package query-activities --brief -a android.intent.action.MAIN -c android.intent.category.LEANBACK_LAUNCHER` (e, se vier vazio, `...LAUNCHER`), mais `pm list packages -3` | os apps que a TV mostra para abrir (a mesma fonte da lista de apps da tela) |
+| 3 | `cmd package query-activities --brief -a android.intent.action.MAIN -c android.intent.category.HOME` | quem atende a tela inicial: protegido |
+| 4 | `settings get secure default_input_method` e `settings get secure enabled_accessibility_services` | o teclado em uso e os serviços de acessibilidade: protegidos |
+| 5 | `ps -A` | quais apps estão **rodando**: só esses são fechados e contados |
+| 6 | `input keyevent KEYCODE_HOME` | o app da frente passa a ser "de fundo" |
+| 7 | `am kill-all` | encerra só processos de fundo e em cache |
+| 8 | `am force-stop '<pacote>'` | um por app em execução que não esteja protegido |
+| 9 | `grep MemAvailable /proc/meminfo` | memória **depois** (o valor liberado nunca é negativo) |
+
+Nunca: `kill-server`, `disconnect`, `reboot`, `pm clear`, `pm uninstall`, `pm disable`, `drop_caches` (exige root).
+`pm trim-caches` também fica de fora: ele libera armazenamento, não memória. Um teste confere que nenhum desses
+comandos chega ao `adb`.
+
+**Lista protegida (nunca fechada, mesmo que apareça como app):**
+
+- o serviço do controle remoto, `com.google.android.tv.remote.service` (fonte: o projeto da TV do dono, que o religa
+  por esse nome, medido na TV real). As variantes dele não foram confirmadas: por isso **todo pacote com `remote` no
+  nome** também é protegido;
+- `android` e `com.android.systemui` (framework e interface);
+- `com.android.tv.settings` (Configurações, como a TV real lista) e `com.android.settings`;
+- `com.google.android.gms` e `com.google.android.gsf` (serviços do Google Play);
+- `com.google.android.tvrecommendations` (recomendações do lançador);
+- `com.android.providers.` e tudo que começa assim (provedores do sistema);
+- o que a lista de apps da tela esconde como peça do sistema da TV: `com.tcl.`, `com.mediatek.`, `com.droidlogic.`,
+  assistentes de configuração e de fábrica;
+- **lidos da TV a cada limpeza:** todo pacote que atende a tela inicial (HOME), o teclado em uso e os serviços de
+  acessibilidade ligados;
+- o que o dono listar em `UNIOVER_TV_CLEANUP_KEEP`.
+
+Se qualquer leitura de proteção falhar (tela inicial, teclado, acessibilidade ou processos), **nenhum app é fechado**:
+ler errado não pode virar "nada a proteger". Se o ADB some no meio, a limpeza para ali. A limpeza se dá 15 s para
+agir; o que passar disso é pulado. Em todos os casos a resposta diz o que não foi feito (`failedSteps`).
+
+A limpeza roda **em tarefa própria**, fora do laço de mensagens: leva vários segundos e, no laço, seguraria todas as
+teclas atrás dela. Uma por vez: um segundo pedido com outra em andamento responde `cleanup_in_progress`. O resultado
+volta em dois quadros, nesta ordem: `tv.cleanup.result.v1` (apps fechados, memória antes e depois, etapas que
+falharam, com o `requestId` do pedido) e `command.result.v1`. O registro (`INFO`) leva só contagens e MB.
+
+A primeira execução deve ser feita com a TV ligada, sabendo que **o app que estiver passando vai fechar**.
+
 ## Ícones dos apps da TV
 
 Com o `aapt2` do Android SDK no PC, a lista de apps (`tv.apps.v2`) leva o ícone de cada app: o agente copia o
@@ -193,7 +248,7 @@ nunca trazem token, `deviceCode`, cabeçalhos nem corpo completo (as bibliotecas
 - `core/`: casos de uso (`HandleCommand`, `ProcessMessage`, `ConnectionSupervisor`, `PairAgent`) e o `EnvelopeGate`;
   em `core/tv/`, o `TvSessionManager` (sessão quente, hibernação, reconexão), os handlers dos comandos da TV e o
   publicador de `tv.state.v1`.
-- `ports/`: `Transport`, `SecretStore`, `PairingClient`, `Clock`, `TvChannel`, `TvRemote` como `typing.Protocol`.
+- `ports/`: `Transport`, `SecretStore`, `PairingClient`, `Clock`, `TvChannel`, `TvRemote`, `TvAdb`, `TvAdbCleanup` como `typing.Protocol`.
 - `adapters/`: `transport_ws`, `secret_store_keyring`, `pairing_http`, `system_clock`, `local_config`,
   `tv_remote_v2`, `tv_pairing` e dublês de teste.
 - `contracts/`: modelos e esquemas gerados, não editar.

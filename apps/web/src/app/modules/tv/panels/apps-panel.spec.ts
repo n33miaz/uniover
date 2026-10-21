@@ -722,6 +722,90 @@ describe('AppsPanel', () => {
     });
   });
 
+  describe('cleanup', () => {
+    const clean = () => root.querySelector<HTMLButtonElement>('.clean')!;
+    const sheet = () => root.querySelector('app-tv-cleanup-sheet dialog');
+    const sheetButton = (name: string) =>
+      [...root.querySelectorAll<HTMLButtonElement>('app-tv-cleanup-sheet button')].find(
+        (b) => b.textContent?.trim() === name,
+      )!;
+
+    it('is a button with an icon only and a name, in the top bar next to the refresh', () => {
+      expect(clean().getAttribute('aria-label')).toBe('Limpar a TV');
+      expect(clean().textContent?.trim()).toBe('');
+      expect(clean().closest('.bar')).toBe(root.querySelector('.refresh')!.closest('.bar'));
+      expect(clean().previousElementSibling).toBe(root.querySelector('.refresh'));
+      expect(clean().getAttribute('aria-haspopup')).toBe('dialog');
+    });
+
+    it('opens the confirmation sheet on a tap, without asking for anything yet', async () => {
+      expect(sheet()).toBeNull();
+      clean().click();
+      await render();
+      expect(sheet()?.hasAttribute('open')).toBe(true);
+      expect(root.querySelector('app-tv-cleanup-sheet h2')?.textContent).toBe('Limpar a TV?');
+      expect(store.cleanup).not.toHaveBeenCalled();
+    });
+
+    it('Cancelar closes the sheet, asks for nothing and gives the focus back to the button', async () => {
+      clean().click();
+      await render();
+      sheetButton('Cancelar').click();
+      await render();
+      expect(sheet()).toBeNull();
+      expect(store.cleanup).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(clean());
+    });
+
+    it('Limpar asks for the cleanup once and the sheet is gone: the rest of the panel stays free', async () => {
+      clean().click();
+      await render();
+      sheetButton('Limpar').click();
+      await render();
+      expect(store.cleanup).toHaveBeenCalledTimes(1);
+      expect(sheet()).toBeNull();
+    });
+
+    it('says "Limpando…" by name and to readers while it works, and ignores a second tap', async () => {
+      store.cleaning.set(true);
+      await render();
+      expect(clean().getAttribute('aria-label')).toBe('Limpando a TV…');
+      expect(clean().getAttribute('aria-disabled')).toBe('true');
+      expect(root.querySelector('.note.cleaning')?.getAttribute('role')).toBe('status');
+      expect(root.querySelector('.note.cleaning')?.textContent).toContain('Limpando a TV…');
+      clean().click();
+      await render();
+      expect(sheet()).toBeNull();
+
+      store.cleaning.set(false);
+      await render();
+      expect(clean().getAttribute('aria-label')).toBe('Limpar a TV');
+      expect(clean().hasAttribute('aria-disabled')).toBe(false);
+      expect(root.querySelector('.note.cleaning')).toBeNull();
+    });
+
+    it('stays dimmed and focusable without an agent, and a tap does nothing', async () => {
+      store.canSend.set(false);
+      await render();
+      expect(clean().disabled).toBe(false);
+      expect(clean().getAttribute('aria-disabled')).toBe('true');
+      expect(clean().classList.contains('off')).toBe(true);
+      clean().focus();
+      expect(document.activeElement).toBe(clean());
+      clean().click();
+      await render();
+      expect(sheet()).toBeNull();
+      expect(store.cleanup).not.toHaveBeenCalled();
+    });
+
+    it('does not touch the list of apps nor the refresh while it opens', async () => {
+      clean().click();
+      await render();
+      expect(store.refreshShortcuts).not.toHaveBeenCalled();
+      expect(names()).toEqual(['Atalho 1', 'Atalho 2', 'Atalho 3']);
+    });
+  });
+
   describe('refresh', () => {
     const refresh = () => root.querySelector<HTMLButtonElement>('.refresh')!;
 
@@ -879,6 +963,14 @@ describe('AppsPanel for a guest', () => {
       root.querySelector('button[aria-label^="Fixar"], button[aria-label^="Tirar"]'),
     ).toBeNull();
     expect(root.querySelector('button.refresh')).not.toBeNull();
+  });
+
+  it('sees "Limpar a TV" like any other TV command', async () => {
+    const root = await open();
+
+    const clean = root.querySelector<HTMLButtonElement>('button.clean')!;
+    expect(clean.getAttribute('aria-label')).toBe('Limpar a TV');
+    expect(clean.hasAttribute('aria-disabled')).toBe(false);
   });
 
   it('opens the apps out of the control too, and is told only that a tap opens them (no mention of Editar)', async () => {

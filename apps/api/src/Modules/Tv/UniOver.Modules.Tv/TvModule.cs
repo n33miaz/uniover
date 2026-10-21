@@ -11,6 +11,7 @@ using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Contracts;
 using UniOver.Modules.Tv.Features.Agents;
+using UniOver.Modules.Tv.Features.Cleanup;
 using UniOver.Modules.Tv.Features.Commands;
 using UniOver.Modules.Tv.Features.Events;
 using UniOver.Modules.Tv.Features.GetModuleInfo;
@@ -73,6 +74,7 @@ public static class TvModule
         services.AddSingleton<ITvAgentPresence, DevicesAgentPresence>();
         services.AddSingleton<IAgentPresenceListener, TvPresenceListener>();
         services.AddSingleton<ITvCommandSender, DevicesGatewayCommandSender>();
+        services.AddSingleton<ITvCleanupReports, InMemoryTvCleanupReports>();
         services.AddSingleton<TvStatePersister>();
         services.AddSingleton<AuditRetention>();
         services.AddSingleton<TvStateProvider>();
@@ -96,6 +98,7 @@ public static class TvModule
         services.AddScoped<ReorderShortcutsHandler>();
         services.AddScoped<RefreshShortcutsHandler>();
         services.AddScoped<WakeHandler>();
+        services.AddScoped<CleanupHandler>();
         services.AddScoped<RecentCommandsHandler>();
         services.AddScoped<StreamEventsHandler>();
         return services;
@@ -119,6 +122,7 @@ public static class TvModule
         group.MapReorderShortcuts();
         group.MapRefreshShortcuts();
         group.MapWake();
+        group.MapCleanup();
         group.MapRecentCommands();
         group.MapStreamEvents();
         return endpoints;

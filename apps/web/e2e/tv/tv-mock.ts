@@ -21,6 +21,17 @@ export interface MockShortcut {
   iconDataUri?: string | null;
 }
 
+/** O que a limpeza da TV devolve: o relatório do agente (memória em MB, `null` quando não deu para ler). */
+export interface MockCleanup {
+  ok: true;
+  latencyMs: number;
+  closedApps: number;
+  freedMb: number | null;
+  memoryBeforeMb: number | null;
+  memoryAfterMb: number | null;
+  failedSteps: string[];
+}
+
 export interface MockTvState {
   power: string;
   volume: number | null;
@@ -42,7 +53,7 @@ export interface TvMock {
   readonly requests: TvRequest[];
   state: MockTvState;
   shortcuts: MockShortcut[];
-  /** Falha de `/keys`, `/text`, `/power/off`, `/launch` e `/refresh` (não de `/wake`). */
+  /** Falha de `/keys`, `/text`, `/power/off`, `/launch`, `/refresh` e `/cleanup` (não de `/wake`). */
   commandFailure: MockFailure | null;
   /** Falha de `/wake`. */
   wakeFailure: MockFailure | null;
@@ -52,6 +63,10 @@ export interface TvMock {
   orderGate: Promise<void> | null;
   /** Enquanto houver uma promessa aqui, `GET /state` espera por ela (para ver a tela "conectando"). */
   stateGate: Promise<void> | null;
+  /** O que `POST /cleanup` responde quando dá certo. */
+  cleanupResult: MockCleanup;
+  /** Enquanto houver uma promessa aqui, `POST /cleanup` espera por ela (para ver o "Limpando…"). */
+  cleanupGate: Promise<void> | null;
   /** Pedidos de comando por rota (`/keys`, `/power/off`, ...). */
   count(path: string): number;
   keysSent(): string[];
@@ -114,6 +129,16 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     orderFailure: null,
     orderGate: null,
     stateGate: null,
+    cleanupResult: {
+      ok: true,
+      latencyMs: 9000,
+      closedApps: 6,
+      freedMb: 383,
+      memoryBeforeMb: 214,
+      memoryAfterMb: 597,
+      failedSteps: [],
+    },
+    cleanupGate: null,
     count: (path) => mock.requests.filter((r) => r.method === 'POST' && r.path === path).length,
     keysSent: () =>
       mock.requests.filter((r) => r.path === '/keys').map((r) => String(r.body?.['key'])),
@@ -192,6 +217,10 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     }
     if (method === 'POST' && (path === '/text' || path === '/power/off')) {
       return json(route, 200, { ok: true, latencyMs: 40 });
+    }
+    if (method === 'POST' && path === '/cleanup') {
+      if (mock.cleanupGate) await mock.cleanupGate;
+      return json(route, 200, mock.cleanupResult);
     }
     if (method === 'POST' && path === '/shortcuts/refresh') {
       return json(route, 200, { ok: true, latencyMs: 40 });

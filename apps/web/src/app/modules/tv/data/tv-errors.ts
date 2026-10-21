@@ -9,6 +9,7 @@ export type TvFailureKind =
   | 'timeout'
   | 'command-failed'
   | 'rate-limited'
+  | 'cleanup-busy'
   | 'shortcut-disabled'
   | 'not-found'
   | 'invalid'
@@ -30,17 +31,32 @@ function agentErrorOf(error: unknown): string | null {
   return null;
 }
 
+/** Códigos do canal ADB do agente: a TV não atendeu pelo ADB (desligada, fora da rede ou sem responder a tempo). */
+const ADB_UNREACHABLE_CODES = new Set(['adb_unreachable', 'adb_unavailable', 'adb_timeout']);
+
 function commandFailedMessage(code: string | null): string {
   if (code === 'TV_UNREACHABLE') {
     return $localize`:@@tv.error.tv-unreachable:A TV não respondeu ao controle. Confira se ela está ligada e na rede.`;
+  }
+  if (code !== null && ADB_UNREACHABLE_CODES.has(code)) {
+    return $localize`:@@tv.error.adb-unreachable:A TV não respondeu pelo ADB agora. Tente de novo com a TV ligada.`;
+  }
+  if (code === 'adb_unauthorized') {
+    return $localize`:@@tv.error.adb-unauthorized:A TV ainda não autorizou o computador do agente no ADB. Aceite o aviso na tela da TV e tente de novo.`;
+  }
+  if (code === 'cleanup_report_missing') {
+    return $localize`:@@tv.error.cleanup-report-missing:A TV recebeu o pedido, mas não deu para confirmar o que foi limpo. Confira a TV.`;
   }
   return code
     ? $localize`:@@tv.error.command-failed-code:A TV não executou o comando (código ${code}:code:).`
     : $localize`:@@tv.error.command-failed:A TV não executou o comando.`;
 }
 
+/** O que se estava fazendo: a limpeza leva até ~25 s, então "tempo esgotado" não quer dizer "não aconteceu". */
+export type TvFailureContext = 'cleanup';
+
 /** Traduz a falha de uma chamada do controle na mensagem da tela; nenhuma delas é repetida sozinha. */
-export function describeFailure(error: unknown): TvFailure {
+export function describeFailure(error: unknown, context?: TvFailureContext): TvFailure {
   const problem = problemOf(error);
   if (!problem) {
     return {
@@ -80,10 +96,15 @@ export function describeFailure(error: unknown): TvFailure {
         $localize`:@@tv.error.not-found:Este atalho não existe mais. Atualize a lista.`,
       );
     case 409:
-      return make(
-        'shortcut-disabled',
-        $localize`:@@tv.error.shortcut-disabled:Este app não está mais instalado na TV. Atualize a lista.`,
-      );
+      return problem.kind === 'cleanup-in-progress'
+        ? make(
+            'cleanup-busy',
+            $localize`:@@tv.error.cleanup-busy:Já há uma limpeza da TV em andamento. Aguarde ela terminar.`,
+          )
+        : make(
+            'shortcut-disabled',
+            $localize`:@@tv.error.shortcut-disabled:Este app não está mais instalado na TV. Atualize a lista.`,
+          );
     case 429: {
       const seconds = problem.retryAfterSeconds;
       return make(
@@ -109,7 +130,9 @@ export function describeFailure(error: unknown): TvFailure {
     case 504:
       return make(
         'timeout',
-        $localize`:@@tv.error.timeout:A TV não respondeu a tempo. Tente de novo.`,
+        context === 'cleanup'
+          ? $localize`:@@tv.error.cleanup-timeout:A limpeza demorou mais do que o esperado e a TV pode ter terminado. Confira a TV e tente de novo.`
+          : $localize`:@@tv.error.timeout:A TV não respondeu a tempo. Tente de novo.`,
       );
     default:
       return make('unknown', $localize`:@@tv.error.unknown:Não foi possível falar com a TV agora.`);

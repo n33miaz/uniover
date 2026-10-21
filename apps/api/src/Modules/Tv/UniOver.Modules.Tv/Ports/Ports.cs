@@ -64,6 +64,36 @@ public interface ITvCommandAudit
     Task RecordAsync(CommandAuditEntry entry, CancellationToken cancellationToken);
 }
 
+/// <summary>O que a limpeza da TV fez, como o agente relatou (<c>tv.cleanup.result.v1</c>). Memória em MB.</summary>
+public sealed record TvCleanupReport(
+    int ClosedApps, int? MemoryBeforeMb, int? MemoryAfterMb, int? FreedMb, IReadOnlyList<string> FailedSteps);
+
+/// <summary>Uma limpeza em andamento: o pedido e a espera pelo relatório do agente. Descartar libera a vez.</summary>
+public interface ITvCleanupTicket : IDisposable
+{
+    /// <summary>O que vai no corpo de <c>tv.cleanup.v1</c> e volta no relatório.</summary>
+    Guid RequestId { get; }
+
+    /// <summary>
+    /// Espera o relatório deste pedido. O agente o manda antes do resultado do comando, então normalmente já chegou;
+    /// <paramref name="grace"/> só cobre uma ordem trocada. Nulo se não chegou.
+    /// </summary>
+    Task<TvCleanupReport?> WaitAsync(TimeSpan grace, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Junta o relatório que o agente manda por iniciativa própria ao pedido HTTP que o espera, e garante uma limpeza por
+/// vez (a TV é uma só). Em memória, da instância do contêiner.
+/// </summary>
+public interface ITvCleanupReports
+{
+    /// <summary>Começa uma limpeza; nulo se já há uma em andamento.</summary>
+    ITvCleanupTicket? TryBegin();
+
+    /// <summary>Entrega o relatório a quem espera pelo <paramref name="requestId"/>; ignora o que ninguém espera.</summary>
+    void Complete(Guid requestId, TvCleanupReport report);
+}
+
 /// <summary>Os atalhos como a tela os vê, lidos do banco.</summary>
 public interface ITvShortcutReader
 {

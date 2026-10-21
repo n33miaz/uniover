@@ -79,6 +79,29 @@ class EnvelopeFactory:
         }
         return self._build("tv.apps.v1", body, correlation_id)
 
+    def tv_cleanup_result(  # noqa: PLR0913 - os campos do relatório, todos obrigatórios no contrato
+        self,
+        request_id: str,
+        correlation_id: str,
+        *,
+        closed_apps: int,
+        memory_before_mb: int | None,
+        memory_after_mb: int | None,
+        freed_mb: int | None,
+        failed_steps: Sequence[str],
+    ) -> dict[str, Any]:
+        """`tv.cleanup.result.v1`: o que a limpeza fez, com o comando e o `requestId` do pedido."""
+        body: dict[str, Any] = {
+            "requestId": request_id,
+            "closedApps": closed_apps,
+            "memoryBeforeMb": memory_before_mb,
+            "memoryAfterMb": memory_after_mb,
+            "freedMb": freed_mb,
+            "failedSteps": list(failed_steps),
+            "at": self._utc_now(),
+        }
+        return self._build("tv.cleanup.result.v1", body, correlation_id)
+
     def tv_apps_v2(
         self,
         apps: Sequence[tuple[str, str, AppIcon | None]],
