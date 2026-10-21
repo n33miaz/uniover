@@ -2,7 +2,6 @@ import AxeBuilder from '@axe-core/playwright';
 import { Locator, Page } from '@playwright/test';
 import { GUEST, IdentityMock, mockIdentityApi } from '../auth/identity-mock';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
-import { settle } from '../screens/screen-helpers';
 import {
   HOT_STATE,
   SHORTCUTS,
@@ -14,7 +13,10 @@ import {
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker. E aqui a dica
 // do atalho na tela de início fica LIGADA (o padrão dos outros testes é silenciá-la).
-test.use({ serviceWorkers: 'block', installHintSilenced: false });
+//
+// `actionTimeout`: o padrão do Playwright é SEM prazo para cliques, prints e esperas de ação; um passo que trava no
+// WebKit do runner deixava o teste calado por 90 s (o relatório só dizia "Test timeout"). Com prazo, a falha diz qual passo.
+test.use({ serviceWorkers: 'block', installHintSilenced: false, actionTimeout: 20_000 });
 
 // A folha abre sozinha ~3 s depois da tela pronta; quem prova que ela NÃO abriu espera um pouco mais que isso.
 const AFTER_DELAY_MS = 3600;
@@ -35,7 +37,7 @@ const UA = {
 let identity: IdentityMock;
 
 test.beforeEach(async ({ context }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(75_000);
   identity = await mockIdentityApi(context);
   await mockTvApi(context, identity);
 });
@@ -117,21 +119,39 @@ async function showTv(page: Page) {
 }
 
 /**
- * Troca o esquema de cores e espera o navegador pintar de fato (o `color-scheme` da raiz muda quando o app aplica o
- * tema); sem isso o print pode sair no esquema anterior, principalmente no WebKit.
+ * Espera as animações que têm fim acabarem, com teto de 5 s: print e axe só valem com a tela parada. Não usa
+ * `animation.finished` nem `requestAnimationFrame` (sem prazo: se o navegador não entrega quadros, o teste ficava
+ * pendurado até o limite); consulta o estado a cada 100 ms e, passado o teto, segue em frente.
+ */
+async function settleAnimations(page: Page) {
+  await page
+    .waitForFunction(
+      () =>
+        document
+          .getAnimations()
+          .every(
+            (animation) =>
+              animation.playState !== 'running' ||
+              animation.effect?.getComputedTiming().iterations === Infinity,
+          ),
+      undefined,
+      { polling: 100, timeout: 5000 },
+    )
+    .catch(() => undefined);
+}
+
+/**
+ * Troca o esquema de cores e espera o app aplicar (o `color-scheme` da raiz muda com o tema); sem isso o print pode
+ * sair no esquema anterior, principalmente no WebKit.
  */
 async function useScheme(page: Page, scheme: 'light' | 'dark') {
   await page.emulateMedia({ colorScheme: scheme });
   await expect
-    .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme))
+    .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), {
+      timeout: 10_000,
+    })
     .toBe(scheme);
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      ),
-  );
-  await settle(page);
+  await settleAnimations(page);
 }
 
 async function expectNoSeriousViolations(page: Page) {
@@ -227,7 +247,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
       await expect(sheet.getByRole('button').first()).toBeFocused();
       await expect(sheet.getByRole('button').first()).toHaveText('Agora não');
     }
-    await settle(page);
+    await settleAnimations(page);
     await expectNoHorizontalScroll(page);
     await expectTargets44(page);
     // A primeira coisa que a pessoa vê: a folha que abriu sozinha (com "Agora não" e "Não mostrar de novo").
@@ -305,7 +325,7 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'TV' })).toBeVisible();
     await expectNoHorizontalScroll(page);
     // O que a convidada vê ao abrir o controle pela primeira vez.
-    await settle(page);
+    await settleAnimations(page);
     for (const scheme of ['light', 'dark'] as const) {
       await useScheme(page, scheme);
       await expectNoA11yViolationsInSheet(page);
@@ -358,9 +378,9 @@ test.describe('no ambiente de fábrica do projeto', () => {
     const row = customize.getByRole('button', { name: /^Adicionar à tela de início/ });
     await expect(row).toBeVisible();
     await expect(customize.locator('app-install-hint-row')).toHaveCount(1);
-    await row.scrollIntoViewIfNeeded();
+    await row.evaluate((element) => element.scrollIntoView({ block: 'center' }));
     await expectTargets44Of(row);
-    await settle(page);
+    await settleAnimations(page);
     for (const scheme of ['light', 'dark'] as const) {
       await useScheme(page, scheme);
       await screenshot(page, `${SHOTS}/personalizar-row-${scheme}-${info.project.name}.png`);
@@ -438,7 +458,11 @@ test.describe('no ambiente de fábrica do projeto', () => {
   });
 });
 
-/** Um modo por vez, com o agente de usuário certo (vale nos dois projetos), e prints claro/escuro. */
+/**
+ * Um modo por vez, com o agente de usuário certo (vale nos dois projetos). Cada modo roda em dois testes, claro e
+ * escuro, e cada um faz só o que precisa: abre a folha pela linha de Ajustes, confere, passa o axe e tira o print.
+ * Testes pequenos: no WebKit do runner Linux print e axe levam várias vezes o tempo do Windows.
+ */
 const MODES = [
   { name: 'ios-safari', ua: UA.safari, native: false, buttons: ['Fechar'] },
   { name: 'ios-chrome', ua: UA.chrome, native: false, buttons: ['Fechar'] },
@@ -450,58 +474,51 @@ for (const mode of MODES) {
   test.describe(`modo ${mode.name}`, () => {
     test.use({ userAgent: mode.ua });
 
-    test('a linha de Ajustes abre a folha deste modo; prints claro e escuro; sem rolagem; axe', async ({
-      page,
-    }, info) => {
-      if (mode.native) await simulateInstallPrompt(page);
-      await signInAsOwner();
-      await page.goto('/ajustes');
-      await expect(rowOf(page)).toBeVisible();
-      await expect(page.locator('app-install-hint-row .ui-tile')).toBeVisible();
-      if (mode.name === 'ios-safari') {
-        // A linha em Ajustes (seção Aparência), antes de abrir a folha.
-        await rowOf(page).scrollIntoViewIfNeeded();
+    for (const scheme of ['light', 'dark'] as const) {
+      test(`a linha de Ajustes abre a folha deste modo: conteúdo, alvos, axe e print (${scheme})`, async ({
+        page,
+      }, info) => {
+        if (mode.native) await simulateInstallPrompt(page);
+        await signInAsOwner();
+        await page.goto('/ajustes');
+        await expect(rowOf(page)).toBeVisible();
+        await expect(page.locator('app-install-hint-row .ui-tile')).toBeVisible();
+        // A linha tem 44 px ou mais nos dois lados (sem rolar a tela: o clique abaixo já leva a linha à vista).
         await expectTargets44Of(rowOf(page));
-        for (const scheme of ['light', 'dark'] as const) {
-          await useScheme(page, scheme);
-          await screenshot(page, `${SHOTS}/settings-row-${scheme}-${info.project.name}.png`);
-        }
-        await useScheme(page, 'light');
-      }
-      await rowOf(page).click();
+        await rowOf(page).click();
 
-      const sheet = sheetOf(page);
-      await expect(sheet).toBeVisible();
-      // Aberta pela pessoa: sem "Agora não" nem "Não mostrar de novo".
-      await expect(sheet.getByRole('button')).toHaveText(mode.buttons);
-      const items = sheet.getByRole('listitem');
-      const titles = sheet.locator('.step-title');
-      await settle(page);
-      await expectNoHorizontalScroll(page);
-      await expectTargets44(page);
-
-      if (mode.name === 'ios-in-app') {
-        await expect(items).toHaveCount(4);
-        await expect(titles.first()).toHaveText('Abra este endereço no Safari');
-        await expect(sheet.getByRole('button', { name: 'Copiar endereço' })).toBeVisible();
-      } else if (!mode.native) {
-        await expect(items).toHaveCount(3);
-        await expect(titles.first()).toHaveText('Toque em Compartilhar');
-      }
-      if (mode.name === 'ios-chrome') {
-        await expect(sheet).toContainText('No Chrome e no Edge ele fica na barra de endereço');
-      }
-      if (mode.name === 'ios-safari' || mode.name === 'ios-in-app') {
-        await expect(sheet).toContainText('Se você abriu pelo WhatsApp');
-      }
-
-      for (const scheme of ['light', 'dark'] as const) {
+        const sheet = sheetOf(page);
+        await expect(sheet).toBeVisible();
+        // Aberta pela pessoa: sem "Agora não" nem "Não mostrar de novo".
+        await expect(sheet.getByRole('button')).toHaveText(mode.buttons);
         await useScheme(page, scheme);
+        await expectNoHorizontalScroll(page);
+        await expectTargets44(page);
+
+        if (scheme === 'light') {
+          const items = sheet.getByRole('listitem');
+          const titles = sheet.locator('.step-title');
+          if (mode.name === 'ios-in-app') {
+            await expect(items).toHaveCount(4);
+            await expect(titles.first()).toHaveText('Abra este endereço no Safari');
+            await expect(sheet.getByRole('button', { name: 'Copiar endereço' })).toBeVisible();
+          } else if (!mode.native) {
+            await expect(items).toHaveCount(3);
+            await expect(titles.first()).toHaveText('Toque em Compartilhar');
+          }
+          if (mode.name === 'ios-chrome') {
+            await expect(sheet).toContainText('No Chrome e no Edge ele fica na barra de endereço');
+          }
+          if (mode.name === 'ios-safari' || mode.name === 'ios-in-app') {
+            await expect(sheet).toContainText('Se você abriu pelo WhatsApp');
+          }
+        }
+
         await expectNoSeriousViolations(page);
         await expectNoA11yViolationsInSheet(page);
         await screenshot(page, `${SHOTS}/${mode.name}-${scheme}-${info.project.name}.png`);
-      }
-    });
+      });
+    }
   });
 }
 
@@ -522,7 +539,7 @@ test.describe('modo native: o botão Instalar', () => {
       'Não mostrar de novo',
     ]);
     await expect(sheet.getByRole('button', { name: 'Instalar' })).toBeFocused();
-    await settle(page);
+    await settleAnimations(page);
     for (const scheme of ['light', 'dark'] as const) {
       await useScheme(page, scheme);
       await screenshot(page, `${SHOTS}/native-auto-${scheme}-${info.project.name}.png`);
@@ -570,7 +587,7 @@ test.describe('modo ios-in-app: copiar o endereço', () => {
         new URL('/ajustes', page.url()).href,
       );
     }
-    await settle(page);
+    await settleAnimations(page);
     await screenshot(page, `${SHOTS}/ios-in-app-copied-${info.project.name}.png`);
   });
 });

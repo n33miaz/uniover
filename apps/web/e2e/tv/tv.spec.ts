@@ -1179,22 +1179,40 @@ test.describe('painel flutuante: comportamento comum', () => {
     page,
   }) => {
     await openTv(page);
-    // Acompanha a opacidade do cartão quadro a quadro desde o pedido de abrir (o `@starting-style` parte de zero).
-    const seen = await page.evaluate(async () => {
+    const startingStyle = await page.evaluate(
+      () =>
+        typeof (window as unknown as { CSSStartingStyleRule?: unknown }).CSSStartingStyleRule !==
+        'undefined',
+    );
+    test.skip(!startingStyle, 'este navegador não tem @starting-style: a folha só aparece');
+
+    // O observador é armado ANTES de pedir o painel: a transição que sai do `@starting-style` (opacidade e deslocamento
+    // do cartão, que parte de zero) dispara `transitionrun` assim que nasce, não importa em que quadro o teste olhe.
+    // Amostrar a opacidade quadro a quadro depois do pedido perdia a janela num executor lento, e a primeira amostra
+    // já vinha opaca.
+    await page.evaluate(() => {
+      const w = window as unknown as { __cardRuns: string[] };
+      w.__cardRuns = [];
+      document.addEventListener(
+        'transitionrun',
+        (event) => {
+          const target = event.target as HTMLElement;
+          if (target.classList?.contains('card') && target.closest('dialog.panel')) {
+            w.__cardRuns.push(event.propertyName);
+          }
+        },
+        true,
+      );
       history.pushState(history.state, '', '/tv?painel=apps');
       window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
-      const values: number[] = [];
-      const deadline = performance.now() + 2000;
-      while (performance.now() < deadline) {
-        const card = document.querySelector('dialog.panel .card');
-        if (card) values.push(Number(getComputedStyle(card).opacity));
-        if (values.at(-1) === 1) break;
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-      }
-      return values;
     });
-    expect(Math.min(...seen), 'começou transparente').toBeLessThan(1);
-    expect(seen.at(-1), 'terminou opaco').toBe(1);
+    await expect(appsDialog(page)).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __cardRuns: string[] }).__cardRuns))
+      .toEqual(expect.arrayContaining(['opacity', 'transform']));
+    await expect
+      .poll(() => page.locator('dialog.panel .card').evaluate((el) => getComputedStyle(el).opacity))
+      .toBe('1');
     await settleMotion(page);
     expect(
       await page
