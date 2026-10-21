@@ -21,7 +21,7 @@ describe('credits route', () => {
     expect(data.back.link).toBe('/ajustes');
   });
 
-  it('is a screen of the administrator only (the guest is sent to the control)', () => {
+  it('is open to who uses the Treino (the screens of the Treino link to it), behind the module guard', () => {
     const route = children.find((child) => child.path === 'creditos')!;
     expect(route.canMatch).toBeDefined();
     expect(route.canMatch).toHaveLength(1);

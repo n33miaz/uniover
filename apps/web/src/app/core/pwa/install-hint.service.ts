@@ -92,6 +92,8 @@ export class InstallHintService {
   private readonly memory = signal<HintMemory>(readMemory());
   /** A folha automática já abriu nesta página: mesmo sem armazenamento ela não repete. */
   private readonly autoShown = signal(false);
+  /** Quantas telas pediram para a folha automática esperar (o treino ao vivo, por exemplo). */
+  private readonly holds = signal(0);
   private readonly _sheet = signal<'auto' | 'manual' | null>(null);
 
   /** Celular ou tablet: só neles a folha abre sozinha; nas linhas de Ajustes e Personalizar vale em qualquer um. */
@@ -111,16 +113,34 @@ export class InstallHintService {
     }
   });
 
+  /**
+   * O app roda dentro de um navegador do iPhone/iPad, e não a partir da tela de início (Safari, outro navegador ou um
+   * app com navegador embutido). É onde o iOS apaga os dados do site depois de 7 dias sem uso: instalado, ele os poupa.
+   */
+  readonly iosNotInstalled = computed(() => {
+    const mode = this.mode();
+    return mode === 'ios-safari' || mode === 'ios-other' || mode === 'ios-in-app';
+  });
+
   /** A folha aberta, e por quem: `auto` (sozinha, respeita "Agora não") ou `manual` (a pessoa tocou numa linha). */
   readonly sheet = this._sheet.asReadonly();
 
+  /** Alguma tela pediu que a folha automática espere (`holdAuto`). */
+  readonly autoHeld = computed(() => this.holds() > 0);
+
   /**
    * Se a folha pode abrir sozinha: há o que oferecer, é um celular, a pessoa não pediu para parar, o último
-   * "Agora não" tem mais de 14 dias e ela ainda não abriu nesta página. Não olha o relógio: quem decide a hora é
-   * `autoOpenAllowed`.
+   * "Agora não" tem mais de 14 dias, ela ainda não abriu nesta página e nenhuma tela pediu para esperar. Não olha o
+   * relógio: quem decide a hora é `autoOpenAllowed`. Quando o pedido de espera termina, isto volta a ser verdadeiro e o
+   * prazo de abertura recomeça do zero.
    */
   readonly autoEligible = computed(
-    () => this.mobile && this.mode() !== 'none' && !this.memory().never && !this.autoShown(),
+    () =>
+      this.mobile &&
+      this.mode() !== 'none' &&
+      !this.memory().never &&
+      !this.autoShown() &&
+      !this.autoHeld(),
   );
 
   constructor() {
@@ -183,6 +203,21 @@ export class InstallHintService {
     if (dismissedAt === undefined) return true;
     // Relógio que andou para trás: na dúvida, não insiste.
     return now - dismissedAt >= INSTALL_HINT_SNOOZE_MS;
+  }
+
+  /**
+   * Pede que a folha NÃO abra sozinha enquanto a tela precisar da atenção inteira (o treino ao vivo: um aviso no meio de
+   * uma série atrapalha mais que ajuda). Devolve a função que solta o pedido; chamá-la de novo não faz nada. A folha pedida
+   * pela pessoa (`open`) não é afetada.
+   */
+  holdAuto(): () => void {
+    let released = false;
+    this.holds.update((count) => count + 1);
+    return () => {
+      if (released) return;
+      released = true;
+      this.holds.update((count) => Math.max(0, count - 1));
+    };
   }
 
   /** Abre a folha sozinha; conta como "já mostrada nesta página". */
