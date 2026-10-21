@@ -1,0 +1,48 @@
+:host {
+  display: contents;
+}
+
+.ui-group {
+  margin: 0;
+}
+
+/* Quem cria ou apaga um treino não confunde: a linha de cancelar usa o tom de perigo só no ícone e no título. */
+.danger .ui-row-title {
+  color: var(--a-bad-ink);
+}
+
+.ui-tile.bad {
+  background: var(--a-bad-soft);
+  color: var(--a-bad-ink);
+}
+
+.platform {
+  margin: calc(-1 * var(--space-1)) var(--space-1) 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.confirm p {
+  margin: 0;
+}
+
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.confirm-actions .ui-btn {
+  flex: 1 1 10rem;
+}
+
+/* A folha abre com o foco na primeira linha: o anel fica por dentro dela (por fora, o grupo o cortaria numa linha solta). */
+.ui-row:focus-visible {
+  outline-offset: -3px;
+}

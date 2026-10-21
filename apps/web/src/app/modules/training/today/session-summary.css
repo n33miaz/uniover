@@ -1,0 +1,147 @@
+:host {
+  display: block;
+}
+
+/* O botão de concluir fica fixo embaixo, como no treino ao vivo: o conteúdo ganha a folga da altura dele. */
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 40rem;
+  margin-inline: auto;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  text-align: center;
+}
+
+.title {
+  margin-top: var(--space-2);
+  font-size: var(--fs-display);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.title:focus {
+  outline: none;
+}
+
+.sub {
+  margin: 0;
+  color: var(--a-ink2);
+}
+
+.saved {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  color: var(--a-ok-ink);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+/* Os quatro números: dois por linha, o número grande e o nome embaixo. */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-1);
+}
+
+.stat dt {
+  color: var(--a-ink2);
+  font-size: var(--fs-label);
+}
+
+.stat dd {
+  margin: 0;
+  overflow: hidden;
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.records,
+.sets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ui-group {
+  margin: 0;
+}
+
+.ui-tile.warn {
+  background: var(--a-warn-soft);
+  color: var(--a-warn-ink);
+}
+
+.pencil {
+  color: var(--a-ink3);
+}
+
+.none {
+  margin: 0;
+  color: var(--a-ink2);
+}
+
+.note {
+  margin: 0 var(--space-1);
+  color: var(--a-ink2);
+  font-size: var(--fs-label);
+}
+
+.missing {
+  align-items: center;
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.missing .title {
+  font-size: var(--fs-title);
+}
+
+.dock {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 2;
+  padding: var(--space-3) var(--gutter) calc(var(--space-3) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--a-line);
+  background: var(--a-surface);
+}
+
+.dock > .go {
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+.go {
+  min-height: 64px;
+  font-size: 1.125rem;
+}

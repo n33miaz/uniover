@@ -1,0 +1,49 @@
+:host {
+  display: contents;
+}
+
+/* O que se está editando: o nome do exercício e como a série ficou gravada. */
+.what {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.name {
+  font-weight: 700;
+}
+
+.was {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+/* A linha inteira é o alvo de toque do interruptor. */
+.warm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  font-weight: 650;
+}
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.confirm p {
+  margin: 0;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.confirm-actions .ui-btn {
+  flex: 1 1 0;
+}
