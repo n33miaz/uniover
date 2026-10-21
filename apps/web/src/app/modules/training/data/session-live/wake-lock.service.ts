@@ -13,12 +13,17 @@ interface WakeLockLike {
 }
 
 /**
- * Tela acesa durante o treino (Wake Lock). É melhor esforço: no iPhone só funciona em PWA instalada a partir do iOS 18.4,
- * e a bateria baixa, a falta de permissão ou o sistema podem recusar. **Nenhum erro aqui quebra o treino**: `request()`
- * devolve `false` e o sinal `active` diz a verdade.
+ * Tela acesa durante o treino (Wake Lock). É melhor esforço: no iPhone existe no Safari desde o iOS 16.4, mas o app aberto
+ * pela tela de início só a manteve acesa a partir do iOS 18.4 (antes, o pedido era aceito e o bloqueio não valia), e a
+ * bateria baixa, a falta de permissão ou o sistema podem recusar. Nada disto foi conferido num aparelho. **Nenhum erro aqui
+ * quebra o treino**: `request()` devolve `false` e os sinais `active` e `refused` dizem a verdade.
  *
  * O navegador solta o bloqueio sozinho quando a página some (aba trocada, tela bloqueada); por isso, enquanto o dono
  * quer a tela acesa, o bloqueio é pedido de novo na volta para a página visível.
+ *
+ * `refused` diz a verdade para a tela contar com calma: a pessoa quis a tela acesa e o aparelho não a manteve (pedido
+ * recusado, ou o sistema soltou o bloqueio com a página à vista, como o iOS costuma fazer em app instalado). Falta da
+ * API não é recusa: nela `supported` já é falso.
  */
 @Injectable()
 export class WakeLockService {
@@ -29,6 +34,7 @@ export class WakeLockService {
 
   private readonly _supported = signal(this.lock !== undefined);
   private readonly _active = signal(false);
+  private readonly _refused = signal(false);
   private wanted = false;
   private sentinel: SentinelLike | null = null;
   private acquiring: Promise<boolean> | null = null;
@@ -37,6 +43,8 @@ export class WakeLockService {
   readonly supported = this._supported.asReadonly();
   /** Há um bloqueio de tela ativo agora. */
   readonly active = this._active.asReadonly();
+  /** A pessoa quer a tela acesa e o aparelho não a manteve (recusou, ou soltou e não deu para pedir de novo). */
+  readonly refused = this._refused.asReadonly();
 
   constructor() {
     const onVisibility = () => {
@@ -62,6 +70,7 @@ export class WakeLockService {
     const sentinel = this.sentinel;
     this.sentinel = null;
     this._active.set(false);
+    this._refused.set(false);
     try {
       await sentinel?.release();
     } catch {
@@ -83,16 +92,22 @@ export class WakeLockService {
         }
         this.sentinel = sentinel;
         this._active.set(true);
+        this._refused.set(false);
         sentinel.addEventListener('release', () => {
           if (this.sentinel === sentinel) {
             this.sentinel = null;
             this._active.set(false);
+            // Com a página escondida (aba trocada, tela bloqueada) soltar é o esperado e a volta pede de novo; à vista, o
+            // aparelho tomou o bloqueio de volta e não há como saber se o devolve: a tela passa a dizer a verdade.
+            if (this.wanted && this.doc.visibilityState === 'visible') this._refused.set(true);
           }
         });
         return true;
       })
       .catch(() => {
         this._active.set(false);
+        // Recusa (bateria baixa, economia de energia, falta de permissão): só conta se a pessoa ainda quer a tela acesa.
+        if (this.wanted) this._refused.set(true);
         return false;
       })
       .finally(() => {

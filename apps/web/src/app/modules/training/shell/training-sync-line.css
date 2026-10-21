@@ -64,3 +64,24 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* A sugestão de instalar fica numa fileira própria, abaixo da linha, e o texto inteiro é o botão (alvo de 44 px). */
+.advice {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--a-warn-ink);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.how {
+  color: var(--a-accent-ink);
+  font-weight: 700;
+}

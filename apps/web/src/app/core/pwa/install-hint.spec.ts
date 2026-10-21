@@ -61,6 +61,30 @@ describe('InstallHint', () => {
     return dialog;
   }
 
+  it('com um pedido de espera (treino ao vivo), nem os 30 s de tentativas a abrem; ao soltar, o prazo recomeça', async () => {
+    const { sheet, tick, hint } = setup();
+    const release = hint.holdAuto();
+    await tick(INSTALL_HINT_MAX_ATTEMPTS * INSTALL_HINT_DELAY_MS * 3);
+    expect(sheet()).toBeNull();
+
+    release();
+    await tick(INSTALL_HINT_DELAY_MS - 1);
+    expect(sheet()).toBeNull();
+    await tick(1);
+    expect(sheet()).not.toBeNull();
+  });
+
+  it('um pedido de espera que chega no meio do prazo cancela a abertura que estava armada', async () => {
+    const { sheet, tick, hint } = setup();
+    await tick(INSTALL_HINT_DELAY_MS - 100);
+    const release = hint.holdAuto();
+    await tick(INSTALL_HINT_DELAY_MS);
+    expect(sheet()).toBeNull();
+    release();
+    await tick(INSTALL_HINT_DELAY_MS);
+    expect(sheet()).not.toBeNull();
+  });
+
   it('não desenha nada enquanto a folha está fechada (nenhum elemento fixo na tela)', () => {
     const { el } = setup();
     expect(el.children).toHaveLength(0);

@@ -246,6 +246,58 @@ describe('InstallHintService', () => {
     });
   });
 
+  describe('pedido de espera (o treino ao vivo)', () => {
+    it('com o pedido de pé, a folha não abre sozinha; solto, volta a poder abrir', () => {
+      const service = create({ userAgent: UA.safari });
+      const release = service.holdAuto();
+      expect(service.autoHeld()).toBe(true);
+      expect(service.autoEligible()).toBe(false);
+      expect(service.autoOpenAllowed()).toBe(false);
+      release();
+      expect(service.autoHeld()).toBe(false);
+      expect(service.autoEligible()).toBe(true);
+      expect(service.autoOpenAllowed()).toBe(true);
+    });
+
+    it('soltar duas vezes não solta o pedido de outra tela', () => {
+      const service = create({ userAgent: UA.safari });
+      const first = service.holdAuto();
+      const second = service.holdAuto();
+      first();
+      first();
+      expect(service.autoHeld()).toBe(true);
+      second();
+      expect(service.autoHeld()).toBe(false);
+    });
+
+    it('não impede a folha pedida pela pessoa', () => {
+      const service = create({ userAgent: UA.safari });
+      service.holdAuto();
+      service.open();
+      expect(service.sheet()).toBe('manual');
+    });
+  });
+
+  describe('iosNotInstalled (onde o iOS apaga os dados do site sem uso)', () => {
+    it.each<[string, InstallEnvInput, boolean]>([
+      ['iPhone Safari', { userAgent: UA.safari }, true],
+      ['Chrome no iPhone', { userAgent: UA.chrome }, true],
+      ['Instagram no iPhone', { userAgent: UA.instagram }, true],
+      ['iPhone na tela de início', { userAgent: UA.safari, standalone: true }, false],
+      ['Android', { userAgent: UA.android }, false],
+      ['computador', { userAgent: UA.desktop }, false],
+    ])('%s', (_name, env, expected) => {
+      expect(create(env).iosNotInstalled()).toBe(expected);
+    });
+
+    it('vale ao instalar sem recarregar: o app abre da tela de início e o aviso some', () => {
+      const service = create({ userAgent: UA.safari });
+      expect(service.iosNotInstalled()).toBe(true);
+      service.acknowledgeInstalled();
+      expect(service.iosNotInstalled()).toBe(false);
+    });
+  });
+
   describe('abertura manual (as linhas de Ajustes e de Personalizar)', () => {
     it('abre mesmo depois de "Agora não" e de "Não mostrar de novo"', () => {
       const service = create({ userAgent: UA.safari });

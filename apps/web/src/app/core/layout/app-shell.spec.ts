@@ -128,6 +128,42 @@ describe('AppShell', () => {
       expect(back.getAttribute('href')).toBe('/ajustes');
       expect(back.getAttribute('aria-label')).toBe('Voltar aos Ajustes');
     });
+
+    it.each([
+      ['has only the Treino', ['module:training'], '/treino', 'Voltar ao Treino'],
+      ['has the TV and the Treino', ['module:tv', 'module:training'], '/tv', 'Voltar ao controle'],
+      ['has no module', [], '/sem-acesso', 'Voltar'],
+    ])(
+      'inside Ajustes, a guest who %s goes back to his own home',
+      async (_name, permissions, link, label) => {
+        TestBed.inject(SessionState).setUser({
+          id: '1',
+          email: 'a@b.c',
+          displayName: 'A',
+          role: 'guest',
+          permissions,
+        });
+        const harness = await RouterTestingHarness.create('/ajustes');
+        const back = root(harness).querySelector('header a')!;
+        expect(back.getAttribute('href')).toBe(link);
+        expect(back.getAttribute('aria-label')).toBe(label);
+      },
+    );
+
+    it('in a module the guest who only has the Treino also gets the round settings button, not an arrow', async () => {
+      TestBed.inject(SessionState).setUser({
+        id: '1',
+        email: 'a@b.c',
+        displayName: 'A',
+        role: 'guest',
+        permissions: ['module:training'],
+      });
+      const harness = await RouterTestingHarness.create('/mod');
+      const links = root(harness).querySelectorAll('header a');
+      expect(links).toHaveLength(1);
+      expect(links[0].getAttribute('href')).toBe('/ajustes');
+      expect(links[0].getAttribute('aria-label')).toBe('Ajustes');
+    });
   });
 
   describe('for the owner in Ajustes', () => {

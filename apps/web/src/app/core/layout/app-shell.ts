@@ -13,21 +13,31 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
 import { AuthService } from '../auth/auth.service';
+import { guestHome } from '../auth/role.guard';
+import { ModuleRegistry } from '../modules/module-registry';
 import { InstallHint } from '../pwa/install-hint';
 import { SessionState } from '../session/session-state';
 import { TabBar } from '../../shared/ui/tab-bar/tab-bar';
 import { GearIcon } from './gear-icon';
 import { ShellBack, collectShellData } from './route-data';
 
-/** Para onde a seta leva por padrão: o dono volta ao Início; o convidado, que não tem Início, volta ao controle. */
+/** Para onde a seta leva por padrão: o dono volta ao Início; o convidado, que não tem Início, volta ao módulo dele. */
 const OWNER_BACK: ShellBack = {
   link: '/',
   label: $localize`:@@shell.back-home-label:Voltar ao Início`,
 };
-const GUEST_BACK: ShellBack = {
-  link: '/tv',
-  label: $localize`:@@shell.back-control-label:Voltar ao controle`,
-};
+
+/** A seta do convidado dentro de Ajustes: leva à tela inicial dele (o controle da TV, o Treino ou "sem acesso"). */
+function guestBack(link: string): ShellBack {
+  switch (link) {
+    case '/treino':
+      return { link, label: $localize`:@@shell.back-training-label:Voltar ao Treino` };
+    case '/tv':
+      return { link, label: $localize`:@@shell.back-control-label:Voltar ao controle` };
+    default:
+      return { link, label: $localize`:@@shell.back-label:Voltar` };
+  }
+}
 
 /** O que ocupa o primeiro lugar do cabeçalho: a seta de voltar ou, para quem não tem Início, o botão de configurações. */
 type ShellLead = ({ readonly kind: 'back' } & ShellBack) | { readonly kind: 'settings' };
@@ -183,6 +193,7 @@ export class AppShell {
   private readonly router = inject(Router);
   private readonly auth = inject(AuthService);
   private readonly session = inject(SessionState);
+  private readonly registry = inject(ModuleRegistry);
   private readonly injector = inject(Injector);
 
   /** Traços da seta de voltar (a mesma seta da tela da TV): a haste e a ponta. */
@@ -207,7 +218,9 @@ export class AppShell {
     const data = this.data();
     if (data.back) return { kind: 'back', ...data.back };
     if (!this.isGuest()) return { kind: 'back', ...OWNER_BACK };
-    return data.settings ? { kind: 'back', ...GUEST_BACK } : { kind: 'settings' };
+    return data.settings
+      ? { kind: 'back', ...guestBack(guestHome(this.session, this.registry)) }
+      : { kind: 'settings' };
   });
 
   private readonly pageTitle = viewChild<ElementRef<HTMLElement>>('pageTitle');

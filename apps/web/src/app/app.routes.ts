@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/auth/auth.guard';
-import { ownerOnlyGuard } from './core/auth/role.guard';
+import { moduleGuard, noAccessGuard, ownerOnlyGuard } from './core/auth/role.guard';
 import { welcomeGuard } from './core/auth/welcome.guard';
 import { AppShell } from './core/layout/app-shell';
 import { ShellBack } from './core/layout/route-data';
@@ -13,9 +13,10 @@ const SETTINGS_BACK: ShellBack = {
 };
 
 // Cada módulo de tela é uma rota preguiçosa. O `data.title` de uma rota liga o cabeçalho do shell (com o
-// retorno ao Início) e as abas vêm do `data.tabs` da rota filha do próprio módulo. O convidado alcança a TV e a parte
-// de Ajustes que é dele (lista, Perfil, Aparência e Sobre): tudo o mais leva `ownerOnlyGuard` (e a API recusa com 403
-// de qualquer jeito).
+// retorno ao Início) e as abas vêm do `data.tabs` da rota filha do próprio módulo. O convidado alcança os módulos que a
+// conta dele libera (a TV e o Treino, cada um pela permissão `module:*`) e a parte de Ajustes que é dele (lista, Perfil,
+// Aparência e Sobre): o que sobra leva `ownerOnlyGuard` (e a API recusa com 403 de qualquer jeito). Quem não pode usar
+// um módulo vai ao primeiro que pode; quem não tem nenhum, à tela de "sem acesso".
 export const routes: Routes = [
   {
     path: 'entrar',
@@ -52,10 +53,16 @@ export const routes: Routes = [
       },
       {
         path: 'treino',
-        canMatch: [ownerOnlyGuard],
+        canMatch: [moduleGuard('training')],
         data: { title: $localize`:@@module.training.title:Treino` },
         loadChildren: () =>
           import('./modules/training/training.routes').then((m) => m.TRAINING_ROUTES),
+      },
+      {
+        path: 'sem-acesso',
+        canMatch: [noAccessGuard],
+        data: { title: $localize`:@@no-access.route-title:Sem acesso` },
+        loadComponent: () => import('./core/auth/no-access.page').then((m) => m.NoAccessPage),
       },
       {
         // Ajustes é uma lista; cada linha abre uma tela filha, com a seta voltando para a lista.
@@ -112,8 +119,10 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/settings/about.page').then((m) => m.AboutPage),
           },
           {
+            // As telas do Treino (a ficha do exercício, a linha de crédito da ilustração) levam a esta: quem usa o Treino
+            // tem de poder abrir.
             path: 'creditos',
-            canMatch: [ownerOnlyGuard],
+            canMatch: [moduleGuard('training')],
             data: { title: $localize`:@@credits.route.title:Créditos`, back: SETTINGS_BACK },
             loadComponent: () =>
               import('./modules/training/credits/credits.page').then((m) => m.CreditsPage),

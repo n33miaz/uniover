@@ -111,6 +111,8 @@ describe('SessionState', () => {
 
   describe('name and permissions', () => {
     const user = { id: '1', email: 'a@b.c', displayName: 'A' };
+    beforeEach(() => localStorage.clear());
+    afterEach(() => localStorage.clear());
 
     it('only an explicit "name not chosen" asks the question', () => {
       expect(state().needsWelcome()).toBe(false);
@@ -138,6 +140,43 @@ describe('SessionState', () => {
       expect(state().permissions()).toEqual(['module:tv', 'tv:power']);
       state().setUser(user);
       expect(state().permissions()).toEqual([]);
+    });
+
+    it('tells "empty" from "not known": no list is null, an empty list is a real answer', () => {
+      expect(state().knownPermissions()).toBeNull();
+      state().setUser({ ...user, permissions: [] });
+      expect(state().knownPermissions()).toEqual([]);
+      state().setUser(user);
+      expect(state().knownPermissions()).toBeNull();
+    });
+
+    it('remembers the list as a hint for the next start without network, and forgets it on exit', () => {
+      state().setUser({ ...user, role: 'guest', permissions: ['module:training'] });
+      expect(JSON.parse(localStorage.getItem('uniover.account-permissions')!)).toEqual([
+        'module:training',
+      ]);
+      TestBed.resetTestingModule();
+      // Reinício sem rede: ainda não há usuário, e a dica diz o que a conta podia.
+      expect(TestBed.inject(SessionState).knownPermissions()).toEqual(['module:training']);
+      TestBed.inject(SessionState).clear();
+      expect(localStorage.getItem('uniover.account-permissions')).toBeNull();
+      expect(TestBed.inject(SessionState).knownPermissions()).toBeNull();
+    });
+
+    it('ignores a remembered list that is not a list of texts', () => {
+      localStorage.setItem('uniover.account-permissions', JSON.stringify({ a: 1 }));
+      TestBed.resetTestingModule();
+      expect(TestBed.inject(SessionState).knownPermissions()).toBeNull();
+      localStorage.setItem('uniover.account-permissions', JSON.stringify([1, 2]));
+      TestBed.resetTestingModule();
+      expect(TestBed.inject(SessionState).knownPermissions()).toBeNull();
+    });
+
+    it('the list from the server replaces the remembered one as soon as it arrives', () => {
+      localStorage.setItem('uniover.account-permissions', JSON.stringify(['module:tv']));
+      TestBed.resetTestingModule();
+      state().setUser({ ...user, role: 'guest', permissions: ['module:training'] });
+      expect(state().knownPermissions()).toEqual(['module:training']);
     });
   });
 });
