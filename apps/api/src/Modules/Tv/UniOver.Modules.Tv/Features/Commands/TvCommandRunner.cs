@@ -9,12 +9,13 @@ namespace UniOver.Modules.Tv.Features.Commands;
 internal sealed record TvCommandOrigin(Guid UserId, ClientInfo Client);
 
 /// <summary>
-/// O caminho comum de todo comando para a TV: escolhe o agente configurado e o tempo limite, entrega, e deixa a
-/// linha de auditoria (inclusive quando o agente está fora do ar ou não responde). Falha ao gravar a auditoria
-/// nunca impede nem desfaz o comando: vira log de erro.
+/// O caminho comum de todo comando para a TV: escolhe o agente configurado (o salvo no app, ou a variável de reserva) e
+/// o tempo limite, entrega, e deixa a linha de auditoria (inclusive quando o agente está fora do ar ou não responde).
+/// Falha ao gravar a auditoria nunca impede nem desfaz o comando: vira log de erro.
 /// </summary>
 internal sealed partial class TvCommandRunner(
     IOptions<TvModuleOptions> options,
+    ITvAgentResolver agents,
     ITvCommandSender sender,
     ITvStateStore state,
     ITvCommandAudit audit,
@@ -44,7 +45,7 @@ internal sealed partial class TvCommandRunner(
         ArgumentNullException.ThrowIfNull(message);
 
         var settings = options.Value;
-        var agentId = settings.AgentId;
+        var agentId = (await agents.ResolveAsync(cancellationToken)).AgentSlug ?? string.Empty;
 
         TvSendOutcome outcome;
         if (string.IsNullOrWhiteSpace(agentId))

@@ -10,6 +10,7 @@ using UniOver.BuildingBlocks.Web;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Guards;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.Modules.Tv;
 
 namespace UniOver.IntegrationTests.Tv;
 
@@ -279,7 +280,7 @@ public sealed class CommandTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task NoTvRoute_AsksForAPasskeyConfirmation()
+    public async Task OnlyTheComputerSwitch_AsksForAPasskeyConfirmation_NoTvCommandDoes()
     {
         await using var app = await TvApp.StartAsync(postgres);
 
@@ -288,8 +289,16 @@ public sealed class CommandTests(PostgresFixture postgres)
             .ToList();
 
         tvRoutes.Should().NotBeEmpty();
-        tvRoutes.SelectMany(r => r.Metadata.GetOrderedMetadata<IAuthorizeData>())
+
+        // Comandar a TV nunca pede a passkey; trocar o computador que a controla (rota de administrador) pede.
+        var adminPatterns = TvPermissionMap.AdminRoutes.Select(r => r.Pattern).ToHashSet(StringComparer.Ordinal);
+        tvRoutes.Where(r => !adminPatterns.Contains(r.RoutePattern.RawText!))
+            .SelectMany(r => r.Metadata.GetOrderedMetadata<IAuthorizeData>())
             .Should().NotContain(a => a.Policy != null && a.Policy.StartsWith(StepUp.PolicyPrefix, StringComparison.Ordinal));
+        tvRoutes.SelectMany(r => r.Metadata.GetOrderedMetadata<IAuthorizeData>())
+            .Where(a => a.Policy != null && a.Policy.StartsWith(StepUp.PolicyPrefix, StringComparison.Ordinal))
+            .Select(a => a.Policy)
+            .Should().Equal(StepUp.Policy(TvAuth.BindAgentAction));
         RouteInspector.Violations(tvRoutes).Should().BeEmpty();
     }
 

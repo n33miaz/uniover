@@ -51,6 +51,9 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/tv/cleanup", RateLimitPolicies.Commands),
         ("POST", "/api/v1/tv/shortcuts/{id:guid}/launch", RateLimitPolicies.Commands),
         ("PUT", "/api/v1/tv/shortcuts/order", RateLimitPolicies.Commands),
+
+        // Trocar o computador que controla a TV: ação rara de administrador, com o mesmo limite baixo das outras que pedem passkey.
+        ("PUT", "/api/v1/tv/config/agent", RateLimitPolicies.Login),
     ];
 
     /// <summary>Production é o que vai para o ar; Development acrescenta o OpenAPI e também não pode vazar rota.</summary>
@@ -245,6 +248,11 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         }
 
         options.AddPolicy(UniOverAuth.OwnerPolicy, policy => policy.RequireAccountRole(AccountRoles.Owner));
+
+        // A política de confirmação com a passkey, como o Identity a monta: papel de administrador mais a confirmação da ação.
+        options.AddPolicy(
+            StepUp.Policy("tv.bind-agent"),
+            policy => policy.RequireAccountRole(AccountRoles.Owner).AddRequirements(new StepUpRequirement("tv.bind-agent")));
         return new DefaultAuthorizationPolicyProvider(Microsoft.Extensions.Options.Options.Create(options));
     }
 
@@ -294,6 +302,49 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
 
         // As demais linhas da tabela ficam sem rota (só há uma montada), mas a rota certa não gera nenhuma violação própria.
         (await TvViolationsOfAsync(route)).Should().NotContain(v => v.StartsWith("POST /api/v1/tv/keys:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TvScan_AcceptsTheAdminRoutesDeclaredAsTheTableSays()
+    {
+        var read = Endpoint("/api/v1/tv/config", new HttpMethodMetadata(["GET"]), new Authorize { Policy = UniOverAuth.OwnerPolicy });
+        var write = Endpoint(
+            "/api/v1/tv/config/agent", new HttpMethodMetadata(["PUT"]), new Authorize { Policy = StepUp.Policy("tv.bind-agent") });
+
+        (await TvViolationsOfAsync(read)).Should().NotContain(v => v.StartsWith("GET /api/v1/tv/config:", StringComparison.Ordinal));
+        (await TvViolationsOfAsync(write)).Should().NotContain(v => v.StartsWith("PUT /api/v1/tv/config/agent:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TvScan_RejectsAnAdminRouteThatIsOpenToTheGuest_ByTvPermission()
+    {
+        var route = Endpoint(
+            "/api/v1/tv/config", new HttpMethodMetadata(["GET"]), new Authorize { Policy = AccessPermissions.Policy(AccessPermissions.TvModule) });
+
+        var violations = await TvViolationsOfAsync(route);
+
+        violations.Should().Contain(v => v.StartsWith("GET /api/v1/tv/config:", StringComparison.Ordinal) && v.Contains("permissão [module:tv]", StringComparison.Ordinal));
+        violations.Should().Contain(v => v.StartsWith("GET /api/v1/tv/config:", StringComparison.Ordinal) && v.Contains("exatamente administrador", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TvScan_RejectsTheAgentSwitchWithoutThePasskeyConfirmation()
+    {
+        var route = Endpoint(
+            "/api/v1/tv/config/agent", new HttpMethodMetadata(["PUT"]), new Authorize { Policy = UniOverAuth.OwnerPolicy });
+
+        (await TvViolationsOfAsync(route)).Should().Contain(v =>
+            v.StartsWith("PUT /api/v1/tv/config/agent:", StringComparison.Ordinal) && v.Contains("'tv.bind-agent'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TvScan_RejectsAnAdminReadThatAsksForAConfirmationItsLineDoesNotHave()
+    {
+        var route = Endpoint(
+            "/api/v1/tv/config", new HttpMethodMetadata(["GET"]), new Authorize { Policy = StepUp.Policy("tv.bind-agent") });
+
+        (await TvViolationsOfAsync(route)).Should().Contain(v =>
+            v.StartsWith("GET /api/v1/tv/config:", StringComparison.Ordinal) && v.Contains("deveria ser nenhuma", StringComparison.Ordinal));
     }
 
     [Fact]

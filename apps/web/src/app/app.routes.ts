@@ -94,6 +94,12 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/settings/people.page').then((m) => m.PeoplePage),
           },
           {
+            path: 'sistema',
+            canMatch: [ownerOnlyGuard],
+            data: { title: SETTINGS_TITLES.system, back: SETTINGS_BACK },
+            loadComponent: () => import('./modules/settings/system.page').then((m) => m.SystemPage),
+          },
+          {
             path: 'aparelhos',
             canMatch: [ownerOnlyGuard],
             data: { title: $localize`:@@devices.route.title:Aparelhos`, back: SETTINGS_BACK },

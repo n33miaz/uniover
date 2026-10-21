@@ -12,6 +12,8 @@ export function actionLabel(action: string | null): string {
       return $localize`:@@auth.step-up.action.guest-invite:criar um convite de convidado`;
     case 'identity.password-change':
       return $localize`:@@auth.step-up.action.password-change:trocar a senha`;
+    case 'tv.bind-agent':
+      return $localize`:@@auth.step-up.action.tv-bind-agent:trocar o computador que controla a TV`;
     default:
       return $localize`:@@auth.step-up.action.generic:fazer uma ação protegida`;
   }

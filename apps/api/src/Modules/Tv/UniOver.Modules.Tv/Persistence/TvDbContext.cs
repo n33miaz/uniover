@@ -18,6 +18,8 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
 
     public DbSet<TvStateRecord> States => Set<TvStateRecord>();
 
+    public DbSet<ConfiguredTv> Tvs => Set<ConfiguredTv>();
+
     public DbSet<WatchdogEvent> WatchdogEvents => Set<WatchdogEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -67,6 +69,22 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             e.Property(x => x.Power).HasMaxLength(10).IsRequired();
             e.Property(x => x.App).HasMaxLength(TvStateRecord.AppMax);
             e.Property(x => x.Connection).HasMaxLength(20).IsRequired();
+        });
+
+        modelBuilder.Entity<ConfiguredTv>(e =>
+        {
+            e.ToTable("tvs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Name).HasMaxLength(ConfiguredTv.NameMax).IsRequired();
+
+            // Sem FK de propósito: o agente é do Devices e a conta que salvou é do Identity (só os valores).
+            e.Property(x => x.AgentSlug).HasMaxLength(ConfiguredTv.AgentSlugMax).IsRequired();
+
+            // Exatamente uma TV padrão por enquanto: o índice único parcial impede uma segunda linha padrão mesmo
+            // com dois salvamentos ao mesmo tempo. O mesmo agente pode controlar várias TVs no futuro, então o
+            // slug do agente não é único.
+            e.HasIndex(x => x.IsDefault).IsUnique().HasFilter("is_default");
         });
 
         modelBuilder.Entity<WatchdogEvent>(e =>

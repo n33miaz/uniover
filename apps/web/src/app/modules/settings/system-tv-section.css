@@ -1,0 +1,164 @@
+:host {
+  display: block;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* O computador de agora: ladrilho, nome e o estado; a origem da escolha vem logo abaixo, em letra pequena. */
+.current {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.info {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.caption,
+.meta {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.name {
+  overflow-wrap: anywhere;
+}
+
+.warning app-settings-glyph,
+.message app-settings-glyph {
+  --glyph-size: 20px;
+  margin-top: 1px;
+}
+
+/* Escolha: uma lista de opções; a linha toda é o alvo de toque, e a escolhida ganha o tom do acento. */
+.choices {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.choices legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+}
+
+.choice {
+  cursor: pointer;
+  transition: background-color var(--dur-fast) linear;
+}
+
+.choice input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--a-accent);
+  cursor: pointer;
+}
+
+.choice:has(input:checked) {
+  background: var(--a-accent-soft);
+}
+
+.choice:has(input:focus-visible) {
+  outline: 3px solid var(--a-accent);
+  outline-offset: -3px;
+}
+
+@media (hover: hover) {
+  .choice:hover {
+    background: var(--a-surface-2);
+  }
+
+  .choice:has(input:checked):hover {
+    background: var(--a-accent-soft);
+  }
+}
+
+.save {
+  gap: var(--space-2);
+}
+
+.devices-link {
+  text-align: center;
+}
+
+/* Vazio, erro e carregando: cartão tracejado, no mesmo desenho dos outros Ajustes. */
+.empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4);
+  border: 2px dashed var(--a-line);
+  border-radius: var(--radius-lg);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.empty p {
+  margin: 0;
+}
+
+.empty app-settings-glyph {
+  --glyph-size: 24px;
+}
+
+.empty.bad {
+  border-color: color-mix(in srgb, var(--a-bad) 45%, var(--a-line));
+  color: var(--a-bad-ink);
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--space-4);
+}
+
+.bar {
+  display: block;
+  width: 40%;
+  height: 14px;
+}
+
+.bar.wide {
+  width: 70%;
+}
+
+.retry {
+  align-self: flex-start;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice {
+    transition: none;
+  }
+}

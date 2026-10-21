@@ -5,6 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Persistence;
+using UniOver.Modules.Devices.Adapters;
+using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Contracts.Pairing;
 using UniOver.Modules.Devices.Features.ApprovePairing;
 using UniOver.Modules.Devices.Features.DenyPairing;
@@ -45,6 +47,9 @@ public static class DevicesModule
         services.AddIntegrationEvent<AgentPaired>(AgentPaired.EventType);
         services.AddIntegrationEvent<AgentRevoked>(AgentRevoked.EventType);
         services.AddScoped<IIntegrationEventHandler<AgentRevoked>, AgentRevokedCacheInvalidator>();
+
+        // Leitura dos agentes pareados para quem precisa escolher ou conferir um (hoje, a TV), pelo Contracts.
+        services.AddScoped<IAgentDirectory, EfAgentDirectory>();
 
         services.AddSingleton<IDeviceTokenCache, InMemoryDeviceTokenCache>();
         services.AddScoped<IDeviceTokenValidator, DeviceTokenValidator>();

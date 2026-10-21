@@ -44,10 +44,12 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
 
     /// <summary>
     /// Por papel o convidado entra em toda rota da TV (inclusive renomear e reordenar atalhos): o que o barra é a
-    /// permissão da rota, que a tabela de <see cref="TvPermissionMap"/> confere e as chamadas HTTP provam.
+    /// permissão da rota, que a tabela de <see cref="TvPermissionMap"/> confere e as chamadas HTTP provam. As rotas de
+    /// configuração da TV (<see cref="TvPermissionMap.AdminRoutes"/>) são só do administrador, e o convidado nunca as alcança.
     /// </summary>
     private static bool IsGuestRoute(string pattern) =>
-        pattern.StartsWith("/api/v1/tv/", StringComparison.Ordinal) || GuestSessionRoutes.Contains(pattern);
+        (pattern.StartsWith("/api/v1/tv/", StringComparison.Ordinal) && !TvPermissionMap.AdminRoutes.Any(r => r.Pattern == pattern))
+        || GuestSessionRoutes.Contains(pattern);
 
     private static ClaimsPrincipal Principal(string? role)
     {
@@ -196,6 +198,8 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
             (HttpMethod.Patch, $"/api/v1/tv/shortcuts/{Guid.NewGuid()}", new { customLabel = "Meu app" }),
             (HttpMethod.Put, "/api/v1/tv/shortcuts/order", new { ids = new[] { Guid.NewGuid() } }),
             (HttpMethod.Get, "/api/v1/devices/agents", null),
+            (HttpMethod.Get, "/api/v1/tv/config", null),
+            (HttpMethod.Put, "/api/v1/tv/config/agent", new { agentSlug = "pc-casa" }),
             (HttpMethod.Post, $"/api/v1/devices/agents/{Guid.NewGuid()}/revoke", null),
             (HttpMethod.Post, "/api/v1/devices/pairing/approve", new { userCode = "ABCD-EFGH" }),
             (HttpMethod.Post, "/api/v1/devices/pairing/deny", new { userCode = "ABCD-EFGH" }),
@@ -296,7 +300,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         foreach (var url in new[]
         {
             "/api/v1/devices/agents", "/api/v1/identity/passkeys", "/api/v1/identity/guests", "/api/v1/identity/guest-invites",
-            "/api/v1/tv/state", "/api/v1/identity/me",
+            "/api/v1/tv/state", "/api/v1/tv/config", "/api/v1/identity/me",
         })
         {
             using var response = await app.GetAsync(url);

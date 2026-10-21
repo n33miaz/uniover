@@ -36,8 +36,8 @@ function themeSummary(preference: ThemePreference): string {
 
 /**
  * Ajustes: a lista das telas, cada uma com ícone, nome, um resumo curto e a seta. Todos veem Perfil, Aparência e
- * Sobre; o administrador vê também Segurança, Pessoas e Aparelhos (e os dois recursos que ainda vêm: Auditoria e
- * Sistema, em cartões calmos, sem link).
+ * Sobre; o administrador vê também Segurança, Pessoas, Aparelhos e Sistema (e o recurso que ainda vem: Auditoria, em um
+ * cartão calmo, sem link).
  *
  * Só esconde o que o servidor também recusa, e nunca chama a API: nenhuma linha daqui faz pedido, então quem não é
  * administrador não gera nenhuma chamada a rota de administrador. Com o papel ainda desconhecido (sessão a confirmar, sem
@@ -110,6 +110,13 @@ export class SettingsPage {
             title: $localize`:@@settings.devices.link:Aparelhos`,
             summary: $localize`:@@settings.devices.hint:Parear o agente do PC de casa`,
           },
+          {
+            id: 'system',
+            link: '/ajustes/sistema',
+            glyph: 'gear',
+            title: SETTINGS_TITLES.system,
+            summary: $localize`:@@settings.list.system-summary:Qual computador controla a TV`,
+          },
         ]
       : [],
   );
@@ -123,12 +130,6 @@ export class SettingsPage {
             glyph: 'audit',
             title: $localize`:@@settings.soon.audit:Auditoria`,
             summary: $localize`:@@settings.soon.audit-summary:Quem fez o quê, e quando`,
-          },
-          {
-            id: 'system',
-            glyph: 'gear',
-            title: $localize`:@@settings.soon.system:Sistema`,
-            summary: $localize`:@@settings.soon.system-summary:Configurar o app sem mexer no servidor`,
           },
         ]
       : [],

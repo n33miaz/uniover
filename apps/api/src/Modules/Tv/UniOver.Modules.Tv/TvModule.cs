@@ -13,6 +13,7 @@ using UniOver.Modules.Tv.Contracts;
 using UniOver.Modules.Tv.Features.Agents;
 using UniOver.Modules.Tv.Features.Cleanup;
 using UniOver.Modules.Tv.Features.Commands;
+using UniOver.Modules.Tv.Features.Config;
 using UniOver.Modules.Tv.Features.Events;
 using UniOver.Modules.Tv.Features.GetModuleInfo;
 using UniOver.Modules.Tv.Features.GetState;
@@ -68,6 +69,10 @@ public static class TvModule
 
         // Em memória e atrás de portas, sempre como instância do contêiner (nada estático).
         services.AddSingleton<ITvStateStore, InMemoryTvStateStore>();
+
+        // Qual agente controla a TV: a linha salva no app, depois a variável de ambiente (reserva), depois nenhum.
+        services.AddSingleton<ISavedTvReader, EfSavedTvReader>();
+        services.AddSingleton<ITvAgentResolver, TvAgentResolver>();
         services.AddSingleton<ITvAgentPresence, DevicesAgentPresence>();
         services.AddSingleton<IAgentPresenceListener, TvPresenceListener>();
         services.AddSingleton<ITvCommandSender, DevicesGatewayCommandSender>();
@@ -98,6 +103,9 @@ public static class TvModule
         services.AddScoped<CleanupHandler>();
         services.AddScoped<RecentCommandsHandler>();
         services.AddScoped<StreamEventsHandler>();
+        services.AddScoped<TvConfigView>();
+        services.AddScoped<GetConfigHandler>();
+        services.AddScoped<BindAgentHandler>();
         return services;
     }
 
@@ -122,6 +130,8 @@ public static class TvModule
         group.MapCleanup();
         group.MapRecentCommands();
         group.MapStreamEvents();
+        group.MapGetConfig();
+        group.MapBindAgent();
         return endpoints;
     }
 }

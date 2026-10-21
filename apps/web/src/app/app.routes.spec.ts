@@ -94,6 +94,7 @@ describe('app routes for a guest', () => {
     '/ajustes/seguranca',
     '/ajustes/pessoas',
     '/ajustes/aparelhos',
+    '/ajustes/sistema',
     '/ajustes/creditos',
     '/nada',
   ])('sends %s to the TV: it is not a screen a guest may use', async (url) => {
