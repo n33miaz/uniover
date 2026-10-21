@@ -32,6 +32,8 @@ internal enum UpsertOutcome
     CatalogReadonly,
     NotFound,
     ClockAhead,
+    /// <summary>Id novo que não é UUID v7: o exercício próprio nasce no aparelho, e o id do catálogo (v5) é de quem semeia.</summary>
+    InvalidId,
 }
 
 internal sealed record UpsertCustomExerciseResult(UpsertOutcome Outcome, ExerciseResponse? Exercise = null);

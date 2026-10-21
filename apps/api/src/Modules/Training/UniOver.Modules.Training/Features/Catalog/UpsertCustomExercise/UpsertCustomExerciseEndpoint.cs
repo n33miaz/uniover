@@ -45,6 +45,8 @@ internal static class UpsertCustomExerciseEndpoint
             UpsertOutcome.Ok => TypedResults.Ok(result.Exercise),
             UpsertOutcome.CatalogReadonly => CatalogProblems.CatalogRowReadonly(),
             UpsertOutcome.ClockAhead => CatalogProblems.ClientClockAhead(),
+            UpsertOutcome.InvalidId => ProblemDetailsExtensions.ValidationProblem(
+                new Dictionary<string, string[]> { ["id"] = ["O id do exercício deve ser um UUID v7 gerado no aparelho."] }),
             _ => CatalogProblems.NotFound(),
         };
     }
