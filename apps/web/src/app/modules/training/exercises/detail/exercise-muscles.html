@@ -1,0 +1,30 @@
+<div
+  class="muscle-figures"
+  role="group"
+  aria-label="Músculos trabalhados"
+  i18n-aria-label="@@training.detail.muscles.label"
+>
+  @for (face of faces; track face) {
+    <figure class="muscle-figure">
+      <svg class="figure" [attr.viewBox]="viewBox" role="img" [attr.aria-label]="imageLabel(face)">
+        <g class="outline" aria-hidden="true">
+          @for (shape of outline; track $index) {
+            <path [attr.d]="shape" />
+          }
+        </g>
+        @for (zone of zones(face); track zone.muscle) {
+          <g
+            class="zone"
+            [class.primary]="isPrimary(zone.muscle)"
+            [class.secondary]="isSecondary(zone.muscle)"
+          >
+            @for (shape of zone.shapes; track $index) {
+              <path [attr.d]="shape" />
+            }
+          </g>
+        }
+      </svg>
+      <figcaption>{{ faceLabel(face) }}</figcaption>
+    </figure>
+  }
+</div>
