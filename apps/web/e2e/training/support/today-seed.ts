@@ -78,10 +78,13 @@ export function seedPastWorkout(
  * 42,5 kg × 6–8, e a série de 42,5 kg × 8 bate o recorde de carga máxima (antes 40 kg).
  */
 export function seedBenchHistory(server: TrainingServer): void {
+  // Oito dias atrás: sempre cai ANTES da semana de hoje (segunda a domingo). Com poucos dias, a data e as séries (que se
+  // completam minutos depois do início) caíam dentro da semana de hoje de quinta a domingo, e o resumo da semana contava
+  // treino a mais; o teste que passava de segunda a quarta falhava de quinta a domingo.
   seedPastWorkout(
     server,
     1,
-    3 * DAY,
+    8 * DAY,
     [0, 1, 2, 3].map(() => ({ exerciseId: SEED_EXERCISE_IDS.bench, weightKg: 40, reps: 10 })),
   );
 }
