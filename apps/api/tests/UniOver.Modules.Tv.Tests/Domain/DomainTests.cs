@@ -177,6 +177,30 @@ public class DomainTests
         list[0].CustomLabel.Should().BeNull();
     }
 
+    [Fact]
+    public void CustomLabel_IsStoredNormalized()
+    {
+        var (list, _) = ShortcutCatalog.Merge([], [new IncomingApp("a.um", "Um")], Now);
+
+        list[0].SetCustomLabel("  Meu\U000000A0  app ", Now);
+
+        list[0].CustomLabel.Should().Be("Meu app");
+    }
+
+    [Theory]
+    [InlineData("\U0000202Eevil")]
+    [InlineData("a\U0000200Bb")]
+    [InlineData("a\nb")]
+    public void CustomLabel_WithInvisibleOrControlCharacters_IsNeverStored_EvenIfTheValidationWasBypassed(string label)
+    {
+        var (list, _) = ShortcutCatalog.Merge([], [new IncomingApp("a.um", "Um")], Now);
+        list[0].SetCustomLabel("Meu app", Now);
+
+        FluentActions.Invoking(() => list[0].SetCustomLabel(label, Now)).Should().Throw<ArgumentException>();
+
+        list[0].CustomLabel.Should().Be("Meu app", "o rótulo anterior fica");
+    }
+
     private static List<Shortcut> Catalog(params string[] packages)
     {
         var (list, _) = ShortcutCatalog.Merge([], [.. packages.Select(p => new IncomingApp(p, p))], Now);

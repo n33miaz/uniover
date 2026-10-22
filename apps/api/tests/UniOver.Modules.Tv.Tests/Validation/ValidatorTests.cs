@@ -107,6 +107,51 @@ public class ValidatorTests
         UpdateShortcutValidator.Validate(new UpdateShortcutRequest("com\nquebra", null)).Should().ContainKey("customLabel");
     }
 
+    [Theory]
+    [InlineData("\U0000202Eevil")]              // sobreposição da direita para a esquerda
+    [InlineData("a\U0000200Eb")]                // marca de direção
+    [InlineData("a\U0000200Bb")]                // espaço de largura zero
+    [InlineData("a\U0000200Cb")]                // junção sem largura
+    [InlineData("a\U0000200Db")]                // junção de largura zero entre letras
+    [InlineData("a\U00002028b")]                // separador de linha
+    [InlineData("a\U00002029b")]                // separador de parágrafo
+    [InlineData("\U0000FEFFTV")]                // marca de ordem de byte
+    [InlineData("\U000E0067tag")]               // marca de tag
+    public void UpdateShortcut_RefusesInvisibleAndDirectionCharacters(string label)
+    {
+        var errors = UpdateShortcutValidator.Validate(new UpdateShortcutRequest(label, null), out var normalized);
+
+        errors.Should().ContainKey("customLabel");
+        normalized.Should().BeNull("o que foi recusado não segue para o comando");
+    }
+
+    [Fact]
+    public void UpdateShortcut_PassesTheNormalizedLabelOn_NotTheRawOne()
+    {
+        UpdateShortcutValidator.Validate(new UpdateShortcutRequest("  Meu\U000000A0  app ", null), out var spaced).Should().BeEmpty();
+        UpdateShortcutValidator.Validate(new UpdateShortcutRequest("Cafe\U00000301", null), out var composed).Should().BeEmpty();
+        UpdateShortcutValidator.Validate(new UpdateShortcutRequest("   ", null), out var cleared).Should().BeEmpty();
+        UpdateShortcutValidator.Validate(new UpdateShortcutRequest(null, true), out var untouched).Should().BeEmpty();
+        UpdateShortcutValidator.Validate(new UpdateShortcutRequest("\U0001F469\U0000200D\U0001F4BB", null), out var emoji).Should().BeEmpty();
+
+        spaced.Should().Be("Meu app");
+        composed.Should().Be("Caf\U000000E9");
+        cleared.Should().BeEmpty("texto só de espaços apaga o rótulo próprio");
+        untouched.Should().BeNull("sem rótulo na requisição, o rótulo não muda");
+        emoji.Should().Be("\U0001F469\U0000200D\U0001F4BB", "a junção dentro do emoji composto fica");
+    }
+
+    [Fact]
+    public void UpdateShortcut_CountsTheLengthOfTheNormalizedLabel()
+    {
+        // 40 letras com espaços sobrando nas pontas e no meio: depois de normalizar cabem no limite.
+        var padded = "  " + new string('n', 19) + "   " + new string('n', 20) + "  ";
+
+        UpdateShortcutValidator.Validate(new UpdateShortcutRequest(padded, null), out var normalized).Should().BeEmpty();
+        normalized!.Length.Should().Be(40);
+        UpdateShortcutValidator.Validate(new UpdateShortcutRequest(new string('n', 5000), null), out _).Should().ContainKey("customLabel");
+    }
+
     [Fact]
     public void ReorderShortcuts_NeedsTheListOfIds()
     {

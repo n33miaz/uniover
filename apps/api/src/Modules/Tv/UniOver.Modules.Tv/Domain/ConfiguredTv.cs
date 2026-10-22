@@ -42,11 +42,12 @@ public sealed class ConfiguredTv
     public static ConfiguredTv CreateDefault(string? name, string agentSlug, Guid updatedBy, DateTimeOffset now)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agentSlug);
+        var cleanName = NormalizeName(name);
 
         return new ConfiguredTv
         {
             Id = IdGenerator.NewId(),
-            Name = string.IsNullOrWhiteSpace(name) ? DefaultName : name.Trim(),
+            Name = cleanName.Length == 0 ? DefaultName : cleanName,
             AgentSlug = agentSlug,
             IsDefault = true,
             CreatedAt = now,
@@ -63,7 +64,8 @@ public sealed class ConfiguredTv
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agentSlug);
 
-        var newName = string.IsNullOrWhiteSpace(name) ? Name : name.Trim();
+        var cleanName = NormalizeName(name);
+        var newName = cleanName.Length == 0 ? Name : cleanName;
         if (string.Equals(AgentSlug, agentSlug, StringComparison.Ordinal) && string.Equals(Name, newName, StringComparison.Ordinal))
         {
             return false;
@@ -74,5 +76,18 @@ public sealed class ConfiguredTv
         UpdatedAt = now;
         UpdatedBy = updatedBy;
         return true;
+    }
+
+    /// <summary>
+    /// O nome como é guardado e comparado: normalizado (<see cref="LabelText"/>), para dois nomes que só diferem em espaços
+    /// ou em caracteres invisíveis nem chegarem a existir. Vazio quando não há nome. A API já recusou com 400 o nome com
+    /// caractere de controle ou invisível; por outro caminho isso falha em vez de gravar.
+    /// </summary>
+    private static string NormalizeName(string? name)
+    {
+        var text = LabelText.Normalize(name);
+        return text.IsValid
+            ? text.Value
+            : throw new ArgumentException("O nome tem caracteres de controle ou invisíveis.", nameof(name));
     }
 }
