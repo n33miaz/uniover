@@ -140,7 +140,9 @@ internal sealed class RefreshHandler(
             .Where(c => c.SessionFamilyId == familyId)
             .ExecuteDeleteAsync(cancellationToken);
 
-        audit.Add(token.UserId, AuditEvents.RefreshReuseDetected, client);
+        // Quem apresentou o token já usado não está autenticado (pode ser o ladrão ou o aparelho do dono com um cookie velho):
+        // o ator fica nulo e a conta do token é o alvo, como nas tentativas de login que falham.
+        audit.Add(null, AuditEvents.RefreshReuseDetected, client, AuditAboutAccount.Detail(token.UserId));
         await db.SaveChangesAsync(cancellationToken);
     }
 }

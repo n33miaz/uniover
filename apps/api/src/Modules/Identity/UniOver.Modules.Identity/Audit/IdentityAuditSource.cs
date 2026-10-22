@@ -23,8 +23,13 @@ internal static class IdentityAuditNormalizer
     /// <summary>Eventos em que o sistema recusou por regra (conta bloqueada, refresh reutilizado).</summary>
     public static IReadOnlyList<string> DeniedEvents { get; } = [AuditEvents.LoginLocked, AuditEvents.RefreshReuseDetected];
 
-    /// <summary>Eventos cujo detalhe começa pelo id da conta sobre a qual o administrador agiu (formato <c>N</c>, 32 hexadecimais).</summary>
-    public static IReadOnlyList<string> TargetAccountEvents { get; } = [AuditEvents.GuestRevoked, AuditEvents.PermissionsChanged];
+    /// <summary>
+    /// Eventos cujo detalhe começa pelo id da conta sobre a qual alguém agiu (formato <c>N</c>, 32 hexadecimais): o
+    /// administrador (revogar, mudar permissões) ou alguém sem login (senha errada, conta bloqueada, refresh reutilizado;
+    /// aí o ator é nulo, e as linhas ANTIGAS, gravadas com a conta como autora, não têm o id no detalhe e seguem como estão).
+    /// </summary>
+    public static IReadOnlyList<string> TargetAccountEvents { get; } =
+        [AuditEvents.GuestRevoked, AuditEvents.PermissionsChanged, AuditEvents.LoginFailed, AuditEvents.LoginLocked, AuditEvents.RefreshReuseDetected];
 
     public static AuditOutcome OutcomeOf(string eventName) =>
         FailureEvents.Contains(eventName) ? AuditOutcome.Failure
@@ -74,6 +79,21 @@ internal static class IdentityAuditNormalizer
                 {
                     targetUser = changed;
                     detail = changes;
+                }
+
+                break;
+
+            case AuditEvents.LoginFailed:
+            case AuditEvents.LoginLocked:
+            case AuditEvents.RefreshReuseDetected:
+                // id ou id|motivo: a conta que sofreu a tentativa é o alvo e o ator fica nulo (ninguém estava autenticado).
+                // Sem o id na frente (linha antiga, com a conta como autora, ou o "passkey-registration" de quem ESTÁ
+                // autenticado) o detalhe segue como veio.
+                var (attacked, reason) = SplitFirst(entry.Detail);
+                if (TryAccount(attacked, out var attackedAccount))
+                {
+                    targetUser = attackedAccount;
+                    detail = reason;
                 }
 
                 break;

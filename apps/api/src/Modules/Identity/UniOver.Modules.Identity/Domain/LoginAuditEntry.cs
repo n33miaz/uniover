@@ -26,7 +26,12 @@ public sealed class LoginAuditEntry
 
     public Guid Id { get; private set; }
 
-    /// <summary>Nulo quando o e-mail não existe: a tentativa não revela nada sobre contas.</summary>
+    /// <summary>
+    /// Quem agiu. Nulo quando ninguém estava autenticado: o e-mail não existe (a tentativa não revela nada sobre contas),
+    /// ou alguém sem login tentou entrar numa conta que existe (aí a conta vai no começo do <see cref="Detail"/>, ver
+    /// <see cref="AuditAboutAccount"/>, e nunca aqui). Linhas antigas gravaram a conta atingida como autora; a trilha é só
+    /// de inclusão e elas ficam como estão.
+    /// </summary>
     public Guid? UserId { get; private set; }
 
     public string Event { get; private set; } = string.Empty;

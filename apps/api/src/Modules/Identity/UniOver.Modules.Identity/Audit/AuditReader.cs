@@ -24,8 +24,8 @@ internal sealed record AuditAccount(Guid Id, string? DisplayName);
 /// </summary>
 /// <param name="Module"><c>identity</c>, <c>devices</c> ou <c>tv</c>.</param>
 /// <param name="Outcome"><c>success</c>, <c>failure</c> ou <c>denied</c>.</param>
-/// <param name="Actor">Quem agiu; nulo quando ninguém estava autenticado.</param>
-/// <param name="TargetAccount">A conta sobre a qual se agiu, quando é outra pessoa.</param>
+/// <param name="Actor">Quem agiu; nulo quando ninguém estava autenticado (a tela mostra "alguém sem login").</param>
+/// <param name="TargetAccount">A conta sobre a qual se agiu, quando é outra pessoa, ou contra a qual alguém sem login tentou entrar.</param>
 internal sealed record AuditItem(
     Guid Id,
     string Module,
