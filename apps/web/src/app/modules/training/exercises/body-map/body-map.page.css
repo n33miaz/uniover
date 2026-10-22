@@ -9,7 +9,7 @@
   --level-2: color-mix(in srgb, var(--a-accent) 50%, var(--a-surface));
   --level-3: color-mix(in srgb, var(--a-accent) 80%, var(--a-surface));
   /* A altura da figura acompanha a do celular: cresce até onde ainda sobra espaço para o painel logo abaixo. */
-  --figure-height: clamp(250px, 44dvh, 340px);
+  --figure-height: clamp(320px, 49dvh, 390px);
 }
 
 .map {
@@ -98,6 +98,8 @@
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-2) var(--space-3);
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 35%, var(--a-elev), transparent 70%), var(--a-surface);
 }
 
 .skeleton {
@@ -118,6 +120,8 @@
   color: var(--a-ink2);
   font-size: var(--fs-label);
   font-weight: 650;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--a-line);
 }
 
 .steps {
