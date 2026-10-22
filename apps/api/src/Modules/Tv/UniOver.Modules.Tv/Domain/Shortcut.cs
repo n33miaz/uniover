@@ -130,10 +130,21 @@ public sealed class Shortcut
         return true;
     }
 
-    /// <summary>Texto vazio ou só espaços apaga o rótulo próprio e a tela volta a "Atalho n".</summary>
+    /// <summary>
+    /// Texto vazio ou só espaços apaga o rótulo próprio e a tela volta a "Atalho n". O que se guarda é o texto normalizado
+    /// (<see cref="LabelText"/>): quem chama pela API já recusou com 400 o que tem caractere invisível ou de controle; se
+    /// algo assim chegar aqui por outro caminho, falha em vez de gravar um rótulo que engana o olho.
+    /// </summary>
+    /// <exception cref="ArgumentException">O texto tem caractere de controle, invisível ou de direção.</exception>
     public void SetCustomLabel(string? label, DateTimeOffset now)
     {
-        CustomLabel = string.IsNullOrWhiteSpace(label) ? null : Clip(label.Trim(), CustomLabelMax);
+        var text = LabelText.Normalize(label);
+        if (!text.IsValid)
+        {
+            throw new ArgumentException("O rótulo tem caracteres de controle ou invisíveis.", nameof(label));
+        }
+
+        CustomLabel = text.Value.Length == 0 ? null : Clip(text.Value, CustomLabelMax);
         UpdatedAt = now;
     }
 

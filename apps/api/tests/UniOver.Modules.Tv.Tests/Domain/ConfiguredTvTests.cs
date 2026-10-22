@@ -57,6 +57,28 @@ public class ConfiguredTvTests
     }
 
     [Fact]
+    public void TheNameIsStoredAndCompared_NormalizedLikeAnyOtherText()
+    {
+        var tv = ConfiguredTv.CreateDefault("TV\U000000A0 da   sala", "pc-casa", Admin, Now);
+
+        tv.Name.Should().Be("TV da sala");
+        tv.Rebind("pc-casa", "TV da sala ", Admin, Now.AddMinutes(1)).Should().BeFalse("só os espaços mudaram");
+    }
+
+    [Theory]
+    [InlineData("\U0000202Eatv")]
+    [InlineData("TV\U0000200Bsala")]
+    [InlineData("TV\nsala")]
+    public void ANameWithInvisibleOrControlCharacters_IsNeverStored_EvenIfTheValidationWasBypassed(string name)
+    {
+        var tv = ConfiguredTv.CreateDefault("TV", "pc-casa", Admin, Now);
+
+        FluentActions.Invoking(() => ConfiguredTv.CreateDefault(name, "pc-casa", Admin, Now)).Should().Throw<ArgumentException>();
+        FluentActions.Invoking(() => tv.Rebind("pc-novo", name, Admin, Now)).Should().Throw<ArgumentException>();
+        tv.AgentSlug.Should().Be("pc-casa", "a falha acontece antes de qualquer mudança");
+    }
+
+    [Fact]
     public void Rebind_WithOnlyANewName_IsAChange()
     {
         var tv = ConfiguredTv.CreateDefault("TV", "pc-casa", Admin, Now);

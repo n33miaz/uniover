@@ -19,8 +19,15 @@ internal sealed record UpdateShortcutCommand(Guid ShortcutId, string? CustomLabe
 
 internal static class UpdateShortcutValidator
 {
-    public static Dictionary<string, string[]> Validate(UpdateShortcutRequest? request)
+    public static Dictionary<string, string[]> Validate(UpdateShortcutRequest? request) => Validate(request, out _);
+
+    /// <param name="customLabel">
+    /// O rótulo já NORMALIZADO (espaços arrumados, NFC): é ele, e não o texto recebido, que vai para o comando. Nulo quando
+    /// a requisição não traz rótulo ou ele foi recusado; vazio quando é para apagar o rótulo próprio.
+    /// </param>
+    public static Dictionary<string, string[]> Validate(UpdateShortcutRequest? request, out string? customLabel)
     {
+        customLabel = null;
         var errors = new Dictionary<string, string[]>();
         if (request is null || (request.CustomLabel is null && request.Enabled is null))
         {
@@ -30,13 +37,18 @@ internal static class UpdateShortcutValidator
 
         if (request.CustomLabel is { } label)
         {
-            if (label.Trim().Length > Shortcut.CustomLabelMax)
+            var text = LabelText.Normalize(label);
+            if (text.Problem == LabelTextProblem.TooLong || (text.IsValid && text.Value.Length > Shortcut.CustomLabelMax))
             {
                 errors["customLabel"] = [$"O nome deve ter no máximo {Shortcut.CustomLabelMax} caracteres."];
             }
-            else if (label.Any(c => c <= '\u001f' || (c >= '\u007f' && c <= '\u009f')))
+            else if (!text.IsValid)
             {
-                errors["customLabel"] = ["O nome não pode ter caracteres de controle."];
+                errors["customLabel"] = ["O nome não pode ter caracteres de controle nem invisíveis."];
+            }
+            else
+            {
+                customLabel = text.Value;
             }
         }
 
@@ -108,12 +120,13 @@ internal sealed partial class UpdateShortcutHandler(
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            LogAuditFailed(ex);
+            LogAuditFailed(ex.GetType().Name);
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao gravar a auditoria da mudança de atalho.")]
-    private partial void LogAuditFailed(Exception exception);
+    // Só o tipo do erro: a mensagem do driver do banco pode citar o servidor e a conexão.
+    [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao gravar a auditoria da mudança de atalho ({ErrorType}).")]
+    private partial void LogAuditFailed(string errorType);
 }
 
 internal static class UpdateShortcutEndpoint
@@ -135,7 +148,7 @@ internal static class UpdateShortcutEndpoint
         UpdateShortcutHandler handler,
         CancellationToken cancellationToken)
     {
-        var errors = UpdateShortcutValidator.Validate(request);
+        var errors = UpdateShortcutValidator.Validate(request, out var customLabel);
         if (errors.Count > 0)
         {
             return ProblemDetailsExtensions.ValidationProblem(errors);
@@ -146,8 +159,9 @@ internal static class UpdateShortcutEndpoint
             return TvProblems.Unauthenticated();
         }
 
+        // O rótulo que vai ao comando é o normalizado: o que se guarda (e o que a trilha considera "mudou") é esse.
         var updated = await handler.HandleAsync(
-            new UpdateShortcutCommand(id, request!.CustomLabel, request.Enabled, origin), cancellationToken);
+            new UpdateShortcutCommand(id, customLabel, request!.Enabled, origin), cancellationToken);
         return updated is null ? TypedResults.NotFound() : TypedResults.Ok(updated);
     }
 }
