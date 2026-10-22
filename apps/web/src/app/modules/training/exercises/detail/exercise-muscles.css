@@ -16,6 +16,10 @@
   background: var(--a-surface);
 }
 
+.muscle-figures.single {
+  grid-template-columns: minmax(0, 8.5rem);
+}
+
 .muscle-figure {
   display: flex;
   flex-direction: column;

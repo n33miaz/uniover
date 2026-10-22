@@ -46,7 +46,7 @@
   overflow-wrap: anywhere;
 }
 
-/* GIF à esquerda, mapa à direita; badges centralizados imediatamente abaixo do GIF. */
+/* As imagens compartilham a mesma faixa; os badges ficam centralizados abaixo do conjunto inteiro. */
 .hero {
   display: flex;
   flex-direction: column;
@@ -54,22 +54,17 @@
   gap: var(--space-3);
 }
 
-.hero.with-art {
+.visuals {
   display: grid;
+  grid-template-columns: minmax(0, 20rem);
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.visuals.with-art {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: auto 1fr;
-  align-items: start;
-  column-gap: var(--space-3);
-}
-
-.hero.with-art .art,
-.hero.with-art .chips {
-  grid-column: 1;
-}
-
-.hero.with-art .muscles {
-  grid-column: 2;
-  grid-row: 1 / span 2;
 }
 
 .art {
@@ -91,34 +86,9 @@
 }
 
 .chips .ui-chip {
-  min-height: 28px;
-}
-
-.muscles {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-}
-
-.muscles h3 {
-  align-self: flex-start;
-}
-
-.muscle-legend {
-  display: flex;
-  flex-wrap: wrap;
   justify-content: center;
-  gap: var(--space-2) var(--space-4);
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-}
-
-.muscle-legend li {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
+  min-height: 28px;
+  text-align: center;
 }
 
 .own-note {
@@ -126,23 +96,6 @@
   color: var(--a-ink2);
   font-size: var(--fs-small);
   text-align: center;
-}
-
-.legend-dot {
-  width: 0.7rem;
-  height: 0.7rem;
-  border: 1px solid var(--a-line);
-  border-radius: 50%;
-}
-
-.legend-dot.primary {
-  border-color: var(--a-accent);
-  background: var(--a-accent);
-}
-
-.legend-dot.secondary {
-  border-color: var(--a-accent-ink);
-  background: var(--a-accent-soft);
 }
 
 .main-action {

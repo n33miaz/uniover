@@ -1,5 +1,15 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  afterRenderEffect,
+  inject,
+  input,
+  output,
+  viewChild,
+} from '@angular/core';
 import type { MuscleId } from '../../domain/taxonomy';
+import { PrefersReducedMotion } from '../../illustrations/prefers-reduced-motion';
 import { BODY_DETAILS, BODY_HEIGHT, BODY_OUTLINE, BODY_WIDTH, BodyFace } from './body-zones';
 import type { Intensity } from './muscle-intensity';
 
@@ -28,6 +38,9 @@ export interface FigureZone {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class BodyFigure {
+  private readonly reducedMotion = inject(PrefersReducedMotion);
+  private readonly figure = viewChild<ElementRef<SVGSVGElement>>('figure');
+
   readonly zones = input.required<readonly FigureZone[]>();
   readonly face = input<BodyFace>('front');
   /** Nome da figura para o leitor de tela ("Corpo, de frente"). */
@@ -37,6 +50,31 @@ export class BodyFigure {
   protected readonly outline = BODY_OUTLINE;
   protected readonly details = BODY_DETAILS;
   protected readonly viewBox = `0 0 ${BODY_WIDTH} ${BODY_HEIGHT}`;
+
+  constructor() {
+    let previous: BodyFace | undefined;
+    afterRenderEffect((onCleanup) => {
+      const face = this.face();
+      const reduced = this.reducedMotion.reduced();
+      const before = previous;
+      previous = face;
+      if (before === undefined || before === face || reduced) return;
+
+      // Uma única figura recebe foco e toque; a entrada comunica o giro sem duplicar zonas no leitor de tela.
+      const animation = this.figure()?.nativeElement.animate?.(
+        [
+          {
+            opacity: 0.4,
+            transform: `perspective(800px) translateX(${face === 'back' ? 10 : -10}px) rotateY(${face === 'back' ? 24 : -24}deg)`,
+          },
+          { opacity: 1, transform: 'perspective(800px) translateX(0) rotateY(0deg)' },
+        ],
+        { duration: 240, easing: 'cubic-bezier(0.22, 0.8, 0.24, 1)' },
+      );
+      // Troca rápida, movimento reduzido ou saída da página: a animação anterior não fica pendurada.
+      onCleanup(() => animation?.cancel());
+    });
+  }
 
   /** Enter e Espaço escolhem a zona; o Espaço não pode rolar a página. */
   protected activate(event: Event, muscle: MuscleId): void {

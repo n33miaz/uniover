@@ -25,12 +25,15 @@
       <h2 class="name">{{ ex.name }}</h2>
     </header>
 
-    <section class="hero" [class.with-art]="hasArt()">
-      @if (hasArt()) {
-        <div class="art">
-          <app-exercise-illustration [slug]="ex.slug" [name]="ex.name" />
-        </div>
-      }
+    <section class="hero">
+      <div class="visuals" [class.with-art]="hasArt()">
+        @if (hasArt()) {
+          <div class="art">
+            <app-exercise-illustration [slug]="ex.slug" [name]="ex.name" />
+          </div>
+        }
+        <app-exercise-muscles [primary]="primaryMuscles()" [secondary]="secondaryMuscles()" />
+      </div>
       <ul class="chips ui-plain" [attr.aria-label]="chipsLabel">
         @for (chip of chips(); track chip.text) {
           <li class="ui-chip" [class.accent]="chip.accent">{{ chip.text }}</li>
@@ -39,26 +42,6 @@
           <li class="ui-chip accent" i18n="@@training.exercise.own">própria</li>
         }
       </ul>
-      <section class="muscles" aria-labelledby="muscles-title">
-        <h3 id="muscles-title" class="ui-section-label" i18n="@@training.detail.muscles.title">
-          Músculos trabalhados
-        </h3>
-        <app-exercise-muscles [primary]="primaryMuscles()" [secondary]="secondaryMuscles()" />
-        <ul
-          class="muscle-legend ui-plain"
-          aria-label="Legenda dos músculos"
-          i18n-aria-label="@@training.detail.muscles.legend"
-        >
-          <li>
-            <span class="legend-dot primary" aria-hidden="true"></span
-            ><span i18n="@@training.detail.muscles.primary">principal</span>
-          </li>
-          <li>
-            <span class="legend-dot secondary" aria-hidden="true"></span
-            ><span i18n="@@training.detail.muscles.secondary">secundário</span>
-          </li>
-        </ul>
-      </section>
     </section>
 
     @if (own()) {

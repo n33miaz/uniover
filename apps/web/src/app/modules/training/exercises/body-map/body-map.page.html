@@ -5,7 +5,7 @@
     </button>
     <h2 class="title" i18n="@@training.map.title">Mapa do corpo</h2>
     @if (!catalogEmpty()) {
-      <div class="faces" role="group" [attr.aria-label]="facesLabel">
+      <div class="faces" role="group" [attr.aria-label]="facesLabel" [attr.data-face]="face()">
         <button
           type="button"
           [attr.aria-pressed]="face() === 'front'"
@@ -86,7 +86,7 @@
         [weekSets]="data.weekSets(current)"
       />
     } @else {
-      <p class="hint ui-notice">
+      <p class="hint">
         <app-training-glyph name="info" />
         <span i18n="@@training.map.hint"
           >Toque num músculo para ver os exercícios e as séries da semana.</span

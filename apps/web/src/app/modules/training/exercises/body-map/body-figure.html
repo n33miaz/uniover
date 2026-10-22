@@ -1,4 +1,4 @@
-<svg class="figure" [attr.viewBox]="viewBox" role="group" [attr.aria-label]="label()">
+<svg #figure class="figure" [attr.viewBox]="viewBox" role="group" [attr.aria-label]="label()">
   <g class="line" aria-hidden="true">
     @for (d of outline; track $index) {
       <path [attr.d]="d" />

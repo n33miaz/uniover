@@ -54,12 +54,13 @@ describe('ExerciseDetailPage', () => {
       ]);
       expect(el.querySelectorAll('app-exercise-illustration img')).toHaveLength(2);
       const hero = el.querySelector('.hero')!;
-      expect(hero.querySelector('.art')?.nextElementSibling?.classList.contains('chips')).toBe(
+      expect(hero.querySelector('.visuals')?.nextElementSibling?.classList.contains('chips')).toBe(
         true,
       );
-      expect(hero.querySelector('.chips')?.nextElementSibling?.classList.contains('muscles')).toBe(
-        true,
-      );
+      expect(hero.querySelectorAll('.visuals > *')).toHaveLength(2);
+      expect(hero.querySelector('.visuals app-exercise-muscles')).not.toBeNull();
+      expect(hero.querySelector('h3')).toBeNull();
+      expect(hero.querySelector('.muscle-legend')).toBeNull();
       expect(el.querySelectorAll('.muscle-figure')).toHaveLength(2);
       expect(el.querySelectorAll('.zone.primary')).toHaveLength(1);
       expect(el.querySelectorAll('.zone.secondary').length).toBeGreaterThan(0);
@@ -93,8 +94,14 @@ describe('ExerciseDetailPage', () => {
       );
       expect(el.querySelector('app-exercise-illustration')).toBeNull();
       expect(el.querySelector('app-exercise-credit-line')).toBeNull();
-      expect(el.querySelectorAll('.muscle-figure')).toHaveLength(2);
+      expect(el.querySelectorAll('.muscle-figure')).toHaveLength(1);
+      expect(el.querySelector('.muscle-figure figcaption')?.textContent).toBe('Frente');
       expect(chips(el)).toEqual(['Abdômen', 'Peso do corpo', 'Tempo']);
+      expect(el.querySelectorAll('.visuals > *')).toHaveLength(1);
+      expect(el.querySelector('.visuals')?.nextElementSibling?.classList.contains('chips')).toBe(
+        true,
+      );
+      expect(el.querySelector('.hero h3')).toBeNull();
     });
 
     it('says there is no step by step', async () => {
