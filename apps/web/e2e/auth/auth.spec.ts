@@ -303,16 +303,18 @@ test.describe('ajustes', () => {
       'Segurança',
       'Pessoas',
       'Aparelhos',
+      'Auditoria',
       'Sistema',
       'Sobre',
     ]);
-    await expect(rows).toHaveCount(7);
+    await expect(rows).toHaveCount(8);
     for (const [name, href] of [
       ['Perfil', '/ajustes/perfil'],
       ['Aparência', '/ajustes/aparencia'],
       ['Segurança', '/ajustes/seguranca'],
       ['Pessoas', '/ajustes/pessoas'],
       ['Aparelhos', '/ajustes/aparelhos'],
+      ['Auditoria', '/ajustes/auditoria'],
       ['Sistema', '/ajustes/sistema'],
       ['Sobre', '/ajustes/sobre'],
     ]) {
@@ -322,10 +324,6 @@ test.describe('ajustes', () => {
       );
     }
     await expect(page.getByText(`${OWNER.displayName} · Administrador`)).toBeVisible();
-    // A Auditoria ainda não existe: cartão calmo, sem link nem botão.
-    const soon = page.locator('ul.soon');
-    await expect(soon.locator('.ui-row-title')).toHaveText(['Auditoria']);
-    await expect(soon.locator('a, button, [tabindex]')).toHaveCount(0);
     await expectNoHorizontalScroll(page);
     await screenshot(page, `test-results/settings-${info.project.name}.png`);
   });
