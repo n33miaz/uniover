@@ -2059,6 +2059,299 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/training/body/entries': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          after?: string;
+          limit?: number | string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PullBodyEntriesResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/body/entries/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['UpsertBodyEntryRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['BodyEntryResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unprocessable Entity */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/body/profile': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          after?: string;
+          limit?: number | string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PullBodyProfileResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['UpsertBodyProfileRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['BodyProfileResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unprocessable Entity */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/training/catalog/credits': {
     parameters: {
       query?: never;
@@ -4430,6 +4723,46 @@ export interface components {
       agentSlug: null | string;
       name: null | string;
     };
+    BodyEntryResponse: {
+      /** Format: double */
+      armCm: null | number | string;
+      /** Format: double */
+      bodyFatPct: null | number | string;
+      /** Format: date-time */
+      clientUpdatedAt: string;
+      deleted: boolean;
+      fatMethod: null | string;
+      /** Format: double */
+      hipCm: null | number | string;
+      /** Format: uuid */
+      id: string;
+      /** Format: date */
+      measuredOn: string;
+      /** Format: double */
+      neckCm: null | number | string;
+      note: null | string;
+      /** Format: double */
+      thighCm: null | number | string;
+      /** Format: date-time */
+      updatedAt: string;
+      /** Format: double */
+      waistCm: null | number | string;
+      /** Format: double */
+      weightKg: null | number | string;
+    };
+    BodyProfileResponse: {
+      /** Format: double */
+      activityFactor: number | string;
+      /** Format: date */
+      birthDate: string;
+      /** Format: date-time */
+      clientUpdatedAt: string;
+      /** Format: double */
+      heightCm: number | string;
+      sex: string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
     CatalogCreditsResponse: {
       sources: components['schemas']['CreditSource'][];
       wgerAuthors: components['schemas']['WgerCredit'][];
@@ -4636,6 +4969,14 @@ export interface components {
     };
     /** @enum {unknown} */
     PublicKeyCredentialType: 'public-key' | 'invalid' | null;
+    PullBodyEntriesResponse: {
+      items: components['schemas']['BodyEntryResponse'][];
+      nextCursor: null | string;
+    };
+    PullBodyProfileResponse: {
+      items: components['schemas']['BodyProfileResponse'][];
+      nextCursor: null | string;
+    };
     PullExercisesResponse: {
       items: components['schemas']['ExerciseResponse'][];
       nextCursor: null | string;
@@ -4900,6 +5241,40 @@ export interface components {
     UpdateShortcutRequest: {
       customLabel: null | string;
       enabled: null | boolean;
+    };
+    UpsertBodyEntryRequest: {
+      /** Format: double */
+      armCm: null | number | string;
+      /** Format: double */
+      bodyFatPct: null | number | string;
+      /** Format: date-time */
+      clientUpdatedAt: null | string;
+      deleted: boolean;
+      fatMethod: null | string;
+      /** Format: double */
+      hipCm: null | number | string;
+      /** Format: date */
+      measuredOn: null | string;
+      /** Format: double */
+      neckCm: null | number | string;
+      note: null | string;
+      /** Format: double */
+      thighCm: null | number | string;
+      /** Format: double */
+      waistCm: null | number | string;
+      /** Format: double */
+      weightKg: null | number | string;
+    };
+    UpsertBodyProfileRequest: {
+      /** Format: double */
+      activityFactor: null | number | string;
+      /** Format: date */
+      birthDate: null | string;
+      /** Format: date-time */
+      clientUpdatedAt: null | string;
+      /** Format: double */
+      heightCm: null | number | string;
+      sex: null | string;
     };
     UpsertCustomExerciseRequest: {
       /** Format: date-time */
