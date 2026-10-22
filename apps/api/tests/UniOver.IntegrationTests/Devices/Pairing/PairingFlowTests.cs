@@ -204,6 +204,39 @@ public sealed class PairingFlowTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Poll_ConcurrentRequestsSerializeTheSlowDownCadenceInPostgres()
+    {
+        var barrier = new PollRaceBarrier();
+        await using var app = await DevicesApp.StartAsync(postgres, new DevicesAppOptions
+        {
+            RequireStepUp = false,
+            CommandInterceptor = barrier,
+        });
+        var started = await app.StartAsync();
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 2).Select(async _ =>
+        {
+            using var response = await app.PollRawAsync(started.PairingId, started.DeviceCode);
+            return (response.StatusCode, Body: await DevicesApp.JsonAsync(response));
+        }));
+
+        responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.OK);
+        responses.Select(response => response.Body.GetProperty("status").GetString())
+            .Should().BeEquivalentTo("pending", "slow_down");
+        responses.Single(response => response.Body.GetProperty("status").GetString() == "slow_down")
+            .Body.GetProperty("interval").GetInt32().Should().Be(10);
+        barrier.BothPollsReachedDatabase.Should().BeTrue();
+
+        await using var db = app.Db();
+        var pairing = await db.Pairings.SingleAsync(Ct);
+        pairing.LastPolledAt.Should().Be(app.Time.GetUtcNow());
+
+        app.Time.Advance(TimeSpan.FromSeconds(5));
+        using var next = await app.PollRawAsync(started.PairingId, started.DeviceCode);
+        (await DevicesApp.JsonAsync(next)).GetProperty("status").GetString().Should().Be("pending");
+    }
+
+    [Fact]
     public async Task Poll_WithAWrongDeviceCode_OrAnUnknownPairing_GivesTheSameAnswer()
     {
         await using var app = await DevicesApp.StartAsync(postgres, NoStepUp);
@@ -475,6 +508,36 @@ internal sealed class PairingCountRaceBarrier : DbCommandInterceptor
         }
 
         await _bothCountsCompleted.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        return result;
+    }
+}
+
+internal sealed class PollRaceBarrier : DbCommandInterceptor
+{
+    private readonly TaskCompletionSource _bothPollsReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _pollCount;
+
+    public bool BothPollsReachedDatabase => _bothPollsReady.Task.IsCompletedSuccessfully;
+
+    public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<DbDataReader> result,
+        CancellationToken cancellationToken = default)
+    {
+        if (command.CommandText.Contains("FROM devices.pairings", StringComparison.OrdinalIgnoreCase)
+            && command.CommandText.Contains("FOR UPDATE", StringComparison.OrdinalIgnoreCase)
+            && Interlocked.Increment(ref _pollCount) == 2)
+        {
+            _bothPollsReady.TrySetResult();
+        }
+
+        if (command.CommandText.Contains("FROM devices.pairings", StringComparison.OrdinalIgnoreCase)
+            && command.CommandText.Contains("FOR UPDATE", StringComparison.OrdinalIgnoreCase))
+        {
+            await _bothPollsReady.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
+
         return result;
     }
 }
