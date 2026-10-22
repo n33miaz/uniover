@@ -64,12 +64,37 @@ public sealed class FoodEndpointsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task OpenFoodFacts_ConcurrentSearchesUpdatingSameCachedProductDoNotFail()
+    {
+        var off = new FakeOff();
+        await using var app = await TrainingApp.StartAsync(postgres,
+            new TrainingAppOptions { Off = off, OffContact = "foods@uniover.test", FakeClock = true });
+        var owner = await app.LoginAsync();
+
+        using (var seed = await app.SendAsync(HttpMethod.Get, "/api/v1/training/foods/off/search?q=arroz", bearer: owner.AccessToken))
+            seed.StatusCode.Should().Be(HttpStatusCode.OK);
+        app.Time!.Advance(TimeSpan.FromSeconds(1));
+
+        var searches = Enumerable.Range(0, 7)
+            .Select(_ => app.SendAsync(HttpMethod.Get, "/api/v1/training/foods/off/search?q=arroz", bearer: owner.AccessToken))
+            .ToArray();
+        var responses = await Task.WhenAll(searches);
+        try { responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.OK); }
+        finally { foreach (var response in responses) response.Dispose(); }
+
+        using var db = TrainingApp.CreateContext(app.Database.RuntimeConnection);
+        (await db.Set<Food>().CountAsync(f => f.Source == FoodSources.Off && f.SourceRef == "12345678", Ct)).Should().Be(1);
+    }
+
+    [Fact]
     public async Task OpenFoodFacts_ValidatesInputs_DegradesFailures_AndAppliesItsOwnRateLimit()
     {
         var off = new FakeOff { Search = (_, _) => throw new HttpRequestException("upstream down") };
         await using var app = await TrainingApp.StartAsync(postgres, new TrainingAppOptions
         {
-            Off = off, OffContact = "foods@uniover.test", FakeClock = true,
+            Off = off,
+            OffContact = "foods@uniover.test",
+            FakeClock = true,
         });
         var owner = await app.LoginAsync();
         using var invalidSearch = await app.SendAsync(HttpMethod.Get, "/api/v1/training/foods/off/search?q=x", bearer: owner.AccessToken);
@@ -133,7 +158,11 @@ public sealed class FoodEndpointsTests(PostgresFixture postgres)
 
         using (var create = await app.SendAsync(HttpMethod.Put, $"/api/v1/training/foods/{foodId}", new
         {
-            name = "Privado da conta A", kcalPer100g = 100m, proteinPer100g = 5m, carbsPer100g = 20m, fatPer100g = 2m,
+            name = "Privado da conta A",
+            kcalPer100g = 100m,
+            proteinPer100g = 5m,
+            carbsPer100g = 20m,
+            fatPer100g = 2m,
             clientUpdatedAt = now,
         }, ownerA.AccessToken, Guid.NewGuid())) create.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -144,14 +173,26 @@ public sealed class FoodEndpointsTests(PostgresFixture postgres)
 
         using (var update = await app.SendAsync(HttpMethod.Put, $"/api/v1/training/foods/{foodId}", new
         {
-            name = "Tentativa da conta B", kcalPer100g = 999m, proteinPer100g = 9m, carbsPer100g = 9m, fatPer100g = 9m,
+            name = "Tentativa da conta B",
+            kcalPer100g = 999m,
+            proteinPer100g = 9m,
+            carbsPer100g = 9m,
+            fatPer100g = 9m,
             clientUpdatedAt = now.AddMinutes(1),
         }, accountB.Login.AccessToken, Guid.NewGuid())) update.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
         using (var meal = await app.SendAsync(HttpMethod.Put, $"/api/v1/training/meals/{Guid.CreateVersion7()}", new
         {
-            foodId, eatenOn = DateOnly.FromDateTime(DateTime.UtcNow), mealType = "lunch", name = "Privado da conta A",
-            quantityG = 100m, kcal = 100m, proteinG = 5m, carbG = 20m, fatG = 2m, clientUpdatedAt = now.AddMinutes(2),
+            foodId,
+            eatenOn = DateOnly.FromDateTime(DateTime.UtcNow),
+            mealType = "lunch",
+            name = "Privado da conta A",
+            quantityG = 100m,
+            kcal = 100m,
+            proteinG = 5m,
+            carbG = 20m,
+            fatG = 2m,
+            clientUpdatedAt = now.AddMinutes(2),
         }, accountB.Login.AccessToken, Guid.NewGuid())) meal.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         using var db = TrainingApp.CreateContext(app.Database.RuntimeConnection);
@@ -195,7 +236,11 @@ public sealed class FoodEndpointsTests(PostgresFixture postgres)
         var now = DateTimeOffset.UtcNow;
         using (var food = await app.SendAsync(HttpMethod.Put, $"/api/v1/training/foods/{foodId}", new
         {
-            name = "Alimento próprio", kcalPer100g = 100m, proteinPer100g = 5m, carbsPer100g = 20m, fatPer100g = 2m,
+            name = "Alimento próprio",
+            kcalPer100g = 100m,
+            proteinPer100g = 5m,
+            carbsPer100g = 20m,
+            fatPer100g = 2m,
             clientUpdatedAt = now,
         }, owner.AccessToken, Guid.NewGuid())) food.StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -203,8 +248,16 @@ public sealed class FoodEndpointsTests(PostgresFixture postgres)
         var mealTime = now.AddSeconds(1);
         var body = new
         {
-            foodId, eatenOn = DateOnly.FromDateTime(DateTime.UtcNow), mealType = "lunch", name = "Alimento próprio",
-            quantityG = 150m, kcal = 150m, proteinG = 7.5m, carbG = 30m, fatG = 3m, clientUpdatedAt = mealTime,
+            foodId,
+            eatenOn = DateOnly.FromDateTime(DateTime.UtcNow),
+            mealType = "lunch",
+            name = "Alimento próprio",
+            quantityG = 150m,
+            kcal = 150m,
+            proteinG = 7.5m,
+            carbG = 30m,
+            fatG = 3m,
+            clientUpdatedAt = mealTime,
         };
         var puts = Enumerable.Range(0, 50).Select(_ => app.SendAsync(HttpMethod.Put, $"/api/v1/training/meals/{mealId}", body, owner.AccessToken, Guid.NewGuid())).ToArray();
         var responses = await Task.WhenAll(puts);
@@ -213,7 +266,11 @@ public sealed class FoodEndpointsTests(PostgresFixture postgres)
 
         using (var change = await app.SendAsync(HttpMethod.Put, $"/api/v1/training/foods/{foodId}", new
         {
-            name = "Alimento próprio", kcalPer100g = 900m, proteinPer100g = 9m, carbsPer100g = 2m, fatPer100g = 40m,
+            name = "Alimento próprio",
+            kcalPer100g = 900m,
+            proteinPer100g = 9m,
+            carbsPer100g = 2m,
+            fatPer100g = 40m,
             clientUpdatedAt = now.AddMinutes(1),
         }, owner.AccessToken, Guid.NewGuid())) change.StatusCode.Should().Be(HttpStatusCode.OK);
 
