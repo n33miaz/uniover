@@ -3,6 +3,7 @@ using System.Net;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Npgsql;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Identity.Domain;
 
@@ -81,6 +82,82 @@ public sealed class RefreshTests(PostgresFixture postgres)
         var tokens = await db.RefreshTokens.ToListAsync(Ct);
         tokens.Should().HaveCount(2).And.OnlyContain(t => t.RevokedAt != null && t.RevokedReason == "reuse");
         (await db.LoginAudit.CountAsync(a => a.Event == AuditEvents.RefreshReuseDetected, Ct)).Should().BeGreaterThanOrEqualTo(1);
+    }
+
+    [Fact]
+    public async Task Refresh_ReplayDuringRotation_RevokesTheNewSuccessor()
+    {
+        await using var app = await IdentityApp.StartAsync(postgres);
+        var login = await app.LoginAsync();
+
+        // Mantém a rotação dentro do UPDATE do token antigo para iniciar o replay antes de o sucessor ser confirmado.
+        await using (var db = app.Db())
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE FUNCTION identity.delay_refresh_rotation() RETURNS trigger
+                LANGUAGE plpgsql AS $body$
+                BEGIN
+                    IF OLD.used_at IS NULL AND NEW.used_at IS NOT NULL THEN
+                        PERFORM pg_sleep(2);
+                    END IF;
+                    RETURN NEW;
+                END
+                $body$;
+                """, Ct);
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                CREATE TRIGGER delay_refresh_rotation
+                BEFORE UPDATE OF used_at ON identity.refresh_tokens
+                FOR EACH ROW EXECUTE FUNCTION identity.delay_refresh_rotation();
+                """, Ct);
+        }
+
+        var rotationTask = app.RefreshRawAsync(login.RefreshSecret);
+        await using var observer = new NpgsqlConnection(app.Database.RuntimeConnection);
+        await observer.OpenAsync(Ct);
+        var rotationIsPaused = false;
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await using var command = new NpgsqlCommand(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_stat_activity
+                    WHERE pid <> pg_backend_pid()
+                      AND datname = current_database()
+                      AND state = 'active'
+                      AND wait_event = 'PgSleep'
+                )
+                """,
+                observer);
+            rotationIsPaused = (bool)(await command.ExecuteScalarAsync(Ct))!;
+            if (rotationIsPaused)
+            {
+                break;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(20), Ct);
+        }
+
+        rotationIsPaused.Should().BeTrue("the rotation must be held before inserting its successor");
+        app.Time.Advance(TimeSpan.FromSeconds(4));
+        var replayTask = app.RefreshRawAsync(login.RefreshSecret);
+
+        using var rotated = await rotationTask;
+        rotated.StatusCode.Should().Be(HttpStatusCode.OK);
+        var successorSecret = IdentityApp.Cookies(rotated).Single(c => c.Name == "uo_rt").Value;
+
+        using var replay = await replayTask;
+        replay.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        using var successorReplay = await app.RefreshRawAsync(successorSecret);
+        successorReplay.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        await using var verification = app.Db();
+        var family = await verification.RefreshTokens.ToListAsync(Ct);
+        family.Should().HaveCount(2).And.OnlyContain(t => t.RevokedAt != null && t.RevokedReason == RevokeReasons.Reuse);
     }
 
     [Fact]
