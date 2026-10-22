@@ -9,10 +9,12 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using UniOver.BuildingBlocks.Persistence;
 using UniOver.BuildingBlocks.Web;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.IntegrationTests.Messaging;
@@ -29,6 +31,8 @@ internal sealed record PasskeyAppOptions
     public int? StepUpMinutes { get; init; }
 
     public bool PasskeyConfiguration { get; init; } = true;
+
+    public DbCommandInterceptor? CommandInterceptor { get; init; }
 
     public IReadOnlyDictionary<string, string?>? Extra { get; init; }
 }
@@ -137,6 +141,10 @@ internal sealed class PasskeyApp : IAsyncDisposable
             services.AddSingleton<TimeProvider>(time);
             services.AddSingleton<ILoggerProvider>(logs);
             services.AddSingleton<IStartupFilter, TestRoutesFilter>();
+            if (options.CommandInterceptor is { } commandInterceptor)
+            {
+                services.ConfigureDbContext<IdentityDbContext>(builder => builder.AddInterceptors(commandInterceptor));
+            }
         }));
 
         var app = new PasskeyApp(root, factory, database, time, logs, ownerEmail, password) { SigningKey = signingKey };
