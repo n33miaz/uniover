@@ -75,7 +75,9 @@ function landscape(info: TestInfo) {
 async function openHome(page: Page, scheme: Scheme) {
   await page.emulateMedia({ colorScheme: scheme });
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText(OWNER.displayName);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(
+    OWNER.displayName.split(' ')[0],
+  );
   // TV e Treino, que já têm tela, e os seis módulos planejados ("Em breve").
   await expect(page.locator('article.card')).toHaveCount(8);
   await settle(page);

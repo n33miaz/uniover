@@ -124,7 +124,8 @@ test.describe('entrada e sessão', () => {
     await page.goto('/entrar');
     await signIn(page);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      new RegExp('(Bom dia|Boa tarde|Boa noite), ' + OWNER.displayName),
+      // A saudação traz só o primeiro nome da conta.
+      new RegExp('(Bom dia|Boa tarde|Boa noite), ' + OWNER.displayName.split(' ')[0] + '$'),
     );
     await expect(page.locator('app-session-notice .notice')).toHaveCount(0);
     await page.getByRole('link', { name: 'Ajustes' }).click();
