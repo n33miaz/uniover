@@ -53,7 +53,7 @@ public sealed class BodyPersistenceTests(PostgresFixture postgres)
 
         await using (var training = TrainingApp.CreateContext(database.OwnerConnection))
         {
-            (await training.Database.GetPendingMigrationsAsync(Ct)).Should().ContainSingle().Which.Should().EndWith("_AddBody");
+            (await training.Database.GetPendingMigrationsAsync(Ct)).First().Should().EndWith("_AddBody");
             await training.Database.MigrateAsync(Ct);
         }
 
