@@ -2,6 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import type { InstallEnvInput } from '../../../core/pwa/install-env';
 import { INSTALL_ENV, InstallHintService } from '../../../core/pwa/install-hint.service';
 import { SessionRepository } from '../data/sessions/session-repository';
+import { SessionState } from '../../../core/session/session-state';
+import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { eventually, setupScreen } from './screen-test-kit';
 import { TrainingPage } from './training.page';
 
@@ -64,5 +66,48 @@ describe('TrainingPage: the install sheet and the open workout', () => {
     await eventually(fixture, () => expect(hint.autoOpenAllowed()).toBe(false));
     hint.open();
     expect(hint.sheet()).toBe('manual');
+  });
+
+  it('shows the module title and opens sync details from the date indicator', async () => {
+    const { fixture } = await render();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('h1')?.textContent).toBe('UniOver Treino');
+    const indicator = el.querySelector<HTMLButtonElement>('.training-header .status')!;
+    expect(indicator.getAttribute('aria-expanded')).toBe('false');
+    TestBed.inject(ConnectivityService).online.set(false);
+    await fixture.whenStable();
+    expect(indicator.classList.contains('offline')).toBe(true);
+    indicator.click();
+    await fixture.whenStable();
+    expect(indicator.getAttribute('aria-expanded')).toBe('true');
+    expect(el.querySelector('app-training-sync-line')?.textContent).toContain('Sem rede');
+  });
+
+  it('only offers a way back when another module is available', async () => {
+    const { fixture } = await render();
+    const el = fixture.nativeElement as HTMLElement;
+    const session = TestBed.inject(SessionState);
+    session.setUser({
+      id: '1',
+      email: 'a@b.c',
+      displayName: 'A',
+      role: 'guest',
+      permissions: ['module:training'],
+    });
+    await fixture.whenStable();
+    expect(el.querySelector('.training-header .back')).toBeNull();
+    expect(el.querySelector('.training-header .settings')?.getAttribute('href')).toBe('/ajustes');
+    session.setUser({
+      id: '1',
+      email: 'a@b.c',
+      displayName: 'A',
+      role: 'guest',
+      permissions: ['module:training', 'module:tv'],
+    });
+    await fixture.whenStable();
+    expect(el.querySelector('.training-header .back')?.getAttribute('href')).toBe('/tv');
+    session.setUser({ id: '1', email: 'a@b.c', displayName: 'A', role: 'owner' });
+    await fixture.whenStable();
+    expect(el.querySelector('.training-header .back')?.getAttribute('href')).toBe('/');
   });
 });

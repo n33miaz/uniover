@@ -249,6 +249,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.getByRole('button', { name: 'Salvar exercício' }).click();
       await expect(page.getByText('1 com erro')).toBeVisible();
       await shot(page, info, 'pendencias-linha', scheme);
+      await page.locator('.training-header .status').click();
       await page.getByRole('button', { name: 'Ver', exact: true }).click();
       await expect(page.getByRole('dialog', { name: 'Alterações com erro' })).toBeVisible();
       await shot(page, info, 'pendencias-folha', scheme);

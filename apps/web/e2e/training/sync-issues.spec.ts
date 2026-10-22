@@ -31,6 +31,7 @@ test.describe('alterações que o servidor recusou', () => {
     await createRefused(page, server);
     expect(server.writes('exercises')).toBe(0);
 
+    await page.locator('.training-header .status').click();
     await page.getByRole('button', { name: 'Ver', exact: true }).click();
     const sheet = page.getByRole('dialog', { name: 'Alterações com erro' });
     await expect(sheet).toContainText('Exercício');
@@ -59,6 +60,7 @@ test.describe('alterações que o servidor recusou', () => {
   }) => {
     const server = await startTraining(context, page);
     await createRefused(page, server);
+    await page.locator('.training-header .status').click();
     await page.getByRole('button', { name: 'Ver', exact: true }).click();
     const sheet = page.getByRole('dialog', { name: 'Alterações com erro' });
 
