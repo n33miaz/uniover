@@ -249,7 +249,7 @@ test.describe('o treino ao vivo de duas contas no mesmo navegador', () => {
     await page.goto('/entrar');
     await signIn(page, OWNER.email, OWNER.password);
     await goInApp(page, '/treino');
-    await expect(page.getByRole('heading', { name: 'Esta semana' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Semana', exact: true })).toBeVisible();
     await expect(page.locator('.lines .ui-row').first()).toContainText('última vez 40 kg × 10');
     await beginWorkout(page);
     server.offline = true;
@@ -265,6 +265,7 @@ test.describe('o treino ao vivo de duas contas no mesmo navegador', () => {
     await signIn(page, GUEST.email, GUEST.password);
     await goInApp(page, '/treino');
     await expect(page.getByText('Sem rotinas ainda')).toBeVisible();
+    await expect(page.locator('app-week-calendar .week-days .day.done')).toHaveCount(0);
     await expect(page.getByText('Treino em andamento')).toHaveCount(0);
     await expect(page.getByText('Continuar treino')).toHaveCount(0);
     await expect(page.locator('.sending')).toHaveCount(0);
@@ -283,6 +284,7 @@ test.describe('o treino ao vivo de duas contas no mesmo navegador', () => {
     await signIn(page, OWNER.email, OWNER.password);
     await goInApp(page, '/treino');
     await expect(page.getByText('Treino em andamento')).toBeVisible();
+    await expect(page.locator('app-week-calendar .week-days .day.done')).toHaveCount(1);
     await expect.poll(() => server.writes('sets', OWNER_ID), { timeout: 20_000 }).toBe(1);
     expect(server.writes('sets', GUEST_ID)).toBe(0);
     const sets = server.hits.filter(isSetWrite);

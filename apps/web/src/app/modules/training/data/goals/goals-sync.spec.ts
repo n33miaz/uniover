@@ -23,6 +23,8 @@ describe('goals pull, end to end', () => {
         ],
         nextCursor: 'cursor-g',
       },
+      EMPTY,
+      EMPTY,
     ];
 
     await TestBed.inject(TrainingSync).start();
@@ -33,6 +35,8 @@ describe('goals pull, end to end', () => {
       '/api/v1/training/sessions',
       '/api/v1/training/sets',
       GOALS_PATH,
+      '/api/v1/training/foods',
+      '/api/v1/training/meals',
       '/api/v1/training/body/entries',
       '/api/v1/training/body/profile',
     ]);

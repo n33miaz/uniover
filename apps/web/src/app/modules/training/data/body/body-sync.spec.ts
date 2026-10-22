@@ -17,6 +17,8 @@ describe('body pull, end to end', () => {
       EMPTY,
       EMPTY,
       EMPTY,
+      EMPTY,
+      EMPTY,
       {
         items: [
           bodyEntryDto('m1', { weightKg: 82.4, waistCm: 86 }),
@@ -35,6 +37,8 @@ describe('body pull, end to end', () => {
       '/api/v1/training/sessions',
       '/api/v1/training/sets',
       '/api/v1/training/goals',
+      '/api/v1/training/foods',
+      '/api/v1/training/meals',
       BODY_ENTRIES_PATH,
       BODY_PROFILE_PATH,
     ]);
@@ -60,12 +64,16 @@ describe('body pull, end to end', () => {
       EMPTY,
       EMPTY,
       EMPTY,
+      EMPTY,
+      EMPTY,
       { items: [bodyEntryDto('m1', { weightKg: 82 })], nextCursor: 'c1' },
       { items: [bodyProfileDto({ heightCm: 180 })], nextCursor: 'p1' },
     ];
     await sync.start();
 
     t.pull.script = [
+      EMPTY,
+      EMPTY,
       EMPTY,
       EMPTY,
       EMPTY,

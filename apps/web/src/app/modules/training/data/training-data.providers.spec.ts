@@ -1,5 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { CatalogRepository } from './catalog/catalog-repository';
 import { CatalogStore } from './catalog/catalog-store';
 import { CatalogWriter } from './catalog/catalog-writer';
@@ -9,6 +11,10 @@ import { BodyRepository } from './body/body-repository';
 import { ProfileRepository } from './body/profile-repository';
 import { GoalRepository } from './goals/goal-repository';
 import { GoalsResourceSync } from './goals/goals-resource-sync';
+import { FoodRepository } from './foods/food-repository';
+import { FoodsResourceSync } from './foods/foods-resource-sync';
+import { MealRepository } from './meals/meal-repository';
+import { MealsResourceSync } from './meals/meals-resource-sync';
 import { ExportService } from './export/export-service';
 import { PhotoStore } from './photos/photo-store';
 import { ProgressRepository } from './progress/progress-repository';
@@ -26,6 +32,9 @@ import { exerciseDto, setupTraining } from './sync/training-test-kit';
 describe('provideTrainingData', () => {
   it('registers the sync, the catalog access classes and one resource per line', () => {
     setupTraining();
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
 
     expect(TestBed.inject(TrainingSync)).toBeInstanceOf(TrainingSync);
     expect(TestBed.inject(CatalogRepository)).toBeInstanceOf(CatalogRepository);
@@ -37,6 +46,8 @@ describe('provideTrainingData', () => {
     expect(TestBed.inject(RestAlert)).toBeInstanceOf(RestAlert);
     expect(TestBed.inject(WakeLockService)).toBeInstanceOf(WakeLockService);
     expect(TestBed.inject(GoalRepository)).toBeInstanceOf(GoalRepository);
+    expect(TestBed.inject(FoodRepository)).toBeInstanceOf(FoodRepository);
+    expect(TestBed.inject(MealRepository)).toBeInstanceOf(MealRepository);
     expect(TestBed.inject(ProgressRepository)).toBeInstanceOf(ProgressRepository);
     expect(TestBed.inject(ExportService)).toBeInstanceOf(ExportService);
     expect(TestBed.inject(BodyRepository)).toBeInstanceOf(BodyRepository);
@@ -44,7 +55,7 @@ describe('provideTrainingData', () => {
     expect(TestBed.inject(PhotoStore)).toBeInstanceOf(PhotoStore);
 
     const resources = TestBed.inject(TRAINING_RESOURCE_SYNCS);
-    expect(resources).toHaveLength(7);
+    expect(resources).toHaveLength(9);
     expect(resources[0]).toBeInstanceOf(ExercisesResourceSync);
     expect(resources[0]).toMatchObject({
       resource: 'exercises',
@@ -64,13 +75,17 @@ describe('provideTrainingData', () => {
     expect(resources[3]).toMatchObject({ resource: 'sets', path: '/api/v1/training/sets' });
     expect(resources[4]).toBeInstanceOf(GoalsResourceSync);
     expect(resources[4]).toMatchObject({ resource: 'goals', path: '/api/v1/training/goals' });
-    expect(resources[5]).toBeInstanceOf(BodyEntriesResourceSync);
-    expect(resources[5]).toMatchObject({
+    expect(resources[5]).toBeInstanceOf(FoodsResourceSync);
+    expect(resources[5]).toMatchObject({ resource: 'foods', path: '/api/v1/training/foods' });
+    expect(resources[6]).toBeInstanceOf(MealsResourceSync);
+    expect(resources[6]).toMatchObject({ resource: 'meals', path: '/api/v1/training/meals' });
+    expect(resources[7]).toBeInstanceOf(BodyEntriesResourceSync);
+    expect(resources[7]).toMatchObject({
       resource: 'bodyEntries',
       path: '/api/v1/training/body/entries',
     });
-    expect(resources[6]).toBeInstanceOf(BodyProfileResourceSync);
-    expect(resources[6]).toMatchObject({
+    expect(resources[8]).toBeInstanceOf(BodyProfileResourceSync);
+    expect(resources[8]).toMatchObject({
       resource: 'bodyProfile',
       path: '/api/v1/training/body/profile',
     });
@@ -109,11 +124,13 @@ describe('catalog pull, end to end', () => {
         after: 'cursor-1',
         limit: 200,
       },
-      // Depois do catálogo o puxador passa pelos recursos seguintes (rotinas, treinos, séries, metas e corpo), que aqui vêm vazios.
+      // Depois do catálogo os recursos restantes vêm vazios, inclusive os lançamentos de alimentos.
       { accountId: 'conta-teste', path: '/api/v1/training/routines', after: null, limit: 200 },
       { accountId: 'conta-teste', path: '/api/v1/training/sessions', after: null, limit: 200 },
       { accountId: 'conta-teste', path: '/api/v1/training/sets', after: null, limit: 200 },
       { accountId: 'conta-teste', path: '/api/v1/training/goals', after: null, limit: 200 },
+      { accountId: 'conta-teste', path: '/api/v1/training/foods', after: null, limit: 200 },
+      { accountId: 'conta-teste', path: '/api/v1/training/meals', after: null, limit: 200 },
       { accountId: 'conta-teste', path: '/api/v1/training/body/entries', after: null, limit: 200 },
       { accountId: 'conta-teste', path: '/api/v1/training/body/profile', after: null, limit: 200 },
     ]);

@@ -43,6 +43,9 @@ function isWithin(path: string, base: string): boolean {
   template: `
     <nav
       [class.training]="variant() === 'training'"
+      [class.active-0]="activeIndex() === 0"
+      [class.active-1]="activeIndex() === 1"
+      [class.active-2]="activeIndex() === 2"
       aria-label="Abas do módulo"
       i18n-aria-label="@@shared.tabs"
     >
@@ -140,6 +143,36 @@ function isWithin(path: string, base: string): boolean {
       font-size: 0.75rem;
       line-height: 1.1;
     }
+    nav.training ul {
+      position: relative;
+    }
+    nav.training ul::before {
+      position: absolute;
+      top: 5px;
+      left: 0;
+      width: calc(100% / 3);
+      height: 28px;
+      border-radius: 999px;
+      background: var(--a-accent-soft);
+      content: '';
+      opacity: 0;
+      transition: transform 220ms var(--ease-out);
+    }
+    nav.training.active-0 ul::before {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    nav.training.active-1 ul::before {
+      opacity: 1;
+      transform: translateX(100%);
+    }
+    nav.training.active-2 ul::before {
+      opacity: 1;
+      transform: translateX(200%);
+    }
+    nav.training li {
+      position: relative;
+    }
     nav.training .icon {
       display: block;
       width: 20px;
@@ -151,22 +184,16 @@ function isWithin(path: string, base: string): boolean {
       stroke-linejoin: round;
     }
     nav.training a.active::before {
-      position: absolute;
-      z-index: -1;
-      top: 5px;
-      left: 50%;
-      width: 52px;
-      height: 28px;
-      border-radius: 999px;
-      background: var(--a-accent-soft);
-      content: '';
-      transform: translateX(-50%);
+      content: none;
     }
     nav.training a:focus-visible {
       outline-offset: -3px;
     }
     @media (prefers-reduced-motion: reduce) {
       a {
+        transition: none;
+      }
+      nav.training ul::before {
         transition: none;
       }
     }
@@ -192,5 +219,9 @@ export class TabBar {
     const path = pathOf(this.url());
     if (tab.nested ? isWithin(path, tab.link) : path === pathOf(tab.link)) return true;
     return (tab.also ?? []).some((base) => isWithin(path, pathOf(base)));
+  }
+
+  protected activeIndex(): number {
+    return this.tabs().findIndex((tab) => this.isActive(tab));
   }
 }

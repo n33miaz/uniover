@@ -47,12 +47,46 @@ async function launch(
 const restTime = (page: Page) => page.locator('.rest .time');
 
 test.describe('Hoje', () => {
+  test('a semana navega e abre o calendário mensal com o treino do dia', async ({
+    page,
+    context,
+  }) => {
+    const server = await launch(context, page);
+    seedPastWorkout(server, 12, 10 * 60_000, [
+      { exerciseId: SEED_EXERCISE_IDS.pushdown, weightKg: 25, reps: 12 },
+    ]);
+    await openToday(page);
+
+    const week = page.locator('app-week-calendar');
+    await expect(week.locator('.week-days .day')).toHaveCount(7);
+    await expect(week.locator('.week-days .day.done')).toHaveCount(1);
+    await expect(week.getByText('Tá pago!')).toBeVisible();
+    const currentRange = await week.locator('.range').textContent();
+    await week.getByRole('button', { name: 'Próxima semana' }).click();
+    await expect(week.locator('.range')).not.toHaveText(currentRange ?? '');
+    await week.getByRole('button', { name: 'Semana anterior' }).click();
+    await expect(week.locator('.range')).toHaveText(currentRange ?? '');
+    await expect(week.locator('.week-days .day.done')).toHaveCount(1);
+
+    await week.getByRole('button', { name: 'Ver calendário' }).click();
+    const calendar = page.getByRole('dialog', { name: 'Calendário de treinos' });
+    await expect(calendar).toBeVisible();
+    await expect(calendar.locator('.month-day.done')).not.toHaveCount(0);
+    await expect(calendar.locator('.day-detail')).toContainText('Treino livre');
+    await expect(calendar.locator('.day-detail')).toContainText('300 kg');
+    const currentMonth = await calendar.locator('.month-nav h3').textContent();
+    await calendar.getByRole('button', { name: 'Mês anterior' }).click();
+    await expect(calendar.locator('.month-nav h3')).not.toHaveText(currentMonth ?? '');
+    await calendar.getByRole('button', { name: 'Fechar' }).click();
+    await expect(calendar).toBeHidden();
+  });
+
   test('o resumo da semana vem em cima, a rotina do dia embaixo, e o botão de iniciar fica acima da lista', async ({
     page,
     context,
   }) => {
     const server = await launch(context, page);
-    // Um treino de dez minutos atrás: está sempre na semana de hoje (segunda a domingo).
+    // Um treino de dez minutos atrás aparece na semana atual.
     seedPastWorkout(server, 2, 10 * 60_000, [
       { exerciseId: SEED_EXERCISE_IDS.pushdown, weightKg: 25, reps: 12 },
       { exerciseId: SEED_EXERCISE_IDS.pushdown, weightKg: 25, reps: 12 },
@@ -61,10 +95,10 @@ test.describe('Hoje', () => {
 
     const week = page.locator('.week');
     const routine = page.locator('.routine');
-    await expect(week.locator('.stat').nth(0)).toHaveText(/^Treinoss*1$/);
-    await expect(week.locator('.stat').nth(1)).toHaveText(/^Sériess*2$/);
+    await expect(week.locator('.stats div').nth(0)).toHaveText(/^Treinoss*1$/);
+    await expect(week.locator('.stats div').nth(1)).toHaveText(/^Sériess*2$/);
     // 25 kg × 12 × 2 séries = 600 kg.
-    await expect(week.locator('.stat').nth(2)).toHaveText(/^Volumes*600 kg$/);
+    await expect(week.locator('.stats div').nth(2)).toHaveText(/^Volumes*600 kg$/);
 
     const weekBox = (await week.boundingBox())!;
     const routineBox = (await routine.boundingBox())!;
@@ -631,7 +665,7 @@ test.describe('treino ao vivo', () => {
     // "Concluir treino" volta a Hoje, e a sequência passou para a rotina B.
     await page.getByRole('button', { name: 'Concluir treino' }).click();
     await expect(page.getByRole('heading', { name: 'Treino B · Costas e bíceps' })).toBeVisible();
-    await expect(page.locator('.week .stat').nth(0)).toHaveText(/^Treinoss*1$/);
+    await expect(page.locator('.week .stats div').nth(0)).toHaveText(/^Treinoss*1$/);
   });
 
   test('apagar uma série pede confirmação e ela some do treino', async ({ page, context }) => {
@@ -675,7 +709,7 @@ test.describe('treino ao vivo', () => {
 
     await menu(page, /Cancelar treino/);
     await page.getByRole('button', { name: 'Sim, cancelar' }).click();
-    await expect(page.getByRole('heading', { name: 'Esta semana' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Semana', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Iniciar treino' })).toBeVisible();
   });
 });

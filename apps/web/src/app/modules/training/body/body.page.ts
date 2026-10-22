@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { BodyStore } from './body-store';
 import { BodySection } from './body-section';
 import { BodyGlyph } from './body-glyph';
@@ -17,6 +18,7 @@ import { BodyNoticeStore } from './notice/notice-store';
 @Component({
   selector: 'app-training-body-page',
   imports: [
+    RouterLink,
     BodySection,
     BodyGlyph,
     WeightSheet,
@@ -57,6 +59,13 @@ import { BodyNoticeStore } from './notice/notice-store';
         </button>
       </div>
       <app-body-health-notice />
+      <a
+        class="assessment-entry"
+        routerLink="/treino/corpo/avaliacoes"
+        i18n="@@training.body.assessments-link"
+      >
+        Histórico de avaliações físicas
+      </a>
       @if (section() === 'weight') {
         <app-body-section
           [heading]="weightHeading"
@@ -285,6 +294,18 @@ import { BodyNoticeStore } from './notice/notice-store';
     .intro h1 {
       margin: 0;
       font-size: var(--fs-title, 1.5rem);
+    }
+    .assessment-entry {
+      display: flex;
+      min-height: var(--tap, 44px);
+      align-items: center;
+      padding: 0 var(--space-3);
+      border: 1px solid var(--a-line);
+      border-radius: var(--radius-md);
+      color: var(--a-ink);
+      background: var(--a-surface);
+      text-decoration: none;
+      font-weight: 600;
     }
     .tabs {
       display: flex;

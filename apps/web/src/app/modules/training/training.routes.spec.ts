@@ -9,26 +9,22 @@ describe('training routes', () => {
   const root = TRAINING_ROUTES[0];
   const children = root.children ?? [];
 
-  it('has the four tabs of the module, in the order Hoje, Exercícios, Progresso, Corpo', () => {
+  it('has three tabs with Início in the center and Corpo under Progresso', () => {
     const tabs = (root.data as { tabs: { link: string; label: string }[] }).tabs;
     expect(tabs.map((tab) => [tab.label, tab.link])).toEqual([
-      ['Hoje', '/treino'],
-      ['Exercícios', '/treino/exercicios'],
+      ['Exercício', '/treino/exercicios'],
+      ['Início', '/treino'],
       ['Progresso', '/treino/progresso'],
-      ['Corpo', '/treino/corpo'],
     ]);
   });
 
-  it('lets Exercícios cover its child screens and the routines, and only it', () => {
+  it('keeps routine screens under Exercício and Corpo under Progresso', () => {
     const tabs = (root.data as { tabs: { link: string; nested?: boolean; also?: string[] }[] })
       .tabs;
     const exercises = tabs.find((tab) => tab.link === '/treino/exercicios')!;
     expect(exercises.nested).toBe(true);
     expect(exercises.also).toEqual(['/treino/rotinas']);
-    for (const tab of tabs.filter((candidate) => candidate !== exercises)) {
-      expect(tab.nested, tab.link).toBeUndefined();
-      expect(tab.also, tab.link).toBeUndefined();
-    }
+    expect(tabs.find((tab) => tab.link === '/treino/progresso')?.also).toEqual(['/treino/corpo']);
   });
 
   it('declares every screen of the module, fixed paths before the ones with an id', () => {
@@ -45,10 +41,21 @@ describe('training routes', () => {
       'rotinas/:id',
       'progresso',
       'corpo',
+      'corpo/avaliacoes/importar',
+      'corpo/avaliacoes/nova',
+      'corpo/avaliacoes/:id/editar',
+      'corpo/avaliacoes/:id',
+      'corpo/avaliacoes',
     ]);
     expect(paths.indexOf('exercicios/novo')).toBeLessThan(paths.indexOf('exercicios/:id'));
     expect(paths.indexOf('exercicios/mapa')).toBeLessThan(paths.indexOf('exercicios/:id'));
     expect(paths.indexOf('rotinas/nova')).toBeLessThan(paths.indexOf('rotinas/:id'));
+    expect(paths.indexOf('corpo/avaliacoes/nova')).toBeLessThan(
+      paths.indexOf('corpo/avaliacoes/:id'),
+    );
+    expect(paths.indexOf('corpo/avaliacoes/importar')).toBeLessThan(
+      paths.indexOf('corpo/avaliacoes/:id'),
+    );
   });
 
   it('loads every page lazily', () => {
@@ -75,15 +82,13 @@ describe('training routes', () => {
       '/treino/exercicios/abc',
       '/treino/rotinas',
       '/treino/progresso',
-    ])('%s shows the tab bar with the four tabs', async (url) => {
+      '/treino/corpo',
+      '/treino/corpo/avaliacoes',
+      '/treino/corpo/avaliacoes/exemplo',
+    ])('%s shows the tab bar with the three tabs', async (url) => {
       const { data } = await navigate(url);
       expect(data.title).toBe('Treino');
-      expect(data.tabs?.map((tab) => tab.label)).toEqual([
-        'Hoje',
-        'Exercícios',
-        'Progresso',
-        'Corpo',
-      ]);
+      expect(data.tabs?.map((tab) => tab.label)).toEqual(['Exercício', 'Início', 'Progresso']);
     });
 
     it.each([
@@ -91,6 +96,9 @@ describe('training routes', () => {
       '/treino/exercicios/abc/editar',
       '/treino/rotinas/nova',
       '/treino/rotinas/abc',
+      '/treino/corpo/avaliacoes/nova',
+      '/treino/corpo/avaliacoes/importar',
+      '/treino/corpo/avaliacoes/exemplo/editar',
     ])('%s is an editing screen: no tab bar', async (url) => {
       const { data } = await navigate(url);
       expect(data.tabs).toEqual([]);
@@ -107,7 +115,8 @@ describe('training routes', () => {
       // A rota abre o escopo da conta, e a casca do módulo fica dentro dele.
       expect(el.matches('app-training-account-scope')).toBe(true);
       expect(el.querySelector('app-training-page')).not.toBeNull();
-      expect(el.querySelector('app-training-sync-line')).not.toBeNull();
+      expect(el.querySelector('.training-header h1')?.textContent).toBe('UniOver Treino');
+      expect(el.querySelector('.training-header .status')).not.toBeNull();
       expect(el.querySelector('app-training-today-page')).not.toBeNull();
       expect(start).toHaveBeenCalledTimes(1);
       start.mockRestore();
@@ -125,6 +134,20 @@ describe('training routes', () => {
       const el = harness.routeNativeElement as HTMLElement;
       expect(el.querySelector('app-exercise-form-page')).not.toBeNull();
       expect(el.querySelector('app-exercise-detail-page')).toBeNull();
+    });
+
+    it('links the Body screen to the local physical assessment history', async () => {
+      const { harness } = await navigate('/treino/corpo');
+      const link = harness.routeNativeElement!.querySelector<HTMLAnchorElement>(
+        'a[routerlink="/treino/corpo/avaliacoes"]',
+      );
+      expect(link?.textContent).toContain('Histórico de avaliações físicas');
+      expect(link?.getAttribute('href')).toBe('/treino/corpo/avaliacoes');
+      link!.click();
+      await harness.fixture.whenStable();
+      expect(
+        harness.routeNativeElement?.querySelector('app-physical-assessments-page'),
+      ).not.toBeNull();
     });
   });
 });

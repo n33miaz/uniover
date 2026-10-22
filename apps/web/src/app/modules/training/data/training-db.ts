@@ -4,6 +4,8 @@ import type { LocalBodyEntry } from './body/body-entry';
 import type { LocalBodyProfile } from './body/body-profile';
 import { accountDatabaseName } from '../../../core/session/account-id';
 import type { LocalExercise } from './catalog/exercise';
+import type { LocalFood } from './foods/food';
+import type { LocalMealEntry } from './meals/meal';
 import type { LocalGoal } from './goals/goal';
 import type { LocalPhoto } from './photos/photo';
 import type {
@@ -52,6 +54,8 @@ export const TRAINING_TABLES = [
   'photos',
   'physicalAssessments',
   'assessmentDocuments',
+  'foods',
+  'meals',
 ] as const;
 
 /**
@@ -113,6 +117,12 @@ export const TRAINING_SCHEMA_V6 = {
   assessmentDocuments: 'id, assessmentId, addedAt',
 } as const;
 
+/** Esquema da versão 7: catálogo de alimentos e diário de refeições, isolados pelo banco da conta. */
+export const TRAINING_SCHEMA_V7 = {
+  foods: 'id, nameKey, barcode, source, deletedAt',
+  meals: 'id, eatenOn, mealType, updatedAt, deletedAt',
+} as const;
+
 export interface TrainingMetaRow {
   readonly key: string;
   readonly value: unknown;
@@ -129,6 +139,8 @@ export interface SyncStateRow {
 
 export class TrainingDb extends Dexie {
   declare exercises: EntityTable<LocalExercise, 'id'>;
+  declare foods: EntityTable<LocalFood, 'id'>;
+  declare meals: EntityTable<LocalMealEntry, 'id'>;
   declare meta: EntityTable<TrainingMetaRow, 'key'>;
   declare syncState: EntityTable<SyncStateRow, 'resource'>;
   declare routines: EntityTable<LocalRoutine, 'id'>;
@@ -149,6 +161,7 @@ export class TrainingDb extends Dexie {
     this.version(4).stores(TRAINING_SCHEMA_V4);
     this.version(5).stores(TRAINING_SCHEMA_V5);
     this.version(6).stores(TRAINING_SCHEMA_V6);
+    this.version(7).stores(TRAINING_SCHEMA_V7);
   }
 }
 

@@ -1,4 +1,4 @@
-<h2 class="ui-visually-hidden" i18n="@@training.today.title">Hoje</h2>
+<h2 class="ui-visually-hidden" i18n="@@training.home.title">Início</h2>
 
 <div class="home">
   @if (message(); as note) {
@@ -31,43 +31,7 @@
     </section>
   }
 
-  <!-- O resumo da semana fica em cima: uma olhada e a pessoa segue para o treino. -->
-  @if (store.homeReady()) {
-    <section class="week ui-card" aria-labelledby="week-title">
-      <div class="week-head">
-        <h3 id="week-title" class="week-title" i18n="@@training.today.week">Esta semana</h3>
-        <span class="range">{{ weekRange() }}</span>
-      </div>
-      @if (store.week(); as week) {
-        @if (week.sessions === 0) {
-          <p class="none" i18n="@@training.today.week-none">Nenhum treino nesta semana ainda.</p>
-        } @else {
-          <dl class="stats">
-            <div class="stat">
-              <dt i18n="@@training.today.week-sessions">Treinos</dt>
-              <dd>{{ week.sessions }}</dd>
-            </div>
-            <div class="stat">
-              <dt i18n="@@training.today.week-sets">Séries</dt>
-              <dd>{{ week.workingSets }}</dd>
-            </div>
-            <div class="stat">
-              <dt i18n="@@training.today.week-volume">Volume</dt>
-              <dd>{{ weekVolume() }}</dd>
-            </div>
-            @if (weekRecords() > 0) {
-              <div class="stat">
-                <dt i18n="@@training.today.week-records">Recordes</dt>
-                <dd>{{ weekRecords() }}</dd>
-              </div>
-            }
-          </dl>
-        }
-      }
-    </section>
-  } @else {
-    <div class="week ui-card skeleton" aria-hidden="true"><span class="ui-skeleton"></span></div>
-  }
+  <app-week-calendar />
 
   @if (!store.ready() || !store.homeReady()) {
     <div class="routine ui-card skeleton" aria-hidden="true">

@@ -46,6 +46,8 @@ describe('routines pull, end to end', () => {
       '/api/v1/training/sessions',
       '/api/v1/training/sets',
       '/api/v1/training/goals',
+      '/api/v1/training/foods',
+      '/api/v1/training/meals',
       '/api/v1/training/body/entries',
       '/api/v1/training/body/profile',
     ]);

@@ -26,7 +26,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await openTraining(page, '/treino/corpo');
       await page.getByRole('button', { name: 'Entendi' }).click();
       await expect(page.getByRole('heading', { name: 'Corpo' })).toBeVisible();
-      await expect(page.locator('app-training-sync-line')).toContainText(
+      await expect(page.locator('.training-header .status')).toContainText(
         /sincronizado às \d{2}:\d{2}/,
       );
 
