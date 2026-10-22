@@ -23,7 +23,7 @@ export class PwaUpdateService {
   private registering = false;
   private applying = false;
   private reloading = false;
-  private activationTimer: ReturnType<typeof setTimeout> | undefined;
+  private activationTimer: number | undefined;
   private readonly watchedWorkers = new WeakSet<ServiceWorker>();
 
   readonly updateReady = signal(false);
