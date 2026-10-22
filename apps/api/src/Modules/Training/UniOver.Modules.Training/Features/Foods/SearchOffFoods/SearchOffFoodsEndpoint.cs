@@ -63,6 +63,11 @@ internal sealed class SearchOffFoodsHandler(IOffClient off, OffRateLimiter limit
             db.ChangeTracker.Clear();
             row = await db.Set<Food>().SingleAsync(f => f.Source == FoodSources.Off && f.SourceRef == data.Barcode, ct);
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            db.ChangeTracker.Clear();
+            row = await db.Set<Food>().SingleAsync(f => f.Source == FoodSources.Off && f.SourceRef == data.Barcode, ct);
+        }
         return row;
     }
 
