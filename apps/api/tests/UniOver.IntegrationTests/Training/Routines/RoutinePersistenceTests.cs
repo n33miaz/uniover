@@ -70,7 +70,7 @@ public sealed class RoutinePersistenceTests(PostgresFixture postgres)
         await using (var training = TrainingApp.CreateContext(database.OwnerConnection))
         {
             (await training.Database.GetAppliedMigrationsAsync(Ct)).Should().Equal(InitialMigration);
-            (await training.Database.GetPendingMigrationsAsync(Ct)).Should().HaveCount(3).And.Subject.First().Should().EndWith("_AddRoutines");
+            (await training.Database.GetPendingMigrationsAsync(Ct)).Should().HaveCount(4).And.Subject.First().Should().EndWith("_AddRoutines");
             await training.Database.MigrateAsync(Ct);
         }
 
