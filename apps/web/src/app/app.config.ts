@@ -37,12 +37,13 @@ export const appConfig: ApplicationConfig = {
     provideAppInitializer(() => {
       void inject(AuthService).init();
     }),
-    // Sobe o que ficou na fila offline de uma sessão anterior. O import dinâmico deixa o banco local e o motor fora do
-    // pacote inicial: a primeira tela não espera por eles.
+    // Liga a fila offline da conta em uso (cada conta tem a sua) e a segue a cada troca de conta: sobe o que ficou pendente
+    // de uma sessão anterior. Sem conta conhecida ainda (nenhuma dica, `/me` por chegar) nada é aberto; a fila abre quando
+    // a conta aparece. O import dinâmico deixa o banco local e o motor fora do pacote inicial: a primeira tela não espera.
     provideAppInitializer(() => {
       const injector = inject(Injector);
-      void import('./core/offline-queue/sync-engine').then(({ SyncEngine }) =>
-        injector.get(SyncEngine).start(),
+      void import('./core/offline-queue/queue-scopes').then(({ QueueScopes }) =>
+        injector.get(QueueScopes).follow(),
       );
     }),
   ],

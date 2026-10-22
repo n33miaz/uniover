@@ -1,11 +1,13 @@
 import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Injectable, effect, inject, signal, untracked } from '@angular/core';
 import { ConnectivityService } from '../connectivity/connectivity.service';
+import { AccountScope } from '../session/account-scope';
 import { SessionState } from '../session/session-state';
 import { SendOutcome, classifyResult } from './classify-result';
 import { OutboxItem } from './offline-db';
 import { OutboxStore } from './outbox-store';
-import { QUEUE_LOCKS, QUEUE_RUNTIME, SYNC_LOCK_NAME } from './queue-ports';
+import { QUEUE_ACCOUNT, QUEUE_READY } from './queue-account';
+import { QUEUE_LOCKS, QUEUE_RUNTIME, syncLockName } from './queue-ports';
 import { QUEUE_TRANSPORT, QueueRequest } from './queue-transport';
 
 /** Intervalo do temporizador de reserva: só existe com pendência e página visível. */
@@ -23,8 +25,11 @@ export interface DrainOptions {
 }
 
 /**
- * Motor de envio da fila. Regras:
- * - **um envio por vez** na aba (uma passagem por vez) e **uma aba por vez** (`navigator.locks`);
+ * Motor de envio da fila de UMA conta (há um por conta, criado pelo escopo dela: `QueueScopes`). Regras:
+ * - **um envio por vez** na aba (uma passagem por vez) e **uma aba por vez** (`navigator.locks`, um bloqueio por conta);
+ * - **só envia com a sessão desta conta**: se o token em memória é de outra (outra pessoa entrou neste navegador, em
+ *   outra aba ou nesta), a fila fica intacta no disco esperando a conta dela voltar. Vale a cada item, não só no começo
+ *   da passagem: a troca pode acontecer no meio dela;
  * - ordem **FIFO**; um erro de infraestrutura (rede, 5xx, 429, servidor acordando, 401) interrompe a passagem e
  *   agenda a próxima, para não furar a fila nem martelar o servidor; recusa de negócio (4xx) marca o item
  *   `failed` e **segue** para o próximo;
@@ -33,7 +38,7 @@ export interface DrainOptions {
  * - sem Background Sync (não existe no iPhone): reenvia com o app aberto, ao gravar, ao voltar a rede, ao voltar
  *   para a aba, na partida, no botão e num temporizador de 30 s que só existe com pendência e página visível.
  */
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class SyncEngine {
   private readonly store = inject(OutboxStore);
   private readonly transport = inject(QUEUE_TRANSPORT);
@@ -41,6 +46,9 @@ export class SyncEngine {
   private readonly locks = inject(QUEUE_LOCKS);
   private readonly connectivity = inject(ConnectivityService);
   private readonly session = inject(SessionState);
+  private readonly account = inject(AccountScope);
+  private readonly accountId = inject(QUEUE_ACCOUNT);
+  private readonly ready = inject(QUEUE_READY);
   private readonly doc = inject(DOCUMENT);
   private readonly win = this.doc.defaultView;
 
@@ -52,6 +60,8 @@ export class SyncEngine {
   private draining: Promise<void> | null = null;
   private requested = false;
   private forceRequested = false;
+  /** Depois de `stop()` o motor não começa nada novo: a conta saiu de cena e o banco vai ser fechado. */
+  private stopped = false;
   /** Pendente até a primeira passagem com o bloqueio em mãos (só então ninguém mais está enviando). */
   private needsReset = true;
   private pollTimer: unknown;
@@ -70,15 +80,19 @@ export class SyncEngine {
     this.win?.addEventListener('online', onOnline);
     this.doc.addEventListener('visibilitychange', onVisibility);
     inject(DestroyRef).onDestroy(() => {
+      this.stopped = true;
       this.win?.removeEventListener('online', onOnline);
       this.doc.removeEventListener('visibilitychange', onVisibility);
       this.clearTimers();
     });
 
-    // Uma sessão que acaba de ficar pronta é motivo para tentar o que esperava por ela.
+    // Uma sessão que acaba de ficar pronta é motivo para tentar o que esperava por ela. O usuário também conta: o token
+    // chega antes do `/me`, e só o `/me` diz de quem é a sessão.
     effect(() => {
-      if (this.session.status() === 'authenticated')
+      if (this.session.status() === 'authenticated') {
+        this.account.sessionAccount();
         untracked(() => void this.kick({ force: true }));
+      }
     });
   }
 
@@ -88,11 +102,29 @@ export class SyncEngine {
    */
   start(): Promise<void> {
     this.started ??= (async () => {
-      await this.store.refresh();
-      this.updateTimers();
-      await this.drain({ force: true });
+      try {
+        // O banco antigo, se for a vez desta conta, é adotado antes de qualquer leitura ou envio.
+        await this.ready;
+        if (this.stopped) return;
+        await this.store.refresh();
+        this.updateTimers();
+        await this.drain({ force: true });
+      } catch (error) {
+        // A conta saiu de cena no meio da partida: o banco dela vai ser fechado, e o que sobrou dela não é erro do app.
+        if (!this.stopped) throw error;
+      }
     })();
     return this.started;
+  }
+
+  /**
+   * A conta saiu de cena (outra entrou, ou ninguém): não começa mais nada, solta os temporizadores e espera a passagem em
+   * andamento terminar (um item em voo é concluído no banco antes de ele ser fechado). Idempotente.
+   */
+  stop(): Promise<void> {
+    this.stopped = true;
+    this.clearTimers();
+    return this.whenIdle();
   }
 
   /** Pede uma passagem de envio. Várias chamadas seguidas viram uma só passagem extra, sem perder nenhuma. */
@@ -110,7 +142,7 @@ export class SyncEngine {
 
   private kick(options: DrainOptions): Promise<void> {
     // Antes de `start()` o banco ainda não foi hidratado: quem chama `start()` já faz a primeira passagem.
-    return this.started ? this.drain(options) : Promise.resolve();
+    return this.started && !this.stopped ? this.drain(options) : Promise.resolve();
   }
 
   private async loop(): Promise<void> {
@@ -121,6 +153,9 @@ export class SyncEngine {
         this.forceRequested = false;
         await this.pass(force);
       }
+    } catch (error) {
+      // Parado no meio (a conta saiu de cena): o que sobrou é problema do banco que vai ser fechado, não do app.
+      if (!this.stopped) throw error;
     } finally {
       // Dentro do `finally` (e não num `.finally()` de fora): nenhum pedido cai na fresta entre o fim do laço e a
       // liberação, o que deixaria um item gravado agora esperando o temporizador.
@@ -128,13 +163,28 @@ export class SyncEngine {
     }
   }
 
+  /**
+   * Pode mexer na fila e falar com o servidor agora? Só com sessão, e só se a sessão é desta conta: o token de outra
+   * pessoa gravaria os dados desta no usuário errado.
+   */
+  private mayOperate(): boolean {
+    return (
+      !this.stopped &&
+      this.session.status() !== 'anonymous' &&
+      this.account.isSessionOf(this.accountId)
+    );
+  }
+
   private async pass(force: boolean): Promise<void> {
-    // Sem sessão não há com quem falar; o que está na fila fica onde está até alguém entrar.
-    if (this.session.status() === 'anonymous') return;
+    // Sem sessão (ou com a sessão de outra conta) não há com quem falar; o que está na fila fica onde está até a conta
+    // dela voltar.
+    if (!this.mayOperate()) return;
     // Sem rede não há o que tentar: o evento `online` volta aqui. Não gasta tentativa nem aumenta o backoff.
     if (!this.connectivity.online()) return;
 
-    const result = await this.locks.tryRun(SYNC_LOCK_NAME, () => this.sendInOrder(force));
+    const result = await this.locks.tryRun(syncLockName(this.accountId), () =>
+      this.sendInOrder(force),
+    );
     if (!result.ran) await this.store.refresh(); // outra aba envia; só atualiza o que esta aba mostra
     this.updateTimers();
   }
@@ -148,6 +198,8 @@ export class SyncEngine {
       }
 
       for (;;) {
+        // A troca de sessão ou de conta pode acontecer no meio da passagem: confere antes de cada item.
+        if (!this.mayOperate()) return;
         const item = await this.store.oldestPending();
         if (!item) return;
 
@@ -160,6 +212,12 @@ export class SyncEngine {
 
         const sending = await this.store.markSending(item.id, item.revision);
         if (!sending) continue; // mudou desde a leitura: relê o mais antigo
+
+        // Marcar leva tempo: se a sessão deixou de ser desta conta nesse intervalo, o item não sai (e a tentativa não conta).
+        if (!this.mayOperate()) {
+          await this.store.giveBack(sending.id, sending.revision);
+          return;
+        }
 
         const outcome = await this.send(sending);
         const decision = classifyResult(outcome, {
@@ -218,7 +276,10 @@ export class SyncEngine {
   /** Temporizadores só existem com pendência, página visível e sessão; senão nada acorda o app nem o servidor. */
   private updateTimers(): void {
     const needed =
-      this.store.pendingCount() > 0 && this.visible() && this.session.status() !== 'anonymous';
+      !this.stopped &&
+      this.store.pendingCount() > 0 &&
+      this.visible() &&
+      this.session.status() !== 'anonymous';
     if (!needed) {
       this.clearTimers();
       return;
@@ -229,7 +290,7 @@ export class SyncEngine {
   private scheduleWake(at: number): void {
     if (this.wakeTimer !== undefined) this.runtime.clearTimeout(this.wakeTimer);
     this.wakeTimer = undefined;
-    if (!this.visible()) return;
+    if (this.stopped || !this.visible()) return;
     this.wakeTimer = this.runtime.setTimeout(
       () => {
         this.wakeTimer = undefined;

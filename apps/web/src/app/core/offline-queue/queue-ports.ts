@@ -58,3 +58,11 @@ export const QUEUE_LOCKS = new InjectionToken<QueueLocks>('QUEUE_LOCKS', {
   providedIn: 'root',
   factory: () => browserQueueLocks(typeof navigator === 'undefined' ? undefined : navigator),
 });
+
+/**
+ * Bloqueio entre abas da fila de UMA conta: só uma aba envia a fila dela por vez, e contas diferentes não se esperam
+ * (a fila de cada uma é outro banco).
+ */
+export function syncLockName(accountId: string): string {
+  return `${SYNC_LOCK_NAME}-${accountId}`;
+}
