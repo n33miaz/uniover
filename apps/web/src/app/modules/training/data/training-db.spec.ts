@@ -9,7 +9,9 @@ import {
   TRAINING_SCHEMA_V3,
   TRAINING_SCHEMA_V4,
   TRAINING_SCHEMA_V5,
+  TRAINING_SCHEMA_V6,
   TrainingDb,
+  trainingDbName,
 } from './training-db';
 
 const FAKE = { IDBKeyRange: FakeIDBKeyRange };
@@ -20,20 +22,22 @@ describe('TrainingDb', () => {
     expect(TRAINING_DB_NAME).not.toBe(OFFLINE_DATABASE_NAME);
   });
 
-  it('opens at version 6 with the existing training data and local assessment tables', async () => {
+  it('opens at version 7 with the existing training data and nutrition tables', async () => {
     const db = new TrainingDb('uniover-training-esquema', {
       indexedDB: new FakeIDBFactory(),
       ...FAKE,
     });
     await db.open();
 
-    expect(db.verno).toBe(6);
+    expect(db.verno).toBe(7);
     expect(db.tables.map((table) => table.name).sort()).toEqual([
       'assessmentDocuments',
       'bodyEntries',
       'bodyProfile',
       'exercises',
+      'foods',
       'goals',
+      'meals',
       'meta',
       'photos',
       'physicalAssessments',
@@ -57,7 +61,70 @@ describe('TrainingDb', () => {
     db.close();
   });
 
-  it('migrates version 5 without changing existing rows and creates empty assessment tables', async () => {
+  it('migrates version 6 without changing account data and adds empty nutrition tables', async () => {
+    const factory = new FakeIDBFactory();
+    const name = 'uniover-training-nutricao-v6';
+    const options = { indexedDB: factory, ...FAKE };
+    class V6Db extends Dexie {
+      constructor() {
+        super(name, options);
+        this.version(1).stores(TRAINING_SCHEMA_V1);
+        this.version(2).stores(TRAINING_SCHEMA_V2);
+        this.version(3).stores(TRAINING_SCHEMA_V3);
+        this.version(4).stores(TRAINING_SCHEMA_V4);
+        this.version(5).stores(TRAINING_SCHEMA_V5);
+        this.version(6).stores(TRAINING_SCHEMA_V6);
+      }
+    }
+    const previous = new V6Db();
+    await previous.table('physicalAssessments').put({ id: 'history', assessedOn: '2026-10-01' });
+    await previous
+      .table('bodyEntries')
+      .put({ id: 'weight', measuredOn: '2026-10-01', weightKg: 80 });
+    previous.close();
+
+    const migrated = new TrainingDb(name, options);
+    await migrated.open();
+    expect(migrated.verno).toBe(7);
+    expect(await migrated.physicalAssessments.get('history')).toMatchObject({
+      assessedOn: '2026-10-01',
+    });
+    expect(await migrated.bodyEntries.get('weight')).toMatchObject({ weightKg: 80 });
+    expect(await migrated.foods.count()).toBe(0);
+    expect(await migrated.meals.count()).toBe(0);
+    expect(migrated.foods.schema.indexes.map((index) => index.name).sort()).toEqual([
+      'barcode',
+      'deletedAt',
+      'nameKey',
+      'source',
+    ]);
+    expect(migrated.meals.schema.indexes.map((index) => index.name).sort()).toEqual([
+      'deletedAt',
+      'eatenOn',
+      'mealType',
+      'updatedAt',
+    ]);
+    migrated.close();
+  });
+
+  it('keeps nutrition rows in separate account databases', async () => {
+    const factory = new FakeIDBFactory();
+    const options = { indexedDB: factory, ...FAKE };
+    const first = new TrainingDb(trainingDbName('account-a'), options);
+    const second = new TrainingDb(trainingDbName('account-b'), options);
+    await first.open();
+    await second.open();
+    await first.foods.put({ id: 'same', source: 'own', name: 'A', nameKey: 'a' } as never);
+    await second.foods.put({ id: 'same', source: 'own', name: 'B', nameKey: 'b' } as never);
+    await first.meals.put({ id: 'entry', eatenOn: '2026-10-01', name: 'A' } as never);
+    expect((await first.foods.get('same'))?.name).toBe('A');
+    expect((await second.foods.get('same'))?.name).toBe('B');
+    expect(await second.meals.count()).toBe(0);
+    first.close();
+    second.close();
+  });
+
+  it('migrates version 5 without changing existing rows and creates empty local tables', async () => {
     const factory = new FakeIDBFactory();
     const name = 'uniover-training-avaliacoes-v5';
     const options = { indexedDB: factory, ...FAKE };
@@ -79,13 +146,15 @@ describe('TrainingDb', () => {
 
     const migrated = new TrainingDb(name, options);
     await migrated.open();
-    expect(migrated.verno).toBe(6);
+    expect(migrated.verno).toBe(7);
     expect(await migrated.bodyEntries.get('historic')).toMatchObject({
       measuredOn: '2026-10-01',
       weightKg: 80,
     });
     expect(await migrated.physicalAssessments.count()).toBe(0);
     expect(await migrated.assessmentDocuments.count()).toBe(0);
+    expect(await migrated.foods.count()).toBe(0);
+    expect(await migrated.meals.count()).toBe(0);
     migrated.close();
   });
 
