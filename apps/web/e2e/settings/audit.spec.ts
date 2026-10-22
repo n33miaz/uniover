@@ -422,8 +422,9 @@ test.describe('Ajustes > Auditoria', () => {
     audit.items = seedTrail();
     await openWithRows(page);
 
-    // O papel muda no servidor: a próxima leitura da trilha é recusada (403) e a tela confere quem a pessoa é agora.
-    signInAsGuest();
+    // O papel da mesma conta muda no servidor: o token e /me ainda têm o mesmo sub/id.
+    // Trocar também o ID simularia uma resposta de outra conta, corretamente descartada pela sessão.
+    identity.role = 'guest';
     await page.getByRole('button', { name: 'Carregar mais' }).click();
     await expect(page).toHaveURL(/\/tv$/);
   });
