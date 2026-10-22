@@ -22,7 +22,8 @@ import { TrainingGlyph } from '../shell/training-glyph';
 import { RoutinePickerSheet } from './routine-picker-sheet';
 import { TodayGlyph } from './today-glyph';
 import { type RoutineLine, TodayStore } from './today-store';
-import { ageLabel, dayLabel, repsRangeText, routineSummary, weekRangeLabel } from './today-text';
+import { ageLabel, dayLabel, repsRangeText, routineSummary } from './today-text';
+import { WeekCalendar } from './week-calendar';
 
 /**
  * A aba Hoje antes (e fora) do treino ao vivo: o resumo da semana em cima e, embaixo, a rotina do dia com uma ação
@@ -32,7 +33,7 @@ import { ageLabel, dayLabel, repsRangeText, routineSummary, weekRangeLabel } fro
  */
 @Component({
   selector: 'app-today-home',
-  imports: [RouterLink, TrainingGlyph, TodayGlyph, RoutinePickerSheet],
+  imports: [RouterLink, TrainingGlyph, TodayGlyph, RoutinePickerSheet, WeekCalendar],
   templateUrl: './today-home.html',
   styleUrl: './today-home.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -71,13 +72,6 @@ export class TodayHome {
     const entry = this.entry();
     return entry === undefined ? '' : routineSummary(entry);
   });
-  protected readonly weekRange = computed(() => {
-    const week = this.store.week();
-    return week === null ? '' : weekRangeLabel(week.week.startKey, week.week.endKey);
-  });
-  protected readonly weekVolume = computed(() => formatKg(this.store.week()?.volumeKg ?? 0));
-  protected readonly weekRecords = computed(() => this.store.week()?.records.length ?? 0);
-
   protected readonly catalogMissing = computed(() => this.store.catalogCount() === 0);
   protected readonly progressText = computed(() => {
     const progress = this.store.activeProgress();

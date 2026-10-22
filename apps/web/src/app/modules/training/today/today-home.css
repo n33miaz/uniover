@@ -10,69 +10,6 @@
   margin-inline: auto;
 }
 
-/* Resumo da semana: um cartão baixo, os números em uma linha. */
-.week {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-}
-
-.week-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.week-title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 750;
-}
-
-.range {
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-}
-
-.none {
-  margin: 0;
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-}
-
-.stats {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: var(--space-2);
-  margin: 0;
-}
-
-.stat {
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 2px;
-  min-width: 0;
-}
-
-.stat dt {
-  color: var(--a-ink2);
-  font-size: var(--fs-label);
-}
-
-.stat dd {
-  margin: 0;
-  overflow: hidden;
-  font-size: 1.25rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.15;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* A rotina do dia: o nome, o resumo e UMA ação principal logo abaixo, antes da lista. */
 .routine {
   display: flex;

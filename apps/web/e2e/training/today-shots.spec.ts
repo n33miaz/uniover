@@ -80,6 +80,15 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
       await shot(page, info, 'hoje', scheme);
 
+      await page.getByRole('button', { name: 'Ver calendário' }).click();
+      await expect(page.getByRole('dialog', { name: 'Calendário de treinos' })).toBeVisible();
+      await shot(page, info, 'calendario', scheme);
+      await page
+        .getByRole('dialog', { name: 'Calendário de treinos' })
+        .getByRole('button', { name: 'Fechar' })
+        .click();
+      await expect(page.getByRole('dialog', { name: 'Calendário de treinos' })).toBeHidden();
+
       await page.getByRole('button', { name: 'Escolher outra rotina' }).click();
       await expect(page.getByRole('dialog', { name: 'Escolher outra rotina' })).toBeVisible();
       await shot(page, info, 'hoje-escolher-rotina', scheme);
@@ -88,7 +97,7 @@ for (const scheme of ['light', 'dark'] as const) {
     shotTest('Hoje: semana sem treino', async ({ page, context }, info) => {
       await launch(context, page, { history: false });
       await openToday(page, { history: false });
-      await expect(page.getByText('Nenhum treino nesta semana ainda.')).toBeVisible();
+      await expect(page.locator('.week .stats div').first()).toHaveText(/^Treinoss*0$/);
       await shot(page, info, 'hoje-semana-vazia', scheme);
     });
 

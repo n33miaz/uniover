@@ -44,6 +44,15 @@ const SCREENS: readonly Screen[] = [
     },
   },
   {
+    name: 'calendário mensal aberto',
+    open: async (page, context) => {
+      await launch(context, page);
+      await openToday(page);
+      await page.getByRole('button', { name: 'Ver calendário' }).click();
+      await expect(page.getByRole('dialog', { name: 'Calendário de treinos' })).toBeVisible();
+    },
+  },
+  {
     name: 'Hoje com treino aberto em outro aparelho (esquecido)',
     open: async (page, context) => {
       const server = await launch(context, page);
