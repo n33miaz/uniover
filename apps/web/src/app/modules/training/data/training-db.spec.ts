@@ -2,7 +2,15 @@ import Dexie from 'dexie';
 import { IDBFactory as FakeIDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
 import { DATABASE_NAME as OFFLINE_DATABASE_NAME } from '../../../core/offline-queue/offline-db';
 import { localExercise } from './sync/training-test-kit';
-import { TRAINING_DB_NAME, TRAINING_SCHEMA_V1, TrainingDb } from './training-db';
+import {
+  TRAINING_DB_NAME,
+  TRAINING_SCHEMA_V1,
+  TRAINING_SCHEMA_V2,
+  TRAINING_SCHEMA_V3,
+  TRAINING_SCHEMA_V4,
+  TRAINING_SCHEMA_V5,
+  TrainingDb,
+} from './training-db';
 
 const FAKE = { IDBKeyRange: FakeIDBKeyRange };
 
@@ -12,21 +20,23 @@ describe('TrainingDb', () => {
     expect(TRAINING_DB_NAME).not.toBe(OFFLINE_DATABASE_NAME);
   });
 
-  it('opens at version 5 with the exercises, meta, syncState, routines, sessions, sets, goals and body tables', async () => {
+  it('opens at version 6 with the existing training data and local assessment tables', async () => {
     const db = new TrainingDb('uniover-training-esquema', {
       indexedDB: new FakeIDBFactory(),
       ...FAKE,
     });
     await db.open();
 
-    expect(db.verno).toBe(5);
+    expect(db.verno).toBe(6);
     expect(db.tables.map((table) => table.name).sort()).toEqual([
+      'assessmentDocuments',
       'bodyEntries',
       'bodyProfile',
       'exercises',
       'goals',
       'meta',
       'photos',
+      'physicalAssessments',
       'routines',
       'sessions',
       'sets',
@@ -45,6 +55,38 @@ describe('TrainingDb', () => {
     expect(db.meta.schema.primKey.name).toBe('key');
     expect(db.syncState.schema.primKey.name).toBe('resource');
     db.close();
+  });
+
+  it('migrates version 5 without changing existing rows and creates empty assessment tables', async () => {
+    const factory = new FakeIDBFactory();
+    const name = 'uniover-training-avaliacoes-v5';
+    const options = { indexedDB: factory, ...FAKE };
+    class V5Db extends Dexie {
+      constructor() {
+        super(name, options);
+        this.version(1).stores(TRAINING_SCHEMA_V1);
+        this.version(2).stores(TRAINING_SCHEMA_V2);
+        this.version(3).stores(TRAINING_SCHEMA_V3);
+        this.version(4).stores(TRAINING_SCHEMA_V4);
+        this.version(5).stores(TRAINING_SCHEMA_V5);
+      }
+    }
+    const previous = new V5Db();
+    await previous
+      .table('bodyEntries')
+      .put({ id: 'historic', measuredOn: '2026-10-01', weightKg: 80 });
+    previous.close();
+
+    const migrated = new TrainingDb(name, options);
+    await migrated.open();
+    expect(migrated.verno).toBe(6);
+    expect(await migrated.bodyEntries.get('historic')).toMatchObject({
+      measuredOn: '2026-10-01',
+      weightKg: 80,
+    });
+    expect(await migrated.physicalAssessments.count()).toBe(0);
+    expect(await migrated.assessmentDocuments.count()).toBe(0);
+    migrated.close();
   });
 
   it('keeps the data of a version 1 database when a later version is opened', async () => {
