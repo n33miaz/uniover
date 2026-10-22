@@ -148,8 +148,11 @@ Quem fez o quê, quando, de onde (IP e aparelho) e com que resultado. Só o admi
   prazo é uma migration nova. O `AuditPurgeService` chama as funções a cada 24 h, a primeira 10 min depois da partida
   (`AuditPurge:FirstRunDelayMinutes` e `AuditPurge:IntervalHours`); sem laço curto, para o banco gratuito poder dormir.
   `tv.watchdog_events` fica de fora: é um buffer rotativo do que o agente relata, não o registro de uma ação de alguém.
-- **IP confiável.** Com `ForwardedHeaders:Enabled`, vale só a **última** entrada de `X-Forwarded-For` (`ForwardLimit = 1`), a
-  que o proxy da frente acrescentou; o que o cliente mandou antes dela é ignorado. Desligado (o padrão), o cabeçalho não vale nada.
+- **IP confiável.** Com `ForwardedHeaders:Enabled`, as redes privadas (10/8, 172.16/12, 192.168/16, loopback e as de IPv6
+  equivalentes) são os únicos proxies confiáveis, e a cadeia de `X-Forwarded-For` é descascada da direita para a esquerda
+  enquanto o salto for interno: o IP do cliente é o primeiro endereço público dessa cadeia (o Render acrescenta saltos internos
+  em número variável depois do cliente, por isso não vale só a última entrada). O que o cliente mandou à esquerda disso é
+  ignorado, e um peer público direto ignora o cabeçalho. Desligado (o padrão), o cabeçalho não vale nada.
 
 ## Como o `Program.cs` compõe os módulos
 
