@@ -1,4 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
+import { claimLegacyOwner, isValidAccountId } from './account-id';
 import { samePermissions, sameUser } from './user-equality';
 
 /**
@@ -87,6 +88,36 @@ function writePermissionsHint(permissions: readonly string[] | null): void {
 }
 
 /**
+ * Dica da conta da última sessão (o id), pelo mesmo motivo das outras: o Treino abre sem rede, antes de o `/me` responder, e
+ * precisa saber QUAL banco local abrir (cada conta tem o seu). Só escolhe o banco para ler e gravar no aparelho: nada é
+ * enviado ao servidor por causa dela (a conta da sessão só se confirma pelo `/me`, ver `isSessionOf`). Some ao sair; sem ela
+ * (e sem `/me`) nenhum banco de conta é aberto.
+ */
+const ACCOUNT_HINT_KEY = 'uniover.account-id';
+
+function readAccountHint(): string | null {
+  try {
+    const value = globalThis.localStorage?.getItem(ACCOUNT_HINT_KEY);
+    return isValidAccountId(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `true` se a dica ficou gravada (ou foi apagada); `false` se o aparelho não deixou guardar nada. */
+function writeAccountHint(accountId: string | null): boolean {
+  try {
+    const storage = globalThis.localStorage;
+    if (!storage) return false;
+    if (accountId) storage.setItem(ACCOUNT_HINT_KEY, accountId);
+    else storage.removeItem(ACCOUNT_HINT_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Estado da sessão em memória. O token de acesso vive num campo privado: não é signal, não é serializado e
  * não passa por nenhum armazenamento do navegador (`localStorage`, `sessionStorage`, IndexedDB). Recarregar a
  * página o perde de propósito; o refresh silencioso pelo cookie `HttpOnly` o devolve.
@@ -102,6 +133,9 @@ export class SessionState {
   private readonly _expiresAt = signal<number | null>(null);
   private readonly _roleHint = signal<AccountRole | null>(readRoleHint());
   private readonly _permissionsHint = signal<readonly string[] | null>(readPermissionsHint());
+  private readonly _accountHint = signal<string | null>(readAccountHint());
+  /** A dica da conta está mesmo gravada neste aparelho (sem isso não há como saber se outra aba trocou de conta). */
+  #accountHintStored = this._accountHint() !== null;
 
   readonly status = this._status.asReadonly();
   readonly user = this._user.asReadonly();
@@ -114,6 +148,16 @@ export class SessionState {
     const user = this._user();
     if (user) return user.role === 'guest' ? 'guest' : 'owner';
     return this._roleHint();
+  });
+
+  /**
+   * A conta cujos dados locais valem: a do usuário carregado (`/me`); sem ele, a dica da última sessão; `null` se não há
+   * nenhum dos dois. Escolhe o banco local (um por conta), nunca autoriza enviar nada (ver `isSessionOf`).
+   */
+  readonly accountId = computed<string | null>(() => {
+    const user = this._user();
+    if (user) return isValidAccountId(user.id) ? user.id : null;
+    return this._accountHint();
   });
 
   /** Só é verdadeiro quando se sabe que é convidado: papel desconhecido nunca tranca o dono para fora. */
@@ -143,6 +187,22 @@ export class SessionState {
     return user ? (user.permissions ?? null) : this._permissionsHint();
   });
 
+  /**
+   * O token em memória é desta conta? Só o `/me` carregado responde (a dica não basta: com o cookie de refresh de outra
+   * conta, o token novo seria dela). Também deixa de valer se outra aba do navegador entrou noutra conta: o cookie de
+   * refresh é um só para todas as abas, então esta aba já pode estar renovando com o token da outra conta sem saber, e é
+   * isto que impede a fila de uma conta de sair com o token de outra.
+   */
+  isSessionOf(accountId: string): boolean {
+    if (this._user()?.id !== accountId) return false;
+    if (!this.#accountHintStored) return true;
+    try {
+      return globalThis.localStorage?.getItem(ACCOUNT_HINT_KEY) === accountId;
+    } catch {
+      return true;
+    }
+  }
+
   /** Token para o cabeçalho `Authorization`, ou `null` se não houver um ainda utilizável. */
   bearer(nowMs: number = Date.now()): string | null {
     const expiresAt = this._expiresAt();
@@ -171,6 +231,11 @@ export class SessionState {
     const permissions = user.permissions ?? null;
     this._permissionsHint.set(permissions);
     writePermissionsHint(permissions);
+    const accountId = isValidAccountId(user.id) ? user.id : null;
+    this._accountHint.set(accountId);
+    this.#accountHintStored = writeAccountHint(accountId) && accountId !== null;
+    // A primeira conta confirmada neste aparelho é a que adota os bancos de antes das contas (ver `account-id.ts`).
+    if (accountId) claimLegacyOwner(accountId);
     return changed;
   }
 
@@ -179,7 +244,7 @@ export class SessionState {
     if (this._status() !== 'authenticated' || this.bearer() === null) this._status.set('pending');
   }
 
-  /** Esquece token e usuário da memória. Não toca em IndexedDB nem em filas locais. */
+  /** Esquece token e usuário da memória (e a dica da conta). Não toca em IndexedDB nem em filas locais. */
   clear(status: 'anonymous' | 'unknown' = 'anonymous'): void {
     this.#accessToken = null;
     this._expiresAt.set(null);
@@ -188,6 +253,9 @@ export class SessionState {
     writeRoleHint(null);
     this._permissionsHint.set(null);
     writePermissionsHint(null);
+    this._accountHint.set(null);
+    writeAccountHint(null);
+    this.#accountHintStored = false;
     this._status.set(status);
   }
 }

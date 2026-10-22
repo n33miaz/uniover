@@ -30,11 +30,14 @@ const LAST_SYNC_KEY = 'lastSyncAt';
 const PERSIST_KEY = 'persistRequested';
 
 /**
- * Tudo o que toca o IndexedDB da fila. As mudanças que dependem do estado anterior (marcar em envio, dar por
+ * Tudo o que toca o IndexedDB da fila de UMA conta. As mudanças que dependem do estado anterior (marcar em envio, dar por
  * enviado, reagendar) acontecem dentro de uma transação de leitura e escrita, para a decisão e a gravação
  * verem a mesma linha.
+ *
+ * Uma instância por conta (criada pelo escopo da conta, ver `QueueScopes`): o banco e os sinais abaixo são dela, e ao trocar de
+ * conta esta instância é descartada junto com o motor de envio, sem nada que sobre para a conta seguinte.
  */
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class OutboxStore {
   private readonly db = inject(OFFLINE_DB);
   private readonly runtime = inject(QUEUE_RUNTIME);
@@ -110,6 +113,23 @@ export class OutboxStore {
       await this.db.outbox.put(next);
       return next;
     });
+  }
+
+  /**
+   * Devolve a `pending` um item que acabou de ser marcado em voo mas que NÃO chegou a sair (a sessão deixou de ser desta
+   * conta no meio do caminho): a tentativa não aconteceu, então não conta. Não mexe se o item mudou desde então.
+   */
+  async giveBack(id: string, revision: number): Promise<void> {
+    await this.db.transaction('rw', this.db.outbox, async () => {
+      const row = await this.db.outbox.get(id);
+      if (!row || row.status !== 'sending' || row.revision !== revision) return;
+      await this.db.outbox.put({
+        ...row,
+        status: 'pending',
+        attempts: Math.max(0, row.attempts - 1),
+      });
+    });
+    await this.refresh();
   }
 
   /**
