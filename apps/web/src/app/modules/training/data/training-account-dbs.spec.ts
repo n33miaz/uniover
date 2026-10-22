@@ -193,6 +193,8 @@ describe('TrainingAccountDbs', () => {
       expect(await mine.bodyEntries.get('body-1')).toMatchObject({ weightKg: 78 });
       expect(await mine.bodyProfile.get('me')).toMatchObject({ heightCm: 180 });
       expect(await mine.photos.get('photo-1')).toMatchObject({ bytes: 2 });
+      expect(await mine.physicalAssessments.count()).toBe(0);
+      expect(await mine.assessmentDocuments.count()).toBe(0);
       expect(await mine.syncState.get('exercises')).toMatchObject({ cursor: 'c1' });
       expect((await mine.meta.get('restEndsAt'))?.value).toBe(123);
     });
@@ -229,6 +231,28 @@ describe('TrainingAccountDbs', () => {
       for (const table of TRAINING_TABLES) {
         expect(await theirs.table(table).count(), table).toBe(0);
       }
+    });
+
+    it('isolates historical physical assessments between accounts', async () => {
+      const kit = setupTraining();
+      const assessment = {
+        id: 'assessment-a',
+        assessedOn: '2026-10-08',
+        origin: 'synthetic',
+        professional: null,
+        notes: null,
+        measurements: [],
+        createdAt: 1,
+        updatedAt: 1,
+      } as const;
+      await kit.trainingDbOf('conta-a').physicalAssessments.put(assessment);
+
+      expect(await kit.trainingDbOf('conta-a').physicalAssessments.get(assessment.id)).toEqual(
+        assessment,
+      );
+      expect(
+        await kit.trainingDbOf('conta-b').physicalAssessments.get(assessment.id),
+      ).toBeUndefined();
     });
 
     it('is not taken by an account that is not the owner even if it enters first', async () => {

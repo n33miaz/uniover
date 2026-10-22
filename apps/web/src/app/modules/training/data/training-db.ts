@@ -6,6 +6,10 @@ import { accountDatabaseName } from '../../../core/session/account-id';
 import type { LocalExercise } from './catalog/exercise';
 import type { LocalGoal } from './goals/goal';
 import type { LocalPhoto } from './photos/photo';
+import type {
+  LocalAssessmentDocument,
+  LocalPhysicalAssessment,
+} from './physical-assessments/physical-assessment';
 import type { LocalRoutine } from './routines/routine';
 import type { LocalSession, LocalSet } from './sessions/session';
 
@@ -46,6 +50,8 @@ export const TRAINING_TABLES = [
   'bodyEntries',
   'bodyProfile',
   'photos',
+  'physicalAssessments',
+  'assessmentDocuments',
 ] as const;
 
 /**
@@ -101,6 +107,12 @@ export const TRAINING_SCHEMA_V5 = {
   photos: 'id, takenOn',
 } as const;
 
+/** Esquema da versão 6: histórico local de avaliações físicas e imagens dos documentos, isoladas das fotos de progresso. */
+export const TRAINING_SCHEMA_V6 = {
+  physicalAssessments: 'id, assessedOn, updatedAt',
+  assessmentDocuments: 'id, assessmentId, addedAt',
+} as const;
+
 export interface TrainingMetaRow {
   readonly key: string;
   readonly value: unknown;
@@ -126,6 +138,8 @@ export class TrainingDb extends Dexie {
   declare bodyEntries: EntityTable<LocalBodyEntry, 'id'>;
   declare bodyProfile: EntityTable<LocalBodyProfile, 'id'>;
   declare photos: EntityTable<LocalPhoto, 'id'>;
+  declare physicalAssessments: EntityTable<LocalPhysicalAssessment, 'id'>;
+  declare assessmentDocuments: EntityTable<LocalAssessmentDocument, 'id'>;
 
   constructor(name: string = TRAINING_DB_NAME, options?: DexieOptions) {
     super(name, options);
@@ -134,6 +148,7 @@ export class TrainingDb extends Dexie {
     this.version(3).stores(TRAINING_SCHEMA_V3);
     this.version(4).stores(TRAINING_SCHEMA_V4);
     this.version(5).stores(TRAINING_SCHEMA_V5);
+    this.version(6).stores(TRAINING_SCHEMA_V6);
   }
 }
 

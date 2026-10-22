@@ -8,6 +8,8 @@ import { ExercisesResourceSync } from './catalog/exercises-resource-sync';
 import { provideExportData } from './export/export-data.providers';
 import { provideGoalsData } from './goals/goals-resource-sync';
 import { providePhotoData } from './photos/photo-data.providers';
+import { PhysicalAssessmentRepository } from './physical-assessments/physical-assessment-repository';
+import { PhysicalAssessmentExport } from './physical-assessments/physical-assessment-export';
 import { provideProgressData } from './progress/progress-data.providers';
 import { provideRoutinesData } from './routines/routines-resource-sync';
 import { provideSessionsData } from './sessions/sessions-resource-sync';
@@ -50,6 +52,10 @@ export function provideTrainingData(): Provider[] {
 
     // Fotos de progresso: só neste aparelho (sem fila, sem leitura do servidor, fora da exportação).
     ...providePhotoData(),
+
+    // Avaliações físicas históricas e documentos: armazenamento privado por conta, sem sincronização.
+    PhysicalAssessmentRepository,
+    PhysicalAssessmentExport,
 
     // Progresso: consultas de leitura, recalculadas das séries (nada a sincronizar).
     ...provideProgressData(),
