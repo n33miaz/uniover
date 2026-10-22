@@ -41,7 +41,7 @@ describe('ExerciseDetailPage', () => {
     )!;
 
   describe('an exercise with an illustration', () => {
-    it('shows the name, the muscles and the equipment, the picture and its credit', async () => {
+    it('centers the illustration, badges and muscle diagram', async () => {
       const { fixture, el } = await open('supino-reto');
       await eventually(fixture, () =>
         expect(el.querySelector('h2')?.textContent).toContain('Supino reto'),
@@ -53,7 +53,18 @@ describe('ExerciseDetailPage', () => {
         'Barra',
       ]);
       expect(el.querySelectorAll('app-exercise-illustration img')).toHaveLength(2);
-      expect(el.querySelector('app-exercise-credit-line')?.textContent).toContain('Everkinetic');
+      const hero = el.querySelector('.hero')!;
+      expect(hero.querySelector('.art')?.nextElementSibling?.classList.contains('chips')).toBe(
+        true,
+      );
+      expect(hero.querySelector('.chips')?.nextElementSibling?.classList.contains('muscles')).toBe(
+        true,
+      );
+      expect(el.querySelectorAll('.muscle-figure')).toHaveLength(2);
+      expect(el.querySelectorAll('.zone.primary')).toHaveLength(1);
+      expect(el.querySelectorAll('.zone.secondary').length).toBeGreaterThan(0);
+      expect(el.querySelector('.origin')).toBeNull();
+      expect(el.querySelector('app-exercise-credit-line')).toBeNull();
     });
 
     it('leaves out the chip of the usual record type (load and repetitions)', async () => {
@@ -72,23 +83,17 @@ describe('ExerciseDetailPage', () => {
       expect(el.querySelectorAll('.steps li')).toHaveLength(5);
       expect(button(el, 'Ver menos').getAttribute('aria-expanded')).toBe('true');
     });
-
-    it('says where the exercise came from', async () => {
-      const { fixture, el } = await open('supino-reto');
-      await eventually(fixture, () => expect(text(el)).toContain('Origem: free-exercise-db'));
-      expect(text(el)).toContain('domínio público');
-      expect(el.querySelector('.origin a[href="/ajustes/creditos"]')).not.toBeNull();
-    });
   });
 
   describe('an exercise without an illustration', () => {
-    it('shows only the text: no picture and no illustration credit', async () => {
+    it('still shows a centered muscle diagram when no exercise illustration exists', async () => {
       const { fixture, el } = await open('prancha');
       await eventually(fixture, () =>
         expect(el.querySelector('h2')?.textContent).toContain('Prancha'),
       );
       expect(el.querySelector('app-exercise-illustration')).toBeNull();
       expect(el.querySelector('app-exercise-credit-line')).toBeNull();
+      expect(el.querySelectorAll('.muscle-figure')).toHaveLength(2);
       expect(chips(el)).toEqual(['Abdômen', 'Peso do corpo', 'Tempo']);
     });
 
@@ -108,14 +113,12 @@ describe('ExerciseDetailPage', () => {
       licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
     });
 
-    it('credits the author and links the license of the record', async () => {
+    it('keeps per exercise author and license details out of the exercise screen', async () => {
       const { fixture, el } = await open('wger-1', [wger]);
-      await eventually(fixture, () => expect(text(el)).toContain('Autor: Maria Souza'));
-      const link = el.querySelector<HTMLAnchorElement>('.origin a[href^="https"]')!;
-      expect(link.textContent?.trim()).toBe('CC-BY-SA 4');
-      expect(link.getAttribute('href')).toBe('https://creativecommons.org/licenses/by-sa/4.0/');
-      expect(link.getAttribute('rel')).toBe('noopener noreferrer');
-      expect(link.getAttribute('target')).toBe('_blank');
+      await eventually(fixture, () => expect(el.querySelector('.muscle-figure')).not.toBeNull());
+      expect(text(el)).not.toContain('Maria Souza');
+      expect(text(el)).not.toContain('CC-BY-SA 4');
+      expect(el.querySelector('.origin')).toBeNull();
     });
   });
 
