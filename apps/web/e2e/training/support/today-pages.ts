@@ -22,7 +22,7 @@ export async function openToday(
   options: { path?: string; history?: boolean } = {},
 ): Promise<void> {
   await openTraining(page, options.path ?? '/treino');
-  await expect(page.getByRole('heading', { name: 'Esta semana' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Semana', exact: true })).toBeVisible();
   if (options.history !== false) {
     await expect(page.locator('.lines .ui-row').first()).toContainText('última vez 40 kg × 10');
   }

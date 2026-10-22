@@ -1,0 +1,166 @@
+<section class="week ui-card" aria-labelledby="week-title">
+  <div class="week-head">
+    <div>
+      <h3 id="week-title" i18n="@@training.today.calendar.title">Semana</h3>
+      <p class="range">{{ weekLabel() }}</p>
+    </div>
+    <div class="nav">
+      <button
+        type="button"
+        class="nav-button"
+        aria-label="Semana anterior"
+        i18n-aria-label="@@training.today.calendar.previous-week"
+        (click)="moveWeek(-1)"
+      >
+        ‹
+      </button>
+      <button
+        type="button"
+        class="nav-button"
+        aria-label="Próxima semana"
+        i18n-aria-label="@@training.today.calendar.next-week"
+        (click)="moveWeek(1)"
+      >
+        ›
+      </button>
+    </div>
+  </div>
+
+  <div
+    class="week-days"
+    role="group"
+    aria-label="Dias da semana"
+    i18n-aria-label="@@training.today.calendar.weekdays"
+  >
+    @for (day of week().days; track day.key; let index = $index) {
+      <button
+        type="button"
+        class="day"
+        [class.done]="hasWorkout(day.key, weekWorkouts())"
+        [class.today]="isToday(day.key)"
+        (click)="openDay(day)"
+      >
+        <span class="weekday">{{ weekdays[index] }}</span>
+        <span class="number">{{ day.day }}</span>
+        <span class="ui-visually-hidden">{{ dayLabel(day, weekWorkouts()) }}</span>
+        <span class="mark" aria-hidden="true">{{
+          hasWorkout(day.key, weekWorkouts()) ? '✓' : ' '
+        }}</span>
+      </button>
+    }
+  </div>
+
+  <div class="week-bottom">
+    <p class="week-progress">
+      @if (paid()) {
+        <span class="paid" i18n="@@training.today.calendar.paid">Tá pago!</span>
+      }
+      <span>{{ goalLine() }}</span>
+    </p>
+    <button
+      type="button"
+      class="calendar-link"
+      (click)="openDay()"
+      i18n="@@training.today.calendar.open"
+    >
+      Ver calendário
+    </button>
+  </div>
+  @if (weekWorkouts() !== null) {
+    <dl class="stats">
+      <div>
+        <dt i18n="@@training.today.calendar.sessions">Treinos</dt>
+        <dd>{{ weekCount() }}</dd>
+      </div>
+      <div>
+        <dt i18n="@@training.today.calendar.sets">Séries</dt>
+        <dd>{{ weekSets() }}</dd>
+      </div>
+      <div>
+        <dt i18n="@@training.today.calendar.volume">Volume</dt>
+        <dd>{{ weekVolume() }}</dd>
+      </div>
+    </dl>
+  }
+</section>
+
+@if (sheetOpen()) {
+  <app-training-sheet [heading]="calendarHeading" (closed)="sheetOpen.set(false)">
+    <div class="month-nav">
+      <button
+        type="button"
+        class="nav-button"
+        aria-label="Mês anterior"
+        i18n-aria-label="@@training.today.calendar.previous-month"
+        (click)="moveCalendarMonth(-1)"
+      >
+        ‹
+      </button>
+      <h3>{{ monthLabel() }}</h3>
+      <button
+        type="button"
+        class="nav-button"
+        aria-label="Próximo mês"
+        i18n-aria-label="@@training.today.calendar.next-month"
+        (click)="moveCalendarMonth(1)"
+      >
+        ›
+      </button>
+    </div>
+    <div
+      class="month-grid"
+      role="group"
+      aria-label="Dias do mês"
+      i18n-aria-label="@@training.today.calendar.month-days"
+    >
+      @for (name of weekdays; track name) {
+        <span class="month-weekday">{{ name }}</span>
+      }
+      @for (day of monthDays(); track day?.key ?? $index) {
+        @if (day) {
+          <button
+            type="button"
+            class="month-day"
+            [class.done]="hasWorkout(day.key, monthWorkouts())"
+            [class.today]="isToday(day.key)"
+            [class.selected]="selectedKey() === day.key"
+            [attr.aria-label]="dayLabel(day, monthWorkouts())"
+            [attr.aria-pressed]="selectedKey() === day.key"
+            (click)="selectedKey.set(day.key)"
+          >
+            {{ day.day }}
+            @if (hasWorkout(day.key, monthWorkouts())) {
+              <span aria-hidden="true" class="month-mark">✓</span>
+            }
+          </button>
+        } @else {
+          <span aria-hidden="true"></span>
+        }
+      }
+    </div>
+    @if (monthWorkouts()) {
+      <p class="month-stats" i18n="@@training.today.calendar.month-stats">
+        {{ monthCountText() }} · {{ monthSetsText() }} · {{ monthVolume() }} de volume
+      </p>
+    }
+    <section class="day-detail" aria-labelledby="selected-day-title">
+      <h3 id="selected-day-title">{{ selectedLabel() }}</h3>
+      @if (selectedWorkouts().length === 0) {
+        <p i18n="@@training.today.calendar.no-session">Nenhum treino registrado neste dia.</p>
+      } @else {
+        <ul class="ui-plain">
+          @for (workout of selectedWorkouts(); track $index) {
+            <li>
+              <strong>{{ workout.name }}</strong
+              ><span i18n="@@training.today.calendar.session-detail"
+                >{{ formatSets(workout.sets) }} · {{ formatVolume(workout.volumeKg) }} de
+                volume</span
+              >
+            </li>
+          }
+        </ul>
+      }
+    </section>
+    <p class="goal-note">{{ goalNote() }}</p>
+  </app-training-sheet>
+}
