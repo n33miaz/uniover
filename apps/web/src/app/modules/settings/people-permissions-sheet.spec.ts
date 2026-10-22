@@ -199,8 +199,12 @@ describe('PeoplePermissionsSheet', () => {
     const { fixture, el, button, flip, save, saved } = await render();
     await flip('Usar o Treino');
     void save();
-    await fixture.whenStable();
-    expect(el.textContent).toContain('Salvando…');
+    // O estado "Salvando…" aparece depois da cadeia assíncrona do salvamento: esperar o estado, e não só a estabilidade
+    // do momento, senão a ordem das tarefas num executor sobrecarregado decide o resultado.
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(el.textContent).toContain('Salvando…');
+    });
     expect(button('Salvar').disabled).toBe(true);
     expect(button('Cancelar').disabled).toBe(true);
     finish({ ...GUEST, permissions: ['module:tv', 'module:training'] });
