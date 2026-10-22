@@ -4,9 +4,13 @@ import { CatalogRepository } from './catalog/catalog-repository';
 import { CatalogStore } from './catalog/catalog-store';
 import { CatalogWriter } from './catalog/catalog-writer';
 import { ExercisesResourceSync } from './catalog/exercises-resource-sync';
+import { BodyEntriesResourceSync, BodyProfileResourceSync } from './body/body-resource-sync';
+import { BodyRepository } from './body/body-repository';
+import { ProfileRepository } from './body/profile-repository';
 import { GoalRepository } from './goals/goal-repository';
 import { GoalsResourceSync } from './goals/goals-resource-sync';
 import { ExportService } from './export/export-service';
+import { PhotoStore } from './photos/photo-store';
 import { ProgressRepository } from './progress/progress-repository';
 import { RoutineRepository } from './routines/routine-repository';
 import { RoutinesResourceSync } from './routines/routines-resource-sync';
@@ -35,9 +39,12 @@ describe('provideTrainingData', () => {
     expect(TestBed.inject(GoalRepository)).toBeInstanceOf(GoalRepository);
     expect(TestBed.inject(ProgressRepository)).toBeInstanceOf(ProgressRepository);
     expect(TestBed.inject(ExportService)).toBeInstanceOf(ExportService);
+    expect(TestBed.inject(BodyRepository)).toBeInstanceOf(BodyRepository);
+    expect(TestBed.inject(ProfileRepository)).toBeInstanceOf(ProfileRepository);
+    expect(TestBed.inject(PhotoStore)).toBeInstanceOf(PhotoStore);
 
     const resources = TestBed.inject(TRAINING_RESOURCE_SYNCS);
-    expect(resources).toHaveLength(5);
+    expect(resources).toHaveLength(7);
     expect(resources[0]).toBeInstanceOf(ExercisesResourceSync);
     expect(resources[0]).toMatchObject({
       resource: 'exercises',
@@ -57,6 +64,16 @@ describe('provideTrainingData', () => {
     expect(resources[3]).toMatchObject({ resource: 'sets', path: '/api/v1/training/sets' });
     expect(resources[4]).toBeInstanceOf(GoalsResourceSync);
     expect(resources[4]).toMatchObject({ resource: 'goals', path: '/api/v1/training/goals' });
+    expect(resources[5]).toBeInstanceOf(BodyEntriesResourceSync);
+    expect(resources[5]).toMatchObject({
+      resource: 'bodyEntries',
+      path: '/api/v1/training/body/entries',
+    });
+    expect(resources[6]).toBeInstanceOf(BodyProfileResourceSync);
+    expect(resources[6]).toMatchObject({
+      resource: 'bodyProfile',
+      path: '/api/v1/training/body/profile',
+    });
   });
 });
 
@@ -87,11 +104,13 @@ describe('catalog pull, end to end', () => {
     expect(t.pull.calls).toEqual([
       { path: '/api/v1/training/exercises', after: null, limit: 200 },
       { path: '/api/v1/training/exercises', after: 'cursor-1', limit: 200 },
-      // Depois do catálogo o puxador passa pelos recursos seguintes (rotinas, treinos e séries), que aqui vêm vazios.
+      // Depois do catálogo o puxador passa pelos recursos seguintes (rotinas, treinos, séries, metas e corpo), que aqui vêm vazios.
       { path: '/api/v1/training/routines', after: null, limit: 200 },
       { path: '/api/v1/training/sessions', after: null, limit: 200 },
       { path: '/api/v1/training/sets', after: null, limit: 200 },
       { path: '/api/v1/training/goals', after: null, limit: 200 },
+      { path: '/api/v1/training/body/entries', after: null, limit: 200 },
+      { path: '/api/v1/training/body/profile', after: null, limit: 200 },
     ]);
     expect(await t.trainingDb.exercises.count()).toBe(203);
     expect(await t.trainingDb.syncState.get('exercises')).toMatchObject({ cursor: 'cursor-2' });
