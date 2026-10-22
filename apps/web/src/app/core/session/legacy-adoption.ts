@@ -33,6 +33,7 @@ export interface LegacyAdoption {
 const CLAIM_KEY = 'adoption:claimedBy';
 const DONE_KEY = 'adoption:doneAt';
 const CHUNK = 400;
+const LOCK_WAIT_MS = 10_000;
 
 /**
  * A conta dona adota os bancos antigos: copia as linhas para o banco dela, CONFERE que toda chave do antigo está no novo e só
@@ -44,6 +45,7 @@ const CHUNK = 400;
  * - copiar é "grava se ainda não existe": rodar de novo não duplica, e uma linha que a conta já mexeu no banco novo não é
  *   sobrescrita pela versão velha;
  * - uma aba por vez (`navigator.locks`), e a segunda encontra a adoção pronta.
+ * - se outra aba não liberar o bloqueio em 10 segundos, desiste sem reivindicar nem copiar; a próxima partida tenta de novo.
  *
  * Nunca rejeita: devolve `failed` e o app segue com o banco da conta (a adoção recomeça na próxima partida).
  */
@@ -74,7 +76,15 @@ export function adoptWhenDue(
 
 async function exclusive<T>(name: string, task: () => Promise<T>): Promise<T> {
   const locks = globalThis.navigator?.locks;
-  return locks ? locks.request(name, task) : task();
+  if (!locks) return task();
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), LOCK_WAIT_MS);
+  try {
+    return await locks.request(name, { signal: controller.signal }, task);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function run(options: LegacyAdoption): Promise<AdoptionOutcome> {

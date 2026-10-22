@@ -189,6 +189,35 @@ describe('adoptLegacyDatabase', () => {
     expect(outcome).toBe('failed');
   });
 
+  it('gives up waiting for another tab after ten seconds and can retry without losing the legacy data', async () => {
+    await seedLegacy();
+    const target = accountDb('conta-a');
+    const request = vi.fn(
+      (_name: string, options: { signal: AbortSignal }, _task: () => Promise<unknown>) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener(
+            'abort',
+            () => reject(new DOMException('The lock request was aborted', 'AbortError')),
+            { once: true },
+          );
+        }),
+    );
+    vi.stubGlobal('navigator', { locks: { request } });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    const pending = adopt('conta-a', target);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await pending).toBe('failed');
+    expect(request).toHaveBeenCalledOnce();
+    expect(await target.outbox.count()).toBe(0);
+
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    expect(await new OfflineDb(LEGACY, options()).meta.get('adoption:claimedBy')).toBeUndefined();
+    expect(await adopt('conta-a', target)).toBe('adopted');
+    expect(await ids(target)).toEqual(['a-pendente', 'b-em-voo', 'c-recusado']);
+  });
+
   it('does not copy the marks of the adoption itself into the new database', async () => {
     await seedLegacy();
     const target = accountDb('conta-a');
