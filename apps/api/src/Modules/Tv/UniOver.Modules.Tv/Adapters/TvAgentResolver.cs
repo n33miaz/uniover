@@ -11,6 +11,13 @@ namespace UniOver.Modules.Tv.Adapters;
 /// por pouco tempo (o mesmo teto de 30 s das permissões) e trocado na hora por quem salva; o prazo só cobre uma mudança
 /// feita por fora do processo. Uma leitura por vez: várias chamadas ao mesmo tempo esperam a primeira em vez de
 /// repetirem a consulta.
+/// <para>
+/// A variável de ambiente só vale quando o banco foi lido COM SUCESSO e não tinha linha. Banco fora do ar sem nenhum valor
+/// conhecido (logo depois da partida, ou depois de <see cref="Invalidate"/>) NÃO cai na variável: ela pode apontar o
+/// computador de antes da troca feita no app, que segue pareado, e teclas e texto digitado (até a senha da TV) iriam para
+/// ele. Nesse caso o resultado é "não configurado" (os comandos respondem 503) e a leitura é tentada de novo em poucos
+/// segundos.
+/// </para>
 /// </summary>
 internal sealed partial class TvAgentResolver(
     ISavedTvReader saved,
@@ -29,7 +36,11 @@ internal sealed partial class TvAgentResolver(
     // Cada Set/Invalidate muda a geração; uma leitura que começou antes e termina depois não sobrescreve o valor novo.
     private long _generation;
 
-    private sealed record Cached(TvAgentBinding Binding, DateTimeOffset ValidUntil);
+    /// <param name="FromDatabase">
+    /// O valor veio de uma leitura bem-sucedida do banco (ou de quem acabou de salvar). Falso é só o "não configurado" que
+    /// vale pelos poucos segundos depois de uma leitura que falhou sem nada conhecido: não conta como valor conhecido.
+    /// </param>
+    private sealed record Cached(TvAgentBinding Binding, DateTimeOffset ValidUntil, bool FromDatabase);
 
     public ValueTask<TvAgentBinding> ResolveAsync(CancellationToken cancellationToken)
     {
@@ -43,7 +54,7 @@ internal sealed partial class TvAgentResolver(
 
     public bool TryGetLast([NotNullWhen(true)] out TvAgentBinding? binding)
     {
-        binding = _cached?.Binding;
+        binding = _cached is { FromDatabase: true } known ? known.Binding : null;
         return binding is not null;
     }
 
@@ -51,7 +62,7 @@ internal sealed partial class TvAgentResolver(
     {
         ArgumentNullException.ThrowIfNull(binding);
         Interlocked.Increment(ref _generation);
-        _cached = new Cached(binding, time.GetUtcNow() + Lifetime);
+        _cached = new Cached(binding, time.GetUtcNow() + Lifetime, FromDatabase: true);
     }
 
     public void Dispose() => _loading.Dispose();
@@ -76,24 +87,31 @@ internal sealed partial class TvAgentResolver(
             var generation = Volatile.Read(ref _generation);
             TvAgentBinding binding;
             DateTimeOffset validUntil;
+            bool fromDatabase;
             try
             {
                 var row = await saved.ReadDefaultAsync(cancellationToken);
                 binding = row is null ? FromEnvironment() : new TvAgentBinding(row.AgentSlug, row.Name, TvAgentSource.Saved);
                 validUntil = time.GetUtcNow() + Lifetime;
+                fromDatabase = true;
             }
-#pragma warning disable CA1031 // Banco fora do ar não pode parar a TV: segue com o que já se sabia (ou com a variável).
+#pragma warning disable CA1031 // Banco fora do ar não pode parar a TV que já se conhece; sem nada conhecido, ninguém é escolhido às cegas.
             catch (Exception ex) when (ex is not OperationCanceledException)
 #pragma warning restore CA1031
             {
-                LogReadFailed(ex);
-                binding = _cached?.Binding ?? FromEnvironment();
+                LogReadFailed(ex.GetType().Name);
+
+                // Só o que já veio do banco com sucesso serve de reserva. A variável de ambiente NÃO: ela nunca foi confrontada
+                // com a linha salva e pode ser o computador de antes da troca.
+                var known = _cached is { FromDatabase: true } last ? last : null;
+                binding = known?.Binding ?? TvAgentBinding.NotConfigured;
+                fromDatabase = known is not null;
                 validUntil = time.GetUtcNow() + RetryAfterFailure;
             }
 
             if (Volatile.Read(ref _generation) == generation)
             {
-                _cached = new Cached(binding, validUntil);
+                _cached = new Cached(binding, validUntil, fromDatabase);
             }
 
             return binding;
@@ -109,6 +127,7 @@ internal sealed partial class TvAgentResolver(
             ? TvAgentBinding.NotConfigured
             : new TvAgentBinding(options.Value.AgentId, ConfiguredTv.DefaultName, TvAgentSource.Environment);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Não foi possível ler o computador da TV no banco; seguindo com o último valor conhecido ou com a variável de ambiente.")]
-    private partial void LogReadFailed(Exception exception);
+    // Só o tipo do erro: a mensagem do driver pode citar o servidor e a conexão.
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Não foi possível ler o computador da TV no banco ({ErrorType}); seguindo com o último valor conhecido ou, se não houver, sem computador configurado.")]
+    private partial void LogReadFailed(string errorType);
 }

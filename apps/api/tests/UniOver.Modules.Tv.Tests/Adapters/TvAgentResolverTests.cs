@@ -1,8 +1,10 @@
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Ports;
+using UniOver.Modules.Tv.Tests.Support;
 
 namespace UniOver.Modules.Tv.Tests.Adapters;
 
@@ -23,6 +25,9 @@ public class TvAgentResolverTests
 
         public bool Fails { get; set; }
 
+        /// <summary>O texto da exceção da falha: tem de ser algo que nunca pode aparecer no log.</summary>
+        public string FailureMessage { get; set; } = "banco fora do ar";
+
         public int Reads { get; private set; }
 
         /// <summary>Quando definida, a leitura espera por ela (para provar o que acontece com uma leitura lenta).</summary>
@@ -38,16 +43,17 @@ public class TvAgentResolverTests
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            return Fails ? throw new InvalidOperationException("banco fora do ar") : snapshot;
+            return Fails ? throw new InvalidOperationException(FailureMessage) : snapshot;
         }
     }
 
-    private static (TvAgentResolver Resolver, FakeReader Reader, ManualTime Time) Build(string environment = "")
+    private static (TvAgentResolver Resolver, FakeReader Reader, ManualTime Time) Build(
+        string environment = "", ILogger<TvAgentResolver>? logger = null)
     {
         var reader = new FakeReader();
         var time = new ManualTime();
         var options = Options.Create(new TvModuleOptions { AgentId = environment });
-        return (new TvAgentResolver(reader, options, time, NullLogger<TvAgentResolver>.Instance), reader, time);
+        return (new TvAgentResolver(reader, options, time, logger ?? NullLogger<TvAgentResolver>.Instance), reader, time);
     }
 
     [Fact]
@@ -182,9 +188,10 @@ public class TvAgentResolverTests
     }
 
     [Fact]
-    public async Task WhenTheDatabaseFailsAndNothingWasKnown_ItFallsBackToTheEnvironmentValue_AndRetriesSoon()
+    public async Task WhenTheDatabaseFailsAndNothingWasKnown_NothingIsConfigured_NeverTheEnvironmentValue_AndItRetriesSoon()
     {
-        var (resolver, reader, time) = Build(environment: "pc-casa");
+        // A variável aponta o computador de antes da troca feita no app: sem conseguir ler a linha salva, não pode valer.
+        var (resolver, reader, time) = Build(environment: "pc-antigo");
         reader.Fails = true;
 
         var first = await resolver.ResolveAsync(CancellationToken.None);
@@ -194,10 +201,86 @@ public class TvAgentResolverTests
         time.Advance(TvAgentResolver.RetryAfterFailure + TimeSpan.FromSeconds(1));
         var afterRetry = await resolver.ResolveAsync(CancellationToken.None);
 
-        first.Source.Should().Be(TvAgentSource.Environment);
-        second.Source.Should().Be(TvAgentSource.Environment);
-        reader.Reads.Should().Be(2, "a segunda pergunta usou o valor de reserva; a terceira, depois do prazo curto, leu de novo");
+        first.Source.Should().Be(TvAgentSource.None);
+        first.IsConfigured.Should().BeFalse("os comandos respondem 503 em vez de ir ao computador antigo");
+        second.Source.Should().Be(TvAgentSource.None);
+        reader.Reads.Should().Be(2, "a segunda pergunta usou o resultado curto da falha; a terceira, depois do prazo curto, leu de novo");
         afterRetry.AgentSlug.Should().Be("pc-novo");
+        afterRetry.Source.Should().Be(TvAgentSource.Saved);
+    }
+
+    [Fact]
+    public async Task AfterAFailureWithNothingKnown_TheEnvironmentValueStillWorksOnceTheDatabaseAnswersWithoutARow()
+    {
+        var (resolver, reader, time) = Build(environment: "pc-casa");
+        reader.Fails = true;
+        (await resolver.ResolveAsync(CancellationToken.None)).IsConfigured.Should().BeFalse();
+
+        reader.Fails = false;
+        reader.Saved = null;
+        time.Advance(TvAgentResolver.RetryAfterFailure + TimeSpan.FromSeconds(1));
+        var binding = await resolver.ResolveAsync(CancellationToken.None);
+
+        binding.AgentSlug.Should().Be("pc-casa");
+        binding.Source.Should().Be(TvAgentSource.Environment, "o banco respondeu e não tem linha: aí a variável vale");
+    }
+
+    [Fact]
+    public async Task WhenTheDatabaseFailsAfterAnEmptyRead_TheEnvironmentValueKeepsWorking()
+    {
+        // O valor de ambiente já foi confrontado com o banco (que respondeu sem linha): é um valor conhecido.
+        var (resolver, reader, time) = Build(environment: "pc-casa");
+        (await resolver.ResolveAsync(CancellationToken.None)).Source.Should().Be(TvAgentSource.Environment);
+
+        reader.Fails = true;
+        time.Advance(TvAgentResolver.Lifetime + TimeSpan.FromSeconds(1));
+        var binding = await resolver.ResolveAsync(CancellationToken.None);
+
+        binding.AgentSlug.Should().Be("pc-casa");
+        binding.Source.Should().Be(TvAgentSource.Environment);
+    }
+
+    [Fact]
+    public async Task WhenTheDatabaseFailsRightAfterInvalidate_NothingIsConfigured()
+    {
+        // Invalidate esquece o valor (não se sabe se o salvamento valeu): a falha seguinte não pode cair na variável.
+        var (resolver, reader, _) = Build(environment: "pc-antigo");
+        reader.Saved = new SavedTv("pc-novo", "TV");
+        await resolver.ResolveAsync(CancellationToken.None);
+
+        resolver.Invalidate();
+        reader.Fails = true;
+        var binding = await resolver.ResolveAsync(CancellationToken.None);
+
+        binding.Source.Should().Be(TvAgentSource.None);
+        binding.AgentSlug.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AFailureWithNothingKnown_IsNotReportedAsAKnownValue()
+    {
+        var (resolver, reader, _) = Build(environment: "pc-antigo");
+        reader.Fails = true;
+        await resolver.ResolveAsync(CancellationToken.None);
+
+        resolver.TryGetLast(out var last).Should().BeFalse("o 'não configurado' de uma falha não é um valor lido do banco");
+        last.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AReadFailure_LogsOnlyTheErrorType_NeverTheExceptionOrItsMessage()
+    {
+        var logger = new CapturingLogger<TvAgentResolver>();
+        var (resolver, reader, _) = Build(environment: "pc-casa", logger);
+        reader.Fails = true;
+        reader.FailureMessage = "Host=ep-segredo.neon.tech;Username=uniover_owner;Password=senha-do-banco";
+
+        await resolver.ResolveAsync(CancellationToken.None);
+
+        var line = logger.Lines.Should().ContainSingle().Subject;
+        line.Exception.Should().BeNull("a exceção inteira carrega a mensagem do driver");
+        line.Message.Should().Contain(nameof(InvalidOperationException));
+        logger.Everything.Should().NotContain("ep-segredo").And.NotContain("senha-do-banco").And.NotContain("uniover_owner");
     }
 
     [Fact]

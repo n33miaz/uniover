@@ -5,6 +5,7 @@ using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Ports;
+using UniOver.Modules.Tv.Tests.Support;
 
 namespace UniOver.Modules.Tv.Tests.Adapters;
 
@@ -122,6 +123,24 @@ public class TvPresenceListenerTests
         await Task.Delay(50, TestContext.Current.CancellationToken);
 
         stream.States.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task WhenTheBackgroundReadFails_LogsOnlyTheErrorType_NeverTheExceptionOrItsMessage()
+    {
+        var read = new TaskCompletionSource<TvAgentBinding>();
+        var logger = new CapturingLogger<TvPresenceListener>();
+        var listener = new TvPresenceListener(
+            new Resolver(last: null, read), new InMemoryTvStateStore(), new Stream(), logger);
+
+        listener.OnPresenceChanged(Presence("pc-novo", connected: true));
+        read.SetException(new InvalidOperationException("Host=ep-segredo.neon.tech;Password=senha-do-banco"));
+        await WaitAsync(() => logger.Lines.Count == 1);
+
+        var line = logger.Lines.Single();
+        line.Exception.Should().BeNull("a exceção inteira carrega a mensagem do driver");
+        line.Message.Should().Contain(nameof(InvalidOperationException));
+        logger.Everything.Should().NotContain("ep-segredo").And.NotContain("senha-do-banco");
     }
 
     private static async Task WaitAsync(Func<bool> condition)

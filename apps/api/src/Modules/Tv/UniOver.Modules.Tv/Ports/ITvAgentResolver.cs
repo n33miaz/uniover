@@ -33,14 +33,15 @@ internal sealed record TvAgentBinding(string? AgentSlug, string Name, TvAgentSou
 internal interface ITvAgentResolver
 {
     /// <summary>
-    /// O valor atual. Com o cache válido volta já, sem ir ao banco; senão lê a linha da TV padrão (e, se o banco não
-    /// responder, segue com o último valor conhecido ou com a variável de ambiente: a TV não pode parar por isso).
+    /// O valor atual. Com o cache válido volta já, sem ir ao banco; senão lê a linha da TV padrão. Se o banco não
+    /// responder, segue com o último valor conhecido (a TV não pode parar por isso); sem nenhum valor conhecido devolve
+    /// "não configurado" e NUNCA a variável de ambiente, que só vale quando o banco respondeu e não tinha linha.
     /// </summary>
     ValueTask<TvAgentBinding> ResolveAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// O último valor conhecido, sem tocar no banco e sem esperar (mesmo vencido). Para quem roda dentro da conexão do
-    /// agente e só pode enfileirar. Falso antes da primeira leitura.
+    /// agente e só pode enfileirar. Falso antes da primeira leitura bem-sucedida.
     /// </summary>
     bool TryGetLast([NotNullWhen(true)] out TvAgentBinding? binding);
 
