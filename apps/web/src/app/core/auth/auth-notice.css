@@ -13,12 +13,13 @@
 }
 
 /*
- * A faixa recebe foco por script depois de um envio recusado: o contorno segue o canto arredondado e usa o tom do
- * aviso, em vez do contorno grosso padrão (que, num bloco de texto, pesa mais que a própria mensagem).
+ * A faixa recebe foco por script depois de um envio recusado (para o leitor de tela começar por ela). Não é controle
+ * e não entra na ordem do Tab, então um anel em volta dela só dobrava a borda que ela já tem; o foco aparece como a
+ * própria borda, um pouco mais forte, no tom do aviso. (O mesmo cuidado do bloco de texto do estado de tela cheia.)
  */
 :host(:focus-visible) {
-  outline: 2px solid color-mix(in srgb, var(--tone) 70%, var(--a-ink));
-  outline-offset: 2px;
+  outline: none;
+  border-color: color-mix(in srgb, var(--tone) 70%, var(--a-ink));
 }
 
 :host([data-tone='warn']) {

@@ -74,7 +74,7 @@ async function fillInvite(page: Page, password = STRONG, confirmation = password
 }
 
 const submitLogin = (page: Page) => page.getByRole('button', { name: 'Entrar', exact: true });
-const submitInvite = (page: Page) => page.getByRole('button', { name: 'Criar conta e entrar' });
+const submitInvite = (page: Page) => page.getByRole('button', { name: 'Continuar', exact: true });
 
 for (const scheme of SCHEMES) {
   for (const orient of Object.keys(ORIENTATIONS) as Orientation[]) {
@@ -168,7 +168,7 @@ for (const scheme of SCHEMES) {
       test('convite: formulário vazio, senha fraca, boa e divergente', async ({ page }, info) => {
         await openInvite(page);
         await expect(
-          page.getByRole('heading', { level: 1, name: 'Criar sua conta' }),
+          page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
         ).toBeVisible();
         await shoot(page, info, 'convite-vazio', scheme, orient);
 
@@ -199,7 +199,9 @@ for (const scheme of SCHEMES) {
 
         await fillInvite(page, STRONG, 'Outra-senha-longa-1!');
         await submitInvite(page).click();
-        await expect(page.getByRole('alert')).toContainText('As duas senhas não são iguais.');
+        await expect(page.locator('#invite-confirmation-status')).toHaveText(
+          'As senhas ainda não são iguais.',
+        );
         await shoot(page, info, 'convite-erro-divergente', scheme, orient);
 
         await fillInvite(page);
@@ -260,7 +262,7 @@ for (const scheme of SCHEMES) {
         const gate = await gateScripts(page);
         await openInvite(page, `/convite#${invite.token}`);
         await expect(
-          page.getByRole('heading', { level: 1, name: 'Criar sua conta' }),
+          page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
         ).toBeVisible();
         gate.hold();
         await fillInvite(page);

@@ -133,14 +133,16 @@ test.describe('head por módulo no cliente', () => {
   }) => {
     const invite = identity.seedInvite();
     await page.goto(`/convite#${invite.token}`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Criar sua conta' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+    ).toBeVisible();
     await expectHead(page, ROOT);
     await markDocument(page);
 
     await page.getByLabel('E-mail').fill(GUEST.email);
     await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
     await page.getByLabel('Repita a senha').fill(GUEST.password);
-    await page.getByRole('button', { name: 'Criar conta e entrar' }).click();
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click();
 
     await expect(page).toHaveURL(/\/tv$/);
     await expect(page.getByRole('heading', { level: 1, name: 'TV' })).toBeVisible();

@@ -75,6 +75,12 @@ export class AuthField {
     if (select) control.select();
   }
 
+  /** O cursor já está neste campo? (Mandar o foco para quem já o tem não muda nada, nem para o leitor de tela.) */
+  isFocused(): boolean {
+    const control = this.input().nativeElement;
+    return control.ownerDocument.activeElement === control;
+  }
+
   protected onInput(event: Event): void {
     this.value.set((event.target as HTMLInputElement).value);
   }

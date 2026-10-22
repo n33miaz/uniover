@@ -55,8 +55,9 @@
   gap: var(--space-2);
 }
 
+/* Título curto numa linha só de 360 a 430px (o tamanho acompanha a largura); a quebra equilibrada é a reserva. */
 h1 {
-  font-size: 1.5rem;
+  font-size: clamp(1.25rem, 6.4vw, 1.5rem);
   font-weight: 750;
   letter-spacing: -0.02em;
   text-wrap: balance;
@@ -68,16 +69,15 @@ h1 {
   text-wrap: pretty;
 }
 
-/* "O que fazer": uma frase em um poço suave, para não se perder no texto. */
+/*
+ * "O que fazer": uma frase de apoio, em texto simples. Sem fundo nem borda: numa caixa arredondada ela parecia um
+ * botão, colada ao botão de verdade que vem logo abaixo.
+ */
 .advice {
-  width: 100%;
   margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius);
-  background: var(--a-surface-2);
-  box-shadow: inset 0 0 0 1px var(--a-line);
+  color: var(--a-ink2);
   font-size: var(--fs-small);
-  font-weight: 600;
+  text-wrap: pretty;
 }
 
 .actions {

@@ -109,7 +109,7 @@ async function acceptTrainingInvite(page: Page) {
   await page.getByLabel('E-mail').fill(RAPHAEL.email);
   await page.getByLabel('Senha', { exact: true }).fill(RAPHAEL.password);
   await page.getByLabel('Repita a senha').fill(RAPHAEL.password);
-  await page.getByRole('button', { name: 'Criar conta e entrar' }).click();
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click();
 }
 
 test.describe('convidado que só tem o Treino', () => {

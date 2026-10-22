@@ -32,7 +32,7 @@ export const WELCOME_MS = 1_200;
 const ANNOUNCE_DELAY_MS = 900;
 
 type InviteView = 'form' | 'missing' | 'incomplete' | 'gone' | 'welcome';
-type InviteError = 'too-short' | 'mismatch' | 'bad-request' | 'rate-limited' | 'network' | 'failed';
+type InviteError = 'too-short' | 'bad-request' | 'rate-limited' | 'network' | 'failed';
 type Rule = 'pending' | 'met' | 'invalid';
 
 /** O que o leitor de tela já ouviu sobre a senha: só se anuncia o que mudou desde então. */
@@ -122,11 +122,12 @@ export class AcceptInvitePage {
   );
   /**
    * Situação da confirmação, em texto e tom. Conferir aparece na hora (é boa notícia); a divergência só depois de o
-   * campo perder o foco ou de um envio, e some assim que as senhas conferem. É um indicador, não um erro: o erro de
-   * um envio recusado vem na faixa de aviso.
+   * campo perder o foco (tom de aviso, âmbar) ou de um envio recusado (tom de erro, como as mensagens dos outros
+   * campos), e some assim que as senhas conferem. Esta é a única indicação da divergência: o envio recusado não
+   * abre faixa no alto, que ficaria repetindo a mesma coisa.
    */
   protected readonly confirmationStatus = computed<{
-    readonly tone: 'ok' | 'warn';
+    readonly tone: 'ok' | 'warn' | 'bad';
     readonly icon: AuthGlyphName;
     readonly text: string;
   } | null>(() => {
@@ -139,14 +140,20 @@ export class AcceptInvitePage {
     }
     if (!this.confirmationTouched() && !this.submitted()) return null;
     if (this.confirmation() === this.password()) return null;
+    const refused = this.submitted();
     return {
-      tone: 'warn',
-      icon: 'warning',
+      tone: refused ? 'bad' : 'warn',
+      icon: refused ? 'alert-circle' : 'warning',
       text:
         this.confirmation().length === 0
           ? $localize`:@@auth.invite.confirmation-empty:Repita a senha para conferir.`
           : $localize`:@@auth.invite.confirmation-mismatch:As senhas ainda não são iguais.`,
     };
+  });
+  /** O campo da confirmação fica reprovado (borda e `aria-invalid`) sempre que o texto abaixo dele é de aviso ou de erro. */
+  protected readonly confirmationInvalid = computed(() => {
+    const tone = this.confirmationStatus()?.tone;
+    return tone === 'warn' || tone === 'bad';
   });
 
   protected readonly emailError = computed(() => {
@@ -178,11 +185,6 @@ export class AcceptInvitePage {
         return this.plain(
           'alert-circle',
           $localize`:@@auth.invite.error.too-short:A senha precisa ter ao menos ${MIN_PASSWORD_LENGTH}:min: caracteres.`,
-        );
-      case 'mismatch':
-        return this.plain(
-          'alert-circle',
-          $localize`:@@auth.invite.error.mismatch:As duas senhas não são iguais.`,
         );
       case 'bad-request':
         return this.plain(
@@ -249,9 +251,7 @@ export class AcceptInvitePage {
     // Dado inválido: o foco vai para o primeiro campo com problema, sem ir ao servidor.
     if (this.emailError()) return this.emailField()?.focus();
     if (!this.check().meetsMinimum) return this.refuse('too-short', this.passwordField());
-    if (this.password() !== this.confirmation()) {
-      return this.refuse('mismatch', this.confirmationField());
-    }
+    if (this.password() !== this.confirmation()) return this.refuseConfirmation();
 
     this.busy.set(true);
     try {
@@ -294,6 +294,27 @@ export class AcceptInvitePage {
   private refuse(kind: InviteError, field: AuthField | undefined): void {
     this.error.set(kind);
     field?.focus();
+  }
+
+  /**
+   * Senhas diferentes: a explicação já está no campo (o texto abaixo dele), então não há faixa. O foco espera a tela
+   * desenhar essa explicação, para o leitor de tela ler o campo já com ela ligada (`aria-describedby`). Se o campo já
+   * estava em foco (o envio saiu do próprio campo), o foco não muda nada e ninguém ouviria o motivo: ele vai então
+   * para a região cortês, que antes era coberta pelo alerta da faixa.
+   */
+  private refuseConfirmation(): void {
+    const field = this.confirmationField();
+    if (field?.isFocused()) {
+      this.speak(this.confirmationStatus()?.text ?? '');
+      return;
+    }
+    afterNextRender(() => field?.focus(), { injector: this.injector });
+  }
+
+  /** Fala na região cortês mesmo repetindo a frase de antes: esvazia primeiro, para o leitor de tela notar a troca. */
+  private speak(text: string): void {
+    this.announcement.set('');
+    afterNextRender(() => this.announcement.set(text), { injector: this.injector });
   }
 
   private fail(error: unknown): void {
