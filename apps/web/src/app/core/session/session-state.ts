@@ -276,6 +276,15 @@ export class SessionState {
   setToken(token: string, expiresInSeconds: number, nowMs: number = Date.now()): void {
     this.#accessToken = token;
     const subject = subjectOf(token);
+    // Outra aba pode ter trocado o cookie de refresh: a renovação trouxe uma conta diferente. A resposta antiga de
+    // `/me` não pode manter aberto o banco da pessoa anterior enquanto a nova sessão já está em uso.
+    if (subject !== null && this._user() !== null && this._user()?.id !== subject) {
+      this._user.set(null);
+      this._roleHint.set(null);
+      this._permissionsHint.set(null);
+      writeRoleHint(null);
+      writePermissionsHint(null);
+    }
     this._tokenAccount.set(subject);
     this._expiresAt.set(nowMs + expiresInSeconds * 1000);
     this._status.set('authenticated');
@@ -286,6 +295,9 @@ export class SessionState {
 
   /** Guarda a conta lida. Devolve se ela mudou de verdade (comparação por conteúdo): igual não avisa ninguém. */
   setUser(user: SessionUser): boolean {
+    // Uma leitura de `/me` iniciada antes da troca de conta pode chegar depois do token novo. Nunca a aplique.
+    const subject = this._tokenAccount();
+    if (subject !== null && user.id !== subject) return false;
     const changed = !sameUser(this._user(), user);
     this._user.set(user);
     const role: AccountRole = user.role === 'guest' ? 'guest' : 'owner';
