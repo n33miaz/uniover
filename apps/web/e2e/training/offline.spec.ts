@@ -175,7 +175,7 @@ test.describe('sem rede de verdade, com o service worker', () => {
     await expect(page.getByRole('heading', { name: 'Remada articulada' })).toBeVisible();
     await page
       .getByRole('navigation', { name: 'Abas do módulo' })
-      .getByRole('link', { name: 'Exercícios' })
+      .getByRole('link', { name: 'Exercício' })
       .click();
     await expect(page.locator('.list .name')).toHaveText([
       'Agachamento livre',

@@ -4,21 +4,21 @@ import { TrainingAccountScope } from './shell/training-account-scope';
 
 // As abas do módulo ficam aqui; a barra de baixo as lê pelo `data.tabs` da rota (a mais específica vence).
 const TABS: readonly TabItem[] = [
-  { link: '/treino', label: $localize`:@@training.tab.today:Hoje`, icon: 'today' },
   // Exercícios também cobre as telas filhas (a ficha, o formulário) e as rotinas, que moram em outro caminho.
   {
     link: '/treino/exercicios',
     nested: true,
     also: ['/treino/rotinas'],
-    label: $localize`:@@training.tab.exercises:Exercícios`,
+    label: $localize`:@@training.tab.exercise:Exercício`,
     icon: 'exercises',
   },
+  { link: '/treino', label: $localize`:@@training.tab.home:Início`, icon: 'today' },
   {
     link: '/treino/progresso',
+    also: ['/treino/corpo'],
     label: $localize`:@@training.tab.progress:Progresso`,
     icon: 'progress',
   },
-  { link: '/treino/corpo', label: $localize`:@@training.tab.body:Corpo`, icon: 'body' },
 ];
 
 // Formulário e editor são telas de edição: sem a barra de abas. Ela cobre a altura do teclado, e uma aba tocada no meio

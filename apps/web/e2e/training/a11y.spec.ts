@@ -135,6 +135,7 @@ test.describe('pendências e movimento', () => {
     await page.getByLabel('Nome').fill('Remada');
     await chooseMuscle(page, 'Meio das costas');
     await page.getByRole('button', { name: 'Salvar exercício' }).click();
+    await page.locator('.training-header .status').click();
     await page.getByRole('button', { name: 'Ver', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Alterações com erro' })).toBeVisible();
     await settle(page);

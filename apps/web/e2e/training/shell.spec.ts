@@ -6,19 +6,22 @@ test.describe('casca do Treino', () => {
   // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
   test.use({ serviceWorkers: 'block' });
 
-  test('as quatro abas levam a quatro telas, e a aba aberta fica marcada', async ({
+  test('as três abas e as seções de progresso levam às telas corretas', async ({
     page,
     context,
   }) => {
     await startTraining(context, page);
     await openTraining(page, '/treino');
     const tabs = page.getByRole('navigation', { name: 'Abas do módulo' });
-    await expect(tabs.getByRole('link')).toHaveText(['Hoje', 'Exercícios', 'Progresso', 'Corpo']);
-    await expect(tabs.getByRole('link', { name: 'Hoje' })).toHaveAttribute('aria-current', 'page');
+    await expect(tabs.getByRole('link')).toHaveText(['Exercício', 'Início', 'Progresso']);
+    await expect(tabs.getByRole('link', { name: 'Início' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
 
-    await tabs.getByRole('link', { name: 'Exercícios' }).click();
+    await tabs.getByRole('link', { name: 'Exercício' }).click();
     await expect(page).toHaveURL(/\/treino\/exercicios$/);
-    await expect(tabs.getByRole('link', { name: 'Exercícios' })).toHaveAttribute(
+    await expect(tabs.getByRole('link', { name: 'Exercício' })).toHaveAttribute(
       'aria-current',
       'page',
     );
@@ -32,11 +35,18 @@ test.describe('casca do Treino', () => {
       'page',
     );
 
-    await tabs.getByRole('link', { name: 'Corpo' }).click();
+    await page
+      .getByRole('navigation', { name: 'Seções de progresso' })
+      .getByRole('link', { name: 'Corpo' })
+      .click();
     await expect(page).toHaveURL(/\/treino\/corpo$/);
     await expect(page.getByRole('heading', { name: 'Corpo' })).toBeVisible();
+    await expect(tabs.getByRole('link', { name: 'Progresso' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
 
-    await tabs.getByRole('link', { name: 'Hoje' }).click();
+    await tabs.getByRole('link', { name: 'Início' }).click();
     await expect(page).toHaveURL(/\/treino$/);
   });
 
@@ -55,12 +65,12 @@ test.describe('casca do Treino', () => {
     ]) {
       await openTraining(page, url);
       await expect(tabs).toBeVisible();
-      await expect(marked, url).toHaveText(['Exercícios']);
+      await expect(marked, url).toHaveText(['Exercício']);
     }
     for (const [url, label] of [
-      ['/treino', 'Hoje'],
+      ['/treino', 'Início'],
       ['/treino/progresso', 'Progresso'],
-      ['/treino/corpo', 'Corpo'],
+      ['/treino/corpo', 'Progresso'],
     ]) {
       await openTraining(page, url);
       await expect(marked, url).toHaveText([label]);
@@ -79,13 +89,13 @@ test.describe('casca do Treino', () => {
       .locator('a[aria-current="page"]');
     await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('halteres');
     await expect(page.locator('.list .ui-row')).toHaveCount(4);
-    await expect(marked).toHaveText(['Exercícios']);
+    await expect(marked).toHaveText(['Exercício']);
     await page.locator('.list .ui-row').first().click();
     await expect(page).toHaveURL(/\/treino\/exercicios\/[0-9a-f-]{36}$/);
-    await expect(marked).toHaveText(['Exercícios']);
+    await expect(marked).toHaveText(['Exercício']);
     await page.goBack();
     await expect(page).toHaveURL(/q=halteres/);
-    await expect(marked).toHaveText(['Exercícios']);
+    await expect(marked).toHaveText(['Exercício']);
   });
 
   test('o editor de rotina não tem barra de abas (nem como sair sem a confirmação)', async ({
@@ -157,6 +167,7 @@ test.describe('casca do Treino', () => {
     const server = await startTraining(context, page);
     await openTraining(page, '/treino/exercicios');
     await waitForCatalog(page);
+    await page.locator('.training-header .status').click();
     await expect(page.getByText(/sincronizado às \d{2}:\d{2}/)).toBeVisible();
     server.offline = true;
     await page.evaluate(() => window.dispatchEvent(new Event('offline')));

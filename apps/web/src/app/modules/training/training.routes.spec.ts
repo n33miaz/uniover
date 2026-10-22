@@ -9,26 +9,22 @@ describe('training routes', () => {
   const root = TRAINING_ROUTES[0];
   const children = root.children ?? [];
 
-  it('has the four tabs of the module, in the order Hoje, Exercícios, Progresso, Corpo', () => {
+  it('has three tabs with Início in the center and Corpo under Progresso', () => {
     const tabs = (root.data as { tabs: { link: string; label: string }[] }).tabs;
     expect(tabs.map((tab) => [tab.label, tab.link])).toEqual([
-      ['Hoje', '/treino'],
-      ['Exercícios', '/treino/exercicios'],
+      ['Exercício', '/treino/exercicios'],
+      ['Início', '/treino'],
       ['Progresso', '/treino/progresso'],
-      ['Corpo', '/treino/corpo'],
     ]);
   });
 
-  it('lets Exercícios cover its child screens and the routines, and only it', () => {
+  it('keeps routine screens under Exercício and Corpo under Progresso', () => {
     const tabs = (root.data as { tabs: { link: string; nested?: boolean; also?: string[] }[] })
       .tabs;
     const exercises = tabs.find((tab) => tab.link === '/treino/exercicios')!;
     expect(exercises.nested).toBe(true);
     expect(exercises.also).toEqual(['/treino/rotinas']);
-    for (const tab of tabs.filter((candidate) => candidate !== exercises)) {
-      expect(tab.nested, tab.link).toBeUndefined();
-      expect(tab.also, tab.link).toBeUndefined();
-    }
+    expect(tabs.find((tab) => tab.link === '/treino/progresso')?.also).toEqual(['/treino/corpo']);
   });
 
   it('declares every screen of the module, fixed paths before the ones with an id', () => {
@@ -86,17 +82,13 @@ describe('training routes', () => {
       '/treino/exercicios/abc',
       '/treino/rotinas',
       '/treino/progresso',
+      '/treino/corpo',
       '/treino/corpo/avaliacoes',
       '/treino/corpo/avaliacoes/exemplo',
-    ])('%s shows the tab bar with the four tabs', async (url) => {
+    ])('%s shows the tab bar with the three tabs', async (url) => {
       const { data } = await navigate(url);
       expect(data.title).toBe('Treino');
-      expect(data.tabs?.map((tab) => tab.label)).toEqual([
-        'Hoje',
-        'Exercícios',
-        'Progresso',
-        'Corpo',
-      ]);
+      expect(data.tabs?.map((tab) => tab.label)).toEqual(['Exercício', 'Início', 'Progresso']);
     });
 
     it.each([
@@ -123,7 +115,8 @@ describe('training routes', () => {
       // A rota abre o escopo da conta, e a casca do módulo fica dentro dele.
       expect(el.matches('app-training-account-scope')).toBe(true);
       expect(el.querySelector('app-training-page')).not.toBeNull();
-      expect(el.querySelector('app-training-sync-line')).not.toBeNull();
+      expect(el.querySelector('.training-header h1')?.textContent).toBe('UniOver Treino');
+      expect(el.querySelector('.training-header .status')).not.toBeNull();
       expect(el.querySelector('app-training-today-page')).not.toBeNull();
       expect(start).toHaveBeenCalledTimes(1);
       start.mockRestore();

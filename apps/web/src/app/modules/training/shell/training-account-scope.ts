@@ -73,9 +73,24 @@ export class TrainingAccountData {}
         <app-training-page />
       </ng-container>
     } @empty {
+      <header class="training-wait-header">
+        <h1 i18n="@@training.shell.title">UniOver Treino</h1>
+      </header>
       <p class="ui-notice" role="status" i18n="@@training.account.entering">
         Confirmando a sua conta…
       </p>
+    }
+  `,
+  styles: `
+    .training-wait-header {
+      padding: calc(var(--space-3) + env(safe-area-inset-top)) var(--gutter) var(--space-3);
+      border-bottom: 1px solid var(--a-line);
+      background: var(--a-surface);
+    }
+    .training-wait-header h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      text-align: right;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

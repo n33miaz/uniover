@@ -54,7 +54,7 @@ type ShellLead = ({ readonly kind: 'back' } & ShellBack) | { readonly kind: 'set
   selector: 'app-shell',
   imports: [RouterOutlet, RouterLink, TabBar, InstallHint, GearIcon],
   template: `
-    @if (data().title; as title) {
+    @if (data().shellStyle !== 'training' && data().title; as title) {
       <header class="bar" [class.training]="data().shellStyle === 'training'">
         @let current = lead();
         @if (current.kind === 'back') {
@@ -84,19 +84,6 @@ type ShellLead = ({ readonly kind: 'back' } & ShellBack) | { readonly kind: 'set
           >
             <app-gear-icon />
           </a>
-        }
-        @if (data().shellStyle === 'training') {
-          <span class="module-mark" aria-hidden="true">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-            >
-              <path [attr.d]="'M5 9v6m3-9v12m8-12v12m3-9v6M8 12h8'" />
-            </svg>
-          </span>
         }
         <h1 #pageTitle tabindex="-1">{{ title }}</h1>
       </header>
