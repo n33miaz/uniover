@@ -101,6 +101,18 @@ test.describe('início e navegação', () => {
     await screenshot(page, `test-results/sheet-${info.project.name}.png`);
     await expectNoSeriousA11yViolations(page);
 
+    await sheet.getByRole('heading', { name: 'Editar a Início' }).click();
+    await sheet.click({ position: { x: 1, y: 1 } }); // espaço interno da folha
+    await expect(sheet).toBeVisible();
+    await page.mouse.click(4, 4); // fora do retângulo da folha
+    await expect
+      .poll(() => sheet.evaluate((dialog) => dialog.classList.contains('closing')))
+      .toBe(true);
+    await expect(sheet).toBeHidden();
+
+    await page.getByRole('button', { name: 'Editar' }).click();
+    await expect(sheet).toBeVisible();
+
     // Cancelar descarta o que foi feito na folha.
     await sheet.getByRole('button', { name: 'Descer TV' }).click();
     await sheet.getByRole('button', { name: 'Cancelar' }).click();

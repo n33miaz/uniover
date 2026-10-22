@@ -189,8 +189,28 @@ describe('TrainingSheet', () => {
     // The side margins and the strip around the title belong to the sheet itself, not to the dimmed background.
     second.el.querySelector<HTMLElement>('.inner')!.click();
     second.el.querySelector<HTMLElement>('h2')!.click();
+    Object.defineProperty(second.dialog, 'getBoundingClientRect', {
+      value: () => ({ left: 10, top: 10, right: 300, bottom: 500 }),
+    });
+    const pointerDown = (target: Element, x: number, y: number) => {
+      target.dispatchEvent(
+        Object.assign(
+          new MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: x, clientY: y }),
+          { isPrimary: true },
+        ),
+      );
+    };
+    pointerDown(second.dialog, 20, 20);
+    second.dialog.dispatchEvent(new MouseEvent('click', { clientX: 20, clientY: 20 }));
+    pointerDown(second.el.querySelector('.content')!, 20, 20);
+    second.dialog.dispatchEvent(new MouseEvent('click', { clientX: 0, clientY: 0 }));
+    pointerDown(second.dialog, 0, 0);
+    second.el
+      .querySelector('.content')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 20, clientY: 20 }));
     expect(second.fixture.componentInstance.closed()).toBe(0);
-    second.dialog.click();
+    pointerDown(second.dialog, 0, 0);
+    second.dialog.dispatchEvent(new MouseEvent('click', { clientX: 0, clientY: 0 }));
     expect(second.fixture.componentInstance.closed()).toBe(1);
   });
 });
