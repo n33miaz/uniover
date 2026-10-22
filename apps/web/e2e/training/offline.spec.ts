@@ -3,6 +3,7 @@ import { expect, test, waitForServiceWorkerControl } from '../fixtures';
 import {
   openTraining,
   startTraining,
+  trainingDbName,
   waitForCatalog,
   chooseMuscle,
 } from './support/training-pages';
@@ -56,12 +57,20 @@ test.describe('exercício próprio criado sem rede', () => {
 test.describe('sem rede de verdade, com o service worker', () => {
   test.use({ serviceWorkers: 'allow' });
 
+  // Aparelho que já teve uma sessão: a dica da última conta (que o app grava ao entrar) diz qual banco local abrir sem
+  // esperar o `/me`. Sem ela e sem rede nenhum banco de conta seria aberto (ver `accounts.spec.ts`).
+  test.beforeEach(async ({ context }) => {
+    await context.addInitScript(() => {
+      localStorage.setItem('uniover.account-id', 'u1');
+    });
+  });
+
   // Grava linhas direto no banco local do Treino, como o puxador faria com o que o servidor entrega.
   async function putRows(page: Page, store: string, rows: Record<string, unknown>[]) {
     await page.evaluate(
-      ({ store, rows }) =>
+      ({ store, rows, dbName }) =>
         new Promise<void>((resolve, reject) => {
-          const open = indexedDB.open('uniover-training');
+          const open = indexedDB.open(dbName);
           open.onerror = () => reject(open.error);
           open.onsuccess = () => {
             const db = open.result;
@@ -74,7 +83,7 @@ test.describe('sem rede de verdade, com o service worker', () => {
             tx.onerror = () => reject(tx.error);
           };
         }),
-      { store, rows },
+      { store, rows, dbName: trainingDbName() },
     );
   }
 
@@ -113,8 +122,9 @@ test.describe('sem rede de verdade, com o service worker', () => {
     await expect(page.locator('app-training-page')).toBeVisible();
     await expect
       .poll(() =>
-        page.evaluate(async () =>
-          ((await indexedDB.databases()) ?? []).some((db) => db.name === 'uniover-training'),
+        page.evaluate(
+          async (name) => ((await indexedDB.databases()) ?? []).some((db) => db.name === name),
+          trainingDbName(),
         ),
       )
       .toBe(true);

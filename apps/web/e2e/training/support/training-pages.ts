@@ -1,8 +1,13 @@
 import { BrowserContext, Page } from '@playwright/test';
-import { OWNER, mockIdentityApi } from '../../auth/identity-mock';
+import { OWNER, OWNER_ID, mockIdentityApi } from '../../auth/identity-mock';
 import { expect } from '../../fixtures';
 import { TrainingServer, mockTrainingApi } from './training-server';
 import { seedTraining } from './training-seed';
+
+/** O banco local do Treino de uma conta (um por conta no aparelho); sem conta, o do dono. */
+export function trainingDbName(accountId: string = OWNER_ID): string {
+  return `uniover-training-${accountId}`;
+}
 
 /**
  * Sobe a simulação da identidade e a do Treino (já com os dados-semente) e entra como dono. Cada teste chama isto no
@@ -35,12 +40,16 @@ export async function waitForCatalog(page: Page): Promise<void> {
   await expect(page.locator('.list .ui-row').first()).toBeVisible();
 }
 
-/** O Dexie do Treino: um `put` direto, para o teste montar um estado sem passar pela tela. */
-export async function countRows(page: Page, table: string): Promise<number> {
+/** Quantas linhas tem uma tabela do banco local do Treino de uma conta (sem conta, o do dono). */
+export async function countRows(
+  page: Page,
+  table: string,
+  accountId: string = OWNER_ID,
+): Promise<number> {
   return page.evaluate(
-    (name) =>
+    ({ name, db: dbName }) =>
       new Promise<number>((resolve, reject) => {
-        const open = indexedDB.open('uniover-training');
+        const open = indexedDB.open(dbName);
         open.onerror = () => reject(open.error);
         open.onsuccess = () => {
           const db = open.result;
@@ -52,7 +61,7 @@ export async function countRows(page: Page, table: string): Promise<number> {
           request.onerror = () => reject(request.error);
         };
       }),
-    table,
+    { name: table, db: trainingDbName(accountId) },
   );
 }
 
