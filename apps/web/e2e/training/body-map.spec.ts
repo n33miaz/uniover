@@ -279,6 +279,7 @@ test.describe('mapa do corpo: sem rede', () => {
 
     server.offline = true;
     await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+    await page.getByRole('button', { name: 'Sem sincronização. Toque para ver detalhes.' }).click();
     await expect(page.getByText('Sem rede: usando o que está no aparelho')).toBeVisible();
 
     await page.getByRole('link', { name: 'Mapa do corpo' }).click();
