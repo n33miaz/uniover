@@ -34,17 +34,28 @@ internal sealed class PollPairingHandler(
     {
         ArgumentNullException.ThrowIfNull(command);
 
+        // O lock torna a decisão do ritmo serializável: dois polls não podem avaliar o mesmo LastPolledAt antigo.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var result = await HandleLockedAsync(command, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return result;
+    }
+
+    private async Task<PollPairingResult> HandleLockedAsync(PollPairingCommand command, CancellationToken cancellationToken)
+    {
         var settings = options.Value.Pairing;
-        var now = time.GetUtcNow();
 
         // Id inexistente e deviceCode errado caem na mesma resposta: quem tenta não enumera pareamentos.
         var presented = DeviceSecrets.HashDeviceCode(command.DeviceCode);
-        var pairing = await db.Pairings.SingleOrDefaultAsync(p => p.Id == command.PairingId, cancellationToken);
+        var pairing = await db.Pairings
+            .FromSqlInterpolated($"SELECT * FROM devices.pairings WHERE id = {command.PairingId} FOR UPDATE")
+            .SingleOrDefaultAsync(cancellationToken);
         if (presented is null || pairing is null || !DeviceSecrets.Matches(pairing.DeviceCodeHash, presented))
         {
             return new PollPairingResult(PollStatus.NotFound);
         }
 
+        var now = time.GetUtcNow();
         var baseInterval = (int)settings.MinPollInterval.TotalSeconds;
         switch (pairing.Evaluate(now, settings.MinPollInterval))
         {
