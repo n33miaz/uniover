@@ -96,6 +96,42 @@ export const TRAINING_ROUTES: Routes = [
         path: 'corpo',
         loadComponent: () => import('./body/body.page').then((m) => m.BodyPage),
       },
+      {
+        path: 'corpo/avaliacoes/importar',
+        data: NO_TABS,
+        loadComponent: () =>
+          import('./body/assessments/assessment-import.page').then(
+            (m) => m.PhysicalAssessmentImportPage,
+          ),
+      },
+      {
+        path: 'corpo/avaliacoes/nova',
+        data: NO_TABS,
+        loadComponent: () =>
+          import('./body/assessments/assessment-editor.page').then(
+            (m) => m.PhysicalAssessmentEditorPage,
+          ),
+      },
+      {
+        path: 'corpo/avaliacoes/:id/editar',
+        data: NO_TABS,
+        loadComponent: () =>
+          import('./body/assessments/assessment-editor.page').then(
+            (m) => m.PhysicalAssessmentEditorPage,
+          ),
+      },
+      {
+        path: 'corpo/avaliacoes/:id',
+        loadComponent: () =>
+          import('./body/assessments/assessment-detail.page').then(
+            (m) => m.PhysicalAssessmentDetailPage,
+          ),
+      },
+      {
+        path: 'corpo/avaliacoes',
+        loadComponent: () =>
+          import('./body/assessments/assessments.page').then((m) => m.PhysicalAssessmentsPage),
+      },
     ],
   },
 ];
