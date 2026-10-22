@@ -69,20 +69,15 @@ test.describe('troca de tela', () => {
 
     await toSettings(page);
     await settingsReady(page);
-    // Os quatro grupos da lista de Ajustes entram um depois do outro (atraso de 50 ms por posição).
+    // Os três grupos da lista de Ajustes entram um depois do outro (atraso de 50 ms por posição).
     await expect
       .poll(
         async () =>
           (await motion(page)).animations.slice(seen).filter((n) => n === 'ui-rise').length,
       )
-      .toBeGreaterThanOrEqual(4);
+      .toBeGreaterThanOrEqual(3);
     const delays = await sectionDelays(page);
-    expect(delays.slice(0, 4)).toEqual([
-      'ui-rise@0s',
-      'ui-rise@0.05s',
-      'ui-rise@0.1s',
-      'ui-rise@0.15s',
-    ]);
+    expect(delays.slice(0, 3)).toEqual(['ui-rise@0s', 'ui-rise@0.05s', 'ui-rise@0.1s']);
     await settle(page);
     await screenshot(page, `test-results/motion/settings-after-route-${info.project.name}.png`);
 
