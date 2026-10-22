@@ -2,6 +2,7 @@ import { InjectionToken } from '@angular/core';
 import Dexie, { type DexieOptions, type EntityTable } from 'dexie';
 import type { LocalBodyEntry } from './body/body-entry';
 import type { LocalBodyProfile } from './body/body-profile';
+import { accountDatabaseName } from '../../../core/session/account-id';
 import type { LocalExercise } from './catalog/exercise';
 import type { LocalGoal } from './goals/goal';
 import type { LocalPhoto } from './photos/photo';
@@ -9,8 +10,9 @@ import type { LocalRoutine } from './routines/routine';
 import type { LocalSession, LocalSet } from './sessions/session';
 
 /**
- * Banco local do Treino (IndexedDB, via Dexie). É outro banco que o da fila de escrita (`uniover-offline`): a fila
- * pode ser esvaziada ou migrada sem tocar nos dados do módulo, e vice-versa.
+ * Banco local do Treino de UMA conta (IndexedDB, via Dexie). É outro banco que o da fila de escrita (`uniover-offline-<id>`):
+ * a fila pode ser esvaziada ou migrada sem tocar nos dados do módulo, e vice-versa. Cada conta tem o seu (`trainingDbName`):
+ * duas pessoas no mesmo navegador nunca veem os treinos uma da outra.
  *
  * REGRA DE ESQUEMA: mudança de esquema = bloco `version(n)` NOVO. Nunca edite um bloco antigo: o navegador só sabe
  * migrar de uma versão que ele conheceu para a seguinte, e um bloco editado deixa o aparelho que já abriu a versão
@@ -18,7 +20,30 @@ import type { LocalSession, LocalSet } from './sessions/session';
  * o seu `version(n)` abaixo do último, repetindo só o que muda (o Dexie herda o resto das versões anteriores).
  */
 
+/**
+ * Nome do banco do tempo em que havia um só por aparelho (hoje só é lido para a adoção, ver `TrainingAccountDbs`). O banco em
+ * uso leva o id da conta no nome.
+ */
 export const TRAINING_DB_NAME = 'uniover-training';
+
+/** Nome do banco do Treino de uma conta: `uniover-training-<id>`. */
+export function trainingDbName(accountId: string): string {
+  return accountDatabaseName(TRAINING_DB_NAME, accountId);
+}
+
+/**
+ * As tabelas que o banco antigo (sem conta) tinha, todas copiadas na adoção dele. Tabela criada depois disso não existe lá:
+ * não entra nesta lista.
+ */
+export const TRAINING_TABLES = [
+  'exercises',
+  'meta',
+  'syncState',
+  'routines',
+  'sessions',
+  'sets',
+  'goals',
+] as const;
 
 /**
  * Esquema da versão 1, exportado só para o teste de migração abrir o banco exatamente como o aparelho o deixou.
@@ -109,7 +134,14 @@ export class TrainingDb extends Dexie {
   }
 }
 
-export const TRAINING_DB = new InjectionToken<TrainingDb>('TRAINING_DB', {
-  providedIn: 'root',
-  factory: () => new TrainingDb(),
-});
+/**
+ * O banco do Treino da conta em uso. Sem fábrica padrão de propósito: quem o fornece é o escopo da conta (`TrainingAccountDbs`),
+ * nunca um banco único do aparelho, que abriria o nome antigo e misturaria as contas.
+ */
+export const TRAINING_DB = new InjectionToken<TrainingDb>('TRAINING_DB');
+
+/** Como criar o banco de uma conta a partir do nome dele (o teste troca por uma fábrica em memória). */
+export const TRAINING_DB_FACTORY = new InjectionToken<(name: string) => TrainingDb>(
+  'TRAINING_DB_FACTORY',
+  { providedIn: 'root', factory: () => (name) => new TrainingDb(name) },
+);

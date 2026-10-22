@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { ConnectivityService } from '../../../../core/connectivity/connectivity.service';
 import {
   NEW_ITEM,
+  TEST_ACCOUNT,
   deferred,
   networkError,
   setupQueue,
@@ -407,5 +408,34 @@ describe('TrainingSync', () => {
 
     expect(t.queue().pendingCount()).toBe(1);
     expect(t.pull.calls).toHaveLength(0);
+  });
+
+  describe('only with the session of the account of the database', () => {
+    it('does not pull with the token of another account (it would bring their data into this database), and pulls once the session is the right one', async () => {
+      const t = setup();
+      t.account.sessionAccount.set('outra-conta');
+      t.pull.script = [page(['a'], 'c1')];
+
+      await t.sync().start();
+
+      expect(t.pull.calls).toHaveLength(0);
+      expect(t.merged).toEqual([]);
+
+      t.account.sessionAccount.set(TEST_ACCOUNT);
+      TestBed.tick();
+      await vi.waitFor(() => expect(t.merged).toEqual([['a']]));
+    });
+
+    it('does not pull while /me has not said whose the session is', async () => {
+      const t = setup();
+      t.account.sessionAccount.set(null);
+      t.pull.script = [page(['a'], 'c1')];
+
+      await t.sync().start();
+      window.dispatchEvent(new Event('online'));
+      await Promise.resolve();
+
+      expect(t.pull.calls).toHaveLength(0);
+    });
   });
 });
