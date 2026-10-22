@@ -51,7 +51,7 @@ internal sealed partial class AgentTransportListener(
         }
         catch (Exception ex)
         {
-            LogTransportFailed(transport.Name, ex);
+            LogTransportFailed(transport.Name, ex.GetType().Name);
         }
     }
 
@@ -63,13 +63,14 @@ internal sealed partial class AgentTransportListener(
         }
         catch (Exception ex)
         {
-            LogSessionFailed(session.AgentId, ex);
+            LogSessionFailed(session.AgentId, ex.GetType().Name);
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "O transporte {Transport} falhou e não aceita mais conexões.")]
-    private partial void LogTransportFailed(string transport, Exception exception);
+    // Só o tipo do erro: a mensagem de uma falha de rede ou de banco pode citar servidor e conexão.
+    [LoggerMessage(Level = LogLevel.Error, Message = "O transporte {Transport} falhou e não aceita mais conexões ({ErrorType}).")]
+    private partial void LogTransportFailed(string transport, string errorType);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Sessão do agente {AgentId} terminou com erro.")]
-    private partial void LogSessionFailed(string agentId, Exception exception);
+    [LoggerMessage(Level = LogLevel.Error, Message = "Sessão do agente {AgentId} terminou com erro ({ErrorType}).")]
+    private partial void LogSessionFailed(string agentId, string errorType);
 }
