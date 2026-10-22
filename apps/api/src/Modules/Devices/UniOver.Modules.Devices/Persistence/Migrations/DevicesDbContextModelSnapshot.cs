@@ -147,6 +147,7 @@ namespace UniOver.Modules.Devices.Persistence.Migrations
                         .HasColumnName("revoke_reason");
 
                     b.Property<DateTimeOffset?>("RevokedAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("revoked_at");
 

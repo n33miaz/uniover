@@ -49,6 +49,7 @@ public static class DevicesTransportModule
             sp.GetRequiredService<IOptions<DevicesTransportOptions>>().Value.Sse));
 
         services.AddSingleton<AgentConnections>();
+        services.AddSingleton<IAgentSessionCloser>(sp => sp.GetRequiredService<AgentConnections>());
         services.AddSingleton<IReplyCorrelator, ReplyCorrelator>();
         services.AddSingleton<AgentHub>();
         services.AddSingleton<AgentGateway>();

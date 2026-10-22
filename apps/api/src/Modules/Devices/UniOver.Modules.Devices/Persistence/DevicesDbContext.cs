@@ -65,6 +65,8 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
             e.Property(x => x.TokenHash).HasColumnType("bytea");
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.Property(x => x.RevokeReason).HasMaxLength(Agent.ReasonMax);
+            // Revogação e entrega do primeiro token não podem vencer com base na mesma leitura antiga.
+            e.Property(x => x.RevokedAt).IsConcurrencyToken();
         });
 
         modelBuilder.Entity<PairingAuditEntry>(e =>

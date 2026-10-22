@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.WebSockets;
+using System.Data.Common;
 using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Infrastructure;
 
 namespace UniOver.IntegrationTests.Devices.Transport;
@@ -55,16 +58,22 @@ public sealed class SessionAndEventsTests(PostgresFixture postgres)
     [Fact]
     public async Task RevokingTheAgent_ClosesTheLiveSession()
     {
-        await using var app = await TransportApp.StartAsync(postgres);
+        var outbox = new OutboxClaimBarrier();
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { CommandInterceptor = outbox });
         await using var agent = await app.ConnectAsync();
         await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == true, "conectado");
+        await app.App.WaitForOutboxAsync(expectedProcessed: 1);
 
+        outbox.Arm();
         using var revoke = await app.App.RevokeRawAsync(app.Login, app.Agent.Id, "perdi o aparelho");
         revoke.StatusCode.Should().Be(HttpStatusCode.OK);
 
+        await outbox.WaitForClaimAsync(Ct);
         var closed = await agent.WaitForCloseAsync();
         closed.Description.Should().Be("revoked");
         closed.Status.Should().Be((WebSocketCloseStatus)4403);
+        outbox.IsBlocked.Should().BeTrue("the session must close locally before the outbox handler is released");
+        outbox.Release();
         await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "presença derrubada");
     }
 
@@ -222,5 +231,41 @@ public sealed class SessionAndEventsTests(PostgresFixture postgres)
         await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "desconexão");
 
         (await app.DatabaseFingerprintAsync()).Should().Be(before);
+    }
+}
+
+internal sealed class OutboxClaimBarrier : DbCommandInterceptor
+{
+    private readonly TaskCompletionSource _claimed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _armed;
+    private int _blocked;
+
+    public bool IsBlocked => Volatile.Read(ref _blocked) == 1;
+
+    public void Arm() => Volatile.Write(ref _armed, 1);
+
+    public void Release() => _release.TrySetResult();
+
+    public async Task WaitForClaimAsync(CancellationToken cancellationToken) =>
+        await _claimed.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+
+    public override async ValueTask<DbDataReader> ReaderExecutedAsync(
+        DbCommand command,
+        CommandExecutedEventData eventData,
+        DbDataReader result,
+        CancellationToken cancellationToken = default)
+    {
+        if (Volatile.Read(ref _armed) != 0
+            && result.HasRows
+            && command.CommandText.Contains("outbox_messages", StringComparison.OrdinalIgnoreCase)
+            && command.CommandText.Contains("SKIP LOCKED", StringComparison.OrdinalIgnoreCase)
+            && Interlocked.CompareExchange(ref _blocked, 1, 0) == 0)
+        {
+            _claimed.TrySetResult();
+            await _release.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
+
+        return result;
     }
 }

@@ -1,6 +1,8 @@
 using System.Net;
+using System.Data.Common;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Devices.Features.Tokens;
@@ -55,6 +57,68 @@ public sealed class RevocationTests(PostgresFixture postgres)
         (await db.Agents.SingleAsync(Ct)).RevokedAt.Should().Be(app.Time.GetUtcNow().AddMinutes(-1));
         (await db.PairingAudit.CountAsync(a => a.Event == "agent_revoked", Ct)).Should().Be(1);
         (await db.Set<OutboxMessage>().CountAsync(m => m.Type == "devices.agent-revoked.v1", Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Revoke_ConcurrentRequestsAreIdempotent_OneEventAndOneAuditRow()
+    {
+        var barrier = new AgentReadRaceBarrier(expectedReads: 2);
+        await using var app = await DevicesApp.StartAsync(postgres, NoStepUp with { CommandInterceptor = barrier });
+        var login = await app.LoginAsync();
+        var (agentId, _, _, _) = await app.PairAsync(login);
+
+        barrier.Arm();
+        var revocations = new[]
+        {
+            app.RevokeRawAsync(login, agentId, "primeiro motivo"),
+            app.RevokeRawAsync(login, agentId, "segundo motivo"),
+        };
+        await barrier.WaitForReadsAsync(Ct);
+        barrier.Release();
+        var responses = await Task.WhenAll(revocations);
+
+        try
+        {
+            responses.Select(response => response.StatusCode).Should().OnlyContain(status => status == HttpStatusCode.OK);
+        }
+        finally
+        {
+            foreach (var response in responses)
+            {
+                response.Dispose();
+            }
+        }
+
+        barrier.OverlappedReads.Should().BeTrue("both requests must read the active agent before either saves");
+        await using var db = app.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "agent_revoked", Ct)).Should().Be(1);
+        (await db.Set<OutboxMessage>().CountAsync(m => m.Type == "devices.agent-revoked.v1", Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Poll_WhenRevocationWinsAfterActiveAgentWasRead_DoesNotIssueToken()
+    {
+        var barrier = new AgentReadRaceBarrier(expectedReads: 1);
+        await using var app = await DevicesApp.StartAsync(postgres, NoStepUp with { CommandInterceptor = barrier });
+        var login = await app.LoginAsync();
+        var started = await app.StartAsync();
+        var agent = await app.ApproveAsync(login, started.UserCode);
+        var agentId = agent.GetProperty("id").GetGuid();
+
+        barrier.Arm();
+        var polling = app.PollRawAsync(started.PairingId, started.DeviceCode);
+        await barrier.WaitForReadsAsync(Ct);
+        using var revoked = await app.RevokeRawAsync(login, agentId);
+        revoked.StatusCode.Should().Be(HttpStatusCode.OK);
+        barrier.Release();
+
+        using var poll = await polling;
+        poll.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await poll.Content.ReadAsStringAsync(Ct)).Should().NotContain("uo_dev_");
+        await using var db = app.Db();
+        (await db.Agents.SingleAsync(Ct)).TokenHash.Should().BeNull();
+        (await db.Pairings.SingleAsync(Ct)).ConsumedAt.Should().BeNull();
+        (await db.PairingAudit.CountAsync(a => a.Event == "token_issued", Ct)).Should().Be(0);
     }
 
     [Fact]
@@ -176,5 +240,49 @@ public sealed class RevocationTests(PostgresFixture postgres)
         // O evento só carrega ids, slug e instante: nada de token nem de segredo.
         var paired = messages.Single(m => m.Type == "devices.agent-paired.v1").Payload;
         paired.Should().Contain(agentId.ToString()).And.Contain(slug).And.NotContain("uo_dev_").And.NotContainEquivalentOf("hash");
+    }
+}
+
+internal sealed class AgentReadRaceBarrier(int expectedReads) : DbCommandInterceptor
+{
+    private readonly TaskCompletionSource _readsReached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _armed;
+    private int _readCount;
+
+    public bool OverlappedReads => Volatile.Read(ref _readCount) >= expectedReads;
+
+    public void Arm() => Volatile.Write(ref _armed, 1);
+
+    public void Release() => _release.TrySetResult();
+
+    public async Task WaitForReadsAsync(CancellationToken cancellationToken) =>
+        await _readsReached.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+
+    public override async ValueTask<DbDataReader> ReaderExecutedAsync(
+        DbCommand command,
+        CommandExecutedEventData eventData,
+        DbDataReader result,
+        CancellationToken cancellationToken = default)
+    {
+        if (Volatile.Read(ref _armed) == 0
+            || !command.CommandText.Contains("SELECT", StringComparison.OrdinalIgnoreCase)
+            || !command.CommandText.Contains("agents", StringComparison.OrdinalIgnoreCase))
+        {
+            return result;
+        }
+
+        var count = Interlocked.Increment(ref _readCount);
+        if (count <= expectedReads)
+        {
+            if (count == expectedReads)
+            {
+                _readsReached.TrySetResult();
+            }
+
+            await _release.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        }
+
+        return result;
     }
 }
