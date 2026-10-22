@@ -73,7 +73,23 @@ internal sealed class ConfirmStepUpHandler(
             }
 
             var now = time.GetUtcNow();
-            passkey.RegisterUse(result.SignCount, now);
+            // O contador é atualizado apenas se ainda tiver o valor que foi validado acima. Requisições
+            // concorrentes que verificaram o mesmo contador não podem confirmar ambas a ação.
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            var updated = await db.Passkeys
+                .Where(p => p.Id == passkey.Id && p.UserId == command.UserId && p.SignCount == passkey.SignCount)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(p => p.SignCount, result.SignCount)
+                        .SetProperty(p => p.LastUsedAt, now),
+                    cancellationToken);
+            if (updated == 0)
+            {
+                db.ChangeTracker.Clear();
+                await FailAsync(command, action, "sign-count", cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return null;
+            }
 
             // Uma confirmação por (sessão, ação): confirmar de novo renova a validade em vez de empilhar linhas.
             var sessionId = command.SessionId;
@@ -87,6 +103,7 @@ internal sealed class ConfirmStepUpHandler(
             db.StepUpConfirmations.Add(confirmation);
             audit.Add(command.UserId, AuditEvents.StepUpSucceeded, command.Client, action);
             await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
             return new ConfirmStepUpResponse(action, confirmation.ExpiresAt);
         }
