@@ -47,15 +47,15 @@ public sealed class IdempotencyGatewayBridge<TContext>(IIdempotencyStore<TContex
         var existing = result.Existing is { } r
             ? new IdempotencyGatewayEntry(r.Method, r.Route, r.RequestHash, r.StatusCode, r.ResponseBody, r.ContentType, r.Location)
             : null;
-        return new IdempotencyGatewayResult(outcome, existing);
+        return new IdempotencyGatewayResult(outcome, existing, result.LeaseId);
     }
 
     public Task CompleteAsync(
-        Guid userId, Guid key, int statusCode, string? responseBody, string? contentType, string? location, CancellationToken cancellationToken) =>
-        store.CompleteAsync(userId, key, statusCode, responseBody, contentType, location, cancellationToken);
+        Guid userId, Guid key, Guid leaseId, int statusCode, string? responseBody, string? contentType, string? location, CancellationToken cancellationToken) =>
+        store.CompleteAsync(userId, key, leaseId, statusCode, responseBody, contentType, location, cancellationToken);
 
-    public Task ReleaseAsync(Guid userId, Guid key, CancellationToken cancellationToken) =>
-        store.ReleaseAsync(userId, key, cancellationToken);
+    public Task ReleaseAsync(Guid userId, Guid key, Guid leaseId, CancellationToken cancellationToken) =>
+        store.ReleaseAsync(userId, key, leaseId, cancellationToken);
 }
 
 /// <summary>Usuário de teste: o id vem do cabeçalho <c>X-Test-User</c>.</summary>

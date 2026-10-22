@@ -223,6 +223,78 @@ public class IdempotencyTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task StaleKeyWithDifferentFingerprint_IsNotTakenOverOrRewritten()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        await using var host = await StartHostAsync(time);
+        var key = Guid.NewGuid();
+        var hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes("{\"name\":\"a\"}"));
+        DateTimeOffset createdAt;
+        Guid generation;
+
+        await using (var scope = host.Services.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IIdempotencyStore<IdempotencyTestDbContext>>();
+            var begin = await store.TryBeginAsync(UserA, key, "POST", "/api/test/orders", hash, Ct);
+            begin.Outcome.Should().Be(IdempotencyBeginOutcome.Started);
+            begin.LeaseId.Should().NotBeNull();
+
+            var context = scope.ServiceProvider.GetRequiredService<IdempotencyTestDbContext>();
+            var record = await context.Set<IdempotencyRecord>().SingleAsync(r => r.UserId == UserA && r.Key == key, Ct);
+            createdAt = record.CreatedAt;
+            generation = record.Generation;
+        }
+
+        time.Advance(TimeSpan.FromSeconds(61));
+        var differentRequest = await PostOrderAsync(host.Client, key, "{\"name\":\"different\"}");
+
+        differentRequest.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await ProblemTypeAsync(differentRequest)).Should().EndWith("/idempotency-key-reused");
+        await using var verifyScope = host.Services.CreateAsyncScope();
+        var unchanged = await verifyScope.ServiceProvider.GetRequiredService<IdempotencyTestDbContext>()
+            .Set<IdempotencyRecord>().SingleAsync(r => r.UserId == UserA && r.Key == key, Ct);
+        unchanged.Method.Should().Be("POST");
+        unchanged.Route.Should().Be("/api/test/orders");
+        unchanged.RequestHash.Should().Equal(hash);
+        unchanged.CreatedAt.Should().Be(createdAt);
+        unchanged.Generation.Should().Be(generation);
+        host.Probe.Total.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task StaleWorkerCannotCompleteOrReleaseTheNewLease()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        await using var host = await StartHostAsync(time);
+        var key = Guid.NewGuid();
+        var hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes("{\"name\":\"a\"}"));
+        await using var scope = host.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IIdempotencyStore<IdempotencyTestDbContext>>();
+
+        var first = await store.TryBeginAsync(UserA, key, "POST", "/api/test/orders", hash, Ct);
+        time.Advance(TimeSpan.FromSeconds(61));
+        var takeover = await store.TryBeginAsync(UserA, key, "POST", "/api/test/orders", hash, Ct);
+
+        first.Outcome.Should().Be(IdempotencyBeginOutcome.Started);
+        takeover.Outcome.Should().Be(IdempotencyBeginOutcome.Started);
+        first.LeaseId.Should().NotBeNull();
+        takeover.LeaseId.Should().NotBeNull();
+        var oldLease = first.LeaseId!.Value;
+        var currentLease = takeover.LeaseId!.Value;
+        oldLease.Should().NotBe(currentLease);
+        await store.CompleteAsync(UserA, key, oldLease, 201, "stale", "application/json", null, Ct);
+        await store.ReleaseAsync(UserA, key, oldLease, Ct);
+
+        var record = await scope.ServiceProvider.GetRequiredService<IdempotencyTestDbContext>()
+            .Set<IdempotencyRecord>().SingleAsync(r => r.UserId == UserA && r.Key == key, Ct);
+        record.Generation.Should().Be(currentLease);
+        record.CompletedAt.Should().BeNull();
+        record.ResponseBody.Should().BeNull();
+
+        await store.ReleaseAsync(UserA, key, currentLease, Ct);
+    }
+
+    [Fact]
     public async Task TwoSendsTakingOverTheSameStaleKey_OnlyOneWins()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);

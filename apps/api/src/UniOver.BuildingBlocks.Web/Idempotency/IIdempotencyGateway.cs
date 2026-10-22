@@ -23,7 +23,7 @@ public sealed record IdempotencyGatewayEntry(
     string? ContentType,
     string? Location);
 
-public sealed record IdempotencyGatewayResult(IdempotencyGatewayOutcome Outcome, IdempotencyGatewayEntry? Existing);
+public sealed record IdempotencyGatewayResult(IdempotencyGatewayOutcome Outcome, IdempotencyGatewayEntry? Existing, Guid? LeaseId = null);
 
 /// <summary>
 /// Porta que o filtro HTTP de idempotência usa para guardar as chaves, sem conhecer EF Core. O adaptador é a loja
@@ -36,7 +36,7 @@ public interface IIdempotencyGateway<TContext>
         Guid userId, Guid key, string method, string route, byte[] requestHash, CancellationToken cancellationToken);
 
     Task CompleteAsync(
-        Guid userId, Guid key, int statusCode, string? responseBody, string? contentType, string? location, CancellationToken cancellationToken);
+        Guid userId, Guid key, Guid leaseId, int statusCode, string? responseBody, string? contentType, string? location, CancellationToken cancellationToken);
 
-    Task ReleaseAsync(Guid userId, Guid key, CancellationToken cancellationToken);
+    Task ReleaseAsync(Guid userId, Guid key, Guid leaseId, CancellationToken cancellationToken);
 }
