@@ -60,6 +60,142 @@ jobs:
           echo "::add-mask::$DB_OWNER_CONNECTION"
           export UNIOVER_MIGRATIONS_CONNECTION="$DB_OWNER_CONNECTION"
           bash scripts/migrate-all.sh
+      # Retenção da auditoria a cada publicação. O serviço da API também a executa, mas só 10 minutos depois da partida, e o
+      # Render grátis dorme: sem este passo a limpeza poderia nunca rodar. As funções são as das migrations (SECURITY
+      # DEFINER, com o piso de retenção dentro delas) e os prazos são os de AuditRetentionPolicy (um teste confere que são
+      # os mesmos: 180 dias para segurança, 30 para comandos da TV). Mesma conexão do passo acima (papel dono, direta).
+      # O segredo está no formato do Npgsql (Chave=valor;...), que o psql não lê: o python3 do runner o converte nas
+      # variáveis PG*, só dentro do processo, depois de mascarar cada parte nos logs. Não faz eco da conexão e sem set -x.
+      # continue-on-error: limpar é manutenção, e uma falha aqui (que o passo mostra em vermelho) não pode impedir a publicação.
+      - name: Limpar a auditoria vencida (retenção)
+        continue-on-error: true
+        env:
+          DB_OWNER_CONNECTION: ${{ secrets.NEON_OWNER_CONNECTION }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DB_OWNER_CONNECTION" ]; then
+            echo "::error::o segredo NEON_OWNER_CONNECTION não está cadastrado no repositório."
+            exit 1
+          fi
+          echo "::add-mask::$DB_OWNER_CONNECTION"
+          if ! command -v psql > /dev/null 2>&1; then
+            sudo apt-get update -qq > /dev/null
+            sudo apt-get install -y --no-install-recommends postgresql-client > /dev/null
+          fi
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          import sys
+
+          # (schema, dias): os mesmos de AuditRetentionPolicy. As funções nunca apagam abaixo do próprio piso.
+          PURGES = [
+              ("identity", 180),
+              ("devices", 180),
+              ("tv", 30),
+          ]
+
+          KEYS = {
+              "PGHOST": ("host", "server", "data source", "address", "addr", "network address"),
+              "PGPORT": ("port",),
+              "PGDATABASE": ("database", "db"),
+              "PGUSER": ("username", "user name", "user id", "userid", "uid", "user"),
+              "PGPASSWORD": ("password", "psw", "pwd"),
+              "PGSSLMODE": ("ssl mode", "sslmode"),
+          }
+          SSL_MODES = {
+              "disable": "disable", "allow": "allow", "prefer": "prefer", "require": "require",
+              "verifyca": "verify-ca", "verify-ca": "verify-ca", "verifyfull": "verify-full", "verify-full": "verify-full",
+          }
+
+
+          def parse(text):
+              """Lê 'Chave=valor;Chave=valor' do Npgsql; o valor pode vir entre aspas simples ou duplas (aspa repetida escapa)."""
+              pairs = {}
+              i, n = 0, len(text)
+              while i < n:
+                  while i < n and text[i] in "; \t\r\n":
+                      i += 1
+                  if i >= n:
+                      break
+                  eq = text.find("=", i)
+                  if eq < 0:
+                      raise ValueError("par sem '='")
+                  key = text[i:eq].strip().lower()
+                  i = eq + 1
+                  while i < n and text[i] in " \t":
+                      i += 1
+                  if i < n and text[i] in "'\"":
+                      quote = text[i]
+                      i += 1
+                      chars = []
+                      while True:
+                          if i >= n:
+                              raise ValueError("aspas sem fechar")
+                          if text[i] == quote:
+                              if i + 1 < n and text[i + 1] == quote:
+                                  chars.append(quote)
+                                  i += 2
+                                  continue
+                              i += 1
+                              break
+                          chars.append(text[i])
+                          i += 1
+                      value = "".join(chars)
+                      while i < n and text[i] in " \t":
+                          i += 1
+                  else:
+                      end = text.find(";", i)
+                      end = n if end < 0 else end
+                      value = text[i:end].strip()
+                      i = end
+                  pairs[key] = value
+              return pairs
+
+
+          try:
+              pairs = parse(os.environ["DB_OWNER_CONNECTION"])
+          except ValueError as error:
+              print(f"::error::o segredo NEON_OWNER_CONNECTION não está no formato esperado ({error}).")
+              sys.exit(1)
+
+          settings = {}
+          for name, synonyms in KEYS.items():
+              for synonym in synonyms:
+                  if pairs.get(synonym):
+                      settings[name] = pairs[synonym]
+                      break
+          missing = [name for name in ("PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD") if name not in settings]
+          if missing:
+              print("::error::a conexão do segredo NEON_OWNER_CONNECTION não tem: " + ", ".join(missing) + ".")
+              sys.exit(1)
+          settings.setdefault("PGPORT", "5432")
+          settings["PGSSLMODE"] = SSL_MODES.get(settings.get("PGSSLMODE", "require").lower(), "require")
+
+          # Cada parte sai dos logs ANTES de qualquer uso (o erro do psql pode citar o servidor).
+          for name in ("PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD"):
+              print("::add-mask::" + settings[name])
+
+          env = {key: value for key, value in os.environ.items() if key != "DB_OWNER_CONNECTION"}
+          env.update(settings)
+
+          failed = False
+          for schema, days in PURGES:
+              sql = f'SELECT "{schema}"."purge_audit"({days})'
+              result = subprocess.run(
+                  ["psql", "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-c", sql],
+                  env=env, capture_output=True, text=True, check=False,
+              )
+              if result.returncode != 0:
+                  # Só o começo da primeira linha de erro, sem endereços IP (o servidor já está mascarado).
+                  detail = re.sub(r"\d{1,3}(\.\d{1,3}){3}", "<ip>", (result.stderr.strip().splitlines() or [""])[0])[:200]
+                  print(f"::error::{schema}.purge_audit({days}) falhou (psql saiu com {result.returncode}): {detail}")
+                  failed = True
+                  continue
+              print(f"{schema}.purge_audit({days}): {result.stdout.strip()} linha(s) vencida(s) apagada(s).")
+
+          sys.exit(1 if failed else 0)
+          PY
 
   deploy:
     name: deploy
