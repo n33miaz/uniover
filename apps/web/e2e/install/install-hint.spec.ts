@@ -225,6 +225,20 @@ async function storedMemory(page: Page): Promise<Record<string, unknown> | null>
 }
 
 test.describe('no ambiente de fábrica do projeto', () => {
+  test('Android sem pedido nativo ainda orienta a instalação pelo menu', async ({ page }, info) => {
+    test.skip(info.project.name !== 's23-fe');
+    await signInAsOwner();
+    await showHome(page);
+    const sheet = sheetOf(page);
+    await expect(sheet).toBeVisible({ timeout: 10_000 });
+    await expect(sheet.getByRole('listitem')).toHaveCount(2);
+    await expect(sheet).toContainText('Abra o menu do navegador');
+    await expect(sheet).toContainText('Escolha instalar ou adicionar à tela inicial');
+    await sheet.getByRole('button', { name: 'Agora não' }).click();
+    await page.goto('/ajustes/aparencia');
+    await expect(rowOf(page)).toBeVisible();
+  });
+
   test('o dono: a folha abre uma vez, uns 3 s depois da tela pronta, e "Agora não" é lembrado', async ({
     page,
   }, info) => {

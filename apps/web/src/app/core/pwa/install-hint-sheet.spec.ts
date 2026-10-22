@@ -109,6 +109,17 @@ describe('InstallHintSheet', () => {
     });
   });
 
+  describe('Android sem pedido nativo', () => {
+    it('mostra instruções manuais em vez de esconder a instalação', async () => {
+      const { stepTitles, numbers } = await render({ userAgent: UA.android });
+      expect(numbers()).toEqual(['1', '2']);
+      expect(stepTitles()).toEqual([
+        'Abra o menu do navegador',
+        'Escolha instalar ou adicionar à tela inicial',
+      ]);
+    });
+  });
+
   describe('iPhone no Chrome, no Edge ou no Firefox', () => {
     it('traz os mesmos passos, com a ressalva do lugar do Compartilhar e do iOS 16.4', async () => {
       const { el, stepTitles } = await render({ userAgent: UA.chrome });
