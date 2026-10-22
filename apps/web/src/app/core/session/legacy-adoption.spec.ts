@@ -193,7 +193,7 @@ describe('adoptLegacyDatabase', () => {
     await seedLegacy();
     const target = accountDb('conta-a');
     const request = vi.fn(
-      (_name: string, options: { signal: AbortSignal }, _task: () => Promise<unknown>) =>
+      (_name: string, options: { signal: AbortSignal }) =>
         new Promise((_resolve, reject) => {
           options.signal.addEventListener(
             'abort',
