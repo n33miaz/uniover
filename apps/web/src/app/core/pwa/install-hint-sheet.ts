@@ -11,7 +11,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { leaveDialog } from '../../shared/ui/dialog-motion';
-import { InstallHintService } from './install-hint.service';
+import { InstallHintService, InstallMode } from './install-hint.service';
 
 /** Traços dos desenhos dos passos (grade de 24), no mesmo estilo dos outros ícones do app: só caminhos. */
 const SHARE_ICON = [
@@ -62,7 +62,12 @@ export class InstallHintSheet {
   readonly manual = input(false);
   readonly closed = output<void>();
 
-  protected readonly mode = this.hint.mode;
+  private readonly frozenMode = signal<InstallMode | null>(null);
+  protected readonly mode = computed(() => this.frozenMode() ?? this.hint.mode());
+  protected readonly iosNotInstalled = computed(() => {
+    const mode = this.mode();
+    return mode === 'ios-safari' || mode === 'ios-other' || mode === 'ios-in-app';
+  });
   protected readonly shareIcon = SHARE_ICON;
   protected readonly addIcon = ADD_ICON;
   protected readonly confirmIcon = CONFIRM_ICON;
@@ -111,14 +116,25 @@ export class InstallHintSheet {
     this.leave();
   }
 
+  /** No iOS a página do Safari não consegue detectar que o atalho já foi instalado na tela de início. */
+  protected alreadyInstalled(): void {
+    if (this.leaving() || this.installing()) return;
+    this.frozenMode.set(this.mode());
+    this.hint.acknowledgeInstalled();
+    this.leave();
+  }
+
   protected async install(): Promise<void> {
     if (this.leaving() || this.installing()) return;
+    this.frozenMode.set(this.mode());
     this.installing.set(true);
     this.installFailed.set(false);
     const outcome = await this.hint.prompt();
     this.installing.set(false);
-    if (outcome === 'unavailable') this.installFailed.set(true);
-    else this.leave();
+    if (outcome === 'unavailable') {
+      this.frozenMode.set(null);
+      this.installFailed.set(true);
+    } else this.leave();
   }
 
   protected async copyAddress(): Promise<void> {
@@ -163,6 +179,7 @@ export class InstallHintSheet {
   /** Toca a descida da folha e só então fecha o diálogo e avisa o hospedeiro, que a tira do DOM. */
   private leave(): void {
     if (this.leaving()) return;
+    if (this.frozenMode() === null) this.frozenMode.set(this.mode());
     this.leaving.set(true);
     const dialog = this.dialog().nativeElement;
     leaveDialog(dialog, () => {

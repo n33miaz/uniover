@@ -106,9 +106,12 @@ describe('InstallHintService', () => {
       window.dispatchEvent(event);
       expect(await service.prompt()).toBe('accepted');
       expect(event.prompt).toHaveBeenCalledTimes(1);
-      expect(service.mode()).toBe('android-manual');
+      expect(service.mode()).toBe('none');
       expect(await service.prompt()).toBe('unavailable');
-      expect(stored()).toBeNull();
+      expect(stored()).toEqual({ installed: true });
+
+      TestBed.resetTestingModule();
+      expect(create({ userAgent: UA.android }).autoOpenAllowed()).toBe(false);
     });
 
     it('recusar o pedido conta como "Agora não": a folha não volta sozinha por 14 dias', async () => {
@@ -129,14 +132,14 @@ describe('InstallHintService', () => {
       expect(await service.prompt()).toBe('unavailable');
     });
 
-    it('appinstalled: não há mais o que oferecer e a memória antiga sai', () => {
+    it('appinstalled: não há mais o que oferecer e a confirmação fica salva', () => {
       localStorage.setItem(INSTALL_HINT_KEY, JSON.stringify({ dismissedAt: 1 }));
       const service = create({ userAgent: UA.android });
       window.dispatchEvent(installPromptEvent());
       expect(service.mode()).toBe('native');
       window.dispatchEvent(new Event('appinstalled'));
       expect(service.mode()).toBe('none');
-      expect(stored()).toBeNull();
+      expect(stored()).toEqual({ installed: true });
     });
   });
 
@@ -196,10 +199,20 @@ describe('InstallHintService', () => {
       expect(create({ userAgent: UA.safari }).autoOpenAllowed()).toBe(false);
     });
 
-    it('rodando como app instalado, a memória é limpa (se desinstalar, a dica pode voltar)', () => {
+    it('rodando como app instalado, salva a confirmação para evitar nova dica automática', () => {
       localStorage.setItem(INSTALL_HINT_KEY, JSON.stringify({ never: true, dismissedAt: 5 }));
       create({ userAgent: UA.safari, standalone: true });
-      expect(localStorage.getItem(INSTALL_HINT_KEY)).toBeNull();
+      expect(stored()).toEqual({ installed: true });
+    });
+
+    it('no iOS, a inicialização standalone confirma instalação sem depender de appinstalled', () => {
+      create({ userAgent: UA.safari, standalone: true });
+      expect(stored()).toEqual({ installed: true });
+
+      TestBed.resetTestingModule();
+      const browser = create({ userAgent: UA.safari });
+      expect(browser.mode()).toBe('ios-safari');
+      expect(browser.autoOpenAllowed()).toBe(false);
     });
 
     it('memória ilegível (texto solto, tipos errados) é ignorada', () => {
@@ -241,7 +254,7 @@ describe('InstallHintService', () => {
       expect(service.autoOpenAllowed()).toBe(false);
     });
 
-    it('instalado: não tenta apagar o que não consegue ler', () => {
+    it('instalado: não tenta persistir o que não consegue ler', () => {
       expect(() => create({ userAgent: UA.safari, standalone: true })).not.toThrow();
     });
   });
