@@ -15,14 +15,6 @@ interface SettingsEntry {
   readonly summary: string;
 }
 
-/** Recurso planejado que ainda não existe: um cartão calmo, sem link. */
-interface SoonEntry {
-  readonly id: string;
-  readonly glyph: SettingsGlyphName;
-  readonly title: string;
-  readonly summary: string;
-}
-
 function themeSummary(preference: ThemePreference): string {
   switch (preference) {
     case 'light':
@@ -36,8 +28,7 @@ function themeSummary(preference: ThemePreference): string {
 
 /**
  * Ajustes: a lista das telas, cada uma com ícone, nome, um resumo curto e a seta. Todos veem Perfil, Aparência e
- * Sobre; o administrador vê também Segurança, Pessoas, Aparelhos e Sistema (e o recurso que ainda vem: Auditoria, em um
- * cartão calmo, sem link).
+ * Sobre; o administrador vê também Segurança, Pessoas, Aparelhos, Auditoria e Sistema.
  *
  * Só esconde o que o servidor também recusa, e nunca chama a API: nenhuma linha daqui faz pedido, então quem não é
  * administrador não gera nenhuma chamada a rota de administrador. Com o papel ainda desconhecido (sessão a confirmar, sem
@@ -111,25 +102,18 @@ export class SettingsPage {
             summary: $localize`:@@settings.devices.hint:Parear o agente do PC de casa`,
           },
           {
+            id: 'audit',
+            link: '/ajustes/auditoria',
+            glyph: 'audit',
+            title: SETTINGS_TITLES.audit,
+            summary: $localize`:@@settings.list.audit-summary:Quem fez o quê, e quando`,
+          },
+          {
             id: 'system',
             link: '/ajustes/sistema',
             glyph: 'gear',
             title: SETTINGS_TITLES.system,
             summary: $localize`:@@settings.list.system-summary:Qual computador controla a TV`,
-          },
-        ]
-      : [],
-  );
-
-  /** O que o administrador ainda vai ganhar: aparece, mas não leva a lugar nenhum. */
-  protected readonly soon = computed<readonly SoonEntry[]>(() =>
-    this.isAdmin()
-      ? [
-          {
-            id: 'audit',
-            glyph: 'audit',
-            title: $localize`:@@settings.soon.audit:Auditoria`,
-            summary: $localize`:@@settings.soon.audit-summary:Quem fez o quê, e quando`,
           },
         ]
       : [],

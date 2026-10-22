@@ -9,6 +9,7 @@ export const SETTINGS_TITLES = {
   appearance: $localize`:@@settings.route.appearance:Aparência`,
   security: $localize`:@@settings.route.security:Segurança`,
   people: $localize`:@@settings.route.people:Pessoas`,
+  audit: $localize`:@@settings.route.audit:Auditoria`,
   system: $localize`:@@settings.route.system:Sistema`,
   about: $localize`:@@settings.route.about:Sobre`,
 } as const;

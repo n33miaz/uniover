@@ -1,0 +1,255 @@
+<div class="audit">
+  <div class="intro ui-rise">
+    <p class="privacy">
+      <app-settings-glyph name="shield" />
+      <span i18n="@@settings.audit.privacy"
+        >Estes registros ficam guardados por segurança: data, IP e aparelho de cada ação.</span
+      >
+    </p>
+    @if (retention(); as text) {
+      <p class="retention">{{ text }}</p>
+    }
+  </div>
+
+  <div class="toolbar ui-rise">
+    <button
+      #filterButton
+      type="button"
+      class="ui-btn secondary"
+      [attr.aria-haspopup]="'dialog'"
+      (click)="openFilters()"
+    >
+      <app-settings-glyph name="filter" />
+      <span i18n="@@settings.audit.filters">Filtros</span>
+      @if (filterCount() > 0) {
+        <span class="count"> {{ filterCount() }}</span>
+      }
+    </button>
+    <button
+      type="button"
+      class="export ui-btn secondary"
+      [disabled]="exporting() || !online()"
+      (click)="exportCsv()"
+    >
+      @if (exporting()) {
+        <span class="ui-spinner" aria-hidden="true"></span>
+        <span i18n="@@settings.audit.exporting">Exportando…</span>
+      } @else {
+        <app-settings-glyph name="download" />
+        <span i18n="@@settings.audit.export">Exportar CSV</span>
+      }
+    </button>
+  </div>
+
+  @if (appliedChips().length > 0) {
+    <div
+      class="applied"
+      role="group"
+      i18n-aria-label="@@settings.audit.applied-label"
+      aria-label="Filtros ativos"
+    >
+      @for (chip of appliedChips(); track chip.part) {
+        <button
+          type="button"
+          class="applied-chip"
+          [attr.aria-label]="chip.aria"
+          (click)="removeFilter(chip.part)"
+        >
+          <span class="pill">
+            <span class="pill-text">{{ chip.label }}</span>
+            <app-settings-glyph name="close" />
+          </span>
+        </button>
+      }
+      @if (appliedChips().length > 1) {
+        <button
+          type="button"
+          class="clear-all ui-btn"
+          (click)="clearFilters()"
+          i18n="@@settings.audit.clear-all"
+        >
+          Limpar tudo
+        </button>
+      }
+    </div>
+  }
+
+  <div class="messages" [attr.aria-live]="'polite'">
+    @if (exportNote(); as note) {
+      <div class="ui-collapse" [animate.leave]="'leaving'">
+        <div class="ui-collapse-inner">
+          <p
+            class="ui-notice"
+            [class.ok]="note.tone === 'ok'"
+            [class.warn]="note.tone === 'warn'"
+            [class.bad]="note.tone === 'bad'"
+            [attr.role]="note.tone === 'bad' ? 'alert' : null"
+          >
+            <app-settings-glyph [name]="note.tone === 'ok' ? 'checkCircle' : 'alert'" />
+            <span>{{ note.text }}</span>
+          </p>
+        </div>
+      </div>
+    }
+  </div>
+
+  @switch (view()) {
+    @case ('loading') {
+      <p class="loading" role="status">
+        <span class="ui-spinner" aria-hidden="true"></span>
+        <span i18n="@@settings.audit.loading">Carregando os registros…</span>
+      </p>
+      <div class="skeleton ui-group" aria-hidden="true">
+        @for (n of [1, 2, 3]; track n) {
+          <div class="skeleton-row">
+            <span class="lines">
+              <span class="ui-skeleton bar wide"></span>
+              <span class="ui-skeleton bar"></span>
+            </span>
+          </div>
+        }
+      </div>
+    }
+    @case ('offline') {
+      <div class="state ui-rise">
+        <app-settings-glyph name="network" />
+        <p i18n="@@settings.audit.offline">
+          A auditoria só funciona com internet, porque os registros ficam no servidor. Quando a
+          conexão voltar, a lista aparece sozinha.
+        </p>
+      </div>
+      <button
+        type="button"
+        class="retry secondary ui-btn"
+        (click)="load()"
+        i18n="@@settings.audit.retry"
+      >
+        Tentar de novo
+      </button>
+    }
+    @case ('error') {
+      <p class="state bad ui-rise" role="alert">
+        <app-settings-glyph name="alert" />
+        <span i18n="@@settings.audit.load-failed"
+          >Não foi possível carregar os registros agora.</span
+        >
+      </p>
+      <button
+        type="button"
+        class="retry secondary ui-btn"
+        (click)="load()"
+        i18n="@@settings.audit.retry"
+      >
+        Tentar de novo
+      </button>
+    }
+    @default {
+      @if (rows().length === 0) {
+        <div class="state ui-rise">
+          <app-settings-glyph name="audit" />
+          @if (filterCount() > 0) {
+            <p i18n="@@settings.audit.empty-filtered">Nenhum registro com esses filtros.</p>
+          } @else {
+            <p i18n="@@settings.audit.empty">Ainda não há registros.</p>
+          }
+        </div>
+        @if (filterCount() > 0) {
+          <button
+            type="button"
+            class="retry secondary ui-btn"
+            (click)="clearFilters()"
+            i18n="@@settings.audit.clear-all"
+          >
+            Limpar tudo
+          </button>
+        }
+      } @else {
+        <ul class="list ui-group">
+          @for (row of rows(); track row.key) {
+            <li>
+              <button
+                type="button"
+                class="entry ui-row"
+                [attr.aria-expanded]="expanded() === row.key"
+                [attr.aria-controls]="expanded() === row.key ? rowId(row) : null"
+                (click)="toggle(row.key)"
+              >
+                <span class="ui-row-text">
+                  <span class="ui-row-title">{{ row.title }}</span>
+                  <span class="ui-row-sub">{{ row.meta }}</span>
+                </span>
+                <span
+                  class="result ui-chip"
+                  [class.ok]="row.outcome.tone === 'ok'"
+                  [class.warn]="row.outcome.tone === 'warn'"
+                  [class.bad]="row.outcome.tone === 'bad'"
+                >
+                  <app-settings-glyph [name]="row.outcome.glyph" />
+                  {{ row.outcome.label }}
+                </span>
+                <app-settings-glyph
+                  class="chev"
+                  [class.open]="expanded() === row.key"
+                  name="chevron"
+                />
+              </button>
+              @if (expanded() === row.key) {
+                <div class="ui-collapse" [animate.leave]="'leaving'">
+                  <div class="ui-collapse-inner">
+                    <dl class="details" [id]="rowId(row)">
+                      @for (line of details(); track line.label) {
+                        <div class="line">
+                          <dt>{{ line.label }}</dt>
+                          <dd>{{ line.value }}</dd>
+                        </div>
+                      }
+                    </dl>
+                  </div>
+                </div>
+              }
+            </li>
+          }
+        </ul>
+
+        @if (nextCursor()) {
+          @if (moreFailed()) {
+            <p class="ui-notice bad" role="alert">
+              <app-settings-glyph name="alert" />
+              <span i18n="@@settings.audit.more-failed"
+                >Não foi possível carregar mais registros agora.</span
+              >
+            </p>
+          }
+          <button
+            type="button"
+            class="more secondary ui-btn block"
+            [disabled]="loadingMore()"
+            (click)="loadMore()"
+          >
+            @if (loadingMore()) {
+              <span class="ui-spinner" aria-hidden="true"></span>
+              <span i18n="@@settings.audit.loading-more">Carregando…</span>
+            } @else if (moreFailed()) {
+              <span i18n="@@settings.audit.retry">Tentar de novo</span>
+            } @else {
+              <span i18n="@@settings.audit.more">Carregar mais</span>
+            }
+          </button>
+        }
+      }
+    }
+  }
+</div>
+
+@if (sheetOpen()) {
+  <app-audit-filter-sheet
+    [filter]="filter()"
+    [sources]="sources()"
+    [people]="people()"
+    [peopleFailed]="peopleFailed()"
+    [selfId]="selfId()"
+    (applied)="closeFilters(); applyFilter($event)"
+    (closed)="closeFilters()"
+    (retryPeople)="loadPeople()"
+  />
+}

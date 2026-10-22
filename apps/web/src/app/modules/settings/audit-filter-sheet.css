@@ -1,0 +1,196 @@
+/* Folha que sobe de baixo: o <dialog> modal ocupa a largura toda e cola no rodapé (a mesma das outras folhas dos Ajustes). */
+.sheet {
+  --dialog-shift: 40px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  max-height: 90dvh;
+  margin: auto 0 0;
+  padding: var(--space-2) var(--gutter) 0;
+  border: 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--a-surface-raised);
+  color: var(--a-ink);
+  box-shadow: var(--shadow-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Em tela larga a folha vira um cartão centrado, ainda colado ao rodapé. */
+@media (min-width: 640px) {
+  .sheet {
+    width: min(100%, 34rem);
+    margin-inline: auto;
+  }
+}
+
+.sheet::backdrop {
+  background: rgb(8 16 10 / 0.52);
+}
+
+.grabber {
+  display: block;
+  width: 40px;
+  height: 5px;
+  margin: 0 auto var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--a-line);
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+h2 {
+  font-size: var(--fs-title);
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+/* A folha abre com o foco no título (o leitor de tela o lê e o primeiro Tab já cai no primeiro controle): não é controle, sem contorno. */
+h2:focus {
+  outline: none;
+}
+
+/* Um bloco de filtro: o rótulo em cima e as opções embaixo. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.field > legend {
+  margin-bottom: var(--space-2);
+  padding: 0 var(--space-1);
+}
+
+/* Opções em forma de chip: o campo de verdade (radio ou caixa) cobre o chip inteiro, invisível, e é ele que recebe o toque e o foco. */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.choice {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--tap);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-pill);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font-size: var(--fs-small);
+  font-weight: 650;
+  transition:
+    background-color var(--dur-fast) linear,
+    border-color var(--dur-fast) linear;
+}
+
+.choice input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* A marca de escolhido: a forma (o visto) e o tom, nunca só a cor. */
+.tick {
+  --glyph-size: 16px;
+  display: none;
+}
+
+.choice:has(input:checked) {
+  border-color: var(--a-accent);
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
+}
+
+.choice:has(input:checked) .tick {
+  display: inline-flex;
+}
+
+.choice:has(input:focus-visible) {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  .choice:hover {
+    background: var(--a-surface-2);
+  }
+
+  .choice:has(input:checked):hover {
+    background: var(--a-accent-soft);
+  }
+}
+
+/* O nome do módulo sobre as ações dele, quando há mais de um módulo à vista. */
+.group-label {
+  margin: var(--space-1) var(--space-1) 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.choice span {
+  overflow-wrap: anywhere;
+}
+
+.note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.note.bad {
+  color: var(--a-bad-ink);
+}
+
+/* Rodapé fixo na base da folha: as duas saídas sempre à mão, mesmo com os filtros rolando. */
+.footer {
+  position: sticky;
+  bottom: 0;
+  margin: var(--space-1) calc(-1 * var(--gutter)) 0;
+  padding: var(--space-3) var(--gutter);
+  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--a-line);
+  background: var(--a-surface-raised);
+}
+
+.buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.buttons button {
+  flex: 1 1 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice {
+    transition: none;
+  }
+}

@@ -45,25 +45,6 @@
     </section>
   }
 
-  @if (soon().length > 0) {
-    <section class="section ui-rise" aria-labelledby="soon-title">
-      <h2 id="soon-title" class="ui-section-label" i18n="@@settings.list.soon">Em breve</h2>
-      <!-- Cartões calmos: nada aqui é link, botão nem recebe foco. O texto já diz que ainda não existe. -->
-      <ul class="ui-group soon">
-        @for (entry of soon(); track entry.id) {
-          <li class="ui-row">
-            <span class="ui-tile soon-tile"><app-settings-glyph [name]="entry.glyph" /></span>
-            <span class="ui-row-text">
-              <span class="ui-row-title">{{ entry.title }}</span>
-              <span class="ui-row-sub">{{ entry.summary }}</span>
-            </span>
-            <span class="ui-chip" i18n="@@settings.list.soon-chip">Em breve</span>
-          </li>
-        }
-      </ul>
-    </section>
-  }
-
   <section class="section ui-rise" aria-labelledby="app-title">
     <h2 id="app-title" class="ui-section-label" i18n="@@settings.list.app">Aplicativo</h2>
     <ul class="ui-group">

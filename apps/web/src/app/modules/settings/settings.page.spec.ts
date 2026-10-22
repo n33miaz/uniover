@@ -72,9 +72,9 @@ describe('SettingsPage (a list of screens)', () => {
     }));
 
   describe('for the administrator', () => {
-    it('lists the screens in groups: account, administration, soon and the app', async () => {
+    it('lists the screens in groups: account, administration and the app', async () => {
       const { el } = await render();
-      expect(headings(el)).toEqual(['Conta', 'Administração', 'Em breve', 'Aplicativo']);
+      expect(headings(el)).toEqual(['Conta', 'Administração', 'Aplicativo']);
     });
 
     it('has a row for each screen, with a short summary and where it goes', async () => {
@@ -93,6 +93,7 @@ describe('SettingsPage (a list of screens)', () => {
           summary: 'Parear o agente do PC de casa',
           href: '/ajustes/aparelhos',
         },
+        { title: 'Auditoria', summary: 'Quem fez o quê, e quando', href: '/ajustes/auditoria' },
         {
           title: 'Sistema',
           summary: 'Qual computador controla a TV',
@@ -108,17 +109,14 @@ describe('SettingsPage (a list of screens)', () => {
       expect(link?.textContent?.trim().startsWith('Aparelhos')).toBe(true);
     });
 
-    it('shows only Auditoria as a calm "Em breve" card: no link, no button, no focus', async () => {
+    it('opens the real Auditoria screen: a link in the administration group, no longer a "coming soon" card', async () => {
       const { el } = await render();
-      const soon = el.querySelector('ul.soon')!;
-      const cards = Array.from(soon.querySelectorAll('li'));
-      expect(cards.map((c) => c.querySelector('.ui-row-title')?.textContent?.trim())).toEqual([
-        'Auditoria',
-      ]);
-      for (const card of cards) {
-        expect(card.querySelector('.ui-chip')?.textContent?.trim()).toBe('Em breve');
-      }
-      expect(soon.querySelectorAll('a, button, input, [tabindex], [role="link"]')).toHaveLength(0);
+      const link = el.querySelector<HTMLAnchorElement>('a[href="/ajustes/auditoria"]')!;
+      expect(link.closest('section')?.querySelector('h2')?.textContent?.trim()).toBe(
+        'Administração',
+      );
+      expect(link.textContent?.trim().startsWith('Auditoria')).toBe(true);
+      expect(el.textContent).not.toContain('Em breve');
     });
 
     it('has a decorative icon and a chevron on each row, hidden from the screen reader', async () => {
@@ -174,13 +172,13 @@ describe('SettingsPage (a list of screens)', () => {
       ]);
     });
 
-    it('does not even mention the administrator screens, or the soon cards', async () => {
+    it('does not even mention the administrator screens', async () => {
       const { el } = await render();
       for (const name of ['Segurança', 'Pessoas', 'Aparelhos', 'Auditoria', 'Sistema']) {
         expect(el.textContent).not.toContain(name);
       }
-      expect(el.querySelector('ul.soon')).toBeNull();
       expect(el.querySelector('a[href="/ajustes/aparelhos"]')).toBeNull();
+      expect(el.querySelector('a[href="/ajustes/auditoria"]')).toBeNull();
     });
   });
 
@@ -189,7 +187,6 @@ describe('SettingsPage (a list of screens)', () => {
       api.refresh.mockRejectedValue(networkProblem());
       const { el } = await render();
       expect(rows(el).map((r) => r.title)).toEqual(['Perfil', 'Aparência', 'Sobre']);
-      expect(el.querySelector('ul.soon')).toBeNull();
     });
   });
 

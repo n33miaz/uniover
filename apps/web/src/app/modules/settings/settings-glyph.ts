@@ -222,6 +222,21 @@ const GLYPHS = {
     ],
   },
   plus: { layers: [['line', 'M12 5v14 M5 12h14']] },
+  close: { layers: [['line', 'M6 6l12 12 M18 6L6 18']] },
+  // Círculo cortado: "recusado" (a forma diz o que a cor sozinha não diria).
+  ban: {
+    layers: [
+      ['fill', 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z'],
+      ['line', 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M5.6 5.6l12.8 12.8'],
+    ],
+  },
+  filter: {
+    layers: [
+      ['fill', 'M4 5h16l-6 7.5V19l-4-2v-4.5z'],
+      ['line', 'M4 5h16l-6 7.5V19l-4-2v-4.5z'],
+    ],
+  },
+  download: { layers: [['line', 'M12 4v11 M7.5 11l4.5 4.5 4.5-4.5 M5 19.5h14']] },
   pencil: {
     layers: [
       ['fill', 'M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z'],
