@@ -38,7 +38,7 @@ internal sealed partial class TvPresenceListener(
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            LogResolveFailed(ex);
+            LogResolveFailed(ex.GetType().Name);
         }
     }
 
@@ -55,6 +55,7 @@ internal sealed partial class TvPresenceListener(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Não foi possível conferir se a presença de um agente é a da TV.")]
-    private partial void LogResolveFailed(Exception exception);
+    // Só o tipo do erro: a mensagem do driver do banco pode citar o servidor e a conexão.
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Não foi possível conferir se a presença de um agente é a da TV ({ErrorType}).")]
+    private partial void LogResolveFailed(string errorType);
 }
