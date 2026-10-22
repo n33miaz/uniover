@@ -1,3 +1,5 @@
+using System.Net.Mail;
+
 namespace UniOver.Modules.Training;
 
 /// <summary>Importação opcional do wger (<c>Modules:Training:Import:Wger</c>): devagar, pouco e uma vez.</summary>
@@ -28,6 +30,12 @@ public sealed class ImportOptions
     public WgerImportOptions Wger { get; set; } = new();
 }
 
+public sealed class FoodsOptions
+{
+    /// <summary>Contato institucional para identificação no Open Food Facts; vazio desabilita chamadas ao OFF.</summary>
+    public string OffContact { get; set; } = string.Empty;
+}
+
 /// <summary>Tudo que é ajustável do módulo, em <c>Modules:Training</c>.</summary>
 public sealed class TrainingModuleOptions
 {
@@ -36,6 +44,8 @@ public sealed class TrainingModuleOptions
     public string Version { get; set; } = "0.0.0";
 
     public ImportOptions Import { get; set; } = new();
+
+    public FoodsOptions Foods { get; set; } = new();
 
     internal static bool IsValid(TrainingModuleOptions o)
     {
@@ -46,6 +56,7 @@ public sealed class TrainingModuleOptions
             && wger.MaxItems is >= 1 and <= 10_000
             && wger.PageSize is >= 1 and <= 100
             && wger.LanguageId >= 1
-            && wger.TimeoutSeconds is >= 1 and <= 120;
+            && wger.TimeoutSeconds is >= 1 and <= 120
+            && (string.IsNullOrWhiteSpace(o.Foods.OffContact) || MailAddress.TryCreate(o.Foods.OffContact, out _));
     }
 }

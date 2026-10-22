@@ -43,12 +43,6 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("content_type");
 
-                    b.Property<Guid>("Generation")
-                        .ValueGeneratedOnAdd()
-                        .HasDefaultValueSql("gen_random_uuid()")
-                        .HasColumnType("uuid")
-                        .HasColumnName("generation");
-
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -56,6 +50,12 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                     b.Property<DateTimeOffset>("ExpiresAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
+
+                    b.Property<Guid>("Generation")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("generation")
+                        .HasDefaultValueSql("gen_random_uuid()");
 
                     b.Property<string>("Location")
                         .HasMaxLength(2000)
@@ -464,6 +464,238 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                     b.ToTable("exercise_overrides", "training");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Foods.Food", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Attribution")
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)")
+                        .HasColumnName("attribution");
+
+                    b.Property<string>("Barcode")
+                        .HasMaxLength(14)
+                        .HasColumnType("character varying(14)")
+                        .HasColumnName("barcode");
+
+                    b.Property<string>("Brand")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("brand");
+
+                    b.Property<decimal>("CarbsPer100g")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("numeric(7,2)")
+                        .HasColumnName("carb_100g");
+
+                    b.Property<DateTimeOffset>("ClientUpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("client_updated_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<decimal?>("DefaultPortionGrams")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("numeric(7,2)")
+                        .HasColumnName("default_portion_g");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<decimal>("FatPer100g")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("numeric(7,2)")
+                        .HasColumnName("fat_100g");
+
+                    b.Property<decimal>("KcalPer100g")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("numeric(7,2)")
+                        .HasColumnName("kcal_100g");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid?>("OwnerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<decimal>("ProteinPer100g")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("numeric(7,2)")
+                        .HasColumnName("protein_100g");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("SourceRef")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("source_ref");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_foods");
+
+                    b.HasIndex("Barcode")
+                        .HasDatabaseName("ix_foods_barcode")
+                        .HasFilter("barcode IS NOT NULL AND deleted_at IS NULL");
+
+                    b.HasIndex("Source", "SourceRef")
+                        .IsUnique()
+                        .HasDatabaseName("ix_foods_source_source_ref")
+                        .HasFilter("source_ref IS NOT NULL");
+
+                    b.HasIndex("OwnerUserId", "UpdatedAt", "Id")
+                        .HasDatabaseName("ix_foods_owner_user_id_updated_at_id");
+
+                    b.ToTable("foods", "training", t =>
+                        {
+                            t.HasCheckConstraint("ck_foods_carbs", "carb_100g BETWEEN 0 AND 99999.99");
+
+                            t.HasCheckConstraint("ck_foods_fat", "fat_100g BETWEEN 0 AND 99999.99");
+
+                            t.HasCheckConstraint("ck_foods_kcal", "kcal_100g BETWEEN 0 AND 99999.99");
+
+                            t.HasCheckConstraint("ck_foods_name", "(char_length(btrim(name)) BETWEEN 1 AND 160) OR deleted_at IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_foods_owner_source", "(source = 'own' AND owner_user_id IS NOT NULL) OR (source <> 'own' AND owner_user_id IS NULL)");
+
+                            t.HasCheckConstraint("ck_foods_portion", "default_portion_g IS NULL OR default_portion_g BETWEEN 0.01 AND 10000");
+
+                            t.HasCheckConstraint("ck_foods_protein", "protein_100g BETWEEN 0 AND 99999.99");
+
+                            t.HasCheckConstraint("ck_foods_source", "source IN ('own', 'off', 'taco')");
+
+                            t.HasCheckConstraint("ck_foods_source_ref", "(source = 'own' AND source_ref IS NULL) OR (source <> 'own' AND source_ref IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Foods.MealEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Carbs")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("carb_g");
+
+                    b.Property<DateTimeOffset>("ClientUpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("client_updated_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<DateTimeOffset?>("EatenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("eaten_at");
+
+                    b.Property<DateOnly>("EatenOn")
+                        .HasColumnType("date")
+                        .HasColumnName("eaten_on");
+
+                    b.Property<decimal>("Fat")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("fat_g");
+
+                    b.Property<Guid?>("FoodId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("food_id");
+
+                    b.Property<string>("FoodName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("name");
+
+                    b.Property<decimal>("Grams")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("numeric(7,2)")
+                        .HasColumnName("quantity_g");
+
+                    b.Property<decimal>("Kcal")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("kcal");
+
+                    b.Property<string>("MealType")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("meal_type");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("note");
+
+                    b.Property<decimal>("Protein")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("protein_g");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_meal_entries");
+
+                    b.HasIndex("FoodId")
+                        .HasDatabaseName("ix_meal_entries_food_id");
+
+                    b.HasIndex("UserId", "EatenOn")
+                        .HasDatabaseName("ix_meal_entries_user_id_eaten_on");
+
+                    b.HasIndex("UserId", "UpdatedAt", "Id")
+                        .HasDatabaseName("ix_meal_entries_user_id_updated_at_id");
+
+                    b.ToTable("meal_entries", "training", t =>
+                        {
+                            t.HasCheckConstraint("ck_meal_entries_carbs", "carb_g >= 0 AND carb_g <= 999999.99");
+
+                            t.HasCheckConstraint("ck_meal_entries_fat", "fat_g >= 0 AND fat_g <= 999999.99");
+
+                            t.HasCheckConstraint("ck_meal_entries_grams", "(quantity_g > 0 AND quantity_g <= 10000) OR deleted_at IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_meal_entries_kcal", "kcal >= 0 AND kcal <= 999999.99");
+
+                            t.HasCheckConstraint("ck_meal_entries_note", "note IS NULL OR char_length(note) <= 300");
+
+                            t.HasCheckConstraint("ck_meal_entries_protein", "protein_g >= 0 AND protein_g <= 999999.99");
+
+                            t.HasCheckConstraint("ck_meal_entries_type", "meal_type IN ('breakfast', 'lunch', 'snack', 'dinner', 'other')");
+                        });
+                });
+
             modelBuilder.Entity("UniOver.Modules.Training.Domain.Goals.Goal", b =>
                 {
                     b.Property<Guid>("Id")
@@ -853,6 +1085,15 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_exercise_overrides_exercises_exercise_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Foods.MealEntry", b =>
+                {
+                    b.HasOne("UniOver.Modules.Training.Domain.Foods.Food", null)
+                        .WithMany()
+                        .HasForeignKey("FoodId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_meal_entries_foods_food_id");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Training.Domain.Goals.Goal", b =>

@@ -15,6 +15,7 @@ using UniOver.Modules.Training.Features.Catalog.PullExercises;
 using UniOver.Modules.Training.Features.Catalog.SetExerciseStep;
 using UniOver.Modules.Training.Features.Catalog.UpsertCustomExercise;
 using UniOver.Modules.Training.Features.Goals;
+using UniOver.Modules.Training.Features.Foods;
 using UniOver.Modules.Training.Features.Routines;
 using UniOver.Modules.Training.Features.Sessions;
 using UniOver.Modules.Training.Persistence;
@@ -33,6 +34,7 @@ public static class TrainingModule
 
         services.AddOptions<TrainingModuleOptions>()
             .Bind(configuration.GetSection(TrainingModuleOptions.SectionName))
+            .Configure(options => options.Foods.OffContact = configuration["TRAINING_OFF_CONTACT"] ?? options.Foods.OffContact)
             .Validate(TrainingModuleOptions.IsValid, "Modules:Training tem valor fora do permitido (importação do wger: endereço https, tempos e limites positivos).")
             .ValidateOnStart();
 
@@ -71,6 +73,7 @@ public static class TrainingModule
         services.AddSessions();
         services.AddGoals();
         services.AddBody();
+        services.AddFoods();
 
         // [composição: training] as próximas áreas do módulo (rotinas, sessões, medidas) acrescentam as suas linhas aqui.
         return services;
@@ -93,6 +96,7 @@ public static class TrainingModule
         group.MapSessions();
         group.MapGoals();
         group.MapBody();
+        group.MapFoods();
 
         // [composição: training] as próximas áreas do módulo acrescentam as suas rotas aqui.
         return endpoints;

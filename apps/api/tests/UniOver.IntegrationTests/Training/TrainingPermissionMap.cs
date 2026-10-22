@@ -70,6 +70,12 @@ internal static class TrainingPermissionMap
         new("PUT", "/api/v1/training/body/entries/{id:guid}", Module, new { weightKg = 80m, clientUpdatedAt = DateTimeOffset.UtcNow }),
         new("GET", "/api/v1/training/body/profile", Module),
         new("PUT", "/api/v1/training/body/profile", Module, new { heightCm = 180m, clientUpdatedAt = DateTimeOffset.UtcNow }),
+        new("GET", "/api/v1/training/foods", Module),
+        new("PUT", "/api/v1/training/foods/{id:guid}", Module, new { name = "Maçã", kcalPer100g = 52m, proteinPer100g = .3m, carbsPer100g = 14m, fatPer100g = .2m, clientUpdatedAt = DateTimeOffset.UtcNow }),
+        new("GET", "/api/v1/training/foods/off/search", Module),
+        new("GET", "/api/v1/training/foods/off/barcode/{barcode}", Module),
+        new("GET", "/api/v1/training/meals", Module),
+        new("PUT", "/api/v1/training/meals/{id:guid}", Module, new { eatenOn = DateOnly.FromDateTime(DateTime.UtcNow), mealType = "lunch", name = "Maçã", quantityG = 100m, kcal = 52m, proteinG = .3m, carbG = 14m, fatG = .2m, clientUpdatedAt = DateTimeOffset.UtcNow }),
     ];
 
     /// <summary>
@@ -79,6 +85,7 @@ internal static class TrainingPermissionMap
     public static IReadOnlyList<TrainingAdminRoute> AdminRoutes { get; } =
     [
         new("POST", "/api/v1/training/catalog/imports/wger"),
+        new("POST", "/api/v1/training/foods/imports/taco"),
     ];
 
     /// <summary>Todas as chamadas do Treino (as de permissão e as de administrador), para as matrizes de HTTP.</summary>
@@ -90,6 +97,7 @@ internal static class TrainingPermissionMap
     public static string Fill(string pattern) => pattern
         .Replace("{sessionId:guid}", Guid.NewGuid().ToString(), StringComparison.Ordinal)
         .Replace("{id:guid}", Guid.NewGuid().ToString(), StringComparison.Ordinal)
+        .Replace("{barcode}", "12345678", StringComparison.Ordinal)
         .Replace("{kind}", "weekly_sessions", StringComparison.Ordinal);
 
     /// <summary>A chamada chegou à rota: a autorização deixou passar (o que veio depois é assunto do tratamento dela).</summary>
