@@ -1,0 +1,34 @@
+:host {
+  display: block;
+}
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ui-field label {
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+.error {
+  margin: 0;
+  color: var(--a-danger, #a32929);
+  font-size: var(--fs-small);
+}
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.confirm-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.remove {
+  align-self: flex-start;
+  min-height: var(--tap);
+  border: 0;
+  color: var(--a-danger, #a32929);
+  background: transparent;
+  font: inherit;
+}

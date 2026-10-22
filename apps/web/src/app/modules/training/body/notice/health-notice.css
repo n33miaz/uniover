@@ -1,0 +1,74 @@
+:host {
+  display: block;
+}
+
+/* O cartão curto é um botão inteiro: o toque em qualquer ponto abre o texto completo, sem uma segunda linha de "Ler mais". */
+.short {
+  align-items: center;
+  width: 100%;
+  min-height: var(--tap);
+  font: inherit;
+  font-size: clamp(0.8125rem, 3.4vw, 0.875rem);
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) linear;
+}
+
+.short:active {
+  background: color-mix(in srgb, var(--tone) 18%, var(--a-surface));
+}
+
+.short .text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chevron {
+  color: var(--a-ink2);
+}
+
+/* A primeira abertura: o texto completo na página, com a saída ("Entendi") no fim. */
+.full {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1rem, 4.6vw, 1.125rem);
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 0 0 var(--space-4);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.sheet-list {
+  color: var(--a-ink);
+  font-size: var(--fs-body);
+  gap: var(--space-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .short {
+    transition: none;
+  }
+}
