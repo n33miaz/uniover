@@ -7,7 +7,7 @@ import {
   output,
   viewChild,
 } from '@angular/core';
-import { leaveDialog } from '../../../shared/ui/dialog-motion';
+import { leaveDialog, onDialogBackdropClick } from '../../../shared/ui/dialog-motion';
 
 let nextSheetId = 0;
 
@@ -38,11 +38,8 @@ export class TrainingSheet {
       const dialog = this.dialog().nativeElement;
       // showModal prende o foco na folha, deixa o resto da tela inerte e trata o Esc.
       dialog.showModal();
-      // O fundo escurecido é o próprio <dialog>: um toque que cai nele (e não no miolo, que leva o espaçamento) fecha a folha.
-      // Fica fora do modelo de propósito: é um atalho do toque, e o teclado já tem o Esc e o botão do rodapé.
-      dialog.addEventListener('click', (event) => {
-        if (event.target === dialog) this.close();
-      });
+      // O fundo escurecido é o próprio <dialog>; só fecha se o toque começou e terminou fora da folha.
+      onDialogBackdropClick(dialog, () => this.close());
     });
   }
 

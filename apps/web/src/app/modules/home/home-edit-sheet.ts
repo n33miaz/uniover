@@ -12,7 +12,7 @@ import {
 } from '@angular/core';
 import { WidgetPref, moveWidget, moveWidgetTo } from '../../core/modules/module-prefs';
 import { ModuleRegistry, WidgetSize } from '../../core/modules/module-registry';
-import { leaveDialog } from '../../shared/ui/dialog-motion';
+import { leaveDialog, onDialogBackdropClick } from '../../shared/ui/dialog-motion';
 import { HomeGlyph, HomeGlyphName, moduleGlyph } from './home-glyph';
 
 /**
@@ -46,7 +46,9 @@ export class HomeEditSheet implements OnInit {
   constructor() {
     afterNextRender(() => {
       // showModal prende o foco na folha, deixa o resto da tela inerte e trata o Esc.
-      this.dialog().nativeElement.showModal();
+      const dialog = this.dialog().nativeElement;
+      dialog.showModal();
+      onDialogBackdropClick(dialog, () => this.cancel());
     });
   }
 

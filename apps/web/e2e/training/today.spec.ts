@@ -139,10 +139,38 @@ test.describe('Hoje', () => {
     const dialog = page.getByRole('dialog', { name: 'Escolher outra rotina' });
     await expect(dialog.getByRole('button')).toHaveCount(3); // duas rotinas e o "Cancelar"
     await expect(dialog.getByText('próxima', { exact: true })).toBeVisible();
-    await dialog.getByRole('button', { name: /Treino B/ }).click();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+
+    await page.getByRole('button', { name: 'Escolher outra rotina' }).click();
+    const opened = page.getByRole('dialog', { name: 'Escolher outra rotina' });
+    await opened.click({ position: { x: 1, y: 1 } }); // padding pertence à folha
+    await opened.getByText('próxima', { exact: true }).click();
+    await expect(opened).toBeVisible();
+    await page.mouse.click(4, 4); // fora do retângulo da folha
+    await expect
+      .poll(() => opened.evaluate((sheet) => sheet.classList.contains('closing')))
+      .toBe(true);
+    await expect(opened).toBeHidden();
+
+    await page.getByRole('button', { name: 'Escolher outra rotina' }).click();
+    const reopened = page.getByRole('dialog', { name: 'Escolher outra rotina' });
+    await reopened.getByRole('button', { name: /Treino B/ }).click();
 
     await expect(page.getByRole('heading', { name: 'Treino B · Costas e bíceps' })).toBeVisible();
     await expect(page.locator('.lines .ui-row').first()).toContainText('Puxada supinada na polia');
+  });
+
+  test('o fundo fecha o seletor sem demora com movimento reduzido', async ({ page, context }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await launch(context, page);
+    await openToday(page);
+
+    await page.getByRole('button', { name: 'Escolher outra rotina' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Escolher outra rotina' });
+    await expect(dialog).toBeVisible();
+    await page.mouse.click(4, 4);
+    await expect(dialog).toBeHidden({ timeout: 250 });
   });
 
   test('sem rotinas, a tela convida a montar uma e ainda deixa treinar sem rotina', async ({

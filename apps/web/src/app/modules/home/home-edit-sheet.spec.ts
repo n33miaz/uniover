@@ -8,6 +8,21 @@ const initial: WidgetPref[] = [
   { id: 'training', size: 'wide', enabled: true },
 ];
 
+function tapAcrossBounds(
+  dialog: HTMLDialogElement,
+  downTarget: Element,
+  upTarget: Element,
+  down: { x: number; y: number },
+  up: { x: number; y: number },
+): void {
+  const pointerDown = Object.assign(
+    new MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: down.x, clientY: down.y }),
+    { isPrimary: true },
+  );
+  downTarget.dispatchEvent(pointerDown);
+  upTarget.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: up.x, clientY: up.y }));
+}
+
 @Component({
   imports: [HomeEditSheet],
   template: `<app-home-edit-sheet
@@ -73,6 +88,34 @@ describe('HomeEditSheet', () => {
     const second = await render();
     second.el.querySelector('dialog')!.dispatchEvent(new Event('cancel', { cancelable: true }));
     expect(second.host.cancelled).toBe(true);
+  });
+
+  it('cancels on the backdrop, keeps clicks inside open, and waits for the exit motion', async () => {
+    const { host, el } = await render();
+    const dialog = el.querySelector('dialog')!;
+    Object.defineProperty(dialog, 'getBoundingClientRect', {
+      value: () => ({ left: 10, top: 10, right: 300, bottom: 500 }),
+    });
+
+    const row = el.querySelector('.row')!;
+    tapAcrossBounds(dialog, row, row, { x: 20, y: 20 }, { x: 20, y: 20 });
+    tapAcrossBounds(dialog, dialog, row, { x: 0, y: 0 }, { x: 20, y: 20 });
+    tapAcrossBounds(dialog, row, dialog, { x: 20, y: 20 }, { x: 0, y: 0 });
+    tapAcrossBounds(dialog, dialog, dialog, { x: 20, y: 20 }, { x: 20, y: 20 });
+    expect(host.cancelled).toBe(false);
+
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => (finish = resolve));
+    dialog.getAnimations = () =>
+      [
+        { finished, effect: { getComputedTiming: () => ({ iterations: 1 }) } },
+      ] as unknown as Animation[];
+    tapAcrossBounds(dialog, dialog, dialog, { x: 0, y: 0 }, { x: 0, y: 0 });
+    expect(dialog.classList.contains('closing')).toBe(true);
+    expect(host.cancelled).toBe(false);
+
+    finish();
+    await vi.waitFor(() => expect(host.cancelled).toBe(true));
   });
 
   it('lists the planned modules too, each with its name and its own glyph', async () => {
