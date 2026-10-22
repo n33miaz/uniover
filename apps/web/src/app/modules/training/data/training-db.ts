@@ -1,7 +1,10 @@
 import { InjectionToken } from '@angular/core';
 import Dexie, { type DexieOptions, type EntityTable } from 'dexie';
+import type { LocalBodyEntry } from './body/body-entry';
+import type { LocalBodyProfile } from './body/body-profile';
 import type { LocalExercise } from './catalog/exercise';
 import type { LocalGoal } from './goals/goal';
+import type { LocalPhoto } from './photos/photo';
 import type { LocalRoutine } from './routines/routine';
 import type { LocalSession, LocalSet } from './sessions/session';
 
@@ -56,6 +59,20 @@ export const TRAINING_SCHEMA_V4 = {
   goals: 'id, kind, exerciseId, updatedAt, deletedAt',
 } as const;
 
+/**
+ * Esquema da versão 5: o corpo. `bodyEntries` são as medições (peso, gordura, medidas), com a data local no índice para a
+ * linha do tempo; `bodyProfile` guarda UMA linha (altura, nascimento, sexo, fator de atividade; o `id` é fixo); `photos` são
+ * as fotos de progresso, que ficam SÓ neste aparelho (nunca entram na fila de escrita nem na leitura do servidor) e só
+ * indexam o `id` e a data, porque os bytes (`data`, um `ArrayBuffer`: o WebKit recusa `Blob` no IndexedDB em sessão efêmera)
+ * e as dimensões não são consultados. `deletedAt` entra no índice, mas linha com
+ * `null` não aparece nele: as leituras filtram a lápide em memória. Os blocos das versões 1 a 4 não foram tocados.
+ */
+export const TRAINING_SCHEMA_V5 = {
+  bodyEntries: 'id, measuredOn, updatedAt, deletedAt',
+  bodyProfile: 'id',
+  photos: 'id, takenOn',
+} as const;
+
 export interface TrainingMetaRow {
   readonly key: string;
   readonly value: unknown;
@@ -78,6 +95,9 @@ export class TrainingDb extends Dexie {
   declare sessions: EntityTable<LocalSession, 'id'>;
   declare sets: EntityTable<LocalSet, 'id'>;
   declare goals: EntityTable<LocalGoal, 'id'>;
+  declare bodyEntries: EntityTable<LocalBodyEntry, 'id'>;
+  declare bodyProfile: EntityTable<LocalBodyProfile, 'id'>;
+  declare photos: EntityTable<LocalPhoto, 'id'>;
 
   constructor(name: string = TRAINING_DB_NAME, options?: DexieOptions) {
     super(name, options);
@@ -85,6 +105,7 @@ export class TrainingDb extends Dexie {
     this.version(2).stores(TRAINING_SCHEMA_V2);
     this.version(3).stores(TRAINING_SCHEMA_V3);
     this.version(4).stores(TRAINING_SCHEMA_V4);
+    this.version(5).stores(TRAINING_SCHEMA_V5);
   }
 }
 

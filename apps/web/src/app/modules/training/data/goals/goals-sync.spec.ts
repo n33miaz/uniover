@@ -33,6 +33,8 @@ describe('goals pull, end to end', () => {
       '/api/v1/training/sessions',
       '/api/v1/training/sets',
       GOALS_PATH,
+      '/api/v1/training/body/entries',
+      '/api/v1/training/body/profile',
     ]);
     expect(GOALS_PATH).toBe('/api/v1/training/goals');
     expect(goalPath('weekly_sessions')).toBe('/api/v1/training/goals/weekly_sessions');
