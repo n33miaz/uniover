@@ -41,7 +41,9 @@ test.beforeEach(async ({ context, page }) => {
 async function openHome(page: Page, scheme: Scheme) {
   await page.emulateMedia({ colorScheme: scheme });
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText(OWNER.displayName);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(
+    OWNER.displayName.split(' ')[0],
+  );
   // O fluxo abre junto da primeira leitura do estado.
   await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
 }

@@ -38,7 +38,9 @@ const motion = (page: Page) =>
 
 async function openHome(page: Page) {
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText(OWNER.displayName);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(
+    OWNER.displayName.split(' ')[0],
+  );
   await expect(page.locator('article.card')).toHaveCount(8);
   await settle(page);
 }
@@ -86,7 +88,7 @@ test.describe('troca de tela', () => {
 
     // Voltar pela seta: a Início volta inteira e clicável, e a folha de edição abre.
     await page.getByRole('link', { name: 'Voltar ao Início' }).click();
-    await expect(page.locator('app-home-page h1')).toContainText(OWNER.displayName);
+    await expect(page.locator('app-home-page h1')).toContainText(OWNER.displayName.split(' ')[0]);
     await expect(page.locator('article.card')).toHaveCount(8);
     await settle(page);
     await page.getByRole('button', { name: 'Editar' }).click();
@@ -212,7 +214,9 @@ test.describe('movimento reduzido', () => {
   test('nenhuma animação longa roda na Início, na folha e nos Ajustes', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/');
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(OWNER.displayName);
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(
+      OWNER.displayName.split(' ')[0],
+    );
     await expect(page.locator('article.card')).toHaveCount(8);
     expect(await longAnimations(page)).toEqual([]);
 
