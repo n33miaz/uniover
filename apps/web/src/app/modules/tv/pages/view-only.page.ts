@@ -1,5 +1,6 @@
 import { Component, computed, inject } from '@angular/core';
 import { TvAccess } from '../data/tv-access';
+import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut } from '../data/tv-types';
 import { vibrate } from '../input/key-button';
@@ -22,6 +23,7 @@ import { TvIcon } from '../ui/tv-icon';
 export class ViewOnlyPage {
   protected readonly store = inject(TvStore);
   protected readonly canLaunch = inject(TvAccess).launch;
+  private readonly prefs = inject(TvPrefs);
 
   /** Só os atalhos ativos, na ordem da posição (a mesma fileira do controle). */
   protected readonly shortcuts = computed(() =>
@@ -30,7 +32,7 @@ export class ViewOnlyPage {
 
   protected openShortcut(shortcut: TvShortcut): void {
     if (!this.store.canSend() || !this.canLaunch()) return;
-    vibrate();
+    vibrate(this.prefs.vibration());
     void this.store.launch(shortcut);
   }
 }

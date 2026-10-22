@@ -8,7 +8,7 @@ import { TvMock, emitSse, installFakeEventSource, mockTvApi, sseUrls } from './t
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
 
-const PREFS_KEY = 'uniover.tv.prefs.v1';
+const PREFS_KEY = 'uniover.tv.prefs.v2.u1';
 /** O apelido mais longo que o cabeçalho comporta (20 letras), um nome de verdade e com espaços. */
 const LONG_NAME = 'Casa da praia - sala';
 /**
@@ -41,6 +41,25 @@ test.beforeEach(async ({ context, page }) => {
   await installFakeEventSource(page);
 });
 
+test('keeps the old unscoped TV preferences inert instead of assigning them to the account', async ({
+  page,
+}) => {
+  await page.goto('/entrar');
+  await page.evaluate(() =>
+    localStorage.setItem('uniover.tv.prefs.v1', JSON.stringify({ name: 'Conta anterior' })),
+  );
+  await page.getByLabel('E-mail').fill(OWNER.email);
+  await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.goto('/tv');
+  await expect(page.getByRole('button', { name: 'TV, personalizar' })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('uniover.tv.prefs.v1'))).toBe(
+    JSON.stringify({ name: 'Conta anterior' }),
+  );
+  expect(await page.evaluate(() => localStorage.getItem('uniover.tv.prefs.v2.u1'))).toBeNull();
+});
+
 async function signIn(page: Page) {
   await page.goto('/entrar');
   await page.getByLabel('E-mail').fill(OWNER.email);
@@ -68,10 +87,11 @@ async function openTv(page: Page, prefs?: Record<string, unknown>) {
 
 /** Troca as escolhas guardadas e recarrega a tela, sem entrar de novo (a sessão já está aberta). */
 async function reloadWith(page: Page, prefs: Record<string, unknown>) {
-  await page.evaluate(
-    ([key, value]) => localStorage.setItem(key as string, JSON.stringify(value)),
-    [PREFS_KEY, prefs] as const,
-  );
+  await page.evaluate((value) => {
+    const accountId = localStorage.getItem('uniover.account-id');
+    if (!accountId) throw new Error('Conta de teste sem identidade local');
+    localStorage.setItem(`uniover.tv.prefs.v2.${encodeURIComponent(accountId)}`, JSON.stringify(value));
+  }, prefs);
   await page.reload();
   await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
   await emitSse(page, 'tv.state', tv.state);

@@ -193,26 +193,26 @@ describe('vibrate', () => {
   });
 
   it('gives a short vibration by default', () => {
-    TestBed.inject(TvPrefs);
-    vibrate();
+    const prefs = TestBed.inject(TvPrefs);
+    vibrate(prefs.vibration());
     expect(vibrateSpy).toHaveBeenCalledExactlyOnceWith(8);
   });
 
   it('stays quiet once the owner turns the vibration off in Personalizar, and comes back when turned on', () => {
     const prefs = TestBed.inject(TvPrefs);
     prefs.set({ vibration: false });
-    vibrate();
+    vibrate(prefs.vibration());
     expect(vibrateSpy).not.toHaveBeenCalled();
 
     prefs.set({ vibration: true });
-    vibrate();
+    vibrate(prefs.vibration());
     expect(vibrateSpy).toHaveBeenCalledTimes(1);
   });
 
   it('stays quiet for who asked for less motion, even with the vibration on', () => {
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
-    TestBed.inject(TvPrefs);
-    vibrate();
+    const prefs = TestBed.inject(TvPrefs);
+    vibrate(prefs.vibration());
     expect(vibrateSpy).not.toHaveBeenCalled();
   });
 });
