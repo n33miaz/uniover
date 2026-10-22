@@ -59,7 +59,12 @@
     </section>
   } @else {
     <section class="stage ui-card">
-      <app-body-figure [zones]="zones()" [label]="figureLabel()" (picked)="pick($event)" />
+      <app-body-figure
+        [zones]="zones()"
+        [face]="face()"
+        [label]="figureLabel()"
+        (picked)="pick($event)"
+      />
       <div class="legend">
         <span id="map-legend-title" class="legend-title">{{ legendLabel }}</span>
         <ul class="steps ui-plain" aria-labelledby="map-legend-title">

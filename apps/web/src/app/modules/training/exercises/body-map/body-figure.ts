@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import type { MuscleId } from '../../domain/taxonomy';
-import { BODY_HEIGHT, BODY_OUTLINE, BODY_WIDTH } from './body-zones';
+import { BODY_DETAILS, BODY_HEIGHT, BODY_OUTLINE, BODY_WIDTH, BodyFace } from './body-zones';
 import type { Intensity } from './muscle-intensity';
 
 /** O que a figura precisa saber de cada zona para desenhá-la (a tela monta isto a partir da face, do volume e da escolha). */
@@ -29,11 +29,13 @@ export interface FigureZone {
 })
 export class BodyFigure {
   readonly zones = input.required<readonly FigureZone[]>();
+  readonly face = input<BodyFace>('front');
   /** Nome da figura para o leitor de tela ("Corpo, de frente"). */
   readonly label = input.required<string>();
   readonly picked = output<MuscleId>();
 
   protected readonly outline = BODY_OUTLINE;
+  protected readonly details = BODY_DETAILS;
   protected readonly viewBox = `0 0 ${BODY_WIDTH} ${BODY_HEIGHT}`;
 
   /** Enter e Espaço escolhem a zona; o Espaço não pode rolar a página. */

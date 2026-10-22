@@ -1,24 +1,10 @@
 import type { MuscleId } from '../../domain/taxonomy';
 import { MUSCLE_IDS } from '../../domain/taxonomy';
-import { Rect, circle, ellipse, mirrorRect, pill } from './body-shapes';
+import { Rect, mirrorRect } from './body-shapes';
 
-/**
- * O mapa do corpo como dados: o contorno da silhueta e, para cada face, as zonas tocáveis. Desenho vetorial próprio, feito
- * com curvas suaves e proporções estilizadas (sem anatomia realista), num espaço de 250 por 300 que o SVG escala.
- *
- * Cada zona é **um músculo da taxonomia**; os dois lados do corpo são a mesma zona (tocar em qualquer um vale). Cada zona
- * tem duas camadas:
- * - `shapes`: o que se vê (contorno e preenchimento);
- * - `tiles`: a área de toque, **retângulos que não se sobrepõem** e ocupam o espaço em volta da forma. O dedo erra o músculo
- *   pequeno por poucos milímetros, e o toque que cai no espaço entre duas formas vai para a zona mais próxima, sem ambiguidade
- *   (nenhum retângulo invade outro; um teste confere). Num celular baixo só os músculos grandes chegam a 44 px; os
- *   demais ficam entre 24 e 44 px (o teste de toque confere esse piso), e a lista de músculos logo abaixo da figura
- *   alcança todos eles com alvos de 44 px.
- */
-
+/** Desenho vetorial próprio. As curvas seguem uma silhueta contínua; as zonas são regiões estilizadas, sem precisão clínica. */
 export type BodyFace = 'front' | 'back';
 export const BODY_FACES: readonly BodyFace[] = ['front', 'back'];
-
 export const BODY_WIDTH = 250;
 export const BODY_HEIGHT = 300;
 
@@ -28,247 +14,246 @@ export interface BodyZone {
   readonly tiles: readonly Rect[];
 }
 
-// O corpo é um pouco mais largo que alto-e-fino: as posições na horizontal (e a largura das formas largas) saem de uma grade
-// de 220 esticada por `STRETCH` em torno do eixo, que dá mais área de toque no tronco sem deformar círculos e cápsulas.
-const STRETCH = 1.15;
-const AXIS = BODY_WIDTH / 2;
-const sx = (value: number): number => Math.round((AXIS + (value - 110) * STRETCH) * 10) / 10;
-const sw = (value: number): number => value * STRETCH;
+/** Espelha os pontos, e não o elemento SVG: desenho e áreas de toque compartilham o mesmo sistema de coordenadas. */
+const pair = (draw: (x: (value: number) => number) => string): string[] => [
+  draw((value) => value),
+  draw((value) => BODY_WIDTH - value),
+];
+const tilePair = (rect: Rect): Rect[] => [rect, mirrorRect(rect, BODY_WIDTH)];
 
-/** Lado do corpo: `x` posiciona (espelha no lado direito) e `turn` inverte o sentido de giro das elipses. */
-interface Side {
-  readonly x: (value: number) => number;
-  readonly turn: 1 | -1;
-}
-const LEFT: Side = { x: sx, turn: 1 };
-const RIGHT: Side = { x: (value) => BODY_WIDTH - sx(value), turn: -1 };
-
-/** A mesma forma nos dois lados do corpo. */
-const pair = (make: (side: Side) => string): string[] => [make(LEFT), make(RIGHT)];
-
-/** Retângulo `[esquerda, topo, direita, base]` da grade de 220 passado para o espaço do desenho. */
-const tile = ([left, top, right, bottom]: Rect): Rect => [sx(left), top, sx(right), bottom];
-/** Uma área de toque do lado esquerdo e a espelhada. */
-const tilePair = (rect: Rect): Rect[] => [tile(rect), mirrorRect(tile(rect), BODY_WIDTH)];
-
-const TORSO =
-  `M${sx(72)} 56C${sx(88)} 48 ${sx(132)} 48 ${sx(148)} 56` +
-  `C${sx(145)} 71 ${sx(143)} 88 ${sx(140)} 102` +
-  `C${sx(137)} 116 ${sx(132)} 130 ${sx(134)} 143L${sx(139)} 164` +
-  `C${sx(134)} 169 ${sx(129)} 172 ${AXIS} 172` +
-  `C${sx(105)} 172 ${sx(94)} 170 ${sx(81)} 164L${sx(86)} 143` +
-  `C${sx(88)} 130 ${sx(83)} 116 ${sx(79)} 102` +
-  `C${sx(76)} 88 ${sx(74)} 71 ${sx(72)} 56Z`;
-
-/** Silhueta neutra, igual nas duas faces: cabeça, pescoço, tronco, braços e pernas (mãos e pés só de enfeite). */
 export const BODY_OUTLINE: readonly string[] = [
-  circle(AXIS, 20, 15),
-  pill(AXIS - 9, 32, 18, 20, 7),
-  TORSO,
+  'M111 19C111 9 116 4 125 4C134 4 139 9 139 19L138 27C140 26 140 33 137 34C135 38 133 40 131 41L132 47L118 47L119 41C117 40 115 38 113 34C110 33 110 26 112 27Z',
+  'M118 39C118 46 114 48 108 50C101 52 95 52 88 56L89 72C91 82 96 89 98 101C100 112 104 122 103 131C103 140 97 146 95 157C104 165 115 168 125 168C135 168 146 165 155 157C153 146 147 140 147 131C146 122 150 112 152 101C154 89 159 82 161 72L162 56C155 52 149 52 142 50C136 48 132 46 132 39Z',
   ...pair(
-    ({ x }) =>
-      `M${x(69)} 62C${x(77)} 62 ${x(80)} 68 ${x(78)} 76` +
-      `L${x(63)} 109C${x(60)} 117 ${x(55)} 121 ${x(49)} 118` +
-      `C${x(42)} 115 ${x(40)} 109 ${x(43)} 101L${x(55)} 70` +
-      `C${x(58)} 64 ${x(63)} 61 ${x(69)} 62Z`,
+    (x) =>
+      `M${x(92)} 53C${x(82)} 51 ${x(76)} 56 ${x(74)} 65` +
+      `C${x(72)} 76 ${x(69)} 87 ${x(66)} 97C${x(64)} 104 ${x(63)} 111 ${x(60)} 117` +
+      `C${x(54)} 128 ${x(51)} 141 ${x(47)} 153C${x(46)} 157 ${x(42)} 159 ${x(41)} 163` +
+      `L${x(38)} 172C${x(37)} 175 ${x(39)} 176 ${x(41)} 174L${x(44)} 169` +
+      `L${x(42)} 178C${x(42)} 181 ${x(46)} 182 ${x(48)} 179` +
+      `C${x(51)} 176 ${x(54)} 172 ${x(55)} 167L${x(58)} 156` +
+      `C${x(62)} 148 ${x(69)} 138 ${x(73)} 127C${x(76)} 120 ${x(75)} 114 ${x(78)} 108` +
+      `C${x(83)} 98 ${x(89)} 89 ${x(92)} 79C${x(96)} 68 ${x(102)} 58 ${x(92)} 53Z`,
   ),
   ...pair(
-    ({ x }) =>
-      `M${x(50)} 116C${x(56)} 118 ${x(56)} 125 ${x(53)} 133` +
-      `L${x(45)} 158C${x(42)} 165 ${x(36)} 167 ${x(31)} 163` +
-      `C${x(27)} 159 ${x(27)} 153 ${x(30)} 146L${x(39)} 122` +
-      `C${x(41)} 117 ${x(45)} 115 ${x(50)} 116Z`,
+    (x) =>
+      `M${x(98)} 147C${x(91)} 160 ${x(93)} 179 ${x(97)} 194` +
+      `C${x(99)} 204 ${x(102)} 212 ${x(101)} 221C${x(100)} 229 ${x(96)} 234 ${x(97)} 244` +
+      `C${x(98)} 257 ${x(103)} 266 ${x(103)} 276C${x(103)} 281 ${x(99)} 284 ${x(96)} 287` +
+      `C${x(94)} 290 ${x(96)} 292 ${x(100)} 292L${x(110)} 292` +
+      `C${x(115)} 292 ${x(116)} 289 ${x(114)} 285C${x(111)} 279 ${x(112)} 273 ${x(114)} 265` +
+      `C${x(116)} 256 ${x(121)} 245 ${x(119)} 234C${x(118)} 228 ${x(116)} 223 ${x(117)} 216` +
+      `C${x(120)} 199 ${x(123)} 184 ${x(123)} 172L${x(125)} 159Z`,
   ),
-  ...pair(({ x }) => ellipse(x(33), 172, 7.5, 9.5)),
-  ...pair(
-    ({ x }) =>
-      `M${x(104)} 167C${x(114)} 168 ${x(119)} 176 ${x(118)} 188` +
-      `L${x(115)} 219C${x(114)} 229 ${x(108)} 235 ${x(101)} 233` +
-      `C${x(94)} 231 ${x(90)} 225 ${x(90)} 217L${x(87)} 188` +
-      `C${x(86)} 176 ${x(93)} 168 ${x(104)} 167Z`,
-  ),
-  ...pair(
-    ({ x }) =>
-      `M${x(100)} 229C${x(107)} 230 ${x(109)} 239 ${x(108)} 249` +
-      `C${x(107)} 260 ${x(105)} 271 ${x(103)} 279` +
-      `C${x(101)} 285 ${x(94)} 286 ${x(90)} 282` +
-      `C${x(86)} 278 ${x(86)} 270 ${x(87)} 262L${x(89)} 240` +
-      `C${x(90)} 232 ${x(94)} 228 ${x(100)} 229Z`,
-  ),
-  ...pair(({ x }) => ellipse(x(90), 287, 13, 5.5)),
 ];
 
-// Zonas que valem nas duas faces (o ombro, o antebraço e a panturrilha aparecem de frente e de costas).
 const SHOULDERS: BodyZone = {
   muscle: 'shoulders',
   shapes: pair(
-    ({ x }) =>
-      `M${x(69)} 55C${x(79)} 55 ${x(85)} 62 ${x(84)} 70` +
-      `C${x(83)} 79 ${x(76)} 85 ${x(69)} 82` +
-      `C${x(62)} 79 ${x(60)} 71 ${x(63)} 63C${x(64)} 59 ${x(66)} 56 ${x(69)} 55Z`,
+    (x) =>
+      `M${x(91)} 55C${x(82)} 54 ${x(77)} 60 ${x(77)} 68C${x(77)} 72 ${x(76)} 76 ${x(75)} 80` +
+      `C${x(82)} 79 ${x(88)} 74 ${x(93)} 69C${x(97)} 65 ${x(99)} 58 ${x(91)} 55Z`,
   ),
-  tiles: tilePair([40, 42, 84, 90]),
+  tiles: tilePair([52, 38, 98, 80]),
 };
 const FOREARMS: BodyZone = {
   muscle: 'forearms',
   shapes: pair(
-    ({ x }) =>
-      `M${x(48)} 117C${x(54)} 119 ${x(55)} 125 ${x(52)} 133` +
-      `L${x(44)} 153C${x(41)} 160 ${x(36)} 161 ${x(32)} 158` +
-      `C${x(29)} 155 ${x(30)} 150 ${x(32)} 144L${x(39)} 123` +
-      `C${x(41)} 118 ${x(44)} 116 ${x(48)} 117Z`,
+    (x) =>
+      `M${x(65)} 119C${x(70)} 117 ${x(73)} 121 ${x(70)} 129` +
+      `C${x(66)} 140 ${x(59)} 149 ${x(54)} 157L${x(50)} 155` +
+      `C${x(54)} 143 ${x(55)} 131 ${x(61)} 123C${x(62)} 121 ${x(63)} 120 ${x(65)} 119Z`,
   ),
-  tiles: tilePair([14, 126, 56, 196]),
+  tiles: tilePair([25, 118, 80, 175]),
 };
 const CALVES: BodyZone = {
   muscle: 'calves',
   shapes: pair(
-    ({ x }) =>
-      `M${x(98)} 232C${x(104)} 233 ${x(106)} 240 ${x(105)} 248` +
-      `C${x(104)} 258 ${x(102)} 268 ${x(100)} 274` +
-      `C${x(98)} 280 ${x(92)} 280 ${x(89)} 276` +
-      `C${x(86)} 272 ${x(87)} 266 ${x(88)} 259L${x(90)} 242` +
-      `C${x(91)} 235 ${x(94)} 231 ${x(98)} 232Z`,
+    (x) =>
+      `M${x(105)} 232C${x(100)} 235 ${x(100)} 245 ${x(103)} 253` +
+      `C${x(106)} 261 ${x(106)} 266 ${x(107)} 271C${x(109)} 264 ${x(111)} 258 ${x(114)} 251` +
+      `C${x(117)} 244 ${x(117)} 236 ${x(112)} 233C${x(110)} 231 ${x(107)} 230 ${x(105)} 232Z`,
   ),
-  tiles: tilePair([68, 234, 110, 296]),
+  tiles: tilePair([82, 232, 125, 296]),
 };
+const upperArm = (): readonly string[] =>
+  pair(
+    (x) =>
+      `M${x(77)} 82C${x(81)} 80 ${x(86)} 78 ${x(89)} 77` +
+      `C${x(87)} 86 ${x(83)} 98 ${x(78)} 107C${x(76)} 112 ${x(72)} 114 ${x(70)} 111` +
+      `C${x(68)} 107 ${x(70)} 100 ${x(72)} 94C${x(74)} 89 ${x(75)} 85 ${x(77)} 82Z`,
+  );
 
-/** As zonas de cada face, de cima para baixo (a ordem da tabulação). */
+/** As áreas invisíveis ampliam o toque sem disputar espaço. A lista completa oferece alvos de pelo menos 44 px. */
 export const BODY_ZONES: Readonly<Record<BodyFace, readonly BodyZone[]>> = {
   front: [
     {
       muscle: 'neck',
-      shapes: [pill(AXIS - sw(7), 36, sw(14), 13, 5)],
-      tiles: [tile([92, 24, 128, 54])],
+      shapes: pair((x) => `M${x(119)} 41L${x(123)} 44L${x(124)} 52Q${x(119)} 50 ${x(116)} 50Z`),
+      tiles: [[105, 24, 145, 52]],
     },
     SHOULDERS,
     {
       muscle: 'chest',
       shapes: pair(
-        ({ x }) =>
-          `M${x(98)} 75C${x(90)} 73 ${x(82)} 79 ${x(81)} 87` +
-          `C${x(80)} 96 ${x(88)} 101 ${x(98)} 101` +
-          `C${x(104)} 97 ${x(105)} 83 ${x(98)} 75Z`,
+        (x) =>
+          `M${x(102)} 58C${x(110)} 57 ${x(118)} 59 ${x(123)} 62` +
+          `L${x(123)} 84C${x(121)} 90 ${x(111)} 93 ${x(104)} 89` +
+          `C${x(99)} 86 ${x(98)} 80 ${x(94)} 76C${x(98)} 72 ${x(100)} 64 ${x(102)} 58Z`,
       ),
-      tiles: [tile([84, 54, 136, 104])],
+      tiles: [[98, 52, 152, 94]],
     },
-    {
-      muscle: 'biceps',
-      shapes: pair(
-        ({ x }) =>
-          `M${x(63)} 74C${x(57)} 74 ${x(51)} 78 ${x(49)} 85` +
-          `C${x(46)} 93 ${x(48)} 102 ${x(53)} 107` +
-          `C${x(57)} 110 ${x(62)} 107 ${x(65)} 101` +
-          `C${x(69)} 92 ${x(69)} 81 ${x(63)} 74Z`,
-      ),
-      tiles: tilePair([30, 90, 84, 126]),
-    },
+    { muscle: 'biceps', shapes: upperArm(), tiles: tilePair([38, 80, 98, 118]) },
     {
       muscle: 'abdominals',
       shapes: [
-        `M${sx(98)} 105C${sx(92)} 105 ${sx(90)} 111 ${sx(91)} 119` +
-          `L${sx(93)} 140C${sx(94)} 147 ${sx(101)} 151 ${AXIS} 151` +
-          `C${sx(119)} 151 ${sx(126)} 147 ${sx(127)} 140L${sx(129)} 119` +
-          `C${sx(130)} 111 ${sx(128)} 105 ${sx(122)} 105Z`,
+        ...pair(
+          (x) =>
+            `M${x(115)} 96Q${x(119)} 94 ${x(123)} 95L${x(123)} 105Q${x(118)} 107 ${x(113)} 104Z`,
+        ),
+        ...pair(
+          (x) =>
+            `M${x(113)} 108Q${x(118)} 110 ${x(123)} 108L${x(123)} 118Q${x(118)} 120 ${x(113)} 117Z`,
+        ),
+        ...pair(
+          (x) =>
+            `M${x(114)} 121Q${x(119)} 123 ${x(123)} 121L${x(123)} 140Q${x(116)} 136 ${x(114)} 129Z`,
+        ),
+        ...pair(
+          (x) =>
+            `M${x(102)} 94Q${x(106)} 96 ${x(110)} 97C${x(108)} 111 ${x(110)} 129 ${x(118)} 140` +
+            `C${x(110)} 136 ${x(106)} 129 ${x(105)} 119Z`,
+        ),
       ],
-      tiles: [tile([84, 104, 136, 170])],
+      tiles: [[98, 94, 152, 150]],
     },
     FOREARMS,
     {
       muscle: 'quadriceps',
       shapes: pair(
-        ({ x }) =>
-          `M${x(97)} 171C${x(89)} 169 ${x(83)} 175 ${x(82)} 185` +
-          `C${x(81)} 198 ${x(84)} 214 ${x(88)} 224` +
-          `C${x(91)} 230 ${x(98)} 229 ${x(101)} 223` +
-          `C${x(105)} 212 ${x(105)} 181 ${x(97)} 171Z`,
+        (x) =>
+          `M${x(100)} 154C${x(95)} 164 ${x(97)} 179 ${x(100)} 191` +
+          `C${x(102)} 202 ${x(103)} 210 ${x(106)} 215C${x(108)} 218 ${x(112)} 215 ${x(114)} 210` +
+          `C${x(117)} 202 ${x(118)} 193 ${x(117)} 184C${x(115)} 171 ${x(110)} 160 ${x(100)} 154Z`,
       ),
-      tiles: tilePair([56, 170, 98, 234]),
+      tiles: [...tilePair([80, 150, 113, 175]), ...tilePair([70, 175, 113, 232])],
     },
     {
       muscle: 'adductors',
       shapes: pair(
-        ({ x }) =>
-          `M${x(106)} 180C${x(110)} 181 ${x(111)} 187 ${x(110)} 195` +
-          `L${x(109)} 211C${x(108)} 217 ${x(104)} 219 ${x(101)} 215` +
-          `C${x(99)} 211 ${x(100)} 190 ${x(102)} 184C${x(103)} 181 ${x(104)} 180 ${x(106)} 180Z`,
+        (x) =>
+          `M${x(115)} 155C${x(118)} 157 ${x(122)} 162 ${x(123)} 168` +
+          `C${x(122)} 181 ${x(120)} 192 ${x(117)} 201C${x(120)} 183 ${x(119)} 170 ${x(115)} 155Z`,
       ),
-      tiles: [tile([98, 170, 122, 234])],
+      tiles: [[113, 150, 137, 232]],
     },
     CALVES,
   ],
   back: [
     {
       muscle: 'traps',
-      shapes: [
-        `M${AXIS} 50C${sx(124)} 54 ${sx(135)} 59 ${sx(137)} 67` +
-          `C${sx(132)} 77 ${sx(122)} 86 ${AXIS} 96` +
-          `C${sx(98)} 86 ${sx(88)} 77 ${sx(83)} 67` +
-          `C${sx(85)} 59 ${sx(96)} 54 ${AXIS} 50Z`,
-      ],
-      tiles: [tile([84, 36, 136, 92])],
+      shapes: pair(
+        (x) =>
+          `M${x(119)} 43C${x(116)} 51 ${x(107)} 55 ${x(100)} 58` +
+          `C${x(109)} 64 ${x(116)} 74 ${x(123)} 82L${x(123)} 48Z`,
+      ),
+      tiles: [[98, 38, 152, 85]],
     },
     SHOULDERS,
-    {
-      muscle: 'triceps',
-      shapes: pair(
-        ({ x }) =>
-          `M${x(63)} 74C${x(57)} 73 ${x(50)} 78 ${x(48)} 86` +
-          `C${x(46)} 95 ${x(49)} 103 ${x(54)} 107` +
-          `C${x(58)} 110 ${x(63)} 105 ${x(66)} 98` +
-          `C${x(69)} 89 ${x(68)} 79 ${x(63)} 74Z`,
-      ),
-      tiles: tilePair([30, 90, 68, 126]),
-    },
+    { muscle: 'triceps', shapes: upperArm(), tiles: tilePair([38, 80, 80, 118]) },
     {
       muscle: 'lats',
-      shapes: pair(({ turn, x }) => ellipse(x(88), 108, sw(9), 20, -8 * turn)),
-      tiles: tilePair([68, 92, 98, 134]),
+      shapes: pair(
+        (x) =>
+          `M${x(96)} 78C${x(101)} 80 ${x(107)} 86 ${x(112)} 89` +
+          `C${x(115)} 103 ${x(113)} 119 ${x(108)} 129C${x(103)} 121 ${x(101)} 110 ${x(100)} 101` +
+          `C${x(100)} 92 ${x(98)} 85 ${x(96)} 78Z`,
+      ),
+      tiles: tilePair([80, 85, 113, 131]),
     },
     FOREARMS,
     {
       muscle: 'middle_back',
-      shapes: [
-        `M${sx(103)} 101C${sx(100)} 101 ${sx(99)} 105 ${sx(99)} 111` +
-          `L${sx(100)} 125C${sx(101)} 131 ${sx(106)} 133 ${AXIS} 133` +
-          `C${sx(114)} 133 ${sx(119)} 131 ${sx(120)} 125L${sx(121)} 111` +
-          `C${sx(121)} 105 ${sx(120)} 101 ${sx(117)} 101Z`,
-      ],
-      tiles: [tile([98, 92, 122, 134])],
+      shapes: pair(
+        (x) =>
+          `M${x(115)} 89Q${x(119)} 88 ${x(123)} 85L${x(123)} 127C${x(117)} 122 ${x(115)} 107 ${x(115)} 89Z`,
+      ),
+      tiles: [[113, 85, 137, 131]],
     },
     {
       muscle: 'lower_back',
-      shapes: [
-        `M${sx(96)} 138C${sx(102)} 135 ${sx(118)} 135 ${sx(124)} 138` +
-          `C${sx(128)} 140 ${sx(130)} 146 ${sx(127)} 152` +
-          `C${sx(124)} 158 ${sx(116)} 161 ${AXIS} 161` +
-          `C${sx(104)} 161 ${sx(96)} 158 ${sx(93)} 152` +
-          `C${sx(90)} 146 ${sx(92)} 140 ${sx(96)} 138Z`,
-      ],
-      tiles: [tile([86, 134, 134, 168])],
+      shapes: pair(
+        (x) =>
+          `M${x(114)} 128Q${x(118)} 131 ${x(123)} 132L${x(123)} 153C${x(118)} 150 ${x(112)} 150 ${x(108)} 148Q${x(109)} 136 ${x(114)} 128Z`,
+      ),
+      tiles: [[98, 131, 152, 161]],
     },
     {
       muscle: 'glutes',
-      shapes: pair(({ x }) => ellipse(x(98), 182, sw(12.5), 11)),
-      tiles: [tile([80, 168, 140, 200])],
+      shapes: pair(
+        (x) =>
+          `M${x(109)} 154C${x(101)} 156 ${x(99)} 167 ${x(101)} 178` +
+          `C${x(103)} 187 ${x(117)} 190 ${x(122)} 181C${x(124)} 176 ${x(123)} 166 ${x(123)} 160` +
+          `C${x(119)} 157 ${x(114)} 155 ${x(109)} 154Z`,
+      ),
+      tiles: [[104, 161, 146, 194]],
     },
     {
       muscle: 'abductors',
-      shapes: pair(({ x }) => ellipse(x(77), 184, 4.5, 10)),
-      tiles: tilePair([56, 160, 80, 200]),
+      shapes: pair(
+        (x) =>
+          `M${x(101)} 157C${x(97)} 163 ${x(96)} 177 ${x(99)} 187C${x(100)} 182 ${x(99)} 173 ${x(101)} 167Q${x(103)} 160 ${x(101)} 157Z`,
+      ),
+      tiles: tilePair([80, 161, 104, 194]),
     },
     {
       muscle: 'hamstrings',
       shapes: pair(
-        ({ x }) =>
-          `M${x(97)} 201C${x(90)} 200 ${x(84)} 205 ${x(83)} 213` +
-          `C${x(82)} 221 ${x(86)} 229 ${x(91)} 232` +
-          `C${x(97)} 235 ${x(102)} 231 ${x(104)} 224` +
-          `C${x(106)} 216 ${x(104)} 205 ${x(97)} 201Z`,
+        (x) =>
+          `M${x(102)} 190C${x(108)} 193 ${x(115)} 193 ${x(120)} 187` +
+          `C${x(119)} 198 ${x(115)} 208 ${x(114)} 216C${x(113)} 220 ${x(110)} 224 ${x(108)} 223` +
+          `C${x(106)} 221 ${x(106)} 213 ${x(105)} 208C${x(104)} 201 ${x(102)} 195 ${x(102)} 190Z`,
       ),
-      tiles: tilePair([64, 200, 110, 234]),
+      tiles: tilePair([80, 194, 125, 232]),
     },
     CALVES,
+  ],
+};
+
+/** Linhas leves de referência anatômica; não criam zonas nem interceptam o toque. */
+export const BODY_DETAILS: Readonly<Record<BodyFace, readonly string[]>> = {
+  front: [
+    ...pair(
+      (x) =>
+        `M${x(118)} 53Q${x(109)} 52 ${x(102)} 55M${x(105)} 95L${x(110)} 99M${x(106)} 101L${x(110)} 105M${x(107)} 108L${x(110)} 111`,
+    ),
+    ...pair(
+      (x) =>
+        `M${x(100)} 146Q${x(108)} 145 ${x(121)} 154M${x(104)} 162C${x(108)} 180 ${x(111)} 195 ${x(108)} 208`,
+    ),
+    ...pair(
+      (x) =>
+        `M${x(104)} 220Q${x(109)} 217 ${x(114)} 220L${x(113)} 225Q${x(109)} 229 ${x(105)} 225Z`,
+    ),
+    ...pair(
+      (x) =>
+        `M${x(108)} 235Q${x(107)} 248 ${x(109)} 257M${x(104)} 274L${x(109)} 278M${x(49)} 159L${x(54)} 161M${x(46)} 166L${x(43)} 174`,
+    ),
+    'M125 94V136M124 144Q125 146 126 144',
+  ],
+  back: [
+    ...pair(
+      (x) =>
+        `M${x(112)} 67C${x(103)} 66 ${x(99)} 72 ${x(103)} 79L${x(111)} 85M${x(116)} 95Q${x(120)} 108 ${x(120)} 119`,
+    ),
+    ...pair(
+      (x) => `M${x(105)} 193Q${x(109)} 202 ${x(109)} 214M${x(105)} 226Q${x(109)} 228 ${x(114)} 225`,
+    ),
+    ...pair(
+      (x) =>
+        `M${x(108)} 233Q${x(110)} 240 ${x(109)} 249M${x(106)} 262L${x(107)} 278M${x(113)} 262L${x(111)} 278M${x(49)} 159L${x(54)} 161M${x(46)} 166L${x(43)} 174`,
+    ),
+    'M125 49V148M125 163V179',
   ],
 };
 
@@ -277,13 +262,11 @@ export function facesOf(muscle: string): BodyFace[] {
   return BODY_FACES.filter((face) => BODY_ZONES[face].some((zone) => zone.muscle === muscle));
 }
 
-/** A face a mostrar quando o músculo é escolhido: a atual, se ele aparece nela; senão a primeira em que aparece. */
 export function faceFor(muscle: string, current: BodyFace): BodyFace {
   const faces = facesOf(muscle);
   return faces.includes(current) || faces.length === 0 ? current : faces[0];
 }
 
-/** Músculos da taxonomia sem zona em nenhuma face (devem ficar vazios; o teste cobra). */
 export const MUSCLES_WITHOUT_ZONE: readonly MuscleId[] = MUSCLE_IDS.filter(
   (muscle) => facesOf(muscle).length === 0,
 );

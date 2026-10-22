@@ -34,4 +34,9 @@
       }
     </g>
   }
+  <g class="detail" aria-hidden="true">
+    @for (d of details[face()]; track $index) {
+      <path [attr.d]="d" />
+    }
+  </g>
 </svg>
