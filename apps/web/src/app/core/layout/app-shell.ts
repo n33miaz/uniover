@@ -55,7 +55,7 @@ type ShellLead = ({ readonly kind: 'back' } & ShellBack) | { readonly kind: 'set
   imports: [RouterOutlet, RouterLink, TabBar, InstallHint, GearIcon],
   template: `
     @if (data().title; as title) {
-      <header class="bar">
+      <header class="bar" [class.training]="data().shellStyle === 'training'">
         @let current = lead();
         @if (current.kind === 'back') {
           <a [routerLink]="current.link" class="back ui-tap" [attr.aria-label]="current.label">
@@ -85,6 +85,19 @@ type ShellLead = ({ readonly kind: 'back' } & ShellBack) | { readonly kind: 'set
             <app-gear-icon />
           </a>
         }
+        @if (data().shellStyle === 'training') {
+          <span class="module-mark" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+            >
+              <path [attr.d]="'M5 9v6m3-9v12m8-12v12m3-9v6M8 12h8'" />
+            </svg>
+          </span>
+        }
         <h1 #pageTitle tabindex="-1">{{ title }}</h1>
       </header>
     }
@@ -92,7 +105,7 @@ type ShellLead = ({ readonly kind: 'back' } & ShellBack) | { readonly kind: 'set
       <router-outlet />
     </main>
     @if (tabs().length > 0) {
-      <app-tab-bar class="tabs" [tabs]="tabs()" />
+      <app-tab-bar class="tabs" [tabs]="tabs()" [variant]="data().shellStyle ?? 'default'" />
     }
     <!-- Fora do <main>: a folha do atalho na tela de início é diálogo (camada do topo) e nunca entra no layout. -->
     <app-install-hint />
@@ -112,6 +125,47 @@ type ShellLead = ({ readonly kind: 'back' } & ShellBack) | { readonly kind: 'set
       padding-top: calc(var(--space-2) + env(safe-area-inset-top));
       background: var(--a-surface);
       border-bottom: 1px solid var(--a-line);
+    }
+    .bar.training {
+      gap: var(--space-2);
+      padding-block: var(--space-1);
+      background: linear-gradient(
+        112deg,
+        color-mix(in srgb, var(--a-accent) 14%, var(--a-surface)),
+        var(--a-surface) 72%
+      );
+      border-bottom-color: color-mix(in srgb, var(--a-accent) 20%, var(--a-line));
+    }
+    .bar.training h1 {
+      font-size: 1.25rem;
+      font-weight: 760;
+      letter-spacing: -0.025em;
+    }
+    .bar.training .module-mark {
+      display: grid;
+      flex: none;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border: 1px solid color-mix(in srgb, var(--a-accent) 18%, transparent);
+      border-radius: 11px;
+      background: var(--a-accent-soft);
+      color: var(--a-accent-ink);
+    }
+    .bar.training .module-mark svg {
+      width: 21px;
+      height: 21px;
+    }
+    .bar.training .back {
+      border-color: transparent;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      box-shadow: none;
+      color: var(--a-accent-ink);
+    }
+    .bar.training .back:hover,
+    .bar.training .back:active {
+      background: var(--a-accent-soft);
     }
     .back {
       display: inline-flex;
