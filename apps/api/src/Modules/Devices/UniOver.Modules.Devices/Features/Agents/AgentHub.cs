@@ -71,7 +71,7 @@ internal sealed partial class AgentHub(
         catch (Exception ex)
         {
             closeReason = AgentCloseReason.InternalError;
-            LogSessionFailed(agentId, ex);
+            LogSessionFailed(agentId, ex.GetType().Name);
         }
         finally
         {
@@ -189,7 +189,7 @@ internal sealed partial class AgentHub(
             catch (Exception ex)
             {
                 // Falha de quem trata não derruba a conexão do agente nem impede os outros tratadores.
-                LogHandlerFailed(agentId, envelope.Type, ex);
+                LogHandlerFailed(agentId, envelope.Type, ex.GetType().Name);
             }
         }
     }
@@ -293,7 +293,7 @@ internal sealed partial class AgentHub(
         }
         catch (Exception ex)
         {
-            LogCloseFailed(session.AgentId, ex);
+            LogCloseFailed(session.AgentId, ex.GetType().Name);
         }
     }
 
@@ -321,12 +321,13 @@ internal sealed partial class AgentHub(
     [LoggerMessage(Level = LogLevel.Debug, Message = "Mensagem {Type} do agente {AgentId} descartada: nenhum tratador registrado.")]
     private partial void LogUnhandled(string agentId, string type);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Tratador falhou ao processar {Type} do agente {AgentId}.")]
-    private partial void LogHandlerFailed(string agentId, string type, Exception exception);
+    // Nos três abaixo só o tipo do erro: o tratador pode ter falhado no banco, e a mensagem do driver cita servidor e conexão.
+    [LoggerMessage(Level = LogLevel.Error, Message = "Tratador falhou ao processar {Type} do agente {AgentId} ({ErrorType}).")]
+    private partial void LogHandlerFailed(string agentId, string type, string errorType);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao conduzir a sessão do agente {AgentId}.")]
-    private partial void LogSessionFailed(string agentId, Exception exception);
+    [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao conduzir a sessão do agente {AgentId} ({ErrorType}).")]
+    private partial void LogSessionFailed(string agentId, string errorType);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Falha ao fechar a sessão do agente {AgentId}.")]
-    private partial void LogCloseFailed(string agentId, Exception exception);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Falha ao fechar a sessão do agente {AgentId} ({ErrorType}).")]
+    private partial void LogCloseFailed(string agentId, string errorType);
 }

@@ -41,10 +41,14 @@ internal sealed class LoginHandler(
 
         var user = await db.Users.SingleOrDefaultAsync(u => u.Email == email, cancellationToken);
 
+        // Nas tentativas que falham (abaixo) o ator da trilha é NULO: quem chuta a senha não está autenticado e não se sabe
+        // quem é; gravar a conta como autora faria o ataque aparecer como "a conta tentou entrar e errou". A conta vai
+        // como ALVO (no detalhe) e o IP e o aparelho seguem gravados.
+
         // Em bloqueio nem se confere a senha: assim quem chuta não prolonga o bloqueio e o dono, ao errar, não o piora.
         if (user is not null && user.IsLockedOut(now))
         {
-            audit.Add(user.Id, AuditEvents.LoginLocked, command.Client);
+            audit.Add(null, AuditEvents.LoginLocked, command.Client, AuditAboutAccount.Detail(user.Id));
             await db.SaveChangesAsync(cancellationToken);
             return new LoginResult(LoginStatus.Locked, RetryAfter: user.RemainingLockout(now));
         }
@@ -54,7 +58,7 @@ internal sealed class LoginHandler(
         if (user is null || check == PasswordCheck.Failed)
         {
             user?.RegisterFailure(now, settings.Lockout);
-            audit.Add(user?.Id, AuditEvents.LoginFailed, command.Client);
+            audit.Add(null, AuditEvents.LoginFailed, command.Client, user is null ? null : AuditAboutAccount.Detail(user.Id));
             await db.SaveChangesAsync(cancellationToken);
             return new LoginResult(LoginStatus.InvalidCredentials);
         }
@@ -62,7 +66,7 @@ internal sealed class LoginHandler(
         // Convidado revogado falha igual a senha errada (a senha já foi conferida, então o tempo não revela nada).
         if (user.IsDisabled)
         {
-            audit.Add(user.Id, AuditEvents.LoginFailed, command.Client, "account-disabled");
+            audit.Add(null, AuditEvents.LoginFailed, command.Client, AuditAboutAccount.Detail(user.Id, "account-disabled"));
             await db.SaveChangesAsync(cancellationToken);
             return new LoginResult(LoginStatus.InvalidCredentials);
         }

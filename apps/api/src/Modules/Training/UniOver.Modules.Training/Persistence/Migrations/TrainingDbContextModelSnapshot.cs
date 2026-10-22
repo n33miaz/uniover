@@ -43,6 +43,12 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("content_type");
 
+                    b.Property<Guid>("Generation")
+                        .ValueGeneratedOnAdd()
+                        .HasDefaultValueSql("gen_random_uuid()")
+                        .HasColumnType("uuid")
+                        .HasColumnName("generation");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -89,6 +95,173 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                         .HasDatabaseName("ix_idempotency_keys_expires_at");
 
                     b.ToTable("idempotency_keys", "training");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Body.BodyEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal?>("ArmCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("arm_cm");
+
+                    b.Property<decimal?>("BodyFatPct")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("body_fat_pct");
+
+                    b.Property<DateTimeOffset>("ClientUpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("client_updated_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("FatMethod")
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("fat_method");
+
+                    b.Property<decimal?>("HipCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("hip_cm");
+
+                    b.Property<DateOnly>("MeasuredOn")
+                        .HasColumnType("date")
+                        .HasColumnName("measured_on");
+
+                    b.Property<decimal?>("NeckCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("neck_cm");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("note");
+
+                    b.Property<decimal?>("ThighCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("thigh_cm");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<decimal?>("WaistCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("waist_cm");
+
+                    b.Property<decimal?>("WeightKg")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("weight_kg");
+
+                    b.HasKey("Id")
+                        .HasName("pk_body_entries");
+
+                    b.HasIndex("UserId", "MeasuredOn")
+                        .HasDatabaseName("ix_body_entries_user_id_measured_on");
+
+                    b.HasIndex("UserId", "UpdatedAt", "Id")
+                        .HasDatabaseName("ix_body_entries_user_id_updated_at_id");
+
+                    b.ToTable("body_entries", "training", t =>
+                        {
+                            t.HasCheckConstraint("ck_body_entries_arm", "arm_cm IS NULL OR arm_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_body_fat", "body_fat_pct IS NULL OR body_fat_pct BETWEEN 2 AND 70");
+
+                            t.HasCheckConstraint("ck_body_entries_fat_method", "fat_method IS NULL OR fat_method IN ('navy', 'manual', 'bioimpedance')");
+
+                            t.HasCheckConstraint("ck_body_entries_fat_pair", "(body_fat_pct IS NULL) = (fat_method IS NULL)");
+
+                            t.HasCheckConstraint("ck_body_entries_hip", "hip_cm IS NULL OR hip_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_measured_on", "measured_on >= DATE '1900-01-01'");
+
+                            t.HasCheckConstraint("ck_body_entries_neck", "neck_cm IS NULL OR neck_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_not_empty", "(weight_kg IS NOT NULL OR body_fat_pct IS NOT NULL OR waist_cm IS NOT NULL OR neck_cm IS NOT NULL OR hip_cm IS NOT NULL OR arm_cm IS NOT NULL OR thigh_cm IS NOT NULL) OR deleted_at IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_body_entries_note", "note IS NULL OR char_length(note) <= 300");
+
+                            t.HasCheckConstraint("ck_body_entries_thigh", "thigh_cm IS NULL OR thigh_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_waist", "waist_cm IS NULL OR waist_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_weight", "weight_kg IS NULL OR weight_kg BETWEEN 20 AND 400");
+                        });
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Body.BodyProfile", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<decimal>("ActivityFactor")
+                        .HasPrecision(3, 2)
+                        .HasColumnType("numeric(3,2)")
+                        .HasColumnName("activity_factor");
+
+                    b.Property<DateOnly>("BirthDate")
+                        .HasColumnType("date")
+                        .HasColumnName("birth_date");
+
+                    b.Property<DateTimeOffset>("ClientUpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("client_updated_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<decimal>("HeightCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("height_cm");
+
+                    b.Property<string>("Sex")
+                        .IsRequired()
+                        .HasMaxLength(6)
+                        .HasColumnType("character varying(6)")
+                        .HasColumnName("sex");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_body_profile");
+
+                    b.ToTable("body_profile", "training", t =>
+                        {
+                            t.HasCheckConstraint("ck_body_profile_activity", "activity_factor BETWEEN 1.0 AND 2.5");
+
+                            t.HasCheckConstraint("ck_body_profile_birth_date", "birth_date >= DATE '1900-01-01'");
+
+                            t.HasCheckConstraint("ck_body_profile_height", "height_cm BETWEEN 100 AND 250");
+
+                            t.HasCheckConstraint("ck_body_profile_sex", "sex IN ('male', 'female')");
+                        });
                 });
 
             modelBuilder.Entity("UniOver.Modules.Training.Domain.CatalogMeta", b =>

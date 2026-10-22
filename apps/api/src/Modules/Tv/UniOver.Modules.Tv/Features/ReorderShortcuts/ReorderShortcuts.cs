@@ -95,12 +95,13 @@ internal sealed partial class ReorderShortcutsHandler(
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            LogAuditFailed(ex);
+            LogAuditFailed(ex.GetType().Name);
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao gravar a auditoria da reordenação dos atalhos.")]
-    private partial void LogAuditFailed(Exception exception);
+    // Só o tipo do erro: a mensagem do driver do banco pode citar o servidor e a conexão.
+    [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao gravar a auditoria da reordenação dos atalhos ({ErrorType}).")]
+    private partial void LogAuditFailed(string errorType);
 }
 
 internal static class ReorderShortcutsEndpoint

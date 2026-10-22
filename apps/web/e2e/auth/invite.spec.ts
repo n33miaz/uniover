@@ -19,7 +19,7 @@ const UNKNOWN_LINK = '/convite#' + 'a'.repeat(43);
 const email = (page: Page) => page.getByLabel('E-mail');
 const password = (page: Page) => page.getByLabel('Senha', { exact: true });
 const confirmation = (page: Page) => page.getByLabel('Repita a senha');
-const submit = (page: Page) => page.getByRole('button', { name: 'Criar conta e entrar' });
+const submit = (page: Page) => page.getByRole('button', { name: 'Continuar', exact: true });
 
 async function openInvite(page: Page, link = `/convite#${mock.seedInvite().token}`) {
   await page.goto(link);
@@ -27,7 +27,9 @@ async function openInvite(page: Page, link = `/convite#${mock.seedInvite().token
 
 async function openForm(page: Page, link?: string) {
   await openInvite(page, link);
-  await expect(page.getByRole('heading', { level: 1, name: 'Criar sua conta' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+  ).toBeVisible();
 }
 
 async function fill(page: Page, mail = GUEST.email, secret = STRONG, repeat = secret) {
@@ -37,7 +39,7 @@ async function fill(page: Page, mail = GUEST.email, secret = STRONG, repeat = se
 }
 
 test.describe('convite: boas-vindas', () => {
-  test('explica o que está acontecendo, avisa o que é registrado e tira o segredo do endereço', async ({
+  test('abre direto no formulário, avisa o que é registrado e tira o segredo do endereço', async ({
     page,
   }) => {
     const invite = mock.seedInvite();
@@ -45,14 +47,17 @@ test.describe('convite: boas-vindas', () => {
     await expect(page).toHaveURL(/\/convite$/);
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
-    await expect(page.getByText('Você recebeu um convite para o UniOver.')).toBeVisible();
-    await expect(
-      page.getByText(
-        'Este acesso fica registrado (data, IP e aparelho) para a segurança do sistema.',
-      ),
-    ).toBeVisible();
+    await expect(page.getByText('Este acesso fica registrado: data, IP e aparelho.')).toBeVisible();
     await expect(page.getByText('Não existe recuperação de senha')).toBeVisible();
     expect(await page.evaluate(() => document.body.innerText)).not.toContain(invite.token);
+    await expectNoHorizontalScroll(page);
+  });
+
+  test('o botão de continuar aparece na primeira tela, sem rolar (também na janela baixa do iPhone)', async ({
+    page,
+  }) => {
+    await openForm(page);
+    await expect(submit(page)).toBeInViewport({ ratio: 1 });
     await expectNoHorizontalScroll(page);
   });
 
@@ -196,7 +201,9 @@ test.describe('convite: aceite', () => {
     gate.hold();
     await fill(page);
     await submit(page).click();
-    await page.getByRole('button', { name: 'Continuar' }).click();
+    // O botão do formulário também se chama "Continuar": só depois do "tudo pronto" ele sai de cena e sobra o do passo novo.
+    await expect(page.getByRole('heading', { level: 1, name: 'Tudo pronto' })).toBeVisible();
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click();
     gate.release();
     await expect(page).toHaveURL(/\/tv$/);
   });
@@ -214,8 +221,17 @@ test.describe('convite: aceite', () => {
 
     await fill(page, GUEST.email, STRONG, 'Outra-senha-longa-1!');
     await submit(page).click();
-    await expect(alert).toContainText('As duas senhas não são iguais.');
+    // Uma indicação só, a do campo: a faixa de cima sai de cena (ela é para o erro que vem da API).
+    await expect(page.locator('#invite-confirmation-status')).toHaveText(
+      'As senhas ainda não são iguais.',
+    );
+    await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(confirmation(page)).toBeFocused();
+    await expect(confirmation(page)).toHaveAttribute('aria-invalid', 'true');
+    await expect(confirmation(page)).toHaveAttribute(
+      'aria-describedby',
+      'invite-confirmation-status',
+    );
     expect(mock.requests.some((r) => r.path === '/guest-invites/accept')).toBe(false);
   });
 
@@ -232,7 +248,9 @@ test.describe('convite: aceite', () => {
     // O tempo de um toque de verdade: se o campo perdesse o foco aqui, o aviso de divergência empurraria o botão.
     await page.waitForTimeout(300);
     await page.mouse.up();
-    await expect(page.getByRole('alert')).toContainText('As duas senhas não são iguais.');
+    await expect(page.locator('#invite-confirmation-status')).toHaveText(
+      'As senhas ainda não são iguais.',
+    );
   });
 
   test('e-mail sem forma de e-mail: aviso no campo e foco nele', async ({ page }) => {
@@ -255,7 +273,9 @@ test.describe('convite: aceite', () => {
     await expect(page.locator('#invite-email-error')).toHaveText('Escolha outro e-mail.');
     await expect(email(page)).toBeFocused();
     await expect(email(page)).toHaveAttribute('aria-invalid', 'true');
-    await expect(page.getByRole('heading', { level: 1, name: 'Criar sua conta' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+    ).toBeVisible();
 
     await email(page).fill(GUEST.email);
     await expect(page.locator('#invite-email-error')).toHaveCount(0);
@@ -265,7 +285,7 @@ test.describe('convite: aceite', () => {
 });
 
 test.describe('convite: estados dedicados', () => {
-  test('convite que não vale mais (410): título, explicação, o que fazer e a saída', async ({
+  test('convite que não vale mais (410): título, o que fazer (lido junto) e a saída', async ({
     page,
   }) => {
     await openForm(page, UNKNOWN_LINK);
@@ -274,7 +294,8 @@ test.describe('convite: estados dedicados', () => {
     await expect(
       page.getByRole('heading', { level: 1, name: 'Este convite não vale mais' }),
     ).toBeVisible();
-    await expect(page.getByRole('alert')).toContainText('usado, expirou ou foi cancelado');
+    // O que fazer fica dentro do bloco anunciado, para o leitor de tela ouvir o motivo e a saída juntos.
+    await expect(page.getByRole('alert')).toContainText('Peça um novo link a quem convidou você.');
     await expect(page.getByText('Peça um novo link a quem convidou você.')).toBeVisible();
     await expect(page).toHaveURL(/\/convite$/);
     await expect(page.getByRole('main').locator('form')).toHaveCount(0);
@@ -293,9 +314,7 @@ test.describe('convite: estados dedicados', () => {
 
   test('link fora do padrão: nunca ecoa o que veio no endereço', async ({ page }) => {
     await page.goto('/convite#curto');
-    await expect(
-      page.getByRole('heading', { level: 1, name: 'Link do convite incompleto' }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Convite incompleto' })).toBeVisible();
     await expect(page).toHaveURL(/\/convite$/);
     expect(await page.evaluate(() => document.body.innerText)).not.toContain('curto');
   });
@@ -308,7 +327,9 @@ test.describe('convite: estados dedicados', () => {
       page.getByRole('heading', { level: 1, name: 'Convite não encontrado' }),
     ).toBeVisible();
     await page.goto(`/convite#${mock.seedInvite().token}`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Criar sua conta' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+    ).toBeVisible();
     await expect(page).toHaveURL(/\/convite$/);
   });
 
@@ -381,7 +402,9 @@ test.describe('convite: acessibilidade (axe, qualquer gravidade)', () => {
       await expectNoA11yViolations(page);
       await fill(page, GUEST.email, STRONG, 'Outra-senha-longa-1!');
       await submit(page).click();
-      await expect(page.getByRole('alert')).toContainText('As duas senhas não são iguais.');
+      await expect(page.locator('#invite-confirmation-status')).toHaveText(
+        'As senhas ainda não são iguais.',
+      );
       await expectNoA11yViolations(page);
     });
 

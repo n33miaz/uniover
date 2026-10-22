@@ -4,7 +4,7 @@ import { DestroyRef, Injectable, effect, inject, signal, untracked } from '@angu
 import { ConnectivityService } from '../../../../core/connectivity/connectivity.service';
 import { OfflineQueue } from '../../../../core/offline-queue/offline-queue';
 import { QUEUE_RUNTIME } from '../../../../core/offline-queue/queue-ports';
-import { SyncEngine } from '../../../../core/offline-queue/sync-engine';
+import { AccountScope } from '../../../../core/session/account-scope';
 import { TRAINING_DB } from '../training-db';
 import { CURSOR_REWIND_MS, rewindCursor } from './cursor';
 import { PullApi } from './pull-api';
@@ -32,6 +32,8 @@ function classify(error: unknown): TrainingSyncError {
  * Regras:
  * - **só puxa com a fila de escrita vazia**: o que o aparelho escreveu sobe antes, para o servidor já ter visto
  *   tudo (hidratar e enviar antes de puxar);
+ * - **só puxa com a sessão da conta deste banco**: com o token de outra conta (outra pessoa entrou neste navegador), o que
+ *   o servidor devolvesse seria dela e entraria no banco local desta;
  * - **uma passada por vez**, e pedido que chega no meio vira uma passada extra (nenhum se perde);
  * - gatilhos: a partida do módulo (`start()`), o evento `online`, a volta à aba, o fim de um envio da fila
  *   (`lastSyncAt` mudou) e o botão manual (`pullNow()`). **Nenhum temporizador**: o servidor dorme de graça e
@@ -45,7 +47,7 @@ export class TrainingSync {
   private readonly resources = inject(TRAINING_RESOURCE_SYNCS, { optional: true }) ?? [];
   private readonly api = inject(PullApi);
   private readonly queue = inject(OfflineQueue);
-  private readonly engine = inject(SyncEngine);
+  private readonly account = inject(AccountScope);
   private readonly connectivity = inject(ConnectivityService);
   private readonly runtime = inject(QUEUE_RUNTIME);
   private readonly doc = inject(DOCUMENT);
@@ -89,6 +91,12 @@ export class TrainingSync {
         void this.request();
       });
     });
+
+    // A sessão ganha dona quando o `/me` responde (a partida sem rede abre o banco pela dica da conta, e a passada espera
+    // por isto): é motivo para puxar o que esperava.
+    effect(() => {
+      if (this.account.sessionAccount() !== null) untracked(() => void this.request());
+    });
   }
 
   /**
@@ -113,7 +121,7 @@ export class TrainingSync {
 
   private async boot(): Promise<void> {
     this._lastPullAt.set(await this.readLastPullAt());
-    await this.engine.start();
+    await this.queue.start();
     this.seenSyncAt = this.queue.lastSyncAt();
     this.started = true;
     await this.request();
@@ -156,10 +164,13 @@ export class TrainingSync {
     // sobe primeiro; o fim do envio chama de novo.
     if (this.resources.length === 0) return;
     if (!this.connectivity.online() || this.queue.pendingCount() > 0) return;
+    // Só com a sessão da conta dona deste banco: o token de outra conta traria os dados dela para cá.
+    const accountId = this.queue.accountId;
+    if (accountId === null || !this.account.isSessionOf(accountId)) return;
 
     this._pulling.set(true);
     try {
-      for (const resource of this.resources) await this.pullResource(resource);
+      for (const resource of this.resources) await this.pullResource(resource, accountId);
       this._error.set(null);
       this._lastPullAt.set(this.runtime.now());
     } catch (error) {
@@ -169,7 +180,7 @@ export class TrainingSync {
     }
   }
 
-  private async pullResource(resource: ResourceSync): Promise<void> {
+  private async pullResource(resource: ResourceSync, accountId: string): Promise<void> {
     const name = resource.resource;
     const previous = await this.db.syncState.get(name);
     const limit = resource.pageSize ?? DEFAULT_PULL_PAGE_SIZE;
@@ -179,7 +190,7 @@ export class TrainingSync {
     let after = stored === null ? null : rewindCursor(stored, CURSOR_REWIND_MS);
 
     for (;;) {
-      const page = await this.api.fetchPage<unknown>(resource.path, after, limit);
+      const page = await this.api.fetchPage<unknown>(resource.path, after, limit, accountId);
 
       // Página vazia devolve o cursor que recebeu (recuado): guardá-lo faria o cursor andar para trás a cada puxar.
       if (page.items.length > 0) {

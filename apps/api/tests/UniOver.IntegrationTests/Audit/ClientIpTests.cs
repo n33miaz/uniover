@@ -11,14 +11,17 @@ using static UniOver.IntegrationTests.Audit.AuditKit;
 namespace UniOver.IntegrationTests.Audit;
 
 /// <summary>
-/// O IP vira dado de auditoria, então um cliente não pode escolhê-lo. Atrás do proxy do Render vale a ÚLTIMA entrada de
-/// <c>X-Forwarded-For</c> (a que o proxy acrescentou); tudo que o cliente mandou antes dela é ignorado.
+/// O IP vira dado de auditoria (e chave do limite de taxa), então um cliente não pode escolhê-lo. Atrás do Render a cadeia
+/// de <c>X-Forwarded-For</c> traz o cliente seguido de saltos INTERNOS (10.x.x.x, em número e valor variáveis): vale o
+/// primeiro endereço PÚBLICO lido da direita para a esquerda, e tudo à esquerda dele (o que o cliente escreveu) é ignorado.
+/// A regra por peer (público ou privado, IPv6) está em <see cref="ForwardedChainTests"/>; aqui é o caminho inteiro, até a trilha.
 /// </summary>
 [Collection(PostgresGroup.Name)]
 public sealed class ClientIpTests(PostgresFixture postgres)
 {
     private const string RealClient = "203.0.113.7";
     private const string Forged = "6.6.6.6";
+    private const string InternalHop = "10.26.16.133";
 
     private async Task<IdentityApp> StartAsync(bool forwardedHeaders) =>
         await IdentityApp.StartAsync(postgres, new IdentityAppOptions { ForwardedHeaders = forwardedHeaders });
@@ -59,6 +62,25 @@ public sealed class ClientIpTests(PostgresFixture postgres)
 
         // Uma linha só, como o proxy a monta ao acrescentar o IP de quem conectou: o que o cliente mandou vem antes.
         (await AuditedIpAsync(app, forwardedFor: $"{Forged}, {RealClient}")).Should().Be(RealClient);
+    }
+
+    [Fact]
+    public async Task BehindTheRender_TheInternalHopsAfterTheClientAreSkipped_AndTheClientIsAudited()
+    {
+        await using var app = await StartAsync(forwardedHeaders: true);
+
+        // O que o Render monta: o cliente e, depois dele, saltos internos que mudam a cada requisição.
+        (await AuditedIpAsync(app, forwardedFor: $"{RealClient}, {InternalHop}")).Should().Be(RealClient);
+        (await AuditedIpAsync(app, forwardedFor: $"{RealClient}, 10.27.0.14, 10.25.120.122")).Should().Be(RealClient);
+    }
+
+    [Fact]
+    public async Task AClientCannotChooseTheAuditedIp_WhateverItForgesToTheLeftOfTheRealClientAndTheInternalHops()
+    {
+        await using var app = await StartAsync(forwardedHeaders: true);
+
+        (await AuditedIpAsync(app, forwardedFor: $"{Forged}, {RealClient}, {InternalHop}")).Should().Be(RealClient);
+        (await AuditedIpAsync(app, forwardedFor: $"{Forged}, 10.9.9.9, {RealClient}, {InternalHop}, 10.27.0.14")).Should().Be(RealClient);
     }
 
     [Fact]
@@ -121,13 +143,19 @@ public sealed class ClientIpTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public void TheForwardedHeadersOptions_ReadOnlyTheLastEntry_AndTrustAnyProxyOnPurpose()
+    public void TheForwardedHeadersOptions_TrustOnlyTheInternalNetworks_AndNeverAnEmptyList()
     {
         var options = ForwardedHeadersExtensions.CreateOptions();
 
-        options.ForwardLimit.Should().Be(1, "só a última entrada (a do proxy da frente) é lida");
+        options.ForwardLimit.Should().Be(ForwardedHeadersExtensions.ForwardLimit).And.BeInRange(2, 16,
+            "o Render põe mais de um salto interno: o limite de 1 lia o salto, não o cliente");
+        options.RequireHeaderSymmetry.Should().BeFalse();
         options.ForwardedHeaders.Should().Be(ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto);
-        options.KnownProxies.Should().BeEmpty();
-        options.KnownIPNetworks.Should().BeEmpty();
+
+        // Lista vazia significaria "confia em qualquer origem": o cliente escolheria o próprio IP.
+        options.KnownIPNetworks.Should().NotBeEmpty();
+        options.KnownProxies.Should().BeEmpty("os endereços de laço local entram como rede, na lista de redes");
+        options.KnownIPNetworks.Select(n => n.ToString()).Should().BeEquivalentTo(
+            "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "::1/128", "fc00::/7", "fe80::/10");
     }
 }

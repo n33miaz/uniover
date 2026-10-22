@@ -137,8 +137,10 @@ public sealed class LoginTests(PostgresFixture postgres)
         success.Ip.Should().Be("203.0.113.7");
         success.UserAgent.Should().HaveLength(256, "o User-Agent é truncado");
 
-        entries.Single(e => e.Event == AuditEvents.LoginFailed && e.UserId == owner.Id).Ip.Should().Be("203.0.113.8");
-        entries.Single(e => e.Event == AuditEvents.LoginFailed && e.UserId == null).Ip.Should().Be("203.0.113.9");
+        // Quem errou a senha não está autenticado: o ator é nulo nas duas, e a conta (quando existe) é o ALVO, no detalhe.
+        entries.Where(e => e.Event == AuditEvents.LoginFailed).Should().OnlyContain(e => e.UserId == null);
+        entries.Single(e => e.Event == AuditEvents.LoginFailed && e.Detail == AuditAboutAccount.Detail(owner.Id)).Ip.Should().Be("203.0.113.8");
+        entries.Single(e => e.Event == AuditEvents.LoginFailed && e.Detail == null).Ip.Should().Be("203.0.113.9");
     }
 
     [Fact]
@@ -172,7 +174,11 @@ public sealed class LoginTests(PostgresFixture postgres)
         }
 
         await using var db = app.Db();
-        (await db.LoginAudit.CountAsync(a => a.Event == AuditEvents.LoginLocked, Ct)).Should().BeGreaterThan(0);
+        var ownerId = (await db.Users.SingleAsync(Ct)).Id;
+        (await db.LoginAudit.CountAsync(a => a.Event == AuditEvents.LoginLocked && a.UserId == null && a.Detail == AuditAboutAccount.Detail(ownerId), Ct))
+            .Should().BeGreaterThan(0, "o bloqueio registra a conta como alvo, com o ator nulo");
+        (await db.LoginAudit.CountAsync(a => (a.Event == AuditEvents.LoginLocked || a.Event == AuditEvents.LoginFailed) && a.UserId != null, Ct))
+            .Should().Be(0, "a conta atacada nunca aparece como autora do ataque");
     }
 
     [Fact]

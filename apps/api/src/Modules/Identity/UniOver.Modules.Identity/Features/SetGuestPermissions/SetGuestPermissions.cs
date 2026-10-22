@@ -47,17 +47,18 @@ internal sealed class SetGuestPermissionsHandler(
         var now = time.GetUtcNow();
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        // O filtro por papel impede mexer na conta do dono por aqui, mesmo com um id certo.
-        var guest = await db.Users.AsNoTracking()
-            .Where(u => u.Id == guestId && u.Role == AccountRoles.Guest)
-            .Select(u => new { u.Id, u.DisplayName, u.Email, u.CreatedAt, u.DisabledAt })
+        // A linha da conta serializa substituições concorrentes da lista completa de concessões.
+        // Depois de esperar pela trava, a próxima leitura das concessões vê o commit anterior.
+        var account = await db.Users
+            .FromSqlInterpolated($"SELECT * FROM identity.users WHERE id = {guestId} AND role = {AccountRoles.Guest} FOR UPDATE")
+            .AsNoTracking()
             .SingleOrDefaultAsync(cancellationToken);
-        if (guest is null)
+        if (account is null)
         {
             return new SetGuestPermissionsResult(SetGuestPermissionsStatus.NotFound);
         }
 
-        if (guest.DisabledAt is not null)
+        if (account.DisabledAt is not null)
         {
             return new SetGuestPermissionsResult(SetGuestPermissionsStatus.Revoked);
         }
@@ -91,7 +92,7 @@ internal sealed class SetGuestPermissionsHandler(
         grants.Invalidate(guestId);
 
         var summary = new GuestSummary(
-            guest.Id, guest.DisplayName, guest.Email, guest.CreatedAt, guest.DisabledAt, PermissionRules.Effective(wanted));
+            account.Id, account.DisplayName, account.Email, account.CreatedAt, account.DisabledAt, PermissionRules.Effective(wanted));
         return new SetGuestPermissionsResult(SetGuestPermissionsStatus.Updated, summary);
     }
 

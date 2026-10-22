@@ -30,7 +30,7 @@ async function acceptInvite(page: Page) {
   await page.getByLabel('E-mail').fill(GUEST.email);
   await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
   await page.getByLabel('Repita a senha').fill(GUEST.password);
-  await page.getByRole('button', { name: 'Criar conta e entrar' }).click();
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click();
 }
 
 function shot(info: { project: { name: string } }, name: string, scheme: string) {
@@ -290,7 +290,8 @@ test.describe('o Perfil muda o nome a qualquer hora', () => {
     await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
     await page.getByRole('link', { name: 'Voltar ao Início' }).click();
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.locator('app-home-page h1')).toContainText('Neemias Jr');
+    // A saudação traz só o primeiro nome: "Neemias Jr" vira "Neemias".
+    await expect(page.locator('app-home-page h1')).toHaveText(/, Neemias$/);
   });
 
   test('mostra no campo o erro do servidor e uma falha de rede, sem perder o que foi digitado', async ({

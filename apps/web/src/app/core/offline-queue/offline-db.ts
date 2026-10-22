@@ -1,5 +1,6 @@
 import { InjectionToken } from '@angular/core';
 import Dexie, { type DexieOptions, type EntityTable } from 'dexie';
+import { accountDatabaseName } from '../session/account-id';
 
 /**
  * `pending`: espera envio (inclui o que aguarda a próxima tentativa) · `sending`: em voo agora · `failed`: o
@@ -39,9 +40,18 @@ export interface MetaRow {
   readonly value: unknown;
 }
 
+/**
+ * Nome do banco do tempo em que havia um só por aparelho (hoje só é lido para a adoção, ver `legacy-adoption.ts`). O banco
+ * em uso leva o id da conta no nome (`offlineDbName`).
+ */
 export const DATABASE_NAME = 'uniover-offline';
 
-/** Banco local da fila de escrita offline (IndexedDB, via Dexie). */
+/** Nome do banco da fila de uma conta: `uniover-offline-<id>`. */
+export function offlineDbName(accountId: string): string {
+  return accountDatabaseName(DATABASE_NAME, accountId);
+}
+
+/** Banco local da fila de escrita offline de UMA conta (IndexedDB, via Dexie). */
 export class OfflineDb extends Dexie {
   declare outbox: EntityTable<OutboxItem, 'id'>;
   declare meta: EntityTable<MetaRow, 'key'>;
@@ -56,7 +66,14 @@ export class OfflineDb extends Dexie {
   }
 }
 
-export const OFFLINE_DB = new InjectionToken<OfflineDb>('OFFLINE_DB', {
-  providedIn: 'root',
-  factory: () => new OfflineDb(),
-});
+/**
+ * O banco da fila da conta em uso. Sem fábrica padrão de propósito: quem o fornece é o escopo da conta
+ * (`QueueScopes`), nunca um banco único do aparelho, que abriria o nome antigo e misturaria as contas.
+ */
+export const OFFLINE_DB = new InjectionToken<OfflineDb>('OFFLINE_DB');
+
+/** Como criar o banco de uma conta a partir do nome dele (o teste troca por uma fábrica em memória). */
+export const OFFLINE_DB_FACTORY = new InjectionToken<(name: string) => OfflineDb>(
+  'OFFLINE_DB_FACTORY',
+  { providedIn: 'root', factory: () => (name) => new OfflineDb(name) },
+);

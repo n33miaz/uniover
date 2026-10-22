@@ -73,6 +73,8 @@ describe('LoginPage', () => {
     const el = await render();
     expect(el.querySelector('app-auth-layout main')).not.toBeNull();
     expect(el.querySelectorAll('h1')).toHaveLength(1);
+    // Sem texto de apoio entre o título e os campos: "Entrar" e os dois campos já dizem o que fazer.
+    expect(el.querySelector('h1 + *')?.tagName).toBe('FORM');
     expect(el.querySelector('label[for="login-email"]')?.textContent).toBe('E-mail');
     expect(el.querySelector('label[for="login-password"]')?.textContent).toBe('Senha');
     const email = field(el, 'login-email');

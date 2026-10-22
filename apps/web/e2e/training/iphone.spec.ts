@@ -7,7 +7,7 @@ import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures'
 import { settle, smallTargets } from '../screens/screen-helpers';
 import { TrainingServer, mockTrainingApi } from './support/training-server';
 import { seedTraining } from './support/training-seed';
-import { chooseMuscle, openTraining } from './support/training-pages';
+import { chooseMuscle, openTraining, trainingDbName } from './support/training-pages';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -21,6 +21,8 @@ test.use({ serviceWorkers: 'block', actionTimeout: 20_000 });
 const SHOTS = process.env['TRAINING_IPHONE_SHOTS'];
 
 const TRAINING_ONLY = ['module:training'];
+/** O id da conta do convidado: nomeia o banco local dele no aparelho (um por conta). */
+const GUEST_ID = '00000000-0000-4000-8000-000000000061';
 const RAPHAEL = {
   name: 'Raphael',
   chosen: 'Raphael Souza',
@@ -49,7 +51,7 @@ test.beforeEach(async ({ context }) => {
 /** O convidado já existe e tem sessão (o app o reconhece pelo refresh), com as permissões dadas. */
 function signInAsGuest(permissions: string[]) {
   identity.guests.push({
-    id: '00000000-0000-4000-8000-000000000061',
+    id: GUEST_ID,
     displayName: GUEST.displayName,
     email: GUEST.email,
     password: GUEST.password,
@@ -109,7 +111,7 @@ async function acceptTrainingInvite(page: Page) {
   await page.getByLabel('E-mail').fill(RAPHAEL.email);
   await page.getByLabel('Senha', { exact: true }).fill(RAPHAEL.password);
   await page.getByLabel('Repita a senha').fill(RAPHAEL.password);
-  await page.getByRole('button', { name: 'Criar conta e entrar' }).click();
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click();
 }
 
 test.describe('convidado que só tem o Treino', () => {
@@ -303,12 +305,13 @@ test.describe('iPhone, Safari fora da tela de início', () => {
       // Deixa o banco do Treino pronto e planta um treino aberto neste aparelho (como o app restaurado no meio da série).
       await expect
         .poll(() =>
-          page.evaluate(async () =>
-            ((await indexedDB.databases()) ?? []).some((db) => db.name === 'uniover-training'),
+          page.evaluate(
+            async (name) => ((await indexedDB.databases()) ?? []).some((db) => db.name === name),
+            trainingDbName(GUEST_ID),
           ),
         )
         .toBe(true);
-      await plantOpenWorkout(page);
+      await plantOpenWorkout(page, trainingDbName(GUEST_ID));
 
       await page.reload();
       await expect(page.locator('app-training-page')).toBeVisible();
@@ -316,7 +319,7 @@ test.describe('iPhone, Safari fora da tela de início', () => {
       await expect(sheetOf(page)).toHaveCount(0);
 
       // O mesmo aparelho, agora sem treino aberto: a folha abre.
-      await removeOpenWorkout(page);
+      await removeOpenWorkout(page, trainingDbName(GUEST_ID));
       await page.reload();
       await expect(page.locator('app-training-page')).toBeVisible();
       await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
@@ -380,7 +383,8 @@ test.describe('iPhone, Safari fora da tela de início', () => {
       // A rede volta, o treino sobe e o aviso some.
       server.offline = false;
       await goOnline(page);
-      await expect.poll(() => server.writes('exercises')).toBe(1);
+      // O servidor guarda por conta: a escrita é do convidado deste teste.
+      await expect.poll(() => server.writes('exercises', GUEST_ID)).toBe(1);
       await expect(page.getByText('ainda não sincronizado')).toHaveCount(0);
       await expect(advice(page)).toHaveCount(0);
     });
@@ -407,11 +411,11 @@ test.describe('iPhone, Safari fora da tela de início', () => {
  * Planta no banco local um treino aberto deste aparelho: a linha do treino e os dois ponteiros (o do aparelho e o do treino
  * ativo). É o que o app deixa no meio de uma série; recarregar a página o restaura.
  */
-async function plantOpenWorkout(page: Page) {
+async function plantOpenWorkout(page: Page, dbName: string) {
   await page.evaluate(
-    () =>
+    (dbName) =>
       new Promise<void>((resolve, reject) => {
-        const open = indexedDB.open('uniover-training');
+        const open = indexedDB.open(dbName);
         open.onerror = () => reject(open.error);
         open.onsuccess = () => {
           const db = open.result;
@@ -438,14 +442,15 @@ async function plantOpenWorkout(page: Page) {
           tx.onerror = () => reject(tx.error);
         };
       }),
+    dbName,
   );
 }
 
-async function removeOpenWorkout(page: Page) {
+async function removeOpenWorkout(page: Page, dbName: string) {
   await page.evaluate(
-    () =>
+    (dbName) =>
       new Promise<void>((resolve, reject) => {
-        const open = indexedDB.open('uniover-training');
+        const open = indexedDB.open(dbName);
         open.onerror = () => reject(open.error);
         open.onsuccess = () => {
           const db = open.result;
@@ -459,5 +464,6 @@ async function removeOpenWorkout(page: Page) {
           tx.onerror = () => reject(tx.error);
         };
       }),
+    dbName,
   );
 }

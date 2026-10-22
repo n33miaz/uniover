@@ -18,6 +18,9 @@ public sealed class IdempotencyRecord
     /// <summary>SHA-256 do corpo da requisição: prova que o reenvio é o mesmo pedido.</summary>
     public byte[] RequestHash { get; set; } = [];
 
+    /// <summary>Identificador da execução que possui a chave; muda a cada retomada vencida.</summary>
+    public Guid Generation { get; set; }
+
     public int? StatusCode { get; set; }
 
     /// <summary>Corpo da resposta (até 32 KB). Nulo quando a resposta era vazia ou passou do limite.</summary>

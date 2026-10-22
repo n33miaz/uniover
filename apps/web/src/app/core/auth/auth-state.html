@@ -2,12 +2,14 @@
 
 <div #copy class="copy" tabindex="-1" [attr.role]="role()">
   <h1>{{ heading() }}</h1>
-  <p class="detail">{{ detail() }}</p>
+  @if (detail(); as text) {
+    <p class="detail">{{ text }}</p>
+  }
+  <!-- Dentro do bloco que recebe o foco: quem usa leitor de tela ouve também o que fazer, não só o que houve. -->
+  @if (advice(); as text) {
+    <p class="advice">{{ text }}</p>
+  }
 </div>
-
-@if (advice(); as text) {
-  <p class="advice">{{ text }}</p>
-}
 
 <div class="actions">
   <ng-content />

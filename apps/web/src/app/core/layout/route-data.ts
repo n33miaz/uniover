@@ -15,6 +15,8 @@ export interface ShellBack {
 export interface ShellRouteData {
   readonly title?: string;
   readonly tabs?: readonly TabItem[];
+  /** Identidade visual opcional da casca; não altera rotas nem conteúdo. */
+  readonly shellStyle?: 'training';
   readonly back?: ShellBack;
   readonly settings?: boolean;
 }

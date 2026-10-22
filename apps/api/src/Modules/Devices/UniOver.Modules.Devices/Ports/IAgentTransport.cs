@@ -55,3 +55,9 @@ public interface IAgentTransport
     /// <summary>As sessões autenticadas, conforme chegam. A sequência termina quando <paramref name="cancellationToken"/> é cancelado.</summary>
     IAsyncEnumerable<IAgentSession> AcceptSessionsAsync(CancellationToken cancellationToken);
 }
+
+/// <summary>Fecha a sessão local de um agente revogado sem depender da entrega assíncrona da outbox.</summary>
+public interface IAgentSessionCloser
+{
+    Task CloseAsync(string agentId, AgentCloseReason reason, CancellationToken cancellationToken);
+}

@@ -39,9 +39,34 @@ public sealed class TrainingPersistenceTests(PostgresFixture postgres)
         var inPublic = await SchemaGuardQueries.RunAsync(database.OwnerConnection, SchemaGuardQueries.PublicObjects, Ct);
 
         tables.Should().Equal(
-            "__ef_migrations_history", "catalog_meta", "exercise_overrides", "exercises", "goals", "idempotency_keys", "routine_items", "routines",
-            "session_sets", "sessions");
+            "__ef_migrations_history", "body_entries", "body_profile", "catalog_meta", "exercise_overrides", "exercises", "goals", "idempotency_keys",
+            "routine_items", "routines", "session_sets", "sessions");
         inPublic.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task IdempotencyGeneration_DefaultKeepsOlderInsertShapeCompatible()
+    {
+        var database = await MigratedAsync();
+        var userId = Guid.NewGuid();
+        var key = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+
+        await using var connection = new NpgsqlConnection(database.OwnerConnection);
+        await connection.OpenAsync(Ct);
+        await using var command = new NpgsqlCommand(
+            "INSERT INTO training.idempotency_keys (user_id, key, method, route, request_hash, created_at, expires_at) "
+            + "VALUES (@user_id, @key, 'POST', '/api/test', @request_hash, @created_at, @expires_at) RETURNING generation",
+            connection);
+        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("key", key);
+        command.Parameters.AddWithValue("request_hash", new byte[32]);
+        command.Parameters.AddWithValue("created_at", now);
+        command.Parameters.AddWithValue("expires_at", now.AddDays(1));
+
+        var generation = (Guid)(await command.ExecuteScalarAsync(Ct))!;
+
+        generation.Should().NotBe(Guid.Empty);
     }
 
     [Fact]

@@ -1,7 +1,9 @@
+using System.Data.Common;
 using System.Net;
 using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using UniOver.BuildingBlocks.Web;
 using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Identity.Passkeys;
@@ -336,6 +338,43 @@ public sealed class GuestPermissionsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task SetPermissions_ConcurrentReplacements_KeepOneCompleteRequestedSet()
+    {
+        var barrier = new GrantReadRaceBarrier();
+        var (app, owner, authenticator) = await StartOwnerAsync(new PasskeyAppOptions { CommandInterceptor = barrier });
+        await using var appScope = app;
+        using var authScope = authenticator;
+        var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow());
+        await ConfirmPermissionsChangeAsync(app, owner, authenticator);
+
+        string[][] requestedSets =
+        [
+            PermissionLists.TvControlAndTraining,
+            ["module:tv", "tv:control", "tv:edit-shortcuts"],
+        ];
+        var responses = await Task.WhenAll(requestedSets.Select(permissions =>
+            PutPermissionsAsync(app, owner, guest.UserId, new { permissions })));
+
+        try
+        {
+            responses.Select(response => response.StatusCode).Should().OnlyContain(status => status == HttpStatusCode.OK);
+        }
+        finally
+        {
+            foreach (var response in responses)
+            {
+                response.Dispose();
+            }
+        }
+
+        barrier.ProvedSerializationOrOverlappedReads.Should().BeTrue(
+            "the test must either observe the account row lock or release two stale grant reads together");
+        var stored = await StoredGrantsAsync(app, guest.UserId);
+        requestedSets.Any(permissions => stored.SequenceEqual(Sorted(permissions))).Should().BeTrue(
+            "each request replaces the complete set, so concurrent requests must serialize instead of combining grants");
+    }
+
+    [Fact]
     public async Task SetPermissions_WithTheSameSet_ChangesNothing_AndWritesNoAudit()
     {
         var (app, owner, authenticator) = await StartOwnerAsync();
@@ -459,5 +498,46 @@ public sealed class GuestPermissionsTests(PostgresFixture postgres)
         Strings(rows[raphael.UserId].GetProperty("permissions")).Should().Equal("module:training");
         var pending = (await PasskeyApp.JsonAsync(invites)).EnumerateArray().Single(e => e.GetProperty("status").GetString() == "pending");
         Strings(pending.GetProperty("permissions")).Should().Equal("module:tv", "tv:history");
+    }
+}
+
+internal sealed class GrantReadRaceBarrier : DbCommandInterceptor
+{
+    private readonly TaskCompletionSource _bothGrantReadsCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _accountLockObserved;
+    private int _grantReadCount;
+    private int _overlapForced;
+
+    public bool ProvedSerializationOrOverlappedReads =>
+        Volatile.Read(ref _accountLockObserved) != 0 || Volatile.Read(ref _overlapForced) != 0;
+
+    public override async ValueTask<DbDataReader> ReaderExecutedAsync(
+        DbCommand command,
+        CommandExecutedEventData eventData,
+        DbDataReader result,
+        CancellationToken cancellationToken = default)
+    {
+        if (command.CommandText.Contains("identity.users", StringComparison.OrdinalIgnoreCase)
+            && command.CommandText.Contains("FOR UPDATE", StringComparison.OrdinalIgnoreCase))
+        {
+            Volatile.Write(ref _accountLockObserved, 1);
+            return result;
+        }
+
+        if (Volatile.Read(ref _accountLockObserved) != 0
+            || !command.CommandText.Contains("user_grants", StringComparison.OrdinalIgnoreCase)
+            || !command.CommandText.Contains("SELECT", StringComparison.OrdinalIgnoreCase))
+        {
+            return result;
+        }
+
+        if (Interlocked.Increment(ref _grantReadCount) == 2)
+        {
+            Volatile.Write(ref _overlapForced, 1);
+            _bothGrantReadsCompleted.TrySetResult();
+        }
+
+        await _bothGrantReadsCompleted.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        return result;
     }
 }

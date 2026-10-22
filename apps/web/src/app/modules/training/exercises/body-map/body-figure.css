@@ -18,12 +18,12 @@
 .line path {
   fill: var(--a-line);
   stroke: var(--a-line);
-  stroke-width: 2.4;
+  stroke-width: 2.1;
   stroke-linejoin: round;
 }
 
 .skin path {
-  fill: var(--a-elev);
+  fill: var(--a-surface-2);
 }
 
 .line,
@@ -65,8 +65,9 @@
 
 .shape {
   fill: var(--fill);
-  stroke: var(--a-accent);
-  stroke-width: 1.4;
+  stroke: color-mix(in srgb, var(--a-accent) 68%, var(--a-ink));
+  stroke-width: 1.2;
+  fill-opacity: 0.94;
   transition: fill var(--dur-fast) linear;
 }
 

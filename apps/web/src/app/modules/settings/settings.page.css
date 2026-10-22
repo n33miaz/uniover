@@ -27,13 +27,3 @@
   margin-left: auto;
   color: var(--a-ink3);
 }
-
-/* Cartões "Em breve": ladrilho neutro e o chip no fim; sem toque, sem realce, sem foco. */
-.soon .ui-row {
-  cursor: default;
-}
-
-.soon-tile {
-  background: var(--a-elev);
-  color: var(--a-ink2);
-}

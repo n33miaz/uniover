@@ -1,4 +1,5 @@
 import { BrowserContext, Route } from '@playwright/test';
+import { OWNER_ID } from '../../auth/identity-mock';
 
 /**
  * Servidor de teste do Treino: simula a API (`/api/v1/training/**`) com rotas do Playwright e implementa as convenções do
@@ -15,6 +16,10 @@ import { BrowserContext, Route } from '@playwright/test';
  *
  * Os dados-semente entram por `seed`. As telas irmãs reutilizam este arquivo: recurso novo não pede código novo.
  *
+ * Os dados são POR CONTA, como na API (`UserId` em toda consulta): a conta é o `sub` do token do pedido (o simulador de
+ * identidade o emite igual ao id do `/me`). Pedido sem token vale como o dono, então os testes de uma conta só não mudam; e
+ * cada `Hit` registra de quem era o token, para um teste provar que nada saiu com o token de outra conta.
+ *
  * Use junto de `serviceWorkers: 'block'`: o Playwright não intercepta o que passa pelo service worker.
  */
 
@@ -25,6 +30,8 @@ export interface Hit {
   /** O caminho depois de `/api/v1/training/`, sem a consulta. */
   readonly path: string;
   readonly key: string;
+  /** A conta a quem o token do pedido pertence (o `sub`); sem token, a do dono. */
+  readonly account: string;
   /** `executed` · `replayed` · `stale` (o guardado era mais novo) · `rejected` (falha programada ou 422) · `down`. */
   readonly outcome: string;
 }
@@ -50,17 +57,19 @@ export interface TrainingServer {
   templates: unknown;
   /** Programa uma falha para as próximas requisições que casarem. */
   failNext(rule: FailureRule): void;
-  /** Põe linhas numa coleção (como se já estivessem no servidor). */
-  seed(collection: string, rows: readonly Record<string, unknown>[]): void;
-  /** As linhas de uma coleção, com lápides. */
-  rows(collection: string): Row[];
+  /** Põe linhas numa coleção de uma conta (como se já estivessem no servidor); sem conta, a do dono. */
+  seed(collection: string, rows: readonly Record<string, unknown>[], account?: string): void;
+  /** As linhas de uma coleção de uma conta, com lápides; sem conta, a do dono. */
+  rows(collection: string, account?: string): Row[];
   /** Quantas vezes o `PUT` com esta chave executou de verdade. */
   executions(key: string): number;
-  /** Quantas escritas executaram de verdade numa coleção (`PUT`s que mudaram algo ou criaram). */
-  writes(collection: string): number;
+  /** Quantas escritas executaram de verdade numa coleção de uma conta (`PUT`s que mudaram algo ou criaram); sem conta, a do dono. */
+  writes(collection: string, account?: string): number;
 }
 
 const BASE = '/api/v1/training/';
+/** Quem chama quando o pedido vem sem token (a sessão ainda por confirmar): o dono, como nos testes de uma conta só. */
+const DEFAULT_ACCOUNT = OWNER_ID;
 const PROBLEM_BASE = 'https://uniover.app/problems/';
 const DAY_MS = 24 * 60 * 60 * 1000;
 // .NET conta tempo em ticks de 100 ns desde 0001-01-01; a diferença até a época Unix, em ms:
@@ -79,6 +88,19 @@ const problem = (route: Route, status: number, kind: string) =>
     headers: { 'content-type': 'application/problem+json' },
     body: JSON.stringify({ type: PROBLEM_BASE + kind, title: kind, status }),
   });
+
+/** A conta do token do pedido: o `sub` do JWT; sem token legível, o dono. */
+function accountOf(headers: Record<string, string>): string {
+  const token = headers['authorization']?.replace(/^Bearer /, '');
+  try {
+    const payload = JSON.parse(Buffer.from(token?.split('.')[1] ?? '', 'base64url').toString()) as {
+      sub?: unknown;
+    };
+    return typeof payload.sub === 'string' ? payload.sub : DEFAULT_ACCOUNT;
+  } catch {
+    return DEFAULT_ACCOUNT;
+  }
+}
 
 /** Instante em milissegundos como a API o escreve (.NET, sete casas de fração). */
 export function dotnetInstant(ms: number): string {
@@ -130,6 +152,7 @@ interface Stored {
 }
 
 export async function mockTrainingApi(context: BrowserContext): Promise<TrainingServer> {
+  // Por conta e depois por coleção, como o servidor guarda por `UserId`.
   const collections = new Map<string, Map<string, Row>>();
   const replies = new Map<string, Stored>();
   const executions = new Map<string, number>();
@@ -137,11 +160,12 @@ export async function mockTrainingApi(context: BrowserContext): Promise<Training
   const rules: { rule: FailureRule; left: number }[] = [];
   let lastUpdated = 0;
 
-  const collection = (name: string): Map<string, Row> => {
-    let found = collections.get(name);
+  const collection = (account: string, name: string): Map<string, Row> => {
+    const key = `${account}/${name}`;
+    let found = collections.get(key);
     if (!found) {
       found = new Map();
-      collections.set(name, found);
+      collections.set(key, found);
     }
     return found;
   };
@@ -158,7 +182,7 @@ export async function mockTrainingApi(context: BrowserContext): Promise<Training
     hits: [],
     templates: { items: [] },
     failNext: (rule) => void rules.push({ rule, left: rule.times ?? 1 }),
-    seed: (name, rows) => {
+    seed: (name, rows, account = DEFAULT_ACCOUNT) => {
       for (const row of rows) {
         const stamped: Row = {
           updatedAt: dotnetInstant(tick()),
@@ -166,12 +190,12 @@ export async function mockTrainingApi(context: BrowserContext): Promise<Training
           deleted: false,
           ...row,
         } as Row;
-        collection(name).set(stamped.id, stamped);
+        collection(account, name).set(stamped.id, stamped);
       }
     },
-    rows: (name) => [...collection(name).values()],
+    rows: (name, account = DEFAULT_ACCOUNT) => [...collection(account, name).values()],
     executions: (key) => executions.get(key) ?? 0,
-    writes: (name) => writes.get(name) ?? 0,
+    writes: (name, account = DEFAULT_ACCOUNT) => writes.get(`${account}/${name}`) ?? 0,
   };
 
   await context.route(`**${BASE}**`, async (route) => {
@@ -180,7 +204,8 @@ export async function mockTrainingApi(context: BrowserContext): Promise<Training
     const path = url.pathname.slice(url.pathname.indexOf(BASE) + BASE.length);
     const method = request.method();
     const key = request.headers()['idempotency-key'] ?? '';
-    const hit = (outcome: string) => server.hits.push({ method, path, key, outcome });
+    const account = accountOf(request.headers());
+    const hit = (outcome: string) => server.hits.push({ method, path, key, account, outcome });
 
     if (server.offline) {
       hit('down');
@@ -211,7 +236,7 @@ export async function mockTrainingApi(context: BrowserContext): Promise<Training
       const name = path.split('/')[0];
       const limit = Math.min(Number(url.searchParams.get('limit') ?? 200) || 200, 500);
       const after = decodeCursor(url.searchParams.get('after') ?? '');
-      const ordered = [...collection(name).values()].sort((a, b) => {
+      const ordered = [...collection(account, name).values()].sort((a, b) => {
         const left = Date.parse(String(a['updatedAt']).replace(/(\.\d{3})\d+/, '$1'));
         const right = Date.parse(String(b['updatedAt']).replace(/(\.\d{3})\d+/, '$1'));
         return left - right || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -245,7 +270,9 @@ export async function mockTrainingApi(context: BrowserContext): Promise<Training
       return problem(route, 400, 'idempotency-key-required');
     }
 
-    const previous = replies.get(key);
+    // A resposta guardada é por conta e por chave, como na API (outro usuário com o mesmo UUID não colide).
+    const replyKey = `${account}|${key}`;
+    const previous = replies.get(replyKey);
     if (previous) {
       hit('replayed');
       return route.fulfill({
@@ -273,7 +300,7 @@ export async function mockTrainingApi(context: BrowserContext): Promise<Training
       return problem(route, 422, 'client-clock-ahead');
     }
 
-    const existing = collection(name).get(id);
+    const existing = collection(account, name).get(id);
     let row: Row;
     let outcome = 'executed';
     if (isStep) {
@@ -308,12 +335,12 @@ export async function mockTrainingApi(context: BrowserContext): Promise<Training
     }
 
     if (outcome === 'executed') {
-      collection(name).set(id, row);
-      writes.set(name, (writes.get(name) ?? 0) + 1);
+      collection(account, name).set(id, row);
+      writes.set(`${account}/${name}`, (writes.get(`${account}/${name}`) ?? 0) + 1);
     }
     executions.set(key, (executions.get(key) ?? 0) + 1);
     const stored = { status: 200, body: JSON.stringify(row) };
-    replies.set(key, stored);
+    replies.set(replyKey, stored);
     hit(outcome);
     return route.fulfill({
       status: 200,

@@ -59,7 +59,7 @@ public sealed class GoalPersistenceTests(PostgresFixture postgres)
 
         await using (var training = TrainingApp.CreateContext(database.OwnerConnection))
         {
-            (await training.Database.GetPendingMigrationsAsync(Ct)).Should().ContainSingle().Which.Should().EndWith("_AddGoals");
+            (await training.Database.GetPendingMigrationsAsync(Ct)).First().Should().EndWith("_AddGoals");
             await training.Database.MigrateAsync(Ct);
         }
 

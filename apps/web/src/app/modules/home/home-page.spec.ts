@@ -5,7 +5,18 @@ import { MODULE_PREFS_KEY, ModulePrefs } from '../../core/modules/module-prefs';
 import { ModuleRegistry } from '../../core/modules/module-registry';
 import { HomeStatus, HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
-import { HomePage, dayPartFor, greetingFor } from './home-page';
+import { HomePage, dayPartFor, firstNameOf, greetingFor } from './home-page';
+
+describe('firstNameOf', () => {
+  it.each([
+    ['Neemias Cormino Manso', 'Neemias'],
+    ['  Ana   Paula ', 'Ana'],
+    ['Raphael', 'Raphael'],
+    ['', null],
+    ['   ', null],
+    [null, null],
+  ])('%j gives %j', (name, expected) => expect(firstNameOf(name)).toBe(expected));
+});
 
 describe('greetingFor', () => {
   it.each([
@@ -82,7 +93,7 @@ describe('HomePage', () => {
     const { el } = await render();
     expect(el.querySelector('h1')?.textContent).toBe('Bom dia');
     expect(el.querySelector('.time')?.textContent).toBe('09:30');
-    status.set({ ...status(), userName: 'Neemias' });
+    status.set({ ...status(), userName: 'Neemias Cormino Manso' });
     TestBed.inject(ClockService).now.set(new Date('2026-10-18T20:00:00'));
     expect((await render()).el.querySelector('h1')?.textContent).toBe('Boa noite, Neemias');
   });

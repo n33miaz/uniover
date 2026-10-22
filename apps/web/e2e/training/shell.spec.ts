@@ -172,6 +172,14 @@ test.describe('casca do Treino', () => {
 test.describe('casca do Treino com o service worker', () => {
   test.use({ serviceWorkers: 'allow' });
 
+  // Aparelho que já teve uma sessão: a dica da última conta (que o app grava ao entrar) diz qual banco local abrir sem
+  // esperar o `/me`. Sem ela, e sem rede nem sessão, o módulo só avisa que a conta está sendo confirmada.
+  test.beforeEach(async ({ context }) => {
+    await context.addInitScript(() => {
+      localStorage.setItem('uniover.account-id', 'u1');
+    });
+  });
+
   test('/treino/ (o endereço do ícone) e /treino abrem a mesma tela', async ({ page }) => {
     await page.goto('/treino/');
     await waitForServiceWorkerControl(page);

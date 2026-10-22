@@ -1,8 +1,8 @@
 # Fila de escrita offline
 
-Toda escrita feita sem rede (ou com a API dormindo) é guardada no aparelho, no IndexedDB (Dexie, banco
-`uniover-offline`), e reenviada quando houver rede. O servidor aceita o reenvio sem duplicar. A fila é genérica:
-qualquer módulo a usa, sem mudar o motor.
+Toda escrita feita sem rede (ou com a API dormindo) é guardada no aparelho, no IndexedDB (Dexie, **um banco por conta**:
+`uniover-offline-<id da conta>`), e reenviada quando houver rede. O servidor aceita o reenvio sem duplicar. A fila é
+genérica: qualquer módulo a usa, sem mudar o motor.
 
 ```ts
 const queue = inject(OfflineQueue);
@@ -20,20 +20,48 @@ pedido for inválido (método que não é de escrita, URL fora de `/api/`) ou se
 
 ## Peças
 
-| Arquivo               | Papel                                                                                                                                     |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `offline-queue.ts`    | Fachada: `enqueue`, `syncNow`, `update`, `retry`, `discard`, `items` e os signals `pendingCount`, `failedCount`, `lastSyncAt`, `syncing`. |
-| `sync-engine.ts`      | Motor de envio: um item por vez, FIFO, trava entre abas, gatilhos e temporizadores.                                                       |
-| `outbox-store.ts`     | Tudo que toca o IndexedDB; mudanças dependentes do estado anterior em transação de leitura e escrita.                                     |
-| `classify-result.ts`  | Função pura que decide o que fazer com o resultado de um envio.                                                                           |
-| `queue-transport.ts`  | Porta de saída (`HttpClient` por padrão, então os interceptadores de conexão e de autenticação valem).                                    |
-| `queue-ports.ts`      | Relógio, temporizadores e bloqueio entre abas, injetáveis (o teste troca por versões falsas).                                             |
-| `sync-status-line.ts` | Componente só apresentacional: "N ainda não sincronizados", "sincronizado às HH:MM", "N com erro".                                        |
-| `uuid-v7.ts`          | Gerador de UUID v7 (ordem estrita, mesmo no mesmo milissegundo).                                                                          |
+| Arquivo               | Papel                                                                                                                                                                                                       |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `offline-queue.ts`    | Fachada: `start`, `enqueue`, `syncNow`, `update`, `retry`, `discard`, `items` e os signals `pendingCount`, `failedCount`, `lastSyncAt`, `syncing`. Sempre da conta em uso (ou da conta a que foi amarrada). |
+| `queue-scopes.ts`     | A fila de cada conta: abre a da conta em uso, tira a anterior de cena (sem apagar nada do disco) e adota o banco antigo.                                                                                    |
+| `queue-account.ts`    | Tokens e tipos do escopo da conta (`QUEUE_ACCOUNT`, `QUEUE_BOUND_ACCOUNT`, `AccountQueue`, `QueueAccountError`).                                                                                            |
+| `sync-engine.ts`      | Motor de envio de uma conta: um item por vez, FIFO, só com a sessão dela, trava entre abas por conta, gatilhos e temporizadores.                                                                            |
+| `outbox-store.ts`     | Tudo que toca o IndexedDB de uma conta; mudanças dependentes do estado anterior em transação de leitura e escrita.                                                                                          |
+| `classify-result.ts`  | Função pura que decide o que fazer com o resultado de um envio.                                                                                                                                             |
+| `queue-transport.ts`  | Porta de saída (`HttpClient` por padrão, então os interceptadores de conexão e de autenticação valem).                                                                                                      |
+| `queue-ports.ts`      | Relógio, temporizadores e bloqueio entre abas, injetáveis (o teste troca por versões falsas).                                                                                                               |
+| `sync-status-line.ts` | Componente só apresentacional: "N ainda não sincronizados", "sincronizado às HH:MM", "N com erro".                                                                                                          |
+| `uuid-v7.ts`          | Gerador de UUID v7 (ordem estrita, mesmo no mesmo milissegundo).                                                                                                                                            |
 
-O motor precisa ser iniciado na partida do app (`SyncEngine.start()` num inicializador): é ele que hidrata o
-banco e reenvia o que ficou pendente de antes. `enqueue` também o inicia, mas um aparelho aberto sem nenhuma
-escrita nova não reenviaria nada se ninguém o iniciasse.
+A fila precisa ser ligada na partida do app (`QueueScopes.follow()` num inicializador): é ela que abre o banco da conta,
+hidrata os contadores e reenvia o que ficou pendente de antes, e que segue a conta quando ela muda. `enqueue` também
+inicia o motor, mas um aparelho aberto sem nenhuma escrita nova não reenviaria nada se ninguém o iniciasse.
+
+## Várias contas no mesmo navegador
+
+O navegador é um só, mas as contas são várias (o dono testando como convidado, um aparelho emprestado). Por isso:
+
+- **Um banco por conta**: `uniover-offline-<id>` (e o Treino, `uniover-training-<id>`). O id é o da conta em `/me` (um UUID);
+  só caracteres seguros entram no nome (`accountDatabaseName`). Nada é aberto sem uma conta conhecida.
+- **Qual conta?** O `/me` quando chega; antes dele (partida sem rede, servidor acordando), a **dica da última conta**
+  (`uniover.account-id` no `localStorage`, junto das dicas de papel e de permissões; some ao sair). Sem dica e sem `/me` (o
+  primeiro uso depois da atualização, ou depois de sair) **nenhum banco de conta é aberto**: as telas mostram só que a
+  conta está sendo confirmada, e nada é lido nem gravado num banco "sem dono". A dica só escolhe o banco local; ela não
+  autoriza enviar nada.
+- **Trocar de conta** (o `/me` diz outra conta que a dica, ou outra pessoa entrou) não recarrega a página: a fila da conta
+  anterior sai de cena (o motor para, o que estava em voo termina no banco dela, e só então o banco fecha) e a da nova
+  abre do zero. Sinais, temporizadores, o "primeiro envio" e o puxador do Treino são recriados; nada passa de uma conta
+  para a outra.
+- **O motor só envia com a sessão da conta dona da fila.** `SessionState.isSessionOf(id)` só vale com o `/me` carregado
+  (a dica não basta) e deixa de valer se outra aba do navegador entrou em outra conta (o cookie de refresh é um só). A
+  conferência acontece antes de cada item e de novo depois de marcá-lo em voo. A fila de uma conta que não está com a sessão
+  fica **intacta no disco** até a conta voltar: nunca é descartada, nunca sai com outro token, nunca é apagada ao sair.
+- **Quem grava recebe a fila amarrada à conta dele** (`QUEUE_BOUND_ACCOUNT`): uma escrita de A que só chega depois de B
+  entrar é recusada (`QueueAccountError`) em vez de cair na fila de B.
+- **O banco antigo** (`uniover-offline`, de quando só havia um por aparelho) é adotado pela PRIMEIRA conta confirmada no
+  aparelho depois da atualização: as linhas são copiadas para o banco dela, conferidas chave a chave, e só então o antigo é
+  marcado como adotado (ele não é apagado). Recomeçar é seguro (copia só o que falta, sem duplicar nem sobrescrever o que a
+  conta já mexeu). Uma segunda conta encontra o antigo adotado e começa vazia. Detalhes em `core/session/legacy-adoption.ts`.
 
 ## Convenções para quem grava na fila
 
@@ -53,7 +81,8 @@ escrita nova não reenviaria nada se ninguém o iniciasse.
 
 ## Regras do motor
 
-- **Um envio por vez** na aba e **uma aba por vez** (`navigator.locks`, com _fallback_ para uma execução por aba).
+- **Um envio por vez** na aba e **uma aba por vez** (`navigator.locks`, um bloqueio por conta, `uniover-sync-<id>`, com
+  _fallback_ para uma execução por aba).
 - **FIFO**. Erro de infraestrutura interrompe a passagem e agenda a próxima, para não furar a fila nem martelar
   o servidor: rede, 5xx, 408, 502/503 do Render acordando, 429 (respeita `Retry-After`) e 409
   `idempotency-in-progress` voltam com _backoff_ `min(2 s × 2^n, 5 min)` e jitter de ±20%. **Nunca desiste por
@@ -63,8 +92,8 @@ escrita nova não reenviaria nada se ninguém o iniciasse.
   (`retry` ou `discard`) e **não** trava os demais.
 - **A fila nunca é limpa por logout, 401 ou erro de rede.** Só um 2xx remove um item, e só se ele não mudou
   durante o voo (revisão igual). Descartar é decisão do usuário (`discard`).
-- Sem sessão (`anonymous`) o motor não envia nada e não mexe em nada: a fila espera quem entrar. A fila é do
-  aparelho do dono (app de um usuário só): itens gravados por uma conta serão enviados na próxima sessão.
+- Sem sessão (`anonymous`) o motor não envia nada e não mexe em nada: a fila espera a conta dela voltar a entrar.
+- **O motor só envia com a sessão da conta dona da fila** (ver "Várias contas no mesmo navegador"), conferido a cada item.
 - **Gatilhos de reenvio** (não há Background Sync no iPhone): ao gravar, no evento `online`, ao voltar para a
   aba, na partida do app, no botão "sincronizar agora" e num temporizador de 30 s que só existe com pendência e
   página visível. `online`, volta para a aba, sessão nova e o botão ignoram a espera do _backoff_; o
@@ -73,7 +102,7 @@ escrita nova não reenviaria nada se ninguém o iniciasse.
 - Estando offline (`navigator.onLine` falso) o motor não tenta nem gasta tentativa; só vira "servidor acordando"
   quem tem rede e mesmo assim não recebe resposta.
 - Na partida, o que ficou `sending` (aba fechada no meio do envio) volta para `pending`, com a mesma chave.
-- `navigator.storage.persist()` é pedido uma única vez (lembrado no próprio banco); erro nele é ignorado.
+- `navigator.storage.persist()` é pedido uma única vez por conta (lembrado no banco dela); erro nele é ignorado.
 
 ## Contrato com o servidor
 

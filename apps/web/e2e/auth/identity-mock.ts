@@ -1,6 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { BrowserContext, Route } from '@playwright/test';
 
+/** O id da conta do dono no simulador (o `sub` dos tokens dele e o `id` do `/me`): nomeia o banco local dele no aparelho. */
+export const OWNER_ID = 'u1';
+
 /** Dados da conta de teste (só existem neste arquivo e nos testes; a API real não é usada). */
 export const OWNER = {
   email: 'dono@exemplo.com',
@@ -233,9 +236,14 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
     issuedTokens: [],
   };
 
+  /** O id da conta da sessão aberta (o do dono, ou o do convidado mais recente quando o papel é o de convidado). */
+  const sessionAccountId = () =>
+    (mock.role === 'guest' ? mock.guests.at(-1)?.id : undefined) ?? OWNER_ID;
+
   const issueToken = () => {
     const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-    const payload = base64url(JSON.stringify({ sub: 'u1', n: ++tokenCounter }));
+    // O `sub` é a conta a quem o token pertence, como na API: é por ele que os simuladores sabem quem está chamando.
+    const payload = base64url(JSON.stringify({ sub: sessionAccountId(), n: ++tokenCounter }));
     const token = `${header}.${payload}.assinatura-${tokenCounter}`;
     mock.issuedTokens.push(token);
     return token;
@@ -245,7 +253,7 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
   const meBody = () => {
     const guest = mock.role === 'guest' ? mock.guests.at(-1) : undefined;
     return {
-      id: guest?.id ?? 'u1',
+      id: guest?.id ?? OWNER_ID,
       email: guest?.email ?? OWNER.email,
       displayName: guest?.displayName ?? mock.owner.displayName,
       role: mock.role,

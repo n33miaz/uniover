@@ -15,7 +15,7 @@ public static class AccessPermissions
     /// <summary>Ver o módulo da TV (sem isto, nenhuma permissão <c>tv:*</c> vale).</summary>
     public const string TvModule = "module:tv";
 
-    /// <summary>Teclas, texto e acordar a TV.</summary>
+    /// <summary>Teclas, texto, acordar e limpar a TV (a limpeza fecha apps e libera memória).</summary>
     public const string TvControl = "tv:control";
 
     /// <summary>Desligar a TV.</summary>

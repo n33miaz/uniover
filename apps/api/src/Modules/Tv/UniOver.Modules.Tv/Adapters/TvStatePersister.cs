@@ -85,7 +85,7 @@ internal sealed partial class TvStatePersister(
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            LogFlushFailed(agentId, ex);
+            LogFlushFailed(agentId, ex.GetType().Name);
             lock (_gate)
             {
                 _scheduled.Remove(agentId);
@@ -123,6 +123,7 @@ internal sealed partial class TvStatePersister(
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao gravar o estado da TV do agente {AgentId}.")]
-    private partial void LogFlushFailed(string agentId, Exception exception);
+    // Só o tipo do erro: a mensagem do driver do banco pode citar o servidor e a conexão.
+    [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao gravar o estado da TV do agente {AgentId} ({ErrorType}).")]
+    private partial void LogFlushFailed(string agentId, string errorType);
 }

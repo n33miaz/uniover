@@ -15,7 +15,8 @@ import { TrainingSyncLine } from './training-sync-line';
 
 /**
  * Casca do módulo Treino: a linha de sincronização no topo de toda tela e, embaixo dela, a tela da aba. Os dados do
- * módulo (`provideTrainingData`) vêm dos `providers` da rota; ao entrar, o puxador é ligado (uma vez) e o que o
+ * módulo (`provideTrainingData`) vêm do escopo da conta (`TrainingAccountScope`), que recria tudo quando a conta muda; ao
+ * entrar, o puxador é ligado (uma vez) e o que o
  * servidor tem de novo chega ao banco local sem a tela esperar por ele. A folha das alterações recusadas só existe
  * enquanto a pessoa a pede, e só se há o que mostrar.
  *

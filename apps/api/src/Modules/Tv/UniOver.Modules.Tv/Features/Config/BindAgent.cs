@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Tv.Domain;
@@ -29,21 +30,28 @@ internal static class BindAgentValidator
     public static bool IsPlausibleSlug(string? slug) =>
         !string.IsNullOrWhiteSpace(slug) && slug.Length <= ConfiguredTv.AgentSlugMax;
 
-    public static Dictionary<string, string[]> ValidateName(string? name)
-    {
-        var errors = new Dictionary<string, string[]>();
-        if (name is null || string.IsNullOrWhiteSpace(name))
-        {
-            return errors;
-        }
+    public static Dictionary<string, string[]> ValidateName(string? name) => ValidateName(name, out _);
 
-        if (name.Trim().Length > ConfiguredTv.NameMax)
+    /// <param name="normalized">
+    /// O nome já NORMALIZADO (espaços arrumados, NFC): é ele, e não o texto recebido, que vai para o comando. Nulo quando
+    /// não há nome (a TV fica com o atual) ou quando foi recusado.
+    /// </param>
+    public static Dictionary<string, string[]> ValidateName(string? name, out string? normalized)
+    {
+        normalized = null;
+        var errors = new Dictionary<string, string[]>();
+        var text = LabelText.Normalize(name);
+        if (text.Problem == LabelTextProblem.TooLong || (text.IsValid && text.Value.Length > ConfiguredTv.NameMax))
         {
             errors["name"] = [$"O nome deve ter no máximo {ConfiguredTv.NameMax} caracteres."];
         }
-        else if (name.Any(c => c <= '\u001f' || (c >= '\u007f' && c <= '\u009f')))
+        else if (!text.IsValid)
         {
-            errors["name"] = ["O nome não pode ter caracteres de controle."];
+            errors["name"] = ["O nome não pode ter caracteres de controle nem invisíveis."];
+        }
+        else if (text.Value.Length > 0)
+        {
+            normalized = text.Value;
         }
 
         return errors;
@@ -66,7 +74,9 @@ internal sealed class BindAgentHandler(
     /// existe entre os pareados ou foi revogado (nada é gravado). A troca e a linha da trilha saem no mesmo
     /// <c>SaveChanges</c>: não há troca sem registro de quem a fez, nem registro de uma troca que não houve. Salvar o
     /// mesmo computador que já estava não grava nem registra nada, a não ser que o valor viesse só da variável de
-    /// ambiente: aí a linha é criada, que é como o administrador tira a variável do servidor com segurança.
+    /// ambiente: aí a linha é criada, que é como o administrador tira a variável do servidor com segurança. Se dois
+    /// primeiros salvamentos chegam juntos e o índice único barra o segundo, ele relê a linha que ficou e aplica a regra
+    /// normal (igual: nada a gravar; diferente: o último vence), sem erro.
     /// </summary>
     public async Task<TvConfigResponse?> HandleAsync(BindAgentCommand command, CancellationToken cancellationToken)
     {
@@ -85,21 +95,30 @@ internal sealed class BindAgentHandler(
         }
 
         var now = time.GetUtcNow();
-        var tv = await db.Tvs.SingleOrDefaultAsync(t => t.IsDefault, cancellationToken);
+        ConfiguredTv tv;
         bool changed;
-        if (tv is null)
+        var attempt = 0;
+        while (true)
         {
-            tv = ConfiguredTv.CreateDefault(command.Name, listing.Slug, command.Origin.UserId, now);
-            db.Tvs.Add(tv);
-            changed = true;
-        }
-        else
-        {
-            changed = tv.Rebind(listing.Slug, command.Name, command.Origin.UserId, now);
-        }
+            attempt++;
+            var existing = await db.Tvs.SingleOrDefaultAsync(t => t.IsDefault, cancellationToken);
+            if (existing is null)
+            {
+                tv = ConfiguredTv.CreateDefault(command.Name, listing.Slug, command.Origin.UserId, now);
+                db.Tvs.Add(tv);
+                changed = true;
+            }
+            else
+            {
+                tv = existing;
+                changed = tv.Rebind(listing.Slug, command.Name, command.Origin.UserId, now);
+            }
 
-        if (changed)
-        {
+            if (!changed)
+            {
+                break;
+            }
+
             var entry = CommandAuditEntry.Create(
                 command.Origin.UserId, listing.Slug, TvCommandNames.ConfigBind, listing.Slug,
                 ok: true, errorCode: null, latencyMs: null, command.Origin.Client, now);
@@ -107,6 +126,15 @@ internal sealed class BindAgentHandler(
             {
                 // O EfCommandAudit usa este mesmo TvDbContext: um SaveChanges grava a TV e a trilha juntas.
                 await audit.RecordAsync(entry, cancellationToken);
+                break;
+            }
+            catch (DbUpdateException ex) when (attempt == 1 && IsDefaultTvTaken(ex))
+            {
+                // Dois primeiros salvamentos ao mesmo tempo: o outro criou a linha da TV padrão primeiro e o índice único
+                // barrou o nosso INSERT (a TV e a trilha, juntas, não foram gravadas). Em vez de 500, esquece o que estava
+                // pendente (a TV perdedora e a linha da trilha) e refaz a decisão a partir da linha que ficou: com o mesmo
+                // computador e nome nada mais é gravado (idempotente); com outro, o último vence, como numa troca normal.
+                db.ChangeTracker.Clear();
             }
             catch
             {
@@ -125,6 +153,10 @@ internal sealed class BindAgentHandler(
 
         return await view.ReadAsync(binding, cancellationToken);
     }
+
+    /// <summary>O INSERT da TV padrão bateu no índice único: já existe uma linha padrão que este salvamento não viu.</summary>
+    private static bool IsDefaultTvTaken(DbUpdateException exception) =>
+        exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, TableName: "tvs" };
 
     /// <summary>
     /// As telas abertas passam a mostrar o computador novo na hora. Publica sempre, e não só quando a presença "mudou":
@@ -157,7 +189,7 @@ internal static class BindAgentEndpoint
         BindAgentHandler handler,
         CancellationToken cancellationToken)
     {
-        var errors = BindAgentValidator.ValidateName(request?.Name);
+        var errors = BindAgentValidator.ValidateName(request?.Name, out var name);
         if (!BindAgentValidator.IsPlausibleSlug(request?.AgentSlug))
         {
             errors["agentSlug"] = [BindAgentValidator.AgentRefused];
@@ -173,7 +205,7 @@ internal static class BindAgentEndpoint
             return TvProblems.Unauthenticated();
         }
 
-        var updated = await handler.HandleAsync(new BindAgentCommand(origin, request!.AgentSlug!, request.Name), cancellationToken);
+        var updated = await handler.HandleAsync(new BindAgentCommand(origin, request!.AgentSlug!, name), cancellationToken);
         return updated is null
             ? ProblemDetailsExtensions.ValidationProblem(new Dictionary<string, string[]>
             {

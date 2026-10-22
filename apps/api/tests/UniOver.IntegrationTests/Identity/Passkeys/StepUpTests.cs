@@ -355,6 +355,48 @@ public sealed class StepUpTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task ConcurrentAssertions_WithTheSameCounter_OnlyOneConfirms()
+    {
+        var (app, login, authenticator) = await StartRegisteredAsync();
+        await using var appScope = app;
+        using var authScope = authenticator;
+        authenticator.SignCount = 5;
+        var (firstChallenge, firstOptions) = await app.BeginStepUpAsync(login, PasskeyApp.DangerousAction);
+        var firstAssertion = authenticator.CreateAssertion(firstOptions);
+        var (secondChallenge, secondOptions) = await app.BeginStepUpAsync(login, PasskeyApp.OtherAction);
+        var secondAssertion = authenticator.CreateAssertion(secondOptions);
+
+        await using var db = app.Db();
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE FUNCTION identity.delay_passkey_counter_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.5); RETURN NEW; END $$",
+            Ct);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE TRIGGER delay_passkey_counter_update BEFORE UPDATE OF sign_count ON identity.passkeys FOR EACH ROW EXECUTE FUNCTION identity.delay_passkey_counter_update()",
+            Ct);
+
+        try
+        {
+            var responses = await Task.WhenAll(
+                app.CompleteStepUpRawAsync(login, firstChallenge, firstAssertion),
+                app.CompleteStepUpRawAsync(login, secondChallenge, secondAssertion));
+            using var firstResponse = responses[0];
+            using var secondResponse = responses[1];
+
+            new[] { firstResponse.StatusCode, secondResponse.StatusCode }
+                .Should().ContainSingle(status => status == HttpStatusCode.OK);
+            new[] { firstResponse.StatusCode, secondResponse.StatusCode }
+                .Should().ContainSingle(status => status == HttpStatusCode.Forbidden);
+            (await db.Passkeys.SingleAsync(Ct)).SignCount.Should().Be(5);
+            (await db.StepUpConfirmations.CountAsync(Ct)).Should().Be(1);
+        }
+        finally
+        {
+            await db.Database.ExecuteSqlRawAsync("DROP TRIGGER IF EXISTS delay_passkey_counter_update ON identity.passkeys", Ct);
+            await db.Database.ExecuteSqlRawAsync("DROP FUNCTION IF EXISTS identity.delay_passkey_counter_update()", Ct);
+        }
+    }
+
+    [Fact]
     public async Task AnAuthenticatorThatDoesNotCount_StaysValidWithZero()
     {
         var (app, login, authenticator) = await StartRegisteredAsync(countsSignatures: false);

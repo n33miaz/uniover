@@ -1,0 +1,281 @@
+:host {
+  display: block;
+}
+
+/* Uma coluna legível; em tablet e computador ela não estica (o mesmo teto das outras telas de Ajustes). */
+.audit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+/* A frase de privacidade e o prazo de guarda: letra pequena e calma, sem cartão. */
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.privacy,
+.retention {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.privacy app-settings-glyph {
+  --glyph-size: 18px;
+  margin-top: 1px;
+  color: var(--a-accent-ink);
+}
+
+/* Em recuo igual ao do texto da frase de cima (ícone de 18 px e o espaço). */
+.retention {
+  padding-left: calc(18px + var(--space-2));
+}
+
+.toolbar {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.toolbar .ui-btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.toolbar app-settings-glyph {
+  --glyph-size: 20px;
+}
+
+/* O número de filtros ligados, ao lado do nome do botão. */
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+  font-size: var(--fs-label);
+  font-weight: 700;
+}
+
+/* Filtros ligados: cada um é um botão de 44 px de altura que o desliga com um toque; o chip desenhado é menor que o alvo. */
+.applied {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+}
+
+.applied-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--a-accent) 40%, var(--a-line));
+  border-radius: var(--radius-pill);
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pill app-settings-glyph {
+  --glyph-size: 14px;
+}
+
+.applied-chip:focus-visible {
+  outline: none;
+}
+
+.applied-chip:focus-visible .pill {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+.clear-all {
+  min-height: var(--tap);
+  padding: 0 var(--space-2);
+  border-color: transparent;
+  background: none;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  text-decoration: underline;
+}
+
+.messages:empty {
+  display: none;
+}
+
+.ui-notice app-settings-glyph {
+  --glyph-size: 20px;
+  margin-top: 1px;
+}
+
+/*
+ * A lista: cada registro é uma linha que se abre com um toque; o resultado vai no chip (forma e texto), nunca só na cor. Sem
+ * ladrilho de ícone: o módulo fica nos detalhes, e a largura da linha vai para o nome da ação, que não precisa quebrar.
+ */
+.entry {
+  min-height: 64px;
+  gap: var(--space-3);
+}
+
+.entry:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: -3px;
+}
+
+.entry .ui-row-sub {
+  overflow-wrap: anywhere;
+}
+
+.result app-settings-glyph {
+  --glyph-size: 14px;
+}
+
+.chev {
+  --glyph-size: 20px;
+  color: var(--a-ink3);
+  transition: rotate var(--dur-base) var(--ease-out);
+}
+
+.chev.open {
+  rotate: 90deg;
+}
+
+/* Detalhes de uma linha aberta: rótulo pequeno e valor ao lado, sobre um fundo um pouco mais fundo que a lista. */
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px dashed var(--a-line);
+  background: var(--a-surface-2);
+}
+
+.line {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: var(--space-3);
+  font-size: var(--fs-small);
+}
+
+.line dt {
+  color: var(--a-ink2);
+}
+
+.line dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.retry {
+  align-self: flex-start;
+}
+
+/* Vazio, erro e sem rede: cartão tracejado, no mesmo desenho dos outros Ajustes. */
+.state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4);
+  border: 2px dashed var(--a-line);
+  border-radius: var(--radius-lg);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.state p {
+  margin: 0;
+}
+
+.state app-settings-glyph {
+  --glyph-size: 24px;
+  flex: none;
+}
+
+.state.bad {
+  border-color: color-mix(in srgb, var(--a-bad) 45%, var(--a-line));
+  color: var(--a-bad-ink);
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 64px;
+  padding: var(--space-3) var(--space-4);
+}
+
+.skeleton-row + .skeleton-row {
+  border-top: 1px solid var(--a-line);
+}
+
+.lines {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bar {
+  display: block;
+  width: 45%;
+  height: 14px;
+}
+
+.bar.wide {
+  width: 70%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chev {
+    transition: none;
+  }
+}

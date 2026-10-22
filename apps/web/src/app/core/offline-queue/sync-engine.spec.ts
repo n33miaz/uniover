@@ -1,4 +1,4 @@
-import { Component, Injector, runInInjectionContext } from '@angular/core';
+import { Component, runInInjectionContext } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { AuthApi } from '../auth/auth-api';
@@ -7,6 +7,7 @@ import { SessionState } from '../session/session-state';
 import {
   FakeTransport,
   NEW_ITEM,
+  TEST_ACCOUNT,
   createTestDb,
   deferred,
   networkError,
@@ -15,6 +16,7 @@ import {
   setupQueue,
 } from './queue-test-kit';
 import { OfflineDb } from './offline-db';
+import { syncLockName } from './queue-ports';
 import { POLL_INTERVAL_MS, SyncEngine } from './sync-engine';
 
 @Component({ template: '' })
@@ -371,7 +373,7 @@ describe('SyncEngine', () => {
   describe('between tabs', () => {
     it('does not send while another tab holds the lock, and sends once it is released', async () => {
       const kit = setupQueue();
-      const release = kit.locks.holdExternally('uniover-sync');
+      const release = kit.locks.holdExternally(syncLockName(TEST_ACCOUNT));
       await kit.queue().enqueue(NEW_ITEM);
       await settle(kit);
       expect(kit.transport.requests).toHaveLength(0);
@@ -390,7 +392,7 @@ describe('SyncEngine', () => {
       kit.transport.gate = gate.promise;
       await kit.queue().enqueue(NEW_ITEM);
 
-      const other = runInInjectionContext(TestBed.inject(Injector), () => new SyncEngine());
+      const other = runInInjectionContext(kit.scopes().sync()!.injector, () => new SyncEngine());
       const first = kit.engine().start();
       await vi.waitFor(() => expect(kit.transport.inFlight).toBe(1));
       const second = other.start();

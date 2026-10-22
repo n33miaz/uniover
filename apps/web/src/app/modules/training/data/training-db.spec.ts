@@ -12,18 +12,21 @@ describe('TrainingDb', () => {
     expect(TRAINING_DB_NAME).not.toBe(OFFLINE_DATABASE_NAME);
   });
 
-  it('opens at version 4 with the exercises, meta, syncState, routines, sessions, sets and goals tables', async () => {
+  it('opens at version 5 with the exercises, meta, syncState, routines, sessions, sets, goals and body tables', async () => {
     const db = new TrainingDb('uniover-training-esquema', {
       indexedDB: new FakeIDBFactory(),
       ...FAKE,
     });
     await db.open();
 
-    expect(db.verno).toBe(4);
+    expect(db.verno).toBe(5);
     expect(db.tables.map((table) => table.name).sort()).toEqual([
+      'bodyEntries',
+      'bodyProfile',
       'exercises',
       'goals',
       'meta',
+      'photos',
       'routines',
       'sessions',
       'sets',

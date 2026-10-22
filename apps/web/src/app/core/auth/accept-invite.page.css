@@ -1,13 +1,10 @@
+/* Título centrado, como nas outras telas de entrada; os rótulos e os campos seguem à esquerda, na largura toda. */
 h1 {
+  margin-bottom: var(--space-6);
   font-size: 1.75rem;
   font-weight: 750;
   letter-spacing: -0.02em;
-}
-
-.lead {
-  margin: var(--space-2) 0 var(--space-6);
-  color: var(--a-ink2);
-  text-wrap: pretty;
+  text-align: center;
 }
 
 form {
@@ -19,24 +16,25 @@ app-auth-field {
   margin-bottom: var(--space-4);
 }
 
-/* Força da senha: quatro trechos que acendem de acordo com o nível, e o nome dele ao lado (nunca só a cor). */
+/*
+ * Força da senha: quatro trechos que acendem de acordo com o nível, esticados pela largura toda do campo, e o nome
+ * dele numa legenda pequena embaixo (nunca só a cor). A legenda não divide a linha com a barra.
+ */
 .strength {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-2);
   margin-top: var(--space-3);
 }
 
 .segments {
   display: grid;
-  flex: 1 1 auto;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-1);
-  max-width: 10rem;
 }
 
 .segments span {
-  height: 4px;
+  height: 6px;
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--a-ink3) 28%, var(--a-surface));
   transition: background-color var(--dur-base) linear;
@@ -62,7 +60,6 @@ app-auth-field {
   color: var(--a-ink2);
   font-size: var(--fs-small);
   font-weight: 600;
-  white-space: nowrap;
 }
 
 /* Requisitos: ícone diferente para cumprido e pendente, além da cor. */
@@ -132,6 +129,11 @@ app-auth-field {
   color: var(--a-warn-ink);
 }
 
+/* Depois de um envio recusado: o tom de erro das mensagens dos outros campos, combinando com a borda do campo. */
+.status[data-tone='bad'] {
+  color: var(--a-bad-ink);
+}
+
 .messages:not(:empty) {
   margin-bottom: var(--space-4);
 }
@@ -170,13 +172,42 @@ app-auth-field {
   color: var(--a-accent-ink);
 }
 
-@media (min-width: 560px) and (max-height: 520px) {
-  h1 {
-    font-size: 1.5rem;
+/*
+ * Celular em pé e baixo: espaços menores, para o botão de enviar aparecer sem rolar. O requisito dos caracteres e o
+ * aviso de que não há recuperação de senha ficam.
+ */
+@media (max-height: 700px) and (max-width: 559px) {
+  app-auth-field {
+    margin-bottom: var(--space-3);
   }
 
-  .lead {
+  .strength,
+  .rules {
+    margin-top: var(--space-2);
+  }
+
+  .rules {
+    gap: var(--space-1);
+  }
+
+  .hint {
+    margin-top: var(--space-1);
+  }
+
+  .messages:not(:empty) {
+    margin-bottom: var(--space-3);
+  }
+
+  .audit {
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+  }
+}
+
+@media (min-width: 560px) and (max-height: 520px) {
+  h1 {
     margin-bottom: var(--space-4);
+    font-size: 1.5rem;
   }
 }
 

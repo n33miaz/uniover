@@ -284,6 +284,35 @@ describe('AuthService', () => {
       expect(await dbGet()).toBe('pendente');
     });
 
+    it('a renewal that comes back after logout does not bring the session back', async () => {
+      api.login.mockResolvedValue(tokens('jwt'));
+      await service().login('a@b.c', 'x');
+      let finish!: (value: TokenResponse) => void;
+      api.refresh.mockReturnValue(new Promise<TokenResponse>((resolve) => (finish = resolve)));
+
+      const renewing = service().renew();
+      await service().logout();
+      finish(tokens('late-token'));
+
+      expect(await renewing).toBe('unauthenticated');
+      expect(service().status()).toBe('anonymous');
+      expect(session().bearer()).toBeNull();
+    });
+
+    it('a renewal refused after logout does not touch the new state either', async () => {
+      api.login.mockResolvedValue(tokens('jwt'));
+      await service().login('a@b.c', 'x');
+      let fail!: (reason: unknown) => void;
+      api.refresh.mockReturnValue(new Promise<TokenResponse>((_, reject) => (fail = reject)));
+
+      const renewing = service().renew();
+      await service().logout();
+      fail(problem(401));
+
+      expect(await renewing).toBe('unauthenticated');
+      expect(service().status()).toBe('anonymous');
+    });
+
     it('logout without a server answer still clears memory and reports it', async () => {
       api.login.mockResolvedValue(tokens('jwt'));
       await service().login('a@b.c', 'x');

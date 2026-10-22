@@ -120,7 +120,7 @@ public sealed partial class OutboxDispatcher(
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                LogSweepFailed(ex, module.ModuleKey);
+                LogSweepFailed(ex.GetType().Name, module.ModuleKey);
                 consecutiveFailures++;
                 nextRetry = time.GetUtcNow() + FailureBackoffFor(consecutiveFailures, TimeSpan.FromSeconds(_options.IdlePollSeconds));
             }
@@ -302,8 +302,9 @@ public sealed partial class OutboxDispatcher(
         return context;
     }
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Falha na varredura da outbox do módulo {Module}.")]
-    private partial void LogSweepFailed(Exception exception, string module);
+    // Só o tipo do erro: a mensagem do driver do banco pode citar o servidor e a conexão.
+    [LoggerMessage(Level = LogLevel.Error, Message = "Falha na varredura da outbox do módulo {Module} ({ErrorType}).")]
+    private partial void LogSweepFailed(string errorType, string module);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Entrega do evento {EventId} ({EventType}) falhou na tentativa {Attempts}: {Error}.")]
     private partial void LogDeliveryFailed(Guid eventId, string eventType, int attempts, string error);

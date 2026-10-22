@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
 using UniOver.Modules.Tv.Persistence;
 
@@ -34,6 +35,9 @@ internal sealed class RecentCommandsHandler(TvDbContext db)
     public async Task<IReadOnlyList<RecentCommand>> HandleAsync(
         Guid viewerId, bool onlyViewer, int limit, CancellationToken cancellationToken) =>
         await db.CommandAudit.AsNoTracking()
+
+            // A anotação de teto diário não é um comando: fica só na trilha do administrador.
+            .Where(a => a.Command != TvCommandNames.AuditLimit)
             .Where(a => !onlyViewer || a.UserId == viewerId)
             .OrderByDescending(a => a.OccurredAt)
             .ThenByDescending(a => a.Id)

@@ -1,11 +1,12 @@
 import { BrowserContext, Page } from '@playwright/test';
-import { OWNER, mockIdentityApi } from '../auth/identity-mock';
+import { OWNER, OWNER_ID, mockIdentityApi } from '../auth/identity-mock';
 import { expect, test } from '../fixtures';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
 
-const DATABASE = 'uniover-offline';
+// Cada conta tem a própria fila no aparelho: o nome do banco leva o id dela (aqui, o do dono).
+const DATABASE = `uniover-offline-${OWNER_ID}`;
 
 /**
  * `up`: aceita · `down`: a rede não entrega · `waking`: o Render ainda está acordando (503 com o cabeçalho de

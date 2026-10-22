@@ -24,6 +24,7 @@ public static class IdempotencyModelBuilderExtensions
             e.Property(x => x.Method).HasColumnName("method").HasMaxLength(10).IsRequired();
             e.Property(x => x.Route).HasColumnName("route").HasMaxLength(300).IsRequired();
             e.Property(x => x.RequestHash).HasColumnName("request_hash").HasMaxLength(32).IsRequired();
+            e.Property(x => x.Generation).HasColumnName("generation").HasDefaultValueSql("gen_random_uuid()").IsRequired();
             e.Property(x => x.StatusCode).HasColumnName("status_code");
             e.Property(x => x.ResponseBody).HasColumnName("response_body");
             e.Property(x => x.ContentType).HasColumnName("content_type").HasMaxLength(200);

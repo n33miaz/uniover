@@ -1,10 +1,7 @@
 <app-auth-layout>
   @switch (view()) {
     @case ('form') {
-      <h1 i18n="@@auth.invite.title">Criar sua conta</h1>
-      <p class="lead" i18n="@@auth.invite.lead">
-        Você recebeu um convite para o UniOver. Escolha o e-mail e a senha que vai usar para entrar.
-      </p>
+      <h1 i18n="@@auth.invite.title">Criar conta</h1>
 
       <form (submit)="submit($event)" novalidate>
         <app-auth-field
@@ -69,7 +66,7 @@
           </ul>
 
           <p id="invite-password-hint" class="hint" i18n="@@auth.invite.password-hint">
-            Não existe recuperação de senha: guarde esta senha.
+            Não existe recuperação de senha.
           </p>
         </app-auth-field>
 
@@ -84,7 +81,7 @@
           [enterKeyHint]="'go'"
           toggleLabel="Mostrar a senha repetida"
           i18n-toggleLabel="@@auth.invite.show-confirmation"
-          [invalid]="confirmationStatus()?.tone === 'warn'"
+          [invalid]="confirmationInvalid()"
           [describedBy]="confirmationStatus() ? 'invite-confirmation-status' : null"
           [(value)]="confirmation"
           (valueChange)="scheduleAnnouncement()"
@@ -135,15 +132,13 @@
             <span class="ui-spinner" aria-hidden="true"></span>
             <span i18n="@@auth.invite.busy">Criando…</span>
           } @else {
-            <span i18n="@@auth.invite.submit">Criar conta e entrar</span>
+            <span i18n="@@auth.invite.submit">Continuar</span>
           }
         </button>
 
         <p class="audit">
           <app-auth-glyph name="shield" />
-          <span i18n="@@auth.invite.audit"
-            >Este acesso fica registrado (data, IP e aparelho) para a segurança do sistema.</span
-          >
+          <span i18n="@@auth.invite.audit">Este acesso fica registrado: data, IP e aparelho.</span>
         </p>
 
         <!-- Estado da senha para o leitor de tela: só o que mudou, depois que a digitação para. -->
@@ -158,10 +153,8 @@
         [role]="'alert'"
         heading="Convite não encontrado"
         i18n-heading="@@auth.invite.missing.title"
-        detail="Abra o link do convite que você recebeu. Este endereço não traz um convite."
+        detail="Abra o link do convite que você recebeu."
         i18n-detail="@@auth.invite.missing.detail"
-        advice="Se o link foi cortado ao ser copiado, peça que o enviem de novo."
-        i18n-advice="@@auth.invite.missing.advice"
       >
         <a class="ui-btn secondary block" routerLink="/entrar" i18n="@@auth.invite.to-login"
           >Já tenho conta: entrar</a
@@ -174,12 +167,10 @@
         [tone]="'warn'"
         [icon]="'link-off'"
         [role]="'alert'"
-        heading="Link do convite incompleto"
+        heading="Convite incompleto"
         i18n-heading="@@auth.invite.incomplete.title"
-        detail="O link do convite parece cortado ou foi alterado. Abra o link que você recebeu, do começo ao fim."
+        detail="O link parece cortado. Abra o link que você recebeu, do começo ao fim."
         i18n-detail="@@auth.invite.incomplete.detail"
-        advice="Se continuar assim, peça que enviem o convite de novo."
-        i18n-advice="@@auth.invite.incomplete.advice"
       >
         <a class="ui-btn secondary block" routerLink="/entrar" i18n="@@auth.invite.to-login"
           >Já tenho conta: entrar</a
@@ -194,8 +185,6 @@
         [role]="'alert'"
         heading="Este convite não vale mais"
         i18n-heading="@@auth.invite.gone.title"
-        detail="Ele já foi usado, expirou ou foi cancelado por quem o enviou."
-        i18n-detail="@@auth.invite.gone.detail"
         advice="Peça um novo link a quem convidou você."
         i18n-advice="@@auth.invite.gone.advice"
       >
@@ -212,7 +201,7 @@
         [role]="'status'"
         heading="Tudo pronto"
         i18n-heading="@@auth.invite.welcome.title"
-        detail="Sua conta foi criada e você já está dentro. Abrindo o UniOver…"
+        detail="Abrindo o UniOver…"
         i18n-detail="@@auth.invite.welcome.detail"
       >
         <button type="button" class="ui-btn primary block" (click)="continueToApp()">

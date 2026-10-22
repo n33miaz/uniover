@@ -1,20 +1,24 @@
 import { Routes } from '@angular/router';
 import type { TabItem } from '../../shared/ui/tab-bar/tab-bar';
-import { provideTrainingData } from './data/training-data.providers';
-import { TrainingPage } from './shell/training.page';
+import { TrainingAccountScope } from './shell/training-account-scope';
 
 // As abas do módulo ficam aqui; a barra de baixo as lê pelo `data.tabs` da rota (a mais específica vence).
 const TABS: readonly TabItem[] = [
-  { link: '/treino', label: $localize`:@@training.tab.today:Hoje` },
+  { link: '/treino', label: $localize`:@@training.tab.today:Hoje`, icon: 'today' },
   // Exercícios também cobre as telas filhas (a ficha, o formulário) e as rotinas, que moram em outro caminho.
   {
     link: '/treino/exercicios',
     nested: true,
     also: ['/treino/rotinas'],
     label: $localize`:@@training.tab.exercises:Exercícios`,
+    icon: 'exercises',
   },
-  { link: '/treino/progresso', label: $localize`:@@training.tab.progress:Progresso` },
-  { link: '/treino/corpo', label: $localize`:@@training.tab.body:Corpo` },
+  {
+    link: '/treino/progresso',
+    label: $localize`:@@training.tab.progress:Progresso`,
+    icon: 'progress',
+  },
+  { link: '/treino/corpo', label: $localize`:@@training.tab.body:Corpo`, icon: 'body' },
 ];
 
 // Formulário e editor são telas de edição: sem a barra de abas. Ela cobre a altura do teclado, e uma aba tocada no meio
@@ -22,15 +26,16 @@ const TABS: readonly TabItem[] = [
 const NO_TABS = { tabs: [] as readonly TabItem[] };
 
 /**
- * Rotas do módulo. A casca (`TrainingPage`) fica em volta de todas e traz os dados do módulo; as rotas fixas vêm
- * antes das que têm `:id`. Cada aba é uma página preguiçosa.
+ * Rotas do módulo. O escopo da conta (`TrainingAccountScope`) fica em volta de todas: ele abre o banco da conta em uso, traz
+ * os dados do módulo (`provideTrainingData`, num componente e não aqui, porque o injetor de uma rota não acompanha a troca
+ * de conta) e põe a casca (`TrainingPage`) dentro. As rotas fixas vêm antes das que têm `:id`. Cada aba é uma página
+ * preguiçosa.
  */
 export const TRAINING_ROUTES: Routes = [
   {
     path: '',
-    component: TrainingPage,
-    providers: [provideTrainingData()],
-    data: { tabs: TABS },
+    component: TrainingAccountScope,
+    data: { tabs: TABS, shellStyle: 'training' },
     children: [
       {
         path: '',

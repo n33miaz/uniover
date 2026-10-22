@@ -63,6 +63,8 @@ describe('AuthLayout', () => {
     expect(root.querySelectorAll('main')).toHaveLength(1);
     expect(root.querySelector('main h1')?.textContent).toBe('Título');
     expect(root.querySelector('.brand .name')?.textContent).toBe('UniOver');
+    // A marca é só o símbolo e o nome do app, sem frase de efeito.
+    expect(root.querySelector('.brand')?.querySelectorAll('p')).toHaveLength(1);
     expect(root.querySelector('.brand svg')?.getAttribute('aria-hidden')).toBe('true');
     // A marca não é um título: só o conteúdo projetado tem `h1`.
     expect(root.querySelectorAll('h1, h2')).toHaveLength(1);

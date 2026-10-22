@@ -240,4 +240,115 @@ describe('SessionState', () => {
       expect(state().user()).toBe(before);
     });
   });
+
+  describe('account', () => {
+    const user = { id: 'conta-a', email: 'a@b.c', displayName: 'A' };
+    const tokenFor = (accountId: string) =>
+      `eyJhbGciOiJub25lIn0.${btoa(JSON.stringify({ sub: accountId }))}.assinatura`;
+    beforeEach(() => localStorage.clear());
+    afterEach(() => localStorage.clear());
+
+    it('is unknown until a user or a remembered account exists', () => {
+      expect(state().accountId()).toBeNull();
+    });
+
+    it('is the id of the user once /me answers, and remembered for the next start without network', () => {
+      state().setUser(user);
+      expect(state().accountId()).toBe('conta-a');
+      expect(localStorage.getItem('uniover.account-id')).toBe('conta-a');
+
+      // Reinício sem rede: ainda não há usuário, e a dica diz qual banco local abrir.
+      TestBed.resetTestingModule();
+      expect(TestBed.inject(SessionState).user()).toBeNull();
+      expect(TestBed.inject(SessionState).accountId()).toBe('conta-a');
+    });
+
+    it('is forgotten on exit: no hint left, so no database of an account is opened without a known account', () => {
+      state().setUser(user);
+      state().clear();
+      expect(state().accountId()).toBeNull();
+      expect(localStorage.getItem('uniover.account-id')).toBeNull();
+      TestBed.resetTestingModule();
+      expect(TestBed.inject(SessionState).accountId()).toBeNull();
+    });
+
+    it('the id from /me replaces a remembered one that is different', () => {
+      localStorage.setItem('uniover.account-id', 'conta-antiga');
+      TestBed.resetTestingModule();
+      expect(state().accountId()).toBe('conta-antiga');
+      state().setUser(user);
+      expect(state().accountId()).toBe('conta-a');
+      expect(localStorage.getItem('uniover.account-id')).toBe('conta-a');
+    });
+
+    it('ignores a remembered value that is not a safe id, and an id from /me that is not one', () => {
+      localStorage.setItem('uniover.account-id', '../x');
+      TestBed.resetTestingModule();
+      expect(state().accountId()).toBeNull();
+      state().setUser({ ...user, id: 'a/b' });
+      expect(state().accountId()).toBeNull();
+      expect(localStorage.getItem('uniover.account-id')).toBeNull();
+    });
+
+    it('records the first confirmed account as the owner of the old databases, and keeps it', () => {
+      state().setUser(user);
+      state().clear();
+      state().setUser({ ...user, id: 'conta-b' });
+      expect(localStorage.getItem('uniover.legacy-owner')).toBe('conta-a');
+    });
+
+    it('drops the old account when a token for another account arrives', () => {
+      state().setUser(user);
+      state().setToken(tokenFor('conta-b'), 600);
+      expect(state().user()).toBeNull();
+      expect(state().accountId()).toBe('conta-b');
+      expect(state().bearerOf('conta-a')).toBeNull();
+      expect(state().bearerOf('conta-b')).toBe(tokenFor('conta-b'));
+
+      expect(state().setUser(user)).toBe(false); // leitura antiga de /me termina depois do token novo
+      expect(state().accountId()).toBe('conta-b');
+      state().setUser({ ...user, id: 'conta-b' });
+      expect(state().bearerOf('conta-b')).toBe(tokenFor('conta-b'));
+    });
+
+    it('does not use an opaque token for account data even when /me matches', () => {
+      state().setUser(user);
+      state().setToken('token-sem-sub', 600);
+      expect(state().bearerOf('conta-a')).toBeNull();
+    });
+
+    describe('is the session of an account', () => {
+      it('only after /me confirmed it: a remembered account is not enough', () => {
+        localStorage.setItem('uniover.account-id', 'conta-a');
+        TestBed.resetTestingModule();
+        expect(state().isSessionOf('conta-a')).toBe(false);
+        state().setUser(user);
+        expect(state().isSessionOf('conta-a')).toBe(true);
+        expect(state().isSessionOf('conta-b')).toBe(false);
+      });
+
+      it('and stops being true when another tab enters another account (the refresh cookie is shared)', () => {
+        state().setUser(user);
+        localStorage.setItem('uniover.account-id', 'conta-b'); // a outra aba entrou como B
+        expect(state().isSessionOf('conta-a')).toBe(false);
+        localStorage.removeItem('uniover.account-id'); // ou saiu
+        expect(state().isSessionOf('conta-a')).toBe(false);
+        state().setUser(user); // esta aba confirma de novo
+        expect(state().isSessionOf('conta-a')).toBe(true);
+      });
+
+      it('keeps working when the device lets nothing be stored (there is nothing to compare with)', () => {
+        const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+          throw new Error('cheio');
+        });
+        try {
+          state().setUser(user);
+          expect(state().accountId()).toBe('conta-a');
+          expect(state().isSessionOf('conta-a')).toBe(true);
+        } finally {
+          set.mockRestore();
+        }
+      });
+    });
+  });
 });

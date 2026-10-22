@@ -38,7 +38,9 @@ const motion = (page: Page) =>
 
 async function openHome(page: Page) {
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText(OWNER.displayName);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(
+    OWNER.displayName.split(' ')[0],
+  );
   await expect(page.locator('article.card')).toHaveCount(8);
   await settle(page);
 }
@@ -67,26 +69,21 @@ test.describe('troca de tela', () => {
 
     await toSettings(page);
     await settingsReady(page);
-    // Os quatro grupos da lista de Ajustes entram um depois do outro (atraso de 50 ms por posição).
+    // Os três grupos da lista de Ajustes entram um depois do outro (atraso de 50 ms por posição).
     await expect
       .poll(
         async () =>
           (await motion(page)).animations.slice(seen).filter((n) => n === 'ui-rise').length,
       )
-      .toBeGreaterThanOrEqual(4);
+      .toBeGreaterThanOrEqual(3);
     const delays = await sectionDelays(page);
-    expect(delays.slice(0, 4)).toEqual([
-      'ui-rise@0s',
-      'ui-rise@0.05s',
-      'ui-rise@0.1s',
-      'ui-rise@0.15s',
-    ]);
+    expect(delays.slice(0, 3)).toEqual(['ui-rise@0s', 'ui-rise@0.05s', 'ui-rise@0.1s']);
     await settle(page);
     await screenshot(page, `test-results/motion/settings-after-route-${info.project.name}.png`);
 
     // Voltar pela seta: a Início volta inteira e clicável, e a folha de edição abre.
     await page.getByRole('link', { name: 'Voltar ao Início' }).click();
-    await expect(page.locator('app-home-page h1')).toContainText(OWNER.displayName);
+    await expect(page.locator('app-home-page h1')).toContainText(OWNER.displayName.split(' ')[0]);
     await expect(page.locator('article.card')).toHaveCount(8);
     await settle(page);
     await page.getByRole('button', { name: 'Editar' }).click();
@@ -212,7 +209,9 @@ test.describe('movimento reduzido', () => {
   test('nenhuma animação longa roda na Início, na folha e nos Ajustes', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/');
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(OWNER.displayName);
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(
+      OWNER.displayName.split(' ')[0],
+    );
     await expect(page.locator('article.card')).toHaveCount(8);
     expect(await longAnimations(page)).toEqual([]);
 

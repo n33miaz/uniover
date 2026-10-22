@@ -7,6 +7,7 @@ using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
 using UniOver.Modules.Tv.Ports;
+using UniOver.Modules.Tv.Tests.Support;
 
 namespace UniOver.Modules.Tv.Tests.Commands;
 
@@ -160,6 +161,34 @@ public class TvCommandRunnerTests
 
         outcome.IsDelivered.Should().BeTrue();
         audit.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AuditFailure_LogsOnlyTheErrorType_NeverTheExceptionOrItsMessage()
+    {
+        var logger = new CapturingLogger<TvCommandRunner>();
+        var runner = new TvCommandRunner(
+            Options.Create(new TvModuleOptions { AgentId = "pc-casa" }),
+            new FixedAgentResolver("pc-casa"),
+            new FakeSender(TvSendOutcome.Ok(TimeSpan.FromMilliseconds(5))),
+            new InMemoryTvStateStore(),
+            new SecretFailingAudit(),
+            new FakeStream(),
+            TimeProvider.System,
+            logger);
+
+        await runner.RunAsync(Origin, TvCommandNames.Key, "OK", Message, waitForReply: true, CancellationToken.None);
+
+        var line = logger.Lines.Should().ContainSingle().Subject;
+        line.Exception.Should().BeNull("a exceção inteira carrega a mensagem do driver");
+        line.Message.Should().Contain(nameof(InvalidOperationException));
+        logger.Everything.Should().NotContain("ep-segredo").And.NotContain("senha-do-banco");
+    }
+
+    private sealed class SecretFailingAudit : ITvCommandAudit
+    {
+        public Task RecordAsync(CommandAuditEntry entry, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Host=ep-segredo.neon.tech;Password=senha-do-banco");
     }
 
     [Fact]

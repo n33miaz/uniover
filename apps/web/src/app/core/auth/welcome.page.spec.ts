@@ -81,6 +81,8 @@ describe('WelcomePage', () => {
     expect(field(el).value).toBe('ana');
     expect(el.querySelector('label')?.textContent).toBe('Seu nome');
     expect(submitButton(el).textContent?.trim()).toBe('Continuar');
+    // A pergunta basta: nada de texto de apoio entre ela e o campo.
+    expect(el.querySelector('h1 + *')?.tagName).toBe('FORM');
   });
 
   it('says honestly that the name can be changed later, in Ajustes', async () => {

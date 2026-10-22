@@ -23,6 +23,7 @@ internal static class TvAuditNormalizer
         TvCommandNames.ShortcutsReorder,
         TvCommandNames.ShortcutUpdate,
         TvCommandNames.ConfigBind,
+        TvCommandNames.AuditLimit,
     ];
 
     /// <summary>

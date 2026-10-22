@@ -19,6 +19,13 @@ internal sealed class RemovePasskeyHandler(IdentityDbContext db, LoginAuditWrite
     {
         ArgumentNullException.ThrowIfNull(client);
 
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        // Serializa remoções do mesmo dono: sem esse lock, duas requisições contam duas chaves e apagam uma cada.
+        _ = await db.Users
+            .FromSqlInterpolated($"SELECT * FROM identity.users WHERE id = {userId} FOR UPDATE")
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
         var count = await db.Passkeys.CountAsync(p => p.UserId == userId, cancellationToken);
         var passkey = await db.Passkeys.SingleOrDefaultAsync(p => p.Id == passkeyId && p.UserId == userId, cancellationToken);
         if (passkey is null)
@@ -35,6 +42,7 @@ internal sealed class RemovePasskeyHandler(IdentityDbContext db, LoginAuditWrite
         db.Passkeys.Remove(passkey);
         audit.Add(userId, AuditEvents.PasskeyRemoved, client, passkey.Id.ToString("N"));
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return RemovePasskeyStatus.Removed;
     }
 }

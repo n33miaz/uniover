@@ -5,6 +5,8 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from './app.routes';
 import { ApiProblem } from './core/auth/api-problem';
 import { AuthApi } from './core/auth/auth-api';
+import { FakeAccountScope } from './core/offline-queue/queue-test-kit';
+import { AccountScope } from './core/session/account-scope';
 import { HomeStatus, HomeStatusPort } from './core/status/home-status.port';
 
 describe('app routes', () => {
@@ -17,6 +19,8 @@ describe('app routes', () => {
     TestBed.configureTestingModule({
       providers: [
         provideRouter(routes),
+        // O Treino só abre com uma conta conhecida (o banco local é por conta): estas rotas só olham o roteamento.
+        { provide: AccountScope, useValue: new FakeAccountScope() },
         // A Início lê o estado da casa pela porta; aqui só interessa que a rota a desenha.
         {
           provide: HomeStatusPort,
@@ -87,6 +91,7 @@ describe('app routes for a guest', () => {
     '/ajustes/seguranca',
     '/ajustes/pessoas',
     '/ajustes/aparelhos',
+    '/ajustes/auditoria',
     '/ajustes/sistema',
     '/nada',
   ];
@@ -121,7 +126,12 @@ describe('app routes for a guest', () => {
     api.me.mockReset();
     signInAs(TV);
     TestBed.configureTestingModule({
-      providers: [provideRouter(routes), { provide: AuthApi, useValue: api }],
+      providers: [
+        provideRouter(routes),
+        { provide: AuthApi, useValue: api },
+        // O Treino só abre com uma conta conhecida (o banco local é por conta): estas rotas só olham o roteamento.
+        { provide: AccountScope, useValue: new FakeAccountScope() },
+      ],
     });
   });
 

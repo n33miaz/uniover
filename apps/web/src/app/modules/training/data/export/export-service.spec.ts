@@ -157,6 +157,8 @@ describe('ExportService', () => {
         'sessions',
         'sets',
         'goals',
+        'bodyEntries',
+        'bodyProfile',
       ]);
 
       const sections = document.sections as Record<string, { id?: string; kind?: string }[]>;
@@ -235,6 +237,8 @@ describe('ExportService', () => {
         sessions: [],
         sets: [],
         goals: [],
+        bodyEntries: [],
+        bodyProfile: null,
       });
     });
 
@@ -251,6 +255,8 @@ describe('ExportService', () => {
         'sessions',
         'sets',
         'goals',
+        'bodyEntries',
+        'bodyProfile',
         'body',
         'meals',
       ]);

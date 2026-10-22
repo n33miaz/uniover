@@ -47,7 +47,6 @@ internal sealed class RefreshHandler(
 
         var settings = options.Value;
         var policy = settings.Refresh;
-        var now = time.GetUtcNow();
 
         var hash = SecretTokens.Hash(command.Secret);
         if (hash is null)
@@ -61,10 +60,27 @@ internal sealed class RefreshHandler(
             return new RefreshResult(RefreshStatus.Unauthenticated);
         }
 
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var familyId = token.FamilyId;
+
+        // Toda rotação e revogação da família passa pela mesma trava transacional. Sem ela, o replay pode atualizar
+        // os tokens existentes enquanto uma rotação ainda está para inserir o sucessor, deixando esse sucessor ativo.
+        await db.Database.ExecuteSqlAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({familyId.ToString("N")}, 0))",
+            cancellationToken);
+        await db.Entry(token).ReloadAsync(cancellationToken);
+        if (db.Entry(token).State == EntityState.Detached)
+        {
+            return new RefreshResult(RefreshStatus.Unauthenticated);
+        }
+
+        var now = time.GetUtcNow();
+
         switch (token.Evaluate(now, policy.ReuseGrace))
         {
             case RefreshDecision.Reuse:
                 await RevokeFamilyAsync(token, now, command.Client, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
                 return new RefreshResult(RefreshStatus.Unauthenticated);
             case RefreshDecision.Conflict:
                 return new RefreshResult(RefreshStatus.Conflict);
@@ -96,8 +112,6 @@ internal sealed class RefreshHandler(
         var expiresAt = policy.ExpiryFor(now, familyStartedAt);
         var next = RefreshToken.Create(
             token.UserId, token.FamilyId, newHash, now, expiresAt, command.Client.Ip, command.Client.UserAgent);
-
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
         // O UPDATE condicional é o que garante UM vencedor quando duas requisições giram o mesmo token ao
         // mesmo tempo: só quem encontra used_at e revoked_at vazios consegue marcar.
@@ -140,7 +154,9 @@ internal sealed class RefreshHandler(
             .Where(c => c.SessionFamilyId == familyId)
             .ExecuteDeleteAsync(cancellationToken);
 
-        audit.Add(token.UserId, AuditEvents.RefreshReuseDetected, client);
+        // Quem apresentou o token já usado não está autenticado (pode ser o ladrão ou o aparelho do dono com um cookie velho):
+        // o ator fica nulo e a conta do token é o alvo, como nas tentativas de login que falham.
+        audit.Add(null, AuditEvents.RefreshReuseDetected, client, AuditAboutAccount.Detail(token.UserId));
         await db.SaveChangesAsync(cancellationToken);
     }
 }

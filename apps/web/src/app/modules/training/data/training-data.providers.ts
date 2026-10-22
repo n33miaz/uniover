@@ -1,10 +1,13 @@
 import type { Provider } from '@angular/core';
+import { provideBodyExportSections } from './body/body-export-sections';
+import { provideBodyData } from './body/body-resource-sync';
 import { CatalogRepository } from './catalog/catalog-repository';
 import { CatalogStore } from './catalog/catalog-store';
 import { CatalogWriter } from './catalog/catalog-writer';
 import { ExercisesResourceSync } from './catalog/exercises-resource-sync';
 import { provideExportData } from './export/export-data.providers';
 import { provideGoalsData } from './goals/goals-resource-sync';
+import { providePhotoData } from './photos/photo-data.providers';
 import { provideProgressData } from './progress/progress-data.providers';
 import { provideRoutinesData } from './routines/routines-resource-sync';
 import { provideSessionsData } from './sessions/sessions-resource-sync';
@@ -42,10 +45,19 @@ export function provideTrainingData(): Provider[] {
     // Metas do dono: acesso aos dados e recurso sincronizável.
     ...provideGoalsData(),
 
+    // Corpo: medições e perfil (acesso aos dados e recursos sincronizáveis).
+    ...provideBodyData(),
+
+    // Fotos de progresso: só neste aparelho (sem fila, sem leitura do servidor, fora da exportação).
+    ...providePhotoData(),
+
     // Progresso: consultas de leitura, recalculadas das séries (nada a sincronizar).
     ...provideProgressData(),
 
     // Exportação em JSON e CSV, com as seções de dados do módulo.
     ...provideExportData(),
+
+    // Seções do corpo na exportação em JSON (depois das que já existiam: a ordem das seções do arquivo não muda).
+    ...provideBodyExportSections(),
   ];
 }
