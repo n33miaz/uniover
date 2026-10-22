@@ -243,6 +243,8 @@ describe('SessionState', () => {
 
   describe('account', () => {
     const user = { id: 'conta-a', email: 'a@b.c', displayName: 'A' };
+    const tokenFor = (accountId: string) =>
+      `eyJhbGciOiJub25lIn0.${btoa(JSON.stringify({ sub: accountId }))}.assinatura`;
     beforeEach(() => localStorage.clear());
     afterEach(() => localStorage.clear());
 
@@ -293,6 +295,22 @@ describe('SessionState', () => {
       state().clear();
       state().setUser({ ...user, id: 'conta-b' });
       expect(localStorage.getItem('uniover.legacy-owner')).toBe('conta-a');
+    });
+
+    it('never gives the queue a token from another account, even with an old /me result', () => {
+      state().setUser(user);
+      state().setToken(tokenFor('conta-b'), 600);
+      expect(state().bearerOf('conta-a')).toBeNull();
+      expect(state().bearerOf('conta-b')).toBeNull();
+
+      state().setUser({ ...user, id: 'conta-b' });
+      expect(state().bearerOf('conta-b')).toBe(tokenFor('conta-b'));
+    });
+
+    it('does not use an opaque token for account data even when /me matches', () => {
+      state().setUser(user);
+      state().setToken('token-sem-sub', 600);
+      expect(state().bearerOf('conta-a')).toBeNull();
     });
 
     describe('is the session of an account', () => {

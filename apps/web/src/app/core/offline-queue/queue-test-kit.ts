@@ -31,6 +31,7 @@ export const TEST_ACCOUNT = 'conta-teste';
 export class FakeAccountScope {
   readonly id = signal<string | null>(TEST_ACCOUNT);
   readonly sessionAccount = signal<string | null>(TEST_ACCOUNT);
+  readonly legacyDecided = signal(true);
   /** Quem adota os bancos antigos (ninguém, a menos que o teste diga). */
   legacyOwner: string | null = null;
 

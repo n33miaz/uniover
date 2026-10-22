@@ -23,8 +23,9 @@ export function accountDatabaseName(base: string, accountId: string): string {
 }
 
 /**
- * Quem pode adotar os bancos antigos (os que existiam antes de haver um por conta). É a PRIMEIRA conta confirmada neste
- * aparelho depois da atualização; ela fica registrada aqui para valer também quando a adoção de cada banco acontece em
+ * Quem pode adotar os bancos antigos (os que existiam antes de haver um por conta). É a PRIMEIRA conta DO DONO confirmada
+ * neste aparelho depois da atualização (o convidado nunca adota: antes das contas as rotas do Treino eram só do dono, então
+ * todo banco antigo é dele); ela fica registrada aqui para valer também quando a adoção de cada banco acontece em
  * momentos diferentes (a fila na partida, o Treino na primeira vez que a pessoa o abre). Uma segunda conta que entre
  * antes disso começa vazia, e os dados do primeiro dono nunca vão parar nela.
  */
@@ -39,13 +40,19 @@ export function readLegacyOwner(): string | null {
   }
 }
 
-/** Registra a conta como dona dos bancos antigos se ainda não há dona. Nunca troca a dona. */
-export function claimLegacyOwner(accountId: string): void {
+/**
+ * Registra a conta como dona dos bancos antigos se ainda não há dona. Nunca troca a dona. Devolve a dona depois da tentativa
+ * (`null` se ninguém é dona, por exemplo sem armazenamento).
+ */
+export function claimLegacyOwner(accountId: string): string | null {
   try {
-    if (!isValidAccountId(accountId) || readLegacyOwner() !== null) return;
+    const current = readLegacyOwner();
+    if (current !== null || !isValidAccountId(accountId)) return current;
     globalThis.localStorage?.setItem(LEGACY_OWNER_KEY, accountId);
+    return readLegacyOwner();
   } catch {
     // Sem armazenamento (modo privado): sem dona registrada, nenhuma conta adota (e nada se perde nem se mistura).
+    return null;
   }
 }
 

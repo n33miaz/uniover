@@ -1,9 +1,12 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { AuthService } from '../auth/auth.service';
+import { SessionState } from '../session/session-state';
 import { QUEUE_TRANSPORT, QueueRequest, SEND_TIMEOUT_MS } from './queue-transport';
 
 const request: QueueRequest = {
+  accountId: 'conta-a',
   method: 'POST',
   url: '/api/v1/test/items',
   body: { name: 'x' },
@@ -18,7 +21,15 @@ describe('HttpClientQueueTransport', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: AuthService,
+          useValue: { accessToken: async () => null, renew: async () => 'unavailable' },
+        },
+        { provide: SessionState, useValue: { bearerOf: () => 'token-da-conta-a' } },
+      ],
     });
     http = TestBed.inject(HttpTestingController);
   });
@@ -35,6 +46,7 @@ describe('HttpClientQueueTransport', () => {
     expect(call.request.body).toBe('{"name":"x"}');
     expect(call.request.headers.get('Idempotency-Key')).toBe(request.headers['Idempotency-Key']);
     expect(call.request.headers.get('Content-Type')).toBe('application/json');
+    expect(call.request.headers.get('Authorization')).toBe('Bearer token-da-conta-a');
     call.flush('{"id":1}', {
       status: 201,
       statusText: 'Created',

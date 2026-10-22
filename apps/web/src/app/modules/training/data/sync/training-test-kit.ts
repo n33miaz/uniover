@@ -68,6 +68,7 @@ export interface PullCall {
   readonly path: string;
   readonly after: string | null;
   readonly limit: number;
+  readonly accountId: string;
 }
 
 type Scripted = PullPage<unknown> | Error | HttpErrorResponse | (() => Promise<PullPage<unknown>>);
@@ -81,8 +82,13 @@ export class FakePullApi {
   inFlight = 0;
   maxInFlight = 0;
 
-  async fetchPage<T>(path: string, after: string | null, limit: number): Promise<PullPage<T>> {
-    this.calls.push({ path, after, limit });
+  async fetchPage<T>(
+    path: string,
+    after: string | null,
+    limit: number,
+    accountId: string,
+  ): Promise<PullPage<T>> {
+    this.calls.push({ path, after, limit, accountId });
     this.inFlight++;
     this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
     try {

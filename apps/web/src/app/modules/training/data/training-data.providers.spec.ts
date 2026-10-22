@@ -102,15 +102,20 @@ describe('catalog pull, end to end', () => {
     await TestBed.inject(TrainingSync).start();
 
     expect(t.pull.calls).toEqual([
-      { path: '/api/v1/training/exercises', after: null, limit: 200 },
-      { path: '/api/v1/training/exercises', after: 'cursor-1', limit: 200 },
+      { accountId: 'conta-teste', path: '/api/v1/training/exercises', after: null, limit: 200 },
+      {
+        accountId: 'conta-teste',
+        path: '/api/v1/training/exercises',
+        after: 'cursor-1',
+        limit: 200,
+      },
       // Depois do catálogo o puxador passa pelos recursos seguintes (rotinas, treinos, séries, metas e corpo), que aqui vêm vazios.
-      { path: '/api/v1/training/routines', after: null, limit: 200 },
-      { path: '/api/v1/training/sessions', after: null, limit: 200 },
-      { path: '/api/v1/training/sets', after: null, limit: 200 },
-      { path: '/api/v1/training/goals', after: null, limit: 200 },
-      { path: '/api/v1/training/body/entries', after: null, limit: 200 },
-      { path: '/api/v1/training/body/profile', after: null, limit: 200 },
+      { accountId: 'conta-teste', path: '/api/v1/training/routines', after: null, limit: 200 },
+      { accountId: 'conta-teste', path: '/api/v1/training/sessions', after: null, limit: 200 },
+      { accountId: 'conta-teste', path: '/api/v1/training/sets', after: null, limit: 200 },
+      { accountId: 'conta-teste', path: '/api/v1/training/goals', after: null, limit: 200 },
+      { accountId: 'conta-teste', path: '/api/v1/training/body/entries', after: null, limit: 200 },
+      { accountId: 'conta-teste', path: '/api/v1/training/body/profile', after: null, limit: 200 },
     ]);
     expect(await t.trainingDb.exercises.count()).toBe(203);
     expect(await t.trainingDb.syncState.get('exercises')).toMatchObject({ cursor: 'cursor-2' });

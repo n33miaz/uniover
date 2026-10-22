@@ -41,6 +41,7 @@ export class QueueScopes {
 
   private following = false;
   private readonly retiring = new Set<Promise<void>>();
+  private readonly adopting = new Set<AccountQueue>();
 
   constructor() {
     // O injetor de uma fila é filho do da raiz mas NÃO morre com ele: sem isto o motor da conta em uso seguiria com os
@@ -62,7 +63,14 @@ export class QueueScopes {
   sync(): AccountQueue | null {
     const id = this.account.id();
     const current = untracked(this._active);
-    if ((current?.accountId ?? null) === id) return current;
+    if (
+      (current?.accountId ?? null) === id &&
+      (id === null ||
+        (current !== null && this.adopting.has(current)) ||
+        !this.account.shouldAdopt(DATABASE_NAME, id))
+    ) {
+      return current;
+    }
 
     if (current) this.retire(current);
     const next = id === null ? null : this.open(id);
@@ -82,6 +90,7 @@ export class QueueScopes {
     effect(
       () => {
         this.account.id();
+        this.account.legacyDecided();
         untracked(() => void this.sync()?.engine.start());
       },
       { injector: this.parent },
@@ -116,7 +125,7 @@ export class QueueScopes {
       this.parent,
       `fila:${accountId}`,
     );
-    return {
+    const queue: AccountQueue = {
       accountId,
       injector,
       db,
@@ -124,6 +133,11 @@ export class QueueScopes {
       store: injector.get(OutboxStore),
       engine: injector.get(SyncEngine),
     };
+    if (adoption) {
+      this.adopting.add(queue);
+      void ready.then(() => this.adopting.delete(queue));
+    }
+    return queue;
   }
 
   /**

@@ -307,6 +307,29 @@ describe('the queue of each account', () => {
       legacy.close();
     }
 
+    it('adopts when /me confirms the owner after the queue opened', async () => {
+      const kit = setupQueue();
+      await seedLegacy(kit);
+      setOnline(false);
+      kit.account.legacyDecided.set(false);
+      kit.account.signInAs('conta-a');
+      const before = kit.scopes().sync()!;
+      await before.engine.start();
+      expect(await before.db.outbox.count()).toBe(0);
+
+      kit.account.legacyOwner = 'conta-a';
+      kit.account.legacyDecided.set(true);
+      TestBed.tick();
+      const after = kit.scopes().sync()!;
+      expect(after).not.toBe(before);
+      await after.ready;
+      expect((await after.db.outbox.toArray()).map((row) => row.id).sort()).toEqual([
+        'a-pendente',
+        'c-recusado',
+      ]);
+      await kit.scopes().retired();
+    });
+
     it('is adopted by the first account, which then sends the pending one once and keeps the refused one visible', async () => {
       const kit = setupQueue();
       await seedLegacy(kit);

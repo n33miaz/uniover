@@ -170,7 +170,7 @@ export class TrainingSync {
 
     this._pulling.set(true);
     try {
-      for (const resource of this.resources) await this.pullResource(resource);
+      for (const resource of this.resources) await this.pullResource(resource, accountId);
       this._error.set(null);
       this._lastPullAt.set(this.runtime.now());
     } catch (error) {
@@ -180,7 +180,7 @@ export class TrainingSync {
     }
   }
 
-  private async pullResource(resource: ResourceSync): Promise<void> {
+  private async pullResource(resource: ResourceSync, accountId: string): Promise<void> {
     const name = resource.resource;
     const previous = await this.db.syncState.get(name);
     const limit = resource.pageSize ?? DEFAULT_PULL_PAGE_SIZE;
@@ -190,7 +190,7 @@ export class TrainingSync {
     let after = stored === null ? null : rewindCursor(stored, CURSOR_REWIND_MS);
 
     for (;;) {
-      const page = await this.api.fetchPage<unknown>(resource.path, after, limit);
+      const page = await this.api.fetchPage<unknown>(resource.path, after, limit, accountId);
 
       // Página vazia devolve o cursor que recebeu (recuado): guardá-lo faria o cursor andar para trás a cada puxar.
       if (page.items.length > 0) {

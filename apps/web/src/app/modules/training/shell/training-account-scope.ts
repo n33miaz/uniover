@@ -98,6 +98,7 @@ export class TrainingAccountScope {
     this.prepare(this.account.id());
     effect(() => {
       const id = this.account.id();
+      this.account.legacyDecided();
       untracked(() => this.prepare(id));
     });
   }

@@ -32,8 +32,8 @@ export function trainingDbName(accountId: string): string {
 }
 
 /**
- * As tabelas que o banco antigo (sem conta) tinha, todas copiadas na adoção dele. Tabela criada depois disso não existe lá:
- * não entra nesta lista.
+ * Todas as tabelas do banco antigo (sem conta), copiadas na adoção dele. O banco pode ter sido atualizado para a versão
+ * do Corpo antes de receber a separação por conta; fotos e medidas locais precisam ir junto com os treinos.
  */
 export const TRAINING_TABLES = [
   'exercises',
@@ -43,6 +43,9 @@ export const TRAINING_TABLES = [
   'sessions',
   'sets',
   'goals',
+  'bodyEntries',
+  'bodyProfile',
+  'photos',
 ] as const;
 
 /**

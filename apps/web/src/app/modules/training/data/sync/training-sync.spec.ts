@@ -74,9 +74,9 @@ describe('TrainingSync', () => {
       await t.sync().start();
 
       expect(t.pull.calls).toEqual([
-        { path: PATH, after: null, limit: 2 },
-        { path: PATH, after: 'c1', limit: 2 },
-        { path: PATH, after: 'c2', limit: 2 },
+        { path: PATH, after: null, limit: 2, accountId: TEST_ACCOUNT },
+        { path: PATH, after: 'c1', limit: 2, accountId: TEST_ACCOUNT },
+        { path: PATH, after: 'c2', limit: 2, accountId: TEST_ACCOUNT },
       ]);
       expect(t.merged).toEqual([['a', 'b'], ['c', 'd'], ['e']]);
       expect(await t.db.syncState.get('things')).toEqual({

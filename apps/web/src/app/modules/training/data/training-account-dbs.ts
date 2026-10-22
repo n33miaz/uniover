@@ -53,7 +53,13 @@ export class TrainingAccountDbs {
 
   /** O banco da conta, aberto na primeira vez e reaproveitado depois. Não conta como uso (ver `lease`). */
   ensure(accountId: string): TrainingAccountDb {
-    if (this.current?.accountId === accountId) return this.current;
+    if (this.current?.accountId === accountId) {
+      // O banco pode ter sido aberto pelo `sub` do token antes de `/me` confirmar que esta é a conta do dono.
+      // Quando a confirmação chega, a adoção passa a ser devida mesmo sem trocar de conta ou recarregar a página.
+      if (!this.account.shouldAdopt(TRAINING_DB_NAME, accountId) || !this.current.isReady()) {
+        return this.current;
+      }
+    }
 
     const previous = this.current;
     const db = this.factory(trainingDbName(accountId));
