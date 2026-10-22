@@ -222,8 +222,8 @@ test.describe('movimento reduzido', () => {
     expect(await sheet.evaluate((dialog) => getComputedStyle(dialog).transitionDuration)).toBe(
       '0s',
     );
-    // Sem animação a folha sai na hora: não fica esperando nada.
-    await sheet.getByRole('button', { name: 'Cancelar' }).click();
+    // Sem animação, o fundo também fecha a folha na hora.
+    await page.mouse.click(4, 4);
     await expect(sheet).toBeHidden({ timeout: 250 });
 
     await toSettings(page);

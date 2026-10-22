@@ -1,6 +1,33 @@
 /** Tempo-limite da saída: passado isso o diálogo sai mesmo que o navegador não avise o fim da transição. */
 export const DIALOG_EXIT_TIMEOUT_MS = 300;
 
+function isOutsideDialog(dialog: HTMLDialogElement, event: MouseEvent): boolean {
+  if (event.target !== dialog) return false;
+  const bounds = dialog.getBoundingClientRect();
+  return (
+    event.clientX < bounds.left ||
+    event.clientX > bounds.right ||
+    event.clientY < bounds.top ||
+    event.clientY > bounds.bottom
+  );
+}
+
+/** Só fecha se o mesmo toque começou e terminou no fundo, sem cruzar a borda da folha. */
+export function onDialogBackdropClick(dialog: HTMLDialogElement, dismiss: () => void): void {
+  let beganOutside = false;
+  dialog.addEventListener('pointerdown', (event) => {
+    beganOutside = event.isPrimary && event.button === 0 && isOutsideDialog(dialog, event);
+  });
+  dialog.addEventListener('pointercancel', () => {
+    beganOutside = false;
+  });
+  dialog.addEventListener('click', (event) => {
+    const shouldDismiss = beganOutside && isOutsideDialog(dialog, event);
+    beganOutside = false;
+    if (shouldDismiss) dismiss();
+  });
+}
+
 /**
  * Toca a saída de um `<dialog class="ui-dialog">` modal e chama `done` quando ela acaba (quem chama tira o
  * diálogo do DOM nesse momento). A saída é a classe `closing` (ver `styles.css`), posta com o diálogo ainda aberto:
