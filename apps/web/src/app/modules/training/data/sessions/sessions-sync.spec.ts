@@ -35,6 +35,8 @@ describe('sessions pull, end to end', () => {
       SESSIONS_PATH,
       SETS_PATH,
       '/api/v1/training/goals',
+      '/api/v1/training/foods',
+      '/api/v1/training/meals',
       '/api/v1/training/body/entries',
       '/api/v1/training/body/profile',
     ]);

@@ -7,6 +7,10 @@ import { CatalogWriter } from './catalog/catalog-writer';
 import { ExercisesResourceSync } from './catalog/exercises-resource-sync';
 import { provideExportData } from './export/export-data.providers';
 import { provideGoalsData } from './goals/goals-resource-sync';
+import { provideFoodsData } from './foods/foods-resource-sync';
+import { provideMealsData } from './meals/meals-resource-sync';
+import { MealsExportSection } from './meals/meals-export-section';
+import { TRAINING_EXPORT_SECTIONS } from './export/export-sections';
 import { providePhotoData } from './photos/photo-data.providers';
 import { PhysicalAssessmentRepository } from './physical-assessments/physical-assessment-repository';
 import { PhysicalAssessmentExport } from './physical-assessments/physical-assessment-export';
@@ -47,6 +51,10 @@ export function provideTrainingData(): Provider[] {
     // Metas do dono: acesso aos dados e recurso sincronizável.
     ...provideGoalsData(),
 
+    // Alimentos e refeições: diário local com escrita pela fila e sincronização por cursor.
+    ...provideFoodsData(),
+    ...provideMealsData(),
+
     // Corpo: medições e perfil (acesso aos dados e recursos sincronizáveis).
     ...provideBodyData(),
 
@@ -65,5 +73,8 @@ export function provideTrainingData(): Provider[] {
 
     // Seções do corpo na exportação em JSON (depois das que já existiam: a ordem das seções do arquivo não muda).
     ...provideBodyExportSections(),
+
+    // Lançamentos de refeição no fim da exportação; os valores já estão congelados no registro.
+    { provide: TRAINING_EXPORT_SECTIONS, useClass: MealsExportSection, multi: true },
   ];
 }

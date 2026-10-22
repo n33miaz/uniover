@@ -159,6 +159,7 @@ describe('ExportService', () => {
         'goals',
         'bodyEntries',
         'bodyProfile',
+        'meals',
       ]);
 
       const sections = document.sections as Record<string, { id?: string; kind?: string }[]>;
@@ -239,13 +240,14 @@ describe('ExportService', () => {
         goals: [],
         bodyEntries: [],
         bodyProfile: null,
+        meals: [],
       });
     });
 
     it('accepts an extra section registered in the token, without editing the service', async () => {
       const body: ExportSection = { key: 'body', build: async () => [{ weightKg: 80 }] };
-      const meals: ExportSection = { key: 'meals', build: async () => [] };
-      const t = setup([body, meals]);
+      const extra: ExportSection = { key: 'custom', build: async () => [] };
+      const t = setup([body, extra]);
 
       const document = await t.service.buildJson();
 
@@ -257,8 +259,9 @@ describe('ExportService', () => {
         'goals',
         'bodyEntries',
         'bodyProfile',
-        'body',
         'meals',
+        'body',
+        'custom',
       ]);
       expect(document.sections['body']).toEqual([{ weightKg: 80 }]);
     });
