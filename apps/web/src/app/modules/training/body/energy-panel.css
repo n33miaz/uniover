@@ -1,0 +1,71 @@
+:host {
+  display: block;
+}
+.energy {
+  display: grid;
+  gap: var(--space-3);
+}
+h2 {
+  margin: 0;
+  font-size: clamp(1.1rem, 4.8vw, 1.25rem);
+}
+.muted,
+.warning,
+.error {
+  margin: 0;
+  font-size: var(--fs-small);
+}
+.muted {
+  color: var(--a-ink2);
+}
+.warning {
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--a-surface2);
+}
+.error {
+  color: var(--a-danger, #a32929);
+}
+.target {
+  margin: 0;
+  font-size: clamp(2rem, 9vw, 2.75rem);
+  font-variant-numeric: tabular-nums;
+}
+.target strong {
+  font-weight: 750;
+  letter-spacing: -0.04em;
+}
+.target span {
+  font-size: var(--fs-body);
+  margin-left: 0.12em;
+}
+summary {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+dl {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+dt {
+  color: var(--a-ink2);
+}
+dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.actions .ui-btn {
+  flex: 1;
+}
