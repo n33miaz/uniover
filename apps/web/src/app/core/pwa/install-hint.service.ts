@@ -2,6 +2,7 @@ import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Injectable, InjectionToken, computed, inject, signal } from '@angular/core';
 import {
   InstallEnvInput,
+  isAndroid,
   iosBrowser,
   isIos,
   isMobileDevice,
@@ -16,7 +17,13 @@ import {
  * Firefox do iPhone (iOS 16.4 ou mais novo) · `ios-in-app` o app está dentro de outro (Instagram, Facebook...), que
  * não tem essa opção: o primeiro passo é abrir no Safari.
  */
-export type InstallMode = 'none' | 'native' | 'ios-safari' | 'ios-other' | 'ios-in-app';
+export type InstallMode =
+  | 'none'
+  | 'native'
+  | 'android-manual'
+  | 'ios-safari'
+  | 'ios-other'
+  | 'ios-in-app';
 
 /** Resultado de pedir a instalação nativa. `unavailable`: não havia pedido guardado, ou o navegador o recusou. */
 export type InstallOutcome = 'accepted' | 'dismissed' | 'unavailable';
@@ -102,6 +109,7 @@ export class InstallHintService {
   readonly mode = computed<InstallMode>(() => {
     if (this.standalone()) return 'none';
     if (this.promptEvent()) return 'native';
+    if (isAndroid(this.env)) return 'android-manual';
     if (!isIos(this.env)) return 'none';
     switch (iosBrowser(this.env)) {
       case 'safari':

@@ -58,7 +58,7 @@ describe('InstallHintService', () => {
       ['Firefox no iPhone', { userAgent: UA.firefox }, 'ios-other'],
       ['Edge no iPhone', { userAgent: UA.edge }, 'ios-other'],
       ['Instagram no iPhone', { userAgent: UA.instagram }, 'ios-in-app'],
-      ['Android sem o pedido do navegador', { userAgent: UA.android }, 'none'],
+      ['Android sem o pedido do navegador', { userAgent: UA.android }, 'android-manual'],
       ['computador', { userAgent: UA.desktop }, 'none'],
       [
         'iPhone já na tela de início (navigator.standalone)',
@@ -76,7 +76,7 @@ describe('InstallHintService', () => {
 
     it('vira native quando o navegador entrega o pedido de instalação, e o guarda sem mostrar o do navegador', () => {
       const service = create({ userAgent: UA.android });
-      expect(service.mode()).toBe('none');
+      expect(service.mode()).toBe('android-manual');
       const event = installPromptEvent();
       window.dispatchEvent(event);
       expect(event.defaultPrevented).toBe(true);
@@ -95,7 +95,7 @@ describe('InstallHintService', () => {
       const service = create({ userAgent: UA.android });
       TestBed.resetTestingModule();
       window.dispatchEvent(installPromptEvent());
-      expect(service.mode()).toBe('none');
+      expect(service.mode()).toBe('android-manual');
     });
   });
 
@@ -106,7 +106,7 @@ describe('InstallHintService', () => {
       window.dispatchEvent(event);
       expect(await service.prompt()).toBe('accepted');
       expect(event.prompt).toHaveBeenCalledTimes(1);
-      expect(service.mode()).toBe('none');
+      expect(service.mode()).toBe('android-manual');
       expect(await service.prompt()).toBe('unavailable');
       expect(stored()).toBeNull();
     });
@@ -160,7 +160,7 @@ describe('InstallHintService', () => {
     });
 
     it('não abre quando não há o que oferecer', () => {
-      expect(create({ userAgent: UA.android }).autoOpenAllowed()).toBe(false);
+      expect(create({ userAgent: UA.desktop }).autoOpenAllowed()).toBe(false);
     });
 
     it('"Agora não" adia por 14 dias, e só então volta', () => {

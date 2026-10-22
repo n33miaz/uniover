@@ -17,12 +17,21 @@ import { PwaUpdateService } from './pwa-update.service';
               <button
                 type="button"
                 class="action ui-tap"
+                [disabled]="pwa.applyingUpdate()"
                 (click)="pwa.applyUpdate()"
-                i18n="@@pwa.update"
               >
-                Atualizar
+                @if (pwa.applyingUpdate()) {
+                  <span i18n="@@pwa.updating">Atualizando…</span>
+                } @else {
+                  <span i18n="@@pwa.update">Atualizar</span>
+                }
               </button>
             </div>
+            @if (pwa.updateError()) {
+              <p class="error" role="alert" i18n="@@pwa.update-error">
+                Não foi possível ativar a nova versão. Tente novamente.
+              </p>
+            }
           </div>
         </div>
       }
@@ -50,6 +59,13 @@ import { PwaUpdateService } from './pwa-update.service';
       font: inherit;
       font-weight: 600;
       cursor: pointer;
+    }
+    .error {
+      margin: 0;
+      padding: 4px var(--gutter) 8px;
+      background: var(--a-accent-soft);
+      color: var(--a-ink);
+      font-size: var(--fs-small);
     }
   `,
 })
