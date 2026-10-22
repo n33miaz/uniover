@@ -24,6 +24,13 @@ public static class TvCommandNames
 
     /// <summary>O administrador trocou o computador que controla a TV: não vai à TV, mas redireciona o controle e a trilha guarda quem fez. O detalhe é o computador novo.</summary>
     public const string ConfigBind = "tv.config.bind";
+
+    /// <summary>
+    /// Anotação, e não comando: a trilha de um usuário bateu no teto diário de linhas e parou de registrar até o dia
+    /// seguinte (os comandos continuam funcionando). Há uma só por usuário e por dia; o detalhe é o teto (<c>limit=N</c>).
+    /// Não entra no histórico curto de comandos da TV: só na trilha do administrador.
+    /// </summary>
+    public const string AuditLimit = "tv.audit.limit";
 }
 
 /// <summary>

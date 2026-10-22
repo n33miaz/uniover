@@ -108,10 +108,11 @@ internal sealed partial class TvCommandRunner(
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            LogAuditFailed(command, ex);
+            LogAuditFailed(command, ex.GetType().Name);
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao gravar a auditoria do comando {Command}.")]
-    private partial void LogAuditFailed(string command, Exception exception);
+    // Só o tipo do erro: a mensagem do driver do banco pode citar o servidor e a conexão.
+    [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao gravar a auditoria do comando {Command} ({ErrorType}).")]
+    private partial void LogAuditFailed(string command, string errorType);
 }
