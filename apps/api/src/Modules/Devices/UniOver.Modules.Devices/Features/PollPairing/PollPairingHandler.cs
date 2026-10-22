@@ -131,9 +131,11 @@ internal sealed class PollPairingHandler(
         }
         catch (DbUpdateConcurrencyException)
         {
-            // Duas consultas ao mesmo tempo: só uma grava o consumo, e é a única que recebe o token.
+            // Revogar e entregar o token usam a mesma versão de RevokedAt: se a revogação venceu, não entregar token.
             db.ChangeTracker.Clear();
-            return new PollPairingResult(PollStatus.Consumed);
+            var revoked = await db.Agents.AsNoTracking()
+                .AnyAsync(a => a.Id == agent.Id && a.RevokedAt != null, cancellationToken);
+            return new PollPairingResult(revoked ? PollStatus.Denied : PollStatus.Consumed);
         }
 
         return new PollPairingResult(PollStatus.Approved, agent.Slug, token);

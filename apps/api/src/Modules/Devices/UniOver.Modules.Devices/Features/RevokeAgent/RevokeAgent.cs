@@ -8,6 +8,7 @@ using UniOver.Modules.Devices.Contracts.Pairing;
 using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Devices.Features.Tokens;
 using UniOver.Modules.Devices.Persistence;
+using UniOver.Modules.Devices.Ports;
 using UniOver.Modules.Devices.Security;
 using UniOver.SharedKernel;
 
@@ -24,7 +25,8 @@ internal sealed class RevokeAgentHandler(
     IEventBus events,
     IDeviceTokenCache cache,
     PairingAuditWriter audit,
-    TimeProvider time)
+    TimeProvider time,
+    IAgentSessionCloser? sessionCloser = null)
 {
     /// <summary><c>false</c> quando o agente não existe. Revogar de novo um revogado é sucesso e não repete evento nem auditoria.</summary>
     public async Task<bool> HandleAsync(RevokeAgentCommand command, CancellationToken cancellationToken = default)
@@ -42,11 +44,23 @@ internal sealed class RevokeAgentHandler(
         {
             audit.Add(PairingEvents.AgentRevoked, command.Client, agentId: agent.Id, userId: command.UserId);
             await events.PublishAsync(new AgentRevoked(IdGenerator.NewId(), now, agent.Id, agent.Slug), cancellationToken);
-            await db.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Outra revogação ganhou: a mudança da entidade, auditoria e outbox desta tentativa foram revertidas.
+                db.ChangeTracker.Clear();
+            }
         }
 
         // Também direto, sem esperar o despachante: o token não pode sobreviver nem aos poucos segundos da entrega.
         cache.Invalidate(agent.Id);
+        if (sessionCloser is not null)
+        {
+            await sessionCloser.CloseAsync(agent.Slug, AgentCloseReason.Revoked, cancellationToken);
+        }
         return true;
     }
 }

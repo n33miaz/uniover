@@ -42,10 +42,11 @@ internal sealed class TransportApp : IAsyncDisposable
 
     public IAgentPresenceReader Presence => App.Services.GetRequiredService<IAgentPresenceReader>();
 
-    public static async Task<TransportApp> StartAsync(PostgresFixture postgres)
+    public static async Task<TransportApp> StartAsync(PostgresFixture postgres, DevicesAppOptions? options = null)
     {
         // Sem passkey ao aprovar (só vale em Development): o pareamento aqui é só meio para ter um token real.
-        var app = await DevicesApp.StartAsync(postgres, new DevicesAppOptions { RequireStepUp = false });
+        options = (options ?? new DevicesAppOptions()) with { RequireStepUp = false };
+        var app = await DevicesApp.StartAsync(postgres, options);
         var login = await app.LoginAsync();
         var (id, slug, token, _) = await app.PairAsync(login);
         return new TransportApp(app, login, new PairedAgent(id, slug, token));

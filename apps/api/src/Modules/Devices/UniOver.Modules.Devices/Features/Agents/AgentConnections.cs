@@ -14,7 +14,7 @@ namespace UniOver.Modules.Devices.Features.Agents;
 internal sealed class AgentConnections(
     IPresenceStore presence,
     SseBroadcaster<PresenceUpdate> events,
-    IEnumerable<IAgentPresenceListener>? listeners = null)
+    IEnumerable<IAgentPresenceListener>? listeners = null) : IAgentSessionCloser
 {
     private readonly IAgentPresenceListener[] _listeners = [.. listeners ?? []];
 
@@ -63,6 +63,22 @@ internal sealed class AgentConnections(
         lock (_gate)
         {
             return _sessions.TryGetValue(agentId, out session!);
+        }
+    }
+
+    /// <summary>Fecha a sessão atual sem esperar a outbox; chamadas repetidas são seguras.</summary>
+    public async Task CloseAsync(string agentId, AgentCloseReason reason, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
+        IAgentSession? session;
+        lock (_gate)
+        {
+            _sessions.TryGetValue(agentId, out session);
+        }
+
+        if (session is not null)
+        {
+            await session.CloseAsync(reason, cancellationToken);
         }
     }
 
