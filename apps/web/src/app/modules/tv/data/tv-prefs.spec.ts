@@ -1,14 +1,22 @@
 import { TestBed } from '@angular/core/testing';
-import { KEY_SCALE, TV_NAME_MAX, TV_PREFS_KEY, TvPrefs, vibrationEnabled } from './tv-prefs';
+import { SessionState } from '../../../core/session/session-state';
+import { KEY_SCALE, TV_NAME_MAX, TV_PREFS_KEY, TvPrefs, tvPrefsStorageKey } from './tv-prefs';
 
 describe('TvPrefs', () => {
+  const identify = (id = 'tv-user') =>
+    TestBed.inject(SessionState).setUser({ id, email: `${id}@example.com`, displayName: 'TV' });
   const fresh = () => {
     TestBed.resetTestingModule();
+    identify();
     return TestBed.inject(TvPrefs);
   };
-  const saved = () => JSON.parse(localStorage.getItem(TV_PREFS_KEY) ?? 'null');
+  const accountKey = () => tvPrefsStorageKey('tv-user');
+  const saved = () => JSON.parse(localStorage.getItem(accountKey()) ?? 'null');
 
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    identify();
+  });
   afterEach(() => {
     // O espelho da vibração é um módulo só: devolve ao padrão para o próximo teste.
     TestBed.inject(TvPrefs).reset();
@@ -29,7 +37,7 @@ describe('TvPrefs', () => {
     expect(prefs.padSpeed()).toBe('normal');
     expect(prefs.pillLayout()).toBe('sides');
     expect(prefs.customized()).toBe(false);
-    expect(localStorage.getItem(TV_PREFS_KEY)).toBeNull();
+    expect(localStorage.getItem(accountKey())).toBeNull();
   });
 
   it('keeps every choice for the next visit', () => {
@@ -76,7 +84,7 @@ describe('TvPrefs', () => {
     it('reads a choice saved before the field existed as "sides", keeping everything else', () => {
       // O formato de antes: sem o campo novo.
       localStorage.setItem(
-        TV_PREFS_KEY,
+        accountKey(),
         JSON.stringify({
           name: 'Sala',
           buttonSize: 'large',
@@ -99,7 +107,7 @@ describe('TvPrefs', () => {
     });
 
     it('does not make an old, all-default choice look customized just because the field is missing', () => {
-      localStorage.setItem(TV_PREFS_KEY, JSON.stringify({ name: '', buttonSize: 'comfortable' }));
+      localStorage.setItem(accountKey(), JSON.stringify({ name: '', buttonSize: 'comfortable' }));
       const prefs = fresh();
       expect(prefs.pillLayout()).toBe('sides');
       expect(prefs.customized()).toBe(false);
@@ -107,7 +115,7 @@ describe('TvPrefs', () => {
 
     it('is "sides" for a stored value that is not one of the two', () => {
       for (const stored of ['top', 3, null, true]) {
-        localStorage.setItem(TV_PREFS_KEY, JSON.stringify({ pillLayout: stored }));
+        localStorage.setItem(accountKey(), JSON.stringify({ pillLayout: stored }));
         expect(fresh().pillLayout(), String(stored)).toBe('sides');
       }
     });
@@ -117,7 +125,8 @@ describe('TvPrefs', () => {
       prefs.set({ pillLayout: 'row' });
       expect(prefs.pillLayout()).toBe('row');
       expect(saved().pillLayout).toBe('row');
-      expect(TV_PREFS_KEY).toBe('uniover.tv.prefs.v1');
+      expect(TV_PREFS_KEY).toBe('uniover.tv.prefs.v2');
+      expect(accountKey()).toBe('uniover.tv.prefs.v2.tv-user');
       expect(fresh().pillLayout()).toBe('row');
     });
 
@@ -185,21 +194,24 @@ describe('TvPrefs', () => {
     expect(fresh().title()).toBe('TV');
   });
 
-  it('mirrors the vibration choice for the code that has no injection', () => {
+  it('switches the vibration choice synchronously with the active account', () => {
     const prefs = fresh();
-    expect(vibrationEnabled()).toBe(true);
-    prefs.set({ vibration: false });
-    expect(vibrationEnabled()).toBe(false);
-    // Uma visita nova já nasce com a escolha guardada.
-    fresh();
-    expect(vibrationEnabled()).toBe(false);
-    TestBed.inject(TvPrefs).reset();
-    expect(vibrationEnabled()).toBe(true);
+    expect(prefs.vibration()).toBe(true);
+    prefs.set({ name: 'Sala do dono', vibration: false });
+    expect(prefs.vibration()).toBe(false);
+
+    identify('guest-1');
+    expect(prefs.vibration()).toBe(true);
+    prefs.set({ name: 'TV da convidada', vibration: true });
+    identify();
+    expect(prefs.vibration()).toBe(false);
+    identify('guest-1');
+    expect(prefs.vibration()).toBe(true);
   });
 
   it('ignores what is stored when it is not valid, field by field', () => {
     localStorage.setItem(
-      TV_PREFS_KEY,
+      accountKey(),
       JSON.stringify({
         name: 42,
         buttonSize: 'gigantic',
@@ -222,7 +234,7 @@ describe('TvPrefs', () => {
   });
 
   it.each(['not json', '[1,2]', 'null', '"text"'])('survives a stored value like %s', (stored) => {
-    localStorage.setItem(TV_PREFS_KEY, stored);
+    localStorage.setItem(accountKey(), stored);
     const prefs = fresh();
     expect(prefs.title()).toBe('TV');
     expect(prefs.buttonSize()).toBe('comfortable');
@@ -252,5 +264,43 @@ describe('TvPrefs', () => {
     expect(() => prefs.set({ name: 'Sala' })).not.toThrow();
     expect(prefs.title()).toBe('Sala');
     spy.mockRestore();
+  });
+
+  it('keeps preferences separate when the authenticated account changes', () => {
+    const prefs = fresh();
+    prefs.set({ name: 'Sala do dono' });
+
+    identify('guest-1');
+    expect(prefs.title()).toBe('TV');
+    prefs.set({ name: 'Quarto da convidada' });
+
+    identify();
+    expect(prefs.title()).toBe('Sala do dono');
+    expect(JSON.parse(localStorage.getItem(tvPrefsStorageKey('guest-1')) ?? 'null').name).toBe(
+      'Quarto da convidada',
+    );
+  });
+
+  it('keeps the old unscoped preference inert instead of assigning it to whichever account signs in first', () => {
+    localStorage.setItem(
+      'uniover.tv.prefs.v1',
+      JSON.stringify({ name: 'Preferência de outra conta' }),
+    );
+    const prefs = fresh();
+    expect(prefs.title()).toBe('TV');
+
+    const token = `x.${btoa(JSON.stringify({ sub: 'tv-user' }))}.x`;
+    TestBed.inject(SessionState).setToken(token, 600);
+    expect(prefs.title()).toBe('TV');
+    expect(localStorage.getItem('uniover.tv.prefs.v1')).toBe(
+      JSON.stringify({ name: 'Preferência de outra conta' }),
+    );
+    expect(localStorage.getItem(accountKey())).toBeNull();
+  });
+
+  it('keeps legacy preferences available for a future explicit migration decision', () => {
+    localStorage.setItem('uniover.tv.prefs.v1', JSON.stringify({ name: 'Old choice' }));
+    fresh();
+    expect(localStorage.getItem('uniover.tv.prefs.v1')).not.toBeNull();
   });
 });

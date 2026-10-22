@@ -136,7 +136,7 @@ export class ControlPage {
 
   protected openShortcut(shortcut: TvShortcut): void {
     if (!this.store.canSend() || !this.canLaunch()) return;
-    vibrate();
+    vibrate(this.prefs.vibration());
     void this.store.launch(shortcut);
   }
 

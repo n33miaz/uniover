@@ -1,6 +1,6 @@
 import { DestroyRef, Directive, inject, input, signal } from '@angular/core';
 import { TV_CONFIG } from '../data/tv-config';
-import { vibrationEnabled } from '../data/tv-prefs';
+import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { TvKey } from '../data/tv-types';
 import { HoldRepeater } from './hold-repeater';
@@ -33,6 +33,7 @@ const CLICK_ECHO_MS = 500;
 export class KeyButton {
   protected readonly store = inject(TvStore);
   private readonly config = inject(TV_CONFIG);
+  private readonly prefs = inject(TvPrefs);
 
   readonly appKey = input.required<TvKey>();
   /** Segurar repete a tecla (setas e volume). */
@@ -91,7 +92,7 @@ export class KeyButton {
   }
 
   private send(): void {
-    vibrate();
+    vibrate(this.prefs.vibration());
     void this.store.sendKey(this.appKey()).then((ok) => {
       if (!ok) this.repeater.stop();
     });
@@ -99,9 +100,9 @@ export class KeyButton {
 }
 
 /** Vibração curta onde existe (o iOS não tem), respeitando "reduzir movimento" e a escolha de Personalizar. */
-export function vibrate(): void {
+export function vibrate(enabled: boolean): void {
   try {
-    if (!vibrationEnabled()) return;
+    if (!enabled) return;
     if (typeof navigator.vibrate !== 'function') return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     navigator.vibrate(8);
