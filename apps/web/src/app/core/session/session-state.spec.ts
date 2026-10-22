@@ -297,12 +297,16 @@ describe('SessionState', () => {
       expect(localStorage.getItem('uniover.legacy-owner')).toBe('conta-a');
     });
 
-    it('never gives the queue a token from another account, even with an old /me result', () => {
+    it('drops the old account when a token for another account arrives', () => {
       state().setUser(user);
       state().setToken(tokenFor('conta-b'), 600);
+      expect(state().user()).toBeNull();
+      expect(state().accountId()).toBe('conta-b');
       expect(state().bearerOf('conta-a')).toBeNull();
-      expect(state().bearerOf('conta-b')).toBeNull();
+      expect(state().bearerOf('conta-b')).toBe(tokenFor('conta-b'));
 
+      expect(state().setUser(user)).toBe(false); // leitura antiga de /me termina depois do token novo
+      expect(state().accountId()).toBe('conta-b');
       state().setUser({ ...user, id: 'conta-b' });
       expect(state().bearerOf('conta-b')).toBe(tokenFor('conta-b'));
     });
