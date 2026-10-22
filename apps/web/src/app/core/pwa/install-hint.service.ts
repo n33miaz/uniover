@@ -18,12 +18,7 @@ import {
  * não tem essa opção: o primeiro passo é abrir no Safari.
  */
 export type InstallMode =
-  | 'none'
-  | 'native'
-  | 'android-manual'
-  | 'ios-safari'
-  | 'ios-other'
-  | 'ios-in-app';
+  'none' | 'native' | 'android-manual' | 'ios-safari' | 'ios-other' | 'ios-in-app';
 
 /** Resultado de pedir a instalação nativa. `unavailable`: não havia pedido guardado, ou o navegador o recusou. */
 export type InstallOutcome = 'accepted' | 'dismissed' | 'unavailable';
@@ -51,6 +46,8 @@ interface HintMemory {
   readonly dismissedAt?: number;
   /** "Não mostrar de novo": a folha nunca mais abre sozinha. */
   readonly never?: boolean;
+  /** A pessoa confirmou que já instalou ou aceitou o pedido nativo neste aparelho. */
+  readonly installed?: boolean;
 }
 
 function readMemory(): HintMemory {
@@ -59,11 +56,12 @@ function readMemory(): HintMemory {
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return {};
-    const { dismissedAt, never } = parsed as Record<string, unknown>;
+    const { dismissedAt, never, installed } = parsed as Record<string, unknown>;
     return {
       dismissedAt:
         typeof dismissedAt === 'number' && Number.isFinite(dismissedAt) ? dismissedAt : undefined,
       never: never === true ? true : undefined,
+      installed: installed === true ? true : undefined,
     };
   } catch {
     return {};
@@ -147,13 +145,14 @@ export class InstallHintService {
       this.mobile &&
       this.mode() !== 'none' &&
       !this.memory().never &&
+      !this.memory().installed &&
       !this.autoShown() &&
       !this.autoHeld(),
   );
 
   constructor() {
-    // Rodando como app instalado: o que foi dito antes não vale mais (se desinstalar, a dica pode voltar).
-    if (this.standalone()) this.forget();
+    // O iOS não dispara `appinstalled`; abrir como app é a confirmação durável de que a instalação deu certo.
+    if (this.standalone()) this.acknowledgeInstalled();
     inject(DestroyRef).onDestroy(() => this.stop());
   }
 
@@ -260,11 +259,11 @@ export class InstallHintService {
     this.remember({ ...this.memory(), never: true });
   }
 
-  /** O app foi instalado (evento `appinstalled`): nada mais a oferecer, e a memória antiga sai. */
+  /** O app foi instalado ou a instalação foi aceita: não oferece a dica automática neste aparelho. */
   acknowledgeInstalled(): void {
     this.standalone.set(true);
     this.promptEvent.set(null);
-    this.forget();
+    this.remember({ installed: true });
   }
 
   /** Pede a instalação nativa. Só existe no modo `native`; o pedido do navegador vale uma vez. */
@@ -277,6 +276,7 @@ export class InstallHintService {
       await event.prompt();
       const { outcome } = await event.userChoice;
       if (outcome === 'dismissed') this.dismiss();
+      else this.acknowledgeInstalled();
       return outcome;
     } catch {
       return 'unavailable';
@@ -286,10 +286,5 @@ export class InstallHintService {
   private remember(memory: HintMemory): void {
     this.memory.set(memory);
     writeMemory(memory);
-  }
-
-  private forget(): void {
-    this.memory.set({});
-    writeMemory(null);
   }
 }
