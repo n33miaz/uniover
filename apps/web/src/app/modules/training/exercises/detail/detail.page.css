@@ -46,34 +46,103 @@
   overflow-wrap: anywhere;
 }
 
-/* Cabeçalho da ficha: a ilustração (quando há) ao lado dos músculos e do equipamento, para a ficha caber na tela. */
+/* GIF à esquerda, mapa à direita; badges centralizados imediatamente abaixo do GIF. */
 .hero {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .hero.with-art {
   display: grid;
-  grid-template-columns: minmax(0, 148px) minmax(0, 1fr);
-  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto 1fr;
   align-items: start;
+  column-gap: var(--space-3);
 }
 
-/* Ao lado da ilustração, os chips e o crédito dela: a ficha não gasta uma faixa inteira só com o crédito. */
-.side {
+.hero.with-art .art,
+.hero.with-art .chips {
+  grid-column: 1;
+}
+
+.hero.with-art .muscles {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.art {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
+  justify-content: center;
+  width: min(100%, 20rem);
+}
+
+.art app-exercise-illustration {
+  width: 100%;
 }
 
 .chips {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 6px;
+  width: 100%;
 }
 
 .chips .ui-chip {
   min-height: 28px;
+}
+
+.muscles {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.muscles h3 {
+  align-self: flex-start;
+}
+
+.muscle-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2) var(--space-4);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.muscle-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.own-note {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+
+.legend-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 1px solid var(--a-line);
+  border-radius: 50%;
+}
+
+.legend-dot.primary {
+  border-color: var(--a-accent);
+  background: var(--a-accent);
+}
+
+.legend-dot.secondary {
+  border-color: var(--a-accent-ink);
+  background: var(--a-accent-soft);
 }
 
 .main-action {
@@ -250,23 +319,6 @@
   color: var(--a-bad-ink);
   font-size: var(--fs-small);
   font-weight: 650;
-}
-
-.origin {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0 var(--space-3);
-  margin: 0;
-  padding: 0 var(--space-1);
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-}
-
-.origin-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--tap);
 }
 
 .title-skeleton {

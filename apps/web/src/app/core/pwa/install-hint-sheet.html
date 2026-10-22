@@ -30,6 +30,29 @@
           Não foi possível abrir a instalação agora. Tente de novo em instantes.
         </p>
       }
+    } @else if (mode() === 'android-manual') {
+      <ol class="steps" role="list">
+        <li class="step">
+          <span class="num" aria-hidden="true">1</span>
+          <span class="glyph" aria-hidden="true">⋮</span>
+          <div class="text">
+            <p class="step-title" i18n="@@install.android.menu.title">Abra o menu do navegador</p>
+            <p class="step-sub" i18n="@@install.android.menu.sub">
+              Toque nos três pontos ao lado do endereço. Se este app abriu dentro de outro, abra o endereço no navegador primeiro.
+            </p>
+          </div>
+        </li>
+        <li class="step">
+          <span class="num" aria-hidden="true">2</span>
+          <span class="glyph" aria-hidden="true">＋</span>
+          <div class="text">
+            <p class="step-title" i18n="@@install.android.add.title">Escolha instalar ou adicionar à tela inicial</p>
+            <p class="step-sub" i18n="@@install.android.add.sub">
+              O nome da opção varia entre navegadores. Se ela não aparecer, este navegador ainda não permite a instalação aqui.
+            </p>
+          </div>
+        </li>
+      </ol>
     } @else {
       @let base = mode() === 'ios-in-app' ? 1 : 0;
       <ol class="steps" role="list">

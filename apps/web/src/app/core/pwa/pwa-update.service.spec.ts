@@ -1,5 +1,9 @@
 import { TestBed } from '@angular/core/testing';
-import { PWA_ENABLED, PwaUpdateService } from './pwa-update.service';
+import {
+  PWA_ENABLED,
+  PwaUpdateService,
+  UPDATE_ACTIVATION_TIMEOUT_MS,
+} from './pwa-update.service';
 import { registerServiceWorker } from './register-sw';
 
 class FakeWorker extends EventTarget {
@@ -85,6 +89,15 @@ describe('PwaUpdateService', () => {
     expect(service.updateReady()).toBe(true);
   });
 
+  it('detects an update already installing when registration resolves', async () => {
+    const { registration, service } = setup({});
+    const incoming = new FakeWorker();
+    incoming.state = 'installed';
+    registration.installing = incoming;
+    await flush();
+    expect(service.updateReady()).toBe(true);
+  });
+
   it('asks the waiting worker to take over and reloads only after the user accepted', async () => {
     const { registration, container, service } = setup({});
     await flush();
@@ -98,8 +111,37 @@ describe('PwaUpdateService', () => {
     registration.waiting = waiting;
     service.applyUpdate();
     expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+    expect(service.applyingUpdate()).toBe(true);
+    service.applyUpdate();
+    expect(waiting.postMessage).toHaveBeenCalledTimes(1);
     container.dispatchEvent(new Event('controllerchange'));
     expect(reload).toHaveBeenCalledTimes(1);
+    container.dispatchEvent(new Event('controllerchange'));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('explains when the waiting worker disappeared instead of making Atualizar a silent no-op', async () => {
+    const { service } = setup({});
+    await flush();
+    service.updateReady.set(true);
+    service.applyUpdate();
+    expect(service.updateError()).toBe(true);
+    expect(service.applyingUpdate()).toBe(false);
+  });
+
+  it('reenables retry if activation never changes the controller', async () => {
+    const { registration, service } = setup({});
+    await flush();
+    registration.waiting = new FakeWorker();
+    vi.useFakeTimers();
+    try {
+      service.applyUpdate();
+      vi.advanceTimersByTime(UPDATE_ACTIVATION_TIMEOUT_MS);
+      expect(service.applyingUpdate()).toBe(false);
+      expect(service.updateError()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('stays out of the way when disabled', () => {

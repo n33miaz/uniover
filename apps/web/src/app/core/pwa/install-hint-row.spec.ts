@@ -46,9 +46,9 @@ describe('InstallHintRow', () => {
     expect(host.hidden).toBe(true);
   });
 
-  it('no Android aparece quando o navegador entrega o pedido de instalação e some quando instala', async () => {
+  it('no Android oferece instrução manual, usa o pedido nativo quando chega e some ao instalar', async () => {
     const { fixture, host } = await render({ userAgent: ANDROID });
-    expect(host.hidden).toBe(true);
+    expect(host.hidden).toBe(false);
     window.dispatchEvent(new Event('beforeinstallprompt', { cancelable: true }));
     await fixture.whenStable();
     expect(host.hidden).toBe(false);

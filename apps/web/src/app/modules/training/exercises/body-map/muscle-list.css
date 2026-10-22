@@ -3,97 +3,127 @@
 }
 
 .list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+
+.title {
+  margin: 0;
+}
+
+/* Cada grupo ocupa uma faixa. Os botões seguem a mesma grade, mesmo quando os nomes têm tamanhos diferentes. */
+.group {
+  display: grid;
   gap: var(--space-2);
 }
 
-/* O nome do grupo à esquerda e os músculos dele ao lado, em quantas linhas precisarem. */
-.group {
-  display: grid;
-  grid-template-columns: 4.75rem minmax(0, 1fr);
-  align-items: start;
+.group + .group {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--a-line);
 }
 
 .group-name {
-  display: flex;
-  align-items: center;
-  min-height: var(--tap);
-  padding-left: var(--space-1);
   color: var(--a-ink2);
-  font-size: var(--fs-small);
-  font-weight: 650;
+  font-size: var(--fs-label);
+  font-weight: 750;
+  letter-spacing: 0.04em;
 }
 
 .chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--space-2);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
 }
 
 .chip {
-  display: inline-flex;
-  align-items: center;
+  display: flex;
+  min-width: 0;
   min-height: var(--tap);
   padding: 0;
-  border: 0;
-  background: none;
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-sm);
+  background: var(--a-surface-2);
   color: var(--a-ink);
   font: inherit;
   font-size: var(--fs-small);
   font-weight: 650;
+  text-align: left;
   cursor: pointer;
-}
-
-.face {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 36px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius-pill);
-  background: var(--a-surface);
-  box-shadow: var(--shadow-1);
-  white-space: nowrap;
   transition:
-    transform var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) linear,
     border-color var(--dur-fast) linear;
 }
 
+.chip:only-child {
+  grid-column: 1 / -1;
+}
+
+.face {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.muscle-name {
+  overflow-wrap: anywhere;
+}
+
 .count {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--a-surface);
   color: var(--a-ink2);
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  font-size: var(--fs-label);
+  font-weight: 650;
 }
 
-.chip:active .face {
-  transform: scale(0.96);
-}
-
-/* Escolhido: pílula cheia na cor de destaque e o número no tom do texto sobre ela (forma e contraste, não só o matiz). */
-.chip[aria-pressed='true'] .face {
+/* O contorno duplo também identifica a escolha sem depender apenas da cor. */
+.chip[aria-pressed='true'] {
   border-color: var(--a-accent);
   background: var(--a-accent);
   color: var(--a-on-accent);
+  box-shadow: inset 0 0 0 2px var(--a-on-accent);
 }
 
 .chip[aria-pressed='true'] .count {
-  color: inherit;
+  background: var(--a-on-accent);
+  color: var(--a-accent);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--a-accent);
+  outline-offset: 3px;
 }
 
 @media (hover: hover) {
-  .chip[aria-pressed='false']:hover .face {
-    border-color: color-mix(in srgb, var(--a-accent) 45%, var(--a-line));
+  .chip[aria-pressed='false']:hover {
+    border-color: var(--a-accent);
+    background: var(--a-elev);
+  }
+}
+
+@media (max-width: 350px) {
+  .chips {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .face {
+  .chip {
     transition: none;
-  }
-
-  .chip:active .face {
-    transform: none;
   }
 }

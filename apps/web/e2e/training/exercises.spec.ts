@@ -1,4 +1,5 @@
-import { expect, test } from '../fixtures';
+import { join } from 'node:path';
+import { expect, screenshot, test } from '../fixtures';
 import { SEED_EXERCISE_IDS } from './support/training-seed';
 import {
   openTraining,
@@ -94,10 +95,10 @@ test.describe('exercícios: lista, busca e ficha', () => {
     await expect(page.getByRole('button', { name: /^Mostrar mais/ })).toHaveCount(0);
   });
 
-  test('a ficha mostra a ilustração e o crédito, o passo a passo e a origem', async ({
-    page,
-    context,
-  }) => {
+  test('a ficha mostra ilustração, músculos e passo a passo sem créditos inline', async (
+    { page, context },
+    info,
+  ) => {
     await startTraining(context, page);
     await openTraining(page, '/treino/exercicios');
     await waitForCatalog(page);
@@ -106,32 +107,44 @@ test.describe('exercícios: lista, busca e ficha', () => {
     await rows(page).first().click();
     await expect(page.getByRole('heading', { name: 'Supino reto com barra' })).toBeVisible();
     await expect(page.locator('app-exercise-illustration img').first()).toBeVisible();
-    await expect(page.getByText('Ilustração: Everkinetic')).toBeVisible();
     await expect(page.getByText('Tríceps · secundário')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Músculos trabalhados' })).toBeVisible();
+    await expect
+      .poll(() =>
+        page
+          .locator('.hero .art')
+          .evaluate((node) => node.nextElementSibling?.classList.contains('chips')),
+      )
+      .toBe(true);
+    await expect(page.locator('.muscle-figure')).toHaveCount(2);
+    await expect(page.getByText('Ilustração: Everkinetic')).toHaveCount(0);
+    if (process.env['TRAINING_SHOTS_DIR']) {
+      await screenshot(
+        page,
+        join(process.env['TRAINING_SHOTS_DIR'], `ficha-exercicio-${info.project.name}.png`),
+        { fullPage: true },
+      );
+    }
     await expect(page.locator('.steps li')).toHaveCount(3);
     await page.getByRole('button', { name: 'Ver todos os 5 passos' }).click();
     await expect(page.locator('.steps li')).toHaveCount(5);
-    await expect(page.getByText('Origem: free-exercise-db (domínio público)')).toBeVisible();
+    await expect(page.locator('.origin')).toHaveCount(0);
   });
 
-  test('a ficha sem ilustração mostra só o texto', async ({ page, context }) => {
+  test('a ficha sem ilustração mantém a figura dos músculos', async ({ page, context }) => {
     await startTraining(context, page);
     await openTraining(page, `/treino/exercicios/${SEED_EXERCISE_IDS.plank}`);
     await expect(page.getByRole('heading', { name: 'Prancha isométrica' })).toBeVisible();
     await expect(page.locator('app-exercise-illustration')).toHaveCount(0);
-    await expect(page.getByText('Ilustração: Everkinetic')).toHaveCount(0);
+    await expect(page.locator('.muscle-figure')).toHaveCount(2);
   });
 
-  test('a ficha de um exercício do wger mostra o autor e a licença com link', async ({
-    page,
-    context,
-  }) => {
+  test('os créditos individuais do wger ficam na tela de créditos', async ({ page, context }) => {
     await startTraining(context, page);
     await openTraining(page, `/treino/exercicios/${SEED_EXERCISE_IDS.wger}`);
-    await expect(page.getByText('Origem: wger. Autor: Maria Souza.')).toBeVisible();
-    const link = page.getByRole('link', { name: 'CC-BY-SA 4' });
-    await expect(link).toHaveAttribute('href', 'https://creativecommons.org/licenses/by-sa/4.0/');
-    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(page.locator('.origin')).toHaveCount(0);
+    await expect(page.getByText('Maria Souza')).toHaveCount(0);
+    await expect(page.getByText('CC-BY-SA 4')).toHaveCount(0);
   });
 
   test('adiciona o exercício a uma rotina com 3 séries de 8 a 12 repetições', async ({

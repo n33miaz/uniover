@@ -20,15 +20,16 @@ import type { LocalRoutine } from '../../data/routines/routine';
 import { TrainingSync } from '../../data/sync/training-sync';
 import type { PersonalRecords } from '../../domain/progress/records';
 import type { DailyPoint } from '../../domain/progress/series';
+import type { MuscleId } from '../../domain/taxonomy';
 import {
   DEFAULT_STEP_KG,
   effectiveStepKg,
   equipmentLabel,
   isEquipmentId,
+  isMuscleId,
   muscleLabel,
   recordTypeLabel,
 } from '../../domain/taxonomy';
-import { ExerciseCreditLine } from '../../illustrations/exercise-credit-line';
 import { ExerciseIllustration } from '../../illustrations/exercise-illustration';
 import { illustrationFor } from '../../illustrations/illustration-map';
 import { BackNavigation } from '../../shell/back-navigation';
@@ -36,6 +37,7 @@ import { awaitingFirstPull } from '../../shell/first-pull';
 import { formatDayMonth, formatKg } from '../../shell/format';
 import { TrainingGlyph } from '../../shell/training-glyph';
 import { TrainingSheet } from '../../shell/training-sheet';
+import { ExerciseMuscles } from './exercise-muscles';
 
 /** Quantos passos de "Como fazer" aparecem antes do "Ver todos". */
 export const STEPS_PREVIEW = 3;
@@ -73,7 +75,7 @@ export function historyRows(points: readonly DailyPoint[], limit = HISTORY_DAYS)
  */
 @Component({
   selector: 'app-exercise-detail-page',
-  imports: [RouterLink, TrainingGlyph, TrainingSheet, ExerciseIllustration, ExerciseCreditLine],
+  imports: [RouterLink, TrainingGlyph, TrainingSheet, ExerciseIllustration, ExerciseMuscles],
   templateUrl: './detail.page.html',
   styleUrl: './detail.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -119,6 +121,13 @@ export class ExerciseDetailPage {
   protected readonly hasHistory = computed(
     () => (this.records()?.maxWeight ?? null) !== null || this.history().length > 0,
   );
+  protected readonly primaryMuscles = computed(
+    () => this.exercise()?.primaryMuscles.filter(isMuscleId) ?? [],
+  );
+  protected readonly secondaryMuscles = computed<readonly MuscleId[]>(() => {
+    const exercise = this.exercise();
+    return exercise ? exercise.secondaryMuscles.filter(isMuscleId) : [];
+  });
 
   protected readonly chips = computed(() => {
     const exercise = this.exercise();
@@ -163,22 +172,6 @@ export class ExerciseDetailPage {
     }
     return $localize`:@@training.detail.step-none:sem salto sugerido`;
   });
-
-  protected readonly originText = computed(() => {
-    const exercise = this.exercise();
-    if (!exercise) return '';
-    if (exercise.source === 'own') {
-      return $localize`:@@training.detail.origin-own:Exercício criado por você neste aparelho.`;
-    }
-    if (exercise.source === 'wger') {
-      const author = exercise.licenseAuthor ?? '';
-      return $localize`:@@training.detail.origin-wger:Origem: wger. Autor: ${author}:author:.`;
-    }
-    return $localize`:@@training.detail.origin-catalog:Origem: free-exercise-db (domínio público); texto em português nosso.`;
-  });
-
-  /** Link que sai do app: sem acesso à janela de origem e sem referência. */
-  protected readonly linkRel = 'noopener noreferrer';
 
   protected readonly stepsPreview = STEPS_PREVIEW;
   protected readonly backLabel = $localize`:@@training.detail.back:Voltar para Exercícios`;

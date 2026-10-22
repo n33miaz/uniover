@@ -8,6 +8,8 @@ export const PWA_ENABLED = new InjectionToken<boolean>('PWA_ENABLED', {
   factory: () => !isDevMode(),
 });
 
+export const UPDATE_ACTIVATION_TIMEOUT_MS = 15_000;
+
 /**
  * Cuida do ciclo de vida do service worker: registra, avisa quando há versão nova esperando e, quando o
  * usuário aceita, manda o worker novo assumir e recarrega a página uma vez.
@@ -17,14 +19,22 @@ export class PwaUpdateService {
   private readonly win = inject(DOCUMENT).defaultView;
   private readonly enabled = inject(PWA_ENABLED);
   private registration: ServiceWorkerRegistration | undefined;
+  private started = false;
+  private registering = false;
   private applying = false;
+  private reloading = false;
+  private activationTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly watchedWorkers = new WeakSet<ServiceWorker>();
 
   readonly updateReady = signal(false);
+  readonly applyingUpdate = signal(false);
+  readonly updateError = signal(false);
 
   /** Chamado na inicialização do app; não bloqueia a primeira tela. */
   start(): void {
     const win = this.win;
-    if (!win || !this.enabled) return;
+    if (this.started || !win || !this.enabled) return;
+    this.started = true;
     const run = () => void this.register(win);
     if (win.document.readyState === 'complete') run();
     else win.addEventListener('load', run, { once: true });
@@ -32,28 +42,63 @@ export class PwaUpdateService {
 
   /** O usuário aceitou a versão nova: o worker que espera passa a controlar e a página recarrega. */
   applyUpdate(): void {
+    if (this.applyingUpdate()) return;
     const waiting = this.registration?.waiting;
-    if (!waiting) return;
+    if (!waiting) {
+      this.updateError.set(true);
+      return;
+    }
+    this.updateError.set(false);
+    this.applyingUpdate.set(true);
     this.applying = true;
-    waiting.postMessage({ type: 'SKIP_WAITING' });
+    try {
+      waiting.postMessage({ type: 'SKIP_WAITING' });
+    } catch {
+      this.applying = false;
+      this.applyingUpdate.set(false);
+      this.updateError.set(true);
+      return;
+    }
+    this.activationTimer = this.win?.setTimeout(() => {
+      this.applyingUpdate.set(false);
+      this.updateError.set(true);
+    }, UPDATE_ACTIVATION_TIMEOUT_MS);
   }
 
   private async register(win: Window): Promise<void> {
+    if (this.registering || this.registration) return;
+    this.registering = true;
     const registration = await registerServiceWorker(win, this.enabled);
+    this.registering = false;
     if (!registration) return;
     this.registration = registration;
     const container = win.navigator.serviceWorker;
 
     // Sem controlador ainda é a primeira instalação: não há "versão nova" para oferecer.
-    if (registration.waiting && container.controller) this.updateReady.set(true);
-    registration.addEventListener('updatefound', () => {
+    const checkWaiting = () => {
+      if (registration.waiting && container.controller) this.updateReady.set(true);
+    };
+    const watchInstalling = () => {
       const incoming = registration.installing;
-      incoming?.addEventListener('statechange', () => {
+      if (!incoming || this.watchedWorkers.has(incoming)) return;
+      this.watchedWorkers.add(incoming);
+      const checkInstalled = () => {
         if (incoming.state === 'installed' && container.controller) this.updateReady.set(true);
-      });
-    });
+      };
+      incoming.addEventListener('statechange', checkInstalled);
+      // The installing worker can finish before updatefound listeners are attached.
+      checkInstalled();
+    };
+    registration.addEventListener('updatefound', watchInstalling);
+    // register() may resolve after updatefound, so inspect both states already in progress.
+    watchInstalling();
+    checkWaiting();
     container.addEventListener('controllerchange', () => {
-      if (this.applying) win.location.reload();
+      if (this.applying && !this.reloading) {
+        this.reloading = true;
+        if (this.activationTimer) win.clearTimeout(this.activationTimer);
+        win.location.reload();
+      }
     });
     // Ao voltar para o app, confere se há versão nova (o navegador só confere sozinho ao navegar).
     win.document.addEventListener('visibilitychange', () => {
