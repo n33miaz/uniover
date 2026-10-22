@@ -15,6 +15,21 @@ const UA = {
 
 const stored = () => JSON.parse(localStorage.getItem(INSTALL_HINT_KEY) ?? 'null');
 
+function holdExitAnimation(dialog: HTMLDialogElement): () => void {
+  let finish!: () => void;
+  const finished = new Promise<void>((resolve) => (finish = resolve));
+  Object.defineProperty(dialog, 'getAnimations', {
+    configurable: true,
+    value: () => [
+      {
+        effect: { getComputedTiming: () => ({ iterations: 1 }) },
+        finished,
+      } as unknown as Animation,
+    ],
+  });
+  return finish;
+}
+
 describe('InstallHintSheet', () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => {
@@ -90,9 +105,10 @@ describe('InstallHintSheet', () => {
       ]);
       expect(el.textContent).toContain('role a lista de ações para baixo');
       expect(el.querySelectorAll('.glyph svg')).toHaveLength(3);
-      // Só as duas saídas: nada de "Instalar" nem "Copiar endereço" no Safari.
+      // No Safari há também a confirmação de quem já adicionou o atalho à tela de início.
       expect(buttons().map((b) => b.textContent?.trim())).toEqual([
         'Agora não',
+        'Já instalei',
         'Não mostrar de novo',
       ]);
     });
@@ -229,7 +245,23 @@ describe('InstallHintSheet', () => {
       await fixture.whenStable();
       expect(closed()).toBe(1);
       expect(dialog.hasAttribute('open')).toBe(false);
-      expect(stored()).toBeNull();
+      expect(stored()).toEqual({ installed: true });
+    });
+
+    it('mantém o botão nativo e não troca pelas instruções durante a animação de saída', async () => {
+      const { button, fixture, dialog, closed, el } = await renderNative('accepted');
+      const finishAnimation = holdExitAnimation(dialog);
+
+      button('Instalar').click();
+      await fixture.whenStable();
+      expect(dialog.classList.contains('closing')).toBe(true);
+      expect(el.querySelector('ol')).toBeNull();
+      expect(button('Instalar')).toBeDefined();
+      expect(closed()).toBe(0);
+
+      finishAnimation();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(closed()).toBe(1);
     });
 
     it('recusado no pedido do navegador, a folha sai e o adiamento de 14 dias vale', async () => {
@@ -260,6 +292,37 @@ describe('InstallHintSheet', () => {
       await fixture.whenStable();
       expect(closed()).toBe(1);
       expect(stored()).toEqual({ never: true });
+    });
+
+    it('no iOS, "Já instalei" confirma e impede a folha automática em sessões futuras', async () => {
+      const { button, fixture, closed, hint } = await render({ userAgent: UA.safari });
+      button('Já instalei').click();
+      await fixture.whenStable();
+      expect(closed()).toBe(1);
+      expect(hint.mode()).toBe('none');
+      expect(stored()).toEqual({ installed: true });
+
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [{ provide: INSTALL_ENV, useValue: { userAgent: UA.safari } }],
+      });
+      expect(TestBed.inject(InstallHintService).autoOpenAllowed()).toBe(false);
+    });
+
+    it('mantém o conteúdo do iOS visível até terminar a animação de saída', async () => {
+      const { button, fixture, dialog, closed, el } = await render({ userAgent: UA.safari });
+      const finishAnimation = holdExitAnimation(dialog);
+
+      button('Já instalei').click();
+      fixture.detectChanges();
+      expect(dialog.classList.contains('closing')).toBe(true);
+      expect(el.querySelector('.steps')).not.toBeNull();
+      expect(button('Já instalei')).toBeDefined();
+      expect(closed()).toBe(0);
+
+      finishAnimation();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(closed()).toBe(1);
     });
 
     it('Esc vale como "Agora não": o evento cancel é barrado (quem tira a folha é o hospedeiro) e a dica adia', async () => {
