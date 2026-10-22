@@ -11,6 +11,7 @@ using UniOver.IntegrationTests.Identity.Passkeys;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Tv;
 using UniOver.Modules.Tv.Domain;
+using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
 
 namespace UniOver.IntegrationTests.Tv;
@@ -415,7 +416,11 @@ public sealed class TvConfigTests(PostgresFixture postgres)
         }
 
         var before = await app.TvFingerprintAsync();
-        foreach (var bad in new[] { new string('n', 61), "TV\nsala", "TV\u0000sala" })
+        foreach (var bad in new[]
+        {
+            new string('n', 61), "TV\nsala", "TV\u0000sala",
+            "\U0000202Eatv", "TV\U0000200Bsala", "TV\U0000200Esala", "TV\U00002028sala", "\U0000FEFFTV",
+        })
         {
             using var response = await BindAsync(app, new { agentSlug = TvApp.AgentSlug, name = bad });
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -453,6 +458,90 @@ public sealed class TvConfigTests(PostgresFixture postgres)
     {
         public Task RecordAsync(CommandAuditEntry entry, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("banco fora do ar");
+    }
+
+    /// <summary>Roda uma ação uma única vez, no instante em que o primeiro salvamento está prestes a gravar.</summary>
+    private sealed class RaceHook
+    {
+        private int _used;
+
+        public Func<Task>? BeforeTheFirstSave { get; set; }
+
+        public async Task RunOnceAsync()
+        {
+            if (Interlocked.Exchange(ref _used, 1) == 0 && BeforeTheFirstSave is { } action)
+            {
+                await action();
+            }
+        }
+    }
+
+    /// <summary>
+    /// A auditoria de verdade, só que o outro salvamento "ganha a corrida" um instante antes: o <c>RecordAsync</c> é o
+    /// último passo antes do único <c>SaveChanges</c> da troca, então a linha do concorrente já existe quando o nosso
+    /// INSERT chega ao índice único. Sempre acontece, sem depender de sorte de agendamento.
+    /// </summary>
+    private sealed class RacingAudit(TvDbContext db, RaceHook hook) : ITvCommandAudit
+    {
+        public async Task RecordAsync(CommandAuditEntry entry, CancellationToken cancellationToken)
+        {
+            await hook.RunOnceAsync();
+            db.CommandAudit.Add(entry);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private static TvAppOptions Racing(RaceHook hook) => new()
+    {
+        ConfigureServices = services =>
+        {
+            services.RemoveAll<ITvCommandAudit>();
+            services.AddSingleton(hook);
+            services.AddScoped<ITvCommandAudit, RacingAudit>();
+        },
+    };
+
+    private static string InsertDefaultTv(string agentSlug) =>
+        "INSERT INTO tv.tvs (id, name, agent_slug, is_default, created_at, updated_at, updated_by) " +
+        $"VALUES (gen_random_uuid(), 'TV', '{agentSlug}', true, now(), now(), gen_random_uuid())";
+
+    [Fact]
+    public async Task Put_WhenTwoFirstSavesRace_AndTheOtherChoseTheSameComputer_IsIdempotentWithoutAServerError()
+    {
+        var hook = new RaceHook();
+        await using var app = await TvApp.StartAsync(postgres, Racing(hook));
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        var second = await app.PairAsync("PC Novo");
+        hook.BeforeTheFirstSave = () => app.ExecuteSqlAsync(InsertDefaultTv(second.Slug));
+
+        using var response = await BindAsync(app, new { agentSlug = second.Slug });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "a corrida não pode virar erro 500");
+        (await TvApp.JsonAsync(response)).GetProperty("agentSlug").GetString().Should().Be(second.Slug);
+        await using var db = app.Db();
+        (await db.Tvs.AsNoTracking().SingleAsync(Ct)).AgentSlug.Should().Be(second.Slug);
+        (await db.CommandAudit.CountAsync(a => a.Command == "tv.config.bind", Ct)).Should().Be(0, "nada foi trocado por este pedido: não há o que registrar");
+        (await GetConfigAsync(app)).GetProperty("source").GetString().Should().Be("saved");
+    }
+
+    [Fact]
+    public async Task Put_WhenTwoFirstSavesRace_AndTheOtherChoseAnotherComputer_TheLastOneWins_AndIsAudited()
+    {
+        var hook = new RaceHook();
+        await using var app = await TvApp.StartAsync(postgres, Racing(hook));
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        var second = await app.PairAsync("PC Novo");
+        hook.BeforeTheFirstSave = () => app.ExecuteSqlAsync(InsertDefaultTv(TvApp.AgentSlug));
+
+        using var response = await BindAsync(app, new { agentSlug = second.Slug });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await TvApp.JsonAsync(response)).GetProperty("agentSlug").GetString().Should().Be(second.Slug);
+        await using var db = app.Db();
+        (await db.Tvs.AsNoTracking().SingleAsync(Ct)).AgentSlug.Should().Be(second.Slug, "a troca de quem chegou por último vale");
+        var audit = await db.CommandAudit.AsNoTracking().SingleAsync(a => a.Command == "tv.config.bind", Ct);
+        audit.Detail.Should().Be(second.Slug, "a troca que valeu tem o seu registro, uma vez só");
+        (await GetConfigAsync(app)).GetProperty("agentSlug").GetString().Should().Be(second.Slug);
     }
 
     // ----- o efeito na TV -----
