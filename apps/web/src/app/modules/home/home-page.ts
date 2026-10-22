@@ -39,6 +39,12 @@ export function dayPartFor(hour: number): DayPart {
   return 'evening';
 }
 
+/** Só o primeiro nome, para a saudação ("Neemias Cormino Manso" vira "Neemias"); `null` se não há nome. */
+export function firstNameOf(name: string | null): string | null {
+  const first = name?.trim().split(/\s+/)[0];
+  return first ? first : null;
+}
+
 /** Saudação pela hora do dia: manhã até 11h59, tarde até 17h59, noite no resto. */
 export function greetingFor(hour: number): string {
   switch (dayPartFor(hour)) {
@@ -103,7 +109,7 @@ export class HomePage {
 
   protected readonly greeting = computed(() => {
     const base = greetingFor(this.clock.now().getHours());
-    const name = this.status().userName;
+    const name = firstNameOf(this.status().userName);
     return name ? `${base}, ${name}` : base;
   });
 
