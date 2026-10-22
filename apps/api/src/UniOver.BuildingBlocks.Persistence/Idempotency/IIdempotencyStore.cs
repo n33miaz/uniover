@@ -12,7 +12,7 @@ public enum IdempotencyBeginOutcome
     InProgress,
 }
 
-public sealed record IdempotencyBeginResult(IdempotencyBeginOutcome Outcome, IdempotencyRecord? Existing);
+public sealed record IdempotencyBeginResult(IdempotencyBeginOutcome Outcome, IdempotencyRecord? Existing, Guid? LeaseId = null);
 
 /// <summary>Registro das chaves de idempotência de um módulo.</summary>
 public interface IIdempotencyStore
@@ -27,10 +27,10 @@ public interface IIdempotencyStore
 
     /// <summary>Guarda a resposta e marca a chave como concluída.</summary>
     Task CompleteAsync(
-        Guid userId, Guid key, int statusCode, string? responseBody, string? contentType, string? location, CancellationToken cancellationToken);
+        Guid userId, Guid key, Guid leaseId, int statusCode, string? responseBody, string? contentType, string? location, CancellationToken cancellationToken);
 
     /// <summary>Apaga uma chave ainda "em andamento" (o envio falhou de forma que o reenvio deve executar de novo).</summary>
-    Task ReleaseAsync(Guid userId, Guid key, CancellationToken cancellationToken);
+    Task ReleaseAsync(Guid userId, Guid key, Guid leaseId, CancellationToken cancellationToken);
 }
 
 /// <summary>A mesma loja, amarrada ao <see cref="ModuleDbContext"/> de um módulo (é o que o DI entrega).</summary>

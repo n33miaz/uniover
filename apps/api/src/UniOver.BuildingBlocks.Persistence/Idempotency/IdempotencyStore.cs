@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -40,21 +41,23 @@ public sealed class IdempotencyStore<TContext>(IServiceScopeFactory scopes, Time
             // Limpeza oportunista: quem cria uma chave nova paga a faxina das vencidas.
             await records.Where(r => r.ExpiresAt <= now).ExecuteDeleteAsync(cancellationToken);
 
-            records.Add(new IdempotencyRecord
+            var record = new IdempotencyRecord
             {
                 UserId = userId,
                 Key = key,
                 Method = method,
                 Route = route,
                 RequestHash = requestHash,
+                Generation = Guid.NewGuid(),
                 CreatedAt = now,
                 ExpiresAt = now + IdempotencyLimits.Retention,
-            });
+            };
+            records.Add(record);
 
             try
             {
                 await context.SaveChangesAsync(cancellationToken);
-                return new IdempotencyBeginResult(IdempotencyBeginOutcome.Started, null);
+                return new IdempotencyBeginResult(IdempotencyBeginOutcome.Started, null, record.Generation);
             }
             catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: UniqueViolation })
             {
@@ -74,27 +77,30 @@ public sealed class IdempotencyStore<TContext>(IServiceScopeFactory scopes, Time
                 return new IdempotencyBeginResult(IdempotencyBeginOutcome.Completed, existing);
             }
 
+            if (!SameFingerprint(existing, method, route, requestHash))
+            {
+                return new IdempotencyBeginResult(IdempotencyBeginOutcome.InProgress, existing);
+            }
+
             if (existing.CreatedAt > now - IdempotencyLimits.InProgressTimeout)
             {
                 return new IdempotencyBeginResult(IdempotencyBeginOutcome.InProgress, existing);
             }
 
             // "Em andamento" parado: o processo que a abriu caiu. Tomar a chave é uma atualização condicional (só
-            // vence quem encontrar a linha ainda intacta); ler e depois gravar deixaria dois envios vencerem.
-            var createdAt = existing.CreatedAt;
+            // vence quem encontrar a geração ainda intacta); ler e depois gravar deixaria dois envios vencerem.
+            var generation = Guid.NewGuid();
             var taken = await records
-                .Where(r => r.UserId == userId && r.Key == key && r.CompletedAt == null && r.CreatedAt == createdAt)
+                .Where(r => r.UserId == userId && r.Key == key && r.CompletedAt == null && r.Generation == existing.Generation)
                 .ExecuteUpdateAsync(
                     s => s
-                        .SetProperty(r => r.Method, method)
-                        .SetProperty(r => r.Route, route)
-                        .SetProperty(r => r.RequestHash, requestHash)
+                        .SetProperty(r => r.Generation, generation)
                         .SetProperty(r => r.CreatedAt, now)
                         .SetProperty(r => r.ExpiresAt, now + IdempotencyLimits.Retention),
                     cancellationToken);
             if (taken == 1)
             {
-                return new IdempotencyBeginResult(IdempotencyBeginOutcome.Started, null);
+                return new IdempotencyBeginResult(IdempotencyBeginOutcome.Started, null, generation);
             }
         }
 
@@ -103,14 +109,14 @@ public sealed class IdempotencyStore<TContext>(IServiceScopeFactory scopes, Time
     }
 
     public async Task CompleteAsync(
-        Guid userId, Guid key, int statusCode, string? responseBody, string? contentType, string? location, CancellationToken cancellationToken)
+        Guid userId, Guid key, Guid leaseId, int statusCode, string? responseBody, string? contentType, string? location, CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
         await using var scope = scopes.CreateAsyncScope();
         var records = scope.ServiceProvider.GetRequiredService<TContext>().Set<IdempotencyRecord>();
 
         await records
-            .Where(r => r.UserId == userId && r.Key == key && r.CompletedAt == null)
+            .Where(r => r.UserId == userId && r.Key == key && r.Generation == leaseId && r.CompletedAt == null)
             .ExecuteUpdateAsync(
                 s => s
                     .SetProperty(r => r.StatusCode, statusCode)
@@ -121,15 +127,20 @@ public sealed class IdempotencyStore<TContext>(IServiceScopeFactory scopes, Time
                 cancellationToken);
     }
 
-    public async Task ReleaseAsync(Guid userId, Guid key, CancellationToken cancellationToken)
+    public async Task ReleaseAsync(Guid userId, Guid key, Guid leaseId, CancellationToken cancellationToken)
     {
         await using var scope = scopes.CreateAsyncScope();
         var records = scope.ServiceProvider.GetRequiredService<TContext>().Set<IdempotencyRecord>();
 
         await records
-            .Where(r => r.UserId == userId && r.Key == key && r.CompletedAt == null)
+            .Where(r => r.UserId == userId && r.Key == key && r.Generation == leaseId && r.CompletedAt == null)
             .ExecuteDeleteAsync(cancellationToken);
     }
+
+    private static bool SameFingerprint(IdempotencyRecord record, string method, string route, byte[] requestHash) =>
+        string.Equals(record.Method, method, StringComparison.Ordinal)
+        && string.Equals(record.Route, route, StringComparison.Ordinal)
+        && CryptographicOperations.FixedTimeEquals(record.RequestHash, requestHash);
 }
 
 public static class IdempotencyServiceCollectionExtensions

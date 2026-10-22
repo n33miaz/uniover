@@ -43,6 +43,12 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("content_type");
 
+                    b.Property<Guid>("Generation")
+                        .ValueGeneratedOnAdd()
+                        .HasDefaultValueSql("gen_random_uuid()")
+                        .HasColumnType("uuid")
+                        .HasColumnName("generation");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");

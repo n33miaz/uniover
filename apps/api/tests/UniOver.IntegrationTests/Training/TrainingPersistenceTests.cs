@@ -45,6 +45,31 @@ public sealed class TrainingPersistenceTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task IdempotencyGeneration_DefaultKeepsOlderInsertShapeCompatible()
+    {
+        var database = await MigratedAsync();
+        var userId = Guid.NewGuid();
+        var key = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+
+        await using var connection = new NpgsqlConnection(database.OwnerConnection);
+        await connection.OpenAsync(Ct);
+        await using var command = new NpgsqlCommand(
+            "INSERT INTO training.idempotency_keys (user_id, key, method, route, request_hash, created_at, expires_at) "
+            + "VALUES (@user_id, @key, 'POST', '/api/test', @request_hash, @created_at, @expires_at) RETURNING generation",
+            connection);
+        command.Parameters.AddWithValue("user_id", userId);
+        command.Parameters.AddWithValue("key", key);
+        command.Parameters.AddWithValue("request_hash", new byte[32]);
+        command.Parameters.AddWithValue("created_at", now);
+        command.Parameters.AddWithValue("expires_at", now.AddDays(1));
+
+        var generation = (Guid)(await command.ExecuteScalarAsync(Ct))!;
+
+        generation.Should().NotBe(Guid.Empty);
+    }
+
+    [Fact]
     public async Task Migration_LeavesNoForeignKeyOutsideTheTrainingSchema()
     {
         var database = await MigratedAsync();

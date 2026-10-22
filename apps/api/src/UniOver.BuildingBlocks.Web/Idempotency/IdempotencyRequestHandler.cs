@@ -63,7 +63,8 @@ internal static class IdempotencyRequestHandler<TContext>
         switch (begin.Outcome)
         {
             case IdempotencyGatewayOutcome.Started:
-                await ExecuteAndStoreAsync(context, inner, gateway, userId.Value, key);
+                await ExecuteAndStoreAsync(context, inner, gateway, userId.Value, key,
+                    begin.LeaseId ?? throw new InvalidOperationException("A loja iniciou uma chave sem identificador de execução."));
                 return;
 
             case IdempotencyGatewayOutcome.Completed or IdempotencyGatewayOutcome.InProgress
@@ -117,7 +118,7 @@ internal static class IdempotencyRequestHandler<TContext>
         && CryptographicOperations.FixedTimeEquals(existing.RequestHash, requestHash);
 
     private static async Task ExecuteAndStoreAsync(
-        HttpContext context, RequestDelegate inner, IIdempotencyGateway<TContext> gateway, Guid userId, Guid key)
+        HttpContext context, RequestDelegate inner, IIdempotencyGateway<TContext> gateway, Guid userId, Guid key, Guid leaseId)
     {
         var response = context.Response;
         var original = response.Body;
@@ -131,7 +132,7 @@ internal static class IdempotencyRequestHandler<TContext>
         catch
         {
             response.Body = original;
-            await TryReleaseAsync(gateway, userId, key);
+            await TryReleaseAsync(gateway, userId, key, leaseId);
             throw;
         }
 
@@ -139,7 +140,7 @@ internal static class IdempotencyRequestHandler<TContext>
         var status = response.StatusCode;
         if (!IsStorable(status))
         {
-            await TryReleaseAsync(gateway, userId, key);
+            await TryReleaseAsync(gateway, userId, key, leaseId);
             return;
         }
 
@@ -148,7 +149,7 @@ internal static class IdempotencyRequestHandler<TContext>
         var location = response.Headers.Location.ToString();
 
         // Sem o token da requisição: se o cliente desistiu, o resultado ainda precisa ser guardado.
-        await gateway.CompleteAsync(userId, key, status, body, contentType,
+        await gateway.CompleteAsync(userId, key, leaseId, status, body, contentType,
             location.Length == 0 ? null : Truncate(location, 2000), CancellationToken.None);
     }
 
@@ -160,11 +161,11 @@ internal static class IdempotencyRequestHandler<TContext>
         status < StatusCodes.Status500InternalServerError
         && status is not (StatusCodes.Status408RequestTimeout or TooEarly or StatusCodes.Status429TooManyRequests);
 
-    private static async Task TryReleaseAsync(IIdempotencyGateway<TContext> gateway, Guid userId, Guid key)
+    private static async Task TryReleaseAsync(IIdempotencyGateway<TContext> gateway, Guid userId, Guid key, Guid leaseId)
     {
         try
         {
-            await gateway.ReleaseAsync(userId, key, CancellationToken.None);
+            await gateway.ReleaseAsync(userId, key, leaseId, CancellationToken.None);
         }
 #pragma warning disable CA1031 // Liberar é melhor esforço: se falhar, o "em andamento" vence sozinho em 60 s.
         catch (Exception)
