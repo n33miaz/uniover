@@ -87,6 +87,7 @@ describe('app routes for a guest', () => {
     '/ajustes/seguranca',
     '/ajustes/pessoas',
     '/ajustes/aparelhos',
+    '/ajustes/auditoria',
     '/ajustes/sistema',
     '/nada',
   ];

@@ -1,0 +1,201 @@
+<dialog
+  #dialog
+  class="sheet ui-dialog"
+  aria-labelledby="audit-filter-title"
+  (cancel)="cancel($event)"
+>
+  <span class="grabber" aria-hidden="true"></span>
+  <form (submit)="apply($event)" novalidate>
+    <div class="head">
+      <h2 id="audit-filter-title" tabindex="-1" autofocus i18n="@@settings.audit.filter.title">
+        Filtros
+      </h2>
+      <button
+        type="button"
+        class="clear ui-btn secondary"
+        [disabled]="!hasFilters() || leaving()"
+        (click)="clear()"
+        i18n="@@settings.audit.filter.clear"
+      >
+        Limpar
+      </button>
+    </div>
+
+    <fieldset class="field">
+      <legend class="ui-section-label" i18n="@@settings.audit.filter.person">Pessoa</legend>
+      <div class="choices">
+        <label class="choice">
+          <input
+            type="radio"
+            name="audit-filter-person"
+            [checked]="draft().person === null"
+            (change)="setPerson(null)"
+          />
+          <app-settings-glyph class="tick" name="check" />
+          <span i18n="@@settings.audit.filter.person-all">Todas as pessoas</span>
+        </label>
+        @for (person of personChoices(); track person.id) {
+          <label class="choice">
+            <input
+              type="radio"
+              name="audit-filter-person"
+              [checked]="draft().person?.id === person.id"
+              (change)="setPerson(person.id)"
+            />
+            <app-settings-glyph class="tick" name="check" />
+            <span>{{ personLabel(person) }}</span>
+          </label>
+        }
+      </div>
+      @if (people() === null && !peopleFailed()) {
+        <p class="note" role="status">
+          <span class="ui-spinner" aria-hidden="true"></span>
+          <span i18n="@@settings.audit.filter.people-loading">Carregando as pessoas…</span>
+        </p>
+      } @else if (peopleFailed()) {
+        <p class="note bad" role="status">
+          <span i18n="@@settings.audit.filter.people-failed"
+            >Não deu para carregar as pessoas.</span
+          >
+          <button
+            type="button"
+            class="retry ui-btn secondary"
+            (click)="retryPeople.emit()"
+            i18n="@@settings.audit.filter.people-retry"
+          >
+            Tentar de novo
+          </button>
+        </p>
+      }
+    </fieldset>
+
+    @if (moduleChoices().length > 0) {
+      <fieldset class="field">
+        <legend class="ui-section-label" i18n="@@settings.audit.filter.module">Módulo</legend>
+        <div class="choices">
+          @for (choice of moduleChoices(); track choice.code) {
+            <label class="choice">
+              <input
+                type="checkbox"
+                [checked]="hasModule(choice.code)"
+                (change)="toggleModule(choice.code)"
+              />
+              <app-settings-glyph class="tick" name="check" />
+              <span>{{ choice.label }}</span>
+            </label>
+          }
+        </div>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend class="ui-section-label" i18n="@@settings.audit.filter.action">Ação</legend>
+        @if (actionGroups().length === 0) {
+          <p class="note" i18n="@@settings.audit.filter.action-hint">
+            Escolha um módulo para ver as ações dele.
+          </p>
+        } @else {
+          <div class="choices">
+            <label class="choice">
+              <input
+                type="radio"
+                name="audit-filter-action"
+                [checked]="draft().action === null"
+                (change)="setAction(null)"
+              />
+              <app-settings-glyph class="tick" name="check" />
+              <span i18n="@@settings.audit.filter.action-all">Todas as ações</span>
+            </label>
+          </div>
+          @for (group of actionGroups(); track group.module) {
+            @if (actionGroups().length > 1) {
+              <p class="group-label">{{ group.label }}</p>
+            }
+            <div class="choices">
+              @for (action of group.actions; track action.code) {
+                <label class="choice">
+                  <input
+                    type="radio"
+                    name="audit-filter-action"
+                    [checked]="draft().action === action.code"
+                    (change)="setAction(action.code)"
+                  />
+                  <app-settings-glyph class="tick" name="check" />
+                  <span>{{ action.label }}</span>
+                </label>
+              }
+            </div>
+          }
+        }
+      </fieldset>
+    }
+
+    <fieldset class="field">
+      <legend class="ui-section-label" i18n="@@settings.audit.filter.outcome">Resultado</legend>
+      <div class="choices">
+        <label class="choice">
+          <input
+            type="radio"
+            name="audit-filter-outcome"
+            [checked]="draft().outcome === null"
+            (change)="setOutcome(null)"
+          />
+          <app-settings-glyph class="tick" name="check" />
+          <span i18n="@@settings.audit.filter.outcome-all">Todos</span>
+        </label>
+        @for (outcome of outcomes(); track outcome) {
+          <label class="choice">
+            <input
+              type="radio"
+              name="audit-filter-outcome"
+              [checked]="draft().outcome === outcome"
+              (change)="setOutcome(outcome)"
+            />
+            <app-settings-glyph class="tick" name="check" />
+            <span>{{ outcomeLabel(outcome) }}</span>
+          </label>
+        }
+      </div>
+    </fieldset>
+
+    <fieldset class="field">
+      <legend class="ui-section-label" i18n="@@settings.audit.filter.period">Período</legend>
+      <div class="choices">
+        @for (period of periods; track period) {
+          <label class="choice">
+            <input
+              type="radio"
+              name="audit-filter-period"
+              [checked]="draft().period === period"
+              (change)="setPeriod(period)"
+            />
+            <app-settings-glyph class="tick" name="check" />
+            <span>{{ periodText(period) }}</span>
+          </label>
+        }
+      </div>
+    </fieldset>
+
+    <!-- O rodapé fica sempre à vista, com os filtros rolando: as duas saídas à mão. -->
+    <div class="footer">
+      <div class="buttons">
+        <button
+          type="button"
+          class="secondary ui-btn"
+          [disabled]="leaving()"
+          (click)="cancel()"
+          i18n="@@settings.audit.filter.cancel"
+        >
+          Cancelar
+        </button>
+        <button
+          type="submit"
+          class="primary ui-btn"
+          [disabled]="!changed() || leaving()"
+          i18n="@@settings.audit.filter.apply"
+        >
+          Aplicar
+        </button>
+      </div>
+    </div>
+  </form>
+</dialog>

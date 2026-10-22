@@ -101,6 +101,12 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/settings/people.page').then((m) => m.PeoplePage),
           },
           {
+            path: 'auditoria',
+            canMatch: [ownerOnlyGuard],
+            data: { title: SETTINGS_TITLES.audit, back: SETTINGS_BACK },
+            loadComponent: () => import('./modules/settings/audit.page').then((m) => m.AuditPage),
+          },
+          {
             path: 'sistema',
             canMatch: [ownerOnlyGuard],
             data: { title: SETTINGS_TITLES.system, back: SETTINGS_BACK },
