@@ -38,7 +38,7 @@
   stroke-width: 0.65;
   stroke-linecap: round;
   stroke-linejoin: round;
-  opacity: 0.6;
+  opacity: 0.45;
 }
 
 /* As cores dos degraus (`--level-0` a `--level-3`) vêm da tela, que as divide com a legenda. */

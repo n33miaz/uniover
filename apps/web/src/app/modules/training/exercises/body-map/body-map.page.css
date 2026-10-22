@@ -4,7 +4,7 @@
    * Os degraus de intensidade, do vazio ao mais forte: a figura pinta as zonas com eles e a legenda os repete. Mistura
    * do destaque com a superfície, então valem nos dois temas sem uma cor a mais.
    */
-  --level-0: var(--a-surface);
+  --level-0: color-mix(in srgb, var(--a-ink3) 12%, var(--a-surface));
   --level-1: color-mix(in srgb, var(--a-accent) 24%, var(--a-surface));
   --level-2: color-mix(in srgb, var(--a-accent) 50%, var(--a-surface));
   --level-3: color-mix(in srgb, var(--a-accent) 80%, var(--a-surface));
@@ -60,6 +60,8 @@
 
 /* Controle segmentado, no mesmo desenho do "Catálogo | Rotinas" (aqui são botões: a face é estado da tela, não rota). */
 .faces {
+  position: relative;
+  isolation: isolate;
   display: grid;
   flex: none;
   grid-template-columns: 1fr 1fr;
@@ -68,6 +70,23 @@
   padding: var(--space-1);
   border-radius: var(--radius);
   background: var(--a-elev);
+}
+
+.faces::before {
+  position: absolute;
+  z-index: -1;
+  inset: var(--space-1) auto var(--space-1) var(--space-1);
+  width: calc((100% - 3 * var(--space-1)) / 2);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-sm);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-1);
+  content: '';
+  transition: transform 240ms var(--ease-out);
+}
+
+.faces[data-face='back']::before {
+  transform: translateX(calc(100% + var(--space-1)));
 }
 
 .faces button {
@@ -80,26 +99,22 @@
   font: inherit;
   font-weight: 650;
   cursor: pointer;
-  transition:
-    background-color var(--dur-fast) linear,
-    box-shadow var(--dur-fast) linear;
+  transition: color var(--dur-fast) linear;
 }
 
 .faces button[aria-pressed='true'] {
-  border-color: var(--a-line);
-  background: var(--a-surface);
   color: var(--a-ink);
-  box-shadow: var(--shadow-1);
 }
 
 /* O cartão da figura: o desenho e, embaixo, a legenda das cores. */
 .stage {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-2) var(--space-3);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-2);
   overflow: hidden;
-  background: radial-gradient(ellipse at 50% 35%, var(--a-elev), transparent 70%), var(--a-surface);
+  background:
+    radial-gradient(ellipse at 50% 42%, var(--a-surface-2) 25%, transparent 72%), var(--a-surface);
 }
 
 .skeleton {
@@ -161,6 +176,20 @@ app-body-panel {
   scroll-margin-top: var(--space-3);
 }
 
+.hint {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding-inline: var(--space-2);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.hint app-training-glyph {
+  flex: none;
+}
+
 /* Primeira abertura sem catálogo: um cartão calmo que diz o que fazer (o mesmo texto da lista de Exercícios). */
 .empty {
   display: flex;
@@ -189,7 +218,8 @@ app-body-panel {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .faces button {
+  .faces button,
+  .faces::before {
     transition: none;
   }
 }

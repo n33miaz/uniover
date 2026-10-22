@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { expect, screenshot, test } from '../fixtures';
+import { expectNoA11yViolations } from '../screens/screen-helpers';
 import { SEED_EXERCISE_IDS } from './support/training-seed';
 import {
   openTraining,
@@ -13,6 +14,28 @@ import {
 test.use({ serviceWorkers: 'block' });
 
 const rows = (page: import('@playwright/test').Page) => page.locator('.list .ui-row .name');
+
+async function expectCenteredComposition(page: import('@playwright/test').Page) {
+  const layout = await page.locator('.hero').evaluate((hero) => {
+    const group = hero.querySelector('.visuals')!;
+    const visuals = group.getBoundingClientRect();
+    const images = Array.from(group.children).map((image) => image.getBoundingClientRect());
+    const imageCenter =
+      (Math.min(...images.map((image) => image.left)) +
+        Math.max(...images.map((image) => image.right))) /
+      2;
+    const chips = hero.querySelector('.chips')!.getBoundingClientRect();
+    return {
+      visualsBottom: visuals.bottom,
+      chipsTop: chips.top,
+      centerOffset: Math.abs(chips.left + chips.width / 2 - visuals.left - visuals.width / 2),
+      imageOffset: Math.abs(imageCenter - visuals.left - visuals.width / 2),
+    };
+  });
+  expect(layout.chipsTop).toBeGreaterThanOrEqual(layout.visualsBottom);
+  expect(layout.centerOffset).toBeLessThan(1);
+  expect(layout.imageOffset).toBeLessThan(1);
+}
 
 test.describe('exercícios: lista, busca e ficha', () => {
   test('busca "supino" sem acento e sem caixa, e filtra por grupo e equipamento', async ({
@@ -95,10 +118,10 @@ test.describe('exercícios: lista, busca e ficha', () => {
     await expect(page.getByRole('button', { name: /^Mostrar mais/ })).toHaveCount(0);
   });
 
-  test('a ficha mostra ilustração, músculos e passo a passo sem créditos inline', async (
-    { page, context },
-    info,
-  ) => {
+  test('a ficha mostra ilustração, músculos e passo a passo sem créditos inline', async ({
+    page,
+    context,
+  }, info) => {
     await startTraining(context, page);
     await openTraining(page, '/treino/exercicios');
     await waitForCatalog(page);
@@ -108,21 +131,24 @@ test.describe('exercícios: lista, busca e ficha', () => {
     await expect(page.getByRole('heading', { name: 'Supino reto com barra' })).toBeVisible();
     await expect(page.locator('app-exercise-illustration img').first()).toBeVisible();
     await expect(page.getByText('Tríceps · secundário')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Músculos trabalhados' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Músculos trabalhados' })).toHaveCount(0);
+    await expect(page.locator('.muscle-legend')).toHaveCount(0);
     await expect
       .poll(() =>
         page
-          .locator('.hero .art')
+          .locator('.hero .visuals')
           .evaluate((node) => node.nextElementSibling?.classList.contains('chips')),
       )
       .toBe(true);
     await expect(page.locator('.muscle-figure')).toHaveCount(2);
+    await expectCenteredComposition(page);
+    await expect(page.locator('.chips .ui-chip').first()).toHaveCSS('text-align', 'center');
+    await expectNoA11yViolations(page);
     await expect(page.getByText('Ilustração: Everkinetic')).toHaveCount(0);
     if (process.env['TRAINING_SHOTS_DIR']) {
       await screenshot(
         page,
         join(process.env['TRAINING_SHOTS_DIR'], `ficha-exercicio-${info.project.name}.png`),
-        { fullPage: true },
       );
     }
     await expect(page.locator('.steps li')).toHaveCount(3);
@@ -131,12 +157,39 @@ test.describe('exercícios: lista, busca e ficha', () => {
     await expect(page.locator('.origin')).toHaveCount(0);
   });
 
-  test('a ficha sem ilustração mantém a figura dos músculos', async ({ page, context }) => {
+  test('a ficha sem ilustração mantém apenas as faces com músculos destacados', async ({
+    page,
+    context,
+  }, info) => {
     await startTraining(context, page);
     await openTraining(page, `/treino/exercicios/${SEED_EXERCISE_IDS.plank}`);
     await expect(page.getByRole('heading', { name: 'Prancha isométrica' })).toBeVisible();
     await expect(page.locator('app-exercise-illustration')).toHaveCount(0);
-    await expect(page.locator('.muscle-figure')).toHaveCount(2);
+    await expect(page.locator('.muscle-figure')).toHaveCount(1);
+    await expect(page.locator('.muscle-figure figcaption')).toHaveText('Frente');
+    await expect(page.locator('.muscle-figure svg')).toHaveAccessibleName(
+      'Frente; principais: Abdômen',
+    );
+    await expectCenteredComposition(page);
+    await expect(page.getByRole('heading', { name: 'Músculos trabalhados' })).toHaveCount(0);
+    await expectNoA11yViolations(page);
+    if (process.env['TRAINING_SHOTS_DIR']) {
+      await screenshot(
+        page,
+        join(process.env['TRAINING_SHOTS_DIR'], `ficha-frente-${info.project.name}.png`),
+      );
+    }
+
+    await openTraining(page, `/treino/exercicios/${SEED_EXERCISE_IDS.pushdown}`);
+    await expect(page.locator('.muscle-figure')).toHaveCount(1);
+    await expect(page.locator('.muscle-figure figcaption')).toHaveText('Costas');
+    await expectNoA11yViolations(page);
+    if (process.env['TRAINING_SHOTS_DIR']) {
+      await screenshot(
+        page,
+        join(process.env['TRAINING_SHOTS_DIR'], `ficha-costas-${info.project.name}.png`),
+      );
+    }
   });
 
   test('os créditos individuais do wger ficam na tela de créditos', async ({ page, context }) => {

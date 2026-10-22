@@ -1,10 +1,11 @@
 <div
   class="muscle-figures"
+  [class.single]="faces().length === 1"
   role="group"
   aria-label="Músculos trabalhados"
   i18n-aria-label="@@training.detail.muscles.label"
 >
-  @for (face of faces; track face) {
+  @for (face of faces(); track face) {
     <figure class="muscle-figure">
       <svg class="figure" [attr.viewBox]="viewBox" role="img" [attr.aria-label]="imageLabel(face)">
         <g class="outline" aria-hidden="true">
