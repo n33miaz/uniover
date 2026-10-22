@@ -110,6 +110,49 @@ public sealed class PasskeyManagementTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task ConcurrentRemovals_CannotDeleteTheLastTwoPasskeys()
+    {
+        await using var app = await PasskeyApp.StartAsync(postgres);
+        var login = await app.LoginAsync();
+        using var first = new VirtualAuthenticator();
+        using var second = new VirtualAuthenticator();
+        var firstId = (await app.RegisterAsync(login, first)).GetProperty("id").GetGuid();
+        var secondId = (await app.RegisterAsync(login, second)).GetProperty("id").GetGuid();
+        (await app.ConfirmAsync(login, first, StepUpActions.PasskeyRemove)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await using var db = app.Db();
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE FUNCTION identity.delay_passkey_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.5); RETURN OLD; END $$",
+            Ct);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE TRIGGER delay_passkey_delete BEFORE DELETE ON identity.passkeys FOR EACH ROW EXECUTE FUNCTION identity.delay_passkey_delete()",
+            Ct);
+
+        try
+        {
+            using var firstRequest = new HttpRequestMessage(HttpMethod.Delete, PasskeyUrl(firstId));
+            firstRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", login.AccessToken);
+            using var secondRequest = new HttpRequestMessage(HttpMethod.Delete, PasskeyUrl(secondId));
+            secondRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", login.AccessToken);
+
+            var responses = await Task.WhenAll(app.Client.SendAsync(firstRequest, Ct), app.Client.SendAsync(secondRequest, Ct));
+            using var firstResponse = responses[0];
+            using var secondResponse = responses[1];
+
+            new[] { firstResponse.StatusCode, secondResponse.StatusCode }
+                .Should().ContainSingle(status => status == HttpStatusCode.NoContent);
+            new[] { firstResponse.StatusCode, secondResponse.StatusCode }
+                .Should().ContainSingle(status => status == HttpStatusCode.Conflict);
+            (await db.Passkeys.CountAsync(Ct)).Should().Be(1);
+        }
+        finally
+        {
+            await db.Database.ExecuteSqlRawAsync("DROP TRIGGER IF EXISTS delay_passkey_delete ON identity.passkeys", Ct);
+            await db.Database.ExecuteSqlRawAsync("DROP FUNCTION IF EXISTS identity.delay_passkey_delete()", Ct);
+        }
+    }
+
+    [Fact]
     public async Task Remove_UnknownPasskey_Returns404_AfterConfirmation()
     {
         await using var app = await PasskeyApp.StartAsync(postgres);
