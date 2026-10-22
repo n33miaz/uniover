@@ -135,7 +135,7 @@ export class TouchpadSurface {
   }
 
   private fire(key: PadDirection | 'OK'): void {
-    vibrate();
+    vibrate(this.prefs.vibration());
     void this.store.sendKey(key).then((ok) => {
       if (!ok) this.repeater.stop();
     });

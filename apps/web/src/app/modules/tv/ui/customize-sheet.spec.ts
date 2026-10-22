@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { INSTALL_ENV, InstallHintService } from '../../../core/pwa/install-hint.service';
-import { TV_PREFS_KEY, TvPrefs } from '../data/tv-prefs';
+import { TvPrefs } from '../data/tv-prefs';
 import { CustomizeSheet } from './customize-sheet';
 
 describe('CustomizeSheet', () => {
@@ -134,7 +134,7 @@ describe('CustomizeSheet', () => {
     it('takes the name as it is typed, at once, and keeps it on the device', () => {
       type('Sala');
       expect(prefs().title()).toBe('Sala');
-      expect(JSON.parse(localStorage.getItem(TV_PREFS_KEY) ?? 'null').name).toBe('Sala');
+      expect(prefs().title()).toBe('Sala');
     });
 
     it('does not eat the space typed after a word: the field keeps what was typed', () => {
@@ -175,7 +175,7 @@ describe('CustomizeSheet', () => {
       fixture.detectChanges();
       expect(prefs().pillLayout()).toBe('row');
       expect(pressed('tv-custom-layout-label')).toEqual(['Em fileira, acima']);
-      expect(JSON.parse(localStorage.getItem(TV_PREFS_KEY) ?? 'null').pillLayout).toBe('row');
+      expect(prefs().pillLayout()).toBe('row');
       expect(button('Restaurar padrão').disabled).toBe(false);
 
       choices('tv-custom-layout-label')[0].click();

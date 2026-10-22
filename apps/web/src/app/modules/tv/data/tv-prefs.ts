@@ -1,5 +1,6 @@
 import { DOCUMENT } from '@angular/common';
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, linkedSignal } from '@angular/core';
+import { SessionState } from '../../../core/session/session-state';
 
 /** Tamanho dos botões de baixo (pílulas e botões redondos); o fator de cada um está em `KEY_SCALE`. */
 export type TvButtonSize = 'compact' | 'comfortable' | 'large';
@@ -25,7 +26,11 @@ export const KEY_SCALE: Readonly<Record<TvButtonSize, number>> = {
   large: 1.15,
 };
 
-export const TV_PREFS_KEY = 'uniover.tv.prefs.v1';
+export const TV_PREFS_KEY = 'uniover.tv.prefs.v2';
+
+export function tvPrefsStorageKey(accountId: string): string {
+  return `${TV_PREFS_KEY}.${encodeURIComponent(accountId)}`;
+}
 /**
  * O que cabe no cabeçalho: o nome usa até duas linhas na coluna do meio, que no 390 é a tela menos duas colunas
  * iguais de 94 px (os dois botões da esquerda; à direita o desligar e o ponto de estado cabem na mesma largura). O
@@ -59,16 +64,6 @@ export const TV_PREFS_DEFAULTS: TvPrefsValue = {
   pillLayout: 'sides',
 };
 
-/**
- * Espelho da escolha de vibração para quem não tem injeção (`vibrate()` é chamada de vários lugares, e uma chamada
- * esquecida não pode ignorar a preferência). Quem manda é o `TvPrefs`, que o atualiza a cada mudança.
- */
-let vibrationOn = TV_PREFS_DEFAULTS.vibration;
-
-export function vibrationEnabled(): boolean {
-  return vibrationOn;
-}
-
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return allowed.includes(value as T) ? (value as T) : fallback;
 }
@@ -95,8 +90,9 @@ function parsePrefs(raw: unknown): TvPrefsValue {
 
 /**
  * Preferências do controle da TV: apelido, tamanho dos botões, disposição das pílulas de volume e canal, que grupos
- * de teclas aparecem, vibração, página inicial do palco e sensibilidade do touchpad. Ficam só neste aparelho (`localStorage`, como as da Início): o
- * convidado tem as dele, e sincronizar na conta depende de um endpoint de preferências que ainda não existe.
+ * de teclas aparecem, vibração, página inicial do palco e sensibilidade do touchpad. Ficam neste aparelho, em uma
+ * chave própria por conta. A chave antiga não identificava a conta que a gravou, então fica preservada e inerte:
+ * atribuí-la à primeira pessoa que entrar poderia expor escolhas de outra conta.
  * Nunca guarda dado sensível; sem armazenamento (modo privado) a escolha vale até recarregar.
  */
 @Injectable({ providedIn: 'root' })
@@ -104,8 +100,12 @@ export class TvPrefs {
   /** Nome mostrado quando o apelido está vazio. */
   readonly defaultName = $localize`:@@tv.header.name:TV`;
 
+  private readonly session = inject(SessionState);
   private readonly storage = this.openStorage();
-  private readonly value = signal<TvPrefsValue>(this.read());
+  private readonly value = linkedSignal<string | null, TvPrefsValue>({
+    source: () => this.session.accountId(),
+    computation: (accountId) => this.read(accountId),
+  });
 
   /** O apelido aparado; vazio quando não há. */
   readonly name = computed(() => this.value().name.trim());
@@ -122,10 +122,6 @@ export class TvPrefs {
   /** Alguma escolha difere do padrão (liga o "Restaurar padrão"). */
   readonly customized = computed(() => !sameAsDefaults(this.value()));
 
-  constructor() {
-    vibrationOn = this.value().vibration;
-  }
-
   set(patch: Partial<TvPrefsValue>): void {
     this.apply(parsePrefs({ ...this.value(), ...patch }));
   }
@@ -136,8 +132,7 @@ export class TvPrefs {
 
   private apply(next: TvPrefsValue): void {
     this.value.set(next);
-    vibrationOn = next.vibration;
-    this.write(next);
+    this.write(this.session.accountId(), next);
   }
 
   private openStorage(): Storage | null {
@@ -148,18 +143,20 @@ export class TvPrefs {
     }
   }
 
-  private read(): TvPrefsValue {
+  private read(accountId: string | null): TvPrefsValue {
+    if (!accountId) return TV_PREFS_DEFAULTS;
     try {
-      const raw = this.storage?.getItem(TV_PREFS_KEY);
+      const raw = this.storage?.getItem(tvPrefsStorageKey(accountId));
       return parsePrefs(raw ? JSON.parse(raw) : null);
     } catch {
       return TV_PREFS_DEFAULTS; // JSON corrompido: volta ao padrão em vez de quebrar o controle
     }
   }
 
-  private write(value: TvPrefsValue): void {
+  private write(accountId: string | null, value: TvPrefsValue): void {
+    if (!accountId) return;
     try {
-      this.storage?.setItem(TV_PREFS_KEY, JSON.stringify(value));
+      this.storage?.setItem(tvPrefsStorageKey(accountId), JSON.stringify(value));
     } catch {
       // sem espaço ou bloqueado: a escolha vale só até recarregar
     }

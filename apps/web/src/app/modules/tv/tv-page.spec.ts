@@ -3,7 +3,7 @@ import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { collectShellData } from '../../core/layout/route-data';
 import { SessionState } from '../../core/session/session-state';
-import { TV_PREFS_KEY, TvPrefs } from './data/tv-prefs';
+import { TvPrefs, tvPrefsStorageKey } from './data/tv-prefs';
 import { TvStore } from './data/tv-store';
 import { TvPage } from './tv-page';
 import { FakeTvStore, createFakeTvStore } from './tv-test-kit';
@@ -27,12 +27,19 @@ describe('TvPage', () => {
     root.querySelector<HTMLButtonElement>('.head button[aria-label="Apps da TV"]')!;
   const titleButton = () => root.querySelector<HTMLButtonElement>('h1 button')!;
   const customizeSheet = () => root.querySelector<HTMLElement>('app-tv-customize-sheet dialog');
+  const prefsKey = () =>
+    tvPrefsStorageKey(TestBed.inject(SessionState).accountId() ?? 'tv-page-user');
 
   beforeEach(async () => {
     localStorage.clear();
     store = createFakeTvStore();
     TestBed.configureTestingModule({
       providers: [provideRouter([]), { provide: TvStore, useValue: store }],
+    });
+    TestBed.inject(SessionState).setUser({
+      id: 'tv-page-user',
+      email: 'tv@example.com',
+      displayName: 'TV',
     });
     fixture = TestBed.createComponent(TvPage);
     root = fixture.nativeElement;
@@ -352,7 +359,7 @@ describe('TvPage', () => {
       field.dispatchEvent(new Event('input', { bubbles: true }));
       await render();
     };
-    const saved = () => JSON.parse(localStorage.getItem(TV_PREFS_KEY) ?? 'null');
+    const saved = () => JSON.parse(localStorage.getItem(prefsKey()) ?? 'null');
 
     it('shows the nickname the owner chose, trimmed, in place of "TV"', async () => {
       TestBed.inject(TvPrefs).set({ name: '  Sala de estar ' });
@@ -611,7 +618,9 @@ describe('TvPage for a guest', () => {
     TestBed.inject(TvPrefs).set({ name: 'Quarto da Alice' });
     fixture.detectChanges();
     expect(root.querySelector('h1')?.textContent?.trim()).toBe('Quarto da Alice');
-    expect(JSON.parse(localStorage.getItem(TV_PREFS_KEY) ?? 'null').name).toBe('Quarto da Alice');
+    expect(JSON.parse(localStorage.getItem(tvPrefsStorageKey('1')) ?? 'null').name).toBe(
+      'Quarto da Alice',
+    );
   });
 });
 
