@@ -8,8 +8,17 @@ import { catalog, eventually, item, saveRoutine, setupScreen } from '../shell/sc
 import { RoutinesListPage } from './routines-list.page';
 
 describe('RoutinesListPage', () => {
-  async function open() {
+  async function open(templateDescription?: string, templateId = 'duplo') {
     const api = new FakeRoutineApi();
+    if (templateDescription !== undefined) {
+      api.dto = {
+        items: api.dto.items.map((template) => ({
+          ...template,
+          id: templateId,
+          description: templateDescription,
+        })),
+      };
+    }
     const kit = await setupScreen(
       [{ path: 'treino/rotinas', component: RoutinesListPage }],
       [{ provide: RoutineApi, useValue: api }],
@@ -76,6 +85,32 @@ describe('RoutinesListPage', () => {
   });
 
   describe('ready-made templates', () => {
+    it('requires previewing a partial draft before creating it', async () => {
+      const { fixture, el, trainingDb } = await open(
+        'Rascunho parcial · opção 3 · cinco sessões.\n\nRosca de terça omitida: confira antes de criar.',
+        'ab-reajustado',
+      );
+      await seedCatalog(trainingDb, ['supino', 'crucifixo', 'rosca', 'triceps']);
+      await eventually(fixture, () => expect(button(el, 'Usar modelo')).toBeDefined());
+      button(el, 'Usar modelo').click();
+      await eventually(fixture, () => expect(el.querySelector('dialog .ui-row')).not.toBeNull());
+
+      const row = el.querySelector<HTMLButtonElement>('dialog .ui-row')!;
+      expect(row.textContent).toContain('Rascunho parcial · opção 3 · cinco sessões.');
+      expect(el.querySelector('dialog .create-draft')).toBeNull();
+      row.click();
+      await eventually(fixture, () => expect(text(el)).toContain('Rosca de terça omitida'));
+      const create = button(el, 'Criar este rascunho parcial');
+      expect(create).toBeDefined();
+      create.click();
+      await eventually(fixture, () =>
+        expect(text(el)).toContain('Criamos 2 rotinas do modelo Duplo.'),
+      );
+      expect(text(el)).toContain(
+        'Elas ficaram inativas, fora da sequência. Revise e ative quando estiverem completas.',
+      );
+    });
+
     it('creates the routines of the template, at the end of the sequence, and says so', async () => {
       const { fixture, el, trainingDb } = await open();
       await seedCatalog(trainingDb, ['supino', 'crucifixo', 'rosca', 'triceps']);

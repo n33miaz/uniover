@@ -84,10 +84,13 @@ export class RoutinesListPage {
   protected onCreated(event: TemplateCreated): void {
     const name = event.name;
     const count = event.count;
-    const text =
+    const createdText =
       count === 1
         ? $localize`:@@training.templates.done-one:Criamos 1 rotina do modelo ${name}:name:.`
         : $localize`:@@training.templates.done-many:Criamos ${count}:count: rotinas do modelo ${name}:name:.`;
+    const text = event.draft
+      ? `${createdText} ${$localize`:@@training.templates.draft-created:Elas ficaram inativas, fora da sequência. Revise e ative quando estiverem completas.`}`
+      : createdText;
     if (event.missing > 0) {
       const missing = event.missing;
       const extra =

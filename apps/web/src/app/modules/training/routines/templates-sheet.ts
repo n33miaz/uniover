@@ -17,12 +17,13 @@ export interface TemplateCreated {
   readonly count: number;
   /** Quantos exercícios do modelo não existem no catálogo deste aparelho e ficaram de fora. */
   readonly missing: number;
+  /** Os modelos parciais conhecidos são criados inativos, fora da sequência, até revisão manual. */
+  readonly draft: boolean;
 }
 
 /**
- * Folha "Usar modelo": os programas prontos (ABC, ABCD, full body). Os modelos vêm do servidor, então a folha só abre
- * com rede; um toque cria as rotinas do modelo no fim da sequência (a pessoa edita à vontade depois). O que o modelo
- * pede e o catálogo do aparelho não tem fica de fora, e a lista avisa quantos.
+ * Folha "Usar modelo": modelos vêm do servidor e só carregam com rede. Modelos com notas extensas abrem os detalhes
+ * antes de disponibilizar a ação de criar; o que o catálogo do aparelho não tem fica de fora, e a lista avisa quantos.
  */
 @Component({
   selector: 'app-templates-sheet',
@@ -39,19 +40,34 @@ export interface TemplateCreated {
         <ul class="ui-group ui-plain">
           @for (template of templates(); track template.id) {
             <li>
-              <button type="button" class="ui-row" [disabled]="creating()" (click)="use(template)">
+              <button
+                type="button"
+                class="ui-row"
+                [disabled]="creating()"
+                [attr.aria-expanded]="hasDetails(template) ? expandedTemplate() === template.id : null"
+                [attr.aria-controls]="hasDetails(template) ? 'template-details-' + template.id : null"
+                (click)="hasDetails(template) ? toggleDetails(template) : use(template)"
+              >
                 <span class="ui-tile"><app-training-glyph name="list" /></span>
                 <span class="ui-row-text">
                   <span class="ui-row-title">{{ template.name }}</span>
-                  <span class="ui-row-sub">{{ template.description }}</span>
+                  <span class="ui-row-sub">{{ summary(template) }}</span>
                 </span>
                 <span class="ui-chip">{{ daysText(template) }}</span>
               </button>
+              @if (expandedTemplate() === template.id && hasDetails(template)) {
+                <div class="template-details" [id]="'template-details-' + template.id">
+                  <p>{{ details(template) }}</p>
+                  <button type="button" class="create-draft" [disabled]="creating()" (click)="use(template)">
+                    <span i18n="@@training.templates.use">Criar este rascunho parcial</span>
+                  </button>
+                </div>
+              }
             </li>
           }
         </ul>
         <p class="note" i18n="@@training.templates.note">
-          São sugestões nossas, sem promessa de resultado. Você edita tudo depois.
+          Confira os detalhes antes de criar. Rascunhos parciais ficam inativos até revisão; os demais modelos mantêm o comportamento atual.
         </p>
       }
       @if (error(); as message) {
@@ -75,6 +91,32 @@ export interface TemplateCreated {
       color: var(--a-ink2);
       font-size: var(--fs-small);
     }
+    .template-details {
+      display: grid;
+      gap: var(--space-3);
+      padding: var(--space-3) var(--space-4);
+      color: var(--a-ink2);
+      font-size: var(--fs-small);
+    }
+    .template-details p {
+      margin: 0;
+      white-space: pre-line;
+    }
+    .create-draft {
+      justify-self: start;
+      min-height: 2.75rem;
+      padding: 0.5rem 0.875rem;
+      border: 1px solid var(--a-line);
+      border-radius: 0.75rem;
+      background: var(--a-surface);
+      color: var(--a-ink);
+      font: inherit;
+      font-weight: 600;
+    }
+    .create-draft:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
     button.ui-row:disabled {
       opacity: 0.6;
       cursor: default;
@@ -95,6 +137,7 @@ export class TemplatesSheet {
   protected readonly loading = signal(true);
   protected readonly creating = signal(false);
   protected readonly error = signal('');
+  protected readonly expandedTemplate = signal<string | null>(null);
 
   constructor() {
     void this.load();
@@ -105,6 +148,22 @@ export class TemplatesSheet {
     return count === 1
       ? $localize`:@@training.templates.days-one:1 treino`
       : $localize`:@@training.templates.days-many:${count}:count: treinos`;
+  }
+
+  protected summary(template: RoutineTemplate): string {
+    return template.description.split('\n\n', 1)[0];
+  }
+
+  protected details(template: RoutineTemplate): string {
+    return template.description.split('\n\n').slice(1).join('\n\n');
+  }
+
+  protected hasDetails(template: RoutineTemplate): boolean {
+    return template.description.includes('\n\n');
+  }
+
+  protected toggleDetails(template: RoutineTemplate): void {
+    this.expandedTemplate.update((current) => (current === template.id ? null : template.id));
   }
 
   protected async use(template: RoutineTemplate): Promise<void> {
@@ -118,6 +177,7 @@ export class TemplatesSheet {
             name: template.name,
             count: result.routines.length,
             missing: result.missing.length,
+            draft: result.routines.every((routine) => !routine.active),
           });
           this.sheet().close();
           return;
