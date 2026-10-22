@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import type { InstallEnvInput } from '../../../core/pwa/install-env';
 import { INSTALL_ENV, InstallHintService } from '../../../core/pwa/install-hint.service';
 import { SessionRepository } from '../data/sessions/session-repository';
@@ -6,8 +7,13 @@ import { SessionState } from '../../../core/session/session-state';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { eventually, setupScreen } from './screen-test-kit';
 import { TrainingPage } from './training.page';
+import { vi } from 'vitest';
 
 describe('TrainingPage: the install sheet and the open workout', () => {
+  afterEach(() => {
+    document.body.removeAttribute('tabindex');
+    vi.unstubAllGlobals();
+  });
   const WEBKIT = 'AppleWebKit/605.1.15 (KHTML, like Gecko)';
   const SAFARI: InstallEnvInput = {
     userAgent: `Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) ${WEBKIT} Version/17.5 Mobile/15E148 Safari/604.1`,
@@ -81,6 +87,49 @@ describe('TrainingPage: the install sheet and the open workout', () => {
     await fixture.whenStable();
     expect(indicator.getAttribute('aria-expanded')).toBe('true');
     expect(el.querySelector('app-training-sync-line')?.textContent).toContain('Sem rede');
+  });
+
+  it('restores focus between exercise routes while reduced motion disables the slide', async () => {
+    await setupScreen();
+    const fixture = TestBed.createComponent(TrainingPage);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as { animateRoute(): void };
+    const router = TestBed.inject(Router);
+    let path = '/treino/exercicios';
+    vi.spyOn(router, 'url', 'get').mockImplementation(() => path);
+    const outlet = (fixture.nativeElement as HTMLElement).querySelector('router-outlet')!;
+    const page = document.createElement('section');
+    const selector = document.createElement('nav');
+    const selectedLink = document.createElement('a');
+    selector.className = 'seg';
+    selectedLink.setAttribute('aria-current', 'page');
+    selectedLink.href = '/treino/rotinas';
+    page.className = 'route-page';
+    selector.append(selectedLink);
+    page.append(selector);
+    outlet.insertAdjacentElement('afterend', page);
+    const animate = vi.fn();
+    page.animate = animate;
+    let reducedMotion = true;
+    document.body.tabIndex = -1;
+    document.body.focus();
+    vi.stubGlobal('matchMedia', () => ({ matches: reducedMotion }));
+
+    component.animateRoute();
+    path = '/treino/rotinas';
+    component.animateRoute();
+
+    expect(document.activeElement).toBe(selectedLink);
+    expect(animate).not.toHaveBeenCalled();
+
+    reducedMotion = false;
+    path = '/treino/exercicios';
+    component.animateRoute();
+    expect(animate.mock.calls[0][0][0]).toMatchObject({ transform: 'translateX(-18px)' });
+    path = '/treino/rotinas';
+    component.animateRoute();
+    expect(animate.mock.calls[1][0][0]).toMatchObject({ transform: 'translateX(18px)' });
   });
 
   it('only offers a way back when another module is available', async () => {

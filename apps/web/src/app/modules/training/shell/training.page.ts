@@ -320,11 +320,14 @@ export class TrainingPage {
     return $localize`:@@training.shell.sync-ok:Sincronização em dia. Toque para ver detalhes.`;
   });
   private lastArea: number | null = null;
+  private lastPath: string | null = null;
   /** Há um treino aberto neste aparelho. */
   protected readonly live = signal(false);
 
   protected animateRoute(): void {
     const path = this.router.url.split(/[?#]/)[0];
+    const previousPath = this.lastPath;
+    this.lastPath = path;
     const area =
       path.startsWith('/treino/exercicios') || path.startsWith('/treino/rotinas')
         ? 0
@@ -335,20 +338,38 @@ export class TrainingPage {
             : 1;
     const previous = this.lastArea;
     this.lastArea = area;
-    if (
-      previous === null ||
-      previous === area ||
-      globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    )
+    const previousExercisePage = this.exercisePage(previousPath);
+    const nextExercisePage = this.exercisePage(path);
+    const switchingExercisePage = previousExercisePage !== null && nextExercisePage !== null;
+    if (!switchingExercisePage && (previous === null || previous === area || previousPath === null))
       return;
     const page = this.host.nativeElement.querySelector('router-outlet + *');
-    page?.animate(
+    if (!page) return;
+
+    // A rota remove o link que iniciou a navegação. Devolve o foco ao seletor equivalente da tela nova.
+    if (switchingExercisePage && document.activeElement === document.body) {
+      page
+        .querySelector<HTMLElement>('.seg a[aria-current="page"]')
+        ?.focus({ preventScroll: true });
+    }
+
+    if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const backwards = switchingExercisePage
+      ? previousExercisePage === 'routines'
+      : previous! > area;
+    page.animate(
       [
-        { opacity: 0.65, transform: `translateX(${area > previous ? 18 : -18}px)` },
+        { opacity: 0.65, transform: `translateX(${backwards ? -18 : 18}px)` },
         { opacity: 1, transform: 'translateX(0)' },
       ],
       { duration: 200, easing: 'ease-out' },
     );
+  }
+
+  private exercisePage(path: string | null): 'catalog' | 'routines' | null {
+    if (path === '/treino/exercicios') return 'catalog';
+    if (path === '/treino/rotinas') return 'routines';
+    return null;
   }
 
   constructor() {

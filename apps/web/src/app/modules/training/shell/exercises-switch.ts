@@ -9,7 +9,13 @@ import { RouterLink } from '@angular/router';
   selector: 'app-exercises-switch',
   imports: [RouterLink],
   template: `
-    <nav class="seg" aria-label="Catálogo ou rotinas" i18n-aria-label="@@training.switch.label">
+    <nav
+      class="seg"
+      [class.catalog-active]="current() === 'catalog'"
+      [class.routines-active]="current() === 'routines'"
+      aria-label="Catálogo ou rotinas"
+      i18n-aria-label="@@training.switch.label"
+    >
       <a
         routerLink="/treino/exercicios"
         [attr.aria-current]="current() === 'catalog' ? 'page' : null"
