@@ -199,8 +199,11 @@ public sealed class PullRoutinesTests(PostgresFixture postgres)
         anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var templates = body.GetProperty("items").EnumerateArray().ToList();
-        templates.Select(t => t.GetProperty("id").GetString()).Should().Equal("abc", "abcd", "full-body");
-        templates.Select(t => t.GetProperty("routines").GetArrayLength()).Should().Equal(3, 4, 2);
+        templates.Select(t => t.GetProperty("id").GetString()).Should().Equal(
+            "abc", "abcd", "full-body",
+            "ppl-superior-inferior", "superior-inferior-acessorios", "divisao-familiar-reforco-inferior",
+            "ab-reajustado", "full-body-cardio");
+        templates.Select(t => t.GetProperty("routines").GetArrayLength()).Should().Equal(3, 4, 2, 5, 5, 5, 2, 3);
         var first = templates[0].GetProperty("routines")[0];
         first.GetProperty("name").GetString().Should().NotBeNullOrWhiteSpace();
         var item = first.GetProperty("items")[0];
@@ -210,9 +213,13 @@ public sealed class PullRoutinesTests(PostgresFixture postgres)
         item.TryGetProperty("repMax", out _).Should().BeTrue();
         item.TryGetProperty("restSeconds", out _).Should().BeTrue();
 
+        var cardioPlan = templates.Single(t => t.GetProperty("id").GetString() == "full-body-cardio");
+        cardioPlan.GetProperty("description").GetString().Should().Contain("15–25 min");
+        cardioPlan.GetProperty("description").GetString().Should().Contain("20–40 s");
+
         // Sem banco: ler os modelos não carrega a semente do catálogo.
         await using var db = app.Db();
         (await db.Exercises.AnyAsync(Ct)).Should().BeFalse("os modelos não dependem do banco");
-        RoutineTemplateSource.Read().Items.Should().HaveCount(3);
+        RoutineTemplateSource.Read().Items.Should().HaveCount(8);
     }
 }

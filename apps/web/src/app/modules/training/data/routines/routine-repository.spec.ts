@@ -2,9 +2,19 @@ import { isUuid } from '../../../../core/offline-queue/uuid-v7';
 import { networkError } from '../../../../core/offline-queue/queue-test-kit';
 import { shape } from '../../domain/routines/routine-test-kit';
 import { localExercise } from '../sync/training-test-kit';
-import type { RoutineDraft, RoutineDraftItem, RoutineWriteResult } from './routine-repository';
+import {
+  PARTIAL_DRAFT_TEMPLATE_IDS,
+  type RoutineDraft,
+  type RoutineDraftItem,
+  type RoutineWriteResult,
+} from './routine-repository';
 import { toLocalRoutine } from './routine';
-import { routineDto, seedCatalog, setupRoutines } from './routine-data-test-kit';
+import {
+  routineDto,
+  seedCatalog,
+  setupRoutines,
+  TEMPLATES_DTO,
+} from './routine-data-test-kit';
 
 const quota = () => Object.assign(new Error('cheio'), { name: 'QuotaExceededError' });
 
@@ -590,6 +600,23 @@ describe('RoutineRepository', () => {
         `/api/v1/training/routines/${a.id}`,
         `/api/v1/training/routines/${b.id}`,
       ]);
+    });
+
+    it('keeps every known partial draft inactive while ordinary templates stay active', async () => {
+      const t = setupRoutines();
+      await seedCatalog(t.trainingDb, SLUGS);
+      t.api.dto = {
+        items: PARTIAL_DRAFT_TEMPLATE_IDS.map((id) => ({ ...TEMPLATES_DTO.items[0], id })),
+      };
+
+      for (const id of PARTIAL_DRAFT_TEMPLATE_IDS) {
+        const result = await t.repository.createFromTemplate(id);
+        if (result.status !== 'saved') throw new Error(`esperava saved para ${id}`);
+        expect(result.routines).toHaveLength(2);
+        expect(result.routines.every((routine) => !routine.active)).toBe(true);
+      }
+
+      expect(await t.trainingDb.routines.count()).toBe(PARTIAL_DRAFT_TEMPLATE_IDS.length * 2);
     });
 
     it('creating the same template twice gives different ids each time', async () => {

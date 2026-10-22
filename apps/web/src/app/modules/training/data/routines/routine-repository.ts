@@ -26,6 +26,16 @@ import {
 } from './routine';
 import { RoutineApi, routinePath } from './routine-api';
 
+/** Modelos de origem que viram rascunhos: não entram na sequência até a pessoa revisar e ativar. */
+export const PARTIAL_DRAFT_TEMPLATE_IDS = [
+  'ppl-superior-inferior',
+  'superior-inferior-acessorios',
+  'divisao-familiar-reforco-inferior',
+  'ab-reajustado',
+  'full-body-cardio',
+] as const;
+const PARTIAL_DRAFT_TEMPLATE_ID_SET: ReadonlySet<string> = new Set(PARTIAL_DRAFT_TEMPLATE_IDS);
+
 /** Um item do que a tela entrega ao salvar; a ordem da lista é a ordem da rotina. Sem `id`, o item é novo. */
 export interface RoutineDraftItem {
   readonly id?: string;
@@ -300,9 +310,9 @@ export class RoutineRepository {
   }
 
   /**
-   * Cria as rotinas de um modelo pronto (ABC, ABCD, full body), no fim da sequência, com ids novos (UUID v7). Os
-   * exercícios do modelo são achados pelo `slug` no catálogo **local**; os que não existem aqui ficam de fora e vêm
-   * em `missing`. Cada rotina criada é um `PUT`; se a fila recusar por espaço, nenhuma fica.
+   * Cria as rotinas de um modelo no fim da sequência, com ids novos (UUID v7). Os modelos parciais conhecidos ficam
+   * inativos até revisão. Exercícios são achados pelo `slug` no catálogo **local**; os que não existem vêm em
+   * `missing`. Cada rotina criada é um `PUT`; se a fila recusar por espaço, nenhuma fica.
    */
   async createFromTemplate(templateId: string): Promise<TemplateResult> {
     let templates: RoutineTemplate[];
@@ -337,7 +347,7 @@ export class RoutineRepository {
         id: uuidV7(),
         name: day.name,
         position: base + writes.length,
-        active: true,
+        active: !PARTIAL_DRAFT_TEMPLATE_ID_SET.has(template.id),
         note: '',
         items: normalizeItems(
           found.map((item, position) => ({

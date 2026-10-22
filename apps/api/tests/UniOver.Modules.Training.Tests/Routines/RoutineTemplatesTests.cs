@@ -15,10 +15,48 @@ public class RoutineTemplatesTests
         Templates.Items.SelectMany(t => t.Routines.Select(r => (t, r)));
 
     [Fact]
-    public void ThereAreThreeTemplates_AbcAbcdAndFullBody()
+    public void ExistingTemplatesAndFiveOptionalPlansAreAllPresent()
     {
-        Templates.Items.Select(t => t.Id).Should().Equal("abc", "abcd", "full-body");
-        Templates.Items.Select(t => t.Routines.Count).Should().Equal(3, 4, 2);
+        Templates.Items.Select(t => t.Id).Should().Equal(
+            "abc", "abcd", "full-body",
+            "ppl-superior-inferior", "superior-inferior-acessorios", "divisao-familiar-reforco-inferior",
+            "ab-reajustado", "full-body-cardio");
+        Templates.Items.Select(t => t.Routines.Count).Should().Equal(3, 4, 2, 5, 5, 5, 2, 3);
+    }
+
+    [Fact]
+    public void OptionalPlansShowTheSessionEstimateAndPreserveNonStrengthScheduleNotes()
+    {
+        var optional = Templates.Items.Skip(3).ToList();
+        optional.Should().OnlyContain(t => t.Description.Contains("45–60 min", StringComparison.Ordinal));
+        optional.Should().OnlyContain(t => t.Description.StartsWith("Rascunho parcial", StringComparison.Ordinal));
+        optional.Should().OnlyContain(t => t.Description.Contains("confira antes de criar", StringComparison.Ordinal));
+
+        var ab = Templates.Items.Single(t => t.Id == "ab-reajustado");
+        ab.Description.Should().Contain("não a ficha original do professor");
+        ab.Description.Should().Contain("opcional, sem recomendação automática");
+
+        var cardio = Templates.Items.Single(t => t.Id == "full-body-cardio");
+        cardio.Description.Should().Contain("15–25 min").And.Contain("5–8 min");
+        cardio.Description.Should().Contain("O app não agenda esses dias");
+        cardio.Description.Should().Contain("20–40 s");
+
+        Templates.Items.Single(t => t.Id == "divisao-familiar-reforco-inferior")
+            .Description.Should().Contain("fica sem exercício de bíceps");
+    }
+
+    [Fact]
+    public void OptionalPlansKeepTheirSupportedExerciseCountsAndDiscloseCatalogGaps()
+    {
+        var plans = Templates.Items.Skip(3).ToDictionary(t => t.Id);
+        plans["ppl-superior-inferior"].Routines.Select(r => r.Items.Count).Should().Equal(5, 4, 4, 5, 5);
+        plans["superior-inferior-acessorios"].Routines.Select(r => r.Items.Count).Should().Equal(5, 3, 4, 5, 4);
+        plans["divisao-familiar-reforco-inferior"].Routines.Select(r => r.Items.Count).Should().Equal(4, 3, 4, 3, 5);
+        plans["ab-reajustado"].Routines.Select(r => r.Items.Count).Should().Equal(6, 5);
+        plans["full-body-cardio"].Routines.Select(r => r.Items.Count).Should().Equal(4, 5, 3);
+
+        plans.Values.Select(t => t.Description).Should().OnlyContain(d =>
+            d.Contains("omitid", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
