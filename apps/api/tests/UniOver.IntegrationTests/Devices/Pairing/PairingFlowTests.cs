@@ -1,8 +1,10 @@
+using System.Data.Common;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Devices.Features.Tokens;
 
@@ -123,6 +125,46 @@ public sealed class PairingFlowTests(PostgresFixture postgres)
         app.Time.Advance(TimeSpan.FromMinutes(11));
         var again = await app.StartAsync("Tres");
         again.PairingId.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task Start_ConcurrentRequests_RespectTheActiveLimit()
+    {
+        var barrier = new PairingCountRaceBarrier();
+        await using var app = await DevicesApp.StartAsync(postgres, new DevicesAppOptions
+        {
+            RequireStepUp = false,
+            MaxActive = 1,
+            CommandInterceptor = barrier,
+        });
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 2).Select(index => app.SendAsync(
+            HttpMethod.Post,
+            "/api/v1/devices/pairing/start",
+            new { agentName = $"PC Casa {index}", platform = "windows", agentVersion = "0.1.0" })));
+
+        try
+        {
+            responses.Count(response => response.StatusCode == HttpStatusCode.OK).Should().Be(1);
+            responses.Count(response => response.StatusCode == HttpStatusCode.TooManyRequests).Should().Be(1);
+            var refused = responses.Single(response => response.StatusCode == HttpStatusCode.TooManyRequests);
+            refused.Headers.RetryAfter.Should().NotBeNull();
+            (await DevicesApp.JsonAsync(refused)).GetProperty("type").GetString().Should().EndWith("/too-many-pairings");
+        }
+        finally
+        {
+            foreach (var response in responses)
+            {
+                response.Dispose();
+            }
+        }
+
+        barrier.ProvedSerializationOrOverlappedCounts.Should().BeTrue(
+            "the test must either observe the database lock or release two completed count queries together");
+        await using var db = app.Db();
+        (await db.Pairings.CountAsync(Ct)).Should().Be(1);
+        (await db.Pairings.CountAsync(p => p.ExpiresAt > app.Time.GetUtcNow()
+            && p.ApprovedAt == null && p.DeniedAt == null && p.ConsumedAt == null, Ct)).Should().Be(1);
     }
 
     [Fact]
@@ -386,5 +428,53 @@ public sealed class PairingFlowTests(PostgresFixture postgres)
         item.GetProperty("createdAt").GetDateTimeOffset().Should().Be(app.Time.GetUtcNow());
         item.GetProperty("revoked").GetBoolean().Should().BeFalse();
         item.TryGetProperty("tokenHash", out _).Should().BeFalse();
+    }
+}
+
+internal sealed class PairingCountRaceBarrier : DbCommandInterceptor
+{
+    private readonly TaskCompletionSource _bothCountsCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _lockObserved;
+    private int _countReadCount;
+    private int _overlapForced;
+
+    public bool ProvedSerializationOrOverlappedCounts =>
+        Volatile.Read(ref _lockObserved) != 0 || Volatile.Read(ref _overlapForced) != 0;
+
+    public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<int> result,
+        CancellationToken cancellationToken = default)
+    {
+        if (command.CommandText.Contains("pg_advisory_xact_lock", StringComparison.OrdinalIgnoreCase))
+        {
+            Volatile.Write(ref _lockObserved, 1);
+        }
+
+        return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+    }
+
+    public override async ValueTask<DbDataReader> ReaderExecutedAsync(
+        DbCommand command,
+        CommandExecutedEventData eventData,
+        DbDataReader result,
+        CancellationToken cancellationToken = default)
+    {
+        if (Volatile.Read(ref _lockObserved) != 0
+            || !command.CommandText.Contains("pairings", StringComparison.OrdinalIgnoreCase)
+            || !command.CommandText.Contains("COUNT", StringComparison.OrdinalIgnoreCase))
+        {
+            return result;
+        }
+
+        if (Interlocked.Increment(ref _countReadCount) == 2)
+        {
+            Volatile.Write(ref _overlapForced, 1);
+            _bothCountsCompleted.TrySetResult();
+        }
+
+        await _bothCountsCompleted.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        return result;
     }
 }

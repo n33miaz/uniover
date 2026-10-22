@@ -26,6 +26,7 @@ internal sealed class StartPairingHandler(
 {
     private const string UniqueViolation = "23505";
     private const int CodeAttempts = 5;
+    private const long ActivePairingLockKey = 0x6465_7669_6365_735F;
 
     /// <summary>Pedidos vencidos há mais que isto são apagados: a tabela não cresce e o código volta a ficar livre.</summary>
     private static readonly TimeSpan Retention = TimeSpan.FromHours(1);
@@ -36,6 +37,8 @@ internal sealed class StartPairingHandler(
 
         var settings = options.Value.Pairing;
         var now = time.GetUtcNow();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({ActivePairingLockKey})", cancellationToken);
 
         // Limpeza oportunista (a rota é anônima e não há tarefa de fundo): nada pendente mais velho que a retenção sobra.
         var cutoff = now - Retention;
@@ -47,6 +50,7 @@ internal sealed class StartPairingHandler(
             p => p.ExpiresAt > now && p.ApprovedAt == null && p.DeniedAt == null && p.ConsumedAt == null, cancellationToken);
         if (active >= settings.MaxActive)
         {
+            await transaction.CommitAsync(cancellationToken);
             return new StartPairingResult(true, RetryAfter: settings.MinPollInterval);
         }
 
@@ -71,6 +75,7 @@ internal sealed class StartPairingHandler(
                 continue;
             }
 
+            await transaction.CommitAsync(cancellationToken);
             return new StartPairingResult(
                 false,
                 pairing.Id,

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -37,6 +38,8 @@ internal sealed record DevicesAppOptions
     public bool ForwardedHeaders { get; init; }
 
     public int? TokenCacheSeconds { get; init; }
+
+    public DbCommandInterceptor? CommandInterceptor { get; init; }
 }
 
 internal sealed record Started(Guid PairingId, string DeviceCode, string UserCode, JsonElement Body);
@@ -148,6 +151,10 @@ internal sealed class DevicesApp : IAsyncDisposable
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(time);
             services.AddSingleton<ILoggerProvider>(logs);
+            if (options.CommandInterceptor is { } commandInterceptor)
+            {
+                services.ConfigureDbContext<DevicesDbContext>(builder => builder.AddInterceptors(commandInterceptor));
+            }
         }));
 
         var app = new DevicesApp(root, factory, database, time, logs, ownerEmail, password);
