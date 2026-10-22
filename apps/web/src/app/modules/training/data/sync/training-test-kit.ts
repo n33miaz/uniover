@@ -1,9 +1,15 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { IDBFactory as FakeIDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
-import { setupQueue } from '../../../../core/offline-queue/queue-test-kit';
+import { TEST_ACCOUNT, setupQueue } from '../../../../core/offline-queue/queue-test-kit';
 import { ExerciseDto, LocalExercise, toLocalExercise } from '../catalog/exercise';
-import { TRAINING_DB, TrainingDb } from '../training-db';
+import {
+  TRAINING_DB,
+  TRAINING_DB_FACTORY,
+  TRAINING_DB_NAME,
+  TrainingDb,
+  trainingDbName,
+} from '../training-db';
 import { provideTrainingData } from '../training-data.providers';
 import { PullApi } from './pull-api';
 import type { PullPage } from './resource-sync';
@@ -91,16 +97,42 @@ export class FakePullApi {
   }
 }
 
-/** Monta o TestBed com a fila falsa, o banco do Treino em memória e a leitura roteirizada. */
+/**
+ * Monta o TestBed com a fila falsa, o banco do Treino em memória e a leitura roteirizada. `db` é o banco da conta de teste (o
+ * mesmo que as telas e os repositórios recebem); o de outras contas (`trainingDbOf`) e o banco antigo (`trainingLegacyDb`)
+ * moram na mesma fábrica falsa do IndexedDB da fila, então reabrir é achar os mesmos dados.
+ */
 export function setupTraining(db: TrainingDb = createTrainingTestDb()) {
   const queue = setupQueue();
   const pull = new FakePullApi();
+  const others = new Map<string, TrainingDb>();
+  const trainingDbOf = (accountId: string): TrainingDb => {
+    if (accountId === TEST_ACCOUNT) return db;
+    let other = others.get(accountId);
+    if (!other) {
+      other = new TrainingDb(trainingDbName(accountId), queue.dbOptions);
+      others.set(accountId, other);
+    }
+    return other;
+  };
   TestBed.configureTestingModule({
     providers: [
       { provide: TRAINING_DB, useValue: db },
+      {
+        provide: TRAINING_DB_FACTORY,
+        useValue: (name: string) =>
+          name === trainingDbName(TEST_ACCOUNT) ? db : new TrainingDb(name, queue.dbOptions),
+      },
       { provide: PullApi, useValue: pull },
       provideTrainingData(),
     ],
   });
-  return { ...queue, trainingDb: db, pull };
+  return {
+    ...queue,
+    trainingDb: db,
+    trainingDbOf,
+    /** O banco do tempo em que havia um só por aparelho, na mesma fábrica falsa (para o teste de adoção). */
+    trainingLegacyDb: () => new TrainingDb(TRAINING_DB_NAME, queue.dbOptions),
+    pull,
+  };
 }

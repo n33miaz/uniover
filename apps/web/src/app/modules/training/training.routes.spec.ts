@@ -104,7 +104,9 @@ describe('training routes', () => {
       const harness = await kit.harness();
       await harness.navigateByUrl('/treino');
       const el = harness.routeNativeElement as HTMLElement;
-      expect(el.matches('app-training-page')).toBe(true);
+      // A rota abre o escopo da conta, e a casca do módulo fica dentro dele.
+      expect(el.matches('app-training-account-scope')).toBe(true);
+      expect(el.querySelector('app-training-page')).not.toBeNull();
       expect(el.querySelector('app-training-sync-line')).not.toBeNull();
       expect(el.querySelector('app-training-today-page')).not.toBeNull();
       expect(start).toHaveBeenCalledTimes(1);
