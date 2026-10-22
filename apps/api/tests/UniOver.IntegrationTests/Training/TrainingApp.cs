@@ -20,6 +20,7 @@ using UniOver.IntegrationTests.Messaging;
 using UniOver.Modules.Identity.Bootstrap;
 using UniOver.Modules.Training.Persistence;
 using UniOver.Modules.Training.Ports;
+using UniOver.Modules.Training.Ports.Foods;
 
 namespace UniOver.IntegrationTests.Training;
 
@@ -34,6 +35,10 @@ internal sealed record TrainingAppOptions
 
     /// <summary>Cliente do wger de mentira no lugar do HTTP real.</summary>
     public IWgerClient? Wger { get; init; }
+
+    public IOffClient? Off { get; init; }
+
+    public string? OffContact { get; init; }
 
     public int MaxItems { get; init; } = 1000;
 
@@ -138,6 +143,7 @@ internal sealed class TrainingApp : IAsyncDisposable
             ["UNIOVER_OWNER_EMAIL"] = ownerEmail,
             ["UNIOVER_OWNER_PASSWORD"] = password,
         };
+        if (options.OffContact is not null) settings["TRAINING_OFF_CONTACT"] = options.OffContact;
         if (options.CaptureSql)
         {
             settings["Logging:LogLevel:Microsoft.EntityFrameworkCore.Database.Command"] = "Information";
@@ -157,6 +163,12 @@ internal sealed class TrainingApp : IAsyncDisposable
             {
                 services.RemoveAll<IWgerClient>();
                 services.AddSingleton(wger);
+            }
+
+            if (options.Off is { } off)
+            {
+                services.RemoveAll<IOffClient>();
+                services.AddSingleton(off);
             }
         }));
 
