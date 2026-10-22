@@ -24,8 +24,9 @@ export class AuthState {
   readonly tone = input<AuthStateTone>('neutral');
   readonly icon = input.required<AuthGlyphName>();
   readonly heading = input.required<string>();
-  readonly detail = input.required<string>();
-  /** O que fazer agora, em uma frase; aparece em destaque suave abaixo da explicação. */
+  /** Uma frase do que houve, quando o título sozinho não basta. */
+  readonly detail = input<string | null>(null);
+  /** O que fazer agora, em uma frase de apoio, em texto simples (sem caixa) abaixo do título ou da explicação. */
   readonly advice = input<string | null>(null);
   readonly role = input<'alert' | 'status' | null>(null);
 

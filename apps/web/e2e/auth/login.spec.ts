@@ -183,6 +183,33 @@ test.describe('tela de entrada: campos', () => {
     await expect(password(page)).toBeFocused();
   });
 
+  test('a marca e o cartão ficam parados quando a faixa de erro aparece (só o que está embaixo desce)', async ({
+    page,
+  }) => {
+    await openLogin(page);
+    await fill(page, OWNER.email, 'errada');
+    // Posição na página (soma a rolagem): se o foco no aviso rolar a tela, isso não é o cartão pulando.
+    const top = (selector: string) =>
+      page.evaluate((css) => {
+        const element = document.querySelector(css)!;
+        return Promise.all(element.getAnimations().map((a) => a.finished)).then(
+          () => element.getBoundingClientRect().top + window.scrollY,
+        );
+      }, selector);
+    const before = {
+      mark: await top('app-auth-layout .mark'),
+      card: await top('app-auth-layout .card'),
+    };
+    await submit(page).click();
+    await expect(page.getByRole('alert')).toContainText('E-mail ou senha incorretos.');
+    const after = {
+      mark: await top('app-auth-layout .mark'),
+      card: await top('app-auth-layout .card'),
+    };
+    expect(Math.abs(after.mark - before.mark)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.card - before.card)).toBeLessThanOrEqual(1);
+  });
+
   test('o botão mostra que está enviando sem mudar de largura e sem se desabilitar antes', async ({
     page,
   }) => {

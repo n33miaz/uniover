@@ -30,7 +30,7 @@ async function acceptInvite(page: Page) {
   await page.getByLabel('E-mail').fill(GUEST.email);
   await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
   await page.getByLabel('Repita a senha').fill(GUEST.password);
-  await page.getByRole('button', { name: 'Criar conta e entrar' }).click();
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click();
 }
 
 function shot(info: { project: { name: string } }, name: string, scheme: string) {

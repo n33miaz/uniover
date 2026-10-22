@@ -96,14 +96,12 @@ describe('AcceptInvitePage', () => {
     expect(el.querySelector('form')).not.toBeNull();
   });
 
-  it('welcomes the guest in two plain lines inside the shared frame, with a single title', async () => {
+  it('opens with a single short title inside the shared frame, and no explanatory text', async () => {
     const el = await render();
     expect(el.querySelector('app-auth-layout main')).not.toBeNull();
     expect(el.querySelectorAll('h1')).toHaveLength(1);
-    expect(text(el, 'h1')).toBe('Criar sua conta');
-    expect(text(el, '.lead')).toBe(
-      'Você recebeu um convite para o UniOver. Escolha o e-mail e a senha que vai usar para entrar.',
-    );
+    expect(text(el, 'h1')).toBe('Criar conta');
+    expect(el.querySelector('.lead')).toBeNull();
   });
 
   it('has labeled fields, autofill hints that pair with the login, and says there is no recovery', async () => {
@@ -133,9 +131,12 @@ describe('AcceptInvitePage', () => {
 
   it('is honest about what is recorded, in one short line', async () => {
     const el = await render();
-    expect(text(el, '.audit')).toBe(
-      'Este acesso fica registrado (data, IP e aparelho) para a segurança do sistema.',
-    );
+    expect(text(el, '.audit')).toBe('Este acesso fica registrado: data, IP e aparelho.');
+  });
+
+  it('has one plain action, "Continuar"', async () => {
+    const el = await render();
+    expect(text(el, '.submit')).toBe('Continuar');
   });
 
   it('shows and hides each password on its own, with its own accessible name', async () => {
@@ -259,6 +260,10 @@ describe('AcceptInvitePage', () => {
 
       blur(el, 'invite-confirmation');
       expect(text(el, '#invite-confirmation-status')).toBe('As senhas ainda não são iguais.');
+      // Só ao sair do campo o tom é de aviso (âmbar); o de erro vem com um envio recusado.
+      expect(el.querySelector<HTMLElement>('#invite-confirmation-status')?.dataset['tone']).toBe(
+        'warn',
+      );
       expect(field(el, 'invite-confirmation').getAttribute('aria-invalid')).toBe('true');
       expect(notice(el)).toBeNull();
 
@@ -356,13 +361,48 @@ describe('AcceptInvitePage', () => {
       expect(el.querySelector<HTMLElement>('.rule')?.dataset['state']).toBe('invalid');
     });
 
-    it('refuses two different passwords without calling the server and focuses the confirmation', async () => {
+    it('refuses two different passwords without calling the server, with one message only, at the confirmation field', async () => {
       const el = await render();
       await fillAndSubmit(el, 'ana@exemplo.com', 'uma-senha-longa', 'outra-senha-longa');
-      expect(text(el, 'app-auth-notice')).toBe('As duas senhas não são iguais.');
-      expect(notice(el)?.getAttribute('role')).toBe('alert');
       expect(api.acceptInvite).not.toHaveBeenCalled();
-      expect(document.activeElement).toBe(field(el, 'invite-confirmation'));
+      // Antes havia a mesma frase duas vezes (embaixo do campo e numa faixa no alto): a faixa é só para erro da API.
+      expect(notice(el)).toBeNull();
+      expect(el.querySelector('[role="alert"]')).toBeNull();
+      const status = el.querySelector<HTMLElement>('#invite-confirmation-status')!;
+      expect(clean(status.textContent)).toBe('As senhas ainda não são iguais.');
+      expect(status.dataset['tone']).toBe('bad');
+      expect(status.querySelector('svg')).not.toBeNull();
+      // O texto é do campo: o leitor de tela o ouve junto com o rótulo.
+      const confirmation = field(el, 'invite-confirmation');
+      expect(confirmation.getAttribute('aria-invalid')).toBe('true');
+      expect(confirmation.getAttribute('aria-describedby')).toBe('invite-confirmation-status');
+      await vi.waitFor(() => expect(document.activeElement).toBe(confirmation));
+    });
+
+    it('says why aloud when the send leaves the confirmation field itself, where the focus would not move', async () => {
+      const el = await render();
+      type(el, 'invite-email', 'ana@exemplo.com');
+      type(el, 'invite-password', 'uma-senha-longa');
+      type(el, 'invite-confirmation', 'outra-senha-longa');
+      field(el, 'invite-confirmation').focus();
+      await submitForm(el);
+      const region = () => text(el, 'p.ui-visually-hidden[role="status"]');
+      await vi.waitFor(() => {
+        harness.fixture.detectChanges();
+        expect(region()).toBe('As senhas ainda não são iguais.');
+      });
+      expect(notice(el)).toBeNull();
+    });
+
+    it('asks for the repeated password in the same single message when it was left empty', async () => {
+      const el = await render();
+      type(el, 'invite-email', 'ana@exemplo.com');
+      type(el, 'invite-password', 'uma-senha-longa');
+      await submitForm(el);
+      expect(api.acceptInvite).not.toHaveBeenCalled();
+      expect(notice(el)).toBeNull();
+      expect(text(el, '#invite-confirmation-status')).toBe('Repita a senha para conferir.');
+      expect(field(el, 'invite-confirmation').getAttribute('aria-invalid')).toBe('true');
     });
 
     it('refuses an e-mail with no shape at the e-mail field, without an alert', async () => {
@@ -425,9 +465,11 @@ describe('AcceptInvitePage', () => {
       expect(el.querySelector('form')).toBeNull();
       expect(el.querySelectorAll('h1')).toHaveLength(1);
       expect(text(el, 'h1')).toBe('Este convite não vale mais');
-      // Cobre as três causas, sem afirmar qual foi (a API também não diz).
-      expect(text(el, 'app-auth-state .detail')).toContain('usado, expirou ou foi cancelado');
+      // Só o título e o que fazer: a API não diz qual foi a causa (usado, vencido ou cancelado), então a tela não a afirma.
+      expect(el.querySelector('app-auth-state .detail')).toBeNull();
       expect(text(el, 'app-auth-state .advice')).toContain('Peça um novo link');
+      // O que fazer está dentro do bloco anunciado, para o leitor de tela ouvir os dois.
+      expect(el.querySelector('[role="alert"] .advice')).not.toBeNull();
       expect(el.querySelector('[role="alert"]')?.textContent).toContain(
         'Este convite não vale mais',
       );
@@ -489,14 +531,14 @@ describe('AcceptInvitePage', () => {
       expect(el.querySelector('form')).toBeNull();
       expect(el.querySelectorAll('h1')).toHaveLength(1);
       expect(el.querySelector('[role="alert"]')?.textContent).toContain('Abra o link do convite');
-      expect(text(el, 'app-auth-state .advice')).toContain('enviem de novo');
+      expect(el.querySelector('app-auth-state .advice')).toBeNull();
       expect(el.querySelector('a[href="/entrar"]')).not.toBeNull();
     });
 
     it('does not accept a fragment that does not look like a secret, and never echoes it', async () => {
       const el = await render('/convite#<script>alert(1)</script>');
       expect(el.querySelector('form')).toBeNull();
-      expect(text(el, 'h1')).toBe('Link do convite incompleto');
+      expect(text(el, 'h1')).toBe('Convite incompleto');
       expect(el.textContent).not.toContain('script');
       expect(api.acceptInvite).not.toHaveBeenCalled();
       expect(TestBed.inject(Router).url).toBe('/convite');

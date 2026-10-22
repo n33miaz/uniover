@@ -71,11 +71,13 @@ async function showTv(page: Page) {
 
 async function acceptInvite(page: Page, token: string) {
   await page.goto(`/convite#${token}`);
-  await expect(page.getByRole('heading', { level: 1, name: 'Criar sua conta' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+  ).toBeVisible();
   await page.getByLabel('E-mail').fill(GUEST.email);
   await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
   await page.getByLabel('Repita a senha').fill(GUEST.password);
-  await page.getByRole('button', { name: 'Criar conta e entrar' }).click();
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click();
 }
 
 test.describe('convite do dono (passkey)', () => {
@@ -174,7 +176,9 @@ test.describe('convidado: só o controle da TV', () => {
     tv.shortcuts = [...SHORTCUTS, outOfControl, gone];
     const invite = identity.seedInvite();
     await page.goto(`/convite#${invite.token}`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Criar sua conta' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+    ).toBeVisible();
 
     // O segredo sai do endereço assim que a tela o lê, e nunca aparece na tela.
     await expect(page).toHaveURL(/\/convite$/);
@@ -191,17 +195,20 @@ test.describe('convidado: só o controle da TV', () => {
     await page.getByLabel('E-mail').fill(GUEST.email);
     await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
     await page.getByLabel('Repita a senha').fill('outra-senha-longa-demais');
-    await page.getByRole('button', { name: 'Criar conta e entrar' }).click();
-    await expect(page.getByRole('alert')).toContainText('As duas senhas não são iguais.');
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+    await expect(page.locator('#invite-confirmation-status')).toHaveText(
+      'As senhas ainda não são iguais.',
+    );
+    await expect(page.getByRole('alert')).toHaveCount(0);
     await page.getByLabel('Senha', { exact: true }).fill('curta');
     await page.getByLabel('Repita a senha').fill('curta');
-    await page.getByRole('button', { name: 'Criar conta e entrar' }).click();
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('ao menos 10 caracteres');
     expect(identity.requests.some((r) => r.path === '/guest-invites/accept')).toBe(false);
 
     await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
     await page.getByLabel('Repita a senha').fill(GUEST.password);
-    await page.getByRole('button', { name: 'Criar conta e entrar' }).click();
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click();
 
     // Visão única: cai no controle, sem Início, sem voltar, sem abas.
     await expect(page).toHaveURL(/\/tv$/);
@@ -429,7 +436,7 @@ test.describe('convidado: só o controle da TV', () => {
     await page.getByLabel('E-mail').fill(GUEST.email);
     await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
     await page.getByLabel('Repita a senha').fill(GUEST.password);
-    await page.getByRole('button', { name: 'Criar conta e entrar' }).click();
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('Este convite não vale mais');
     await expect(page).toHaveURL(/\/convite$/);
 
@@ -457,5 +464,38 @@ test.describe('convidado: só o controle da TV', () => {
     await page.getByRole('button', { name: 'Entrar', exact: true }).click();
     await expect(page).toHaveURL(/\/tv$/);
     await showTv(page);
+  });
+});
+
+test.describe('convidado sem nenhum módulo: tela simples', () => {
+  test('o cartão fica no meio da altura, e não colado no alto com a tela vazia embaixo', async ({
+    page,
+  }) => {
+    identity.guests.push({
+      id: '00000000-0000-4000-8000-000000000071',
+      displayName: GUEST.displayName,
+      email: GUEST.email,
+      password: GUEST.password,
+      createdAt: '2026-10-21T15:00:00Z',
+      disabledAt: null,
+      permissions: [],
+    });
+    identity.role = 'guest';
+    identity.loggedIn = true;
+    await page.goto('/');
+    await expect(page).toHaveURL(/\/sem-acesso$/);
+    const card = page.locator('app-no-access-page .card');
+    await expect(card).toBeVisible();
+    await expectNoHorizontalScroll(page);
+
+    // Geometria, não texto: o vão em cima do cartão (abaixo do cabeçalho) e o de baixo são parecidos. Sobra uma folga
+    // para o centro cair um pouco acima do meio, de propósito.
+    const header = (await page.locator('header.bar').boundingBox())!;
+    const box = (await card.boundingBox())!;
+    const viewport = page.viewportSize()!;
+    const above = box.y - (header.y + header.height);
+    const below = viewport.height - (box.y + box.height);
+    expect(above).toBeGreaterThan(24);
+    expect(Math.abs(above - below)).toBeLessThan(64);
   });
 });

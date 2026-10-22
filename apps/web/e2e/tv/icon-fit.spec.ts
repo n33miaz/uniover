@@ -441,11 +441,13 @@ test.describe('atalhos maiores e centralizados', () => {
     tv.shortcuts = shortcutsFor(FIT_CASES.slice(0, 4));
     const invite = identity.seedInvite();
     await page.goto(`/convite#${invite.token}`);
-    await expect(page.getByRole('heading', { level: 1, name: 'Criar sua conta' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Criar conta', exact: true }),
+    ).toBeVisible();
     await page.getByLabel('E-mail').fill(GUEST.email);
     await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
     await page.getByLabel('Repita a senha').fill(GUEST.password);
-    await page.getByRole('button', { name: 'Criar conta e entrar' }).click();
+    await page.getByRole('button', { name: 'Continuar', exact: true }).click();
     await expect(page).toHaveURL(/\/tv$/);
     await showTv(page);
     await expect(page.getByRole('link', { name: /Início/ })).toHaveCount(0);

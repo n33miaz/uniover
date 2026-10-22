@@ -172,6 +172,15 @@ describe('AuthField', () => {
     expect(input.selectionEnd).toBe('segredo-antigo'.length);
   });
 
+  it('knows whether the cursor is already in the field', () => {
+    const { host, input } = setup();
+    expect(host.field().isFocused()).toBe(false);
+    host.field().focus();
+    expect(host.field().isFocused()).toBe(true);
+    input.blur();
+    expect(host.field().isFocused()).toBe(false);
+  });
+
   describe('free text (a name)', () => {
     it('is a plain text field: no e-mail keyboard, words capitalized, no spelling squiggles', () => {
       const { input } = setup('text');
