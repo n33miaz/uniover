@@ -75,16 +75,78 @@ public class IdentityAuditNormalizerTests
     }
 
     [Fact]
-    public void FailedLoginOfAnUnknownAccount_HasNoActor_AndKeepsTheReasonOnlyWhenThereIsOne()
+    public void FailedLoginOfAnUnknownAccount_HasNoActor_AndNoTarget()
     {
         var unknown = Normalize(AuditEvents.LoginFailed);
-        var disabled = Normalize(AuditEvents.LoginFailed, Guest, "account-disabled");
 
         unknown.ActorId.Should().BeNull();
+        unknown.TargetUserId.Should().BeNull("o e-mail não existe: não há conta a apontar");
         unknown.Outcome.Should().Be(AuditOutcome.Failure);
         unknown.Detail.Should().BeNull();
-        disabled.ActorId.Should().Be(Guest);
-        disabled.Detail.Should().Be("account-disabled");
+    }
+
+    [Theory]
+    [InlineData(AuditEvents.LoginFailed, AuditOutcome.Failure)]
+    [InlineData(AuditEvents.LoginLocked, AuditOutcome.Denied)]
+    [InlineData(AuditEvents.RefreshReuseDetected, AuditOutcome.Denied)]
+    public void AnAttemptAgainstAnAccount_PutsTheAccountAsTarget_AndLeavesTheActorEmpty(string eventName, AuditOutcome outcome)
+    {
+        var record = Normalize(eventName, user: null, detail: AuditAboutAccount.Detail(Guest));
+
+        record.ActorId.Should().BeNull("quem tentou não está autenticado e não se sabe quem é");
+        record.TargetUserId.Should().Be(Guest);
+        record.Detail.Should().BeNull("o id da conta não é um detalhe: vira o alvo");
+        record.Outcome.Should().Be(outcome);
+        record.Ip.Should().Be("203.0.113.7", "o IP e o aparelho seguem gravados");
+        record.UserAgent.Should().Be("navegador/1.0");
+    }
+
+    [Fact]
+    public void ADisabledAccountsLogin_KeepsTheReason_AndTheAccountIsTheTarget()
+    {
+        var record = Normalize(AuditEvents.LoginFailed, user: null, detail: AuditAboutAccount.Detail(Guest, "account-disabled"));
+
+        record.ActorId.Should().BeNull();
+        record.TargetUserId.Should().Be(Guest);
+        record.Detail.Should().Be("account-disabled");
+    }
+
+    [Theory]
+    [InlineData(AuditEvents.LoginFailed, "account-disabled")]
+    [InlineData(AuditEvents.LoginFailed, null)]
+    [InlineData(AuditEvents.LoginLocked, null)]
+    [InlineData(AuditEvents.RefreshReuseDetected, null)]
+    public void OldRows_WrittenWithTheAccountAsTheAuthor_StayExactlyAsTheyWere(string eventName, string? detail)
+    {
+        // A trilha é só de inclusão: as linhas gravadas antes da correção não são reescritas nem reinterpretadas.
+        var record = Normalize(eventName, Guest, detail);
+
+        record.ActorId.Should().Be(Guest);
+        record.TargetUserId.Should().BeNull();
+        record.Detail.Should().Be(detail);
+    }
+
+    [Theory]
+    [InlineData(AuditEvents.LoginFailed)]
+    [InlineData(AuditEvents.LoginLocked)]
+    public void PasskeyRegistration_WrongPassword_KeepsTheAuthenticatedUserAsTheActor(string eventName)
+    {
+        // Esse caminho exige sessão: quem errou a senha é a pessoa autenticada, não "alguém sem login".
+        var record = Normalize(eventName, Admin, "passkey-registration");
+
+        record.ActorId.Should().Be(Admin);
+        record.TargetUserId.Should().BeNull();
+        record.Detail.Should().Be("passkey-registration");
+    }
+
+    [Fact]
+    public void TheDetailOfAnAttempt_UsesTheSameShapeAsTheEventsOfTheAdministratorAboutAnAccount()
+    {
+        AuditAboutAccount.Detail(Guest).Should().Be(Guest.ToString("N"));
+        AuditAboutAccount.Detail(Guest, "account-disabled").Should().Be($"{Guest:N}|account-disabled");
+        IdentityAuditNormalizer.TargetAccountEvents.Should().Contain(
+            [AuditEvents.LoginFailed, AuditEvents.LoginLocked, AuditEvents.RefreshReuseDetected, AuditEvents.GuestRevoked, AuditEvents.PermissionsChanged],
+            "o filtro por pessoa casa a conta que agiu OU a atingida");
     }
 
     [Fact]

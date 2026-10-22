@@ -59,9 +59,13 @@ public static class AuditOutcomes
 /// <param name="Id">Id da linha na tabela de origem (desempate estável da paginação).</param>
 /// <param name="Module">A fonte: <c>identity</c>, <c>devices</c>, <c>tv</c>.</param>
 /// <param name="Action">Código estável da ação (por exemplo <c>login_failed</c>, <c>tv.key</c>).</param>
-/// <param name="ActorId">A conta que agiu; nula quando ninguém estava autenticado (login de e-mail desconhecido, agente).</param>
+/// <param name="ActorId">
+/// A conta que agiu; nula quando ninguém estava autenticado: a tela mostra isso como "alguém sem login" (tentativa de
+/// login ou de refresh contra uma conta, login de e-mail desconhecido, agente). Nesses casos a conta atingida vai em
+/// <paramref name="TargetUserId"/>, e nunca como autora.
+/// </param>
 /// <param name="Target">Sobre o quê: tecla, pacote do app, id de convite ou de passkey, nome do aparelho. Texto curto do servidor.</param>
-/// <param name="TargetUserId">A conta que sofreu a ação, quando a ação é sobre outra conta (revogar convidado, mudar permissões).</param>
+/// <param name="TargetUserId">A conta que sofreu a ação, quando a ação é sobre outra conta (revogar convidado, mudar permissões) ou uma tentativa contra ela (senha errada, conta bloqueada).</param>
 /// <param name="Detail">Código ou complemento curto (motivo da falha, o que entrou e saiu das permissões).</param>
 public sealed record AuditRecord(
     Guid Id,

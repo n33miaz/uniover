@@ -55,3 +55,15 @@ public static class AuditEvents
         AuditExported,
     ];
 }
+
+/// <summary>
+/// O <c>detail</c> dos eventos em que alguém SEM LOGIN agiu sobre uma conta (senha errada, conta bloqueada, refresh
+/// reutilizado). Nesses eventos o ator é nulo (quem tentou é desconhecido: o IP e o aparelho continuam gravados) e a
+/// conta que sofreu a tentativa vai no começo do detalhe, no mesmo formato dos eventos do administrador sobre uma conta
+/// (<c>N</c>, 32 hexadecimais), seguida do motivo quando há: <c>id</c> ou <c>id|motivo</c>. Nunca o e-mail digitado.
+/// </summary>
+public static class AuditAboutAccount
+{
+    public static string Detail(Guid accountId, string? reason = null) =>
+        string.IsNullOrEmpty(reason) ? accountId.ToString("N") : $"{accountId:N}|{reason}";
+}
