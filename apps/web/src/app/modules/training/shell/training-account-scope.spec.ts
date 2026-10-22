@@ -174,6 +174,24 @@ describe('TrainingAccountScope', () => {
   });
 
   describe('the old database, from before there was one per account', () => {
+    it('adopts after /me confirms the owner even if the scoped database opened first', async () => {
+      const kit = await open();
+      const legacy = kit.trainingLegacyDb();
+      await legacy.exercises.bulkPut(catalog());
+      legacy.close();
+      kit.account.legacyDecided.set(false);
+      kit.account.signInAs('conta-a');
+
+      const { fixture, el } = await show(kit);
+      await eventually(fixture, () => expect(el.querySelector('app-training-page')).not.toBeNull());
+      expect(names(el)).toEqual([]);
+
+      kit.account.legacyOwner = 'conta-a';
+      kit.account.legacyDecided.set(true);
+      await eventually(fixture, () => expect(names(el)).toHaveLength(5));
+      expect(kit.account.adopted.has('uniover-training')).toBe(true);
+    });
+
     it('is adopted before the screens appear, and they show what was adopted', async () => {
       const kit = await open();
       const legacy = kit.trainingLegacyDb();

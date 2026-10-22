@@ -86,11 +86,13 @@ export class SyncEngine {
       this.clearTimers();
     });
 
-    // Uma sessão que acaba de ficar pronta é motivo para tentar o que esperava por ela. O usuário também conta: o token
-    // chega antes do `/me`, e só o `/me` diz de quem é a sessão.
+    // Uma sessão que acaba de ficar pronta é motivo para tentar o que esperava por ela. Também conta o dono da sessão (o
+    // `sub` do token ou o `/me`) e cada token novo (uma renovação): o item que ficou esperando um token desta conta sai
+    // assim que ele chega, sem esperar o relógio.
     effect(() => {
       if (this.session.status() === 'authenticated') {
         this.account.sessionAccount();
+        this.session.expiresAt();
         untracked(() => void this.kick({ force: true }));
       }
     });
@@ -255,6 +257,7 @@ export class SyncEngine {
 
   private async send(item: OutboxItem): Promise<SendOutcome> {
     const request: QueueRequest = {
+      accountId: this.accountId,
       method: item.method,
       url: item.url,
       body: item.body,

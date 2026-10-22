@@ -134,6 +134,41 @@ describe('TrainingAccountDbs', () => {
       await legacy.sessions.put(session);
       await legacy.sets.put(set);
       await legacy.goals.put(goal);
+      await legacy.bodyEntries.put({
+        id: 'body-1',
+        measuredOn: '2026-10-21',
+        weightKg: 78,
+        bodyFatPct: null,
+        fatMethod: null,
+        waistCm: null,
+        neckCm: null,
+        hipCm: null,
+        armCm: null,
+        thighCm: null,
+        note: '',
+        updatedAt: 1,
+        clientUpdatedAt: 1,
+        deletedAt: null,
+      });
+      await legacy.bodyProfile.put({
+        id: 'me',
+        heightCm: 180,
+        birthDate: '1990-01-01',
+        sex: 'male',
+        activityFactor: 1.2,
+        updatedAt: 1,
+        clientUpdatedAt: 1,
+      });
+      await legacy.photos.put({
+        id: 'photo-1',
+        takenOn: '2026-10-21',
+        data: new Uint8Array([1, 2]).buffer,
+        type: 'image/jpeg',
+        width: 1,
+        height: 1,
+        bytes: 2,
+        addedAt: 1,
+      });
       await legacy.syncState.put({ resource: 'exercises', cursor: 'c1', lastPullAt: 5 });
       await legacy.meta.put({ key: 'restEndsAt', value: 123 });
       legacy.close();
@@ -155,6 +190,9 @@ describe('TrainingAccountDbs', () => {
       expect(await mine.sessions.get('s1')).toMatchObject({ startedAt: 1_000 });
       expect(await mine.sets.get('set1')).toMatchObject({ weightKg: 60, reps: 8 });
       expect(await mine.goals.get(goal.id)).toMatchObject({ value: 4 });
+      expect(await mine.bodyEntries.get('body-1')).toMatchObject({ weightKg: 78 });
+      expect(await mine.bodyProfile.get('me')).toMatchObject({ heightCm: 180 });
+      expect(await mine.photos.get('photo-1')).toMatchObject({ bytes: 2 });
       expect(await mine.syncState.get('exercises')).toMatchObject({ cursor: 'c1' });
       expect((await mine.meta.get('restEndsAt'))?.value).toBe(123);
     });
