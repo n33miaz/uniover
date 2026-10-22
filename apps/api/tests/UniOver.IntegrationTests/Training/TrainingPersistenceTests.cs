@@ -39,8 +39,8 @@ public sealed class TrainingPersistenceTests(PostgresFixture postgres)
         var inPublic = await SchemaGuardQueries.RunAsync(database.OwnerConnection, SchemaGuardQueries.PublicObjects, Ct);
 
         tables.Should().Equal(
-            "__ef_migrations_history", "catalog_meta", "exercise_overrides", "exercises", "goals", "idempotency_keys", "routine_items", "routines",
-            "session_sets", "sessions");
+            "__ef_migrations_history", "body_entries", "body_profile", "catalog_meta", "exercise_overrides", "exercises", "goals", "idempotency_keys",
+            "routine_items", "routines", "session_sets", "sessions");
         inPublic.Should().BeEmpty();
     }
 

@@ -66,6 +66,10 @@ internal static class TrainingPermissionMap
         new("GET", "/api/v1/training/sets", Module),
         new("PUT", "/api/v1/training/sessions/{id:guid}", Module, new { deviceId = "a", clientUpdatedAt = DateTimeOffset.UtcNow }),
         new("PUT", "/api/v1/training/sessions/{sessionId:guid}/sets/{id:guid}", Module, new { clientUpdatedAt = DateTimeOffset.UtcNow }),
+        new("GET", "/api/v1/training/body/entries", Module),
+        new("PUT", "/api/v1/training/body/entries/{id:guid}", Module, new { weightKg = 80m, clientUpdatedAt = DateTimeOffset.UtcNow }),
+        new("GET", "/api/v1/training/body/profile", Module),
+        new("PUT", "/api/v1/training/body/profile", Module, new { heightCm = 180m, clientUpdatedAt = DateTimeOffset.UtcNow }),
     ];
 
     /// <summary>
