@@ -93,6 +93,10 @@ export const TRAINING_ROUTES: Routes = [
         loadComponent: () => import('./progress/progress.page').then((m) => m.ProgressPage),
       },
       {
+        path: 'alimentacao',
+        loadComponent: () => import('./foods/food-diary.page').then((m) => m.FoodDiaryPage),
+      },
+      {
         path: 'corpo',
         loadComponent: () => import('./body/body.page').then((m) => m.BodyPage),
       },

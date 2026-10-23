@@ -1,4 +1,5 @@
 import { DB_CLOSE_GRACE_MS } from '../../../core/session/db-close';
+import { localMeal } from '../data/meals/meal-data-test-kit';
 import { TrainingSync } from '../data/sync/training-sync';
 import { localExercise } from '../data/sync/training-test-kit';
 import { TRAINING_ROUTES } from '../training.routes';
@@ -68,6 +69,35 @@ describe('TrainingAccountScope', () => {
     // A volta: o que é dela está no banco dela.
     kit.account.signInAs('conta-a');
     await eventually(fixture, () => expect(names(el)).toHaveLength(5));
+  });
+
+  it('keeps diary entries in the account that owns them when the active account changes', async () => {
+    const kit = await open('/treino/alimentacao');
+    kit.account.signInAs('conta-a');
+    await kit.trainingDbOf('conta-a').meals.put(
+      localMeal('meal-a', {
+        eatenOn: '2025-10-09',
+        name: 'Registro da conta A',
+        foodId: null,
+      }),
+    );
+    kit.account.signInAs('conta-b');
+    await kit.trainingDbOf('conta-b').meals.put(
+      localMeal('meal-b', {
+        eatenOn: '2025-10-09',
+        name: 'Registro da conta B',
+        foodId: null,
+      }),
+    );
+    kit.account.signInAs('conta-a');
+
+    const { fixture, el } = await show(kit);
+    await eventually(fixture, () => expect(el.textContent).toContain('Registro da conta A'));
+    expect(el.textContent).not.toContain('Registro da conta B');
+
+    kit.account.signInAs('conta-b');
+    await eventually(fixture, () => expect(el.textContent).toContain('Registro da conta B'));
+    expect(el.textContent).not.toContain('Registro da conta A');
   });
 
   describe('Hoje', () => {

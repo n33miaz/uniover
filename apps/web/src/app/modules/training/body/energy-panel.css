@@ -69,3 +69,62 @@ dd {
 .actions .ui-btn {
   flex: 1;
 }
+.consumption {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-lg, 1rem);
+  background: var(--a-surface);
+}
+.consumption-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+.consumption-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.consumption-head a {
+  min-height: var(--tap, 44px);
+  display: inline-flex;
+  align-items: center;
+  color: var(--a-accent, #276749);
+}
+.consumed {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--a-ink2);
+}
+.consumed strong {
+  color: var(--a-ink);
+  font-size: 1.4rem;
+  font-variant-numeric: tabular-nums;
+}
+.difference {
+  margin: 0;
+  font-size: var(--fs-small);
+}
+.difference.over {
+  color: var(--a-ink2);
+}
+.macros {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+.macros div {
+  display: grid;
+  gap: 0.2rem;
+}
+.macros dt {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+.macros dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
