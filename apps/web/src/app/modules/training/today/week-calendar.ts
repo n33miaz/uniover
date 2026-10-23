@@ -45,11 +45,6 @@ const weekdays = [
 ];
 
 const fullDate = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full', timeZone: 'UTC' });
-const shortDate = new Intl.DateTimeFormat('pt-BR', {
-  day: 'numeric',
-  month: 'short',
-  timeZone: 'UTC',
-});
 const monthName = new Intl.DateTimeFormat('pt-BR', {
   month: 'long',
   year: 'numeric',
@@ -124,10 +119,6 @@ export class WeekCalendar {
   protected readonly selectedWorkouts = computed(
     () => this.monthWorkouts()?.filter((workout) => workout.dayKey === this.selectedKey()) ?? [],
   );
-  protected readonly weekLabel = computed(() => {
-    const days = this.week().days;
-    return `${shortDate.format(dateAt(days[0]))} – ${shortDate.format(dateAt(days[6]))}`;
-  });
   protected readonly monthLabel = computed(() =>
     sentenceCase(
       monthName.format(new Date(Date.UTC(this.month().year, this.month().month - 1, 1))),
