@@ -20,14 +20,14 @@ public class RoutineTemplatesTests
         Templates.Items.Select(t => t.Id).Should().Equal(
             "abc", "abcd", "full-body",
             "ppl-superior-inferior", "superior-inferior-acessorios", "divisao-familiar-reforco-inferior",
-            "ab-reajustado", "full-body-cardio");
-        Templates.Items.Select(t => t.Routines.Count).Should().Equal(3, 4, 2, 5, 5, 5, 2, 3);
+            "ab-reajustado", "full-body-cardio", "historical-ab");
+        Templates.Items.Select(t => t.Routines.Count).Should().Equal(3, 4, 2, 5, 5, 5, 2, 3, 2);
     }
 
     [Fact]
     public void OptionalPlansShowTheSessionEstimateAndPreserveNonStrengthScheduleNotes()
     {
-        var optional = Templates.Items.Skip(3).ToList();
+        var optional = Templates.Items.Skip(3).Take(5).ToList();
         optional.Should().OnlyContain(t => t.Description.Contains("45–60 min", StringComparison.Ordinal));
         optional.Should().OnlyContain(t => t.Description.StartsWith("Rascunho parcial", StringComparison.Ordinal));
         optional.Should().OnlyContain(t => t.Description.Contains("confira antes de criar", StringComparison.Ordinal));
@@ -48,7 +48,7 @@ public class RoutineTemplatesTests
     [Fact]
     public void OptionalPlansKeepTheirSupportedExerciseCountsAndDiscloseCatalogGaps()
     {
-        var plans = Templates.Items.Skip(3).ToDictionary(t => t.Id);
+        var plans = Templates.Items.Skip(3).Take(5).ToDictionary(t => t.Id);
         plans["ppl-superior-inferior"].Routines.Select(r => r.Items.Count).Should().Equal(5, 4, 4, 5, 5);
         plans["superior-inferior-acessorios"].Routines.Select(r => r.Items.Count).Should().Equal(5, 3, 4, 5, 4);
         plans["divisao-familiar-reforco-inferior"].Routines.Select(r => r.Items.Count).Should().Equal(4, 3, 4, 3, 5);
@@ -57,6 +57,33 @@ public class RoutineTemplatesTests
 
         plans.Values.Select(t => t.Description).Should().OnlyContain(d =>
             d.Contains("omitid", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void HistoricalOriginalAbKeepsOnlyClearItemsAndDisclosesItsLimits()
+    {
+        var historical = Templates.Items.Single(t => t.Id == "historical-ab");
+
+        historical.Name.Should().Be("A/B histórico rejeitado");
+        historical.Description.Should().StartWith("Histórico · rejeitado pelo dono · rascunho parcial.");
+        historical.Description.Should().Contain("Não é recomendação");
+        historical.Description.Should().Contain("nunca será ativado automaticamente");
+        historical.Description.Should().Contain("padrão editável de 90 s");
+        historical.Description.Should().Contain("esse valor não veio da ficha");
+        historical.Description.Should().Contain("não confirma a alternância semanal");
+        historical.Description.Should().Contain("as sessões caibam em 45–60 minutos");
+        historical.Routines.Select(r => r.Name).Should().Equal(
+            "A · Histórico rejeitado", "B · Histórico rejeitado");
+        historical.Routines.Select(r => r.Items.Count).Should().Equal(2, 5);
+        historical.Routines.SelectMany(r => r.Items).Select(i =>
+            (i.ExerciseSlug, i.TargetSets, i.RepMin, i.RepMax, i.RestSeconds)).Should().Equal(
+            ("crucifixo-na-maquina-voador", 3, 10, 10, 90),
+            ("cadeira-extensora", 3, 10, 10, 90),
+            ("puxada-aberta-na-polia", 3, 10, 10, 90),
+            ("puxada-supinada-na-polia", 3, 10, 10, 90),
+            ("crucifixo-inverso-na-maquina", 3, 10, 10, 90),
+            ("mesa-flexora", 3, 10, 10, 90),
+            ("abdominal-crunch", 3, 20, 20, 90));
     }
 
     [Fact]

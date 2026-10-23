@@ -85,6 +85,47 @@ describe('RoutinesListPage', () => {
   });
 
   describe('ready-made templates', () => {
+    it('labels the rejected historical A/B as partial and creates it inactive only after preview', async () => {
+      const description =
+        'Histórico · rejeitado pelo dono · rascunho parcial. Não é recomendação e nunca será ativado automaticamente.\n\nA alternância semanal e o encaixe em 45–60 minutos não foram confirmados.';
+      const { api, fixture, el, trainingDb } = await open();
+      const source = api.dto.items[0];
+      api.dto = {
+        items: [
+          {
+            ...source,
+            id: 'historical-ab',
+            name: 'A/B histórico rejeitado',
+            description,
+            routines: source.routines.map((routine, index) => ({
+              ...routine,
+              name: index === 0 ? 'A · Histórico rejeitado' : 'B · Histórico rejeitado',
+            })),
+          },
+        ],
+      };
+      await seedCatalog(trainingDb, ['supino', 'crucifixo', 'rosca', 'triceps']);
+      await eventually(fixture, () => expect(button(el, 'Usar modelo')).toBeDefined());
+      button(el, 'Usar modelo').click();
+      await eventually(fixture, () => expect(el.querySelector('dialog .ui-row')).not.toBeNull());
+
+      const row = el.querySelector<HTMLButtonElement>('dialog .ui-row')!;
+      expect(row.textContent).toContain('Histórico · rejeitado pelo dono');
+      expect(el.querySelector('dialog .create-draft')).toBeNull();
+      row.click();
+      await eventually(fixture, () => expect(text(el)).toContain('não foram confirmados'));
+      button(el, 'Criar este rascunho parcial').click();
+
+      await eventually(fixture, () => expect(rows(el)).toHaveLength(2));
+      expect(
+        rows(el).map((routine) => routine.querySelector('.ui-row-title')?.textContent?.trim()),
+      ).toEqual(['A · Histórico rejeitado', 'B · Histórico rejeitado']);
+      expect(text(el)).toContain(
+        'Estas rotinas históricas ficaram inativas e não são uma recomendação.',
+      );
+      expect(text(el)).not.toContain('ative quando estiverem completas');
+    });
+
     it('requires previewing a partial draft before creating it', async () => {
       const { fixture, el, trainingDb } = await open(
         'Rascunho parcial · opção 3 · cinco sessões.\n\nRosca de terça omitida: confira antes de criar.',

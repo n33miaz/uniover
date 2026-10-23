@@ -637,6 +637,30 @@
           ]
         }
       ]
+    },
+    {
+      "id": "historical-ab",
+      "name": "A/B histórico rejeitado",
+      "description": "Histórico · rejeitado pelo dono · rascunho parcial. Não é recomendação e nunca será ativado automaticamente.\n\nForam preservados somente os movimentos com nome e correspondência inequívocos no catálogo. A ficha não informa os intervalos de descanso. O app aplica o padrão editável de 90 s; esse valor não veio da ficha. A fonte mostra A e B, mas não confirma a alternância semanal nem que as sessões caibam em 45–60 minutos.\n\nFicaram de fora: supino reto com implemento abreviado; desenvolvimento com nome truncado; paralelas com repetições incompletas e carga ambígua; tríceps no crossover sem acessório definido; leg press com orientação sem correspondência exata; agachamento goblet sem variação exata; remada com nome e implemento truncados; rosca no crossover sem variação inequívoca; flexão plantar com equipamento truncado; esteira com campo que não confirma a duração. As cargas pessoais foram removidas.",
+      "routines": [
+        {
+          "name": "A · Histórico rejeitado",
+          "items": [
+            { "exerciseSlug": "crucifixo-na-maquina-voador", "targetSets": 3, "repMin": 10, "repMax": 10, "restSeconds": 90 },
+            { "exerciseSlug": "cadeira-extensora", "targetSets": 3, "repMin": 10, "repMax": 10, "restSeconds": 90 }
+          ]
+        },
+        {
+          "name": "B · Histórico rejeitado",
+          "items": [
+            { "exerciseSlug": "puxada-aberta-na-polia", "targetSets": 3, "repMin": 10, "repMax": 10, "restSeconds": 90 },
+            { "exerciseSlug": "puxada-supinada-na-polia", "targetSets": 3, "repMin": 10, "repMax": 10, "restSeconds": 90 },
+            { "exerciseSlug": "crucifixo-inverso-na-maquina", "targetSets": 3, "repMin": 10, "repMax": 10, "restSeconds": 90 },
+            { "exerciseSlug": "mesa-flexora", "targetSets": 3, "repMin": 10, "repMax": 10, "restSeconds": 90 },
+            { "exerciseSlug": "abdominal-crunch", "targetSets": 3, "repMin": 20, "repMax": 20, "restSeconds": 90 }
+          ]
+        }
+      ]
     }
   ]
 }
