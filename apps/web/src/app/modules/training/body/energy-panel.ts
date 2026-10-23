@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   inject,
   input,
   output,
@@ -11,12 +12,82 @@ import type { GoalWriteResult } from '../data/goals/goal-repository';
 import { GoalRepository } from '../data/goals/goal-repository';
 import type { EnergyState } from './body-store';
 import { formatKcalNumber, parseDecimal } from './body-text';
+import { MealRepository } from '../data/meals/meal-repository';
+import { RouterLink } from '@angular/router';
 
 @Component({
   selector: 'app-body-energy-panel',
+  imports: [RouterLink],
   template: `
     <section class="energy" aria-labelledby="energy-title">
       <h2 id="energy-title" i18n="@@training.body.energy.title">Meta de calorias</h2>
+      <section class="consumption" aria-labelledby="consumption-title">
+        <div class="consumption-head">
+          <h3 id="consumption-title" i18n="@@training.body.energy.consumed-title">
+            Consumo de hoje
+          </h3>
+          <a routerLink="/treino/alimentacao" i18n="@@training.body.energy.diary-link"
+            >Abrir diário</a
+          >
+        </div>
+        @if (mealsLoaded()) {
+          <p class="consumed">
+            <strong>{{ formatKcalNumber(consumed().kcal) }}</strong>
+            <span i18n="@@training.body.energy.kcal">kcal</span>
+          </p>
+          @if (readyState(); as ready) {
+            <p class="muted" i18n="@@training.body.energy.of-target">
+              Meta escolhida: {{ formatKcalNumber(ready.target) }} kcal
+            </p>
+            <p class="difference" [class.over]="consumed().kcal > ready.target">
+              @if (consumed().kcal <= ready.target) {
+                <ng-container i18n="@@training.body.energy.remaining"
+                  >{{ formatKcalNumber(ready.target - consumed().kcal) }} kcal até a meta
+                  escolhida</ng-container
+                >
+              } @else {
+                <ng-container i18n="@@training.body.energy.over"
+                  >{{ formatKcalNumber(consumed().kcal - ready.target) }} kcal acima da meta
+                  escolhida</ng-container
+                >
+              }
+            </p>
+          } @else {
+            <p class="muted" i18n="@@training.body.energy.no-target">
+              Defina uma meta diária para comparar os valores.
+            </p>
+          }
+          <dl class="macros" aria-label="{{ macrosLabel }}">
+            <div>
+              <dt i18n="@@training.body.energy.protein">Proteína</dt>
+              <dd i18n="@@training.body.energy.protein-value">
+                {{ formatKcalNumber(consumed().protein) }} g
+              </dd>
+            </div>
+            <div>
+              <dt i18n="@@training.body.energy.carbs">Carboidratos</dt>
+              <dd i18n="@@training.body.energy.carbs-value">
+                {{ formatKcalNumber(consumed().carbs) }} g
+              </dd>
+            </div>
+            <div>
+              <dt i18n="@@training.body.energy.fat">Gorduras</dt>
+              <dd i18n="@@training.body.energy.fat-value">
+                {{ formatKcalNumber(consumed().fat) }} g
+              </dd>
+            </div>
+          </dl>
+        } @else if (mealsError()) {
+          <p class="error" role="alert">{{ mealsError() }}</p>
+        } @else {
+          <p class="muted" role="status" i18n="@@training.body.energy.meals-loading">
+            Lendo seus lançamentos locais…
+          </p>
+        }
+        <p class="muted" i18n="@@training.body.energy.nonprescriptive">
+          Valores para acompanhamento pessoal; não são orientação médica.
+        </p>
+      </section>
       @switch (state().kind) {
         @case ('no-profile') {
           <p class="muted" i18n="@@training.body.energy.no-profile">
@@ -144,6 +215,11 @@ import { formatKcalNumber, parseDecimal } from './body-text';
 })
 export class BodyEnergyPanel {
   private readonly goals = inject(GoalRepository);
+  private readonly meals = inject(MealRepository);
+  protected readonly mealsLoaded = signal(false);
+  protected readonly mealsError = signal('');
+  protected readonly consumed = signal({ kcal: 0, protein: 0, carbs: 0, fat: 0 });
+  protected readonly macrosLabel = $localize`:@@training.body.energy.macros:Macronutrientes consumidos hoje`;
   readonly state = input.required<EnergyState>();
   protected readonly readyState = computed(() => {
     const current = this.state();
@@ -153,6 +229,7 @@ export class BodyEnergyPanel {
   protected readonly editing = signal(false);
   protected readonly draft = signal('');
   protected readonly error = signal('');
+  private mealLoad = 0;
   protected formatKcalNumber = formatKcalNumber;
   protected belowText = (bmr: number) =>
     $localize`:@@training.body.energy.below:A meta nunca fica abaixo da taxa basal estimada (${formatKcalNumber(bmr)}:bmr: kcal). Escolha pelo menos esse valor.`;
@@ -161,6 +238,39 @@ export class BodyEnergyPanel {
     this.draft.set(String(state.chosen ?? state.target));
     this.error.set('');
     this.editing.set(true);
+  }
+  constructor() {
+    effect(() => {
+      this.meals.revision();
+      const day = this.meals.today();
+      const request = ++this.mealLoad;
+      this.mealsLoaded.set(false);
+      this.mealsError.set('');
+      void this.meals
+        .entriesOf(day)
+        .then((entries) => {
+          if (request !== this.mealLoad) return;
+          this.consumed.set(
+            entries.reduce(
+              (total, entry) => ({
+                kcal: total.kcal + entry.kcal,
+                protein: total.protein + entry.proteinG,
+                carbs: total.carbs + entry.carbG,
+                fat: total.fat + entry.fatG,
+              }),
+              { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+            ),
+          );
+          this.mealsLoaded.set(true);
+        })
+        .catch(() => {
+          if (request !== this.mealLoad) return;
+          this.consumed.set({ kcal: 0, protein: 0, carbs: 0, fat: 0 });
+          this.mealsError.set(
+            $localize`:@@training.body.energy.meals-failed:Não foi possível ler seus lançamentos agora.`,
+          );
+        });
+    });
   }
   protected async save(state: Extract<EnergyState, { kind: 'ready' }>): Promise<void> {
     const value = parseDecimal(this.draft());
