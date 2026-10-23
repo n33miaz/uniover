@@ -1,6 +1,6 @@
 /**
  * Ilustrações dos exercícios (Everkinetic, CC BY-SA 4.0), guardadas sem modificação em
- * `assets-third-party/everkinetic/svg/`. Cada exercício do catálogo que tem um equivalente SEGURO (mesmo movimento
+ * `assets-third-party/everkinetic/` (SVG e PNG). Cada exercício do catálogo que tem um equivalente SEGURO (mesmo movimento
  * e mesmo equipamento) aponta para o par de poses; o que não está aqui não mostra imagem nenhuma. Na dúvida, fica
  * de fora: nunca se usa a figura de outro exercício.
  */
@@ -26,6 +26,20 @@ function art(title: string, id: string): ExerciseIllustrationEntry {
     title,
     frames: [`${id}-relaxation.svg`, `${id}-tension.svg`],
     sourceUrl: `https://github.com/everkinetic/data/blob/${EVERKINETIC_COMMIT}/dist/svg/${id}-relaxation.svg`,
+  };
+}
+
+/** Alguns exercícios só têm o par original em PNG no repositório da origem. */
+function pngArt(
+  title: string,
+  name: string,
+  order: readonly [number, number] = [1, 2],
+): ExerciseIllustrationEntry {
+  const frames = order.map((pose) => `${name}-${pose}.png`) as [string, string];
+  return {
+    title,
+    frames,
+    sourceUrl: `https://github.com/everkinetic/data/blob/${EVERKINETIC_COMMIT}/src/images-web/${frames[0]}`,
   };
 }
 
@@ -113,6 +127,8 @@ export const EXERCISE_ILLUSTRATIONS: Readonly<Record<string, ExerciseIllustratio
   'puxada-com-triangulo-na-polia': art('V Bar Pull Down', '0096'),
   'puxada-com-bracos-estendidos-na-polia': art('Straight Arm Push Down', '0092'),
   'puxada-supinada-na-polia': art('Underhand Pull downs', '0093'),
+  // Na origem, a pose com braços estendidos é a segunda imagem.
+  'puxada-aberta-na-polia': pngArt('Wide Grip Lat Pull Down', 'wide-grip-lat-pull-down', [2, 1]),
   'remada-sentada-na-polia': art('Seated Cable Rows', '0025'),
   'remada-curvada-supinada-com-barra': art('Reverse Grips Bent Over Barbell Rows', '0026'),
   'remada-curvada-para-ombro-posterior-com-barra': art('Rear Deltoid Row Barbell', '0028'),
@@ -143,6 +159,7 @@ export const EXERCISE_ILLUSTRATIONS: Readonly<Record<string, ExerciseIllustratio
     '0032',
   ),
   'desenvolvimento-militar-sentado-com-barra': art('Seated Military Press', '0004'),
+  'desenvolvimento-com-halteres': pngArt('Dumbbell Shoulder Press', 'dumbbell-shoulder-press'),
   'desenvolvimento-unilateral-com-halter': art('One Arm Dumbbell Shoulder Press', '0038'),
   'elevacao-frontal-com-halteres': art('Front Dumbbell Raise', '0033'),
   'elevacao-frontal-na-polia': art('Front Cable Raises', '0008'),

@@ -13,6 +13,8 @@ import {
 const REPO = resolve(process.cwd(), '../..');
 const ART_ROOT = resolve(process.cwd(), 'assets-third-party/everkinetic');
 const ART_DIR = resolve(ART_ROOT, 'svg');
+const PNG_DIR = resolve(ART_ROOT, 'png');
+const artPath = (file: string) => resolve(file.endsWith('.png') ? PNG_DIR : ART_DIR, file);
 const SEED = resolve(
   REPO,
   'apps/api/src/Modules/Training/UniOver.Modules.Training/Catalog/Seed/exercises.pt-br.json',
@@ -24,6 +26,7 @@ interface SeedFile {
 interface SourceExercise {
   readonly id_num: string;
   readonly title: string;
+  readonly img?: readonly string[];
 }
 
 const entries = Object.entries(EXERCISE_ILLUSTRATIONS);
@@ -38,16 +41,16 @@ describe('illustration map', () => {
 
   it('only cites files that exist in the third-party folder', () => {
     const missing = entries.flatMap(([slug, entry]) =>
-      entry.frames
-        .filter((file) => !existsSync(resolve(ART_DIR, file)))
-        .map((f) => `${slug}: ${f}`),
+      entry.frames.filter((file) => !existsSync(artPath(file))).map((f) => `${slug}: ${f}`),
     );
     expect(missing).toEqual([]);
   });
 
   it('keeps no file in the folder that the map does not use', () => {
     const used = new Set(entries.flatMap(([, entry]) => entry.frames));
-    const unused = readdirSync(ART_DIR).filter((file) => !used.has(file));
+    const unused = [...readdirSync(ART_DIR), ...readdirSync(PNG_DIR)].filter(
+      (file) => !used.has(file),
+    );
     expect(unused).toEqual([]);
   });
 
@@ -72,6 +75,14 @@ describe('illustration map', () => {
     for (const [slug, entry] of entries) {
       const [start, end] = entry.frames;
       expect(start, slug).not.toBe(end);
+      if (start.endsWith('.png')) {
+        expect(start.replace(/-[12]\.png$/, ''), slug).toBe(end.replace(/-[12]\.png$/, ''));
+        expect([start, end].map((file) => file.match(/-([12])\.png$/)?.[1]).sort()).toEqual([
+          '1',
+          '2',
+        ]);
+        continue;
+      }
       expect(start.split('-')[0], slug).toBe(end.split('-')[0]);
       expect(start, slug).toMatch(/^\d{4}-relaxation\.svg$/);
       expect(end, slug).toMatch(/^\d{4}-tension\.svg$/);
@@ -89,7 +100,16 @@ describe('illustration map', () => {
       titles.set(row.id_num, list);
     }
     const wrong = entries
-      .filter(([, entry]) => !titles.get(entry.frames[0].slice(0, 4))?.includes(entry.title))
+      .filter(([, entry]) => {
+        if (entry.frames[0].endsWith('.png')) {
+          return !source.some(
+            (row) =>
+              row.title === entry.title &&
+              entry.frames.every((file) => row.img?.includes(`_images/web/${file}`)),
+          );
+        }
+        return !titles.get(entry.frames[0].slice(0, 4))?.includes(entry.title);
+      })
       .map(([slug, entry]) => `${slug}: ${entry.title}`);
     expect(wrong).toEqual([]);
   });
@@ -106,6 +126,33 @@ describe('illustration map', () => {
     expect(illustrationFor('supino-reto-com-barra')?.title).toBe('Bench Press');
     expect(illustrationFor('nao-existe')).toBeUndefined();
     expect(illustrationFor('constructor')).toBeUndefined();
+  });
+
+  it('uses the original PNG pairs when the exact movement has no SVG pair', () => {
+    expect(illustrationFor('desenvolvimento-com-halteres')?.frames).toEqual([
+      'dumbbell-shoulder-press-1.png',
+      'dumbbell-shoulder-press-2.png',
+    ]);
+    expect(illustrationFor('puxada-aberta-na-polia')?.frames).toEqual([
+      'wide-grip-lat-pull-down-2.png',
+      'wide-grip-lat-pull-down-1.png',
+    ]);
+    for (const slug of ['desenvolvimento-com-halteres', 'puxada-aberta-na-polia']) {
+      const entry = illustrationFor(slug)!;
+      expect(entry.sourceUrl).toContain(`/src/images-web/${entry.frames[0]}`);
+    }
+  });
+
+  it('leaves movements without an exact pair unillustrated', () => {
+    for (const slug of [
+      'crucifixo-inverso-na-maquina',
+      'crucifixo-na-maquina-voador',
+      'remada-apoiada-no-banco-inclinado-com-halteres',
+      'stiff-com-halteres',
+      'supino-articulado-na-maquina',
+    ]) {
+      expect(illustrationFor(slug), slug).toBeUndefined();
+    }
   });
 
   it('builds the same-origin address of a frame', () => {
