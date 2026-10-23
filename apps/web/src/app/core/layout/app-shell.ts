@@ -88,7 +88,10 @@ type ShellLead = ({ readonly kind: 'back' } & ShellBack) | { readonly kind: 'set
         <h1 #pageTitle tabindex="-1">{{ title }}</h1>
       </header>
     }
-    <main [class.no-header]="!data().title">
+    <main
+      [class.no-header]="!data().title"
+      [class.training-main]="data().shellStyle === 'training'"
+    >
       <router-outlet />
     </main>
     @if (tabs().length > 0) {
@@ -223,6 +226,9 @@ type ShellLead = ({ readonly kind: 'back' } & ShellBack) | { readonly kind: 'set
     /* Sem cabeçalho (Início) o conteúdo começa abaixo da área segura do aparelho. */
     main.no-header {
       padding-top: calc(var(--gutter) + env(safe-area-inset-top));
+    }
+    main.training-main {
+      padding: 0;
     }
     .tabs {
       position: sticky;
