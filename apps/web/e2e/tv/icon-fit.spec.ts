@@ -69,6 +69,15 @@ const button = (root: Page | Locator, name: string) =>
   root.getByRole('button', { name, exact: true });
 const appsDialog = (page: Page) => page.getByRole('dialog', { name: 'Apps da TV' });
 
+/** Abre o painel Apps pelo menu dos três pontos, como quem usa a tela (o menu sai antes de o painel abrir). */
+async function openApps(page: Page) {
+  await button(page, 'Mais opções').click();
+  const menu = page.getByRole('dialog', { name: 'Mais opções' });
+  await expect(menu).toBeVisible();
+  await menu.getByRole('button', { name: 'Apps da TV' }).click();
+  await expect(menu).toHaveCount(0);
+}
+
 async function settleMotion(page: Page) {
   await page.evaluate(() =>
     Promise.all(
@@ -246,7 +255,7 @@ test.describe('ícone sem borda: o desenho do app enche o azulejo', () => {
       await expectNoHorizontalScroll(page);
       await screenshot(page, join(SHOTS, `icon-fit-controle-${scheme}-${info.project.name}.png`));
 
-      await button(page, 'Apps da TV').click();
+      await openApps(page);
       const dialog = appsDialog(page);
       await expect(dialog).toBeVisible();
       await settleMotion(page);
@@ -295,7 +304,7 @@ test.describe('ícone sem borda: o desenho do app enche o azulejo', () => {
     expect(scales[1]).toBeCloseTo(scales[0], 3);
     expect(scales[2]).toBeCloseTo(scales[0], 3);
     // O painel mostra o mesmo ícone: já vem medido, com o mesmo recorte da fileira.
-    await button(page, 'Apps da TV').click();
+    await openApps(page);
     await settleMotion(page);
     const panel = appsDialog(page).locator('.item .art app-tv-app-icon').first();
     await expectMeasured(panel, FIT_CASES[0]);
@@ -399,7 +408,7 @@ test.describe('atalhos maiores e centralizados', () => {
       expect(ring.width, 'anel no 390 x 664').toBeGreaterThanOrEqual(316);
     }
     expect(ring.width).toBeGreaterThanOrEqual(0.85 * Math.min(stage.width, stage.height));
-    for (const name of ['Aumentar o volume', 'Voltar', 'OK', 'Apps da TV', 'Página 1 de 3']) {
+    for (const name of ['Aumentar o volume', 'Voltar', 'OK', 'Mais opções', 'Página 1 de 3']) {
       const box = (await button(page, name).boundingBox())!;
       expect(box.width, name).toBeGreaterThanOrEqual(43.5);
       expect(box.height, name).toBeGreaterThanOrEqual(43.5);
