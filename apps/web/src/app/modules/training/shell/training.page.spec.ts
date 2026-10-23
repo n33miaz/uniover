@@ -5,6 +5,8 @@ import { INSTALL_ENV, InstallHintService } from '../../../core/pwa/install-hint.
 import { SessionRepository } from '../data/sessions/session-repository';
 import { SessionState } from '../../../core/session/session-state';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
+import { NEW_ITEM } from '../../../core/offline-queue/queue-test-kit';
+import { TrainingSync } from '../data/sync/training-sync';
 import { eventually, setupScreen } from './screen-test-kit';
 import { TrainingPage } from './training.page';
 import { vi } from 'vitest';
@@ -74,19 +76,68 @@ describe('TrainingPage: the install sheet and the open workout', () => {
     expect(hint.sheet()).toBe('manual');
   });
 
-  it('shows the module title and opens sync details from the date indicator', async () => {
+  it('answers every tap on the sync icon with a visual state, without showing any text', async () => {
     const { fixture } = await render();
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('h1')?.textContent).toBe('UniOver Treino');
-    const indicator = el.querySelector<HTMLButtonElement>('.training-header .status')!;
-    expect(indicator.getAttribute('aria-expanded')).toBe('false');
+    const icon = el.querySelector<HTMLButtonElement>('.training-header .status')!;
+    expect(icon.disabled).toBe(false);
+    await eventually(fixture, () => expect(icon.dataset['state']).toBe('ok'));
+    const pull = vi.spyOn(TestBed.inject(TrainingSync), 'pullNow').mockResolvedValue();
+    icon.click();
+    fixture.detectChanges();
+    expect(pull).toHaveBeenCalledOnce();
+    expect(icon.dataset['state']).toBe('busy');
+    expect(icon.classList.contains('ripple')).toBe(true);
+    expect(icon.querySelector('svg')?.classList.contains('spin')).toBe(true);
+    // Um segundo toque no meio do puxar ainda responde, mas não dispara outro pedido.
+    icon.click();
+    expect(pull).toHaveBeenCalledOnce();
+    // Nenhuma etiqueta nem faixa: só o ícone.
+    expect(el.querySelector('app-training-sync-line')?.textContent?.trim()).toBe('');
+    expect(icon.textContent?.trim()).toBe('');
+    // A volta mínima acaba, o estado volta a "ok" e o resultado é anunciado só para leitor de tela.
+    await eventually(fixture, () => expect(icon.dataset['state']).toBe('ok'));
+    expect(el.querySelector('[role="status"].ui-visually-hidden')?.textContent).toContain(
+      'Atualizado',
+    );
+    // A rotação só solta no fim de uma volta, para parar em zero sem salto.
+    const svg = icon.querySelector('svg')!;
+    expect(svg.classList.contains('spin')).toBe(true);
+    svg.dispatchEvent(new Event('animationiteration'));
+    fixture.detectChanges();
+    expect(svg.classList.contains('spin')).toBe(false);
+    pull.mockRestore();
+  });
+
+  it('opens the refused changes from the icon when something failed, and syncs otherwise', async () => {
+    const { fixture, queue, store } = await render();
+    const el = fixture.nativeElement as HTMLElement;
+    const icon = el.querySelector<HTMLButtonElement>('.training-header .status')!;
+    const pull = vi.spyOn(TestBed.inject(TrainingSync), 'pullNow').mockResolvedValue();
+    const id = await queue().enqueue({ ...NEW_ITEM, url: '/api/v1/training/routines/1' });
+    await store().markFailed(id, (await store().get(id))!.revision, 'http-422');
+    await eventually(fixture, () => expect(icon.dataset['state']).toBe('failed'));
+    icon.click();
+    fixture.detectChanges();
+    expect(pull).not.toHaveBeenCalled();
+    expect(el.querySelector('app-sync-issues-sheet')).not.toBeNull();
+    pull.mockRestore();
+  });
+
+  it('shows the offline state without trying to pull', async () => {
+    const { fixture } = await render();
+    const icon = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
+      '.training-header .status',
+    )!;
+    const pull = vi.spyOn(TestBed.inject(TrainingSync), 'pullNow').mockResolvedValue();
     TestBed.inject(ConnectivityService).online.set(false);
-    await fixture.whenStable();
-    expect(indicator.classList.contains('offline')).toBe(true);
-    indicator.click();
-    await fixture.whenStable();
-    expect(indicator.getAttribute('aria-expanded')).toBe('true');
-    expect(el.querySelector('app-training-sync-line')?.textContent).toContain('Sem rede');
+    await eventually(fixture, () => expect(icon.dataset['state']).toBe('offline'));
+    icon.click();
+    fixture.detectChanges();
+    expect(pull).not.toHaveBeenCalled();
+    expect(icon.classList.contains('ripple')).toBe(true);
+    pull.mockRestore();
   });
 
   it('restores focus between exercise routes while reduced motion disables the slide', async () => {
@@ -114,7 +165,10 @@ describe('TrainingPage: the install sheet and the open workout', () => {
     let reducedMotion = true;
     document.body.tabIndex = -1;
     document.body.focus();
-    vi.stubGlobal('matchMedia', () => ({ matches: reducedMotion }));
+    // Só a consulta de movimento reduzido responde; as demais (modo de exibição do app instalado) seguem como "não".
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('prefers-reduced-motion') && reducedMotion,
+    }));
 
     component.animateRoute();
     path = '/treino/rotinas';

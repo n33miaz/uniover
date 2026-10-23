@@ -26,28 +26,48 @@ describe('TrainingSyncLine', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('.line')?.classList.contains('empty')).toBe(true);
+    expect(el.hidden).toBe(true);
+    expect(el.querySelector('.line')).toBeNull();
   });
 
-  it('says the device is up to date, with the time of the last pull', async () => {
+  it('stays hidden when up to date, and never says "Atualizando" while pulling', async () => {
     const { fixture, el } = await render();
-    await eventually(fixture, () => expect(text(el)).toMatch(/sincronizado às \d{2}:\d{2}/));
-    expect(el.querySelector('button')).toBeNull();
+    await eventually(fixture, () =>
+      expect(TestBed.inject(TrainingSync).lastPullAt()).not.toBeNull(),
+    );
+    expect(el.hidden).toBe(true);
+    expect(text(el)).toBe('');
+    const pulling = TestBed.inject(TrainingSync).pullNow();
+    fixture.detectChanges();
+    expect(text(el)).not.toContain('Atualizando');
+    await pulling;
   });
 
-  it('says it keeps going with what is on the device when there is no network', async () => {
+  it('stays hidden without network when nothing waits (the header icon says it)', async () => {
     const { fixture, el } = await render();
+    TestBed.inject(ConnectivityService).online.set(false);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el.hidden).toBe(true);
+    expect(text(el)).toBe('');
+  });
+
+  it('says it keeps going with what is on the device when sets wait and there is no network', async () => {
+    const { fixture, el, queue } = await render();
+    await queue().enqueue({ ...NEW_ITEM, url: '/api/v1/training/routines/1' });
     TestBed.inject(ConnectivityService).online.set(false);
     await eventually(fixture, () =>
       expect(text(el)).toContain('Sem rede: usando o que está no aparelho'),
     );
+    expect(el.hidden).toBe(false);
     expect(el.querySelector('.line')?.classList.contains('warn')).toBe(true);
   });
 
-  it('says so when the server did not answer the last pull', async () => {
-    const { fixture, el, pull } = await render();
+  it('says so when the server did not answer the last pull and something waits', async () => {
+    const { fixture, el, pull, queue } = await render();
     pull.script = [new HttpErrorResponse({ status: 503 })];
     await TestBed.inject(TrainingSync).pullNow();
+    await queue().enqueue({ ...NEW_ITEM, url: '/api/v1/training/routines/1' });
     await eventually(fixture, () =>
       expect(text(el)).toContain('Sem resposta do servidor: usando o que está no aparelho'),
     );
@@ -132,9 +152,9 @@ describe('TrainingSyncLine: install advice (iPhone outside the home screen)', ()
   it('says nothing without anything waiting, even offline on an iPhone', async () => {
     const kit = await render({ userAgent: SAFARI });
     TestBed.inject(ConnectivityService).online.set(false);
-    await eventually(kit.fixture, () =>
-      expect(text(kit.el)).toContain('Sem rede: usando o que está no aparelho'),
-    );
+    await kit.fixture.whenStable();
+    kit.fixture.detectChanges();
+    expect(kit.el.hidden).toBe(true);
     expect(advice(kit.el)).toBeNull();
   });
 

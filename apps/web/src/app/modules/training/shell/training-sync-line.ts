@@ -7,9 +7,9 @@ import { TrainingSync } from '../data/sync/training-sync';
 import { TrainingGlyph, TrainingGlyphName } from './training-glyph';
 
 /**
- * A linha de sincronização do topo das telas do Treino: uma linha fina que diz se o aparelho está em dia, quanto
- * falta subir e, sem rede ou com o servidor fora, que o app segue com o que está guardado ("sem rede" é estado
- * normal, não erro). Só ganha botão quando há o que fazer: "Sincronizar agora" (há envio pendente) ou "Ver" (o
+ * A faixa de sincronização do topo das telas do Treino: aparece só quando algo espera para subir ou foi recusado e, aí,
+ * diz quanto falta e, sem rede ou com o servidor fora, que o app segue com o que está guardado ("sem rede" é estado
+ * normal, não erro). Em dia, atualizando ou sem rede sem nada pendente ela some: o estado fica no ícone do cabeçalho. Só ganha botão quando há o que fazer: "Sincronizar agora" (há envio pendente) ou "Ver" (o
  * servidor recusou algo e a pessoa precisa decidir).
  *
  * Num navegador do iPhone/iPad (fora da tela de início) o iOS apaga os dados do site depois de 7 dias sem uso. Se há
@@ -21,39 +21,33 @@ import { TrainingGlyph, TrainingGlyphName } from './training-glyph';
   selector: 'app-training-sync-line',
   imports: [SyncStatusLine, TrainingGlyph],
   template: `
-    <div
-      class="line"
-      [class.empty]="!visible()"
-      [class.warn]="!reachable()"
-      [class.bad]="failed() > 0"
-    >
-      <app-training-glyph [name]="glyph()" />
-      <div class="text">
-        @if (note(); as value) {
-          <span class="note">{{ value }}</span>
-        }
-        @if (updating()) {
-          <span class="note" i18n="@@training.sync.updating">Atualizando…</span>
-        }
-        <app-sync-status-line
-          [pending]="pending()"
-          [failed]="failed()"
-          [lastSyncAt]="lastSyncAt()"
-        />
-      </div>
-      @if (failed() > 0) {
-        <button type="button" class="act" (click)="issues.emit()" i18n="@@training.sync.see">
-          Ver
-        </button>
-      } @else if (pending() > 0 && reachable()) {
-        <button type="button" class="act" [disabled]="busy()" (click)="syncNow()">
-          @if (busy()) {
-            <span class="ui-spinner" aria-hidden="true"></span>
+    @if (visible()) {
+      <div class="line" [class.warn]="!reachable()" [class.bad]="failed() > 0">
+        <app-training-glyph [name]="glyph()" />
+        <div class="text">
+          @if (note(); as value) {
+            <span class="note">{{ value }}</span>
           }
-          <span i18n="@@training.sync.now">Sincronizar agora</span>
-        </button>
-      }
-    </div>
+          <app-sync-status-line
+            [pending]="pending()"
+            [failed]="failed()"
+            [lastSyncAt]="lastSyncAt()"
+          />
+        </div>
+        @if (failed() > 0) {
+          <button type="button" class="act" (click)="issues.emit()" i18n="@@training.sync.see">
+            Ver
+          </button>
+        } @else if (pending() > 0 && reachable()) {
+          <button type="button" class="act" [disabled]="busy()" (click)="syncNow()">
+            @if (busy()) {
+              <span class="ui-spinner" aria-hidden="true"></span>
+            }
+            <span i18n="@@training.sync.now">Sincronizar agora</span>
+          </button>
+        }
+      </div>
+    }
     @if (installAdvice()) {
       <button type="button" class="advice" (click)="install.open()">
         <span>
@@ -65,6 +59,7 @@ import { TrainingGlyph, TrainingGlyphName } from './training-glyph';
       </button>
     }
   `,
+  host: { '[hidden]': '!visible() && !installAdvice()' },
   styleUrl: './training-sync-line.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -117,23 +112,17 @@ export class TrainingSyncLine {
       this.install.iosNotInstalled(),
   );
 
-  /** Primeira passada em andamento: ainda não há hora de sincronização para mostrar. */
-  protected readonly updating = computed(() => this.sync.pulling() && this.lastSyncAt() === null);
-
-  /** A linha só aparece quando tem o que dizer; sem nada a dizer ela não gasta altura da tela. */
-  protected readonly visible = computed(
-    () =>
-      this.failed() > 0 ||
-      this.pending() > 0 ||
-      this.note() !== '' ||
-      this.lastSyncAt() !== null ||
-      this.updating(),
-  );
+  /**
+   * A faixa só existe quando há o que fazer ou decidir: envio pendente ou recusado. O resto (em dia, atualizando, sem
+   * rede sem nada a enviar) fica por conta do ícone do cabeçalho, sem texto e sem gastar altura. O conselho de instalação
+   * tem a sua própria fileira.
+   */
+  protected readonly visible = computed(() => this.failed() > 0 || this.pending() > 0);
 
   protected readonly glyph = computed<TrainingGlyphName>(() => {
     if (this.failed() > 0) return 'alert';
     if (!this.reachable()) return 'offline';
-    if (this.pending() > 0 || this.updating()) return 'hourglass';
+    if (this.pending() > 0) return 'hourglass';
     return 'check';
   });
 
