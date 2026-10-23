@@ -24,7 +24,10 @@ describe('training routes', () => {
     const exercises = tabs.find((tab) => tab.link === '/treino/exercicios')!;
     expect(exercises.nested).toBe(true);
     expect(exercises.also).toEqual(['/treino/rotinas']);
-    expect(tabs.find((tab) => tab.link === '/treino/progresso')?.also).toEqual(['/treino/corpo']);
+    expect(tabs.find((tab) => tab.link === '/treino/progresso')?.also).toEqual([
+      '/treino/corpo',
+      '/treino/alimentacao',
+    ]);
   });
 
   it('declares every screen of the module, fixed paths before the ones with an id', () => {
@@ -40,6 +43,7 @@ describe('training routes', () => {
       'rotinas/nova',
       'rotinas/:id',
       'progresso',
+      'alimentacao',
       'corpo',
       'corpo/avaliacoes/importar',
       'corpo/avaliacoes/nova',
@@ -83,6 +87,7 @@ describe('training routes', () => {
       '/treino/rotinas',
       '/treino/progresso',
       '/treino/corpo',
+      '/treino/alimentacao',
       '/treino/corpo/avaliacoes',
       '/treino/corpo/avaliacoes/exemplo',
     ])('%s shows the tab bar with the three tabs', async (url) => {

@@ -120,8 +120,10 @@ describe('RoutinesListPage', () => {
       expect(
         rows(el).map((routine) => routine.querySelector('.ui-row-title')?.textContent?.trim()),
       ).toEqual(['A · Histórico rejeitado', 'B · Histórico rejeitado']);
-      expect(text(el)).toContain(
-        'Estas rotinas históricas ficaram inativas e não são uma recomendação.',
+      await eventually(fixture, () =>
+        expect(text(el)).toContain(
+          'Estas rotinas históricas ficaram inativas e não são uma recomendação.',
+        ),
       );
       expect(text(el)).not.toContain('ative quando estiverem completas');
     });
