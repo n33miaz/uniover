@@ -1,0 +1,21 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* O ícone na medida do azulejo da faixa de atalhos, com o aviso de sugestão ao lado. */
+.who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.who app-tv-app-icon {
+  --tile: 60px;
+  --tile-radius: 16px;
+}
+
+.note {
+  margin: 0;
+  color: var(--a-ink2);
+}

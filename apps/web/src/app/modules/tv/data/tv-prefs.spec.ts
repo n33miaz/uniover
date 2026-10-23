@@ -51,6 +51,7 @@ describe('TvPrefs', () => {
       startPage: 'numbers',
       padSpeed: 'fast',
       pillLayout: 'row',
+      dismissedSuggestions: ['netflix'],
     });
     expect(saved()).toEqual({
       name: 'Sala',
@@ -61,6 +62,7 @@ describe('TvPrefs', () => {
       startPage: 'numbers',
       padSpeed: 'fast',
       pillLayout: 'row',
+      dismissedSuggestions: ['netflix'],
     });
 
     const again = fresh();
@@ -73,7 +75,57 @@ describe('TvPrefs', () => {
     expect(again.startPage()).toBe('numbers');
     expect(again.padSpeed()).toBe('fast');
     expect(again.pillLayout()).toBe('row');
+    expect(again.dismissedSuggestions()).toEqual(['netflix']);
     expect(again.customized()).toBe(true);
+  });
+
+  describe('removed shortcut suggestions', () => {
+    it('start empty, so an old saved choice without the field has nothing removed and is not customized', () => {
+      localStorage.setItem(accountKey(), JSON.stringify({ name: '', buttonSize: 'comfortable' }));
+      const prefs = fresh();
+      expect(prefs.dismissedSuggestions()).toEqual([]);
+      expect(prefs.customized()).toBe(false);
+    });
+
+    it('count as a customization and go back with "Restaurar padrão"', () => {
+      const prefs = fresh();
+      prefs.set({ dismissedSuggestions: ['max'] });
+      expect(prefs.customized()).toBe(true);
+      prefs.reset();
+      expect(prefs.dismissedSuggestions()).toEqual([]);
+      expect(prefs.customized()).toBe(false);
+    });
+
+    it('belong to the account that removed them, not to whoever signs in next on this device', () => {
+      const prefs = fresh();
+      prefs.set({ dismissedSuggestions: ['max'] });
+      identify('other-user');
+      expect(prefs.dismissedSuggestions()).toEqual([]);
+      identify('tv-user');
+      expect(prefs.dismissedSuggestions()).toEqual(['max']);
+    });
+
+    it('drop what is not a name, repeats and anything past the limit, instead of breaking the control', () => {
+      localStorage.setItem(
+        accountKey(),
+        JSON.stringify({
+          dismissedSuggestions: [
+            'max',
+            'max',
+            '',
+            7,
+            null,
+            ...Array.from({ length: 40 }, (_, i) => `k${i}`),
+          ],
+        }),
+      );
+      const kept = fresh().dismissedSuggestions();
+      expect(kept[0]).toBe('max');
+      expect(kept).toHaveLength(20);
+      expect(new Set(kept).size).toBe(20);
+      localStorage.setItem(accountKey(), JSON.stringify({ dismissedSuggestions: 'netflix' }));
+      expect(fresh().dismissedSuggestions()).toEqual([]);
+    });
   });
 
   describe('layout of the volume and channel pills', () => {

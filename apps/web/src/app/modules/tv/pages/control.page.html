@@ -4,6 +4,7 @@
     [canSend]="store.canSend()"
     [launchable]="canLaunch()"
     (open)="openShortcut($event)"
+    (suggest)="suggest.emit($event)"
   />
 
   <!--
@@ -206,6 +207,7 @@
       [attr.aria-haspopup]="'dialog'"
       aria-label="Teclado"
       i18n-aria-label="@@tv.key.keyboard"
+      [class.off]="!store.canSend()"
       (click)="askKeyboard($event)"
     >
       <app-tv-icon name="keyboard" />

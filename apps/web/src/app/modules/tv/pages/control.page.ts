@@ -20,7 +20,7 @@ import { TouchpadSurface } from '../input/touchpad-surface';
 import { DirectionalRing } from '../ui/directional-ring';
 import { NumberPad } from '../ui/number-pad';
 import { PageDots } from '../ui/page-dots';
-import { ShortcutRow } from '../ui/shortcut-row';
+import { ShortcutRow, TvSuggestionRequest } from '../ui/shortcut-row';
 import { TvIcon } from '../ui/tv-icon';
 
 /** Páginas do palco central, nesta ordem: direções com o OK, números e, por último, o touchpad. */
@@ -71,6 +71,8 @@ export class ControlPage {
 
   /** Leva o botão tocado: o painel devolve o foco a ele ao fechar (o Safari não foca botão ao toque). */
   readonly openKeyboard = output<HTMLElement>();
+  /** Tocaram numa sugestão de atalho: a tela abre o painel dela. */
+  readonly suggest = output<TvSuggestionRequest>();
 
   protected readonly pageCount = PAGE_COUNT;
   private readonly stage = new StagePager(

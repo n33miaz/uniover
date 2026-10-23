@@ -1,10 +1,10 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, output } from '@angular/core';
 import { TvAccess } from '../data/tv-access';
 import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut } from '../data/tv-types';
 import { vibrate } from '../input/key-button';
-import { ShortcutRow } from '../ui/shortcut-row';
+import { ShortcutRow, TvSuggestionRequest } from '../ui/shortcut-row';
 import { TvIcon } from '../ui/tv-icon';
 
 /**
@@ -24,6 +24,9 @@ export class ViewOnlyPage {
   protected readonly store = inject(TvStore);
   protected readonly canLaunch = inject(TvAccess).launch;
   private readonly prefs = inject(TvPrefs);
+
+  /** Tocaram numa sugestão de atalho (quem edita os atalhos as vê): a tela abre o painel dela. */
+  readonly suggest = output<TvSuggestionRequest>();
 
   /** Só os atalhos ativos, na ordem da posição (a mesma fileira do controle). */
   protected readonly shortcuts = computed(() =>

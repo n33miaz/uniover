@@ -1,0 +1,29 @@
+<div class="who">
+  <app-tv-app-icon [shortcut]="subject()" />
+  <span class="ui-chip" i18n="@@tv.suggestion.chip">Sugestão</span>
+</div>
+
+@if (match()) {
+  <button type="button" class="ui-btn primary block" [disabled]="busy()" (click)="pin()">
+    <span i18n="@@tv.suggestion.pin">Fixar no controle</span>
+  </button>
+} @else {
+  <p class="note" i18n="@@tv.suggestion.missing">A lista da TV ainda não traz este app.</p>
+  @if (access.launch()) {
+    <!-- Pedir a lista à TV precisa do agente: sem ele o botão fica apagado e o motivo vem logo abaixo. -->
+    <button
+      type="button"
+      class="ui-btn primary block"
+      [disabled]="!store.canSend()"
+      (click)="openApps.emit()"
+    >
+      <span i18n="@@tv.suggestion.open-apps">Atualizar a lista de apps</span>
+    </button>
+    @if (!store.canSend()) {
+      <p class="note">{{ store.disabledReason() }}</p>
+    }
+  }
+}
+<button type="button" class="ui-btn secondary block" (click)="remove()">
+  <span i18n="@@tv.suggestion.remove">Remover sugestão</span>
+</button>

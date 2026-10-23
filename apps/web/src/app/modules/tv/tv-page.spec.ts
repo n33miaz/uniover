@@ -22,9 +22,21 @@ describe('TvPage', () => {
   const byLabel = (label: string) =>
     root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
   const dialogs = () => [...root.querySelectorAll<HTMLDialogElement>('app-tv-panel dialog')];
-  /** O botão Apps mora no cabeçalho (o chip da fileira de atalhos tem o mesmo nome até sair de lá). */
-  const appsButton = () =>
-    root.querySelector<HTMLButtonElement>('.head button[aria-label="Apps da TV"]')!;
+  /** Os três pontos do cabeçalho abrem o menu; o Apps da TV é uma linha dele. */
+  const menuButton = () =>
+    root.querySelector<HTMLButtonElement>('.head button[aria-label="Mais opções"]')!;
+  const menuRow = (name: string) =>
+    [...root.querySelectorAll<HTMLButtonElement>('app-tv-menu button.ui-row')].find((row) =>
+      row.textContent?.includes(name),
+    )!;
+  /** O caminho de quem usa a tela: abre o menu e toca na linha. O menu sai antes de o painel abrir (um modal por vez). */
+  const openApps = async () => {
+    menuButton().click();
+    await render();
+    menuRow('Apps da TV').click();
+    await render();
+    await render();
+  };
   const titleButton = () => root.querySelector<HTMLButtonElement>('h1 button')!;
   const customizeSheet = () => root.querySelector<HTMLElement>('app-tv-customize-sheet dialog');
   const prefsKey = () =>
@@ -59,7 +71,7 @@ describe('TvPage', () => {
   });
 
   describe('header', () => {
-    it('has back to Início and the three dots of Apps on the left, the name TV as the h1 with the state dot beside it, and power on the right', () => {
+    it('has back to Início and power on the left, the name TV as the h1 with the state dot beside it, and the three dots of the menu on the right', () => {
       const back = root.querySelector('a.back')!;
       expect(back.getAttribute('href')).toBe('/');
       expect(back.getAttribute('aria-label')).toBe('Voltar ao Início');
@@ -69,15 +81,15 @@ describe('TvPage', () => {
       expect(h1.querySelector('app-status-indicator')).toBeNull();
       expect(h1.nextElementSibling?.matches('app-status-indicator')).toBe(true);
       expect(byLabel('Desligar a TV')).not.toBeNull();
-      // Só o desligar fica à direita; a saída e o Apps formam o grupo da esquerda, nessa ordem.
+      // Só o menu fica à direita; a saída e o desligar formam o grupo da esquerda, nessa ordem.
       expect(
         [...root.querySelectorAll('.head .actions button')].map((b) =>
           b.getAttribute('aria-label'),
         ),
-      ).toEqual(['Desligar a TV']);
+      ).toEqual(['Mais opções']);
       expect(
         [...root.querySelectorAll('.head .lead > *')].map((b) => b.getAttribute('aria-label')),
-      ).toEqual(['Voltar ao Início', 'Apps da TV']);
+      ).toEqual(['Voltar ao Início', 'Desligar a TV']);
     });
 
     it('lays the header out as the left group, the name and the right group, in that order', () => {
@@ -89,16 +101,17 @@ describe('TvPage', () => {
       ]);
     });
 
-    it('draws Apps as three dots, not as the old grid, with the same accessible name', () => {
-      const apps = appsButton();
-      expect(apps.getAttribute('aria-label')).toBe('Apps da TV');
-      expect(apps.classList.contains('circle')).toBe(true);
-      expect(apps.textContent?.trim()).toBe('');
-      // Três pontos: três círculos no traço do ícone, e não os quatro quadrados da grade.
-      const path = apps.querySelector('app-tv-icon path')!.getAttribute('d')!;
+    it('draws the menu as three dots in a column, with an accessible name that says it is a dialog', () => {
+      const menu = menuButton();
+      expect(menu.getAttribute('aria-label')).toBe('Mais opções');
+      expect(menu.getAttribute('aria-haspopup')).toBe('dialog');
+      expect(menu.classList.contains('circle')).toBe(true);
+      expect(menu.textContent?.trim()).toBe('');
+      // Três pontos, um sobre o outro (mesmo x, y diferentes): três círculos no traço do ícone.
+      const path = menu.querySelector('app-tv-icon path')!.getAttribute('d')!;
       expect(path.match(/M/g)).toHaveLength(3);
       expect(path).toContain('a1.2 1.2');
-      expect(path).not.toContain('h7v7');
+      expect(path.match(/M10\.8 \d+/g)).toHaveLength(3);
     });
 
     it('shows the owner the arrow back, never the settings button of the guest', () => {
@@ -122,13 +135,13 @@ describe('TvPage', () => {
       ]);
     });
 
-    it('gives back, Apps and power the same circle', () => {
+    it('gives back, power and the menu the same circle', () => {
       const circles = [...root.querySelectorAll('.head .circle')];
       expect(circles).toHaveLength(3);
       expect(circles.map((c) => c.getAttribute('aria-label'))).toEqual([
         'Voltar ao Início',
-        'Apps da TV',
         'Desligar a TV',
+        'Mais opções',
       ]);
     });
 
@@ -176,8 +189,7 @@ describe('TvPage', () => {
     });
 
     it('hides its own toast while a panel is open, because the panel shows the notice inside', async () => {
-      appsButton().click();
-      await render();
+      await openApps();
       store.notice.set({ kind: 'error', text: 'A TV não respondeu a tempo.' });
       await render();
       expect(root.querySelector('.toast')).toBeNull();
@@ -187,26 +199,180 @@ describe('TvPage', () => {
     });
   });
 
+  describe('states of the TV', () => {
+    const unconfigure = async () => {
+      store.status.set('unconfigured');
+      store.canSend.set(false);
+      store.disabledReason.set('Nenhum agente foi configurado para controlar a TV.');
+      await render();
+    };
+
+    it('without a TV configured, the owner gets an empty state with one action, "Configurar TV", in place of the control', async () => {
+      await unconfigure();
+      expect(root.querySelector('app-tv-control, app-tv-view-only')).toBeNull();
+      expect(root.querySelector('.reason-row')).toBeNull();
+      const empty = root.querySelector('.empty')!;
+      expect(empty.querySelector('h2')?.textContent?.trim()).toBe('Nenhuma TV configurada');
+      const actions = empty.querySelectorAll('a, button');
+      expect(actions).toHaveLength(1);
+      expect(actions[0].textContent?.trim()).toBe('Configurar TV');
+      expect(actions[0].getAttribute('href')).toBe('/ajustes/sistema');
+      // Nenhum botão de comando para parecer pronto: o que sobra na tela é a casca (voltar, desligar e o menu).
+      expect(
+        root.querySelectorAll('button.round, button.pill-btn, button.seg, button.num'),
+      ).toHaveLength(0);
+    });
+
+    it('without a TV configured, whoever cannot choose the computer gets one sentence and no button', async () => {
+      TestBed.inject(SessionState).setUser({
+        id: 'g',
+        email: 'g@example.com',
+        displayName: 'Gi',
+        role: 'guest',
+        permissions: ['module:tv', 'tv:control'],
+      });
+      await unconfigure();
+      const empty = root.querySelector('.empty')!;
+      expect(empty.querySelector('h2')?.textContent?.trim()).toBe('Nenhuma TV configurada');
+      expect(empty.textContent).toContain('Peça a quem administra o app para configurar a TV.');
+      expect(empty.querySelector('a, button')).toBeNull();
+    });
+
+    it('the control comes back by itself when a TV is configured', async () => {
+      await unconfigure();
+      store.status.set('hot');
+      store.canSend.set(true);
+      store.disabledReason.set(null);
+      await render();
+      expect(root.querySelector('.empty')).toBeNull();
+      expect(root.querySelector('app-tv-control')).not.toBeNull();
+    });
+
+    it('with the agent off the control stays, dimmed, and the one action is to try again', async () => {
+      store.status.set('agent-off');
+      store.canSend.set(false);
+      store.disabledReason.set(
+        'O agente da TV está desligado, então os botões não funcionam agora.',
+      );
+      await render();
+      expect(root.querySelector('app-tv-control')).not.toBeNull();
+      const row = root.querySelector('.reason-row')!;
+      expect(row.querySelector('.reason')?.textContent).toContain('agente da TV está desligado');
+      const retry = row.querySelector<HTMLButtonElement>('button.retry')!;
+      expect(retry.textContent?.trim()).toBe('Tentar de novo');
+
+      retry.click();
+      await render();
+      expect(store.refresh).toHaveBeenCalledTimes(1);
+      expect(store.wake).toHaveBeenCalled();
+    });
+
+    it('offers no retry when the network or the server is the problem, which fix themselves', async () => {
+      for (const status of ['offline', 'waking'] as const) {
+        store.status.set(status);
+        store.canSend.set(false);
+        store.disabledReason.set('Sem rede: o controle precisa de internet.');
+        await render();
+        expect(root.querySelector('.reason-row'), status).not.toBeNull();
+        expect(root.querySelector('.reason-row button'), status).toBeNull();
+      }
+    });
+
+    it('dims every command while the remote cannot send, and keeps the menu, which sends nothing', async () => {
+      store.status.set('agent-off');
+      store.canSend.set(false);
+      store.disabledReason.set(
+        'O agente da TV está desligado, então os botões não funcionam agora.',
+      );
+      await render();
+      expect(root.querySelector<HTMLButtonElement>('.power')!.disabled).toBe(true);
+      expect(byLabel('Mudo').disabled).toBe(true);
+      expect(byLabel('Teclado').classList.contains('off')).toBe(true);
+      expect(menuButton().disabled).toBe(false);
+    });
+  });
+
+  describe('suggested shortcuts', () => {
+    const tapSuggestion = async (name: string) => {
+      root.querySelector<HTMLButtonElement>(`.shortcut.suggestion[aria-label="${name}"]`)!.click();
+      await render();
+    };
+
+    beforeEach(async () => {
+      // A faixa só é medida depois de desenhada, e o jsdom não faz layout: a medida vem do dublê, e a tela nasce de novo.
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(358);
+      fixture.destroy();
+      TestBed.resetTestingModule();
+      store = createFakeTvStore();
+      store.shortcuts.set([]);
+      TestBed.configureTestingModule({
+        providers: [provideRouter([]), { provide: TvStore, useValue: store }],
+      });
+      TestBed.inject(SessionState).setUser({
+        id: 'tv-page-user',
+        email: 'tv@example.com',
+        displayName: 'TV',
+      });
+      fixture = TestBed.createComponent(TvPage);
+      root = fixture.nativeElement;
+      await render();
+    });
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it('a tap opens the panel of that suggestion, which Remover closes and remembers', async () => {
+      await tapSuggestion('Sugestão: Netflix');
+      expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Netflix');
+      expect(root.querySelector('app-tv-suggestion')).not.toBeNull();
+
+      [...root.querySelectorAll<HTMLButtonElement>('app-tv-suggestion button')]
+        .find((b) => b.textContent?.trim() === 'Remover sugestão')!
+        .click();
+      await render();
+      expect(root.querySelector('app-tv-panel')).toBeNull();
+      expect(root.querySelector('.shortcut.suggestion[aria-label="Sugestão: Netflix"]')).toBeNull();
+      expect(TestBed.inject(TvPrefs).dismissedSuggestions()).toEqual(['netflix']);
+    });
+
+    it('asking for the Apps panel closes the suggestion first and then opens Apps, one modal at a time', async () => {
+      await tapSuggestion('Sugestão: YouTube');
+      [...root.querySelectorAll<HTMLButtonElement>('app-tv-suggestion button')]
+        .find((b) => b.textContent?.trim() === 'Atualizar a lista de apps')!
+        .click();
+      await render();
+      await render();
+      expect(root.querySelector('app-tv-suggestion')).toBeNull();
+      expect(dialogs()).toHaveLength(1);
+      expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Apps da TV');
+    });
+
+    it('hides the toast while the suggestion is open, as for any panel', async () => {
+      await tapSuggestion('Sugestão: Max');
+      store.notice.set({ kind: 'error', text: 'Falhou.' });
+      await render();
+      expect(root.querySelector('.toast')).toBeNull();
+    });
+  });
+
   describe('floating panels', () => {
     it('start closed', () => {
       expect(dialogs()).toHaveLength(0);
     });
 
-    it('the Apps button in the header opens the Apps panel, which Fechar closes, giving the focus back to it', async () => {
-      const chip = appsButton();
-      expect(chip.getAttribute('aria-haspopup')).toBe('dialog');
-      chip.focus();
-      chip.click();
-      await render();
+    it('the Apps row of the menu opens the Apps panel, which Fechar closes, giving the focus back to the three dots', async () => {
+      const dots = menuButton();
+      dots.focus();
+      await openApps();
       expect(dialogs()).toHaveLength(1);
       expect(dialogs()[0].hasAttribute('open')).toBe(true);
       expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Apps da TV');
       expect(root.querySelector('app-tv-apps')).not.toBeNull();
+      expect(root.querySelector('app-tv-menu')).toBeNull();
 
       root.querySelector<HTMLButtonElement>('app-tv-panel .x')!.click();
       await render();
       expect(dialogs()).toHaveLength(0);
-      expect(document.activeElement).toBe(chip);
+      expect(document.activeElement).toBe(dots);
     });
 
     it('the keyboard button opens the Keyboard panel at the top, with no header close (it has its own Fechar)', async () => {
@@ -229,16 +395,14 @@ describe('TvPage', () => {
     });
 
     it('Esc closes the open panel', async () => {
-      appsButton().click();
-      await render();
+      await openApps();
       dialogs()[0].dispatchEvent(new Event('cancel', { cancelable: true }));
       await render();
       expect(dialogs()).toHaveLength(0);
     });
 
     it('opening an app from the panel closes it, so the control is back at hand', async () => {
-      appsButton().click();
-      await render();
+      await openApps();
       root.querySelector<HTMLButtonElement>('app-tv-apps .launch')!.click();
       await render();
       expect(store.launch).toHaveBeenCalledTimes(1);
@@ -247,8 +411,7 @@ describe('TvPage', () => {
 
     it('a failed launch keeps the panel open, where the error is shown', async () => {
       store.launch.mockResolvedValueOnce(false);
-      appsButton().click();
-      await render();
+      await openApps();
       root.querySelector<HTMLButtonElement>('app-tv-apps .launch')!.click();
       await render();
       expect(dialogs()).toHaveLength(1);
@@ -276,8 +439,18 @@ describe('TvPage', () => {
       });
 
       it('opening an app lets the panel finish its exit before it leaves the screen', async () => {
-        appsButton().click();
+        menuButton().click();
         await tick();
+        menuRow('Apps da TV').click();
+        // O menu termina a saída antes de o painel dos apps abrir: nunca dois modais ao mesmo tempo.
+        await tick();
+        expect(dialogs()).toHaveLength(1);
+        expect(dialogs()[0].classList.contains('leaving')).toBe(true);
+        await tick(300);
+        await tick();
+        expect(root.querySelector('app-tv-menu')).toBeNull();
+        expect(dialogs()).toHaveLength(1);
+        expect(root.querySelector('app-tv-apps')).not.toBeNull();
         root.querySelector<HTMLButtonElement>('app-tv-apps .launch')!.click();
         await tick();
         expect(store.launch).toHaveBeenCalledTimes(1);
@@ -338,13 +511,59 @@ describe('TvPage', () => {
     });
   });
 
-  describe('Apps in the header', () => {
-    it('is enabled even without the agent: the panel reads the saved list', async () => {
+  describe('menu', () => {
+    const openMenu = async () => {
+      menuButton().click();
+      await render();
+    };
+
+    it('starts closed and opens as a panel named "Mais opções", with the same gestures as the other panels', async () => {
+      expect(root.querySelector('app-tv-menu')).toBeNull();
+      await openMenu();
+      expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Mais opções');
+      expect(dialogs()[0].getAttribute('data-placement')).toBe('bottom');
+      expect(root.querySelector('app-tv-panel .grab')).not.toBeNull();
+      expect(
+        [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
+      ).toEqual(['Apps da TV', 'Personalizar', 'Trocar a TV']);
+    });
+
+    it('closes with Esc and with its own close button, and gives the focus back to the three dots', async () => {
+      const dots = menuButton();
+      for (const close of [
+        () => dialogs()[0].dispatchEvent(new Event('cancel', { cancelable: true })),
+        () => root.querySelector<HTMLButtonElement>('app-tv-panel .x')!.click(),
+      ]) {
+        dots.focus();
+        await openMenu();
+        close();
+        await render();
+        expect(dialogs()).toHaveLength(0);
+        expect(document.activeElement).toBe(dots);
+      }
+    });
+
+    it('opens Personalizar from its row, one modal at a time, and the focus comes back to the three dots', async () => {
+      const dots = menuButton();
+      dots.focus();
+      await openMenu();
+      menuRow('Personalizar').click();
+      await render();
+      await render();
+      expect(root.querySelector('app-tv-menu')).toBeNull();
+      expect(customizeSheet()).not.toBeNull();
+      root.querySelector<HTMLButtonElement>('app-tv-customize-sheet .footer .primary')!.click();
+      await render();
+      await render();
+      expect(customizeSheet()).toBeNull();
+      expect(document.activeElement).toBe(dots);
+    });
+
+    it('is there even without the agent, because nothing in it sends a command', async () => {
       store.canSend.set(false);
       await render();
-      expect(appsButton().disabled).toBe(false);
-      appsButton().click();
-      await render();
+      expect(menuButton().disabled).toBe(false);
+      await openApps();
       expect(dialogs()).toHaveLength(1);
       expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Apps da TV');
     });
@@ -565,25 +784,38 @@ describe('TvPage for a guest', () => {
     localStorage.clear();
   });
 
-  it('has no way back to Início (the guest has none), but keeps name, state, Apps and power', async () => {
+  it('has no way back to Início (the guest has none), but keeps name, state, the menu and power', async () => {
     await open();
     expect(root.querySelector('a.back')).toBeNull();
     expect(root.querySelector('a[href="/"]')).toBeNull();
     expect(root.textContent).not.toContain('Início');
     expect(root.querySelector('h1')?.textContent?.trim()).toBe('TV');
     expect(root.querySelector('button[aria-label="Desligar a TV"]')).not.toBeNull();
-    expect(root.querySelector('.head button[aria-label="Apps da TV"]')).not.toBeNull();
+    expect(root.querySelector('.head button[aria-label="Mais opções"]')).not.toBeNull();
     expect(root.querySelector('app-tv-control')).not.toBeNull();
   });
 
-  it('keeps the three dots beside the settings button, on the left, and only power on the right', async () => {
+  it('keeps power beside the settings button, on the left, and only the menu on the right', async () => {
     await open();
     expect(
       [...root.querySelectorAll('.head .lead > *')].map((el) => el.getAttribute('aria-label')),
-    ).toEqual(['Ajustes', 'Apps da TV']);
+    ).toEqual(['Ajustes', 'Desligar a TV']);
     expect(
       [...root.querySelectorAll('.head .actions > *')].map((el) => el.getAttribute('aria-label')),
-    ).toEqual(['Desligar a TV']);
+    ).toEqual(['Mais opções']);
+  });
+
+  it('shows the guest the menu without the one thing that changes the TV for everybody', async () => {
+    await open();
+    root.querySelector<HTMLButtonElement>('.head button[aria-label="Mais opções"]')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(
+      [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
+    ).toEqual(['Apps da TV', 'Personalizar']);
+    expect(root.querySelector('app-tv-menu a')).toBeNull();
+    expect(root.querySelector('app-tv-menu .ui-chip')).toBeNull();
   });
 
   it('puts the round settings button where back was, so the name stays in the middle', async () => {
@@ -603,9 +835,9 @@ describe('TvPage for a guest', () => {
   it('draws the settings button like the other round buttons of the header: a decorative gear, no visible text', async () => {
     await open();
     const settings = root.querySelector('.head a.settings')!;
-    const apps = root.querySelector('.head button[aria-label="Apps da TV"]')!;
+    const menu = root.querySelector('.head button[aria-label="Mais opções"]')!;
     expect(settings.classList.contains('circle')).toBe(true);
-    expect(apps.classList.contains('circle')).toBe(true);
+    expect(menu.classList.contains('circle')).toBe(true);
     expect(settings.textContent?.trim()).toBe('');
     const svg = settings.querySelector('svg')!;
     expect(svg.getAttribute('aria-hidden')).toBe('true');
@@ -674,9 +906,9 @@ describe('TvPage by permission', () => {
     localStorage.clear();
   });
 
-  it('control only: the whole control and the name opens Personalizar; the three dots hold only the cleaning, and there is no power', async () => {
+  it('control only: the whole control and the name opens Personalizar; the menu holds only the options and Personalizar, and there is no power', async () => {
     await open('guest', 'module:tv', 'tv:control');
-    expect(labels()).toEqual(['Ajustes', 'Opções da TV']);
+    expect(labels()).toEqual(['Ajustes', 'Mais opções']);
     expect(root.querySelector('app-tv-control')).not.toBeNull();
     expect(root.querySelector('app-tv-view-only')).toBeNull();
     expect(titleButton()?.getAttribute('aria-label')).toBe('TV, personalizar');
@@ -686,9 +918,17 @@ describe('TvPage by permission', () => {
     expect(root.querySelector('button[aria-label="Mudo"]')).not.toBeNull();
   });
 
-  it('control only: the three dots open a short panel with the cleaning and nothing of the app list', async () => {
+  it('control only: the menu leads to a short panel with the cleaning and nothing of the app list', async () => {
     await open('guest', 'module:tv', 'tv:control');
-    root.querySelector<HTMLButtonElement>('.head button[aria-label="Opções da TV"]')!.click();
+    root.querySelector<HTMLButtonElement>('.head button[aria-label="Mais opções"]')!.click();
+    await render();
+    expect(
+      [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
+    ).toEqual(['Opções da TV', 'Personalizar']);
+    [...root.querySelectorAll<HTMLButtonElement>('app-tv-menu button.ui-row')]
+      .find((row) => row.textContent?.includes('Opções da TV'))!
+      .click();
+    await render();
     await render();
     expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Opções da TV');
     const panel = root.querySelector('app-tv-panel')!;
@@ -709,9 +949,9 @@ describe('TvPage by permission', () => {
     expect(root.querySelector('app-tv-cleanup-sheet')).not.toBeNull();
   });
 
-  it('launch and edit, no control: the message and the shortcuts, Apps in the header, no power, the name is only text', async () => {
+  it('launch and edit, no control: the message and the shortcuts, the menu, no power, the name is only text', async () => {
     await open('guest', 'module:tv', 'tv:launch', 'tv:edit-shortcuts');
-    expect(labels()).toEqual(['Ajustes', 'Apps da TV']);
+    expect(labels()).toEqual(['Ajustes', 'Mais opções']);
     expect(root.querySelector('app-tv-control')).toBeNull();
     expect(message()).toBe('Você pode ver a TV, mas não controlá-la.');
     expect(root.querySelectorAll('button.shortcut')).toHaveLength(3);
@@ -735,7 +975,7 @@ describe('TvPage by permission', () => {
 
   it('everything, as the owner: the same page as always', async () => {
     await open('owner', ...ALL);
-    expect(labels()).toEqual(['Voltar ao Início', 'Apps da TV', 'Desligar a TV']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Desligar a TV', 'Mais opções']);
     expect(root.querySelector('app-tv-control')).not.toBeNull();
     expect(root.querySelector('app-tv-view-only')).toBeNull();
     expect(titleButton()?.getAttribute('aria-label')).toBe('TV, personalizar');
@@ -756,7 +996,7 @@ describe('TvPage by permission', () => {
     fixture = TestBed.createComponent(TvPage);
     root = fixture.nativeElement as HTMLElement;
     await render();
-    expect(labels()).toEqual(['Voltar ao Início', 'Apps da TV', 'Desligar a TV']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Desligar a TV', 'Mais opções']);
   });
 
   it('power alone shows the power button, and the header keeps its three groups', async () => {
@@ -788,7 +1028,7 @@ describe('TvPage by permission', () => {
     }
   });
 
-  it('follows the session: the control, power and Apps appear and go away with the permissions', async () => {
+  it('follows the session: the control, power and the menu appear and go away with the permissions', async () => {
     await open('guest', 'module:tv');
     expect(root.querySelector('app-tv-control')).toBeNull();
 
@@ -796,7 +1036,7 @@ describe('TvPage by permission', () => {
     await render();
     expect(root.querySelector('app-tv-control')).not.toBeNull();
     expect(root.querySelector('app-tv-view-only')).toBeNull();
-    expect(labels()).toEqual(['Ajustes', 'Apps da TV', 'Desligar a TV']);
+    expect(labels()).toEqual(['Ajustes', 'Desligar a TV', 'Mais opções']);
 
     grant('guest', 'module:tv');
     await render();
@@ -828,7 +1068,7 @@ describe('TvPage by permission', () => {
   it('closes the keyboard panel when the control goes away', async () => {
     await open('guest', 'module:tv', 'tv:control');
     expect(root.querySelector('button[aria-label="Apps da TV"]')).toBeNull();
-    expect(root.querySelector('button[aria-label="Opções da TV"]')).not.toBeNull();
+    expect(root.querySelector('button[aria-label="Mais opções"]')).not.toBeNull();
     root.querySelector<HTMLButtonElement>('button[aria-label="Teclado"]')!.click();
     await render();
     expect(root.querySelector('app-tv-keyboard')).not.toBeNull();

@@ -140,7 +140,7 @@ describe('ControlPage', () => {
       expect(root.querySelectorAll('.shortcut')).toHaveLength(0);
       expect(root.querySelector('.shortcuts')).toBeNull();
       expect(root.querySelector('.top .hint')?.textContent?.trim()).toBe(
-        'Fixe apps aqui: abra Apps, no topo.',
+        'Fixe apps aqui: abra o menu, no topo.',
       );
       expect(root.querySelector('.top .hint')!.closest('button, a')).toBeNull();
       expect(root.textContent).not.toMatch(/sem atalhos/i);
@@ -479,10 +479,17 @@ describe('ControlPage', () => {
     for (const button of sending) expect(button.hasAttribute('disabled')).toBe(true);
   });
 
-  it('the keyboard button is not a key: it stays usable, because typing needs the panel to explain why it cannot send', () => {
+  it('the keyboard button is not a key: it stays focusable and opens the panel that explains why it cannot send, but looks off', () => {
+    expect(byLabel('Teclado').classList.contains('off')).toBe(false);
     store.canSend.set(false);
     render();
-    expect(byLabel('Teclado').hasAttribute('disabled')).toBe(false);
+    const keyboard = byLabel('Teclado');
+    expect(keyboard.hasAttribute('disabled')).toBe(false);
+    // Apagado como os demais botões de comando: nada ali parece pronto para mandar texto à TV.
+    expect(keyboard.classList.contains('off')).toBe(true);
+    store.canSend.set(true);
+    render();
+    expect(byLabel('Teclado').classList.contains('off')).toBe(false);
   });
 
   describe('what Personalizar chooses', () => {

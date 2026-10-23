@@ -4,6 +4,7 @@
     [canSend]="store.canSend()"
     [launchable]="canLaunch()"
     (open)="openShortcut($event)"
+    (suggest)="suggest.emit($event)"
   />
   <div class="message">
     <app-tv-icon name="tv" />
