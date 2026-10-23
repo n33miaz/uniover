@@ -15,7 +15,7 @@ const TABS: readonly TabItem[] = [
   { link: '/treino', label: $localize`:@@training.tab.home:Início`, icon: 'today' },
   {
     link: '/treino/progresso',
-    also: ['/treino/corpo'],
+    also: ['/treino/corpo', '/treino/alimentacao'],
     label: $localize`:@@training.tab.progress:Progresso`,
     icon: 'progress',
   },
