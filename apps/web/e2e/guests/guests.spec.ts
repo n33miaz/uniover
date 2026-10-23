@@ -229,7 +229,11 @@ test.describe('convidado: só o controle da TV', () => {
     ).toBe('web');
 
     // No painel Apps o convidado abre apps, mas não edita (renomear, fixar e tirar do controle são só do dono).
-    await page.getByRole('button', { name: 'Apps da TV', exact: true }).click();
+    await page.getByRole('button', { name: 'Mais opções', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Mais opções' })
+      .getByRole('button', { name: 'Apps da TV', exact: true })
+      .click();
     const apps = page.getByRole('dialog', { name: 'Apps da TV' });
     await expect(apps).toBeVisible();
     await expect(apps.getByRole('button', { name: /^Renomear / })).toHaveCount(0);
@@ -325,24 +329,21 @@ test.describe('convidado: só o controle da TV', () => {
     const settings = page.locator('header.head').getByRole('link', { name: 'Ajustes' });
     await expect(settings).toBeVisible();
 
-    // Os três pontos do Apps ficam ao lado da engrenagem, na esquerda e antes do nome; à direita só o desligar.
-    const apps = page
-      .locator('header.head')
-      .getByRole('button', { name: 'Apps da TV', exact: true });
+    // O desligar fica ao lado da engrenagem, na esquerda e antes do nome; à direita só os três pontos do menu.
+    const header = page.locator('header.head');
     const gearBox = (await settings.boundingBox())!;
-    const appsBox = (await apps.boundingBox())!;
-    const nameBox = (await page.locator('header.head h1').boundingBox())!;
-    const powerBox = (await page
-      .locator('header.head')
-      .getByRole('button', { name: 'Desligar a TV' })
+    const powerBox = (await header.getByRole('button', { name: 'Desligar a TV' }).boundingBox())!;
+    const nameBox = (await header.locator('h1').boundingBox())!;
+    const menuBox = (await header
+      .getByRole('button', { name: 'Mais opções', exact: true })
       .boundingBox())!;
-    expect(Math.abs(appsBox.y - gearBox.y), 'na mesma linha da engrenagem').toBeLessThanOrEqual(1);
-    expect(appsBox.x, 'depois da engrenagem').toBeGreaterThanOrEqual(gearBox.x + gearBox.width);
-    expect(nameBox.x, 'antes do nome').toBeGreaterThanOrEqual(appsBox.x + appsBox.width);
-    expect(powerBox.x, 'o desligar depois do nome').toBeGreaterThanOrEqual(
+    expect(Math.abs(powerBox.y - gearBox.y), 'na mesma linha da engrenagem').toBeLessThanOrEqual(1);
+    expect(powerBox.x, 'depois da engrenagem').toBeGreaterThanOrEqual(gearBox.x + gearBox.width);
+    expect(nameBox.x, 'antes do nome').toBeGreaterThanOrEqual(powerBox.x + powerBox.width);
+    expect(menuBox.x, 'o menu depois do nome').toBeGreaterThanOrEqual(
       nameBox.x + nameBox.width - 1,
     );
-    await expect(page.locator('header.head .actions').getByRole('button')).toHaveCount(1);
+    await expect(header.locator('.actions').getByRole('button')).toHaveCount(1);
 
     await settings.click();
     await expect(page).toHaveURL(/\/ajustes$/);

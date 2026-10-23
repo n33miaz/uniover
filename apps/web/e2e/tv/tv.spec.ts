@@ -119,10 +119,20 @@ const appsDialog = (page: Page) => page.getByRole('dialog', { name: 'Apps da TV'
 const keyboardDialog = (page: Page) => page.getByRole('dialog', { name: 'Teclado' });
 const keyboardField = (page: Page) => page.getByLabel('Texto para a TV');
 
-/** Abre o painel Apps pelo botão "Apps da TV" do cabeçalho, o caminho de quem usa a tela. */
+const menuDialog = (page: Page) => page.getByRole('dialog', { name: 'Mais opções' });
+
+/** Abre o menu pelos três pontos do cabeçalho. */
+async function openMenu(page: Page) {
+  await button(page, 'Mais opções').click();
+  await expect(menuDialog(page)).toBeVisible();
+}
+
+/** Abre o painel Apps pelo menu dos três pontos, o caminho de quem usa a tela (o menu sai antes de o painel abrir). */
 async function openApps(page: Page) {
-  await button(page, 'Apps da TV').click();
+  await openMenu(page);
+  await menuDialog(page).getByRole('button', { name: 'Apps da TV' }).click();
   await expect(appsDialog(page)).toBeVisible();
+  await expect(menuDialog(page)).toHaveCount(0);
 }
 
 /**
@@ -202,7 +212,7 @@ test.describe('controle: tela única, sem abas', () => {
     await expect(statusDot(page, 'Conectada')).toBeVisible();
     await expect(page.getByRole('img', { name: 'Volume 22' })).toBeVisible();
     await expect(button(page, 'Atalho 1')).toBeVisible();
-    await expect(button(page, 'Apps da TV')).toBeVisible();
+    await expect(button(page, 'Mais opções')).toBeVisible();
 
     // Sem a barra de abas de baixo e sem as pílulas de estado de antes.
     await expect(page.getByRole('navigation', { name: 'Abas do módulo' })).toHaveCount(0);
@@ -218,19 +228,22 @@ test.describe('controle: tela única, sem abas', () => {
     await expectNoSeriousViolations(page);
   });
 
-  test('o Apps é o botão de três pontos à esquerda, depois da seta, e o Tab segue a ordem da tela', async ({
+  test('o menu é o botão de três pontos à direita, e o Tab segue a ordem da tela', async ({
     page,
   }) => {
     await openTv(page);
     const head = page.locator('header.head');
-    await expect(head.locator('.lead').getByRole('button', { name: 'Apps da TV' })).toBeVisible();
-    // À direita fica só o desligar.
+    // À esquerda ficam a seta e o desligar; à direita, só os três pontos do menu.
+    await expect(head.locator('.lead').getByRole('button')).toHaveCount(1);
+    await expect(
+      head.locator('.lead').getByRole('button', { name: 'Desligar a TV' }),
+    ).toBeVisible();
     await expect(head.locator('.actions').getByRole('button')).toHaveCount(1);
     await expect(
-      head.locator('.actions').getByRole('button', { name: 'Desligar a TV' }),
+      head.locator('.actions').getByRole('button', { name: 'Mais opções' }),
     ).toBeVisible();
 
-    // Do começo para o fim da linha: seta, três pontos, nome, ponto de estado e desligar.
+    // Do começo para o fim da linha: seta, desligar, nome, ponto de estado e três pontos.
     await head.getByRole('link', { name: 'Voltar ao Início' }).focus();
     const seen: string[] = [];
     for (let step = 0; step < 4; step++) {
@@ -239,17 +252,17 @@ test.describe('controle: tela única, sem abas', () => {
         await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? ''),
       );
     }
-    expect(seen[0]).toBe('Apps da TV');
+    expect(seen[0]).toBe('Desligar a TV');
     expect(seen[1]).toBe('TV, personalizar');
     expect(seen[2]).toMatch(/^Estado do controle:/);
-    expect(seen[3]).toBe('Desligar a TV');
+    expect(seen[3]).toBe('Mais opções');
 
-    // O botão abre o painel e devolve o foco a ele ao fechar.
-    await button(page, 'Apps da TV').click();
-    await expect(appsDialog(page)).toBeVisible();
+    // O botão abre o menu e devolve o foco a ele ao fechar.
+    await button(page, 'Mais opções').click();
+    await expect(menuDialog(page)).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(appsDialog(page)).toHaveCount(0);
-    await expect(button(page, 'Apps da TV')).toBeFocused();
+    await expect(menuDialog(page)).toHaveCount(0);
+    await expect(button(page, 'Mais opções')).toBeFocused();
   });
 
   test('o endereço antigo /tv/apps e /tv/teclado leva ao controle com o painel aberto', async ({
@@ -266,7 +279,7 @@ test.describe('controle: tela única, sem abas', () => {
     await expect(page).toHaveURL(/\/tv$/);
     // Recarregar não reabre o painel: o parâmetro saiu do endereço.
     await page.reload();
-    await expect(button(page, 'Apps da TV')).toBeVisible();
+    await expect(button(page, 'Mais opções')).toBeVisible();
     await expect(button(page, 'Atalho 1')).toBeVisible();
     await expect(keyboardDialog(page)).toHaveCount(0);
   });
@@ -287,7 +300,7 @@ test.describe('controle: tela única, sem abas', () => {
       'Próxima',
       'Teclado',
       'Desligar a TV',
-      'Apps da TV',
+      'Mais opções',
       'Atalho 1',
       'Página 1 de 3',
       'Página 2 de 3',
@@ -423,7 +436,7 @@ test.describe('controle: fileira de atalhos', () => {
     for (const n of [1, 2, 3]) await expect(button(page, `Atalho ${n}`)).toBeVisible();
     // O pacote não aparece na tela de controle.
     await expect(page.getByText('exemplo.pacote')).toHaveCount(0);
-    // O chip "Apps" saiu da fileira: o painel abre por um botão do cabeçalho.
+    // O chip "Apps" saiu da fileira: o painel abre pelo menu dos três pontos do cabeçalho.
     await expect(page.locator('.apps-chip')).toHaveCount(0);
 
     await button(page, 'Atalho 2').click();
@@ -472,7 +485,7 @@ test.describe('controle: fileira de atalhos', () => {
     await expectChipNames(page, ['App 1', 'App 2', 'App 3']);
   });
 
-  test('sem atalho ativo não há texto de erro: só uma dica discreta da altura de um azulejo, sem salto', async ({
+  test('sem atalho ativo o dono vê sugestões da altura de um azulejo, sem salto e sem texto de erro', async ({
     page,
   }) => {
     await openTv(page);
@@ -480,15 +493,35 @@ test.describe('controle: fileira de atalhos', () => {
     const stageTop = (await page.locator('.viewport').boundingBox())!.y;
 
     await emitSse(page, 'tv.shortcuts', []);
-    const hint = page.getByText('Fixe apps aqui: abra Apps, no topo.');
-    await expect(hint).toBeVisible();
-    await expect(page.locator('.shortcuts')).toHaveCount(0);
-    // A dica não é um botão nem um aviso, e tem a altura de um azulejo: o palco não sobe nem desce.
-    expect(await hint.evaluate((el) => el.closest('button, a, [role="alert"]') === null)).toBe(
-      true,
+    const suggestions = page.locator('.shortcuts .shortcut.suggestion');
+    await expect(suggestions.first()).toBeVisible();
+    // Nenhuma é um atalho de verdade, e a dica de texto deu lugar a elas.
+    await expect(page.locator('.shortcuts .shortcut:not(.suggestion)')).toHaveCount(0);
+    await expect(page.getByText('Fixe apps aqui: abra o menu, no topo.')).toHaveCount(0);
+    for (const name of ['YouTube', 'Netflix', 'Prime Video']) {
+      await expect(
+        page.getByRole('button', { name: `Sugestão: ${name}`, exact: true }),
+      ).toBeVisible();
+    }
+    // Quantas cabem vem da largura medida da faixa: lado a lado, sem rolar e com folga; uma a mais não caberia.
+    const strip = (await page.locator('app-tv-shortcut-row .top').boundingBox())!;
+    const count = await suggestions.count();
+    expect(count).toBe(Math.min(6, Math.floor((strip.width - 8) / 68)));
+    const first = (await suggestions.first().boundingBox())!;
+    const last = (await suggestions.last().boundingBox())!;
+    expect(first.x, 'folga à esquerda').toBeGreaterThanOrEqual(strip.x + 8 - 1);
+    expect(last.x + last.width, 'folga à direita').toBeLessThanOrEqual(
+      strip.x + strip.width - 8 + 1,
     );
-    const box = (await hint.boundingBox())!;
-    expect(Math.abs(box.height - tile.height), 'altura da dica').toBeLessThanOrEqual(1);
+    expect(
+      await page.locator('ul.shortcuts').evaluate((el) => el.scrollWidth <= el.clientWidth),
+      'a faixa não rola',
+    ).toBe(true);
+    // Mesma altura e mesma largura do azulejo de um atalho: o palco não sobe nem desce.
+    for (const box of [first, last]) {
+      expect(Math.abs(box.height - tile.height), 'altura').toBeLessThanOrEqual(1);
+      expect(Math.abs(box.width - tile.width), 'largura').toBeLessThanOrEqual(1);
+    }
     expect((await page.locator('.viewport').boundingBox())!.y, 'o palco não salta').toBeCloseTo(
       stageTop,
       0,
@@ -499,13 +532,18 @@ test.describe('controle: fileira de atalhos', () => {
     await expectNoVerticalScroll(page);
   });
 
-  test('a fileira vazia já na abertura mostra a dica, e o convidado não é mandado fixar nada', async ({
+  test('a fileira vazia já na abertura mostra as sugestões ao dono, sem presumir app instalado', async ({
     page,
   }) => {
     tv.shortcuts = [];
     await openTv(page);
-    await expect(page.getByText('Fixe apps aqui: abra Apps, no topo.')).toBeVisible();
-    await expect(page.locator('.shortcuts .shortcut')).toHaveCount(0);
+    await expect(page.locator('.shortcuts .shortcut.suggestion').first()).toBeVisible();
+    await expect(page.locator('.shortcuts .shortcut:not(.suggestion)')).toHaveCount(0);
+    await expect(page.getByText('Fixe apps aqui: abra o menu, no topo.')).toHaveCount(0);
+    // Tocar numa sugestão só abre o painel dela: nada vai à TV nem à lista de atalhos.
+    await page.getByRole('button', { name: 'Sugestão: Netflix', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Netflix' })).toBeVisible();
+    expect(tv.requests.filter((r) => r.method !== 'GET' && r.path !== '/wake')).toEqual([]);
     await expectNoVerticalScroll(page);
   });
 
@@ -952,19 +990,26 @@ test.describe('ponto de estado clicável', () => {
     await expect(statusDot(page, 'Sem rede')).toHaveCount(0);
   });
 
-  test('sem agente configurado o ponto pede atenção e a tela diz o motivo', async ({ page }) => {
+  test('sem agente configurado o ponto pede atenção e o controle dá lugar ao estado vazio', async ({
+    page,
+  }) => {
     // Sem agente configurado a API informa agente fora do ar, e o aquecer volta 503 com o tipo próprio.
     tv.state = { ...HOT_STATE, agentOnline: false, connection: 'disconnected', volume: null };
     tv.wakeFailure = { status: 503, kind: 'agent-not-configured' };
-    await openTv(page);
+    await signIn(page);
+    await page.goto('/tv');
+    await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
+    await emitSse(page, 'tv.state', tv.state);
+    await emitSse(page, 'tv.shortcuts', tv.shortcuts);
     await expect(statusDot(page, 'Sem agente configurado')).toHaveAttribute(
       'data-phase',
       'attention',
     );
+    // Nenhum botão de comando chegaria a lugar nenhum: no lugar deles, uma ação só (o detalhe está em tv-menu.spec.ts).
     await expect(
-      page.getByText('Nenhum agente foi configurado para controlar a TV.').first(),
+      page.getByRole('heading', { level: 2, name: 'Nenhuma TV configurada' }),
     ).toBeVisible();
-    await expect(button(page, 'OK')).toBeDisabled();
+    await expect(button(page, 'OK')).toHaveCount(0);
   });
 
   test('o foco do teclado é visível no ponto de estado', async ({ page }) => {
@@ -1333,10 +1378,13 @@ test.describe('painel flutuante: comportamento comum', () => {
     await expect(appsDialog(page)).toHaveCount(0);
   });
 
-  test('o painel Apps devolve o foco ao botão do cabeçalho que o abriu', async ({ page }) => {
+  test('o painel Apps devolve o foco ao botão do cabeçalho que abriu o menu', async ({ page }) => {
     await openTv(page);
-    const opener = button(page, 'Apps da TV');
+    const opener = button(page, 'Mais opções');
     await opener.focus();
+    await page.keyboard.press('Enter');
+    await expect(menuDialog(page)).toBeVisible();
+    await menuDialog(page).getByRole('button', { name: 'Apps da TV' }).focus();
     await page.keyboard.press('Enter');
     await expect(appsDialog(page)).toBeVisible();
     await page.keyboard.press('Escape');
@@ -2193,7 +2241,7 @@ test.describe('acessibilidade e tema', () => {
       .locator('.glyph')
       .evaluate((el) => getComputedStyle(el).outlineStyle);
     expect(outline).toBe('solid');
-    for (const name of ['Menu', 'Apps da TV', 'Atalho 1']) {
+    for (const name of ['Menu', 'Mais opções', 'Atalho 1']) {
       await button(page, name).focus();
       const style = await button(page, name).evaluate((el) => getComputedStyle(el).outlineStyle);
       expect(style, name).toBe('solid');
@@ -2204,7 +2252,7 @@ test.describe('acessibilidade e tema', () => {
 /** Caixa de cada elemento fixo do controle (tudo que não é o palco que troca de página). */
 async function fixedBoxes(page: Page) {
   const targets: [string, Locator][] = [
-    ['apps', button(page, 'Apps da TV')],
+    ['menu', button(page, 'Mais opções')],
     ['atalho', button(page, 'Atalho 1')],
     ['volume+', button(page, 'Aumentar o volume')],
     ['voltar', button(page, 'Voltar')],
@@ -2285,7 +2333,7 @@ for (const screen of SCREENS) {
         'Próxima',
         'Teclado',
         'Desligar a TV',
-        'Apps da TV',
+        'Mais opções',
         'Atalho 1',
         'Página 1 de 3',
         'Página 2 de 3',
@@ -2685,7 +2733,7 @@ test.describe('ícones dos apps', () => {
     // A imagem que não carrega cai no azulejo de reserva, sem quebrar a fileira.
     await expect(chips.nth(5).locator('.fallback')).toHaveText('Y');
     await expect(chips.nth(5).locator('img')).toHaveCount(0);
-    await expect(button(page, 'Apps da TV')).toBeVisible();
+    await expect(button(page, 'Mais opções')).toBeVisible();
     await expectNoHorizontalScroll(page);
     await expectNoVerticalScroll(page);
   });
@@ -3252,10 +3300,10 @@ test.describe('ícones dos apps', () => {
       await print('apps-empty');
       await expectNoSeriousViolations(page);
 
-      // Fechado o painel, a fileira vazia mostra a dica no lugar dos azulejos.
+      // Fechado o painel, a fileira vazia mostra as sugestões no lugar dos azulejos.
       await page.keyboard.press('Escape');
       await expect(dialog).toHaveCount(0);
-      await expect(page.getByText('Fixe apps aqui: abra Apps, no topo.')).toBeVisible();
+      await expect(page.locator('.shortcuts .shortcut.suggestion').first()).toBeVisible();
       await print('row-empty');
       await expectNoSeriousViolations(page);
     });
