@@ -11,7 +11,9 @@
  * - `navigator.standalone` é um booleano só de leitura do iOS que diz se a página abriu a partir da tela de início.
  *   Fonte: Apple, "Configuring Web Applications" (developer.apple.com/library/archive/documentation/
  *   AppleApplications/Reference/SafariWebContent/ConfiguringWebApplications). A media query
- *   `(display-mode: standalone)` é o equivalente do padrão (MDN, mesma página acima).
+ *   `(display-mode: standalone)` é o equivalente do padrão (MDN, mesma página acima). O WebKit tem um bug aberto em
+ *   que um PWA de tela inicial informa `fullscreen` em vez de `standalone` (bugs.webkit.org/show_bug.cgi?id=264218),
+ *   então no iOS também aceitamos `fullscreen` como sinal de instalação.
  * - Fichas dos navegadores de terceiros no iPhone: `CriOS/` (Chromium, docs/ios/user_agent.md), `FxiOS/` (MDN,
  *   "Firefox user agent string") e `EdgiOS/` (Microsoft Learn, "Detecting Microsoft Edge from your website").
  * - Navegador embutido em outro app (Instagram, Facebook...): o `WKWebView` com o agente padrão não manda o
@@ -60,7 +62,10 @@ export function isMobileDevice(env: InstallEnvInput): boolean {
 export function isStandalone(env: InstallEnvInput): boolean {
   if (env.standalone === true) return true;
   try {
-    return env.matchMedia?.('(display-mode: standalone)').matches === true;
+    if (env.matchMedia?.('(display-mode: standalone)').matches === true) return true;
+    // O WebKit reporta `fullscreen` em alguns PWAs adicionados à tela inicial (bug 264218). A exceção fica limitada ao
+    // iOS para não confundir o modo de tela cheia solicitado por um site noutras plataformas com um PWA instalado.
+    return isIos(env) && env.matchMedia?.('(display-mode: fullscreen)').matches === true;
   } catch {
     return false;
   }
