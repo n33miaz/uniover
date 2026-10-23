@@ -1,7 +1,7 @@
 import { Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
 import { TrainingServer } from './support/training-server';
-import { openTraining, startTraining, chooseMuscle } from './support/training-pages';
+import { openTraining, startTraining, chooseMuscle, expectSynced } from './support/training-pages';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -32,7 +32,6 @@ test.describe('alterações que o servidor recusou', () => {
     expect(server.writes('exercises')).toBe(0);
 
     await page.locator('.training-header .status').click();
-    await page.getByRole('button', { name: 'Ver', exact: true }).click();
     const sheet = page.getByRole('dialog', { name: 'Alterações com erro' });
     await expect(sheet).toContainText('Exercício');
     await expect(sheet).toContainText('“Remada na máquina articulada”');
@@ -42,7 +41,7 @@ test.describe('alterações que o servidor recusou', () => {
     await expect.poll(() => server.writes('exercises')).toBe(1);
     await expect(sheet).toHaveCount(0);
     await expect(page.getByText('1 com erro')).toHaveCount(0);
-    await expect(page.getByText(/sincronizado às \d{2}:\d{2}/)).toBeVisible();
+    await expectSynced(page);
   });
 
   test('o item recusado não some sozinho, nem ao recarregar', async ({ page, context }) => {
@@ -61,7 +60,6 @@ test.describe('alterações que o servidor recusou', () => {
     const server = await startTraining(context, page);
     await createRefused(page, server);
     await page.locator('.training-header .status').click();
-    await page.getByRole('button', { name: 'Ver', exact: true }).click();
     const sheet = page.getByRole('dialog', { name: 'Alterações com erro' });
 
     await sheet.getByRole('button', { name: /^Descartar/ }).click();

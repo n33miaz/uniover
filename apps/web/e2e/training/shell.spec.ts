@@ -1,6 +1,13 @@
 import { expect, expectNoHorizontalScroll, test, waitForServiceWorkerControl } from '../fixtures';
 import { SEED_EXERCISE_IDS, SEED_ROUTINE_IDS } from './support/training-seed';
-import { openTraining, startTraining, waitForCatalog } from './support/training-pages';
+import {
+  openTraining,
+  startTraining,
+  waitForCatalog,
+  expectSynced,
+  expectOfflineIcon,
+  syncIcon,
+} from './support/training-pages';
 
 test.describe('casca do Treino', () => {
   // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -160,23 +167,22 @@ test.describe('casca do Treino', () => {
     await expect(page.locator('app-training-page')).toBeVisible();
   });
 
-  test('a linha de sincronização diz que está em dia, e sem rede diz que usa o que está no aparelho', async ({
+  test('o ícone de sincronização diz que está em dia e, sem rede, que usa o que está no aparelho', async ({
     page,
     context,
   }) => {
     const server = await startTraining(context, page);
     await openTraining(page, '/treino/exercicios');
     await waitForCatalog(page);
-    await page.locator('.training-header .status').click();
-    await expect(page.getByText(/sincronizado às \d{2}:\d{2}/)).toBeVisible();
+    await expectSynced(page);
     server.offline = true;
     await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-    await expect(page.getByText('Sem rede: usando o que está no aparelho')).toBeVisible();
+    await expectOfflineIcon(page);
     // Sem rede a lista continua lendo o aparelho.
     await expect(page.locator('.list .ui-row').first()).toBeVisible();
     server.offline = false;
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
-    await expect(page.getByText('Sem rede: usando o que está no aparelho')).toHaveCount(0);
+    await expect(syncIcon(page)).not.toHaveAttribute('data-state', 'offline');
   });
 });
 
@@ -196,12 +202,12 @@ test.describe('casca do Treino com o service worker', () => {
     await waitForServiceWorkerControl(page);
     await expect(page.locator('app-training-page')).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Abas do módulo' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Hoje' })).toBeVisible();
-    const withSlash = await page.getByRole('heading', { name: 'Hoje' }).textContent();
+    await expect(page.getByRole('heading', { name: 'Início' })).toBeVisible();
+    const withSlash = await page.getByRole('heading', { name: 'Início' }).textContent();
 
     await page.goto('/treino');
-    await expect(page.getByRole('heading', { name: 'Hoje' })).toBeVisible();
-    expect(await page.getByRole('heading', { name: 'Hoje' }).textContent()).toBe(withSlash);
+    await expect(page.getByRole('heading', { name: 'Início' })).toBeVisible();
+    expect(await page.getByRole('heading', { name: 'Início' }).textContent()).toBe(withSlash);
     await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
       'href',
       '/treino/manifest.webmanifest',

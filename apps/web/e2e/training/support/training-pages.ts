@@ -81,3 +81,18 @@ export async function chooseEquipment(page: Page, label: string): Promise<void> 
     .getByRole('button', { name: label, exact: true })
     .click();
 }
+
+/** O ícone de sincronização do cabeçalho: o estado fica em `data-state` e o rótulo, sem texto à vista, diz o resto. */
+export function syncIcon(page: Page) {
+  return page.locator('.training-header .status');
+}
+
+/** O aparelho está em dia: o rótulo do ícone traz a hora da última sincronização. */
+export async function expectSynced(page: Page): Promise<void> {
+  await expect(syncIcon(page)).toHaveAttribute('aria-label', /Sincronizado às \d{2}:\d{2}/);
+}
+
+/** Sem rede (estado normal): só o ícone muda; a faixa de texto só existe com algo pendente. */
+export async function expectOfflineIcon(page: Page): Promise<void> {
+  await expect(syncIcon(page)).toHaveAttribute('data-state', 'offline');
+}

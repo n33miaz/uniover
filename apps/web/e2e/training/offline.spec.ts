@@ -6,6 +6,8 @@ import {
   trainingDbName,
   waitForCatalog,
   chooseMuscle,
+  expectSynced,
+  expectOfflineIcon,
 } from './support/training-pages';
 
 const goOffline = (page: Page) => page.evaluate(() => window.dispatchEvent(new Event('offline')));
@@ -41,7 +43,7 @@ test.describe('exercício próprio criado sem rede', () => {
     server.offline = false;
     await goOnline(page);
     await expect.poll(() => server.writes('exercises')).toBe(1);
-    await expect(page.getByText(/sincronizado às \d{2}:\d{2}/)).toBeVisible();
+    await expectSynced(page);
     await expect(page.getByText('ainda não sincronizado')).toHaveCount(0);
 
     const puts = server.hits.filter(
@@ -162,7 +164,7 @@ test.describe('sem rede de verdade, com o service worker', () => {
     await page.reload();
     await waitForCatalog(page);
     await expect(page.locator('.list .name')).toHaveText(['Agachamento livre', 'Supino reto']);
-    await expect(page.getByText('Sem rede: usando o que está no aparelho')).toBeVisible();
+    await expectOfflineIcon(page);
 
     // Criar sem rede, de ponta a ponta.
     await page.getByRole('link', { name: 'Novo exercício' }).click();

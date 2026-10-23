@@ -254,7 +254,6 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.getByText('1 com erro')).toBeVisible();
       await shot(page, info, 'pendencias-linha', scheme);
       await page.locator('.training-header .status').click();
-      await page.getByRole('button', { name: 'Ver', exact: true }).click();
       await expect(page.getByRole('dialog', { name: 'Alterações com erro' })).toBeVisible();
       await shot(page, info, 'pendencias-folha', scheme);
     });
@@ -262,7 +261,7 @@ for (const scheme of ['light', 'dark'] as const) {
     shotTest('Hoje: a tela provisória', async ({ page, context }, info) => {
       await startTraining(context, page);
       await openTraining(page, '/treino');
-      await expect(page.getByRole('heading', { name: 'Hoje' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Início' })).toBeVisible();
       await shot(page, info, 'hoje', scheme);
     });
 
@@ -277,6 +276,21 @@ for (const scheme of ['light', 'dark'] as const) {
       const titleBox = await header.getByRole('heading').boundingBox();
       const statusBox = await header.locator('.status').boundingBox();
       expect(statusBox!.x).toBeGreaterThan(titleBox!.x + titleBox!.width);
+      // Colado no topo e de borda a borda (a tela de baixo é que guarda o respiro lateral).
+      const headerBox = await header.boundingBox();
+      const viewport = page.viewportSize()!;
+      expect(headerBox!.x).toBe(0);
+      expect(headerBox!.y).toBe(0);
+      expect(headerBox!.width).toBe(viewport.width);
+      // O toque sempre responde, mesmo com o puxar de fundo já em andamento, e nenhum texto aparece.
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      const status = header.locator('.status');
+      await expect(status).toBeEnabled();
+      await status.click();
+      await expect(status).toHaveAttribute('data-state', 'busy');
+      await expect(page.locator('app-training-sync-line')).toBeHidden();
+      await expect(status).toHaveText('');
+      await expect(status).toHaveAttribute('data-state', 'ok');
       const tabs = page.getByRole('navigation', { name: 'Abas do módulo' });
       await expect(tabs).toBeVisible();
       const tapHighlights = await Promise.all(
