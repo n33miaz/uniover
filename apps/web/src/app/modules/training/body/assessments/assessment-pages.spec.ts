@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { PhysicalAssessmentRepository } from '../../data/physical-assessments/physical-assessment-repository';
+import { BodyRepository } from '../../data/body/body-repository';
+import { TRAINING_DB } from '../../data/training-db';
 import { eventually, setupScreen } from '../../shell/screen-test-kit';
 import { TRAINING_ROUTES } from '../../training.routes';
 
@@ -166,6 +168,118 @@ describe('physical assessment screens', () => {
       return saved;
     });
     expect(documents.map((document) => document.name)).toEqual(['relatorio-sintetico.jpg']);
+  });
+
+  it('transfers only explicitly selected supported fields, preserves provenance and date, and deduplicates re-imports', async () => {
+    const kit = await setupScreen([
+      { path: 'treino', data: { title: 'Treino' }, children: TRAINING_ROUTES },
+    ]);
+    const assessments = TestBed.inject(PhysicalAssessmentRepository);
+    const row = await assessments.save({
+      assessedOn: '2025-03-04',
+      origin: 'Clínica sintética',
+      professional: 'Profissional sintético',
+      measurements: [
+        {
+          type: 'weight',
+          reportedValue: 82.4,
+          unit: 'kg',
+          kind: 'measured',
+          method: 'balança',
+          source: 'relatório sintético',
+        },
+        { type: 'waist', reportedValue: 86, unit: 'cm', kind: 'measured', method: 'fita' },
+        { type: 'calf', reportedValue: 39, unit: 'cm', kind: 'measured', side: 'right' },
+        { type: 'body-fat', reportedValue: '00', unit: '%', kind: 'measured' },
+      ],
+    });
+    await assessments.addDocument(
+      row.id,
+      new Blob([new Uint8Array([0x41, 0x42])], { type: 'image/jpeg' }),
+      'imagem-sintetica.jpg',
+    );
+
+    const harness = await kit.harness();
+    await harness.navigateByUrl(`/treino/corpo/avaliacoes/${row.id}`);
+    const page = harness.routeNativeElement as HTMLElement;
+    await eventually({ detectChanges: () => harness.detectChanges() }, () => {
+      expect(page.textContent).toContain('Registro histórico');
+    });
+    const transferButton = Array.from(page.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Levar medidas ao Corpo'),
+    )!;
+    transferButton.click();
+    await eventually({ detectChanges: () => harness.detectChanges() }, () => {
+      expect(page.textContent).toContain('Escolher medidas para o Corpo');
+      expect(page.querySelectorAll('.transfer-option')).toHaveLength(2);
+    });
+
+    const choices = Array.from(page.querySelectorAll<HTMLInputElement>('.transfer-option input'));
+    expect(choices).toHaveLength(2);
+    expect(choices.every((choice) => !choice.checked)).toBe(true);
+    choices[0].click();
+    await eventually({ detectChanges: () => harness.detectChanges() }, () => {
+      expect(page.textContent).toContain('Anotação que será registrada no Corpo');
+    });
+    expect(choices[0].checked).toBe(true);
+    page.querySelector<HTMLButtonElement>('.transfer-actions .primary')!.click();
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    const body = TestBed.inject(BodyRepository);
+    await vi.waitFor(async () => expect(await body.entries()).toHaveLength(1));
+    const entries = await body.entries();
+    expect(entries[0]).toMatchObject({
+      measuredOn: '2025-03-04',
+      weightKg: 82.4,
+      waistCm: null,
+    });
+    expect(entries[0].note).toContain('balança');
+    expect(entries[0].note).not.toContain('Clínica sintética');
+    expect(entries[0].note).not.toContain('relatório sintético');
+    expect(entries[0].note).toContain('[assessment:');
+    expect(await TestBed.inject(TRAINING_DB).photos.count()).toBe(0);
+    expect(await assessments.documents(row.id)).toHaveLength(1);
+    expect(await kit.db.outbox.count()).toBe(1);
+    expect(await kit.db.outbox.toArray()).toMatchObject([
+      { method: 'PUT', url: expect.stringContaining('/training/body/entries/') },
+    ]);
+
+    await assessments.save({
+      assessedOn: row.assessedOn,
+      origin: row.origin,
+      professional: row.professional,
+      measurements: row.measurements,
+    });
+    const reimport = (await assessments.list()).find((candidate) => candidate.id !== row.id)!;
+    await harness.navigateByUrl('/treino/corpo/avaliacoes');
+    await harness.navigateByUrl(`/treino/corpo/avaliacoes/${reimport.id}`);
+    const reimportPage = harness.routeNativeElement as HTMLElement;
+    await eventually({ detectChanges: () => harness.detectChanges() }, () => {
+      expect(reimportPage.textContent).toContain('Registro histórico');
+    });
+    Array.from(reimportPage.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes('Levar medidas ao Corpo'))!
+      .click();
+    await eventually({ detectChanges: () => harness.detectChanges() }, () => {
+      expect(reimportPage.textContent).toContain('Este campo já foi registrado');
+    });
+    const reimportChoices = Array.from(
+      reimportPage.querySelectorAll<HTMLInputElement>('.transfer-option input'),
+    );
+    expect(reimportChoices.filter((choice) => choice.disabled)).toHaveLength(1);
+    const remaining = reimportChoices.find((choice) => !choice.disabled)!;
+    remaining.click();
+    await eventually({ detectChanges: () => harness.detectChanges() }, () => {
+      expect(reimportPage.textContent).toContain('Anotação que será registrada no Corpo');
+    });
+    reimportPage.querySelector<HTMLButtonElement>('.transfer-actions .primary')!.click();
+    await vi.waitFor(async () => expect(await body.entries()).toHaveLength(2));
+    const allEntries = await body.entries();
+    expect(allEntries.map((entry) => [entry.weightKg, entry.waistCm])).toContainEqual([82.4, null]);
+    expect(allEntries.map((entry) => [entry.weightKg, entry.waistCm])).toContainEqual([null, 86]);
+    expect(await kit.db.outbox.count()).toBe(2);
+    expect(await TestBed.inject(TRAINING_DB).photos.count()).toBe(0);
   });
 
   it('rejects malformed image data before saving any imported assessment', async () => {

@@ -1,5 +1,12 @@
 import { DOCUMENT } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  inject,
+  signal,
+} from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   AssessmentDocumentInfo,
@@ -8,7 +15,21 @@ import {
 import { PhysicalAssessmentExport } from '../../data/physical-assessments/physical-assessment-export';
 import { PhysicalAssessmentRepository } from '../../data/physical-assessments/physical-assessment-repository';
 import { ExportDelivery } from '../../data/export/export-delivery';
+import { BodyRepository } from '../../data/body/body-repository';
+import { TRAINING_DB } from '../../data/training-db';
 import { assessmentTitle, KIND_LABELS, measureLabel, measurementText } from './assessment-format';
+import {
+  assessmentBodyCandidates,
+  assessmentBodyDraft,
+  assessmentBodyEntryMatchesField,
+  assessmentBodyFingerprint,
+  assessmentBodyNoteTooLong,
+  assessmentBodyProvenance,
+  assessmentBodyTransferKey,
+  assessmentBodyTransferredFields,
+  type AssessmentBodyField,
+  type AssessmentBodyCandidate,
+} from './assessment-body-transfer';
 
 @Component({
   selector: 'app-physical-assessment-detail-page',
@@ -119,10 +140,135 @@ import { assessmentTitle, KIND_LABELS, measureLabel, measurementText } from './a
             </div>
           }
         </section>
+        @if (transferOpen()) {
+          <section class="transfer" aria-labelledby="transfer-title">
+            <h2 id="transfer-title" i18n="@@training.assessments.transfer.title">
+              Escolher medidas para o Corpo
+            </h2>
+            <p class="muted" i18n="@@training.assessments.transfer.copy">
+              Só os campos selecionados serão registrados com a data desta avaliação. Eles poderão
+              sincronizar como os outros dados do Corpo. As imagens do relatório ficam neste
+              aparelho e nunca são copiadas.
+            </p>
+            @if (transferLoading()) {
+              <p role="status" i18n="@@training.assessments.transfer.checking">
+                Conferindo o histórico do Corpo…
+              </p>
+            } @else if (transferAlready()) {
+              <p
+                class="transfer-status"
+                role="status"
+                i18n="@@training.assessments.transfer.already"
+              >
+                Estas medidas já foram transferidas para o Corpo. Uma nova importação do mesmo
+                registro também será reconhecida neste aparelho.
+              </p>
+            } @else if (transferCandidates().length === 0) {
+              <p class="muted" i18n="@@training.assessments.transfer.none">
+                Esta avaliação não tem medidas compatíveis e completas para o Corpo.
+              </p>
+            } @else {
+              @if ((row.measurements?.length ?? 0) > transferCandidates().length) {
+                <p class="muted" i18n="@@training.assessments.transfer.filtered">
+                  Só aparecem valores numéricos com unidade e campo sem ambiguidade que o Corpo
+                  representa. Os demais permanecem apenas no histórico local.
+                </p>
+              }
+              <fieldset class="transfer-fields">
+                <legend i18n="@@training.assessments.transfer.choose">
+                  Marque cada campo que deseja copiar
+                </legend>
+                @for (candidate of transferCandidates(); track candidate.key) {
+                  <label class="transfer-option" [for]="transferInputId(candidate)">
+                    <input
+                      type="checkbox"
+                      [id]="transferInputId(candidate)"
+                      [disabled]="isTransferFieldDone(candidate.field)"
+                      [checked]="isTransferSelected(candidate.key)"
+                      (change)="toggleTransferCandidate(candidate.key, $any($event.target).checked)"
+                    />
+                    <span class="transfer-value">
+                      <strong>{{ label(candidate.measure.type) }}</strong>
+                      <span>{{ candidateValueText(candidate) }}</span>
+                      <small>{{ candidateProvenance(candidate) }}</small>
+                      @if (isTransferFieldDone(candidate.field)) {
+                        <small i18n="@@training.assessments.transfer.field-done">
+                          Este campo já foi registrado
+                        </small>
+                      }
+                    </span>
+                  </label>
+                }
+              </fieldset>
+              @if (transferNoteTooLong()) {
+                <p
+                  class="transfer-error"
+                  role="alert"
+                  i18n="@@training.assessments.transfer.note-long"
+                >
+                  A origem selecionada é longa demais para a anotação do Corpo. Desmarque campos até
+                  a procedência caber por inteiro.
+                </p>
+              }
+              @if (selectedTransferCandidates().length > 0) {
+                <div class="transfer-note">
+                  <strong i18n="@@training.assessments.transfer.note-label">
+                    Anotação que será registrada no Corpo
+                  </strong>
+                  <p>{{ transferNote() }}</p>
+                </div>
+              }
+              @if (transferError()) {
+                <p class="transfer-error" role="alert">{{ transferError() }}</p>
+                <button
+                  type="button"
+                  class="secondary"
+                  (click)="openBodyTransfer()"
+                  i18n="@@training.assessments.transfer.retry"
+                >
+                  Conferir novamente
+                </button>
+              }
+              <div class="transfer-actions">
+                <button
+                  type="button"
+                  class="primary"
+                  [disabled]="
+                    !transferCheckComplete() ||
+                    transferSaving() ||
+                    selectedTransferCandidates().length === 0 ||
+                    transferNoteTooLong()
+                  "
+                  (click)="saveBodyTransfer()"
+                  i18n="@@training.assessments.transfer.confirm"
+                >
+                  Registrar campos selecionados
+                </button>
+                <button
+                  type="button"
+                  class="secondary"
+                  [disabled]="transferSaving()"
+                  (click)="closeBodyTransfer()"
+                  i18n="@@training.assessments.transfer.cancel"
+                >
+                  Cancelar
+                </button>
+              </div>
+            }
+          </section>
+        }
         <div class="actions">
           <a class="primary" [routerLink]="['editar']" i18n="@@training.assessments.edit"
             >Editar avaliação</a
           >
+          <button
+            class="secondary"
+            type="button"
+            (click)="openBodyTransfer()"
+            i18n="@@training.assessments.transfer.open"
+          >
+            Levar medidas ao Corpo…
+          </button>
           <button
             class="secondary"
             type="button"
@@ -203,7 +349,8 @@ import { assessmentTitle, KIND_LABELS, measureLabel, measurementText } from './a
       font-size: var(--fs-small);
     }
     .context-card,
-    .notes {
+    .notes,
+    .transfer {
       display: grid;
       gap: 7px;
       padding: var(--space-3);
@@ -303,6 +450,83 @@ import { assessmentTitle, KIND_LABELS, measureLabel, measurementText } from './a
       padding: var(--space-2);
       background: var(--a-surface2);
     }
+    .transfer-fields {
+      display: grid;
+      gap: 4px;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+    .transfer-fields legend {
+      margin-bottom: 6px;
+      color: var(--a-ink2);
+      font-size: var(--fs-small);
+    }
+    .transfer-option {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-2);
+      min-height: var(--tap);
+      padding: 8px;
+      border: 1px solid var(--a-line);
+      border-radius: var(--radius-md);
+      background: var(--a-surface);
+    }
+    .transfer-option input {
+      width: 20px;
+      height: 20px;
+      margin: 2px 0 0;
+      accent-color: var(--a-accent);
+    }
+    .transfer-value {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+    .transfer-value small {
+      overflow-wrap: anywhere;
+      color: var(--a-ink2);
+      font-size: var(--fs-small);
+    }
+    .transfer-status {
+      margin: 0;
+      padding: var(--space-2);
+      border-radius: var(--radius-md);
+      background: var(--a-surface);
+    }
+    .transfer-note {
+      display: grid;
+      gap: 4px;
+      padding: var(--space-2);
+      border: 1px solid var(--a-line);
+      border-radius: var(--radius-md);
+      background: var(--a-surface);
+      overflow-wrap: anywhere;
+      font-size: var(--fs-small);
+    }
+    .transfer-note p {
+      margin: 0;
+      color: var(--a-ink2);
+    }
+    .transfer-error {
+      margin: 0;
+      color: var(--a-danger, #a11);
+      font-size: var(--fs-small);
+    }
+    .transfer-actions {
+      display: grid;
+      gap: var(--space-2);
+    }
+    .transfer-actions > * {
+      min-height: var(--tap);
+      border: 0;
+      border-radius: var(--radius-md);
+      font: inherit;
+      font-weight: 650;
+    }
+    .transfer-actions button:disabled {
+      opacity: 0.55;
+    }
     .preview {
       position: fixed;
       inset: 0;
@@ -339,6 +563,8 @@ import { assessmentTitle, KIND_LABELS, measureLabel, measurementText } from './a
 })
 export class PhysicalAssessmentDetailPage {
   private readonly repository = inject(PhysicalAssessmentRepository);
+  private readonly bodyRepository = inject(BodyRepository);
+  private readonly db = inject(TRAINING_DB);
   private readonly exports = inject(PhysicalAssessmentExport);
   private readonly delivery = inject(ExportDelivery);
   private readonly route = inject(ActivatedRoute);
@@ -349,6 +575,28 @@ export class PhysicalAssessmentDetailPage {
   protected readonly docs = signal<AssessmentDocumentInfo[]>([]);
   protected readonly loading = signal(true);
   protected readonly message = signal('');
+  protected readonly transferOpen = signal(false);
+  protected readonly transferLoading = signal(false);
+  protected readonly transferCheckComplete = signal(false);
+  protected readonly transferAlready = signal(false);
+  protected readonly transferredFields = signal<readonly AssessmentBodyField[]>([]);
+  private readonly transferFingerprint = signal<string | null>(null);
+  protected readonly transferSaving = signal(false);
+  protected readonly transferError = signal('');
+  protected readonly transferCandidates = signal<AssessmentBodyCandidate[]>([]);
+  protected readonly selectedTransferKeys = signal<readonly string[]>([]);
+  protected readonly selectedTransferCandidates = computed(() => {
+    const keys = new Set(this.selectedTransferKeys());
+    return this.transferCandidates().filter((candidate) => keys.has(candidate.key));
+  });
+  protected readonly transferNote = computed(() => {
+    const row = this.assessment();
+    return row ? assessmentBodyProvenance(row, this.selectedTransferCandidates()) : '';
+  });
+  protected readonly transferNoteTooLong = computed(() => {
+    const row = this.assessment();
+    return row !== null && assessmentBodyNoteTooLong(row, this.selectedTransferCandidates());
+  });
   protected readonly previewUrl = signal<string | null>(null);
   protected readonly previewName = signal('');
   protected readonly title = assessmentTitle;
@@ -412,6 +660,152 @@ export class PhysicalAssessmentDetailPage {
 
   protected removeLabel(name: string): string {
     return $localize`:@@training.assessments.remove-document-label:Remover ${name}:name:`;
+  }
+
+  protected async openBodyTransfer(): Promise<void> {
+    const row = this.assessment();
+    if (!row) return;
+    this.transferOpen.set(true);
+    this.transferLoading.set(true);
+    this.transferCheckComplete.set(false);
+    this.transferAlready.set(false);
+    this.transferredFields.set([]);
+    this.transferFingerprint.set(null);
+    this.transferError.set('');
+    this.selectedTransferKeys.set([]);
+    const candidates = assessmentBodyCandidates(row);
+    this.transferCandidates.set(candidates);
+    try {
+      const fingerprint = await assessmentBodyFingerprint(row);
+      this.transferFingerprint.set(fingerprint);
+      const entries = await this.bodyRepository.entries();
+      const byId = new Map(entries.map((entry) => [entry.id, entry]));
+      const byNotes = assessmentBodyTransferredFields(row, candidates, entries);
+      const byFingerprint = await Promise.all(
+        candidates.map(async (candidate) => {
+          const marker = await this.db.meta.get(
+            assessmentBodyTransferKey(fingerprint, candidate.field),
+          );
+          if (typeof marker?.value !== 'string') return null;
+          const entry = byId.get(marker.value);
+          if (!entry || !entry.note.includes('[assessment:')) return null;
+          const savedFields = entry.note.match(/\[assessment-fields:([a-zA-Z0-9_,]+)\]/)?.[1];
+          if (savedFields && !savedFields.split(',').includes(candidate.field)) return null;
+          return assessmentBodyEntryMatchesField(row, candidate, entry) ? candidate.field : null;
+        }),
+      );
+      this.transferredFields.set([
+        ...new Set([...byNotes, ...byFingerprint.filter((field) => field !== null)]),
+      ]);
+      this.transferAlready.set(
+        candidates.length > 0 && this.transferredFields().length === candidates.length,
+      );
+      this.transferCheckComplete.set(true);
+    } catch {
+      this.transferError.set(
+        $localize`:@@training.assessments.transfer.check-failed:Não foi possível conferir o histórico local do Corpo. Tente novamente.`,
+      );
+    } finally {
+      this.transferLoading.set(false);
+    }
+  }
+
+  protected closeBodyTransfer(): void {
+    this.transferOpen.set(false);
+    this.selectedTransferKeys.set([]);
+  }
+
+  protected transferInputId(candidate: AssessmentBodyCandidate): string {
+    return `body-transfer-${candidate.key}`;
+  }
+
+  protected isTransferSelected(key: string): boolean {
+    return this.selectedTransferKeys().includes(key);
+  }
+
+  protected isTransferFieldDone(field: AssessmentBodyField): boolean {
+    return this.transferredFields().includes(field);
+  }
+
+  protected toggleTransferCandidate(key: string, checked: boolean): void {
+    this.selectedTransferKeys.update((keys) =>
+      checked ? [...new Set([...keys, key])] : keys.filter((item) => item !== key),
+    );
+    this.transferError.set('');
+  }
+
+  protected candidateProvenance(candidate: AssessmentBodyCandidate): string {
+    return [
+      this.kindLabel(candidate.measure.kind),
+      candidate.measure.method ? `${this.methodPrefix}: ${candidate.measure.method}` : '',
+      candidate.measure.source ? `${this.sourcePrefix}: ${candidate.measure.source}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+  }
+
+  protected candidateValueText(candidate: AssessmentBodyCandidate): string {
+    const value = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(
+      candidate.value,
+    );
+    return `${value} ${candidate.unit}`;
+  }
+
+  protected async saveBodyTransfer(): Promise<void> {
+    const row = this.assessment();
+    const selected = this.selectedTransferCandidates();
+    const fingerprint = this.transferFingerprint();
+    if (
+      !row ||
+      !this.transferCheckComplete() ||
+      !fingerprint ||
+      selected.length === 0 ||
+      selected.some(({ field }) => this.isTransferFieldDone(field)) ||
+      this.transferNoteTooLong()
+    )
+      return;
+    this.transferSaving.set(true);
+    this.transferError.set('');
+    try {
+      const result = await this.bodyRepository.saveEntry(assessmentBodyDraft(row, selected));
+      if (result.status === 'saved') {
+        this.transferredFields.update((fields) => [
+          ...new Set([...fields, ...selected.map(({ field }) => field)]),
+        ]);
+        await this.db.transaction('rw', this.db.meta, async () => {
+          await Promise.all(
+            selected.map(({ field }) =>
+              this.db.meta.put({
+                key: assessmentBodyTransferKey(fingerprint, field),
+                value: result.entry.id,
+              }),
+            ),
+          );
+        });
+        this.message.set(
+          $localize`:@@training.assessments.transfer.saved:Os campos selecionados foram registrados no Corpo com a data e a origem da avaliação.`,
+        );
+        this.closeBodyTransfer();
+      } else if (result.status === 'storage-full') {
+        this.transferError.set(
+          $localize`:@@training.assessments.transfer.storage:Sem espaço no aparelho para guardar as medidas. Libere espaço e tente novamente.`,
+        );
+      } else if (result.status === 'invalid') {
+        this.transferError.set(
+          $localize`:@@training.assessments.transfer.invalid:As medidas ou a data não podem ser registradas no Corpo. Confira o histórico antes de tentar novamente.`,
+        );
+      } else {
+        this.transferError.set(
+          $localize`:@@training.assessments.transfer.failed:Não foi possível registrar as medidas no Corpo. Tente novamente.`,
+        );
+      }
+    } catch {
+      this.transferError.set(
+        $localize`:@@training.assessments.transfer.failed:Não foi possível registrar as medidas no Corpo. Tente novamente.`,
+      );
+    } finally {
+      this.transferSaving.set(false);
+    }
   }
 
   protected async export(): Promise<void> {

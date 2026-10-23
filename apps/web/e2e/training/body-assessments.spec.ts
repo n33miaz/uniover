@@ -21,6 +21,11 @@ test('guarda uma avaliação e as fotos do relatório só neste aparelho, sem re
   await page.getByLabel('Valor').fill('00');
   await page.getByLabel('Unidade').fill('cm');
   await page.getByLabel('Método').fill('fita');
+  await page.getByRole('button', { name: 'Adicionar medida' }).click();
+  await page.locator('#type-1').fill('weight');
+  await page.locator('#value-1').fill('82.4');
+  await page.getByRole('textbox', { name: 'Unidade' }).nth(1).fill('kg');
+  await page.locator('#method-1').fill('balança');
 
   const jpeg = Buffer.from(
     await page.evaluate(() => {
@@ -49,7 +54,7 @@ test('guarda uma avaliação e as fotos do relatório só neste aparelho, sem re
   await expect(page.getByRole('heading', { name: '05 de abril de 2026' })).toBeVisible();
   await expect(page.getByText('Clínica sintética')).toBeVisible();
   await expect(page.getByText('00 cm')).toBeVisible();
-  await expect(page.getByText('Medido')).toBeVisible();
+  await expect(page.getByText('Medido').first()).toBeVisible();
   await expect(
     page.getByRole('button', { name: 'relatorio-sintetico.jpg', exact: true }),
   ).toBeVisible();
@@ -63,4 +68,18 @@ test('guarda uma avaliação e as fotos do relatório só neste aparelho, sem re
   await expectNoHorizontalScroll(page);
   const { violations } = await new AxeBuilder({ page }).analyze();
   expect(violations).toEqual([]);
+
+  await page.getByRole('button', { name: /Levar medidas ao Corpo/ }).click();
+  const transferChoices = page.locator('.transfer-option input[type="checkbox"]');
+  await expect(transferChoices).toHaveCount(1);
+  await expect(transferChoices.first()).not.toBeChecked();
+  await transferChoices.first().check();
+  await expect(page.getByText('Anotação que será registrada no Corpo')).toBeVisible();
+  await page.getByRole('button', { name: 'Registrar campos selecionados' }).click();
+  await expect(
+    page.getByText('Os campos selecionados foram registrados no Corpo', { exact: false }),
+  ).toBeVisible();
+  await openTraining(page, '/treino/corpo');
+  await expect(page.getByRole('button', { name: /Peso 82,4\s+kg/ })).toBeVisible();
+  await page.screenshot({ path: 'test-results/assessment-body-transfer.png', fullPage: true });
 });
