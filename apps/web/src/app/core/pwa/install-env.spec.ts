@@ -101,6 +101,26 @@ describe('install-env', () => {
       expect(asked).toEqual(['(display-mode: standalone)']);
     });
 
+    it('trata fullscreen como instalado no iOS quando o WebKit reporta assim o PWA', () => {
+      const asked: string[] = [];
+      const matchMedia = (query: string) => {
+        asked.push(query);
+        return { matches: query === '(display-mode: fullscreen)' };
+      };
+      expect(isStandalone(env(UA.safari17, { standalone: false, matchMedia }))).toBe(true);
+      expect(asked).toEqual(['(display-mode: standalone)', '(display-mode: fullscreen)']);
+    });
+
+    it('não trata tela cheia comum fora do iOS como instalação', () => {
+      expect(
+        isStandalone(
+          env(UA.androidChrome, {
+            matchMedia: (query) => ({ matches: query === '(display-mode: fullscreen)' }),
+          }),
+        ),
+      ).toBe(false);
+    });
+
     it('standalone falso e media query falsa: está no navegador', () => {
       expect(
         isStandalone(

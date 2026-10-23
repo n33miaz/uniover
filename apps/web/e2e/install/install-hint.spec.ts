@@ -94,6 +94,21 @@ async function simulateStandalone(page: Page) {
   });
 }
 
+/** Simula o bug do WebKit: o PWA está instalado, mas o modo aparece como `fullscreen`. */
+async function simulateIosFullscreenPwa(page: Page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, 'standalone', {
+      get: () => false,
+      configurable: true,
+    });
+    const original = window.matchMedia.bind(window);
+    window.matchMedia = (query: string) =>
+      query === '(display-mode: fullscreen)'
+        ? ({ matches: true, media: query } as unknown as MediaQueryList)
+        : original(query);
+  });
+}
+
 /** O ambiente "de fábrica" de cada projeto: iPhone Safari no `iphone-12`; Android com o pedido nativo no `s23-fe`. */
 async function projectDefaultEnvironment(page: Page, project: string) {
   if (project === 's23-fe') await simulateInstallPrompt(page);
@@ -471,6 +486,27 @@ test.describe('no ambiente de fábrica do projeto', () => {
     await expect(
       customize.getByRole('button', { name: /^Adicionar à tela de início/ }),
     ).toHaveCount(0);
+  });
+
+  test('no PWA iOS que o WebKit reporta como fullscreen, a dica não reaparece', async ({
+    page,
+  }, info) => {
+    test.skip(info.project.name !== 'iphone-12', 'simulação do comportamento do WebKit no iPhone');
+    await simulateIosFullscreenPwa(page);
+    await signInAsOwner();
+    await page.goto('/treino/');
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () =>
+          [
+            (navigator as Navigator & { standalone?: boolean }).standalone,
+            window.matchMedia('(display-mode: fullscreen)').matches,
+          ] as const,
+      ),
+    ).toEqual([false, true]);
+    await page.waitForTimeout(AFTER_DELAY_MS);
+    await expectSheetClosed(page);
   });
 });
 
