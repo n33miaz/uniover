@@ -27,12 +27,14 @@ import {
 import { RoutineApi, routinePath } from './routine-api';
 
 /** Modelos de origem que viram rascunhos: não entram na sequência até a pessoa revisar e ativar. */
+export const HISTORICAL_REJECTED_TEMPLATE_ID = 'historical-ab';
 export const PARTIAL_DRAFT_TEMPLATE_IDS = [
   'ppl-superior-inferior',
   'superior-inferior-acessorios',
   'divisao-familiar-reforco-inferior',
   'ab-reajustado',
   'full-body-cardio',
+  HISTORICAL_REJECTED_TEMPLATE_ID,
 ] as const;
 const PARTIAL_DRAFT_TEMPLATE_ID_SET: ReadonlySet<string> = new Set(PARTIAL_DRAFT_TEMPLATE_IDS);
 

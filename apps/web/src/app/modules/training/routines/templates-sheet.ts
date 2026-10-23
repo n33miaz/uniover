@@ -7,7 +7,10 @@ import {
   viewChild,
 } from '@angular/core';
 import type { RoutineTemplate } from '../data/routines/routine';
-import { RoutineRepository } from '../data/routines/routine-repository';
+import {
+  HISTORICAL_REJECTED_TEMPLATE_ID,
+  RoutineRepository,
+} from '../data/routines/routine-repository';
 import { TrainingGlyph } from '../shell/training-glyph';
 import { TrainingSheet } from '../shell/training-sheet';
 
@@ -19,6 +22,8 @@ export interface TemplateCreated {
   readonly missing: number;
   /** Os modelos parciais conhecidos são criados inativos, fora da sequência, até revisão manual. */
   readonly draft: boolean;
+  /** Este modelo fica inativo e identificado como histórico, sem convite para ativá-lo. */
+  readonly historical: boolean;
 }
 
 /**
@@ -44,8 +49,12 @@ export interface TemplateCreated {
                 type="button"
                 class="ui-row"
                 [disabled]="creating()"
-                [attr.aria-expanded]="hasDetails(template) ? expandedTemplate() === template.id : null"
-                [attr.aria-controls]="hasDetails(template) ? 'template-details-' + template.id : null"
+                [attr.aria-expanded]="
+                  hasDetails(template) ? expandedTemplate() === template.id : null
+                "
+                [attr.aria-controls]="
+                  hasDetails(template) ? 'template-details-' + template.id : null
+                "
                 (click)="hasDetails(template) ? toggleDetails(template) : use(template)"
               >
                 <span class="ui-tile"><app-training-glyph name="list" /></span>
@@ -58,7 +67,12 @@ export interface TemplateCreated {
               @if (expandedTemplate() === template.id && hasDetails(template)) {
                 <div class="template-details" [id]="'template-details-' + template.id">
                   <p>{{ details(template) }}</p>
-                  <button type="button" class="create-draft" [disabled]="creating()" (click)="use(template)">
+                  <button
+                    type="button"
+                    class="create-draft"
+                    [disabled]="creating()"
+                    (click)="use(template)"
+                  >
                     <span i18n="@@training.templates.use">Criar este rascunho parcial</span>
                   </button>
                 </div>
@@ -67,7 +81,8 @@ export interface TemplateCreated {
           }
         </ul>
         <p class="note" i18n="@@training.templates.note">
-          Confira os detalhes antes de criar. Rascunhos parciais ficam inativos até revisão; os demais modelos mantêm o comportamento atual.
+          Confira os detalhes antes de criar. Rascunhos parciais ficam inativos até revisão; os
+          demais modelos mantêm o comportamento atual.
         </p>
       }
       @if (error(); as message) {
@@ -178,6 +193,7 @@ export class TemplatesSheet {
             count: result.routines.length,
             missing: result.missing.length,
             draft: result.routines.every((routine) => !routine.active),
+            historical: template.id === HISTORICAL_REJECTED_TEMPLATE_ID,
           });
           this.sheet().close();
           return;

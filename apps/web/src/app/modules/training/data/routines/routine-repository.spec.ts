@@ -9,12 +9,7 @@ import {
   type RoutineWriteResult,
 } from './routine-repository';
 import { toLocalRoutine } from './routine';
-import {
-  routineDto,
-  seedCatalog,
-  setupRoutines,
-  TEMPLATES_DTO,
-} from './routine-data-test-kit';
+import { routineDto, seedCatalog, setupRoutines, TEMPLATES_DTO } from './routine-data-test-kit';
 
 const quota = () => Object.assign(new Error('cheio'), { name: 'QuotaExceededError' });
 
@@ -603,6 +598,7 @@ describe('RoutineRepository', () => {
     });
 
     it('keeps every known partial draft inactive while ordinary templates stay active', async () => {
+      expect(PARTIAL_DRAFT_TEMPLATE_IDS).toContain('historical-ab');
       const t = setupRoutines();
       await seedCatalog(t.trainingDb, SLUGS);
       t.api.dto = {
