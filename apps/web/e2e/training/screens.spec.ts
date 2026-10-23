@@ -1,7 +1,7 @@
 import { BrowserContext, Page, TestInfo } from '@playwright/test';
 import { join } from 'node:path';
 import { settle } from '../screens/screen-helpers';
-import { expect, screenshot, test } from '../fixtures';
+import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import { SEED_EXERCISE_IDS, SEED_ROUTINE_IDS } from './support/training-seed';
 import {
   openTraining,
@@ -22,7 +22,11 @@ const DIR = process.env['TRAINING_SHOTS_DIR'] ?? 'test-results/training';
 
 // A coleção inteira (umas 20 telas e estados, nos dois temas) só roda para revisar a mão, com a pasta de destino indicada;
 // na esteira entram só duas capturas, para a tela abrir e o print sair sem custar login e captura demais no WebKit do Linux.
-const ESSENTIAL = new Set(['Exercícios: a lista', 'Editor: a rotina']);
+const ESSENTIAL = new Set([
+  'Exercícios: a lista',
+  'Editor: a rotina',
+  'Treino: cabeçalho e navegação',
+]);
 
 interface Fixtures {
   page: Page;
@@ -260,6 +264,38 @@ for (const scheme of ['light', 'dark'] as const) {
       await openTraining(page, '/treino');
       await expect(page.getByRole('heading', { name: 'Hoje' })).toBeVisible();
       await shot(page, info, 'hoje', scheme);
+    });
+
+    shotTest('Treino: cabeçalho e navegação', async ({ page, context }, info) => {
+      await startTraining(context, page);
+      await openTraining(page, '/treino');
+      const header = page.locator('.training-header');
+      await expect(header.getByRole('heading', { name: 'Treino' })).toBeVisible();
+      await expect(header.locator('.back svg path')).toHaveCount(1);
+      await expect(header.getByRole('link', { name: 'Ajustes' })).toBeVisible();
+      await expect(header.locator('.status')).toBeVisible();
+      const titleBox = await header.getByRole('heading').boundingBox();
+      const statusBox = await header.locator('.status').boundingBox();
+      expect(statusBox!.x).toBeGreaterThan(titleBox!.x + titleBox!.width);
+      const tabs = page.getByRole('navigation', { name: 'Abas do módulo' });
+      await expect(tabs).toBeVisible();
+      const tapHighlights = await Promise.all(
+        [header.locator('.status'), tabs].map((element) =>
+          element.evaluate((node) =>
+            getComputedStyle(node).getPropertyValue('-webkit-tap-highlight-color').trim(),
+          ),
+        ),
+      );
+      if (info.project.name === 's23-fe') {
+        expect(tapHighlights).toEqual(['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)']);
+      }
+      const tabWidths = await tabs.locator('ul').evaluate((list) => ({
+        bar: list.getBoundingClientRect().width,
+        activePill: Number.parseFloat(getComputedStyle(list, '::before').width),
+      }));
+      expect(tabWidths.activePill).toBeLessThan(tabWidths.bar / 3);
+      await expectNoHorizontalScroll(page);
+      await shot(page, info, 'cabecalho-navegacao', scheme);
     });
   });
 }

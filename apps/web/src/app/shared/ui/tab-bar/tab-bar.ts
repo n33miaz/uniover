@@ -131,6 +131,8 @@ function isWithin(path: string, base: string): boolean {
     nav.training {
       border-top-color: color-mix(in srgb, var(--a-accent) 20%, var(--a-line));
       box-shadow: 0 -5px 18px color-mix(in srgb, var(--a-ink) 5%, transparent);
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
     nav.training a {
       position: relative;
@@ -142,16 +144,17 @@ function isWithin(path: string, base: string): boolean {
       border-top: 0;
       font-size: 0.75rem;
       line-height: 1.1;
+      touch-action: manipulation;
     }
     nav.training ul {
       position: relative;
     }
     nav.training ul::before {
       position: absolute;
-      top: 5px;
-      left: 0;
-      width: calc(100% / 3);
-      height: 28px;
+      top: 6px;
+      left: 6px;
+      width: calc(33.333333% - 12px);
+      height: 26px;
       border-radius: 999px;
       background: var(--a-accent-soft);
       content: '';
@@ -164,11 +167,11 @@ function isWithin(path: string, base: string): boolean {
     }
     nav.training.active-1 ul::before {
       opacity: 1;
-      transform: translateX(100%);
+      transform: translateX(calc(100% + 12px));
     }
     nav.training.active-2 ul::before {
       opacity: 1;
-      transform: translateX(200%);
+      transform: translateX(calc(200% + 24px));
     }
     nav.training li {
       position: relative;
@@ -185,6 +188,9 @@ function isWithin(path: string, base: string): boolean {
     }
     nav.training a.active::before {
       content: none;
+    }
+    nav.training a:active {
+      background: transparent;
     }
     nav.training a:focus-visible {
       outline-offset: -3px;
