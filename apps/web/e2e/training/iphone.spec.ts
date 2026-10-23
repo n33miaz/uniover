@@ -7,7 +7,12 @@ import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures'
 import { settle, smallTargets } from '../screens/screen-helpers';
 import { TrainingServer, mockTrainingApi } from './support/training-server';
 import { seedTraining } from './support/training-seed';
-import { chooseMuscle, openTraining, trainingDbName } from './support/training-pages';
+import {
+  chooseMuscle,
+  openTraining,
+  trainingDbName,
+  expectOfflineIcon,
+} from './support/training-pages';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -348,7 +353,7 @@ test.describe('iPhone, Safari fora da tela de início', () => {
       await openTraining(page, '/treino/exercicios');
       server.offline = true;
       await goOffline(page);
-      await expect(page.getByText('Sem rede: usando o que está no aparelho')).toBeVisible();
+      await expectOfflineIcon(page);
       await expect(advice(page)).toHaveCount(0);
     });
 

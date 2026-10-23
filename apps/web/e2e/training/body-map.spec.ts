@@ -1,6 +1,11 @@
 import { expect, test } from '../fixtures';
 import { SEED_EXERCISE_IDS } from './support/training-seed';
-import { openTraining, startTraining, waitForCatalog } from './support/training-pages';
+import {
+  openTraining,
+  startTraining,
+  waitForCatalog,
+  expectOfflineIcon,
+} from './support/training-pages';
 import {
   listChip,
   openMap,
@@ -279,8 +284,7 @@ test.describe('mapa do corpo: sem rede', () => {
 
     server.offline = true;
     await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-    await page.getByRole('button', { name: 'Sem sincronização. Toque para ver detalhes.' }).click();
-    await expect(page.getByText('Sem rede: usando o que está no aparelho')).toBeVisible();
+    await expectOfflineIcon(page);
 
     await page.getByRole('link', { name: 'Mapa do corpo' }).click();
     await expect(zone(page, 'chest')).toHaveAttribute(

@@ -2,7 +2,12 @@ import { BrowserContext, Page, TestInfo } from '@playwright/test';
 import { join } from 'node:path';
 import { settle } from '../screens/screen-helpers';
 import { expect, screenshot, test } from '../fixtures';
-import { openTraining, startTraining, waitForCatalog } from './support/training-pages';
+import {
+  openTraining,
+  startTraining,
+  waitForCatalog,
+  expectOfflineIcon,
+} from './support/training-pages';
 import { listChip, openMap, panel, seedExampleWeek, showFace, tapZone, zone } from './body-map-kit';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -124,7 +129,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.getByRole('button', { name: 'Voltar para Exercícios' }).click();
       server.offline = true;
       await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-      await expect(page.getByText('Sem rede: usando o que está no aparelho')).toBeVisible();
+      await expectOfflineIcon(page);
       await page.getByRole('link', { name: 'Mapa do corpo' }).click();
       await expect(zone(page, 'chest')).toHaveAttribute('data-level', '3');
       await tapZone(page, 'chest');

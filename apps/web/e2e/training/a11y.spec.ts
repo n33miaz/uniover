@@ -101,7 +101,7 @@ const SCREENS: readonly Screen[] = [
     name: 'tela provisória de Hoje',
     open: async (page) => {
       await openTraining(page, '/treino');
-      await expect(page.getByRole('heading', { name: 'Hoje' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Início' })).toBeVisible();
     },
   },
 ];
@@ -135,8 +135,9 @@ test.describe('pendências e movimento', () => {
     await page.getByLabel('Nome').fill('Remada');
     await chooseMuscle(page, 'Meio das costas');
     await page.getByRole('button', { name: 'Salvar exercício' }).click();
+    // Só com a falha já registrada o ícone abre a lista (antes disso o toque atualiza).
+    await expect(page.getByText('1 com erro')).toBeVisible();
     await page.locator('.training-header .status').click();
-    await page.getByRole('button', { name: 'Ver', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Alterações com erro' })).toBeVisible();
     await settle(page);
     await expectNoA11yViolations(page);

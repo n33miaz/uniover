@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { expect, screenshot, test } from '../fixtures';
 import type { Page, TestInfo } from '@playwright/test';
-import { openTraining, startTraining } from '../training/support/training-pages';
+import { openTraining, startTraining, expectSynced } from '../training/support/training-pages';
 
 test.use({ serviceWorkers: 'block', timezoneId: 'America/Sao_Paulo', locale: 'pt-BR' });
 
@@ -26,9 +26,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await openTraining(page, '/treino/corpo');
       await page.getByRole('button', { name: 'Entendi' }).click();
       await expect(page.getByRole('heading', { name: 'Corpo' })).toBeVisible();
-      await expect(page.locator('.training-header .status')).toContainText(
-        /sincronizado às \d{2}:\d{2}/,
-      );
+      await expectSynced(page);
 
       await shot(page, info, 'corpo-vazio', scheme);
 

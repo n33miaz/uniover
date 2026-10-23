@@ -22,7 +22,7 @@ import {
   DeviceStubs,
 } from './support/today-pages';
 import { SEED_EXERCISE_IDS } from './support/training-seed';
-import { countRows, startTraining } from './support/training-pages';
+import { countRows, startTraining, expectSynced } from './support/training-pages';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -272,7 +272,7 @@ test.describe('treino ao vivo', () => {
 
     // O treino já subiu e a fila esvaziou; agora o servidor passa a ter o histórico, e a próxima leitura o traz.
     await expect.poll(() => server.writes('sessions')).toBe(1);
-    await expect(page.getByText(/sincronizado às \d{2}:\d{2}/)).toBeVisible();
+    await expectSynced(page);
     seedBenchHistory(server);
     // O relógio da página só anda quando o teste manda: sem isto o carimbo da leitura seria o mesmo da anterior.
     await page.clock.fastForward(1000);
@@ -547,7 +547,7 @@ test.describe('treino ao vivo', () => {
     server.offline = false;
     await goOnline(page);
     await expect.poll(() => server.writes('sets'), { timeout: 20_000 }).toBe(4);
-    await expect(page.getByText(/sincronizado às \d{2}:\d{2}/)).toBeVisible();
+    await expectSynced(page);
 
     const puts = server.hits.filter((hit) => hit.method === 'PUT' && hit.outcome === 'executed');
     const sessions = puts.filter((hit) => /^sessions\/[^/]+$/.test(hit.path));
