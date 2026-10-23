@@ -50,6 +50,8 @@ export interface TvPrefsValue {
   readonly padSpeed: TvPadSpeed;
   /** Ausente nas escolhas guardadas antes de existir: lê-se como `sides`, a disposição que sempre foi. */
   readonly pillLayout: TvPillLayout;
+  /** Sugestões de atalho que a pessoa removeu (as chaves do catálogo); ausente nas escolhas de antes, lê-se como vazio. */
+  readonly dismissedSuggestions: readonly string[];
 }
 
 export const TV_PREFS_DEFAULTS: TvPrefsValue = {
@@ -62,6 +64,7 @@ export const TV_PREFS_DEFAULTS: TvPrefsValue = {
   startPage: 'last',
   padSpeed: 'normal',
   pillLayout: 'sides',
+  dismissedSuggestions: [],
 };
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -70,6 +73,15 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
 
 function flag(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
+}
+
+/** Teto da lista de sugestões removidas: o catálogo é curto, e o armazenamento não pode crescer sem limite. */
+const DISMISSED_MAX = 20;
+
+function keys(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  const text = value.filter((item): item is string => typeof item === 'string' && item !== '');
+  return [...new Set(text)].slice(0, DISMISSED_MAX);
 }
 
 /** Valida o que veio do armazenamento campo a campo: um valor estragado volta ao padrão sem derrubar os outros. */
@@ -85,12 +97,13 @@ function parsePrefs(raw: unknown): TvPrefsValue {
     startPage: oneOf(stored['startPage'], TV_START_PAGES, defaults.startPage),
     padSpeed: oneOf(stored['padSpeed'], TV_PAD_SPEEDS, defaults.padSpeed),
     pillLayout: oneOf(stored['pillLayout'], TV_PILL_LAYOUTS, defaults.pillLayout),
+    dismissedSuggestions: keys(stored['dismissedSuggestions']),
   };
 }
 
 /**
  * Preferências do controle da TV: apelido, tamanho dos botões, disposição das pílulas de volume e canal, que grupos
- * de teclas aparecem, vibração, página inicial do palco e sensibilidade do touchpad. Ficam neste aparelho, em uma
+ * de teclas aparecem, vibração, página inicial do palco, sensibilidade do touchpad e as sugestões de atalho removidas. Ficam neste aparelho, em uma
  * chave própria por conta. A chave antiga não identificava a conta que a gravou, então fica preservada e inerte:
  * atribuí-la à primeira pessoa que entrar poderia expor escolhas de outra conta.
  * Nunca guarda dado sensível; sem armazenamento (modo privado) a escolha vale até recarregar.
@@ -119,6 +132,7 @@ export class TvPrefs {
   readonly startPage = computed(() => this.value().startPage);
   readonly padSpeed = computed(() => this.value().padSpeed);
   readonly pillLayout = computed(() => this.value().pillLayout);
+  readonly dismissedSuggestions = computed(() => this.value().dismissedSuggestions);
   /** Alguma escolha difere do padrão (liga o "Restaurar padrão"). */
   readonly customized = computed(() => !sameAsDefaults(this.value()));
 
@@ -173,6 +187,7 @@ function sameAsDefaults(value: TvPrefsValue): boolean {
     value.vibration === defaults.vibration &&
     value.startPage === defaults.startPage &&
     value.padSpeed === defaults.padSpeed &&
-    value.pillLayout === defaults.pillLayout
+    value.pillLayout === defaults.pillLayout &&
+    value.dismissedSuggestions.length === 0
   );
 }

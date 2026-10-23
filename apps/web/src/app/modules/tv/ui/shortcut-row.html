@@ -1,4 +1,4 @@
-<div class="top">
+<div #top class="top">
   @if (shortcuts().length > 0) {
     <!--
       Sem permissão para abrir apps os azulejos são figuras (sem botão), e a faixa recebe o foco do teclado no lugar deles:
@@ -33,9 +33,32 @@
         </li>
       }
     </ul>
+  } @else if (suggestions().length > 0) {
+    <!-- Sugestões, não atalhos: cada uma abre um painel onde a pessoa confirma ou remove. -->
+    <ul
+      class="shortcuts"
+      aria-label="Sugestões de atalhos"
+      i18n-aria-label="@@tv.suggestions.label"
+    >
+      @for (app of suggestions(); track app.key) {
+        @let name = suggestionLabel(app);
+        <li>
+          <button
+            type="button"
+            class="shortcut suggestion"
+            [attr.aria-label]="name"
+            [attr.title]="name"
+            [attr.aria-haspopup]="'dialog'"
+            (click)="suggestApp(app, $event)"
+          >
+            <app-tv-app-icon [shortcut]="subject(app)" />
+          </button>
+        </li>
+      }
+    </ul>
   } @else if (showHint()) {
     @if (canEdit()) {
-      <p class="hint" i18n="@@tv.shortcuts.empty-owner">Fixe apps aqui: abra Apps, no topo.</p>
+      <p class="hint" i18n="@@tv.shortcuts.empty-owner">Fixe apps aqui: abra o menu, no topo.</p>
     } @else {
       <p class="hint" i18n="@@tv.shortcuts.empty-guest">Nenhum app fixado no controle.</p>
     }

@@ -15,7 +15,7 @@
 .tv {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
   max-width: 36rem;
   height: max(var(--tv-avail), var(--tv-min), var(--tv-pills-min, 0px));
@@ -168,12 +168,59 @@ h1 {
   left: calc(100% - 8px);
 }
 
-/* A linha do motivo entra no fluxo: o palco do controle encolhe o que ela ocupa. */
+/*
+ * A linha do motivo entra no fluxo: o palco do controle encolhe o que ela ocupa. É um aviso de estado (cartão com a
+ * faixa de atenção à esquerda) e, com o agente fora do ar, leva a única ação possível ao lado do texto.
+ */
+.reason-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--a-line);
+  border-left: 4px solid var(--a-warn);
+  border-radius: var(--radius);
+  background: var(--a-warn-soft);
+}
 .reason {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--a-ink);
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+.retry {
+  flex: none;
+  min-height: var(--tap);
+}
+
+/* Sem TV configurada: o estado vazio ocupa o lugar do controle, no meio do que sobra da altura, com uma ação só. */
+.empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 0 24px;
+  text-align: center;
+  text-wrap: balance;
+}
+.empty app-tv-icon {
+  width: 3.5rem;
+  height: 3.5rem;
+  color: var(--a-ink2);
+}
+.empty h2 {
+  margin: 0;
+  font-size: clamp(1.15rem, 5.4vw, 1.5rem);
+  white-space: nowrap;
+}
+.empty p {
   margin: 0;
   color: var(--a-ink2);
-  font-size: 0.9rem;
-  text-align: center;
 }
 
 /* Conta sem acesso à TV: uma frase no meio do que sobra da altura, discreta (não é um erro). */

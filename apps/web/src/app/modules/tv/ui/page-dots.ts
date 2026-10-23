@@ -31,9 +31,15 @@ import { Component, computed, input, output } from '@angular/core';
     </div>
   `,
   styles: `
+    /*
+     * Os pontos têm 8 px e o alvo de toque tem 44. A caixa invade só os 6 px do vão vazio antes dos botões de baixo (é a
+     * medida desse vão, para a caixa não passar para cima deles) e nunca o palco: em cima ela começa onde o anel termina,
+     * para não tomar o toque da borda de baixo do setor "para baixo". O alvo continua inteiro.
+     */
     :host {
       display: flex;
       align-self: center;
+      margin-bottom: -6px;
     }
     .dots {
       position: relative;

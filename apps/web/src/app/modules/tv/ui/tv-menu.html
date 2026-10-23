@@ -1,0 +1,51 @@
+<!--
+  Primeiro grupo: o que é da pessoa (vale só para ela, neste aparelho). Segundo grupo, só do administrador: o que muda
+  para todos que usam a TV. Sem permissão para nenhuma linha o botão que abre este menu nem aparece.
+-->
+@if (access.apps() || access.control() || canRestoreSuggestions()) {
+  <div class="ui-group">
+    @if (access.apps()) {
+      <button type="button" class="ui-row" (click)="choose.emit('apps')">
+        <span class="ui-tile"><app-tv-icon name="apps" /></span>
+        <span class="ui-row-text">
+          <span class="ui-row-title">{{ appsLabel() }}</span>
+        </span>
+      </button>
+    }
+    @if (access.control()) {
+      <button
+        type="button"
+        class="ui-row"
+        [attr.aria-haspopup]="'dialog'"
+        (click)="choose.emit('customize')"
+      >
+        <span class="ui-tile"><app-tv-icon name="tune" /></span>
+        <span class="ui-row-text">
+          <span class="ui-row-title" i18n="@@tv.menu.customize">Personalizar</span>
+        </span>
+      </button>
+    }
+    @if (canRestoreSuggestions()) {
+      <button type="button" class="ui-row" (click)="restoreSuggestions()">
+        <span class="ui-tile"><app-tv-icon name="refresh" /></span>
+        <span class="ui-row-text">
+          <span class="ui-row-title" i18n="@@tv.menu.restore-suggestions"
+            >Mostrar sugestões de atalhos</span
+          >
+        </span>
+      </button>
+    }
+  </div>
+}
+
+@if (canBind()) {
+  <div class="ui-group">
+    <a class="ui-row" [routerLink]="bindingRoute">
+      <span class="ui-tile"><app-tv-icon name="tv" /></span>
+      <span class="ui-row-text">
+        <span class="ui-row-title">{{ bindingLabel() }}</span>
+      </span>
+      <span class="ui-chip warn" i18n="@@tv.menu.affects-all">Afeta todos</span>
+    </a>
+  </div>
+}

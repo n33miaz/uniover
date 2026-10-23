@@ -125,6 +125,10 @@ h2 {
   cursor: pointer;
   touch-action: manipulation;
 }
+/* O foco inicial cai neste botão, na quina da folha (que corta o que passa dela): o anel fica por dentro do botão. */
+.x:focus-visible {
+  outline-offset: -3px;
+}
 
 .body {
   flex: 1 1 auto;

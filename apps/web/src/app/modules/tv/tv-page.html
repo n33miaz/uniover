@@ -2,10 +2,10 @@
   <header class="head">
     <!--
       Grupo da esquerda: o botão de saída (a seta de voltar do administrador ou a engrenagem do convidado) e, logo depois,
-      os três pontos que abrem o painel Apps. À direita fica só o de desligar; as duas colunas dos lados têm a mesma
-      largura, então o nome continua no meio da tela. Cada um deles só existe para quem pode usá-lo (três pontos: abrir
-      apps, editar os atalhos ou limpar a TV; desligar: `tv:power`): as colunas seguem do mesmo tamanho com um botão a
-      menos, e o nome não se mexe.
+      o de desligar. À direita fica só o dos três pontos, que abre o menu. As duas colunas dos lados têm a mesma largura
+      (a do grupo da esquerda, dois botões), então o nome continua no meio da tela. Cada botão só existe para quem pode
+      usá-lo (desligar: `tv:power`; menu: ter alguma linha nele): as colunas seguem do mesmo tamanho com um botão a menos,
+      e o nome não se mexe.
     -->
     <div class="lead">
       @if (isGuest()) {
@@ -44,16 +44,16 @@
           </svg>
         </a>
       }
-      @if (access.apps()) {
+      @if (access.power()) {
         <button
-          #appsButton
           type="button"
-          class="circle"
-          [attr.aria-haspopup]="'dialog'"
-          [attr.aria-label]="appsLabel()"
-          (click)="open('apps', appsButton)"
+          class="circle power"
+          aria-label="Desligar a TV"
+          i18n-aria-label="@@tv.power.label"
+          [disabled]="!store.canSend()"
+          (click)="powerOpen.set(true)"
         >
-          <app-tv-icon name="more" />
+          <app-tv-icon name="power" />
         </button>
       }
     </div>
@@ -91,16 +91,17 @@
       }
     </div>
     <div class="actions">
-      @if (access.power()) {
+      @if (hasMenu()) {
         <button
+          #menuButton
           type="button"
-          class="circle power"
-          aria-label="Desligar a TV"
-          i18n-aria-label="@@tv.power.label"
-          [disabled]="!store.canSend()"
-          (click)="powerOpen.set(true)"
+          class="circle"
+          [attr.aria-haspopup]="'dialog'"
+          aria-label="Mais opções"
+          i18n-aria-label="@@tv.menu.open"
+          (click)="openMenu(menuButton)"
         >
-          <app-tv-icon name="power" />
+          <app-tv-icon name="more" />
         </button>
       }
     </div>
@@ -112,18 +113,47 @@
       <app-tv-icon name="tv" />
       <p i18n="@@tv.no-access">Esta conta não tem acesso à TV.</p>
     </div>
+  } @else if (unconfigured()) {
+    <!--
+      Sem computador escolhido para a TV nenhum botão chegaria a lugar nenhum: no lugar do controle fica uma única ação,
+      só para quem pode escolher o computador (o administrador). As demais contas só sabem que falta configurar.
+    -->
+    <section class="empty" aria-labelledby="tv-empty-title">
+      <app-tv-icon name="tv" />
+      <h2 id="tv-empty-title" i18n="@@tv.unconfigured.title">Nenhuma TV configurada</h2>
+      @if (isOwner()) {
+        <a class="ui-btn primary" routerLink="/ajustes/sistema" i18n="@@tv.unconfigured.action"
+          >Configurar TV</a
+        >
+      } @else {
+        <p i18n="@@tv.unconfigured.guest">Peça a quem administra o app para configurar a TV.</p>
+      }
+    </section>
   } @else {
-    <!-- O motivo dos botões apagados é de quem tem algum botão: o controle, o desligar ou os atalhos que abrem apps. -->
+    <!--
+      O motivo dos botões apagados é de quem tem algum botão: o controle, o desligar ou os atalhos que abrem apps. Com o
+      agente fora do ar a ação é tentar de novo; sem rede ou com o servidor acordando o controle volta sozinho.
+    -->
     @if (
       (access.control() || access.power() || access.launch()) && store.disabledReason();
       as reason
     ) {
-      <p class="reason">{{ reason }}</p>
+      <div class="reason-row" [attr.data-link]="store.link()">
+        <p class="reason">{{ reason }}</p>
+        @if (canRetry()) {
+          <button type="button" class="retry ui-btn" [disabled]="retrying()" (click)="retry()">
+            <span i18n="@@tv.reason.retry">Tentar de novo</span>
+          </button>
+        }
+      </div>
     }
     @if (access.control()) {
-      <app-tv-control (openKeyboard)="open('keyboard', $event)" />
+      <app-tv-control
+        (openKeyboard)="open('keyboard', $event)"
+        (suggest)="openSuggestion($event)"
+      />
     } @else {
-      <app-tv-view-only />
+      <app-tv-view-only (suggest)="openSuggestion($event)" />
     }
   }
 </div>
@@ -133,6 +163,29 @@
     <p class="toast error" role="alert" [animate.leave]="'toast-leave'">{{ notice.text }}</p>
   } @else {
     <p class="toast" role="status" [animate.leave]="'toast-leave'">{{ notice.text }}</p>
+  }
+}
+
+@if (menuOpen() && hasMenu()) {
+  <app-tv-panel #menuPanel [heading]="menuTitle" [opener]="menuOpener()" (closed)="menuClosed()">
+    <app-tv-menu [appsLabel]="appsTitle()" (choose)="chooseFromMenu($event, menuPanel)" />
+  </app-tv-panel>
+}
+
+@if (suggestion(); as request) {
+  @if (access.editShortcuts()) {
+    <app-tv-panel
+      #suggestionPanel
+      [heading]="request.app.label"
+      [opener]="request.opener"
+      (closed)="suggestionClosed()"
+    >
+      <app-tv-suggestion
+        [app]="request.app"
+        (done)="suggestionPanel.close()"
+        (openApps)="suggestionToApps(suggestionPanel)"
+      />
+    </app-tv-panel>
   }
 }
 

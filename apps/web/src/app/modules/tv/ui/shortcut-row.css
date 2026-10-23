@@ -62,6 +62,35 @@ button {
   --tile-edge: transparent;
 }
 
+/*
+ * Sugestão: ainda não é um atalho. Borda tracejada, ícone esmaecido e um sinal de mais no canto; o contraste do ícone
+ * baixa sem apagar o azulejo (ele continua um botão que se toca).
+ */
+.shortcut.suggestion {
+  position: relative;
+  border-style: dashed;
+  border-color: var(--a-ink3);
+}
+.shortcut.suggestion app-tv-app-icon {
+  opacity: 0.55;
+}
+.shortcut.suggestion::after {
+  content: '+';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 /* Resposta imediata ao toque: o azulejo afunda um pouco. Quem pediu menos movimento não vê a animação. */
 @media (prefers-reduced-motion: no-preference) {
   .shortcut {

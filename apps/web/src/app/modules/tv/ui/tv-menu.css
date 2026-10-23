@@ -1,0 +1,15 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Um grupo sem linhas (permissões que não deixam nenhuma) não deixa um cartão vazio. */
+.ui-group:empty {
+  display: none;
+}
+
+/* O chip de aviso não encolhe nem quebra: o nome da linha é que cede a largura. */
+.ui-chip {
+  white-space: nowrap;
+}
