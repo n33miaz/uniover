@@ -74,14 +74,14 @@ describe('TodayPage', () => {
       expect(rows[1]).toContain('supersérie');
     });
 
-    it('has a single heading with "Hoje" in it', async () => {
+    it('has a single heading for Início', async () => {
       const kit = await open();
       await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
       const { el, fixture } = await show(kit);
 
       await eventually(fixture, () => expect(el.querySelector('.routine')).not.toBeNull());
       const headings = Array.from(el.querySelectorAll('h1, h2, h3')).filter((node) =>
-        node.textContent?.includes('Hoje'),
+        node.textContent?.includes('Início'),
       );
       expect(headings).toHaveLength(1);
     });

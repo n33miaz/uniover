@@ -110,7 +110,7 @@ describe('TrainingAccountScope', () => {
       kit.account.signInAs('conta-a');
       const { fixture, el } = await show(kit);
       await eventually(fixture, () => expect(text(el)).toContain('Treino em andamento'));
-      await eventually(fixture, () => expect(text(el)).toContain('1 ainda não sincronizado'));
+      await eventually(fixture, () => expect(text(el)).toContain('1 série aguardando envio'));
 
       // B entra: a tela Hoje é a dele, sem o treino aberto de A nem o aviso do que espera envio.
       kit.account.signInAs('conta-b');
@@ -118,13 +118,13 @@ describe('TrainingAccountScope', () => {
         expect(el.querySelector('app-training-today-page')).not.toBeNull();
         expect(text(el)).not.toContain('Treino em andamento');
         expect(text(el)).not.toContain('Continuar treino');
-        expect(text(el)).not.toContain('ainda não sincronizado');
+        expect(text(el)).not.toContain('série aguardando envio');
       });
 
       // A volta e tudo o que era dele está como estava.
       kit.account.signInAs('conta-a');
       await eventually(fixture, () => expect(text(el)).toContain('Treino em andamento'));
-      await eventually(fixture, () => expect(text(el)).toContain('1 ainda não sincronizado'));
+      await eventually(fixture, () => expect(text(el)).toContain('1 série aguardando envio'));
     });
   });
 
