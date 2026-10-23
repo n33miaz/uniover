@@ -158,5 +158,6 @@ describe('TrainingPage: the install sheet and the open workout', () => {
     session.setUser({ id: '1', email: 'a@b.c', displayName: 'A', role: 'owner' });
     await fixture.whenStable();
     expect(el.querySelector('.training-header .back')?.getAttribute('href')).toBe('/');
+    expect(el.querySelector('.training-header .settings')?.getAttribute('href')).toBe('/ajustes');
   });
 });

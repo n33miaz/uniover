@@ -43,8 +43,23 @@ function isWithin(path: string, section: string): boolean {
     <header class="training-header">
       <div class="header-leading">
         @if (backLink(); as link) {
-          <a class="back ui-tap" [routerLink]="link" [attr.aria-label]="backLabel()">←</a>
+          <a class="back ui-tap" [routerLink]="link" [attr.aria-label]="backLabel()">
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path [attr.d]="'M19 12H5m7 7-7-7 7-7'" />
+            </svg>
+          </a>
         }
+      </div>
+      <h1 i18n="@@training.shell.title">UniOver Treino</h1>
+      <div class="header-actions">
         <button
           type="button"
           class="status ui-tap"
@@ -65,14 +80,11 @@ function isWithin(path: string, section: string): boolean {
             stroke-linejoin="round"
           >
             <path [attr.d]="'M20 7v5h-5M4 17v-5h5'" />
-            <path [attr.d]="'M5.5 9a7 7 0 0 1 12-2L20 12M4 12l2.5 5a7 7 0 0 0 12-2'" />
+            <path [attr.d]="'M5.64 5.64A9 9 0 0 1 20 12M4 12a9 9 0 0 0 14.36 6.36'" />
           </svg>
           <span class="state" aria-hidden="true"></span>
           <span class="ui-visually-hidden">{{ statusLabel() }}</span>
         </button>
-      </div>
-      <h1 i18n="@@training.shell.title">UniOver Treino</h1>
-      @if (isGuest()) {
         <a
           routerLink="/ajustes"
           class="settings ui-tap"
@@ -80,7 +92,7 @@ function isWithin(path: string, section: string): boolean {
           i18n-aria-label="@@shell.settings-label"
           ><app-gear-icon
         /></a>
-      }
+      </div>
     </header>
     @if (statusOpen()) {
       <section
@@ -131,10 +143,11 @@ function isWithin(path: string, section: string): boolean {
       display: flex;
       flex-direction: column;
       gap: var(--space-3);
+      -webkit-tap-highlight-color: transparent;
     }
     .training-header {
       display: grid;
-      grid-template-columns: minmax(44px, 1fr) auto minmax(44px, 1fr);
+      grid-template-columns: minmax(44px, 1fr) auto minmax(88px, 1fr);
       align-items: center;
       gap: var(--space-1);
       min-height: 56px;
@@ -148,10 +161,14 @@ function isWithin(path: string, section: string): boolean {
       text-align: center;
       white-space: nowrap;
     }
-    .header-leading {
+    .header-leading,
+    .header-actions {
       display: flex;
       align-items: center;
-      justify-self: start;
+      min-width: 0;
+    }
+    .header-actions {
+      justify-self: end;
     }
     .back,
     .status {
@@ -166,7 +183,10 @@ function isWithin(path: string, section: string): boolean {
     }
     .back {
       min-width: var(--tap);
-      font-size: 1.4rem;
+    }
+    .back svg {
+      width: 22px;
+      height: 22px;
     }
     .settings {
       display: grid;
@@ -275,7 +295,6 @@ export class TrainingPage {
   protected readonly issuesOpen = signal(false);
   protected readonly statusOpen = signal(false);
   protected readonly online = this.connectivity.online;
-  protected readonly isGuest = this.session.isGuest;
   protected readonly failed = this.queue.failedCount;
   protected readonly pending = this.queue.pendingCount;
   protected readonly busy = computed(() => this.queue.syncing() || this.sync.pulling());
