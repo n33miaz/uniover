@@ -53,6 +53,19 @@ describe('ExerciseIllustration', () => {
     expect(states).toEqual(['ready']);
   });
 
+  it('alternates the original PNG poses in movement order', () => {
+    create('puxada-aberta-na-polia', 'Puxada aberta na polia');
+    expect(images().map((img) => img.getAttribute('src'))).toEqual([
+      '/exercise-art/wide-grip-lat-pull-down-2.png',
+      '/exercise-art/wide-grip-lat-pull-down-1.png',
+    ]);
+    expect(visible()[0]).toBe(images()[0]);
+    vi.advanceTimersByTime(FRAME_INTERVAL_MS);
+    fixture.detectChanges();
+    expect(visible()[0]).toBe(images()[1]);
+    expect(states).toEqual(['ready']);
+  });
+
   it('describes each pose with the name and its number', () => {
     create(SLUG, 'Supino reto com barra');
     expect(images().map((img) => img.alt)).toEqual([

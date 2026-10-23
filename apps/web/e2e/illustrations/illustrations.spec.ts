@@ -5,6 +5,7 @@ import { expect, test, waitForServiceWorkerControl } from '../fixtures';
 
 // O servidor de teste entrega o mesmo `dist` que a imagem do Docker copia para o wwwroot.
 const ART_DIR = join(__dirname, '..', '..', 'assets-third-party', 'everkinetic', 'svg');
+const PNG_DIR = join(__dirname, '..', '..', 'assets-third-party', 'everkinetic', 'png');
 const FIRST_POSE = '0042-relaxation.svg';
 const SECOND_POSE = '0042-tension.svg';
 const NOT_WARMED = '0043-relaxation.svg';
@@ -20,14 +21,16 @@ test.describe('ilustrações dos exercícios', () => {
   });
 
   test('todo arquivo guardado é publicado, idêntico ao original', async ({ request }) => {
-    const files = readdirSync(ART_DIR);
+    const files = [
+      ...readdirSync(ART_DIR).map((file) => ({ file, path: join(ART_DIR, file) })),
+      ...readdirSync(PNG_DIR).map((file) => ({ file, path: join(PNG_DIR, file) })),
+    ];
     expect(files.length).toBeGreaterThan(100);
-    for (const file of files) {
+    for (const { file, path } of files) {
       const response = await request.get(`/exercise-art/${file}`);
       expect(response.status(), file).toBe(200);
-      expect(Buffer.compare(await response.body(), readFileSync(join(ART_DIR, file))), file).toBe(
-        0,
-      );
+      if (file.endsWith('.png')) expect(response.headers()['content-type']).toBe('image/png');
+      expect(Buffer.compare(await response.body(), readFileSync(path)), file).toBe(0);
     }
   });
 

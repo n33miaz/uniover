@@ -28,6 +28,11 @@
                 "glob": "**/*.svg",
                 "input": "assets-third-party/everkinetic/svg",
                 "output": "/exercise-art"
+              },
+              {
+                "glob": "**/*.png",
+                "input": "assets-third-party/everkinetic/png",
+                "output": "/exercise-art"
               }
             ],
             "styles": ["src/styles.css"],
