@@ -61,11 +61,12 @@ test.describe('Hoje', () => {
     await expect(week.locator('.week-days .day')).toHaveCount(7);
     await expect(week.locator('.week-days .day.done')).toHaveCount(1);
     await expect(week.getByText('Tá pago!')).toBeVisible();
-    const currentRange = await week.locator('.range').textContent();
+    const firstDay = week.locator('.week-days .day').first();
+    const currentDayLabel = await firstDay.getAttribute('aria-label');
     await week.getByRole('button', { name: 'Próxima semana' }).click();
-    await expect(week.locator('.range')).not.toHaveText(currentRange ?? '');
+    await expect(firstDay).not.toHaveAttribute('aria-label', currentDayLabel ?? '');
     await week.getByRole('button', { name: 'Semana anterior' }).click();
-    await expect(week.locator('.range')).toHaveText(currentRange ?? '');
+    await expect(firstDay).toHaveAttribute('aria-label', currentDayLabel ?? '');
     await expect(week.locator('.week-days .day.done')).toHaveCount(1);
 
     await week.getByRole('button', { name: 'Ver calendário' }).click();

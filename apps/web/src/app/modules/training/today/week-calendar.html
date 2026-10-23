@@ -1,9 +1,6 @@
 <section class="week ui-card" aria-labelledby="week-title">
   <div class="week-head">
-    <div>
-      <h3 id="week-title" i18n="@@training.today.calendar.title">Semana</h3>
-      <p class="range">{{ weekLabel() }}</p>
-    </div>
+    <h3 id="week-title" i18n="@@training.today.calendar.title">Semana</h3>
     <div class="nav">
       <button
         type="button"
@@ -12,7 +9,7 @@
         i18n-aria-label="@@training.today.calendar.previous-week"
         (click)="moveWeek(-1)"
       >
-        ‹
+        <span aria-hidden="true">‹</span>
       </button>
       <button
         type="button"
@@ -21,7 +18,7 @@
         i18n-aria-label="@@training.today.calendar.next-week"
         (click)="moveWeek(1)"
       >
-        ›
+        <span aria-hidden="true">›</span>
       </button>
     </div>
   </div>
@@ -38,11 +35,12 @@
         class="day"
         [class.done]="hasWorkout(day.key, weekWorkouts())"
         [class.today]="isToday(day.key)"
+        [attr.aria-label]="dayLabel(day, weekWorkouts())"
+        [attr.aria-current]="isToday(day.key) ? 'date' : null"
         (click)="openDay(day)"
       >
         <span class="weekday">{{ weekdays[index] }}</span>
         <span class="number">{{ day.day }}</span>
-        <span class="ui-visually-hidden">{{ dayLabel(day, weekWorkouts()) }}</span>
         <span class="mark" aria-hidden="true">{{
           hasWorkout(day.key, weekWorkouts()) ? '✓' : ' '
         }}</span>
@@ -94,7 +92,7 @@
         i18n-aria-label="@@training.today.calendar.previous-month"
         (click)="moveCalendarMonth(-1)"
       >
-        ‹
+        <span aria-hidden="true">‹</span>
       </button>
       <h3>{{ monthLabel() }}</h3>
       <button
@@ -104,7 +102,7 @@
         i18n-aria-label="@@training.today.calendar.next-month"
         (click)="moveCalendarMonth(1)"
       >
-        ›
+        <span aria-hidden="true">›</span>
       </button>
     </div>
     <div
