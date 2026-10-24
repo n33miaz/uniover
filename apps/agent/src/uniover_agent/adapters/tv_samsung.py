@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 import httpx
 from samsungtvws import SamsungTVWS
+from samsungtvws import helper as samsung_helper
 
 from uniover_agent.ports import TvNotPaired, TvUnreachable
 
@@ -22,6 +23,7 @@ SAMSUNG_REST_PORT = 8001
 SAMSUNG_TIMEOUT_SECONDS = 5.0
 SAMSUNG_APP_TIMEOUT_SECONDS = 3.0
 SAMSUNG_APP_LIST_TIMEOUT_SECONDS = 5.0
+SAMSUNG_APP_ICON_TIMEOUT_SECONDS = 1.0
 SAMSUNG_APP_PROBE_CONCURRENCY = 8
 
 # Estes identificadores são publicados só quando o endpoint da própria TV confirma que o app está
@@ -92,14 +94,49 @@ class SamsungClient(Protocol):
 
     def run_app(self, app_id: str, app_type: str = "DEEP_LINK", meta_tag: str = "") -> None: ...
 
+    def app_list(self) -> list[dict[str, Any]] | None: ...
+
+    def app_icon(self, icon_path: str) -> str | None: ...
+
 
 SamsungFactory = Callable[[str, str | None, str], SamsungClient]
 PowerFetcher = Callable[[str], Awaitable[bool | None]]
 
 
+class _SamsungTvWs(SamsungTVWS):
+    """Pequena extensão da biblioteca para o evento EDEN de ícones, ainda não exposto por ela."""
+
+    def app_icon(self, icon_path: str) -> str | None:
+        # A resposta vem no mesmo socket síncrono usado pelo `app_list`; não iniciamos o loop de
+        # eventos porque o driver mantém a conexão quente e faz as chamadas numa thread.
+        self._ws_send(
+            {
+                "method": "ms.channel.emit",
+                "params": {
+                    "event": "ed.apps.icon",
+                    "to": "host",
+                    "data": {"iconPath": icon_path},
+                },
+            }
+        )
+        if self.connection is None:
+            return None
+        try:
+            response = samsung_helper.process_api_response(self.connection.recv())
+        except Exception:
+            return None
+        if response.get("event") != "ed.apps.icon":
+            return None
+        data = response.get("data")
+        if not isinstance(data, dict):
+            return None
+        image = data.get("imageBase64")
+        return image if isinstance(image, str) and image else None
+
+
 def _default_factory(host: str, token: str | None, name: str) -> SamsungClient:
     # A pausa padrão da biblioteca é um segundo por tecla, desnecessária para toques únicos.
-    return SamsungTVWS(
+    return _SamsungTvWs(
         host,
         token=token,
         port=SAMSUNG_PORT,
@@ -158,6 +195,7 @@ class SamsungTvDriver:
         self._ws_timeout_seconds = ws_timeout_seconds
         self._app_timeout_seconds = app_timeout_seconds
         self._app_list_timeout_seconds = app_list_timeout_seconds
+        self._app_icon_timeout_seconds = SAMSUNG_APP_ICON_TIMEOUT_SECONDS
         self._client: SamsungClient | None = None
         self._connected = False
         self._power: list[Callable[[bool], None]] = []
@@ -225,7 +263,18 @@ class SamsungTvDriver:
         raise ValueError("texto não é suportado pela TV Samsung")
 
     async def app_list(self) -> list[dict[str, Any]] | None:
-        """Sonda os apps conhecidos pelo REST, sem depender do canal WebSocket instável."""
+        """Pede a lista detalhada pelo WS e usa o catálogo REST nos firmwares que não respondem."""
+        client = self._client
+        if client is not None and self._connected:
+            try:
+                listed = await self._call_client(client.app_list)
+            except Exception:
+                listed = None
+            if listed:
+                return await self._with_icons(client, listed)
+        return await self._rest_app_list()
+
+    async def _rest_app_list(self) -> list[dict[str, Any]]:
         async with httpx.AsyncClient(transport=self._rest_transport) as client:
             semaphore = asyncio.Semaphore(SAMSUNG_APP_PROBE_CONCURRENCY)
             tasks = [
@@ -238,6 +287,26 @@ class SamsungTvDriver:
             await asyncio.gather(*pending, return_exceptions=True)
             results = [task.result() for task in tasks if task in done]
         return [result for result in results if result is not None]
+
+    async def _with_icons(
+        self, client: SamsungClient, listed: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Acrescenta a imagem base64 que o EDEN devolve para cada caminho de ícone da lista."""
+        enriched: list[dict[str, Any]] = []
+        for item in listed:
+            copy = dict(item)
+            icon_path = item.get("icon")
+            if isinstance(icon_path, str) and icon_path:
+                try:
+                    image = await self._call_client(
+                        client.app_icon, icon_path, wait_seconds=self._app_icon_timeout_seconds
+                    )
+                except Exception:
+                    image = None
+                if isinstance(image, str) and image:
+                    copy["imageBase64"] = image
+            enriched.append(copy)
+        return enriched
 
     async def run_app(self, app_id: str) -> None:
         if await self._launch_app_rest(app_id):
@@ -273,10 +342,13 @@ class SamsungTvDriver:
         for callback in self._available:
             callback(False)
 
-    async def _call_client(self, operation: Callable[..., Any], *args: Any) -> Any:
+    async def _call_client(
+        self, operation: Callable[..., Any], *args: Any, wait_seconds: float | None = None
+    ) -> Any:
         """Limita a espera pelo cliente síncrono, que pode travar em uma resposta ausente da TV."""
         return await asyncio.wait_for(
-            asyncio.to_thread(operation, *args), timeout=self._ws_timeout_seconds
+            asyncio.to_thread(operation, *args),
+            timeout=self._ws_timeout_seconds if wait_seconds is None else wait_seconds,
         )
 
     async def _probe_app(
