@@ -11,6 +11,7 @@ describe('sessions pull, end to end', () => {
     t.pull.script = [
       { items: [], nextCursor: null },
       { items: [], nextCursor: null },
+      { items: [], nextCursor: null },
       {
         items: [
           sessionDto('s1', { finishedAt: '2026-10-01T11:00:00Z', feeling: '4', note: 'ok' }),
@@ -32,6 +33,7 @@ describe('sessions pull, end to end', () => {
     expect(t.pull.calls.map((call) => call.path)).toEqual([
       '/api/v1/training/exercises',
       '/api/v1/training/routines',
+      '/api/v1/training/program',
       SESSIONS_PATH,
       SETS_PATH,
       '/api/v1/training/goals',
@@ -66,6 +68,7 @@ describe('sessions pull, end to end', () => {
     t.pull.script = [
       { items: [], nextCursor: null },
       { items: [], nextCursor: null },
+      { items: [], nextCursor: null },
       { items: [sessionDto('s-tablet', { deviceId: 'tablet' })], nextCursor: 'c' },
     ];
 
@@ -95,6 +98,7 @@ describe('sessions pull, end to end', () => {
     t.resume();
     await t.queue().syncNow();
     t.pull.script = [
+      { items: [], nextCursor: null },
       { items: [], nextCursor: null },
       { items: [], nextCursor: null },
       { items: [], nextCursor: 'c' },

@@ -19,7 +19,7 @@ import { ExportService } from './export/export-service';
 import { PhotoStore } from './photos/photo-store';
 import { ProgressRepository } from './progress/progress-repository';
 import { RoutineRepository } from './routines/routine-repository';
-import { RoutinesResourceSync } from './routines/routines-resource-sync';
+import { ProgramResourceSync, RoutinesResourceSync } from './routines/routines-resource-sync';
 import { SessionRepository } from './sessions/session-repository';
 import { SessionsResourceSync, SetsResourceSync } from './sessions/sessions-resource-sync';
 import { RestAlert } from './session-live/rest-alert';
@@ -55,7 +55,7 @@ describe('provideTrainingData', () => {
     expect(TestBed.inject(PhotoStore)).toBeInstanceOf(PhotoStore);
 
     const resources = TestBed.inject(TRAINING_RESOURCE_SYNCS);
-    expect(resources).toHaveLength(9);
+    expect(resources).toHaveLength(10);
     expect(resources[0]).toBeInstanceOf(ExercisesResourceSync);
     expect(resources[0]).toMatchObject({
       resource: 'exercises',
@@ -66,26 +66,28 @@ describe('provideTrainingData', () => {
       resource: 'routines',
       path: '/api/v1/training/routines',
     });
-    expect(resources[2]).toBeInstanceOf(SessionsResourceSync);
-    expect(resources[2]).toMatchObject({
+    expect(resources[2]).toBeInstanceOf(ProgramResourceSync);
+    expect(resources[2]).toMatchObject({ resource: 'program', path: '/api/v1/training/program' });
+    expect(resources[3]).toBeInstanceOf(SessionsResourceSync);
+    expect(resources[3]).toMatchObject({
       resource: 'sessions',
       path: '/api/v1/training/sessions',
     });
-    expect(resources[3]).toBeInstanceOf(SetsResourceSync);
-    expect(resources[3]).toMatchObject({ resource: 'sets', path: '/api/v1/training/sets' });
-    expect(resources[4]).toBeInstanceOf(GoalsResourceSync);
-    expect(resources[4]).toMatchObject({ resource: 'goals', path: '/api/v1/training/goals' });
-    expect(resources[5]).toBeInstanceOf(FoodsResourceSync);
-    expect(resources[5]).toMatchObject({ resource: 'foods', path: '/api/v1/training/foods' });
-    expect(resources[6]).toBeInstanceOf(MealsResourceSync);
-    expect(resources[6]).toMatchObject({ resource: 'meals', path: '/api/v1/training/meals' });
-    expect(resources[7]).toBeInstanceOf(BodyEntriesResourceSync);
-    expect(resources[7]).toMatchObject({
+    expect(resources[4]).toBeInstanceOf(SetsResourceSync);
+    expect(resources[4]).toMatchObject({ resource: 'sets', path: '/api/v1/training/sets' });
+    expect(resources[5]).toBeInstanceOf(GoalsResourceSync);
+    expect(resources[5]).toMatchObject({ resource: 'goals', path: '/api/v1/training/goals' });
+    expect(resources[6]).toBeInstanceOf(FoodsResourceSync);
+    expect(resources[6]).toMatchObject({ resource: 'foods', path: '/api/v1/training/foods' });
+    expect(resources[7]).toBeInstanceOf(MealsResourceSync);
+    expect(resources[7]).toMatchObject({ resource: 'meals', path: '/api/v1/training/meals' });
+    expect(resources[8]).toBeInstanceOf(BodyEntriesResourceSync);
+    expect(resources[8]).toMatchObject({
       resource: 'bodyEntries',
       path: '/api/v1/training/body/entries',
     });
-    expect(resources[8]).toBeInstanceOf(BodyProfileResourceSync);
-    expect(resources[8]).toMatchObject({
+    expect(resources[9]).toBeInstanceOf(BodyProfileResourceSync);
+    expect(resources[9]).toMatchObject({
       resource: 'bodyProfile',
       path: '/api/v1/training/body/profile',
     });
@@ -126,6 +128,7 @@ describe('catalog pull, end to end', () => {
       },
       // Depois do catálogo os recursos restantes vêm vazios, inclusive os lançamentos de alimentos.
       { accountId: 'conta-teste', path: '/api/v1/training/routines', after: null, limit: 200 },
+      { accountId: 'conta-teste', path: '/api/v1/training/program', after: null, limit: 200 },
       { accountId: 'conta-teste', path: '/api/v1/training/sessions', after: null, limit: 200 },
       { accountId: 'conta-teste', path: '/api/v1/training/sets', after: null, limit: 200 },
       { accountId: 'conta-teste', path: '/api/v1/training/goals', after: null, limit: 200 },

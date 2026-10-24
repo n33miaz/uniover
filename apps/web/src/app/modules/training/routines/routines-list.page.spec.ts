@@ -128,7 +128,7 @@ describe('RoutinesListPage', () => {
       expect(text(el)).not.toContain('ative quando estiverem completas');
     });
 
-    it('requires previewing a partial draft before creating it', async () => {
+    it('requires previewing a partial program before choosing it', async () => {
       const { fixture, el, trainingDb } = await open(
         'Rascunho parcial · opção 3 · cinco sessões.\n\nRosca de terça omitida: confira antes de criar.',
         'ab-reajustado',
@@ -143,18 +143,16 @@ describe('RoutinesListPage', () => {
       expect(el.querySelector('dialog .create-draft')).toBeNull();
       row.click();
       await eventually(fixture, () => expect(text(el)).toContain('Rosca de terça omitida'));
-      const create = button(el, 'Criar este rascunho parcial');
+      const create = button(el, 'Escolher este programa');
       expect(create).toBeDefined();
       create.click();
       await eventually(fixture, () =>
-        expect(text(el)).toContain('Criamos 2 rotinas do modelo Duplo.'),
+        expect(text(el)).toContain('Programa Duplo escolhido. Hoje abre no treino do dia.'),
       );
-      expect(text(el)).toContain(
-        'Elas ficaram inativas, fora da sequência. Revise e ative quando estiverem completas.',
-      );
+      expect(text(el)).not.toContain('ficaram inativas');
     });
 
-    it('creates the routines of the template, at the end of the sequence, and says so', async () => {
+    it('chooses the program: the routines are created active on the device, and the choice is queued', async () => {
       const { fixture, el, trainingDb } = await open();
       await seedCatalog(trainingDb, ['supino', 'crucifixo', 'rosca', 'triceps']);
       await eventually(fixture, () => expect(button(el, 'Usar modelo')).toBeDefined());
@@ -166,18 +164,20 @@ describe('RoutinesListPage', () => {
       row.click();
       await eventually(fixture, () => expect(rows(el)).toHaveLength(2));
       await eventually(fixture, () =>
-        expect(text(el)).toContain('Criamos 2 rotinas do modelo Duplo.'),
+        expect(text(el)).toContain('Programa Duplo escolhido. Hoje abre no treino do dia.'),
       );
       await eventually(fixture, () => expect(el.querySelector('dialog')).toBeNull());
       expect(rows(el).map((r) => r.querySelector('.ui-row-title')?.textContent?.trim())).toEqual([
         'A · Peito',
         'B · Braços',
       ]);
-      expect(await TestBed.inject(OfflineQueue).items()).toHaveLength(2);
+      expect(await TestBed.inject(RoutineRepository).activeProgramId()).toBe('duplo');
+      // Duas fichas e a escolha do programa esperam na fila de escrita, como qualquer gravação.
+      expect(await TestBed.inject(OfflineQueue).items()).toHaveLength(3);
     });
 
-    it('says how many exercises of the template were left out because the catalog lacks them', async () => {
-      const { fixture, el, trainingDb } = await open();
+    it('says how many exercises of a historical template were left out because the catalog lacks them', async () => {
+      const { fixture, el, trainingDb } = await open('Histórico.', 'historical-ab');
       await seedCatalog(trainingDb, ['supino', 'crucifixo', 'rosca']);
       await eventually(fixture, () => expect(button(el, 'Usar modelo')).toBeDefined());
       button(el, 'Usar modelo').click();

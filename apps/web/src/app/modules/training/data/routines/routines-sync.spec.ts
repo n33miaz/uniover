@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { TrainingSync } from '../sync/training-sync';
 import { RoutineRepository } from './routine-repository';
 import { routineDto, setupRoutines } from './routine-data-test-kit';
-import { ROUTINES_PATH } from './routine-api';
+import { PROGRAM_PATH, ROUTINES_PATH } from './routine-api';
 
 const DRAFT = {
   name: 'A',
@@ -10,6 +10,30 @@ const DRAFT = {
 };
 
 describe('routines pull, end to end', () => {
+  it('pulls the weekly program chosen on another device', async () => {
+    const t = setupRoutines();
+    t.pull.script = [
+      { items: [], nextCursor: null },
+      { items: [], nextCursor: null },
+      {
+        items: [
+          {
+            programId: 'ppl-superior-inferior',
+            updatedAt: '2026-10-20T10:00:00.0000000+00:00',
+            clientUpdatedAt: '2026-10-20T09:59:00.0000000+00:00',
+          },
+        ],
+        nextCursor: 'cursor-p',
+      },
+    ];
+
+    await TestBed.inject(TrainingSync).start();
+
+    expect(PROGRAM_PATH).toBe('/api/v1/training/program');
+    expect(await t.trainingDb.syncState.get('program')).toMatchObject({ cursor: 'cursor-p' });
+    expect(await TestBed.inject(RoutineRepository).activeProgramId()).toBe('ppl-superior-inferior');
+  });
+
   it('pulls the routines into the local database, with the items inside', async () => {
     const t = setupRoutines();
     t.pull.script = [
@@ -43,6 +67,7 @@ describe('routines pull, end to end', () => {
     expect(t.pull.calls.map((call) => call.path)).toEqual([
       '/api/v1/training/exercises',
       ROUTINES_PATH,
+      PROGRAM_PATH,
       '/api/v1/training/sessions',
       '/api/v1/training/sets',
       '/api/v1/training/goals',

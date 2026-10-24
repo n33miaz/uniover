@@ -24,7 +24,8 @@ import {
   toRoutineTemplates,
   toUpsertBody,
 } from './routine';
-import { RoutineApi, routinePath } from './routine-api';
+import { PROGRAM_PATH, RoutineApi, routinePath } from './routine-api';
+import { ACTIVE_PROGRAM_ID, type LocalProgram, resolveProgram, toProgramBody } from './program';
 
 /** Modelos de origem que viram rascunhos: não entram na sequência até a pessoa revisar e ativar. */
 export const HISTORICAL_REJECTED_TEMPLATE_ID = 'historical-ab';
@@ -206,6 +207,9 @@ export class RoutineRepository {
     const stamp = this.nextStamp(previous?.clientUpdatedAt);
     const written: LocalRoutine = {
       ...model,
+      // O programa e os dias da semana vêm do servidor e a edição da ficha não os muda.
+      programId: previous?.programId ?? null,
+      weekdays: previous?.weekdays ?? [],
       updatedAt: stamp,
       clientUpdatedAt: stamp,
       deletedAt: null,
@@ -312,11 +316,124 @@ export class RoutineRepository {
   }
 
   /**
-   * Cria as rotinas de um modelo no fim da sequência, com ids novos (UUID v7). Os modelos parciais conhecidos ficam
-   * inativos até revisão. Exercícios são achados pelo `slug` no catálogo **local**; os que não existem vêm em
-   * `missing`. Cada rotina criada é um `PUT`; se a fila recusar por espaço, nenhuma fica.
+   * Cria as rotinas de um modelo no fim da sequência, com ids novos (UUID v7), como fichas livres. Só o histórico
+   * rejeitado usa este caminho (fica inativo, fora da sequência); os demais modelos viram o programa da semana
+   * (`selectProgram`). Exercícios são achados pelo `slug` no catálogo **local**; os que não existem vêm em `missing`.
+   * Cada rotina criada é um `PUT`; se a fila recusar por espaço, nenhuma fica.
    */
   async createFromTemplate(templateId: string): Promise<TemplateResult> {
+    const found = await this.findTemplate(templateId);
+    if (!('template' in found)) return found;
+
+    const built = await this.buildRoutines(found.template, {
+      active: !PARTIAL_DRAFT_TEMPLATE_ID_SET.has(found.template.id),
+      programId: null,
+      basePosition: await this.nextPosition(),
+    });
+    if (built.writes.length === 0) return { status: 'no-exercises', missing: built.missing };
+
+    const saved = await this.commit(built.writes);
+    return saved
+      ? {
+          status: 'saved',
+          routines: built.writes.map((write) => write.written),
+          missing: built.missing,
+        }
+      : { status: 'storage-full' };
+  }
+
+  /**
+   * O programa da semana ativo desta conta: a escolha gravada (uma linha própria, sincronizada), nunca inferida das
+   * fichas. `null` enquanto ninguém escolheu um programa.
+   */
+  async activeProgramId(): Promise<string | null> {
+    return (await this.db.program.get(ACTIVE_PROGRAM_ID))?.programId ?? null;
+  }
+
+  /**
+   * Escolhe o programa da semana, offline-first: cria as fichas do modelo na conta (se ainda não existem, com o
+   * programa e os dias da semana), reativa as dele, desativa as de outro programa (ficam guardadas) e grava a
+   * escolha, tudo no banco local; depois enfileira um `PUT` por ficha mexida e o `PUT /program`. Sem rede funciona
+   * igual (os modelos vêm da cópia guardada). Se a fila recusar por falta de espaço, nada fica gravado.
+   */
+  async selectProgram(templateId: string): Promise<TemplateResult> {
+    if (templateId === HISTORICAL_REJECTED_TEMPLATE_ID) return { status: 'template-not-found' };
+    const found = await this.findTemplate(templateId);
+    if (!('template' in found)) return found;
+    const { template } = found;
+
+    const all = await this.all();
+    const stamp = this.runtime.now();
+    const writes: PendingWrite[] = [];
+    const flip = (previous: LocalRoutine, active: boolean): PendingWrite => {
+      const next = this.nextStamp(previous.clientUpdatedAt);
+      return {
+        written: { ...previous, active, updatedAt: next, clientUpdatedAt: next },
+        previous,
+        deleted: false,
+      };
+    };
+    // O programa anterior sai de Hoje, mas as fichas dele nunca são descartadas.
+    for (const row of all) {
+      if (row.deletedAt === null && row.active && row.programId && row.programId !== template.id) {
+        writes.push(flip(row, false));
+      }
+    }
+
+    const own = all.filter((row) => row.deletedAt === null && row.programId === template.id);
+    let missing: readonly string[] = [];
+    if (own.length === 0) {
+      const built = await this.buildRoutines(template, {
+        active: true,
+        programId: template.id,
+        basePosition: await this.nextPosition(),
+      });
+      if (built.writes.length === 0) return { status: 'no-exercises', missing: built.missing };
+      writes.push(...built.writes);
+      missing = built.missing;
+    } else {
+      for (const row of own) if (!row.active) writes.push(flip(row, true));
+    }
+
+    const previousProgram = await this.db.program.get(ACTIVE_PROGRAM_ID);
+    const program: LocalProgram = {
+      id: ACTIVE_PROGRAM_ID,
+      programId: template.id,
+      updatedAt: stamp,
+      clientUpdatedAt: this.nextStamp(previousProgram?.clientUpdatedAt),
+    };
+    const saved = await this.commit(writes, { written: program, previous: previousProgram });
+    if (!saved) return { status: 'storage-full' };
+    const written = new Map(writes.map((write) => [write.written.id, write.written]));
+    const routines = [
+      ...own.map((row) => written.get(row.id) ?? row),
+      ...writes.map((w) => w.written),
+    ];
+    return {
+      status: 'saved',
+      routines: [...new Map(routines.map((row) => [row.id, row])).values()].filter(
+        (row) => row.programId === template.id,
+      ),
+      missing,
+    };
+  }
+
+  /** Funde a escolha de programa que veio do servidor (outro aparelho escolheu). A mais nova vence. */
+  async applyRemoteProgram(remote: readonly LocalProgram[]): Promise<void> {
+    if (remote.length === 0) return;
+    await this.db.transaction('rw', this.db.program, async () => {
+      const found = await this.db.program.bulkGet(remote.map((row) => row.id));
+      const local = new Map<string, LocalProgram>();
+      for (const row of found) if (row) local.set(row.id, row);
+      const writes = mergeById(local, remote, resolveProgram);
+      if (writes.length > 0) await this.db.program.bulkPut(writes);
+    });
+    this.touch();
+  }
+
+  private async findTemplate(
+    templateId: string,
+  ): Promise<{ readonly template: RoutineTemplate } | TemplateResult> {
     let templates: RoutineTemplate[];
     try {
       templates = await this.templates();
@@ -324,8 +441,14 @@ export class RoutineRepository {
       return { status: 'templates-unavailable' };
     }
     const template = templates.find((candidate) => candidate.id === templateId);
-    if (template === undefined) return { status: 'template-not-found' };
+    return template === undefined ? { status: 'template-not-found' } : { template };
+  }
 
+  /** As fichas novas de um modelo, prontas para gravar (nenhuma se o catálogo local não tem exercício dele). */
+  private async buildRoutines(
+    template: RoutineTemplate,
+    options: { active: boolean; programId: string | null; basePosition: number },
+  ): Promise<{ writes: PendingWrite[]; missing: string[] }> {
     const slugs = [
       ...new Set(template.routines.flatMap((day) => day.items.map((item) => item.exerciseSlug))),
     ];
@@ -340,7 +463,6 @@ export class RoutineRepository {
     const missing = slugs.filter((slug) => !idBySlug.has(slug));
 
     const stamp = this.runtime.now();
-    const base = await this.nextPosition();
     const writes: PendingWrite[] = [];
     for (const day of template.routines) {
       const found = day.items.filter((item) => idBySlug.has(item.exerciseSlug));
@@ -348,8 +470,8 @@ export class RoutineRepository {
       const model: RoutineModel = {
         id: uuidV7(),
         name: day.name,
-        position: base + writes.length,
-        active: !PARTIAL_DRAFT_TEMPLATE_ID_SET.has(template.id),
+        position: options.basePosition + writes.length,
+        active: options.active,
         note: '',
         items: normalizeItems(
           found.map((item, position) => ({
@@ -367,17 +489,19 @@ export class RoutineRepository {
       };
       assertValid(model);
       writes.push({
-        written: { ...model, updatedAt: stamp, clientUpdatedAt: stamp, deletedAt: null },
+        written: {
+          ...model,
+          programId: options.programId,
+          weekdays: options.programId === null ? [] : [...day.weekdays],
+          updatedAt: stamp,
+          clientUpdatedAt: stamp,
+          deletedAt: null,
+        },
         previous: undefined,
         deleted: false,
       });
     }
-    if (writes.length === 0) return { status: 'no-exercises', missing };
-
-    const saved = await this.commit(writes);
-    return saved
-      ? { status: 'saved', routines: writes.map((write) => write.written), missing }
-      : { status: 'storage-full' };
+    return { writes, missing };
   }
 
   /** Aplica uma mudança só nos itens de uma rotina viva; sem mudança de fato, não grava nem envia nada. */
@@ -415,12 +539,19 @@ export class RoutineRepository {
   }
 
   /**
-   * Grava no banco local e enfileira um `PUT` por rotina. `false` = a fila recusou por falta de espaço: o que já tinha
-   * entrado na fila é descartado e as gravações locais são desfeitas. (Se o envio já tiver levado uma das primeiras
-   * escritas ao servidor, o descarte não a alcança; o próximo puxar traz a rotina de volta, então nada se perde.)
+   * Grava no banco local e enfileira um `PUT` por rotina (e o do programa, quando a escrita escolhe um). As gravações
+   * locais entram numa transação só. `false` = a fila recusou por falta de espaço: o que já tinha entrado na fila é
+   * descartado e as gravações locais são desfeitas. (Se o envio já tiver levado uma das primeiras escritas ao
+   * servidor, o descarte não a alcança; o próximo puxar traz a rotina de volta, então nada se perde.)
    */
-  private async commit(writes: readonly PendingWrite[]): Promise<boolean> {
-    await this.db.routines.bulkPut(writes.map((write) => write.written));
+  private async commit(
+    writes: readonly PendingWrite[],
+    program?: { readonly written: LocalProgram; readonly previous: LocalProgram | undefined },
+  ): Promise<boolean> {
+    await this.db.transaction('rw', this.db.routines, this.db.program, async () => {
+      await this.db.routines.bulkPut(writes.map((write) => write.written));
+      if (program) await this.db.program.put(program.written);
+    });
     this.touch();
 
     const queued: string[] = [];
@@ -435,23 +566,43 @@ export class RoutineRepository {
           }),
         );
       }
+      if (program) {
+        queued.push(
+          await this.queue.enqueue({
+            method: 'PUT',
+            url: PROGRAM_PATH,
+            body: toProgramBody(program.written),
+            module: QUEUE_MODULE,
+          }),
+        );
+      }
       return true;
     } catch (error) {
       for (const key of queued) await this.queue.discard(key);
-      await this.undoLocal(writes);
+      await this.undoLocal(writes, program);
       if (error instanceof QueueStorageFullError) return false;
       throw error;
     }
   }
 
   /** Desfaz as gravações locais que a fila recusou; só mexe na linha se ela ainda é a que foi gravada. */
-  private async undoLocal(writes: readonly PendingWrite[]): Promise<void> {
-    await this.db.transaction('rw', this.db.routines, async () => {
+  private async undoLocal(
+    writes: readonly PendingWrite[],
+    program?: { readonly written: LocalProgram; readonly previous: LocalProgram | undefined },
+  ): Promise<void> {
+    await this.db.transaction('rw', this.db.routines, this.db.program, async () => {
       for (const { written, previous } of writes) {
         const current = await this.db.routines.get(written.id);
         if (current === undefined || current.clientUpdatedAt !== written.clientUpdatedAt) continue;
         if (previous) await this.db.routines.put(previous);
         else await this.db.routines.delete(written.id);
+      }
+      if (program) {
+        const current = await this.db.program.get(ACTIVE_PROGRAM_ID);
+        if (current?.clientUpdatedAt === program.written.clientUpdatedAt) {
+          if (program.previous) await this.db.program.put(program.previous);
+          else await this.db.program.delete(ACTIVE_PROGRAM_ID);
+        }
       }
     });
     this.touch();

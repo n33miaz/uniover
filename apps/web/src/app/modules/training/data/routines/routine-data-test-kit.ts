@@ -20,6 +20,7 @@ export const TEMPLATES_DTO: RoutineTemplatesDto = {
       routines: [
         {
           name: 'A · Peito',
+          weekdays: null,
           items: [
             {
               exerciseSlug: 'supino',
@@ -41,6 +42,7 @@ export const TEMPLATES_DTO: RoutineTemplatesDto = {
         },
         {
           name: 'B · Braços',
+          weekdays: null,
           items: [
             {
               exerciseSlug: 'rosca',
@@ -111,6 +113,8 @@ export function routineDto(id: string, overrides: Partial<RoutineDto> = {}): Rou
     name: 'A',
     position: 0,
     active: true,
+    programId: null,
+    weekdays: [],
     note: null,
     items: [],
     updatedAt: '2026-10-01T10:00:00.0000000+00:00',
