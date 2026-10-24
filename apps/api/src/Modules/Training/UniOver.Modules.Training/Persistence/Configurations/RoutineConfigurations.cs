@@ -23,6 +23,8 @@ internal sealed class RoutineConfiguration : IEntityTypeConfiguration<Routine>
         e.Property(x => x.UserId).IsRequired();
         e.Property(x => x.Name).HasMaxLength(RoutineLimits.NameMax).IsRequired();
         e.Property(x => x.Note).HasMaxLength(RoutineLimits.NoteMax);
+        e.Property(x => x.ProgramId).HasMaxLength(RoutineLimits.ProgramIdMax);
+        e.Property(x => x.Weekdays).HasColumnType("integer[]");
 
         // A ordem do cursor da leitura incremental, sempre dentro de um usuário.
         e.HasIndex(x => new { x.UserId, x.UpdatedAt, x.Id });
@@ -33,6 +35,19 @@ internal sealed class RoutineConfiguration : IEntityTypeConfiguration<Routine>
         // Os itens moram e morrem com a rotina (mesmo schema, então a chave estrangeira é permitida).
         e.HasMany(x => x.Items).WithOne().HasForeignKey(i => i.RoutineId).OnDelete(DeleteBehavior.Cascade);
         e.Ignore(x => x.IsDeleted);
+    }
+}
+
+internal sealed class TrainingProgramConfiguration : IEntityTypeConfiguration<TrainingProgram>
+{
+    public void Configure(EntityTypeBuilder<TrainingProgram> e)
+    {
+        e.ToTable("programs");
+        // Um programa por pessoa: a chave primária recusa a segunda inserção simultânea, quem perde relê e decide de novo.
+        e.HasKey(x => x.UserId);
+        e.Property(x => x.UserId).ValueGeneratedNever();
+        e.Property(x => x.ProgramId).HasMaxLength(RoutineLimits.ProgramIdMax).IsRequired();
+        e.Property(x => x.ClientUpdatedAt).IsConcurrencyToken();
     }
 }
 

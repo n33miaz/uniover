@@ -21,6 +21,8 @@ public sealed class TrainingDbContext(DbContextOptions<TrainingDbContext> option
 
     internal DbSet<CatalogMeta> CatalogMeta => Set<CatalogMeta>();
 
+    internal DbSet<Domain.Routines.TrainingProgram> Programs => Set<Domain.Routines.TrainingProgram>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);

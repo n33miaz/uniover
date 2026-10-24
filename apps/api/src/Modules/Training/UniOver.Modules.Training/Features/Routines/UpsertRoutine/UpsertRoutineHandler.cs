@@ -120,6 +120,9 @@ internal sealed class UpsertRoutineHandler(TrainingDbContext db, CatalogSeeder s
         row.Position = command.Position;
         row.Active = command.Active;
         row.Note = command.Note;
+        // Programa e dias só mudam quando o pedido os traz: um aparelho antigo, que não os conhece, não os apaga.
+        if (command.ProgramId is not null) row.ProgramId = command.ProgramId;
+        if (command.Weekdays is not null) row.Weekdays = command.Weekdays;
         row.ClientUpdatedAt = command.ClientUpdatedAt;
         row.UpdatedAt = now;
 
@@ -190,7 +193,9 @@ internal sealed class UpsertRoutineHandler(TrainingDbContext db, CatalogSeeder s
             && row.Name == command.Name
             && row.Position == command.Position
             && row.Active == command.Active
-            && row.Note == command.Note;
+            && row.Note == command.Note
+            && (command.ProgramId is null || row.ProgramId == command.ProgramId)
+            && (command.Weekdays is null || row.Weekdays.SequenceEqual(command.Weekdays));
         if (!header)
         {
             return false;
