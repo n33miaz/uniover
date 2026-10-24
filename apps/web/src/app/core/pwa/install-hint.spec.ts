@@ -1,6 +1,7 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Navigation, Router } from '@angular/router';
+import { EMPTY } from 'rxjs';
 import { SessionState } from '../session/session-state';
 import { InstallEnvInput } from './install-env';
 import { INSTALL_HINT_DELAY_MS, INSTALL_HINT_MAX_ATTEMPTS, InstallHint } from './install-hint';
@@ -34,7 +35,7 @@ describe('InstallHint', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: INSTALL_ENV, useValue: env },
-        { provide: Router, useValue: { currentNavigation: navigation } },
+        { provide: Router, useValue: { currentNavigation: navigation, events: EMPTY } },
       ],
     });
     const session = TestBed.inject(SessionState);

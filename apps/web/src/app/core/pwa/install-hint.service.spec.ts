@@ -1,9 +1,14 @@
 import { TestBed } from '@angular/core/testing';
+import { NavigationEnd, Router } from '@angular/router';
+import { Subject } from 'rxjs';
 import { InstallEnvInput } from './install-env';
 import {
   INSTALL_ENV,
   INSTALL_HINT_KEY,
   INSTALL_HINT_SNOOZE_MS,
+  INSTALL_INTENT_KEY,
+  INSTALL_NAVIGATE,
+  INSTALL_OFFER_WAIT_MS,
   InstallHintService,
   InstallMode,
 } from './install-hint.service';
@@ -340,6 +345,165 @@ describe('InstallHintService', () => {
       service.openAuto();
       service.open();
       expect(service.sheet()).toBe('auto');
+    });
+  });
+
+  describe('por módulo', () => {
+    const navigations: string[] = [];
+    let events: Subject<unknown>;
+
+    /** Cria o serviço com o documento carregado em `loadedAt`, e um roteador falso para navegar por dentro. */
+    function createAt(loadedAt: string, env: InstallEnvInput): InstallHintService {
+      history.replaceState(null, '', loadedAt);
+      events = new Subject();
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: INSTALL_ENV, useValue: env },
+          { provide: Router, useValue: { events } },
+          { provide: INSTALL_NAVIGATE, useValue: (url: string) => navigations.push(url) },
+        ],
+      });
+      const service = TestBed.inject(InstallHintService);
+      service.start();
+      return service;
+    }
+    const goTo = (url: string) => events.next(new NavigationEnd(1, url, url));
+
+    beforeEach(() => navigations.splice(0));
+    afterEach(() => {
+      history.replaceState(null, '', '/');
+      sessionStorage.removeItem(INSTALL_INTENT_KEY);
+    });
+
+    it('a raiz instalada não suprime a dica do Treino', () => {
+      localStorage.setItem(INSTALL_HINT_KEY, JSON.stringify({ installed: true, never: true }));
+      const service = createAt('/', { userAgent: UA.safari });
+      expect(service.autoEligible()).toBe(false);
+      goTo('/treino/hoje');
+      expect(service.autoEligible()).toBe(true);
+    });
+
+    it('"nunca" e "agora não" de um módulo não valem para a raiz', () => {
+      const service = createAt('/treino/', { userAgent: UA.safari });
+      service.never();
+      expect(JSON.parse(localStorage.getItem(`${INSTALL_HINT_KEY}.treino`)!)).toEqual({
+        never: true,
+      });
+      expect(localStorage.getItem(INSTALL_HINT_KEY)).toBeNull();
+      goTo('/');
+      expect(service.autoEligible()).toBe(true);
+    });
+
+    it('instalar marca só o app do documento', () => {
+      const service = createAt('/treino/', { userAgent: UA.safari });
+      service.acknowledgeInstalled();
+      expect(localStorage.getItem(INSTALL_HINT_KEY)).toBeNull();
+      expect(JSON.parse(localStorage.getItem(`${INSTALL_HINT_KEY}.treino`)!)).toEqual({
+        installed: true,
+      });
+    });
+
+    it('aberto como app instalado (standalone) a folha nunca abre sozinha, com a memória vazia', () => {
+      const service = createAt('/treino/', { userAgent: UA.safari, standalone: true });
+      expect(service.mode()).toBe('none');
+      expect(service.autoEligible()).toBe(false);
+      expect(service.autoOpenAllowed()).toBe(false);
+    });
+
+    it('o pedido guardado no documento da raiz não instala o Treino: faz carga completa em /treino/', async () => {
+      const service = createAt('/', { userAgent: UA.android });
+      const event = installPromptEvent();
+      window.dispatchEvent(event);
+      expect(service.mode()).toBe('native');
+      goTo('/treino/hoje');
+      expect(service.mode()).toBe('native');
+      expect(await service.prompt()).toBe('reloading');
+      expect(event.prompt).not.toHaveBeenCalled();
+      expect(navigations).toEqual([
+        `/treino/?instalar=${sessionStorage.getItem(INSTALL_INTENT_KEY)}`,
+      ]);
+      expect(sessionStorage.getItem(INSTALL_INTENT_KEY)).toBeTruthy();
+    });
+
+    it('no escopo do próprio documento usa o pedido nativo', async () => {
+      const service = createAt('/treino/', { userAgent: UA.android });
+      window.dispatchEvent(installPromptEvent());
+      goTo('/treino/historico');
+      expect(await service.prompt()).toBe('accepted');
+      expect(navigations).toEqual([]);
+    });
+
+    it('pedido para a raiz, vindo de um documento do Treino, recarrega o endereço atual da raiz, com busca e fragmento', async () => {
+      const service = createAt('/treino/', { userAgent: UA.android });
+      window.dispatchEvent(installPromptEvent());
+      history.replaceState(null, '', '/ajustes/aparencia?aba=2#topo');
+      goTo('/ajustes/aparencia?aba=2#topo');
+      expect(await service.prompt()).toBe('reloading');
+      const token = sessionStorage.getItem(INSTALL_INTENT_KEY);
+      expect(navigations).toEqual([`/ajustes/aparencia?aba=2&instalar=${token}#topo`]);
+    });
+
+    it('marcador de um link externo (sem o código gravado pelo botão) é só tirado do endereço: a folha não abre', () => {
+      vi.useFakeTimers();
+      try {
+        const service = createAt('/treino/?instalar=1&x=1#a', { userAgent: UA.android });
+        expect(location.pathname + location.search + location.hash).toBe('/treino/?x=1#a');
+        window.dispatchEvent(installPromptEvent());
+        vi.advanceTimersByTime(INSTALL_OFFER_WAIT_MS);
+        expect(service.sheet()).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('o código é de uso único: o de outra carga, ou o já usado, não vale', () => {
+      sessionStorage.setItem(INSTALL_INTENT_KEY, 'abc');
+      const first = createAt('/treino/?instalar=abc', { userAgent: UA.android });
+      window.dispatchEvent(installPromptEvent());
+      expect(first.sheet()).toBe('manual');
+      expect(sessionStorage.getItem(INSTALL_INTENT_KEY)).toBeNull();
+      TestBed.resetTestingModule();
+      const second = createAt('/treino/?instalar=abc', { userAgent: UA.android });
+      window.dispatchEvent(installPromptEvent());
+      expect(second.sheet()).toBeNull();
+    });
+
+    it('depois da carga com marcador: tira o marcador do endereço e abre a folha quando o pedido chega', () => {
+      sessionStorage.setItem(INSTALL_INTENT_KEY, 'tok');
+      const service = createAt('/treino/?instalar=tok&x=1#a', { userAgent: UA.android });
+      expect(location.pathname + location.search + location.hash).toBe('/treino/?x=1#a');
+      expect(service.sheet()).toBeNull();
+      window.dispatchEvent(installPromptEvent());
+      expect(service.sheet()).toBe('manual');
+    });
+
+    it('com marcador mas sem pedido do navegador, abre a folha depois da espera', () => {
+      vi.useFakeTimers();
+      try {
+        sessionStorage.setItem(INSTALL_INTENT_KEY, 'tok');
+        const service = createAt('/treino/?instalar=tok', { userAgent: UA.android });
+        vi.advanceTimersByTime(INSTALL_OFFER_WAIT_MS);
+        expect(service.sheet()).toBe('manual');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('a folha automática abre uma vez por app: depois da raiz, o Treino ganha a sua vez', () => {
+      const service = createAt('/', { userAgent: UA.safari });
+      service.openAuto();
+      service.closeSheet();
+      expect(service.autoEligible()).toBe(false);
+      goTo('/treino');
+      expect(service.autoEligible()).toBe(true);
+    });
+
+    it('navegar entre módulos continua sendo navegação interna (sem recarregar)', () => {
+      const service = createAt('/', { userAgent: UA.android });
+      goTo('/tv');
+      goTo('/treino');
+      expect(navigations).toEqual([]);
+      expect(service.sheet()).toBeNull();
     });
   });
 });

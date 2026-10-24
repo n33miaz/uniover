@@ -1,5 +1,8 @@
 import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Injectable, InjectionToken, computed, inject, signal } from '@angular/core';
+import { NavigationEnd, Router } from '@angular/router';
+import { filter } from 'rxjs';
+import { ScopedModuleSlug } from '../modules/module-slugs';
 import {
   InstallEnvInput,
   isAndroid,
@@ -9,6 +12,7 @@ import {
   isStandalone,
   readInstallEnv,
 } from './install-env';
+import { moduleScopeOf } from './module-head.service';
 
 /**
  * Como a pessoa instala neste aparelho agora: `none` não há o que oferecer (já instalado, computador sem instalação
@@ -20,8 +24,49 @@ import {
 export type InstallMode =
   'none' | 'native' | 'android-manual' | 'ios-safari' | 'ios-other' | 'ios-in-app';
 
-/** Resultado de pedir a instalação nativa. `unavailable`: não havia pedido guardado, ou o navegador o recusou. */
-export type InstallOutcome = 'accepted' | 'dismissed' | 'unavailable';
+/**
+ * Resultado de pedir a instalação nativa. `unavailable`: não havia pedido guardado, ou o navegador o recusou.
+ * `reloading`: o pedido guardado é de outro app (o documento abriu com o manifest de outro escopo); a página está
+ * sendo recarregada na raiz do módulo certo e a folha reabre lá.
+ */
+export type InstallOutcome = 'accepted' | 'dismissed' | 'unavailable' | 'reloading';
+
+/** Escopo de um app instalável: a raiz (`root`) ou um módulo com manifest próprio. */
+export type InstallScope = 'root' | ScopedModuleSlug;
+
+/**
+ * Marcador de endereço: "esta carga foi pedida para instalar"; some do endereço assim que a página o lê. Traz um
+ * código de uso único, que o botão grava na sessão (`INSTALL_INTENT_KEY`) antes de recarregar: um link externo com
+ * `?instalar=...` não bate com nada e não abre a folha.
+ */
+export const INSTALL_MARKER_PARAM = 'instalar';
+
+/** Chave da sessão (some ao fechar a aba) com o código da recarga pedida pelo botão. */
+export const INSTALL_INTENT_KEY = 'uniover.install-intent';
+
+function newIntentToken(): string {
+  try {
+    return globalThis.crypto.randomUUID();
+  } catch {
+    return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+/** Quanto esperar o pedido do navegador depois de uma carga pedida para instalar, antes de abrir a folha assim mesmo (ms). */
+export const INSTALL_OFFER_WAIT_MS = 2500;
+
+/** Troca de página inteira; os testes trocam por um espião (o jsdom não navega). */
+export const INSTALL_NAVIGATE = new InjectionToken<(url: string) => void>('INSTALL_NAVIGATE', {
+  providedIn: 'root',
+  factory: () => {
+    const win = inject(DOCUMENT).defaultView;
+    return (url) => win?.location.assign(url);
+  },
+});
+
+function scopeOfPath(path: string): InstallScope {
+  return moduleScopeOf(path) ?? 'root';
+}
 
 /** O evento `beforeinstallprompt` (ainda não está nos tipos do TypeScript: é do Chromium). */
 export interface InstallPromptEvent extends Event {
@@ -35,8 +80,17 @@ export const INSTALL_ENV = new InjectionToken<InstallEnvInput>('INSTALL_ENV', {
   factory: () => readInstallEnv(inject(DOCUMENT).defaultView),
 });
 
-/** Chave da memória da dica neste aparelho. A versão no nome deixa trocar o formato sem ler lixo antigo. */
+/**
+ * Chave da memória da dica da raiz neste aparelho. A versão no nome deixa trocar o formato sem ler lixo antigo. Era a
+ * única chave por origem; ficou como a da raiz e cada módulo ganhou a sua (`installHintKey`): o que a pessoa disse
+ * do UniOver geral (instalado, "nunca") não vale para o Treino nem para a TV, que são outros apps.
+ */
 export const INSTALL_HINT_KEY = 'uniover.install-hint.v1';
+
+/** Chave da memória de um escopo: a antiga para a raiz, `<antiga>.<módulo>` para cada módulo. */
+export function installHintKey(scope: InstallScope): string {
+  return scope === 'root' ? INSTALL_HINT_KEY : `${INSTALL_HINT_KEY}.${scope}`;
+}
 
 /** Depois de "Agora não" a folha não volta sozinha por este tempo (14 dias). */
 export const INSTALL_HINT_SNOOZE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -50,9 +104,9 @@ interface HintMemory {
   readonly installed?: boolean;
 }
 
-function readMemory(): HintMemory {
+function readMemory(scope: InstallScope): HintMemory {
   try {
-    const raw = globalThis.localStorage?.getItem(INSTALL_HINT_KEY);
+    const raw = globalThis.localStorage?.getItem(installHintKey(scope));
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return {};
@@ -68,10 +122,9 @@ function readMemory(): HintMemory {
   }
 }
 
-function writeMemory(memory: HintMemory | null): void {
+function writeMemory(scope: InstallScope, memory: HintMemory): void {
   try {
-    if (memory) globalThis.localStorage?.setItem(INSTALL_HINT_KEY, JSON.stringify(memory));
-    else globalThis.localStorage?.removeItem(INSTALL_HINT_KEY);
+    globalThis.localStorage?.setItem(installHintKey(scope), JSON.stringify(memory));
   } catch {
     // Sem armazenamento (modo privado, dados bloqueados): a memória vale só até recarregar a página.
   }
@@ -92,11 +145,39 @@ export class InstallHintService {
   private started = false;
   private teardown: (() => void) | null = null;
 
+  // Alguns consumidores isolados da dica não precisam de rotas; na aplicação o Router sempre está presente.
+  private readonly router = inject(Router, { optional: true });
+  private readonly navigate = inject(INSTALL_NAVIGATE);
+
+  /**
+   * De qual app é este documento: o escopo do endereço com que ele foi CARREGADO (o servidor escolhe o manifest pelo
+   * primeiro segmento). O Chromium só avalia a instalabilidade e entrega `beforeinstallprompt` nessa carga; trocar o
+   * `<link rel="manifest">` depois não refaz a conta. Então o pedido guardado vale para este escopo, mesmo que a
+   * navegação interna já tenha levado a outro módulo.
+   */
+  private readonly loadScope: InstallScope = scopeOfPath(this.win?.location.pathname ?? '/');
+  /** O escopo da tela aberta agora (muda com a navegação interna sem recarregar). */
+  private readonly scope = signal<InstallScope>(this.loadScope);
+  /** Escopos em que a pessoa confirmou, nesta página, que o app já está instalado. */
+  private readonly ackedScopes = signal<ReadonlySet<InstallScope>>(new Set());
+  /** Uma carga pedida para instalar (marcador no endereço): a folha deve abrir assim que o pedido chegar. */
+  private offerOnLoad = false;
+  private offerTimer: ReturnType<typeof setTimeout> | undefined;
+
   private readonly promptEvent = signal<InstallPromptEvent | null>(null);
   private readonly standalone = signal(isStandalone(this.env));
-  private readonly memory = signal<HintMemory>(readMemory());
-  /** A folha automática já abriu nesta página: mesmo sem armazenamento ela não repete. */
-  private readonly autoShown = signal(false);
+  private readonly memories = signal<Readonly<Partial<Record<InstallScope, HintMemory>>>>({});
+  /** A memória do escopo aberto; lê o armazenamento só na primeira vez de cada escopo. */
+  private readonly memory = computed(
+    () => this.memories()[this.scope()] ?? readMemory(this.scope()),
+  );
+  /**
+   * A tela aberta é de outro app que não o do documento carregado: o pedido guardado (se houver) é do app errado e a
+   * instalação só dá certo depois de uma carga completa no escopo certo.
+   */
+  private readonly crossScope = computed(() => this.scope() !== this.loadScope);
+  /** A folha automática já abriu nesta página para este app (cada módulo tem a sua vez): mesmo sem armazenamento ela não repete. */
+  private readonly autoShown = signal<ReadonlySet<InstallScope>>(new Set());
   /** Quantas telas pediram para a folha automática esperar (o treino ao vivo, por exemplo). */
   private readonly holds = signal(0);
   private readonly _sheet = signal<'auto' | 'manual' | null>(null);
@@ -105,8 +186,13 @@ export class InstallHintService {
   readonly mobile = isMobileDevice(this.env);
 
   readonly mode = computed<InstallMode>(() => {
-    if (this.standalone()) return 'none';
-    if (this.promptEvent()) return 'native';
+    if (this.standalone() || this.ackedScopes().has(this.scope())) return 'none';
+    if (this.crossScope()) {
+      // Fora do iOS (que instala pelo Compartilhar e lê o manifest na hora), o botão "Instalar" faz a carga completa
+      // no escopo certo. Sem pedido guardado e fora do Android (computador com o app geral já instalado, por
+      // exemplo) não há como oferecer nada com segurança.
+      if (!isIos(this.env) && (this.promptEvent() || isAndroid(this.env))) return 'native';
+    } else if (this.promptEvent()) return 'native';
     if (isAndroid(this.env)) return 'android-manual';
     if (!isIos(this.env)) return 'none';
     switch (iosBrowser(this.env)) {
@@ -146,13 +232,14 @@ export class InstallHintService {
       this.mode() !== 'none' &&
       !this.memory().never &&
       !this.memory().installed &&
-      !this.autoShown() &&
+      !this.autoShown().has(this.scope()) &&
       !this.autoHeld(),
   );
 
   constructor() {
-    // O iOS não dispara `appinstalled`; abrir como app é a confirmação durável de que a instalação deu certo.
-    if (this.standalone()) this.acknowledgeInstalled();
+    // O iOS não dispara `appinstalled`; abrir como app é a confirmação durável de que a instalação deu certo. Vale
+    // para o app deste documento (`loadScope`), nunca para os outros: o armazenamento é por origem, a instalação não.
+    if (this.standalone()) this.acknowledgeInstalled(this.loadScope);
     inject(DestroyRef).onDestroy(() => this.stop());
   }
 
@@ -162,22 +249,60 @@ export class InstallHintService {
     if (this.started || !win) return;
     this.started = true;
 
+    // Tem de vir antes de o roteador ler o endereço (este método roda no inicializador do app).
+    this.offerOnLoad = this.consumeMarker(win);
+
     const onPrompt = (event: Event) => {
       // Guarda o pedido para a pessoa decidir na hora certa; sem isto o Chromium mostraria o dele na hora.
       event.preventDefault();
       this.promptEvent.set(event as InstallPromptEvent);
+      if (this.offerOnLoad) this.offerNow();
     };
-    const onInstalled = () => this.acknowledgeInstalled();
+    const onInstalled = () => this.acknowledgeInstalled(this.loadScope);
     win.addEventListener('beforeinstallprompt', onPrompt);
     win.addEventListener('appinstalled', onInstalled);
 
     // O app pode passar a rodar como instalado sem recarregar (a media query muda).
     const query = this.listenStandalone();
+    // O escopo da tela segue a navegação interna; o do documento (`loadScope`) fica o da carga.
+    const navigation = this.router?.events
+      .pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd))
+      .subscribe((event) => this.scope.set(scopeOfPath(event.urlAfterRedirects)));
+    // Carga pedida para instalar mas o navegador não entregou o pedido (já instalado, sem suporte): abre a folha
+    // mesmo assim, que mostra o caminho manual ou nada, conforme o modo.
+    if (this.offerOnLoad)
+      this.offerTimer = setTimeout(() => this.offerNow(), INSTALL_OFFER_WAIT_MS);
     this.teardown = () => {
       win.removeEventListener('beforeinstallprompt', onPrompt);
       win.removeEventListener('appinstalled', onInstalled);
       query?.();
+      navigation?.unsubscribe();
+      clearTimeout(this.offerTimer);
     };
+  }
+
+  /** Lê e tira o marcador de "instalar" do endereço (sem recarregar nem mexer no histórico). */
+  private consumeMarker(win: Window): boolean {
+    try {
+      const url = new URL(win.location.href);
+      const token = url.searchParams.get(INSTALL_MARKER_PARAM);
+      if (token === null) return false;
+      url.searchParams.delete(INSTALL_MARKER_PARAM);
+      win.history.replaceState(win.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+      // O código é de uso único: vale o que o botão gravou antes de recarregar, e só uma vez.
+      const expected = win.sessionStorage?.getItem(INSTALL_INTENT_KEY);
+      win.sessionStorage?.removeItem(INSTALL_INTENT_KEY);
+      return token !== '' && token === expected;
+    } catch {
+      return false;
+    }
+  }
+
+  private offerNow(): void {
+    if (!this.offerOnLoad) return;
+    this.offerOnLoad = false;
+    clearTimeout(this.offerTimer);
+    this.open();
   }
 
   private stop(): void {
@@ -191,7 +316,7 @@ export class InstallHintService {
       const mql = this.win?.matchMedia?.('(display-mode: standalone)');
       if (!mql?.addEventListener) return null;
       const onChange = () => {
-        if (mql.matches) this.acknowledgeInstalled();
+        if (mql.matches) this.acknowledgeInstalled(this.loadScope);
       };
       mql.addEventListener('change', onChange);
       return () => mql.removeEventListener('change', onChange);
@@ -227,10 +352,14 @@ export class InstallHintService {
     };
   }
 
+  private markShown(): void {
+    this.autoShown.update((shown) => new Set(shown).add(this.scope()));
+  }
+
   /** Abre a folha sozinha; conta como "já mostrada nesta página". */
   openAuto(): void {
     if (this._sheet() !== null) return;
-    this.autoShown.set(true);
+    this.markShown();
     this._sheet.set('auto');
   }
 
@@ -240,7 +369,7 @@ export class InstallHintService {
    */
   open(): void {
     if (this.mode() === 'none' || this._sheet() !== null) return;
-    this.autoShown.set(true);
+    this.markShown();
     this._sheet.set('manual');
   }
 
@@ -251,23 +380,35 @@ export class InstallHintService {
 
   /** "Agora não" (ou Esc): não volta sozinha por 14 dias. */
   dismiss(now: number = Date.now()): void {
-    this.remember({ ...this.memory(), dismissedAt: now });
+    this.remember(this.scope(), { ...this.memory(), dismissedAt: now });
   }
 
   /** "Não mostrar de novo": a folha nunca mais abre sozinha (as linhas de Ajustes e Personalizar continuam). */
   never(): void {
-    this.remember({ ...this.memory(), never: true });
+    this.remember(this.scope(), { ...this.memory(), never: true });
   }
 
-  /** O app foi instalado ou a instalação foi aceita: não oferece a dica automática neste aparelho. */
-  acknowledgeInstalled(): void {
-    this.standalone.set(true);
-    this.promptEvent.set(null);
-    this.remember({ installed: true });
+  /**
+   * O app foi instalado ou a instalação foi aceita: não oferece a dica automática deste app neste aparelho. Sem
+   * argumento vale o app da tela aberta (a pessoa disse "já instalei"); os sinais do navegador passam o do documento.
+   */
+  acknowledgeInstalled(scope: InstallScope = this.scope()): void {
+    if (scope === this.loadScope) {
+      // O pedido guardado e o modo `standalone` são do app do documento.
+      this.standalone.set(true);
+      this.promptEvent.set(null);
+    }
+    this.ackedScopes.update((acked) => new Set(acked).add(scope));
+    this.remember(scope, { installed: true });
   }
 
-  /** Pede a instalação nativa. Só existe no modo `native`; o pedido do navegador vale uma vez. */
+  /**
+   * Pede a instalação nativa. Só existe no modo `native`; o pedido do navegador vale uma vez. Se o documento foi
+   * carregado com o manifest de outro app, o pedido guardado instalaria o app errado: recarrega a página inteira na raiz
+   * do escopo da tela (com o marcador) e a folha reabre lá, com o pedido certo.
+   */
   async prompt(): Promise<InstallOutcome> {
+    if (this.crossScope()) return this.reloadIntoScope();
     const event = this.promptEvent();
     if (!event) return 'unavailable';
     // O pedido só pode ser usado uma vez: o navegador entrega outro quando achar que cabe.
@@ -276,15 +417,33 @@ export class InstallHintService {
       await event.prompt();
       const { outcome } = await event.userChoice;
       if (outcome === 'dismissed') this.dismiss();
-      else this.acknowledgeInstalled();
+      else this.acknowledgeInstalled(this.loadScope);
       return outcome;
     } catch {
       return 'unavailable';
     }
   }
 
-  private remember(memory: HintMemory): void {
-    this.memory.set(memory);
-    writeMemory(memory);
+  private reloadIntoScope(): InstallOutcome {
+    const win = this.win;
+    if (!win) return 'unavailable';
+    const scope = this.scope();
+    const token = newIntentToken();
+    try {
+      win.sessionStorage.setItem(INSTALL_INTENT_KEY, token);
+    } catch {
+      // Sem armazenamento na sessão: a recarga acontece, mas a folha não reabre sozinha depois dela.
+    }
+    // Módulo: a raiz dele (`/treino/`). Raiz do UniOver: o endereço atual por inteiro (a tela aberta é um Ajuste, por
+    // exemplo), que não deve jogar a pessoa de volta no início nem perder busca e fragmento.
+    const url = new URL(scope === 'root' ? win.location.href : `/${scope}/`, win.location.origin);
+    url.searchParams.set(INSTALL_MARKER_PARAM, token);
+    this.navigate(`${url.pathname}${url.search}${url.hash}`);
+    return 'reloading';
+  }
+
+  private remember(scope: InstallScope, memory: HintMemory): void {
+    this.memories.update((all) => ({ ...all, [scope]: memory }));
+    writeMemory(scope, memory);
   }
 }

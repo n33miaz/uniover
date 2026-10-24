@@ -40,6 +40,11 @@ export function moduleScopeOf(path: string): ScopedModuleSlug | null {
  * O servidor só escolhe isso ao entregar o HTML. Quem entra por `/convite` ou `/entrar` recebe o manifest da raiz e,
  * depois, o roteador leva para `/tv` sem recarregar a página: o documento seguiria com o ícone e o nome do UniOver, e
  * o "Adicionar à Tela de Início" feito ali gravaria o app errado. Por isso o escopo é recalculado a cada navegação.
+ *
+ * A troca do `<link rel="manifest">` serve ao iOS, que lê o link, o ícone e o título no momento do "Adicionar à Tela de
+ * Início". No Chromium ela NÃO basta: a instalabilidade e o `beforeinstallprompt` valem para o manifest da carga da página,
+ * então a instalação nativa de outro módulo exige carga completa (`InstallHintService` cuida disso, com um marcador no
+ * endereço). Por isso o link continua sendo trocado: no iOS é o que faz o atalho sair com o nome e o ícone certos.
  */
 @Injectable({ providedIn: 'root' })
 export class ModuleHeadService {
