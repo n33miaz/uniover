@@ -1,5 +1,11 @@
 import { Component, InjectionToken, computed, inject, input, signal } from '@angular/core';
-import { AppIconSubject, fallbackGlyph, fallbackHue, iconSource } from './app-icon-source';
+import {
+  AppIconSubject,
+  fallbackGlyph,
+  fallbackHue,
+  iconSource,
+  samsungIconSource,
+} from './app-icon-source';
 import {
   IconPixelReader,
   cachedIconFit,
@@ -42,7 +48,9 @@ export class AppIcon {
   /** Sobe a cada medida feita: o cache em memória não é um signal, e este faz o ajuste reler o que ele guarda. */
   private readonly measured = signal(0);
 
-  private readonly declared = computed(() => iconSource(this.shortcut().iconDataUri));
+  private readonly declared = computed(
+    () => iconSource(this.shortcut().iconDataUri) ?? samsungIconSource(this.shortcut().package),
+  );
   protected readonly source = computed(() => {
     const uri = this.declared();
     return uri && uri !== this.failed() ? uri : null;
