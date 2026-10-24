@@ -283,7 +283,7 @@ test.describe('iPhone, Safari fora da tela de início', () => {
       await sheet.getByRole('button', { name: 'Agora não' }).click();
       await expect(sheetOf(page)).toHaveCount(0);
       const memory = await page.evaluate(() =>
-        JSON.parse(localStorage.getItem('uniover.install-hint.v1') ?? 'null'),
+        JSON.parse(localStorage.getItem('uniover.install-hint.v1.treino') ?? 'null'),
       );
       expect(typeof memory?.dismissedAt).toBe('number');
 
@@ -305,7 +305,7 @@ test.describe('iPhone, Safari fora da tela de início', () => {
       await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
       await sheetOf(page).getByRole('button', { name: 'Agora não' }).click();
       // O "Agora não" adia por 14 dias: o teste apaga a memória para provar só o efeito do treino aberto.
-      await page.evaluate(() => localStorage.removeItem('uniover.install-hint.v1'));
+      await page.evaluate(() => localStorage.removeItem('uniover.install-hint.v1.treino'));
 
       // Deixa o banco do Treino pronto e planta um treino aberto neste aparelho (como o app restaurado no meio da série).
       await expect
