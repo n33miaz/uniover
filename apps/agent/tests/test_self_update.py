@@ -158,7 +158,9 @@ def test_a_failed_quick_check_refuses_the_update_and_keeps_the_previous_version(
 
 
 def test_a_version_blocked_by_the_wrapper_is_not_downloaded(installed: Installation) -> None:
-    (installed.base / module.BLOCKED_VERSIONS_FILE).write_text(NEW + "\n", encoding="utf-8")
+    runtime = installed.base / "runtime"
+    runtime.mkdir()
+    (runtime / module.BLOCKED_VERSIONS_FILE).write_text(NEW + "\n", encoding="utf-8")
     result = installed.update(NEW)
     assert not result.updated
     assert installed.downloads == []
@@ -437,6 +439,6 @@ def test_the_self_update_command_always_exits_zero_and_says_what_happened(
     monkeypatch.setattr(main_module, "self_update", fake)
     assert main(["self-update", "--no-sync"]) == EXIT_OK
     assert "sem rede" in capsys.readouterr().out
-    assert seen == {"source": tmp_path / "localappdata" / "UniOver" / "agent-src", "sync": False}
+    assert seen == {"source": tmp_path / "localappdata" / "UniOver" / "app", "sync": False}
     assert main(["self-update"]) == EXIT_OK
     assert seen["sync"] is True
