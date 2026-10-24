@@ -19,6 +19,7 @@ from typing import Protocol
 
 from androidtvremote2 import AndroidTVRemote, CannotConnect, ConnectionClosed, InvalidAuth
 
+from uniover_agent.adapters.process import run_hidden
 from uniover_agent.adapters.tv_remote_v2 import CERT_FILE, KEY_FILE
 
 _log = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ def restrict_to_current_user(directory: Path) -> None:
     icacls = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "icacls.exe"
     grant = f"{getpass.getuser()}:(OI)(CI)F"
     try:
-        subprocess.run(  # noqa: S603 - executável do sistema, argumentos fixos
+        run_hidden(
             [str(icacls), str(directory), "/inheritance:r", "/grant:r", grant],
             check=True,
             capture_output=True,

@@ -55,6 +55,8 @@ _log = logging.getLogger(__name__)
 MAX_ENVELOPE_BYTES: Final = 60_000
 # Respiro entre um APK e o seguinte: deixa passar o que for interativo e poupa a TV (48 MB livres).
 PAUSE_BETWEEN_APKS_SECONDS: Final = 0.5
+# As versões dos apps lidas da TV valem um dia num reenvio da lista (reconexão com a API).
+VERSIONS_TTL_SECONDS: Final = 86400.0
 # `,"icon":{"mime":"image/webp","data":""}` sem os dados: folga fixa por ícone no cálculo do pacote.
 _ICON_FRAMING_BYTES: Final = 48
 # APKs de configuração por densidade (onde os PNG de alta resolução costumam ficar).
@@ -270,7 +272,7 @@ class IconResolver:
 class IconRequests(Protocol):
     """O que a publicação da lista pede ao publicador de ícones."""
 
-    def request(self, apps: Sequence[AppEntry]) -> None: ...
+    def request(self, apps: Sequence[AppEntry], *, refresh_versions: bool = True) -> None: ...
 
 
 def _fingerprint(icon: AppIcon) -> str:
@@ -289,6 +291,8 @@ class AppIconPublisher:
         is_hot: Callable[[], bool],
         sleep: Callable[[float], Awaitable[None]],
         pause: float = PAUSE_BETWEEN_APKS_SECONDS,
+        monotonic: Callable[[], float] | None = None,
+        versions_ttl: float = VERSIONS_TTL_SECONDS,
     ) -> None:
         self._resolver = resolver
         self._source = source
@@ -297,17 +301,26 @@ class AppIconPublisher:
         self._is_hot = is_hot
         self._sleep = sleep
         self._pause = pause
+        self._monotonic = monotonic
+        self._versions_ttl = versions_ttl
+        # Versões dos apps lidas da TV: reaproveitadas num reenvio (reconexão com a API) para não
+        # perguntar tudo de novo à TV por ADB; a lista pedida pelo app (ou 1 dia) as renova.
+        self._versions: dict[str, int] | None = None
+        self._versions_at = 0.0
+        self._refresh_versions = True
         self._latest: list[AppEntry] = []
         self._sent: dict[str, str] = {}
         self._trigger = asyncio.Event()
         self._dirty = False
         self._unfinished = False
 
-    def request(self, apps: Sequence[AppEntry]) -> None:
+    def request(self, apps: Sequence[AppEntry], *, refresh_versions: bool = True) -> None:
         """Nova lista publicada (`tv.apps.v1`): os ícones chegam de novo (do cache, se der).
 
-        Só marca e acorda a tarefa de fundo; nunca espera TV nem rede.
+        Só marca e acorda a tarefa de fundo; nunca espera TV nem rede. Sem `refresh_versions`
+        (a lista só foi reenviada numa reconexão), as versões já lidas da TV valem por um dia.
         """
+        self._refresh_versions = self._refresh_versions or refresh_versions
         self._latest = list(apps)
         self._sent.clear()
         self._dirty = True
@@ -336,7 +349,7 @@ class AppIconPublisher:
             return
         self._unfinished = False
         try:
-            versions = await self._source.package_versions()
+            versions = await self._package_versions()
         except AdbError as exc:
             _log.info("versões dos apps não obtidas (%s); ícones ficam para depois", exc.code)
             self._unfinished = True
@@ -378,6 +391,22 @@ class AppIconPublisher:
                 continue
             if icon is not None:
                 await self._publish(apps, [(app.package, icon)])
+
+    async def _package_versions(self) -> dict[str, int]:
+        now = self._monotonic() if self._monotonic is not None else None
+        fresh = (
+            self._versions is not None
+            and not self._refresh_versions
+            and now is not None
+            and now - self._versions_at < self._versions_ttl
+        )
+        if fresh and self._versions is not None:
+            return self._versions
+        versions = await self._source.package_versions()
+        self._versions = versions
+        self._versions_at = now if now is not None else 0.0
+        self._refresh_versions = False
+        return versions
 
     async def _publish(self, apps: list[AppEntry], ready: list[tuple[str, AppIcon]]) -> None:
         """Envia os ícones ainda não enviados, em quantas mensagens o orçamento de bytes exigir."""

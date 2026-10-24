@@ -22,6 +22,11 @@ from uniover_agent.ports import AdbError, Transport, TransportError, TvAdb
 _log = logging.getLogger(__name__)
 
 SEND_FAILED = "send_failed"
+# A lista de apps é consultada à TV no pareamento, quando o app pede e, no máximo, uma vez por dia.
+LIST_MAX_AGE_SECONDS = 86400.0
+LIST_RETRY_SECONDS = 3600.0
+# Sem lista nenhuma ainda: tenta de novo em 2, 5 e (no teto) 15 minutos.
+FIRST_LIST_RETRY_SECONDS = (120.0, 300.0, 900.0)
 
 
 class Wakeable(Protocol):
@@ -88,7 +93,8 @@ class TvApps:
             self._envelopes.tv_apps([(app.package, app.label) for app in apps], correlation_id)
         )
         if self._icons is not None:
-            self._icons.request(apps)
+            # Reenvio numa reconexão (sem pedido do app) reaproveita as versões já lidas da TV.
+            self._icons.request(apps, refresh_versions=correlation_id is not None)
 
     async def launch_package(self, package: str) -> None:
         """Abre o app. `ValueError` se o nome do pacote não tem o formato do Android."""
@@ -124,9 +130,25 @@ class AppsAnnouncer:
     lista guardada, ela é reenviada na hora; senão espera a sessão ficar quente (`on_state`).
     """
 
-    def __init__(self, apps: AppsProvider, is_hot: Callable[[], bool]) -> None:
+    def __init__(
+        self,
+        apps: AppsProvider,
+        is_hot: Callable[[], bool],
+        *,
+        monotonic: Callable[[], float] | None = None,
+        max_age_seconds: float = LIST_MAX_AGE_SECONDS,
+        retry_seconds: float = LIST_RETRY_SECONDS,
+    ) -> None:
         self._apps = apps
         self._is_hot = is_hot
+        # Lista em cache vale um dia; uma consulta que falhou só é repetida depois de uma hora.
+        self._monotonic = monotonic
+        self._max_age = max_age_seconds
+        self._retry = retry_seconds
+        self._seen_cache: list[AppEntry] | None = None
+        self._seen_at = 0.0
+        self._retry_at = 0.0
+        self._failures = 0
         self._announced = False
         self._trigger = asyncio.Event()
 
@@ -149,20 +171,53 @@ class AppsAnnouncer:
                 # Nada aqui pode derrubar o agente; o próximo evento tenta de novo.
                 _log.exception("falha ao publicar a lista de apps da TV")
 
+    def _schedule_retry(self, *, has_cache: bool) -> None:
+        """Depois de uma consulta que falhou: uma hora de espera se já há lista (só a renovação
+        diária falhou); sem lista nenhuma, o app ficaria vazio, então tenta de novo em poucos
+        minutos, com espera crescente."""
+        self._failures += 1
+        if self._monotonic is None:
+            self._retry_at = 0.0  # sem relógio não há espera entre tentativas
+        elif has_cache:
+            self._retry_at = self._now() + self._retry
+        else:
+            steps = FIRST_LIST_RETRY_SECONDS
+            self._retry_at = self._now() + steps[min(self._failures - 1, len(steps) - 1)]
+
+    def _now(self) -> float:
+        return self._monotonic() if self._monotonic is not None else 0.0
+
+    def _cache_is_stale(self) -> bool:
+        """A lista guardada tem mais de um dia (contado de quando este vigia a viu)."""
+        cache = self._apps.cache
+        if cache is not self._seen_cache:
+            self._seen_cache, self._seen_at = cache, self._now()
+            return False
+        return self._monotonic is not None and self._now() - self._seen_at >= self._max_age
+
     async def _announce_once(self) -> None:
         if self._announced:
             return
         try:
-            if self._apps.cache is not None:
-                apps = self._apps.cache
-            elif self._is_hot():
+            cache = self._apps.cache
+            stale = cache is not None and self._cache_is_stale()
+            if cache is not None and not (
+                stale and self._is_hot() and self._now() >= self._retry_at
+            ):
+                apps = cache
+            elif self._is_hot() and self._now() >= self._retry_at:
                 apps = await self._apps.refresh()
+                self._seen_cache, self._seen_at = self._apps.cache, self._now()
+            elif cache is not None:
+                apps = cache
             else:
                 return
             await self._apps.publish(apps)
         except TvSessionError as exc:
+            self._schedule_retry(has_cache=self._apps.cache is not None)
             _log.warning("lista de apps da TV não obtida (%s)", exc.code)
         except TransportError as exc:
             _log.debug("lista de apps não enviada (%s)", exc)
         else:
             self._announced = True
+            self._failures = 0

@@ -26,7 +26,7 @@ from uniover_agent.adapters.apk_tools import (
     locate_aapt2,
 )
 from uniover_agent.adapters.installation import migrate_layout
-from uniover_agent.adapters.local_config import save_agent_config, update_config
+from uniover_agent.adapters.local_config import ConfigValue, save_agent_config, update_config
 from uniover_agent.adapters.pairing_http import HttpPairingClient, probe_api
 from uniover_agent.adapters.pairing_page import (
     can_open_browser,
@@ -44,17 +44,21 @@ from uniover_agent.adapters.tray_status import TrayStatus
 from uniover_agent.adapters.tv_adb import AdbTv, locate_adb
 from uniover_agent.adapters.tv_discovery import (
     ANDROID_REMOTE_PORT,
-    SAMSUNG_REST_PORT,
     DiscoveredTv,
     TvKindName,
     find_tvs,
-    same_tv,
     tcp_open,
+)
+from uniover_agent.adapters.tv_locate import (
+    build_liveness,
+    build_locator,
+    identify_tv,
 )
 from uniover_agent.adapters.tv_pairing import TvPairingError, is_paired, pair_tv
 from uniover_agent.adapters.tv_remote_v2 import AndroidTvRemoteV2
 from uniover_agent.adapters.tv_samsung import SamsungTvDriver
 from uniover_agent.adapters.tv_samsung_pairing import SamsungPairingError, pair_samsung_tv
+from uniover_agent.adapters.wol import send_wake_on_lan
 from uniover_agent.config import (
     ConfigError,
     Settings,
@@ -81,6 +85,8 @@ from uniover_agent.core import (
     TextReconciler,
     TvApps,
     TvCleanup,
+    TvIdentity,
+    TvKnown,
     TvRelocator,
     TvSessionManager,
     TvStatePublisher,
@@ -112,6 +118,8 @@ EXIT_NOT_PAIRED = 2
 EXIT_CREDENTIAL_REJECTED = 3
 # A TV mudou de endereço: `main` recomeça o `run` já com o endereço novo.
 EXIT_TV_MOVED = 4
+# De quanto em quanto tempo o vigia olha o ARP atrás do MAC da TV, enquanto não o aprendeu.
+ARP_LEARN_SECONDS = 600.0
 
 _NOT_PAIRED = "não pareado. Rode `uniover-agent pair` para parear este PC."
 
@@ -176,6 +184,8 @@ class TvSetup:
     text: TextReconciler | None = None
     # Comandos longos, atendidos em tarefa própria para não segurar as teclas atrás deles.
     background_commands: set[str] = field(default_factory=set)
+    # O que se sabe da TV (dica de identificador e MAC): o vigia do endereço e o Wake-on-LAN usam.
+    known: TvKnown = field(default_factory=TvKnown)
 
 
 def build_tv(
@@ -201,7 +211,12 @@ def build_tv(
         _log.warning("TV configurada, mas ainda não pareada. Rode `uniover-agent tv-pair`.")
         return None
     remote = AndroidTvRemoteV2(host, settings.tv_client_name, cert_dir)
-    manager = TvSessionManager(clock, remote, hibernate_seconds=settings.tv_hibernate_seconds)
+    manager = TvSessionManager(
+        clock,
+        remote,
+        hibernate_seconds=settings.tv_hibernate_seconds,
+        liveness=build_liveness("android", host),
+    )
     # `POWER` passa como as outras teclas: o app só o manda depois da folha de confirmação e a API
     # só o aceita pela rota própria de desligar. Sem emissor infravermelho a TV só volta com o
     # controle original, então o gerenciador de sessão não repete um `POWER` e nada aqui o reenvia.
@@ -230,6 +245,7 @@ def build_tv(
         },
         capabilities=["tv.remote", "tv.kind.android"],
         text=text,
+        known=TvKnown(settings.tv_id_hint, settings.tv_mac),
     )
     # Cada tarefa seguinte insere aqui só a linha dela; o gerenciador é o único dono da conexão.
     compose_adb(setup, settings, host, clock)  # [composição: adb]
@@ -262,17 +278,33 @@ def build_samsung_tv(
         )
         return None
     host = require_tv_host(settings.tv_host)
+    known = TvKnown(settings.tv_id_hint, settings.tv_mac)
     remote = SamsungTvDriver(
         host,
         token,
         settings.tv_client_name,
         save_token=lambda value: secrets.set(token_name, value),
         app_ids=tuple(settings.tv_samsung_apps),
+        on_identity=lambda identity: remember_tv_identity(known, identity),
     )
-    manager = TvSessionManager(clock, remote, hibernate_seconds=settings.tv_hibernate_seconds)
+
+    async def wake_on_lan() -> bool:
+        # O MAC vem do arquivo ou é aprendido na primeira conexão; sem ele não há pacote mágico.
+        return known.mac is not None and await send_wake_on_lan(known.mac, host)
+
+    manager = TvSessionManager(
+        clock,
+        remote,
+        hibernate_seconds=settings.tv_hibernate_seconds,
+        liveness=build_liveness("samsung", host),
+        wake_on_lan=wake_on_lan,
+        volume_reader=remote.read_volume,
+    )
     keys = tv_key_handler(manager)
     apps = SamsungTvApps(manager, remote, transport, envelopes)
-    announcer = AppsAnnouncer(apps, lambda: manager.snapshot().connection == "hot")
+    announcer = AppsAnnouncer(
+        apps, lambda: manager.snapshot().connection == "hot", monotonic=clock.monotonic
+    )
     manager.subscribe(announcer.on_state)
     return TvSetup(
         manager,
@@ -292,7 +324,28 @@ def build_samsung_tv(
         capabilities=["tv.remote", "tv.kind.samsung"],
         background=[announcer.run],
         after_hello=[announcer.after_hello],
+        known=known,
     )
+
+
+def remember_tv_identity(known: TvKnown, identity: TvIdentity) -> None:
+    """Grava o `duid` e o MAC da TV no `agent.toml` na primeira vez que ela se identifica.
+
+    Assim reencontrar a TV nunca depende do IP antigo, nem de ter rodado o `tv-find`.
+    """
+    if not known.learn(identity):
+        return
+    values: dict[str, ConfigValue] = {}
+    if known.hint is not None:
+        values["tv_id_hint"] = known.hint
+    if known.mac is not None:
+        values["tv_mac"] = known.mac
+    try:
+        update_config(config_path(), values)
+    except OSError as exc:
+        _log.warning("não consegui gravar a identidade da TV (%s)", type(exc).__name__)
+    else:
+        _log.info("identidade da TV guardada para reencontrá-la se o endereço mudar")
 
 
 def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> None:
@@ -323,7 +376,9 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
     manager.add_channel(adb)
     icons = compose_icons(setup, settings, adb, clock)
     apps = TvApps(manager, adb, setup.transport, setup.envelopes, icons)
-    announcer = AppsAnnouncer(apps, lambda: manager.snapshot().connection == "hot")
+    announcer = AppsAnnouncer(
+        apps, lambda: manager.snapshot().connection == "hot", monotonic=clock.monotonic
+    )
     # O handler de `tv.text.v1` continua sendo um só: ele recebe o ADB, não é substituído.
     if setup.text is not None:
         setup.text.use_adb(adb)
@@ -381,6 +436,7 @@ def compose_icons(
         setup.envelopes,
         lambda: manager.snapshot().connection == "hot",
         clock.sleep,
+        monotonic=clock.monotonic,
     )
     manager.subscribe(publisher.on_state)
     setup.background.append(publisher.run)
@@ -504,29 +560,56 @@ async def pair(
 
 
 def build_relocator(
-    settings: Settings, clock: Clock, is_hot: Callable[[], bool]
+    settings: Settings, clock: Clock, is_hot: Callable[[], bool], known: TvKnown | None = None
 ) -> TvRelocator | None:
-    """Vigia do endereço da TV; só existe quando o `tv-find` gravou o identificador dela.
+    """Vigia do endereço da TV: só existe com `tv_host`.
 
-    `is_hot` diz se a sessão com a TV está aberta (prova de que ela responde)."""
-    hint, host = settings.tv_id_hint, settings.tv_host
-    if not hint or not host:
+    `is_hot` diz se a sessão com a TV está aberta (prova de que ela responde). Fora isso, confere
+    se **a TV certa** atende no endereço (o IP velho pode ter virado de um celular) e, se não,
+    procura-a pelo MAC na tabela ARP, depois SSDP, depois numa varredura lenta do /24 dela.
+    `known` é compartilhado com o resto do agente, que aprende o MAC na primeira conexão.
+    """
+    host = settings.tv_host
+    if not host:
         return None
-    port = SAMSUNG_REST_PORT if settings.tv_kind == "samsung" else ANDROID_REMOTE_PORT
+    identity = known if known is not None else TvKnown(settings.tv_id_hint, settings.tv_mac)
+    locator = build_locator(settings.tv_kind, host, identity, clock)
 
     async def reachable() -> bool:
-        return await tcp_open(host, port, wait=2.0)
+        if settings.tv_kind == "android":
+            return await tcp_open(host, ANDROID_REMOTE_PORT, wait=2.0)
+        return await locator.is_at(host)
 
     async def rescan() -> str | None:
-        for tv in await find_tvs(settings.tv_kind):
-            if same_tv(tv, hint):
-                if tv.host == host:
-                    return None
-                update_config(config_path(), {"tv_host": tv.host})
-                return tv.host
-        return None
+        located = await locator.find(host)
+        if located is None or located.host == host:
+            return None
+        values: dict[str, ConfigValue] = {"tv_host": located.host}
+        if identity.mac is not None:
+            values["tv_mac"] = identity.mac
+        if identity.hint is not None:
+            values["tv_id_hint"] = identity.hint
+        update_config(config_path(), values)
+        return located.host
 
-    return TvRelocator(clock, is_hot=is_hot, reachable=reachable, rescan=rescan)
+    learned_at: list[float] = []
+
+    async def learn_arp_mac() -> None:
+        """Com a TV confirmada no endereço, guarda o MAC que o ARP mostra (a TV pode estar no
+        cabo). Só olha a tabela de tempos em tempos e para de olhar depois de aprender."""
+        now = clock.monotonic()
+        if learned_at and (learned_at[0] < 0 or now - learned_at[0] < ARP_LEARN_SECONDS):
+            return
+        learned_at[:] = [now]
+        mac = await locator.learn_mac(host)
+        if mac is not None:
+            update_config(config_path(), {"tv_mac": mac})
+            learned_at[:] = [-1.0]
+            _log.info("MAC da TV guardado a partir da tabela ARP")
+
+    return TvRelocator(
+        clock, is_hot=is_hot, reachable=reachable, rescan=rescan, on_alive=learn_arp_mac
+    )
 
 
 async def supervise(supervisor: ConnectionSupervisor, relocator: TvRelocator | None) -> bool:
@@ -622,7 +705,9 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
         jobs = [tv.manager.watch, *tv.background]
     background = [asyncio.create_task(job()) for job in jobs]
     relocator = (
-        build_relocator(settings, clock, lambda: tv.manager.snapshot().connection == "hot")
+        build_relocator(
+            settings, clock, lambda: tv.manager.snapshot().connection == "hot", tv.known
+        )
         if tv is not None
         else None
     )
@@ -676,6 +761,7 @@ async def tv_pair(  # noqa: PLR0911, PLR0913, PLR0917 - espelha a linha de coman
     ask_code: Callable[[], Awaitable[str]] = _ask_tv_code,
     *,
     if_needed: bool = False,
+    identify: Callable[[TvKindName, str], Awaitable[TvIdentity | None]] | None = None,
 ) -> int:
     """Pareia a TV escolhida e guarda a credencial no lugar adequado ao driver.
 
@@ -701,6 +787,7 @@ async def tv_pair(  # noqa: PLR0911, PLR0913, PLR0917 - espelha a linha de coman
             print(f"Falha no pareamento da TV Samsung: {exc}", file=sys.stderr)
             return EXIT_FAILURE
         print("TV Samsung pareada. Token guardado no Cofre de Credenciais.")
+        await _remember_paired_identity(settings, tv_kind, tv_host, configured, identify)
         if not configured:
             print(
                 f"Agora defina UNIOVER_TV_KIND=samsung e UNIOVER_TV_HOST={tv_host} "
@@ -718,9 +805,29 @@ async def tv_pair(  # noqa: PLR0911, PLR0913, PLR0917 - espelha a linha de coman
         print(f"Falha no pareamento da TV: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     print(f"TV pareada. Certificado guardado em {cert_dir} (acesso só do seu usuário).")
+    await _remember_paired_identity(settings, tv_kind, tv_host, configured, identify)
     if not configured:
         print(f"Agora defina UNIOVER_TV_HOST={tv_host} (ou tv_host no agent.toml) e rode `run`.")
     return EXIT_OK
+
+
+async def _remember_paired_identity(
+    settings: Settings,
+    kind: str,
+    host: str,
+    configured: bool,
+    identify: Callable[[TvKindName, str], Awaitable[TvIdentity | None]] | None,
+) -> None:
+    """Depois de parear, grava o `duid` e o MAC da TV (a TV está ligada e acabou de responder).
+
+    Só quando é a TV já configurada: parear outra por `--host` não mexe no arquivo."""
+    if identify is None or not configured or kind not in {"android", "samsung"}:
+        return
+    identity = await identify(kind, host)  # type: ignore[arg-type]
+    if identity is None:
+        return
+    known = TvKnown(settings.tv_id_hint, settings.tv_mac)
+    remember_tv_identity(known, identity)
 
 
 async def _ask_line(prompt: str) -> str:
@@ -776,7 +883,12 @@ async def tv_find(
         chosen = tvs[int(answer) - 1]
     update_config(
         config_path(),
-        {"tv_kind": chosen.kind, "tv_host": chosen.host, "tv_id_hint": chosen.id_hint},
+        {
+            "tv_kind": chosen.kind,
+            "tv_host": chosen.host,
+            "tv_id_hint": chosen.id_hint,
+            "tv_mac": chosen.mac,
+        },
     )
     print(f"TV encontrada: {_describe(chosen)}.")
     if chosen.id_hint is None:
@@ -864,6 +976,7 @@ def main(  # noqa: PLR0911 - um retorno por comando
                     args.kind,
                     open_store(),
                     if_needed=args.if_needed,
+                    identify=identify_tv,
                 )
             )
         if command == "tv-find":

@@ -7,6 +7,7 @@ o token explicitamente.
 
 import asyncio
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
@@ -14,6 +15,8 @@ import httpx
 from samsungtvws import SamsungTVWS
 from samsungtvws import helper as samsung_helper
 
+from uniover_agent.adapters.tv_discovery import samsung_identity
+from uniover_agent.core.tv.locator import TvIdentity
 from uniover_agent.ports import TvNotPaired, TvUnreachable
 
 _log = logging.getLogger(__name__)
@@ -25,6 +28,19 @@ SAMSUNG_APP_TIMEOUT_SECONDS = 3.0
 SAMSUNG_APP_LIST_TIMEOUT_SECONDS = 5.0
 SAMSUNG_APP_ICON_TIMEOUT_SECONDS = 1.0
 SAMSUNG_APP_PROBE_CONCURRENCY = 8
+# Ícones seguidos sem resposta que encerram o pedido de ícones (a TV está sem fôlego).
+SAMSUNG_ICON_MAX_FAILURES = 3
+# Volume: o serviço UPnP de renderização que a própria TV expõe. Lido só depois de uma tecla.
+SAMSUNG_UPNP_PORT = 9197
+SAMSUNG_VOLUME_TIMEOUT_SECONDS = 2.0
+_VOLUME_SOAP = (
+    '<?xml version="1.0" encoding="utf-8"?>'
+    '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
+    's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>'
+    '<u:GetVolume xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1">'
+    "<InstanceID>0</InstanceID><Channel>Master</Channel></u:GetVolume></s:Body></s:Envelope>"
+)
+_VOLUME_VALUE = re.compile(r"<CurrentVolume>\s*(\d{1,3})\s*</CurrentVolume>")
 
 # Estes identificadores são publicados só quando o endpoint da própria TV confirma que o app está
 # instalado. A Samsung não disponibiliza uma lista confiável de apps em todos os modelos Tizen.
@@ -101,6 +117,7 @@ class SamsungClient(Protocol):
 
 SamsungFactory = Callable[[str, str | None, str], SamsungClient]
 PowerFetcher = Callable[[str], Awaitable[bool | None]]
+IdentitySink = Callable[[TvIdentity], None]
 
 
 class _SamsungTvWs(SamsungTVWS):
@@ -146,16 +163,22 @@ def _default_factory(host: str, token: str | None, name: str) -> SamsungClient:
     )
 
 
-async def fetch_samsung_power(host: str) -> bool | None:
-    """Lê `PowerState` sem tornar a abertura do controle dependente do REST."""
+async def fetch_samsung_info(host: str) -> dict[str, Any] | None:
+    """O REST da própria TV (`/api/v2/`): energia, `duid` e MAC Wi-Fi numa só leitura."""
     url = f"http://{host}:{SAMSUNG_REST_PORT}/api/v2/"
     try:
         async with httpx.AsyncClient(timeout=SAMSUNG_TIMEOUT_SECONDS) as client:
             response = await client.get(url)
             response.raise_for_status()
-            value = response.json().get("device", {}).get("PowerState")
+            data = response.json()
     except httpx.HTTPError, ValueError, TypeError:
         return None
+    return data if isinstance(data, dict) else None
+
+
+def power_from_info(info: dict[str, Any] | None) -> bool | None:
+    device = info.get("device") if info else None
+    value = device.get("PowerState") if isinstance(device, dict) else None
     if not isinstance(value, str):
         return None
     lowered = value.casefold()
@@ -164,6 +187,11 @@ async def fetch_samsung_power(host: str) -> bool | None:
     if lowered in {"off", "standby"}:
         return False
     return None
+
+
+async def fetch_samsung_power(host: str) -> bool | None:
+    """Lê `PowerState` sem tornar a abertura do controle dependente do REST."""
+    return power_from_info(await fetch_samsung_info(host))
 
 
 class SamsungTvDriver:
@@ -176,7 +204,8 @@ class SamsungTvDriver:
         name: str,
         *,
         factory: SamsungFactory = _default_factory,
-        fetch_power: PowerFetcher = fetch_samsung_power,
+        fetch_power: PowerFetcher | None = None,
+        on_identity: IdentitySink | None = None,
         save_token: Callable[[str], None] | None = None,
         app_ids: tuple[str, ...] = (),
         rest_transport: httpx.AsyncBaseTransport | None = None,
@@ -189,6 +218,7 @@ class SamsungTvDriver:
         self._name = name
         self._factory = factory
         self._fetch_power = fetch_power
+        self._on_identity = on_identity
         self._save_token = save_token
         self._app_ids = tuple(dict.fromkeys((*SAMSUNG_APP_IDS, *app_ids)))
         self._rest_transport = rest_transport
@@ -224,10 +254,44 @@ class SamsungTvDriver:
             self._token = client.token
             if self._save_token is not None:
                 self._save_token(client.token)
-        power = await self._fetch_power(self._host)
+        power = await self._read_power_and_identity()
         if power is not None:
             for callback in self._power:
                 callback(power)
+
+    async def _read_power_and_identity(self) -> bool | None:
+        """Uma só leitura do REST por abertura: energia agora e quem a TV diz ser (para gravar o
+        `duid` e o MAC, que reencontram a TV se o IP mudar)."""
+        if self._fetch_power is not None:
+            return await self._fetch_power(self._host)
+        info = await fetch_samsung_info(self._host)
+        identity = samsung_identity(info)
+        if identity is not None and self._on_identity is not None:
+            try:
+                self._on_identity(identity)
+            except Exception:
+                _log.exception("falha ao guardar a identidade da TV")
+        return power_from_info(info)
+
+    async def read_volume(self) -> int | None:
+        """Volume atual pelo UPnP da TV; `None` se ela não responde (nunca levanta).
+
+        Só é chamado logo depois de uma tecla de volume: não há sondagem periódica.
+        """
+        url = f"http://{self._host}:{SAMSUNG_UPNP_PORT}/dmr/upnp/control/RenderingControl1"
+        headers = {
+            "Content-Type": 'text/xml; charset="utf-8"',
+            "SOAPAction": '"urn:schemas-upnp-org:service:RenderingControl:1#GetVolume"',
+        }
+        try:
+            async with httpx.AsyncClient(
+                transport=self._rest_transport, timeout=SAMSUNG_VOLUME_TIMEOUT_SECONDS
+            ) as client:
+                response = await client.post(url, content=_VOLUME_SOAP, headers=headers)
+        except httpx.HTTPError:
+            return None
+        match = _VOLUME_VALUE.search(response.text) if response.is_success else None
+        return min(100, int(match.group(1))) if match else None
 
     async def disconnect(self) -> None:
         client, self._client = self._client, None
@@ -293,10 +357,12 @@ class SamsungTvDriver:
     ) -> list[dict[str, Any]]:
         """Acrescenta a imagem base64 que o EDEN devolve para cada caminho de ícone da lista."""
         enriched: list[dict[str, Any]] = []
+        failures = 0
         for item in listed:
             copy = dict(item)
             icon_path = item.get("icon")
-            if isinstance(icon_path, str) and icon_path:
+            # TV que não responde aos ícones: depois de algumas falhas seguidas, para de pedir.
+            if isinstance(icon_path, str) and icon_path and failures < SAMSUNG_ICON_MAX_FAILURES:
                 try:
                     image = await self._call_client(
                         client.app_icon, icon_path, wait_seconds=self._app_icon_timeout_seconds
@@ -305,6 +371,9 @@ class SamsungTvDriver:
                     image = None
                 if isinstance(image, str) and image:
                     copy["imageBase64"] = image
+                    failures = 0
+                else:
+                    failures += 1
             enriched.append(copy)
         return enriched
 
