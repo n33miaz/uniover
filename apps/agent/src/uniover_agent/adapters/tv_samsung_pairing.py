@@ -9,6 +9,9 @@ import logging
 from uniover_agent.adapters.tv_samsung import SamsungClient, SamsungFactory, _default_factory
 
 SAMSUNG_PAIR_TIMEOUT_SECONDS = 60.0
+# `close()` é síncrono na biblioteca e algumas TVs não respondem ao fechamento. O pareamento já
+# terminou neste ponto; não faz sentido segurar o instalador por isso.
+SAMSUNG_CLOSE_TIMEOUT_SECONDS = 3.0
 _log = logging.getLogger(__name__)
 
 
@@ -41,6 +44,8 @@ async def pair_samsung_tv(
         ) from None
     finally:
         try:
-            await asyncio.to_thread(client.close)
+            await asyncio.wait_for(
+                asyncio.to_thread(client.close), timeout=SAMSUNG_CLOSE_TIMEOUT_SECONDS
+            )
         except Exception:
             _log.warning("falha ao fechar o canal Samsung depois do pareamento")
