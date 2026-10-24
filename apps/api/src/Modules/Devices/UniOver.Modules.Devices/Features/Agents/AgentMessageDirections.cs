@@ -11,10 +11,14 @@ namespace UniOver.Modules.Devices.Features.Agents;
 /// </summary>
 internal static class AgentMessageDirections
 {
+    private const string AgentKeepAlive = "agent.keepalive.v1";
+    private const string ApiKeepAlive = "api.keepalive.v1";
+
     /// <summary>Tipos que o agente envia à API.</summary>
     public static FrozenSet<string> FromAgent { get; } = new[]
     {
         AgentMessageTypes.AgentHelloV1,
+        AgentKeepAlive,
         AgentMessageTypes.CommandResultV1,
         AgentMessageTypes.TvAppsV1,
         AgentMessageTypes.TvAppsV2,
@@ -26,6 +30,7 @@ internal static class AgentMessageDirections
     /// <summary>Tipos que a API envia ao agente.</summary>
     public static FrozenSet<string> ToAgent { get; } = new[]
     {
+        ApiKeepAlive,
         AgentMessageTypes.TvAppLaunchV1,
         AgentMessageTypes.TvAppsRefreshV1,
         AgentMessageTypes.TvCleanupV1,
