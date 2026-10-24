@@ -24,6 +24,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Final
 
+from uniover_agent.adapters.process import exec_hidden
 from uniover_agent.adapters.tv_adb_parsing import (
     AdbOutput,
     DeviceState,
@@ -72,8 +73,6 @@ _LEANBACK: Final = "android.intent.category.LEANBACK_LAUNCHER"
 _LAUNCHER: Final = "android.intent.category.LAUNCHER"
 _HOME: Final = "android.intent.category.HOME"
 _MAX_TEXT_LENGTH: Final = 200
-# No Windows o `adb` não pode abrir (e piscar) uma janela de console a cada comando.
-_NO_WINDOW: Final = 0x08000000 if sys.platform == "win32" else 0
 
 Runner = Callable[[Sequence[str], float], Awaitable[AdbOutput]]
 
@@ -102,12 +101,12 @@ async def run_process(argv: Sequence[str], seconds: float) -> AdbOutput:
 
     O `adb` pode ter de subir o servidor dele na primeira chamada; o tempo vale para tudo isso.
     """
-    process = await asyncio.create_subprocess_exec(
+    # Sem janela: o `adb` não pode piscar um console a cada comando.
+    process = await exec_hidden(
         *argv,
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        creationflags=_NO_WINDOW,
     )
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), seconds)

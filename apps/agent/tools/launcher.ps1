@@ -7,8 +7,22 @@ $fallback = Join-Path $base 'run-agent.fallback.ps1'
 
 # Um lancador so: a tarefa e a migracao podem tentar subir outro ao mesmo tempo.
 $created = $false
-$mutex = New-Object System.Threading.Mutex($true, 'Local\UniOverLauncher', [ref]$created)
+# O nome inclui a pasta: outra instalacao (ou um teste numa pasta temporaria) nao disputa o mesmo.
+$sha = [System.Security.Cryptography.SHA256]::Create()
+$key = [System.BitConverter]::ToString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($base.ToLowerInvariant()))).Replace('-', '').Substring(0, 16)
+$mutex = New-Object System.Threading.Mutex($true, ('Local\UniOverLauncher-' + $key), [ref]$created)
 if (-not $created) { exit 0 }
+
+# Na instalacao real, o lancador antigo usava um nome de mutex sem a pasta: se um deles ainda esta
+# vivo, este nao sobe (dois lancadores dariam dois agentes com a mesma identidade). Em outra pasta
+# (teste, outra instalacao) o nome antigo nao vale e nao se disputa.
+$realBase = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'UniOver'
+$legacyMutex = $null
+if ($base -ieq $realBase) {
+    $legacyCreated = $false
+    $legacyMutex = New-Object System.Threading.Mutex($true, 'Local\UniOverLauncher', [ref]$legacyCreated)
+    if (-not $legacyCreated) { exit 0 }
+}
 
 # Este lancador e o unico dono do agente. Qualquer agente que sobrou (layout antigo com
 # agent-src/venv/run-agent.ps1 na raiz, ou um supervisor orfao) sai antes: dois agentes com a
