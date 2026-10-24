@@ -232,6 +232,8 @@ function routine(
     name,
     position,
     active: true,
+    programId: null,
+    weekdays: [],
     note: null,
     items: items.map(([exercise, sets, repMin, repMax, rest], index) => ({
       id: `20000000-0000-4000-8000-${String(n * 10 + index).padStart(12, '0')}`,

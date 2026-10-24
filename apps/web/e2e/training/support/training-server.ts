@@ -287,8 +287,10 @@ export async function mockTrainingApi(context: BrowserContext): Promise<Training
     // `sessions/<sessão>/sets/<id>` grava na coleção `sets`; `exercises/<id>/step` ajusta só o salto de carga.
     const isSet = segments[0] === 'sessions' && segments[2] === 'sets';
     const isStep = segments[0] === 'exercises' && segments[2] === 'step';
+    // O programa da semana é um registro único por conta: não tem id na rota.
+    const isProgram = segments[0] === 'program';
     const name = isSet ? 'sets' : segments[0];
-    const id = isSet ? segments[3] : segments[1];
+    const id = isSet ? segments[3] : isProgram ? 'active' : segments[1];
     if (!name || !id) {
       hit('invalid');
       return route.fulfill({ status: 404, body: '' });

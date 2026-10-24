@@ -26,7 +26,7 @@ test.describe('rotinas: lista e modelos', () => {
     await expect(page.getByRole('heading', { name: 'Editar rotina' })).toBeVisible();
   });
 
-  test('"Usar modelo" cria as rotinas do modelo e avisa o que ficou de fora', async ({
+  test('"Usar modelo" escolhe o programa: o aparelho cria as fichas, a lista as mostra e o servidor as recebe', async ({
     page,
     context,
   }) => {
@@ -38,11 +38,14 @@ test.describe('rotinas: lista e modelos', () => {
     await expect(sheet.getByRole('button', { name: /Full body/ })).toBeVisible();
     await sheet.getByRole('button', { name: /ABC/ }).click();
     await expect(page.locator('.list .ui-row')).toHaveCount(3);
-    await expect(page.getByText('Criamos 3 rotinas do modelo ABC.')).toBeVisible();
+    await expect(
+      page.getByText(/Programa ABC escolhido. Hoje abre no treino do dia./),
+    ).toBeVisible();
     await expect(
       page.getByText('1 exercício do modelo não está no seu catálogo e ficou de fora.'),
     ).toBeVisible();
-    await expect.poll(() => server.writes('routines')).toBe(3);
+    await expect.poll(() => server.rows('routines').length).toBe(3);
+    expect(server.rows('routines').every((row) => row['programId'] === 'abc')).toBe(true);
   });
 
   test('sem rede, "Usar modelo" fica desligado e diz por quê', async ({ page, context }) => {
