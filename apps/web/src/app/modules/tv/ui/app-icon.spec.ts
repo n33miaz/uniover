@@ -50,6 +50,11 @@ describe('AppIcon', () => {
     expect(image()).not.toBeNull();
   });
 
+  it('uses the local Samsung asset when that firmware did not give an icon', () => {
+    show(makeShortcut(1, { package: 'samsung.app.id3201907018807', iconDataUri: null }));
+    expect(image()!.getAttribute('src')).toBe('/tv/app-icons/netflix.png');
+  });
+
   it('loads the image late only where it is asked to (the long list in the panel)', () => {
     show(makeShortcut(1, { iconDataUri: pngIcon(96, 96) }), true);
     expect(image()!.getAttribute('loading')).toBe('lazy');
