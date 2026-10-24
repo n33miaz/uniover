@@ -20,6 +20,7 @@ internal sealed class AgentConnections(
 
     private readonly object _gate = new();
     private readonly Dictionary<string, IAgentSession> _sessions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TaskCompletionSource<IAgentSession>> _waiters = new(StringComparer.Ordinal);
 
     /// <summary>Torna <paramref name="session"/> a dona da conexão do agente e devolve a sessão que ela substituiu, se havia.</summary>
     public IAgentSession? Attach(IAgentSession session, DateTimeOffset now)
@@ -29,6 +30,10 @@ internal sealed class AgentConnections(
         {
             _sessions.TryGetValue(session.AgentId, out var previous);
             _sessions[session.AgentId] = session;
+            if (_waiters.Remove(session.AgentId, out var waiter))
+            {
+                waiter.TrySetResult(session);
+            }
             Announce(presence.MarkConnected(session.AgentId, now));
             return previous;
         }
@@ -63,6 +68,61 @@ internal sealed class AgentConnections(
         lock (_gate)
         {
             return _sessions.TryGetValue(agentId, out session!);
+        }
+    }
+
+    /// <summary>Espera uma conexão nova por pouco tempo, para absorver a reconexão normal do agente sem enfileirar comandos.</summary>
+    public async Task<IAgentSession?> WaitForSessionAsync(
+        string agentId, TimeSpan timeout, TimeProvider time, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
+        ArgumentNullException.ThrowIfNull(time);
+
+        TaskCompletionSource<IAgentSession> waiter;
+        lock (_gate)
+        {
+            if (_sessions.TryGetValue(agentId, out var current))
+            {
+                return current;
+            }
+
+            if (!_waiters.TryGetValue(agentId, out waiter!))
+            {
+                waiter = new TaskCompletionSource<IAgentSession>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _waiters.Add(agentId, waiter);
+            }
+        }
+
+        try
+        {
+            return await waiter.Task.WaitAsync(timeout, time, cancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            return null;
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                if (_waiters.TryGetValue(agentId, out var current) && ReferenceEquals(current, waiter))
+                {
+                    _waiters.Remove(agentId);
+                }
+            }
+        }
+    }
+
+    /// <summary>Informa se a sessão atual anunciou a capacidade; versões antigas não recebem tipos novos.</summary>
+    public bool Supports(IAgentSession session, string capability)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentException.ThrowIfNullOrWhiteSpace(capability);
+        lock (_gate)
+        {
+            return _sessions.TryGetValue(session.AgentId, out var current)
+                && ReferenceEquals(current, session)
+                && presence.Get(session.AgentId)?.Capabilities.Contains(capability, StringComparer.Ordinal) == true;
         }
     }
 

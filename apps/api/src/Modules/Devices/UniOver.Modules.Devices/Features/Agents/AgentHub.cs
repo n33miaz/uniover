@@ -28,6 +28,9 @@ internal sealed partial class AgentHub(
     ILogger<AgentHub> logger)
 {
     private const string InvalidMessageText = "A mensagem não cumpre o contrato.";
+    private const string KeepAliveCapability = "transport.keepalive.v1";
+    private const string AgentKeepAliveType = "agent.keepalive.v1";
+    private const string ApiKeepAliveType = "api.keepalive.v1";
 
     public async Task RunSessionAsync(IAgentSession session, CancellationToken cancellationToken)
     {
@@ -37,6 +40,8 @@ internal sealed partial class AgentHub(
         var closeReason = AgentCloseReason.Normal;
 
         var previous = connections.Attach(session, time.GetUtcNow());
+        using var heartbeatStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var heartbeat = SendKeepAlivesAsync(session, heartbeatStop.Token);
         LogConnected(agentId);
         try
         {
@@ -68,6 +73,11 @@ internal sealed partial class AgentHub(
         {
             closeReason = AgentCloseReason.Shutdown;
         }
+        catch (OperationCanceledException)
+        {
+            // O transporte pode cancelar uma leitura quando o proxy corta o socket. Não é falha interna da sessão.
+            closeReason = AgentCloseReason.Normal;
+        }
         catch (Exception ex)
         {
             closeReason = AgentCloseReason.InternalError;
@@ -75,6 +85,8 @@ internal sealed partial class AgentHub(
         }
         finally
         {
+            await heartbeatStop.CancelAsync();
+            await AwaitKeepAliveAsync(heartbeat);
             // Só a dona da conexão derruba a presença; quem foi substituída sai sem mexer (ver AgentConnections).
             if (connections.Detach(session))
             {
@@ -128,6 +140,9 @@ internal sealed partial class AgentHub(
                     .Select(c => c.GetString()!)
                     .ToArray();
                 connections.RecordHello(session, version, capabilities, now);
+                break;
+
+            case AgentKeepAliveType:
                 break;
 
             case AgentMessageTypes.CommandResultV1:
@@ -245,6 +260,50 @@ internal sealed partial class AgentHub(
         }
     }
 
+    private async Task SendKeepAlivesAsync(IAgentSession session, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(options.Value.ApplicationKeepAlive, time, cancellationToken);
+                if (!connections.Supports(session, KeepAliveCapability))
+                {
+                    continue;
+                }
+
+                var heartbeat = factory.Create(
+                    ApiKeepAliveType, session.AgentId, correlationId: null,
+                    JsonSerializer.SerializeToElement(new JsonObject()));
+                if (heartbeat.IsFailure || !await session.SendAsync(heartbeat.Value.Json, cancellationToken))
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Encerramento normal da sessão.
+        }
+        catch (Exception ex)
+        {
+            // Um batimento nunca derruba a sessão nem vira fechamento 1011.
+            LogKeepAliveFailed(session.AgentId, ex.GetType().Name);
+        }
+    }
+
+    private static async Task AwaitKeepAliveAsync(Task heartbeat)
+    {
+        try
+        {
+            await heartbeat;
+        }
+        catch (OperationCanceledException)
+        {
+            // O cancelamento já foi pedido no encerramento da sessão.
+        }
+    }
+
     /// <summary>
     /// Leitura tolerante só para responder e registrar: o tipo (só se tem a forma de um tipo, para não injetar texto
     /// do agente no log) e o <c>correlationId</c> (só se for um UUID bem formado).
@@ -330,4 +389,7 @@ internal sealed partial class AgentHub(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Falha ao fechar a sessão do agente {AgentId} ({ErrorType}).")]
     private partial void LogCloseFailed(string agentId, string errorType);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Batimento da sessão do agente {AgentId} interrompido ({ErrorType}).")]
+    private partial void LogKeepAliveFailed(string agentId, string errorType);
 }

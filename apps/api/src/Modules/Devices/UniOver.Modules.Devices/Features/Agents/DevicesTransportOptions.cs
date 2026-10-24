@@ -19,6 +19,12 @@ public sealed class DevicesTransportOptions
     /// <summary>Intervalo do ping/pong do próprio protocolo WebSocket.</summary>
     public int KeepAliveSeconds { get; set; } = 20;
 
+    /// <summary>Intervalo do batimento JSON que atravessa proxies que ignoram ping/pong WebSocket.</summary>
+    public int ApplicationKeepAliveSeconds { get; set; } = 25;
+
+    /// <summary>Quanto um comando tolera a sessão reaparecer depois de uma reconexão curta do agente.</summary>
+    public int ReconnectGraceSeconds { get; set; } = 3;
+
     /// <summary>Recusas toleradas na janela; passou disso (a sexta, no padrão), a conexão é fechada.</summary>
     public int RefusalLimit { get; set; } = 5;
 
@@ -34,6 +40,10 @@ public sealed class DevicesTransportOptions
 
     public TimeSpan KeepAlive => TimeSpan.FromSeconds(KeepAliveSeconds);
 
+    public TimeSpan ApplicationKeepAlive => TimeSpan.FromSeconds(ApplicationKeepAliveSeconds);
+
+    public TimeSpan ReconnectGrace => TimeSpan.FromSeconds(ReconnectGraceSeconds);
+
     public TimeSpan RefusalWindow => TimeSpan.FromSeconds(RefusalWindowSeconds);
 
     public TimeSpan CloseGrace => TimeSpan.FromSeconds(CloseGraceSeconds);
@@ -46,6 +56,8 @@ public sealed class DevicesTransportOptions
             && o.QueueCapacity >= 1
             && o.MaxMessageBytes >= 1024
             && o.KeepAliveSeconds >= 1
+            && o.ApplicationKeepAliveSeconds is >= 1 and < 60
+            && o.ReconnectGraceSeconds >= 0
             && o.RefusalLimit >= 1
             && o.RefusalWindowSeconds >= 1
             && o.CloseGraceSeconds >= 0
