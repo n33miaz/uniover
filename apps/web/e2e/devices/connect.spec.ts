@@ -48,7 +48,7 @@ test.describe('link do QR do agente', () => {
     await expect(page).toHaveURL(/\/ajustes\/dispositivos$/);
     await expectNoHorizontalScroll(page);
     await settle(page);
-    await screenshot(page, info.outputPath(`deep-link.png`));
+    await screenshot(page, info.outputPath('deep-link.png'));
 
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
     await expect(page.getByText('Aparelho PC de casa pareado.')).toBeVisible();
@@ -95,7 +95,7 @@ test.describe('link do QR do agente', () => {
     expect(devices.requests).toHaveLength(0);
     await expectNoHorizontalScroll(page);
     await settle(page);
-    await screenshot(page, info.outputPath(`no-permission.png`));
+    await screenshot(page, info.outputPath('no-permission.png'));
   });
 });
 
@@ -124,7 +124,7 @@ test.describe('conectar este PC', () => {
       expect(box!.height).toBeGreaterThanOrEqual(44);
       await expectNoHorizontalScroll(page);
       await settle(page);
-      await screenshot(page, info.outputPath(`connect-sheet.png`));
+      await screenshot(page, info.outputPath('connect-sheet.png'));
       const { violations } = await new AxeBuilder({ page }).analyze();
       expect(seriousViolations(violations)).toEqual([]);
 
@@ -160,7 +160,7 @@ test.describe('conectar este PC', () => {
     ).toBeVisible();
     await expectNoHorizontalScroll(page);
     await settle(page);
-    await screenshot(page, info.outputPath(`not-windows.png`));
+    await screenshot(page, info.outputPath('not-windows.png'));
   });
 
   test.describe('com o service worker ativo', () => {
