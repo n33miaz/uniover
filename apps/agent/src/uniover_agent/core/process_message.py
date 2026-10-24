@@ -12,6 +12,8 @@ from uniover_agent.ports import Transport, TransportError
 
 _log = logging.getLogger(__name__)
 
+_KEEPALIVE_TYPE = "api.keepalive.v1"
+
 
 class ProcessMessage:
     """Valida a mensagem, executa o comando e responde.
@@ -47,6 +49,9 @@ class ProcessMessage:
             return
 
         command = outcome.command
+        if command.type == _KEEPALIVE_TYPE:
+            # Batimento da API: já chegou pelo canal; não executa comando nem produz resultado.
+            return
         if command.type in self._background_types:
             task = asyncio.create_task(self._execute_detached(command))
             self._tasks.add(task)

@@ -1,5 +1,6 @@
 """Laço de conexão: reconecta com backoff para sempre, mas para quando a credencial é recusada."""
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from uniover_agent.ports import (
 _log = logging.getLogger(__name__)
 
 REVOKED_MESSAGE: Final = "token revogado ou inválido; rode `uniover-agent pair`"
+APPLICATION_KEEPALIVE_SECONDS: Final = 25.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +67,7 @@ class ConnectionSupervisor:
         capabilities: Sequence[str],
         policy: BackoffPolicy | None = None,
         on_connected: Callable[[], Awaitable[None]] | None = None,
+        keepalive_interval: float = APPLICATION_KEEPALIVE_SECONDS,
     ) -> None:
         self._transport = transport
         self._process = process_message
@@ -76,6 +79,7 @@ class ConnectionSupervisor:
         self._backoff = Backoff(self._policy, random)
         # Roda a cada conexão, logo depois do `hello` (ex.: informar à API o estado atual da TV).
         self._on_connected = on_connected
+        self._keepalive_interval = keepalive_interval
 
     async def run(self) -> None:
         """Roda até ser cancelado; devolve (sem erro) só quando a credencial é recusada.
@@ -106,6 +110,7 @@ class ConnectionSupervisor:
 
     async def _session(self) -> None:
         started: float | None = None
+        keepalive: asyncio.Task[None] | None = None
         try:
             await self._transport.connect()
             started = self._clock.monotonic()
@@ -115,12 +120,21 @@ class ConnectionSupervisor:
             )
             if self._on_connected is not None:
                 await self._on_connected()
+            keepalive = asyncio.create_task(self._send_keepalives())
             async for raw in self._transport.incoming():
                 await self._process(raw)
         finally:
+            if keepalive is not None:
+                keepalive.cancel()
+                await asyncio.gather(keepalive, return_exceptions=True)
             if (
                 started is not None
                 and self._clock.monotonic() - started >= self._policy.stable_after
             ):
                 self._backoff.reset()
             await self._transport.close()
+
+    async def _send_keepalives(self) -> None:
+        while True:
+            await asyncio.sleep(self._keepalive_interval)
+            await self._transport.send(self._envelopes.keepalive())
