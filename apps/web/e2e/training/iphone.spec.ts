@@ -160,6 +160,25 @@ test.describe('convidado que só tem o Treino', () => {
     await expect(page).toHaveTitle('UniOver Treino');
   });
 
+  test('na raiz não tem Voltar ao Início, mas conserva o Voltar da tela interna', async ({
+    page,
+  }, info) => {
+    signInAsGuest(TRAINING_ONLY);
+    await openTraining(page, '/treino');
+
+    const header = page.locator('.training-header');
+    await expect(header.getByRole('link', { name: /^Voltar/ })).toHaveCount(0);
+    await expect(gear(page)).toHaveAttribute('href', '/ajustes');
+    await screenshot(page, info.outputPath('raiz-sem-voltar.png'));
+
+    await openTraining(page, '/treino/exercicios/novo');
+    const back = page.getByRole('button', { name: 'Sair do formulário' });
+    await expect(back).toBeVisible();
+    await screenshot(page, info.outputPath('tela-interna-com-voltar.png'));
+    await back.click();
+    await expect(page).toHaveURL(/\/treino\/exercicios$/);
+  });
+
   test('os Ajustes dele voltam para o Treino, não para a TV', async ({ page }, info) => {
     signInAsGuest(TRAINING_ONLY);
     await page.goto('/treino');

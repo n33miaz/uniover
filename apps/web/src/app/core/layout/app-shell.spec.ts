@@ -164,6 +164,22 @@ describe('AppShell', () => {
       expect(links[0].getAttribute('href')).toBe('/ajustes');
       expect(links[0].getAttribute('aria-label')).toBe('Ajustes');
     });
+
+    it('a guest who only controls TV also keeps the round settings button, not a way back to Início', async () => {
+      TestBed.inject(SessionState).setUser({
+        id: '1',
+        email: 'a@b.c',
+        displayName: 'A',
+        role: 'guest',
+        permissions: ['module:tv', 'tv:control'],
+      });
+      const harness = await RouterTestingHarness.create('/mod');
+      const links = root(harness).querySelectorAll('header a');
+      expect(links).toHaveLength(1);
+      expect(links[0].getAttribute('href')).toBe('/ajustes');
+      expect(links[0].getAttribute('aria-label')).toBe('Ajustes');
+      expect(root(harness).querySelector('header a[href="/"]')).toBeNull();
+    });
   });
 
   describe('for the owner in Ajustes', () => {
