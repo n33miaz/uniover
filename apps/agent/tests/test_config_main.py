@@ -262,7 +262,7 @@ async def test_run_connects_with_vault_token_and_stops_on_revocation(
     assert api.paths == [f"/api/v1/devices/agents/{AGENT_ID}/ws"]
     hello, result = api.received
     assert hello["type"] == "agent.hello.v1"
-    assert hello["body"]["capabilities"] == []
+    assert hello["body"]["capabilities"] == ["transport.keepalive.v1"]
     # Sem aparelhos habilitados, o comando válido é recusado pelo núcleo e informado à API.
     assert result["type"] == "command.result.v1"
     assert result["correlationId"] == "0192f1e4-0000-7000-8000-0000000000bb"
