@@ -4,21 +4,21 @@ param(
     [string]$TvKind = 'android',
     [string]$TvHost,
     [string]$ApiUrl = 'https://uniover.onrender.com',
-    # Branch do repositório de onde vem o código do agente; rode de novo com o padrão para atualizar.
+    # Branch do repositorio de onde vem o codigo do agente; rode de novo com o padrao para atualizar.
     [string]$Ref = 'main',
     [switch]$Uninstall
 )
 
 # Dois modos:
-#  - Automático (sem -TvHost): acha a TV na rede, pareia o agente (QR), pareia a TV e deixa o agente
-#    iniciando sozinho com o Windows, sem perguntar nada. É o que o conectar-uniover.cmd roda.
+#  - Automatico (sem -TvHost): acha a TV na rede, pareia o agente (QR), pareia a TV e deixa o agente
+#    iniciando sozinho com o Windows, sem perguntar nada. E o que o conectar-uniover.cmd roda.
 #  - Manual (com -TvHost): o comportamento de sempre, com a pergunta antes de criar a tarefa.
 
 $ErrorActionPreference = 'Stop'
 # A barra de progresso do Windows PowerShell 5.1 deixa o download dezenas de vezes mais lento.
 $ProgressPreference = 'SilentlyContinue'
 try {
-    # O 5.1 pode vir só com TLS antigo, que o GitHub recusa.
+    # O 5.1 pode vir so com TLS antigo, que o GitHub recusa.
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 }
 catch { }
@@ -31,20 +31,25 @@ $env:PYTHONUTF8 = '1'
 
 $taskName = 'UniOver agente'
 $base = Join-Path $env:LOCALAPPDATA 'UniOver'
-$source = Join-Path $base 'agent-src'
-$config = Join-Path $base 'agent.toml'
-$wrapper = Join-Path $base 'run-agent.ps1'
+$source = Join-Path $base 'app'
+$config = Join-Path $base 'config\agent.toml'
+$launcher = Join-Path $base 'launcher.ps1'
+$fallback = Join-Path $base 'run-agent.fallback.ps1'
 $installerUrl = 'https://raw.githubusercontent.com/n33miaz/uniover/main/apps/agent/tools/install-windows.ps1'
 $automatic = -not $PSBoundParameters.ContainsKey('TvHost')
 
 function Stop-Agent {
-    # Parar a tarefa e os processos que ela deixou: pasta em uso não pode ser trocada.
+    # Parar a tarefa e os processos que ela deixou: pasta em uso nao pode ser trocada.
     Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     $mine = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
         $_.CommandLine -and ($_.ProcessId -ne $PID) -and (
+            $_.CommandLine -like "*$base\launcher.ps1*" -or
             $_.CommandLine -like "*$base\run-agent.ps1*" -or
-            $_.CommandLine -like "*$base\venv*" -or
-            $_.CommandLine -like "*$base\agent-src*"
+            $_.CommandLine -like "*$base\runtime*" -or
+            $_.CommandLine -like "*$base\app*" -or
+            # Layout antigo: sem isto o agente de antes continua vivo ao lado do novo.
+            $_.CommandLine -like "*$base\agent-src*" -or
+            $_.CommandLine -like "*$base\venv*"
         )
     }
     foreach ($process in $mine) {
@@ -56,9 +61,10 @@ function Stop-Agent {
 if ($Uninstall) {
     Stop-Agent
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $wrapper -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $launcher -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $fallback -Force -ErrorAction SilentlyContinue
     Write-Host 'A tarefa agendada do UniOver foi removida e o agente parou.'
-    Write-Host "Configuração e pareamento ficaram em $base; apague a pasta se quiser tirar tudo."
+    Write-Host "Configuracao e pareamento ficaram em $base; apague a pasta se quiser tirar tudo."
     exit 0
 }
 
@@ -71,7 +77,7 @@ function Find-Uv {
     winget install --id astral-sh.uv -e --source winget --accept-package-agreements --accept-source-agreements
     $command = Get-Command uv -ErrorAction SilentlyContinue
     if (-not $command) {
-        # O winget cria o atalho fora do PATH desta sessão; procuramos nos dois lugares que ele usa.
+        # O winget cria o atalho fora do PATH desta sessao; procuramos nos dois lugares que ele usa.
         foreach ($candidate in @('Microsoft\WinGet\Links\uv.exe', 'Microsoft\WindowsApps\uv.exe', '.local\bin\uv.exe')) {
             $path = Join-Path $env:LOCALAPPDATA $candidate
             if (Test-Path $path) {
@@ -80,7 +86,7 @@ function Find-Uv {
         }
     }
     if (-not $command) {
-        throw 'O uv foi instalado, mas o terminal ainda não o encontrou. Abra outro PowerShell e rode o instalador de novo.'
+        throw 'O uv foi instalado, mas o terminal ainda nao o encontrou. Abra outro PowerShell e rode o instalador de novo.'
     }
     return $command.Source
 }
@@ -93,7 +99,7 @@ function Write-Config([string]$Path, [string[]]$Lines) {
 }
 
 function Set-ConfigValues([string]$Path, [hashtable]$Values) {
-    # Troca só as chaves dadas e preserva o resto (agent_id, listas do dono...). Nunca guarda token aqui.
+    # Troca so as chaves dadas e preserva o resto (agent_id, listas do dono...). Nunca guarda token aqui.
     $keys = ($Values.Keys | ForEach-Object { [regex]::Escape($_) }) -join '|'
     $lines = @()
     if (Test-Path -LiteralPath $Path) {
@@ -106,7 +112,7 @@ function Set-ConfigValues([string]$Path, [hashtable]$Values) {
 }
 
 function Get-AgentSource([string]$Destination) {
-    # Baixa o commit exato (e grava .version para a auto-atualização saber de onde partiu).
+    # Baixa o commit exato (e grava .version para a auto-atualizacao saber de onde partiu).
     $temporary = Join-Path $env:TEMP ('uniover-agent-' + [guid]::NewGuid())
     $zip = Join-Path $temporary 'main.zip'
     New-Item -ItemType Directory -Path $temporary -Force | Out-Null
@@ -115,17 +121,17 @@ function Get-AgentSource([string]$Destination) {
             $reply = Invoke-RestMethod -UseBasicParsing -Uri "https://api.github.com/repos/n33miaz/uniover/commits/$Ref" -Headers @{ 'User-Agent' = 'uniover-installer' }
         }
         catch {
-            throw 'Não consegui consultar a versão do agente no GitHub. Confira a internet e tente de novo.'
+            throw 'Nao consegui consultar a versao do agente no GitHub. Confira a internet e tente de novo.'
         }
         if ($reply.sha -notmatch '^[0-9a-f]{40}$') {
-            throw 'O GitHub não informou um commit válido para o agente.'
+            throw 'O GitHub nao informou um commit valido para o agente.'
         }
         $sha = $reply.sha
         $address = "https://github.com/n33miaz/uniover/archive/$sha.zip"
         Write-Host 'Baixando o agente...'
         Invoke-WebRequest -UseBasicParsing -Uri $address -OutFile $zip
-        # Só apps/agent sai do zip: o repositório inteiro tem caminhos (da API) que passam do limite de 260
-        # caracteres do Windows e derrubam a extração completa.
+        # So apps/agent sai do zip: o repositorio inteiro tem caminhos (da API) que passam do limite de 260
+        # caracteres do Windows e derrubam a extracao completa.
         if (Test-Path $Destination) {
             Remove-Item -LiteralPath $Destination -Recurse -Force
         }
@@ -136,14 +142,17 @@ function Get-AgentSource([string]$Destination) {
         $extracted = 0
         try {
             foreach ($entry in $bundle.Entries) {
-                # <repo>-<sha>/apps/agent/<resto>
+                # <repo>-<sha>/apps/agent/<resto>, mais o icone publico do app para a bandeja.
                 $parts = $entry.FullName -split '/', 4
-                if ($parts.Count -lt 4 -or $parts[1] -ne 'apps' -or $parts[2] -ne 'agent' -or -not $parts[3]) {
+                $isAgent = $parts.Count -ge 4 -and $parts[1] -eq 'apps' -and $parts[2] -eq 'agent' -and $parts[3]
+                $isIcon = $entry.FullName -match '/apps/web/public/icons/icon-192\.png$'
+                if (-not $isAgent -and -not $isIcon) {
                     continue
                 }
-                $target = [System.IO.Path]::GetFullPath((Join-Path $root ($parts[3] -replace '/', '\')))
+                $relative = if ($isAgent) { $parts[3] -replace '/', '\' } else { 'assets\uniover.png' }
+                $target = [System.IO.Path]::GetFullPath((Join-Path $root $relative))
                 if (-not $target.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
-                    throw 'O pacote baixado tem um caminho inválido.'
+                    throw 'O pacote baixado tem um caminho invalido.'
                 }
                 if ($entry.FullName.EndsWith('/')) {
                     New-Item -ItemType Directory -Path $target -Force | Out-Null
@@ -157,8 +166,21 @@ function Get-AgentSource([string]$Destination) {
         finally {
             $bundle.Dispose()
         }
-        if ($extracted -eq 0) {
-            throw 'O pacote baixado não contém apps\agent.'
+        if ($extracted -eq 0 -or -not (Test-Path -LiteralPath (Join-Path $Destination 'pyproject.toml'))) {
+            throw 'O pacote baixado nao contem apps\agent.'
+        }
+        $png = Join-Path $Destination 'assets\uniover.png'
+        $ico = Join-Path $Destination 'assets\uniover.ico'
+        if (Test-Path -LiteralPath $png) {
+            try {
+                Add-Type -AssemblyName System.Drawing
+                $bitmap = [System.Drawing.Bitmap]::new($png)
+                $icon = [System.Drawing.Icon]::FromHandle($bitmap.GetHicon())
+                $stream = [System.IO.File]::Create($ico)
+                try { $icon.Save($stream) } finally { $stream.Dispose(); $icon.Dispose(); $bitmap.Dispose() }
+            }
+            catch { }
+            Remove-Item -LiteralPath $png -Force -ErrorAction SilentlyContinue
         }
         if ($sha) {
             [System.IO.File]::WriteAllText((Join-Path $Destination '.version'), $sha + "`n", [System.Text.UTF8Encoding]::new($false))
@@ -170,13 +192,62 @@ function Get-AgentSource([string]$Destination) {
 }
 
 function Register-AgentTask([string]$Arguments) {
-    # O padrão do Agendador mata a tarefa depois de 72 h e não a inicia na bateria: o agente
-    # precisa ficar de pé o tempo todo. O Windows PowerShell existe em todo Windows.
+    # O padrao do Agendador mata a tarefa depois de 72 h e nao a inicia na bateria: o agente
+    # precisa ficar de pe o tempo todo. O Windows PowerShell existe em todo Windows.
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $Arguments
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
     $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -StartWhenAvailable
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+}
+
+function Move-LegacyLayout {
+    # A primeira execucao nova organiza uma instalacao antiga sem tocar no Cofre de Credenciais.
+    $moves = @(
+        @((Join-Path $base 'agent-src'), $source),
+        @((Join-Path $base 'agent-src.previous'), (Join-Path $base 'app.previous')),
+        @((Join-Path $base 'venv'), (Join-Path $base 'runtime\venv')),
+        @((Join-Path $base 'agent.toml'), $config),
+        @((Join-Path $base 'agent.log'), (Join-Path $base 'logs\agent.log')),
+        @((Join-Path $base 'conectar.html'), (Join-Path $base 'web\conectar.html')),
+        @((Join-Path $base '.blocked-versions'), (Join-Path $base 'runtime\.blocked-versions')),
+        @((Join-Path $base 'update-trial.txt'), (Join-Path $base 'runtime\update-trial.txt'))
+    )
+    foreach ($move in $moves) {
+        if ((Test-Path -LiteralPath $move[0]) -and -not (Test-Path -LiteralPath $move[1])) {
+            New-Item -ItemType Directory -Path (Split-Path $move[1] -Parent) -Force | Out-Null
+            Move-Item -LiteralPath $move[0] -Destination $move[1] -ErrorAction SilentlyContinue
+        }
+    }
+    foreach ($folder in @('runtime', 'config', 'logs', 'web')) {
+        New-Item -ItemType Directory -Path (Join-Path $base $folder) -Force | Out-Null
+    }
+}
+
+function Write-Readme {
+    $readme = @'
+UniOver
+
+Esta pasta guarda o agente que conecta este computador ao UniOver e a TV.
+Ele inicia sozinho, fica perto do relogio e se atualiza automaticamente.
+
+Se algo nao funcionar, rode de novo o arquivo conectar-uniover.cmd.
+Para remover, execute o instalador com -Uninstall e, se quiser, apague esta pasta.
+'@
+    [System.IO.File]::WriteAllText((Join-Path $base 'LEIA-ME.txt'), $readme, [System.Text.UTF8Encoding]::new($false))
+}
+
+function Write-StartMenuShortcut {
+    try {
+        $start = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+        $shortcut = Join-Path $start 'UniOver.lnk'
+        $shell = New-Object -ComObject WScript.Shell
+        $link = $shell.CreateShortcut($shortcut)
+        $link.TargetPath = ($ApiUrl.TrimEnd('/') + '/')
+        $link.Description = 'Abrir o UniOver'
+        $link.Save()
+    }
+    catch { }
 }
 
 # So ASCII, de proposito: o Windows PowerShell 5.1 le arquivo sem BOM como ANSI. O agente roda
@@ -312,33 +383,52 @@ while ($true) {
 
 function Write-AgentWrapper([string]$Uv) {
     $wrapperText = $wrapperTemplate.Replace('__UV__', $Uv.Replace("'", "''"))
-    [System.IO.File]::WriteAllText($wrapper, $wrapperText, [System.Text.Encoding]::ASCII)
+    # Mantido apenas para atualizar instalacoes muito antigas que ainda chamam este nome.
+    [System.IO.File]::WriteAllText((Join-Path $base 'run-agent.ps1'), $wrapperText, [System.Text.Encoding]::ASCII)
+}
+
+function Write-AgentLauncher {
+    $updatedWrapper = Join-Path $source 'tools\run-agent.ps1'
+    $updatedLauncher = Join-Path $source 'tools\launcher.ps1'
+    if (-not (Test-Path -LiteralPath $updatedWrapper) -or -not (Test-Path -LiteralPath $updatedLauncher)) {
+        throw 'O pacote do agente nao tem os arquivos de inicializacao.'
+    }
+    # O lancador nao muda: ele sempre delega para o supervisor que veio dentro de app atualizado.
+    Copy-Item -LiteralPath $updatedLauncher -Destination $launcher -Force
+    # Esta copia fica conhecida boa ate o proximo instalador; protege contra um supervisor futuro ruim.
+    Copy-Item -LiteralPath $updatedWrapper -Destination $fallback -Force
 }
 
 $uv = Find-Uv
 New-Item -ItemType Directory -Path $base -Force | Out-Null
-$env:UNIOVER_CONFIG_FILE = $config
+# O instalador e um caminho manual de recuperacao: pare o supervisor antigo antes de mover
+# qualquer pasta que ele possa estar usando. A auto-atualizacao usa o lancador estavel acima.
 Stop-Agent
+Move-LegacyLayout
+Write-Readme
+Write-StartMenuShortcut
+$env:UNIOVER_CONFIG_FILE = $config
+$env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'runtime\venv'
 
 if ($automatic) {
     # O ambiente Python fica FORA da pasta do agente e o uv roda com --project: assim a
-    # auto-atualização consegue trocar a pasta do agente por renomeação (pasta em uso não troca).
-    $env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'venv'
+    # auto-atualizacao consegue trocar a pasta do agente por renomeacao (pasta em uso nao troca).
+    $env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'runtime\venv'
 
     Get-AgentSource $source
     # A instalacao direta ja foi testada abaixo; uma versao anterior de outra instalacao nao e um
     # retorno valido caso este primeiro processo caia.
-    Remove-Item -LiteralPath (Join-Path $base 'agent-src.previous') -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $base 'app.previous') -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
     Set-ConfigValues $config @{ api_url = $ApiUrl }
 
     Write-Host 'Preparando o ambiente Python (na primeira vez demora um pouco)...'
     & $uv sync --project $source
     if ($LASTEXITCODE -ne 0) {
-        throw 'Não foi possível preparar o agente.'
+        throw 'Nao foi possivel preparar o agente.'
     }
 
-    # 1. Acha a TV na rede. O agente grava tipo, endereço e identificador no agent.toml.
+    # 1. Acha a TV na rede. O agente grava tipo, endereco e identificador no agent.toml.
     $findArguments = @('run', '--project', $source, 'uniover-agent', 'tv-find')
     if ($PSBoundParameters.ContainsKey('TvKind')) {
         $findArguments += @('--kind', $TvKind)
@@ -347,10 +437,10 @@ if ($automatic) {
     $tvFound = ($LASTEXITCODE -eq 0)
     if (-not $tvFound) {
         Write-Host ''
-        Write-Host 'Não achei a TV sozinho. Confira se ela está ligada e no mesmo Wi-Fi deste computador.'
-        $typed = Read-Host 'Se souber o endereço IP da TV, digite aqui (ou aperte Enter para seguir sem a TV)'
+        Write-Host 'Nao achei a TV sozinho. Confira se ela esta ligada e no mesmo Wi-Fi deste computador.'
+        $typed = Read-Host 'Se souber o endereco IP da TV, digite aqui (ou aperte Enter para seguir sem a TV)'
         if ($typed) {
-            $isSamsung = Read-Host 'A TV é Samsung? (s/N)'
+            $isSamsung = Read-Host 'A TV e Samsung? (s/N)'
             $kind = 'android'
             if ($isSamsung -match '^[sS]') {
                 $kind = 'samsung'
@@ -360,10 +450,10 @@ if ($automatic) {
         }
     }
 
-    # 2. Pareia este PC com a conta (código + QR). Já pareado: não pede de novo.
+    # 2. Pareia este PC com a conta (codigo + QR). Ja pareado: nao pede de novo.
     & $uv run --project $source uniover-agent pair --if-needed
     if ($LASTEXITCODE -ne 0) {
-        throw 'O pareamento do agente não foi concluído.'
+        throw 'O pareamento do agente nao foi concluido.'
     }
 
     # 3. Pareia a TV (na Samsung, aceite o aviso Permitir na tela da TV).
@@ -372,13 +462,13 @@ if ($automatic) {
         & $uv run --project $source uniover-agent tv-pair --if-needed
         $tvPaired = ($LASTEXITCODE -eq 0)
         if (-not $tvPaired) {
-            Write-Host 'O pareamento da TV não foi concluído. Rode este arquivo de novo com a TV ligada.'
+            Write-Host 'O pareamento da TV nao foi concluido. Rode este arquivo de novo com a TV ligada.'
         }
     }
 
     # 4. O agente passa a iniciar com o Windows, sem janela, sem perguntar.
-    Write-AgentWrapper $uv
-    Register-AgentTask "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wrapper`""
+    Write-AgentLauncher
+    Register-AgentTask "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$launcher`""
     Start-ScheduledTask -TaskName $taskName
 
     Write-Host ''
@@ -388,35 +478,35 @@ if ($automatic) {
         Write-Host '  - A TV foi encontrada e pareada.'
     }
     else {
-        Write-Host '  - A TV ainda não está pareada (rode este arquivo de novo com a TV ligada).'
+        Write-Host '  - A TV ainda nao esta pareada (rode este arquivo de novo com a TV ligada).'
     }
-    Write-Host "  - Foi criada a tarefa agendada '$taskName': o agente inicia sozinho quando você entra no Windows, sem janela."
-    Write-Host "  - O que o agente faz fica registrado em $(Join-Path $base 'agent.log')."
-    Write-Host 'Para remover, rode o comando abaixo (a configuração e o pareamento ficam):'
+    Write-Host "  - Foi criada a tarefa agendada '$taskName': o agente inicia sozinho quando voce entra no Windows, sem janela."
+    Write-Host "  - O que o agente faz fica registrado em $(Join-Path $base 'logs\agent.log')."
+    Write-Host 'Para remover, rode o comando abaixo (a configuracao e o pareamento ficam):'
     Write-Host ('  powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ' + $installerUrl + '))) -Uninstall"')
     exit 0
 }
 
 # --- Modo manual (-TvHost informado) ---------------------------------------------------------
 Get-AgentSource $source
-Remove-Item -LiteralPath (Join-Path $base 'agent-src.previous') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $base 'app.previous') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
 Write-Config $config @("api_url = " + ($ApiUrl | ConvertTo-Json -Compress))
 
 Write-Host 'Preparando o ambiente Python...'
 & $uv --directory $source sync
 if ($LASTEXITCODE -ne 0) {
-    throw 'Não foi possível preparar o agente.'
+    throw 'Nao foi possivel preparar o agente.'
 }
 
-Write-Host 'Aprovação do agente'
-Write-Host 'O próximo comando mostrará um código e um QR. Abra o app UniOver e aprove.'
+Write-Host 'Aprovacao do agente'
+Write-Host 'O proximo comando mostrara um codigo e um QR. Abra o app UniOver e aprove.'
 & $uv --directory $source run uniover-agent pair
 if ($LASTEXITCODE -ne 0) {
-    throw 'O pareamento do agente não foi concluído.'
+    throw 'O pareamento do agente nao foi concluido.'
 }
 
-# O pareamento preserva chaves locais; trocamos só os campos da TV para nunca guardar token aqui.
+# O pareamento preserva chaves locais; trocamos so os campos da TV para nunca guardar token aqui.
 Set-ConfigValues $config @{ tv_kind = $TvKind; tv_host = $TvHost }
 
 if ($TvKind -eq 'samsung') {
@@ -424,16 +514,16 @@ if ($TvKind -eq 'samsung') {
 }
 & $uv --directory $source run uniover-agent tv-pair --kind $TvKind --host $TvHost
 if ($LASTEXITCODE -ne 0) {
-    throw 'O pareamento da TV não foi concluído.'
+    throw 'O pareamento da TV nao foi concluido.'
 }
 
 $answer = Read-Host "Registrar a tarefa '$taskName' para iniciar ao entrar no Windows? (s/N)"
 if ($answer -match '^[sS]') {
-    Write-AgentWrapper $uv
-    Register-AgentTask "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wrapper`""
+    Write-AgentLauncher
+    Register-AgentTask "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$launcher`""
     Start-ScheduledTask -TaskName $taskName
     Write-Host 'Tarefa registrada e iniciada.'
 }
 else {
-    Write-Host 'A tarefa não foi registrada. Para iniciar agora: uv run uniover-agent run'
+    Write-Host 'A tarefa nao foi registrada. Para iniciar agora: uv run uniover-agent run'
 }
