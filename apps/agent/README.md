@@ -90,11 +90,12 @@ Use uma Samsung recente na mesma rede do PC, com o controle por rede liberado:
 
 O agente mantém o WebSocket Samsung aberto enquanto há uso e o hiberna como faz com Android. Lê a energia pelo
 REST da TV (`on`, `standby` ou `off`; sem resposta fica `unknown`) e não repete `POWER` em menos de dez segundos.
-Teclas, volume, canais, números, mídia e início funcionam pelo canal Samsung. A lista consulta pelo REST um catálogo
-de apps conhecidos e os IDs extras em `UNIOVER_TV_SAMSUNG_APPS`; só publica respostas que a TV confirma como
-instaladas e não recebe ícone. A abertura tenta o mesmo REST antes de recorrer ao canal Samsung. A lista usa aliases
-internos válidos no contrato, mas abre o `appId` original Tizen. Não há ADB, limpeza de apps, abertura de links ou
-digitação pelo canal desta TV: esses pedidos retornam `unsupported`.
+Teclas, volume, canais, números, mídia e início funcionam pelo canal Samsung. A lista primeiro pede o catálogo pelo
+WebSocket (quando o firmware entrega o caminho, o agente busca o ícone e publica `tv.apps.v2`); nos modelos que não
+respondem, consulta pelo REST um catálogo de apps conhecidos e os IDs extras em `UNIOVER_TV_SAMSUNG_APPS`. A web tem
+ícones locais para os serviços Tizen mais comuns nesse segundo caso. A abertura tenta o mesmo REST antes de recorrer
+ao canal Samsung. A lista usa aliases internos válidos no contrato, mas abre o `appId` original Tizen. Não há ADB,
+limpeza de apps, abertura de links ou digitação pelo canal desta TV: esses pedidos retornam `unsupported`.
 
 ### Instalação em um clique
 
