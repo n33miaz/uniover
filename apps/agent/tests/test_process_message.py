@@ -147,3 +147,13 @@ async def test_known_by_contract_but_without_handler_is_rejected_by_core() -> No
     (reply,) = transport.sent
     assert reply["body"]["ok"] is False
     assert reply["body"]["error"]["code"] == "rejected"
+
+
+async def test_api_keepalive_is_accepted_without_executing_or_replying() -> None:
+    spy = Spy()
+    process, transport = build(spy)
+
+    await process(dump(envelope("api.keepalive.v1", {})))
+
+    assert spy.calls == []
+    assert transport.sent == []

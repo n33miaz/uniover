@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 
 import pytest
@@ -199,6 +200,36 @@ async def test_reconnects_after_the_server_drops_the_connection() -> None:
     assert clock.sleeps[0] == 1
     # A primeira conexão consumiu o hello no roteiro; a segunda também anunciou o agente.
     assert [m["type"] for m in api.received] == ["agent.hello.v1"]
+
+
+async def test_sends_an_application_keepalive_while_the_channel_is_idle() -> None:
+    received: list[dict[str, object]] = []
+
+    async def script(connection: ServerConnection) -> None:
+        received.append(json.loads(await connection.recv()))
+        received.append(json.loads(await connection.recv()))
+        await connection.close(4403, "revoked")
+
+    clock = FakeClock()
+    async with FakeApi(script) as api:
+        gate = EnvelopeGate(AGENT_ID)
+        envelopes = EnvelopeFactory(AGENT_ID, gate, clock)
+        transport = transport_for(api)
+        process = ProcessMessage(AGENT_ID, gate, build_handler(clock), envelopes, transport)
+        supervisor = ConnectionSupervisor(
+            transport,
+            process,
+            envelopes,
+            clock,
+            lambda: 0.5,
+            agent_version="0.1.0",
+            capabilities=("transport.keepalive.v1",),
+            keepalive_interval=0.01,
+        )
+
+        await asyncio.wait_for(supervisor.run(), timeout=5)
+
+    assert [message["type"] for message in received] == ["agent.hello.v1", "agent.keepalive.v1"]
 
 
 async def test_invalid_message_from_server_is_not_executed_and_revocation_stops() -> None:
