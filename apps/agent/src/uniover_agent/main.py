@@ -4,6 +4,7 @@
 import argparse
 import asyncio
 import logging
+import os
 import platform
 import random
 import re
@@ -24,6 +25,7 @@ from uniover_agent.adapters.apk_tools import (
     default_icons_dir,
     locate_aapt2,
 )
+from uniover_agent.adapters.installation import migrate_layout
 from uniover_agent.adapters.local_config import save_agent_config, update_config
 from uniover_agent.adapters.pairing_http import HttpPairingClient, probe_api
 from uniover_agent.adapters.pairing_page import (
@@ -38,6 +40,7 @@ from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, Secr
 from uniover_agent.adapters.self_update import self_update
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.transport_ws import WebSocketTransport, build_ws_url
+from uniover_agent.adapters.tray_status import TrayStatus
 from uniover_agent.adapters.tv_adb import AdbTv, locate_adb
 from uniover_agent.adapters.tv_discovery import (
     ANDROID_REMOTE_PORT,
@@ -558,6 +561,7 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
         print(_NOT_PAIRED, file=sys.stderr)
         return EXIT_NOT_PAIRED
     api_url = require_api_url(settings)
+    tray = TrayStatus(settings.tv_name)
 
     clock = SystemClock()
     gate = EnvelopeGate(agent_id)
@@ -584,6 +588,7 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
     if tv is not None:
         publisher = TvStatePublisher(transport, envelopes)
         tv.manager.subscribe(publisher.publish)
+        tv.manager.subscribe(tray.tv_state)
         manager, announcer = tv.manager, publisher
 
         async def announce_tv() -> None:
@@ -593,6 +598,7 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
         after_hello = [announce_tv, *tv.after_hello]
 
     async def on_connected() -> None:
+        tray.connected()
         for step in after_hello:
             await step()
 
@@ -607,7 +613,8 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
             "transport.keepalive.v1",
             *(tuple(tv.capabilities) if tv is not None else ()),
         ),
-        on_connected=on_connected if after_hello else None,
+        on_connected=on_connected,
+        on_disconnected=tray.disconnected,
     )
     _log.info("agente %s iniciando (api %s)", agent_id, api_url)
     jobs: list[Callable[[], Coroutine[Any, Any, None]]] = []
@@ -782,6 +789,7 @@ async def tv_find(
 
 def update_agent(*, sync: bool) -> int:
     """Atualiza o agente instalado pela `main`. Nunca falha: o agente atual continua valendo."""
+    migrate_layout()
     print(self_update(agent_source_dir(), sync=sync).message)
     return EXIT_OK
 
@@ -816,6 +824,7 @@ def _parser() -> argparse.ArgumentParser:
     update_parser.add_argument(
         "--no-sync", action="store_true", help="não roda `uv sync` depois (o instalador faz)"
     )
+    sub.add_parser("tray", help=argparse.SUPPRESS)
     return parser
 
 
@@ -825,6 +834,8 @@ def main(  # noqa: PLR0911 - um retorno por comando
     args = _parser().parse_args(argv)
     command = args.command or "run"
     try:
+        # Também roda quando um wrapper antigo inicia o código novo pela primeira vez.
+        migrate_layout()
         settings = Settings()
         configure_logging(settings.log_level, settings.log_file)
 
@@ -859,6 +870,16 @@ def main(  # noqa: PLR0911 - um retorno por comando
             return asyncio.run(tv_find(args.kind))
         if command == "self-update":
             return update_agent(sync=not args.no_sync)
+        if command == "tray":
+            # pystray e Pillow sao opcionais para o processo principal: sem bandeja, a TV segue
+            # funcionando e o supervisor tentara o icone de novo depois.
+            from uniover_agent.adapters.tray import run_tray  # noqa: PLC0415 - dependência opcional
+
+            return run_tray()
+        if os.environ.pop("UNIOVER_LEGACY_TAKEOVER", None):
+            # O lançador novo já foi destacado; o wrapper legado fica sem o código antigo e não
+            # deve abrir uma segunda conexão com a API.
+            return EXIT_OK
         while True:
             code = asyncio.run(run(settings, open_store))
             if code != EXIT_TV_MOVED:

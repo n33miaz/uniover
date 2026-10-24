@@ -58,7 +58,7 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_TV_HOST` | endereço (IP) da TV; sem ele o agente não controla TV. O IP não é garantidamente fixo |
 | `UNIOVER_TV_KIND` | tipo da TV: `android` (padrão) ou `samsung` |
 | `UNIOVER_TV_ID_HINT` | identificador estável da TV (Samsung: `duid` ou MAC Wi-Fi; Android: MAC); o `tv-find` grava e o agente usa para reencontrar a TV se o IP mudar |
-| `UNIOVER_LOG_FILE` | também registra neste arquivo (rodízio de 1 MB, 2 cópias); o instalador usa `%LOCALAPPDATA%\UniOver\agent.log` |
+| `UNIOVER_LOG_FILE` | também registra neste arquivo (rodízio de 1 MB, 2 cópias); o instalador usa `%LOCALAPPDATA%\UniOver\logs\agent.log` |
 | `UNIOVER_TV_CLIENT_NAME` | nome do agente que aparece na TV no pareamento (padrão `UniOver`) |
 | `UNIOVER_TV_NAME` | nome da pasta do certificado desta TV (padrão `tv`) |
 | `UNIOVER_TV_SAMSUNG_APPS` | IDs Tizen extras a procurar, separados por vírgula; a TV só publica os instalados |
@@ -73,7 +73,7 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_ICONS_DIR` | pasta do cache de ícones (padrão `%LOCALAPPDATA%\UniOver\icons`; um arquivo por pacote e versão do app, e o nome leva a versão da regra de escolha do ícone: ao mudar a regra, o que a antiga guardou é ignorado e refeito) |
 | `UNIOVER_TV_CLEANUP_KEEP` | pacotes que a limpeza da TV **nunca** fecha, além dos protegidos de fábrica (ver "Limpeza da TV"): nomes de pacote do Android separados por vírgula (`com.exemplo.app,com.outro.app`); no `agent.toml`, `tv_cleanup_keep` como lista ou como esse mesmo texto. Item fora do formato de pacote é erro de configuração e o agente não sobe |
 
-Arquivo local (fora do repositório): `%LOCALAPPDATA%\UniOver\agent.toml`, com `api_url` e `agent_id`. Nunca
+Arquivo local (fora do repositório): `%LOCALAPPDATA%\UniOver\config\agent.toml`, com `api_url` e `agent_id`. Nunca
 guarda segredo.
 
 ## TV Samsung (Tizen)
@@ -109,14 +109,22 @@ sem parâmetros (modo automático), que:
 3. **pareia o agente**: mostra o código e o QR para escanear com o celular onde a pessoa usa o UniOver
    (já pareado, não repete);
 4. **pareia a TV** (na Samsung, aceitar o aviso na tela; já pareada, não repete);
-5. cria a tarefa **UniOver agente** (ao entrar no Windows, sem janela, sem perguntar) que roda
-   `%LOCALAPPDATA%\UniOver\run-agent.ps1`. O instalador imprime o que fez e o comando de remoção (`-Uninstall`).
+5. cria a tarefa **UniOver agente** (ao entrar no Windows, sem janela, sem perguntar) que roda o
+   lançador estável `%LOCALAPPDATA%\UniOver\launcher.ps1`. O instalador também deixa um atalho **UniOver** no
+   Menu Iniciar.
 
-O `run-agent.ps1` (gerado, só ASCII e compatível com Windows PowerShell 5.1) fica sem janela, faz `uv sync` e
-`run`; se o agente cair, volta com espera crescente (5 s até 5 min, voltando a 5 s depois de 10 min de agente
-saudável). Se o `uv` ou o ambiente virtual quebrarem numa atualização do Windows, procura o executável nos locais
-conhecidos do Windows/WinGet e recria `%LOCALAPPDATA%\UniOver\venv`. O registro fica em
-`%LOCALAPPDATA%\UniOver\agent.log`.
+O lançador chama o `app\tools\run-agent.ps1` que veio com a versão atual e mantém uma cópia conhecida para
+recuperação. Assim o supervisor, o ícone e futuras correções também chegam pela atualização. O supervisor fica sem
+janela, faz `uv sync` e `run`; se o agente cair, volta com espera crescente (5 s até 5 min, voltando a 5 s depois de
+10 min de agente saudável). Se o `uv` ou o ambiente virtual quebrarem numa atualização do Windows, recria
+`%LOCALAPPDATA%\UniOver\runtime\venv`. O registro fica em `%LOCALAPPDATA%\UniOver\logs\agent.log`.
+
+**Bandeja e pasta do PC.** Perto do relógio aparece o ícone do UniOver: verde para TV ligada, amarelo para estado
+desconhecido/TV desligada e vermelho sem conexão. A dica traz o nome da TV. O menu abre o UniOver, o registro, pede
+uma atualização ou reinicia o agente; não há opção de desligar por engano. Se a bandeja não estiver disponível, o
+agente continua normalmente e tenta o ícone de novo. A pasta `%LOCALAPPDATA%\UniOver` fica organizada em `app`,
+`runtime`, `config`, `logs` e `web`, com um `LEIA-ME.txt`. Instalações antigas são migradas preservando
+`agent_id`, configuração e os tokens do Cofre do Windows.
 
 **Reencontro da TV.** Com `tv_id_hint` gravado, o `run` confere a cada minuto se a TV responde (a sessão quente já
 prova que sim). Depois de 3 falhas seguidas refaz a varredura, no máximo uma a cada 10 minutos; achando a **mesma**
@@ -125,12 +133,12 @@ TV (mesmo `duid`/MAC) em outro endereço, grava o `tv_host` novo no `agent.toml`
 endereço nem identificador.
 
 **Auto-atualização com retorno.** A cada início e depois a cada 6 h (com até 45 min de variação), o wrapper
-consulta o commit da `main`. A candidata é baixada para `agent-src.new`, passa por `uv sync` e por um import rápido
-do agente e do contrato `agent.hello.v1`; só então entra no lugar. A pasta anterior fica em `agent-src.previous`.
+consulta o commit da `main`. A candidata é baixada para `app.new`, passa por `uv sync` e por um import rápido
+do agente e do contrato `agent.hello.v1`; só então entra no lugar. A pasta anterior fica em `app.previous`.
 Se a versão recém-instalada cair três vezes antes de completar 10 min, o wrapper restaura a anterior e anota o SHA
 em `.blocked-versions`, para não tentar o mesmo commit ruim de novo. Falha de rede, limite do GitHub, teste ou pasta
 em uso só preserva a versão que está rodando. Para a renomeação funcionar no Windows, o ambiente Python fica fora da
-pasta (`UV_PROJECT_ENVIRONMENT=%LOCALAPPDATA%\UniOver\venv`) e o `uv` roda com `--project`.
+pasta (`UV_PROJECT_ENVIRONMENT=%LOCALAPPDATA%\UniOver\runtime\venv`) e o `uv` roda com `--project`.
 
 **Início com o PC.** A tarefa usa `AtLogOn`, usuário atual, sem janela, sem parar na bateria e sem limite de 72 h.
 É o caminho confiável sem administrador porque a credencial do agente fica no cofre do usuário. Antes de haver
@@ -148,7 +156,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 ```
 
 Com `-TvHost` o instalador segue o fluxo manual (sem descoberta e com a pergunta abaixo). Ele instala o `uv` pelo `winget` se necessário, baixa somente `apps/agent` da branch pública `main` em
-`%LOCALAPPDATA%\UniOver\agent-src`, prepara as dependências, mostra o código para aprovar o PC no app, pareia a
+`%LOCALAPPDATA%\UniOver\app`, prepara as dependências, mostra o código para aprovar o PC no app, pareia a
 TV e pergunta explicitamente antes de criar a tarefa **UniOver agente** para iniciar sem janela ao entrar no Windows.
 Para remover só a tarefa: `.\install-windows.ps1 -Uninstall`.
 

@@ -67,6 +67,7 @@ class ConnectionSupervisor:
         capabilities: Sequence[str],
         policy: BackoffPolicy | None = None,
         on_connected: Callable[[], Awaitable[None]] | None = None,
+        on_disconnected: Callable[[], None] | None = None,
         keepalive_interval: float = APPLICATION_KEEPALIVE_SECONDS,
     ) -> None:
         self._transport = transport
@@ -79,6 +80,7 @@ class ConnectionSupervisor:
         self._backoff = Backoff(self._policy, random)
         # Roda a cada conexão, logo depois do `hello` (ex.: informar à API o estado atual da TV).
         self._on_connected = on_connected
+        self._on_disconnected = on_disconnected
         self._keepalive_interval = keepalive_interval
 
     async def run(self) -> None:
@@ -133,6 +135,8 @@ class ConnectionSupervisor:
             ):
                 self._backoff.reset()
             await self._transport.close()
+            if self._on_disconnected is not None:
+                self._on_disconnected()
 
     async def _send_keepalives(self) -> None:
         while True:
