@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
+using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
 
@@ -58,6 +59,7 @@ internal static class UpdateShortcutValidator
 
 internal sealed partial class UpdateShortcutHandler(
     TvDbContext db,
+    ITvCurrentSelection selection,
     ITvShortcutReader reader,
     ITvStreamPublisher stream,
     ITvCommandAudit audit,
@@ -69,7 +71,7 @@ internal sealed partial class UpdateShortcutHandler(
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var shortcut = await db.Shortcuts.SingleOrDefaultAsync(s => s.Id == command.ShortcutId, cancellationToken);
+        var shortcut = await db.Shortcuts.SingleOrDefaultAsync(s => s.Id == command.ShortcutId && s.TvId == selection.Current.Id, cancellationToken);
         if (shortcut is null)
         {
             return null;
@@ -87,7 +89,7 @@ internal sealed partial class UpdateShortcutHandler(
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        stream.PublishShortcuts(await reader.ListAsync(cancellationToken));
+        stream.PublishShortcuts(selection.Current.Id, await reader.ListAsync(selection.Current.Id, cancellationToken));
         await RecordAsync(command, now);
         return TvShortcut.From(shortcut);
     }
@@ -113,7 +115,7 @@ internal sealed partial class UpdateShortcutHandler(
 
             var entry = CommandAuditEntry.Create(
                 command.Origin.UserId, null, TvCommandNames.ShortcutUpdate, string.Join(',', fields),
-                ok: true, errorCode: null, latencyMs: null, command.Origin.Client, now);
+                ok: true, errorCode: null, latencyMs: null, command.Origin.Client, now, selection.Current.Id);
             await audit.RecordAsync(entry, CancellationToken.None);
         }
 #pragma warning disable CA1031 // A auditoria não pode desfazer a mudança: o erro vai para o log.

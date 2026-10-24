@@ -20,6 +20,8 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
 
     public DbSet<ConfiguredTv> Tvs => Set<ConfiguredTv>();
 
+    public DbSet<TvMember> TvMembers => Set<TvMember>();
+
     public DbSet<WatchdogEvent> WatchdogEvents => Set<WatchdogEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -40,6 +42,7 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             e.Property(x => x.ErrorCode).HasMaxLength(CommandAuditEntry.ErrorCodeMax);
             e.Property(x => x.Ip).HasMaxLength(CommandAuditEntry.IpMax);
             e.Property(x => x.UserAgent).HasMaxLength(CommandAuditEntry.UserAgentMax);
+            e.HasIndex(x => new { x.TvId, x.OccurredAt });
             e.HasIndex(x => x.OccurredAt);
         });
 
@@ -49,7 +52,7 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.Package).HasMaxLength(Shortcut.PackageMax).IsRequired();
-            e.HasIndex(x => x.Package).IsUnique();
+            e.HasIndex(x => new { x.TvId, x.Package }).IsUnique();
             e.Property(x => x.TvLabel).HasMaxLength(Shortcut.TvLabelMax);
             e.Property(x => x.CustomLabel).HasMaxLength(Shortcut.CustomLabelMax);
             e.HasIndex(x => x.Position);
@@ -83,8 +86,17 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
 
             // Exatamente uma TV padrão por enquanto: o índice único parcial impede uma segunda linha padrão mesmo
             // com dois salvamentos ao mesmo tempo. O mesmo agente pode controlar várias TVs no futuro, então o
-            // slug do agente não é único.
+            // Uma mensagem de um agente precisa ter um único destino; por isso o mesmo computador não controla duas TVs.
+            e.HasIndex(x => x.AgentSlug).IsUnique();
             e.HasIndex(x => x.IsDefault).IsUnique().HasFilter("is_default");
+        });
+
+        modelBuilder.Entity<TvMember>(e =>
+        {
+            e.ToTable("tv_members");
+            e.HasKey(x => new { x.TvId, x.UserId });
+            // O usuário é do Identity, portanto fica somente como UUID, sem FK entre schemas.
+            e.HasIndex(x => x.UserId);
         });
 
         modelBuilder.Entity<WatchdogEvent>(e =>

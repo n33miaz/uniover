@@ -898,6 +898,27 @@
         ],
         "type": "object"
       },
+      "CreateTvRequest": {
+        "properties": {
+          "agentSlug": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "agentSlug",
+          "name"
+        ],
+        "type": "object"
+      },
       "CredentialPropertiesOutput": {
         "properties": {
           "authenticatorDisplayName": {
@@ -2892,6 +2913,35 @@
         ],
         "type": "object"
       },
+      "TvListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TvSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "TvMembersResponse": {
+        "properties": {
+          "userIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "userIds"
+        ],
+        "type": "object"
+      },
       "TvShortcut": {
         "properties": {
           "customLabel": {
@@ -2986,6 +3036,51 @@
         ],
         "type": "object"
       },
+      "TvSummary": {
+        "properties": {
+          "agentSlug": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "online": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "isDefault",
+          "agentSlug",
+          "kind",
+          "online",
+          "capabilities"
+        ],
+        "type": "object"
+      },
       "UpdateProfileRequest": {
         "properties": {
           "displayName": {
@@ -3018,6 +3113,45 @@
         "required": [
           "customLabel",
           "enabled"
+        ],
+        "type": "object"
+      },
+      "UpdateTvMembersRequest": {
+        "properties": {
+          "userIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "userIds"
+        ],
+        "type": "object"
+      },
+      "UpdateTvRequest": {
+        "properties": {
+          "agentSlug": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "agentSlug",
+          "name"
         ],
         "type": "object"
       },
@@ -8778,6 +8912,229 @@
         ]
       }
     },
+    "/api/v1/tv/tvs": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ManageTvsEndpoint"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CreateTvRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvSummary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "409": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        },
+        "tags": [
+          "ManageTvsEndpoint"
+        ]
+      }
+    },
+    "/api/v1/tv/tvs/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "409": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        },
+        "tags": [
+          "ManageTvsEndpoint"
+        ]
+      },
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UpdateTvRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvSummary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "409": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        },
+        "tags": [
+          "ManageTvsEndpoint"
+        ]
+      }
+    },
+    "/api/v1/tv/tvs/{id}/members": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvMembersResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ManageTvsEndpoint"
+        ]
+      },
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UpdateTvMembersRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvMembersResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ManageTvsEndpoint"
+        ]
+      }
+    },
     "/api/v1/tv/wake": {
       "post": {
         "responses": {
@@ -8897,6 +9254,9 @@
     },
     {
       "name": "BindAgentEndpoint"
+    },
+    {
+      "name": "ManageTvsEndpoint"
     },
     {
       "name": "PullExercisesEndpoint"

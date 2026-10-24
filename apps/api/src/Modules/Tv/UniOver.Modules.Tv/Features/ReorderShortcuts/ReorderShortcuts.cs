@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
+using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
 
@@ -41,6 +42,7 @@ internal static class ReorderShortcutsValidator
 
 internal sealed partial class ReorderShortcutsHandler(
     TvDbContext db,
+    ITvCurrentSelection selection,
     ITvShortcutReader reader,
     ITvStreamPublisher stream,
     ITvCommandAudit audit,
@@ -57,7 +59,7 @@ internal sealed partial class ReorderShortcutsHandler(
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var existing = await db.Shortcuts.ToListAsync(cancellationToken);
+        var existing = await db.Shortcuts.Where(s => s.TvId == selection.Current.Id).ToListAsync(cancellationToken);
         var now = time.GetUtcNow();
         if (!ShortcutCatalog.TryReorder(existing, command.Ids, now, out var changed))
         {
@@ -69,12 +71,12 @@ internal sealed partial class ReorderShortcutsHandler(
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        var list = await reader.ListAsync(cancellationToken);
+        var list = await reader.ListAsync(selection.Current.Id, cancellationToken);
 
         // Sem mudança nada precisa chegar às outras telas; com ela, o mesmo fluxo que o PATCH de atalho usa.
         if (changed)
         {
-            stream.PublishShortcuts(list);
+            stream.PublishShortcuts(selection.Current.Id, list);
             await RecordAsync(command, now);
         }
 
@@ -88,7 +90,7 @@ internal sealed partial class ReorderShortcutsHandler(
         {
             var entry = CommandAuditEntry.Create(
                 command.Origin.UserId, null, TvCommandNames.ShortcutsReorder, $"count={command.Ids.Count}",
-                ok: true, errorCode: null, latencyMs: null, command.Origin.Client, now);
+                ok: true, errorCode: null, latencyMs: null, command.Origin.Client, now, selection.Current.Id);
             await audit.RecordAsync(entry, CancellationToken.None);
         }
 #pragma warning disable CA1031 // A auditoria não pode desfazer a ordem: o erro vai para o log.
