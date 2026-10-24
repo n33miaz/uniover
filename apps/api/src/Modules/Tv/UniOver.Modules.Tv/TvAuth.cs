@@ -1,4 +1,5 @@
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Tv.Contracts;
 
 namespace UniOver.Modules.Tv;
 
@@ -21,7 +22,7 @@ public static class TvAuth
     /// o administrador, e só com a passkey (a política <c>stepup:</c> já inclui o papel de administrador). Mora aqui,
     /// como a do pareamento mora no Devices: o Identity não precisa conhecer as ações dos outros módulos.
     /// </summary>
-    public const string BindAgentAction = "tv.bind-agent";
+    public const string BindAgentAction = TvPairingActions.BindAgent;
 
     /// <summary>Ver a TV: estado, lista de atalhos e o fluxo ao vivo (<c>module:tv</c>).</summary>
     internal static readonly string Module = AccessPermissions.Policy(AccessPermissions.TvModule);

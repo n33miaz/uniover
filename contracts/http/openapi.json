@@ -78,6 +78,22 @@
               "string"
             ]
           },
+          "tvMemberIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "tvName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "userCode": {
             "type": [
               "null",
@@ -87,7 +103,9 @@
         },
         "required": [
           "userCode",
-          "name"
+          "name",
+          "tvName",
+          "tvMemberIds"
         ],
         "type": "object"
       },
