@@ -18,8 +18,10 @@ from uniover_agent.core.tv.handlers import (
     tv_key_handler,
     tv_text_handler,
     tv_wake_handler,
+    unsupported_handler,
 )
 from uniover_agent.core.tv.icons import AppIconPublisher, IconResolver
+from uniover_agent.core.tv.samsung_apps import SamsungTvApps
 from uniover_agent.core.tv.session import (
     TV_NOT_PAIRED,
     TV_UNREACHABLE,
@@ -43,6 +45,7 @@ __all__ = [
     "CleanupReport",
     "IconResolver",
     "PackageLauncher",
+    "SamsungTvApps",
     "SessionState",
     "TextReconciler",
     "TvApps",
@@ -59,4 +62,5 @@ __all__ = [
     "tv_key_handler",
     "tv_text_handler",
     "tv_wake_handler",
+    "unsupported_handler",
 ]

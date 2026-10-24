@@ -74,7 +74,7 @@ def test_host_with_certificate_builds_the_session(monkeypatch: pytest.MonkeyPatc
     assert setup is not None
     assert built == [(TV_HOST, "Casa", tv_cert_dir("tv"))]
     assert setup.manager.snapshot().connection == "hibernating"
-    assert setup.capabilities == ["tv.remote"]
+    assert setup.capabilities == ["tv.remote", "tv.kind.android"]
     assert set(setup.handlers) == {
         "tv.key.v1",
         "tv.key.v2",
@@ -184,7 +184,7 @@ async def test_run_declares_the_capability_and_serves_tv_commands(
 
     hello = api.received[0]
     assert hello["type"] == "agent.hello.v1"
-    assert hello["body"]["capabilities"] == ["tv.remote"]
+    assert hello["body"]["capabilities"] == ["tv.remote", "tv.kind.android"]
 
     # Logo depois do `hello`, a API recebe o estado atual: controle dormindo, poder desconhecido.
     first_state = api.received[1]
@@ -288,7 +288,11 @@ async def test_later_deliveries_extend_the_composition_with_one_line_each(
         )
         assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
 
-    assert api.received[0]["body"]["capabilities"] == ["tv.remote", "tv.adb"]
+    assert api.received[0]["body"]["capabilities"] == [
+        "tv.remote",
+        "tv.kind.android",
+        "tv.adb",
+    ]
     assert sorted(ran) == ["apps", "fundo"]
     # O estado inicial (anunciado pela composição) e o evento da extensão saem depois do `hello`.
     states = [m for m in api.received if m["type"] == "tv.state.v1"]

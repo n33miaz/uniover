@@ -25,6 +25,7 @@ from uniover_agent.core.tv import (
     CleanupReport,
     IconResolver,
     PackageLauncher,
+    SamsungTvApps,
     SessionState,
     TextReconciler,
     TvApps,
@@ -41,6 +42,7 @@ from uniover_agent.core.tv import (
     tv_key_handler,
     tv_text_handler,
     tv_wake_handler,
+    unsupported_handler,
 )
 
 __all__ = [
@@ -74,6 +76,7 @@ __all__ = [
     "ProcessMessage",
     "Rejected",
     "ResultStatus",
+    "SamsungTvApps",
     "SessionState",
     "TextReconciler",
     "TvApps",
@@ -91,4 +94,5 @@ __all__ = [
     "tv_key_handler",
     "tv_text_handler",
     "tv_wake_handler",
+    "unsupported_handler",
 ]

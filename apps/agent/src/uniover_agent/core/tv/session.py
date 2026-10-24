@@ -24,9 +24,9 @@ from uniover_agent.ports import (
     Clock,
     TvChannel,
     TvChannelError,
+    TvDriver,
     TvNotPaired,
     TvPortClosed,
-    TvRemote,
     TvUnreachable,
 )
 
@@ -76,7 +76,7 @@ class TvSessionManager:
     def __init__(
         self,
         clock: Clock,
-        remote: TvRemote,
+        remote: TvDriver,
         *,
         hibernate_seconds: float = DEFAULT_HIBERNATE_SECONDS,
         backoff: tuple[float, ...] = DEFAULT_BACKOFF,
@@ -246,7 +246,7 @@ class TvSessionManager:
 
     # --- comandos ----------------------------------------------------------------------------
 
-    async def _run(self, action: Callable[[TvRemote], Awaitable[None]]) -> None:
+    async def _run(self, action: Callable[[TvDriver], Awaitable[None]]) -> None:
         self.touch()
         self._reopened_unattended = False
         await self._ensure_hot()

@@ -46,6 +46,15 @@ def failed_result(command: Command, exc: TvSessionError) -> CommandResult:
     return CommandResult(command.id, ResultStatus.FAILED, exc.message, exc.code)
 
 
+def unsupported_handler(message: str) -> Handler:
+    """Recusa um comando conhecido que este tipo de TV não consegue executar."""
+
+    async def handle(command: Command) -> CommandResult:
+        return CommandResult(command.id, ResultStatus.REJECTED, message, UNSUPPORTED)
+
+    return handle
+
+
 def tv_key_handler(tv: TvControl, *, blocked_keys: frozenset[str] = frozenset()) -> Handler:
     """Trata `tv.key.v1` e `tv.key.v2` (a direção só existe na v2; o padrão é `SHORT`).
 
@@ -176,10 +185,13 @@ def tv_app_launch_handler(
     *,
     allowed_schemes: frozenset[str] = DEFAULT_LINK_SCHEMES,
     packages: PackageLauncher | None = None,
+    links_supported: bool = True,
 ) -> Handler:
     """`tv.app.launch.v1`: link pelo controle remoto; pacote pelo canal ADB (`packages`).
 
-    Sem o canal ADB, abrir por pacote é recusado com `unsupported`.
+    Sem o canal ADB, abrir por pacote é recusado com `unsupported`. Drivers sem abertura de link
+    passam `links_supported=False`, para que o app esconda a ação em vez de tentar um protocolo que
+    a TV não oferece.
     """
 
     async def handle(command: Command) -> CommandResult:
@@ -194,6 +206,13 @@ def tv_app_launch_handler(
                 command.id,
                 ResultStatus.REJECTED,
                 "abrir app por pacote precisa do canal ADB, que não está habilitado",
+                UNSUPPORTED,
+            )
+        if kind == "link" and not links_supported:
+            return CommandResult(
+                command.id,
+                ResultStatus.REJECTED,
+                "a TV não suporta abrir links por este canal",
                 UNSUPPORTED,
             )
         return await _launch_link(command, tv, allowed_schemes, kind, value)
