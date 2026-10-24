@@ -1,6 +1,7 @@
 /* GERADO por `npm --prefix contracts run generate` — não editar. */
 
-export type AgentHelloV1BodyCapabilitiesItem = 'tv.remote' | 'tv.adb';
+export type AgentHelloV1BodyCapabilitiesItem =
+  'tv.remote' | 'tv.adb' | 'tv.kind.android' | 'tv.kind.samsung';
 
 /**
  * Agente para API ao conectar: versão do agente e capacidades.
