@@ -47,7 +47,7 @@ def test_tv_id_hint_and_log_file_are_settings(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_agent_source_dir_is_under_localappdata(tmp_path: Path) -> None:
-    assert agent_source_dir() == tmp_path / "localappdata" / "UniOver" / "agent-src"
+    assert agent_source_dir() == tmp_path / "localappdata" / "UniOver" / "app"
 
 
 def test_log_file_gets_the_records_with_rotation(tmp_path: Path) -> None:
