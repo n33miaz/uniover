@@ -27,6 +27,32 @@ public sealed class MessageValidationTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task KeepAlives_KeepTheChannelActiveInBothDirections()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAsync();
+        await agent.SendHelloAsync("2.5.0", "transport.keepalive.v1");
+        await TransportApp.WaitUntilAsync(
+            () => app.Presence.Get(app.Agent.Slug)?.Capabilities.Contains("transport.keepalive.v1") == true,
+            "capacidade de batimento processada");
+
+        // O relógio do Host é falso: adiantar prova o batimento da API sem esperar 25 segundos reais.
+        var incoming = agent.ReceiveAsync();
+        app.App.Time.Advance(TimeSpan.FromSeconds(25));
+        var heartbeat = (await incoming)!.Value;
+        heartbeat.GetProperty("type").GetString().Should().Be("api.keepalive.v1");
+        heartbeat.GetProperty("body").EnumerateObject().Should().BeEmpty();
+
+        var before = app.Presence.Get(app.Agent.Slug)!.LastMessageAt;
+        app.App.Time.Advance(TimeSpan.FromSeconds(1));
+        await agent.SendTextAsync(agent.Envelope("agent.keepalive.v1", new JsonObject()));
+        await TransportApp.WaitUntilAsync(
+            () => app.Presence.Get(app.Agent.Slug)!.LastMessageAt > before,
+            "batimento do agente processado");
+        agent.State.Should().Be(WebSocketState.Open);
+    }
+
+    [Fact]
     public async Task OutOfContractMessages_AreRefused_LoggedWithoutTheBody_AndTheConnectionSurvives()
     {
         await using var app = await TransportApp.StartAsync(postgres);
