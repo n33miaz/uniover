@@ -6,7 +6,9 @@ A biblioteca aceita `token=`; não há motivo para criar o `token_file` que ela 
 import asyncio
 import logging
 
-from uniover_agent.adapters.tv_samsung import SamsungClient, SamsungFactory, _default_factory
+from samsungtvws import SamsungTVWS
+
+from uniover_agent.adapters.tv_samsung import SAMSUNG_PORT, SamsungClient, SamsungFactory
 
 SAMSUNG_PAIR_TIMEOUT_SECONDS = 60.0
 # `close()` é síncrono na biblioteca e algumas TVs não respondem ao fechamento. O pareamento já
@@ -19,11 +21,19 @@ class SamsungPairingError(Exception):
     """Falha do pareamento Samsung, sem propagar detalhes que podem trazer o token."""
 
 
+def _pairing_factory(host: str, token: str | None, name: str) -> SamsungClient:
+    # A TV só responde ao WebSocket depois que alguém aceita o aviso: o tempo do socket precisa
+    # cobrir a espera inteira, não os 5 s do controle (que estouravam antes do aceite).
+    return SamsungTVWS(
+        host, token=token, port=SAMSUNG_PORT, timeout=SAMSUNG_PAIR_TIMEOUT_SECONDS, name=name
+    )
+
+
 async def pair_samsung_tv(
     host: str,
     name: str,
     *,
-    factory: SamsungFactory = _default_factory,
+    factory: SamsungFactory = _pairing_factory,
 ) -> str:
     """Espera o aceite na TV e devolve apenas o token para quem o guarda no cofre."""
     client: SamsungClient = factory(host, None, name)
