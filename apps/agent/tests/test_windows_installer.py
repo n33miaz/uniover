@@ -123,3 +123,15 @@ def test_launcher_also_respects_the_old_mutex_only_in_the_real_installation_fold
     assert guard < text.index(old_name) < text.index("while ($true)")
     assert text.index(new_name) < guard
     assert text.count("exit 0") >= 2
+
+
+def test_the_tray_never_holds_the_executable_that_the_sync_replaces() -> None:
+    # O ícone roda do mesmo ambiente: aberto durante o sync, prende o uniover-agent.exe e o agente
+    # nunca mais sobe depois de uma atualização.
+    runner = RUNNER.read_text(encoding="utf-8")
+    sync_body = runner.split("function Sync-Agent", 1)[1].split("function ", 1)[0]
+    assert sync_body.lstrip().split("\n", 1)[1].strip().startswith("Stop-VenvUsers")
+    loop = runner.split("while ($true) {", 1)[1]
+    assert loop.index("Sync-Agent $uv") < loop.index("Start-Tray $uv")
+    startup_update = loop.split("$updated = Invoke-Update $uv", 1)[1].split("exit 42", 1)[0]
+    assert "taskkill.exe /PID $tray.Id /T /F" in startup_update
