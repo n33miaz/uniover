@@ -1,0 +1,149 @@
+<dialog #dialog class="sheet ui-dialog" aria-labelledby="tv-edit-title" (cancel)="cancel($event)">
+  <span class="grabber" aria-hidden="true"></span>
+  <form (submit)="save($event)" novalidate>
+    <h2 id="tv-edit-title" tabindex="-1" autofocus>{{ title() }}</h2>
+
+    <div class="ui-field">
+      <label for="tv-edit-name" i18n="@@settings.system.tv.sheet.name">Nome</label>
+      <input
+        class="ui-input"
+        id="tv-edit-name"
+        type="text"
+        autocomplete="off"
+        required
+        [attr.maxlength]="maxName"
+        [value]="name()"
+        (input)="setName($event)"
+      />
+    </div>
+
+    <fieldset class="group">
+      <legend class="ui-section-label" i18n="@@settings.system.tv.sheet.computer">
+        Computador
+      </legend>
+      @if (computers().length === 0) {
+        <p class="empty" i18n="@@settings.system.tv.sheet.no-computer">
+          Nenhum computador livre. Pareie um em Aparelhos.
+        </p>
+      } @else {
+        <ul class="ui-group">
+          @for (computer of computers(); track computer.slug) {
+            <li>
+              <label class="choice ui-row">
+                <input
+                  type="radio"
+                  name="tv-edit-computer"
+                  [value]="computer.slug"
+                  [checked]="agent() === computer.slug"
+                  (change)="agent.set(computer.slug)"
+                />
+                <span class="ui-row-text">
+                  <span class="ui-row-title">{{ computer.name }}</span>
+                  <span class="ui-row-sub">{{ platform(computer) }}</span>
+                </span>
+                <span class="ui-chip" [class.accent]="computer.online">{{
+                  computerState(computer)
+                }}</span>
+              </label>
+            </li>
+          }
+        </ul>
+      }
+    </fieldset>
+
+    <fieldset class="group">
+      <legend class="ui-section-label" i18n="@@settings.system.tv.sheet.members">Quem usa</legend>
+      @if (peopleFailed()) {
+        <p class="empty bad" role="alert" i18n="@@settings.system.tv.sheet.people-failed">
+          Não foi possível carregar as pessoas agora.
+        </p>
+      } @else if (people(); as list) {
+        @if (list.length === 0) {
+          <p class="empty" i18n="@@settings.system.tv.sheet.no-people">
+            Ninguém mais tem conta ainda.
+          </p>
+        } @else {
+          <p class="hint">{{ membersHint() }}</p>
+          <ul class="ui-group">
+            @for (person of list; track person.id) {
+              <li>
+                <label class="option">
+                  <span class="option-title">{{ person.displayName }}</span>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    class="ui-switch"
+                    [checked]="isMember(person.id)"
+                    (change)="toggleMember(person.id, $event)"
+                  />
+                </label>
+              </li>
+            }
+          </ul>
+        }
+      } @else {
+        <p class="loading" role="status">
+          <span class="ui-spinner" aria-hidden="true"></span>
+          <span i18n="@@settings.system.tv.sheet.loading">Carregando…</span>
+        </p>
+      }
+    </fieldset>
+
+    @if (canRemove()) {
+      @if (confirmingRemove()) {
+        <div class="confirm ui-notice warn" role="group" aria-labelledby="tv-remove-title">
+          <p id="tv-remove-title" i18n="@@settings.system.tv.sheet.remove-ask">Remover esta TV?</p>
+          <div class="buttons">
+            <button type="button" class="secondary ui-btn" [disabled]="busy()" (click)="keep()">
+              <span i18n="@@settings.system.tv.sheet.remove-keep">Manter</span>
+            </button>
+            <button type="button" class="danger ui-btn" [disabled]="busy()" (click)="remove()">
+              <span i18n="@@settings.system.tv.sheet.remove-confirm">Remover</span>
+            </button>
+          </div>
+        </div>
+      } @else {
+        <button
+          type="button"
+          class="remove secondary ui-btn"
+          [disabled]="busy() || leaving()"
+          (click)="askRemove()"
+        >
+          <span i18n="@@settings.system.tv.sheet.remove">Remover TV</span>
+        </button>
+      }
+    }
+
+    <!-- O rodapé fica sempre à vista, com a lista rolando: o aviso de cada tentativa e as duas saídas. -->
+    <div class="footer">
+      <div class="messages" [attr.aria-live]="'polite'">
+        @if (error(); as text) {
+          <p class="error ui-notice bad ui-rise" role="alert">
+            <app-settings-glyph name="alert" />
+            <span>{{ text }}</span>
+          </p>
+        }
+        @if (busy()) {
+          <p class="note ui-notice ui-rise" role="status">
+            <span class="ui-spinner" aria-hidden="true"></span>
+            <span i18n="@@settings.system.tv.sheet.saving">Salvando…</span>
+          </p>
+        }
+      </div>
+
+      <div class="buttons">
+        <button
+          type="button"
+          class="secondary ui-btn"
+          [disabled]="busy() || leaving()"
+          (click)="cancel()"
+        >
+          <span i18n="@@settings.system.tv.sheet.cancel">Cancelar</span>
+        </button>
+        <button type="submit" class="primary ui-btn" [disabled]="!canSave()">
+          <span i18n="@@settings.system.tv.sheet.save">Salvar</span>
+        </button>
+      </div>
+    </div>
+  </form>
+</dialog>

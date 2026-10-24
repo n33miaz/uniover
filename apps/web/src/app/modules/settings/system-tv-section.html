@@ -1,113 +1,67 @@
 <section class="section" aria-labelledby="system-tv-title">
-  <h2 id="system-tv-title" class="ui-section-label" i18n="@@settings.system.tv.title">TV</h2>
+  <h2 id="system-tv-title" class="ui-section-label" i18n="@@settings.system.tv.title">TVs</h2>
 
-  @if (config(); as current) {
-    <div class="current ui-card ui-rise">
-      <div class="head">
-        <span class="ui-tile" [class.bad]="broken()"><app-settings-glyph name="tv" /></span>
-        <div class="info">
-          <span class="caption" i18n="@@settings.system.tv.caption"
-            >Computador que controla a TV</span
-          >
-          <strong class="name">{{ currentName() }}</strong>
-        </div>
-        @if (statusView(); as view) {
-          <span
-            class="chip ui-chip"
-            [class.accent]="view.tone === 'accent'"
-            [class.warn]="view.tone === 'warn'"
-            [class.bad]="view.tone === 'bad'"
-            >{{ view.label }}</span
-          >
-        }
+  @if (tvs(); as list) {
+    @if (list.length === 0) {
+      <div class="empty ui-rise">
+        <app-settings-glyph name="tv" />
+        <p i18n="@@settings.system.tv.empty-tvs">Nenhuma TV ainda.</p>
       </div>
-      @if (originText(); as text) {
-        <p class="meta">{{ text }}</p>
-      }
-      @if (offlineHint(); as text) {
-        <p class="meta">{{ text }}</p>
-      }
-    </div>
-
-    @if (warning(); as text) {
-      <p class="warning ui-notice warn ui-rise" role="status">
-        <app-settings-glyph name="alert" />
-        <span>{{ text }}</span>
-      </p>
+    } @else {
+      <ul class="tvs ui-group ui-rise">
+        @for (tv of list; track tv.id) {
+          <li>
+            <button
+              #rowButton
+              type="button"
+              class="ui-row"
+              [attr.aria-haspopup]="'dialog'"
+              (click)="openSheet(tv, rowButton)"
+            >
+              <span class="ui-tile"><app-settings-glyph name="tv" /></span>
+              <span class="ui-row-text">
+                <span class="ui-row-title">{{ tv.name }}</span>
+                <span class="ui-row-sub">{{ computerText(tv) }}</span>
+              </span>
+              @if (stateOf(tv); as state) {
+                <span
+                  class="chip ui-chip"
+                  [class.accent]="state.tone === 'accent'"
+                  [class.warn]="state.tone === 'warn'"
+                  >{{ state.label }}</span
+                >
+              }
+            </button>
+          </li>
+        }
+      </ul>
     }
 
-    @if (computers().length === 0) {
-      <div class="empty ui-rise">
-        <app-settings-glyph name="laptop" />
-        <p i18n="@@settings.system.tv.empty">
-          Nenhum computador pareado. Pareie o computador de casa em Aparelhos para ele poder
-          controlar a TV.
-        </p>
-      </div>
-      <a
-        routerLink="/ajustes/aparelhos"
-        class="devices-link primary ui-btn block"
-        i18n="@@settings.system.tv.go-devices"
-        >Ir para Aparelhos</a
-      >
-    } @else {
-      <fieldset class="choices">
-        <legend class="ui-section-label" i18n="@@settings.system.tv.choose">
-          Escolher o computador
-        </legend>
-        <ul class="ui-group">
-          @for (computer of computers(); track computer.slug) {
-            <li>
-              <label class="choice ui-row">
-                <input
-                  type="radio"
-                  name="tv-computer"
-                  [value]="computer.slug"
-                  [checked]="selected() === computer.slug"
-                  (change)="choose(computer.slug)"
-                />
-                <span class="ui-row-text">
-                  <span class="ui-row-title">{{ computer.name }}</span>
-                  <span class="ui-row-sub">{{ platform(computer) }}</span>
-                </span>
-                <span class="chip ui-chip" [class.accent]="computer.online">{{
-                  computerState(computer)
-                }}</span>
-              </label>
-            </li>
-          }
-        </ul>
-      </fieldset>
-
-      @if (!online()) {
-        <p class="ui-notice warn ui-rise" role="status" i18n="@@settings.system.tv.offline">
-          Sem conexão: salvar precisa de rede.
-        </p>
-      }
-
+    @if (freeComputers().length > 0) {
       <button
+        #addButton
         type="button"
-        class="save primary ui-btn block"
-        [disabled]="!canSave() || busy() || !online()"
-        (click)="save()"
+        class="add primary ui-btn block"
+        [attr.aria-haspopup]="'dialog'"
+        (click)="openSheet(null, addButton)"
       >
-        @if (busy()) {
-          <span class="ui-spinner" aria-hidden="true"></span>
-          <span i18n="@@settings.system.tv.saving">Salvando…</span>
-        } @else {
-          <span i18n="@@settings.system.tv.save">Salvar</span>
-        }
+        <span i18n="@@settings.system.tv.add">Adicionar TV</span>
       </button>
+    } @else {
+      <p class="empty ui-rise">
+        <app-settings-glyph name="laptop" />
+        <span i18n="@@settings.system.tv.no-free">Todo computador pareado já tem uma TV.</span>
+      </p>
       <a
         routerLink="/ajustes/aparelhos"
         class="devices-link secondary ui-btn block"
-        i18n="@@settings.system.tv.pair-other"
-        >Parear outro computador</a
+        i18n="@@settings.system.tv.go-devices"
+        >Ir para Aparelhos</a
       >
     }
   } @else if (loadFailed()) {
     <p class="empty bad ui-rise" role="alert" i18n="@@settings.system.tv.load-failed">
-      Não foi possível carregar a configuração da TV agora.
+      Não foi possível carregar as TVs agora.
     </p>
     <button
       type="button"
@@ -129,20 +83,23 @@
   }
 
   <div class="messages" [attr.aria-live]="'polite'">
-    @if (message(); as text) {
+    @if (saved()) {
       <div class="ui-collapse" [animate.leave]="'leaving'">
         <div class="ui-collapse-inner">
-          <p
-            class="message ui-notice"
-            [class.bad]="messageIsError()"
-            [class.ok]="!messageIsError()"
-            [attr.role]="messageIsError() ? 'alert' : null"
-          >
-            <app-settings-glyph [name]="messageIsError() ? 'alert' : 'checkCircle'" />
-            <span>{{ text }}</span>
+          <p class="message ui-notice ok">
+            <app-settings-glyph name="checkCircle" />
+            <span i18n="@@settings.system.tv.saved">Pronto: as TVs foram atualizadas.</span>
           </p>
         </div>
       </div>
     }
   </div>
 </section>
+
+@if (sheet(); as open) {
+  <app-tv-edit-sheet
+    [tv]="open.tv"
+    [computers]="computersFor(open.tv)"
+    (closed)="sheetClosed($event)"
+  />
+}

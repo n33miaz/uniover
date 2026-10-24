@@ -1,252 +1,129 @@
-import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import {
+  Component,
+  Injector,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { problemOf } from '../../core/auth/api-problem';
-import { ConnectivityService } from '../../core/connectivity/connectivity.service';
 import { SessionState } from '../../core/session/session-state';
 import { SettingsGlyph } from './settings-glyph';
-import { SystemApi, TvComputer, TvComputerStatus, TvConfig, TvConfigSource } from './system-api';
+import { SystemApi, TvComputer, TvItem } from './system-api';
+import { TvEditSheet } from './tv-edit-sheet';
 
-/** O estado do computador em palavras da pessoa, e o tom do chip que o mostra. */
-interface StatusView {
+/** O estado de uma TV em palavras da pessoa, e o tom do chip que o mostra. */
+interface RowState {
   readonly label: string;
-  readonly tone: 'accent' | 'warn' | 'bad' | 'plain';
+  readonly tone: 'accent' | 'warn' | 'plain';
 }
 
-function readStatus(config: TvConfig): TvComputerStatus {
-  switch (config.agentStatus) {
-    case 'online':
-    case 'offline':
-    case 'revoked':
-      return config.agentStatus;
-    default:
-      return 'unknown';
-  }
-}
-
-function readSource(config: TvConfig): TvConfigSource {
-  return config.source === 'saved' || config.source === 'environment' ? config.source : 'none';
+/** A folha aberta: a TV que ela edita (`null` cria uma nova) e o botão que a abriu (o foco volta a ele). */
+interface OpenSheet {
+  readonly tv: TvItem | null;
+  readonly opener: HTMLElement | null;
 }
 
 /**
- * Sistema > TV: qual computador controla a TV. O administrador vê o computador de agora (nome, se está ligado e de onde
- * vem a escolha), escolhe outro entre os pareados e salva com a passkey, sem mexer em nada no servidor. Quando o
- * computador atual foi revogado ou não existe, a tela avisa que a TV não responde até haver outra escolha.
+ * Sistema > TVs: as TVs do app. O administrador vê cada uma com o computador que a controla e se ele está ligado,
+ * adiciona uma TV (um computador pareado que ainda não tem TV mais um nome) e, tocando numa TV, renomeia, troca o
+ * computador, escolhe quem a usa e a remove (a padrão não). Tudo isso mora na folha de edição; a tela só lista e abre.
  *
  * Só carrega quando se sabe que a conta é do administrador (a rota é dele): quem não é nunca gera essa chamada. Escrita
- * nunca passa pela fila offline: sem rede, o botão fica desabilitado e a tela explica.
+ * nunca passa pela fila offline: sem rede, a folha explica ao tentar salvar.
  */
 @Component({
   selector: 'app-system-tv-section',
-  imports: [RouterLink, SettingsGlyph],
+  imports: [RouterLink, SettingsGlyph, TvEditSheet],
   templateUrl: './system-tv-section.html',
   styleUrl: './system-tv-section.css',
 })
 export class SystemTvSection {
   private readonly api = inject(SystemApi);
   private readonly session = inject(SessionState);
-  private readonly connectivity = inject(ConnectivityService);
+  private readonly injector = inject(Injector);
 
-  protected readonly online = this.connectivity.online;
-  protected readonly config = signal<TvConfig | null>(null);
+  protected readonly tvs = signal<readonly TvItem[] | null>(null);
+  protected readonly computers = signal<readonly TvComputer[]>([]);
   protected readonly loadFailed = signal(false);
-  protected readonly selected = signal<string | null>(null);
-  protected readonly busy = signal(false);
-  protected readonly message = signal<string | null>(null);
-  protected readonly messageIsError = signal(false);
+  protected readonly sheet = signal<OpenSheet | null>(null);
+  protected readonly saved = signal(false);
 
-  protected readonly status = computed<TvComputerStatus>(() => {
-    const config = this.config();
-    return config ? readStatus(config) : 'unknown';
-  });
-  protected readonly source = computed<TvConfigSource>(() => {
-    const config = this.config();
-    return config ? readSource(config) : 'none';
-  });
-  protected readonly computers = computed<readonly TvComputer[]>(() => this.config()?.agents ?? []);
-  protected readonly hasCurrent = computed(() => this.source() !== 'none');
-
-  /** O nome que aparece no cartão: o do computador, ou o que explica que não há um. */
-  protected readonly currentName = computed(() => {
-    const config = this.config();
-    if (!config || !this.hasCurrent()) {
-      return $localize`:@@settings.system.tv.none:Nenhum computador escolhido`;
-    }
-    return config.agentName ?? $localize`:@@settings.system.tv.not-found:Computador não encontrado`;
-  });
-
-  protected readonly statusView = computed<StatusView | null>(() => {
-    if (!this.config() || !this.hasCurrent()) return null;
-    switch (this.status()) {
-      case 'online':
-        return { label: $localize`:@@settings.system.tv.state-online:Ligado`, tone: 'accent' };
-      case 'offline':
-        return { label: $localize`:@@settings.system.tv.state-offline:Desligado`, tone: 'plain' };
-      case 'revoked':
-        return { label: $localize`:@@settings.system.tv.state-revoked:Revogado`, tone: 'bad' };
-      default:
-        return {
-          label: $localize`:@@settings.system.tv.state-unknown:Não encontrado`,
-          tone: 'warn',
-        };
-    }
-  });
-
-  /** Sem computador, ou com um revogado ou que nunca foi pareado: a TV não responde. Desligado é só desligado. */
-  protected readonly broken = computed(
-    () =>
-      !!this.config() &&
-      (!this.hasCurrent() || this.status() === 'revoked' || this.status() === 'unknown'),
-  );
-
-  protected readonly warning = computed(() => {
-    if (!this.broken()) return null;
-    if (!this.hasCurrent()) {
-      return $localize`:@@settings.system.tv.warn-none:Nenhum computador controla a TV. Ela não vai responder até você escolher um computador ou parear um em Aparelhos.`;
-    }
-    return this.status() === 'revoked'
-      ? $localize`:@@settings.system.tv.warn-revoked:Este computador foi revogado. A TV não vai responder até você escolher outro computador ou parear de novo em Aparelhos.`
-      : $localize`:@@settings.system.tv.warn-unknown:Este computador não está entre os aparelhos pareados. A TV não vai responder até você escolher outro computador ou parear de novo em Aparelhos.`;
-  });
-
-  /** De onde vem a escolha, em uma frase curta (o servidor só entra quando nada foi salvo aqui). */
-  protected readonly originText = computed(() => {
-    switch (this.source()) {
-      case 'saved':
-        return $localize`:@@settings.system.tv.origin-saved:Escolhido aqui, no app.`;
-      case 'environment':
-        return $localize`:@@settings.system.tv.origin-environment:Vem da configuração do servidor. Salve aqui para guardar a escolha no app.`;
-      default:
-        return null;
-    }
-  });
-
-  /** Desligado agora não é problema: a TV volta a responder quando o computador ligar. */
-  protected readonly offlineHint = computed(() =>
-    this.hasCurrent() && this.status() === 'offline'
-      ? $localize`:@@settings.system.tv.offline-hint:Está desligado agora. A TV volta a responder quando ele ligar.`
-      : null,
-  );
-
-  /**
-   * Salvar vale quando a escolha mudou, ou quando o valor ainda vem só do servidor (salvar o mesmo computador é o que o
-   * guarda no app). O computador revogado nunca está na lista, então não dá para escolhê-lo de novo.
-   */
-  protected readonly canSave = computed(() => {
-    const choice = this.selected();
-    const config = this.config();
-    if (!choice || !config) return false;
-    return choice !== config.agentSlug || this.source() !== 'saved';
+  /** Os computadores pareados que ainda não têm TV: só eles podem ganhar uma nova. */
+  protected readonly freeComputers = computed(() => {
+    const used = new Set((this.tvs() ?? []).map((tv) => tv.agentSlug));
+    return this.computers().filter((computer) => !used.has(computer.slug));
   });
 
   constructor() {
     // Carrega quando há sessão confirmada (também quando uma sessão pendente é confirmada depois) e se sabe que a conta é
-    // do administrador: a configuração do sistema é rota de administrador, e quem não é nunca deve gerar essa chamada.
+    // do administrador: as TVs e os computadores são rota de administrador, e quem não é nunca deve gerar essa chamada.
     effect(() => {
       if (
         this.session.status() === 'authenticated' &&
         this.session.role() === 'owner' &&
-        untracked(() => this.config()) === null
+        untracked(() => this.tvs()) === null
       ) {
         untracked(() => void this.load());
       }
     });
   }
 
-  /** O sistema do computador como a pessoa o conhece (a API manda em minúsculas). */
-  protected platform(computer: TvComputer): string {
-    switch (computer.platform) {
-      case 'windows':
-        return 'Windows';
-      case 'macos':
-        return 'macOS';
-      case 'linux':
-        return 'Linux';
-      default:
-        return computer.platform.charAt(0).toUpperCase() + computer.platform.slice(1);
-    }
-  }
-
-  protected computerState(computer: TvComputer): string {
-    return computer.online
-      ? $localize`:@@settings.system.tv.state-online:Ligado`
-      : $localize`:@@settings.system.tv.state-offline:Desligado`;
-  }
-
-  protected isCurrent(computer: TvComputer): boolean {
-    return this.config()?.agentSlug === computer.slug;
-  }
-
-  protected choose(slug: string): void {
-    this.selected.set(slug);
-    this.say(null);
-  }
-
   protected async load(): Promise<void> {
     this.loadFailed.set(false);
     try {
-      this.apply(await this.api.tvConfig());
+      const [tvs, config] = await Promise.all([this.api.tvs(), this.api.tvConfig()]);
+      this.tvs.set(tvs);
+      this.computers.set(config.agents);
     } catch {
       this.loadFailed.set(true);
     }
   }
 
-  protected async save(): Promise<void> {
-    const choice = this.selected();
-    if (this.busy() || !this.online() || !choice || !this.canSave()) return;
-    this.busy.set(true);
-    this.say(null);
-    try {
-      // Sem a confirmação recente com a passkey a API recusa (403) e o interceptador abre o diálogo e repete o pedido.
-      const updated = await this.api.bindTvComputer(choice);
-      this.apply(updated);
-      const name = updated.agentName ?? '';
-      this.say(
-        name
-          ? $localize`:@@settings.system.tv.saved-named:Pronto: agora ${name}:name: controla a TV.`
-          : $localize`:@@settings.system.tv.saved:Pronto: a escolha foi salva.`,
-        false,
-      );
-    } catch (error) {
-      this.say(this.saveError(error), true);
-      // O computador saiu da lista (revogado por outra pessoa, por exemplo): mostra a lista de agora.
-      if (problemOf(error)?.status === 400) await this.load();
-    } finally {
-      this.busy.set(false);
-    }
+  /** O computador de uma TV, para a linha da lista: o nome dele e, se a API disser, o tipo da TV. */
+  protected computerText(tv: TvItem): string {
+    const computer = tv.agentSlug
+      ? this.computers().find((item) => item.slug === tv.agentSlug)
+      : undefined;
+    const name =
+      computer?.name ??
+      (tv.agentSlug
+        ? $localize`:@@settings.system.tv.not-found:Computador não encontrado`
+        : $localize`:@@settings.system.tv.none:Nenhum computador escolhido`);
+    if (tv.kind === 'samsung') return `${name} · Samsung`;
+    return tv.kind === 'android' ? `${name} · Android` : name;
   }
 
-  private apply(config: TvConfig): void {
-    this.config.set(config);
-    this.loadFailed.set(false);
-    // O computador atual já vem escolhido, se ainda está na lista; senão a pessoa precisa escolher.
-    const current = config.agents.find((computer) => computer.slug === config.agentSlug);
-    const keep = this.selected();
-    this.selected.set(
-      keep && config.agents.some((computer) => computer.slug === keep)
-        ? keep
-        : (current?.slug ?? null),
-    );
+  protected stateOf(tv: TvItem): RowState {
+    if (tv.agentSlug && !this.computers().some((item) => item.slug === tv.agentSlug)) {
+      return { label: $localize`:@@settings.system.tv.state-unknown:Não encontrado`, tone: 'warn' };
+    }
+    return tv.online
+      ? { label: $localize`:@@settings.system.tv.state-online:Ligado`, tone: 'accent' }
+      : { label: $localize`:@@settings.system.tv.state-offline:Desligado`, tone: 'plain' };
   }
 
-  private say(text: string | null, isError = false): void {
-    this.message.set(text);
-    this.messageIsError.set(isError);
+  /** Os computadores que a folha oferece: os livres e, ao editar, o da própria TV (que deixa de estar livre). */
+  protected computersFor(tv: TvItem | null): readonly TvComputer[] {
+    const own = tv?.agentSlug ? this.computers().find((item) => item.slug === tv.agentSlug) : null;
+    return own ? [own, ...this.freeComputers()] : this.freeComputers();
   }
 
-  private saveError(error: unknown): string {
-    const problem = problemOf(error);
-    if (problem?.status === 400) {
-      return $localize`:@@settings.system.tv.gone:Esse computador não está mais na lista de pareados. A lista foi atualizada: escolha de novo.`;
-    }
-    if (problem?.status === 403) {
-      return $localize`:@@settings.system.tv.unconfirmed:A troca não foi feita: falta a confirmação com a passkey. Se ainda não tem uma, cadastre em Segurança e tente de novo.`;
-    }
-    if (problem?.status === 429) {
-      return $localize`:@@settings.system.tv.rate-limited:Muitas tentativas seguidas. Espere um pouco.`;
-    }
-    if (problem?.isNetwork) {
-      return $localize`:@@settings.system.tv.network:Sem conexão com o servidor. Tente de novo.`;
-    }
-    return $localize`:@@settings.system.tv.save-failed:Não foi possível salvar agora. Tente de novo.`;
+  protected openSheet(tv: TvItem | null, opener: HTMLElement): void {
+    this.saved.set(false);
+    this.sheet.set({ tv, opener });
+  }
+
+  /** A folha saiu: se algo mudou a lista é lida de novo; o foco volta ao botão que a abriu. */
+  protected async sheetClosed(changed: boolean): Promise<void> {
+    const opener = this.sheet()?.opener ?? null;
+    this.sheet.set(null);
+    // Com a folha ainda no DOM a tela está inerte e o foco não entra: devolve-o depois que ela sair.
+    afterNextRender(() => opener?.focus({ preventScroll: true }), { injector: this.injector });
+    if (!changed) return;
+    await this.load();
+    this.saved.set(!this.loadFailed());
   }
 }
