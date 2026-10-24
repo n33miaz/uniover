@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     # Identificador estável da TV (Samsung: `duid` ou MAC Wi-Fi; Android: MAC). Serve para
     # reencontrá-la na rede se o IP mudar; o `tv-find` grava.
     tv_id_hint: str | None = None
+    # MAC da TV (Wi-Fi). Reencontra a TV pela tabela ARP quando o IP muda e serve ao
+    # Wake-on-LAN. Gravado pelo `tv-find`, pelo pareamento e na primeira conexão.
+    tv_mac: str | None = None
     # Nome do agente que aparece na TV durante o pareamento.
     tv_client_name: str = "UniOver"
     # Nome da pasta do certificado desta TV, em `%LOCALAPPDATA%\UniOver\tv\<nome>`.

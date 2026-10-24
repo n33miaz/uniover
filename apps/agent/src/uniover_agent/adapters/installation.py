@@ -5,6 +5,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from uniover_agent.adapters.process import popen_hidden, run_hidden
+
 
 def _powershell() -> str:
     """Caminho do Windows PowerShell que acompanha o Windows (não depende do PATH)."""
@@ -107,7 +109,7 @@ def _register_launcher_task(root: Path) -> bool:
         )
     )
     try:
-        result = subprocess.run(  # noqa: S603 - executável e script fixos, sem dados externos
+        result = run_hidden(
             [_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
             check=False,
             capture_output=True,
@@ -146,7 +148,7 @@ def _install_launcher(root: Path, *, start_now: bool) -> None:
             # A tarefa antiga ainda está executando `agent-src`. Sobe o lançador novo fora
             # dela antes de o processo atual terminar; assim a atualização seguinte já usa
             # `app\tools\run-agent.ps1` e não depende de novo logon.
-            subprocess.Popen(  # noqa: S603 - executável e argumentos fixos
+            popen_hidden(
                 [
                     _powershell(),
                     "-NoProfile",
@@ -157,7 +159,7 @@ def _install_launcher(root: Path, *, start_now: bool) -> None:
                     "-File",
                     str(root / "launcher.ps1"),
                 ],
-                creationflags=subprocess.DETACHED_PROCESS,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
             )
             os.environ["UNIOVER_LEGACY_TAKEOVER"] = "1"
     except OSError:

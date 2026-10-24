@@ -21,6 +21,9 @@ from typing import Any, Literal
 
 import httpx
 
+from uniover_agent.adapters.arp import arp_mac
+from uniover_agent.core.tv.locator import TvIdentity, normalize_mac
+
 _log = logging.getLogger(__name__)
 
 SAMSUNG_REST_PORT = 8001
@@ -49,6 +52,11 @@ class DiscoveredTv:
     def id_hint(self) -> str | None:
         return self.ids[0] if self.ids else None
 
+    @property
+    def mac(self) -> str | None:
+        """O MAC entre os identificadores (Samsung: o Wi-Fi do REST; Android: o do ARP)."""
+        return next((known for known in self.ids if _MAC.fullmatch(known)), None)
+
 
 # Substituíveis nos testes: nenhuma delas toca a rede real.
 Connect = Callable[[str, int], Awaitable[bool]]
@@ -67,10 +75,49 @@ def local_ipv4() -> str | None:
     return None if address.startswith("0.") else address
 
 
-def subnet_hosts(local: str) -> list[str]:
-    """Os outros 253 endereços do /24 de `local`."""
+def subnet_hosts(local: str, exclude: str | None = None) -> list[str]:
+    """Os outros 253 endereços do /24 de `local` (e sem `exclude`, quando dado)."""
     network = ipaddress.ip_network(f"{local}/24", strict=False)
-    return [str(host) for host in network.hosts() if str(host) != local]
+    skip = {local, exclude}
+    return [str(host) for host in network.hosts() if str(host) not in skip]
+
+
+def local_address_for(host: str) -> str | None:
+    """Endereço desta máquina na interface que leva até `host`.
+
+    O `connect` de UDP só consulta a tabela de rotas (nenhum pacote sai). É o que importa com
+    várias placas (Wi-Fi, cabo sem rede, Hyper-V, VPN): a rota padrão pode ser outra, e o /24 da
+    TV é o da interface que a alcança.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.connect((host, 9))
+            address: str = probe.getsockname()[0]
+        except OSError:
+            return None
+    return None if address.startswith("0.") else address
+
+
+def usable_local_addresses() -> list[str]:
+    """Endereços IPv4 desta máquina que podem estar na mesma rede de uma TV, o da rota padrão
+    primeiro. Ficam de fora o de loopback e o link-local (169.254), de placa sem rede."""
+    default = local_ipv4()
+    if default is None:
+        return []  # sem rota padrão não há rede a varrer
+    candidates: list[str] = [default]
+    try:
+        listed = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+    except OSError:
+        listed = []
+    candidates.extend(str(entry[4][0]) for entry in listed)
+    usable: list[str] = []
+    for candidate in candidates:
+        address = ipaddress.ip_address(candidate)
+        if address.is_loopback or address.is_link_local or address.is_unspecified:
+            continue
+        if candidate not in usable:
+            usable.append(candidate)
+    return usable
 
 
 async def tcp_open(host: str, port: int, wait: float = CONNECT_TIMEOUT_SECONDS) -> bool:
@@ -97,31 +144,6 @@ async def http_json(url: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def normalize_mac(raw: str) -> str:
-    return raw.strip().upper().replace("-", ":")
-
-
-async def arp_mac(host: str) -> str | None:
-    """MAC do endereço pela tabela ARP (o `connect` da varredura acabou de populá-la)."""
-    try:
-        process = await asyncio.create_subprocess_exec(
-            "arp",
-            "-a",
-            host,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        output, _ = await asyncio.wait_for(process.communicate(), 3.0)
-    except OSError, TimeoutError:
-        return None
-    for match in _MAC.finditer(output.decode("ascii", errors="ignore")):
-        mac = normalize_mac(match.group())
-        # Entradas de difusão e multicast não identificam a TV.
-        if mac != "FF:FF:FF:FF:FF:FF" and not mac.startswith("01:00:5E"):
-            return mac
-    return None
-
-
 def _samsung_ids(device: dict[str, Any]) -> tuple[str, ...]:
     """Identificadores da Samsung: `duid` primeiro (estável), depois o MAC Wi-Fi."""
     found: list[str] = []
@@ -132,6 +154,18 @@ def _samsung_ids(device: dict[str, Any]) -> tuple[str, ...]:
     if isinstance(mac, str) and _MAC.fullmatch(mac.strip()):
         found.append(normalize_mac(mac))
     return tuple(found)
+
+
+def samsung_identity(info: dict[str, Any] | None) -> TvIdentity | None:
+    """Quem a TV diz ser no REST (`duid` e MAC Wi-Fi), ou `None` se não é uma Samsung."""
+    device = _samsung_device(info)
+    if device is None:
+        return None
+    mac = device.get("wifiMac")
+    return TvIdentity(
+        _samsung_ids(device),
+        normalize_mac(mac) if isinstance(mac, str) and _MAC.fullmatch(mac.strip()) else None,
+    )
 
 
 def _samsung_device(info: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -206,13 +240,26 @@ async def find_tvs(
     fetch_json: FetchJson = http_json,
     lookup_mac: ArpLookup = arp_mac,
 ) -> list[DiscoveredTv]:
-    """Varre a rede local atrás de TVs (todas, ou só do `kind`). Sem rede, lista vazia."""
-    address = local or local_ipv4()
-    if address is None:
+    """Varre a rede local atrás de TVs (todas, ou só do `kind`). Sem rede, lista vazia.
+
+    Sem `local`, varre o /24 de cada endereço utilizável desta máquina (não só o da rota padrão:
+    com várias placas a TV pode estar em outra), sem os de placa sem rede (169.254).
+    """
+    addresses = [local] if local else usable_local_addresses()
+    if not addresses:
         _log.warning("sem rota de rede: nada a varrer")
         return []
+    hosts: list[str] = []
+    for address in addresses:
+        for host in subnet_hosts(address):
+            if host not in hosts and host not in addresses:
+                hosts.append(host)
     tvs = await scan_hosts(
-        subnet_hosts(address), connect=connect, fetch_json=fetch_json, lookup_mac=lookup_mac
+        hosts,
+        connect=connect,
+        fetch_json=fetch_json,
+        lookup_mac=lookup_mac,
+        deadline=SCAN_DEADLINE_SECONDS * len(addresses),
     )
     return [tv for tv in tvs if kind is None or tv.kind == kind]
 

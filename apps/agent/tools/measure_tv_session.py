@@ -40,7 +40,6 @@ import re
 import shutil
 import socket
 import statistics
-import subprocess
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -48,6 +47,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
 
+from uniover_agent.adapters.process import run_hidden
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.tv_remote_v2 import AndroidTvRemoteV2
 from uniover_agent.config import tv_cert_dir
@@ -82,7 +82,7 @@ def run_adb(adb: Path, serial: str, name: str) -> str:
     if name not in READ_ONLY_ADB:
         raise SystemExit(f"comando ADB fora da lista somente leitura: {name}")
     command = [str(adb), "-s", serial, *READ_ONLY_ADB[name]]
-    done = subprocess.run(  # noqa: S603 - executável informado pelo usuário, argumentos da lista fixa
+    done = run_hidden(
         command,
         capture_output=True,
         text=True,
