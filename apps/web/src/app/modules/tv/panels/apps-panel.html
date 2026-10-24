@@ -163,7 +163,7 @@
         <app-tv-icon name="refresh" [class.spin]="refreshing()" />
       </button>
     }
-    @if (access.control()) {
+    @if (access.cleanup()) {
       <button
         type="button"
         class="icon-btn clean"
@@ -274,6 +274,6 @@
   }
 }
 
-@if (cleanupOpen() && access.control()) {
+@if (cleanupOpen() && access.cleanup()) {
   <app-tv-cleanup-sheet (closed)="closeCleanup()" />
 }

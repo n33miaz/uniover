@@ -1,0 +1,23 @@
+<ul class="ui-group">
+  @for (tv of tvs(); track tv.id) {
+    <li>
+      <button
+        type="button"
+        class="ui-row"
+        [attr.aria-current]="tv.id === currentId() ? 'true' : null"
+        (click)="pick.emit(tv.id)"
+      >
+        <span class="ui-tile"><app-tv-icon name="tv" /></span>
+        <span class="ui-row-text">
+          <span class="ui-row-title">{{ tv.name }}</span>
+          <span class="ui-row-sub">{{ stateText(tv) }}</span>
+        </span>
+        <span class="end">
+          <app-status-dot class="dot" [phase]="phase(tv)" />
+          <!-- O visto ocupa o lugar mesmo nas outras linhas: os pontos ficam alinhados. -->
+          <app-tv-icon class="check" [class.on]="tv.id === currentId()" name="check" />
+        </span>
+      </button>
+    </li>
+  }
+</ul>

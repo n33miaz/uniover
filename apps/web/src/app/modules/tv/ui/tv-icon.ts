@@ -25,6 +25,7 @@ export type TvIconName =
   | 'close'
   | 'search'
   | 'clean'
+  | 'check'
   | 'clock'
   | 'tune'
   | 'tv';
@@ -57,6 +58,7 @@ const PATHS: Record<TvIconName, string> = {
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z M21 21l-5-5',
   clean:
     'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z M19 16l.9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9z',
+  check: 'M5 12.5l4.5 4.5L19 7.5',
   clock: 'M12 7v5l3 2 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
   // Dois controles deslizantes: Personalizar.
   tune: 'M4 7h9 M17 7h3 M4 17h3 M11 17h9 M15 4v6 M9 14v6',

@@ -173,7 +173,11 @@
 </ng-template>
 
 <ng-template #roundButtons>
-  <div class="round-grid" [attr.data-cols]="roundColumns()">
+  <div
+    class="round-grid"
+    [attr.data-cols]="roundColumns()"
+    [attr.data-short]="shortRow() ? '' : null"
+  >
     <button
       type="button"
       class="round"
@@ -201,17 +205,20 @@
     >
       <app-tv-icon name="menu" />
     </button>
-    <button
-      type="button"
-      class="round"
-      [attr.aria-haspopup]="'dialog'"
-      aria-label="Teclado"
-      i18n-aria-label="@@tv.key.keyboard"
-      [class.off]="!store.canSend()"
-      (click)="askKeyboard($event)"
-    >
-      <app-tv-icon name="keyboard" />
-    </button>
+    <!-- A TV que não recebe texto (Samsung) não tem o que digitar: o botão do Teclado nem existe. -->
+    @if (access.text()) {
+      <button
+        type="button"
+        class="round"
+        [attr.aria-haspopup]="'dialog'"
+        aria-label="Teclado"
+        i18n-aria-label="@@tv.key.keyboard"
+        [class.off]="!store.canSend()"
+        (click)="askKeyboard($event)"
+      >
+        <app-tv-icon name="keyboard" />
+      </button>
+    }
     @if (prefs.showMedia()) {
       <button
         type="button"

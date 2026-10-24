@@ -1,9 +1,9 @@
 import { vi } from 'vitest';
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import { TvFailure } from './data/tv-errors';
 import { TvLink, TvNotice, TvStatus, TvStreamStatus } from './data/tv-store';
 import { withOrder } from './data/tv-order';
-import { TvShortcut, TvState, TvWatchdog } from './data/tv-types';
+import { TvShortcut, TvState, TvSummary, TvWatchdog } from './data/tv-types';
 
 /** Estado quente padrão dos testes de tela. */
 export const HOT: TvState = {
@@ -14,6 +14,20 @@ export const HOT: TvState = {
   agentOnline: true,
   updatedAt: '2026-10-19T14:02:00Z',
 };
+
+/** Uma TV da lista de TVs; sem nada a dizer sobre ela, é a padrão, Android, ligada e com as capacidades de sempre. */
+export function makeTv(id: string, overrides: Partial<TvSummary> = {}): TvSummary {
+  return {
+    id,
+    name: `TV ${id}`,
+    isDefault: false,
+    agentSlug: `agente-${id}`,
+    kind: 'android',
+    online: true,
+    capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb'],
+    ...overrides,
+  };
+}
 
 export function makeShortcut(position: number, overrides: Partial<TvShortcut> = {}): TvShortcut {
   return {
@@ -87,7 +101,17 @@ export function createFakeTvStore() {
     makeShortcut(2),
     makeShortcut(3),
   ]);
+  const tvs = signal<readonly TvSummary[] | null>(null);
+  const selectedId = signal<string | null>(null);
+  const selectedTv = computed(
+    () => tvs()?.find((tv) => tv.id === selectedId()) ?? tvs()?.[0] ?? null,
+  );
   return {
+    tvs,
+    selectedTv,
+    multiple: computed(() => (tvs()?.length ?? 0) > 1),
+    selectTv: vi.fn<(id: string) => void>().mockImplementation((id) => selectedId.set(id)),
+    refreshTvs: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     state: signal<TvState | null>(HOT),
     shortcuts,
     status: signal<TvStatus>('hot'),

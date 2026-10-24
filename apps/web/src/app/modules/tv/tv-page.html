@@ -64,20 +64,25 @@
     <div class="name" [attr.data-size]="titleSize()">
       <h1>
         <!--
-          O nome é um botão só para quem controla a TV: tocar nele abre Personalizar (tamanho e disposição dos botões, que
-          só existem com o controle). Sem o controle ele é só o nome, com a mesma caixa (altura do alvo e centralizado),
-          para o cabeçalho não mudar de altura nem o nome sair do meio.
+          Com várias TVs o nome é o seletor (nome e uma seta discreta): tocar nele abre a folha que troca de TV, para qualquer
+          conta que veja a TV. Com uma só, é um botão só para quem controla: tocar nele abre Personalizar (tamanho e
+          disposição dos botões, que só existem com o controle). Sem nada disso ele é só o nome, com a mesma caixa (altura
+          do alvo e centralizado), para o cabeçalho não mudar de altura nem o nome sair do meio.
         -->
-        @if (access.control()) {
+        @if (titleAction(); as action) {
           <button
             #titleButton
             type="button"
             class="title"
+            [class.switcher]="action === 'switch'"
             [attr.aria-haspopup]="'dialog'"
             [attr.aria-label]="titleLabel()"
-            (click)="openCustomize(titleButton)"
+            (click)="action === 'switch' ? openSwitch(titleButton) : openCustomize(titleButton)"
           >
             <span class="title-text">{{ prefs.title() }}</span>
+            @if (action === 'switch') {
+              <app-tv-icon class="chevron" name="down" />
+            }
           </button>
         } @else {
           <span class="title plain"
@@ -172,6 +177,17 @@
   </app-tv-panel>
 }
 
+@if (switchOpen() && store.multiple()) {
+  <app-tv-panel
+    #switchPanel
+    [heading]="switchTitle"
+    [opener]="switchOpener()"
+    (closed)="switchOpen.set(false)"
+  >
+    <app-tv-switcher (pick)="pickTv($event, switchPanel)" />
+  </app-tv-panel>
+}
+
 @if (suggestion(); as request) {
   @if (access.editShortcuts()) {
     <app-tv-panel
@@ -195,7 +211,7 @@
   </app-tv-panel>
 }
 
-@if (panel() === 'keyboard' && access.control()) {
+@if (panel() === 'keyboard' && access.text()) {
   <app-tv-panel
     #keyboardPanel
     [heading]="keyboardTitle"

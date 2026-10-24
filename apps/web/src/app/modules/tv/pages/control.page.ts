@@ -65,8 +65,9 @@ const DRAG_SLOP_PX = 6;
 export class ControlPage {
   protected readonly store = inject(TvStore);
   protected readonly prefs = inject(TvPrefs);
+  protected readonly access = inject(TvAccess);
   /** Abrir apps pelos atalhos de cima é de quem tem `tv:launch` (esta tela só existe para quem tem `tv:control`). */
-  protected readonly canLaunch = inject(TvAccess).launch;
+  protected readonly canLaunch = this.access.launch;
   private readonly pager = viewChild.required<ElementRef<HTMLElement>>('pager');
 
   /** Leva o botão tocado: o painel devolve o foco a ele ao fechar (o Safari não foca botão ao toque). */
@@ -111,10 +112,16 @@ export class ControlPage {
    * colunas (uma fileira só, sem as teclas de mídia), até no tamanho grande.
    */
   protected readonly roundColumns = computed(() => {
-    if (this.rowPills()) return 4;
-    if (!this.prefs.showMedia()) return 2;
+    // Sem o Teclado (a TV não digita) são três botões fixos em vez de quatro: a conta muda com eles.
+    const keyboard = this.access.text();
+    if (this.rowPills()) return keyboard || this.prefs.showMedia() ? 4 : 3;
+    if (!this.prefs.showMedia()) return keyboard ? 2 : 3;
     return this.prefs.buttonSize() === 'large' ? 3 : 4;
   });
+  /** Sete botões em quatro colunas (sem o Teclado): a última fileira, de três, fica no meio e não encostada à esquerda. */
+  protected readonly shortRow = computed(
+    () => !this.access.text() && this.prefs.showMedia() && this.roundColumns() === 4,
+  );
 
   protected readonly volumeText = computed(() => {
     const volume = this.store.state()?.volume;
