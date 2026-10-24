@@ -4178,6 +4178,15 @@ export interface paths {
             'application/json': components['schemas']['TvConfigResponse'];
           };
         };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
         /** @description Unauthorized */
         401: {
           headers: {
@@ -5044,6 +5053,213 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/tv/tvs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvListResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['CreateTvRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvSummary'];
+          };
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/tv/tvs/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['UpdateTvRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvSummary'];
+          };
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    trace?: never;
+  };
+  '/api/v1/tv/tvs/{id}/members': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvMembersResponse'];
+          };
+        };
+      };
+    };
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['UpdateTvMembersRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvMembersResponse'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/wake': {
     parameters: {
       query?: never;
@@ -5350,6 +5566,10 @@ export interface components {
       id: string;
       permissions: string[];
       token: string;
+    };
+    CreateTvRequest: {
+      agentSlug: null | string;
+      name: null | string;
     };
     CredentialPropertiesOutput: {
       authenticatorDisplayName?: null | string;
@@ -5833,6 +6053,12 @@ export interface components {
       name: string;
       source: string;
     };
+    TvListResponse: {
+      items: components['schemas']['TvSummary'][];
+    };
+    TvMembersResponse: {
+      userIds: string[];
+    };
     TvShortcut: {
       customLabel: null | string;
       enabled: boolean;
@@ -5855,12 +6081,29 @@ export interface components {
       /** Format: int32 */
       volume: null | number | string;
     };
+    TvSummary: {
+      agentSlug: null | string;
+      capabilities: string[];
+      /** Format: uuid */
+      id: string;
+      isDefault: boolean;
+      kind: null | string;
+      name: string;
+      online: boolean;
+    };
     UpdateProfileRequest: {
       displayName: null | string;
     };
     UpdateShortcutRequest: {
       customLabel: null | string;
       enabled: null | boolean;
+    };
+    UpdateTvMembersRequest: {
+      userIds: null | string[];
+    };
+    UpdateTvRequest: {
+      agentSlug: null | string;
+      name: null | string;
     };
     UpsertBodyEntryRequest: {
       /** Format: double */

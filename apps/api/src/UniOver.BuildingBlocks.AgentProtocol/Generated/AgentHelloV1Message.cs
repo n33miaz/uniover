@@ -55,7 +55,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public AgentHelloV1BodyCapabilitiesItem[] Capabilities { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { TvAdb, TvKindAndroid, TvKindSamsung, TvRemote };
+    public enum AgentHelloV1BodyCapabilitiesItem { TransportKeepaliveV1, TvAdb, TvKindAndroid, TvKindSamsung, TvRemote };
 
     public partial class AgentHelloV1Message
     {
@@ -115,6 +115,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             var value = reader.GetString();
             switch (value)
             {
+                case "transport.keepalive.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.TransportKeepaliveV1;
                 case "tv.adb":
                     return AgentHelloV1BodyCapabilitiesItem.TvAdb;
                 case "tv.kind.android":
@@ -131,6 +133,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         {
             switch (value)
             {
+                case AgentHelloV1BodyCapabilitiesItem.TransportKeepaliveV1:
+                    JsonSerializer.Serialize(writer, "transport.keepalive.v1", options);
+                    return;
                 case AgentHelloV1BodyCapabilitiesItem.TvAdb:
                     JsonSerializer.Serialize(writer, "tv.adb", options);
                     return;

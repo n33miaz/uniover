@@ -22,7 +22,7 @@
         "capabilities": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "enum": ["tv.remote", "tv.adb", "tv.kind.android", "tv.kind.samsung"] }
+          "items": { "enum": ["transport.keepalive.v1", "tv.remote", "tv.adb", "tv.kind.android", "tv.kind.samsung"] }
         }
       }
     }

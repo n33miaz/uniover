@@ -1,2 +1,2 @@
 { "v": 1, "id": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e9f", "type": "agent.hello.v1", "source": "agent:pc-casa", "target": "api",
-  "ts": "2026-10-18T14:00:00Z", "correlationId": null, "body": { "agentVersion": "0.1.0", "capabilities": ["tv.remote", "tv.adb", "tv.kind.android"] } }
+  "ts": "2026-10-18T14:00:00Z", "correlationId": null, "body": { "agentVersion": "0.1.0", "capabilities": ["transport.keepalive.v1", "tv.remote", "tv.adb", "tv.kind.android"] } }
