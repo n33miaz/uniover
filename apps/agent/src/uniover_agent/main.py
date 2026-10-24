@@ -1,4 +1,5 @@
-"""Composição do agente e comandos de linha: `run` (padrão), `pair`, `status` e `tv-pair`."""
+"""Composição do agente e comandos de linha: `run` (padrão), `pair`, `status`, `tv-pair`,
+`tv-find` e `self-update`."""
 
 import argparse
 import asyncio
@@ -11,8 +12,10 @@ import sys
 from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
 from importlib import metadata
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from uniover_agent.adapters.apk_tools import (
     Aapt2Inspector,
@@ -21,12 +24,23 @@ from uniover_agent.adapters.apk_tools import (
     default_icons_dir,
     locate_aapt2,
 )
-from uniover_agent.adapters.local_config import save_agent_config
+from uniover_agent.adapters.local_config import save_agent_config, update_config
 from uniover_agent.adapters.pairing_http import HttpPairingClient, probe_api
+from uniover_agent.adapters.qr_terminal import render_ascii, render_for
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
+from uniover_agent.adapters.self_update import self_update
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.transport_ws import WebSocketTransport, build_ws_url
 from uniover_agent.adapters.tv_adb import AdbTv, locate_adb
+from uniover_agent.adapters.tv_discovery import (
+    ANDROID_REMOTE_PORT,
+    SAMSUNG_REST_PORT,
+    DiscoveredTv,
+    TvKindName,
+    find_tvs,
+    same_tv,
+    tcp_open,
+)
 from uniover_agent.adapters.tv_pairing import TvPairingError, is_paired, pair_tv
 from uniover_agent.adapters.tv_remote_v2 import AndroidTvRemoteV2
 from uniover_agent.adapters.tv_samsung import SamsungTvDriver
@@ -34,6 +48,7 @@ from uniover_agent.adapters.tv_samsung_pairing import SamsungPairingError, pair_
 from uniover_agent.config import (
     ConfigError,
     Settings,
+    agent_source_dir,
     config_path,
     require_api_url,
     require_cleanup_keep,
@@ -55,6 +70,7 @@ from uniover_agent.core import (
     TextReconciler,
     TvApps,
     TvCleanup,
+    TvRelocator,
     TvSessionManager,
     TvStatePublisher,
     tv_app_launch_handler,
@@ -83,6 +99,8 @@ EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_NOT_PAIRED = 2
 EXIT_CREDENTIAL_REJECTED = 3
+# A TV mudou de endereço: `main` recomeça o `run` já com o endereço novo.
+EXIT_TV_MOVED = 4
 
 _NOT_PAIRED = "não pareado. Rode `uniover-agent pair` para parear este PC."
 
@@ -102,9 +120,23 @@ def silence_noisy_loggers() -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
-def configure_logging(level: str) -> None:
+def configure_logging(level: str, log_file: str | None = None) -> None:
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if log_file:
+        # A tarefa do Windows roda sem janela: o arquivo é o único lugar onde o dono (ou quem o
+        # ajuda) vê o que o agente fez. Rodízio de 1 MB com 2 cópias: nunca enche o disco.
+        try:
+            Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+            handlers.append(
+                RotatingFileHandler(log_file, maxBytes=1_000_000, backupCount=2, encoding="utf-8")
+            )
+        except OSError:
+            print("Aviso: não consegui abrir o arquivo de registro.", file=sys.stderr)
     logging.basicConfig(
-        level=level, format="%(asctime)s %(levelname)s %(name)s: %(message)s", force=True
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=handlers,
+        force=True,
     )
     silence_noisy_loggers()
 
@@ -370,14 +402,39 @@ def pairing_info(name: str | None) -> PairingInfo:
 StoreFactory = Callable[[], SecretStore]
 
 
-async def pair(settings: Settings, open_store: StoreFactory, name: str | None) -> int:
+def approval_link(api_url: str, user_code: str) -> str:
+    """Link que abre a aprovação do dispositivo já com o código preenchido."""
+    return f"{api_url}/ajustes/dispositivos?codigo={quote(user_code)}"
+
+
+def print_qr(link: str) -> None:
+    """Imprime o QR do link; falha de desenho é só um aviso (o código escrito basta)."""
+    try:
+        try:
+            print(render_for(link))
+        except UnicodeEncodeError:
+            print(render_ascii(link))
+    except Exception:
+        _log.warning("não consegui desenhar o QR; use o código escrito")
+
+
+async def pair(
+    settings: Settings, open_store: StoreFactory, name: str | None, *, if_needed: bool = False
+) -> int:
     api_url = require_api_url(settings)
-    use_case = PairAgent(HttpPairingClient(api_url), open_store(), SystemClock())
+    store = open_store()
+    if if_needed and settings.agent_id and store.get(settings.agent_id) is not None:
+        print("Este PC já está pareado com o UniOver.")
+        return EXIT_OK
+    use_case = PairAgent(HttpPairingClient(api_url), store, SystemClock())
 
     def show(ticket: PairingTicket) -> None:
         print(f"\nCódigo de pareamento: {ticket.user_code}")
+        print("\nEscaneie com o celular onde você usa o UniOver:\n")
+        print_qr(approval_link(api_url, ticket.user_code))
         print(
-            f"Abra o app ({api_url}) e aprove este código em até {ticket.expires_in // 60} minutos."
+            f"\nOu abra o app ({api_url}) e aprove este código "
+            f"em até {ticket.expires_in // 60} minutos."
         )
         print("Aguardando a aprovação...")
 
@@ -406,6 +463,54 @@ async def pair(settings: Settings, open_store: StoreFactory, name: str | None) -
     print(f"Pareado como '{paired.agent_id}'. Token guardado no cofre de credenciais.")
     print("Agora rode `uniover-agent run`.")
     return EXIT_OK
+
+
+def build_relocator(
+    settings: Settings, clock: Clock, is_hot: Callable[[], bool]
+) -> TvRelocator | None:
+    """Vigia do endereço da TV; só existe quando o `tv-find` gravou o identificador dela.
+
+    `is_hot` diz se a sessão com a TV está aberta (prova de que ela responde)."""
+    hint, host = settings.tv_id_hint, settings.tv_host
+    if not hint or not host:
+        return None
+    port = SAMSUNG_REST_PORT if settings.tv_kind == "samsung" else ANDROID_REMOTE_PORT
+
+    async def reachable() -> bool:
+        return await tcp_open(host, port, wait=2.0)
+
+    async def rescan() -> str | None:
+        for tv in await find_tvs(settings.tv_kind):
+            if same_tv(tv, hint):
+                if tv.host == host:
+                    return None
+                update_config(config_path(), {"tv_host": tv.host})
+                return tv.host
+        return None
+
+    return TvRelocator(clock, is_hot=is_hot, reachable=reachable, rescan=rescan)
+
+
+async def supervise(supervisor: ConnectionSupervisor, relocator: TvRelocator | None) -> bool:
+    """Mantém a conexão com a API até ela acabar; devolve `True` se a TV mudou de endereço.
+
+    Mudou de endereço: o novo já está gravado no arquivo, e a conexão com a API cai para `main`
+    recomeçar com ele. Sem derrubá-la, o canal antigo, aberto, faria a API recusar o novo por
+    "substituído" e custaria um minuto de espera.
+    """
+    connection = asyncio.create_task(supervisor.run())
+    watch = asyncio.create_task(relocator.run()) if relocator is not None else None
+    tasks = [task for task in (connection, watch) if task is not None]
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        if connection.done():
+            connection.result()
+            return False
+        return True
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def run(settings: Settings, open_store: StoreFactory) -> int:
@@ -471,8 +576,14 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
     if tv is not None:
         jobs = [tv.manager.watch, *tv.background]
     background = [asyncio.create_task(job()) for job in jobs]
+    relocator = (
+        build_relocator(settings, clock, lambda: tv.manager.snapshot().connection == "hot")
+        if tv is not None
+        else None
+    )
+    moved = False
     try:
-        await supervisor.run()
+        moved = await supervise(supervisor, relocator)
     finally:
         # Ao encerrar, fecha a sessão com a TV de forma limpa (não deixa o canal pendurado).
         for task in background:
@@ -483,6 +594,8 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
             await tv.manager.aclose()
         if publisher is not None:
             await publisher.aclose()
+    if moved:
+        return EXIT_TV_MOVED
     # `run` só devolve quando a credencial foi recusada; o token continua no cofre.
     print(
         "Token revogado ou inválido. Rode `uniover-agent pair` para parear de novo.",
@@ -509,22 +622,32 @@ async def _ask_tv_code() -> str:
     return await asyncio.to_thread(input, "Digite o código da TV: ")
 
 
-async def tv_pair(  # noqa: PLR0913, PLR0917 - parâmetros espelham a linha de comando e os testes
+async def tv_pair(  # noqa: PLR0911, PLR0913, PLR0917 - espelha a linha de comando e os testes
     settings: Settings,
     host: str | None,
     name: str | None,
     kind: str | None = None,
     secrets: SecretStore | None = None,
     ask_code: Callable[[], Awaitable[str]] = _ask_tv_code,
+    *,
+    if_needed: bool = False,
 ) -> int:
-    """Pareia a TV escolhida e guarda a credencial no lugar adequado ao driver."""
+    """Pareia a TV escolhida e guarda a credencial no lugar adequado ao driver.
+
+    Com `if_needed`, uma TV que já tem credencial guardada não é pareada de novo (o instalador
+    roda de novo para atualizar sem pedir outro aceite na TV).
+    """
     tv_host = require_tv_host(host or settings.tv_host)
     tv_kind = kind or settings.tv_kind
     tv_name = name or settings.tv_name
+    configured = tv_host == settings.tv_host and tv_kind == settings.tv_kind
     if tv_kind == "samsung":
         if secrets is None:
             print("Não consegui abrir o Cofre de Credenciais para a TV Samsung.", file=sys.stderr)
             return EXIT_FAILURE
+        if if_needed and secrets.get(samsung_token_name(tv_name)) is not None:
+            print("A TV Samsung já está pareada.")
+            return EXIT_OK
         print(f"Pareando com a TV Samsung em {tv_host}. Aceite o aviso na TV em até 60 segundos.")
         try:
             token = await pair_samsung_tv(tv_host, settings.tv_client_name)
@@ -533,11 +656,16 @@ async def tv_pair(  # noqa: PLR0913, PLR0917 - parâmetros espelham a linha de c
             print(f"Falha no pareamento da TV Samsung: {exc}", file=sys.stderr)
             return EXIT_FAILURE
         print("TV Samsung pareada. Token guardado no Cofre de Credenciais.")
-        print(
-            f"Agora defina UNIOVER_TV_KIND=samsung e UNIOVER_TV_HOST={tv_host} (ou no agent.toml)."
-        )
+        if not configured:
+            print(
+                f"Agora defina UNIOVER_TV_KIND=samsung e UNIOVER_TV_HOST={tv_host} "
+                "(ou no agent.toml)."
+            )
         return EXIT_OK
     cert_dir = tv_cert_dir(tv_name)
+    if if_needed and is_paired(cert_dir):
+        print("A TV já está pareada.")
+        return EXIT_OK
     print(f"Pareando com a TV em {tv_host}. Deixe a TV ligada e a tela de pareamento aberta.")
     try:
         await pair_tv(tv_host, settings.tv_client_name, cert_dir, ask_code)
@@ -545,7 +673,78 @@ async def tv_pair(  # noqa: PLR0913, PLR0917 - parâmetros espelham a linha de c
         print(f"Falha no pareamento da TV: {exc}", file=sys.stderr)
         return EXIT_FAILURE
     print(f"TV pareada. Certificado guardado em {cert_dir} (acesso só do seu usuário).")
-    print(f"Agora defina UNIOVER_TV_HOST={tv_host} (ou tv_host no agent.toml) e rode `run`.")
+    if not configured:
+        print(f"Agora defina UNIOVER_TV_HOST={tv_host} (ou tv_host no agent.toml) e rode `run`.")
+    return EXIT_OK
+
+
+async def _ask_line(prompt: str) -> str:
+    try:
+        return await asyncio.to_thread(input, prompt)
+    except EOFError:
+        return ""
+
+
+def _describe(tv: DiscoveredTv) -> str:
+    label = "Samsung" if tv.kind == "samsung" else "Android TV"
+    return f"{label} {tv.name} em {tv.host}" if tv.name else f"{label} em {tv.host}"
+
+
+async def tv_find(
+    kind: TvKindName | None = None,
+    *,
+    find: Callable[[TvKindName | None], Awaitable[list[DiscoveredTv]]] | None = None,
+    ask: Callable[[str], Awaitable[str]] = _ask_line,
+    interactive: bool | None = None,
+) -> int:
+    """Procura a TV na rede local e grava tipo, endereço e identificador no `agent.toml`.
+
+    Uma TV achada é usada direto; havendo várias, pergunta qual (sem terminal interativo não
+    há como perguntar: falha com a explicação em vez de adivinhar).
+    """
+    print("Procurando a TV na rede (leva alguns segundos)...")
+    tvs = await (find or find_tvs)(kind)
+    if not tvs:
+        print(
+            "Não encontrei nenhuma TV. Confira se ela está ligada e no mesmo Wi-Fi deste PC.",
+            file=sys.stderr,
+        )
+        return EXIT_FAILURE
+    chosen = tvs[0]
+    if len(tvs) > 1:
+        if interactive is None:
+            interactive = sys.stdin.isatty()
+        if not interactive:
+            print(
+                "Há mais de uma TV na rede; rode `uniover-agent tv-find` num terminal para "
+                "escolher, ou informe o tipo com --kind.",
+                file=sys.stderr,
+            )
+            return EXIT_FAILURE
+        print("Encontrei mais de uma TV:")
+        for number, tv in enumerate(tvs, start=1):
+            print(f"  {number}) {_describe(tv)}")
+        answer = (await ask(f"Qual é a sua? (1-{len(tvs)}): ")).strip()
+        if not answer.isdigit() or not 1 <= int(answer) <= len(tvs):
+            print("Escolha inválida.", file=sys.stderr)
+            return EXIT_FAILURE
+        chosen = tvs[int(answer) - 1]
+    update_config(
+        config_path(),
+        {"tv_kind": chosen.kind, "tv_host": chosen.host, "tv_id_hint": chosen.id_hint},
+    )
+    print(f"TV encontrada: {_describe(chosen)}.")
+    if chosen.id_hint is None:
+        print(
+            "Aviso: esta TV não informa um identificador; se o endereço dela mudar, "
+            "rode `uniover-agent tv-find` de novo."
+        )
+    return EXIT_OK
+
+
+def update_agent(*, sync: bool) -> int:
+    """Atualiza o agente instalado pela `main`. Nunca falha: o agente atual continua valendo."""
+    print(self_update(agent_source_dir(), sync=sync).message)
     return EXIT_OK
 
 
@@ -555,32 +754,68 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("run", help="conecta à API e roda em primeiro plano (padrão)")
     pair_parser = sub.add_parser("pair", help="pareia este PC com um código curto")
     pair_parser.add_argument("--name", help="nome do agente (padrão: nome do computador)")
+    pair_parser.add_argument(
+        "--if-needed", action="store_true", help="não pareia de novo se este PC já está pareado"
+    )
     sub.add_parser("status", help="mostra se há token e se a API responde")
     tv_parser = sub.add_parser("tv-pair", help="pareia o agente com a TV (código mostrado na tela)")
     tv_parser.add_argument("--kind", choices=("android", "samsung"), help="tipo da TV")
     tv_parser.add_argument("--host", help="endereço IP da TV (padrão: UNIOVER_TV_HOST)")
     tv_parser.add_argument("--name", help="nome da pasta do certificado (padrão: UNIOVER_TV_NAME)")
+    tv_parser.add_argument(
+        "--if-needed", action="store_true", help="não pareia de novo uma TV que já está pareada"
+    )
+    find_parser = sub.add_parser(
+        "tv-find", help="procura a TV na rede local e grava o endereço no agent.toml"
+    )
+    find_parser.add_argument("--kind", choices=("android", "samsung"), help="só este tipo de TV")
+    update_parser = sub.add_parser(
+        "self-update", help="atualiza o agente instalado se a versão pública mudou"
+    )
+    update_parser.add_argument(
+        "--no-sync", action="store_true", help="não roda `uv sync` depois (o instalador faz)"
+    )
     return parser
 
 
-def main(argv: Sequence[str] | None = None, *, secrets: SecretStore | None = None) -> int:
+def main(  # noqa: PLR0911 - um retorno por comando
+    argv: Sequence[str] | None = None, *, secrets: SecretStore | None = None
+) -> int:
     args = _parser().parse_args(argv)
     command = args.command or "run"
     try:
         settings = Settings()
-        configure_logging(settings.log_level)
+        configure_logging(settings.log_level, settings.log_file)
 
         def open_store() -> SecretStore:
             # O cofre só é aberto quando o comando precisa dele.
             return secrets or KeyringSecretStore()
 
         if command == "pair":
-            return asyncio.run(pair(settings, open_store, args.name))
+            return asyncio.run(pair(settings, open_store, args.name, if_needed=args.if_needed))
         if command == "status":
             return asyncio.run(status(settings, open_store))
         if command == "tv-pair":
-            return asyncio.run(tv_pair(settings, args.host, args.name, args.kind, open_store()))
-        return asyncio.run(run(settings, open_store))
+            return asyncio.run(
+                tv_pair(
+                    settings,
+                    args.host,
+                    args.name,
+                    args.kind,
+                    open_store(),
+                    if_needed=args.if_needed,
+                )
+            )
+        if command == "tv-find":
+            return asyncio.run(tv_find(args.kind))
+        if command == "self-update":
+            return update_agent(sync=not args.no_sync)
+        while True:
+            code = asyncio.run(run(settings, open_store))
+            if code != EXIT_TV_MOVED:
+                return code
+            # O endereço novo da TV já está no arquivo: recomeça lendo a configuração de novo.
+            settings = Settings()
     except (ConfigError, SecretStoreError) as exc:
         print(f"Erro: {exc}", file=sys.stderr)
         return EXIT_FAILURE
