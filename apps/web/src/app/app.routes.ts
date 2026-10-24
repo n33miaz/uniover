@@ -23,6 +23,12 @@ export const routes: Routes = [
     loadComponent: () => import('./core/auth/login.page').then((m) => m.LoginPage),
   },
   {
+    // Quem está no PC baixa o conector sem conta: fica fora da casca e sem guarda de login. O arquivo em si
+    // (`/conectar/conectar-uniover.cmd`) é estático; só a rota sem arquivo cai neste app.
+    path: 'conectar',
+    loadComponent: () => import('./modules/devices/connect.page').then((m) => m.ConnectPage),
+  },
+  {
     // O convite chega por link, sem sessão: fica fora da casca e do guarda de login.
     path: 'convite',
     loadComponent: () => import('./core/auth/accept-invite.page').then((m) => m.AcceptInvitePage),

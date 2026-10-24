@@ -9,7 +9,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiProblem } from './api-problem';
 import { AuthField } from './auth-field';
 import { AuthLayout } from './auth-layout';
@@ -32,7 +32,7 @@ type LoginError = 'invalid' | 'bad-request' | 'network' | 'failed' | 'locked' | 
  */
 @Component({
   selector: 'app-login-page',
-  imports: [AuthLayout, AuthField, AuthNotice],
+  imports: [AuthLayout, AuthField, AuthNotice, RouterLink],
   templateUrl: './login.page.html',
   styleUrl: './login.page.css',
 })

@@ -11,6 +11,8 @@ import {
   viewChild,
 } from '@angular/core';
 import { ApiProblem, isStepUpRequired, problemOf } from '../../core/auth/api-problem';
+import { AuthApi, GuestSummary } from '../../core/auth/auth-api';
+import { AuthService } from '../../core/auth/auth.service';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
 import { leaveDialog } from '../../shared/ui/dialog-motion';
 import { DevicesApi } from './devices-api';
@@ -33,6 +35,8 @@ export type PairOutcome =
 })
 export class PairSheet {
   private readonly api = inject(DevicesApi);
+  private readonly auth = inject(AuthService);
+  private readonly authApi = inject(AuthApi);
   private readonly connectivity = inject(ConnectivityService);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
@@ -44,6 +48,11 @@ export class PairSheet {
   protected readonly maxName = MAX_DEVICE_NAME;
   protected readonly code = linkedSignal(() => formatCodeInput(this.initialCode()));
   protected readonly name = signal($localize`:@@devices.pair.name-suggestion:PC de casa`);
+  /** A pessoa marcada passa a ver a TV nova; sem marcas ela fica só para o administrador quando já existe padrão. */
+  protected readonly people = signal<readonly GuestSummary[] | null>(null);
+  /** A lista não carregou: nada de aprovar às cegas (uma TV sem as pessoas certas é um passo manual de volta). */
+  protected readonly peopleFailed = signal(false);
+  protected readonly members = signal<readonly string[]>([]);
   protected readonly busy = signal(false);
   /** A folha já está descendo: nada mais vale (nem aprovar, nem recusar, nem cancelar de novo). */
   protected readonly leaving = signal(false);
@@ -57,6 +66,7 @@ export class PairSheet {
       this.online() &&
       !this.busy() &&
       !this.leaving() &&
+      this.people() !== null &&
       this.normalized() !== null &&
       this.nameValid(),
   );
@@ -69,6 +79,19 @@ export class PairSheet {
       // showModal prende o foco na folha, deixa o resto da tela inerte e trata o Esc.
       this.dialog().nativeElement.showModal();
     });
+    void this.loadPeople();
+  }
+
+  protected isMember(id: string): boolean {
+    return this.members().includes(id);
+  }
+
+  protected toggleMember(id: string, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.members.update((list) =>
+      checked ? (list.includes(id) ? list : [...list, id]) : list.filter((member) => member !== id),
+    );
+    this.error.set(null);
   }
 
   protected onCodeInput(event: Event): void {
@@ -96,8 +119,17 @@ export class PairSheet {
     this.busy.set(true);
     this.error.set(null);
     const name = this.name().trim() || null;
+    const chosen = this.people()?.filter((person) => this.members().includes(person.id)) ?? [];
+    // Uma pessoa só: a TV leva o nome dela (a API limita o nome a 60 caracteres).
+    const tvName =
+      chosen.length === 1
+        ? $localize`:@@devices.pair.tv-name:TV de ${chosen[0].displayName}:name:`.slice(
+            0,
+            MAX_DEVICE_NAME,
+          )
+        : null;
     try {
-      await this.api.approve(code, name);
+      await this.api.approve(code, name, tvName, this.members());
       this.leave(() => this.done.emit({ kind: 'approved', name }));
     } catch (error) {
       this.error.set(this.approveError(error));
@@ -126,6 +158,20 @@ export class PairSheet {
     if (this.leaving()) return;
     this.leaving.set(true);
     leaveDialog(this.dialog().nativeElement, then);
+  }
+
+  /**
+   * Contas desativadas não entram na escolha. Enquanto a lista carrega, ou se falhar, Aprovar fica bloqueado: o
+   * administrador tenta de novo em vez de aprovar sem ver para quem é a TV.
+   */
+  protected async loadPeople(): Promise<void> {
+    this.peopleFailed.set(false);
+    try {
+      const guests = await this.auth.authorized((token) => this.authApi.guests(token));
+      this.people.set(guests.filter((guest) => guest.disabledAt === null));
+    } catch {
+      this.peopleFailed.set(true);
+    }
   }
 
   private approveError(error: unknown): string {

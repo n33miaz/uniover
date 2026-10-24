@@ -122,3 +122,8 @@
   color: var(--a-ink2);
   font-size: var(--fs-small);
 }
+
+.download {
+  align-self: flex-start;
+  text-decoration: none;
+}

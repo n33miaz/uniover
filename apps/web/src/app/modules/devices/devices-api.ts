@@ -21,9 +21,19 @@ export class DevicesApi {
     return firstValueFrom(this.http.get<DeviceAgent[]>(`${BASE}/agents`));
   }
 
-  /** Aprova o código mostrado no aparelho. Exige a confirmação com a passkey. `name` nulo mantém o nome do agente. */
-  async approve(userCode: string, name: string | null): Promise<void> {
-    const body: components['schemas']['ApprovePairingRequest'] = { userCode, name };
+  /** Aprova o código e cria a TV já ligada ao computador. Exige a mesma confirmação com passkey usada ao criar uma TV. */
+  async approve(
+    userCode: string,
+    name: string | null,
+    tvName: string | null,
+    tvMemberIds: readonly string[],
+  ): Promise<void> {
+    const body: components['schemas']['ApprovePairingRequest'] = {
+      userCode,
+      name,
+      tvName,
+      tvMemberIds: [...tvMemberIds],
+    };
     await firstValueFrom(this.http.post(`${BASE}/pairing/approve`, body));
   }
 

@@ -89,3 +89,13 @@ h2 {
   flex: 1 1 0;
   text-decoration: none;
 }
+
+/* Atalho discreto para a página com os avisos do navegador; sai da folha ao abrir. */
+.help {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  margin-top: var(--space-2);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}

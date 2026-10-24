@@ -46,7 +46,7 @@ registerRoute(
   }),
 );
 
-const denylist = [/^\/api(\/|$)/, /^\/health(\/|$)/, /^\/openapi/];
+const denylist = [/^\/api(\/|$)/, /^\/health(\/|$)/, /^\/openapi/, /^\/conectar\/.+\.cmd$/];
 
 // Um roteador de navegação por escopo: dentro de /tv/ a página servida offline continua sendo a que traz o
 // manifest da TV, senão "Adicionar à Tela de Início" a partir dali instalaria o app da raiz.

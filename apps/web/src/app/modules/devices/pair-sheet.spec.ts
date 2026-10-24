@@ -1,5 +1,7 @@
 import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
+import { AuthApi, GuestSummary } from '../../core/auth/auth-api';
+import { AuthService } from '../../core/auth/auth.service';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
 import { DevicesApi } from './devices-api';
 import { PairOutcome, PairSheet } from './pair-sheet';
@@ -16,11 +18,34 @@ function problem(status: number, kind: string, headers: Record<string, string> =
 
 describe('PairSheet', () => {
   const api = { approve: vi.fn(), deny: vi.fn(), list: vi.fn(), revoke: vi.fn() };
+  const authApi = { guests: vi.fn() };
+  const guest = (
+    id: string,
+    displayName: string,
+    disabledAt: string | null = null,
+  ): GuestSummary => ({
+    id,
+    displayName,
+    disabledAt,
+    email: `${id}@uniover.test`,
+    createdAt: '2026-10-01T00:00:00Z',
+    permissions: ['module:tv'],
+  });
 
   beforeEach(() => {
     api.approve.mockReset().mockResolvedValue(undefined);
     api.deny.mockReset().mockResolvedValue(undefined);
-    TestBed.configureTestingModule({ providers: [{ provide: DevicesApi, useValue: api }] });
+    authApi.guests.mockReset().mockResolvedValue([]);
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: DevicesApi, useValue: api },
+        { provide: AuthApi, useValue: authApi },
+        {
+          provide: AuthService,
+          useValue: { authorized: (call: (token: string) => unknown) => call('token') },
+        },
+      ],
+    });
   });
 
   async function render() {
@@ -104,7 +129,7 @@ describe('PairSheet', () => {
       await type(typed);
       button('Aprovar').click();
       await vi.waitFor(() => expect(outcomes).toEqual([{ kind: 'approved', name: 'PC de casa' }]));
-      expect(api.approve).toHaveBeenCalledExactlyOnceWith('BCDF2345', 'PC de casa');
+      expect(api.approve).toHaveBeenCalledExactlyOnceWith('BCDF2345', 'PC de casa', null, []);
     },
   );
 
@@ -115,7 +140,7 @@ describe('PairSheet', () => {
     await type('BCDF2345');
     button('Aprovar').click();
     await vi.waitFor(() => expect(outcomes).toEqual([{ kind: 'approved', name: null }]));
-    expect(api.approve).toHaveBeenCalledWith('BCDF2345', null);
+    expect(api.approve).toHaveBeenCalledWith('BCDF2345', null, null, []);
   });
 
   it('blocks an invalid name', async () => {
@@ -160,7 +185,7 @@ describe('PairSheet', () => {
           type: PROBLEM + 'step-up-required',
           title: 'x',
           code: 'step_up_required',
-          action: 'devices.pair-approve',
+          action: 'tv.bind-agent',
         },
       }),
     );
@@ -183,6 +208,91 @@ describe('PairSheet', () => {
     await vi.waitFor(() => {
       fixture.detectChanges();
       expect(el.textContent).toContain('Sem conexão com o servidor');
+    });
+  });
+
+  describe('para quem é a TV', () => {
+    it('lists the active accounts and sends the chosen ones, naming the TV after a single person', async () => {
+      authApi.guests.mockResolvedValue([
+        guest('g1', 'Raphael'),
+        guest('g2', 'Ana', '2026-10-02T00:00:00Z'),
+      ]);
+      const { fixture, el, button, type, outcomes } = await render();
+      fixture.detectChanges();
+      const switches = Array.from(el.querySelectorAll<HTMLInputElement>('input[role="switch"]'));
+      expect(switches).toHaveLength(1); // a conta desativada não aparece
+      expect(el.textContent).toContain('Raphael');
+      expect(el.textContent).not.toContain('Ana');
+
+      switches[0].click();
+      await type('BCDF2345');
+      button('Aprovar').click();
+      await vi.waitFor(() => expect(outcomes).toHaveLength(1));
+      expect(api.approve).toHaveBeenCalledExactlyOnceWith(
+        'BCDF2345',
+        'PC de casa',
+        'TV de Raphael',
+        ['g1'],
+      );
+    });
+
+    it('keeps the default TV name when more than one person is chosen', async () => {
+      authApi.guests.mockResolvedValue([guest('g1', 'Raphael'), guest('g2', 'Ana')]);
+      const { fixture, el, button, type, outcomes } = await render();
+      fixture.detectChanges();
+      el.querySelectorAll<HTMLInputElement>('input[role="switch"]').forEach((box) => box.click());
+      await type('BCDF2345');
+      button('Aprovar').click();
+      await vi.waitFor(() => expect(outcomes).toHaveLength(1));
+      expect(api.approve).toHaveBeenCalledExactlyOnceWith('BCDF2345', 'PC de casa', null, [
+        'g1',
+        'g2',
+      ]);
+    });
+
+    it('blocks Aprovar while the list loads', async () => {
+      let finish!: (list: GuestSummary[]) => void;
+      authApi.guests.mockReturnValue(new Promise<GuestSummary[]>((resolve) => (finish = resolve)));
+      const { fixture, el, button, type } = await render();
+      await type('BCDF2345');
+      fixture.detectChanges();
+      expect(el.textContent).toContain('Carregando pessoas');
+      expect(button('Aprovar').disabled).toBe(true);
+
+      finish([]);
+      await vi.waitFor(() => {
+        fixture.detectChanges();
+        expect(button('Aprovar').disabled).toBe(false);
+      });
+    });
+
+    it('shows a short error with Tentar de novo when the list fails, and never approves blind', async () => {
+      authApi.guests.mockRejectedValueOnce(new HttpErrorResponse({ status: 0 }));
+      const { fixture, el, button, type, outcomes } = await render();
+      await type('BCDF2345');
+      await vi.waitFor(() => {
+        fixture.detectChanges();
+        expect(el.textContent).toContain('Não foi possível carregar as pessoas');
+      });
+      expect(button('Aprovar').disabled).toBe(true);
+      expect(api.approve).not.toHaveBeenCalled();
+
+      authApi.guests.mockResolvedValue([guest('g1', 'Raphael')]);
+      button('Tentar de novo').click();
+      await vi.waitFor(() => {
+        fixture.detectChanges();
+        expect(el.textContent).toContain('Raphael');
+      });
+      expect(button('Aprovar').disabled).toBe(false);
+      expect(outcomes).toEqual([]);
+    });
+
+    it('says only the administrator has an account when there is no one else', async () => {
+      const { fixture, el } = await render();
+      await vi.waitFor(() => {
+        fixture.detectChanges();
+        expect(el.textContent).toContain('Só você tem conta por enquanto');
+      });
     });
   });
 
