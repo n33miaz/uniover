@@ -33,9 +33,12 @@
 
   <app-week-calendar />
 
-  @if (store.suggestProgram() && store.entries().length === 0) {
-    <!-- Conta sem programa e sem fichas: escolher o programa da semana é o primeiro passo, em destaque. -->
-    <app-program-suggestion />
+  @if (store.suggestProgram()) {
+    <!-- Sem programa da semana, escolher é o primeiro passo e fica no topo. Quem já tem fichas livres pode dispensar. -->
+    <app-program-suggestion
+      [dismissible]="store.entries().length > 0"
+      (dismissed)="store.dismissSuggestion()"
+    />
   }
 
   @if (!store.ready() || !store.homeReady()) {
@@ -231,11 +234,6 @@
         </button>
       </div>
     </section>
-  }
-
-  @if (store.suggestProgram() && store.entries().length > 0) {
-    <!-- Já tem fichas livres: a sugestão fica abaixo do treino do dia e pode ser dispensada. -->
-    <app-program-suggestion [dismissible]="true" (dismissed)="store.dismissSuggestion()" />
   }
 </div>
 
