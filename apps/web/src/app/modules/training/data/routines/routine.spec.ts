@@ -57,6 +57,8 @@ describe('toLocalRoutine', () => {
       name: 'A · Peito',
       position: 2,
       active: true,
+      programId: null,
+      weekdays: [],
       note: '',
       items: [
         {
@@ -115,6 +117,8 @@ describe('toUpsertBody', () => {
       position: 0,
       active: true,
       note: null,
+      programId: null,
+      weekdays: null,
       items: [
         {
           id: 'i1',

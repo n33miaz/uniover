@@ -9,6 +9,9 @@ const BASE = `${APP_CONFIG.apiBase}/v1/training`;
 /** Caminho da leitura incremental de rotinas (o puxador acrescenta `?after=&limit=`). */
 export const ROUTINES_PATH = `${BASE}/routines`;
 
+/** Caminho da leitura incremental e do `PUT` do programa da semana ativo (a escrita sai pela fila). */
+export const PROGRAM_PATH = `${BASE}/program`;
+
 /** Caminho do `PUT` de uma rotina inteira (escrita; sai pela fila). */
 export function routinePath(id: string): string {
   return `${ROUTINES_PATH}/${encodeURIComponent(id)}`;

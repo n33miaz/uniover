@@ -14,6 +14,7 @@ describe('goals pull, end to end', () => {
       EMPTY,
       EMPTY,
       EMPTY,
+      EMPTY,
       {
         items: [
           goalDto('weekly_sessions', { value: 3 }),
@@ -32,6 +33,7 @@ describe('goals pull, end to end', () => {
     expect(t.pull.calls.map((call) => call.path)).toEqual([
       '/api/v1/training/exercises',
       '/api/v1/training/routines',
+      '/api/v1/training/program',
       '/api/v1/training/sessions',
       '/api/v1/training/sets',
       GOALS_PATH,
@@ -61,11 +63,13 @@ describe('goals pull, end to end', () => {
       EMPTY,
       EMPTY,
       EMPTY,
+      EMPTY,
       { items: [goalDto('weekly_sessions', { value: 3 })], nextCursor: 'c1' },
     ];
     await sync.start();
 
     t.pull.script = [
+      EMPTY,
       EMPTY,
       EMPTY,
       EMPTY,

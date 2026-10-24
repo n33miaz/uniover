@@ -112,6 +112,110 @@ describe('TodayStore', () => {
       expect(store.selected()?.routine.id).toBe(b.id);
     });
 
+    describe('program suggestion', () => {
+      it('suggests a program while the account has none, and stops once one is chosen', async () => {
+        const t = await setup();
+        const store = TestBed.inject(TodayStore);
+        await store.loadCore();
+        await store.loadHome();
+        expect(store.suggestProgram()).toBe(true);
+
+        await t.trainingDb.program.put({
+          id: 'active',
+          programId: 'p',
+          updatedAt: 1,
+          clientUpdatedAt: 1,
+        });
+        await store.loadHome();
+        expect(store.suggestProgram()).toBe(false);
+      });
+
+      it('with free routines, can be dismissed on this device; with none, it stays', async () => {
+        await setup();
+        const store = TestBed.inject(TodayStore);
+        await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
+        await store.loadCore();
+        await store.loadHome();
+        expect(store.suggestProgram()).toBe(true);
+
+        store.dismissSuggestion();
+        expect(store.suggestProgram()).toBe(false);
+        await store.loadHome();
+        expect(store.suggestProgram()).toBe(false);
+      });
+
+      it('does not suggest while a workout is open', async () => {
+        await setup();
+        const store = TestBed.inject(TodayStore);
+        await store.start(null);
+        await store.loadCore();
+        await store.loadHome();
+
+        expect(store.suggestProgram()).toBe(false);
+      });
+    });
+
+    describe('weekly program', () => {
+      // 2026-10-19 é segunda-feira.
+      const day = (offset: number) => new Date(2026, 9, 19 + offset, 12).getTime();
+
+      async function program() {
+        const t = await setup();
+        const seg = await saveRoutine('Segunda · Peito', [item('a1', 'supino-reto', 0)]);
+        const ter = await saveRoutine('Terça · Costas', [item('b1', 'agachamento', 0)]);
+        await t.trainingDb.routines.update(seg.id, { programId: 'p', weekdays: [1] });
+        await t.trainingDb.routines.update(ter.id, { programId: 'p', weekdays: [2] });
+        await t.trainingDb.program.put({
+          id: 'active',
+          programId: 'p',
+          updatedAt: 1,
+          clientUpdatedAt: 1,
+        });
+        return { t, seg, ter, store: TestBed.inject(TodayStore) };
+      }
+
+      it('opens on the routine of the weekday, Monday then Tuesday', async () => {
+        const { t, seg, ter, store } = await program();
+
+        t.runtime.time = day(0);
+        await store.loadHome();
+        expect(store.selected()?.routine.id).toBe(seg.id);
+
+        t.runtime.time = day(1);
+        await store.loadHome();
+        expect(store.selected()?.routine.id).toBe(ter.id);
+        expect(store.resting()).toBe(false);
+      });
+
+      it('rests on the weekend, offering no routine, and goes back to training on Monday', async () => {
+        const { t, seg, store } = await program();
+
+        t.runtime.time = day(5);
+        await store.loadHome();
+        expect(store.resting()).toBe(true);
+        expect(store.selected()).toBeUndefined();
+
+        t.runtime.time = day(7);
+        await store.loadHome();
+        expect(store.resting()).toBe(false);
+        expect(store.selected()?.routine.id).toBe(seg.id);
+      });
+
+      it('lets the person pick another routine on a rest day, and forgets the pick on the next day', async () => {
+        const { t, ter, store } = await program();
+        t.runtime.time = day(5);
+        await store.loadHome();
+
+        store.chooseRoutine(ter.id);
+        expect(store.selected()?.routine.id).toBe(ter.id);
+
+        t.runtime.time = day(6);
+        await store.loadHome();
+        expect(store.chosenRoutineId()).toBeNull();
+        expect(store.selected()).toBeUndefined();
+      });
+    });
+
     it('lines carry the last time and a higher load only when the suggestion goes up', async () => {
       const t = await setup();
       // Três séries no topo da faixa (10): a sugestão sobe um degrau de 2,5 kg. No agachamento a faixa não fechou.

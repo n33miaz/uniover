@@ -83,6 +83,8 @@ describe('RoutineRepository', () => {
         position: 0,
         active: true,
         note: null,
+        programId: null,
+        weekdays: null,
         items: stored?.items.map((entry) => ({
           id: entry.id,
           exerciseId: entry.exerciseId,
@@ -708,6 +710,182 @@ describe('RoutineRepository', () => {
       expect(result).toEqual({ status: 'storage-full' });
       expect(await t.trainingDb.routines.count()).toBe(0);
       expect(await t.outbox()).toEqual([]);
+    });
+  });
+
+  describe('selectProgram', () => {
+    const SLUGS = ['supino', 'crucifixo', 'rosca', 'triceps'];
+
+    /** O modelo "duplo" com os dias da semana (segunda e quarta) e um segundo modelo, para trocar de programa. */
+    function withPrograms(t: ReturnType<typeof setupRoutines>) {
+      const [duplo] = TEMPLATES_DTO.items;
+      t.api.dto = {
+        items: [
+          {
+            ...duplo,
+            routines: duplo.routines.map((day, index) => ({
+              ...day,
+              weekdays: [index === 0 ? 1 : 3],
+            })),
+          },
+          {
+            ...duplo,
+            id: 'outro',
+            name: 'Outro',
+            routines: duplo.routines
+              .slice(0, 1)
+              .map((day) => ({ ...day, name: 'Terça · X', weekdays: [2] })),
+          },
+        ],
+      };
+    }
+
+    it('saves the routines (active, with program and weekdays), the choice, and queues them: routines first, then the program', async () => {
+      const t = setupRoutines();
+      withPrograms(t);
+      await seedCatalog(t.trainingDb, SLUGS);
+
+      const result = await t.repository.selectProgram('duplo');
+
+      if (result.status !== 'saved') throw new Error(result.status);
+      expect(result.routines.map((row) => [row.programId, row.weekdays, row.active])).toEqual([
+        ['duplo', [1], true],
+        ['duplo', [3], true],
+      ]);
+      expect(await t.repository.activeProgramId()).toBe('duplo');
+      const queued = await t.outbox();
+      expect(queued.map((entry) => entry.method)).toEqual(['PUT', 'PUT', 'PUT']);
+      expect(
+        queued.map((entry) =>
+          entry.url.replace(/.*\/training\//, '').replace(/[0-9a-f-]{36}/, ':id'),
+        ),
+      ).toEqual(['routines/:id', 'routines/:id', 'program']);
+      expect(queued[0].body).toMatchObject({ programId: 'duplo', weekdays: [1], active: true });
+      expect(queued[2].body).toMatchObject({ programId: 'duplo' });
+    });
+
+    it('works with no network at all, from the cached templates, and everything waits in the queue', async () => {
+      const t = setupRoutines();
+      withPrograms(t);
+      await seedCatalog(t.trainingDb, SLUGS);
+      await t.repository.templates();
+      t.api.failing = true;
+
+      const result = await t.repository.selectProgram('duplo');
+
+      expect(result.status).toBe('saved');
+      expect(await t.repository.activeProgramId()).toBe('duplo');
+      expect(await t.outbox()).toHaveLength(3);
+    });
+
+    it('says the templates are unavailable when neither the network nor the cache has them', async () => {
+      const t = setupRoutines();
+      t.api.failing = true;
+
+      expect((await t.repository.selectProgram('duplo')).status).toBe('templates-unavailable');
+      expect(await t.repository.activeProgramId()).toBeNull();
+      expect(await t.outbox()).toEqual([]);
+    });
+
+    it('never makes the rejected historical template a program', async () => {
+      const t = setupRoutines();
+      await seedCatalog(t.trainingDb, SLUGS);
+
+      expect(await t.repository.selectProgram('historical-ab')).toEqual({
+        status: 'template-not-found',
+      });
+    });
+
+    it('switching deactivates the previous program (kept), and choosing it again reactivates without duplicating', async () => {
+      const t = setupRoutines();
+      withPrograms(t);
+      await seedCatalog(t.trainingDb, SLUGS);
+      await t.repository.selectProgram('duplo');
+
+      await t.repository.selectProgram('outro');
+      const afterSwitch = await t.repository.listAll();
+      expect(afterSwitch.map((row) => [row.programId, row.active])).toEqual([
+        ['duplo', false],
+        ['duplo', false],
+        ['outro', true],
+      ]);
+      expect(await t.repository.activeProgramId()).toBe('outro');
+
+      await t.repository.selectProgram('duplo');
+      const afterBack = await t.repository.listAll();
+      expect(afterBack).toHaveLength(3);
+      expect(afterBack.map((row) => [row.programId, row.active])).toEqual([
+        ['duplo', true],
+        ['duplo', true],
+        ['outro', false],
+      ]);
+      expect(await t.repository.activeProgramId()).toBe('duplo');
+    });
+
+    it('recreates the routines of the program when they were all deleted', async () => {
+      const t = setupRoutines();
+      withPrograms(t);
+      await seedCatalog(t.trainingDb, SLUGS);
+      const first = await t.repository.selectProgram('duplo');
+      if (first.status !== 'saved') throw new Error(first.status);
+      for (const row of first.routines) await t.repository.softDelete(row.id);
+
+      const again = await t.repository.selectProgram('duplo');
+
+      if (again.status !== 'saved') throw new Error(again.status);
+      expect(again.routines).toHaveLength(2);
+      expect((await t.repository.list()).map((row) => row.programId)).toEqual(['duplo', 'duplo']);
+    });
+
+    it('leaves nothing behind when the queue is full', async () => {
+      const t = setupRoutines();
+      withPrograms(t);
+      await seedCatalog(t.trainingDb, SLUGS);
+      failSecondEnqueue(t);
+
+      expect(await t.repository.selectProgram('duplo')).toEqual({ status: 'storage-full' });
+
+      expect(await t.trainingDb.routines.count()).toBe(0);
+      expect(await t.repository.activeProgramId()).toBeNull();
+      expect(await t.outbox()).toEqual([]);
+    });
+
+    it('editing a program routine keeps its program and weekdays', async () => {
+      const t = setupRoutines();
+      withPrograms(t);
+      await seedCatalog(t.trainingDb, SLUGS);
+      const result = await t.repository.selectProgram('duplo');
+      if (result.status !== 'saved') throw new Error(result.status);
+      const [first] = result.routines;
+
+      const saved = savedRoutine(
+        await t.repository.save({
+          id: first.id,
+          name: 'Segunda · Nova',
+          items: [draftItem('supino')],
+        }),
+      );
+
+      expect([saved.programId, saved.weekdays]).toEqual(['duplo', [1]]);
+      expect((await t.repository.get(first.id))?.programId).toBe('duplo');
+    });
+
+    it('takes the choice made on another device when it is newer, and keeps its own when it is older', async () => {
+      const t = setupRoutines();
+      await t.repository.applyRemoteProgram([
+        { id: 'active', programId: 'duplo', updatedAt: 10, clientUpdatedAt: 100 },
+      ]);
+      expect(await t.repository.activeProgramId()).toBe('duplo');
+
+      await t.repository.applyRemoteProgram([
+        { id: 'active', programId: 'outro', updatedAt: 20, clientUpdatedAt: 50 },
+      ]);
+      expect(await t.repository.activeProgramId()).toBe('duplo');
+
+      await t.repository.applyRemoteProgram([
+        { id: 'active', programId: 'outro', updatedAt: 30, clientUpdatedAt: 200 },
+      ]);
+      expect(await t.repository.activeProgramId()).toBe('outro');
     });
   });
 
