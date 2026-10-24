@@ -55,6 +55,9 @@ public sealed class CommandAuditEntry
 
     public Guid UserId { get; private set; }
 
+    /// <summary>TV a que a ação pertence; a trilha continua sem FK porque a exclusão da TV não apaga auditoria.</summary>
+    public Guid TvId { get; private set; }
+
     /// <summary>Nulo quando nenhum agente está configurado para controlar a TV.</summary>
     public string? AgentId { get; private set; }
 
@@ -84,7 +87,8 @@ public sealed class CommandAuditEntry
         string? errorCode,
         int? latencyMs,
         ClientInfo client,
-        DateTimeOffset occurredAt)
+        DateTimeOffset occurredAt,
+        Guid tvId = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(command);
         ArgumentNullException.ThrowIfNull(client);
@@ -93,6 +97,7 @@ public sealed class CommandAuditEntry
         {
             Id = IdGenerator.NewId(),
             UserId = userId,
+            TvId = tvId,
             AgentId = Truncate(agentId, AgentMax),
             Command = Truncate(command, CommandMax)!,
             Detail = Truncate(detail, DetailMax),

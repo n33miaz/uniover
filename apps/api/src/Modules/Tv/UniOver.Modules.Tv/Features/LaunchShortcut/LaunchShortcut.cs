@@ -7,6 +7,7 @@ using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
+using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
 
@@ -17,13 +18,13 @@ internal sealed record LaunchShortcutCommand(TvCommandOrigin Origin, Guid Shortc
 /// <summary>Resultado do lançamento: o atalho pode não existir ou o app não estar mais na TV (nada vai ao agente nesses casos).</summary>
 internal sealed record LaunchShortcutResult(bool Found, bool Installed, TvSendOutcome? Outcome);
 
-internal sealed class LaunchShortcutHandler(TvDbContext db, TvCommandRunner runner)
+internal sealed class LaunchShortcutHandler(TvDbContext db, ITvCurrentSelection selection, TvCommandRunner runner)
 {
     public async Task<LaunchShortcutResult> HandleAsync(LaunchShortcutCommand command, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var shortcut = await db.Shortcuts.AsNoTracking().SingleOrDefaultAsync(s => s.Id == command.ShortcutId, cancellationToken);
+        var shortcut = await db.Shortcuts.AsNoTracking().SingleOrDefaultAsync(s => s.Id == command.ShortcutId && s.TvId == selection.Current.Id, cancellationToken);
         if (shortcut is null)
         {
             return new LaunchShortcutResult(false, false, null);

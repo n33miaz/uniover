@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,7 +27,9 @@ using UniOver.Modules.Tv.Features.RefreshShortcuts;
 using UniOver.Modules.Tv.Features.ReorderShortcuts;
 using UniOver.Modules.Tv.Features.SendKey;
 using UniOver.Modules.Tv.Features.SendText;
+using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Features.UpdateShortcut;
+using UniOver.Modules.Tv.Features.Tvs;
 using UniOver.Modules.Tv.Features.Wake;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
@@ -80,11 +83,13 @@ public static class TvModule
         services.AddSingleton<ITvCommandSender, DevicesGatewayCommandSender>();
         services.AddSingleton<ITvCleanupReports, InMemoryTvCleanupReports>();
         services.AddSingleton<TvStatePersister>();
-        services.AddSingleton<TvStateProvider>();
-        services.AddSingleton(sp => new SseBroadcaster<object>(sp.GetRequiredService<IOptions<TvModuleOptions>>().Value.Sse));
-        services.AddSingleton<ITvStreamPublisher, TvStreamPublisher>();
+        services.AddScoped<TvStateProvider>();
+        services.AddSingleton<TvStreamPublisher>();
+        services.AddSingleton<ITvStreamPublisher>(sp => sp.GetRequiredService<TvStreamPublisher>());
 
         services.AddScoped<ITvCommandAudit, EfCommandAudit>();
+        services.AddScoped<ITvCurrentSelection, TvCurrentSelection>();
+        services.AddScoped<TvSelectionService>();
 
         // Auditoria: os comandos da TV são uma fonte da trilha do administrador. A retenção (30 dias) roda no banco; a aplicação só chama a função.
         services.AddScoped<IAuditSource, TvAuditSource>();
@@ -111,6 +116,7 @@ public static class TvModule
         services.AddScoped<TvConfigView>();
         services.AddScoped<GetConfigHandler>();
         services.AddScoped<BindAgentHandler>();
+        services.AddScoped<ManageTvsHandler>();
         return services;
     }
 
@@ -120,7 +126,7 @@ public static class TvModule
 
         // Sem AllowAnonymous no grupo: ele venceria a política de cada rota. A padrão é "autenticado" e a
         // única rota pública (/info) se declara sozinha.
-        var group = endpoints.MapGroup($"/api/v1/{Name}");
+        var group = endpoints.MapGroup($"/api/v1/{Name}").AddEndpointFilter(TvSelectionEndpointFilter.InvokeAsync);
         group.MapGetModuleInfo();
         group.MapGetState();
         group.MapSendKey();
@@ -137,6 +143,7 @@ public static class TvModule
         group.MapStreamEvents();
         group.MapGetConfig();
         group.MapBindAgent();
+        group.MapTvs();
         return endpoints;
     }
 }

@@ -77,7 +77,8 @@ internal sealed class EfCommandAudit(TvDbContext db) : ITvCommandAudit
                 errorCode: null,
                 latencyMs: null,
                 new ClientInfo(entry.Ip, entry.UserAgent),
-                entry.OccurredAt));
+                entry.OccurredAt,
+                entry.TvId));
         }
 
         return false;

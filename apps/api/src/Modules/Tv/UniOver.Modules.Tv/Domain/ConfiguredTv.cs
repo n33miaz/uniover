@@ -40,6 +40,10 @@ public sealed class ConfiguredTv
     public Guid UpdatedBy { get; private set; }
 
     public static ConfiguredTv CreateDefault(string? name, string agentSlug, Guid updatedBy, DateTimeOffset now)
+        => Create(name, agentSlug, isDefault: true, updatedBy, now);
+
+    /// <summary>Cria uma TV adicional. O agente é único no módulo para que estado e mensagens tenham um único destino.</summary>
+    public static ConfiguredTv Create(string? name, string agentSlug, bool isDefault, Guid updatedBy, DateTimeOffset now)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agentSlug);
         var cleanName = NormalizeName(name);
@@ -49,7 +53,7 @@ public sealed class ConfiguredTv
             Id = IdGenerator.NewId(),
             Name = cleanName.Length == 0 ? DefaultName : cleanName,
             AgentSlug = agentSlug,
-            IsDefault = true,
+            IsDefault = isDefault,
             CreatedAt = now,
             UpdatedAt = now,
             UpdatedBy = updatedBy,

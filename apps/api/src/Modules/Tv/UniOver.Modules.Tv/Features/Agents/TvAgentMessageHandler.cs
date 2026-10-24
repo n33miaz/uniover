@@ -44,24 +44,31 @@ internal sealed partial class TvAgentMessageHandler(
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        var binding = await agents.ResolveAsync(cancellationToken);
-        if (!binding.IsConfigured || !string.Equals(binding.AgentSlug, message.AgentId, StringComparison.Ordinal))
+        var tv = await db.Tvs.SingleOrDefaultAsync(t => t.AgentSlug == message.AgentId, cancellationToken);
+        var tvId = tv?.Id ?? Guid.Empty;
+        if (tv is null)
         {
-            LogIgnored(message.AgentId, message.Type);
-            return;
+            // Instalações que ainda dependem de AgentId não têm linha em tvs. Mantêm o comportamento anterior, mas só
+            // enquanto não houver TV salva para o agente: uma TV adicional nunca recebe mensagens por esse atalho.
+            var fallback = await agents.ResolveAsync(cancellationToken);
+            if (!fallback.IsConfigured || !string.Equals(fallback.AgentSlug, message.AgentId, StringComparison.Ordinal))
+            {
+                LogIgnored(message.AgentId, message.Type);
+                return;
+            }
         }
 
         switch (message.Type)
         {
             case AgentMessageTypes.TvStateV1:
-                HandleState(message);
+                HandleState(tvId, message);
                 break;
             case AgentMessageTypes.TvAppsV1:
             case AgentMessageTypes.TvAppsV2:
-                await HandleAppsAsync(message, cancellationToken);
+                await HandleAppsAsync(tvId, message, cancellationToken);
                 break;
             case AgentMessageTypes.TvWatchdogV1:
-                await HandleWatchdogAsync(message, cancellationToken);
+                await HandleWatchdogAsync(tvId, message, cancellationToken);
                 break;
             case AgentMessageTypes.TvCleanupResultV1:
                 HandleCleanupResult(message);
@@ -86,7 +93,7 @@ internal sealed partial class TvAgentMessageHandler(
     private static int? OptionalMegabytes(JsonElement body, string name) =>
         body.GetProperty(name) is { ValueKind: JsonValueKind.Number } value ? value.GetInt32() : null;
 
-    private void HandleState(InboundMessage message)
+    private void HandleState(Guid tvId, InboundMessage message)
     {
         var body = message.Body;
         var snapshot = new TvStateSnapshot(
@@ -99,19 +106,19 @@ internal sealed partial class TvAgentMessageHandler(
         // Um estado vindo do agente prova que ele está conectado.
         state.NoteOnline(message.AgentId, true);
         state.Apply(message.AgentId, snapshot);
-        stream.PublishState(TvState.From(snapshot, agentOnline: true));
+        stream.PublishState(tvId, TvState.From(snapshot, agentOnline: true));
         persister.Observe(message.AgentId, snapshot);
     }
 
-    private async Task HandleAppsAsync(InboundMessage message, CancellationToken cancellationToken)
+    private async Task HandleAppsAsync(Guid tvId, InboundMessage message, CancellationToken cancellationToken)
     {
         // `tv.apps.v1` não traz ícone; `tv.apps.v2` pode trazer, app por app. Sem o campo, o ícone guardado fica.
         var incoming = message.Body.GetProperty("apps").EnumerateArray()
             .Select(a => new IncomingApp(a.GetProperty("package").GetString()!, a.GetProperty("label").GetString(), ReadIcon(a, message.AgentId)))
             .ToList();
 
-        var existing = await db.Shortcuts.ToListAsync(cancellationToken);
-        var (added, changed) = ShortcutCatalog.Merge(existing, incoming, time.GetUtcNow());
+        var existing = await db.Shortcuts.Where(s => s.TvId == tvId).ToListAsync(cancellationToken);
+        var (added, changed) = ShortcutCatalog.Merge(existing, incoming, time.GetUtcNow(), tvId);
         db.Shortcuts.AddRange(added);
         if (changed)
         {
@@ -119,7 +126,7 @@ internal sealed partial class TvAgentMessageHandler(
         }
 
         // Mesmo sem mudança a tela recebe a lista: quem pediu a atualização espera ver a resposta.
-        stream.PublishShortcuts(await shortcutReader.ListAsync(cancellationToken));
+        stream.PublishShortcuts(tvId, await shortcutReader.ListAsync(tvId, cancellationToken));
     }
 
     /// <summary>
@@ -144,7 +151,7 @@ internal sealed partial class TvAgentMessageHandler(
         return null;
     }
 
-    private async Task HandleWatchdogAsync(InboundMessage message, CancellationToken cancellationToken)
+    private async Task HandleWatchdogAsync(Guid tvId, InboundMessage message, CancellationToken cancellationToken)
     {
         var body = message.Body;
         var kind = body.GetProperty("kind").GetString()!;
@@ -171,7 +178,7 @@ internal sealed partial class TvAgentMessageHandler(
             await db.WatchdogEvents.Where(w => w.ReceivedAt <= oldest).ExecuteDeleteAsync(cancellationToken);
         }
 
-        stream.PublishWatchdog(new TvWatchdogEntry(kind, severity, detail, attempts, at));
+        stream.PublishWatchdog(tvId, new TvWatchdogEntry(kind, severity, detail, attempts, at));
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Ícone do app {Package} do agente {AgentId} recusado (tipo, base64, tamanho ou conteúdo inválido).")]

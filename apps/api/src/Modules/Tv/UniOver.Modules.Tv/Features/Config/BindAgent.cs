@@ -121,7 +121,7 @@ internal sealed class BindAgentHandler(
 
             var entry = CommandAuditEntry.Create(
                 command.Origin.UserId, listing.Slug, TvCommandNames.ConfigBind, listing.Slug,
-                ok: true, errorCode: null, latencyMs: null, command.Origin.Client, now);
+                ok: true, errorCode: null, latencyMs: null, command.Origin.Client, now, tv.Id);
             try
             {
                 // O EfCommandAudit usa este mesmo TvDbContext: um SaveChanges grava a TV e a trilha juntas.
@@ -148,7 +148,7 @@ internal sealed class BindAgentHandler(
         agents.Set(binding);
         if (changed)
         {
-            AnnounceNewAgent(binding.AgentSlug!);
+            AnnounceNewAgent(tv.Id, binding.AgentSlug!);
         }
 
         return await view.ReadAsync(binding, cancellationToken);
@@ -162,11 +162,12 @@ internal sealed class BindAgentHandler(
     /// As telas abertas passam a mostrar o computador novo na hora. Publica sempre, e não só quando a presença "mudou":
     /// o computador novo pode nunca ter sido visto pelo módulo, e sem isto a tela ficaria com o estado do antigo.
     /// </summary>
-    private void AnnounceNewAgent(string agentSlug)
+    private void AnnounceNewAgent(Guid tvId, string agentSlug)
     {
+        stream.AdoptUnidentifiedStream(tvId);
         var online = presence.IsOnline(agentSlug);
         state.NoteOnline(agentSlug, online);
-        stream.PublishState(TvState.From(state.Last(agentSlug), online));
+        stream.PublishState(tvId, TvState.From(state.Last(agentSlug), online));
     }
 }
 

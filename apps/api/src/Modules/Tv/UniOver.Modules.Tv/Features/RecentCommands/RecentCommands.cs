@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
+using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Persistence;
 
 namespace UniOver.Modules.Tv.Features.RecentCommands;
@@ -25,7 +26,7 @@ internal sealed record RecentCommand(
     DateTimeOffset OccurredAt,
     bool ByMe);
 
-internal sealed class RecentCommandsHandler(TvDbContext db)
+internal sealed class RecentCommandsHandler(TvDbContext db, ITvCurrentSelection selection)
 {
     public const int DefaultLimit = 20;
     public const int MaxLimit = 100;
@@ -38,6 +39,7 @@ internal sealed class RecentCommandsHandler(TvDbContext db)
 
             // A anotação de teto diário não é um comando: fica só na trilha do administrador.
             .Where(a => a.Command != TvCommandNames.AuditLimit)
+            .Where(a => a.TvId == selection.Current.Id)
             .Where(a => !onlyViewer || a.UserId == viewerId)
             .OrderByDescending(a => a.OccurredAt)
             .ThenByDescending(a => a.Id)

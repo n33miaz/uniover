@@ -159,6 +159,10 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("ok");
 
+                    b.Property<Guid>("TvId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tv_id");
+
                     b.Property<string>("UserAgent")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
@@ -173,6 +177,9 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
 
                     b.HasIndex("OccurredAt")
                         .HasDatabaseName("ix_command_audit_occurred_at");
+
+                    b.HasIndex("TvId", "OccurredAt")
+                        .HasDatabaseName("ix_command_audit_tv_id_occurred_at");
 
                     b.ToTable("command_audit", "tv");
                 });
@@ -213,6 +220,10 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_tvs");
+
+                    b.HasIndex("AgentSlug")
+                        .IsUnique()
+                        .HasDatabaseName("ix_tvs_agent_slug");
 
                     b.HasIndex("IsDefault")
                         .IsUnique()
@@ -265,6 +276,10 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("position");
 
+                    b.Property<Guid>("TvId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tv_id");
+
                     b.Property<string>("TvLabel")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -277,14 +292,37 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_shortcuts");
 
-                    b.HasIndex("Package")
-                        .IsUnique()
-                        .HasDatabaseName("ix_shortcuts_package");
-
                     b.HasIndex("Position")
                         .HasDatabaseName("ix_shortcuts_position");
 
+                    b.HasIndex("TvId", "Package")
+                        .IsUnique()
+                        .HasDatabaseName("ix_shortcuts_tv_id_package");
+
                     b.ToTable("shortcuts", "tv");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvMember", b =>
+                {
+                    b.Property<Guid>("TvId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tv_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("AddedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("added_at");
+
+                    b.HasKey("TvId", "UserId")
+                        .HasName("pk_tv_members");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_tv_members_user_id");
+
+                    b.ToTable("tv_members", "tv");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvStateRecord", b =>

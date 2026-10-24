@@ -1,4 +1,5 @@
 using System.Text.Json;
+using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Tv.Domain;
 
 namespace UniOver.Modules.Tv.Ports;
@@ -97,7 +98,7 @@ public interface ITvCleanupReports
 /// <summary>Os atalhos como a tela os vê, lidos do banco.</summary>
 public interface ITvShortcutReader
 {
-    Task<IReadOnlyList<TvShortcut>> ListAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<TvShortcut>> ListAsync(Guid tvId, CancellationToken cancellationToken);
 }
 
 /// <summary>Empurra mudanças para os fluxos SSE abertos (a tela).</summary>
@@ -108,6 +109,21 @@ public interface ITvStreamPublisher
     void PublishShortcuts(IReadOnlyList<TvShortcut> shortcuts);
 
     void PublishWatchdog(TvWatchdogEntry entry);
+
+    // As implementações antigas continuam válidas nos testes; o adaptador real sobrescreve para isolar cada TV.
+    void PublishState(Guid tvId, TvState state) => PublishState(state);
+
+    void PublishShortcuts(Guid tvId, IReadOnlyList<TvShortcut> shortcuts) => PublishShortcuts(shortcuts);
+
+    void PublishWatchdog(Guid tvId, TvWatchdogEntry entry) => PublishWatchdog(entry);
+
+    /// <summary>
+    /// Sem linha de TV a tela abre o fluxo "sem identificador". Quando a linha é criada, essas telas já abertas passam a
+    /// ouvir o fluxo da TV nova, senão ficariam surdas até recarregar. Sem efeito nas implementações de teste.
+    /// </summary>
+    void AdoptUnidentifiedStream(Guid tvId)
+    {
+    }
 }
 
 /// <summary>Evento do vigia como a tela o recebe.</summary>

@@ -2,13 +2,14 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using UniOver.Modules.Tv.Domain;
+using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Ports;
 
 namespace UniOver.Modules.Tv.Features.ListShortcuts;
 
-internal sealed class ListShortcutsHandler(ITvShortcutReader reader)
+internal sealed class ListShortcutsHandler(ITvShortcutReader reader, ITvCurrentSelection selection)
 {
-    public Task<IReadOnlyList<TvShortcut>> HandleAsync(CancellationToken cancellationToken) => reader.ListAsync(cancellationToken);
+    public Task<IReadOnlyList<TvShortcut>> HandleAsync(CancellationToken cancellationToken) => reader.ListAsync(selection.Current.Id, cancellationToken);
 }
 
 internal static class ListShortcutsEndpoint

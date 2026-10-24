@@ -22,6 +22,9 @@ public sealed class Shortcut
 
     public Guid Id { get; private set; }
 
+    /// <summary>TV a que o app pertence; sem FK para deixar a remoção administrativa explícita.</summary>
+    public Guid TvId { get; private set; }
+
     public string Package { get; private set; } = string.Empty;
 
     /// <summary>Nome que a TV informa para o app; fica guardado, mas a tela não o mostra por padrão.</summary>
@@ -59,15 +62,20 @@ public sealed class Shortcut
     /// <summary>O que a tela mostra como "no controle" (a fileira de atalhos): escolhido pelo dono e ainda instalado.</summary>
     public bool IsActive => Enabled && Installed;
 
-    public static Shortcut Create(string package, string? tvLabel, int position, DateTimeOffset now) =>
+    public static Shortcut Create(Guid tvId, string package, string? tvLabel, int position, DateTimeOffset now) =>
         new()
         {
             Id = IdGenerator.NewId(),
+            TvId = tvId,
             Package = package,
             TvLabel = Clip(tvLabel, TvLabelMax),
             Position = position,
             UpdatedAt = now,
         };
+
+    /// <summary>Compatibilidade dos testes e chamadas antigas enquanto a TV padrão é materializada na primeira configuração.</summary>
+    public static Shortcut Create(string package, string? tvLabel, int position, DateTimeOffset now) =>
+        Create(Guid.Empty, package, tvLabel, position, now);
 
     /// <summary>Atualiza o que veio da TV, sem tocar no rótulo do dono nem na posição.</summary>
     internal bool ApplyFromTv(string? tvLabel, DateTimeOffset now)
@@ -238,7 +246,7 @@ public static class ShortcutCatalog
     /// lista mantém o que já tem. Devolve os atalhos novos (o chamador os persiste) e se algo mudou.
     /// </summary>
     public static (IReadOnlyList<Shortcut> Added, bool Changed) Merge(
-        IReadOnlyCollection<Shortcut> existing, IReadOnlyList<IncomingApp> incoming, DateTimeOffset now)
+        IReadOnlyCollection<Shortcut> existing, IReadOnlyList<IncomingApp> incoming, DateTimeOffset now, Guid? tvId = null)
     {
         ArgumentNullException.ThrowIfNull(existing);
         ArgumentNullException.ThrowIfNull(incoming);
@@ -267,7 +275,8 @@ public static class ShortcutCatalog
             }
             else
             {
-                var created = Shortcut.Create(app.Package, app.Label, next++, now);
+                var targetTvId = existing.FirstOrDefault()?.TvId ?? tvId ?? Guid.Empty;
+                var created = Shortcut.Create(targetTvId, app.Package, app.Label, next++, now);
                 if (app.Icon is { } icon)
                 {
                     created.SetIcon(icon, now);

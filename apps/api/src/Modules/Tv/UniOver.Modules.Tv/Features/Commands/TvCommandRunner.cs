@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using UniOver.Modules.Tv.Domain;
+using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Ports;
 
 namespace UniOver.Modules.Tv.Features.Commands;
@@ -21,7 +22,8 @@ internal sealed partial class TvCommandRunner(
     ITvCommandAudit audit,
     ITvStreamPublisher stream,
     TimeProvider time,
-    ILogger<TvCommandRunner> logger)
+    ILogger<TvCommandRunner> logger,
+    ITvCurrentSelection? selection = null)
 {
     public const string NotConfiguredCode = "agent_not_configured";
 
@@ -45,7 +47,10 @@ internal sealed partial class TvCommandRunner(
         ArgumentNullException.ThrowIfNull(message);
 
         var settings = options.Value;
-        var agentId = (await agents.ResolveAsync(cancellationToken)).AgentSlug ?? string.Empty;
+        var target = selection is not null && selection.TryGet(out var selected)
+            ? selected!
+            : new TvTarget(Guid.Empty, (await agents.ResolveAsync(cancellationToken)).AgentSlug ?? string.Empty, ConfiguredTv.DefaultName, true);
+        var agentId = target.AgentSlug;
 
         TvSendOutcome outcome;
         if (string.IsNullOrWhiteSpace(agentId))
@@ -64,10 +69,10 @@ internal sealed partial class TvCommandRunner(
 
         if (outcome.Status == TvSendStatus.AgentOffline)
         {
-            AnnounceOffline(agentId);
+            AnnounceOffline(target);
         }
 
-        await RecordAsync(origin, agentId, command, detail, outcome);
+        await RecordAsync(origin, target.Id, agentId, command, detail, outcome);
         return outcome;
     }
 
@@ -77,16 +82,17 @@ internal sealed partial class TvCommandRunner(
             : settings.CommandTimeout;
 
     // A API não recebe aviso quando o agente cai; descobre ao falhar um comando e conta para a tela uma vez só.
-    private void AnnounceOffline(string agentId)
+    private void AnnounceOffline(TvTarget target)
     {
+        var agentId = target.AgentSlug;
         if (state.NoteOnline(agentId, false))
         {
-            stream.PublishState(TvState.From(state.Last(agentId), agentOnline: false));
+            stream.PublishState(target.Id, TvState.From(state.Last(agentId), agentOnline: false));
         }
     }
 
     private async Task RecordAsync(
-        TvCommandOrigin origin, string agentId, string command, string? detail, TvSendOutcome outcome)
+        TvCommandOrigin origin, Guid tvId, string agentId, string command, string? detail, TvSendOutcome outcome)
     {
         try
         {
@@ -99,7 +105,8 @@ internal sealed partial class TvCommandRunner(
                 outcome.IsDelivered ? null : outcome.ErrorCode ?? outcome.Status.ToString(),
                 outcome.Status is TvSendStatus.NotConfigured or TvSendStatus.AgentOffline ? null : (int)outcome.Latency.TotalMilliseconds,
                 origin.Client,
-                time.GetUtcNow());
+                time.GetUtcNow(),
+                tvId);
 
             // Sem o token do pedido: se o cliente largou a conexão, o comando já saiu e a trilha precisa existir.
             await audit.RecordAsync(entry, CancellationToken.None);
