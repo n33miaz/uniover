@@ -290,7 +290,7 @@ public sealed class CommandTests(PostgresFixture postgres)
 
         tvRoutes.Should().NotBeEmpty();
 
-        // Comandar a TV nunca pede a passkey; trocar o computador que a controla (rota de administrador) pede.
+        // Comandar a TV nunca pede a passkey; trocar o computador ou a filiação de uma TV é administração perigosa.
         var adminPatterns = TvPermissionMap.AdminRoutes.Select(r => r.Pattern).ToHashSet(StringComparer.Ordinal);
         tvRoutes.Where(r => !adminPatterns.Contains(r.RoutePattern.RawText!))
             .SelectMany(r => r.Metadata.GetOrderedMetadata<IAuthorizeData>())
@@ -298,7 +298,7 @@ public sealed class CommandTests(PostgresFixture postgres)
         tvRoutes.SelectMany(r => r.Metadata.GetOrderedMetadata<IAuthorizeData>())
             .Where(a => a.Policy != null && a.Policy.StartsWith(StepUp.PolicyPrefix, StringComparison.Ordinal))
             .Select(a => a.Policy)
-            .Should().Equal(StepUp.Policy(TvAuth.BindAgentAction));
+            .Should().OnlyContain(policy => policy == StepUp.Policy(TvAuth.BindAgentAction));
         RouteInspector.Violations(tvRoutes).Should().BeEmpty();
     }
 
@@ -417,11 +417,11 @@ public sealed class CommandTests(PostgresFixture postgres)
     {
         await using var app = await TvApp.StartAsync(postgres);
         await app.ExecuteSqlAsync(
-            "INSERT INTO tv.command_audit (id, user_id, command, ok, occurred_at) " +
-            "SELECT gen_random_uuid(), gen_random_uuid(), 'tv.key', true, now() - interval '40 days' FROM generate_series(1, 20)");
+            "INSERT INTO tv.command_audit (id, tv_id, user_id, command, ok, occurred_at) " +
+            "SELECT gen_random_uuid(), '00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'tv.key', true, now() - interval '40 days' FROM generate_series(1, 20)");
         await app.ExecuteSqlAsync(
-            "INSERT INTO tv.command_audit (id, user_id, command, ok, occurred_at) " +
-            "SELECT gen_random_uuid(), gen_random_uuid(), 'tv.key', true, now() - (g * interval '1 second') - interval '1 hour' FROM generate_series(1, 5010) g");
+            "INSERT INTO tv.command_audit (id, tv_id, user_id, command, ok, occurred_at) " +
+            "SELECT gen_random_uuid(), '00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'tv.key', true, now() - (g * interval '1 second') - interval '1 hour' FROM generate_series(1, 5010) g");
 
         (await app.PostAsync("/api/v1/tv/keys", new { key = "HOME" })).Dispose();
 

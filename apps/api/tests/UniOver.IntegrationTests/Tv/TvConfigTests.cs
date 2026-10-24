@@ -739,7 +739,7 @@ public sealed class TvConfigTests(PostgresFixture postgres)
     // ----- o esquema -----
 
     [Fact]
-    public async Task Schema_AllowsExactlyOneDefaultTv_ButManyTvsForTheSameComputerLater()
+    public async Task Schema_AllowsExactlyOneDefaultTv_AndOnlyOneTvPerComputer()
     {
         await using var app = await TvApp.StartAsync(postgres);
         const string Insert = "INSERT INTO tv.tvs (id, name, agent_slug, is_default, created_at, updated_at, updated_by) " +
@@ -752,11 +752,15 @@ public sealed class TvConfigTests(PostgresFixture postgres)
             .Should().ThrowAsync<PostgresException>();
         second.Which.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation, "só uma TV padrão");
 
-        // Fora da padrão pode haver várias, inclusive com o mesmo computador: é o caminho para várias TVs.
-        await app.ExecuteSqlAsync(string.Format(System.Globalization.CultureInfo.InvariantCulture, Insert, "pc-a", "false"));
-        await app.ExecuteSqlAsync(string.Format(System.Globalization.CultureInfo.InvariantCulture, Insert, "pc-a", "false"));
+        // Cada agente tem uma única TV para que as mensagens e o estado tenham um destino inequívoco: nem a padrão (pc-a)
+        // nem outra TV podem repetir um agente já usado.
+        await app.ExecuteSqlAsync(string.Format(System.Globalization.CultureInfo.InvariantCulture, Insert, "pc-c", "false"));
+        var repeated = await FluentActions.Awaiting(() => app.ExecuteSqlAsync(
+                string.Format(System.Globalization.CultureInfo.InvariantCulture, Insert, "pc-c", "false")))
+            .Should().ThrowAsync<PostgresException>();
+        repeated.Which.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation, "um agente controla uma única TV");
         await using var db = app.Db();
-        (await db.Tvs.CountAsync(Ct)).Should().Be(3);
+        (await db.Tvs.CountAsync(Ct)).Should().Be(2);
     }
 
     [Fact]
