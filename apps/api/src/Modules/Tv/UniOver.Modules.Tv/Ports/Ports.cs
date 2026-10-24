@@ -84,15 +84,15 @@ public interface ITvCleanupTicket : IDisposable
 
 /// <summary>
 /// Junta o relatório que o agente manda por iniciativa própria ao pedido HTTP que o espera, e garante uma limpeza por
-/// vez (a TV é uma só). Em memória, da instância do contêiner.
+/// vez em cada TV. Em memória, da instância do contêiner.
 /// </summary>
 public interface ITvCleanupReports
 {
-    /// <summary>Começa uma limpeza; nulo se já há uma em andamento.</summary>
-    ITvCleanupTicket? TryBegin();
+    /// <summary>Começa uma limpeza na TV; nulo se ela já tem outra em andamento.</summary>
+    ITvCleanupTicket? TryBegin(Guid tvId);
 
-    /// <summary>Entrega o relatório a quem espera pelo <paramref name="requestId"/>; ignora o que ninguém espera.</summary>
-    void Complete(Guid requestId, TvCleanupReport report);
+    /// <summary>Entrega o relatório à limpeza da TV e do <paramref name="requestId"/>; ignora o que ninguém espera.</summary>
+    void Complete(Guid tvId, Guid requestId, TvCleanupReport report);
 }
 
 /// <summary>Os atalhos como a tela os vê, lidos do banco.</summary>
