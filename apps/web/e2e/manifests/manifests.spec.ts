@@ -97,6 +97,35 @@ test.describe('manifest por módulo', () => {
     await context.setOffline(false);
   });
 
+  test('com o service worker no controle, /treino/?instalar=... carrega a casca e o manifest do Treino, online e offline, e o endereço fica limpo', async ({
+    page,
+    context,
+  }) => {
+    await page.goto('/treino/');
+    await waitForServiceWorkerControl(page);
+
+    for (const offline of [false, true]) {
+      await context.setOffline(offline);
+      // Um código qualquer: sem o que o botão grava na sessão a folha não abre, mas a carga e a limpeza do endereço valem.
+      await page.goto('/treino/?instalar=codigo-de-teste&x=1');
+      await expect(page.locator('app-root')).toBeAttached();
+      await expect
+        .poll(() => page.evaluate(() => location.search), { message: `offline=${offline}` })
+        .toBe('?x=1');
+      await expect(page.locator('head link[rel="manifest"]'), `offline=${offline}`).toHaveAttribute(
+        'href',
+        '/treino/manifest.webmanifest',
+      );
+      const manifest = await page.evaluate(async () => {
+        const response = await fetch('/treino/manifest.webmanifest');
+        return { status: response.status, id: ((await response.json()) as { id: string }).id };
+      });
+      expect(manifest, `manifest offline=${offline}`).toEqual({ status: 200, id: '/treino/' });
+      await expectNoHorizontalScroll(page);
+    }
+    await context.setOffline(false);
+  });
+
   test('o Chromium não aponta erro de instalabilidade em / e /tv/', async ({
     baseURL,
     browserName,

@@ -14,8 +14,13 @@ function lateToolStyle(page: Page, pattern: RegExp, detail: string): boolean {
   return pattern.test(detail) && Date.now() < (toolStyleUntil.get(page) ?? 0);
 }
 
-/** Chave onde o app guarda a escolha de "Não mostrar de novo" da folha do atalho na tela de início. */
-const INSTALL_HINT_KEY = 'uniover.install-hint.v1';
+/**
+ * Chaves onde o app guarda a escolha de "Não mostrar de novo" da folha do atalho na tela de início: uma por app
+ * (a raiz e cada módulo com manifest próprio).
+ */
+const INSTALL_HINT_KEYS = ['', '.tv', '.treino'].map(
+  (suffix) => `uniover.install-hint.v1${suffix}`,
+);
 
 /**
  * Todo teste falha se a página violar a CSP, online ou offline. Escuta o evento do navegador e as mensagens
@@ -36,13 +41,13 @@ export const test = base.extend<{
     async ({ context, installHintSilenced }, use) => {
       if (installHintSilenced) {
         // No contexto (e não na página): uma segunda aba aberta pelo teste também nasce silenciada.
-        await context.addInitScript((key) => {
+        await context.addInitScript((keys) => {
           try {
-            localStorage.setItem(key, JSON.stringify({ never: true }));
+            for (const key of keys) localStorage.setItem(key, JSON.stringify({ never: true }));
           } catch {
             // Sem armazenamento: a dica também não se lembra de nada, mas aí nada a silenciar.
           }
-        }, INSTALL_HINT_KEY);
+        }, INSTALL_HINT_KEYS);
       }
       await use(undefined);
     },

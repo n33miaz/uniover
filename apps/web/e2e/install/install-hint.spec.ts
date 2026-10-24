@@ -644,3 +644,106 @@ test.describe('modo ios-in-app: copiar o endereço', () => {
     await screenshot(page, `${SHOTS}/ios-in-app-copied-${info.project.name}.png`);
   });
 });
+
+test.describe('cada módulo é um app: a memória e o pedido de instalação são por escopo', () => {
+  test.use({ userAgent: UA.android });
+
+  const TRAINING_KEY = 'uniover.install-hint.v1.treino';
+  const trainingHeading = (page: Page) => page.getByRole('heading', { level: 1, name: 'Treino' });
+
+  /** Como `simulateInstallPrompt`, mas lembra (na sessão, que sobrevive à troca de página) em que endereço o pedido foi usado. */
+  async function simulateRecordingPrompt(page: Page) {
+    await page.addInitScript(() => {
+      const timer = setInterval(() => {
+        const event = new Event('beforeinstallprompt', { cancelable: true });
+        Object.assign(event, {
+          prompt: async () => {
+            const used: string[] = JSON.parse(sessionStorage.getItem('promptUsedAt') ?? '[]');
+            used.push(location.pathname);
+            sessionStorage.setItem('promptUsedAt', JSON.stringify(used));
+          },
+          userChoice: Promise.resolve({ outcome: 'accepted' }),
+        });
+        if (!window.dispatchEvent(event)) clearInterval(timer);
+      }, 150);
+      setTimeout(() => clearInterval(timer), 20_000);
+    });
+  }
+
+  test('o UniOver geral instalado (e "nunca") não silencia a dica do Treino', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        'uniover.install-hint.v1',
+        JSON.stringify({ installed: true, never: true }),
+      );
+    });
+    await simulateInstallPrompt(page);
+    await signInAsOwner();
+    await page.goto('/treino');
+    await expect(trainingHeading(page)).toBeVisible();
+    await expect(sheetOf(page)).toBeVisible({ timeout: 10_000 });
+    await sheetOf(page).getByRole('button', { name: 'Agora não' }).click();
+    await expectSheetClosed(page);
+    // O "Agora não" do Treino fica na chave do Treino; a da raiz continua como estava.
+    expect(
+      await page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null'), TRAINING_KEY),
+    ).toEqual({ dismissedAt: expect.any(Number) });
+    expect(await storedMemory(page)).toEqual({ installed: true, never: true });
+  });
+
+  test('pedir para instalar o Treino num documento carregado na raiz faz carga completa em /treino/ e usa o pedido do Treino', async ({
+    page,
+  }) => {
+    await simulateRecordingPrompt(page);
+    await signInAsOwner();
+    await showHome(page);
+    await sheetOf(page).getByRole('button', { name: 'Agora não' }).click({ timeout: 10_000 });
+    await expectSheetClosed(page);
+
+    // Navegação por dentro do app até o Treino: continua o mesmo documento (sem recarregar).
+    await page.evaluate(
+      () => ((window as unknown as { sameDocument: boolean }).sameDocument = true),
+    );
+    await page.getByRole('link', { name: 'Ver treino' }).click();
+    await expect(trainingHeading(page)).toBeVisible();
+    expect(
+      await page.evaluate(() => (window as unknown as { sameDocument?: boolean }).sameDocument),
+    ).toBe(true);
+
+    // A dica do Treino é dele (a raiz já dispensou a sua) e o pedido guardado ainda é o da raiz.
+    const sheet = sheetOf(page);
+    await expect(sheet).toBeVisible({ timeout: 10_000 });
+    await sheet.getByRole('button', { name: 'Instalar' }).click();
+
+    // Carga completa: o documento mudou, o marcador saiu do endereço e a folha reabre com o pedido do Treino.
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { sameDocument?: boolean }).sameDocument),
+      )
+      .toBeUndefined();
+    await expect(page).toHaveURL(/\/treino\/?$/);
+    expect(new URL(page.url()).search).toBe('');
+    await expect(page.locator('head link[rel="manifest"]')).toHaveAttribute(
+      'href',
+      '/treino/manifest.webmanifest',
+    );
+    await expect(sheet).toBeVisible({ timeout: 10_000 });
+    await sheet.getByRole('button', { name: 'Instalar' }).click();
+    await expectSheetClosed(page);
+    // O pedido do navegador só foi usado depois da carga em /treino/.
+    expect(
+      await page.evaluate(() => JSON.parse(sessionStorage.getItem('promptUsedAt') ?? '[]')),
+    ).toEqual([expect.stringMatching(/^\/treino\/?$/)]);
+  });
+
+  test('no app do Treino já instalado a folha nunca abre sozinha, mesmo com a memória vazia', async ({
+    page,
+  }) => {
+    await simulateStandalone(page);
+    await signInAsOwner();
+    await page.goto('/treino');
+    await expect(trainingHeading(page)).toBeVisible();
+    await page.waitForTimeout(AFTER_DELAY_MS);
+    await expectSheetClosed(page);
+  });
+});
