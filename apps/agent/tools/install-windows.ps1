@@ -124,20 +124,42 @@ function Get-AgentSource([string]$Destination) {
         $address = "https://github.com/n33miaz/uniover/archive/$sha.zip"
         Write-Host 'Baixando o agente...'
         Invoke-WebRequest -UseBasicParsing -Uri $address -OutFile $zip
-        Expand-Archive -Path $zip -DestinationPath $temporary -Force
-        $repository = Get-ChildItem -Path $temporary -Directory | Where-Object { $_.Name -like 'uniover-*' } | Select-Object -First 1
-        if (-not $repository) {
-            throw 'O pacote baixado não tem a estrutura esperada.'
-        }
-        $agent = Join-Path $repository.FullName 'apps\agent'
-        if (-not (Test-Path $agent)) {
-            throw 'O pacote baixado não contém apps\agent.'
-        }
+        # Só apps/agent sai do zip: o repositório inteiro tem caminhos (da API) que passam do limite de 260
+        # caracteres do Windows e derrubam a extração completa.
         if (Test-Path $Destination) {
             Remove-Item -LiteralPath $Destination -Recurse -Force
         }
         New-Item -ItemType Directory -Path $Destination -Force | Out-Null
-        Copy-Item -Path (Join-Path $agent '*') -Destination $Destination -Recurse -Force
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $root = [System.IO.Path]::GetFullPath($Destination).TrimEnd('\') + '\'
+        $bundle = [System.IO.Compression.ZipFile]::OpenRead($zip)
+        $extracted = 0
+        try {
+            foreach ($entry in $bundle.Entries) {
+                # <repo>-<sha>/apps/agent/<resto>
+                $parts = $entry.FullName -split '/', 4
+                if ($parts.Count -lt 4 -or $parts[1] -ne 'apps' -or $parts[2] -ne 'agent' -or -not $parts[3]) {
+                    continue
+                }
+                $target = [System.IO.Path]::GetFullPath((Join-Path $root ($parts[3] -replace '/', '\')))
+                if (-not $target.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
+                    throw 'O pacote baixado tem um caminho inválido.'
+                }
+                if ($entry.FullName.EndsWith('/')) {
+                    New-Item -ItemType Directory -Path $target -Force | Out-Null
+                    continue
+                }
+                New-Item -ItemType Directory -Path (Split-Path $target -Parent) -Force | Out-Null
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true)
+                $extracted++
+            }
+        }
+        finally {
+            $bundle.Dispose()
+        }
+        if ($extracted -eq 0) {
+            throw 'O pacote baixado não contém apps\agent.'
+        }
         if ($sha) {
             [System.IO.File]::WriteAllText((Join-Path $Destination '.version'), $sha + "`n", [System.Text.UTF8Encoding]::new($false))
         }
