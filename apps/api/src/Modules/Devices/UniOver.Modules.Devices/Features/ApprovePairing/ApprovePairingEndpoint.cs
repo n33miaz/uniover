@@ -8,17 +8,18 @@ using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Devices.Features.StartPairing;
 using UniOver.Modules.Devices.Security;
+using UniOver.Modules.Tv.Contracts;
 
 namespace UniOver.Modules.Devices.Features.ApprovePairing;
 
-internal sealed record ApprovePairingRequest(string? UserCode, string? Name);
+internal sealed record ApprovePairingRequest(string? UserCode, string? Name, string? TvName, IReadOnlyList<Guid>? TvMemberIds);
 
 internal sealed record ApprovePairingResponse(Guid Id, string Slug, string Name, string Platform);
 
 internal static class ApprovePairingEndpoint
 {
     /// <summary>Ação de confirmação: quem pareia ganha poder de comandar a casa, então pede a passkey.</summary>
-    public const string StepUpAction = "devices.pair-approve";
+    public const string StepUpAction = TvPairingActions.BindAgent;
 
     public static void MapApprovePairing(this IEndpointRouteBuilder group)
     {
@@ -60,6 +61,12 @@ internal static class ApprovePairingEndpoint
         var errors = new Dictionary<string, string[]>();
         var code = UserCode.Normalize(request?.UserCode);
         var name = request?.Name?.Trim();
+        var tvName = request?.TvName?.Trim();
+        if (tvName is { Length: 0 })
+        {
+            tvName = null;
+        }
+
         if (string.IsNullOrEmpty(request?.UserCode))
         {
             errors["userCode"] = ["Informe o código mostrado no aparelho."];
@@ -68,6 +75,19 @@ internal static class ApprovePairingEndpoint
         if (name is not null && !StartPairingValidator.IsValidName(name))
         {
             errors["name"] = ["Informe um nome válido (letras, números, espaço e . _ ( ) -)."];
+        }
+
+        // O nome da TV é livre (pode levar o nome de uma pessoa, com acento ou apóstrofo), só sem controle e no limite.
+        if (tvName is not null && (tvName.Length > PairingText.NameMax || tvName.Any(char.IsControl)))
+        {
+            errors["tvName"] = ["Informe um nome válido para a TV."];
+        }
+
+        // Omitido vale lista vazia: a TV sai sempre da aprovação (cliente antigo ou aba com JS velho não volta ao passo manual).
+        var tvMemberIds = request?.TvMemberIds ?? [];
+        if (tvMemberIds.Count != tvMemberIds.Distinct().Count())
+        {
+            errors["tvMemberIds"] = ["Informe as pessoas da TV sem repetir."];
         }
 
         if (errors.Count > 0)
@@ -81,7 +101,9 @@ internal static class ApprovePairingEndpoint
             return PairingProblems.NotFound();
         }
 
-        var agent = await handler.HandleAsync(new ApprovePairingCommand(userId, code, name, ClientInfo.From(http)), cancellationToken);
+        var agent = await handler.HandleAsync(
+            new ApprovePairingCommand(userId, code, name, tvName, tvMemberIds, ClientInfo.From(http)),
+            cancellationToken);
         return agent is null
             ? PairingProblems.NotFound()
             : TypedResults.Ok(new ApprovePairingResponse(agent.Id, agent.Slug, agent.Name, agent.Platform));

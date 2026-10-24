@@ -1,23 +1,34 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.Modules.Devices.Contracts.Pairing;
 using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Devices.Persistence;
 using UniOver.Modules.Devices.Security;
+using UniOver.Modules.Tv.Contracts;
 using UniOver.SharedKernel;
 
 namespace UniOver.Modules.Devices.Features.ApprovePairing;
 
 /// <param name="UserCode">Já normalizado (<see cref="Domain.UserCode.Normalize"/>).</param>
 /// <param name="Name">Nome final escolhido pelo dono; nulo mantém o nome que o agente pediu.</param>
-internal sealed record ApprovePairingCommand(Guid UserId, string UserCode, string? Name, ClientInfo Client);
+/// <param name="TvName">Nome da TV criada junto; nulo usa o nome do computador.</param>
+/// <param name="TvMemberIds">Quem vê a TV (vazia: só o administrador). A aprovação sempre cria a TV ligada ao computador.</param>
+internal sealed record ApprovePairingCommand(
+    Guid UserId,
+    string UserCode,
+    string? Name,
+    string? TvName,
+    IReadOnlyList<Guid> TvMemberIds,
+    ClientInfo Client);
 
 internal sealed record ApprovedAgent(Guid Id, string Slug, string Name, string Platform);
 
 internal sealed class ApprovePairingHandler(
     DevicesDbContext db,
     IEventBus events,
+    IPairedTvRegistrar tvs,
     PairingAuditWriter audit,
     TimeProvider time)
 {
@@ -50,9 +61,19 @@ internal sealed class ApprovePairingHandler(
             // Mesma transação do SaveChanges: o agente e o evento saem juntos ou nenhum dos dois sai.
             await events.PublishAsync(new AgentPaired(IdGenerator.NewId(), now, agent.Id, agent.Slug), cancellationToken);
 
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
             try
             {
+                // Primeiro grava o lado que pode colidir no slug. Se ele falhar, o contexto da TV ainda não recebeu
+                // estado algum e a tentativa seguinte continua limpa; o commit só acontece depois dos dois schemas.
                 await db.SaveChangesAsync(cancellationToken);
+                await tvs.RegisterAsync(
+                    new PairedTvRegistration(agent.Slug, agent.Name, command.TvName, command.UserId, command.TvMemberIds),
+                    db.Database.GetDbConnection(),
+                    transaction.GetDbTransaction(),
+                    cancellationToken);
+
+                await transaction.CommitAsync(cancellationToken);
                 return new ApprovedAgent(agent.Id, agent.Slug, agent.Name, agent.Platform);
             }
             catch (DbUpdateConcurrencyException)

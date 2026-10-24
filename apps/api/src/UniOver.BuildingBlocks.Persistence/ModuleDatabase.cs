@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -24,6 +25,27 @@ public static class ModuleDatabase
         builder
             .UseNpgsql(connectionString, npgsql => npgsql
                 // A tabela de histórico mora no schema do módulo (cada módulo migra sozinho).
+                .MigrationsHistoryTable(MigrationsHistoryTable, schema)
+                .MigrationsAssembly(migrationsAssembly.GetName().Name))
+            .UseSnakeCaseNamingConvention();
+    }
+
+    /// <summary>
+    /// Configura um contexto para a conexão da requisição. Os módulos continuam com modelos e schemas próprios, mas uma
+    /// ação que precisa gravar em mais de um deles pode usar uma única transação do Postgres.
+    /// </summary>
+    public static void Configure(
+        DbContextOptionsBuilder builder,
+        DbConnection connection,
+        string schema,
+        Assembly migrationsAssembly)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(migrationsAssembly);
+
+        builder
+            .UseNpgsql(connection, npgsql => npgsql
                 .MigrationsHistoryTable(MigrationsHistoryTable, schema)
                 .MigrationsAssembly(migrationsAssembly.GetName().Name))
             .UseSnakeCaseNamingConvention();
