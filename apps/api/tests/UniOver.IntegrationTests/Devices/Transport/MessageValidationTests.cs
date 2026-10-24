@@ -27,6 +27,24 @@ public sealed class MessageValidationTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task MinimumSupportedHello_IsAcceptedForAnOldAgent()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAsync();
+
+        // Campos e capacidades novos sao aditivos: o hello mais antigo valido continua entrando.
+        await agent.SendTextAsync(agent.Envelope(
+            "agent.hello.v1",
+            new JsonObject { ["agentVersion"] = "0.1.0", ["capabilities"] = new JsonArray() }));
+
+        await TransportApp.WaitUntilAsync(
+            () => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "0.1.0",
+            "hello minimo processado");
+        app.Presence.Get(app.Agent.Slug)!.Capabilities.Should().BeEmpty();
+        agent.State.Should().Be(WebSocketState.Open);
+    }
+
+    [Fact]
     public async Task KeepAlives_KeepTheChannelActiveInBothDirections()
     {
         await using var app = await TransportApp.StartAsync(postgres);
