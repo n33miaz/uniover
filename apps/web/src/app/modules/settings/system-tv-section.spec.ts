@@ -1,35 +1,83 @@
-import { HttpErrorResponse } from '@angular/common/http';
+import { Component, input, output } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { ApiProblem, problemFrom } from '../../core/auth/api-problem';
-import { ConnectivityService } from '../../core/connectivity/connectivity.service';
 import { SessionState } from '../../core/session/session-state';
-import { SystemApi, TvConfig } from './system-api';
+import { SystemApi, TvComputer, TvConfig, TvItem } from './system-api';
 import { SystemTvSection } from './system-tv-section';
+import { TvEditSheet } from './tv-edit-sheet';
 
-const CASA = { slug: 'pc-casa', name: 'PC de casa', platform: 'windows', online: true };
-const NOVO = { slug: 'pc-novo', name: 'Notebook', platform: 'windows', online: false };
+const CASA_PC: TvComputer = {
+  slug: 'pc-casa',
+  name: 'PC de casa',
+  platform: 'windows',
+  online: true,
+};
+const AMIGO_PC: TvComputer = {
+  slug: 'pc-amigo',
+  name: 'PC do Raphael',
+  platform: 'windows',
+  online: false,
+};
+const LIVRE_PC: TvComputer = {
+  slug: 'pc-livre',
+  name: 'Notebook',
+  platform: 'linux',
+  online: true,
+};
 
-function config(overrides: Partial<TvConfig> = {}): TvConfig {
+const CASA: TvItem = {
+  id: 'tv-casa',
+  name: 'Sala',
+  isDefault: true,
+  agentSlug: 'pc-casa',
+  kind: 'android',
+  online: true,
+  capabilities: ['tv.remote', 'tv.adb'],
+};
+const AMIGO: TvItem = {
+  id: 'tv-amigo',
+  name: 'Raphael',
+  isDefault: false,
+  agentSlug: 'pc-amigo',
+  kind: 'samsung',
+  online: false,
+  capabilities: ['tv.remote', 'tv.kind.samsung'],
+};
+
+function config(agents: TvComputer[]): TvConfig {
   return {
     name: 'TV',
     agentSlug: 'pc-casa',
     agentName: 'PC de casa',
     source: 'saved',
     agentStatus: 'online',
-    agents: [CASA, NOVO],
-    ...overrides,
+    agents,
   };
 }
 
+/** A folha de verdade é testada à parte: aqui ela só mostra com o que a tela a abriu e deixa o teste fechá-la. */
+@Component({
+  selector: 'app-tv-edit-sheet',
+  template: '<p class="fake-sheet">{{ tv()?.name ?? "nova" }}</p>',
+})
+class FakeSheet {
+  readonly tv = input<TvItem | null>(null);
+  readonly computers = input.required<readonly TvComputer[]>();
+  readonly closed = output<boolean>();
+}
+
 describe('SystemTvSection', () => {
-  const api = { tvConfig: vi.fn(), bindTvComputer: vi.fn() };
+  const api = { tvs: vi.fn(), tvConfig: vi.fn() };
 
   beforeEach(() => {
-    api.tvConfig.mockReset().mockResolvedValue(config());
-    api.bindTvComputer.mockReset();
+    api.tvs.mockReset().mockResolvedValue([CASA, AMIGO]);
+    api.tvConfig.mockReset().mockResolvedValue(config([CASA_PC, AMIGO_PC, LIVRE_PC]));
     TestBed.configureTestingModule({
       providers: [provideRouter([]), { provide: SystemApi, useValue: api }],
+    });
+    TestBed.overrideComponent(SystemTvSection, {
+      remove: { imports: [TvEditSheet] },
+      add: { imports: [FakeSheet] },
     });
   });
 
@@ -39,7 +87,6 @@ describe('SystemTvSection', () => {
       session.setToken('t', 600);
       session.setUser({ id: '1', email: 'a@b.c', displayName: 'Dono', role });
     }
-    return session;
   }
 
   async function render() {
@@ -49,278 +96,144 @@ describe('SystemTvSection', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
-    const save = () => el.querySelector<HTMLButtonElement>('button.save');
-    const radios = () => Array.from(el.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
-    const text = () => el.textContent?.replace(/\s+/g, ' ') ?? '';
-    return { fixture, el, save, radios, text };
+    const settle = async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    const rows = () => Array.from(el.querySelectorAll<HTMLButtonElement>('ul.tvs button.ui-row'));
+    const add = () => el.querySelector<HTMLButtonElement>('button.add');
+    const sheet = () =>
+      fixture.debugElement.children.find((child) => child.name === 'app-tv-edit-sheet');
+    const closeSheet = async (changed: boolean) => {
+      sheet()!.componentInstance.closed.emit(changed);
+      await settle();
+    };
+    return { fixture, el, rows, add, sheet, closeSheet, settle };
   }
 
-  it('loads for the administrator and shows the computer that controls the TV, its state and where it comes from', async () => {
+  it('loads for the administrator and lists every TV with its computer, its type and whether it is on', async () => {
     signIn();
-    const { el, text } = await render();
+    const { el, rows } = await render();
+    expect(api.tvs).toHaveBeenCalledTimes(1);
     expect(api.tvConfig).toHaveBeenCalledTimes(1);
-    expect(el.querySelector('.name')?.textContent).toBe('PC de casa');
-    expect(el.querySelector('.current .chip')?.textContent?.trim()).toBe('Ligado');
-    expect(text()).toContain('Escolhido aqui, no app.');
-    expect(el.querySelector('.warning')).toBeNull();
-  });
-
-  it('never calls the API for a guest or while the role is unknown', async () => {
-    signIn('guest');
-    await render();
-    expect(api.tvConfig).not.toHaveBeenCalled();
-  });
-
-  it('never calls the API without a session', async () => {
-    signIn(null);
-    await render();
-    expect(api.tvConfig).not.toHaveBeenCalled();
-  });
-
-  it('lists the paired computers with name, system and whether each is on, and preselects the current one', async () => {
-    signIn();
-    const { el, radios } = await render();
-    const rows = Array.from(el.querySelectorAll('.choice'));
-    expect(rows.map((r) => r.querySelector('.ui-row-title')?.textContent)).toEqual([
-      'PC de casa',
-      'Notebook',
+    expect(el.querySelector('h2')?.textContent?.trim()).toBe('TVs');
+    expect(rows().map((row) => row.querySelector('.ui-row-title')?.textContent?.trim())).toEqual([
+      'Sala',
+      'Raphael',
     ]);
-    expect(rows.map((r) => r.querySelector('.chip')?.textContent?.trim())).toEqual([
+    expect(rows().map((row) => row.querySelector('.ui-row-sub')?.textContent?.trim())).toEqual([
+      'PC de casa · Android',
+      'PC do Raphael · Samsung',
+    ]);
+    expect(rows().map((row) => row.querySelector('.chip')?.textContent?.trim())).toEqual([
       'Ligado',
       'Desligado',
     ]);
-    expect(rows[0].querySelector('.ui-row-sub')?.textContent).toBe('Windows');
-    expect(radios().map((r) => r.checked)).toEqual([true, false]);
   });
 
-  it('keeps Salvar disabled until a different computer is chosen, then saves it', async () => {
-    signIn();
-    api.bindTvComputer.mockResolvedValue(
-      config({ agentSlug: 'pc-novo', agentName: 'Notebook', agentStatus: 'offline' }),
-    );
-    const { fixture, el, save, radios, text } = await render();
-    expect(save()!.disabled).toBe(true);
-
-    radios()[1].click();
-    fixture.detectChanges();
-    expect(save()!.disabled).toBe(false);
-
-    save()!.click();
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(el.querySelector('.name')?.textContent).toBe('Notebook');
-    });
-    expect(api.bindTvComputer).toHaveBeenCalledExactlyOnceWith('pc-novo');
-    expect(text()).toContain('Pronto: agora Notebook controla a TV.');
-    expect(save()!.disabled).toBe(true);
-    expect(el.querySelector('.current .chip')?.textContent?.trim()).toBe('Desligado');
+  it('never calls the API for a guest, nor without a session', async () => {
+    signIn('guest');
+    await render();
+    expect(api.tvs).not.toHaveBeenCalled();
+    expect(api.tvConfig).not.toHaveBeenCalled();
   });
 
-  it('explains that a computer that is only off is not a problem', async () => {
+  it('says that a TV whose computer is no longer paired cannot be found, and that one without a computer has none', async () => {
     signIn();
-    api.tvConfig.mockResolvedValue(config({ agentStatus: 'offline' }));
-    const { el, text } = await render();
-    expect(text()).toContain('Está desligado agora. A TV volta a responder quando ele ligar.');
-    expect(el.querySelector('.warning')).toBeNull();
+    api.tvs.mockResolvedValue([
+      { ...CASA, agentSlug: 'pc-revogado', kind: null },
+      { ...AMIGO, agentSlug: null, kind: null },
+    ]);
+    const { rows } = await render();
+    expect(rows().map((row) => row.querySelector('.ui-row-sub')?.textContent?.trim())).toEqual([
+      'Computador não encontrado',
+      'Nenhum computador escolhido',
+    ]);
+    expect(rows()[0].querySelector('.chip')?.textContent?.trim()).toBe('Não encontrado');
   });
 
-  it('lets the administrator keep a value that comes from the server in the app: saving the same computer is allowed', async () => {
+  it('offers to add a TV when a paired computer is still free, and opens the sheet to create one', async () => {
     signIn();
-    api.tvConfig.mockResolvedValue(config({ source: 'environment' }));
-    api.bindTvComputer.mockResolvedValue(config());
-    const { fixture, el, save, text } = await render();
-    expect(text()).toContain(
-      'Vem da configuração do servidor. Salve aqui para guardar a escolha no app.',
-    );
-    expect(save()!.disabled).toBe(false);
-
-    save()!.click();
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(el.textContent).toContain('Escolhido aqui, no app.');
-    });
-    expect(api.bindTvComputer).toHaveBeenCalledExactlyOnceWith('pc-casa');
-    expect(save()!.disabled).toBe(true);
+    const { add, sheet, settle } = await render();
+    expect(add()).not.toBeNull();
+    expect(add()!.getAttribute('aria-haspopup')).toBe('dialog');
+    add()!.click();
+    await settle();
+    const open = sheet()!;
+    expect(open.componentInstance.tv()).toBeNull();
+    // Só o computador livre pode ganhar a TV nova.
+    expect(open.componentInstance.computers().map((c: TvComputer) => c.slug)).toEqual(['pc-livre']);
   });
 
-  it('warns clearly when the current computer was revoked, and asks for a new choice', async () => {
+  it('opens the sheet of the TV that was touched, offering its own computer besides the free ones', async () => {
     signIn();
-    api.tvConfig.mockResolvedValue(config({ agentStatus: 'revoked', agents: [NOVO] }));
-    const { el, save, radios, text } = await render();
-    expect(el.querySelector('.warning')?.textContent).toContain(
-      'Este computador foi revogado. A TV não vai responder até você escolher outro computador ou parear de novo em Aparelhos.',
-    );
-    expect(el.querySelector('.current .chip')?.textContent?.trim()).toBe('Revogado');
-    expect(radios().map((r) => r.checked)).toEqual([false]);
-    expect(save()!.disabled).toBe(true);
-    expect(text()).toContain('PC de casa');
+    const { rows, sheet, settle } = await render();
+    rows()[1].click();
+    await settle();
+    expect(sheet()!.componentInstance.tv()).toEqual(AMIGO);
+    expect(
+      sheet()!
+        .componentInstance.computers()
+        .map((c: TvComputer) => c.slug),
+    ).toEqual(['pc-amigo', 'pc-livre']);
   });
 
-  it('warns when the computer is not among the paired devices', async () => {
+  it('has no add button when every paired computer already has a TV: it explains and leads to Aparelhos', async () => {
     signIn();
-    api.tvConfig.mockResolvedValue(
-      config({
-        agentSlug: 'fantasma',
-        agentName: null,
-        agentStatus: 'unknown',
-        source: 'environment',
-      }),
-    );
+    api.tvConfig.mockResolvedValue(config([CASA_PC, AMIGO_PC]));
+    const { el, add } = await render();
+    expect(add()).toBeNull();
+    expect(el.textContent).toContain('Todo computador pareado já tem uma TV');
+    expect(el.querySelector('a.devices-link')?.getAttribute('href')).toBe('/ajustes/aparelhos');
+  });
+
+  it('re-reads the list and confirms when the sheet saved something, and gives the focus back to the button', async () => {
+    signIn();
+    const { el, rows, closeSheet, settle } = await render();
+    rows()[0].click();
+    await settle();
+    api.tvs.mockResolvedValue([CASA, { ...AMIGO, name: 'Quarto' }]);
+    await closeSheet(true);
+    expect(api.tvs).toHaveBeenCalledTimes(2);
+    expect(rows().map((row) => row.querySelector('.ui-row-title')?.textContent?.trim())).toEqual([
+      'Sala',
+      'Quarto',
+    ]);
+    expect(el.querySelector('.message')?.textContent).toContain('Pronto');
+    expect(el.querySelector('app-tv-edit-sheet')).toBeNull();
+    expect(document.activeElement === rows()[0] || !rows()[0].isConnected).toBe(true);
+  });
+
+  it('does not read anything again when the sheet closed with nothing changed', async () => {
+    signIn();
+    const { el, rows, closeSheet, settle } = await render();
+    rows()[0].click();
+    await settle();
+    await closeSheet(false);
+    expect(api.tvs).toHaveBeenCalledTimes(1);
+    expect(el.querySelector('.message')).toBeNull();
+  });
+
+  it('says when there is no TV yet', async () => {
+    signIn();
+    api.tvs.mockResolvedValue([]);
     const { el } = await render();
-    expect(el.querySelector('.name')?.textContent).toBe('Computador não encontrado');
-    expect(el.querySelector('.warning')?.textContent).toContain(
-      'A TV não vai responder até você escolher outro computador ou parear de novo em Aparelhos.',
-    );
+    expect(el.textContent).toContain('Nenhuma TV ainda.');
+    expect(el.querySelector('ul.tvs')).toBeNull();
   });
 
-  it('warns when nothing is chosen yet, and shows no state chip', async () => {
+  it('shows the error and lets the administrator try again', async () => {
     signIn();
-    api.tvConfig.mockResolvedValue(
-      config({ agentSlug: null, agentName: null, agentStatus: 'unknown', source: 'none' }),
-    );
-    const { el } = await render();
-    expect(el.querySelector('.name')?.textContent).toBe('Nenhum computador escolhido');
-    expect(el.querySelector('.current .chip')).toBeNull();
-    expect(el.querySelector('.warning')?.textContent).toContain('Nenhum computador controla a TV.');
-  });
-
-  it('explains the empty state and sends the administrator to Aparelhos, with no save button', async () => {
-    signIn();
-    api.tvConfig.mockResolvedValue(
-      config({
-        agentSlug: null,
-        agentName: null,
-        agentStatus: 'unknown',
-        source: 'none',
-        agents: [],
-      }),
-    );
-    const { el, save } = await render();
-    expect(el.textContent).toContain(
-      'Nenhum computador pareado. Pareie o computador de casa em Aparelhos',
-    );
-    expect(save()).toBeNull();
-    const link = el.querySelector<HTMLAnchorElement>('a.devices-link')!;
-    expect(link.getAttribute('href')).toBe('/ajustes/aparelhos');
-    expect(link.textContent?.trim()).toBe('Ir para Aparelhos');
-  });
-
-  it('links to Aparelhos to pair another computer when there are some', async () => {
-    signIn();
-    const { el } = await render();
-    const link = el.querySelector<HTMLAnchorElement>('a.devices-link')!;
-    expect(link.getAttribute('href')).toBe('/ajustes/aparelhos');
-    expect(link.textContent?.trim()).toBe('Parear outro computador');
-  });
-
-  it('shows a loading state, then an error with a retry when the configuration cannot be loaded', async () => {
-    signIn();
-    api.tvConfig.mockRejectedValueOnce(new HttpErrorResponse({ status: 0 }));
-    const { fixture, el } = await render();
+    api.tvs.mockRejectedValueOnce(new Error('falhou'));
+    const { el, rows, settle } = await render();
     expect(el.querySelector('[role="alert"]')?.textContent).toContain(
-      'Não foi possível carregar a configuração da TV agora.',
+      'Não foi possível carregar as TVs',
     );
     el.querySelector<HTMLButtonElement>('button.retry')!.click();
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(el.querySelector('.name')?.textContent).toBe('PC de casa');
-    });
+    await settle();
+    expect(rows()).toHaveLength(2);
     expect(el.querySelector('[role="alert"]')).toBeNull();
-  });
-
-  it('shows a loading indicator while the configuration is on its way', () => {
-    signIn();
-    api.tvConfig.mockReturnValue(new Promise(() => undefined));
-    const fixture = TestBed.createComponent(SystemTvSection);
-    fixture.detectChanges();
-    const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('[role="status"]')?.textContent).toContain('Carregando…');
-    expect(el.querySelector('.skeleton-card')).not.toBeNull();
-  });
-
-  it('says the change was not made when the passkey confirmation is missing or cancelled', async () => {
-    signIn();
-    api.bindTvComputer.mockRejectedValue(problemFrom(403, { type: 'x/step-up-required' }, null));
-    const { fixture, el, save, radios } = await render();
-    radios()[1].click();
-    fixture.detectChanges();
-    save()!.click();
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(el.querySelector('.message')?.textContent).toContain('A troca não foi feita');
-    });
-    expect(el.querySelector('.name')?.textContent).toBe('PC de casa');
-    expect(el.querySelector('.message')?.getAttribute('role')).toBe('alert');
-  });
-
-  it('reloads the list when the chosen computer is no longer valid', async () => {
-    signIn();
-    api.bindTvComputer.mockRejectedValue(problemFrom(400, { errors: { agentSlug: ['x'] } }, null));
-    const { fixture, el, save, radios } = await render();
-    api.tvConfig.mockResolvedValue(config({ agents: [CASA] }));
-    radios()[1].click();
-    fixture.detectChanges();
-    save()!.click();
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(el.querySelectorAll('.choice')).toHaveLength(1);
-    });
-    expect(el.querySelector('.message')?.textContent).toContain(
-      'não está mais na lista de pareados',
-    );
-    expect(api.tvConfig).toHaveBeenCalledTimes(2);
-  });
-
-  it.each([
-    [new ApiProblem(429, 'rate-limited', 'x'), 'Muitas tentativas seguidas'],
-    [new ApiProblem(0, 'network', 'x'), 'Sem conexão com o servidor'],
-    [new ApiProblem(500, 'internal', 'x'), 'Não foi possível salvar agora'],
-  ])('says what went wrong for %#', async (problem, expected) => {
-    signIn();
-    api.bindTvComputer.mockRejectedValue(problem);
-    const { fixture, el, save, radios } = await render();
-    radios()[1].click();
-    fixture.detectChanges();
-    save()!.click();
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(el.querySelector('.message')?.textContent).toContain(expected);
-    });
-  });
-
-  it('does not save twice while a save is in flight', async () => {
-    signIn();
-    let finish!: (value: TvConfig) => void;
-    api.bindTvComputer.mockReturnValue(new Promise<TvConfig>((resolve) => (finish = resolve)));
-    const { fixture, el, save, radios } = await render();
-    radios()[1].click();
-    fixture.detectChanges();
-    save()!.click();
-    fixture.detectChanges();
-    expect(save()!.disabled).toBe(true);
-    expect(el.querySelector('button.save')?.textContent).toContain('Salvando…');
-    save()!.click();
-    expect(api.bindTvComputer).toHaveBeenCalledTimes(1);
-    finish(config({ agentSlug: 'pc-novo', agentName: 'Notebook' }));
-    await fixture.whenStable();
-  });
-
-  it('disables saving without a network, with an explanation', async () => {
-    signIn();
-    const { fixture, el, save, radios } = await render();
-    radios()[1].click();
-    TestBed.inject(ConnectivityService).online.set(false);
-    fixture.detectChanges();
-    expect(save()!.disabled).toBe(true);
-    expect(el.textContent).toContain('Sem conexão: salvar precisa de rede.');
-  });
-
-  it('uses plain words: no technical terms on the screen', async () => {
-    signIn();
-    api.tvConfig.mockResolvedValue(config({ source: 'environment' }));
-    const { text } = await render();
-    for (const term of ['slug', 'agente', 'agent', 'variável', 'env', 'passkey']) {
-      expect(text().toLowerCase()).not.toContain(term);
-    }
   });
 });

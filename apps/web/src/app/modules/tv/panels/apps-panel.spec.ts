@@ -1,8 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../../core/session/session-state';
 import { withOrder } from '../data/tv-order';
+import { TvSelection } from '../data/tv-selection';
 import { TvStore } from '../data/tv-store';
-import { FakeTvStore, createFakeTvStore, makeShortcut, pngIcon } from '../tv-test-kit';
+import { FakeTvStore, createFakeTvStore, makeShortcut, makeTv, pngIcon } from '../tv-test-kit';
 import { AppsPanel } from './apps-panel';
 
 describe('AppsPanel', () => {
@@ -736,6 +737,26 @@ describe('AppsPanel', () => {
       expect(clean().closest('.bar')).toBe(root.querySelector('.refresh')!.closest('.bar'));
       expect(clean().previousElementSibling).toBe(root.querySelector('.refresh'));
       expect(clean().getAttribute('aria-haspopup')).toBe('dialog');
+    });
+
+    it('has no cleanup on a TV without the ADB channel (a Samsung), and the app grid stays', async () => {
+      TestBed.inject(TvSelection).setTvs([
+        makeTv('tv', {
+          isDefault: true,
+          kind: 'samsung',
+          capabilities: ['tv.remote', 'tv.kind.samsung'],
+        }),
+      ]);
+      await render();
+      expect(clean()).toBeNull();
+      expect(root.querySelectorAll('.launch')).toHaveLength(3);
+      expect(root.querySelector('app-tv-cleanup-sheet')).toBeNull();
+    });
+
+    it('keeps the cleanup on an Android with ADB', async () => {
+      TestBed.inject(TvSelection).setTvs([makeTv('tv', { isDefault: true })]);
+      await render();
+      expect(clean()).not.toBeNull();
     });
 
     it('opens the confirmation sheet on a tap, without asking for anything yet', async () => {
