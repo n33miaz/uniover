@@ -3,9 +3,12 @@ import {
   normalizeShortcut,
   parseShortcuts,
   parseState,
+  parseTvs,
   parseWatchdog,
   shortcutLabel,
+  tvSupports,
   TvShortcut,
+  TvSummary,
 } from './tv-types';
 
 const shortcut = (overrides: Partial<TvShortcut> = {}): TvShortcut => ({
@@ -184,5 +187,112 @@ describe('clockText', () => {
     expect(clockText(new Date(2026, 9, 19, 9, 5))).toBe('09:05');
     expect(clockText('texto')).toBe('');
     expect(clockText(null)).toBe('');
+  });
+});
+
+const tv = (overrides: Partial<TvSummary> = {}): TvSummary => ({
+  id: 'tv-1',
+  name: 'Sala',
+  isDefault: true,
+  agentSlug: 'pc-casa',
+  kind: 'android',
+  online: true,
+  capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb'],
+  ...overrides,
+});
+
+describe('parseTvs', () => {
+  it('reads the list and keeps what each TV says about itself', () => {
+    const list = parseTvs({
+      items: [
+        {
+          id: 'a',
+          name: 'Sala',
+          isDefault: true,
+          agentSlug: 'pc',
+          kind: 'android',
+          online: true,
+          capabilities: ['tv.adb'],
+        },
+        {
+          id: 'b',
+          name: 'Quarto',
+          isDefault: false,
+          kind: 'samsung',
+          online: false,
+          capabilities: [],
+        },
+      ],
+    });
+    expect(list).toEqual([
+      {
+        id: 'a',
+        name: 'Sala',
+        isDefault: true,
+        agentSlug: 'pc',
+        kind: 'android',
+        online: true,
+        capabilities: ['tv.adb'],
+      },
+      {
+        id: 'b',
+        name: 'Quarto',
+        isDefault: false,
+        agentSlug: null,
+        kind: 'samsung',
+        online: false,
+        capabilities: [],
+      },
+    ]);
+  });
+
+  it('drops entries without the minimum and rejects a body that is not a list', () => {
+    expect(parseTvs({ items: [{ name: 'sem id' }, null, 'x', { id: 'a', name: 'ok' }] })).toEqual([
+      {
+        id: 'a',
+        name: 'ok',
+        isDefault: false,
+        agentSlug: null,
+        kind: null,
+        online: false,
+        capabilities: [],
+      },
+    ]);
+    expect(parseTvs({})).toBeNull();
+    expect(parseTvs(null)).toBeNull();
+    expect(parseTvs([])).toBeNull();
+  });
+
+  it('treats an unknown kind as unknown, never as a kind', () => {
+    expect(parseTvs({ items: [{ id: 'a', name: 'x', kind: 'roku' }] })?.[0].kind).toBeNull();
+  });
+});
+
+describe('tvSupports', () => {
+  it('offers everything when nothing is known about the TV (no list, or the agent is off)', () => {
+    for (const feature of ['cleanup', 'text', 'apps'] as const) {
+      expect(tvSupports(null, feature)).toBe(true);
+      expect(tvSupports(tv({ kind: null, capabilities: [], online: false }), feature)).toBe(true);
+    }
+  });
+
+  it('gives an Android with ADB cleanup, apps and text', () => {
+    for (const feature of ['cleanup', 'text', 'apps'] as const) {
+      expect(tvSupports(tv(), feature)).toBe(true);
+    }
+  });
+
+  it('takes cleanup and text away from a Samsung, which still opens apps by its own channel', () => {
+    const samsung = tv({ kind: 'samsung', capabilities: ['tv.remote', 'tv.kind.samsung'] });
+    expect(tvSupports(samsung, 'cleanup')).toBe(false);
+    expect(tvSupports(samsung, 'text')).toBe(false);
+    expect(tvSupports(samsung, 'apps')).toBe(true);
+  });
+
+  it('takes cleanup and apps away from an Android without the ADB channel, but keeps text', () => {
+    const noAdb = tv({ capabilities: ['tv.remote', 'tv.kind.android'] });
+    expect(tvSupports(noAdb, 'cleanup')).toBe(false);
+    expect(tvSupports(noAdb, 'apps')).toBe(false);
+    expect(tvSupports(noAdb, 'text')).toBe(true);
   });
 });

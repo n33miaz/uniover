@@ -258,7 +258,7 @@ test.describe('menu dos três pontos', () => {
     await expect(menu.getByRole('heading', { level: 2, name: 'Mais opções' })).toBeVisible();
     await expect(menu.getByRole('button', { name: 'Apps da TV', exact: true })).toBeVisible();
     await expect(menu.getByRole('button', { name: 'Personalizar', exact: true })).toBeVisible();
-    const bind = menu.getByRole('link', { name: /Trocar a TV/ });
+    const bind = menu.getByRole('link', { name: /Gerenciar TVs/ });
     await expect(bind).toHaveAttribute('href', '/ajustes/sistema');
     await expect(bind.getByText('Afeta todos')).toBeVisible();
     await settle(page);

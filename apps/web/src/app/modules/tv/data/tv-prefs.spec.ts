@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../../core/session/session-state';
 import { KEY_SCALE, TV_NAME_MAX, TV_PREFS_KEY, TvPrefs, tvPrefsStorageKey } from './tv-prefs';
+import { TvSelection, tvSelectedStorageKey } from './tv-selection';
 
 describe('TvPrefs', () => {
   const identify = (id = 'tv-user') =>
@@ -354,5 +355,100 @@ describe('TvPrefs', () => {
     localStorage.setItem('uniover.tv.prefs.v1', JSON.stringify({ name: 'Old choice' }));
     fresh();
     expect(localStorage.getItem('uniover.tv.prefs.v1')).not.toBeNull();
+  });
+});
+
+describe('TvPrefs per TV', () => {
+  const account = 'conta-tv';
+  const tv = (id: string, isDefault: boolean, name = `TV ${id}`) => ({
+    id,
+    name,
+    isDefault,
+    agentSlug: null,
+    kind: 'android' as const,
+    online: true,
+    capabilities: [],
+  });
+  const setup = (seed?: () => void) => {
+    TestBed.resetTestingModule();
+    localStorage.clear();
+    seed?.();
+    TestBed.inject(SessionState).setUser({ id: account, email: 'a@b.c', displayName: 'A' });
+    return { prefs: TestBed.inject(TvPrefs), selection: TestBed.inject(TvSelection) };
+  };
+
+  afterEach(() => {
+    TestBed.inject(TvPrefs).reset();
+    localStorage.clear();
+  });
+
+  it('keeps the default TV on the key it always had, so nothing already saved is lost', () => {
+    const old = JSON.stringify({
+      name: 'Sala',
+      buttonSize: 'large',
+      dismissedSuggestions: ['netflix'],
+    });
+    const { prefs, selection } = setup(() => localStorage.setItem(tvPrefsStorageKey(account), old));
+    selection.setTvs([tv('casa', true), tv('amigo', false)]);
+    expect(prefs.name()).toBe('Sala');
+    expect(prefs.buttonSize()).toBe('large');
+    expect(prefs.dismissedSuggestions()).toEqual(['netflix']);
+    prefs.set({ showMedia: false });
+    expect(JSON.parse(localStorage.getItem(tvPrefsStorageKey(account)) ?? 'null').showMedia).toBe(
+      false,
+    );
+  });
+
+  it('gives every other TV its own choices, and the suggestions removed there stay there', () => {
+    const { prefs, selection } = setup();
+    selection.setTvs([tv('casa', true), tv('amigo', false)]);
+    prefs.set({ name: 'Sala', dismissedSuggestions: ['netflix'] });
+
+    selection.select('amigo');
+    expect(prefs.name()).toBe('');
+    expect(prefs.dismissedSuggestions()).toEqual([]);
+    prefs.set({ name: 'Quarto', buttonSize: 'compact' });
+
+    selection.select('casa');
+    expect(prefs.name()).toBe('Sala');
+    expect(prefs.buttonSize()).toBe('comfortable');
+    expect(prefs.dismissedSuggestions()).toEqual(['netflix']);
+
+    expect(
+      JSON.parse(localStorage.getItem(tvPrefsStorageKey(account, 'amigo')) ?? 'null').name,
+    ).toBe('Quarto');
+    expect(tvPrefsStorageKey(account, 'amigo')).not.toBe(tvPrefsStorageKey(account));
+  });
+
+  it('shows the name the administrator gave to the TV when there are several and no nickname', () => {
+    const { prefs, selection } = setup();
+    selection.setTvs([tv('casa', true, 'Casa'), tv('amigo', false, 'Raphael')]);
+    expect(prefs.title()).toBe('Casa');
+    selection.select('amigo');
+    expect(prefs.title()).toBe('Raphael');
+    prefs.set({ name: 'Quarto' });
+    expect(prefs.title()).toBe('Quarto');
+  });
+
+  it('keeps the title of always with a single TV, whatever the administrator called it', () => {
+    const { prefs, selection } = setup();
+    selection.setTvs([tv('casa', true, 'Casa')]);
+    expect(prefs.title()).toBe('TV');
+  });
+
+  it('finds the saved TV choices before the list arrives', () => {
+    const first = setup();
+    first.selection.setTvs([tv('casa', true), tv('amigo', false)]);
+    first.selection.select('amigo');
+    first.prefs.set({ name: 'Quarto' });
+
+    const next = setup(() => {
+      localStorage.setItem(tvPrefsStorageKey(account, 'amigo'), JSON.stringify({ name: 'Quarto' }));
+      localStorage.setItem(
+        tvSelectedStorageKey(account),
+        JSON.stringify({ id: 'amigo', isDefault: false }),
+      );
+    });
+    expect(next.prefs.name()).toBe('Quarto');
   });
 });

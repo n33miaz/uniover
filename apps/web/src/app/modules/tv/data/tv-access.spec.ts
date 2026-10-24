@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../../core/session/session-state';
 import { TvAccess } from './tv-access';
+import { TvSelection } from './tv-selection';
+import { TvSummary } from './tv-types';
 
 describe('TvAccess', () => {
   const session = () => TestBed.inject(SessionState);
@@ -135,5 +137,81 @@ describe('TvAccess', () => {
     guest(['module:training']);
     expect(access().control()).toBe(false);
     expect(access().view()).toBe(false);
+  });
+});
+
+describe('TvAccess with the capabilities of the TV in use', () => {
+  const tv = (overrides: Partial<TvSummary>): TvSummary => ({
+    id: 'tv',
+    name: 'TV',
+    isDefault: true,
+    agentSlug: null,
+    kind: 'android',
+    online: true,
+    capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb'],
+    ...overrides,
+  });
+  const owner = () =>
+    TestBed.inject(SessionState).setUser({
+      id: '1',
+      email: 'a@b.c',
+      displayName: 'A',
+      role: 'owner',
+      permissions: ['module:tv', 'tv:control', 'tv:power', 'tv:launch', 'tv:edit-shortcuts'],
+    });
+  const show = (item: TvSummary | null) => TestBed.inject(TvSelection).setTvs(item ? [item] : null);
+
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
+  it('keeps everything for an Android with ADB', () => {
+    owner();
+    show(tv({}));
+    const access = TestBed.inject(TvAccess);
+    expect([access.cleanup(), access.text(), access.appList(), access.apps()]).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
+  });
+
+  it('takes the keyboard and the cleanup away from a Samsung, which still opens apps', () => {
+    owner();
+    show(tv({ kind: 'samsung', capabilities: ['tv.remote', 'tv.kind.samsung'] }));
+    const access = TestBed.inject(TvAccess);
+    expect(access.cleanup()).toBe(false);
+    expect(access.text()).toBe(false);
+    expect(access.appList()).toBe(true);
+    expect(access.control()).toBe(true);
+  });
+
+  it('has no apps panel at all when the TV can neither list apps nor be cleaned', () => {
+    owner();
+    show(tv({ capabilities: ['tv.remote', 'tv.kind.android'] }));
+    const access = TestBed.inject(TvAccess);
+    expect(access.appList()).toBe(false);
+    expect(access.cleanup()).toBe(false);
+    expect(access.apps()).toBe(false);
+  });
+
+  it('does not hide anything while the agent is off and nothing is known about the TV', () => {
+    owner();
+    show(tv({ kind: null, capabilities: [], online: false }));
+    const access = TestBed.inject(TvAccess);
+    expect([access.cleanup(), access.text(), access.appList()]).toEqual([true, true, true]);
+  });
+
+  it('still needs the permission: the capability alone gives nothing', () => {
+    TestBed.inject(SessionState).setUser({
+      id: '2',
+      email: 'g@b.c',
+      displayName: 'G',
+      role: 'guest',
+      permissions: ['module:tv'],
+    });
+    show(tv({}));
+    const access = TestBed.inject(TvAccess);
+    expect([access.cleanup(), access.text(), access.appList()]).toEqual([false, false, false]);
   });
 });

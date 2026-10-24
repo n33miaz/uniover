@@ -4,9 +4,10 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { collectShellData } from '../../core/layout/route-data';
 import { SessionState } from '../../core/session/session-state';
 import { TvPrefs, tvPrefsStorageKey } from './data/tv-prefs';
+import { TvSelection } from './data/tv-selection';
 import { TvStore } from './data/tv-store';
 import { TvPage } from './tv-page';
-import { FakeTvStore, createFakeTvStore } from './tv-test-kit';
+import { FakeTvStore, createFakeTvStore, makeTv } from './tv-test-kit';
 import { TV_ROUTES } from './tv.routes';
 
 describe('TvPage', () => {
@@ -525,7 +526,7 @@ describe('TvPage', () => {
       expect(root.querySelector('app-tv-panel .grab')).not.toBeNull();
       expect(
         [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
-      ).toEqual(['Apps da TV', 'Personalizar', 'Trocar a TV']);
+      ).toEqual(['Apps da TV', 'Personalizar', 'Gerenciar TVs']);
     });
 
     it('closes with Esc and with its own close button, and gives the focus back to the three dots', async () => {
@@ -689,6 +690,87 @@ describe('TvPage', () => {
           .querySelector<HTMLElement>('app-tv-control .remote')!
           .style.getPropertyValue('--key-scale'),
       ).toBe('1.15');
+    });
+  });
+
+  describe('several TVs', () => {
+    const CASA = makeTv('casa', { name: 'Casa', isDefault: true });
+    const AMIGO = makeTv('amigo', { name: 'Raphael', kind: 'samsung', online: false });
+    const showTvs = async (list = [CASA, AMIGO]) => {
+      store.tvs.set(list);
+      const selection = TestBed.inject(TvSelection);
+      selection.setTvs(list);
+      // O store de mentira troca a TV dele; a escolha de verdade (nome, preferências) é a do TvSelection.
+      store.selectTv.mockImplementation((id) => selection.select(id));
+      await render();
+    };
+    const switchSheet = () => root.querySelector<HTMLElement>('app-tv-switcher');
+    const rows = () => [
+      ...root.querySelectorAll<HTMLButtonElement>('app-tv-switcher button.ui-row'),
+    ];
+
+    afterEach(() => localStorage.clear());
+
+    it('with a single TV the name is exactly what it always was: no arrow, and it opens Personalizar', async () => {
+      await showTvs([CASA]);
+      expect(root.querySelector('h1 .chevron')).toBeNull();
+      expect(titleButton().getAttribute('aria-label')).toBe('TV, personalizar');
+      titleButton().click();
+      await render();
+      expect(customizeSheet()).not.toBeNull();
+      expect(switchSheet()).toBeNull();
+    });
+
+    it('with two TVs the name becomes the selector: the name of the TV, a discreet arrow and a name that says what it does', async () => {
+      await showTvs();
+      expect(root.querySelector('h1')?.textContent?.trim()).toBe('Casa');
+      expect(titleButton().classList.contains('switcher')).toBe(true);
+      expect(titleButton().querySelector('.chevron')).not.toBeNull();
+      expect(titleButton().getAttribute('aria-label')).toBe('Casa, trocar de TV');
+      expect(titleButton().getAttribute('aria-haspopup')).toBe('dialog');
+    });
+
+    it('opens a sheet that lists the TVs, with the one in use marked, and leaves Personalizar to the menu', async () => {
+      await showTvs();
+      titleButton().click();
+      await render();
+      expect(customizeSheet()).toBeNull();
+      expect(switchSheet()).not.toBeNull();
+      expect(root.querySelector('app-tv-panel h2')?.textContent?.trim()).toBe('Escolher a TV');
+      expect(rows().map((row) => row.querySelector('.ui-row-title')?.textContent?.trim())).toEqual([
+        'Casa',
+        'Raphael',
+      ]);
+      expect(rows().map((row) => row.getAttribute('aria-current'))).toEqual(['true', null]);
+    });
+
+    it('switches to the TV that was touched and closes the sheet', async () => {
+      await showTvs();
+      titleButton().click();
+      await render();
+      rows()[1].click();
+      await render();
+      expect(store.selectTv).toHaveBeenCalledWith('amigo');
+      expect(switchSheet()).toBeNull();
+      expect(root.querySelector('h1')?.textContent?.trim()).toBe('Raphael');
+    });
+
+    it('gives the name back to the person: a nickname wins over the name of the TV', async () => {
+      await showTvs();
+      TestBed.inject(TvPrefs).set({ name: 'Sala' });
+      await render();
+      expect(root.querySelector('h1')?.textContent?.trim()).toBe('Sala');
+      expect(titleButton().getAttribute('aria-label')).toBe('Sala, trocar de TV');
+    });
+
+    it('closes the sheet if the account stops having more than one TV', async () => {
+      await showTvs();
+      titleButton().click();
+      await render();
+      expect(switchSheet()).not.toBeNull();
+      await showTvs([CASA]);
+      expect(switchSheet()).toBeNull();
+      expect(root.querySelector('h1 .chevron')).toBeNull();
     });
   });
 });

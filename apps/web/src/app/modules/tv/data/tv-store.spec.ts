@@ -6,8 +6,9 @@ import { ConnectivityService, ServerState } from '../../../core/connectivity/con
 import { SessionState } from '../../../core/session/session-state';
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
 import { TvApi } from './tv-api';
+import { TvSelection } from './tv-selection';
 import { ICONS_CACHE_MAX_CHARS, TvStore, isValidTvText } from './tv-store';
-import { TvShortcut } from './tv-types';
+import { TvShortcut, TvSummary } from './tv-types';
 
 const PROBLEM = 'https://uniover.app/problems/';
 
@@ -45,6 +46,7 @@ describe('TvStore', () => {
   let events: Subject<StreamEvent>;
   let open: ReturnType<typeof vi.fn>;
   const api = {
+    tvs: vi.fn(),
     state: vi.fn(),
     shortcuts: vi.fn(),
     wake: vi.fn(),
@@ -1235,6 +1237,207 @@ describe('TvStore', () => {
       expect(open).toHaveBeenCalledTimes(2);
       expect(events.observed).toBe(true);
       expect(api.wake).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('several TVs', () => {
+    const tvOf = (id: string, isDefault = false, extra: Partial<TvSummary> = {}): TvSummary => ({
+      id,
+      name: id,
+      isDefault,
+      agentSlug: null,
+      kind: 'android',
+      online: true,
+      capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb'],
+      ...extra,
+    });
+    const CASA = tvOf('casa', true);
+    const AMIGO = tvOf('amigo');
+    const selection = () => TestBed.inject(TvSelection);
+    /** Uma promessa que o teste resolve quando quiser (a resposta que demora). */
+    const deferred = <T>() => {
+      let resolve!: (value: T) => void;
+      let reject!: (reason: unknown) => void;
+      const promise = new Promise<T>((ok, fail) => {
+        resolve = ok;
+        reject = fail;
+      });
+      return { promise, resolve, reject };
+    };
+
+    afterEach(() => localStorage.clear());
+
+    it('keeps the plain events path with a single TV', async () => {
+      api.tvs.mockResolvedValue([CASA]);
+      await started();
+      expect(open.mock.calls[0][0]).toBe('/api/v1/tv/events');
+      expect(store.multiple()).toBe(false);
+    });
+
+    it('keeps the plain events path when the list of TVs cannot be read', async () => {
+      api.tvs.mockRejectedValue(problem(404));
+      await started();
+      expect(store.tvs()).toBeNull();
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(open.mock.calls[0][0]).toBe('/api/v1/tv/events');
+      expect(store.state()?.volume).toBe(22);
+    });
+
+    it('adopts the first TV of the list without reopening the stream the server already chose', async () => {
+      api.tvs.mockResolvedValue([CASA, AMIGO]);
+      await started();
+      expect(store.multiple()).toBe(true);
+      expect(store.selectedTv()?.id).toBe('casa');
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(open.mock.calls[0][0]).toBe('/api/v1/tv/events');
+      expect(store.state()?.volume).toBe(22);
+    });
+
+    it('opens the stream already on the TV the person had chosen', async () => {
+      selection().setTvs([CASA, AMIGO]);
+      selection().select('amigo');
+      api.tvs.mockResolvedValue([CASA, AMIGO]);
+      await started();
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(open.mock.calls[0][0]).toBe('/api/v1/tv/events?tvId=amigo');
+      expect(store.selectedTv()?.id).toBe('amigo');
+    });
+
+    it('switching erases what was known about the previous TV at once and reopens the stream on the new one', async () => {
+      api.tvs.mockResolvedValue([CASA, AMIGO]);
+      await started();
+      expect(store.shortcuts()).not.toBeNull();
+      const gate = deferred<TvShortcut[]>();
+      api.shortcuts.mockReturnValueOnce(gate.promise);
+
+      store.selectTv('amigo');
+      // Nada da TV anterior aparece na nova enquanto ela não responde.
+      expect(store.state()).toBeNull();
+      expect(store.shortcuts()).toBeNull();
+      expect(store.status()).toBe('loading');
+      expect(store.selectedTv()?.id).toBe('amigo');
+      expect(open).toHaveBeenCalledTimes(2);
+      expect(open.mock.calls[1][0]).toBe('/api/v1/tv/events?tvId=amigo');
+
+      gate.resolve([shortcut(7)]);
+      await flush();
+      expect(store.shortcuts()?.map((item) => item.id)).toEqual(['s7']);
+      expect(store.status()).toBe('hot');
+    });
+
+    it('does nothing when the chosen TV is the one already in use', async () => {
+      api.tvs.mockResolvedValue([CASA, AMIGO]);
+      await started();
+      store.selectTv('casa');
+      await flush();
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(store.state()).not.toBeNull();
+    });
+
+    it('never paints on the new TV what the previous one answers late', async () => {
+      selection().setTvs([CASA, AMIGO]);
+      const lateState = deferred<unknown>();
+      const lateShortcuts = deferred<TvShortcut[]>();
+      api.tvs.mockResolvedValue([CASA, AMIGO]);
+      api.state.mockReturnValueOnce(lateState.promise);
+      api.shortcuts.mockReturnValueOnce(lateShortcuts.promise);
+      await started();
+
+      api.shortcuts.mockResolvedValue([shortcut(5)]);
+      store.selectTv('amigo');
+      await flush();
+      expect(store.shortcuts()?.map((item) => item.id)).toEqual(['s5']);
+
+      lateState.resolve({ ...hot, volume: 99 });
+      lateShortcuts.resolve([shortcut(9)]);
+      await flush();
+      expect(store.shortcuts()?.map((item) => item.id)).toEqual(['s5']);
+      expect(store.state()?.volume).toBe(22);
+    });
+
+    it('does not show on the new TV the error of a key sent to the previous one', async () => {
+      api.tvs.mockResolvedValue([CASA, AMIGO]);
+      await started();
+      const gate = deferred<void>();
+      api.sendKey.mockReturnValueOnce(gate.promise);
+      const sending = store.sendKey('HOME');
+      store.selectTv('amigo');
+      await flush();
+      gate.reject(problem(500));
+      await expect(sending).resolves.toBe(false);
+      expect(store.notice()).toBeNull();
+      expect(store.inFlightKeys()).toBe(0);
+    });
+
+    it('drops the order being saved for the previous TV instead of painting it on the new one', async () => {
+      api.tvs.mockResolvedValue([CASA, AMIGO]);
+      await started();
+      const gate = deferred<TvShortcut[]>();
+      api.reorderShortcuts.mockReturnValueOnce(gate.promise);
+      const saving = store.reorder(['s2', 's1']);
+      api.shortcuts.mockResolvedValue([shortcut(7)]);
+      store.selectTv('amigo');
+      await flush();
+
+      gate.resolve([shortcut(2), shortcut(1)]);
+      await expect(saving).resolves.toBe(false);
+      await flush();
+      expect(store.shortcuts()?.map((item) => item.id)).toEqual(['s7']);
+      expect(store.notice()).toBeNull();
+    });
+
+    it('stamps the last state it keeps with the TV it belongs to', async () => {
+      selection().setTvs([CASA, AMIGO]);
+      selection().select('amigo');
+      api.tvs.mockResolvedValue([CASA, AMIGO]);
+      await started();
+      expect(JSON.parse(localStorage.getItem('uniover.tv.last-state') ?? 'null').tv).toBe('amigo');
+    });
+
+    it('shows offline only the last state of the TV in use, never the one of another', async () => {
+      const cached = (tv: string | null) =>
+        JSON.stringify({ tv, state: hot, seenAt: Date.now() - 60_000, shortcuts: [shortcut(1)] });
+      online.set(false);
+      selection().setTvs([CASA, AMIGO]);
+
+      // A TV padrão, com o guardado de outra TV: nada vale.
+      localStorage.setItem('uniover.tv.last-state', cached('amigo'));
+      store.start();
+      await flush();
+      expect(store.state()).toBeNull();
+      expect(store.shortcuts()).toBeNull();
+      store.stop();
+
+      // A TV padrão com o guardado dela (ou de antes de haver várias, sem o campo): vale.
+      localStorage.setItem('uniover.tv.last-state', cached(null));
+      store.start();
+      await flush();
+      expect(store.state()?.volume).toBe(22);
+    });
+
+    it('reads the list again when the agent comes back, because its capabilities arrive with its hello', async () => {
+      api.tvs.mockResolvedValue([CASA, AMIGO]);
+      await started();
+      const reads = api.tvs.mock.calls.length;
+      emit('tv.state', { ...hot, agentOnline: false });
+      await flush();
+      expect(api.tvs.mock.calls.length).toBe(reads);
+      emit('tv.state', hot);
+      await flush();
+      expect(api.tvs.mock.calls.length).toBe(reads + 1);
+    });
+
+    it('does not offer cleanup or typing on a Samsung, and does not even send them', async () => {
+      const samsung = tvOf('sam', true, {
+        kind: 'samsung',
+        capabilities: ['tv.remote', 'tv.kind.samsung'],
+      });
+      api.tvs.mockResolvedValue([samsung]);
+      await started();
+      await expect(store.cleanup()).resolves.toBe(false);
+      expect(api.cleanup).not.toHaveBeenCalled();
+      await expect(store.sendText('oi')).resolves.toMatchObject({ kind: 'forbidden' });
+      expect(api.sendText).not.toHaveBeenCalled();
     });
   });
 });

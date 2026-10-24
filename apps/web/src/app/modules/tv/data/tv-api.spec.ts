@@ -1,7 +1,9 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { TvApi } from './tv-api';
+import { SessionState } from '../../../core/session/session-state';
+import { TvApi, tvEventsPath } from './tv-api';
+import { TvSelection } from './tv-selection';
 import type { TvShortcut } from './tv-types';
 
 const SHORTCUT = {
@@ -141,5 +143,110 @@ describe('TvApi', () => {
     const pin = api.updateShortcut('a1', { enabled: true });
     http.expectOne('/api/v1/tv/shortcuts/a1').flush({ ...legacy, enabled: true });
     expect((await pin).installed).toBe(true);
+  });
+
+  describe('with several TVs', () => {
+    const tv = (id: string, isDefault: boolean) => ({
+      id,
+      name: id,
+      isDefault,
+      agentSlug: null,
+      kind: 'android' as const,
+      online: true,
+      capabilities: [],
+    });
+    const choose = (id: string) => {
+      TestBed.inject(SessionState).setUser({ id: 'c', email: 'c@x.y', displayName: 'C' });
+      const selection = TestBed.inject(TvSelection);
+      selection.setTvs([tv('casa', true), tv('amigo', false)]);
+      selection.select(id);
+    };
+
+    beforeEach(() => localStorage.clear());
+    afterEach(() => localStorage.clear());
+
+    it('asks the state, the shortcuts and the commands of the chosen TV', async () => {
+      choose('amigo');
+      const state = api.state();
+      http.expectOne('/api/v1/tv/state?tvId=amigo').flush({ agentOnline: true });
+      await state;
+      const shortcuts = api.shortcuts();
+      http.expectOne('/api/v1/tv/shortcuts?tvId=amigo').flush([]);
+      await shortcuts;
+
+      const key = api.sendKey('HOME');
+      const sent = http.expectOne('/api/v1/tv/keys?tvId=amigo');
+      expect(sent.request.body).toEqual({ key: 'HOME', direction: null });
+      sent.flush({});
+      await key;
+
+      const off = api.powerOff();
+      http.expectOne('/api/v1/tv/power/off?tvId=amigo').flush({});
+      await off;
+      const wake = api.wake();
+      http
+        .expectOne('/api/v1/tv/wake?tvId=amigo')
+        .flush(null, { status: 202, statusText: 'Accepted' });
+      await wake;
+      const clean = api.cleanup();
+      http.expectOne('/api/v1/tv/cleanup?tvId=amigo').flush({});
+      await clean;
+      const launch = api.launch('a1');
+      http.expectOne('/api/v1/tv/shortcuts/a1/launch?tvId=amigo').flush({});
+      await launch;
+      const refresh = api.refreshShortcuts();
+      http.expectOne('/api/v1/tv/shortcuts/refresh?tvId=amigo').flush({});
+      await refresh;
+      const order = api.reorderShortcuts(['a1']);
+      http.expectOne('/api/v1/tv/shortcuts/order?tvId=amigo').flush([SHORTCUT]);
+      await order;
+      const text = api.sendText('oi');
+      http.expectOne('/api/v1/tv/text?tvId=amigo').flush({});
+      await text;
+      const rename = api.updateShortcut('a1', { enabled: false });
+      http.expectOne('/api/v1/tv/shortcuts/a1?tvId=amigo').flush(SHORTCUT);
+      await rename;
+    });
+
+    it('reads the TV id at the moment of the call: a request already sent stays with its TV', async () => {
+      choose('amigo');
+      const first = api.state();
+      const request = http.expectOne('/api/v1/tv/state?tvId=amigo');
+      TestBed.inject(TvSelection).select('casa');
+      request.flush({ agentOnline: true });
+      await first;
+      const second = api.state();
+      http.expectOne('/api/v1/tv/state?tvId=casa').flush({ agentOnline: true });
+      await second;
+    });
+
+    it('leaves the list of TVs without a tv id (it is where the id comes from)', async () => {
+      choose('amigo');
+      const list = api.tvs();
+      const request = http.expectOne('/api/v1/tv/tvs');
+      expect(request.request.method).toBe('GET');
+      request.flush({ items: [tv('casa', true)] });
+      expect((await list).map((item) => item.id)).toEqual(['casa']);
+    });
+
+    it('refuses a list in an unexpected format', async () => {
+      const list = api.tvs();
+      http.expectOne('/api/v1/tv/tvs').flush({ itens: [] });
+      await expect(list).rejects.toThrow();
+    });
+  });
+
+  it('sends nothing extra with a single TV or no list at all', async () => {
+    const state = api.state();
+    http.expectOne('/api/v1/tv/state').flush({ agentOnline: true });
+    await state;
+    const key = api.sendKey('HOME');
+    http.expectOne('/api/v1/tv/keys').flush({});
+    await key;
+  });
+
+  it('builds the events path with the TV id only when there is one', () => {
+    expect(tvEventsPath(null)).toBe('/api/v1/tv/events');
+    expect(tvEventsPath('a b')).toBe('/api/v1/tv/events?tvId=a%20b');
   });
 });
