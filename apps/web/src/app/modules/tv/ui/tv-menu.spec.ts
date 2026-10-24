@@ -47,7 +47,7 @@ describe('TvMenu', () => {
 
   it('gathers apps and customization for the person, and, apart, the one thing that affects everybody', () => {
     mount();
-    expect(rows()).toEqual(['Apps da TV', 'Personalizar', 'Trocar a TV']);
+    expect(rows()).toEqual(['Apps da TV', 'Personalizar', 'Gerenciar TVs']);
     expect(root.querySelectorAll('.ui-group')).toHaveLength(2);
     const bind = root.querySelector<HTMLAnchorElement>('a.ui-row')!;
     expect(bind.getAttribute('href')).toBe('/ajustes/sistema');

@@ -1,8 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../../core/session/session-state';
 import { TvPrefs } from '../data/tv-prefs';
+import { TvSelection } from '../data/tv-selection';
 import { TvStore } from '../data/tv-store';
-import { FakeTvStore, HOT, createFakeTvStore, makeShortcut, pngIcon } from '../tv-test-kit';
+import { FakeTvStore, HOT, createFakeTvStore, makeShortcut, makeTv, pngIcon } from '../tv-test-kit';
 import { ControlPage } from './control.page';
 
 describe('ControlPage', () => {
@@ -703,6 +704,60 @@ describe('ControlPage', () => {
         sessionStorage.setItem('uniover.tv.stage-page', '2');
         expect(marks(reopen())).toEqual([null, null, 'true']);
       });
+    });
+  });
+
+  describe('what the TV in use can do', () => {
+    const prefs = () => TestBed.inject(TvPrefs);
+    const roundLabels = () =>
+      [...root.querySelectorAll('.round-grid .round')].map((el) => el.getAttribute('aria-label'));
+    const cols = () => root.querySelector('.round-grid')!.getAttribute('data-cols');
+    const useTv = (overrides: Parameters<typeof makeTv>[1]) => {
+      TestBed.inject(TvSelection).setTvs([makeTv('tv', { isDefault: true, ...overrides })]);
+      render();
+    };
+    const SAMSUNG = { kind: 'samsung', capabilities: ['tv.remote', 'tv.kind.samsung'] } as const;
+
+    afterEach(() => localStorage.clear());
+
+    it('has no Keyboard button on a TV that does not take text, and no gap where it was', () => {
+      useTv(SAMSUNG);
+      expect(byLabel('Teclado')).toBeNull();
+      expect(roundLabels()).toEqual([
+        'Voltar',
+        'Início da TV',
+        'Menu',
+        'Anterior',
+        'Reproduzir ou pausar',
+        'Próxima',
+        'Mudo',
+      ]);
+      // Sete botões em quatro colunas: a última fileira, de três, fica no meio.
+      expect(cols()).toBe('4');
+      expect(root.querySelector('.round-grid')!.hasAttribute('data-short')).toBe(true);
+    });
+
+    it('keeps the Keyboard on an Android, whatever else it lacks', () => {
+      useTv({ capabilities: ['tv.remote', 'tv.kind.android'] });
+      expect(byLabel('Teclado')).not.toBeNull();
+      expect(root.querySelector('.round-grid')!.hasAttribute('data-short')).toBe(false);
+    });
+
+    it('re-counts the columns without the Keyboard: three without the media keys, three in a row', () => {
+      useTv(SAMSUNG);
+      prefs().set({ showMedia: false });
+      render();
+      expect(roundLabels()).toEqual(['Voltar', 'Início da TV', 'Menu']);
+      expect(cols()).toBe('3');
+      expect(root.querySelector('.round-grid')!.hasAttribute('data-short')).toBe(false);
+      prefs().set({ pillLayout: 'row' });
+      render();
+      expect(cols()).toBe('3');
+    });
+
+    it('does not hide anything while nothing is known about the TV (agent off)', () => {
+      useTv({ kind: null, capabilities: [], online: false });
+      expect(byLabel('Teclado')).not.toBeNull();
     });
   });
 });

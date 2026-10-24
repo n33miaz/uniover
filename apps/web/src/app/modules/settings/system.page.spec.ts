@@ -18,6 +18,6 @@ describe('system route', () => {
     expect(root.matches('app-shell')).toBe(true);
     expect(root.querySelector('app-system-page app-system-tv-section')).not.toBeNull();
     expect(root.querySelector('h1')?.textContent).toBe('Sistema');
-    expect(root.querySelector('h2')?.textContent?.trim()).toBe('TV');
+    expect(root.querySelector('h2')?.textContent?.trim()).toBe('TVs');
   });
 });

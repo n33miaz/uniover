@@ -5,6 +5,24 @@ export interface TvRequest {
   readonly method: string;
   readonly path: string;
   readonly body: Record<string, unknown> | null;
+  /** O `?tvId=` do pedido (`null` quando o app não o mandou). */
+  readonly tvId: string | null;
+}
+
+/**
+ * Uma TV do servidor de mentira (várias TVs). `state` e `shortcuts` são os dela; sem eles valem os do mock inteiro, o que
+ * mantém todos os cenários de uma TV só como eram. `agentSlug` só chega ao administrador, como na API.
+ */
+export interface MockTv {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  agentSlug: string | null;
+  kind: 'android' | 'samsung' | null;
+  online: boolean;
+  capabilities: string[];
+  state?: MockTvState;
+  shortcuts?: MockShortcut[];
 }
 
 export interface MockShortcut {
@@ -58,6 +76,15 @@ export interface TvMock {
   readonly denied: TvRequest[];
   state: MockTvState;
   shortcuts: MockShortcut[];
+  /**
+   * As TVs do servidor. `null` (o padrão) é um servidor sem várias TVs: `GET /tvs` responde 404 e o app se comporta como
+   * sempre. Com a lista, cada conta vê as que a regra de visibilidade da API manda (ver `visibleTvs`).
+   */
+  tvs: MockTv[] | null;
+  /** As contas de cada TV (`tvId` para os ids das contas), como `GET/PUT /tvs/{id}/members`. */
+  members: Record<string, string[]>;
+  /** Enquanto houver uma promessa aqui, `GET /shortcuts` espera por ela (para ver a TV nova ainda sem atalhos). */
+  shortcutsGate: Promise<void> | null;
   /** Falha de `/keys`, `/text`, `/power/off`, `/launch`, `/refresh` e `/cleanup` (não de `/wake`). */
   commandFailure: MockFailure | null;
   /** Falha de `/wake`. */
@@ -84,7 +111,9 @@ const PROBLEM_BASE = 'https://uniover.app/problems/';
  * atalhos e ler o histórico. `null` é uma rota que o mock não conhece (cai no 404 de sempre).
  */
 function requiredPermission(method: string, path: string): string | null {
-  if (method === 'GET' && (path === '/state' || path === '/shortcuts')) return 'module:tv';
+  if (method === 'GET' && (path === '/state' || path === '/shortcuts' || path === '/tvs')) {
+    return 'module:tv';
+  }
   if (method === 'GET' && path === '/commands/recent') return 'tv:history';
   if (method === 'POST' && ['/wake', '/keys', '/text', '/cleanup'].includes(path))
     return 'tv:control';
@@ -107,6 +136,26 @@ function requiredPermission(method: string, path: string): string | null {
 function permissionsOf(identity: IdentityMock): readonly string[] {
   const guest = identity.role === 'guest' ? identity.guests.at(-1) : undefined;
   return guest ? (guest.permissions ?? identity.guestPermissions) : ALL_PERMISSIONS;
+}
+
+/** O id da conta da sessão aberta no simulador de identidade. */
+function accountOf(identity: IdentityMock): string | null {
+  return (identity.role === 'guest' ? identity.guests.at(-1)?.id : undefined) ?? null;
+}
+
+/**
+ * As TVs que a conta vê (a regra da API): o administrador, todas; as demais, as de que são membros; quem não é membro de
+ * nenhuma continua vendo a padrão. A lista sai com a padrão na frente e depois por nome, como a API a ordena.
+ */
+function visibleTvs(mock: TvMock, identity: IdentityMock): MockTv[] {
+  if (!mock.tvs) return [];
+  const all = [...mock.tvs].sort(
+    (a, b) => Number(b.isDefault) - Number(a.isDefault) || a.name.localeCompare(b.name),
+  );
+  if (identity.role === 'owner') return all;
+  const me = accountOf(identity);
+  const own = all.filter((tv) => me !== null && (mock.members[tv.id] ?? []).includes(me));
+  return own.length > 0 ? own : all.filter((tv) => tv.isDefault);
 }
 
 export const HOT_STATE: MockTvState = {
@@ -161,6 +210,9 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     denied: [],
     state: { ...HOT_STATE },
     shortcuts: SHORTCUTS.map((s) => ({ ...s })),
+    tvs: null,
+    members: {},
+    shortcutsGate: null,
     commandFailure: null,
     wakeFailure: null,
     orderFailure: null,
@@ -183,12 +235,14 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
 
   await context.route('**/api/v1/tv/**', async (route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname.replace('/api/v1/tv', '');
+    const url = new URL(request.url());
+    const path = url.pathname.replace('/api/v1/tv', '');
+    const tvId = url.searchParams.get('tvId');
     const method = request.method();
     const headers = request.headers();
     const isJson = (headers['content-type'] ?? '').startsWith('application/json');
     const body = isJson ? (request.postDataJSON() as Record<string, unknown> | null) : null;
-    mock.requests.push({ method, path, body });
+    mock.requests.push({ method, path, body, tvId });
 
     if (identity.offline) return route.abort('internetdisconnected');
     if (request.postData() && !isJson) {
@@ -205,16 +259,34 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     if (needed) {
       const granted = permissionsOf(identity);
       if (!granted.includes(needed) || (needed !== 'module:tv' && !granted.includes('module:tv'))) {
-        mock.denied.push({ method, path, body });
+        mock.denied.push({ method, path, body, tvId });
         return problem(route, { status: 403, kind: 'forbidden' });
       }
     }
 
+    // Várias TVs: a lista, a administração (só do dono, com a passkey) e a escolha de qual TV responde cada pedido.
+    if (mock.tvs) {
+      const handled = await handleTvs(route, mock, identity, { method, path, body, tvId });
+      if (handled) return;
+    }
+    // Sem `tvId` a API usa a única visível (ou a padrão, ou a primeira por nome); com ele, a pedida.
+    const chosen = !mock.tvs
+      ? null
+      : tvId
+        ? (mock.tvs.find((tv) => tv.id === tvId) ?? null)
+        : (visibleTvs(mock, identity)[0] ?? null);
+    if (mock.tvs && tvId && !visibleTvs(mock, identity).some((tv) => tv.id === tvId)) {
+      return problem(route, { status: 404, kind: 'not-found' });
+    }
+
     if (method === 'GET' && path === '/state') {
       if (mock.stateGate) await mock.stateGate;
-      return json(route, 200, mock.state);
+      return json(route, 200, chosen?.state ?? mock.state);
     }
-    if (method === 'GET' && path === '/shortcuts') return json(route, 200, mock.shortcuts);
+    if (method === 'GET' && path === '/shortcuts') {
+      if (mock.shortcutsGate) await mock.shortcutsGate;
+      return json(route, 200, chosen?.shortcuts ?? mock.shortcuts);
+    }
 
     if (method === 'POST' && path === '/wake') {
       if (mock.wakeFailure) return problem(route, mock.wakeFailure);
@@ -285,6 +357,128 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
   });
 
   return mock;
+}
+
+/**
+ * As rotas de várias TVs. Devolve `true` quando respondeu. Escrever é do administrador e pede a confirmação com a passkey
+ * (`identity.stepUpValid`, que a API deixa valer alguns minutos para a ação), como o `PUT /config/agent`; criar com um computador que já tem TV é 409.
+ */
+async function handleTvs(
+  route: Route,
+  mock: TvMock,
+  identity: IdentityMock,
+  request: TvRequest,
+): Promise<boolean> {
+  const { method, path, body } = request;
+  const tvs = mock.tvs!;
+  const owner = identity.role === 'owner';
+
+  if (method === 'GET' && path === '/tvs') {
+    const items = visibleTvs(mock, identity).map((tv) => ({
+      id: tv.id,
+      name: tv.name,
+      isDefault: tv.isDefault,
+      ...(owner ? { agentSlug: tv.agentSlug } : {}),
+      kind: tv.kind,
+      online: tv.online,
+      capabilities: tv.capabilities,
+    }));
+    await json(route, 200, { items });
+    return true;
+  }
+
+  const target = /^\/tvs(?:\/([^/]+)(\/members)?)?$/.exec(path);
+  if (!target) return false;
+  if (!owner) {
+    await problem(route, { status: 403, kind: 'forbidden' });
+    return true;
+  }
+  const writes = method !== 'GET';
+  if (writes && !identity.stepUpValid) {
+    await problem(route, {
+      status: 403,
+      kind: 'step-up-required',
+      extra: { code: 'step_up_required', action: 'tv.bind-agent' },
+    });
+    return true;
+  }
+  const summary = (tv: MockTv) => ({
+    id: tv.id,
+    name: tv.name,
+    isDefault: tv.isDefault,
+    agentSlug: tv.agentSlug,
+    kind: tv.kind,
+    online: tv.online,
+    capabilities: tv.capabilities,
+  });
+  const found = target[1] ? tvs.find((tv) => tv.id === target[1]) : undefined;
+
+  if (!target[1] && method === 'POST') {
+    const agentSlug = String(body?.['agentSlug'] ?? '');
+    const name = String(body?.['name'] ?? '').trim();
+    if (!agentSlug || !name) {
+      await problem(route, { status: 400, kind: 'validation-failed' });
+      return true;
+    }
+    if (tvs.some((tv) => tv.agentSlug === agentSlug)) {
+      await problem(route, { status: 409, kind: 'agent-in-use' });
+      return true;
+    }
+    const created: MockTv = {
+      id: `tv-${tvs.length + 1}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      name,
+      isDefault: false,
+      agentSlug,
+      kind: null,
+      online: false,
+      capabilities: [],
+    };
+    tvs.push(created);
+    await json(route, 200, summary(created));
+    return true;
+  }
+
+  if (!found) {
+    await problem(route, { status: 404, kind: 'not-found' });
+    return true;
+  }
+
+  if (!target[2] && method === 'PATCH') {
+    const slug = body?.['agentSlug'];
+    if (typeof slug === 'string' && tvs.some((tv) => tv.id !== found.id && tv.agentSlug === slug)) {
+      await problem(route, { status: 409, kind: 'agent-in-use' });
+      return true;
+    }
+    if (typeof body?.['name'] === 'string') found.name = body['name'].trim();
+    if (typeof slug === 'string') found.agentSlug = slug;
+    await json(route, 200, summary(found));
+    return true;
+  }
+
+  if (!target[2] && method === 'DELETE') {
+    if (found.isDefault) {
+      await problem(route, { status: 409, kind: 'default-tv' });
+      return true;
+    }
+    mock.tvs = tvs.filter((tv) => tv.id !== found.id);
+    delete mock.members[found.id];
+    await route.fulfill({ status: 204 });
+    return true;
+  }
+
+  if (target[2] && method === 'GET') {
+    await json(route, 200, { userIds: mock.members[found.id] ?? [] });
+    return true;
+  }
+
+  if (target[2] && method === 'PUT') {
+    const ids = Array.isArray(body?.['userIds']) ? (body['userIds'] as string[]) : [];
+    mock.members[found.id] = [...ids];
+    await json(route, 200, { userIds: mock.members[found.id] });
+    return true;
+  }
+
+  return false;
 }
 
 /**
