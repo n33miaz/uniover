@@ -50,6 +50,8 @@ internal static class StreamEventsEndpoint
         ClaimsPrincipal principal,
         IServiceProvider services,
         StreamEventsHandler handler,
+        ITvCurrentSelection selection,
+        TvSelectionService selections,
         TvStreamPublisher stream,
         TimeProvider time,
         IHostApplicationLifetime lifetime,
@@ -63,17 +65,34 @@ internal static class StreamEventsEndpoint
 
         var subscription = await handler.OpenAsync(userId, cancellationToken);
 
-        // O administrador não paga a consulta. Quem não é administrador tem a permissão da TV reavaliada com o fluxo
-        // aberto, pelo mesmo caminho da política da rota (banco com cache curto, nunca o JWT): conta revogada ou sem
-        // module:tv fecha o fluxo. Sem a porta registrada, nega (falha fechada), nunca "sem conferência".
+        // O administrador não paga a consulta. Quem não é administrador tem a permissão e a visibilidade da TV escolhida
+        // reavaliadas com o fluxo aberto: conta revogada, sem module:tv ou removida da TV fecha o fluxo. A leitura é do
+        // banco, nunca do JWT; sem a porta registrada, nega (falha fechada), nunca "sem conferência".
         if (string.Equals(AccountRoles.Of(principal), AccountRoles.Owner, StringComparison.Ordinal))
         {
             return SseResults.Stream(subscription, stream.Options, time, lifetime.ApplicationStopping);
         }
 
         var grants = services.GetService<IAccessGrants>();
+        Guid? tvId = selection.Current.IsPersisted ? selection.Current.Id : null;
+        var recheckGate = new SemaphoreSlim(1, 1);
         Func<CancellationToken, Task<bool>> stillAllowed =
-            async ct => grants is not null && await grants.HasAsync(userId, AccessPermissions.TvModule, ct);
+            async ct =>
+            {
+                // O keep-alive e o vigia próprio podem despertar no mesmo instante. Compartilham o DbContext do pedido,
+                // que só aceita uma consulta por vez, então a segunda conferência espera a primeira sem deixar passar.
+                await recheckGate.WaitAsync(ct);
+                try
+                {
+                    return grants is not null
+                        && await grants.HasAsync(userId, AccessPermissions.TvModule, ct)
+                        && await selections.ResolveAsync(userId, isOwner: false, tvId, ct) is not null;
+                }
+                finally
+                {
+                    recheckGate.Release();
+                }
+            };
 
         // Duas conferências com o mesmo critério: no keep-alive do fluxo ocioso (antes de escrever qualquer coisa) e por
         // relógio próprio, para o fluxo movimentado em que o keep-alive nunca chega a disparar.

@@ -129,6 +129,43 @@ public sealed class TvStreamPermissionTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Stream_ClosesWhenTheGuestGainsMembershipOfAnotherTv_AndLosesTheDefault()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = new VirtualAuthenticator();
+        await app.RegisterOwnerPasskeyAsync(authenticator);
+        await app.ConfirmOwnerActionAsync(authenticator, "tv.bind-agent");
+        using (var bind = await app.SendAsync(HttpMethod.Put, "/api/v1/tv/config/agent", new { agentSlug = app.Agent.Slug }))
+        {
+            bind.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var otherAgent = await app.PairAsync("PC Alice");
+        Guid otherTvId;
+        using (var create = await app.PostAsync("/api/v1/tv/tvs", new { agentSlug = otherAgent.Slug, name = "TV Alice" }))
+        {
+            create.StatusCode.Should().Be(HttpStatusCode.OK);
+            otherTvId = (await TvApp.JsonAsync(create)).GetProperty("id").GetGuid();
+        }
+
+        var guest = await app.NewGuestAsync("Alice", ModuleOnly, 45);
+        using var response = await OpenAsync(app, guest.Login.AccessToken);
+        using var reader = await ReadSnapshotAsync(response);
+
+        // A conta legada vê a padrão até ganhar a primeira filiação. A partir daí o fluxo aberto não pode continuar
+        // expondo a TV padrão, mesmo que module:tv permaneça válido.
+        using (var members = await app.SendAsync(HttpMethod.Put, $"/api/v1/tv/tvs/{otherTvId}/members", new { userIds = new[] { guest.UserId } }))
+        {
+            members.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var (frame, elapsed) = await AdvanceUntilFrameAsync(app, reader, 0);
+
+        frame.Should().BeNull("a TV originalmente escolhida deixou de ser visível");
+        elapsed.Should().BeLessThanOrEqualTo(15, "a filiação é consultada diretamente no banco no próximo vigia do fluxo");
+    }
+
+    [Fact]
     public async Task Stream_StaysOpen_WhenTheGuestLosesOnlyAnActionPermission()
     {
         await using var app = await TvApp.StartAsync(postgres);
