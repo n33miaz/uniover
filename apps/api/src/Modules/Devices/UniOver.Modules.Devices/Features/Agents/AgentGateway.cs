@@ -45,12 +45,6 @@ internal sealed partial class AgentGateway(
             return Result.Failure<AgentReply>(envelope.Error);
         }
 
-        // Sem sessão não há o que esperar: responde na hora, sem gastar o tempo todo.
-        if (!connections.TryGet(agentId, out _))
-        {
-            return Result.Failure<AgentReply>(AgentErrors.Offline);
-        }
-
         var wait = timeout > TimeSpan.Zero ? timeout : options.Value.RequestTimeout;
         var commandId = envelope.Value.Id;
 
@@ -94,8 +88,19 @@ internal sealed partial class AgentGateway(
         return created;
     }
 
-    private async Task<bool> DeliverAsync(string agentId, byte[] json, CancellationToken cancellationToken) =>
-        connections.TryGet(agentId, out var session) && await session.SendAsync(json, cancellationToken);
+    private async Task<bool> DeliverAsync(string agentId, byte[] json, CancellationToken cancellationToken)
+    {
+        if (connections.TryGet(agentId, out var connected) && await connected.SendAsync(json, cancellationToken))
+        {
+            return true;
+        }
+
+        // Deploys e quedas breves do socket levam o agente a reconectar em cerca de dois segundos. Esperar esta
+        // janela evita responder `agent_offline` para o comando que coincidiu com a troca, sem reter filas longas.
+        var session = await connections.WaitForSessionAsync(
+            agentId, options.Value.ReconnectGrace, time, cancellationToken);
+        return session is not null && await session.SendAsync(json, cancellationToken);
+    }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Comando {Type} ao agente {AgentId} ({CommandId}) sem resposta no prazo; resposta tardia será descartada.")]
     private partial void LogRequestTimedOut(string agentId, string type, Guid commandId);

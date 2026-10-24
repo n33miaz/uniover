@@ -20,7 +20,7 @@ internal static class CloseCodes
         AgentCloseReason.Replaced => (Replaced, "replaced"),
         AgentCloseReason.Revoked => (Revoked, "revoked"),
         AgentCloseReason.PolicyViolation => (WebSocketCloseStatus.PolicyViolation, "policy_violation"),
-        AgentCloseReason.Shutdown => (WebSocketCloseStatus.EndpointUnavailable, "going_away"),
+        AgentCloseReason.Shutdown => ((WebSocketCloseStatus)1012, "service_restart"),
         AgentCloseReason.InternalError => (WebSocketCloseStatus.InternalServerError, "internal_error"),
         _ => (WebSocketCloseStatus.NormalClosure, "closed"),
     };
@@ -73,7 +73,7 @@ internal sealed class WebSocketAgentSession : IAgentSession
             {
                 result = await _socket.ReceiveAsync(_buffer.AsMemory(), cancellationToken);
             }
-            catch (WebSocketException)
+            catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException)
             {
                 // Conexão derrubada sem o aperto de mão de fechamento.
                 return null;
