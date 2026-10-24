@@ -59,18 +59,39 @@ public sealed class GatewayTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Request_ToAnOfflineAgent_FailsImmediately()
+    public async Task Request_ToAnOfflineAgent_FailsAfterTheReconnectGrace()
     {
         await using var app = await TransportApp.StartAsync(postgres);
 
-        // O relógio é falso e nunca anda: se esperasse o prazo, o teste travaria e falharia no WaitAsync.
-        var result = await Within(app.Gateway.RequestAsync(
-            app.Agent.Slug, Key(), TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        var request = app.Gateway.RequestAsync(app.Agent.Slug, Key(), TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await Task.Delay(25, TestContext.Current.CancellationToken);
+        request.IsCompleted.Should().BeFalse("a janela absorve uma reconexão curta");
+        app.App.Time.Advance(TimeSpan.FromSeconds(3));
+        var result = await Within(request);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("agent_offline");
-        (await Within(app.Gateway.SendAsync(app.Agent.Slug, Key(), TestContext.Current.CancellationToken)))
-            .Error.Code.Should().Be("agent_offline");
+
+        var send = app.Gateway.SendAsync(app.Agent.Slug, Key(), TestContext.Current.CancellationToken);
+        await Task.Delay(25, TestContext.Current.CancellationToken);
+        app.App.Time.Advance(TimeSpan.FromSeconds(3));
+        (await Within(send)).Error.Code.Should().Be("agent_offline");
+    }
+
+    [Fact]
+    public async Task Send_WaitsForTheAgentToReconnectInsideTheGrace()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+
+        var send = app.Gateway.SendAsync(app.Agent.Slug, Key(), TestContext.Current.CancellationToken);
+        await Task.Delay(25, TestContext.Current.CancellationToken);
+        send.IsCompleted.Should().BeFalse("o gateway ainda aguarda a reconexão");
+
+        await using var agent = await app.ConnectAsync();
+        var command = (await agent.ReceiveAsync())!.Value;
+        command.GetProperty("type").GetString().Should().Be("tv.key.v1");
+
+        (await Within(send)).IsSuccess.Should().BeTrue();
     }
 
     [Fact]
