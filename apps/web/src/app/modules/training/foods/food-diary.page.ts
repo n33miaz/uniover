@@ -499,10 +499,12 @@ export class FoodDiaryPage {
   protected readonly savingFood = signal(false);
   protected readonly deletingId = signal<string | null>(null);
   private dayLoad = 0;
-  private searchRequest = 0;
-  private localSearchRequest = 0;
+  private foodResultsRequest = 0;
   private editRequest = 0;
   private observedQuery = '';
+  private pendingOnlineQuery: string | null = null;
+  private onlineResultsQuery: string | null = null;
+  private savingOwnFoodQuery: string | null = null;
 
   constructor() {
     effect(() => {
@@ -512,15 +514,25 @@ export class FoodDiaryPage {
     effect(() => {
       this.foodRepository.revision();
       const query = this.query().trim();
-      const request = ++this.localSearchRequest;
       if (query !== this.observedQuery) {
         this.observedQuery = query;
-        this.searchRequest++;
+        if (this.pendingOnlineQuery !== query) this.pendingOnlineQuery = null;
+        if (this.onlineResultsQuery !== query) this.onlineResultsQuery = null;
         this.searching.set(false);
         if (this.searchState() === 'loading') this.searchState.set('idle');
       }
-      if (query) void this.refreshLocalSearch(query, request);
-      else this.foods.set([]);
+      if (!query) {
+        ++this.foodResultsRequest;
+        this.foods.set([]);
+        return;
+      }
+      if (
+        this.pendingOnlineQuery === query ||
+        this.onlineResultsQuery === query ||
+        this.savingOwnFoodQuery === query
+      )
+        return;
+      void this.refreshLocalSearch(query, ++this.foodResultsRequest);
     });
   }
 
@@ -571,29 +583,35 @@ export class FoodDiaryPage {
 
   protected async search(): Promise<void> {
     const query = this.query().trim();
-    const request = ++this.searchRequest;
+    const request = ++this.foodResultsRequest;
+    this.pendingOnlineQuery = query;
+    this.onlineResultsQuery = null;
     this.searching.set(true);
     this.searchState.set('loading');
     try {
       const result = await this.foodRepository.searchOnline(query);
-      if (request !== this.searchRequest || query !== this.query().trim()) return;
+      if (request !== this.foodResultsRequest || query !== this.query().trim()) return;
+      this.pendingOnlineQuery = null;
+      this.onlineResultsQuery = query;
       this.foods.set([...result.foods]);
       this.searchState.set(result.status === 'invalid-query' ? 'ok' : result.status);
     } catch {
-      if (request !== this.searchRequest || query !== this.query().trim()) return;
+      if (request !== this.foodResultsRequest || query !== this.query().trim()) return;
+      this.pendingOnlineQuery = null;
       this.searchState.set('unavailable');
+      await this.refreshLocalSearch(query, request);
     } finally {
-      if (request === this.searchRequest) this.searching.set(false);
+      if (request === this.foodResultsRequest) this.searching.set(false);
     }
   }
 
   private async refreshLocalSearch(query: string, request: number): Promise<void> {
     try {
       const foods = await this.foodRepository.searchLocal(query);
-      if (request === this.localSearchRequest && query === this.query().trim())
+      if (request === this.foodResultsRequest && query === this.query().trim())
         this.foods.set(foods);
     } catch {
-      if (request === this.localSearchRequest && query === this.query().trim()) {
+      if (request === this.foodResultsRequest && query === this.query().trim()) {
         this.foods.set([]);
         this.searchState.set('unavailable');
       }
@@ -624,6 +642,10 @@ export class FoodDiaryPage {
   protected async saveOwnFood(): Promise<void> {
     this.formError.set('');
     this.savingFood.set(true);
+    const request = ++this.foodResultsRequest;
+    this.pendingOnlineQuery = null;
+    this.onlineResultsQuery = null;
+    this.savingOwnFoodQuery = this.query().trim();
     const draft: OwnFoodDraft = {
       name: this.ownName(),
       brand: this.ownBrand(),
@@ -644,7 +666,9 @@ export class FoodDiaryPage {
       this.ownProtein.set('');
       this.ownCarbs.set('');
       this.ownFat.set('');
-      this.searchRequest++;
+      if (request !== this.foodResultsRequest) return;
+      this.observedQuery = result.food.name;
+      this.onlineResultsQuery = result.food.name;
       this.query.set(result.food.name);
       this.foods.set([result.food]);
       this.searching.set(false);
@@ -654,6 +678,7 @@ export class FoodDiaryPage {
     } catch {
       this.formError.set(this.foodError('unavailable'));
     } finally {
+      this.savingOwnFoodQuery = null;
       this.savingFood.set(false);
     }
   }

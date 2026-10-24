@@ -133,6 +133,63 @@ describe('FoodDiaryPage', () => {
     expect(foods.searchOnline).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps the online results when local and online searches finish in either order', async () => {
+    const fixture = await open();
+    const delayedLocal = localFood('local-delayed', { name: 'Resultado local atrasado' });
+    const firstRemote = localFood('remote-first', { name: 'Resultado online imediato' });
+    let finishLocal!: (value: (typeof food)[]) => void;
+    foods.searchLocal.mockImplementationOnce(
+      () =>
+        new Promise<(typeof food)[]>((resolve) => {
+          finishLocal = resolve;
+        }),
+    );
+    foods.searchOnline.mockImplementationOnce(async () => ({ status: 'ok', foods: [firstRemote] }));
+
+    const input = fixture.nativeElement.querySelector('#food-search') as HTMLInputElement;
+    input.value = 'iogurte';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    button(fixture, 'Buscar').click();
+
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).toContain('Resultado online imediato');
+    });
+    foodRevision.update((value) => value + 1);
+    fixture.detectChanges();
+    finishLocal([delayedLocal]);
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).not.toContain('Resultado local atrasado');
+    });
+
+    const immediateLocal = localFood('local-immediate', { name: 'Resultado local imediato' });
+    const delayedRemote = localFood('remote-delayed', { name: 'Resultado online atrasado' });
+    let finishOnline!: (value: { status: 'ok'; foods: (typeof food)[] }) => void;
+    foods.searchLocal.mockImplementationOnce(async () => [immediateLocal]);
+    foods.searchOnline.mockImplementationOnce(
+      () =>
+        new Promise<{ status: 'ok'; foods: (typeof food)[] }>((resolve) => {
+          finishOnline = resolve;
+        }),
+    );
+
+    input.value = 'aveia';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).toContain('Resultado local imediato');
+    });
+    button(fixture, 'Buscar').click();
+    finishOnline({ status: 'ok', foods: [delayedRemote] });
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).toContain('Resultado online atrasado');
+    });
+  });
+
   it('shows a day-load failure with a working retry action', async () => {
     const fixture = await open();
     meals.entriesOf.mockRejectedValueOnce(new Error('database unavailable'));
