@@ -120,6 +120,15 @@ export const routes: Routes = [
               import('./modules/devices/devices.page').then((m) => m.DevicesPage),
           },
           {
+            // Destino do QR que o agente mostra no PC (`?codigo=`). Sem `ownerOnlyGuard` de propósito: o convidado que o
+            // abre vê o aviso "peça ao administrador" em vez de ser levado embora sem explicação. A tela só mostra o
+            // aviso para ele (nenhuma chamada à API), e a API recusa com 403 de qualquer jeito.
+            path: 'dispositivos',
+            data: { title: $localize`:@@devices.route.title:Aparelhos`, back: SETTINGS_BACK },
+            loadComponent: () =>
+              import('./modules/devices/devices.page').then((m) => m.DevicesPage),
+          },
+          {
             path: 'sobre',
             data: { title: SETTINGS_TITLES.about, back: SETTINGS_BACK },
             loadComponent: () => import('./modules/settings/about.page').then((m) => m.AboutPage),

@@ -1,28 +1,50 @@
 import { Component, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { problemOf } from '../../core/auth/api-problem';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
+import { SessionState } from '../../core/session/session-state';
+import { ConnectSheet } from './connect-sheet';
 import { DeviceAgent, DevicesApi } from './devices-api';
 import { PairOutcome, PairSheet } from './pair-sheet';
+import { formatCodeInput } from './pairing-code';
+import { isWindowsPc } from './windows-pc';
+
+/** Parâmetro do endereço que o QR do agente traz (`?codigo=XXXX-XXXX`). */
+const CODE_PARAM = 'codigo';
 
 /**
  * Aparelhos: lista dos agentes pareados, pareamento por código (com passkey), recusa de código e revogação.
  * Escrita nunca passa pela fila offline: sem rede, os botões ficam desabilitados e a tela explica.
+ *
+ * O QR que o agente mostra no PC abre esta tela com o código no endereço: a folha de aprovação já sobe com ele
+ * preenchido e o parâmetro sai do endereço na hora (o código não fica no histórico nem em cópia do link). Quem não
+ * pode aprovar (convidado) vê só o aviso, sem lista nem folha. Em PC com Windows há ainda a folha "Conectar este PC".
  */
 @Component({
   selector: 'app-devices-page',
-  imports: [RouterLink, PairSheet],
+  imports: [RouterLink, PairSheet, ConnectSheet],
   templateUrl: './devices.page.html',
   styleUrl: './devices.page.css',
 })
 export class DevicesPage {
   private readonly api = inject(DevicesApi);
   private readonly connectivity = inject(ConnectivityService);
+  private readonly session = inject(SessionState);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly online = this.connectivity.online;
   protected readonly agents = signal<readonly DeviceAgent[] | null>(null);
   protected readonly loadFailed = signal(false);
   protected readonly pairing = signal(false);
+  protected readonly connecting = signal(false);
+  /** Código vindo do endereço (já no formato da tela) para a folha de aprovação. */
+  protected readonly linkedCode = signal('');
+  /** A API só deixa o dono listar e aprovar; o convidado que chega pelo QR vê um aviso no lugar. */
+  protected readonly canManage = !this.session.isGuest();
+  /** O conector só existe para Windows: nos outros aparelhos a tela diz isso em vez de oferecer o download. */
+  protected readonly windowsPc = isWindowsPc(navigator);
   protected readonly revokingId = signal<string | null>(null);
   protected readonly busy = signal(false);
   protected readonly message = signal<string | null>(null);
@@ -30,7 +52,14 @@ export class DevicesPage {
   protected readonly dateFormat = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium' });
 
   constructor() {
-    void this.load();
+    if (this.canManage) void this.load();
+    // Assina em vez de ler uma vez: com o app já aberto nesta tela, um novo QR muda só o endereço.
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const raw = params.get(CODE_PARAM);
+      if (raw === null) return;
+      this.dropCodeFromUrl();
+      if (this.canManage && raw.trim()) this.openPair(formatCodeInput(raw));
+    });
   }
 
   protected pairedAt(agent: DeviceAgent): string {
@@ -64,10 +93,28 @@ export class DevicesPage {
     }
   }
 
-  protected openPair(): void {
+  protected openPair(code = ''): void {
     this.revokingId.set(null);
     this.say(null);
+    this.connecting.set(false);
+    this.linkedCode.set(code);
     this.pairing.set(true);
+  }
+
+  protected openConnect(): void {
+    this.revokingId.set(null);
+    this.say(null);
+    this.connecting.set(true);
+  }
+
+  /** Tira o código do endereço sem empilhar histórico: voltar não reabre a folha com um código já usado. */
+  private dropCodeFromUrl(): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { [CODE_PARAM]: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   protected closePair(): void {
