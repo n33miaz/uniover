@@ -117,6 +117,7 @@ public static class TvModule
         services.AddScoped<GetConfigHandler>();
         services.AddScoped<BindAgentHandler>();
         services.AddScoped<ManageTvsHandler>();
+        services.AddScoped<IPairedTvRegistrar, PairedTvRegistrar>();
         return services;
     }
 
