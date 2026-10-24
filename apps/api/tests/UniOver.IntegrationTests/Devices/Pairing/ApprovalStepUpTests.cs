@@ -36,7 +36,7 @@ public sealed class ApprovalStepUpTests(PostgresFixture postgres)
         var problem = await DevicesApp.JsonAsync(response);
         problem.GetProperty("type").GetString().Should().EndWith("/step-up-required");
         problem.GetProperty("code").GetString().Should().Be("step_up_required");
-        problem.GetProperty("action").GetString().Should().Be("devices.pair-approve");
+        problem.GetProperty("action").GetString().Should().Be(DevicesApp.ApproveAction);
 
         await using var db = app.Db();
         (await db.Agents.CountAsync(Ct)).Should().Be(0);
