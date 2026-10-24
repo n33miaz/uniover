@@ -107,6 +107,32 @@ public sealed class TvConfigTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task ConfigRoutes_RejectTvId_AndDoNotRebindTheDefaultTv()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        using (var bind = await BindAsync(app, new { agentSlug = TvApp.AgentSlug }))
+        {
+            bind.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var other = await app.PairAsync("PC Extra");
+        var tvId = Guid.NewGuid();
+        using (var get = await app.GetAsync($"{ConfigUrl}?tvId={tvId}"))
+        {
+            get.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        using (var bind = await app.SendAsync(HttpMethod.Put, $"{BindUrl}?tvId={tvId}", new { agentSlug = other.Slug }))
+        {
+            bind.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        var config = await GetConfigAsync(app);
+        config.GetProperty("agentSlug").GetString().Should().Be(TvApp.AgentSlug, "a rota legada só administra a TV padrão");
+    }
+
+    [Fact]
     public async Task Get_WhenTheConfiguredComputerWasNeverPaired_IsUnknown()
     {
         await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { AgentId = "fantasma" });

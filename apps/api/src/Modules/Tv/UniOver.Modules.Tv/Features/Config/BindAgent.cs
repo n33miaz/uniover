@@ -185,11 +185,17 @@ internal static class BindAgentEndpoint
 
     private static async Task<IResult> HandleAsync(
         BindAgentRequest? request,
+        HttpRequest requestHttp,
         ICurrentUser current,
         HttpContext http,
         BindAgentHandler handler,
         CancellationToken cancellationToken)
     {
+        if (LegacyConfigRoute.RejectTvId(requestHttp) is { } rejection)
+        {
+            return rejection;
+        }
+
         var errors = BindAgentValidator.ValidateName(request?.Name, out var name);
         if (!BindAgentValidator.IsPlausibleSlug(request?.AgentSlug))
         {
