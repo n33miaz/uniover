@@ -58,6 +58,7 @@ internal static class TvPermissionMap
         new("GET", "/api/v1/tv/state", "module:tv"),
         new("GET", "/api/v1/tv/shortcuts", "module:tv"),
         new("GET", "/api/v1/tv/events", "module:tv"),
+        new("GET", "/api/v1/tv/tvs", "module:tv"),
         new("POST", "/api/v1/tv/keys", "tv:control", KeyBody),
         new("POST", "/api/v1/tv/text", "tv:control", TextBody),
         new("POST", "/api/v1/tv/wake", "tv:control"),
@@ -78,6 +79,11 @@ internal static class TvPermissionMap
     [
         new("GET", "/api/v1/tv/config"),
         new("PUT", "/api/v1/tv/config/agent", "tv.bind-agent", new { agentSlug = TvApp.AgentSlug }),
+        new("POST", "/api/v1/tv/tvs", "tv.bind-agent", new { agentSlug = TvApp.AgentSlug, name = "TV adicional" }),
+        new("PATCH", "/api/v1/tv/tvs/{id:guid}", "tv.bind-agent", new { name = "TV adicional" }),
+        new("DELETE", "/api/v1/tv/tvs/{id:guid}", "tv.bind-agent"),
+        new("GET", "/api/v1/tv/tvs/{id:guid}/members"),
+        new("PUT", "/api/v1/tv/tvs/{id:guid}/members", "tv.bind-agent", new { userIds = new[] { Guid.NewGuid() } }),
     ];
 
     /// <summary>A chamada chegou à rota: a autorização deixou passar (o que veio depois é assunto do tratamento dela).</summary>

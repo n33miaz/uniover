@@ -41,8 +41,8 @@ public sealed class CommandAuditLimitTests(PostgresFixture postgres)
     {
         var start = dayStart.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
         var count = rows.ToString(CultureInfo.InvariantCulture);
-        return "INSERT INTO tv.command_audit (id, user_id, command, detail, ok, occurred_at) " +
-            $"SELECT gen_random_uuid(), '{user}', 'tv.key', 'HOME', true, '{start}'::timestamptz + g * interval '1 millisecond' " +
+        return "INSERT INTO tv.command_audit (id, user_id, tv_id, command, detail, ok, occurred_at) " +
+            $"SELECT gen_random_uuid(), '{user}', '00000000-0000-0000-0000-000000000000', 'tv.key', 'HOME', true, '{start}'::timestamptz + g * interval '1 millisecond' " +
             $"FROM generate_series(1, {count}) g";
     }
 

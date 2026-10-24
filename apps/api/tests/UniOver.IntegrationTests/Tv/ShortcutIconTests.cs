@@ -245,13 +245,24 @@ public sealed class ShortcutIconTests(PostgresFixture postgres) : IDisposable
                 INSERT INTO tv.shortcuts (id, package, tv_label, custom_label, "position", enabled, installed, updated_at)
                 VALUES ('0192f1e4-0000-7000-8000-000000000001', {"com.cnvs.apptv"}, {"CineVS"}, {"Meu filme"}, {3}, {false}, {true}, now())
                 """, Ct);
+            await migrator.MigrateAsync("20261021160237_AddTvs", Ct);
+            await context.Database.ExecuteSqlAsync(
+                $"""
+                INSERT INTO tv.tvs (id, name, agent_slug, is_default, created_at, updated_at, updated_by)
+                VALUES ('0192f1e4-0000-7000-8000-000000000002', 'TV', 'pc-casa', true, now(), now(), '0192f1e4-0000-7000-8000-000000000003')
+                """, Ct);
+            await context.Database.ExecuteSqlAsync(
+                $"""
+                INSERT INTO tv.command_audit (id, user_id, command, detail, ok, occurred_at)
+                VALUES ('0192f1e4-0000-7000-8000-000000000004', '0192f1e4-0000-7000-8000-000000000005', 'tv.key', 'HOME', true, now())
+                """, Ct);
             await migrator.MigrateAsync(null, Ct);
         }
 
         await using var conn = new NpgsqlConnection(database.OwnerConnection);
         await conn.OpenAsync(Ct);
         await using var command = new NpgsqlCommand(
-            "SELECT package, custom_label, \"position\", enabled, icon_mime, icon_data, icon_sha256 FROM tv.shortcuts", conn);
+            "SELECT package, custom_label, \"position\", enabled, icon_mime, icon_data, icon_sha256, tv_id FROM tv.shortcuts", conn);
         await using var reader = await command.ExecuteReaderAsync(Ct);
         (await reader.ReadAsync(Ct)).Should().BeTrue();
         reader.GetString(0).Should().Be("com.cnvs.apptv");
@@ -261,8 +272,12 @@ public sealed class ShortcutIconTests(PostgresFixture postgres) : IDisposable
         reader.IsDBNull(4).Should().BeTrue();
         reader.IsDBNull(5).Should().BeTrue();
         reader.IsDBNull(6).Should().BeTrue();
+        reader.GetGuid(7).Should().Be(Guid.Parse("0192f1e4-0000-7000-8000-000000000002"), "o atalho legado pertence à TV padrão");
         (await reader.ReadAsync(Ct)).Should().BeFalse();
         await reader.CloseAsync();
+
+        await using var audit = new NpgsqlCommand("SELECT tv_id FROM tv.command_audit", conn);
+        (await audit.ExecuteScalarAsync(Ct)).Should().Be(Guid.Parse("0192f1e4-0000-7000-8000-000000000002"), "a auditoria legada pertence à TV padrão");
 
         // Só se acrescentou: as colunas novas são anuláveis e a migration anterior segue no histórico, intacta.
         await using var history = new NpgsqlCommand("SELECT migration_id FROM tv.__ef_migrations_history ORDER BY migration_id", conn);
@@ -290,10 +305,11 @@ public sealed class ShortcutIconTests(PostgresFixture postgres) : IDisposable
         await using var runtime = new NpgsqlConnection(database.RuntimeConnection);
         await runtime.OpenAsync(Ct);
         await using var insert = new NpgsqlCommand(
-            "INSERT INTO tv.shortcuts (id, package, \"position\", enabled, installed, updated_at, icon_mime, icon_data, icon_sha256) "
-            + "VALUES (@id, @package, 1, true, true, now(), 'image/png', @data, @hash)",
+            "INSERT INTO tv.shortcuts (id, tv_id, package, \"position\", enabled, installed, updated_at, icon_mime, icon_data, icon_sha256) "
+            + "VALUES (@id, @tvId, @package, 1, true, true, now(), 'image/png', @data, @hash)",
             runtime);
         insert.Parameters.AddWithValue("id", Guid.CreateVersion7());
+        insert.Parameters.AddWithValue("tvId", Guid.Empty);
         insert.Parameters.AddWithValue("package", "com.a.um");
         insert.Parameters.AddWithValue("data", Png());
         insert.Parameters.AddWithValue("hash", new string('a', 64));
