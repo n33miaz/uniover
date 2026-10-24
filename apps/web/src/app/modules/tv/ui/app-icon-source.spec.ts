@@ -1,5 +1,11 @@
 import { pngIcon, webpIcon } from '../tv-test-kit';
-import { FALLBACK_HUES, fallbackGlyph, fallbackHue, iconSource } from './app-icon-source';
+import {
+  FALLBACK_HUES,
+  fallbackGlyph,
+  fallbackHue,
+  iconSource,
+  samsungIconSource,
+} from './app-icon-source';
 
 describe('iconSource', () => {
   it('accepts a PNG or a WebP as a data URI', () => {
@@ -23,6 +29,16 @@ describe('iconSource', () => {
     ]) {
       expect(iconSource(value), String(value)).toBeNull();
     }
+  });
+});
+
+describe('samsungIconSource', () => {
+  it('uses a local branded asset for known Tizen aliases only', () => {
+    expect(samsungIconSource('samsung.app.id3201907018807')).toBe('/tv/app-icons/netflix.png');
+    expect(samsungIconSource('com.samsung.tv.tvPlusDeeplinker')).toBe(
+      '/tv/app-icons/samsung-tv-plus.svg',
+    );
+    expect(samsungIconSource('samsung.app.iddesconhecido')).toBeNull();
   });
 });
 
