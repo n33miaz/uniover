@@ -24,6 +24,8 @@ export interface TemplateCreated {
   readonly draft: boolean;
   /** Este modelo fica inativo e identificado como histórico, sem convite para ativá-lo. */
   readonly historical: boolean;
+  /** Virou o programa da semana: as fichas estão ativas e a tela Hoje segue o dia da semana. */
+  readonly program: boolean;
 }
 
 /**
@@ -73,7 +75,11 @@ export interface TemplateCreated {
                     [disabled]="creating()"
                     (click)="use(template)"
                   >
-                    <span i18n="@@training.templates.use">Criar este rascunho parcial</span>
+                    @if (isHistorical(template)) {
+                      <span i18n="@@training.templates.use">Criar este rascunho parcial</span>
+                    } @else {
+                      <span i18n="@@training.templates.choose">Escolher este programa</span>
+                    }
                   </button>
                 </div>
               }
@@ -81,8 +87,7 @@ export interface TemplateCreated {
           }
         </ul>
         <p class="note" i18n="@@training.templates.note">
-          Confira os detalhes antes de criar. Rascunhos parciais ficam inativos até revisão; os
-          demais modelos mantêm o comportamento atual.
+          Escolha um programa: Hoje abre no treino do dia da semana.
         </p>
       }
       @if (error(); as message) {
@@ -173,6 +178,10 @@ export class TemplatesSheet {
     return template.description.split('\n\n').slice(1).join('\n\n');
   }
 
+  protected isHistorical(template: RoutineTemplate): boolean {
+    return template.id === HISTORICAL_REJECTED_TEMPLATE_ID;
+  }
+
   protected hasDetails(template: RoutineTemplate): boolean {
     return template.description.includes('\n\n');
   }
@@ -185,15 +194,20 @@ export class TemplatesSheet {
     this.error.set('');
     this.creating.set(true);
     try {
-      const result = await this.routines.createFromTemplate(template.id);
+      const historical = this.isHistorical(template);
+      // O histórico rejeitado segue como rascunho inativo; os demais viram o programa da semana.
+      const result = historical
+        ? await this.routines.createFromTemplate(template.id)
+        : await this.routines.selectProgram(template.id);
       switch (result.status) {
         case 'saved':
           this.created.emit({
             name: template.name,
             count: result.routines.length,
             missing: result.missing.length,
-            draft: result.routines.every((routine) => !routine.active),
-            historical: template.id === HISTORICAL_REJECTED_TEMPLATE_ID,
+            draft: historical,
+            historical,
+            program: !historical,
           });
           this.sheet().close();
           return;

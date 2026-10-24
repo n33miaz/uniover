@@ -3448,6 +3448,139 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/training/program': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          after?: string;
+          limit?: number | string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PullTrainingProgramResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['SelectTrainingProgramRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TrainingProgramResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unprocessable Entity */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/training/routine-templates': {
     parameters: {
       query?: never;
@@ -5834,6 +5967,10 @@ export interface components {
       items: components['schemas']['SetResponse'][];
       nextCursor: null | string;
     };
+    PullTrainingProgramResponse: {
+      items: components['schemas']['TrainingProgramResponse'][];
+      nextCursor: null | string;
+    };
     RecentCommand: {
       byMe: boolean;
       command: string;
@@ -5905,8 +6042,10 @@ export interface components {
       note: null | string;
       /** Format: int32 */
       position: number | string;
+      programId: null | string;
       /** Format: date-time */
       updatedAt: string;
+      weekdays: (number | string)[];
     };
     RoutineTemplate: {
       description: string;
@@ -5930,9 +6069,15 @@ export interface components {
     RoutineTemplateRoutine: {
       items: components['schemas']['RoutineTemplateItem'][];
       name: string;
+      weekdays: null | (number | string)[];
     };
     RoutineTemplatesResponse: {
       items: components['schemas']['RoutineTemplate'][];
+    };
+    SelectTrainingProgramRequest: {
+      /** Format: date-time */
+      clientUpdatedAt: null | string;
+      programId: null | string;
     };
     SendKeyRequest: {
       direction: null | string;
@@ -6021,6 +6166,13 @@ export interface components {
       /** Format: int32 */
       imported: number | string;
       invalidRows: (number | string)[];
+    };
+    TrainingProgramResponse: {
+      /** Format: date-time */
+      clientUpdatedAt: string;
+      programId: string;
+      /** Format: date-time */
+      updatedAt: string;
     };
     TvAgentChoice: {
       name: string;
@@ -6233,6 +6385,8 @@ export interface components {
       note: null | string;
       /** Format: int32 */
       position: null | number | string;
+      programId?: null | string;
+      weekdays?: null | (number | string)[];
     };
     UpsertSessionRequest: {
       /** Format: date-time */

@@ -12,6 +12,7 @@ import type {
   LocalAssessmentDocument,
   LocalPhysicalAssessment,
 } from './physical-assessments/physical-assessment';
+import type { LocalProgram } from './routines/program';
 import type { LocalRoutine } from './routines/routine';
 import type { LocalSession, LocalSet } from './sessions/session';
 
@@ -46,6 +47,7 @@ export const TRAINING_TABLES = [
   'meta',
   'syncState',
   'routines',
+  'program',
   'sessions',
   'sets',
   'goals',
@@ -123,6 +125,14 @@ export const TRAINING_SCHEMA_V7 = {
   meals: 'id, eatenOn, mealType, updatedAt, deletedAt',
 } as const;
 
+/**
+ * Esquema da versão 8: o programa da semana ativo da conta. UMA linha (o `id` é fixo, `active`), sincronizada como
+ * recurso próprio: a escolha feita em outro aparelho chega pelo pull. Os blocos das versões 1 a 7 não foram tocados.
+ */
+export const TRAINING_SCHEMA_V8 = {
+  program: 'id',
+} as const;
+
 export interface TrainingMetaRow {
   readonly key: string;
   readonly value: unknown;
@@ -144,6 +154,7 @@ export class TrainingDb extends Dexie {
   declare meta: EntityTable<TrainingMetaRow, 'key'>;
   declare syncState: EntityTable<SyncStateRow, 'resource'>;
   declare routines: EntityTable<LocalRoutine, 'id'>;
+  declare program: EntityTable<LocalProgram, 'id'>;
   declare sessions: EntityTable<LocalSession, 'id'>;
   declare sets: EntityTable<LocalSet, 'id'>;
   declare goals: EntityTable<LocalGoal, 'id'>;
@@ -162,6 +173,7 @@ export class TrainingDb extends Dexie {
     this.version(5).stores(TRAINING_SCHEMA_V5);
     this.version(6).stores(TRAINING_SCHEMA_V6);
     this.version(7).stores(TRAINING_SCHEMA_V7);
+    this.version(8).stores(TRAINING_SCHEMA_V8);
   }
 }
 

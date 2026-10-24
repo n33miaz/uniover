@@ -19,6 +19,7 @@ import { IllustrationPrefetcher } from '../illustrations/illustration-prefetcher
 import type { RoutineEntry } from '../routines/routine-stats';
 import { formatKg } from '../shell/format';
 import { TrainingGlyph } from '../shell/training-glyph';
+import { ProgramSuggestion } from './program-suggestion';
 import { RoutinePickerSheet } from './routine-picker-sheet';
 import { TodayGlyph } from './today-glyph';
 import { type RoutineLine, TodayStore } from './today-store';
@@ -33,10 +34,22 @@ import { WeekCalendar } from './week-calendar';
  */
 @Component({
   selector: 'app-today-home',
-  imports: [RouterLink, TrainingGlyph, TodayGlyph, RoutinePickerSheet, WeekCalendar],
+  imports: [
+    RouterLink,
+    TrainingGlyph,
+    TodayGlyph,
+    RoutinePickerSheet,
+    ProgramSuggestion,
+    WeekCalendar,
+  ],
   templateUrl: './today-home.html',
   styleUrl: './today-home.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // O app instalado volta do segundo plano sem recarregar: ao voltar, a ficha do dia é calculada de novo.
+  host: {
+    '(document:visibilitychange)': 'refreshDay()',
+    '(window:focus)': 'refreshDay()',
+  },
 })
 export class TodayHome {
   protected readonly store = inject(TodayStore);
@@ -67,7 +80,10 @@ export class TodayHome {
   protected readonly missingName = $localize`:@@training.today.missing-name:Exercício removido`;
 
   protected readonly entry = this.store.selected;
-  protected readonly today = computed(() => dayLabel(this.runtime.now()));
+  protected readonly today = computed(() => {
+    this.store.plan();
+    return dayLabel(this.runtime.now());
+  });
   protected readonly summary = computed(() => {
     const entry = this.entry();
     return entry === undefined ? '' : routineSummary(entry);
@@ -108,6 +124,12 @@ export class TodayHome {
       const entries = this.store.entries();
       untracked(() => void this.warmIllustrations(entries));
     });
+  }
+
+  /** Relê as rotinas e a ficha do dia; barato, e só age quando a tela está visível. */
+  protected refreshDay(): void {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    void this.store.loadHome();
   }
 
   protected lineSub(line: RoutineLine): string {

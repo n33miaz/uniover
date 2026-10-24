@@ -19,6 +19,7 @@ describe('body pull, end to end', () => {
       EMPTY,
       EMPTY,
       EMPTY,
+      EMPTY,
       {
         items: [
           bodyEntryDto('m1', { weightKg: 82.4, waistCm: 86 }),
@@ -34,6 +35,7 @@ describe('body pull, end to end', () => {
     expect(t.pull.calls.map((call) => call.path)).toEqual([
       '/api/v1/training/exercises',
       '/api/v1/training/routines',
+      '/api/v1/training/program',
       '/api/v1/training/sessions',
       '/api/v1/training/sets',
       '/api/v1/training/goals',
@@ -66,12 +68,14 @@ describe('body pull, end to end', () => {
       EMPTY,
       EMPTY,
       EMPTY,
+      EMPTY,
       { items: [bodyEntryDto('m1', { weightKg: 82 })], nextCursor: 'c1' },
       { items: [bodyProfileDto({ heightCm: 180 })], nextCursor: 'p1' },
     ];
     await sync.start();
 
     t.pull.script = [
+      EMPTY,
       EMPTY,
       EMPTY,
       EMPTY,

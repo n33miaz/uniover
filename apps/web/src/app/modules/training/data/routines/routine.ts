@@ -18,6 +18,10 @@ export type RoutineTemplatesDto = components['schemas']['RoutineTemplatesRespons
  * Apagar é lápide (`deletedAt`): a linha fica para o apagamento valer em todo aparelho.
  */
 export interface LocalRoutine extends RoutineModel {
+  /** Programa semanal que criou esta ficha; `null` mantém a ficha manual. */
+  readonly programId?: string | null;
+  /** Dias ISO da semana (segunda=1); vazio vale segunda a sexta. */
+  readonly weekdays?: readonly number[];
   /** Relógio do servidor na última gravação; só informativo (quem ordena o pull é o servidor). */
   readonly updatedAt: number;
   /** Relógio do aparelho que escreveu: decide o conflito, o mais novo vence. */
@@ -33,6 +37,7 @@ export interface RoutineTemplate {
   readonly description: string;
   readonly routines: readonly {
     readonly name: string;
+    readonly weekdays: readonly number[];
     readonly items: readonly {
       readonly exerciseSlug: string;
       readonly targetSets: number;
@@ -66,6 +71,8 @@ export function toLocalRoutine(dto: RoutineDto): LocalRoutine {
     name: dto.name,
     position: toNumberOrNull(dto.position) ?? 0,
     active: dto.active,
+    programId: dto.programId,
+    weekdays: (dto.weekdays ?? []).map(Number),
     note: dto.note ?? '',
     items: dto.items.map(toLocalItem).sort((a, b) => a.position - b.position),
     updatedAt,
@@ -81,6 +88,8 @@ export function toUpsertBody(row: LocalRoutine, deleted: boolean): RoutineUpsert
     position: row.position,
     active: row.active,
     note: row.note.trim() === '' ? null : row.note,
+    programId: row.programId ?? null,
+    weekdays: row.weekdays?.length ? [...row.weekdays] : null,
     items: row.items.map((item) => ({
       id: item.id,
       exerciseId: item.exerciseId,
@@ -114,6 +123,7 @@ export function toRoutineTemplates(dto: RoutineTemplatesDto): RoutineTemplate[] 
     description: template.description,
     routines: template.routines.map((routine) => ({
       name: routine.name,
+      weekdays: (routine.weekdays ?? []).map(Number),
       items: routine.items.map((entry) => ({
         exerciseSlug: entry.exerciseSlug,
         targetSets: toNumberOrNull(entry.targetSets) ?? 0,

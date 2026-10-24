@@ -33,6 +33,11 @@
 
   <app-week-calendar />
 
+  @if (store.suggestProgram() && store.entries().length === 0) {
+    <!-- Conta sem programa e sem fichas: escolher o programa da semana é o primeiro passo, em destaque. -->
+    <app-program-suggestion />
+  }
+
   @if (!store.ready() || !store.homeReady()) {
     <div class="routine ui-card skeleton" aria-hidden="true">
       <span class="ui-skeleton big"></span>
@@ -184,6 +189,26 @@
         <span i18n="@@training.today.free">Treino livre</span>
       </button>
     </div>
+  } @else if (store.resting()) {
+    <section class="routine ui-card calm" aria-labelledby="rest-title">
+      <span class="ui-tile lg"><app-training-glyph name="check" /></span>
+      <h3 id="rest-title" i18n="@@training.today.rest-title">Dia de descanso</h3>
+      <button
+        type="button"
+        class="secondary ui-btn block"
+        [disabled]="starting()"
+        (click)="start(null)"
+      >
+        <app-training-glyph name="plus" />
+        <span i18n="@@training.today.rest-manual">Iniciar treino manual</span>
+      </button>
+      @if (store.entries().length > 0) {
+        <button type="button" class="secondary ui-btn block" (click)="pickerOpen.set(true)">
+          <app-training-glyph name="list" />
+          <span i18n="@@training.today.choose-other-rest">Escolher uma ficha</span>
+        </button>
+      }
+    </section>
   } @else {
     <section class="routine ui-card calm" aria-labelledby="empty-title">
       <span class="ui-tile lg"><app-training-glyph name="list" /></span>
@@ -206,6 +231,11 @@
         </button>
       </div>
     </section>
+  }
+
+  @if (store.suggestProgram() && store.entries().length > 0) {
+    <!-- Já tem fichas livres: a sugestão fica abaixo do treino do dia e pode ser dispensada. -->
+    <app-program-suggestion [dismissible]="true" (dismissed)="store.dismissSuggestion()" />
   }
 </div>
 

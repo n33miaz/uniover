@@ -1,5 +1,7 @@
+import { DOCUMENT } from '@angular/common';
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
+import { AccountScope } from '../../../core/session/account-scope';
 import { OfflineQueue } from '../../../core/offline-queue/offline-queue';
 import { QUEUE_RUNTIME } from '../../../core/offline-queue/queue-ports';
 import { CatalogRepository } from '../data/catalog/catalog-repository';
@@ -11,12 +13,18 @@ import type { LocalSession } from '../data/sessions/session';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { TrainingSync } from '../data/sync/training-sync';
 import { summarizeLastSets } from '../exercises/last-set';
+import { type DayPlan, planForDay } from '../domain/routines/week-plan';
 import { type RoutineEntry, buildRoutineEntries } from '../routines/routine-stats';
 import { awaitingFirstPull } from '../shell/first-pull';
 import { coalesced, quiet } from './coalesce';
 import { SwapStore } from './swap-store';
 
 /** Depois de quanto tempo um treino aberto em outro aparelho pode ser dado como esquecido (proposta nossa, 12 horas). */
+/** Chave do aparelho onde a conta guarda que dispensou a sugestão de programa (por conta). */
+export function programDismissedKey(accountId: string): string {
+  return `uniover.training.program-dismissed.${accountId}`;
+}
+
 export const FORGOTTEN_AFTER_MS = 12 * 60 * 60 * 1000;
 
 /** Uma linha da rotina do dia, como a tela de Hoje a mostra. */
@@ -63,6 +71,8 @@ export class TodayStore {
   private readonly sync = inject(TrainingSync);
   private readonly connectivity = inject(ConnectivityService);
   private readonly swaps = inject(SwapStore);
+  private readonly account = inject(AccountScope);
+  private readonly storage = inject(DOCUMENT).defaultView?.localStorage ?? null;
 
   // O que decide qual visão aparece.
   readonly ready = signal(false);
@@ -77,6 +87,26 @@ export class TodayStore {
   readonly week = signal<WeekSummary | null>(null);
   readonly lines = signal<readonly RoutineLine[]>([]);
   readonly chosenRoutineId = signal<string | null>(null);
+  /** A ficha do programa da semana para hoje, calculada no aparelho (vale sem rede). */
+  readonly plan = signal<DayPlan>({ routineId: null, resting: false });
+  /** Dia de descanso do programa: a tela oferece só o treino manual ou outra ficha. */
+  readonly resting = computed(() => this.plan().resting);
+  /** O programa da semana ativo da conta (a escolha gravada); `null` enquanto ninguém escolheu. */
+  readonly programId = signal<string | null>(null);
+  /** A pessoa dispensou a sugestão de programa neste aparelho (só vale com fichas livres; sem fichas ela fica). */
+  readonly suggestionDismissed = signal(false);
+  /**
+   * Sugerir o programa da semana: a conta ainda não tem programa ativo, não há treino aberto e a sugestão não foi
+   * dispensada. Escolhido o programa, ela some sozinha e Hoje abre no treino do dia.
+   */
+  readonly suggestProgram = computed(
+    () =>
+      this.homeReady() &&
+      this.programId() === null &&
+      this.active() === undefined &&
+      this.otherDevice() === undefined &&
+      (this.entries().length === 0 || !this.suggestionDismissed()),
+  );
   /** O nome da rotina em andamento (para o cartão "Continuar treino"). */
   readonly activeRoutine = signal<LocalRoutine | undefined>(undefined);
   readonly activeProgress = signal<{ readonly done: number; readonly planned: number } | null>(
@@ -92,12 +122,18 @@ export class TodayStore {
   readonly selected = computed<RoutineEntry | undefined>(() => {
     const entries = this.entries();
     const chosen = this.chosenRoutineId();
+    if (chosen !== null) return entries.find((entry) => entry.routine.id === chosen);
+    const plan = this.plan();
+    if (plan.resting) return undefined;
     return (
-      entries.find((entry) => entry.routine.id === chosen) ??
+      entries.find((entry) => entry.routine.id === plan.routineId) ??
       entries.find((entry) => entry.next) ??
       entries[0]
     );
   });
+
+  /** Dia (ano-mês-dia local) da última leitura: ao virar, a escolha manual do dia anterior é esquecida. */
+  private lastDay = '';
 
   /** Sem rede ainda trouxe nada: a lista vazia pode ser só falta de primeira passada. */
   readonly downloading = computed(
@@ -193,15 +229,49 @@ export class TodayStore {
   );
 
   private async readHome(): Promise<void> {
-    const [all, active, sessions, week] = await Promise.all([
+    const [all, active, sessions, week, programId] = await Promise.all([
       this.routines.all(),
       this.routines.list(),
       this.sessions.sessionsBetween(0, Number.MAX_SAFE_INTEGER),
       this.progress.weekSummary(),
+      this.routines.activeProgramId(),
     ]);
-    this.entries.set(buildRoutineEntries(all, active, sessions));
+    const entries = buildRoutineEntries(all, active, sessions);
+    const now = this.runtime.now();
+    const day = new Date(now).toDateString();
+    if (day !== this.lastDay) {
+      // Virou o dia (o app instalado volta do segundo plano na terça): a ficha do dia vale de novo.
+      this.lastDay = day;
+      this.chosenRoutineId.set(null);
+    }
+    this.programId.set(programId);
+    this.suggestionDismissed.set(this.readDismissed());
+    this.plan.set(planForDay(all, sessions, now, programId));
+    this.entries.set(entries);
     this.week.set(week);
     this.homeReady.set(true);
+  }
+
+  /** Dispensa a sugestão de programa neste aparelho (quem já tem fichas livres pode seguir com elas). */
+  dismissSuggestion(): void {
+    this.suggestionDismissed.set(true);
+    const id = this.account.id();
+    if (id === null) return;
+    try {
+      this.storage?.setItem(programDismissedKey(id), '1');
+    } catch {
+      // Sem armazenamento (janela privada): a sugestão volta na próxima abertura.
+    }
+  }
+
+  private readDismissed(): boolean {
+    const id = this.account.id();
+    if (id === null) return false;
+    try {
+      return this.storage?.getItem(programDismissedKey(id)) === '1';
+    } catch {
+      return this.suggestionDismissed();
+    }
   }
 
   /** Escolhe outra rotina para o cartão do dia (só vale até a tela sair). */
