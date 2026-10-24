@@ -51,7 +51,8 @@ internal sealed record Started(Guid PairingId, string DeviceCode, string UserCod
 /// </summary>
 internal sealed class DevicesApp : IAsyncDisposable
 {
-    public const string ApproveAction = "devices.pair-approve";
+    /// <summary>Aprovar pareamento exige a mesma confirmação de criar uma TV.</summary>
+    public const string ApproveAction = "tv.bind-agent";
 
     private readonly EdgeFactory _root;
     private readonly WebApplicationFactory<Program> _factory;
@@ -103,6 +104,12 @@ internal sealed class DevicesApp : IAsyncDisposable
         await using (var devices = CreateContext(database.OwnerConnection))
         {
             await devices.Database.MigrateAsync(TestContext.Current.CancellationToken);
+        }
+
+        // A aprovação com "Para quem" cria a TV no mesmo commit, então o schema do módulo TV precisa existir.
+        await using (var tv = Tv.TvApp.CreateContext(database.OwnerConnection))
+        {
+            await tv.Database.MigrateAsync(TestContext.Current.CancellationToken);
         }
 
         var password = IdentityApp.NewPassword();
@@ -238,6 +245,11 @@ internal sealed class DevicesApp : IAsyncDisposable
 
     public Task<HttpResponseMessage> ApproveRawAsync(LoggedIn? login, string userCode, string? name = null, string? forwardedFor = null) =>
         SendAsync(HttpMethod.Post, "/api/v1/devices/pairing/approve", new { userCode, name }, login?.AccessToken, forwardedFor);
+
+    /// <summary>Aprova pedindo também a TV: <paramref name="tvMemberIds"/> (mesmo vazio) liga o computador a uma TV nova.</summary>
+    public Task<HttpResponseMessage> ApproveWithTvRawAsync(
+        LoggedIn? login, string userCode, IReadOnlyList<Guid> tvMemberIds, string? name = null, string? tvName = null) =>
+        SendAsync(HttpMethod.Post, "/api/v1/devices/pairing/approve", new { userCode, name, tvName, tvMemberIds }, login?.AccessToken);
 
     public Task<HttpResponseMessage> DenyRawAsync(LoggedIn? login, string userCode) =>
         SendAsync(HttpMethod.Post, "/api/v1/devices/pairing/deny", new { userCode }, login?.AccessToken);

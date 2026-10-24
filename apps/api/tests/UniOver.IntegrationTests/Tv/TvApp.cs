@@ -303,7 +303,17 @@ internal sealed class TvApp : IAsyncDisposable
         using var approve = await SendAsync(
             HttpMethod.Post, "/api/v1/devices/pairing/approve", new { userCode = started.GetProperty("userCode").GetString() });
         approve.EnsureSuccessStatusCode();
-        var agentId = (await JsonAsync(approve)).GetProperty("id").GetGuid();
+        var approved = await JsonAsync(approve);
+        var agentId = approved.GetProperty("id").GetGuid();
+
+        // A aprovação cria a TV do computador; estes testes montam a configuração da TV por conta própria.
+        await using (var tv = Db())
+        {
+            var slug = approved.GetProperty("slug").GetString();
+            var created = await tv.Tvs.Where(t => t.AgentSlug == slug).Select(t => t.Id).ToListAsync();
+            await tv.TvMembers.Where(m => created.Contains(m.TvId)).ExecuteDeleteAsync();
+            await tv.Tvs.Where(t => created.Contains(t.Id)).ExecuteDeleteAsync();
+        }
 
         using var poll = await SendAsync(
             HttpMethod.Post, "/api/v1/devices/pairing/poll",

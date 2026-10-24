@@ -70,6 +70,8 @@ public partial class SecurityHeadersAndPwaTests
     [InlineData("/index.html")]
     [InlineData("/INDEX.HTML")]
     [InlineData("/treino/sessao/1")]
+    [InlineData("/conectar")]
+    [InlineData("/conectar/")]
     public async Task IndexHtml_IsServedWithTheHeaderNonceAndNeverRaw(string path)
     {
         await using var factory = new EdgeFactory();
