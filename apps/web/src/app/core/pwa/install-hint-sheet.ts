@@ -130,6 +130,8 @@ export class InstallHintSheet {
     this.installing.set(true);
     this.installFailed.set(false);
     const outcome = await this.hint.prompt();
+    // Recarregando: a página inteira está saindo e a folha reabre do outro lado; aqui não resta nada a fazer.
+    if (outcome === 'reloading') return;
     this.installing.set(false);
     if (outcome === 'unavailable') {
       this.frozenMode.set(null);

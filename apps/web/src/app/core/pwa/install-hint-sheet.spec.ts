@@ -248,6 +248,20 @@ describe('InstallHintSheet', () => {
       expect(stored()).toEqual({ installed: true });
     });
 
+    it('com o pedido de outro app, a página recarrega: a folha fica como está, sem erro e sem fechar', async () => {
+      const { button, fixture, hint, dialog, closed, el } = await renderNative('accepted');
+      const prompt = vi.spyOn(hint, 'prompt').mockResolvedValue('reloading');
+      button('Instalar').click();
+      await fixture.whenStable();
+      expect(prompt).toHaveBeenCalledTimes(1);
+      expect(closed()).toBe(0);
+      expect(dialog.hasAttribute('open')).toBe(true);
+      expect(el.querySelector('[role="alert"]')).toBeNull();
+      // Segue ocupada (a página está saindo): um segundo toque não pede outra vez.
+      expect(button('Instalar').disabled).toBe(true);
+      expect(stored()).toBeNull();
+    });
+
     it('mantém o botão nativo e não troca pelas instruções durante a animação de saída', async () => {
       const { button, fixture, dialog, closed, el } = await renderNative('accepted');
       const finishAnimation = holdExitAnimation(dialog);
