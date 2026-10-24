@@ -2028,6 +2028,27 @@
         ],
         "type": "object"
       },
+      "PullTrainingProgramResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TrainingProgramResponse"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
       "RecentCommand": {
         "properties": {
           "byMe": {
@@ -2307,9 +2328,26 @@
               "string"
             ]
           },
+          "programId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "weekdays": {
+            "items": {
+              "format": "int32",
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ]
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -2317,6 +2355,8 @@
           "name",
           "position",
           "active",
+          "programId",
+          "weekdays",
           "note",
           "items",
           "updatedAt",
@@ -2418,11 +2458,26 @@
           },
           "name": {
             "type": "string"
+          },
+          "weekdays": {
+            "items": {
+              "format": "int32",
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ]
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           }
         },
         "required": [
           "name",
-          "items"
+          "items",
+          "weekdays"
         ],
         "type": "object"
       },
@@ -2437,6 +2492,28 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "SelectTrainingProgramRequest": {
+        "properties": {
+          "clientUpdatedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "programId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "programId",
+          "clientUpdatedAt"
         ],
         "type": "object"
       },
@@ -2791,6 +2868,27 @@
         "required": [
           "imported",
           "invalidRows"
+        ],
+        "type": "object"
+      },
+      "TrainingProgramResponse": {
+        "properties": {
+          "clientUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "programId": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "programId",
+          "updatedAt",
+          "clientUpdatedAt"
         ],
         "type": "object"
       },
@@ -3778,6 +3876,26 @@
               "null",
               "integer",
               "string"
+            ]
+          },
+          "programId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "weekdays": {
+            "items": {
+              "format": "int32",
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ]
+            },
+            "type": [
+              "null",
+              "array"
             ]
           }
         },
@@ -7393,6 +7511,159 @@
         ]
       }
     },
+    "/api/v1/training/program": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int32",
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullTrainingProgramResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "SelectTrainingProgramEndpoint"
+        ]
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SelectTrainingProgramRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingProgramResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "SelectTrainingProgramEndpoint"
+        ]
+      }
+    },
     "/api/v1/training/routine-templates": {
       "get": {
         "responses": {
@@ -9303,6 +9574,9 @@
     },
     {
       "name": "UpsertRoutineEndpoint"
+    },
+    {
+      "name": "SelectTrainingProgramEndpoint"
     },
     {
       "name": "UpsertSessionEndpoint"

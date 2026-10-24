@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using UniOver.Modules.Training.Features.Routines.ListRoutineTemplates;
 using UniOver.Modules.Training.Features.Routines.PullRoutines;
+using UniOver.Modules.Training.Features.Routines.Programs;
 using UniOver.Modules.Training.Features.Routines.UpsertRoutine;
 
 namespace UniOver.Modules.Training.Features.Routines;
@@ -16,6 +17,7 @@ internal static class RoutinesRegistration
         services.AddSingleton<RoutineTemplateSource>();
         services.AddScoped<PullRoutinesHandler>();
         services.AddScoped<UpsertRoutineHandler>();
+        services.AddScoped<TrainingProgramHandler>();
         return services;
     }
 
@@ -26,6 +28,8 @@ internal static class RoutinesRegistration
         group.MapPullRoutines();
         group.MapUpsertRoutine();
         group.MapListRoutineTemplates();
+        group.MapTrainingProgram();
+        group.MapGetTrainingProgram();
         return group;
     }
 }

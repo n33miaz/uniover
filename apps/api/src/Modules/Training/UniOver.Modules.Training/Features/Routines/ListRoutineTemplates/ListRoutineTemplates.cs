@@ -14,8 +14,13 @@ internal sealed record RoutineTemplateItem(
     int RestSeconds,
     int? SupersetGroup);
 
-/// <summary>Um dia do modelo (A, B, C...): vira uma rotina quando o usuário escolhe o modelo.</summary>
-internal sealed record RoutineTemplateRoutine(string Name, IReadOnlyList<RoutineTemplateItem> Items);
+/// <summary>
+/// Um dia do modelo (A, B, C...): vira uma rotina quando o usuário escolhe o modelo. <paramref name="Weekdays"/> são os
+/// dias ISO (1=segunda ... 7=domingo) em que a ficha acontece. Regra do programa da semana: um dia com uma só ficha
+/// candidata treina essa ficha (divisões seg–sex e full-body seg/qua/sex); vários candidatos no mesmo dia alternam pela
+/// sequência (A/B nos dias de treino, seg–sex); nenhum candidato é descanso (sábado e domingo, salvo se o modelo disser outro dia). Todo modelo que vira programa declara os dias; só o histórico rejeitado não tem (nunca vira programa).
+/// </summary>
+internal sealed record RoutineTemplateRoutine(string Name, IReadOnlyList<RoutineTemplateItem> Items, IReadOnlyList<int>? Weekdays);
 
 /// <summary>
 /// Um modelo pronto: um programa com uma ou mais rotinas. É proposta nossa, não de fonte externa; o usuário edita à

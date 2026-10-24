@@ -801,6 +801,11 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("position");
 
+                    b.Property<string>("ProgramId")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("program_id");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -808,6 +813,11 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
+
+                    b.PrimitiveCollection<int[]>("Weekdays")
+                        .IsRequired()
+                        .HasColumnType("integer[]")
+                        .HasColumnName("weekdays");
 
                     b.HasKey("Id")
                         .HasName("pk_routines");
@@ -884,6 +894,33 @@ namespace UniOver.Modules.Training.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_routine_items_superset", "superset_group IS NULL OR superset_group BETWEEN 1 AND 100");
                         });
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.Routines.TrainingProgram", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("ClientUpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("client_updated_at");
+
+                    b.Property<string>("ProgramId")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("program_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_programs");
+
+                    b.ToTable("programs", "training");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Training.Domain.Sessions.Session", b =>

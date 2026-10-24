@@ -6,6 +6,7 @@ public static class RoutineLimits
     public const int NameMax = 80;
     public const int NoteMax = 500;
     public const int ItemNoteMax = 300;
+    public const int ProgramIdMax = 80;
     public const int MaxItems = 40;
     public const int PositionMax = 1000;
     public const int SetsMin = 1;
@@ -35,6 +36,12 @@ public sealed class Routine
 
     /// <summary>Rotina inativa continua guardada, mas fica fora da sequência.</summary>
     public bool Active { get; set; } = true;
+
+    /// <summary>Programa semanal que criou esta ficha; nulo para fichas livres já existentes.</summary>
+    public string? ProgramId { get; set; }
+
+    /// <summary>Dias ISO (1=segunda ... 7=domingo) em que a ficha é sugerida. Vazio significa alternância.</summary>
+    public int[] Weekdays { get; set; } = [];
 
     public string? Note { get; set; }
 
