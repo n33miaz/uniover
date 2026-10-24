@@ -13,7 +13,11 @@ from uniover_agent import main as main_module
 from uniover_agent.adapters import tv_samsung_pairing as samsung_pairing
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTransport
 from uniover_agent.adapters.tv_samsung import SAMSUNG_KEYS, SamsungClient, SamsungTvDriver
-from uniover_agent.adapters.tv_samsung_pairing import pair_samsung_tv
+from uniover_agent.adapters.tv_samsung_pairing import (
+    SAMSUNG_PAIR_TIMEOUT_SECONDS,
+    _pairing_factory,
+    pair_samsung_tv,
+)
 from uniover_agent.config import Settings
 from uniover_agent.core import (
     Command,
@@ -365,3 +369,10 @@ async def test_samsung_pair_does_not_wait_for_a_slow_close(
     assert "token-novo" not in caplog.text
     await asyncio.sleep(0.11)
     assert client.closes == 1
+
+
+def test_pairing_waits_for_the_accept_on_the_tv() -> None:
+    # A TV só responde depois do aceite: o socket do pareamento não pode usar os 5 s do controle.
+    client = _pairing_factory("192.168.0.11", None, "UniOver")
+
+    assert client.timeout == SAMSUNG_PAIR_TIMEOUT_SECONDS
