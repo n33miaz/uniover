@@ -47,6 +47,7 @@ class FakeSamsungClient:
             {"appId": "111299001912", "name": "Vídeo"},
             {"appId": "org.tizen.browser", "name": "Internet"},
         ]
+        self.icons: dict[str, str] = {}
         self.runs: list[tuple[str, str, str]] = []
 
     def open(self) -> object:
@@ -68,6 +69,9 @@ class FakeSamsungClient:
 
     def app_list(self) -> list[dict[str, Any]] | None:
         return self.apps
+
+    def app_icon(self, icon_path: str) -> str | None:
+        return self.icons.get(icon_path)
 
     def run_app(self, app_id: str, app_type: str = "DEEP_LINK", meta_tag: str = "") -> None:
         self.runs.append((app_id, app_type, meta_tag))
@@ -151,6 +155,7 @@ async def test_standby_reported_by_rest_becomes_power_off() -> None:
 
 async def test_samsung_apps_use_a_valid_alias_but_launch_the_original_app_id() -> None:
     client = FakeSamsungClient()
+    client.apps = []  # Firmware sem EDEN: a lista vem do catálogo REST abaixo.
 
     def respond(request: httpx.Request) -> httpx.Response:
         if request.method == "GET" and request.url.path.endswith("/111299001912"):
@@ -174,6 +179,32 @@ async def test_samsung_apps_use_a_valid_alias_but_launch_the_original_app_id() -
     assert [entry.package for entry in entries] == ["samsung.app.id111299001912"]
     await apps.launch_package(entries[0].package)
     assert client.runs == [("111299001912", "NATIVE_LAUNCH", "")]
+
+
+async def test_samsung_ws_list_publishes_its_square_icon_in_the_v2_contract() -> None:
+    client = FakeSamsungClient()
+    client.apps = [{"appId": "111299001912", "name": "YouTube", "icon": "/icons/youtube.png"}]
+    png = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR4nGN4yinyHxkzkC4A"
+        "AD/YIBHrRBzaAAAAAElFTkSuQmCC"
+    )
+    client.icons["/icons/youtube.png"] = png
+    driver = SamsungTvDriver(
+        "192.168.0.11", "token-anterior", "UniOver", factory=factory(client), fetch_power=power_on
+    )
+    manager = TvSessionManager(FakeClock(), driver)
+    clock = FakeClock()
+    envelopes = EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock)
+    transport = FakeTransport()
+    apps = SamsungTvApps(manager, driver, transport, envelopes)
+
+    listed = await apps.refresh()
+    await apps.publish(listed)
+
+    (message,) = transport.sent
+    assert message["type"] == "tv.apps.v2"
+    icon = message["body"]["apps"][0]["icon"]
+    assert icon == {"mime": "image/png", "data": png}
 
 
 async def test_samsung_catalog_probes_only_installed_apps_and_extra_ids() -> None:
