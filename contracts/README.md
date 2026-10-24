@@ -17,6 +17,10 @@ um `type` publicado. As duas versões convivem até o agente atualizar.
 
 ## Mensagens da TV
 
+`agent.keepalive.v1` e `api.keepalive.v1` são batimentos sem corpo, a cada 25 segundos, para atravessar proxies
+que descartam conexões WebSocket ociosas. O agente anuncia a capacidade `transport.keepalive.v1`; enquanto ela não
+existe, a API não envia o batimento novo para preservar a compatibilidade durante a atualização.
+
 | `type` | Direção | Corpo |
 |---|---|---|
 | `tv.key.v1` | API para agente | `key` (14 teclas). Segue válido e inalterado. |

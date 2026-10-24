@@ -11,10 +11,10 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
 
 
 class AgentHelloV1BodyCapabilitiesItem(
-    RootModel[Literal['tv.remote', 'tv.adb', 'tv.kind.android', 'tv.kind.samsung']]
+    RootModel[Literal['transport.keepalive.v1', 'tv.remote', 'tv.adb', 'tv.kind.android', 'tv.kind.samsung']]
 ):
     root: Annotated[
-        Literal['tv.remote', 'tv.adb', 'tv.kind.android', 'tv.kind.samsung'],
+        Literal['transport.keepalive.v1', 'tv.remote', 'tv.adb', 'tv.kind.android', 'tv.kind.samsung'],
         Field(title='AgentHelloV1BodyCapabilitiesItem'),
     ]
 

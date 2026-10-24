@@ -10,6 +10,12 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>agent.hello.v1</c>.</summary>
     public const string AgentHelloV1 = "agent.hello.v1";
 
+    /// <summary>Tipo de mensagem <c>agent.keepalive.v1</c>.</summary>
+    public const string AgentKeepaliveV1 = "agent.keepalive.v1";
+
+    /// <summary>Tipo de mensagem <c>api.keepalive.v1</c>.</summary>
+    public const string ApiKeepaliveV1 = "api.keepalive.v1";
+
     /// <summary>Tipo de mensagem <c>command.result.v1</c>.</summary>
     public const string CommandResultV1 = "command.result.v1";
 
@@ -53,6 +59,8 @@ public static class AgentMessageTypes
     public static readonly IReadOnlyList<string> All =
     [
         AgentHelloV1,
+        AgentKeepaliveV1,
+        ApiKeepaliveV1,
         CommandResultV1,
         TvAppLaunchV1,
         TvAppsRefreshV1,
