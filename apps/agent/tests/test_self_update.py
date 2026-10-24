@@ -21,6 +21,7 @@ from uniover_agent.adapters.self_update import (
     extract_agent,
     latest_commit,
     read_version,
+    run_uv_check,
     run_uv_sync,
     self_update,
     swap_directories,
@@ -58,6 +59,7 @@ class Installation:
             (self.source / ".version").write_text(version + "\n", encoding="utf-8")
         self.downloads: list[str] = []
         self.synced: list[Path] = []
+        self.checked: list[Path] = []
 
     def download(self, sha: str, destination: Path) -> None:
         self.downloads.append(sha)
@@ -66,12 +68,16 @@ class Installation:
     def run_sync(self, source: Path) -> None:
         self.synced.append(source)
 
+    def run_check(self, source: Path) -> None:
+        self.checked.append(source)
+
     def update(self, latest: str, **kwargs: object) -> UpdateResult:
         return self_update(
             self.source,
             fetch_latest=lambda: latest,
             download=kwargs.pop("download", self.download),  # type: ignore[arg-type]
             run_sync=kwargs.pop("run_sync", self.run_sync),  # type: ignore[arg-type]
+            run_check=kwargs.pop("run_check", self.run_check),  # type: ignore[arg-type]
             **kwargs,  # type: ignore[arg-type]
         )
 
@@ -106,9 +112,11 @@ def test_a_new_sha_downloads_that_exact_commit_and_swaps_the_folder(
     assert not (source / "README.md").exists()
     assert not (source / "apps").exists()
     assert read_version(source) == NEW
-    assert installed.synced == [source]
-    # Nenhuma pasta temporária, `.new` ou `.old` sobra.
-    assert installed.leftovers() == []
+    assert installed.synced == [installed.base / "agent-src.new"]
+    assert installed.checked == [installed.base / "agent-src.new"]
+    # A anterior fica para o wrapper do Windows poder voltar atrás após quedas curtas.
+    assert (installed.base / "agent-src.previous" / "pyproject.toml").is_file()
+    assert installed.leftovers() == ["agent-src.previous"]
 
 
 def test_a_missing_version_file_counts_as_outdated(tmp_path: Path) -> None:
@@ -120,18 +128,41 @@ def test_a_missing_version_file_counts_as_outdated(tmp_path: Path) -> None:
 def test_no_sync_flag_skips_uv_sync(installed: Installation) -> None:
     assert installed.update(NEW, sync=False).updated
     assert installed.synced == []
+    assert installed.checked == [installed.base / "agent-src.new"]
 
 
-def test_a_failed_sync_still_reports_the_update_and_does_not_raise(
+def test_a_failed_sync_refuses_the_update_and_keeps_the_previous_version(
     installed: Installation,
 ) -> None:
     def failing(_source: Path) -> None:
         raise SelfUpdateError("uv não encontrado")
 
     result = installed.update(NEW, run_sync=failing)
-    assert result.updated
+    assert not result.updated
     assert "uv não encontrado" in result.message
-    assert read_version(installed.source) == NEW
+    assert read_version(installed.source) == OLD
+    assert installed.leftovers() == []
+
+
+def test_a_failed_quick_check_refuses_the_update_and_keeps_the_previous_version(
+    installed: Installation,
+) -> None:
+    def failing(_source: Path) -> None:
+        raise SelfUpdateError("import não passou")
+
+    result = installed.update(NEW, run_check=failing)
+    assert not result.updated
+    assert "import não passou" in result.message
+    assert read_version(installed.source) == OLD
+    assert installed.leftovers() == []
+
+
+def test_a_version_blocked_by_the_wrapper_is_not_downloaded(installed: Installation) -> None:
+    (installed.base / module.BLOCKED_VERSIONS_FILE).write_text(NEW + "\n", encoding="utf-8")
+    result = installed.update(NEW)
+    assert not result.updated
+    assert installed.downloads == []
+    assert "caiu repetidamente" in result.message
 
 
 def test_a_network_failure_on_the_commit_check_keeps_everything(
@@ -369,6 +400,26 @@ def test_uv_sync_failure_is_a_soft_error(monkeypatch: pytest.MonkeyPatch, tmp_pa
     monkeypatch.setattr(subprocess, "run", failing)
     with pytest.raises(SelfUpdateError, match="sincronizar"):
         run_uv_sync(tmp_path)
+
+
+def test_uv_check_imports_the_agent_and_the_minimum_hello_contract(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setenv("UV", "C:/uv/uv.exe")
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+    run_uv_check(tmp_path / "agent-src")
+    assert calls == [
+        [
+            "C:/uv/uv.exe",
+            "run",
+            "--project",
+            str(tmp_path / "agent-src"),
+            "python",
+            "-c",
+            "import uniover_agent.main; import uniover_agent.contracts.agent_hello_v1",
+        ]
+    ]
 
 
 # --- comando de linha -----------------------------------------------------------------------
