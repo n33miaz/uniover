@@ -114,7 +114,7 @@ test.describe('aparelhos', () => {
     if (browserName === 'chromium') {
       const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
       await expect(dialog).toBeVisible();
-      await expect(dialog).toContainText('aprovar o pareamento de um aparelho');
+      await expect(dialog).toContainText('ligar um computador à TV');
       await dialog.getByRole('button', { name: 'Confirmar' }).click();
     }
 
@@ -125,7 +125,12 @@ test.describe('aparelhos', () => {
 
     const approvals = devices.requests.filter((r) => r.path === '/pairing/approve');
     expect(approvals.map((r) => r.body)).toEqual(
-      Array(browserName === 'chromium' ? 2 : 1).fill({ userCode: 'BCDF2345', name: 'PC de casa' }),
+      Array(browserName === 'chromium' ? 2 : 1).fill({
+        userCode: 'BCDF2345',
+        name: 'PC de casa',
+        tvName: null,
+        tvMemberIds: [],
+      }),
     );
     if (browserName === 'chromium') {
       expect(identity.requests.some((r) => r.path === '/step-up/complete')).toBe(true);

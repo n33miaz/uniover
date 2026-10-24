@@ -17,9 +17,17 @@ interface StoredAgent {
   lastSeenAt: string | null;
 }
 
+/** A TV que a API real cria junto da aprovação quando o corpo traz `tvMemberIds`. */
+export interface StoredTv {
+  readonly name: string;
+  readonly agentSlug: string;
+  readonly memberIds: readonly string[];
+}
+
 export interface DevicesMock {
   readonly requests: DevicesRequest[];
   readonly agents: StoredAgent[];
+  readonly tvs: StoredTv[];
   /** Códigos que o agente "mostrou" e que ainda esperam decisão (forma guardada, sem hífen). */
   readonly openCodes: Set<string>;
 }
@@ -53,7 +61,7 @@ export async function mockDevicesApi(
   context: BrowserContext,
   identity: IdentityMock,
 ): Promise<DevicesMock> {
-  const mock: DevicesMock = { requests: [], agents: [], openCodes: new Set() };
+  const mock: DevicesMock = { requests: [], agents: [], tvs: [], openCodes: new Set() };
 
   await context.route('**/api/v1/devices/**', async (route) => {
     const request = route.request();
@@ -98,7 +106,7 @@ export async function mockDevicesApi(
       if (!identity.stepUpValid) {
         return problem(route, 403, 'step-up-required', 'Confirme com a passkey.', {
           code: 'step_up_required',
-          action: 'devices.pair-approve',
+          action: 'tv.bind-agent',
         });
       }
       if (!mock.openCodes.has(code))
@@ -116,6 +124,15 @@ export async function mockDevicesApi(
         lastSeenAt: null,
       };
       mock.agents.push(agent);
+      // Como a API: a lista de pessoas (mesmo vazia) cria, na mesma aprovação, a TV ligada ao novo agente.
+      const members = body?.['tvMemberIds'];
+      if (Array.isArray(members)) {
+        mock.tvs.push({
+          name: (body?.['tvName'] as string | null) ?? agent.name,
+          agentSlug: agent.slug,
+          memberIds: members as string[],
+        });
+      }
       return route.fulfill({
         status: 200,
         headers: { 'content-type': 'application/json' },
