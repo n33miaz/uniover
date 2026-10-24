@@ -17,6 +17,7 @@ from uniover_agent.adapters import self_update as module
 from uniover_agent.adapters.self_update import (
     SelfUpdateError,
     UpdateResult,
+    candidate_env,
     download_archive,
     extract_agent,
     latest_commit,
@@ -24,6 +25,7 @@ from uniover_agent.adapters.self_update import (
     run_uv_check,
     run_uv_sync,
     self_update,
+    summarize_failure,
     swap_directories,
 )
 from uniover_agent.main import EXIT_OK, main
@@ -375,14 +377,61 @@ def test_download_failure_is_a_soft_error(monkeypatch: pytest.MonkeyPatch, tmp_p
         download_archive(NEW, tmp_path / "main.zip")
 
 
-def test_uv_sync_runs_the_project_sync_with_the_uv_that_launched_us(
+class FakeRun:
+    """`subprocess.run` roteirizado: uma resposta por chamada (ou uma exceção)."""
+
+    def __init__(self, *outcomes: subprocess.CompletedProcess[str] | Exception) -> None:
+        self.outcomes = list(outcomes) or [done(0)]
+        self.calls: list[tuple[list[str], dict[str, Any]]] = []
+
+    def __call__(self, cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        self.calls.append((cmd, kwargs))
+        outcome = self.outcomes.pop(0) if len(self.outcomes) > 1 else self.outcomes[0]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+def done(code: int, stderr: str = "", stdout: str = "") -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(["uv"], code, stdout, stderr)
+
+
+def test_uv_sync_runs_in_a_throwaway_environment_and_never_in_the_running_one(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    calls: list[list[str]] = []
+    fake = FakeRun()
     monkeypatch.setenv("UV", "C:/uv/uv.exe")
-    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: calls.append(cmd))
-    run_uv_sync(tmp_path / "agent-src")
-    assert calls == [["C:/uv/uv.exe", "sync", "--project", str(tmp_path / "agent-src"), "--quiet"]]
+    monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", str(tmp_path / "runtime" / "venv"))
+    monkeypatch.setattr(subprocess, "run", fake)
+    candidate = tmp_path / "app.new"
+    run_uv_sync(candidate)
+    [(command, kwargs)] = fake.calls
+    assert command == ["C:/uv/uv.exe", "sync", "--project", str(candidate), "--quiet"]
+    # O ambiente do agente em uso (arquivos presos no Windows) fica intocado.
+    assert kwargs["env"]["UV_PROJECT_ENVIRONMENT"] == str(tmp_path / "app.new.venv")
+    assert kwargs["capture_output"] is True
+    assert kwargs["cwd"] == tmp_path
+
+
+def test_uv_check_uses_the_same_environment_without_syncing_again(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake = FakeRun()
+    monkeypatch.setenv("UV", "C:/uv/uv.exe")
+    monkeypatch.setattr(subprocess, "run", fake)
+    run_uv_check(tmp_path / "app.new")
+    [(command, kwargs)] = fake.calls
+    assert command == [
+        "C:/uv/uv.exe",
+        "run",
+        "--no-sync",
+        "--project",
+        str(tmp_path / "app.new"),
+        "python",
+        "-c",
+        "import uniover_agent.main; import uniover_agent.contracts.agent_hello_v1",
+    ]
+    assert kwargs["env"]["UV_PROJECT_ENVIRONMENT"] == str(tmp_path / "app.new.venv")
 
 
 def test_uv_sync_without_uv_is_a_soft_error(
@@ -394,34 +443,76 @@ def test_uv_sync_without_uv_is_a_soft_error(
         run_uv_sync(tmp_path)
 
 
-def test_uv_sync_failure_is_a_soft_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    def failing(cmd: list[str], **kwargs: object) -> None:
-        raise subprocess.CalledProcessError(1, cmd)
-
-    monkeypatch.setenv("UV", "uv")
-    monkeypatch.setattr(subprocess, "run", failing)
-    with pytest.raises(SelfUpdateError, match="sincronizar"):
-        run_uv_sync(tmp_path)
-
-
-def test_uv_check_imports_the_agent_and_the_minimum_hello_contract(
+def test_uv_sync_failure_says_why_and_is_tried_twice(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    calls: list[list[str]] = []
-    monkeypatch.setenv("UV", "C:/uv/uv.exe")
-    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: calls.append(cmd))
-    run_uv_check(tmp_path / "agent-src")
-    assert calls == [
-        [
-            "C:/uv/uv.exe",
-            "run",
-            "--project",
-            str(tmp_path / "agent-src"),
-            "python",
-            "-c",
-            "import uniover_agent.main; import uniover_agent.contracts.agent_hello_v1",
-        ]
-    ]
+    fake = FakeRun(done(2, stderr="error: failed to remove file `uniover-agent.exe`\n"))
+    monkeypatch.setenv("UV", "uv")
+    monkeypatch.setattr(subprocess, "run", fake)
+    with pytest.raises(SelfUpdateError) as caught:
+        run_uv_sync(tmp_path / "app.new", pause=0)
+    assert len(fake.calls) == 2
+    message = str(caught.value)
+    assert "sincronização das dependências" in message
+    assert "código 2" in message
+    assert "failed to remove file" in message  # o motivo, não só "CalledProcessError"
+    assert "CalledProcessError" not in message
+
+
+def test_uv_sync_recovers_when_the_second_try_works(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake = FakeRun(done(1, stderr="arquivo em uso"), done(0))
+    monkeypatch.setenv("UV", "uv")
+    monkeypatch.setattr(subprocess, "run", fake)
+    run_uv_sync(tmp_path / "app.new", pause=0)
+    assert len(fake.calls) == 2
+
+
+def test_uv_timeout_and_missing_executable_have_their_own_reasons(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("UV", "uv")
+    monkeypatch.setattr(subprocess, "run", FakeRun(subprocess.TimeoutExpired("uv", 600)))
+    with pytest.raises(SelfUpdateError, match="passou de 600 s"):
+        run_uv_sync(tmp_path / "app.new", pause=0)
+    monkeypatch.setattr(subprocess, "run", FakeRun(FileNotFoundError()))
+    with pytest.raises(SelfUpdateError, match="FileNotFoundError"):
+        run_uv_check(tmp_path / "app.new")
+
+
+def test_failure_reasons_drop_secrets_and_stay_short() -> None:
+    text = (
+        "error: download https://user:senha-secreta@pypi.example/simple/x failed\n"
+        "Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123456789ABCDEF\n"
+        "token=abc123 e uma chave 0123456789abcdef0123456789abcdef0123\n" + "x" * 900
+    )
+    reason = summarize_failure(text)
+    assert len(reason) <= 400
+    for secret in ("senha-secreta", "abcdefghijklmnopqrstuvwxyz", "abc123", "0123456789abcdef"):
+        assert secret not in reason
+
+
+def test_the_candidate_environment_is_removed_after_the_update(installed: Installation) -> None:
+    def sync(source: Path) -> None:
+        (candidate_env(source) / "Lib").mkdir(parents=True)
+
+    result = installed.update(NEW, run_sync=sync)
+    assert result.updated
+    assert "agent-src.new.venv" not in installed.leftovers()
+
+
+def test_the_candidate_environment_is_removed_when_the_update_fails(
+    installed: Installation,
+) -> None:
+    def sync(source: Path) -> None:
+        (candidate_env(source) / "Lib").mkdir(parents=True)
+        raise SelfUpdateError("a sincronização das dependências falhou (código 2)")
+
+    result = installed.update(NEW, run_sync=sync)
+    assert not result.updated
+    assert "código 2" in result.message  # o motivo chega ao aviso
+    assert installed.leftovers() == []
 
 
 # --- comando de linha -----------------------------------------------------------------------

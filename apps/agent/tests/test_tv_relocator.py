@@ -10,11 +10,11 @@ import pytest
 from websockets.asyncio.server import ServerConnection
 
 from uniover_agent import main as main_module
+from uniover_agent.adapters import tv_locate
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTvRemote
 from uniover_agent.adapters.local_config import update_config
-from uniover_agent.adapters.tv_discovery import DiscoveredTv
 from uniover_agent.config import Settings
-from uniover_agent.core import TvRelocator
+from uniover_agent.core import TvKnown, TvRelocator
 from uniover_agent.main import EXIT_CREDENTIAL_REJECTED, EXIT_TV_MOVED, build_relocator, main, run
 
 from .support import AGENT_ID, TOKEN, FakeApi
@@ -22,7 +22,7 @@ from .test_tv_composition import TV_HOST, pair_fake_tv
 
 
 class Scene:
-    """Cenário do vigia: se a TV responde e o que a varredura devolve a cada chamada."""
+    """Cenário do vigia: se a TV responde e o que a procura devolve a cada chamada."""
 
     def __init__(self, *, hot: bool = False, reachable: bool = False) -> None:
         self.hot = hot
@@ -51,7 +51,7 @@ class Scene:
         )
 
 
-async def test_only_after_three_failures_in_a_row_the_network_is_scanned() -> None:
+async def test_only_after_three_failures_in_a_row_the_network_is_searched() -> None:
     scene = Scene()
     relocator = scene.relocator()
     assert [await relocator.step(), await relocator.step()] == [None, None]
@@ -88,21 +88,36 @@ async def test_a_hot_session_proves_the_tv_is_there_without_probing() -> None:
     assert scene.rescans == 0
 
 
-async def test_scans_are_at_most_one_every_ten_minutes() -> None:
+async def test_after_the_threshold_every_check_asks_for_the_cheap_search() -> None:
     scene = Scene()
     relocator = scene.relocator(failures=1)
-    assert await relocator.step() is None
-    assert scene.rescans == 1
-    for _ in range(5):
+    for _ in range(4):
         scene.clock.advance(60)
+        assert await relocator.step() is None
+    # O que custa caro (SSDP, varredura) é limitado por quem procura, não por este vigia.
+    assert scene.rescans == 4
+
+
+async def test_the_search_is_announced_once_then_only_summarized(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    scene = Scene()
+    relocator = scene.relocator(failures=1, summary_seconds=1800)
+    with caplog.at_level(logging.INFO):
+        for _ in range(10):
+            scene.clock.advance(60)
+            await relocator.step()
+        assert caplog.text.count("procurando na rede") == 1
+        scene.clock.advance(1800)
         await relocator.step()
-    assert scene.rescans == 1
-    scene.clock.advance(600)
-    await relocator.step()
-    assert scene.rescans == 2
+    assert caplog.text.count("segue sem responder") == 1
+    scene.reachable = True
+    with caplog.at_level(logging.INFO):
+        await relocator.step()
+    assert "voltou a responder" in caplog.text
 
 
-async def test_a_scan_that_blows_up_is_logged_and_swallowed(
+async def test_a_search_that_blows_up_is_logged_and_swallowed(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     scene = Scene()
@@ -112,12 +127,39 @@ async def test_a_scan_that_blows_up_is_logged_and_swallowed(
     assert "falha ao procurar a TV" in caplog.text
 
 
+async def test_a_check_that_blows_up_counts_as_a_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    scene = Scene()
+
+    async def broken() -> bool:
+        raise RuntimeError("falha qualquer")
+
+    relocator = TvRelocator(
+        scene.clock, is_hot=lambda: False, reachable=broken, rescan=scene.rescan, failures=1
+    )
+    assert await relocator.step() is None
+    assert scene.rescans == 1
+    assert "falha ao conferir a TV" in caplog.text
+
+
 async def test_run_waits_between_checks_and_returns_the_new_address(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     scene = Scene()
-    scene.answer = "192.168.0.99"
-    relocator = scene.relocator(failures=2, check_seconds=60)
+    answers = iter([None, "192.168.0.99"])
+
+    async def rescan() -> str | None:
+        return next(answers)
+
+    relocator = TvRelocator(
+        scene.clock,
+        is_hot=lambda: False,
+        reachable=scene.is_reachable,
+        rescan=rescan,
+        failures=1,
+        check_seconds=60,
+    )
     with caplog.at_level(logging.INFO):
         assert await relocator.run() == "192.168.0.99"
     assert scene.clock.sleeps == [60, 60]
@@ -126,11 +168,52 @@ async def test_run_waits_between_checks_and_returns_the_new_address(
     assert "192.168.0.99" not in caplog.text
 
 
-# --- ligação com a configuração e com `run` --------------------------------------------------
+# --- a rede de mentira: o caso real (IP velho de outro aparelho, TV em outro IP) ------------------
+
+OLD_HOST = "192.168.0.11"  # agora é de um celular: responde ping, nenhuma porta aberta
+NEW_HOST = "192.168.0.14"
+DUID = "12345678-aaaa-bbbb-cccc-1234567890ab"
+MAC = "74:6D:FA:5D:52:08"
+TV_INFO = {"device": {"type": "Samsung SmartTV", "duid": f"uuid:{DUID}", "wifiMac": MAC.lower()}}
 
 
-def seed(path: Path, text: str) -> None:
-    path.write_text(text, encoding="utf-8")
+class Lan:
+    """Rede doméstica falsa: portas, respostas do REST, tabela ARP e respostas ao SSDP."""
+
+    def __init__(self) -> None:
+        self.open: dict[tuple[str, int], bool] = {(NEW_HOST, 8001): True}
+        self.rest: dict[str, dict[str, Any]] = {NEW_HOST: TV_INFO}
+        self.arp: dict[str, list[str]] = {}
+        self.ssdp_hosts: list[str] = []
+        self.contacted: list[str] = []
+        self.ssdp_calls = 0
+        self.arp_calls = 0
+
+    async def tcp_open(self, host: str, port: int, wait: float = 1.0) -> bool:
+        self.contacted.append(host)
+        return self.open.get((host, port), False)
+
+    async def http_json(self, url: str) -> dict[str, Any] | None:
+        host = url.split("//")[1].split(":", maxsplit=1)[0]
+        self.contacted.append(host)
+        return self.rest.get(host)
+
+    async def arp_table(self) -> dict[str, list[str]]:
+        self.arp_calls += 1
+        return self.arp
+
+    async def ssdp_search(self, kind: str, interface: str, wait: float = 0.0) -> list[str]:
+        self.ssdp_calls += 1
+        return self.ssdp_hosts
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(tv_locate, "tcp_open", self.tcp_open)
+        monkeypatch.setattr(tv_locate, "http_json", self.http_json)
+        monkeypatch.setattr(tv_locate, "arp_table", self.arp_table)
+        monkeypatch.setattr(tv_locate, "ssdp_search", self.ssdp_search)
+        # A placa com rota padrão é a do cabo sem rede (link-local); a TV está no Wi-Fi.
+        monkeypatch.setattr(tv_locate, "local_ipv4", lambda: "169.254.190.176")
+        monkeypatch.setattr(tv_locate, "local_address_for", lambda host: "192.168.0.12")
 
 
 def read_saved(path: Path) -> dict[str, Any]:
@@ -141,69 +224,120 @@ def path_exists(path: Path) -> bool:
     return path.exists()
 
 
-HINT = "11111111-2222-3333-4444-555555555555"
+def settings_for_old_host(**extra: Any) -> Settings:
+    return Settings(tv_host=OLD_HOST, tv_kind="samsung", tv_id_hint=DUID, **extra)
 
 
-def stub_scan(monkeypatch: pytest.MonkeyPatch, *tvs: DiscoveredTv) -> list[str | None]:
-    kinds: list[str | None] = []
-
-    async def find(kind: str | None = None, **_: Any) -> list[DiscoveredTv]:
-        kinds.append(kind)
-        return list(tvs)
-
-    async def silent(host: str, port: int, wait: float = 1.0) -> bool:
-        return False  # nenhum teste conecta em endereço de verdade
-
-    monkeypatch.setattr(main_module, "find_tvs", find)
-    monkeypatch.setattr(main_module, "tcp_open", silent)
-    return kinds
+async def steps_until_moved(relocator: TvRelocator, limit: int = 3) -> str | None:
+    moved: str | None = None
+    for _ in range(limit):
+        moved = await relocator.step()
+    return moved
 
 
-def test_without_a_hint_or_a_host_there_is_no_relocator() -> None:
-    clock = FakeClock()
-    assert build_relocator(Settings(tv_host=TV_HOST), clock, lambda: False) is None
-    assert build_relocator(Settings(tv_id_hint=HINT), clock, lambda: False) is None
-
-
-async def test_the_same_tv_at_a_new_address_updates_the_host_and_keeps_the_rest_of_the_file(
-    monkeypatch: pytest.MonkeyPatch, isolated_env: Path
+@pytest.mark.parametrize("how", ["arp", "ssdp", "sweep"])
+async def test_the_tv_moved_to_another_address_is_found_and_the_new_one_is_saved(
+    monkeypatch: pytest.MonkeyPatch, isolated_env: Path, how: str
 ) -> None:
-    seed(
-        isolated_env,
-        f'api_url = "https://a.test"\ntv_host = "{TV_HOST}"\ntv_cleanup_keep = ["com.x.y"]\n',
-    )
-    kinds = stub_scan(
-        monkeypatch,
-        DiscoveredTv("192.168.0.50", "samsung", ("outra-tv",)),
-        DiscoveredTv("192.168.0.77", "samsung", (HINT.upper(), "AA:BB:CC:DD:EE:01")),
-    )
-    settings = Settings(tv_host=TV_HOST, tv_kind="samsung", tv_id_hint=HINT)
-    relocator = build_relocator(settings, FakeClock(), lambda: False)
+    """Reproduz o caso real: o IP velho virou de um celular e a TV foi para outro endereço do /24.
+
+    A rota padrão desta máquina pode ser a de uma placa sem rede (169.254.x): a procura tem de
+    ser no /24 da TV, e a TV é confirmada pelo `duid` no REST (não basta ser "uma Samsung").
+    """
+    lan = Lan()
+    if how == "arp":
+        lan.arp = {MAC: [NEW_HOST]}
+    elif how == "ssdp":
+        lan.ssdp_hosts = ["192.168.0.30", NEW_HOST]
+        lan.rest["192.168.0.30"] = {"device": {"type": "Samsung SmartTV", "duid": "uuid:outra"}}
+    lan.install(monkeypatch)
+    update_config(isolated_env, {"tv_host": OLD_HOST, "tv_cleanup_keep": ["com.x.y"]})
+    relocator = build_relocator(settings_for_old_host(tv_mac=MAC), FakeClock(), lambda: False)
     assert relocator is not None
-    assert await relocator.run() == "192.168.0.77"  # a varredura aconteceu na terceira falha
+    assert await steps_until_moved(relocator) == NEW_HOST
     saved = read_saved(isolated_env)
-    assert saved == {
-        "api_url": "https://a.test",
-        "tv_host": "192.168.0.77",
-        "tv_cleanup_keep": ["com.x.y"],
-    }
-    assert kinds == ["samsung"]
+    assert saved["tv_host"] == NEW_HOST
+    assert saved["tv_mac"] == MAC
+    assert saved["tv_id_hint"] == DUID
+    assert saved["tv_cleanup_keep"] == ["com.x.y"]  # o resto do arquivo é preservado
+    # Nada foi perguntado fora do /24 da TV (a rota padrão apontava para 169.254.x).
+    assert all(host.startswith("192.168.0.") for host in lan.contacted)
+    if how == "arp":
+        assert lan.ssdp_calls == 0  # o ARP bastou: nada de multicast nem de varredura
 
 
-async def test_the_tv_at_the_same_address_or_not_found_changes_nothing(
+async def test_the_old_address_answering_as_another_device_is_not_the_tv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lan = Lan()
+    lan.open[(OLD_HOST, 8001)] = True
+    lan.rest[OLD_HOST] = {"device": {"type": "Samsung SmartTV", "duid": "uuid:de-outra-tv"}}
+    lan.install(monkeypatch)
+    relocator = build_relocator(settings_for_old_host(), FakeClock(), lambda: False)
+    assert relocator is not None
+    # Responder na porta e até ser Samsung não basta: o `duid` não é o da nossa TV.
+    assert await steps_until_moved(relocator) == NEW_HOST
+
+
+async def test_the_tv_still_at_its_address_is_reachable_and_nothing_is_searched(
     monkeypatch: pytest.MonkeyPatch, isolated_env: Path
 ) -> None:
-    settings = Settings(tv_host=TV_HOST, tv_kind="samsung", tv_id_hint=HINT)
-    for tvs in (
-        (DiscoveredTv(TV_HOST, "samsung", (HINT,)),),
-        (),
-        (DiscoveredTv("1.1.1.1", "samsung", ("x",)),),
-    ):
-        stub_scan(monkeypatch, *tvs)
-        relocator = build_relocator(settings, FakeClock(), lambda: False)
-        assert relocator is not None
-        for _ in range(3):
-            assert await relocator.step() is None
+    lan = Lan()
+    lan.open[(OLD_HOST, 8001)] = True
+    lan.rest[OLD_HOST] = TV_INFO
+    lan.install(monkeypatch)
+    relocator = build_relocator(settings_for_old_host(), FakeClock(), lambda: False)
+    assert relocator is not None
+    for _ in range(5):
+        assert await relocator.step() is None
+    assert lan.ssdp_calls == 0  # nenhuma procura; o ARP só é lido para aprender o MAC
+    assert not path_exists(isolated_env)
+
+
+async def test_a_tv_asleep_at_the_same_address_does_not_trigger_a_sweep(
+    monkeypatch: pytest.MonkeyPatch, isolated_env: Path
+) -> None:
+    lan = Lan()
+    lan.open.clear()  # standby: nenhuma porta abre, mas o ARP ainda a vê onde sempre esteve
+    lan.arp = {MAC: [OLD_HOST]}
+    lan.install(monkeypatch)
+    relocator = build_relocator(settings_for_old_host(tv_mac=MAC), FakeClock(), lambda: False)
+    assert relocator is not None
+    for _ in range(6):
+        assert await relocator.step() is None
+    assert lan.ssdp_calls == 0
+    assert not path_exists(isolated_env)
+
+
+async def test_the_relocator_learns_the_mac_from_the_shared_record(
+    monkeypatch: pytest.MonkeyPatch, isolated_env: Path
+) -> None:
+    """A instalação antiga só tem o `duid`; o MAC aprendido na conexão passa a valer na hora."""
+    lan = Lan()
+    lan.arp = {MAC: [NEW_HOST]}
+    lan.install(monkeypatch)
+    known = TvKnown(hint="outro-id-antigo", mac=None)
+    relocator = build_relocator(settings_for_old_host(), FakeClock(), lambda: False, known)
+    assert relocator is not None
+    known.mac = MAC  # aprendido na primeira conexão (o REST o entregou)
+    assert await steps_until_moved(relocator) == NEW_HOST
+
+
+def test_without_a_host_there_is_no_relocator() -> None:
+    assert build_relocator(Settings(tv_id_hint=DUID), FakeClock(), lambda: False) is None
+
+
+async def test_a_tv_that_cannot_be_identified_is_never_guessed(
+    monkeypatch: pytest.MonkeyPatch, isolated_env: Path
+) -> None:
+    lan = Lan()
+    lan.install(monkeypatch)
+    relocator = build_relocator(
+        Settings(tv_host=OLD_HOST, tv_kind="samsung"), FakeClock(), lambda: False
+    )
+    assert relocator is not None
+    # Sem `duid` nem MAC guardados, qualquer Samsung do /24 seria um palpite: não procura.
+    assert await steps_until_moved(relocator, limit=5) is None
     assert not path_exists(isolated_env)
 
 
@@ -250,3 +384,25 @@ def test_main_restarts_run_with_fresh_settings_after_a_move(
     monkeypatch.setattr(main_module, "run", fake_run)
     assert main(["run"], secrets=FakeSecretStore()) == EXIT_CREDENTIAL_REJECTED
     assert seen == ["192.168.0.10", "192.168.0.77"]
+
+
+async def test_the_mac_the_arp_shows_for_a_confirmed_tv_is_saved_once(
+    monkeypatch: pytest.MonkeyPatch, isolated_env: Path
+) -> None:
+    """TV no cabo: o ARP mostra o MAC da placa de rede, que não é o `wifiMac` do REST."""
+    lan = Lan()
+    lan.open[(OLD_HOST, 8001)] = True
+    lan.rest[OLD_HOST] = TV_INFO
+    lan.arp = {"AA:00:00:00:00:77": [OLD_HOST]}
+    lan.install(monkeypatch)
+    update_config(isolated_env, {"tv_host": OLD_HOST})
+    clock = FakeClock()
+    relocator = build_relocator(settings_for_old_host(tv_mac=MAC), clock, lambda: False)
+    assert relocator is not None
+    await relocator.step()
+    assert read_saved(isolated_env)["tv_mac"] == "AA:00:00:00:00:77"
+    calls = lan.arp_calls
+    for _ in range(5):  # já aprendido: não volta a olhar a tabela
+        clock.advance(60)
+        await relocator.step()
+    assert lan.arp_calls == calls

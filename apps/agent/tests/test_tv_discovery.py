@@ -12,12 +12,13 @@ from typing import Any
 import pytest
 
 from uniover_agent import main as main_module
+from uniover_agent.adapters import arp as arp_module
 from uniover_agent.adapters import tv_discovery
+from uniover_agent.adapters.arp import parse_arp_table
 from uniover_agent.adapters.tv_discovery import (
     ANDROID_REMOTE_PORT,
     SAMSUNG_REST_PORT,
     DiscoveredTv,
-    arp_mac,
     find_tvs,
     http_json,
     local_ipv4,
@@ -234,42 +235,25 @@ async def test_http_json_reads_objects_and_swallows_failures(local_server: int) 
     assert await http_json("http://127.0.0.1:1/api/v2/") is None
 
 
-class FakeProcess:
-    def __init__(self, output: bytes) -> None:
-        self._output = output
-
-    async def communicate(self) -> tuple[bytes, bytes]:
-        return self._output, b""
-
-
 @pytest.mark.parametrize(
     ("output", "expected"),
     [
         (
-            b"Interface: 192.168.0.5\n  192.168.0.40  aa-bb-cc-00-00-09  dynamic\n",
+            "Interface: 192.168.0.5\n  192.168.0.40  aa-bb-cc-00-00-09  dynamic\n",
             "AA:BB:CC:00:00:09",
         ),
-        (b"  224.0.0.22  01-00-5e-00-00-16  static\n  192.168.0.40  ff-ff-ff-ff-ff-ff\n", None),
-        (b"Nenhuma entrada ARP encontrada.\n", None),
+        ("  224.0.0.22  01-00-5e-00-00-16  static\n  192.168.0.40  ff-ff-ff-ff-ff-ff\n", None),
+        ("Nenhuma entrada ARP encontrada.\n", None),
     ],
 )
-async def test_arp_mac_parses_the_table_and_skips_broadcast(
-    monkeypatch: pytest.MonkeyPatch, output: bytes, expected: str | None
+async def test_arp_mac_reads_the_table_and_skips_broadcast(
+    monkeypatch: pytest.MonkeyPatch, output: str, expected: str | None
 ) -> None:
-    async def fake_exec(*args: str, **kwargs: Any) -> FakeProcess:
-        assert args == ("arp", "-a", "192.168.0.40")
-        return FakeProcess(output)
+    async def fake_table() -> dict[str, list[str]]:
+        return parse_arp_table(output)
 
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
-    assert await arp_mac("192.168.0.40") == expected
-
-
-async def test_arp_mac_without_the_arp_program_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def missing(*args: str, **kwargs: Any) -> FakeProcess:
-        raise FileNotFoundError
-
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", missing)
-    assert await arp_mac("192.168.0.40") is None
+    monkeypatch.setattr(arp_module, "arp_table", fake_table)
+    assert await arp_module.arp_mac("192.168.0.40") == expected
 
 
 # --- comando `tv-find` ----------------------------------------------------------------------
@@ -308,6 +292,7 @@ async def test_tv_find_with_one_tv_saves_kind_host_and_id_without_asking(
         "tv_kind": "samsung",
         "tv_host": "192.168.0.20",
         "tv_id_hint": "duid-1",
+        "tv_mac": "AA:BB:CC:DD:EE:01",
     }
     assert "TV encontrada: Samsung [TV] Sala em 192.168.0.20" in capsys.readouterr().out
 

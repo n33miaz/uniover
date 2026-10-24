@@ -177,10 +177,11 @@ async def test_wake_with_the_tv_in_standby_only_tries_to_open_the_session() -> N
     await rig.manager.settle()
     connects = rig.remote.connects
 
+    rig.clock.advance(120)  # fora da espera da TV offline
     result = await rig.wake()
     assert (result.status, result.code) == (ResultStatus.FAILED, "tv_unreachable")
-    # Quatro tentativas de conexão, nenhuma tecla: nada além de abrir a sessão.
-    assert rig.remote.connects == connects + 4
+    # Uma tentativa de conexão (a TV já estava offline), nenhuma tecla: só abrir a sessão.
+    assert rig.remote.connects == connects + 1
     assert rig.remote.sent == [("POWER", "SHORT")]
 
 
@@ -259,6 +260,7 @@ async def test_a_power_that_failed_does_not_block_the_next_try() -> None:
     with pytest.raises(TvSessionError):
         await rig.manager.send_key("POWER")
     assert rig.remote.sent == []
+    rig.clock.advance(6)  # a espera mínima de quem espera a TV
     await rig.manager.send_key("POWER")
     assert rig.remote.sent == [("POWER", "SHORT")]
     assert state_of(rig.manager) is SessionState.HOT
