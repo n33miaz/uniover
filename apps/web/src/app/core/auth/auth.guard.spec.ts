@@ -43,6 +43,13 @@ describe('authGuard', () => {
     expect(TestBed.inject(Router).url).toBe('/entrar?next=%2Ftv');
   });
 
+  it('keeps the query of the wanted page in next, so the sign-in can bring the visitor back to it', async () => {
+    api.refresh.mockRejectedValue(new ApiProblem(401, '', 'x'));
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/tv?codigo=BCDF-2345');
+    expect(TestBed.inject(Router).url).toBe('/entrar?next=%2Ftv%3Fcodigo%3DBCDF-2345');
+  });
+
   it('does not put the home page in next', async () => {
     api.refresh.mockRejectedValue(new ApiProblem(401, '', 'x'));
     const harness = await RouterTestingHarness.create();
