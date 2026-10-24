@@ -1,12 +1,14 @@
 """Lista e abertura de apps Samsung pelo mesmo canal do controle remoto."""
 
+import base64
 import re
 from typing import Any, Protocol
 
 from uniover_agent.core.envelopes import EnvelopeFactory
 from uniover_agent.core.tv.apps import AppEntry
+from uniover_agent.core.tv.icons import validate_icon
 from uniover_agent.core.tv.session import TvSessionError
-from uniover_agent.ports import Transport
+from uniover_agent.ports import AppIcon, Transport
 
 
 class SamsungAppsDriver(Protocol):
@@ -37,6 +39,7 @@ class SamsungTvApps:
         self._transport = transport
         self._envelopes = envelopes
         self._ids: dict[str, str] = {}
+        self._icons: dict[str, AppIcon] = {}
         self.cache: list[AppEntry] | None = None
 
     async def refresh(self) -> list[AppEntry]:
@@ -45,6 +48,7 @@ class SamsungTvApps:
         if listed is None:
             raise TvSessionError("unsupported", "a TV Samsung não informa a lista de apps")
         self._ids.clear()
+        self._icons.clear()
         entries: list[AppEntry] = []
         for item in listed:
             app_id = item.get("appId") or item.get("app_id")
@@ -54,12 +58,26 @@ class SamsungTvApps:
             # id Tizen pode ser só numérico, então o alias fica válido sem perder o id original.
             alias = _app_alias(app_id)
             self._ids[alias] = app_id
+            icon = _icon(item.get("imageBase64"))
+            if icon is not None:
+                self._icons[alias] = icon
             label = item.get("name") or item.get("app_name") or app_id
             entries.append(AppEntry(alias, str(label)[:100]))
         self.cache = entries
         return entries
 
     async def publish(self, apps: list[AppEntry], correlation_id: str | None = None) -> None:
+        # Quando o EDEN devolve imagens, o contrato v2 já é o mesmo que a Android TV usa. Nos
+        # firmwares sem EDEN continuamos no v1: a web conhece os ícones locais dos apps Tizen
+        # comuns.
+        if self._icons:
+            await self._transport.send(
+                self._envelopes.tv_apps_v2(
+                    [(app.package, app.label, self._icons.get(app.package)) for app in apps],
+                    correlation_id,
+                )
+            )
+            return
         await self._transport.send(
             self._envelopes.tv_apps([(app.package, app.label) for app in apps], correlation_id)
         )
@@ -77,3 +95,13 @@ def _app_alias(app_id: str) -> str:
         return app_id
     normalized = "".join(char if char.isalnum() or char == "_" else "_" for char in app_id)
     return f"samsung.app.id{normalized or 'unknown'}"
+
+
+def _icon(encoded: object) -> AppIcon | None:
+    """Decodifica somente um PNG/WebP quadrado que caiba no contrato público."""
+    if not isinstance(encoded, str):
+        return None
+    try:
+        return validate_icon(base64.b64decode(encoded, validate=True))
+    except ValueError:
+        return None
