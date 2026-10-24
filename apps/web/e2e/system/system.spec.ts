@@ -199,7 +199,7 @@ test.describe('Ajustes > Sistema > TV', () => {
     if (browserName === 'chromium') {
       const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
       await expect(dialog).toBeVisible();
-      await expect(dialog).toContainText('trocar o computador que controla a TV');
+      await expect(dialog).toContainText('ligar um computador à TV');
       await dialog.getByRole('button', { name: 'Confirmar' }).click();
     }
 
