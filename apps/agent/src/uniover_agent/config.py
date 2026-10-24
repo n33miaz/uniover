@@ -41,6 +41,11 @@ def default_config_path() -> Path:
     return _local_base() / "UniOver" / "agent.toml"
 
 
+def connection_page_path() -> Path:
+    """Página local do QR do pareamento: ao lado do arquivo de configuração em uso."""
+    return config_path().parent / "conectar.html"
+
+
 def tv_cert_dir(tv_name: str) -> Path:
     """Pasta do par certificado/chave da TV: fora do repositório, por usuário e por TV."""
     safe = re.sub(r"[^A-Za-z0-9._-]", "-", tv_name).strip(".-")[:40] or "tv"
