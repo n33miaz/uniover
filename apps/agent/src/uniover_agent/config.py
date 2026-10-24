@@ -47,6 +47,11 @@ def tv_cert_dir(tv_name: str) -> Path:
     return _local_base() / "UniOver" / "tv" / safe
 
 
+def agent_source_dir() -> Path:
+    """Onde o instalador põe o código do agente (e onde a auto-atualização o troca)."""
+    return _local_base() / "UniOver" / "agent-src"
+
+
 def config_path() -> Path:
     override = os.environ.get(CONFIG_FILE_ENV)
     return Path(override) if override else default_config_path()
@@ -59,9 +64,15 @@ class Settings(BaseSettings):
     agent_id: str | None = None
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     allow_insecure: bool = False
+    # Arquivo de registro com rodízio (o instalador aponta para `%LOCALAPPDATA%\UniOver\agent.log`,
+    # pois a tarefa roda sem janela). Vazio: só o terminal.
+    log_file: str | None = None
     # TV. O IP não é garantidamente fixo, por isso vem de configuração.
     tv_kind: Literal["android", "samsung"] = "android"
     tv_host: str | None = None
+    # Identificador estável da TV (Samsung: `duid` ou MAC Wi-Fi; Android: MAC). Serve para
+    # reencontrá-la na rede se o IP mudar; o `tv-find` grava.
+    tv_id_hint: str | None = None
     # Nome do agente que aparece na TV durante o pareamento.
     tv_client_name: str = "UniOver"
     # Nome da pasta do certificado desta TV, em `%LOCALAPPDATA%\UniOver\tv\<nome>`.

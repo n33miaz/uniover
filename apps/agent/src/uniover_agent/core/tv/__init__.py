@@ -21,6 +21,7 @@ from uniover_agent.core.tv.handlers import (
     unsupported_handler,
 )
 from uniover_agent.core.tv.icons import AppIconPublisher, IconResolver
+from uniover_agent.core.tv.relocator import TvRelocator
 from uniover_agent.core.tv.samsung_apps import SamsungTvApps
 from uniover_agent.core.tv.session import (
     TV_NOT_PAIRED,
@@ -51,6 +52,7 @@ __all__ = [
     "TvApps",
     "TvCleanup",
     "TvControl",
+    "TvRelocator",
     "TvSessionError",
     "TvSessionManager",
     "TvStatePublisher",
