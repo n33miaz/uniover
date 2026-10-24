@@ -40,7 +40,7 @@ public sealed class TrainingPersistenceTests(PostgresFixture postgres)
 
         tables.Should().Equal(
             "__ef_migrations_history", "body_entries", "body_profile", "catalog_meta", "exercise_overrides", "exercises", "foods", "goals", "idempotency_keys",
-            "meal_entries", "routine_items", "routines", "session_sets", "sessions");
+            "meal_entries", "programs", "routine_items", "routines", "session_sets", "sessions");
         inPublic.Should().BeEmpty();
     }
 

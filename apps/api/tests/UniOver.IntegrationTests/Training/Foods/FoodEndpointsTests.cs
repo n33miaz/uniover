@@ -298,10 +298,11 @@ public sealed class FoodEndpointsTests(PostgresFixture postgres)
             var tablesBefore = await GetTrainingTablesAsync(app.Database.OwnerConnection);
             var existingSchemaBefore = await GetExistingTrainingSchemaObjectsAsync(app.Database.OwnerConnection);
             var pending = await training.Database.GetPendingMigrationsAsync(Ct);
-            pending.Should().Equal("20261022124339_AddFoods");
-            await training.Database.MigrateAsync(Ct);
+            // Migrações posteriores (o programa da semana) vêm depois e têm o teste delas; aqui só a AddFoods é aplicada.
+            pending.Should().StartWith("20261022124339_AddFoods");
+            await training.Database.MigrateAsync("20261022124339_AddFoods", Ct);
             (await training.Database.GetAppliedMigrationsAsync(Ct)).Should().Contain("20261022124339_AddFoods");
-            (await training.Database.GetPendingMigrationsAsync(Ct)).Should().BeEmpty();
+            (await training.Database.GetPendingMigrationsAsync(Ct)).Should().NotContain("20261022124339_AddFoods");
             (await GetTrainingTablesAsync(app.Database.OwnerConnection)).Except(tablesBefore)
                 .Should().BeEquivalentTo("foods", "meal_entries");
             (await GetExistingTrainingSchemaObjectsAsync(app.Database.OwnerConnection)).Should().BeEquivalentTo(existingSchemaBefore,
