@@ -60,6 +60,8 @@ internal static class TrainingPermissionMap
         new("GET", "/api/v1/training/goals", Module),
         new("PUT", "/api/v1/training/goals/{kind}", Module, GoalBody),
         new("GET", "/api/v1/training/routine-templates", Module),
+        new("GET", "/api/v1/training/program", Module),
+        new("PUT", "/api/v1/training/program", Module, new { programId = "ppl-superior-inferior", clientUpdatedAt = DateTimeOffset.UtcNow }),
         new("GET", "/api/v1/training/routines", Module),
         new("PUT", "/api/v1/training/routines/{id:guid}", Module, new { name = "A", clientUpdatedAt = DateTimeOffset.UtcNow }),
         new("GET", "/api/v1/training/sessions", Module),
