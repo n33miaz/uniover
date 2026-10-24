@@ -29,6 +29,8 @@ from uniover_agent.adapters.transport_ws import WebSocketTransport, build_ws_url
 from uniover_agent.adapters.tv_adb import AdbTv, locate_adb
 from uniover_agent.adapters.tv_pairing import TvPairingError, is_paired, pair_tv
 from uniover_agent.adapters.tv_remote_v2 import AndroidTvRemoteV2
+from uniover_agent.adapters.tv_samsung import SamsungTvDriver
+from uniover_agent.adapters.tv_samsung_pairing import SamsungPairingError, pair_samsung_tv
 from uniover_agent.config import (
     ConfigError,
     Settings,
@@ -49,6 +51,7 @@ from uniover_agent.core import (
     IconResolver,
     PairAgent,
     ProcessMessage,
+    SamsungTvApps,
     TextReconciler,
     TvApps,
     TvCleanup,
@@ -60,6 +63,7 @@ from uniover_agent.core import (
     tv_key_handler,
     tv_text_handler,
     tv_wake_handler,
+    unsupported_handler,
 )
 from uniover_agent.ports import (
     AdbUnauthorized,
@@ -94,7 +98,7 @@ def silence_noisy_loggers() -> None:
     """Em DEBUG essas bibliotecas registram cabeçalhos (inclusive `Authorization`) e corpos:
     ficam em WARNING sempre, para que nenhum segredo chegue ao registro. A `androidtvremote2`
     também registra o que envia à TV e o código de pareamento."""
-    for noisy in ("websockets", "httpx", "httpcore", "androidtvremote2"):
+    for noisy in ("websockets", "httpx", "httpcore", "androidtvremote2", "samsungtvws"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
@@ -132,9 +136,13 @@ class TvSetup:
 
 
 def build_tv(
-    settings: Settings, clock: Clock, transport: Transport, envelopes: EnvelopeFactory
+    settings: Settings,
+    clock: Clock,
+    transport: Transport,
+    envelopes: EnvelopeFactory,
+    secrets: SecretStore | None = None,
 ) -> TvSetup | None:
-    """Sessão da TV pelo Remote v2, ou `None` se não estiver configurada e pareada.
+    """Sessão pelo driver configurado, ou `None` se a TV ainda não foi pareada.
 
     A capacidade `tv.remote` só é declarada à API quando há endereço da TV **e** o par
     certificado/chave existe: declarar sem poder atender faria o app mostrar uma TV que não
@@ -143,6 +151,8 @@ def build_tv(
     if not settings.tv_host:
         return None
     host = require_tv_host(settings.tv_host)
+    if settings.tv_kind == "samsung":
+        return build_samsung_tv(settings, clock, transport, envelopes, secrets)
     cert_dir = tv_cert_dir(settings.tv_name)
     if not is_paired(cert_dir):
         _log.warning("TV configurada, mas ainda não pareada. Rode `uniover-agent tv-pair`.")
@@ -175,13 +185,71 @@ def build_tv(
             "tv.wake.v1": tv_wake_handler(manager),
             "tv.app.launch.v1": tv_app_launch_handler(manager),
         },
-        capabilities=["tv.remote"],
+        capabilities=["tv.remote", "tv.kind.android"],
         text=text,
     )
     # Cada tarefa seguinte insere aqui só a linha dela; o gerenciador é o único dono da conexão.
     compose_adb(setup, settings, host, clock)  # [composição: adb]
     # [composição: vigia]
     return setup
+
+
+def samsung_token_name(tv_name: str) -> str:
+    """Nome estável no Cofre de Credenciais, separado do token do agente."""
+    return f"samsung:{tv_name}"
+
+
+def build_samsung_tv(
+    settings: Settings,
+    clock: Clock,
+    transport: Transport,
+    envelopes: EnvelopeFactory,
+    secrets: SecretStore | None,
+) -> TvSetup | None:
+    """Compõe somente o que a Samsung Tizen oferece: remoto e apps, sem ADB nem limpeza."""
+    if secrets is None:
+        _log.warning("TV Samsung configurada, mas o cofre não foi aberto para ler o pareamento.")
+        return None
+    token_name = samsung_token_name(settings.tv_name)
+    token = secrets.get(token_name)
+    if token is None:
+        _log.warning(
+            "TV Samsung configurada, mas ainda não pareada. "
+            "Rode `uniover-agent tv-pair --kind samsung`."
+        )
+        return None
+    host = require_tv_host(settings.tv_host)
+    remote = SamsungTvDriver(
+        host,
+        token,
+        settings.tv_client_name,
+        save_token=lambda value: secrets.set(token_name, value),
+        app_ids=tuple(settings.tv_samsung_apps),
+    )
+    manager = TvSessionManager(clock, remote, hibernate_seconds=settings.tv_hibernate_seconds)
+    keys = tv_key_handler(manager)
+    apps = SamsungTvApps(manager, remote, transport, envelopes)
+    announcer = AppsAnnouncer(apps, lambda: manager.snapshot().connection == "hot")
+    manager.subscribe(announcer.on_state)
+    return TvSetup(
+        manager,
+        transport,
+        envelopes,
+        handlers={
+            "tv.key.v1": keys,
+            "tv.key.v2": keys,
+            "tv.wake.v1": tv_wake_handler(manager),
+            "tv.app.launch.v1": tv_app_launch_handler(
+                manager, packages=apps, links_supported=False
+            ),
+            "tv.apps.refresh.v1": tv_apps_refresh_handler(apps),
+            "tv.text.v1": unsupported_handler("a TV Samsung não suporta digitação por este canal"),
+            "tv.cleanup.v1": unsupported_handler("a TV Samsung não suporta limpeza por ADB"),
+        },
+        capabilities=["tv.remote", "tv.kind.samsung"],
+        background=[announcer.run],
+        after_hello=[announcer.after_hello],
+    )
 
 
 def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> None:
@@ -359,7 +427,7 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
         lambda: secrets.get(agent_id),
         user_agent=f"uniover-agent/{agent_version()}",
     )
-    tv = build_tv(settings, clock, transport, envelopes)
+    tv = build_tv(settings, clock, transport, envelopes, secrets)
     if tv is not None:
         for step in tv.prepare:
             await step()
@@ -441,15 +509,35 @@ async def _ask_tv_code() -> str:
     return await asyncio.to_thread(input, "Digite o código da TV: ")
 
 
-async def tv_pair(
+async def tv_pair(  # noqa: PLR0913, PLR0917 - parâmetros espelham a linha de comando e os testes
     settings: Settings,
     host: str | None,
     name: str | None,
+    kind: str | None = None,
+    secrets: SecretStore | None = None,
     ask_code: Callable[[], Awaitable[str]] = _ask_tv_code,
 ) -> int:
-    """Pareia o agente com a TV e guarda o certificado fora do repositório."""
+    """Pareia a TV escolhida e guarda a credencial no lugar adequado ao driver."""
     tv_host = require_tv_host(host or settings.tv_host)
-    cert_dir = tv_cert_dir(name or settings.tv_name)
+    tv_kind = kind or settings.tv_kind
+    tv_name = name or settings.tv_name
+    if tv_kind == "samsung":
+        if secrets is None:
+            print("Não consegui abrir o Cofre de Credenciais para a TV Samsung.", file=sys.stderr)
+            return EXIT_FAILURE
+        print(f"Pareando com a TV Samsung em {tv_host}. Aceite o aviso na TV em até 60 segundos.")
+        try:
+            token = await pair_samsung_tv(tv_host, settings.tv_client_name)
+            secrets.set(samsung_token_name(tv_name), token)
+        except SamsungPairingError as exc:
+            print(f"Falha no pareamento da TV Samsung: {exc}", file=sys.stderr)
+            return EXIT_FAILURE
+        print("TV Samsung pareada. Token guardado no Cofre de Credenciais.")
+        print(
+            f"Agora defina UNIOVER_TV_KIND=samsung e UNIOVER_TV_HOST={tv_host} (ou no agent.toml)."
+        )
+        return EXIT_OK
+    cert_dir = tv_cert_dir(tv_name)
     print(f"Pareando com a TV em {tv_host}. Deixe a TV ligada e a tela de pareamento aberta.")
     try:
         await pair_tv(tv_host, settings.tv_client_name, cert_dir, ask_code)
@@ -469,6 +557,7 @@ def _parser() -> argparse.ArgumentParser:
     pair_parser.add_argument("--name", help="nome do agente (padrão: nome do computador)")
     sub.add_parser("status", help="mostra se há token e se a API responde")
     tv_parser = sub.add_parser("tv-pair", help="pareia o agente com a TV (código mostrado na tela)")
+    tv_parser.add_argument("--kind", choices=("android", "samsung"), help="tipo da TV")
     tv_parser.add_argument("--host", help="endereço IP da TV (padrão: UNIOVER_TV_HOST)")
     tv_parser.add_argument("--name", help="nome da pasta do certificado (padrão: UNIOVER_TV_NAME)")
     return parser
@@ -490,7 +579,7 @@ def main(argv: Sequence[str] | None = None, *, secrets: SecretStore | None = Non
         if command == "status":
             return asyncio.run(status(settings, open_store))
         if command == "tv-pair":
-            return asyncio.run(tv_pair(settings, args.host, args.name))
+            return asyncio.run(tv_pair(settings, args.host, args.name, args.kind, open_store()))
         return asyncio.run(run(settings, open_store))
     except (ConfigError, SecretStoreError) as exc:
         print(f"Erro: {exc}", file=sys.stderr)

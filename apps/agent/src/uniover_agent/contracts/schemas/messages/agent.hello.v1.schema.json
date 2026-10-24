@@ -19,7 +19,11 @@
       "required": ["agentVersion", "capabilities"],
       "properties": {
         "agentVersion": { "type": "string", "minLength": 1 },
-        "capabilities": { "type": "array", "uniqueItems": true, "items": { "enum": ["tv.remote", "tv.adb"] } }
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["tv.remote", "tv.adb", "tv.kind.android", "tv.kind.samsung"] }
+        }
       }
     }
   }

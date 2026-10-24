@@ -10,7 +10,8 @@ uv sync
 uv run uniover-agent pair      # pareia este PC com um código curto
 uv run uniover-agent run       # conecta e roda em primeiro plano (é o padrão)
 uv run uniover-agent status    # diz se há token no cofre e se a API responde
-uv run uniover-agent tv-pair --host <ip-da-tv>   # pareia o agente com a TV (código mostrado na tela)
+uv run uniover-agent tv-pair --host <ip-da-tv>   # pareia uma Android TV (código mostrado na tela)
+uv run uniover-agent tv-pair --kind samsung --host <ip-da-tv>   # pareia uma Samsung (aviso na TV)
 ```
 
 Verificação do projeto:
@@ -50,8 +51,10 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_ALLOW_INSECURE` | `1` libera `http://`/`ws://` para a API local em desenvolvimento (com aviso) |
 | `UNIOVER_CONFIG_FILE` | outro caminho para o arquivo de configuração |
 | `UNIOVER_TV_HOST` | endereço (IP) da TV; sem ele o agente não controla TV. O IP não é garantidamente fixo |
+| `UNIOVER_TV_KIND` | tipo da TV: `android` (padrão) ou `samsung` |
 | `UNIOVER_TV_CLIENT_NAME` | nome do agente que aparece na TV no pareamento (padrão `UniOver`) |
 | `UNIOVER_TV_NAME` | nome da pasta do certificado desta TV (padrão `tv`) |
+| `UNIOVER_TV_SAMSUNG_APPS` | IDs Tizen extras a procurar, separados por vírgula; a TV só publica os instalados |
 | `UNIOVER_TV_HIBERNATE_SECONDS` | segundos sem comando até a sessão com a TV hibernar (padrão `300`) |
 | `UNIOVER_ADB_PATH` | caminho do `adb` (padrão: procura no `PATH` e em `%LOCALAPPDATA%\Android\Sdk\platform-tools`); habilita lista de apps, abrir app por pacote e digitação pelo ADB |
 | `UNIOVER_TV_ADB_PORT` | porta do ADB da TV (padrão `5555`) |
@@ -65,6 +68,40 @@ Variáveis de ambiente (vencem o arquivo):
 
 Arquivo local (fora do repositório): `%LOCALAPPDATA%\UniOver\agent.toml`, com `api_url` e `agent_id`. Nunca
 guarda segredo.
+
+## TV Samsung (Tizen)
+
+Use uma Samsung recente na mesma rede do PC, com o controle por rede liberado:
+
+1. Defina `tv_kind = "samsung"` e `tv_host = "<ip-da-tv>"` no `agent.toml` (ou use as variáveis
+   `UNIOVER_TV_KIND=samsung` e `UNIOVER_TV_HOST`).
+2. Rode `uv run uniover-agent tv-pair --kind samsung --host <ip-da-tv>` e selecione **Permitir** no aviso da TV
+   em até 60 segundos. O token fica no Cofre de Credenciais do Windows, no serviço `uniover-agent` e nome
+   `samsung:<nome-da-tv>`; ele não é gravado em arquivo nem mostrado no log.
+3. Se o aviso não aparecer, na TV procure **Gerenciador de Conexão do Dispositivo** ou **Notificação de acesso**,
+   permita o PC e tente o pareamento outra vez.
+
+O agente mantém o WebSocket Samsung aberto enquanto há uso e o hiberna como faz com Android. Lê a energia pelo
+REST da TV (`on`, `standby` ou `off`; sem resposta fica `unknown`) e não repete `POWER` em menos de dez segundos.
+Teclas, volume, canais, números, mídia e início funcionam pelo canal Samsung. A lista consulta pelo REST um catálogo
+de apps conhecidos e os IDs extras em `UNIOVER_TV_SAMSUNG_APPS`; só publica respostas que a TV confirma como
+instaladas e não recebe ícone. A abertura tenta o mesmo REST antes de recorrer ao canal Samsung. A lista usa aliases
+internos válidos no contrato, mas abre o `appId` original Tizen. Não há ADB, limpeza de apps, abertura de links ou
+digitação pelo canal desta TV: esses pedidos retornam `unsupported`.
+
+### Instalador Windows
+
+No PowerShell, baixe e rode `apps/agent/tools/install-windows.ps1` com, por exemplo:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\install-windows.ps1 -TvKind samsung -TvHost 192.168.0.11
+```
+
+Ele instala o `uv` pelo `winget` se necessário, baixa somente `apps/agent` da branch pública `main` em
+`%LOCALAPPDATA%\UniOver\agent-src`, prepara as dependências, mostra o código para aprovar o PC no app, pareia a
+TV e pergunta explicitamente antes de criar a tarefa **UniOver agente** para iniciar sem janela ao entrar no Windows.
+Para remover só a tarefa: `.\install-windows.ps1 -Uninstall`.
 
 ## TV (Android TV Remote v2)
 

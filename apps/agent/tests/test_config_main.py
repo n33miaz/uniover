@@ -276,5 +276,5 @@ async def test_run_connects_with_vault_token_and_stops_on_revocation(
 
 def test_configure_logging_caps_libraries_that_log_headers() -> None:
     configure_logging("DEBUG")
-    for name in ("websockets", "httpx", "httpcore", "androidtvremote2"):
+    for name in ("websockets", "httpx", "httpcore", "androidtvremote2", "samsungtvws"):
         assert logging.getLogger(name).getEffectiveLevel() == logging.WARNING

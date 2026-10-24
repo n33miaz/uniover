@@ -30,6 +30,16 @@ class Wakeable(Protocol):
     async def wake(self) -> None: ...
 
 
+class AppsProvider(Protocol):
+    """Lista de apps de qualquer driver de TV e a última resposta reaproveitável."""
+
+    cache: list[AppEntry] | None
+
+    async def refresh(self) -> list[AppEntry]: ...
+
+    async def publish(self, apps: list[AppEntry], correlation_id: str | None = None) -> None: ...
+
+
 class TvApps:
     """Lista de apps e abertura por pacote, com a última lista guardada."""
 
@@ -89,7 +99,7 @@ class TvApps:
             raise TvSessionError(exc.code, exc.message) from None
 
 
-def tv_apps_refresh_handler(apps: TvApps) -> Handler:
+def tv_apps_refresh_handler(apps: AppsProvider) -> Handler:
     """`tv.apps.refresh.v1`: lista os apps pelo ADB, envia `tv.apps.v1` e responde ao pedido."""
 
     async def handle(command: Command) -> CommandResult:
@@ -114,7 +124,7 @@ class AppsAnnouncer:
     lista guardada, ela é reenviada na hora; senão espera a sessão ficar quente (`on_state`).
     """
 
-    def __init__(self, apps: TvApps, is_hot: Callable[[], bool]) -> None:
+    def __init__(self, apps: AppsProvider, is_hot: Callable[[], bool]) -> None:
         self._apps = apps
         self._is_hot = is_hot
         self._announced = False

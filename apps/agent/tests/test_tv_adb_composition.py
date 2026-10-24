@@ -73,7 +73,7 @@ def test_adb_is_wired_with_one_line_and_the_text_handler_is_not_replaced(
     assert len(setup.after_hello) == 1
     assert len(setup.background) == 1
     # A capacidade só vem depois do teste de conexão (passo de preparação).
-    assert setup.capabilities == ["tv.remote"]
+    assert setup.capabilities == ["tv.remote", "tv.kind.android"]
 
 
 def test_without_the_adb_nothing_of_it_is_registered(
@@ -98,7 +98,7 @@ async def test_capability_is_declared_when_the_adb_answers(
     assert setup is not None
     for step in setup.prepare:
         await step()
-    assert setup.capabilities == ["tv.remote", "tv.adb"]
+    assert setup.capabilities == ["tv.remote", "tv.kind.android", "tv.adb"]
     assert adb.connects == 1
 
 
@@ -113,7 +113,7 @@ async def test_capability_is_still_declared_when_the_tv_is_off_right_now(
     assert setup is not None
     for step in setup.prepare:
         await step()
-    assert setup.capabilities == ["tv.remote", "tv.adb"]
+    assert setup.capabilities == ["tv.remote", "tv.kind.android", "tv.adb"]
 
 
 async def test_capability_is_not_declared_when_the_tv_did_not_authorize_this_pc(
@@ -128,7 +128,7 @@ async def test_capability_is_not_declared_when_the_tv_did_not_authorize_this_pc(
     with caplog.at_level(logging.WARNING):
         for step in setup.prepare:
             await step()
-    assert setup.capabilities == ["tv.remote"]
+    assert setup.capabilities == ["tv.remote", "tv.kind.android"]
     assert "não autorizou" in caplog.text
     # Os comandos continuam registrados: respondem `adb_unauthorized` em vez de "desconhecido".
     assert "tv.apps.refresh.v1" in setup.handlers
@@ -170,7 +170,11 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
         )
         assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
 
-    assert api.received[0]["body"]["capabilities"] == ["tv.remote", "tv.adb"]
+    assert api.received[0]["body"]["capabilities"] == [
+        "tv.remote",
+        "tv.kind.android",
+        "tv.adb",
+    ]
     lists = [m for m in api.received if m["type"] == "tv.apps.v1"]
     # Uma lista por iniciativa do agente (sessão quente depois do `hello`) e a do pedido.
     assert [m["correlationId"] for m in lists] == [None, ids["refresh"]]

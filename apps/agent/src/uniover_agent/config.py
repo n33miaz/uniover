@@ -59,12 +59,15 @@ class Settings(BaseSettings):
     agent_id: str | None = None
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     allow_insecure: bool = False
-    # TV (Remote v2). O IP não é garantidamente fixo, por isso vem de configuração.
+    # TV. O IP não é garantidamente fixo, por isso vem de configuração.
+    tv_kind: Literal["android", "samsung"] = "android"
     tv_host: str | None = None
     # Nome do agente que aparece na TV durante o pareamento.
     tv_client_name: str = "UniOver"
     # Nome da pasta do certificado desta TV, em `%LOCALAPPDATA%\UniOver\tv\<nome>`.
     tv_name: str = "tv"
+    # Apps Tizen extras a consultar no endpoint REST da Samsung; a TV só publica os instalados.
+    tv_samsung_apps: Annotated[list[str], NoDecode] = Field(default_factory=list)
     # Sem comando e sem aviso de "app aberto" por este tempo, a sessão com a TV hiberna.
     tv_hibernate_seconds: int = Field(default=300, ge=1)
     # Digitação: o acréscimo feito só de letras minúsculas, dígitos, espaço e `. , - /` vai por
@@ -94,6 +97,20 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
+
+    @field_validator("tv_samsung_apps", mode="before")
+    @classmethod
+    def _split_samsung_apps(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
+
+    @field_validator("tv_samsung_apps")
+    @classmethod
+    def _validate_samsung_apps(cls, value: list[str]) -> list[str]:
+        if any(not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", app_id) for app_id in value):
+            raise ValueError("tv_samsung_apps precisa conter IDs Tizen separados por vírgula")
+        return list(dict.fromkeys(value))
 
     @classmethod
     def settings_customise_sources(
