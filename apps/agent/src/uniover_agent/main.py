@@ -26,6 +26,13 @@ from uniover_agent.adapters.apk_tools import (
 )
 from uniover_agent.adapters.local_config import save_agent_config, update_config
 from uniover_agent.adapters.pairing_http import HttpPairingClient, probe_api
+from uniover_agent.adapters.pairing_page import (
+    can_open_browser,
+    open_connection_page,
+    write_connected_page,
+    write_failed_page,
+    write_pairing_page,
+)
 from uniover_agent.adapters.qr_terminal import render_ascii, render_for
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
 from uniover_agent.adapters.self_update import self_update
@@ -50,6 +57,7 @@ from uniover_agent.config import (
     Settings,
     agent_source_dir,
     config_path,
+    connection_page_path,
     require_api_url,
     require_cleanup_keep,
     require_tv_host,
@@ -418,8 +426,21 @@ def print_qr(link: str) -> None:
         _log.warning("não consegui desenhar o QR; use o código escrito")
 
 
+def _update_page(write: Callable[[Path], None]) -> None:
+    """Reescreve a página do QR; falha de disco é só um aviso."""
+    try:
+        write(connection_page_path())
+    except OSError as exc:
+        _log.warning("não consegui atualizar a página do QR (%s)", type(exc).__name__)
+
+
 async def pair(
-    settings: Settings, open_store: StoreFactory, name: str | None, *, if_needed: bool = False
+    settings: Settings,
+    open_store: StoreFactory,
+    name: str | None,
+    *,
+    if_needed: bool = False,
+    no_browser: bool = False,
 ) -> int:
     api_url = require_api_url(settings)
     store = open_store()
@@ -429,9 +450,17 @@ async def pair(
     use_case = PairAgent(HttpPairingClient(api_url), store, SystemClock())
 
     def show(ticket: PairingTicket) -> None:
+        link = approval_link(api_url, ticket.user_code)
         print(f"\nCódigo de pareamento: {ticket.user_code}")
-        print("\nEscaneie com o celular onde você usa o UniOver:\n")
-        print_qr(approval_link(api_url, ticket.user_code))
+        print("\nEscaneie com o celular de quem administra o UniOver:\n")
+        print_qr(link)
+        try:
+            page = connection_page_path()
+            write_pairing_page(page, link, ticket.user_code)
+            if not no_browser and can_open_browser():
+                open_connection_page(page)
+        except OSError as exc:
+            _log.warning("não consegui preparar a página do QR (%s)", type(exc).__name__)
         print(
             f"\nOu abra o app ({api_url}) e aprove este código "
             f"em até {ticket.expires_in // 60} minutos."
@@ -441,14 +470,20 @@ async def pair(
     try:
         paired = await use_case(pairing_info(name), show)
     except PairingExpired:
+        _update_page(write_failed_page)
         print("O código venceu. Rode `uniover-agent pair` de novo.", file=sys.stderr)
         return EXIT_FAILURE
     except PairingDenied:
+        _update_page(write_failed_page)
         print("O pareamento foi recusado no app.", file=sys.stderr)
         return EXIT_FAILURE
     except PairingError as exc:
+        if connection_page_path().exists():
+            _update_page(write_failed_page)
         print(f"Falha no pareamento: {exc}", file=sys.stderr)
         return EXIT_FAILURE
+
+    _update_page(write_connected_page)
 
     # O token já está no cofre; agora o `agentId` vai para a configuração local do usuário.
     try:
@@ -760,6 +795,9 @@ def _parser() -> argparse.ArgumentParser:
     pair_parser.add_argument(
         "--if-needed", action="store_true", help="não pareia de novo se este PC já está pareado"
     )
+    pair_parser.add_argument(
+        "--no-browser", action="store_true", help="não abre a página local do QR no navegador"
+    )
     sub.add_parser("status", help="mostra se há token e se a API responde")
     tv_parser = sub.add_parser("tv-pair", help="pareia o agente com a TV (código mostrado na tela)")
     tv_parser.add_argument("--kind", choices=("android", "samsung"), help="tipo da TV")
@@ -795,7 +833,15 @@ def main(  # noqa: PLR0911 - um retorno por comando
             return secrets or KeyringSecretStore()
 
         if command == "pair":
-            return asyncio.run(pair(settings, open_store, args.name, if_needed=args.if_needed))
+            return asyncio.run(
+                pair(
+                    settings,
+                    open_store,
+                    args.name,
+                    if_needed=args.if_needed,
+                    no_browser=args.no_browser,
+                )
+            )
         if command == "status":
             return asyncio.run(status(settings, open_store))
         if command == "tv-pair":
