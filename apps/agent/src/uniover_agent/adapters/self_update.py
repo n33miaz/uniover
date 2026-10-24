@@ -1,7 +1,7 @@
-r"""Auto-atualização do agente instalado em `%LOCALAPPDATA%\UniOver\agent-src`.
+r"""Auto-atualização do agente instalado em `%LOCALAPPDATA%\UniOver\app`.
 
 O fluxo é: perguntar ao GitHub qual é o commit atual da `main`, comparar com o gravado em
-`agent-src\.version` e, se mudou, baixar **o zip daquele commit** (e não o da branch, que poderia
+`app\.version` e, se mudou, baixar **o zip daquele commit** (e não o da branch, que poderia
 andar entre uma chamada e outra), montar a pasta nova ao lado, validá-la e trocar por renomeação,
 guardando a anterior para o wrapper do Windows voltar atrás.
 
@@ -99,7 +99,7 @@ def read_version(source: Path) -> str | None:
 
 
 def extract_agent(archive: Path, destination: Path) -> None:
-    """Extrai só `apps/agent` do zip (`<repo>-<sha>/apps/agent/...`) para `destination`.
+    """Extrai `apps/agent` e o ícone público para `destination`.
 
     Cada caminho é conferido para ficar dentro do destino (zip malicioso com `..` ou caminho
     absoluto não escreve fora) e o que não é arquivo comum é ignorado.
@@ -110,11 +110,14 @@ def extract_agent(archive: Path, destination: Path) -> None:
         with zipfile.ZipFile(archive) as bundle:
             for info in bundle.infolist():
                 parts = PurePosixPath(info.filename).parts
-                if len(parts) < len(AGENT_PREFIX) + 2 or parts[1:3] != AGENT_PREFIX:
+                agent_file = len(parts) >= len(AGENT_PREFIX) + 2 and parts[1:3] == AGENT_PREFIX
+                app_icon = parts[1:] == ("apps", "web", "public", "icons", "icon-192.png")
+                if not agent_file and not app_icon:
                     continue
                 if info.is_dir() or (info.external_attr >> 16) & _FILE_TYPE_MASK == _SYMLINK:
                     continue
-                target = (root.joinpath(*parts[3:])).resolve()
+                relative = parts[3:] if agent_file else ("assets", "uniover.png")
+                target = (root.joinpath(*relative)).resolve()
                 if not target.is_relative_to(root):
                     raise SelfUpdateError("o pacote baixado tem um caminho inválido")
                 extracted += info.file_size
@@ -127,12 +130,28 @@ def extract_agent(archive: Path, destination: Path) -> None:
         raise SelfUpdateError("o pacote baixado não é um zip válido") from None
     if not (root / "pyproject.toml").is_file():
         raise SelfUpdateError("o pacote baixado não contém apps/agent")
+    png, ico = root / "assets" / "uniover.png", root / "assets" / "uniover.ico"
+    if png.is_file():
+        try:
+            from PIL import Image  # noqa: PLC0415 - Pillow só é necessário ao preparar o ícone opcional
+
+            with Image.open(png) as image:
+                image.save(ico, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64)])
+        except OSError, ValueError:
+            _log.warning("não consegui preparar o ícone da bandeja")
+        finally:
+            try:
+                png.unlink(missing_ok=True)
+            except OSError:
+                _log.warning("não consegui remover a imagem temporária da bandeja")
 
 
 def blocked_versions(source: Path) -> set[str]:
     """Commits recusados pelo monitor do Windows depois de uma queda repetida."""
     try:
-        entries = (source.parent / BLOCKED_VERSIONS_FILE).read_text(encoding="utf-8").splitlines()
+        runtime_file = source.parent / "runtime" / BLOCKED_VERSIONS_FILE
+        path = runtime_file if runtime_file.exists() else source.parent / BLOCKED_VERSIONS_FILE
+        entries = path.read_text(encoding="utf-8").splitlines()
         return {line.strip() for line in entries if _SHA.fullmatch(line.strip())}
     except OSError:
         return set()
@@ -218,7 +237,7 @@ def self_update(  # noqa: PLR0913 - dependências injetadas deixam a atualizaç�
     run_sync: Callable[[Path], None] = run_uv_sync,
     run_check: Callable[[Path], None] = run_uv_check,
 ) -> UpdateResult:
-    """Atualiza `source` (a `agent-src` instalada) se a `main` andou. Nunca levanta por falha de
+    """Atualiza `source` (a `app` instalada) se a `main` andou. Nunca levanta por falha de
     rede nem de disco: devolve o motivo em `message`."""
     if not source.is_dir():
         return UpdateResult(False, "agente não instalado pelo instalador; nada a atualizar")

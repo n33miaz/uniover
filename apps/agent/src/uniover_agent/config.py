@@ -37,13 +37,17 @@ def _local_base() -> Path:
 
 
 def default_config_path() -> Path:
-    """`%LOCALAPPDATA%\\UniOver\\agent.toml` no Windows; `~/.config/UniOver/agent.toml` no resto."""
-    return _local_base() / "UniOver" / "agent.toml"
+    """Arquivo de configuração na pasta organizada da instalação."""
+    return _local_base() / "UniOver" / "config" / "agent.toml"
 
 
 def connection_page_path() -> Path:
     """Página local do QR do pareamento: ao lado do arquivo de configuração em uso."""
-    return config_path().parent / "conectar.html"
+    config = config_path()
+    if config.parent.name == "config":
+        return config.parent.parent / "web" / "conectar.html"
+    # Overrides de desenvolvimento e wrappers antigos continuam tendo a página ao lado do TOML.
+    return config.parent / "conectar.html"
 
 
 def tv_cert_dir(tv_name: str) -> Path:
@@ -54,7 +58,7 @@ def tv_cert_dir(tv_name: str) -> Path:
 
 def agent_source_dir() -> Path:
     """Onde o instalador põe o código do agente (e onde a auto-atualização o troca)."""
-    return _local_base() / "UniOver" / "agent-src"
+    return _local_base() / "UniOver" / "app"
 
 
 def config_path() -> Path:
@@ -69,7 +73,8 @@ class Settings(BaseSettings):
     agent_id: str | None = None
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     allow_insecure: bool = False
-    # Arquivo de registro com rodízio (o instalador aponta para `%LOCALAPPDATA%\UniOver\agent.log`,
+    # Arquivo de registro com rodízio. O instalador aponta para
+    # `%LOCALAPPDATA%\UniOver\logs\agent.log`,
     # pois a tarefa roda sem janela). Vazio: só o terminal.
     log_file: str | None = None
     # TV. O IP não é garantidamente fixo, por isso vem de configuração.
