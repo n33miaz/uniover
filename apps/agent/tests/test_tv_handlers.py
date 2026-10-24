@@ -26,6 +26,11 @@ from .support import AGENT_ID
 
 
 def make() -> tuple[HandleCommand, FakeTvRemote]:
+    handler, remote, _ = make_with_clock()
+    return handler, remote
+
+
+def make_with_clock() -> tuple[HandleCommand, FakeTvRemote, FakeClock]:
     clock, remote = FakeClock(), FakeTvRemote()
     session = TvSessionManager(clock, remote)
     keys = tv_key_handler(session)
@@ -39,7 +44,7 @@ def make() -> tuple[HandleCommand, FakeTvRemote]:
         },
         clock,
     )
-    return handler, remote
+    return handler, remote, clock
 
 
 async def test_key_v1_and_v2_are_both_accepted() -> None:
@@ -284,11 +289,15 @@ async def test_texts_arriving_together_are_sent_in_order_and_the_last_wins() -> 
 
 
 async def test_a_failed_text_does_not_block_the_next_one() -> None:
-    handler, remote = make()
+    handler, remote, clock = make_with_clock()
     remote.connect_errors = [TvUnreachable("x") for _ in range(4)]
     failed = await handler(Command("1", "tv.text.v1", {"text": "a"}))
     assert failed.status is ResultStatus.FAILED
-    recovered = await handler(Command("2", "tv.text.v1", {"text": "ab"}))
+    # A TV ficou offline: um pedido logo em seguida falha na hora, sem tocar na TV.
+    too_soon = await handler(Command("2", "tv.text.v1", {"text": "a"}))
+    assert (too_soon.status, remote.connects) == (ResultStatus.FAILED, 4)
+    clock.advance(6)  # passada a espera mínima de quem está esperando a TV, ela é tentada de novo
+    recovered = await handler(Command("3", "tv.text.v1", {"text": "ab"}))
     assert recovered.status is ResultStatus.OK
     assert remote.texts == ["ab"]
 

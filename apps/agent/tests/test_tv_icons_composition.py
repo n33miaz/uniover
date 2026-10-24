@@ -75,9 +75,11 @@ async def test_the_apps_list_hands_its_list_to_the_icon_task_after_publishing(
     requested: list[list[str]] = []
     original = AppIconPublisher.request
 
-    def record(self: AppIconPublisher, apps: Sequence[AppEntry]) -> None:
+    def record(
+        self: AppIconPublisher, apps: Sequence[AppEntry], *, refresh_versions: bool = True
+    ) -> None:
         requested.append([entry.package for entry in apps])
-        original(self, apps)
+        original(self, apps, refresh_versions=refresh_versions)
 
     monkeypatch.setattr(AppIconPublisher, "request", record)
     setup = make_tv(Settings(tv_host=TV_HOST))

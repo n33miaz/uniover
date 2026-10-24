@@ -110,3 +110,16 @@ def test_powershell_scripts_are_ascii_and_parse_in_windows_powershell() -> None:
             text=True,
         )
         assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_launcher_also_respects_the_old_mutex_only_in_the_real_installation_folder() -> None:
+    text = LAUNCHER.read_text(encoding="utf-8")
+    old_name = "'Local" + chr(92) + "UniOverLauncher'"  # o nome antigo, sem a pasta
+    new_name = "'Local" + chr(92) + "UniOverLauncher-' + $key"  # o novo, com o hash da pasta
+    assert old_name in text
+    assert new_name in text
+    # O antigo só é disputado quando a pasta é a instalação real (não em pasta temporária).
+    guard = text.index("-ieq $realBase")
+    assert guard < text.index(old_name) < text.index("while ($true)")
+    assert text.index(new_name) < guard
+    assert text.count("exit 0") >= 2
