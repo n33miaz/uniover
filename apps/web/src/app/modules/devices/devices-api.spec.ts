@@ -34,11 +34,16 @@ describe('DevicesApi', () => {
     expect((await list).map((a) => a.name)).toEqual(['PC']);
   });
 
-  it('approves with a JSON body carrying the code and the name', async () => {
-    const done = api.approve('BCDF2345', 'PC de casa');
+  it('approves with a JSON body carrying the code, the name and who the TV is for', async () => {
+    const done = api.approve('BCDF2345', 'PC de casa', 'TV de Ana', ['g1']);
     const request = http.expectOne('/api/v1/devices/pairing/approve');
     expect(request.request.method).toBe('POST');
-    expect(request.request.body).toEqual({ userCode: 'BCDF2345', name: 'PC de casa' });
+    expect(request.request.body).toEqual({
+      userCode: 'BCDF2345',
+      name: 'PC de casa',
+      tvName: 'TV de Ana',
+      tvMemberIds: ['g1'],
+    });
     request.flush({ id: 'a1', slug: 'agent:pc', name: 'PC de casa', platform: 'windows' });
     await done;
   });

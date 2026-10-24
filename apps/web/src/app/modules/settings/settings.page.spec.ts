@@ -162,19 +162,30 @@ describe('SettingsPage (a list of screens)', () => {
   describe('for a guest', () => {
     beforeEach(() => api.me.mockResolvedValue(GUEST));
 
-    it('shows only Perfil, Aparência and Sobre', async () => {
+    it('shows Perfil, Aparência, Aparelhos (só o download do conector, com a TV) e Sobre', async () => {
       const { el } = await render();
       expect(headings(el)).toEqual(['Conta', 'Aplicativo']);
       expect(rows(el)).toEqual([
         { title: 'Perfil', summary: 'Alice · Convidado', href: '/ajustes/perfil' },
         { title: 'Aparência', summary: 'Tema automático', href: '/ajustes/aparencia' },
+        {
+          title: 'Aparelhos',
+          summary: 'Baixar o conector do PC',
+          href: '/ajustes/dispositivos',
+        },
         { title: 'Sobre', summary: 'Versão do app e da API', href: '/ajustes/sobre' },
       ]);
     });
 
+    it('hides Aparelhos from a guest without the TV', async () => {
+      api.me.mockResolvedValue({ ...GUEST, permissions: ['module:training'] });
+      const { el } = await render();
+      expect(rows(el).map((row) => row.title)).toEqual(['Perfil', 'Aparência', 'Sobre']);
+    });
+
     it('does not even mention the administrator screens', async () => {
       const { el } = await render();
-      for (const name of ['Segurança', 'Pessoas', 'Aparelhos', 'Auditoria', 'Sistema']) {
+      for (const name of ['Segurança', 'Pessoas', 'Auditoria', 'Sistema']) {
         expect(el.textContent).not.toContain(name);
       }
       expect(el.querySelector('a[href="/ajustes/aparelhos"]')).toBeNull();

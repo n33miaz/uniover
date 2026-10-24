@@ -3,6 +3,8 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from '../../app.routes';
+import { AuthApi } from '../../core/auth/auth-api';
+import { AuthService } from '../../core/auth/auth.service';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
 import { SessionState } from '../../core/session/session-state';
 import { DeviceAgent, DevicesApi } from './devices-api';
@@ -27,7 +29,16 @@ describe('DevicesPage', () => {
     api.deny.mockReset().mockResolvedValue(undefined);
     api.revoke.mockReset().mockResolvedValue(undefined);
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), { provide: DevicesApi, useValue: api }],
+      providers: [
+        provideRouter([]),
+        { provide: DevicesApi, useValue: api },
+        // A folha de aprovação lista as pessoas para "Para quem é a TV".
+        { provide: AuthApi, useValue: { guests: vi.fn().mockResolvedValue([]) } },
+        {
+          provide: AuthService,
+          useValue: { authorized: (call: (token: string) => unknown) => call('token') },
+        },
+      ],
     });
   });
 
@@ -203,6 +214,36 @@ describe('DevicesPage deep link and connector', () => {
     expect(el.querySelector('app-pair-sheet')).toBeNull();
     expect(el.querySelector('button')).toBeNull();
     expect(api.list).not.toHaveBeenCalled();
+  });
+
+  it('lets a guest with the TV download the connector on Windows, without approving', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(WINDOWS);
+    TestBed.inject(SessionState).setUser({
+      id: 'guest-1',
+      email: 'g@example.com',
+      displayName: 'Convidada',
+      role: 'guest',
+      permissions: ['module:tv'],
+    });
+    const { el } = await open('/ajustes/dispositivos');
+    const link = el.querySelector<HTMLAnchorElement>('a.download')!;
+    expect(link.textContent?.trim()).toBe('Baixar conector');
+    expect(link.getAttribute('href')).toBe('/conectar/conectar-uniover.cmd');
+    expect(el.querySelector('button')).toBeNull();
+    expect(api.list).not.toHaveBeenCalled();
+  });
+
+  it('gives a guest without the TV no download', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(WINDOWS);
+    TestBed.inject(SessionState).setUser({
+      id: 'guest-1',
+      email: 'g@example.com',
+      displayName: 'Convidada',
+      role: 'guest',
+      permissions: ['module:training'],
+    });
+    const { el } = await open('/ajustes/dispositivos');
+    expect(el.querySelector('a.download')).toBeNull();
   });
 
   it('offers Connect this PC only on Windows and opens its sheet', async () => {

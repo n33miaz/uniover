@@ -13,7 +13,7 @@ export function actionLabel(action: string | null): string {
     case 'identity.password-change':
       return $localize`:@@auth.step-up.action.password-change:trocar a senha`;
     case 'tv.bind-agent':
-      return $localize`:@@auth.step-up.action.tv-bind-agent:trocar o computador que controla a TV`;
+      return $localize`:@@auth.step-up.action.tv-bind-agent:ligar um computador à TV`;
     case 'identity.permissions-change':
       return $localize`:@@auth.step-up.action.permissions-change:mudar as permissões de uma pessoa`;
     default:

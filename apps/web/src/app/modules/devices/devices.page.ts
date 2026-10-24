@@ -2,13 +2,14 @@ import { Component, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { problemOf } from '../../core/auth/api-problem';
+import { canUseModule } from '../../core/auth/guest-home';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
 import { SessionState } from '../../core/session/session-state';
 import { ConnectSheet } from './connect-sheet';
 import { DeviceAgent, DevicesApi } from './devices-api';
 import { PairOutcome, PairSheet } from './pair-sheet';
 import { formatCodeInput } from './pairing-code';
-import { isWindowsPc } from './windows-pc';
+import { CONNECTOR_URL, isWindowsPc } from './windows-pc';
 
 /** Parâmetro do endereço que o QR do agente traz (`?codigo=XXXX-XXXX`). */
 const CODE_PARAM = 'codigo';
@@ -19,7 +20,7 @@ const CODE_PARAM = 'codigo';
  *
  * O QR que o agente mostra no PC abre esta tela com o código no endereço: a folha de aprovação já sobe com ele
  * preenchido e o parâmetro sai do endereço na hora (o código não fica no histórico nem em cópia do link). Quem não
- * pode aprovar (convidado) vê só o aviso, sem lista nem folha. Em PC com Windows há ainda a folha "Conectar este PC".
+ * pode aprovar (convidado) vê só o aviso, sem lista nem folha; se a conta dele tem a TV, vê também o botão que baixa o conector. Em PC com Windows há ainda a folha "Conectar este PC".
  */
 @Component({
   selector: 'app-devices-page',
@@ -43,6 +44,13 @@ export class DevicesPage {
   protected readonly linkedCode = signal('');
   /** A API só deixa o dono listar e aprovar; o convidado que chega pelo QR vê um aviso no lugar. */
   protected readonly canManage = !this.session.isGuest();
+  /** O convidado com a TV também baixa o conector (aprovar continua só do administrador). */
+  protected readonly canDownload = canUseModule(
+    this.session.role(),
+    this.session.knownPermissions(),
+    'tv',
+  );
+  protected readonly connectorUrl = CONNECTOR_URL;
   /** O conector só existe para Windows: nos outros aparelhos a tela diz isso em vez de oferecer o download. */
   protected readonly windowsPc = isWindowsPc(navigator);
   protected readonly revokingId = signal<string | null>(null);

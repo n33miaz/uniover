@@ -6,7 +6,7 @@ describe('actionLabel', () => {
     ['identity.passkey-remove', 'remover uma passkey'],
     ['identity.guest-invite', 'criar um convite de convidado'],
     ['identity.password-change', 'trocar a senha'],
-    ['tv.bind-agent', 'trocar o computador que controla a TV'],
+    ['tv.bind-agent', 'ligar um computador à TV'],
     ['identity.permissions-change', 'mudar as permissões de uma pessoa'],
   ])('names %s in plain words', (action, text) => {
     expect(actionLabel(action)).toBe(text);
