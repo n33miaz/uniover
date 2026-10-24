@@ -106,7 +106,19 @@
   width: 70%;
 }
 
-.retry,
-.pair-button {
+.retry {
   align-self: flex-start;
+}
+
+/* Ação principal primeiro; no celular, "Parear aparelho" é a principal e o aviso do PC vai logo abaixo. */
+.cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.windows-only {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
 }

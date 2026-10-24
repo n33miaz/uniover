@@ -43,6 +43,30 @@ describe('PairSheet', () => {
     return { fixture, el, code, name, button, buttons, type, outcomes, closed: () => closed };
   }
 
+  it('starts with the code from the link, normalized and ready to approve', async () => {
+    const fixture = TestBed.createComponent(PairSheet);
+    fixture.componentRef.setInput('initialCode', 'bcdf2345');
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector<HTMLInputElement>('#pair-code')!.value).toBe('BCDF-2345');
+    const approve = Array.from(el.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Aprovar',
+    )!;
+    expect(approve.disabled).toBe(false);
+  });
+
+  it('keeps an incomplete code from the link editable and not approvable', async () => {
+    const fixture = TestBed.createComponent(PairSheet);
+    fixture.componentRef.setInput('initialCode', 'bcdf');
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector<HTMLInputElement>('#pair-code')!.value).toBe('BCDF');
+    const approve = Array.from(el.querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === 'Aprovar',
+    )!;
+    expect(approve.disabled).toBe(true);
+  });
+
   it('opens as a modal sheet without a close button and with the right input hints', async () => {
     const { el, code, name, buttons } = await render();
     const dialog = el.querySelector('dialog')!;

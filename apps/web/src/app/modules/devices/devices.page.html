@@ -1,137 +1,174 @@
 <div class="devices">
   <a routerLink="/ajustes" class="back ui-btn secondary" i18n="@@devices.back">&larr; Ajustes</a>
 
-  <section class="section" aria-labelledby="devices-title">
-    <h2 id="devices-title" class="ui-section-label" i18n="@@devices.title">Aparelhos pareados</h2>
+  @if (!canManage) {
+    <p class="empty ui-rise" role="status" i18n="@@devices.no-permission">
+      Peça ao administrador para aprovar.
+    </p>
+  } @else {
+    <section class="section" aria-labelledby="devices-title">
+      <h2 id="devices-title" class="ui-section-label" i18n="@@devices.title">Aparelhos pareados</h2>
 
-    @if (agents(); as list) {
-      @if (list.length === 0) {
-        <p class="empty ui-rise" i18n="@@devices.empty">
-          Nenhum aparelho pareado. Rode o agente no PC e digite o código que ele mostrar.
-        </p>
-      } @else {
-        <ul class="list ui-plain ui-stagger">
-          @for (agent of list; track agent.id) {
-            <li class="item ui-card ui-rise">
-              <div class="info">
-                <strong class="name">{{ agent.name }}</strong>
-                <span class="meta">{{ platform(agent) }}</span>
-                <span class="meta">{{ pairedAt(agent) }}</span>
-                <span class="meta last-seen">{{ lastSeen(agent) }}</span>
-                @if (agent.revoked) {
-                  <span class="chip revoked ui-chip bad" i18n="@@devices.state.revoked"
-                    >Revogado</span
-                  >
-                } @else {
-                  <span class="chip active ui-chip accent" i18n="@@devices.state.active"
-                    >Ativo</span
-                  >
-                }
-              </div>
-              @if (!agent.revoked) {
-                @if (revokingId() === agent.id) {
-                  <div
-                    class="confirm ui-notice bad ui-rise"
-                    role="group"
-                    [attr.aria-label]="revokeQuestion(agent)"
-                  >
-                    <div class="confirm-body">
-                      <p class="question">{{ revokeQuestion(agent) }}</p>
-                      <div class="actions">
-                        <button
-                          type="button"
-                          class="secondary ui-btn"
-                          (click)="revokingId.set(null)"
-                          i18n="@@devices.cancel"
-                        >
-                          Cancelar
-                        </button>
-                        <button
-                          type="button"
-                          class="danger ui-btn"
-                          [disabled]="busy() || !online()"
-                          (click)="confirmRevoke(agent)"
-                          i18n="@@devices.revoke"
-                        >
-                          Revogar
-                        </button>
+      @if (agents(); as list) {
+        @if (list.length === 0) {
+          <p class="empty ui-rise" i18n="@@devices.empty">
+            Nenhum aparelho pareado. Rode o agente no PC e digite o código que ele mostrar.
+          </p>
+        } @else {
+          <ul class="list ui-plain ui-stagger">
+            @for (agent of list; track agent.id) {
+              <li class="item ui-card ui-rise">
+                <div class="info">
+                  <strong class="name">{{ agent.name }}</strong>
+                  <span class="meta">{{ platform(agent) }}</span>
+                  <span class="meta">{{ pairedAt(agent) }}</span>
+                  <span class="meta last-seen">{{ lastSeen(agent) }}</span>
+                  @if (agent.revoked) {
+                    <span class="chip revoked ui-chip bad" i18n="@@devices.state.revoked"
+                      >Revogado</span
+                    >
+                  } @else {
+                    <span class="chip active ui-chip accent" i18n="@@devices.state.active"
+                      >Ativo</span
+                    >
+                  }
+                </div>
+                @if (!agent.revoked) {
+                  @if (revokingId() === agent.id) {
+                    <div
+                      class="confirm ui-notice bad ui-rise"
+                      role="group"
+                      [attr.aria-label]="revokeQuestion(agent)"
+                    >
+                      <div class="confirm-body">
+                        <p class="question">{{ revokeQuestion(agent) }}</p>
+                        <div class="actions">
+                          <button
+                            type="button"
+                            class="secondary ui-btn"
+                            (click)="revokingId.set(null)"
+                            i18n="@@devices.cancel"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            class="danger ui-btn"
+                            [disabled]="busy() || !online()"
+                            (click)="confirmRevoke(agent)"
+                            i18n="@@devices.revoke"
+                          >
+                            Revogar
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                } @else {
-                  <div class="actions">
-                    <button
-                      type="button"
-                      class="secondary ui-btn"
-                      [disabled]="!online()"
-                      [attr.aria-label]="revokeLabel(agent)"
-                      (click)="askRevoke(agent)"
-                      i18n="@@devices.revoke"
-                    >
-                      Revogar
-                    </button>
-                  </div>
+                  } @else {
+                    <div class="actions">
+                      <button
+                        type="button"
+                        class="secondary ui-btn"
+                        [disabled]="!online()"
+                        [attr.aria-label]="revokeLabel(agent)"
+                        (click)="askRevoke(agent)"
+                        i18n="@@devices.revoke"
+                      >
+                        Revogar
+                      </button>
+                    </div>
+                  }
                 }
-              }
-            </li>
-          }
-        </ul>
-      }
-    } @else if (loadFailed()) {
-      <p class="empty bad ui-rise" role="alert" i18n="@@devices.load-failed">
-        Não foi possível carregar os aparelhos agora.
-      </p>
-      <button type="button" class="retry secondary ui-btn" (click)="load()" i18n="@@devices.retry">
-        Tentar de novo
-      </button>
-    } @else {
-      <p class="empty" role="status">
-        <span class="ui-spinner" aria-hidden="true"></span>
-        <span i18n="@@devices.loading">Carregando os aparelhos…</span>
-      </p>
-      <div class="skeleton-card ui-card" aria-hidden="true">
-        <span class="ui-skeleton bar wide"></span>
-        <span class="ui-skeleton bar"></span>
-        <span class="ui-skeleton bar"></span>
-      </div>
-    }
-
-    <div class="messages" [attr.aria-live]="'polite'">
-      @if (message(); as text) {
-        <div class="ui-collapse" [animate.leave]="'leaving'">
-          <div class="ui-collapse-inner">
-            <p
-              class="message ui-notice"
-              [class.bad]="messageIsError()"
-              [class.ok]="!messageIsError()"
-              [class.error]="messageIsError()"
-              [attr.role]="messageIsError() ? 'alert' : null"
-            >
-              {{ text }}
-            </p>
-          </div>
+              </li>
+            }
+          </ul>
+        }
+      } @else if (loadFailed()) {
+        <p class="empty bad ui-rise" role="alert" i18n="@@devices.load-failed">
+          Não foi possível carregar os aparelhos agora.
+        </p>
+        <button
+          type="button"
+          class="retry secondary ui-btn"
+          (click)="load()"
+          i18n="@@devices.retry"
+        >
+          Tentar de novo
+        </button>
+      } @else {
+        <p class="empty" role="status">
+          <span class="ui-spinner" aria-hidden="true"></span>
+          <span i18n="@@devices.loading">Carregando os aparelhos…</span>
+        </p>
+        <div class="skeleton-card ui-card" aria-hidden="true">
+          <span class="ui-skeleton bar wide"></span>
+          <span class="ui-skeleton bar"></span>
+          <span class="ui-skeleton bar"></span>
         </div>
       }
-    </div>
 
-    @if (!online()) {
-      <p class="note ui-notice warn ui-rise" role="status" i18n="@@devices.offline">
-        Sem conexão: parear, recusar e revogar precisam de rede.
-      </p>
+      <div class="messages" [attr.aria-live]="'polite'">
+        @if (message(); as text) {
+          <div class="ui-collapse" [animate.leave]="'leaving'">
+            <div class="ui-collapse-inner">
+              <p
+                class="message ui-notice"
+                [class.bad]="messageIsError()"
+                [class.ok]="!messageIsError()"
+                [class.error]="messageIsError()"
+                [attr.role]="messageIsError() ? 'alert' : null"
+              >
+                {{ text }}
+              </p>
+            </div>
+          </div>
+        }
+      </div>
+
+      @if (!online()) {
+        <p class="note ui-notice warn ui-rise" role="status" i18n="@@devices.offline">
+          Sem conexão: parear, recusar e revogar precisam de rede.
+        </p>
+      }
+
+      <div class="cta">
+        @if (windowsPc) {
+          <button
+            type="button"
+            class="primary ui-btn"
+            (click)="openConnect()"
+            i18n="@@devices.connect"
+          >
+            Conectar este PC
+          </button>
+        }
+        <button
+          type="button"
+          class="pair-button ui-btn"
+          [class.primary]="!windowsPc"
+          [class.secondary]="windowsPc"
+          [disabled]="!online()"
+          (click)="openPair()"
+          i18n="@@devices.pair"
+        >
+          Parear aparelho
+        </button>
+      </div>
+      @if (!windowsPc) {
+        <p class="windows-only" i18n="@@devices.connect.windows-only">
+          Para conectar um PC, abra esta tela nele (Windows).
+        </p>
+      }
+    </section>
+
+    @if (pairing()) {
+      <app-pair-sheet
+        [initialCode]="linkedCode()"
+        (done)="onPaired($event)"
+        (closed)="closePair()"
+      />
     }
-
-    <button
-      type="button"
-      class="primary pair-button ui-btn"
-      [disabled]="!online()"
-      (click)="openPair()"
-      i18n="@@devices.pair"
-    >
-      Parear aparelho
-    </button>
-  </section>
-
-  @if (pairing()) {
-    <app-pair-sheet (done)="onPaired($event)" (closed)="closePair()" />
+    @if (connecting()) {
+      <app-connect-sheet (closed)="connecting.set(false)" />
+    }
   }
 </div>

@@ -4,6 +4,8 @@ import {
   afterNextRender,
   computed,
   inject,
+  input,
+  linkedSignal,
   output,
   signal,
   viewChild,
@@ -34,11 +36,13 @@ export class PairSheet {
   private readonly connectivity = inject(ConnectivityService);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
+  /** Código já conhecido (o QR do agente abre a página com ele): entra normalizado e pronto para aprovar. */
+  readonly initialCode = input('');
   readonly done = output<PairOutcome>();
   readonly closed = output<void>();
 
   protected readonly maxName = MAX_DEVICE_NAME;
-  protected readonly code = signal('');
+  protected readonly code = linkedSignal(() => formatCodeInput(this.initialCode()));
   protected readonly name = signal($localize`:@@devices.pair.name-suggestion:PC de casa`);
   protected readonly busy = signal(false);
   /** A folha já está descendo: nada mais vale (nem aprovar, nem recusar, nem cancelar de novo). */
