@@ -25,6 +25,11 @@ channels:
     parameters:
       agentId: {}
     messages:
+      apiKeepalive:
+        name: api.keepalive.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/api.keepalive.v1.schema.json'
       tvKey:
         name: tv.key.v1
         contentType: application/json
@@ -66,6 +71,11 @@ channels:
     parameters:
       agentId: {}
     messages:
+      agentKeepalive:
+        name: agent.keepalive.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/agent.keepalive.v1.schema.json'
       agentHello:
         name: agent.hello.v1
         contentType: application/json
@@ -102,6 +112,20 @@ channels:
         payload:
           $ref: './messages/tv.cleanup.result.v1.schema.json'
 operations:
+  sendApiKeepalive:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API mantém o canal WebSocket ativo no proxy.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/apiKeepalive'
+  receiveAgentKeepalive:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe o batimento do agente.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/agentKeepalive'
   sendTvKey:
     action: send
     channel:
