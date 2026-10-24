@@ -26,6 +26,21 @@ app-auth-field {
   font-size: var(--fs-body);
 }
 
+/* Atalho discreto para a página pública do conector: texto pequeno, sem competir com o botão de entrar. */
+.alt {
+  margin: var(--space-3) 0 0;
+  text-align: center;
+  font-size: var(--fs-small);
+}
+
+.alt a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding-inline: var(--space-3);
+  color: var(--a-ink2);
+}
+
 /* Enviando: o botão mantém a cor cheia (o anel precisa de contraste) e o mesmo tamanho. */
 .submit:disabled:has(.ui-spinner) {
   opacity: 1;

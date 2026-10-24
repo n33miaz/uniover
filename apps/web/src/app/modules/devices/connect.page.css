@@ -1,0 +1,92 @@
+/* Título centrado, como nas outras telas fora da casca; o resto usa a largura toda do cartão. */
+h1 {
+  margin-bottom: var(--space-5);
+  font-size: 1.75rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.download {
+  text-decoration: none;
+}
+
+/* Passos numerados por contador (o número é enfeite; a lista ordenada já diz a ordem aos leitores de tela). */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-5) 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.steps li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  font-weight: 600;
+  counter-increment: step;
+}
+
+.steps li::before {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+  content: counter(step);
+  font-size: var(--fs-small);
+  font-weight: 750;
+}
+
+.warnings {
+  margin-top: var(--space-5);
+}
+
+.warnings h2 {
+  margin: 0 0 var(--space-2);
+}
+
+.warnings ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.warnings li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.where {
+  color: var(--a-ink2);
+}
+
+.warnings strong {
+  color: var(--a-ink);
+}
+
+.login {
+  margin: var(--space-5) 0 0;
+  text-align: center;
+  font-size: var(--fs-small);
+}
+
+.login a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding-inline: var(--space-3);
+  color: var(--a-ink2);
+}

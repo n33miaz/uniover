@@ -5376,6 +5376,8 @@ export interface components {
     };
     ApprovePairingRequest: {
       name: null | string;
+      tvMemberIds: null | string[];
+      tvName: null | string;
       userCode: null | string;
     };
     ApprovePairingResponse: {

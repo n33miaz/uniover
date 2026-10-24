@@ -45,6 +45,54 @@
       </p>
     }
 
+    <fieldset class="people">
+      <legend class="ui-section-label" i18n="@@devices.pair.tv-members">Para quem é a TV</legend>
+      @if (people(); as list) {
+        @if (list.length === 0) {
+          <p class="hint" i18n="@@devices.pair.no-tv-members">Só você tem conta por enquanto.</p>
+        } @else {
+          <ul class="ui-group">
+            @for (person of list; track person.id) {
+              <li>
+                <label class="person">
+                  <span>{{ person.displayName }}</span>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    class="ui-switch"
+                    [checked]="isMember(person.id)"
+                    (change)="toggleMember(person.id, $event)"
+                  />
+                </label>
+              </li>
+            }
+          </ul>
+        }
+        @if (members().length === 0) {
+          <p class="hint" i18n="@@devices.pair.tv-members-empty">
+            Sem ninguém marcado, só você usa esta TV.
+          </p>
+        }
+      } @else if (peopleFailed()) {
+        <p class="error ui-notice bad ui-rise" role="alert" i18n="@@devices.pair.people-failed">
+          Não foi possível carregar as pessoas.
+        </p>
+        <button
+          type="button"
+          class="retry secondary ui-btn"
+          (click)="loadPeople()"
+          i18n="@@devices.pair.people-retry"
+        >
+          Tentar de novo
+        </button>
+      } @else {
+        <p class="hint" role="status">
+          <span class="ui-spinner" aria-hidden="true"></span>
+          <span i18n="@@devices.pair.loading-people">Carregando pessoas…</span>
+        </p>
+      }
+    </fieldset>
+
     <div class="messages" [attr.aria-live]="'polite'">
       @if (error(); as text) {
         <p class="error ui-notice bad ui-rise" role="alert">{{ text }}</p>

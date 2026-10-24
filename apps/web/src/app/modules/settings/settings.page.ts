@@ -1,6 +1,7 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
+import { canUseModule } from '../../core/auth/guest-home';
 import { AppearanceService, ThemePreference } from '../../core/session/appearance.service';
 import { SessionState } from '../../core/session/session-state';
 import { SettingsGlyph, SettingsGlyphName } from './settings-glyph';
@@ -72,6 +73,21 @@ export class SettingsPage {
   /** Perfil e Aparência para todos; Segurança só para o administrador. */
   protected readonly account = computed<readonly SettingsEntry[]>(() => {
     const entries = [this.profileEntry(), this.appearanceEntry()];
+    // O convidado com a TV chega ao download do conector por aqui; aprovar o PC segue sendo do administrador.
+    const permissions = this.session.knownPermissions();
+    if (
+      this.session.role() === 'guest' &&
+      permissions !== null &&
+      canUseModule('guest', permissions, 'tv')
+    ) {
+      entries.push({
+        id: 'devices',
+        link: '/ajustes/dispositivos',
+        glyph: 'laptop',
+        title: $localize`:@@settings.devices.link:Aparelhos`,
+        summary: $localize`:@@settings.devices.guest-hint:Baixar o conector do PC`,
+      });
+    }
     if (this.isAdmin()) {
       entries.push({
         id: 'security',

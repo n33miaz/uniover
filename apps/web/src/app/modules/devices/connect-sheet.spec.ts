@@ -1,7 +1,10 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { ConnectSheet } from './connect-sheet';
 
 describe('ConnectSheet', () => {
+  beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([])] }));
+
   async function render() {
     const fixture = TestBed.createComponent(ConnectSheet);
     let closed = 0;
@@ -22,6 +25,11 @@ describe('ConnectSheet', () => {
       'Escanear o QR com o celular',
       'Aceitar na TV',
     ]);
+  });
+
+  it('links to the public page with the browser warnings', async () => {
+    const { el } = await render();
+    expect(el.querySelector('a.help')?.getAttribute('href')).toBe('/conectar');
   });
 
   it('downloads the connector file from the site', async () => {

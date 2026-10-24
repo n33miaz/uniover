@@ -62,6 +62,13 @@ describe('app routes', () => {
     expect(harness.routeNativeElement?.matches('app-login-page')).toBe(true);
   });
 
+  it('serves the public connector page outside the shell and without a session', async () => {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/conectar');
+    expect(TestBed.inject(Router).url).toBe('/conectar');
+    expect(harness.routeNativeElement?.matches('app-connect-page')).toBe(true);
+  });
+
   it('sends an unknown screen of Ajustes home', async () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/ajustes/nada');

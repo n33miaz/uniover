@@ -1,4 +1,5 @@
 import { Component, ElementRef, afterNextRender, output, signal, viewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { leaveDialog, onDialogBackdropClick } from '../../shared/ui/dialog-motion';
 import { CONNECTOR_URL } from './windows-pc';
 
@@ -9,6 +10,7 @@ import { CONNECTOR_URL } from './windows-pc';
  */
 @Component({
   selector: 'app-connect-sheet',
+  imports: [RouterLink],
   templateUrl: './connect-sheet.html',
   styleUrl: './connect-sheet.css',
 })
