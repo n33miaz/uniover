@@ -2,7 +2,8 @@ r"""Auto-atualização do agente instalado em `%LOCALAPPDATA%\UniOver\agent-src`
 
 O fluxo é: perguntar ao GitHub qual é o commit atual da `main`, comparar com o gravado em
 `agent-src\.version` e, se mudou, baixar **o zip daquele commit** (e não o da branch, que poderia
-andar entre uma chamada e outra), montar a pasta nova ao lado e trocar as duas por renomeação.
+andar entre uma chamada e outra), montar a pasta nova ao lado, validá-la e trocar por renomeação,
+guardando a anterior para o wrapper do Windows voltar atrás.
 
 Qualquer falha (sem rede, GitHub limitando, zip estranho, pasta travada) deixa a instalação
 como estava e é só um aviso: quem chama segue para rodar o agente que já existe.
@@ -32,6 +33,7 @@ REPOSITORY = "n33miaz/uniover"
 COMMIT_URL = f"https://api.github.com/repos/{REPOSITORY}/commits/main"
 ARCHIVE_URL = f"https://github.com/{REPOSITORY}/archive/{{sha}}.zip"
 VERSION_FILE = ".version"
+BLOCKED_VERSIONS_FILE = ".blocked-versions"
 AGENT_PREFIX = ("apps", "agent")
 # Tipo de arquivo nos bits altos do `external_attr` do zip (modo Unix).
 _FILE_TYPE_MASK = 0o170000
@@ -127,9 +129,22 @@ def extract_agent(archive: Path, destination: Path) -> None:
         raise SelfUpdateError("o pacote baixado não contém apps/agent")
 
 
-def swap_directories(current: Path, new: Path) -> None:
-    """Troca `current` por `new` por renomeação, com volta atrás se a segunda falhar."""
-    old = current.with_name(current.name + ".old")
+def blocked_versions(source: Path) -> set[str]:
+    """Commits recusados pelo monitor do Windows depois de uma queda repetida."""
+    try:
+        entries = (source.parent / BLOCKED_VERSIONS_FILE).read_text(encoding="utf-8").splitlines()
+        return {line.strip() for line in entries if _SHA.fullmatch(line.strip())}
+    except OSError:
+        return set()
+
+
+def swap_directories(current: Path, new: Path, *, keep_previous: bool = False) -> None:
+    """Troca `current` por `new` por renomeação, com volta atrás se a segunda falhar.
+
+    No Windows instalado, mantém uma cópia anterior para o wrapper poder voltar se a versão
+    nova morrer logo após iniciar. Os testes e outros chamadores podem pedir a troca efêmera.
+    """
+    old = current.with_name(current.name + (".previous" if keep_previous else ".old"))
     shutil.rmtree(old, ignore_errors=True)
     try:
         current.rename(old)
@@ -140,11 +155,12 @@ def swap_directories(current: Path, new: Path) -> None:
     except OSError:
         old.rename(current)
         raise SelfUpdateError("não consegui pôr a versão nova no lugar") from None
-    shutil.rmtree(old, ignore_errors=True)
+    if not keep_previous:
+        shutil.rmtree(old, ignore_errors=True)
 
 
 def run_uv_sync(source: Path) -> None:
-    """`uv sync` do projeto. O `uv run` também sincroniza, então falhar aqui só avisa."""
+    """Sincroniza a candidata antes de ela substituir a instalação atual."""
     uv = os.environ.get("UV") or shutil.which("uv")
     if uv is None:
         raise SelfUpdateError("uv não encontrado para sincronizar as dependências")
@@ -161,19 +177,46 @@ def run_uv_sync(source: Path) -> None:
         ) from None
 
 
+def run_uv_check(source: Path) -> None:
+    """Importa o núcleo e o contrato mínimo antes de promover uma atualização."""
+    uv = os.environ.get("UV") or shutil.which("uv")
+    if uv is None:
+        raise SelfUpdateError("uv não encontrado para testar a atualização")
+    try:
+        subprocess.run(  # noqa: S603 - executável do próprio uv, argumentos fixos
+            [
+                uv,
+                "run",
+                "--project",
+                str(source),
+                "python",
+                "-c",
+                "import uniover_agent.main; import uniover_agent.contracts.agent_hello_v1",
+            ],
+            check=True,
+            timeout=120,
+            cwd=source.parent,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SelfUpdateError(
+            f"a verificação rápida da atualização falhou ({type(exc).__name__})"
+        ) from None
+
+
 @dataclass(frozen=True, slots=True)
 class UpdateResult:
     updated: bool
     message: str
 
 
-def self_update(
+def self_update(  # noqa: PLR0913 - dependências injetadas deixam a atualização testável sem rede
     source: Path,
     *,
     sync: bool = True,
     fetch_latest: Callable[[], str] = latest_commit,
     download: Callable[[str, Path], None] = download_archive,
     run_sync: Callable[[Path], None] = run_uv_sync,
+    run_check: Callable[[Path], None] = run_uv_check,
 ) -> UpdateResult:
     """Atualiza `source` (a `agent-src` instalada) se a `main` andou. Nunca levanta por falha de
     rede nem de disco: devolve o motivo em `message`."""
@@ -183,6 +226,8 @@ def self_update(
         sha = fetch_latest()
         if read_version(source) == sha:
             return UpdateResult(False, "o agente já está na versão mais recente")
+        if sha in blocked_versions(source):
+            return UpdateResult(False, "a versão nova caiu repetidamente; aguardando outro commit")
         workspace = Path(tempfile.mkdtemp(prefix="uniover-update-", dir=source.parent))
         try:
             archive = workspace / "main.zip"
@@ -193,7 +238,10 @@ def self_update(
                 new.mkdir()
                 extract_agent(archive, new)
                 (new / VERSION_FILE).write_text(sha + "\n", encoding="utf-8")
-                swap_directories(source, new)
+                if sync:
+                    run_sync(new)
+                run_check(new)
+                swap_directories(source, new, keep_previous=True)
             except BaseException:
                 shutil.rmtree(new, ignore_errors=True)
                 raise
@@ -203,9 +251,4 @@ def self_update(
         _log.warning("auto-atualização adiada: %s", exc)
         return UpdateResult(False, f"não atualizei agora: {exc}")
     _log.info("agente atualizado")
-    if sync:
-        try:
-            run_sync(source)
-        except SelfUpdateError as exc:
-            return UpdateResult(True, f"atualizado; {exc} (o próximo início sincroniza)")
     return UpdateResult(True, "agente atualizado")

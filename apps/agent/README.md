@@ -112,8 +112,10 @@ sem parâmetros (modo automático), que:
 5. cria a tarefa **UniOver agente** (ao entrar no Windows, sem janela, sem perguntar) que roda
    `%LOCALAPPDATA%\UniOver\run-agent.ps1`. O instalador imprime o que fez e o comando de remoção (`-Uninstall`).
 
-O `run-agent.ps1` (gerado, só ASCII) faz `self-update`, `uv sync` e `run`; se o agente cair, volta com espera
-crescente (5 s até 5 min, voltando a 5 s depois de 10 min de agente saudável). O registro fica em
+O `run-agent.ps1` (gerado, só ASCII e compatível com Windows PowerShell 5.1) fica sem janela, faz `uv sync` e
+`run`; se o agente cair, volta com espera crescente (5 s até 5 min, voltando a 5 s depois de 10 min de agente
+saudável). Se o `uv` ou o ambiente virtual quebrarem numa atualização do Windows, procura o executável nos locais
+conhecidos do Windows/WinGet e recria `%LOCALAPPDATA%\UniOver\venv`. O registro fica em
 `%LOCALAPPDATA%\UniOver\agent.log`.
 
 **Reencontro da TV.** Com `tv_id_hint` gravado, o `run` confere a cada minuto se a TV responde (a sessão quente já
@@ -122,13 +124,19 @@ TV (mesmo `duid`/MAC) em outro endereço, grava o `tv_host` novo no `agent.toml`
 (`run` devolve o código 4 e o `main` recomeça). TV desligada não aparece na varredura e nada muda. O log não traz
 endereço nem identificador.
 
-**Auto-atualização.** `self-update` consulta o commit da `main` na API do GitHub, compara com
-`agent-src\.version` e, se mudou, baixa o zip **daquele commit**, monta `agent-src.new` e troca por renomeação
-(com volta atrás se a segunda renomeação falhar). Falha de rede, limite do GitHub ou pasta em uso só avisam e o
-agente atual segue. Para a renomeação funcionar no Windows, o instalador deixa o ambiente Python **fora** da pasta
-(`UV_PROJECT_ENVIRONMENT=%LOCALAPPDATA%\UniOver\venv`) e usa `uv run --project` (sem mudar o diretório). O
-`uv sync` é do `run-agent.ps1` (`self-update --no-sync`), nunca de dentro do processo que está no ambiente
-atualizado. A atualização acontece quando o agente inicia (logon ou queda), não com ele já rodando.
+**Auto-atualização com retorno.** A cada início e depois a cada 6 h (com até 45 min de variação), o wrapper
+consulta o commit da `main`. A candidata é baixada para `agent-src.new`, passa por `uv sync` e por um import rápido
+do agente e do contrato `agent.hello.v1`; só então entra no lugar. A pasta anterior fica em `agent-src.previous`.
+Se a versão recém-instalada cair três vezes antes de completar 10 min, o wrapper restaura a anterior e anota o SHA
+em `.blocked-versions`, para não tentar o mesmo commit ruim de novo. Falha de rede, limite do GitHub, teste ou pasta
+em uso só preserva a versão que está rodando. Para a renomeação funcionar no Windows, o ambiente Python fica fora da
+pasta (`UV_PROJECT_ENVIRONMENT=%LOCALAPPDATA%\UniOver\venv`) e o `uv` roda com `--project`.
+
+**Início com o PC.** A tarefa usa `AtLogOn`, usuário atual, sem janela, sem parar na bateria e sem limite de 72 h.
+É o caminho confiável sem administrador porque a credencial do agente fica no cofre do usuário. Antes de haver
+logon não existe esse cofre disponível; uma tarefa `AtStartup` como `SYSTEM` precisaria de elevação e não poderia usar
+o pareamento do usuário. No PC configurado para entrar automaticamente, o agente sobe sozinho. Para reparar uma
+instalação, abra o mesmo `conectar-uniover.cmd` de novo: o fluxo é idempotente e preserva pareamento e configuração.
 
 ### Instalador Windows (manual)
 
@@ -305,6 +313,8 @@ APK pelo ADB (sem a trava dos comandos curtos), lê só a imagem de dentro dele 
 - `wss://<api>/api/v1/devices/agents/<agentId>/ws`, `ping` a cada 20 s, mensagens de texto JSON de até 64 KB.
 - Ao conectar envia `agent.hello.v1` (versão e capacidades: `tv.remote` com a TV configurada e pareada, senão
   nenhuma) e, em seguida, `tv.state.v1` com o estado atual da TV.
+- A API aceita o `agent.hello.v1` mínimo da versão `0.1.0`, inclusive sem capacidades. Novas capacidades e campos
+  de mensagens precisam ser aditivos: nunca se exige que um agente antigo anuncie algo que ele não conhece.
 - Reconexão com espera exponencial e variação aleatória (1 s, 2, 4 ... teto de 30 s), **sem limite de
   tentativas**; a espera volta ao início depois de 60 s de conexão estável.
 - Credencial recusada (401/403 na abertura ou fechamento 4403 `revoked`): **para**, avisa para rodar

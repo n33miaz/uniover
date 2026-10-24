@@ -72,7 +72,7 @@ function Find-Uv {
     $command = Get-Command uv -ErrorAction SilentlyContinue
     if (-not $command) {
         # O winget cria o atalho fora do PATH desta sessão; procuramos nos dois lugares que ele usa.
-        foreach ($candidate in @('Microsoft\WinGet\Links\uv.exe', 'Microsoft\WindowsApps\uv.exe')) {
+        foreach ($candidate in @('Microsoft\WinGet\Links\uv.exe', 'Microsoft\WindowsApps\uv.exe', '.local\bin\uv.exe')) {
             $path = Join-Path $env:LOCALAPPDATA $candidate
             if (Test-Path $path) {
                 return $path
@@ -179,34 +179,141 @@ function Register-AgentTask([string]$Arguments) {
     Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 }
 
-# Só ASCII, de propósito: o Windows PowerShell 5.1 lê arquivo sem BOM como ANSI. O agente roda
-# daqui: atualiza uma vez por início e, se cair, volta com espera crescente (até 5 min).
+# So ASCII, de proposito: o Windows PowerShell 5.1 le arquivo sem BOM como ANSI. O agente roda
+# daqui, confere atualizacao a cada 6 h e, se cair, volta com espera crescente (ate 5 min).
 $wrapperTemplate = @'
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 $base = Join-Path $env:LOCALAPPDATA 'UniOver'
 $source = Join-Path $base 'agent-src'
+$previous = Join-Path $base 'agent-src.previous'
+$blocked = Join-Path $base '.blocked-versions'
+$trial = Join-Path $base 'update-trial.txt'
 $env:UNIOVER_CONFIG_FILE = Join-Path $base 'agent.toml'
 $env:UNIOVER_LOG_FILE = Join-Path $base 'agent.log'
 $env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'venv'
 $env:PYTHONUTF8 = '1'
-$uv = '__UV__'
-if (-not (Test-Path -LiteralPath $uv)) {
+
+function Find-Uv {
+    $configured = '__UV__'
+    if (Test-Path -LiteralPath $configured) { return $configured }
     $found = Get-Command uv -ErrorAction SilentlyContinue
-    if ($found) { $uv = $found.Source }
+    if ($found) { return $found.Source }
+    foreach ($relative in @('Microsoft\WinGet\Links\uv.exe', 'Microsoft\WindowsApps\uv.exe', '.local\bin\uv.exe')) {
+        $candidate = Join-Path $env:LOCALAPPDATA $relative
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    return $null
 }
+
+function Get-Version {
+    try { return [System.IO.File]::ReadAllText((Join-Path $source '.version')).Trim() }
+    catch { return $null }
+}
+
+function Sync-Agent([string]$Uv) {
+    & $Uv sync --project $source --quiet *> $null
+    if ($LASTEXITCODE -eq 0) { return $true }
+    # Uma atualizacao do Windows pode deixar o venv parcialmente quebrado. Ele e descartavel.
+    $venv = Join-Path $base 'venv'
+    if (Test-Path -LiteralPath $venv) { Remove-Item -LiteralPath $venv -Recurse -Force -ErrorAction SilentlyContinue }
+    & $Uv sync --project $source --quiet *> $null
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Schedule-NextUpdate {
+    return (Get-Date).AddHours(6).AddMinutes((Get-Random -Minimum 0 -Maximum 46))
+}
+
+function Invoke-Update([string]$Uv) {
+    $before = Get-Version
+    $env:UV = $Uv
+    & $Uv run --project $source uniover-agent self-update *> $null
+    $after = Get-Version
+    if ($before -and $after -and $before -ne $after) {
+        [System.IO.File]::WriteAllText($trial, ($after + '|0'), [System.Text.Encoding]::ASCII)
+        return $true
+    }
+    return $false
+}
+
+function Note-Run([double]$Seconds) {
+    if (-not (Test-Path -LiteralPath $trial)) { return }
+    $parts = (Get-Content -LiteralPath $trial -ErrorAction SilentlyContinue) -split '\|', 2
+    if ($parts.Count -ne 2 -or $parts[0] -ne (Get-Version)) { return }
+    if ($Seconds -ge 600) {
+        Remove-Item -LiteralPath $trial -Force -ErrorAction SilentlyContinue
+        return
+    }
+    $falls = 0
+    [void][int]::TryParse($parts[1], [ref]$falls)
+    $falls++
+    if ($falls -lt 3 -or -not (Test-Path -LiteralPath $previous)) {
+        [System.IO.File]::WriteAllText($trial, ($parts[0] + '|' + $falls), [System.Text.Encoding]::ASCII)
+        return
+    }
+    $bad = Join-Path $base ('agent-src.rejected-' + $parts[0].Substring(0, 12))
+    Remove-Item -LiteralPath $bad -Recurse -Force -ErrorAction SilentlyContinue
+    try {
+        Move-Item -LiteralPath $source -Destination $bad -ErrorAction Stop
+        Move-Item -LiteralPath $previous -Destination $source -ErrorAction Stop
+        if (-not (Select-String -LiteralPath $blocked -SimpleMatch $parts[0] -Quiet -ErrorAction SilentlyContinue)) {
+            Add-Content -LiteralPath $blocked -Value $parts[0] -Encoding ASCII
+        }
+        Remove-Item -LiteralPath $trial -Force -ErrorAction SilentlyContinue
+    }
+    catch {
+        # Na proxima tentativa o wrapper ainda tem a versao atual e tenta se recuperar de novo.
+    }
+}
+
 Set-Location -LiteralPath $base
-& $uv run --project $source uniover-agent self-update --no-sync *> $null
-& $uv sync --project $source --quiet *> $null
 $wait = 5
+$nextUpdate = [DateTime]::MinValue
 while ($true) {
+    $uv = Find-Uv
+    if (-not $uv -or -not (Test-Path -LiteralPath $source)) {
+        Start-Sleep -Seconds 300
+        continue
+    }
+    $updated = $false
+    if ((Get-Date) -ge $nextUpdate) {
+        $updated = Invoke-Update $uv
+        $nextUpdate = Schedule-NextUpdate
+    }
+    if (-not (Sync-Agent $uv)) {
+        Start-Sleep -Seconds $wait
+        $wait = [Math]::Min($wait * 2, 300)
+        continue
+    }
+    $arguments = 'run --project "' + $source + '" uniover-agent run'
+    $process = Start-Process -FilePath $uv -ArgumentList $arguments -PassThru -WindowStyle Hidden
     $started = Get-Date
-    & $uv run --project $source uniover-agent run
-    if (((Get-Date) - $started).TotalSeconds -gt 600) { $wait = 5 }
+    $restartForUpdate = $false
+    while (-not $process.HasExited) {
+        Start-Sleep -Seconds 15
+        if ((Get-Date) -ge $nextUpdate) {
+            if (Invoke-Update $uv) {
+                # O uv run abre um python filho: derrubar so o uv deixaria o agente antigo vivo.
+                & taskkill.exe /PID $process.Id /T /F *> $null
+                $restartForUpdate = $true
+            }
+            $nextUpdate = Schedule-NextUpdate
+        }
+    }
+    $seconds = ((Get-Date) - $started).TotalSeconds
+    if (-not $restartForUpdate) { Note-Run $seconds }
+    if ($seconds -gt 600) { $wait = 5 }
+    if ($restartForUpdate) { $wait = 5 }
     Start-Sleep -Seconds $wait
     $wait = [Math]::Min($wait * 2, 300)
 }
 '@
+
+function Write-AgentWrapper([string]$Uv) {
+    $wrapperText = $wrapperTemplate.Replace('__UV__', $Uv.Replace("'", "''"))
+    [System.IO.File]::WriteAllText($wrapper, $wrapperText, [System.Text.Encoding]::ASCII)
+}
 
 $uv = Find-Uv
 New-Item -ItemType Directory -Path $base -Force | Out-Null
@@ -219,6 +326,10 @@ if ($automatic) {
     $env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'venv'
 
     Get-AgentSource $source
+    # A instalacao direta ja foi testada abaixo; uma versao anterior de outra instalacao nao e um
+    # retorno valido caso este primeiro processo caia.
+    Remove-Item -LiteralPath (Join-Path $base 'agent-src.previous') -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
     Set-ConfigValues $config @{ api_url = $ApiUrl }
 
     Write-Host 'Preparando o ambiente Python (na primeira vez demora um pouco)...'
@@ -266,8 +377,7 @@ if ($automatic) {
     }
 
     # 4. O agente passa a iniciar com o Windows, sem janela, sem perguntar.
-    $wrapperText = $wrapperTemplate.Replace('__UV__', $uv.Replace("'", "''"))
-    [System.IO.File]::WriteAllText($wrapper, $wrapperText, [System.Text.Encoding]::ASCII)
+    Write-AgentWrapper $uv
     Register-AgentTask "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wrapper`""
     Start-ScheduledTask -TaskName $taskName
 
@@ -289,6 +399,8 @@ if ($automatic) {
 
 # --- Modo manual (-TvHost informado) ---------------------------------------------------------
 Get-AgentSource $source
+Remove-Item -LiteralPath (Join-Path $base 'agent-src.previous') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
 Write-Config $config @("api_url = " + ($ApiUrl | ConvertTo-Json -Compress))
 
 Write-Host 'Preparando o ambiente Python...'
@@ -317,8 +429,8 @@ if ($LASTEXITCODE -ne 0) {
 
 $answer = Read-Host "Registrar a tarefa '$taskName' para iniciar ao entrar no Windows? (s/N)"
 if ($answer -match '^[sS]') {
-    $command = "& '$uv' --directory '$source' run uniover-agent run"
-    Register-AgentTask "-NoProfile -WindowStyle Hidden -Command `"$command`""
+    Write-AgentWrapper $uv
+    Register-AgentTask "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wrapper`""
     Start-ScheduledTask -TaskName $taskName
     Write-Host 'Tarefa registrada e iniciada.'
 }
