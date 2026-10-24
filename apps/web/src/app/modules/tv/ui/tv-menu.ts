@@ -9,7 +9,7 @@ import { TvIcon } from './tv-icon';
 /** O que o menu pede à tela: abrir o painel Apps ou a folha Personalizar (o menu fecha antes). */
 export type TvMenuChoice = 'apps' | 'customize';
 
-/** Onde o administrador escolhe qual computador controla a TV (a tela de ajustes do sistema). */
+/** Onde o administrador gerencia as TVs: quais existem, qual computador controla cada uma e quem usa (ajustes do sistema). */
 export const TV_BINDING_ROUTE = '/ajustes/sistema';
 
 /**
@@ -41,7 +41,7 @@ export class TvMenu {
   protected readonly bindingLabel = computed(() =>
     this.store.status() === 'unconfigured'
       ? $localize`:@@tv.menu.configure:Configurar TV`
-      : $localize`:@@tv.menu.switch:Trocar a TV`,
+      : $localize`:@@tv.menu.manage:Gerenciar TVs`,
   );
 
   /** Sugestões removidas que podem voltar: só para quem edita os atalhos, que é quem as vê. */

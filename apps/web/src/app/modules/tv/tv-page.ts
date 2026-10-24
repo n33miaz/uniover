@@ -23,6 +23,7 @@ import { KeyboardPanel } from './panels/keyboard-panel';
 import { CustomizeSheet } from './ui/customize-sheet';
 import { SuggestionSheet } from './ui/suggestion-sheet';
 import { TvMenu, TvMenuChoice } from './ui/tv-menu';
+import { TvSwitcher } from './ui/tv-switcher';
 import { PowerSheet } from './ui/power-sheet';
 import { TvSuggestionRequest } from './ui/shortcut-row';
 import { StatusIndicator } from './ui/status-indicator';
@@ -41,10 +42,11 @@ const TITLE_MEDIUM_MAX = 12;
 /**
  * Tela única do módulo da TV: cabeçalho (à esquerda voltar ao Início e a energia, no meio o nome com o ponto de estado e
  * à direita os três pontos do menu), o controle e, por cima dele, o menu, os painéis flutuantes de Apps, Teclado e da
- * sugestão de atalho e as folhas de Personalizar e de desligar. O menu reúne os apps da TV, Personalizar e, para o
- * administrador, trocar a TV; escolher uma linha fecha o menu e só então abre o painel dela, um modal por vez. Sem TV
+ * sugestão de atalho e as folhas de Personalizar, de desligar e de trocar de TV. O menu reúne os apps da TV, Personalizar e,
+ * para o administrador, gerenciar as TVs; escolher uma linha fecha o menu e só então abre o painel dela, um modal por vez. Sem TV
  * configurada o controle dá lugar a um estado vazio com a ação certa para cada conta. O nome é o apelido
- * que a pessoa deu à TV (tocar nele abre Personalizar). O estado da TV (`TvStore`) é um só; ele só fala com o
+ * que a pessoa deu à TV (tocar nele abre Personalizar) e, com mais de uma TV à vista, o nome fica ao lado de uma seta e
+ * tocar nele abre a folha que troca de TV (Personalizar segue no menu). O estado da TV (`TvStore`) é um só; ele só fala com o
  * servidor enquanto esta tela existe (ao sair, o fluxo e o "aquecer" param). Fica na raiz, e não nos `providers`
  * do componente, porque o recurso de providers de componente puxaria código do Angular para o pacote inicial.
  *
@@ -64,6 +66,7 @@ const TITLE_MEDIUM_MAX = 12;
     CustomizeSheet,
     TvPanel,
     TvMenu,
+    TvSwitcher,
     SuggestionSheet,
     AppsPanel,
     KeyboardPanel,
@@ -82,6 +85,9 @@ export class TvPage {
   protected readonly powerOpen = signal(false);
   protected readonly customizeOpen = signal(false);
   protected readonly menuOpen = signal(false);
+  /** A folha que troca de TV, e o título que a abriu (o foco volta a ele). */
+  protected readonly switchOpen = signal(false);
+  protected readonly switchOpener = signal<HTMLElement | null>(null);
   /** O botão dos três pontos: o menu devolve o foco a ele, e os painéis que abrem pelo menu também. */
   protected readonly menuOpener = signal<HTMLElement | null>(null);
   /** A linha do menu escolhida: o painel dela só abre depois que o menu terminar de sair. */
@@ -114,6 +120,7 @@ export class TvPage {
   );
   protected readonly keyboardTitle = $localize`:@@tv.keyboard.title:Teclado`;
   protected readonly menuTitle = $localize`:@@tv.menu.title:Mais opções`;
+  protected readonly switchTitle = $localize`:@@tv.switch.title:Escolher a TV`;
 
   /** A conta dona (a que administra) é a única que troca o computador da TV. */
   protected readonly isOwner = computed(() => !this.isGuest());
@@ -136,7 +143,14 @@ export class TvPage {
   /** O nome do título falado pelo leitor de tela: o apelido e o que o toque faz. */
   protected readonly titleLabel = computed(() => {
     const name = this.prefs.title();
-    return $localize`:@@tv.header.customize:${name}:name:, personalizar`;
+    return this.store.multiple()
+      ? $localize`:@@tv.header.switch:${name}:name:, trocar de TV`
+      : $localize`:@@tv.header.customize:${name}:name:, personalizar`;
+  });
+  /** Com várias TVs o nome é o seletor (qualquer conta que veja a TV); com uma só, é o atalho para Personalizar (de quem controla). */
+  protected readonly titleAction = computed<'switch' | 'customize' | null>(() => {
+    if (this.store.multiple()) return 'switch';
+    return this.access.control() ? 'customize' : null;
   });
 
   /** O aviso flutuante some enquanto há um painel aberto: o painel mostra o aviso dentro dele. */
@@ -146,6 +160,7 @@ export class TvPage {
       !this.powerOpen() &&
       !this.customizeOpen() &&
       !this.menuOpen() &&
+      !this.switchOpen() &&
       this.suggestion() === null,
   );
 
@@ -180,17 +195,18 @@ export class TvPage {
       if (!this.access.power()) this.powerOpen.set(false);
       if (!this.access.control()) this.customizeOpen.set(false);
       if (!this.hasMenu()) this.menuOpen.set(false);
+      if (!this.store.multiple()) this.switchOpen.set(false);
       if (!this.access.editShortcuts()) this.suggestion.set(null);
       const apps = this.access.apps();
-      const control = this.access.control();
+      const text = this.access.text();
       this.panel.update((open) =>
-        (open === 'apps' && !apps) || (open === 'keyboard' && !control) ? null : open,
+        (open === 'apps' && !apps) || (open === 'keyboard' && !text) ? null : open,
       );
     });
   }
 
   private canOpen(panel: TvPanelName): boolean {
-    return panel === 'apps' ? this.access.apps() : this.access.control();
+    return panel === 'apps' ? this.access.apps() : this.access.text();
   }
 
   protected open(panel: TvPanelName, opener: HTMLElement): void {
@@ -205,6 +221,17 @@ export class TvPage {
   protected openCustomize(opener: HTMLElement): void {
     this.customizeOpener = opener;
     this.customizeOpen.set(true);
+  }
+
+  protected openSwitch(opener: HTMLElement): void {
+    this.switchOpener.set(opener);
+    this.switchOpen.set(true);
+  }
+
+  /** Escolheu uma TV: troca e fecha a folha (a tela de trás já mostra "conectando" até a nova responder). */
+  protected pickTv(id: string, sheet: TvPanel): void {
+    this.store.selectTv(id);
+    sheet.close();
   }
 
   protected openMenu(opener: HTMLElement): void {

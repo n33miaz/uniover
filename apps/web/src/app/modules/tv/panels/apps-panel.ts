@@ -170,7 +170,7 @@ export class AppsPanel {
   protected openCleanup(): void {
     // Apagado e focável, não `disabled`: sem agente (ou com uma limpeza em curso) o toque não faz nada, e o botão
     // continua achável por quem navega pelo teclado ou pelo leitor de tela.
-    if (!this.store.canSend() || this.store.cleaning() || !this.access.control()) return;
+    if (!this.store.canSend() || this.store.cleaning() || !this.access.cleanup()) return;
     this.cleanupOpen.set(true);
   }
 

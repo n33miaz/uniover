@@ -1,6 +1,7 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, computed, inject, linkedSignal } from '@angular/core';
 import { SessionState } from '../../../core/session/session-state';
+import { TvSelection } from './tv-selection';
 
 /** Tamanho dos botões de baixo (pílulas e botões redondos); o fator de cada um está em `KEY_SCALE`. */
 export type TvButtonSize = 'compact' | 'comfortable' | 'large';
@@ -28,8 +29,13 @@ export const KEY_SCALE: Readonly<Record<TvButtonSize, number>> = {
 
 export const TV_PREFS_KEY = 'uniover.tv.prefs.v2';
 
-export function tvPrefsStorageKey(accountId: string): string {
-  return `${TV_PREFS_KEY}.${encodeURIComponent(accountId)}`;
+/**
+ * Chave das escolhas de uma conta numa TV. A TV padrão (`tvId` nulo) segue na chave de sempre, para nada do que já estava
+ * guardado se perder; cada outra TV tem a sua, dentro da conta (as preferências são por conta **e** por TV).
+ */
+export function tvPrefsStorageKey(accountId: string, tvId: string | null = null): string {
+  const base = `${TV_PREFS_KEY}.${encodeURIComponent(accountId)}`;
+  return tvId ? `${base}.tv.${encodeURIComponent(tvId)}` : base;
 }
 /**
  * O que cabe no cabeçalho: o nome usa até duas linhas na coluna do meio, que no 390 é a tela menos duas colunas
@@ -103,8 +109,8 @@ function parsePrefs(raw: unknown): TvPrefsValue {
 
 /**
  * Preferências do controle da TV: apelido, tamanho dos botões, disposição das pílulas de volume e canal, que grupos
- * de teclas aparecem, vibração, página inicial do palco, sensibilidade do touchpad e as sugestões de atalho removidas. Ficam neste aparelho, em uma
- * chave própria por conta. A chave antiga não identificava a conta que a gravou, então fica preservada e inerte:
+ * de teclas aparecem, vibração, página inicial do palco, sensibilidade do touchpad e as sugestões de atalho removidas. Ficam neste aparelho, em
+ * uma chave própria por conta **e por TV** (a TV padrão usa a chave de antes de haver várias, e nada se perde). A chave antiga não identificava a conta que a gravou, então fica preservada e inerte:
  * atribuí-la à primeira pessoa que entrar poderia expor escolhas de outra conta.
  * Nunca guarda dado sensível; sem armazenamento (modo privado) a escolha vale até recarregar.
  */
@@ -114,16 +120,33 @@ export class TvPrefs {
   readonly defaultName = $localize`:@@tv.header.name:TV`;
 
   private readonly session = inject(SessionState);
+  private readonly selection = inject(TvSelection);
   private readonly storage = this.openStorage();
-  private readonly value = linkedSignal<string | null, TvPrefsValue>({
-    source: () => this.session.accountId(),
-    computation: (accountId) => this.read(accountId),
+  /** A conta e a TV (nula = a padrão) de quem são as escolhas de agora; trocar de TV troca todas elas. */
+  private readonly owner = computed(() => ({
+    accountId: this.session.accountId(),
+    tvId: this.selection.scope(),
+  }));
+  private readonly value = linkedSignal<
+    { accountId: string | null; tvId: string | null },
+    TvPrefsValue
+  >({
+    source: () => this.owner(),
+    computation: ({ accountId, tvId }) => this.read(accountId, tvId),
   });
 
   /** O apelido aparado; vazio quando não há. */
   readonly name = computed(() => this.value().name.trim());
-  /** O que o cabeçalho mostra: o apelido ou o nome padrão. */
-  readonly title = computed(() => this.name() || this.defaultName);
+  /**
+   * O que o cabeçalho mostra: o apelido ou, com várias TVs, o nome que o administrador deu à TV (é ele que diz qual é qual)
+   * e, por último, o nome padrão. Com uma TV só o título é o de sempre.
+   */
+  readonly title = computed(
+    () =>
+      this.name() ||
+      (this.selection.multiple() ? (this.selection.selected()?.name.trim() ?? '') : '') ||
+      this.defaultName,
+  );
   readonly buttonSize = computed(() => this.value().buttonSize);
   readonly keyScale = computed(() => KEY_SCALE[this.buttonSize()]);
   readonly showMedia = computed(() => this.value().showMedia);
@@ -146,7 +169,8 @@ export class TvPrefs {
 
   private apply(next: TvPrefsValue): void {
     this.value.set(next);
-    this.write(this.session.accountId(), next);
+    const { accountId, tvId } = this.owner();
+    this.write(accountId, tvId, next);
   }
 
   private openStorage(): Storage | null {
@@ -157,20 +181,20 @@ export class TvPrefs {
     }
   }
 
-  private read(accountId: string | null): TvPrefsValue {
+  private read(accountId: string | null, tvId: string | null): TvPrefsValue {
     if (!accountId) return TV_PREFS_DEFAULTS;
     try {
-      const raw = this.storage?.getItem(tvPrefsStorageKey(accountId));
+      const raw = this.storage?.getItem(tvPrefsStorageKey(accountId, tvId));
       return parsePrefs(raw ? JSON.parse(raw) : null);
     } catch {
       return TV_PREFS_DEFAULTS; // JSON corrompido: volta ao padrão em vez de quebrar o controle
     }
   }
 
-  private write(accountId: string | null, value: TvPrefsValue): void {
+  private write(accountId: string | null, tvId: string | null, value: TvPrefsValue): void {
     if (!accountId) return;
     try {
-      this.storage?.setItem(tvPrefsStorageKey(accountId), JSON.stringify(value));
+      this.storage?.setItem(tvPrefsStorageKey(accountId, tvId), JSON.stringify(value));
     } catch {
       // sem espaço ou bloqueado: a escolha vale só até recarregar
     }

@@ -1,0 +1,37 @@
+:host {
+  display: block;
+}
+
+/* O ponto de estado e o visto da TV em uso, à direita; o visto reserva o lugar para os pontos ficarem em coluna. */
+.end {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dot {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.check {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--a-accent);
+  visibility: hidden;
+}
+
+.check.on {
+  visibility: visible;
+}
+
+/* A linha da TV em uso ganha o tom suave do acento, além do visto (a cor nunca é a única pista). */
+[aria-current='true'] {
+  background: var(--a-accent-soft);
+}
+
+/* No tom do acento da linha da TV em uso o ladrilho some: ele ganha o fundo do cartão para continuar à vista. */
+[aria-current='true'] .ui-tile {
+  background: var(--a-surface);
+}
