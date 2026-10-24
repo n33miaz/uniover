@@ -52,6 +52,10 @@ class EnvelopeFactory:
         body = {"agentVersion": agent_version, "capabilities": list(capabilities)}
         return self._build("agent.hello.v1", body, None)
 
+    def keepalive(self) -> dict[str, Any]:
+        """`agent.keepalive.v1`: mantém o canal ativo sem efeito de negócio."""
+        return self._build("agent.keepalive.v1", {}, None)
+
     def result(
         self, correlation_id: str, *, ok: bool, code: str = "", message: str = ""
     ) -> dict[str, Any]:

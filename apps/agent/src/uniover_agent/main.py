@@ -568,7 +568,10 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
         clock,
         random.SystemRandom().random,
         agent_version=agent_version(),
-        capabilities=tuple(tv.capabilities) if tv is not None else (),
+        capabilities=(
+            "transport.keepalive.v1",
+            *(tuple(tv.capabilities) if tv is not None else ()),
+        ),
         on_connected=on_connected if after_hello else None,
     )
     _log.info("agente %s iniciando (api %s)", agent_id, api_url)
