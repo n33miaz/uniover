@@ -171,6 +171,7 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
         assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
 
     assert api.received[0]["body"]["capabilities"] == [
+        "transport.keepalive.v1",
         "tv.remote",
         "tv.kind.android",
         "tv.adb",
