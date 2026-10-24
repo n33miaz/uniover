@@ -27,7 +27,20 @@ function Get-Version {
     catch { return $null }
 }
 
+function Stop-VenvUsers {
+    # Qualquer processo rodando do ambiente (icone da bandeja, agente que sobrou) prende o
+    # uniover-agent.exe e faz o sync falhar para sempre. Antes de sincronizar, todos saem.
+    $venvPath = Join-Path $runtime 'venv'
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        ($_.ProcessId -ne $PID) -and (
+            ($_.ExecutablePath -and $_.ExecutablePath -like "$venvPath\*") -or
+            ($_.CommandLine -and $_.CommandLine -like "*uniover-agent*" -and $_.CommandLine -like "*$source*")
+        )
+    } | ForEach-Object { & taskkill.exe /PID $_.ProcessId /T /F *> $null }
+}
+
 function Sync-Agent([string]$Uv) {
+    Stop-VenvUsers
     & $Uv sync --project $source --quiet *> $null
     if ($LASTEXITCODE -eq 0) { return $true }
     $venv = Join-Path $runtime 'venv'
@@ -87,15 +100,19 @@ $tray = $null
 while ($true) {
     $uv = Find-Uv
     if (-not $uv -or -not (Test-Path -LiteralPath $source)) { Start-Sleep -Seconds 300; continue }
-    if ($null -eq $tray -or $tray.HasExited) { $tray = Start-Tray $uv }
     $updated = $false
     if ((Get-Date) -ge $nextUpdate -or (Test-Path (Join-Path $runtime 'update-now'))) {
         Remove-Item -LiteralPath (Join-Path $runtime 'update-now') -Force -ErrorAction SilentlyContinue
         $updated = Invoke-Update $uv
         $nextUpdate = Schedule-NextUpdate
-        if ($updated) { exit 42 }
+        if ($updated) {
+            if ($null -ne $tray -and -not $tray.HasExited) { & taskkill.exe /PID $tray.Id /T /F *> $null }
+            exit 42
+        }
     }
     if (-not (Sync-Agent $uv)) { Start-Sleep -Seconds $wait; $wait = [Math]::Min($wait * 2, 300); continue }
+    # O icone sobe depois do sync: antes, ele prenderia o executavel que o sync troca.
+    if ($null -eq $tray -or $tray.HasExited) { $tray = Start-Tray $uv }
     $arguments = 'run --project "' + $source + '" uniover-agent run'
     $process = Start-Process -FilePath $uv -ArgumentList $arguments -PassThru -WindowStyle Hidden
     $started = Get-Date
