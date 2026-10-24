@@ -8,11 +8,12 @@ using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
+using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Ports;
 
 namespace UniOver.Modules.Tv.Features.Cleanup;
 
-internal sealed record CleanupCommand(TvCommandOrigin Origin);
+internal sealed record CleanupCommand(TvCommandOrigin Origin, Guid TvId = default);
 
 /// <summary>
 /// Resposta de uma limpeza que rodou: o que o agente relatou. A memória é em MB e some (<c>null</c>) quando a TV não
@@ -46,8 +47,8 @@ internal sealed class CleanupHandler(TvCommandRunner runner, ITvCleanupReports r
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        // Uma limpeza por vez (a TV é uma só): a vez só volta quando esta termina, com ou sem erro.
-        using var ticket = reports.TryBegin();
+        // Uma limpeza por TV: a vez só volta quando esta termina, com ou sem erro.
+        using var ticket = reports.TryBegin(command.TvId);
         if (ticket is null)
         {
             return new CleanupResult(true, null, null);
@@ -90,14 +91,14 @@ internal static class CleanupEndpoint
             .ProducesProblem(StatusCodes.Status504GatewayTimeout);
 
     private static async Task<IResult> HandleAsync(
-        ICurrentUser current, HttpContext http, CleanupHandler handler, CancellationToken cancellationToken)
+        ICurrentUser current, HttpContext http, ITvCurrentSelection selection, CleanupHandler handler, CancellationToken cancellationToken)
     {
         if (TvHttp.OriginOf(current, http) is not { } origin)
         {
             return TvProblems.Unauthenticated();
         }
 
-        return ToResult(await handler.HandleAsync(new CleanupCommand(origin), cancellationToken));
+        return ToResult(await handler.HandleAsync(new CleanupCommand(origin, selection.Current.Id), cancellationToken));
     }
 
     /// <summary>Separado do HTTP para ser testado sem subir o servidor.</summary>

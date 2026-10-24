@@ -45,7 +45,7 @@ public class CleanupTests
     {
         public Task<TvSendOutcome> RequestAsync(string agentId, TvMessage message, TimeSpan timeout, CancellationToken cancellationToken)
         {
-            reports.Complete(message.Body.GetProperty("requestId").GetGuid(), Report);
+            reports.Complete(Guid.Empty, message.Body.GetProperty("requestId").GetGuid(), Report);
             return inner.RequestAsync(agentId, message, timeout, cancellationToken);
         }
 
@@ -132,36 +132,51 @@ public class CleanupTests
     {
         var reports = new InMemoryTvCleanupReports(TimeProvider.System);
 
-        var first = reports.TryBegin();
+        var first = reports.TryBegin(Guid.Empty);
         first.Should().NotBeNull();
-        reports.TryBegin().Should().BeNull();
+        reports.TryBegin(Guid.Empty).Should().BeNull();
 
         first!.Dispose();
-        using var second = reports.TryBegin();
+        using var second = reports.TryBegin(Guid.Empty);
         second.Should().NotBeNull();
         second!.RequestId.Should().NotBe(first.RequestId);
+    }
+
+    [Fact]
+    public async Task Reports_KeepTheCleanupsOfDifferentTvsSeparate()
+    {
+        var reports = new InMemoryTvCleanupReports(TimeProvider.System);
+        var firstTv = Guid.NewGuid();
+        var secondTv = Guid.NewGuid();
+        using var first = reports.TryBegin(firstTv)!;
+        using var second = reports.TryBegin(secondTv)!;
+
+        reports.Complete(secondTv, second.RequestId, Report);
+
+        (await second.WaitAsync(TimeSpan.FromSeconds(1), CancellationToken.None)).Should().BeSameAs(Report);
+        (await first.WaitAsync(TimeSpan.FromMilliseconds(50), CancellationToken.None)).Should().BeNull();
     }
 
     [Fact]
     public void Reports_DisposingAStaleTicketNeverFreesTheTurnOfANewerOne()
     {
         var reports = new InMemoryTvCleanupReports(TimeProvider.System);
-        var first = reports.TryBegin()!;
+        var first = reports.TryBegin(Guid.Empty)!;
         first.Dispose();
-        using var second = reports.TryBegin()!;
+        using var second = reports.TryBegin(Guid.Empty)!;
 
         first.Dispose();
 
-        reports.TryBegin().Should().BeNull("a limpeza nova segue ocupando a vez");
+        reports.TryBegin(Guid.Empty).Should().BeNull("a limpeza nova segue ocupando a vez");
     }
 
     [Fact]
     public async Task Reports_TheReportReachesTheTicketThatWaitsForItsRequestId()
     {
         var reports = new InMemoryTvCleanupReports(TimeProvider.System);
-        using var ticket = reports.TryBegin()!;
+        using var ticket = reports.TryBegin(Guid.Empty)!;
 
-        reports.Complete(ticket.RequestId, Report);
+        reports.Complete(Guid.Empty, ticket.RequestId, Report);
 
         (await ticket.WaitAsync(TimeSpan.FromSeconds(1), CancellationToken.None)).Should().BeSameAs(Report);
     }
@@ -170,10 +185,10 @@ public class CleanupTests
     public async Task Reports_AReportThatArrivesWhileWaitingWakesTheWait()
     {
         var reports = new InMemoryTvCleanupReports(TimeProvider.System);
-        using var ticket = reports.TryBegin()!;
+        using var ticket = reports.TryBegin(Guid.Empty)!;
 
         var waiting = ticket.WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
-        reports.Complete(ticket.RequestId, Report);
+        reports.Complete(Guid.Empty, ticket.RequestId, Report);
 
         (await waiting.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)).Should().BeSameAs(Report);
     }
@@ -182,9 +197,9 @@ public class CleanupTests
     public async Task Reports_AReportForAnotherRequestIdIsIgnored_AndTheWaitEndsInNull()
     {
         var reports = new InMemoryTvCleanupReports(TimeProvider.System);
-        using var ticket = reports.TryBegin()!;
+        using var ticket = reports.TryBegin(Guid.Empty)!;
 
-        reports.Complete(Guid.NewGuid(), Report);
+        reports.Complete(Guid.Empty, Guid.NewGuid(), Report);
 
         (await ticket.WaitAsync(TimeSpan.FromMilliseconds(50), CancellationToken.None)).Should().BeNull();
     }
@@ -194,10 +209,10 @@ public class CleanupTests
     {
         var reports = new InMemoryTvCleanupReports(TimeProvider.System);
 
-        var act = () => reports.Complete(Guid.NewGuid(), Report);
+        var act = () => reports.Complete(Guid.Empty, Guid.NewGuid(), Report);
 
         act.Should().NotThrow();
-        using var ticket = reports.TryBegin();
+        using var ticket = reports.TryBegin(Guid.Empty);
         ticket.Should().NotBeNull();
     }
 
@@ -205,12 +220,12 @@ public class CleanupTests
     public async Task Reports_ALateReportOfAnEarlierCleanupNeverReachesTheNextOne()
     {
         var reports = new InMemoryTvCleanupReports(TimeProvider.System);
-        var first = reports.TryBegin()!;
+        var first = reports.TryBegin(Guid.Empty)!;
         var firstId = first.RequestId;
         first.Dispose();
-        using var second = reports.TryBegin()!;
+        using var second = reports.TryBegin(Guid.Empty)!;
 
-        reports.Complete(firstId, Report);
+        reports.Complete(Guid.Empty, firstId, Report);
 
         (await second.WaitAsync(TimeSpan.FromMilliseconds(50), CancellationToken.None)).Should().BeNull();
     }
@@ -258,7 +273,7 @@ public class CleanupTests
     public async Task Handler_WhileAnotherCleanupHoldsTheTurn_IsBusy_AndNothingReachesTheAgent()
     {
         var (handler, sender, audit, reports) = Build(TvSendOutcome.Ok(TimeSpan.Zero));
-        using var other = reports.TryBegin();
+        using var other = reports.TryBegin(Guid.Empty);
 
         var result = await handler.HandleAsync(new CleanupCommand(Origin), CancellationToken.None);
 
@@ -275,7 +290,7 @@ public class CleanupTests
         var result = await handler.HandleAsync(new CleanupCommand(Origin), CancellationToken.None);
 
         result.Outcome!.Status.Should().Be(TvSendStatus.AgentTimeout);
-        using var next = reports.TryBegin();
+        using var next = reports.TryBegin(Guid.Empty);
         next.Should().NotBeNull();
     }
 
