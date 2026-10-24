@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 import pytest
+from samsungtvws import SamsungTVWS
 
 from uniover_agent import main as main_module
 from uniover_agent.adapters import tv_samsung_pairing as samsung_pairing
@@ -406,4 +407,5 @@ def test_pairing_waits_for_the_accept_on_the_tv() -> None:
     # A TV só responde depois do aceite: o socket do pareamento não pode usar os 5 s do controle.
     client = _pairing_factory("192.168.0.11", None, "UniOver")
 
+    assert isinstance(client, SamsungTVWS)
     assert client.timeout == SAMSUNG_PAIR_TIMEOUT_SECONDS
