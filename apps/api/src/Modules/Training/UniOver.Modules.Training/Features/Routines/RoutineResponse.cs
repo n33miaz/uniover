@@ -24,6 +24,8 @@ internal sealed record RoutineResponse(
     string Name,
     int Position,
     bool Active,
+    string? ProgramId,
+    IReadOnlyList<int> Weekdays,
     string? Note,
     IReadOnlyList<RoutineItemResponse> Items,
     DateTimeOffset UpdatedAt,
@@ -39,6 +41,8 @@ internal sealed record RoutineResponse(
             routine.Name,
             routine.Position,
             routine.Active,
+            routine.ProgramId,
+            routine.Weekdays,
             routine.Note,
             [.. routine.Items
                 .OrderBy(i => i.Position)

@@ -4,8 +4,13 @@ using UniOver.Modules.Training.Domain.Routines;
 namespace UniOver.Modules.Training.Features.Routines.UpsertRoutine;
 
 /// <summary>Validação da borda da rotina: nada chega ao handler sem passar por aqui.</summary>
-internal static class UpsertRoutineValidator
+internal static partial class UpsertRoutineValidator
 {
+    [System.Text.RegularExpressions.GeneratedRegex("^[a-z0-9-]+$")]
+    private static partial System.Text.RegularExpressions.Regex ProgramIdRegex();
+
+    private static readonly System.Text.RegularExpressions.Regex ProgramIdPattern = ProgramIdRegex();
+
     public static Dictionary<string, string[]> Validate(
         Guid id, UpsertRoutineRequest? request, Guid userId, out UpsertRoutineCommand? command)
     {
@@ -50,6 +55,22 @@ internal static class UpsertRoutineValidator
             errors["clientUpdatedAt"] = ["Informe o instante da escrita no aparelho."];
         }
 
+        var programId = request.ProgramId?.Trim();
+        if (programId is { Length: > RoutineLimits.ProgramIdMax } || (programId is not null && !ProgramIdPattern.IsMatch(programId)))
+        {
+            errors["programId"] = ["O programa deve usar só letras minúsculas, números e hífen."];
+        }
+
+        int[]? weekdays = null;
+        if (request.Weekdays is { } requestedDays)
+        {
+            weekdays = [.. requestedDays.Distinct().Order()];
+            if (requestedDays.Count > 7 || weekdays.Length != requestedDays.Count || weekdays.Any(d => d is < 1 or > 7))
+            {
+                errors["weekdays"] = ["Os dias devem ser de 1 (segunda) a 7 (domingo), sem repetir."];
+            }
+        }
+
         // Na lápide os itens são ignorados (ficam como estavam): o aparelho manda a rotina inteira, mas só o apagamento vale.
         var items = new List<RoutineItemSpec>();
         if (!request.Deleted)
@@ -71,7 +92,9 @@ internal static class UpsertRoutineValidator
             string.IsNullOrEmpty(note) ? null : note,
             items,
             TimeStamps.ToStorage(request.ClientUpdatedAt!.Value),
-            request.Deleted);
+            request.Deleted,
+            string.IsNullOrEmpty(programId) ? null : programId,
+            weekdays);
         return errors;
     }
 

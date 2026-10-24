@@ -22,7 +22,9 @@ internal sealed record UpsertRoutineRequest(
     string? Note,
     IReadOnlyList<UpsertRoutineItemRequest>? Items,
     DateTimeOffset? ClientUpdatedAt,
-    bool Deleted);
+    bool Deleted,
+    string? ProgramId = null,
+    IReadOnlyList<int>? Weekdays = null);
 
 /// <summary>O pedido já validado e normalizado (nome aparado, itens arrumados e com as posições recompactadas).</summary>
 internal sealed record UpsertRoutineCommand(
@@ -34,7 +36,9 @@ internal sealed record UpsertRoutineCommand(
     string? Note,
     IReadOnlyList<RoutineItemSpec> Items,
     DateTimeOffset ClientUpdatedAt,
-    bool Deleted);
+    bool Deleted,
+    string? ProgramId,
+    int[]? Weekdays);
 
 internal enum UpsertRoutineOutcome
 {

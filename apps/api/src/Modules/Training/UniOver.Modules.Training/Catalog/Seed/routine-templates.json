@@ -7,6 +7,7 @@
       "routines": [
         {
           "name": "A · Peito e tríceps",
+          "weekdays": [1],
           "items": [
             {
               "exerciseSlug": "supino-reto-com-barra",
@@ -49,6 +50,7 @@
         },
         {
           "name": "B · Costas e bíceps",
+          "weekdays": [3],
           "items": [
             {
               "exerciseSlug": "puxada-aberta-na-polia",
@@ -91,6 +93,7 @@
         },
         {
           "name": "C · Pernas e ombros",
+          "weekdays": [5],
           "items": [
             {
               "exerciseSlug": "agachamento-livre-com-barra",
@@ -145,6 +148,7 @@
       "routines": [
         {
           "name": "A · Peito",
+          "weekdays": [1],
           "items": [
             {
               "exerciseSlug": "supino-reto-com-barra",
@@ -178,6 +182,7 @@
         },
         {
           "name": "B · Costas",
+          "weekdays": [2],
           "items": [
             {
               "exerciseSlug": "puxada-aberta-na-polia",
@@ -211,6 +216,7 @@
         },
         {
           "name": "C · Pernas",
+          "weekdays": [4],
           "items": [
             {
               "exerciseSlug": "agachamento-livre-com-barra",
@@ -258,6 +264,7 @@
         },
         {
           "name": "D · Ombros e braços",
+          "weekdays": [5],
           "items": [
             {
               "exerciseSlug": "desenvolvimento-com-halteres",
@@ -307,6 +314,7 @@
       "routines": [
         {
           "name": "A · Corpo inteiro",
+          "weekdays": [1, 3, 5],
           "items": [
             {
               "exerciseSlug": "agachamento-livre-com-barra",
@@ -363,6 +371,7 @@
         },
         {
           "name": "B · Corpo inteiro",
+          "weekdays": [1, 3, 5],
           "items": [
             {
               "exerciseSlug": "levantamento-terra-romeno-com-barra",
@@ -424,6 +433,7 @@
       "routines": [
         {
           "name": "Segunda · Peito, ombros e tríceps",
+          "weekdays": [1],
           "items": [
             { "exerciseSlug": "supino-reto-com-halteres", "targetSets": 3, "repMin": 6, "repMax": 10, "restSeconds": 120 },
             { "exerciseSlug": "crucifixo-na-maquina-voador", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
@@ -434,6 +444,7 @@
         },
         {
           "name": "Terça · Costas e bíceps",
+          "weekdays": [2],
           "items": [
             { "exerciseSlug": "puxada-aberta-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "remada-apoiada-no-banco-inclinado-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
@@ -443,6 +454,7 @@
         },
         {
           "name": "Quarta · Pernas A",
+          "weekdays": [3],
           "items": [
             { "exerciseSlug": "prensa-de-pernas-na-maquina", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "cadeira-extensora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
@@ -452,6 +464,7 @@
         },
         {
           "name": "Quinta · Superior misto",
+          "weekdays": [4],
           "items": [
             { "exerciseSlug": "supino-inclinado-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "remada-sentada-na-polia", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
@@ -462,6 +475,7 @@
         },
         {
           "name": "Sexta · Pernas B",
+          "weekdays": [5],
           "items": [
             { "exerciseSlug": "stiff-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 10, "restSeconds": 120 },
             { "exerciseSlug": "mesa-flexora", "targetSets": 3, "repMin": 10, "repMax": 15, "restSeconds": 90 },
@@ -479,6 +493,7 @@
       "routines": [
         {
           "name": "Segunda · Superior A",
+          "weekdays": [1],
           "items": [
             { "exerciseSlug": "supino-reto-com-halteres", "targetSets": 3, "repMin": 6, "repMax": 10, "restSeconds": 120 },
             { "exerciseSlug": "puxada-aberta-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
@@ -489,6 +504,7 @@
         },
         {
           "name": "Terça · Inferior A",
+          "weekdays": [2],
           "items": [
             { "exerciseSlug": "prensa-de-pernas-na-maquina", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "mesa-flexora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
@@ -497,6 +513,7 @@
         },
         {
           "name": "Quarta · Superior B",
+          "weekdays": [3],
           "items": [
             { "exerciseSlug": "supino-inclinado-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "remada-sentada-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
@@ -506,6 +523,7 @@
         },
         {
           "name": "Quinta · Inferior B",
+          "weekdays": [4],
           "items": [
             { "exerciseSlug": "stiff-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 10, "restSeconds": 120 },
             { "exerciseSlug": "avanco-para-tras-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
@@ -516,6 +534,7 @@
         },
         {
           "name": "Sexta · Ombros, braços e acessórios",
+          "weekdays": [5],
           "items": [
             { "exerciseSlug": "elevacao-lateral-com-halteres", "targetSets": 3, "repMin": 12, "repMax": 20, "restSeconds": 60 },
             { "exerciseSlug": "crucifixo-inverso-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 90 },
@@ -532,6 +551,7 @@
       "routines": [
         {
           "name": "Segunda · Peito e tríceps",
+          "weekdays": [1],
           "items": [
             { "exerciseSlug": "supino-reto-com-halteres", "targetSets": 3, "repMin": 6, "repMax": 10, "restSeconds": 120 },
             { "exerciseSlug": "crucifixo-na-maquina-voador", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
@@ -541,6 +561,7 @@
         },
         {
           "name": "Terça · Costas e bíceps",
+          "weekdays": [2],
           "items": [
             { "exerciseSlug": "puxada-aberta-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "remada-apoiada-no-banco-inclinado-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
@@ -549,6 +570,7 @@
         },
         {
           "name": "Quarta · Inferior completo",
+          "weekdays": [3],
           "items": [
             { "exerciseSlug": "prensa-de-pernas-na-maquina", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "cadeira-extensora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
@@ -558,6 +580,7 @@
         },
         {
           "name": "Quinta · Peito e tríceps (variante)",
+          "weekdays": [4],
           "items": [
             { "exerciseSlug": "supino-inclinado-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "crucifixo-na-maquina-voador", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
@@ -566,6 +589,7 @@
         },
         {
           "name": "Sexta · Costas, bíceps e mini-inferior",
+          "weekdays": [5],
           "items": [
             { "exerciseSlug": "remada-sentada-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "puxada-supinada-na-polia", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
@@ -583,6 +607,7 @@
       "routines": [
         {
           "name": "A · Empurrar e quadríceps",
+          "weekdays": [1, 2, 3, 4, 5],
           "items": [
             { "exerciseSlug": "supino-reto-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "crucifixo-na-maquina-voador", "targetSets": 1, "repMin": 10, "repMax": 15, "restSeconds": 90 },
@@ -594,6 +619,7 @@
         },
         {
           "name": "B · Puxar e posterior",
+          "weekdays": [1, 2, 3, 4, 5],
           "items": [
             { "exerciseSlug": "puxada-aberta-na-polia", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "remada-apoiada-no-banco-inclinado-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
@@ -611,6 +637,7 @@
       "routines": [
         {
           "name": "A · Corpo inteiro (segunda)",
+          "weekdays": [1],
           "items": [
             { "exerciseSlug": "prensa-de-pernas-na-maquina", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "supino-reto-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
@@ -620,6 +647,7 @@
         },
         {
           "name": "B · Corpo inteiro (quarta)",
+          "weekdays": [3],
           "items": [
             { "exerciseSlug": "stiff-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "puxada-aberta-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
@@ -630,6 +658,7 @@
         },
         {
           "name": "C · Corpo inteiro (sexta)",
+          "weekdays": [5],
           "items": [
             { "exerciseSlug": "puxada-com-triangulo-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
             { "exerciseSlug": "supino-articulado-na-maquina", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
