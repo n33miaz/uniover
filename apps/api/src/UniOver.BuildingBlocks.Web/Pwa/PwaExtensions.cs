@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -89,13 +90,19 @@ public static class PwaExtensions
         return services;
     }
 
-    /// <summary>Arquivos estáticos do PWA, exceto o <c>index.html</c>, que só sai pelo endpoint de fallback.</summary>
+    /// <summary>
+    /// Arquivos estáticos do PWA, exceto o <c>index.html</c>, que só sai pelo endpoint de fallback. O conector do PC
+    /// (<c>/conectar/*.cmd</c>) tem tipo que o servidor não conhece e daria 404: sai como download.
+    /// </summary>
     public static IApplicationBuilder UseUniOverStaticFiles(this WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
+        var types = new FileExtensionContentTypeProvider();
+        types.Mappings[".cmd"] = "application/octet-stream";
         return app.UseStaticFiles(new StaticFileOptions
         {
             FileProvider = new IndexHidingFileProvider(app.Environment.WebRootFileProvider),
+            ContentTypeProvider = types,
         });
     }
 
