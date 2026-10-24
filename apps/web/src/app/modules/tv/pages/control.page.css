@@ -188,6 +188,19 @@ button:disabled,
   flex-wrap: wrap;
   justify-content: center;
 }
+/*
+ * Sem o botão do Teclado sobram sete: oito colunas de meia largura, cada botão ocupando duas, e o primeiro da segunda
+ * fileira começa na segunda coluna, o que deixa os três últimos no meio.
+ */
+.round-grid[data-short] {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+.round-grid[data-short] > .round {
+  grid-column: span 2;
+}
+.round-grid[data-short] > .round:nth-child(5) {
+  grid-column: 2 / span 2;
+}
 .pill {
   display: flex;
   flex-direction: column;

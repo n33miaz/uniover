@@ -3,14 +3,17 @@ import { Injectable, Injector, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import type { components } from '../../../core/api/generated/schema';
 import { APP_CONFIG } from '../../../core/config/app-config';
+import { TvSelection } from './tv-selection';
 import {
   TvCleanupResult,
   TvKey,
   TvShortcut,
   TvState,
+  TvSummary,
   normalizeShortcut,
   parseShortcuts,
   parseState,
+  parseTvs,
 } from './tv-types';
 
 const BASE = `${APP_CONFIG.apiBase}/v1/tv`;
@@ -18,23 +21,47 @@ const BASE = `${APP_CONFIG.apiBase}/v1/tv`;
 /** Caminho do fluxo de eventos (o cookie de bilhete do `StreamService` é a credencial, nunca um token na URL). */
 export const TV_EVENTS_PATH = `${BASE}/events`;
 
+/** O fluxo de eventos da TV escolhida: com `tvId` só chegam os eventos dela; sem ele, os da única TV visível. */
+export function tvEventsPath(tvId: string | null): string {
+  return tvId ? `${TV_EVENTS_PATH}?tvId=${encodeURIComponent(tvId)}` : TV_EVENTS_PATH;
+}
+
 /**
  * Cliente da API da TV. Usa o `HttpClient` do app (os interceptadores levam o Bearer e renovam a sessão); o
  * cliente é buscado só na hora da chamada, para a tela abrir mesmo onde ele não foi provido (nos testes de rota).
  * Teclas e comandos não passam pela fila offline: controle é em tempo real, e um comando velho executado depois
  * seria pior do que nenhum.
+ *
+ * Com mais de uma TV visível, toda chamada leva `?tvId=` da TV escolhida (`TvSelection`), lida no instante da chamada: o
+ * pedido que já saiu continua sendo da TV de quando saiu, mesmo que a pessoa troque de TV em seguida. Com uma só, nada
+ * muda na URL (a API usa a única visível).
  */
 @Injectable({ providedIn: 'root' })
 export class TvApi {
   private readonly injector = inject(Injector);
+  private readonly selection = inject(TvSelection);
 
   private get http(): HttpClient {
     return this.injector.get(HttpClient);
   }
 
+  /** O parâmetro `tvId` da TV escolhida, quando há mais de uma. */
+  private target(): { params?: { tvId: string } } {
+    const tvId = this.selection.tvId();
+    return tvId ? { params: { tvId } } : {};
+  }
+
+  /** As TVs que a conta vê, com o que cada uma oferece. Não leva `tvId`: é a lista de onde ele vem. */
+  async tvs(): Promise<TvSummary[]> {
+    const dto = await firstValueFrom(this.http.get<unknown>(`${BASE}/tvs`));
+    const list = parseTvs(dto);
+    if (!list) throw new Error('Lista de TVs em formato inesperado.');
+    return list;
+  }
+
   async state(): Promise<TvState> {
     const dto = await firstValueFrom(
-      this.http.get<components['schemas']['TvState']>(`${BASE}/state`),
+      this.http.get<components['schemas']['TvState']>(`${BASE}/state`, this.target()),
     );
     const state = parseState(dto);
     if (!state) throw new Error('Estado da TV em formato inesperado.');
@@ -42,29 +69,31 @@ export class TvApi {
   }
 
   async shortcuts(): Promise<TvShortcut[]> {
-    const dto = await firstValueFrom(this.http.get<TvShortcut[]>(`${BASE}/shortcuts`));
+    const dto = await firstValueFrom(
+      this.http.get<TvShortcut[]>(`${BASE}/shortcuts`, this.target()),
+    );
     return parseShortcuts(dto) ?? [];
   }
 
   /** Pré-aquece a sessão com a TV; o servidor responde 202 sem esperar o agente. */
   async wake(): Promise<void> {
-    await firstValueFrom(this.http.post(`${BASE}/wake`, null));
+    await firstValueFrom(this.http.post(`${BASE}/wake`, null, this.target()));
   }
 
   /** `POWER` nunca passa aqui (a API responde 400): desligar é {@link powerOff}. */
   async sendKey(key: TvKey): Promise<void> {
     const body: components['schemas']['SendKeyRequest'] = { key, direction: null };
-    await firstValueFrom(this.http.post(`${BASE}/keys`, body));
+    await firstValueFrom(this.http.post(`${BASE}/keys`, body, this.target()));
   }
 
   async sendText(text: string): Promise<void> {
     const body: components['schemas']['SendTextRequest'] = { text };
-    await firstValueFrom(this.http.post(`${BASE}/text`, body));
+    await firstValueFrom(this.http.post(`${BASE}/text`, body, this.target()));
   }
 
   /** Sem passkey (decisão do dono): o freio é o limite de comandos e a trilha de auditoria da API. */
   async powerOff(): Promise<void> {
-    await firstValueFrom(this.http.post(`${BASE}/power/off`, null));
+    await firstValueFrom(this.http.post(`${BASE}/power/off`, null, this.target()));
   }
 
   /**
@@ -72,17 +101,17 @@ export class TvApi {
    * agente por até 30 s), e devolve o que o agente relatou.
    */
   async cleanup(): Promise<TvCleanupResult> {
-    return firstValueFrom(this.http.post<TvCleanupResult>(`${BASE}/cleanup`, null));
+    return firstValueFrom(this.http.post<TvCleanupResult>(`${BASE}/cleanup`, null, this.target()));
   }
 
   async launch(id: string): Promise<void> {
     await firstValueFrom(
-      this.http.post(`${BASE}/shortcuts/${encodeURIComponent(id)}/launch`, null),
+      this.http.post(`${BASE}/shortcuts/${encodeURIComponent(id)}/launch`, null, this.target()),
     );
   }
 
   async refreshShortcuts(): Promise<void> {
-    await firstValueFrom(this.http.post(`${BASE}/shortcuts/refresh`, null));
+    await firstValueFrom(this.http.post(`${BASE}/shortcuts/refresh`, null, this.target()));
   }
 
   /** Muda só o que vier preenchido (`null` = não muda); texto vazio em `customLabel` apaga o nome próprio. */
@@ -95,7 +124,11 @@ export class TvApi {
       enabled: change.enabled ?? null,
     };
     const updated = await firstValueFrom(
-      this.http.patch<TvShortcut>(`${BASE}/shortcuts/${encodeURIComponent(id)}`, body),
+      this.http.patch<TvShortcut>(
+        `${BASE}/shortcuts/${encodeURIComponent(id)}`,
+        body,
+        this.target(),
+      ),
     );
     return normalizeShortcut(updated);
   }
@@ -106,7 +139,9 @@ export class TvApi {
    */
   async reorderShortcuts(ids: readonly string[]): Promise<TvShortcut[]> {
     const body: components['schemas']['ReorderShortcutsRequest'] = { ids: [...ids] };
-    const dto = await firstValueFrom(this.http.put<TvShortcut[]>(`${BASE}/shortcuts/order`, body));
+    const dto = await firstValueFrom(
+      this.http.put<TvShortcut[]>(`${BASE}/shortcuts/order`, body, this.target()),
+    );
     const list = parseShortcuts(dto);
     if (!list) throw new Error('Lista de atalhos em formato inesperado.');
     return list;

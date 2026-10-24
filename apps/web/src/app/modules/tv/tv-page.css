@@ -122,6 +122,19 @@ h1 {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
+/*
+ * Com várias TVs o nome ganha uma seta ao lado (discreta: é só a pista de que ali se escolhe). O texto continua centrado
+ * na coluna do meio e a seta fica ao lado dele, dentro dos mesmos 44 px de alvo.
+ */
+.title.switcher {
+  gap: 2px;
+}
+.chevron {
+  flex: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--a-ink2);
+}
 /* Sem o controle o nome é só texto: a mesma caixa do botão (altura do alvo, centralizado), sem a mão do cursor. */
 .title.plain {
   cursor: default;

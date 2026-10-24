@@ -26,6 +26,76 @@ export interface TvState {
   readonly updatedAt: string | null;
 }
 
+/** Tipo da TV, como o agente a declara: muda o que o controle oferece (a Samsung não tem teclado nem limpeza). */
+export type TvKind = 'android' | 'samsung';
+
+/**
+ * Uma TV da lista `GET /api/v1/tv/tvs` (só as que a conta vê). O tipo é local porque o contrato gerado ainda não traz
+ * esta rota; `agentSlug` só vem para o administrador. `capabilities` repete o que o agente anunciou ao conectar:
+ * com ele desligado a lista vem vazia (e `kind` nulo), e isso quer dizer "não sei", nunca "não suporta".
+ */
+export interface TvSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly isDefault: boolean;
+  readonly agentSlug: string | null;
+  readonly kind: TvKind | null;
+  readonly online: boolean;
+  readonly capabilities: readonly string[];
+}
+
+/** O que uma TV pode ou não oferecer no controle. */
+export type TvFeature = 'cleanup' | 'text' | 'apps';
+
+/** Capacidades que o agente anuncia no `agent.hello` e que a web usa para decidir o que mostrar. */
+export const TV_CAPABILITY = { adb: 'tv.adb' } as const;
+
+/**
+ * A TV oferece o recurso? Sem lista de TVs, ou com a TV sem capacidades nem tipo (agente desligado: a API não sabe o que
+ * ele faz), vale "sim": esconder por falta de informação tiraria os botões de quem só está com o agente fora do ar.
+ * - limpeza: pede o canal ADB (`tv.adb`), que a Samsung não tem;
+ * - apps: a Samsung os abre pelo canal próprio dela; a Android, pelo ADB;
+ * - texto: só a Samsung não digita (não existe capacidade própria de texto, o tipo é o que diferencia).
+ */
+export function tvSupports(tv: TvSummary | null, feature: TvFeature): boolean {
+  if (!tv || (tv.capabilities.length === 0 && tv.kind === null)) return true;
+  switch (feature) {
+    case 'cleanup':
+      return tv.capabilities.includes(TV_CAPABILITY.adb);
+    case 'apps':
+      return tv.kind === 'samsung' || tv.capabilities.includes(TV_CAPABILITY.adb);
+    case 'text':
+      return tv.kind !== 'samsung';
+  }
+}
+
+function parseTv(value: unknown): TvSummary | null {
+  if (!value || typeof value !== 'object') return null;
+  const dto = value as Record<string, unknown>;
+  if (typeof dto['id'] !== 'string' || dto['id'] === '' || typeof dto['name'] !== 'string') {
+    return null;
+  }
+  const capabilities = Array.isArray(dto['capabilities'])
+    ? dto['capabilities'].filter((item): item is string => typeof item === 'string')
+    : [];
+  return {
+    id: dto['id'],
+    name: dto['name'],
+    isDefault: dto['isDefault'] === true,
+    agentSlug: typeof dto['agentSlug'] === 'string' ? dto['agentSlug'] : null,
+    kind: dto['kind'] === 'android' || dto['kind'] === 'samsung' ? dto['kind'] : null,
+    online: dto['online'] === true,
+    capabilities,
+  };
+}
+
+/** Lê `{ items }` da lista de TVs, descartando o que não tem o mínimo; `null` quando o corpo não tem a forma esperada. */
+export function parseTvs(value: unknown): TvSummary[] | null {
+  const items = (value as { items?: unknown } | null)?.items;
+  if (!Array.isArray(items)) return null;
+  return items.map(parseTv).filter((tv): tv is TvSummary => tv !== null);
+}
+
 /** Evento do vigia como chega pelo SSE; o formato é o mesmo do corpo da mensagem do agente. */
 export type TvWatchdog = Pick<TvWatchdogV1Body, 'kind' | 'severity' | 'detail' | 'attempts' | 'at'>;
 
