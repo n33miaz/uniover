@@ -71,16 +71,17 @@ internal sealed partial class TvAgentMessageHandler(
                 await HandleWatchdogAsync(tvId, message, cancellationToken);
                 break;
             case AgentMessageTypes.TvCleanupResultV1:
-                HandleCleanupResult(message);
+                HandleCleanupResult(tvId, message);
                 break;
         }
     }
 
-    private void HandleCleanupResult(InboundMessage message)
+    private void HandleCleanupResult(Guid tvId, InboundMessage message)
     {
         var body = message.Body;
         var steps = body.GetProperty("failedSteps").EnumerateArray().Select(s => s.GetString()!).ToList();
         cleanupReports.Complete(
+            tvId,
             body.GetProperty("requestId").GetGuid(),
             new TvCleanupReport(
                 body.GetProperty("closedApps").GetInt32(),
