@@ -20,12 +20,15 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 import httpx
+
+from uniover_agent.adapters.process import run_hidden
 
 _log = logging.getLogger(__name__)
 
@@ -178,48 +181,125 @@ def swap_directories(current: Path, new: Path, *, keep_previous: bool = False) -
         shutil.rmtree(old, ignore_errors=True)
 
 
-def run_uv_sync(source: Path) -> None:
-    """Sincroniza a candidata antes de ela substituir a instalação atual."""
+def candidate_env(source: Path) -> Path:
+    """Ambiente virtual **descartável** da candidata, ao lado dela (fora da pasta que é trocada).
+
+    O ambiente do agente em execução (`UV_PROJECT_ENVIRONMENT`, `runtime\\venv`) não serve para
+    validar a candidata: o `uv sync` de um projeto em outro caminho reinstala o próprio pacote
+    nele (inclusive `Scripts\\uniover-agent.exe`, que o agente e esta atualização estão usando) e
+    o Windows recusa trocar arquivo em uso. Foi o que fez `uv sync` falhar com `CalledProcessError`.
+    """
+    return source.with_name(source.name + ".venv")
+
+
+def _find_uv() -> str:
     uv = os.environ.get("UV") or shutil.which("uv")
     if uv is None:
         raise SelfUpdateError("uv não encontrado para sincronizar as dependências")
-    try:
-        subprocess.run(  # noqa: S603 - executável do próprio uv, argumentos fixos
-            [uv, "sync", "--project", str(source), "--quiet"],
-            check=True,
-            timeout=600,
-            cwd=source.parent,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise SelfUpdateError(
-            f"não consegui sincronizar as dependências ({type(exc).__name__})"
-        ) from None
+    return uv
+
+
+_SECRET_PAIR = re.compile(
+    r"(?i)\b(token|password|passwd|secret|authorization|api[_-]?key|bearer)\b(\s*[=:]\s*|\s+)\S+"
+)
+_URL_CREDENTIALS = re.compile(r"(?i)(\w+://)[^/\s:@]+(?::[^/\s@]*)?@")
+_LONG_TOKEN = re.compile(r"\b[A-Za-z0-9_\-]{32,}\b")
+_REASON_LINES = 4
+_REASON_LIMIT = 400
+
+
+def summarize_failure(text: str) -> str:
+    """O fim da saída de erro do `uv`, curto e sem segredos (para o registro dizer o motivo).
+
+    Tira credenciais de URL, pares `token=...` e sequências longas que parecem chave."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    tail = " | ".join(lines[-_REASON_LINES:])
+    tail = _URL_CREDENTIALS.sub(r"\1***@", tail)
+    tail = _SECRET_PAIR.sub(lambda m: f"{m.group(1)}=***", tail)
+    tail = _LONG_TOKEN.sub("***", tail)
+    return tail[:_REASON_LIMIT]
+
+
+def _run_uv(  # noqa: PLR0913 - cada argumento é um limite ou um caminho, todos por nome
+    arguments: list[str],
+    *,
+    what: str,
+    timeout: int,
+    cwd: Path,
+    environment: Path,
+    pause: float,
+    attempts: int = 1,
+) -> None:
+    """Roda o `uv` sem janela, com o ambiente descartável, e diz o motivo se falhar."""
+    uv = _find_uv()
+    env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(environment)}
+    reason = ""
+    for attempt in range(1, attempts + 1):
+        if attempt > 1:
+            time.sleep(pause)
+        try:
+            done = run_hidden(
+                [uv, *arguments],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                cwd=cwd,
+                env=env,
+            )
+        except subprocess.TimeoutExpired:
+            reason = f"passou de {timeout} s"
+            continue
+        except OSError as exc:
+            reason = f"não consegui executar o uv ({type(exc).__name__})"
+            continue
+        if done.returncode == 0:
+            return
+        detail = summarize_failure(f"{done.stderr}\n{done.stdout}")
+        reason = f"código {done.returncode}" + (f": {detail}" if detail else "")
+    raise SelfUpdateError(f"{what} falhou ({reason})")
+
+
+def run_uv_sync(source: Path, *, pause: float = 3.0) -> None:
+    """Sincroniza a candidata, num ambiente só dela, antes de ela substituir a instalação.
+
+    Tenta de novo uma vez (arquivo preso por antivírus, cache do `uv` em uso, rede) e, se ainda
+    falhar, a mensagem leva o motivo (final do erro do `uv`, sem segredos)."""
+    environment = candidate_env(source)
+    shutil.rmtree(environment, ignore_errors=True)
+    _run_uv(
+        ["sync", "--project", str(source), "--quiet"],
+        what="a sincronização das dependências",
+        timeout=600,
+        cwd=source.parent,
+        environment=environment,
+        pause=pause,
+        attempts=2,
+    )
 
 
 def run_uv_check(source: Path) -> None:
-    """Importa o núcleo e o contrato mínimo antes de promover uma atualização."""
-    uv = os.environ.get("UV") or shutil.which("uv")
-    if uv is None:
-        raise SelfUpdateError("uv não encontrado para testar a atualização")
-    try:
-        subprocess.run(  # noqa: S603 - executável do próprio uv, argumentos fixos
-            [
-                uv,
-                "run",
-                "--project",
-                str(source),
-                "python",
-                "-c",
-                "import uniover_agent.main; import uniover_agent.contracts.agent_hello_v1",
-            ],
-            check=True,
-            timeout=120,
-            cwd=source.parent,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise SelfUpdateError(
-            f"a verificação rápida da atualização falhou ({type(exc).__name__})"
-        ) from None
+    """Importa o núcleo e o contrato mínimo antes de promover uma atualização.
+
+    Usa o mesmo ambiente descartável, sem sincronizar de novo (`--no-sync`)."""
+    _run_uv(
+        [
+            "run",
+            "--no-sync",
+            "--project",
+            str(source),
+            "python",
+            "-c",
+            "import uniover_agent.main; import uniover_agent.contracts.agent_hello_v1",
+        ],
+        what="a verificação rápida da atualização",
+        timeout=120,
+        cwd=source.parent,
+        environment=candidate_env(source),
+        pause=0.0,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,6 +344,8 @@ def self_update(  # noqa: PLR0913 - dependências injetadas deixam a atualizaç�
             except BaseException:
                 shutil.rmtree(new, ignore_errors=True)
                 raise
+            finally:
+                shutil.rmtree(candidate_env(new), ignore_errors=True)
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
     except (SelfUpdateError, OSError) as exc:
