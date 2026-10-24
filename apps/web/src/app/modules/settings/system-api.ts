@@ -16,7 +16,46 @@ export type TvComputerStatus = 'online' | 'offline' | 'revoked' | 'unknown';
 /** De onde vem o computador escolhido (os valores que a API usa em `source`). */
 export type TvConfigSource = 'saved' | 'environment' | 'none';
 
+/**
+ * Uma TV como o administrador a vê em `GET /api/v1/tv/tvs`. O tipo é local enquanto os tipos HTTP gerados não incluem
+ * estas rotas (e um módulo de tela não importa de outro): `agentSlug` é o computador que a controla, `kind` o tipo
+ * declarado por ele (nulo com o computador desligado), `online` se o computador está ligado e `capabilities` o que ele
+ * anunciou ao conectar.
+ */
+export interface TvItem {
+  readonly id: string;
+  readonly name: string;
+  readonly isDefault: boolean;
+  readonly agentSlug: string | null;
+  readonly kind: 'android' | 'samsung' | null;
+  readonly online: boolean;
+  readonly capabilities: readonly string[];
+}
+
 const BASE = `${APP_CONFIG.apiBase}/v1/tv`;
+
+function readTv(value: unknown): TvItem | null {
+  if (!value || typeof value !== 'object') return null;
+  const dto = value as Record<string, unknown>;
+  if (typeof dto['id'] !== 'string' || typeof dto['name'] !== 'string') return null;
+  return {
+    id: dto['id'],
+    name: dto['name'],
+    isDefault: dto['isDefault'] === true,
+    agentSlug: typeof dto['agentSlug'] === 'string' ? dto['agentSlug'] : null,
+    kind: dto['kind'] === 'android' || dto['kind'] === 'samsung' ? dto['kind'] : null,
+    online: dto['online'] === true,
+    capabilities: Array.isArray(dto['capabilities'])
+      ? dto['capabilities'].filter((item): item is string => typeof item === 'string')
+      : [],
+  };
+}
+
+function readTvOrThrow(value: unknown): TvItem {
+  const tv = readTv(value);
+  if (!tv) throw new Error('TV em formato inesperado.');
+  return tv;
+}
 
 /**
  * Cliente da API de configuração do sistema (hoje, só a da TV). Usa o `HttpClient`, cujos interceptadores já levam o
@@ -35,5 +74,53 @@ export class SystemApi {
   bindTvComputer(agentSlug: string): Promise<TvConfig> {
     const body: components['schemas']['BindAgentRequest'] = { agentSlug, name: null };
     return firstValueFrom(this.http.put<TvConfig>(`${BASE}/config/agent`, body));
+  }
+
+  /** Todas as TVs (o administrador vê todas), a padrão primeiro. */
+  async tvs(): Promise<TvItem[]> {
+    const dto = await firstValueFrom(this.http.get<{ items?: unknown }>(`${BASE}/tvs`));
+    if (!Array.isArray(dto?.items)) throw new Error('Lista de TVs em formato inesperado.');
+    return dto.items.map(readTv).filter((tv): tv is TvItem => tv !== null);
+  }
+
+  /** Cria uma TV ligada a um computador pareado que ainda não tem TV (409 se já tiver). Exige a passkey. */
+  async createTv(agentSlug: string, name: string): Promise<TvItem> {
+    return readTvOrThrow(await firstValueFrom(this.http.post(`${BASE}/tvs`, { agentSlug, name })));
+  }
+
+  /** Muda só o que vier (nome e/ou computador). Exige a passkey. */
+  async updateTv(id: string, change: { name?: string; agentSlug?: string }): Promise<TvItem> {
+    const body: Record<string, string> = {};
+    if (change.name !== undefined) body['name'] = change.name;
+    if (change.agentSlug !== undefined) body['agentSlug'] = change.agentSlug;
+    return readTvOrThrow(
+      await firstValueFrom(this.http.patch(`${BASE}/tvs/${encodeURIComponent(id)}`, body)),
+    );
+  }
+
+  /** Remove a TV (a padrão não: 409). Exige a passkey. */
+  async deleteTv(id: string): Promise<void> {
+    await firstValueFrom(this.http.delete(`${BASE}/tvs/${encodeURIComponent(id)}`));
+  }
+
+  /** As contas que usam a TV (os ids). */
+  async tvMembers(id: string): Promise<string[]> {
+    const dto = await firstValueFrom(
+      this.http.get<{ userIds?: unknown }>(`${BASE}/tvs/${encodeURIComponent(id)}/members`),
+    );
+    if (!Array.isArray(dto?.userIds)) throw new Error('Lista de contas em formato inesperado.');
+    return dto.userIds.filter((item): item is string => typeof item === 'string');
+  }
+
+  /** Troca as contas da TV pela lista COMPLETA desejada (não é um acréscimo). Exige a passkey. */
+  async setTvMembers(id: string, userIds: readonly string[]): Promise<string[]> {
+    const dto = await firstValueFrom(
+      this.http.put<{ userIds?: unknown }>(`${BASE}/tvs/${encodeURIComponent(id)}/members`, {
+        userIds: [...userIds],
+      }),
+    );
+    return Array.isArray(dto?.userIds)
+      ? dto.userIds.filter((item): item is string => typeof item === 'string')
+      : [...userIds];
   }
 }

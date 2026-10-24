@@ -1,0 +1,207 @@
+/* Folha que sobe de baixo: o <dialog> modal ocupa a largura toda e cola no rodapé (a mesma das Pessoas). */
+.sheet {
+  --dialog-shift: 40px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  max-height: 90dvh;
+  margin: auto 0 0;
+  padding: var(--space-2) var(--gutter) 0;
+  border: 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--a-surface-raised);
+  color: var(--a-ink);
+  box-shadow: var(--shadow-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Em tela larga a folha vira um cartão centrado, ainda colado ao rodapé. */
+@media (min-width: 640px) {
+  .sheet {
+    width: min(100%, 34rem);
+    margin-inline: auto;
+  }
+}
+
+.sheet::backdrop {
+  background: rgb(8 16 10 / 0.52);
+}
+
+.grabber {
+  display: block;
+  width: 40px;
+  height: 5px;
+  margin: 0 auto var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--a-line);
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+h2 {
+  font-size: var(--fs-title);
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+/* A folha abre com o foco no título (o leitor de tela o lê e o primeiro Tab já cai no primeiro controle). */
+h2:focus {
+  outline: none;
+}
+
+fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.group legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+}
+
+.hint {
+  margin: 0 0 var(--space-2);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+/* Computador: a linha toda é o alvo de toque, e a escolhida ganha o tom do acento. */
+.choice {
+  cursor: pointer;
+  transition: background-color var(--dur-fast) linear;
+}
+
+.choice input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--a-accent);
+  cursor: pointer;
+}
+
+.choice:has(input:checked) {
+  background: var(--a-accent-soft);
+}
+
+.choice:has(input:focus-visible) {
+  outline: 3px solid var(--a-accent);
+  outline-offset: -3px;
+}
+
+@media (hover: hover) {
+  .choice:hover {
+    background: var(--a-surface-2);
+  }
+
+  .choice:has(input:checked):hover {
+    background: var(--a-accent-soft);
+  }
+}
+
+/* Pessoas: cada linha inteira é o alvo do toque (o interruptor em si tem 32 px de altura). */
+.option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+}
+
+.option:has(input:focus-visible) {
+  background: var(--a-surface-2);
+}
+
+.option-title {
+  min-width: 0;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+/* Vazio, erro e carregando: uma linha discreta (não é um erro, salvo o que vem marcado). */
+.empty {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 2px dashed var(--a-line);
+  border-radius: var(--radius-lg);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.empty.bad {
+  border-color: color-mix(in srgb, var(--a-bad) 45%, var(--a-line));
+  color: var(--a-bad-ink);
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.confirm {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.confirm p {
+  margin: 0;
+  font-weight: 650;
+}
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.messages:empty {
+  display: none;
+}
+
+.error app-settings-glyph {
+  --glyph-size: 20px;
+  margin-top: 1px;
+}
+
+/* Rodapé fixo na base da folha: as duas saídas sempre à mão, mesmo com a lista rolando. */
+.footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-1) calc(-1 * var(--gutter)) 0;
+  padding: var(--space-3) var(--gutter);
+  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--a-line);
+  background: var(--a-surface-raised);
+}
+
+.buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.buttons button {
+  flex: 1 1 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice {
+    transition: none;
+  }
+}
