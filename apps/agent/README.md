@@ -12,6 +12,8 @@ uv run uniover-agent run       # conecta e roda em primeiro plano (é o padrão)
 uv run uniover-agent status    # diz se há token no cofre e se a API responde
 uv run uniover-agent tv-pair --host <ip-da-tv>   # pareia uma Android TV (código mostrado na tela)
 uv run uniover-agent tv-pair --kind samsung --host <ip-da-tv>   # pareia uma Samsung (aviso na TV)
+uv run uniover-agent tv-find   # acha a TV na rede e grava tipo, endereço e identificador no agent.toml
+uv run uniover-agent self-update   # troca o agente instalado pela versão atual da main (se mudou)
 ```
 
 Verificação do projeto:
@@ -26,8 +28,11 @@ uv run pytest
 
 ## Pareamento
 
-1. `uniover-agent pair` pede um código à API, **mostra** `XXXX-XXXX` e o endereço do app e consulta até o dono
-   aprovar (respeitando o intervalo e o `slow_down`) ou o código vencer.
+1. `uniover-agent pair` pede um código à API, **mostra** `XXXX-XXXX`, um **QR** do link
+   `<api>/ajustes/dispositivos?codigo=XXXX-XXXX` (o app abre a aprovação já preenchida) e o endereço do app, e
+   consulta até o dono aprovar (respeitando o intervalo e o `slow_down`) ou o código vencer. O QR é desenhado com
+   meios-blocos (módulos claros preenchidos, para o terminal escuro) e cai para ASCII se o console não escreve
+   blocos. `--if-needed` não pareia de novo um PC já pareado.
 2. Aprovado, o **token de dispositivo** vai para o **Cofre de Credenciais do Windows** (serviço `uniover-agent`,
    nome = `agentId`) e o `agentId` para a configuração local. Nenhum dos dois vai para o repositório.
 3. `uniover-agent run` lê o token do cofre a cada conexão e o envia só no cabeçalho `Authorization` do *upgrade*.
@@ -52,6 +57,8 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_CONFIG_FILE` | outro caminho para o arquivo de configuração |
 | `UNIOVER_TV_HOST` | endereço (IP) da TV; sem ele o agente não controla TV. O IP não é garantidamente fixo |
 | `UNIOVER_TV_KIND` | tipo da TV: `android` (padrão) ou `samsung` |
+| `UNIOVER_TV_ID_HINT` | identificador estável da TV (Samsung: `duid` ou MAC Wi-Fi; Android: MAC); o `tv-find` grava e o agente usa para reencontrar a TV se o IP mudar |
+| `UNIOVER_LOG_FILE` | também registra neste arquivo (rodízio de 1 MB, 2 cópias); o instalador usa `%LOCALAPPDATA%\UniOver\agent.log` |
 | `UNIOVER_TV_CLIENT_NAME` | nome do agente que aparece na TV no pareamento (padrão `UniOver`) |
 | `UNIOVER_TV_NAME` | nome da pasta do certificado desta TV (padrão `tv`) |
 | `UNIOVER_TV_SAMSUNG_APPS` | IDs Tizen extras a procurar, separados por vírgula; a TV só publica os instalados |
@@ -89,7 +96,40 @@ instaladas e não recebe ícone. A abertura tenta o mesmo REST antes de recorrer
 internos válidos no contrato, mas abre o `appId` original Tizen. Não há ADB, limpeza de apps, abertura de links ou
 digitação pelo canal desta TV: esses pedidos retornam `unsupported`.
 
-### Instalador Windows
+### Instalação em um clique
+
+Para quem não é técnico: baixar e abrir **um** arquivo, `apps/agent/tools/conectar-uniover.cmd`. Ele roda o instalador
+sem parâmetros (modo automático), que:
+
+1. instala o `uv` pelo `winget` se faltar e baixa o agente (commit exato da `main`, com `.version`);
+2. **acha a TV** na rede (`tv-find`): varre o /24 da interface com rota padrão em menos de 10 s, procurando Samsung
+   (`GET http://<ip>:8001/api/v2/` com `device.type` `Samsung SmartTV`) e Android TV (porta 6466). Uma TV achada é
+   usada; várias, pergunta qual. Não achando, aceita o IP digitado ou segue sem a TV;
+3. **pareia o agente**: mostra o código e o QR para escanear com o celular onde a pessoa usa o UniOver
+   (já pareado, não repete);
+4. **pareia a TV** (na Samsung, aceitar o aviso na tela; já pareada, não repete);
+5. cria a tarefa **UniOver agente** (ao entrar no Windows, sem janela, sem perguntar) que roda
+   `%LOCALAPPDATA%\UniOver\run-agent.ps1`. O instalador imprime o que fez e o comando de remoção (`-Uninstall`).
+
+O `run-agent.ps1` (gerado, só ASCII) faz `self-update`, `uv sync` e `run`; se o agente cair, volta com espera
+crescente (5 s até 5 min, voltando a 5 s depois de 10 min de agente saudável). O registro fica em
+`%LOCALAPPDATA%\UniOver\agent.log`.
+
+**Reencontro da TV.** Com `tv_id_hint` gravado, o `run` confere a cada minuto se a TV responde (a sessão quente já
+prova que sim). Depois de 3 falhas seguidas refaz a varredura, no máximo uma a cada 10 minutos; achando a **mesma**
+TV (mesmo `duid`/MAC) em outro endereço, grava o `tv_host` novo no `agent.toml` e reinicia a conexão sozinho
+(`run` devolve o código 4 e o `main` recomeça). TV desligada não aparece na varredura e nada muda. O log não traz
+endereço nem identificador.
+
+**Auto-atualização.** `self-update` consulta o commit da `main` na API do GitHub, compara com
+`agent-src\.version` e, se mudou, baixa o zip **daquele commit**, monta `agent-src.new` e troca por renomeação
+(com volta atrás se a segunda renomeação falhar). Falha de rede, limite do GitHub ou pasta em uso só avisam e o
+agente atual segue. Para a renomeação funcionar no Windows, o instalador deixa o ambiente Python **fora** da pasta
+(`UV_PROJECT_ENVIRONMENT=%LOCALAPPDATA%\UniOver\venv`) e usa `uv run --project` (sem mudar o diretório). O
+`uv sync` é do `run-agent.ps1` (`self-update --no-sync`), nunca de dentro do processo que está no ambiente
+atualizado. A atualização acontece quando o agente inicia (logon ou queda), não com ele já rodando.
+
+### Instalador Windows (manual)
 
 No PowerShell, baixe e rode `apps/agent/tools/install-windows.ps1` com, por exemplo:
 
@@ -98,7 +138,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install-windows.ps1 -TvKind samsung -TvHost 192.168.0.11
 ```
 
-Ele instala o `uv` pelo `winget` se necessário, baixa somente `apps/agent` da branch pública `main` em
+Com `-TvHost` o instalador segue o fluxo manual (sem descoberta e com a pergunta abaixo). Ele instala o `uv` pelo `winget` se necessário, baixa somente `apps/agent` da branch pública `main` em
 `%LOCALAPPDATA%\UniOver\agent-src`, prepara as dependências, mostra o código para aprovar o PC no app, pareia a
 TV e pergunta explicitamente antes de criar a tarefa **UniOver agente** para iniciar sem janela ao entrar no Windows.
 Para remover só a tarefa: `.\install-windows.ps1 -Uninstall`.
@@ -300,4 +340,4 @@ Trocar de transporte (MQTT, depois) é trocar o adaptador: o núcleo não sabe q
 
 ## Ainda fora daqui
 
-Iniciar sozinho com o Windows e empacotar; teclas e apps pelo canal ADB; vigia da TV; adaptador MQTT.
+Empacotar como instalador nativo; atualização com o agente já rodando (hoje só no início); adaptador MQTT.
