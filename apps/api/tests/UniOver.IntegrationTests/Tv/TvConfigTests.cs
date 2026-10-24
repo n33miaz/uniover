@@ -251,7 +251,7 @@ public sealed class TvConfigTests(PostgresFixture postgres)
         await using var app = await TvApp.StartAsync(postgres);
         using var authenticator = new VirtualAuthenticator();
         await app.RegisterOwnerPasskeyAsync(authenticator);
-        await app.ConfirmOwnerActionAsync(authenticator, "devices.pair-approve");
+        await app.ConfirmOwnerActionAsync(authenticator, "tv.power-off");
         var second = await app.PairAsync("PC Novo");
 
         using var response = await BindAsync(app, new { agentSlug = second.Slug });
