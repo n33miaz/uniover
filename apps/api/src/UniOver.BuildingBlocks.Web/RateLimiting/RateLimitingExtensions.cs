@@ -25,7 +25,16 @@ public static class RateLimitPolicies
     /// <summary>Mudanças do próprio perfil (o nome): por conta, para não dividir o balde do login nem o dos comandos.</summary>
     public const string Profile = "profile";
 
-    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile];
+    /// <summary>Abrir um pedido de entrada pelo QR (anônimo, grava no banco): poucos por minuto e por IP.</summary>
+    public const string QrStart = "qr-start";
+
+    /// <summary>A consulta do computador ao pedido (anônima, a cada poucos segundos durante 2 min): balde próprio e mais largo.</summary>
+    public const string QrPoll = "qr-poll";
+
+    /// <summary>O que o celular faz com o pedido (ver, confirmar, recusar): por conta, e a senha de reconfirmação conta no bloqueio.</summary>
+    public const string QrDecide = "qr-decide";
+
+    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide];
 }
 
 /// <summary>Uma política configurável em <c>RateLimiting:&lt;política&gt;</c>.</summary>
@@ -51,6 +60,9 @@ public static class RateLimitingExtensions
         [RateLimitPolicies.Commands] = new() { Permitted = 300, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.GuestInvite] = new() { Permitted = 10, WindowSeconds = 60, Partition = "ip" },
         [RateLimitPolicies.Profile] = new() { Permitted = 10, WindowSeconds = 60, Partition = "user" },
+        [RateLimitPolicies.QrStart] = new() { Permitted = 10, WindowSeconds = 60, Partition = "ip" },
+        [RateLimitPolicies.QrPoll] = new() { Permitted = 90, WindowSeconds = 60, Partition = "ip" },
+        [RateLimitPolicies.QrDecide] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
     };
 
     /// <summary>
