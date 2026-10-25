@@ -19,6 +19,7 @@ from uniover_agent.adapters.tv_discovery import (
     ANDROID_REMOTE_PORT,
     SAMSUNG_REST_PORT,
     DiscoveredTv,
+    PortState,
     find_tvs,
     http_json,
     local_ipv4,
@@ -26,6 +27,7 @@ from uniover_agent.adapters.tv_discovery import (
     scan_hosts,
     subnet_hosts,
     tcp_open,
+    tcp_probe,
 )
 from uniover_agent.main import EXIT_FAILURE, EXIT_OK, main, tv_find
 
@@ -226,6 +228,30 @@ def local_server() -> Iterator[int]:
 async def test_tcp_open_tells_an_open_port_from_a_closed_one(local_server: int) -> None:
     assert await tcp_open("127.0.0.1", local_server)
     assert not await tcp_open("127.0.0.1", 1, wait=0.5)
+
+
+async def test_tcp_probe_tells_open_from_refused_from_silence(
+    local_server: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert await tcp_probe("127.0.0.1", local_server) is PortState.OPEN
+
+    async def refused(host: str, port: int) -> None:
+        raise ConnectionRefusedError
+
+    monkeypatch.setattr(asyncio, "open_connection", refused)
+    assert await tcp_probe("192.168.0.50", 6466) is PortState.REFUSED
+
+    async def no_route(host: str, port: int) -> None:
+        raise OSError("sem rota para o destino")
+
+    monkeypatch.setattr(asyncio, "open_connection", no_route)
+    assert await tcp_probe("192.168.0.50", 6466) is PortState.SILENT
+
+    async def never(host: str, port: int) -> None:
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(asyncio, "open_connection", never)
+    assert await tcp_probe("192.168.0.50", 6466, wait=0.01) is PortState.SILENT
 
 
 async def test_http_json_reads_objects_and_swallows_failures(local_server: int) -> None:
