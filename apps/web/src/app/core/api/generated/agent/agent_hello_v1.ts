@@ -7,7 +7,28 @@ export type AgentHelloV1BodyCapabilitiesItem =
   | 'tv.remote'
   | 'tv.adb'
   | 'tv.kind.android'
-  | 'tv.kind.samsung';
+  | 'tv.kind.samsung'
+  | 'tv.key.v3'
+  | 'tv.key.INPUT'
+  | 'tv.key.INFO'
+  | 'tv.key.GUIDE'
+  | 'tv.key.TOOLS'
+  | 'tv.key.CHANNEL_LIST'
+  | 'tv.key.PREVIOUS_CHANNEL'
+  | 'tv.key.EXIT'
+  | 'tv.key.PLAY'
+  | 'tv.key.PAUSE'
+  | 'tv.key.STOP'
+  | 'tv.key.REWIND'
+  | 'tv.key.FAST_FORWARD'
+  | 'tv.key.RED'
+  | 'tv.key.GREEN'
+  | 'tv.key.YELLOW'
+  | 'tv.key.BLUE'
+  | 'tv.key.SUBTITLE'
+  | 'tv.key.ASPECT'
+  | 'tv.key.SLEEP'
+  | 'tv.key.E_MANUAL';
 export type AgentHelloV1BodyTvKind = 'android' | 'samsung';
 export type AgentHelloV1BodyUpdateOutcome =
   'not_checked' | 'updating' | 'updated' | 'up_to_date' | 'failed' | 'blocked' | 'rolled_back';

@@ -40,6 +40,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.key.v2.schema.json'
+      tvKeyV3:
+        name: tv.key.v3
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.key.v3.schema.json'
       tvWake:
         name: tv.wake.v1
         contentType: application/json
@@ -179,6 +184,13 @@ operations:
     summary: A API envia uma tecla ao agente, com pressão curta ou longa.
     messages:
       - $ref: '#/channels/agentCommands/messages/tvKeyV2'
+  sendTvKeyV3:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API envia ao agente uma tecla que só a v3 conhece (guia, ferramentas, cores, mídia...).
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvKeyV3'
   sendTvWake:
     action: send
     channel:
