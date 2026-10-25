@@ -17,6 +17,7 @@ import re
 import socket
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, Literal
 
 import httpx
@@ -120,18 +121,41 @@ def usable_local_addresses() -> list[str]:
     return usable
 
 
-async def tcp_open(host: str, port: int, wait: float = CONNECT_TIMEOUT_SECONDS) -> bool:
-    """Há alguém ouvindo nesta porta? Abre e fecha na hora."""
+class PortState(StrEnum):
+    OPEN = "open"
+    # A máquina respondeu e fechou a porta (RST): a TV está na rede e o serviço não está de pé.
+    REFUSED = "refused"
+    # Nenhuma resposta (TV em standby, fora da rede, rota sem destino): nada a consertar.
+    SILENT = "silent"
+
+
+# No Windows uma porta fechada só é reportada como recusada depois de ~2 s (a pilha repete o SYN
+# duas vezes antes de aceitar o RST): com espera menor a recusa se confunde com o silêncio.
+REFUSAL_WAIT_SECONDS = 3.0
+
+
+async def tcp_probe(host: str, port: int, wait: float = CONNECT_TIMEOUT_SECONDS) -> PortState:
+    """Abre e fecha a conexão na hora e diz se a porta atende, recusou ou não respondeu.
+
+    Para distinguir a recusa do silêncio no Windows, `wait` precisa ser `REFUSAL_WAIT_SECONDS`.
+    """
     try:
         _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), wait)
+    except ConnectionRefusedError:
+        return PortState.REFUSED
     except OSError, TimeoutError:
-        return False
+        return PortState.SILENT
     writer.close()
     try:
         await writer.wait_closed()
     except OSError:
         pass
-    return True
+    return PortState.OPEN
+
+
+async def tcp_open(host: str, port: int, wait: float = CONNECT_TIMEOUT_SECONDS) -> bool:
+    """Há alguém ouvindo nesta porta? Abre e fecha na hora."""
+    return await tcp_probe(host, port, wait) is PortState.OPEN
 
 
 async def http_json(url: str) -> dict[str, Any] | None:
