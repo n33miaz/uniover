@@ -304,6 +304,15 @@ class SamsungTvDriver:
                 _log.exception("falha ao guardar a identidade da TV")
         return power_from_info(info)
 
+    async def read_power(self) -> bool | None:
+        """Energia agora, pelo REST da TV (não o valor lido ao abrir a sessão, que pode ser velho).
+
+        `PowerState` `standby` conta como desligada; sem resposta devolve `None`.
+        """
+        if self._fetch_power is not None:
+            return await self._fetch_power(self._host)
+        return power_from_info(await fetch_samsung_info(self._host))
+
     async def read_volume(self) -> int | None:
         """Volume atual pelo serviço UPnP que a própria TV descreve; `None` se ela não o tem.
 

@@ -18,7 +18,9 @@ Gentileza com a TV: uma TV com a pilha de rede engasgada piora com cada tentativ
   a TV volta. Dentro da espera os pedidos falham na hora, sem tocar na rede;
 * o registro conta a queda uma vez, a volta uma vez e um resumo de tempos em tempos;
 * `POWER` com a TV fora da rede vira Wake-on-LAN (e nunca a tecla, que é um interruptor);
-* o volume é lido ao abrir a sessão e logo depois de uma tecla de volume (nunca em sondagem).
+* o volume é lido ao abrir a sessão e logo depois de uma tecla de volume (nunca em sondagem);
+* `power_off` (desligar de verdade) só aperta `POWER` depois de ler que a TV está ligada, nunca
+  usa o Wake-on-LAN e nunca repete a tecla: um interruptor repetido às cegas liga a TV.
 """
 
 import asyncio
@@ -75,6 +77,18 @@ POWER_KEY: Final = "POWER"
 # enquanto o agente ainda abria a sessão) quase sempre é repetição, e enviá-lo desfaria o
 # desligamento. Passado esse tempo é um pedido novo e vale como qualquer outro.
 POWER_REPEAT_SECONDS: Final = 10.0
+# Desligar com leitura: limites de quanto esperar a leitura de energia e a confirmação depois da
+# tecla (sem confirmação a tecla não é repetida, e o pedido termina como incerto). São ajustáveis
+# em `Settings` até serem medidos na TV real.
+DEFAULT_POWER_OFF_READ_TIMEOUT_SECONDS: Final = 2.0
+DEFAULT_POWER_OFF_CONFIRMATION_TIMEOUT_SECONDS: Final = 5.0
+# De quanto em quanto tempo se olha o estado enquanto se espera (relógio injetado, então testável).
+POWER_OFF_POLL_SECONDS: Final = 0.25
+# Quando a leitura é uma consulta de rede (Samsung), olha mais devagar para não martelar a TV.
+POWER_OFF_READER_POLL_SECONDS: Final = 1.0
+# A sessão caiu logo depois da tecla: a TV só conta como desligada se a rede também não a atende.
+POWER_OFF_GONE_CHECKS: Final = 2
+POWER_OFF_GONE_PAUSE_SECONDS: Final = 1.0
 
 
 class SessionState(StrEnum):
@@ -83,6 +97,17 @@ class SessionState(StrEnum):
     HOT = "hot"
     # Reservado ao vigia: ele entra e sai por `mark_repairing` e `clear_repairing`.
     REPAIRING = "repairing"
+
+
+class PowerOffResult(StrEnum):
+    """Desfecho de `power_off`. O valor viaja como código de erro no `command.result.v1`."""
+
+    OFF = "off"
+    ALREADY_OFF = "already_off"
+    # Não deu para ler ou confirmar o estado. Nada de novo é enviado: repetir pode ligar a TV.
+    UNCERTAIN = "uncertain"
+    OFFLINE = "offline"
+    FAILED = "failed"
 
 
 class TvSessionError(Exception):
@@ -116,6 +141,11 @@ class TvSessionManager:
         wake_on_lan: Callable[[], Awaitable[bool]] | None = None,
         volume_reader: Callable[[], Awaitable[int | None]] | None = None,
         offline_summary_seconds: float = OFFLINE_SUMMARY_SECONDS,
+        power_reader: Callable[[], Awaitable[bool | None]] | None = None,
+        power_off_read_timeout_seconds: float = DEFAULT_POWER_OFF_READ_TIMEOUT_SECONDS,
+        power_off_confirmation_timeout_seconds: float = (
+            DEFAULT_POWER_OFF_CONFIRMATION_TIMEOUT_SECONDS
+        ),
     ) -> None:
         self._clock = clock
         self._remote = remote
@@ -129,6 +159,16 @@ class TvSessionManager:
         self._wake_on_lan = wake_on_lan
         self._volume_reader = volume_reader
         self._offline_summary_seconds = offline_summary_seconds
+        # Consulta de energia na hora, para o driver que só informa o estado ao abrir a sessão (a
+        # Samsung). Sem ela vale o aviso que a TV empurra na conexão atual (a Android).
+        self._power_reader = power_reader
+        self._power_off_read_timeout_seconds = power_off_read_timeout_seconds
+        self._power_off_confirmation_timeout_seconds = power_off_confirmation_timeout_seconds
+        # O aviso de energia só vale na conexão que o recebeu: o contador sobe a cada abertura e
+        # um aviso de sessão antiga nunca autoriza uma tecla que pode religar a TV.
+        self._connection_generation = 0
+        self._power_generation: int | None = None
+        self._power_sequence = 0
         # Offline: desde quando, quantas aberturas falharam em seguida e quando pode tentar de novo.
         self._offline_since: float | None = None
         self._failures = 0
@@ -233,6 +273,134 @@ class TvSessionManager:
         await self._run(lambda remote: remote.send_key(key, direction))
         if key in VOLUME_KEYS and direction in {"SHORT", "END_LONG"}:
             self._schedule_volume_read()
+
+    async def power_off(self) -> PowerOffResult:
+        """Desliga a TV só depois de ler que ela está ligada; nunca a liga.
+
+        `POWER` é um interruptor. Por isso, aqui:
+
+        * sem leitura fresca de "ligada" (ausente, velha, de outra conexão) a tecla não é enviada;
+        * a tecla sai uma vez só, direto no driver: nem a repetição de `_run` depois de uma queda
+          do canal nem outro pedido logo em seguida a reenviam;
+        * a TV fora da rede é `offline` e nada é enviado: o Wake-on-LAN da tecla `POWER` comum
+          aqui ligaria a TV, que é o contrário do pedido;
+        * sem confirmação depois da tecla o resultado é `uncertain`, e a tecla não é repetida.
+        """
+        async with self._power_lock:
+            self.touch()
+            self._reopened_unattended = False
+            now = self._clock.monotonic()
+            if (early := await self._power_off_precheck(now)) is not None:
+                return early
+            sent_at = self._power_sent_at
+            repeated = sent_at is not None and now - sent_at < POWER_REPEAT_SECONDS
+            generation = self._connection_generation
+            power = await self._read_power(generation)
+            if power is None:
+                return PowerOffResult.UNCERTAIN
+            if not power:
+                return PowerOffResult.ALREADY_OFF
+            if repeated or generation != self._connection_generation or not self._is_hot():
+                return PowerOffResult.UNCERTAIN
+            return await self._press_power_once(generation)
+
+    async def _power_off_precheck(self, now: float) -> PowerOffResult | None:
+        """O que impede desligar antes de qualquer leitura; `None` quando a sessão está pronta."""
+        if self._state is SessionState.REPAIRING:
+            return PowerOffResult.UNCERTAIN
+        guard = self._wol_guard_until
+        if guard is not None and now < guard:
+            _log.info("a TV está ligando (Wake-on-LAN); desligar não enviou tecla nenhuma")
+            return PowerOffResult.UNCERTAIN
+        try:
+            await self._ensure_hot()
+        except TvSessionError as exc:
+            return PowerOffResult.FAILED if exc.code == TV_NOT_PAIRED else PowerOffResult.OFFLINE
+        return None
+
+    async def _press_power_once(self, generation: int) -> PowerOffResult:
+        # A leitura de antes da tecla já não vale: sem aviso novo da TV um pedido seguinte não pode
+        # tomá-la por atual (a TV pode ter desligado sem avisar, e outra tecla a ligaria).
+        self._power_generation = None
+        before = self._power_sequence
+        # Marcado antes do envio: se a tecla chegou mas a resposta se perdeu, um segundo pedido
+        # logo depois também é tratado como repetição.
+        self._power_sent_at = self._clock.monotonic()
+        try:
+            await self._remote.send_key(POWER_KEY, "SHORT")
+        except TvChannelError:
+            self._channel_lost()
+            return PowerOffResult.UNCERTAIN
+        except Exception:
+            _log.exception("falha ao enviar POWER para desligar a TV")
+            return PowerOffResult.FAILED
+        self._power_sent_at = self._clock.monotonic()
+        self._expect_off = True
+        if await self._confirm_off(generation, before):
+            return PowerOffResult.OFF
+        _log.info("POWER enviado, mas a TV não confirmou o desligamento; não repito a tecla")
+        return PowerOffResult.UNCERTAIN
+
+    async def _read_power(self, generation: int) -> bool | None:
+        """Energia agora, na conexão `generation`; `None` (nunca evidência) se não deu a tempo."""
+        deadline = self._clock.monotonic() + self._power_off_read_timeout_seconds
+        step = POWER_OFF_READER_POLL_SECONDS if self._power_reader else POWER_OFF_POLL_SECONDS
+        while True:
+            if self._power_reader is not None:
+                reading = await self._query_power(deadline)
+                if reading is not None:
+                    return reading
+            elif self._power_generation == generation and self._power is not None:
+                return self._power
+            remaining = deadline - self._clock.monotonic()
+            if remaining <= 0 or generation != self._connection_generation or not self._is_hot():
+                return None
+            await self._clock.sleep(min(step, remaining))
+
+    async def _confirm_off(self, generation: int, sent_sequence: int) -> bool:
+        """Depois da tecla: a TV avisou (ou respondeu) que está desligada, ou saiu da rede."""
+        deadline = self._clock.monotonic() + self._power_off_confirmation_timeout_seconds
+        step = POWER_OFF_READER_POLL_SECONDS if self._power_reader else POWER_OFF_POLL_SECONDS
+        while True:
+            if self._power_reader is not None:
+                if await self._query_power(deadline) is False:
+                    return True
+            elif (
+                self._power_generation == generation
+                and self._power_sequence > sent_sequence
+                and self._power is False
+            ):
+                return True
+            if generation != self._connection_generation or not self._is_hot():
+                return await self._tv_left_the_network()
+            remaining = deadline - self._clock.monotonic()
+            if remaining <= 0:
+                return False
+            await self._clock.sleep(min(step, remaining))
+
+    async def _query_power(self, deadline: float) -> bool | None:
+        """Uma consulta ao driver, limitada pelo tempo que resta; erro ou demora viram `None`."""
+        assert self._power_reader is not None  # noqa: S101 - garantido pelos chamadores
+        remaining = max(deadline - self._clock.monotonic(), POWER_OFF_POLL_SECONDS)
+        try:
+            reading = await asyncio.wait_for(self._power_reader(), remaining)
+        except Exception as exc:
+            _log.debug("energia da TV não lida (%s)", type(exc).__name__)
+            return None
+        if reading is not None:
+            self._on_power(reading)
+        return reading
+
+    async def _tv_left_the_network(self) -> bool:
+        """A sessão caiu depois da tecla: desligada se a rede também não atende (repetido)."""
+        if self._liveness is None:
+            return False
+        for check in range(POWER_OFF_GONE_CHECKS):
+            if await self._liveness():
+                return False
+            if check < POWER_OFF_GONE_CHECKS - 1:
+                await self._clock.sleep(POWER_OFF_GONE_PAUSE_SECONDS)
+        return True
 
     async def _send_power(self) -> None:
         """`POWER` com um toque só: repetido em `POWER_REPEAT_SECONDS` do anterior, não é enviado.
@@ -536,6 +704,7 @@ class TvSessionManager:
         self._last_summary = None
 
     async def _open_channels(self) -> None:
+        self._connection_generation += 1
         opened: list[TvChannel] = []
         for reg in self._channels:
             try:
@@ -657,6 +826,8 @@ class TvSessionManager:
 
     def _on_power(self, is_on: bool) -> None:
         self._power = is_on
+        self._power_generation = self._connection_generation
+        self._power_sequence += 1
         if is_on:
             self._expect_off = False
         self._emit()

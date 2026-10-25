@@ -87,6 +87,7 @@ from uniover_agent.core import (
     LOGS_REQUEST_TYPE,
     MAINTENANCE_CAPABILITY,
     MAINTENANCE_TYPE,
+    POWER_OFF_CAPABILITY,
     AppIconPublisher,
     AppsAnnouncer,
     ConnectionSupervisor,
@@ -115,6 +116,7 @@ from uniover_agent.core import (
     tv_apps_refresh_handler,
     tv_cleanup_handler,
     tv_key_handler,
+    tv_power_off_handler,
     tv_text_handler,
     tv_wake_handler,
     unsupported_handler,
@@ -271,10 +273,12 @@ def build_tv(
         remote,
         hibernate_seconds=settings.tv_hibernate_seconds,
         liveness=build_liveness("android", host),
+        power_off_read_timeout_seconds=settings.tv_power_off_read_timeout_seconds,
+        power_off_confirmation_timeout_seconds=settings.tv_power_off_confirmation_timeout_seconds,
     )
-    # `POWER` passa como as outras teclas: o app só o manda depois da folha de confirmação e a API
-    # só o aceita pela rota própria de desligar. Sem emissor infravermelho a TV só volta com o
-    # controle original, então o gerenciador de sessão não repete um `POWER` e nada aqui o reenvia.
+    # `POWER` passa como as outras teclas (agente antigo ou app antigo): o app só o manda depois da
+    # folha de confirmação e a API só o aceita pela rota própria de desligar. O desligamento com
+    # leitura (`tv.power.off.v1`) só aperta a tecla com a TV lida como ligada e nunca a repete.
     keys = tv_key_handler(manager)
     text = TextReconciler(
         manager,
@@ -295,11 +299,17 @@ def build_tv(
             "tv.key.v1": keys,
             "tv.key.v2": keys,
             "tv.key.v3": keys,
+            "tv.power.off.v1": tv_power_off_handler(manager),
             "tv.text.v1": tv_text_handler(manager, reconciler=text, monotonic=clock.monotonic),
             "tv.wake.v1": tv_wake_handler(manager),
             "tv.app.launch.v1": tv_app_launch_handler(manager),
         },
-        capabilities=["tv.remote", "tv.kind.android", *key_capabilities(ANDROID_OPTIONAL_KEYS)],
+        capabilities=[
+            "tv.remote",
+            "tv.kind.android",
+            POWER_OFF_CAPABILITY,
+            *key_capabilities(ANDROID_OPTIONAL_KEYS),
+        ],
         text=text,
         known=TvKnown(settings.tv_id_hint, settings.tv_mac),
     )
@@ -363,6 +373,9 @@ def build_samsung_tv(
         liveness=build_liveness("samsung", host),
         wake_on_lan=wake_on_lan,
         volume_reader=remote.read_volume,
+        power_reader=remote.read_power,
+        power_off_read_timeout_seconds=settings.tv_power_off_read_timeout_seconds,
+        power_off_confirmation_timeout_seconds=settings.tv_power_off_confirmation_timeout_seconds,
     )
     keys = tv_key_handler(manager)
     apps = SamsungTvApps(manager, remote, transport, envelopes)
@@ -378,6 +391,7 @@ def build_samsung_tv(
             "tv.key.v1": keys,
             "tv.key.v2": keys,
             "tv.key.v3": keys,
+            "tv.power.off.v1": tv_power_off_handler(manager),
             "tv.wake.v1": tv_wake_handler(manager),
             "tv.app.launch.v1": tv_app_launch_handler(
                 manager, packages=apps, links_supported=False
@@ -386,7 +400,12 @@ def build_samsung_tv(
             "tv.text.v1": unsupported_handler("a TV Samsung não suporta digitação por este canal"),
             "tv.cleanup.v1": unsupported_handler("a TV Samsung não suporta limpeza por ADB"),
         },
-        capabilities=["tv.remote", "tv.kind.samsung", *key_capabilities(SAMSUNG_OPTIONAL_KEYS)],
+        capabilities=[
+            "tv.remote",
+            "tv.kind.samsung",
+            POWER_OFF_CAPABILITY,
+            *key_capabilities(SAMSUNG_OPTIONAL_KEYS),
+        ],
         background=[announcer.run],
         after_hello=[announcer.after_hello],
         known=known,
