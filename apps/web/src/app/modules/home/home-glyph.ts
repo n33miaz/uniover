@@ -27,11 +27,8 @@ const GLYPHS = {
   dumbbell: {
     box: '0 0 24 24',
     layers: [
-      ['fill', 'M5.2 7.5h2.1v9H5.2z M16.7 7.5h2.1v9h-2.1z'],
-      [
-        'line',
-        'M7.3 6.5v11 M16.7 6.5v11 M4.2 9v6 M19.8 9v6 M7.3 12h9.4 M2.5 10.8v2.4 M21.5 10.8v2.4',
-      ],
+      ['fill', 'M5.2 6h2.1v12H5.2z M16.7 6h2.1v12h-2.1z'],
+      ['line', 'M7.3 5v14 M16.7 5v14 M4.2 7.5v9 M19.8 7.5v9 M7.3 12h9.4 M2.5 10.5v3 M21.5 10.5v3'],
     ],
   },
   // Módulos planejados: coração com pulso (saúde e eventos), pilha de servidores (monitor), ondas de rede,
