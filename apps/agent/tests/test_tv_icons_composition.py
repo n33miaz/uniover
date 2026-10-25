@@ -34,7 +34,7 @@ def test_without_aapt_there_is_no_icon_task_and_the_reason_is_logged(
     pair_fake_tv(monkeypatch, FakeTvRemote())
     enable_adb(monkeypatch, tmp_path, FakeTvAdb())
     with caplog.at_level(logging.INFO):
-        setup = make_tv(Settings(tv_host=TV_HOST))
+        setup = make_tv(Settings(tv_host=TV_HOST, tv_watchdog=False))
     assert setup is not None
     assert len(setup.background) == 1  # só o anunciante da lista
     assert "aapt2 não encontrado" in caplog.text
@@ -55,7 +55,9 @@ def test_with_aapt_the_icon_task_is_registered_and_listens_to_the_session(
         return publisher
 
     monkeypatch.setattr(main_module, "AppIconPublisher", spy)
-    setup = make_tv(Settings(tv_host=TV_HOST, icons_dir=str(tmp_path / "meus-icones")))
+    setup = make_tv(
+        Settings(tv_host=TV_HOST, icons_dir=str(tmp_path / "meus-icones"), tv_watchdog=False)
+    )
     assert setup is not None
     (publisher,) = created
     assert len(setup.background) == 2

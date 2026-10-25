@@ -61,7 +61,9 @@ def test_adb_is_wired_with_one_line_and_the_text_handler_is_not_replaced(
         return created[-1]
 
     monkeypatch.setattr(main_module, "tv_text_handler", spy)
-    setup = make_tv(Settings(tv_host=TV_HOST, tv_adb_port=5556, adb_timeout_seconds=7.5))
+    setup = make_tv(
+        Settings(tv_host=TV_HOST, tv_adb_port=5556, adb_timeout_seconds=7.5, tv_watchdog=False)
+    )
     assert setup is not None
     assert built == [(tmp_path / "platform-tools" / "adb.exe", TV_HOST, 5556, 7.5)]
     # Um único handler de texto: o ADB se pluga na digitação, não registra outro por cima.
