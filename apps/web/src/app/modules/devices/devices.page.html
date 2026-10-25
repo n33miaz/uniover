@@ -37,17 +37,51 @@
                 <div class="info">
                   <strong class="name">{{ agent.name }}</strong>
                   <span class="meta">{{ platform(agent) }}</span>
+                  @if (version(agent); as text) {
+                    <span class="meta version">{{ text }}</span>
+                  }
+                  @if (tv(agent); as text) {
+                    <span class="meta tv">{{ text }}</span>
+                  }
                   <span class="meta">{{ pairedAt(agent) }}</span>
                   <span class="meta last-seen">{{ lastSeen(agent) }}</span>
-                  @if (agent.revoked) {
-                    <span class="chip revoked ui-chip bad" i18n="@@devices.state.revoked"
-                      >Revogado</span
-                    >
-                  } @else {
-                    <span class="chip active ui-chip accent" i18n="@@devices.state.active"
-                      >Ativo</span
-                    >
+                  @if (!agent.revoked && updateState(agent); as state) {
+                    <div class="update">
+                      <span
+                        class="chip update-state ui-chip"
+                        [class.ok]="updateTone(agent) === 'ok'"
+                        [class.warn]="updateTone(agent) === 'warn'"
+                        [class.bad]="updateTone(agent) === 'bad'"
+                        >{{ state }}</span
+                      >
+                      @if (installed(agent); as text) {
+                        <span class="meta update-installed">{{ text }}</span>
+                      }
+                      @if (newest(agent); as text) {
+                        <span class="meta update-newest">{{ text }}</span>
+                      }
+                      @if (lastCheck(agent); as text) {
+                        <span class="meta update-check">{{ text }}</span>
+                      }
+                      @if (rollbackNote(agent); as text) {
+                        <span class="meta update-rollback">{{ text }}</span>
+                      }
+                    </div>
                   }
+                  <div class="chips">
+                    @if (agent.revoked) {
+                      <span class="chip revoked ui-chip bad" i18n="@@devices.state.revoked"
+                        >Revogado</span
+                      >
+                    } @else {
+                      <span class="chip active ui-chip accent" i18n="@@devices.state.active"
+                        >Ativo</span
+                      >
+                      <span class="chip connection ui-chip" [class.accent]="agent.connected">{{
+                        connection(agent)
+                      }}</span>
+                    }
+                  </div>
                 </div>
                 @if (!agent.revoked) {
                   @if (revokingId() === agent.id) {
@@ -79,11 +113,85 @@
                         </div>
                       </div>
                     </div>
+                  } @else if (maintaining()?.id === agent.id) {
+                    <div
+                      class="confirm ui-notice ui-rise"
+                      role="group"
+                      [attr.aria-label]="maintenanceQuestion(agent, maintaining()!.action)"
+                    >
+                      <div class="confirm-body">
+                        <p class="question">
+                          {{ maintenanceQuestion(agent, maintaining()!.action) }}
+                        </p>
+                        <div class="actions">
+                          <button
+                            type="button"
+                            class="secondary ui-btn"
+                            [disabled]="busy()"
+                            (click)="maintaining.set(null)"
+                            i18n="@@devices.cancel"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            class="maintenance-confirm primary ui-btn"
+                            [disabled]="busy() || !online()"
+                            (click)="confirmMaintenance(agent)"
+                            i18n="@@devices.maintenance.confirm"
+                          >
+                            Confirmar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   } @else {
                     <div class="actions">
                       <button
                         type="button"
-                        class="secondary ui-btn"
+                        class="view-log secondary ui-btn"
+                        [disabled]="!online() || !agent.connected"
+                        [attr.aria-label]="viewLogLabel(agent)"
+                        (click)="openLog(agent)"
+                        i18n="@@devices.view-log"
+                      >
+                        Ver registro
+                      </button>
+                      <button
+                        type="button"
+                        class="update-now secondary ui-btn"
+                        [disabled]="!online() || !agent.connected"
+                        [attr.aria-label]="updateLabel(agent)"
+                        (click)="askMaintenance(agent, 'update')"
+                        i18n="@@devices.update-now"
+                      >
+                        Atualizar agora
+                      </button>
+                      @if (agent.canRollback) {
+                        <button
+                          type="button"
+                          class="rollback secondary ui-btn"
+                          [disabled]="!online() || !agent.connected"
+                          [attr.aria-label]="rollbackLabel(agent)"
+                          (click)="askMaintenance(agent, 'rollback')"
+                          i18n="@@devices.rollback"
+                        >
+                          Voltar para a versão anterior
+                        </button>
+                      }
+                      <button
+                        type="button"
+                        class="restart secondary ui-btn"
+                        [disabled]="!online() || !agent.connected"
+                        [attr.aria-label]="restartLabel(agent)"
+                        (click)="askMaintenance(agent, 'restart')"
+                        i18n="@@devices.restart"
+                      >
+                        Reiniciar o agente
+                      </button>
+                      <button
+                        type="button"
+                        class="revoke secondary ui-btn"
                         [disabled]="!online()"
                         [attr.aria-label]="revokeLabel(agent)"
                         (click)="askRevoke(agent)"
@@ -185,6 +293,9 @@
     }
     @if (connecting()) {
       <app-connect-sheet (closed)="connecting.set(false)" />
+    }
+    @if (viewingLog(); as target) {
+      <app-agent-log-sheet [agent]="target" (closed)="viewingLog.set(null)" />
     }
   }
 </div>
