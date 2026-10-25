@@ -113,7 +113,7 @@ async def test_library_still_exposes_the_connection_lost_future_the_adapter_reli
 
 async def test_connects_and_translates_the_pushed_state(tmp_path: Path) -> None:
     power: list[bool] = []
-    volume: list[int] = []
+    volume: list[int | None] = []
     apps: list[str] = []
     async with FakeTvServer(tmp_path) as server:
         adapter = make_adapter(tmp_path, server.port)
@@ -539,7 +539,7 @@ async def test_a_broken_listener_does_not_silence_the_others(tmp_path: Path) -> 
 async def test_volume_without_a_valid_scale_is_not_reported(tmp_path: Path) -> None:
     library = FakeLibrary()
     adapter = duplo_adapter(tmp_path, library)
-    seen: list[int] = []
+    seen: list[int | None] = []
     adapter.on_volume(seen.append)
     await adapter.connect()
     library._volume[0]({"level": 3, "max": 0, "muted": False})

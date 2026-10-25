@@ -1,4 +1,4 @@
-"""Samsung gentil: identidade gravada, Wake-on-LAN, volume só depois da tecla e o pareamento."""
+"""Samsung gentil: identidade gravada, Wake-on-LAN, volume (abrir e tecla) e o pareamento."""
 
 import tomllib
 from pathlib import Path
@@ -9,8 +9,10 @@ import pytest
 
 from uniover_agent import main as main_module
 from uniover_agent.adapters import tv_samsung, wol
+from uniover_agent.adapters import tv_samsung_volume as volume_module
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTransport
 from uniover_agent.adapters.tv_samsung import SamsungTvDriver
+from uniover_agent.adapters.tv_samsung_volume import SamsungVolume
 from uniover_agent.adapters.wol import broadcast_for, magic_packet, send_wake_on_lan
 from uniover_agent.config import Settings
 from uniover_agent.core import EnvelopeFactory, EnvelopeGate, TvIdentity, TvKnown, TvSessionError
@@ -30,15 +32,33 @@ def read_toml(path: Path) -> dict[str, Any]:
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
+DMR_DESCRIPTION = """
+    <root xmlns="urn:schemas-upnp-org:device-1-0"><device><deviceList><device><serviceList>
+    <service><serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType>
+    <controlURL>/dmr/upnp/control/RenderingControl1</controlURL></service>
+    </serviceList></device></deviceList></device></root>
+"""
+LOCATION = f"http://{HOST}:9080/description.xml"
+
+
 def volume_transport(level: int | None, *, status: int = 200) -> httpx.MockTransport:
+    """A TV simulada: a descrição em `:9080` aponta o serviço de volume (a porta vem de lá)."""
+
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.port == 9197
+        if request.method == "GET":
+            assert request.url == LOCATION
+            return httpx.Response(200, text=DMR_DESCRIPTION)
         assert request.url.path == "/dmr/upnp/control/RenderingControl1"
         assert "GetVolume" in request.headers["soapaction"]
-        body = f"<s:Envelope><CurrentVolume>{level}</CurrentVolume></s:Envelope>"
+        body = f"<Envelope><CurrentVolume>{level}</CurrentVolume></Envelope>"
         return httpx.Response(status, text=body if level is not None else "<x/>")
 
     return httpx.MockTransport(handler)
+
+
+def driver_with(transport: httpx.AsyncBaseTransport) -> SamsungTvDriver:
+    volume = SamsungVolume(HOST, transport=transport, discover=lambda _host: [LOCATION])
+    return SamsungTvDriver(HOST, "t", "U", volume=volume)
 
 
 # --- identidade: o duid e o MAC gravados sem o dono fazer nada -----------------------------
@@ -249,60 +269,73 @@ async def test_a_wake_on_lan_that_cannot_leave_is_reported_not_raised(
     assert await send_wake_on_lan("mac inválido", HOST) is False
 
 
-# --- volume: só depois de uma tecla --------------------------------------------------------
+# --- volume: ao abrir e depois de uma tecla --------------------------------------------
 
 
-async def test_the_driver_reads_the_volume_from_the_tv_upnp() -> None:
-    driver = SamsungTvDriver(HOST, "t", "U", rest_transport=volume_transport(17))
-    assert await driver.read_volume() == 17
-    assert (
-        await SamsungTvDriver(HOST, "t", "U", rest_transport=volume_transport(250)).read_volume()
-        == 100
-    )
+async def test_the_driver_reads_the_volume_from_the_service_the_tv_describes() -> None:
+    assert await driver_with(volume_transport(17)).read_volume() == 17
+    assert await driver_with(volume_transport(250)).read_volume() == 100
 
 
 async def test_a_tv_that_does_not_answer_the_volume_gives_none() -> None:
-    assert (
-        await SamsungTvDriver(HOST, "t", "U", rest_transport=volume_transport(None)).read_volume()
-        is None
-    )
-    assert (
-        await SamsungTvDriver(
-            HOST, "t", "U", rest_transport=volume_transport(5, status=500)
-        ).read_volume()
-        is None
-    )
+    assert await driver_with(volume_transport(None)).read_volume() is None
+    assert await driver_with(volume_transport(5, status=500)).read_volume() is None
 
     def refuse(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("recusou")
 
-    assert (
-        await SamsungTvDriver(
-            HOST, "t", "U", rest_transport=httpx.MockTransport(refuse)
-        ).read_volume()
-        is None
-    )
+    assert await driver_with(httpx.MockTransport(refuse)).read_volume() is None
 
 
-async def test_a_volume_key_reads_the_volume_once_and_nothing_else_does(
+async def test_the_volume_is_read_on_open_and_after_a_volume_key_nothing_else_does(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     requests: list[str] = []
+    levels = iter([23, 24])
 
     def counting(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, text=DMR_DESCRIPTION)
         requests.append(request.url.path)
-        return httpx.Response(200, text="<CurrentVolume>23</CurrentVolume>")
+        return httpx.Response(
+            200, text=f"<Envelope><CurrentVolume>{next(levels)}</CurrentVolume></Envelope>"
+        )
 
+    monkeypatch.setattr(volume_module, "ssdp_locations", lambda host: [LOCATION])
     client = FakeSamsungClient()
     setup, _ = compose_samsung(monkeypatch, client, httpx.MockTransport(counting))
     await setup.manager.wake()
-    await setup.manager.send_key("HOME")
-    await setup.manager.settle()
-    assert requests == []  # abrir a sessão e teclas comuns não leem o volume
-    await setup.manager.send_key("VOLUME_UP")
     await setup.manager.settle()
     assert requests == ["/dmr/upnp/control/RenderingControl1"]
     assert setup.manager.snapshot().volume == 23
+    await setup.manager.send_key("HOME")
+    await setup.manager.settle()
+    assert len(requests) == 1
+    await setup.manager.send_key("VOLUME_UP")
+    await setup.manager.settle()
+    assert len(requests) == 2
+    assert setup.manager.snapshot().volume == 24
+
+
+async def test_the_installed_config_without_a_mac_still_gets_keys_and_survives_a_broken_volume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A config que já está num PC (samsung, host, id_hint, token no cofre, sem `tv_mac`)."""
+
+    def boom(host: str) -> list[str]:
+        raise RuntimeError(host)
+
+    monkeypatch.setattr(volume_module, "ssdp_locations", boom)
+    client = FakeSamsungClient()
+    setup, _ = compose_samsung(monkeypatch, client, tv_id_hint=DUID)
+    assert setup.known.mac is None
+    assert {"tv.remote", "tv.kind.samsung", "tv.key.v3", "tv.key.GUIDE"} <= set(setup.capabilities)
+    await setup.manager.wake()
+    await setup.manager.send_key("VOLUME_UP")
+    await setup.manager.send_key("GUIDE")
+    await setup.manager.settle()
+    assert [key for key, _ in client.keys] == ["KEY_VOLUP", "KEY_GUIDE"]
+    assert setup.manager.snapshot().volume is None
 
 
 # --- pareamento grava a identidade ---------------------------------------------------------
