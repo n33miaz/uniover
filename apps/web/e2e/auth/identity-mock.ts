@@ -114,8 +114,10 @@ export interface IdentityMock {
   readonly qr: QrServerMock;
   /** Há sessão no servidor (equivale ao cookie de refresh válido). */
   loggedIn: boolean;
-  /** A confirmação com a passkey está em vigor. */
+  /** A confirmação com a passkey (ou, para o convidado, com a senha) está em vigor. */
   stepUpValid: boolean;
+  /** As confirmações com a senha que o convidado fez (`POST /step-up/password`): a ação e a senha enviada. */
+  readonly passwordConfirmations: { action: string; password: string }[];
   /** Derruba toda chamada como se não houvesse rede. */
   offline: boolean;
   /** Espera antes de responder ao refresh (para sobrepor renovações de abas). */
@@ -241,6 +243,7 @@ export async function mockIdentityApi(
     qr: options.qr ?? newQrServer(),
     loggedIn: false,
     stepUpValid: false,
+    passwordConfirmations: [],
     offline: false,
     refreshDelayMs: 0,
     refreshCalls: 0,
@@ -488,6 +491,24 @@ export async function mockIdentityApi(
       return json(route, 200, meBody());
     }
 
+    // O passo forte do convidado, que não tem passkey: a senha de novo, só para a ação da lista fechada da API (vem antes do 403 das rotas só do dono: só o convidado a usa).
+    if (method === 'POST' && path === '/step-up/password') {
+      const guest = mock.role === 'guest' ? mock.guests.at(-1) : undefined;
+      if (!guest) return problem(route, 403, 'forbidden', 'Esta confirmação é só para convidados.');
+      const action = String(body?.['action'] ?? '');
+      const password = String(body?.['password'] ?? '');
+      if (action !== 'devices.pair-self') {
+        return problem(route, 400, 'validation-failed', 'Um ou mais campos são inválidos.', {
+          errors: { action: ['Esta ação não pode ser confirmada com a senha.'] },
+        });
+      }
+      mock.passwordConfirmations.push({ action, password });
+      if (password !== guest.password) {
+        return problem(route, 403, 'invalid-password', 'Senha incorreta.');
+      }
+      mock.stepUpValid = true;
+      return json(route, 200, { action, expiresAt: '2026-10-18T12:05:00Z' });
+    }
     // Como a API: tudo o que é da conta e dos convites é só do dono.
     if (mock.role === 'guest') return problem(route, 403, 'forbidden', 'Sem permissão.');
 

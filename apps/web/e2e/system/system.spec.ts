@@ -2,7 +2,7 @@ import { Page, TestInfo } from '@playwright/test';
 import { IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import { expectNoA11yViolations, settle, smallTargets } from '../screens/screen-helpers';
-import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
+import { MockTv, TvMock, installFakeEventSource, mockTvApi } from '../tv/tv-mock';
 import { MockComputer, SystemMock, mockSystemApi } from './system-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -12,6 +12,7 @@ const SCHEMES = ['light', 'dark'] as const;
 type Scheme = (typeof SCHEMES)[number];
 
 let identity: IdentityMock;
+let tv: TvMock;
 let system: SystemMock;
 
 const CASA: MockComputer = {
@@ -29,20 +30,32 @@ const NOTEBOOK: MockComputer = {
   revoked: false,
 };
 
+/** A TV de casa, a padrão, controlada pelo computador de casa. */
+const TV_CASA: MockTv = {
+  id: '11111111-1111-4111-8111-111111111111',
+  name: 'Casa',
+  isDefault: true,
+  agentSlug: 'pc-casa',
+  kind: 'android',
+  online: true,
+  capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb'],
+};
+
 test.beforeEach(async ({ context, page }) => {
   identity = await mockIdentityApi(context);
   identity.loggedIn = true;
-  await mockTvApi(context, identity);
+  tv = await mockTvApi(context, identity);
   // Depois do mock da TV: a rota registrada por último vence, e a configuração mora sob o mesmo prefixo.
   system = await mockSystemApi(context, identity);
   await installFakeEventSource(page);
 });
 
-/** Dois computadores pareados; o de casa controla a TV, escolha que ainda vem só do servidor. */
+/** Dois computadores pareados; a TV de casa é controlada pelo de casa e o notebook ainda não tem TV. */
 function seedPaired(): void {
+  tv.tvs = [{ ...TV_CASA }];
   system.computers.push({ ...CASA }, { ...NOTEBOOK });
   system.current = CASA.slug;
-  system.source = 'environment';
+  system.source = 'saved';
 }
 
 async function addVirtualAuthenticator(page: Page) {
@@ -75,12 +88,14 @@ async function preparePasskey(page: Page, browserName: string) {
   await expect(page.getByText('Passkey cadastrada.', { exact: true })).toBeVisible();
 }
 
-async function open(page: Page, scheme: Scheme = 'light') {
+/** Abre a tela e espera o título; `list` espera também a lista de TVs (que não existe quando não há nenhuma). */
+async function open(page: Page, scheme: Scheme = 'light', list = true) {
   // Movimento reduzido: as animações de entrada saem do caminho e o axe mede as cores finais (o executor da CI é lento).
   await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
   await page.goto('/ajustes/sistema');
   await expect(page.getByRole('heading', { level: 1, name: 'Sistema' })).toBeVisible();
-  await expect(page.getByRole('heading', { level: 2, name: 'TV', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'TVs', exact: true })).toBeVisible();
+  if (list) await expect(page.locator('ul.tvs')).toBeVisible();
 }
 
 const shot = (info: TestInfo, name: string, scheme: Scheme) =>
@@ -95,9 +110,12 @@ async function check(page: Page, info: TestInfo, name: string, scheme: Scheme) {
   await expectNoA11yViolations(page);
 }
 
-const requestsTo = (method: string) => system.requests.filter((r) => r.method === method);
+const row = (page: Page, name: string) =>
+  page.locator('ul.tvs button.ui-row', { has: page.getByText(name, { exact: true }) });
+const sheet = (page: Page) => page.locator('app-tv-edit-sheet dialog');
+const requestsTo = (method: string) => tv.requests.filter((r) => r.method === method);
 
-test.describe('Ajustes > Sistema > TV', () => {
+test.describe('Ajustes > Sistema > TVs', () => {
   test('a linha Sistema da lista leva à tela', async ({ page }) => {
     seedPaired();
     await page.goto('/ajustes');
@@ -109,61 +127,61 @@ test.describe('Ajustes > Sistema > TV', () => {
   });
 
   for (const scheme of SCHEMES) {
-    test(`mostra o computador, de onde vem a escolha e a lista, no tema ${scheme}`, async ({
+    test(`mostra a TV com o computador e o estado, e a lista dos computadores livres, no tema ${scheme}`, async ({
       page,
     }, info) => {
       seedPaired();
       await open(page, scheme);
 
-      await expect(page.locator('.current .name')).toHaveText('PC de casa');
-      await expect(page.locator('.current .chip')).toHaveText('Ligado');
-      await expect(
-        page.getByText(
-          'Vem da configuração do servidor. Salve aqui para guardar a escolha no app.',
-        ),
-      ).toBeVisible();
-      await expect(page.locator('.choice .ui-row-title')).toHaveText(['PC de casa', 'Notebook']);
-      await expect(page.locator('.choice .chip')).toHaveText(['Ligado', 'Desligado']);
-      await expect(page.locator('.choice input').first()).toBeChecked();
-      await expect(page.locator('.warning')).toHaveCount(0);
+      await expect(row(page, 'Casa')).toContainText('PC de casa · Android');
+      await expect(row(page, 'Casa').locator('.chip')).toHaveText('Ligado');
       // Só uma ação principal na tela.
       await expect(page.locator('button.primary')).toHaveCount(1);
       await check(page, info, 'system-list', scheme);
+
+      // A folha oferece o computador da TV (já escolhido) e o livre, cada um com o seu estado.
+      await row(page, 'Casa').click();
+      await expect(sheet(page).locator('.choice .ui-row-title')).toHaveText([
+        'PC de casa',
+        'Notebook',
+      ]);
+      await expect(sheet(page).locator('.choice .ui-chip')).toHaveText(['Ligado', 'Desligado']);
+      await expect(sheet(page).getByRole('radio', { name: /PC de casa/ })).toBeChecked();
+      await expect(sheet(page).getByRole('radio', { name: /Notebook/ })).not.toBeChecked();
+      await expect(sheet(page).getByRole('button', { name: 'Salvar' })).toBeDisabled();
     });
 
-    test(`avisa que a TV não responde quando o computador foi revogado, no tema ${scheme}`, async ({
+    test(`avisa que o computador da TV não foi encontrado quando ele foi revogado, no tema ${scheme}`, async ({
       page,
     }, info) => {
+      tv.tvs = [{ ...TV_CASA }];
       system.computers.push({ ...CASA, revoked: true }, { ...NOTEBOOK });
       system.current = CASA.slug;
       system.source = 'saved';
       await open(page, scheme);
 
-      await expect(page.locator('.current .chip')).toHaveText('Revogado');
-      await expect(page.locator('.warning')).toContainText(
-        'A TV não vai responder até você escolher outro computador ou parear de novo em Aparelhos.',
-      );
-      // O revogado não está na lista e nada vem escolhido: salvar espera uma escolha.
-      await expect(page.locator('.choice .ui-row-title')).toHaveText(['Notebook']);
-      await expect(page.locator('.choice input')).not.toBeChecked();
-      await expect(page.getByRole('button', { name: 'Salvar' })).toBeDisabled();
+      await expect(row(page, 'Casa')).toContainText('Computador não encontrado');
+      await expect(row(page, 'Casa').locator('.chip')).toHaveText('Não encontrado');
       await check(page, info, 'system-revoked', scheme);
+
+      // O revogado não está na lista e nada vem escolhido: salvar espera uma escolha.
+      await row(page, 'Casa').click();
+      await expect(sheet(page).locator('.choice .ui-row-title')).toHaveText(['Notebook']);
+      await expect(sheet(page).locator('.choice input')).not.toBeChecked();
+      await expect(sheet(page).getByRole('button', { name: 'Salvar' })).toBeDisabled();
     });
 
     test(`explica o vazio e leva a Aparelhos, no tema ${scheme}`, async ({ page }, info) => {
-      await open(page, scheme);
+      tv.tvs = [];
+      await open(page, scheme, false);
 
-      await expect(
-        page.getByText('Nenhum computador pareado. Pareie o computador de casa em Aparelhos', {
-          exact: false,
-        }),
-      ).toBeVisible();
-      await expect(page.locator('.current .name')).toHaveText('Nenhum computador escolhido');
+      await expect(page.getByText('Nenhuma TV ainda.')).toBeVisible();
+      await expect(page.getByText('Todo computador pareado já tem uma TV.')).toBeVisible();
       await expect(page.getByRole('link', { name: 'Ir para Aparelhos' })).toHaveAttribute(
         'href',
         '/ajustes/aparelhos',
       );
-      await expect(page.getByRole('button', { name: 'Salvar' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Adicionar TV' })).toHaveCount(0);
       await check(page, info, 'system-empty', scheme);
     });
 
@@ -173,18 +191,18 @@ test.describe('Ajustes > Sistema > TV', () => {
       await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
       await page.goto('/ajustes/sistema');
 
-      await expect(
-        page.getByText('Não foi possível carregar a configuração da TV agora.'),
-      ).toBeVisible();
+      await expect(page.getByText('Não foi possível carregar as TVs agora.')).toBeVisible();
       await check(page, info, 'system-error', scheme);
 
       await page.getByRole('button', { name: 'Tentar de novo' }).click();
-      await expect(page.locator('.current .name')).toHaveText('PC de casa');
-      await expect.poll(() => requestsTo('GET').length).toBeGreaterThanOrEqual(2);
+      await expect(row(page, 'Casa')).toContainText('PC de casa');
+      await expect
+        .poll(() => system.requests.filter((r) => r.method === 'GET').length)
+        .toBeGreaterThanOrEqual(2);
     });
   }
 
-  test('troca o computador com a passkey e mostra o resultado', async ({
+  test('troca o computador da TV com a passkey e mostra o resultado', async ({
     page,
     browserName,
   }, info) => {
@@ -192,9 +210,12 @@ test.describe('Ajustes > Sistema > TV', () => {
     await preparePasskey(page, browserName);
     await open(page);
 
-    await page.locator('.choice', { hasText: 'Notebook' }).click();
-    await expect(page.getByRole('button', { name: 'Salvar' })).toBeEnabled();
-    await page.getByRole('button', { name: 'Salvar' }).click();
+    await row(page, 'Casa').click();
+    await sheet(page)
+      .getByRole('radio', { name: /Notebook/ })
+      .check();
+    await expect(sheet(page).getByRole('button', { name: 'Salvar' })).toBeEnabled();
+    await sheet(page).getByRole('button', { name: 'Salvar' }).click();
 
     if (browserName === 'chromium') {
       const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
@@ -203,32 +224,28 @@ test.describe('Ajustes > Sistema > TV', () => {
       await dialog.getByRole('button', { name: 'Confirmar' }).click();
     }
 
-    await expect(page.getByText('Pronto: agora Notebook controla a TV.')).toBeVisible();
-    await expect(page.locator('.current .name')).toHaveText('Notebook');
-    await expect(page.locator('.current .chip')).toHaveText('Desligado');
-    await expect(page.getByText('Escolhido aqui, no app.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Salvar' })).toBeDisabled();
+    await expect(sheet(page)).toBeHidden();
+    await expect(page.getByText('Pronto: as TVs foram atualizadas.')).toBeVisible();
+    await expect(row(page, 'Casa')).toContainText('Notebook');
 
-    // No Chromium o primeiro pedido é recusado (passkey pendente) e repetido uma vez depois da confirmação.
-    const puts = requestsTo('PUT');
-    expect(puts.map((r) => r.body)).toEqual(
-      Array(browserName === 'chromium' ? 2 : 1).fill({ agentSlug: 'notebook', name: null }),
+    // No Chromium o primeiro pedido é recusado (passkey pendente) e repetido uma vez depois da confirmação; só o que
+    // mudou vai no corpo (o computador, não o nome).
+    expect(requestsTo('PATCH').map((r) => r.body)).toEqual(
+      Array(browserName === 'chromium' ? 2 : 1).fill({ agentSlug: 'notebook' }),
     );
-    expect(system.current).toBe('notebook');
-    expect(system.source).toBe('saved');
+    expect(tv.tvs![0].agentSlug).toBe('notebook');
     await check(page, info, 'system-saved', 'light');
   });
 
-  test('salvar o computador que já vem do servidor o guarda no app', async ({
-    page,
-    browserName,
-  }) => {
+  test('salvar sem trocar o computador não toca na TV', async ({ page, browserName }) => {
     seedPaired();
     await preparePasskey(page, browserName);
     await open(page);
 
-    await expect(page.getByRole('button', { name: 'Salvar' })).toBeEnabled();
-    await page.getByRole('button', { name: 'Salvar' }).click();
+    // Só o nome muda: o computador não vai no corpo.
+    await row(page, 'Casa').click();
+    await sheet(page).getByLabel('Nome').fill('Sala');
+    await sheet(page).getByRole('button', { name: 'Salvar' }).click();
     if (browserName === 'chromium') {
       await page
         .getByRole('dialog', { name: 'Confirmar com passkey' })
@@ -236,10 +253,10 @@ test.describe('Ajustes > Sistema > TV', () => {
         .click();
     }
 
-    await expect(page.getByText('Pronto: agora PC de casa controla a TV.')).toBeVisible();
-    await expect(page.getByText('Escolhido aqui, no app.')).toBeVisible();
-    expect(system.source).toBe('saved');
-    expect(system.current).toBe('pc-casa');
+    await expect(page.getByText('Pronto: as TVs foram atualizadas.')).toBeVisible();
+    await expect(row(page, 'Sala')).toContainText('PC de casa');
+    expect(requestsTo('PATCH').every((r) => !('agentSlug' in (r.body ?? {})))).toBe(true);
+    expect(tv.tvs![0].agentSlug).toBe('pc-casa');
   });
 
   test('cancelar a passkey não troca nada', async ({ page, browserName }) => {
@@ -248,21 +265,27 @@ test.describe('Ajustes > Sistema > TV', () => {
     await preparePasskey(page, browserName);
     await open(page);
 
-    await page.locator('.choice', { hasText: 'Notebook' }).click();
-    await page.getByRole('button', { name: 'Salvar' }).click();
+    await row(page, 'Casa').click();
+    await sheet(page)
+      .getByRole('radio', { name: /Notebook/ })
+      .check();
+    await sheet(page).getByRole('button', { name: 'Salvar' }).click();
     await page
       .getByRole('dialog', { name: 'Confirmar com passkey' })
       .getByRole('button', { name: 'Cancelar' })
       .click();
 
-    await expect(page.getByText('A troca não foi feita', { exact: false })).toBeVisible();
-    await expect(page.locator('.current .name')).toHaveText('PC de casa');
-    expect(requestsTo('PUT')).toHaveLength(1);
-    expect(system.current).toBe('pc-casa');
-    expect(system.source).toBe('environment');
+    await expect(
+      sheet(page).getByText('A mudança não foi confirmada com a passkey. Nada foi alterado.'),
+    ).toBeVisible();
+    expect(requestsTo('PATCH')).toHaveLength(1);
+    expect(tv.tvs![0].agentSlug).toBe('pc-casa');
+    await sheet(page).getByRole('button', { name: 'Cancelar' }).click();
+    await expect(sheet(page)).toBeHidden();
+    await expect(row(page, 'Casa')).toContainText('PC de casa');
   });
 
-  test('se o computador sai da lista no meio, a lista é atualizada e nada é trocado', async ({
+  test('se o computador já foi tomado por outra TV no meio, a folha avisa e nada é trocado', async ({
     page,
     browserName,
   }) => {
@@ -270,16 +293,26 @@ test.describe('Ajustes > Sistema > TV', () => {
     await preparePasskey(page, browserName);
     await open(page);
 
-    await page.locator('.choice', { hasText: 'Notebook' }).click();
-    // Outra pessoa revoga o Notebook antes de salvar: o servidor recusa e a tela mostra a lista de agora.
-    system.computers.find((c) => c.slug === 'notebook')!.revoked = true;
+    await row(page, 'Casa').click();
+    await sheet(page)
+      .getByRole('radio', { name: /Notebook/ })
+      .check();
+    // Outra TV passa a usar o Notebook antes de salvar: o servidor recusa com 409.
+    tv.tvs!.push({
+      id: '22222222-2222-4222-8222-222222222222',
+      name: 'Quarto',
+      isDefault: false,
+      agentSlug: 'notebook',
+      kind: null,
+      online: false,
+      capabilities: [],
+    });
     identity.stepUpValid = true;
-    await page.getByRole('button', { name: 'Salvar' }).click();
+    await sheet(page).getByRole('button', { name: 'Salvar' }).click();
 
     await expect(
-      page.getByText('Esse computador não está mais na lista de pareados', { exact: false }),
+      sheet(page).getByText('Esse computador já controla outra TV. Escolha outro.'),
     ).toBeVisible();
-    await expect(page.locator('.choice .ui-row-title')).toHaveText(['PC de casa']);
-    expect(system.current).toBe('pc-casa');
+    expect(tv.tvs![0].agentSlug).toBe('pc-casa');
   });
 });
