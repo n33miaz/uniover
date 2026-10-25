@@ -7,7 +7,6 @@ o token explicitamente.
 
 import asyncio
 import logging
-import re
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
@@ -16,6 +15,7 @@ from samsungtvws import SamsungTVWS
 from samsungtvws import helper as samsung_helper
 
 from uniover_agent.adapters.tv_discovery import samsung_identity
+from uniover_agent.adapters.tv_samsung_volume import SamsungVolume
 from uniover_agent.core.tv.locator import TvIdentity
 from uniover_agent.ports import TvNotPaired, TvUnreachable
 
@@ -30,18 +30,6 @@ SAMSUNG_APP_ICON_TIMEOUT_SECONDS = 1.0
 SAMSUNG_APP_PROBE_CONCURRENCY = 8
 # Ícones seguidos sem resposta que encerram o pedido de ícones (a TV está sem fôlego).
 SAMSUNG_ICON_MAX_FAILURES = 3
-# Volume: o serviço UPnP de renderização que a própria TV expõe. Lido só depois de uma tecla.
-SAMSUNG_UPNP_PORT = 9197
-SAMSUNG_VOLUME_TIMEOUT_SECONDS = 2.0
-_VOLUME_SOAP = (
-    '<?xml version="1.0" encoding="utf-8"?>'
-    '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
-    's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>'
-    '<u:GetVolume xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1">'
-    "<InstanceID>0</InstanceID><Channel>Master</Channel></u:GetVolume></s:Body></s:Envelope>"
-)
-_VOLUME_VALUE = re.compile(r"<CurrentVolume>\s*(\d{1,3})\s*</CurrentVolume>")
-
 # Estes identificadores são publicados só quando o endpoint da própria TV confirma que o app está
 # instalado. A Samsung não disponibiliza uma lista confiável de apps em todos os modelos Tizen.
 SAMSUNG_APP_IDS = (
@@ -89,8 +77,47 @@ SAMSUNG_KEYS: dict[str, str] = {
     "POWER": "KEY_POWER",
     "INFO": "KEY_INFO",
     "INPUT": "KEY_SOURCE",
+    "GUIDE": "KEY_GUIDE",
+    "TOOLS": "KEY_TOOLS",
+    "CHANNEL_LIST": "KEY_CH_LIST",
+    "PREVIOUS_CHANNEL": "KEY_PRECH",
+    "EXIT": "KEY_EXIT",
+    "RED": "KEY_RED",
+    "GREEN": "KEY_GREEN",
+    "YELLOW": "KEY_YELLOW",
+    # No controle Samsung a tecla azul se chama CYAN.
+    "BLUE": "KEY_CYAN",
+    "SUBTITLE": "KEY_CAPTION",
+    "ASPECT": "KEY_PICTURE_SIZE",
+    "SLEEP": "KEY_SLEEP",
+    "E_MANUAL": "KEY_EMANUAL",
     **{f"NUM_{number}": f"KEY_{number}" for number in range(10)},
 }
+
+
+# Teclas além das básicas que o app oferece como botões extras (o agente declara as que a TV tem).
+SAMSUNG_OPTIONAL_KEYS: tuple[str, ...] = (
+    "INPUT",
+    "INFO",
+    "GUIDE",
+    "TOOLS",
+    "CHANNEL_LIST",
+    "PREVIOUS_CHANNEL",
+    "EXIT",
+    "PLAY",
+    "PAUSE",
+    "STOP",
+    "REWIND",
+    "FAST_FORWARD",
+    "RED",
+    "GREEN",
+    "YELLOW",
+    "BLUE",
+    "SUBTITLE",
+    "ASPECT",
+    "SLEEP",
+    "E_MANUAL",
+)
 
 
 class SamsungClient(Protocol):
@@ -205,6 +232,7 @@ class SamsungTvDriver:
         *,
         factory: SamsungFactory = _default_factory,
         fetch_power: PowerFetcher | None = None,
+        volume: SamsungVolume | None = None,
         on_identity: IdentitySink | None = None,
         save_token: Callable[[str], None] | None = None,
         app_ids: tuple[str, ...] = (),
@@ -218,6 +246,7 @@ class SamsungTvDriver:
         self._name = name
         self._factory = factory
         self._fetch_power = fetch_power
+        self._upnp = volume or SamsungVolume(host, transport=rest_transport)
         self._on_identity = on_identity
         self._save_token = save_token
         self._app_ids = tuple(dict.fromkeys((*SAMSUNG_APP_IDS, *app_ids)))
@@ -254,6 +283,8 @@ class SamsungTvDriver:
             self._token = client.token
             if self._save_token is not None:
                 self._save_token(client.token)
+        # A TV pode ter mudado de endereço de serviço desde a conexão anterior: descobre de novo.
+        self._upnp.reset()
         power = await self._read_power_and_identity()
         if power is not None:
             for callback in self._power:
@@ -274,24 +305,11 @@ class SamsungTvDriver:
         return power_from_info(info)
 
     async def read_volume(self) -> int | None:
-        """Volume atual pelo UPnP da TV; `None` se ela não responde (nunca levanta).
+        """Volume atual pelo serviço UPnP que a própria TV descreve; `None` se ela não o tem.
 
-        Só é chamado logo depois de uma tecla de volume: não há sondagem periódica.
+        Só é chamado ao abrir a sessão e logo depois de uma tecla de volume: não há sondagem.
         """
-        url = f"http://{self._host}:{SAMSUNG_UPNP_PORT}/dmr/upnp/control/RenderingControl1"
-        headers = {
-            "Content-Type": 'text/xml; charset="utf-8"',
-            "SOAPAction": '"urn:schemas-upnp-org:service:RenderingControl:1#GetVolume"',
-        }
-        try:
-            async with httpx.AsyncClient(
-                transport=self._rest_transport, timeout=SAMSUNG_VOLUME_TIMEOUT_SECONDS
-            ) as client:
-                response = await client.post(url, content=_VOLUME_SOAP, headers=headers)
-        except httpx.HTTPError:
-            return None
-        match = _VOLUME_VALUE.search(response.text) if response.is_success else None
-        return min(100, int(match.group(1))) if match else None
+        return await self._upnp.read()
 
     async def disconnect(self) -> None:
         client, self._client = self._client, None

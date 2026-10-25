@@ -69,6 +69,9 @@ KEY_CODES: Final[Mapping[str, str]] = {
     **{f"NUM_{digit}": f"KEYCODE_{digit}" for digit in range(10)},
 }
 
+# Teclas além das básicas que o app pode oferecer como botões extras (a Samsung tem mais).
+ANDROID_OPTIONAL_KEYS: Final[tuple[str, ...]] = ("INPUT",)
+
 # Teclas de digitação (`TYPE_*`): letras minúsculas, espaço e pontuação simples, para o agente
 # digitar sem passar pelo ADB. Os dígitos usam as teclas `NUM_*` do contrato. São só as teclas
 # **sem SHIFT**: a biblioteca aceita `SHIFT_LEFT` com `START_LONG` e `END_LONG`, mas ninguém mediu

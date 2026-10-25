@@ -58,8 +58,8 @@ from uniover_agent.adapters.tv_locate import (
     identify_tv,
 )
 from uniover_agent.adapters.tv_pairing import TvPairingError, is_paired, pair_tv
-from uniover_agent.adapters.tv_remote_v2 import AndroidTvRemoteV2
-from uniover_agent.adapters.tv_samsung import SamsungTvDriver
+from uniover_agent.adapters.tv_remote_v2 import ANDROID_OPTIONAL_KEYS, AndroidTvRemoteV2
+from uniover_agent.adapters.tv_samsung import SAMSUNG_OPTIONAL_KEYS, SamsungTvDriver
 from uniover_agent.adapters.tv_samsung_pairing import SamsungPairingError, pair_samsung_tv
 from uniover_agent.adapters.update_status import (
     FileUpdateStatus,
@@ -286,11 +286,12 @@ def build_tv(
         handlers={
             "tv.key.v1": keys,
             "tv.key.v2": keys,
+            "tv.key.v3": keys,
             "tv.text.v1": tv_text_handler(manager, reconciler=text, monotonic=clock.monotonic),
             "tv.wake.v1": tv_wake_handler(manager),
             "tv.app.launch.v1": tv_app_launch_handler(manager),
         },
-        capabilities=["tv.remote", "tv.kind.android"],
+        capabilities=["tv.remote", "tv.kind.android", *key_capabilities(ANDROID_OPTIONAL_KEYS)],
         text=text,
         known=TvKnown(settings.tv_id_hint, settings.tv_mac),
     )
@@ -298,6 +299,14 @@ def build_tv(
     compose_adb(setup, settings, host, clock)  # [composição: adb]
     # [composição: vigia]
     return setup
+
+
+def key_capabilities(keys: Sequence[str]) -> list[str]:
+    """Capacidades de teclas: a versão da mensagem e uma por tecla opcional que a TV tem.
+
+    O app usa esta lista para oferecer os botões extras; tecla que a TV não tem não é declarada.
+    """
+    return ["tv.key.v3", *(f"tv.key.{key}" for key in keys)]
 
 
 def samsung_token_name(tv_name: str) -> str:
@@ -360,6 +369,7 @@ def build_samsung_tv(
         handlers={
             "tv.key.v1": keys,
             "tv.key.v2": keys,
+            "tv.key.v3": keys,
             "tv.wake.v1": tv_wake_handler(manager),
             "tv.app.launch.v1": tv_app_launch_handler(
                 manager, packages=apps, links_supported=False
@@ -368,7 +378,7 @@ def build_samsung_tv(
             "tv.text.v1": unsupported_handler("a TV Samsung não suporta digitação por este canal"),
             "tv.cleanup.v1": unsupported_handler("a TV Samsung não suporta limpeza por ADB"),
         },
-        capabilities=["tv.remote", "tv.kind.samsung"],
+        capabilities=["tv.remote", "tv.kind.samsung", *key_capabilities(SAMSUNG_OPTIONAL_KEYS)],
         background=[announcer.run],
         after_hello=[announcer.after_hello],
         known=known,

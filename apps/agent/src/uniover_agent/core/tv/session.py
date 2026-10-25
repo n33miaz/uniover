@@ -18,7 +18,7 @@ Gentileza com a TV: uma TV com a pilha de rede engasgada piora com cada tentativ
   a TV volta. Dentro da espera os pedidos falham na hora, sem tocar na rede;
 * o registro conta a queda uma vez, a volta uma vez e um resumo de tempos em tempos;
 * `POWER` com a TV fora da rede vira Wake-on-LAN (e nunca a tecla, que é um interruptor);
-* o volume só é lido logo depois de uma tecla de volume (nunca em sondagem periódica).
+* o volume é lido ao abrir a sessão e logo depois de uma tecla de volume (nunca em sondagem).
 """
 
 import asyncio
@@ -485,6 +485,8 @@ class TvSessionManager:
         self._state = SessionState.HOT
         self.touch()
         self._set_connection("hot")
+        # Uma leitura ao abrir a sessão: o contador já aparece antes de qualquer tecla de volume.
+        self._schedule_volume_read()
 
     async def _attempt(self) -> None:
         """Uma tentativa: o teste de vida primeiro e o WebSocket só se alguém atende."""
@@ -626,7 +628,7 @@ class TvSessionManager:
         task.add_done_callback(self._tasks.discard)
         return task
 
-    # --- volume: lido só depois de uma tecla de volume ----------------------------------------
+    # --- volume: lido ao abrir a sessão e depois de uma tecla de volume -----------------------
 
     def _schedule_volume_read(self) -> None:
         if self._volume_reader is None:
