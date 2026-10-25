@@ -32,6 +32,7 @@ from uniover_agent.core import (
     Command,
     EnvelopeFactory,
     EnvelopeGate,
+    PowerOffResult,
     ResultStatus,
     TvSessionManager,
 )
@@ -697,7 +698,7 @@ def test_samsung_configuration_selects_its_capabilities_without_adb(
         secrets,
     )
     assert setup is not None
-    expected = ["tv.remote", "tv.kind.samsung", "tv.key.v3"] + [
+    expected = ["tv.remote", "tv.kind.samsung", "tv.power.off.v1", "tv.key.v3"] + [
         f"tv.key.{key}" for key in SAMSUNG_OPTIONAL_KEYS
     ]
     assert setup.capabilities == expected
@@ -706,6 +707,41 @@ def test_samsung_configuration_selects_its_capabilities_without_adb(
     assert "tv.cleanup.v1" in setup.handlers
     assert setup.text is None
     assert "token-secreto" not in caplog.text
+
+
+async def test_read_power_asks_the_tv_again_instead_of_reusing_the_reading_from_connect() -> None:
+    readings = iter([True, False])
+
+    async def fetch(host: str) -> bool | None:
+        del host
+        return next(readings)
+
+    client = FakeSamsungClient()
+    driver = SamsungTvDriver(
+        "192.168.0.11", "token", "UniOver", factory=factory(client), fetch_power=fetch
+    )
+    seen: list[bool] = []
+    driver.on_power(seen.append)
+    await driver.connect()
+    assert seen == [True]
+    assert await driver.read_power() is False
+
+
+async def test_power_off_on_a_samsung_tv_in_standby_sends_no_key() -> None:
+    # A sessão abriu com a TV ligada, mas ela entrou em espera depois: a leitura nova manda.
+    states = iter([True, False])
+
+    async def fetch(host: str) -> bool | None:
+        del host
+        return next(states)
+
+    client = FakeSamsungClient()
+    driver = SamsungTvDriver(
+        "192.168.0.11", "token", "UniOver", factory=factory(client), fetch_power=fetch
+    )
+    manager = TvSessionManager(FakeClock(), driver, power_reader=driver.read_power)
+    assert await manager.power_off() is PowerOffResult.ALREADY_OFF
+    assert client.keys == []
 
 
 def test_tv_kind_reads_the_environment_and_defaults_to_android(
