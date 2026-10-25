@@ -18,6 +18,12 @@ public sealed class PairingOptions
     /// </summary>
     public bool RequireStepUp { get; set; } = true;
 
+    /// <summary>
+    /// Computadores ativos (não revogados) que uma conta de convidado pode ter pareados por conta própria. O dono não tem
+    /// limite aqui; o convidado que chega ao teto precisa que o administrador revogue um para parear outro.
+    /// </summary>
+    public int MaxPerGuest { get; set; } = 2;
+
     public TimeSpan Validity => TimeSpan.FromMinutes(ExpiresMinutes);
 
     public TimeSpan MinPollInterval => TimeSpan.FromSeconds(MinPollIntervalSeconds);
@@ -40,5 +46,6 @@ public sealed class DevicesModuleOptions
         o.Pairing.ExpiresMinutes is >= 1 and <= 60
         && o.Pairing.MinPollIntervalSeconds is >= 1 and <= 600
         && o.Pairing.MaxActive >= 1
+        && o.Pairing.MaxPerGuest >= 1
         && o.TokenCacheSeconds >= 0;
 }
