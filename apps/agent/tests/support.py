@@ -12,6 +12,8 @@ from websockets.datastructures import Headers
 from websockets.http11 import Request, Response
 
 AGENT_ID = "pc-casa"
+# Teclas opcionais que uma TV Android declara no `hello`, além do tipo e do `tv.remote`.
+ANDROID_KEYS = ["tv.key.v3", "tv.key.INPUT"]
 TOKEN = "uo_dev_TOKEN-SECRETO-DE-TESTE"
 
 

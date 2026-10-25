@@ -47,6 +47,7 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tv_locate, "arp_mac", no_mac)
     monkeypatch.setattr(wol, "_send", lambda mac, host: None)
     monkeypatch.setattr(tv_samsung, "fetch_samsung_info", no_info)
+    monkeypatch.setattr("uniover_agent.adapters.tv_samsung_volume.ssdp_locations", lambda host: [])
     monkeypatch.setattr(tv_locate, "arp_table", no_arp)
 
 

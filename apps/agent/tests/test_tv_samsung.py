@@ -12,13 +12,21 @@ from samsungtvws import SamsungTVWS
 
 from uniover_agent import main as main_module
 from uniover_agent.adapters import tv_samsung_pairing as samsung_pairing
+from uniover_agent.adapters import tv_samsung_volume as volume_module
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTransport
-from uniover_agent.adapters.tv_samsung import SAMSUNG_KEYS, SamsungClient, SamsungTvDriver
+from uniover_agent.adapters.tv_samsung import (
+    SAMSUNG_KEYS,
+    SAMSUNG_OPTIONAL_KEYS,
+    SamsungClient,
+    SamsungTvDriver,
+)
 from uniover_agent.adapters.tv_samsung_pairing import (
     SAMSUNG_PAIR_TIMEOUT_SECONDS,
     _pairing_factory,
     pair_samsung_tv,
 )
+from uniover_agent.adapters.tv_samsung_volume import SamsungVolume, rendering_control_url
+from uniover_agent.adapters.tv_samsung_volume import ssdp_locations as real_ssdp_locations
 from uniover_agent.config import Settings
 from uniover_agent.core import (
     Command,
@@ -154,6 +162,378 @@ async def test_standby_reported_by_rest_becomes_power_off() -> None:
     assert manager.snapshot().power == "off"
 
 
+DESCRIPTION = """
+    <root xmlns="urn:schemas-upnp-org:device-1-0"><device><serviceList><service>
+    <serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType>
+    <controlURL>/upnp/control/RenderingControl1</controlURL>
+    </service></serviceList></device></root>
+"""
+SOAP_VOLUME = (
+    "<s:Envelope xmlns:s='http://schemas.xmlsoap.org/soap/envelope/'><s:Body>"
+    "<u:GetVolumeResponse xmlns:u='urn:schemas-upnp-org:service:RenderingControl:1'>"
+    "<CurrentVolume>{}</CurrentVolume></u:GetVolumeResponse>"
+    "</s:Body></s:Envelope>"
+)
+
+
+def upnp_tv(
+    volume: int | None = 37, *, requests: list[httpx.Request] | None = None
+) -> httpx.MockTransport:
+    """A TV simulada: o renderizador em `:9197/dmr`, o servidor da Netflix em `:9080`."""
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if requests is not None:
+            requests.append(request)
+        if request.url.port == 9080:
+            return httpx.Response(200, text="status=ok")
+        if request.method == "GET" and request.url.path == "/dmr":
+            return httpx.Response(200, text=DESCRIPTION)
+        if request.method == "POST" and request.url.path == "/upnp/control/RenderingControl1":
+            assert request.headers["SOAPACTION"].endswith('#GetVolume"')
+            if volume is None:
+                return httpx.Response(500)
+            return httpx.Response(200, text=SOAP_VOLUME.format(volume))
+        return httpx.Response(404)
+
+    return httpx.MockTransport(respond)
+
+
+def discover(*locations: str) -> Callable[[str], list[str]]:
+    return lambda _host: list(locations)
+
+
+async def test_samsung_volume_is_read_from_the_service_the_description_announces() -> None:
+    requests: list[httpx.Request] = []
+    reader = SamsungVolume(
+        "192.168.0.11",
+        transport=upnp_tv(37, requests=requests),
+        # A TV anuncia vários dispositivos: o primeiro (Netflix, texto puro) não é a descrição.
+        discover=discover("http://192.168.0.11:9080", "http://192.168.0.11:9197/dmr"),
+    )
+    assert await reader.read() == 37
+    assert reader.available is True
+    assert [(request.method, request.url.port, request.url.path) for request in requests] == [
+        ("GET", 9080, "/"),
+        ("GET", 9197, "/dmr"),
+        ("POST", 9197, "/upnp/control/RenderingControl1"),
+    ]
+    # A descoberta vale pela conexão: a leitura seguinte vai direto ao serviço.
+    requests.clear()
+    assert await reader.read() == 37
+    assert [request.method for request in requests] == ["POST"]
+
+
+async def test_samsung_volume_without_rendering_control_is_asked_once_and_never_again() -> None:
+    requests: list[httpx.Request] = []
+    searches: list[str] = []
+
+    def only_netflix(host: str) -> list[str]:
+        searches.append(host)
+        return ["http://192.168.0.11:9080", "http://192.168.0.11:9110/ip_control"]
+
+    now = [100.0]
+    reader = SamsungVolume(
+        "192.168.0.11",
+        transport=upnp_tv(requests=requests),
+        discover=only_netflix,
+        monotonic=lambda: now[0],
+    )
+    assert reader.available is None
+    assert await reader.read() is None
+    assert reader.available is False
+    discovery_requests = len(requests)
+    for _ in range(3):
+        assert await reader.read() is None
+    assert searches == ["192.168.0.11"]
+    assert len(requests) == discovery_requests
+    # Sessão reaberta logo depois: a descoberta recente vale, a TV não é perguntada de novo.
+    reader.reset()
+    assert reader.available is False
+    # Passado o prazo, a TV pode ter mudado: descobre de novo.
+    now[0] += volume_module.REDISCOVER_SECONDS
+    reader.reset()
+    assert reader.available is None
+
+
+async def test_samsung_volume_follows_a_location_without_path_and_the_url_base() -> None:
+    description = (
+        '<root xmlns="urn:schemas-upnp-org:device-1-0">'
+        "<URLBase>http://192.168.0.11:7676/</URLBase><device><deviceList><device><serviceList>"
+        "<service><serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType>"
+        "<controlURL>upnp/control/RenderingControl1</controlURL></service>"
+        "</serviceList></device></deviceList></device></root>"
+    )
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, text=description)
+        return httpx.Response(200, text=SOAP_VOLUME.format(12))
+
+    reader = SamsungVolume(
+        "192.168.0.11",
+        transport=httpx.MockTransport(respond),
+        discover=discover("http://192.168.0.11:9080"),
+    )
+    assert await reader.read() == 12
+    assert [(r.method, r.url.port, r.url.path) for r in requests] == [
+        ("GET", 9080, "/"),
+        ("POST", 7676, "/upnp/control/RenderingControl1"),
+    ]
+
+
+async def test_samsung_volume_never_raises_whatever_goes_wrong() -> None:
+    def broken(host: str) -> list[str]:
+        raise RuntimeError(host)
+
+    assert await SamsungVolume("192.168.0.11", discover=broken).read() is None
+
+    garbage = httpx.MockTransport(
+        lambda request: httpx.Response(200, content=bytes([255, 254, 60]))
+    )
+    reader = SamsungVolume(
+        "192.168.0.11", transport=garbage, discover=discover("http://192.168.0.11:9080")
+    )
+    assert await reader.read() is None
+    assert await reader.read() is None
+
+
+async def test_samsung_volume_ignores_announcements_that_point_to_another_machine() -> None:
+    requests: list[httpx.Request] = []
+    reader = SamsungVolume(
+        "192.168.0.11",
+        transport=upnp_tv(requests=requests),
+        discover=discover("http://10.0.0.9:9197/dmr"),
+    )
+    assert await reader.read() is None
+    assert requests == []
+
+
+async def test_samsung_volume_reads_nothing_when_the_service_fails() -> None:
+    reader = SamsungVolume(
+        "192.168.0.11",
+        transport=upnp_tv(None),
+        discover=discover("http://192.168.0.11:9197/dmr"),
+    )
+    assert await reader.read() is None
+    # O serviço existe: uma falha de leitura não o dá como ausente.
+    assert reader.available is True
+
+
+def test_samsung_rendering_control_url_needs_xml_with_the_service() -> None:
+    assert rendering_control_url("status=ok", "http://tv:9080/") is None
+    assert rendering_control_url("<root/>", "http://tv:9080/") is None
+    assert (
+        rendering_control_url(DESCRIPTION, "http://tv:9197/dmr")
+        == "http://tv:9197/upnp/control/RenderingControl1"
+    )
+
+
+def test_ssdp_locations_collects_every_announcement_of_the_tv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ok = b"HTTP/1.1 200 OK\r\n"
+    replies = [
+        (ok + b"LOCATION: http://192.168.0.11:9110/ip_control\r\n\r\n", "192.168.0.11"),
+        (ok + b"Location: http://192.168.0.99:9197/dmr\r\n\r\n", "192.168.0.99"),
+        (ok + b"LOCATION: http://192.168.0.11:9080\r\n\r\n", "192.168.0.11"),
+        (ok + b"LOCATION: http://192.168.0.11:9080\r\n\r\n", "192.168.0.11"),
+        (ok + b"EXT:\r\n\r\n", "192.168.0.11"),
+    ]
+    sent: list[tuple[bytes, tuple[str, int]]] = []
+
+    class FakeSocket:
+        def __enter__(self) -> FakeSocket:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def settimeout(self, seconds: float) -> None:
+            del seconds
+
+        def sendto(self, data: bytes, address: tuple[str, int]) -> None:
+            sent.append((data, address))
+
+        def recvfrom(self, size: int) -> tuple[bytes, tuple[str, int]]:
+            del size
+            if not replies:
+                raise TimeoutError
+            data, host = replies.pop(0)
+            return data, (host, 1900)
+
+    monkeypatch.setattr(volume_module, "_udp_socket", FakeSocket)
+    monkeypatch.setattr(volume_module, "SSDP_LISTEN_SECONDS", 0.05)
+    assert real_ssdp_locations("192.168.0.11") == [
+        "http://192.168.0.11:9110/ip_control",
+        "http://192.168.0.11:9080",
+    ]
+    # Perguntou direto à TV e, como ela respondeu, nem chegou a falar com o grupo multicast.
+    assert all(address == ("192.168.0.11", 1900) for _, address in sent)
+    assert len(sent) == len(volume_module.SSDP_TARGETS)
+
+
+def test_ssdp_locations_falls_back_to_multicast_when_the_tv_ignores_the_direct_question(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[tuple[str, int]] = []
+    replies: list[tuple[bytes, tuple[str, int]]] = []
+
+    class FakeSocket:
+        def __enter__(self) -> FakeSocket:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def settimeout(self, seconds: float) -> None:
+            del seconds
+
+        def sendto(self, data: bytes, address: tuple[str, int]) -> None:
+            del data
+            sent.append(address)
+            if address[0] == "239.255.255.250" and not replies:
+                reply = b"HTTP/1.1 200 OK\r\nLOCATION: http://192.168.0.11:9080/desc\r\n\r\n"
+                replies.append((reply, ("192.168.0.11", 1900)))
+
+        def recvfrom(self, size: int) -> tuple[bytes, tuple[str, int]]:
+            del size
+            if not replies:
+                raise TimeoutError
+            return replies.pop(0)
+
+    monkeypatch.setattr(volume_module, "_udp_socket", FakeSocket)
+    monkeypatch.setattr(volume_module, "SSDP_LISTEN_SECONDS", 0.02)
+    assert real_ssdp_locations("192.168.0.11") == ["http://192.168.0.11:9080/desc"]
+    assert sent[0] == ("192.168.0.11", 1900)
+    assert ("239.255.255.250", 1900) in sent
+
+
+def test_ssdp_locations_gives_up_quietly_without_a_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken(*args: object) -> None:
+        raise OSError("sem rede")
+
+    monkeypatch.setattr(volume_module, "_udp_socket", broken)
+    assert real_ssdp_locations("192.168.0.11") == []
+
+
+def samsung_with_volume(client: FakeSamsungClient, reader: SamsungVolume) -> TvSessionManager:
+    driver = SamsungTvDriver(
+        "192.168.0.11",
+        "token-anterior",
+        "UniOver",
+        factory=factory(client),
+        fetch_power=power_on,
+        volume=reader,
+    )
+    return TvSessionManager(
+        FakeClock(), driver, hibernate_seconds=10, volume_reader=driver.read_volume
+    )
+
+
+class CountingVolume(SamsungVolume):
+    """Leitor que devolve uma sequência de níveis e conta as consultas."""
+
+    def __init__(self, levels: list[int | None], *, has_service: bool = True) -> None:
+        super().__init__("192.168.0.11")
+        self.levels = levels
+        self.reads = 0
+        self.resets = 0
+        self.has_service = has_service
+
+    @property
+    def available(self) -> bool | None:
+        return self.has_service if self.reads else None
+
+    def reset(self) -> None:
+        self.resets += 1
+
+    async def read(self) -> int | None:
+        self.reads += 1
+        return self.levels.pop(0) if self.levels else None
+
+
+async def test_samsung_volume_is_published_on_open_and_after_a_volume_key_only() -> None:
+    reader = CountingVolume([22, 23, 22])
+    manager = samsung_with_volume(FakeSamsungClient(), reader)
+    await manager.wake()
+    await manager.settle()
+    assert manager.snapshot().volume == 22
+    assert reader.resets == 1
+
+    await manager.send_key("VOLUME_UP")
+    await manager.settle()
+    assert manager.snapshot().volume == 23
+
+    await manager.send_key("MUTE")
+    await manager.settle()
+    assert manager.snapshot().volume == 22
+    # Teclas que não mexem no volume não consultam a TV, e nada consulta sozinho.
+    reads = reader.reads
+    await manager.send_key("UP")
+    await manager.settle()
+    assert reader.reads == reads
+    await manager.aclose()
+
+
+async def test_samsung_does_not_poll_the_volume() -> None:
+    reader = CountingVolume([10])
+    manager = samsung_with_volume(FakeSamsungClient(), reader)
+    await manager.wake()
+    await manager.settle()
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+    assert reader.reads == 1
+    await manager.aclose()
+
+
+async def test_samsung_without_the_volume_service_costs_no_traffic_per_key() -> None:
+    reader = SamsungVolume("192.168.0.11", discover=lambda _host: [])
+    manager = samsung_with_volume(FakeSamsungClient(), reader)
+    await manager.wake()
+    await manager.settle()
+    assert reader.available is False
+    assert manager.snapshot().volume is None
+    searches: list[str] = []
+
+    def spy(host: str) -> list[str]:
+        searches.append(host)
+        return []
+
+    reader._discover = spy
+    for _ in range(5):
+        await manager.send_key("VOLUME_DOWN")
+    await manager.settle()
+    assert searches == []
+    await manager.aclose()
+
+
+async def test_samsung_keeps_volume_unknown_when_the_service_answers_nothing() -> None:
+    reader = CountingVolume([None])
+    manager = samsung_with_volume(FakeSamsungClient(), reader)
+    await manager.wake()
+    await manager.settle()
+    assert manager.snapshot().volume is None
+    await manager.aclose()
+
+
+async def test_samsung_declares_only_keys_it_can_send() -> None:
+    assert set(SAMSUNG_OPTIONAL_KEYS) <= SAMSUNG_KEYS.keys()
+    client = FakeSamsungClient()
+    _, _, manager = manager_for(client)
+    for key in ("GUIDE", "BLUE", "SUBTITLE", "E_MANUAL"):
+        await manager.send_key(key)
+    assert [key for key, _ in client.keys] == [
+        "KEY_GUIDE",
+        "KEY_CYAN",
+        "KEY_CAPTION",
+        "KEY_EMANUAL",
+    ]
+
+
 async def test_samsung_apps_use_a_valid_alias_but_launch_the_original_app_id() -> None:
     client = FakeSamsungClient()
     client.apps = []  # Firmware sem EDEN: a lista vem do catálogo REST abaixo.
@@ -270,6 +650,7 @@ async def test_samsung_websocket_timeout_does_not_block_the_event_loop() -> None
             time.sleep(0.1)
 
     client = SlowSamsungClient()
+
     driver = SamsungTvDriver(
         "192.168.0.11",
         "token-anterior",
@@ -316,11 +697,12 @@ def test_samsung_configuration_selects_its_capabilities_without_adb(
         secrets,
     )
     assert setup is not None
-    assert setup.capabilities == ["tv.remote", "tv.kind.samsung"]
-    assert envelopes.hello("0.1.0", tuple(setup.capabilities))["body"]["capabilities"] == [
-        "tv.remote",
-        "tv.kind.samsung",
+    expected = ["tv.remote", "tv.kind.samsung", "tv.key.v3"] + [
+        f"tv.key.{key}" for key in SAMSUNG_OPTIONAL_KEYS
     ]
+    assert setup.capabilities == expected
+    assert envelopes.hello("0.1.0", tuple(setup.capabilities))["body"]["capabilities"] == expected
+    assert "tv.key.v3" in setup.handlers
     assert "tv.cleanup.v1" in setup.handlers
     assert setup.text is None
     assert "token-secreto" not in caplog.text
