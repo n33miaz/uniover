@@ -94,6 +94,11 @@ class Settings(BaseSettings):
     tv_samsung_apps: Annotated[list[str], NoDecode] = Field(default_factory=list)
     # Sem comando e sem aviso de "app aberto" por este tempo, a sessão com a TV hiberna.
     tv_hibernate_seconds: int = Field(default=300, ge=1)
+    # Desligar com leitura (`tv.power.off.v1`): quanto esperar a leitura de energia antes da tecla e
+    # a confirmação depois dela. Sem leitura ou sem confirmação a tecla não é repetida (uma segunda
+    # tecla pode religar a TV). Valores iniciais, a ajustar depois de medir na TV real.
+    tv_power_off_read_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
+    tv_power_off_confirmation_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     # Digitação: o acréscimo feito só de letras minúsculas, dígitos, espaço e `. , - /` vai por
     # teclas do controle remoto (um pacote por caractere, sem o processo `adb` de cada trecho).
     # Desligado por padrão: foi desenhado sem poder testar na TV real. `tv_text_key_pause_ms` põe
