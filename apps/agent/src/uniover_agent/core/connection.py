@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 from uniover_agent.core.envelopes import EnvelopeFactory
 from uniover_agent.ports import (
@@ -19,6 +19,9 @@ _log = logging.getLogger(__name__)
 
 REVOKED_MESSAGE: Final = "token revogado ou inválido; rode `uniover-agent pair`"
 APPLICATION_KEEPALIVE_SECONDS: Final = 25.0
+# O `hello` volta de tempos em tempos: se a API do momento o recusou (ainda não conhecia um campo
+# novo) ou foi trocada com o agente já conectado, ele passa a valer sem reiniciar o agente.
+REHELLO_SECONDS: Final = 300.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +72,10 @@ class ConnectionSupervisor:
         on_connected: Callable[[], Awaitable[None]] | None = None,
         on_disconnected: Callable[[], None] | None = None,
         keepalive_interval: float = APPLICATION_KEEPALIVE_SECONDS,
+        rehello_interval: float = REHELLO_SECONDS,
+        os_description: str | None = None,
+        tv: tuple[str, str] | None = None,
+        update_status: Callable[[], dict[str, Any] | None] | None = None,
     ) -> None:
         self._transport = transport
         self._process = process_message
@@ -82,6 +89,39 @@ class ConnectionSupervisor:
         self._on_connected = on_connected
         self._on_disconnected = on_disconnected
         self._keepalive_interval = keepalive_interval
+        self._rehello_interval = rehello_interval
+        # Opcionais do `hello` (sistema do PC; tipo e endereço da TV): só aparecem na tela do dono.
+        self._os_description = os_description
+        self._tv = tv
+        # Lido a cada `hello`: o estado da auto-atualização muda com o tempo.
+        self._update_status = update_status
+
+    def _hello(self) -> dict[str, Any]:
+        update: dict[str, Any] | None = None
+        if self._update_status is not None:
+            try:
+                update = self._update_status()
+            except Exception:
+                _log.exception("não consegui ler o estado da atualização")
+        try:
+            return self._envelopes.hello(
+                self._agent_version,
+                self._capabilities,
+                os_description=self._os_description,
+                tv=self._tv,
+                update=update,
+            )
+        except ValueError:
+            if update is None:
+                raise
+            # Sem o estado da atualização o agente ainda conecta, nunca fica fora do ar por ele.
+            _log.warning("estado da atualização fora do contrato; o hello segue sem ele")
+            return self._envelopes.hello(
+                self._agent_version,
+                self._capabilities,
+                os_description=self._os_description,
+                tv=self._tv,
+            )
 
     async def run(self) -> None:
         """Roda até ser cancelado; devolve (sem erro) só quando a credencial é recusada.
@@ -117,9 +157,7 @@ class ConnectionSupervisor:
             await self._transport.connect()
             started = self._clock.monotonic()
             _log.info("conectado")
-            await self._transport.send(
-                self._envelopes.hello(self._agent_version, self._capabilities)
-            )
+            await self._transport.send(self._hello())
             if self._on_connected is not None:
                 await self._on_connected()
             keepalive = asyncio.create_task(self._send_keepalives())
@@ -139,6 +177,10 @@ class ConnectionSupervisor:
                 self._on_disconnected()
 
     async def _send_keepalives(self) -> None:
+        last_hello = self._clock.monotonic()
         while True:
             await asyncio.sleep(self._keepalive_interval)
             await self._transport.send(self._envelopes.keepalive())
+            if self._clock.monotonic() - last_hello >= self._rehello_interval:
+                last_hello = self._clock.monotonic()
+                await self._transport.send(self._hello())
