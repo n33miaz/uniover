@@ -288,7 +288,7 @@ function todayKey(): string {
       margin: 0;
       padding: var(--space-3);
       border: 1px solid var(--a-line);
-      border-radius: var(--radius-md);
+      border-radius: var(--radius);
     }
     legend {
       padding: 0 5px;
@@ -335,7 +335,7 @@ function todayKey(): string {
       min-height: var(--tap);
       padding: 8px 12px;
       border: 0;
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-sm);
       font: inherit;
       font-weight: 650;
     }
@@ -345,7 +345,7 @@ function todayKey(): string {
     }
     .secondary {
       color: var(--a-ink);
-      background: var(--a-surface2);
+      background: var(--a-surface-2);
     }
     .remove {
       justify-self: start;
@@ -354,8 +354,8 @@ function todayKey(): string {
     }
     .status {
       padding: var(--space-2);
-      border-radius: var(--radius-md);
-      background: var(--a-surface2);
+      border-radius: var(--radius-sm);
+      background: var(--a-surface-2);
     }
     :focus-visible {
       outline: 3px solid var(--a-accent);

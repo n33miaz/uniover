@@ -10,8 +10,8 @@
   display: grid;
   gap: var(--space-1);
   padding: var(--space-2);
-  background: var(--a-surface2);
-  border-radius: var(--radius-md);
+  background: var(--a-surface-2);
+  border-radius: var(--radius-sm);
 }
 
 .error {
@@ -52,11 +52,11 @@
 
 .choice:has(input:checked) {
   border-color: var(--a-accent);
-  background: var(--a-surface2);
+  background: var(--a-surface-2);
 }
 
 .choice:focus-within {
-  outline: 2px solid var(--a-focus, var(--a-accent));
+  outline: 2px solid var(--a-accent);
   outline-offset: 2px;
 }
 

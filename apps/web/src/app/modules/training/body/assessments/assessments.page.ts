@@ -92,8 +92,8 @@ import { assessmentTitle } from './assessment-format';
     .privacy,
     .empty {
       padding: var(--space-3);
-      border-radius: var(--radius-md);
-      background: var(--a-surface2);
+      border-radius: var(--radius);
+      background: var(--a-surface-2);
     }
     .privacy {
       display: grid;
@@ -117,7 +117,7 @@ import { assessmentTitle } from './assessment-format';
       min-height: var(--tap);
       display: grid;
       place-items: center;
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-sm);
       text-align: center;
       text-decoration: none;
       font-weight: 650;
@@ -128,7 +128,7 @@ import { assessmentTitle } from './assessment-format';
     }
     .secondary {
       color: var(--a-ink);
-      background: var(--a-surface2);
+      background: var(--a-surface-2);
     }
     .history {
       display: grid;
