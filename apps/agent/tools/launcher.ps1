@@ -1,4 +1,6 @@
 # Lancador estavel. Somente ASCII e compativel com Windows PowerShell 5.1.
+# Quem o abre e o launcher.vbs (WScript, sem console), que cria este PowerShell ja oculto. Os filhos abaixo sao chamados
+# direto, sem Start-Process: herdam o console oculto em vez de criar um novo, entao nada pisca na tela.
 $ErrorActionPreference = 'Continue'
 $base = Join-Path $env:LOCALAPPDATA 'UniOver'
 $current = Join-Path $base 'app\tools\run-agent.ps1'
