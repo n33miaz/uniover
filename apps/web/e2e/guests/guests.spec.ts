@@ -318,7 +318,7 @@ test.describe('convidado: só o controle da TV', () => {
     expect(identity.requests.map((r) => r.path)).not.toContain('/passkeys');
   });
 
-  test('o botão redondo do cabeçalho leva aos Ajustes da convidada: só Perfil, Aparência e Sobre', async ({
+  test('o botão redondo do cabeçalho leva aos Ajustes da convidada: Perfil, Aparência, Aparelhos e Sobre', async ({
     page,
   }) => {
     const invite = identity.seedInvite();
@@ -351,9 +351,16 @@ test.describe('convidado: só o controle da TV', () => {
     await expect(page.locator('a.ui-row .ui-row-title')).toHaveText([
       'Perfil',
       'Aparência',
+      'Aparelhos',
       'Sobre',
     ]);
-    for (const name of ['Segurança', 'Pessoas', 'Aparelhos', 'Auditoria', 'Sistema']) {
+    // "Aparelhos" é só o download do conector do PC (a convidada tem a TV); o resto do administrador não aparece.
+    await expect(page.getByRole('link', { name: /Aparelhos/ })).toHaveAttribute(
+      'href',
+      '/ajustes/dispositivos',
+    );
+    await expect(page.getByText('Baixar o conector do PC', { exact: true })).toBeVisible();
+    for (const name of ['Segurança', 'Pessoas', 'Auditoria', 'Sistema']) {
       await expect(page.getByText(name, { exact: true })).toHaveCount(0);
     }
     await expect(page.getByText(`${GUEST.displayName} · Convidado`)).toBeVisible();
