@@ -97,6 +97,13 @@ respondem, consulta pelo REST um catálogo de apps conhecidos e os IDs extras em
 ao canal Samsung. A lista usa aliases internos válidos no contrato, mas abre o `appId` original Tizen. Não há ADB,
 limpeza de apps, abertura de links ou digitação pelo canal desta TV: esses pedidos retornam `unsupported`.
 
+O canal Samsung só envia teclas e não informa o volume. O agente tenta lê-lo pelo serviço UPnP RenderingControl: acha a
+descrição por SSDP (primeiro direto à TV, depois no grupo multicast; o endereço do serviço vem da própria descrição, sem
+porta nem caminho fixos) e consulta `GetVolume` uma vez ao abrir a sessão e uma vez depois de cada tecla de volume ou
+mudo, nunca por sondagem. Modelo sem esse serviço fica com o volume desconhecido, e a descoberta não se repete a cada
+tecla. Além das teclas básicas, o agente declara no `hello` as teclas extras que a TV tem (`tv.key.INPUT`,
+`tv.key.GUIDE`, `tv.key.RED`...), e a web as oferece como botões extras.
+
 ### Instalação em um clique
 
 Para quem não é técnico: baixar e abrir **um** arquivo, `apps/agent/tools/conectar-uniover.cmd`. Ele roda o instalador
