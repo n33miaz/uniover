@@ -5490,7 +5490,11 @@ export interface paths {
         path?: never;
         cookie?: never;
       };
-      requestBody?: never;
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['PowerOffRequest'];
+        };
+      };
       responses: {
         /** @description OK */
         200: {
@@ -5498,7 +5502,16 @@ export interface paths {
             [name: string]: unknown;
           };
           content: {
-            'application/json': components['schemas']['TvCommandOk'];
+            'application/json': components['schemas']['TvPowerOffOk'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
           };
         };
         /** @description Unauthorized */
@@ -6863,6 +6876,9 @@ export interface components {
       expiresIn?: null | number | string;
       status: string;
     };
+    PowerOffRequest: {
+      mode: null | string;
+    };
     ProblemDetails: {
       detail?: null | string;
       instance?: null | string;
@@ -7186,6 +7202,12 @@ export interface components {
     };
     TvMembersResponse: {
       userIds: string[];
+    };
+    TvPowerOffOk: {
+      /** Format: int32 */
+      latencyMs: number;
+      ok: boolean;
+      outcome: string;
     };
     TvShortcut: {
       customLabel: null | string;

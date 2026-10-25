@@ -43,6 +43,13 @@ internal static class TvMessages
             new TvKeyV3Message { Body = new TvKeyV3Body { Key = key, Direction = v3Direction } }.ToJson()));
     }
 
+    /// <summary>
+    /// O desligamento com leitura: o agente lê a energia da TV, aperta <c>POWER</c> só se ela estiver ligada e confirma. A
+    /// API só o manda a agente que declarou a capacidade <c>tv.power.off.v1</c>.
+    /// </summary>
+    public static TvMessage PowerOff() =>
+        new(AgentMessageTypes.TvPowerOffV1, BodyOf(new TvPowerOffV1Message { Body = new TvPowerOffV1Body() }.ToJson()));
+
     public static TvMessage Text(string text) =>
         new(AgentMessageTypes.TvTextV1, BodyOf(
             new TvTextV1Message { Body = new TvTextV1Body { Text = text } }.ToJson()));
