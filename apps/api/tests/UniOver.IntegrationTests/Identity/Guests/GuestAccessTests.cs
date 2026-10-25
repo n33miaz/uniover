@@ -32,7 +32,8 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
 
     /// <summary>
     /// As únicas rotas autenticadas (fora da TV e do Treino) que o convidado alcança: a própria sessão, inclusive as três
-    /// do login por QR (o celular já conectado vê, confirma ou recusa o pedido do computador), que exigem sessão de conta ativa.
+    /// do login por QR (o celular já conectado vê, confirma ou recusa o pedido do computador), que exigem sessão de conta ativa,
+    /// e a confirmação da própria senha (o convidado a refaz antes de aprovar o próprio computador).
     /// </summary>
     private static readonly string[] GuestSessionRoutes =
     [
@@ -42,6 +43,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         "/api/v1/identity/auth/qr/info",
         "/api/v1/identity/auth/qr/approve",
         "/api/v1/identity/auth/qr/deny",
+        "/api/v1/identity/step-up/password",
     ];
 
     /// <summary>Rotas que se autenticam por credencial própria (o agente do PC), não por papel de pessoa.</summary>
@@ -61,7 +63,8 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
     private static bool IsGuestRoute(string method, string pattern) =>
         (pattern.StartsWith("/api/v1/tv/", StringComparison.Ordinal) && !TvPermissionMap.AdminRoutes.Any(r => IsRoute(r.Method, r.Pattern, method, pattern)))
         || (pattern.StartsWith("/api/v1/training/", StringComparison.Ordinal) && !TrainingPermissionMap.AdminRoutes.Any(r => IsRoute(r.Method, r.Pattern, method, pattern)))
-        || GuestSessionRoutes.Contains(pattern);
+        || GuestSessionRoutes.Contains(pattern)
+        || pattern == TvPermissionMap.OwnPairingRoute;
 
     private static bool IsRoute(string ruleMethod, string rulePattern, string method, string pattern) =>
         rulePattern == pattern && string.Equals(ruleMethod, method, StringComparison.OrdinalIgnoreCase);
@@ -194,8 +197,11 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
             }
         }
 
-        allowed.Should().NotContain(p => p.Contains("/devices/", StringComparison.Ordinal));
-        allowed.Where(p => !p.StartsWith("/api/v1/tv/", StringComparison.Ordinal) && !p.StartsWith("/api/v1/training/", StringComparison.Ordinal))
+        // Em Aparelhos o convidado alcança só a aprovação do próprio computador; nada do que é do administrador.
+        allowed.Where(p => p.Contains("/devices/", StringComparison.Ordinal)).Distinct()
+            .Should().BeEquivalentTo(["/api/v1/devices/pairing/approve-own"]);
+        allowed.Where(p => !p.StartsWith("/api/v1/tv/", StringComparison.Ordinal) && !p.StartsWith("/api/v1/training/", StringComparison.Ordinal)
+                && !p.Contains("/devices/", StringComparison.Ordinal))
             .Distinct().Should().BeEquivalentTo(GuestSessionRoutes);
         allowed.Count(p => p.StartsWith("/api/v1/tv/", StringComparison.Ordinal)).Should().BeGreaterThanOrEqualTo(10);
 
