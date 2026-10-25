@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { GUEST, IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
 import {
   expect,
@@ -14,6 +15,7 @@ import { DevicesMock, mockDevicesApi } from './devices-mock';
 const WINDOWS_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const DEEP_LINK = '/ajustes/dispositivos?codigo=bcdf2345';
+const CONNECTOR_FILE = resolve(__dirname, '../../public/conectar/conectar-uniover.cmd');
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -132,12 +134,11 @@ test.describe('conectar este PC', () => {
       const [download] = await Promise.all([page.waitForEvent('download'), link.click()]);
       expect(download.suggestedFilename()).toBe('conectar-uniover.cmd');
       const bytes = await readFile((await download.path())!, 'utf8');
-      expect(bytes).toBe(
-        '@echo off\r\n' +
-          'rem Conecta este computador ao UniOver: baixa o instalador, acha a TV, pareia e deixa tudo iniciando sozinho.\r\n' +
-          `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; & ([scriptblock]::Create((irm https://raw.githubusercontent.com/n33miaz/uniover/main/apps/agent/tools/install-windows.ps1)))"\r\n` +
-          'pause\r\n',
-      );
+      // O arquivo baixado é o que está em public/: sem janela de console aberta e sem "pause".
+      expect(bytes).toBe(await readFile(CONNECTOR_FILE, 'utf8'));
+      expect(bytes).toContain('start "" wscript.exe //B //Nologo');
+      expect(bytes).toContain('install-windows.ps1');
+      expect(bytes).not.toMatch(/\bpause\b/i);
       // Baixar não fecha a folha: os passos seguem na tela.
       await expect(sheet).toBeVisible();
 
