@@ -10,7 +10,11 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { leaveDialog } from '../../shared/ui/dialog-motion';
+import {
+  leaveDialog,
+  onDialogBackdropClick,
+  restoreDialogFocus,
+} from '../../shared/ui/dialog-motion';
 import { InstallHintService, InstallMode } from './install-hint.service';
 
 /** Traços dos desenhos dos passos (grade de 24), no mesmo estilo dos outros ícones do app: só caminhos. */
@@ -54,6 +58,7 @@ export class InstallHintSheet {
   private readonly hint = inject(InstallHintService);
   private readonly doc = inject(DOCUMENT);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
+  private opener: Element | null = null;
   /** O campo do endereço existe só no passo "abrir no Safari" (o único que copia). */
   private readonly ghost = viewChild<ElementRef<HTMLInputElement>>('ghost');
   private readonly copyButton = viewChild<ElementRef<HTMLButtonElement>>('copyButton');
@@ -96,7 +101,10 @@ export class InstallHintSheet {
     afterNextRender(() => {
       const dialog = this.dialog().nativeElement;
       // showModal prende o foco na folha, deixa o resto da tela inerte e trata o Esc.
+      this.opener = document.activeElement;
       dialog.showModal();
+      // O fundo escurecido é o próprio <dialog>; só fecha se o toque começou e terminou fora da folha.
+      onDialogBackdropClick(dialog, () => this.later());
       // O primeiro controle recebe o foco de propósito (e não o que o navegador escolher).
       dialog.querySelector<HTMLElement>('button:not([disabled])')?.focus();
     });
@@ -185,8 +193,8 @@ export class InstallHintSheet {
     this.leaving.set(true);
     const dialog = this.dialog().nativeElement;
     leaveDialog(dialog, () => {
-      // close() devolve o foco a quem a abriu (por exemplo, a linha de Personalizar).
       dialog.close();
+      restoreDialogFocus(this.opener);
       this.closed.emit();
     });
   }

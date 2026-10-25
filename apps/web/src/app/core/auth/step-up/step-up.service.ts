@@ -7,7 +7,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { leaveDialog } from '../../../shared/ui/dialog-motion';
+import { closeDialog, leaveDialog } from '../../../shared/ui/dialog-motion';
 import { ApiProblem } from '../api-problem';
 import { AuthApi, WebAuthnChallenge } from '../auth-api';
 import { AuthService } from '../auth.service';
@@ -183,7 +183,11 @@ export class StepUpService {
       release();
     };
     const element = (pending.dialog.location.nativeElement as HTMLElement).querySelector('dialog');
-    if (element) leaveDialog(element, teardown);
+    if (element)
+      leaveDialog(element, () => {
+        closeDialog(element);
+        teardown();
+      });
     else teardown();
     if (!gone) this.leaving = left;
   }

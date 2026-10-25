@@ -7,7 +7,12 @@ import {
   output,
   viewChild,
 } from '@angular/core';
-import { leaveDialog, onDialogBackdropClick } from '../../../shared/ui/dialog-motion';
+import {
+  closeDialog,
+  leaveDialog,
+  onDialogBackdropClick,
+  restoreDialogFocus,
+} from '../../../shared/ui/dialog-motion';
 
 let nextSheetId = 0;
 
@@ -31,12 +36,14 @@ export class TrainingSheet {
 
   protected readonly titleId = `training-sheet-title-${nextSheetId++}`;
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
+  private opener: Element | null = null;
   private leaving = false;
 
   constructor() {
     afterNextRender(() => {
       const dialog = this.dialog().nativeElement;
       // showModal prende o foco na folha, deixa o resto da tela inerte e trata o Esc.
+      this.opener = document.activeElement;
       dialog.showModal();
       // O fundo escurecido é o próprio <dialog>; só fecha se o toque começou e terminou fora da folha.
       onDialogBackdropClick(dialog, () => this.close());
@@ -48,6 +55,11 @@ export class TrainingSheet {
     event?.preventDefault(); // o pai tira a folha do DOM; evita o fechamento duplo do navegador
     if (this.leaving) return;
     this.leaving = true;
-    leaveDialog(this.dialog().nativeElement, () => this.closed.emit());
+    const dialog = this.dialog().nativeElement;
+    leaveDialog(dialog, () => {
+      closeDialog(dialog);
+      restoreDialogFocus(this.opener);
+      this.closed.emit();
+    });
   }
 }

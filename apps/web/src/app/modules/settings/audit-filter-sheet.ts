@@ -9,7 +9,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { leaveDialog } from '../../shared/ui/dialog-motion';
+import { closeDialog, leaveDialog, onDialogBackdropClick } from '../../shared/ui/dialog-motion';
 import {
   auditActionLabel,
   knownActionLabel,
@@ -120,7 +120,10 @@ export class AuditFilterSheet {
   constructor() {
     afterNextRender(() => {
       // showModal prende o foco na folha, deixa o resto da tela inerte e trata o Esc.
-      this.dialog().nativeElement.showModal();
+      const dialog = this.dialog().nativeElement;
+      dialog.showModal();
+      // O fundo escurecido é o próprio <dialog>; só fecha se o toque começou e terminou fora da folha.
+      onDialogBackdropClick(dialog, () => this.cancel());
     });
   }
 
@@ -194,6 +197,10 @@ export class AuditFilterSheet {
   private leave(then: () => void): void {
     if (this.leaving()) return;
     this.leaving.set(true);
-    leaveDialog(this.dialog().nativeElement, then);
+    const dialog = this.dialog().nativeElement;
+    leaveDialog(dialog, () => {
+      closeDialog(dialog);
+      then();
+    });
   }
 }

@@ -1,4 +1,5 @@
 import { Component, ElementRef, afterNextRender, computed, inject, viewChild } from '@angular/core';
+import { onDialogBackdropClick } from '../../../shared/ui/dialog-motion';
 import { StepUpError, StepUpService } from './step-up.service';
 
 /** Texto de cada ação perigosa conhecida; o que não está aqui recebe uma frase genérica. */
@@ -71,7 +72,12 @@ export class StepUpDialog {
 
   constructor() {
     // showModal prende o foco no diálogo, deixa o resto da tela inerte e trata o Esc.
-    afterNextRender(() => this.dialog().nativeElement.showModal());
+    afterNextRender(() => {
+      const dialog = this.dialog().nativeElement;
+      dialog.showModal();
+      // Cancelar pelo fundo segue o mesmo caminho seguro da tecla Esc.
+      onDialogBackdropClick(dialog, () => this.service.cancel());
+    });
   }
 
   protected onCancel(event: Event): void {
