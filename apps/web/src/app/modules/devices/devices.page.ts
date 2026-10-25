@@ -8,6 +8,7 @@ import { SessionState } from '../../core/session/session-state';
 import { ConnectSheet } from './connect-sheet';
 import { AgentLogSheet } from './agent-log-sheet';
 import { DeviceAgent, DevicesApi, MaintenanceAction } from './devices-api';
+import { GuestPairSheet } from './guest-pair-sheet';
 import { PairOutcome, PairSheet } from './pair-sheet';
 import { formatCodeInput } from './pairing-code';
 import { CONNECTOR_URL, isWindowsPc } from './windows-pc';
@@ -28,7 +29,8 @@ const outdatedText = () =>
  *
  * O QR que o agente mostra no PC abre esta tela com o código no endereço: a folha de aprovação já sobe com ele
  * preenchido e o parâmetro sai do endereço na hora (o código não fica no histórico nem em cópia do link). Quem não
- * pode aprovar (convidado) vê só o aviso, sem lista nem folha; se a conta dele tem a TV, vê também o botão que baixa o conector. Em PC com Windows há ainda a folha "Conectar este PC".
+ * pode aprovar para os outros (convidado) não vê lista: se a conta dele tem a TV, baixa o conector e aprova o PC dele como
+ * a PRÓPRIA TV (folha própria, com a senha reconfirmada); sem a TV vê só o aviso. Em PC com Windows há ainda a folha "Conectar este PC".
  *
  * Manutenção remota (só o administrador, que é quem chega até aqui): cada aparelho mostra a versão instalada, o sistema,
  * a TV e o último contato, e oferece "Ver registro" (folha com o fim do registro do agente), "Atualizar agora" e
@@ -36,7 +38,7 @@ const outdatedText = () =>
  */
 @Component({
   selector: 'app-devices-page',
-  imports: [RouterLink, PairSheet, ConnectSheet, AgentLogSheet],
+  imports: [RouterLink, PairSheet, ConnectSheet, AgentLogSheet, GuestPairSheet],
   templateUrl: './devices.page.html',
   styleUrl: './devices.page.css',
 })
@@ -62,6 +64,9 @@ export class DevicesPage {
     this.session.knownPermissions(),
     'tv',
   );
+  /** O convidado com a TV aprova o PC dele sozinho (a API confere a permissão, a senha recente e o limite). */
+  protected readonly canPairSelf = !this.canManage && this.canDownload;
+  protected readonly guestPairing = signal(false);
   protected readonly connectorUrl = CONNECTOR_URL;
   /** O conector só existe para Windows: nos outros aparelhos a tela diz isso em vez de oferecer o download. */
   protected readonly windowsPc = isWindowsPc(navigator);
@@ -87,6 +92,7 @@ export class DevicesPage {
       if (raw === null) return;
       this.dropCodeFromUrl();
       if (this.canManage && raw.trim()) this.openPair(formatCodeInput(raw));
+      else if (this.canPairSelf && raw.trim()) this.openGuestPair(formatCodeInput(raw));
     });
   }
 
@@ -372,6 +378,20 @@ export class DevicesPage {
     this.connecting.set(false);
     this.linkedCode.set(code);
     this.pairing.set(true);
+  }
+
+  protected openGuestPair(code = ''): void {
+    this.say(null);
+    this.linkedCode.set(code);
+    this.guestPairing.set(true);
+  }
+
+  protected onGuestPaired(): void {
+    this.guestPairing.set(false);
+    this.say(
+      $localize`:@@devices.guest-paired:Computador conectado. A sua TV já aparece no controle.`,
+      false,
+    );
   }
 
   protected openConnect(): void {

@@ -2,9 +2,27 @@
   <a routerLink="/ajustes" class="back ui-btn secondary" i18n="@@devices.back">&larr; Ajustes</a>
 
   @if (!canManage) {
-    <p class="empty ui-rise" role="status" i18n="@@devices.no-permission">
-      Peça ao administrador para aprovar.
-    </p>
+    @if (canPairSelf) {
+      <p class="empty ui-rise" role="status" i18n="@@devices.guest-pair.intro">
+        Baixe o conector no PC e aprove o computador aqui, com a sua conta.
+      </p>
+      @if (message(); as text) {
+        <p class="message ui-notice ok ui-rise" role="status">{{ text }}</p>
+      }
+      <button
+        type="button"
+        class="guest-pair primary ui-btn"
+        [disabled]="!online()"
+        (click)="openGuestPair()"
+        i18n="@@devices.guest-pair.open"
+      >
+        Aprovar este computador
+      </button>
+    } @else {
+      <p class="empty ui-rise" role="status" i18n="@@devices.no-permission">
+        Peça ao administrador para aprovar.
+      </p>
+    }
     @if (canDownload) {
       @if (windowsPc) {
         <a
@@ -20,6 +38,13 @@
           Para conectar um PC, abra esta tela nele (Windows).
         </p>
       }
+    }
+    @if (guestPairing()) {
+      <app-guest-pair-sheet
+        [initialCode]="linkedCode()"
+        (done)="onGuestPaired()"
+        (closed)="guestPairing.set(false)"
+      />
     }
   } @else {
     <section class="section" aria-labelledby="devices-title">

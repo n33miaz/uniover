@@ -163,6 +163,15 @@ export class AuthApi {
     return this.send('POST', '/step-up/complete', { token, body });
   }
 
+  /**
+   * O passo forte do CONVIDADO, que não tem passkey: digitar a senha de novo. Vale poucos minutos, só nesta sessão e só
+   * para as ações da lista fechada da API (hoje, aprovar o pareamento do próprio PC); o dono usa a passkey.
+   */
+  stepUpWithPassword(token: string, action: string, password: string): Promise<StepUpConfirmation> {
+    const body: Schemas['ConfirmStepUpWithPasswordRequest'] = { action, password };
+    return this.send('POST', '/step-up/password', { token, body });
+  }
+
   passkeys(token: string): Promise<readonly PasskeySummary[]> {
     return this.send('GET', '/passkeys', { token });
   }

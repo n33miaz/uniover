@@ -1,6 +1,16 @@
 <app-auth-layout>
   <h1 i18n="@@devices.connect-page.title">Conectar este PC</h1>
 
+  @if (signedIn()) {
+    <p class="who ui-notice ok" role="status">
+      @if (accountName(); as name) {
+        <span i18n="@@devices.connect-page.signed-in-as">Você entrou como {{ name }}.</span>
+      } @else {
+        <span i18n="@@devices.connect-page.signed-in">Você entrou na sua conta.</span>
+      }
+    </p>
+  }
+
   @if (windowsPc) {
     <a
       class="download primary ui-btn block"
@@ -13,9 +23,15 @@
 
     <ol class="steps">
       <li i18n="@@devices.connect-page.step-open">Abra o arquivo baixado</li>
-      <li i18n="@@devices.connect-page.step-scan">
-        Escaneie o QR da tela com o celular de quem administra
-      </li>
+      @if (signedIn()) {
+        <li i18n="@@devices.connect-page.step-approve">
+          Na janela que abrir, toque em Aprovar neste computador
+        </li>
+      } @else {
+        <li i18n="@@devices.connect-page.step-scan">
+          Escaneie o QR da tela com o celular de quem administra
+        </li>
+      }
       <li i18n="@@devices.connect-page.step-accept">Toque em Permitir na TV</li>
     </ol>
 
@@ -42,7 +58,14 @@
 
   <app-qr-login />
 
-  <p class="login">
-    <a routerLink="/entrar" i18n="@@devices.connect-page.login">Entrar</a>
-  </p>
+  @if (!signedIn()) {
+    <p class="login">
+      <a
+        routerLink="/entrar"
+        [queryParams]="{ next: '/conectar' }"
+        i18n="@@devices.connect-page.login"
+        >Entrar</a
+      >
+    </p>
+  }
 </app-auth-layout>
