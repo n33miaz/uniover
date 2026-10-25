@@ -103,6 +103,29 @@ describe('TvApi', () => {
     await done;
   });
 
+  it('powers off without a body for the request of before and reads the outcome', async () => {
+    const done = api.powerOff();
+    const request = http.expectOne('/api/v1/tv/power/off');
+    expect(request.request.body).toBeNull();
+    request.flush({ ok: true, latencyMs: 30, outcome: 'sent' });
+    await expect(done).resolves.toBe('sent');
+  });
+
+  it('asks for the safe power off explicitly and returns what the server says happened', async () => {
+    const done = api.powerOff(true);
+    const request = http.expectOne('/api/v1/tv/power/off');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ mode: 'safe' });
+    request.flush({ ok: true, latencyMs: 30, outcome: 'already_off' });
+    await expect(done).resolves.toBe('already_off');
+  });
+
+  it('treats an answer without an outcome (older server) as sent', async () => {
+    const done = api.powerOff(true);
+    http.expectOne('/api/v1/tv/power/off').flush({ ok: true, latencyMs: 30 });
+    await expect(done).resolves.toBe('sent');
+  });
+
   it('sends the text, launches a shortcut and refreshes the list', async () => {
     const text = api.sendText('batman');
     const sent = http.expectOne('/api/v1/tv/text');
