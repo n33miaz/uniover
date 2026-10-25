@@ -45,6 +45,33 @@ describe('describeFailure', () => {
     );
   });
 
+  it('gives the codes of the safe power off their own message, and only for that request', () => {
+    const uncertain = http(502, 'command-failed', { agentError: 'uncertain' });
+    expect(describeFailure(uncertain, 'power-off').message).toBe(
+      'Não deu para confirmar se a TV desligou, e a tecla não foi repetida. Olhe a TV antes de tentar de novo.',
+    );
+    const offline = http(502, 'command-failed', { agentError: 'offline' });
+    expect(describeFailure(offline, 'power-off').message).toBe(
+      'A TV não respondeu ao controle e nada foi enviado. Ela pode já estar desligada.',
+    );
+    const failed = http(502, 'command-failed', { agentError: 'failed' });
+    expect(describeFailure(failed, 'power-off').message).toBe(
+      'O agente não conseguiu desligar a TV. Olhe a TV antes de tentar de novo.',
+    );
+    // Sem o contexto, são códigos desconhecidos como quaisquer outros.
+    expect(describeFailure(uncertain).message).toContain('(código uncertain)');
+    expect(describeFailure(offline).message).toContain('(código offline)');
+  });
+
+  it('a timeout of the safe power off warns that the TV may have turned off', () => {
+    const failure = describeFailure(http(504, 'agent-timeout'), 'power-off');
+    expect(failure.kind).toBe('timeout');
+    expect(failure.message).toContain('a TV pode ter desligado');
+    expect(describeFailure(http(504, 'agent-timeout')).message).toBe(
+      'A TV não respondeu a tempo. Tente de novo.',
+    );
+  });
+
   it('maps the ADB codes of the agent to one clear message', () => {
     for (const code of ['adb_unreachable', 'adb_unavailable', 'adb_timeout']) {
       const failure = describeFailure(http(502, 'command-failed', { agentError: code }));

@@ -6,6 +6,8 @@ import {
   parseTvs,
   parseWatchdog,
   shortcutLabel,
+  parsePowerOffOutcome,
+  tvCanPowerOffSafely,
   tvSupports,
   TvShortcut,
   TvSummary,
@@ -265,6 +267,35 @@ describe('parseTvs', () => {
 
   it('treats an unknown kind as unknown, never as a kind', () => {
     expect(parseTvs({ items: [{ id: 'a', name: 'x', kind: 'roku' }] })?.[0].kind).toBeNull();
+  });
+});
+
+describe('desligar com leitura', () => {
+  const tv = (capabilities: string[]): TvSummary => ({
+    id: 'a',
+    name: 'Sala',
+    isDefault: true,
+    agentSlug: null,
+    kind: 'android',
+    online: true,
+    capabilities,
+  });
+
+  it('only an agent that declares it can be asked for the safe power off', () => {
+    expect(tvCanPowerOffSafely(tv(['tv.remote', 'tv.power.off.v1']))).toBe(true);
+    expect(tvCanPowerOffSafely(tv(['tv.remote', 'tv.adb']))).toBe(false);
+    expect(tvCanPowerOffSafely(tv([]))).toBe(false);
+    expect(tvCanPowerOffSafely(null)).toBe(false);
+  });
+
+  it('reads the outcome of the answer and falls back to sent', () => {
+    expect(parsePowerOffOutcome({ ok: true, outcome: 'off' })).toBe('off');
+    expect(parsePowerOffOutcome({ ok: true, outcome: 'already_off' })).toBe('already_off');
+    expect(parsePowerOffOutcome({ ok: true, outcome: 'sent' })).toBe('sent');
+    expect(parsePowerOffOutcome({ ok: true })).toBe('sent');
+    expect(parsePowerOffOutcome({ outcome: 'surprise' })).toBe('sent');
+    expect(parsePowerOffOutcome(null)).toBe('sent');
+    expect(parsePowerOffOutcome(undefined)).toBe('sent');
   });
 });
 
