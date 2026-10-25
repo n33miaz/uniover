@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import {
   PWA_ENABLED,
   PwaUpdateService,
+  UPDATE_CHECK_THROTTLE_MS,
   UPDATE_ACTIVATION_TIMEOUT_MS,
 } from './pwa-update.service';
 import { registerServiceWorker } from './register-sw';
@@ -48,10 +49,10 @@ describe('registerServiceWorker', () => {
     expect(container.register).toHaveBeenCalledWith('/sw.js', { scope: '/' });
   });
 
-  it('survives a failed registration', async () => {
+  it('reports a failed registration to the caller', async () => {
     const container = stubServiceWorker(new FakeRegistration(), null);
     container.register.mockRejectedValue(new Error('bloqueado'));
-    expect(await registerServiceWorker(window, true)).toBeUndefined();
+    await expect(registerServiceWorker(window, true)).rejects.toThrow('bloqueado');
   });
 });
 
@@ -96,6 +97,41 @@ describe('PwaUpdateService', () => {
     registration.installing = incoming;
     await flush();
     expect(service.updateReady()).toBe(true);
+  });
+
+  it('tries registration again when the first opening was offline and the connection returns', async () => {
+    const registration = new FakeRegistration();
+    const container = stubServiceWorker(registration, {});
+    container.register.mockRejectedValueOnce(new Error('offline'));
+    TestBed.configureTestingModule({ providers: [{ provide: PWA_ENABLED, useValue: true }] });
+    const service = TestBed.inject(PwaUpdateService);
+    service.start();
+    await flush();
+    expect(container.register).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new Event('online'));
+    await flush();
+    expect(container.register).toHaveBeenCalledTimes(2);
+  });
+
+  it('checks the existing registration when the connection returns and avoids repeated checks', async () => {
+    const { registration } = setup({});
+    await flush();
+
+    window.dispatchEvent(new Event('online'));
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flush();
+    expect(registration.update).toHaveBeenCalledTimes(1);
+
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(UPDATE_CHECK_THROTTLE_MS);
+      window.dispatchEvent(new Event('online'));
+      await vi.runAllTimersAsync();
+      expect(registration.update).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('asks the waiting worker to take over and reloads only after the user accepted', async () => {
