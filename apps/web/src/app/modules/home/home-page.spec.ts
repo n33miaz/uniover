@@ -1,7 +1,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { MODULE_PREFS_KEY, ModulePrefs } from '../../core/modules/module-prefs';
+import { MODULE_PREFS_KEY } from '../../core/modules/module-prefs';
 import { ModuleRegistry } from '../../core/modules/module-registry';
 import { HomeStatus, HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
@@ -162,35 +162,35 @@ describe('HomePage', () => {
   it('shows one block per module, TV and Treino first and then the planned ones, in order', async () => {
     const { el } = await render();
     expect(titles(el)).toEqual(['TV', 'Treino', ...PLANNED]);
-    const sizes = Array.from(el.querySelectorAll('li.widget')).map((li) =>
-      li.classList.contains('wide'),
-    );
-    expect(sizes).toEqual([false, true, ...PLANNED.map(() => false)]);
+    // Grade regular: nenhum bloco ganha classe de tamanho, nem o que foi guardado como "Largo" antes.
+    expect(el.querySelectorAll('li.widget.wide, li.widget.full')).toHaveLength(0);
   });
 
   it('links only the modules that have a screen', async () => {
     const { el } = await render();
     const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('article a'));
     expect(links.map((a) => [a.textContent?.trim(), a.getAttribute('href')])).toEqual([
-      ['Abrir controle', '/tv'],
-      ['Ver treino', '/treino'],
+      ['TV', '/tv'],
+      ['Treino', '/treino'],
+    ]);
+    // O nome acessível leva a ação junto do nome que se vê.
+    expect(links.map((a) => a.getAttribute('aria-label'))).toEqual([
+      'TV: Abrir controle',
+      'Treino: Ver treino',
     ]);
     expect(el.querySelector('article[data-module="tv"] .chip')?.textContent ?? '').not.toContain(
       'Em breve',
     );
   });
 
-  it('shows a planned module as a calm card: badge and footer say coming soon, nothing to tap or focus', async () => {
+  it('shows a planned module as a calm card: the badge says coming soon, nothing to tap or focus', async () => {
     const { el } = await render();
     const planned = Array.from(el.querySelectorAll<HTMLElement>('article.card.planned'));
     expect(planned.map((card) => card.querySelector('h3')?.textContent?.trim())).toEqual(PLANNED);
     for (const card of planned) {
       const id = card.dataset['module'];
       expect(card.querySelector('.badges .chip')?.textContent?.trim(), id).toBe('Em breve');
-      const note = card.querySelector('.quiet')!;
-      expect(note.textContent?.trim(), id).toBe('Em breve');
-      expect(note.getAttribute('aria-hidden')).toBe('true');
-      // O rodapé não é ação: nada que receba foco, nada que seja link ou botão, nada que aperte ao toque.
+      // O cartão não é ação: nada que receba foco, nada que seja link ou botão, nada que aperte ao toque.
       expect(
         card.querySelector('a, button, [tabindex], [role="link"], [role="button"]'),
         id,
@@ -201,45 +201,14 @@ describe('HomePage', () => {
     const training = el.querySelector('article[data-module="training"]')!;
     expect(training.classList.contains('planned')).toBe(false);
     expect(training.querySelector('.badges')?.textContent).not.toContain('Em breve');
-    expect(training.querySelector('a.action')?.textContent?.trim()).toBe('Ver treino');
-    expect(training.querySelector('a.action')?.getAttribute('href')).toBe('/treino');
+    expect(training.querySelector('a.card-link')?.textContent?.trim()).toBe('Treino');
+    expect(training.querySelector('a.card-link')?.getAttribute('href')).toBe('/treino');
   });
 
-  it('keeps the footer slot of every card, the link or the quiet note, so the rows keep the same rhythm', async () => {
+  it('keeps a badge strip in every card, so cards with and without a badge have the same rhythm', async () => {
     const { el } = await render();
-    const footers = Array.from(el.querySelectorAll('article .action, article .quiet')).map(
-      (f) => f.tagName,
-    );
-    expect(footers).toEqual(['A', 'A', ...PLANNED.map(() => 'P')]);
-  });
-
-  it('lets a small block that would be alone on its row take the whole row', async () => {
-    const full = (el: HTMLElement) =>
-      Array.from(el.querySelectorAll('li.widget')).map((li) => li.classList.contains('full'));
-    // TV pequena seguida de Treino largo: a TV ficaria sozinha na linha; os planejados, pequenos, formam pares.
-    expect(full((await render()).el)).toEqual([true, true, ...PLANNED.map(() => false)]);
-    // Duas pequenas dividem a linha (as preferências já foram lidas, então troca pelo serviço).
-    TestBed.inject(ModulePrefs).apply([
-      { id: 'tv', size: 'small', enabled: true },
-      { id: 'training', size: 'small', enabled: true },
-    ]);
-    const pair = (await render()).el;
-    expect(full(pair).every((isFull) => !isFull)).toBe(true);
-    expect(pair.querySelectorAll('li.widget.wide')).toHaveLength(0);
-  });
-
-  it('lets a lone block on the last row take the whole row', async () => {
-    // Sete blocos pequenos (sem o Controle do PC e com o Treino pequeno): o último ficaria sozinho.
-    storeAll((id) => id !== 'pc');
-    TestBed.inject(ModulePrefs).apply(
-      TestBed.inject(ModulePrefs)
-        .widgets()
-        .map((w) => ({ ...w, size: 'small' as const })),
-    );
-    const cards = Array.from((await render()).el.querySelectorAll('li.widget'));
-    expect(cards).toHaveLength(7);
-    expect(cards.at(-1)!.classList.contains('full')).toBe(true);
-    expect(cards.at(-2)!.classList.contains('full')).toBe(false);
+    expect(el.querySelectorAll('article .badges')).toHaveLength(8);
+    expect(el.querySelectorAll('article .action, article .quiet, article .desc')).toHaveLength(0);
   });
 
   it('hides a module that was turned off', async () => {
@@ -268,6 +237,7 @@ describe('HomePage', () => {
     const { el } = await render();
     const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('.shortcuts a.shortcut'));
     expect(links.map((a) => a.getAttribute('href'))).toEqual(['/ajustes/aparelhos', '/ajustes']);
+    expect(el.querySelectorAll('.shortcut-hint')).toHaveLength(0);
     expect(links.map((a) => a.querySelector('.shortcut-title')?.textContent?.trim())).toEqual([
       'Aparelhos',
       'Ajustes',
@@ -314,21 +284,8 @@ describe('HomePage', () => {
     ).toContain('Sem agente em casa');
   });
 
-  it('gives every module a one line description and a hidden-from-readers glyph', async () => {
+  it('hides every glyph from screen readers and shows no description under the module name', async () => {
     const { el } = await render();
-    const descriptions = Array.from(el.querySelectorAll('article .desc')).map((p) =>
-      p.textContent?.trim(),
-    );
-    expect(descriptions).toEqual([
-      'Ligar, volume, canais e apps',
-      'Fichas, séries e progresso',
-      'Aparelhos e linha do tempo',
-      'Seus serviços na internet',
-      'A rede de casa num lugar só',
-      'Cópia das fotos do Android',
-      'Avisos e notificações',
-      'Mais adiante: controlar o PC',
-    ]);
     for (const svg of Array.from(el.querySelectorAll('article svg'))) {
       expect(svg.getAttribute('aria-hidden')).toBe('true');
     }
