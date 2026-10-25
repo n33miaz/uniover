@@ -75,7 +75,11 @@ test('estima a meta e mantém fotos locais ao usar sem rede', async ({ page, con
   await page.evaluate(() => window.dispatchEvent(new Event('offline')));
   await upload.setInputFiles({ name: 'progress-offline.png', mimeType: 'image/png', buffer: png });
   await expect(page.locator('.photo-card')).toHaveCount(3);
-  await page.getByRole('button', { name: 'Apagar foto de 22/10/2026' }).first().click();
+  await page
+    .locator('.photo-card')
+    .first()
+    .getByRole('button', { name: /^Apagar foto de/ })
+    .click();
   await page.getByRole('button', { name: 'Apagar foto', exact: true }).click();
   await expect(page.locator('.photo-card')).toHaveCount(2);
 
