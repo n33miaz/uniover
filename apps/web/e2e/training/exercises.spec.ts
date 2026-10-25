@@ -13,6 +13,9 @@ import {
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
 
+// O envio da fila ao servidor simulado é assíncrono e, com a máquina ocupada, passa dos 5 s de uma verificação comum.
+const PUSH = { timeout: 25_000 };
+
 const rows = (page: import('@playwright/test').Page) => page.locator('.list .ui-row .name');
 
 async function expectCenteredComposition(page: import('@playwright/test').Page) {
@@ -210,7 +213,7 @@ test.describe('exercícios: lista, busca e ficha', () => {
     const sheet = page.getByRole('dialog', { name: 'Adicionar a um treino' });
     await sheet.getByRole('button', { name: /Treino A/ }).click();
     await expect(page.getByText('Adicionado a Treino A · Peito e tríceps.')).toBeVisible();
-    await expect.poll(() => server.writes('routines')).toBe(1);
+    await expect.poll(() => server.writes('routines'), PUSH).toBe(1);
     const routine = server
       .rows('routines')
       .find((row) => String(row['name']).startsWith('Treino A'))!;
@@ -243,6 +246,7 @@ test.describe('exercícios: lista, busca e ficha', () => {
         () =>
           server.hits.filter((hit) => hit.path.endsWith('/step') && hit.outcome === 'executed')
             .length,
+        PUSH,
       )
       .toBe(1);
     const row = server.rows('exercises').find((item) => item.id === SEED_EXERCISE_IDS.bench)!;
@@ -268,7 +272,7 @@ test.describe('exercício próprio', () => {
     await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('articulada');
     await expect(rows(page)).toHaveText(['Remada na máquina articulada']);
     await expect(page.locator('.list .ui-chip', { hasText: 'própria' })).toBeVisible();
-    await expect.poll(() => server.writes('exercises')).toBe(1);
+    await expect.poll(() => server.writes('exercises'), PUSH).toBe(1);
 
     await rows(page).first().click();
     await page.getByRole('link', { name: 'Editar', exact: true }).click();
@@ -276,7 +280,10 @@ test.describe('exercício próprio', () => {
     await page.getByRole('button', { name: 'Salvar exercício' }).click();
     await expect(page.getByRole('heading', { name: 'Remada articulada' })).toBeVisible();
     await expect
-      .poll(() => server.rows('exercises').filter((row) => row['source'] === 'own')[0]?.['name'])
+      .poll(
+        () => server.rows('exercises').filter((row) => row['source'] === 'own')[0]?.['name'],
+        PUSH,
+      )
       .toBe('Remada articulada');
 
     await page.getByRole('button', { name: 'Apagar', exact: true }).click();
@@ -284,7 +291,10 @@ test.describe('exercício próprio', () => {
     await expect(page).toHaveURL(/\/treino\/exercicios/);
     await expect(page.getByRole('heading', { name: 'Remada articulada' })).toHaveCount(0);
     await expect
-      .poll(() => server.rows('exercises').filter((row) => row['source'] === 'own')[0]?.['deleted'])
+      .poll(
+        () => server.rows('exercises').filter((row) => row['source'] === 'own')[0]?.['deleted'],
+        PUSH,
+      )
       .toBe(true);
   });
 

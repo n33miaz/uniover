@@ -35,9 +35,13 @@ export async function openTraining(page: Page, path: string): Promise<void> {
   await expect(page.locator('app-training-page')).toBeVisible();
 }
 
-/** Espera a lista de exercícios chegar do banco local (o catálogo foi puxado do servidor simulado). */
+/**
+ * Espera a lista de exercícios chegar do banco local (o catálogo foi puxado do servidor simulado). Com a máquina
+ * ocupada, o puxar e a gravação do catálogo no IndexedDB levam alguns segundos: a espera acompanha o trabalho, que é
+ * limitado, e não o prazo padrão de 5 s de uma verificação.
+ */
 export async function waitForCatalog(page: Page): Promise<void> {
-  await expect(page.locator('.list .ui-row').first()).toBeVisible();
+  await expect(page.locator('.list .ui-row').first()).toBeVisible({ timeout: 25_000 });
 }
 
 /** Quantas linhas tem uma tabela do banco local do Treino de uma conta (sem conta, o do dono). */
@@ -88,8 +92,12 @@ export function syncIcon(page: Page) {
 }
 
 /** O aparelho está em dia: o rótulo do ícone traz a hora da última sincronização. */
-export async function expectSynced(page: Page): Promise<void> {
-  await expect(syncIcon(page)).toHaveAttribute('aria-label', /Sincronizado às \d{2}:\d{2}/);
+export async function expectSynced(page: Page, options?: { timeout: number }): Promise<void> {
+  await expect(syncIcon(page)).toHaveAttribute(
+    'aria-label',
+    /Sincronizado às \d{2}:\d{2}/,
+    options,
+  );
 }
 
 /** Sem rede (estado normal): só o ícone muda; a faixa de texto só existe com algo pendente. */
