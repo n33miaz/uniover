@@ -34,7 +34,10 @@ public static class RateLimitPolicies
     /// <summary>O que o celular faz com o pedido (ver, confirmar, recusar): por conta, e a senha de reconfirmação conta no bloqueio.</summary>
     public const string QrDecide = "qr-decide";
 
-    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide];
+    /// <summary>Manutenção remota de um agente (ver o registro, atualizar, reiniciar): por conta, baixa, pois cada pedido vai ao PC de alguém.</summary>
+    public const string Maintenance = "maintenance";
+
+    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance];
 }
 
 /// <summary>Uma política configurável em <c>RateLimiting:&lt;política&gt;</c>.</summary>
@@ -63,6 +66,7 @@ public static class RateLimitingExtensions
         [RateLimitPolicies.QrStart] = new() { Permitted = 10, WindowSeconds = 60, Partition = "ip" },
         [RateLimitPolicies.QrPoll] = new() { Permitted = 90, WindowSeconds = 60, Partition = "ip" },
         [RateLimitPolicies.QrDecide] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
+        [RateLimitPolicies.Maintenance] = new() { Permitted = 12, WindowSeconds = 60, Partition = "user" },
     };
 
     /// <summary>

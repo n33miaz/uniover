@@ -151,15 +151,46 @@ internal sealed class AgentConnections(
     }
 
     /// <summary>Registra versão e capacidades do <c>agent.hello.v1</c>; ignora sessão que já não é a atual.</summary>
-    public void RecordHello(IAgentSession session, string agentVersion, IReadOnlyList<string> capabilities, DateTimeOffset now)
+    public void RecordHello(
+        IAgentSession session,
+        string agentVersion,
+        IReadOnlyList<string> capabilities,
+        DateTimeOffset now,
+        AgentHostInfo? host = null,
+        AgentUpdateInfo? update = null)
     {
         lock (_gate)
         {
-            if (_sessions.TryGetValue(session.AgentId, out var current)
-                && ReferenceEquals(current, session)
-                && presence.RecordHello(session.AgentId, agentVersion, capabilities, now) is { } info)
+            if (_sessions.TryGetValue(session.AgentId, out var current) && ReferenceEquals(current, session))
             {
-                Announce(info);
+                var before = presence.Get(session.AgentId);
+                if (presence.RecordHello(session.AgentId, agentVersion, capabilities, now, host, update) is { } info
+                    && !SamePublicState(before, info))
+                {
+                    Announce(info);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// O agente repete o <c>hello</c> de tempos em tempos (para valer depois de uma API que o recusou): sem mudança do que
+    /// os ouvintes enxergam (conexão, versão e capacidades) ninguém é avisado, e o banco do plano grátis segue dormindo.
+    /// </summary>
+    private static bool SamePublicState(AgentPresenceInfo? before, AgentPresenceInfo after) =>
+        before is not null
+        && before.Connected == after.Connected
+        && string.Equals(before.AgentVersion, after.AgentVersion, StringComparison.Ordinal)
+        && before.Capabilities.SequenceEqual(after.Capabilities, StringComparer.Ordinal);
+
+    /// <summary>Registra o estado da auto-atualização; ignora sessão que já não é a atual.</summary>
+    public void RecordUpdate(IAgentSession session, AgentUpdateInfo update, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            if (_sessions.TryGetValue(session.AgentId, out var current) && ReferenceEquals(current, session))
+            {
+                presence.RecordUpdate(session.AgentId, update, now);
             }
         }
     }

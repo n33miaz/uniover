@@ -1,4 +1,41 @@
+using System.Text.Json.Serialization;
+
 namespace UniOver.Modules.Devices.Contracts.Agents;
+
+/// <summary>
+/// O que o <c>agent.hello.v1</c> conta do PC além da versão e das capacidades: sistema e a TV que ele controla. É
+/// informação do administrador (manutenção remota): nunca sai nos eventos de presença, só na lista dos agentes dele.
+/// </summary>
+/// <param name="Os">Sistema do PC, texto curto (por exemplo <c>Windows 11 (10.0.26200)</c>).</param>
+/// <param name="TvKind"><c>android</c> ou <c>samsung</c>.</param>
+/// <param name="TvHost">Endereço da TV na rede do PC.</param>
+public sealed record AgentHostInfo(string? Os, string? TvKind, string? TvHost);
+
+/// <summary>
+/// O que o agente conta da própria auto-atualização (<c>update</c> do <c>hello</c> e <c>agent.update.status.v1</c>). Só
+/// informativo, e só na lista do administrador. Os <c>sha</c> são o commit inteiro; os horários, UTC.
+/// </summary>
+/// <param name="Outcome"><c>not_checked</c>, <c>updating</c>, <c>updated</c>, <c>up_to_date</c>, <c>failed</c>, <c>blocked</c> ou <c>rolled_back</c>.</param>
+/// <param name="InstalledSha">Commit instalado.</param>
+/// <param name="InstalledAt">Quando essa versão foi instalada.</param>
+/// <param name="LatestSha">O commit mais novo que a última checagem viu na <c>main</c>.</param>
+/// <param name="CheckedAt">Quando a última checagem rodou.</param>
+/// <param name="NextCheckAt">Quando o supervisor checa de novo.</param>
+/// <param name="Reason">Motivo curto da falha (o agente já tirou segredos).</param>
+/// <param name="BlockedSha">Versão que caiu repetidamente e não será instalada de novo.</param>
+/// <param name="PreviousSha">Versão guardada para voltar atrás (<c>app.previous</c>), se houver.</param>
+/// <param name="RolledBack">Houve volta à versão anterior.</param>
+public sealed record AgentUpdateInfo(
+    string Outcome,
+    string? InstalledSha,
+    DateTimeOffset? InstalledAt,
+    string? LatestSha,
+    DateTimeOffset? CheckedAt,
+    DateTimeOffset? NextCheckAt,
+    string? Reason,
+    string? BlockedSha,
+    string? PreviousSha,
+    bool RolledBack);
 
 /// <summary>
 /// Presença de um agente, só em memória: nada disto vai para o banco. <see cref="AgentVersion"/> e
@@ -12,7 +49,9 @@ public sealed record AgentPresenceInfo(
     string? AgentVersion,
     IReadOnlyList<string> Capabilities,
     DateTimeOffset? LastMessageAt,
-    DateTimeOffset? DisconnectedAt = null);
+    DateTimeOffset? DisconnectedAt = null,
+    [property: JsonIgnore] AgentHostInfo? Host = null,
+    [property: JsonIgnore] AgentUpdateInfo? Update = null);
 
 /// <summary>Consulta a presença dos agentes (a escrita é do Devices).</summary>
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1716", Justification = "O nome Get da consulta é parte do contrato público pedido pela tarefa.")]

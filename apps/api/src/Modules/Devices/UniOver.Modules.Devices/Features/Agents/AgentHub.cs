@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.AgentProtocol;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Devices.Features.RemoteCare;
 using UniOver.Modules.Devices.Ports;
 using UniOver.SharedKernel;
 
@@ -22,6 +23,7 @@ internal sealed partial class AgentHub(
     OutboundEnvelopeFactory factory,
     AgentConnections connections,
     IReplyCorrelator correlator,
+    IAgentLogReports logReports,
     IServiceScopeFactory scopes,
     IOptions<DevicesTransportOptions> options,
     TimeProvider time,
@@ -139,7 +141,21 @@ internal sealed partial class AgentHub(
                 var capabilities = envelope.Body.GetProperty("capabilities").EnumerateArray()
                     .Select(c => c.GetString()!)
                     .ToArray();
-                connections.RecordHello(session, version, capabilities, now);
+                connections.RecordHello(
+                    session,
+                    version,
+                    capabilities,
+                    now,
+                    ReadHost(envelope.Body),
+                    envelope.Body.TryGetProperty("update", out var update) ? ReadUpdate(update) : null);
+                break;
+
+            case AgentMessageTypes.AgentUpdateStatusV1:
+                connections.RecordUpdate(session, ReadUpdate(envelope.Body), now);
+                break;
+
+            case AgentMessageTypes.AgentLogsV1:
+                CompleteLogs(agentId, envelope);
                 break;
 
             case AgentKeepAliveType:
@@ -155,6 +171,58 @@ internal sealed partial class AgentHub(
         }
 
         return true;
+    }
+
+    /// <summary>Os campos opcionais do <c>hello</c> que a tela do administrador mostra; já passaram pelo contrato (tamanho e forma).</summary>
+    private static AgentHostInfo? ReadHost(JsonElement body)
+    {
+        var os = body.TryGetProperty("os", out var osElement) ? osElement.GetString() : null;
+        string? kind = null;
+        string? host = null;
+        if (body.TryGetProperty("tv", out var tv) && tv.ValueKind == JsonValueKind.Object)
+        {
+            kind = tv.GetProperty("kind").GetString();
+            host = tv.GetProperty("host").GetString();
+        }
+
+        return os is null && kind is null ? null : new AgentHostInfo(os, kind, host);
+    }
+
+    /// <summary>O estado da auto-atualização (<c>update</c> do <c>hello</c> ou corpo de <c>agent.update.status.v1</c>); já passou pelo contrato.</summary>
+    private static AgentUpdateInfo ReadUpdate(JsonElement body)
+    {
+        string? Text(string name) => body.TryGetProperty(name, out var value) ? value.GetString() : null;
+        DateTimeOffset? Time(string name) => body.TryGetProperty(name, out var value) ? value.GetDateTimeOffset() : null;
+
+        return new AgentUpdateInfo(
+            body.GetProperty("outcome").GetString()!,
+            Text("installedSha"),
+            Time("installedAt"),
+            Text("latestSha"),
+            Time("checkedAt"),
+            Time("nextCheckAt"),
+            Text("reason"),
+            Text("blockedSha"),
+            Text("previousSha"),
+            body.TryGetProperty("rolledBack", out var rolledBack) && rolledBack.GetBoolean());
+    }
+
+    /// <summary>
+    /// O registro do agente chega antes do resultado do comando e é entregue a quem o pediu, pelo <c>requestId</c> e
+    /// pelo agente. O texto nunca vai para o log da API.
+    /// </summary>
+    private void CompleteLogs(string agentId, ValidatedEnvelope envelope)
+    {
+        var body = envelope.Body;
+        var report = new AgentLogReport(
+            body.GetProperty("text").GetString()!,
+            body.GetProperty("lines").GetInt32(),
+            body.GetProperty("truncated").GetBoolean(),
+            body.GetProperty("at").GetDateTimeOffset());
+        if (!logReports.Complete(agentId, body.GetProperty("requestId").GetGuid(), report))
+        {
+            LogLogsDiscarded(agentId);
+        }
     }
 
     private void CompleteRequest(string agentId, ValidatedEnvelope envelope)
@@ -376,6 +444,9 @@ internal sealed partial class AgentHub(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Resposta {CommandId} do agente {AgentId} descartada: ninguém espera por ela (tardia, repetida ou de outro agente).")]
     private partial void LogReplyDiscarded(string agentId, Guid commandId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Registro do agente {AgentId} descartado: ninguém espera por ele (tardio, repetido ou de outro agente).")]
+    private partial void LogLogsDiscarded(string agentId);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Mensagem {Type} do agente {AgentId} descartada: nenhum tratador registrado.")]
     private partial void LogUnhandled(string agentId, string type);
