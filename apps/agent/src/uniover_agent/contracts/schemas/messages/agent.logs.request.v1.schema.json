@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/agent.logs.request.v1.schema.json",
+  "title": "agent.logs.request.v1",
+  "description": "API para agente: pede as últimas linhas do registro do próprio agente (arquivo fixo, nunca um caminho enviado pela API). O agente responde com agent.logs.v1 (que devolve o requestId) e, depois dele, com command.result.v1. Só agentes que anunciam a capacidade agent.logs.v1 recebem este pedido.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "type", "source", "target", "ts", "correlationId", "body"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+    "type": { "const": "agent.logs.request.v1" },
+    "source": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "target": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "ts": { "$ref": "../envelope.schema.json#/$defs/timestamp" },
+    "correlationId": { "oneOf": [{ "$ref": "../envelope.schema.json#/$defs/uuid" }, { "type": "null" }] },
+    "body": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requestId", "lines"],
+      "properties": {
+        "requestId": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+        "lines": { "type": "integer", "minimum": 1, "maximum": 1000 }
+      }
+    }
+  }
+}

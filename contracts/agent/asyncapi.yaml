@@ -65,6 +65,16 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.cleanup.v1.schema.json'
+      agentLogsRequest:
+        name: agent.logs.request.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/agent.logs.request.v1.schema.json'
+      agentMaintenance:
+        name: agent.maintenance.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/agent.maintenance.v1.schema.json'
   agentEvents:
     address: uniover/{agentId}/evt
     description: Agente para API. No WebSocket é o mesmo socket; no MQTT, o tópico de eventos.
@@ -111,6 +121,16 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.cleanup.result.v1.schema.json'
+      agentLogs:
+        name: agent.logs.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/agent.logs.v1.schema.json'
+      agentUpdateStatus:
+        name: agent.update.status.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/agent.update.status.v1.schema.json'
 operations:
   sendApiKeepalive:
     action: send
@@ -222,3 +242,31 @@ operations:
     summary: A API recebe o que a limpeza da TV fez (apps fechados e memória antes e depois).
     messages:
       - $ref: '#/channels/agentEvents/messages/tvCleanupResult'
+  sendAgentLogsRequest:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: O administrador pede ao agente o fim do registro dele (arquivo fixo, sem segredos).
+    messages:
+      - $ref: '#/channels/agentCommands/messages/agentLogsRequest'
+  receiveAgentLogs:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe o fim do registro do agente, já higienizado, antes do resultado do comando.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/agentLogs'
+  sendAgentMaintenance:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: O administrador (com passkey) pede ao agente que se atualize ou reinicie pelo supervisor.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/agentMaintenance'
+  receiveAgentUpdateStatus:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe o estado da auto-atualização do agente (versão instalada, a mais nova vista, resultado da última checagem).
+    messages:
+      - $ref: '#/channels/agentEvents/messages/agentUpdateStatus'

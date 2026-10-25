@@ -1,2 +1,3 @@
 { "v": 1, "id": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e9f", "type": "agent.hello.v1", "source": "agent:pc-casa", "target": "api",
-  "ts": "2026-10-18T14:00:00Z", "correlationId": null, "body": { "agentVersion": "0.1.0", "capabilities": ["transport.keepalive.v1", "tv.remote", "tv.adb", "tv.kind.android"] } }
+  "ts": "2026-10-18T14:00:00Z", "correlationId": null, "body": { "agentVersion": "0.1.0+3f2a9c1d4e5b", "capabilities": ["transport.keepalive.v1", "agent.logs.v1", "agent.maintenance.v1", "tv.remote", "tv.adb", "tv.kind.android"], "os": "Windows 11 (10.0.26200)", "tv": { "kind": "android", "host": "192.168.0.20" },
+    "update": { "outcome": "up_to_date", "installedSha": "3f2a9c1d4e5b6a7988776655443322110fedcba9", "installedAt": "2026-10-20T09:15:00Z", "latestSha": "3f2a9c1d4e5b6a7988776655443322110fedcba9", "checkedAt": "2026-10-18T13:40:00Z", "nextCheckAt": "2026-10-18T19:55:00Z" } } }

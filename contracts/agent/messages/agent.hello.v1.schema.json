@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://uniover.dev/contracts/agent/messages/agent.hello.v1.schema.json",
   "title": "agent.hello.v1",
-  "description": "Agente para API ao conectar: versão do agente e capacidades.",
+  "description": "Agente para API ao conectar: versão do agente, capacidades e, opcionalmente, o que a manutenção remota mostra (sistema do PC, a TV que ele controla e o estado da auto-atualização).",
   "type": "object",
   "additionalProperties": false,
   "required": ["v", "id", "type", "source", "target", "ts", "correlationId", "body"],
@@ -22,7 +22,32 @@
         "capabilities": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "enum": ["transport.keepalive.v1", "tv.remote", "tv.adb", "tv.kind.android", "tv.kind.samsung"] }
+          "items": { "enum": ["transport.keepalive.v1", "agent.logs.v1", "agent.maintenance.v1", "tv.remote", "tv.adb", "tv.kind.android", "tv.kind.samsung"] }
+        },
+        "os": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "tv": {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "host"],
+          "properties": {
+            "kind": { "enum": ["android", "samsung"] },
+            "host": { "type": "string", "minLength": 1, "maxLength": 64 }
+          }
+        },
+        "update": {
+          "type": "object", "additionalProperties": false,
+          "required": ["outcome"],
+          "properties": {
+            "outcome": {"enum": ["not_checked", "updating", "updated", "up_to_date", "failed", "blocked", "rolled_back"]},
+            "installedSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "installedAt": {"$ref": "../envelope.schema.json#/$defs/timestamp"},
+            "latestSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "checkedAt": {"$ref": "../envelope.schema.json#/$defs/timestamp"},
+            "nextCheckAt": {"$ref": "../envelope.schema.json#/$defs/timestamp"},
+            "reason": {"type": "string", "minLength": 1, "maxLength": 200},
+            "blockedSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "previousSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "rolledBack": {"type": "boolean"}
+          }
         }
       }
     }

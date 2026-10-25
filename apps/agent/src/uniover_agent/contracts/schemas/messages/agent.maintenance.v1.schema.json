@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/agent.maintenance.v1.schema.json",
+  "title": "agent.maintenance.v1",
+  "description": "API para agente: manutenção remota pedida pelo administrador (com passkey). update: pede ao supervisor que rode a auto-atualização agora, e o agente reinicia só se houver versão nova; restart: pede ao supervisor que reinicie o agente; rollback: pede ao supervisor que volte para a versão anterior (a pasta app.previous guardada pela última atualização), bloqueando a versão que sai, e reinicie. O agente responde com command.result.v1 assim que o pedido foi entregue ao supervisor. Só agentes que anunciam a capacidade agent.maintenance.v1 recebem este pedido.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "type", "source", "target", "ts", "correlationId", "body"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+    "type": { "const": "agent.maintenance.v1" },
+    "source": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "target": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "ts": { "$ref": "../envelope.schema.json#/$defs/timestamp" },
+    "correlationId": { "oneOf": [{ "$ref": "../envelope.schema.json#/$defs/uuid" }, { "type": "null" }] },
+    "body": {
+      "type": "object", "additionalProperties": false,
+      "required": ["action"],
+      "properties": {
+        "action": { "enum": ["update", "restart", "rollback"] }
+      }
+    }
+  }
+}
