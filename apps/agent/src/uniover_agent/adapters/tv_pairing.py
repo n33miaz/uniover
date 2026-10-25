@@ -74,6 +74,52 @@ def restrict_to_current_user(directory: Path) -> None:
         ) from exc
 
 
+_CODE_WINDOW_SCRIPT = (
+    "Add-Type -AssemblyName Microsoft.VisualBasic;"
+    "[Microsoft.VisualBasic.Interaction]::InputBox("
+    "'Digite o codigo de 6 caracteres que aparece na tela da TV.','UniOver - parear a TV','')"
+)
+
+
+async def ask_code_in_window() -> str:
+    """Pede o código da TV numa janelinha do Windows (o instalador roda sem console).
+
+    O PowerShell nasce sem janela de console (`run_hidden`); só a caixa de texto aparece. Fora
+    do Windows, ou se a caixa não abrir, devolve vazio e o pareamento falha como sempre.
+    """
+    if sys.platform != "win32":
+        return ""
+    powershell = (
+        Path(os.environ.get("SystemRoot", r"C:\Windows"))
+        / "System32"
+        / "WindowsPowerShell"
+        / "v1.0"
+        / "powershell.exe"
+    )
+
+    def ask() -> str:
+        try:
+            result = run_hidden(
+                [
+                    str(powershell),
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    _CODE_WINDOW_SCRIPT,
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        except OSError, subprocess.SubprocessError:
+            return ""
+        return str(result.stdout).strip()
+
+    return await asyncio.to_thread(ask)
+
+
 def prepare_private_dir(directory: Path) -> None:
     """Cria a pasta do certificado já restrita ao usuário (antes de qualquer arquivo nascer)."""
     directory.mkdir(parents=True, exist_ok=True)

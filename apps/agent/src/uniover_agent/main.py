@@ -37,6 +37,7 @@ from uniover_agent.adapters.pairing_page import (
     write_connected_page,
     write_failed_page,
     write_pairing_page,
+    write_progress_page,
 )
 from uniover_agent.adapters.qr_terminal import render_ascii, render_for
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
@@ -59,7 +60,12 @@ from uniover_agent.adapters.tv_locate import (
     build_locator,
     identify_tv,
 )
-from uniover_agent.adapters.tv_pairing import TvPairingError, is_paired, pair_tv
+from uniover_agent.adapters.tv_pairing import (
+    TvPairingError,
+    ask_code_in_window,
+    is_paired,
+    pair_tv,
+)
 from uniover_agent.adapters.tv_remote_v2 import ANDROID_OPTIONAL_KEYS, AndroidTvRemoteV2
 from uniover_agent.adapters.tv_samsung import SAMSUNG_OPTIONAL_KEYS, SamsungTvDriver
 from uniover_agent.adapters.tv_samsung_pairing import SamsungPairingError, pair_samsung_tv
@@ -635,13 +641,14 @@ def _update_page(write: Callable[[Path], None]) -> None:
         _log.warning("não consegui atualizar a página do QR (%s)", type(exc).__name__)
 
 
-async def pair(
+async def pair(  # noqa: PLR0913 - o instalador soma uma opção a cada passo
     settings: Settings,
     open_store: StoreFactory,
     name: str | None,
     *,
     if_needed: bool = False,
     no_browser: bool = False,
+    installing: bool = False,
 ) -> int:
     api_url = require_api_url(settings)
     store = open_store()
@@ -684,7 +691,13 @@ async def pair(
         print(f"Falha no pareamento: {exc}", file=sys.stderr)
         return EXIT_FAILURE
 
-    _update_page(write_connected_page)
+    if installing:
+        # O instalador ainda tem a TV e a tarefa pela frente e é ele quem escreve o "Pronto".
+        _update_page(
+            lambda page: write_progress_page(page, "PC conectado. Terminando a instalação…")
+        )
+    else:
+        _update_page(write_connected_page)
 
     # O token já está no cofre; agora o `agentId` vai para a configuração local do usuário.
     try:
@@ -1105,6 +1118,11 @@ def _parser() -> argparse.ArgumentParser:
         "--if-needed", action="store_true", help="não pareia de novo se este PC já está pareado"
     )
     pair_parser.add_argument(
+        "--installing",
+        action="store_true",
+        help="chamado pelo instalador: a página segue em andamento depois do pareamento",
+    )
+    pair_parser.add_argument(
         "--no-browser", action="store_true", help="não abre a página local do QR no navegador"
     )
     sub.add_parser("status", help="mostra se há token e se a API responde")
@@ -1112,6 +1130,11 @@ def _parser() -> argparse.ArgumentParser:
     tv_parser.add_argument("--kind", choices=("android", "samsung"), help="tipo da TV")
     tv_parser.add_argument("--host", help="endereço IP da TV (padrão: UNIOVER_TV_HOST)")
     tv_parser.add_argument("--name", help="nome da pasta do certificado (padrão: UNIOVER_TV_NAME)")
+    tv_parser.add_argument(
+        "--installing",
+        action="store_true",
+        help="chamado pelo instalador (sem console): o código da TV é pedido numa janela",
+    )
     tv_parser.add_argument(
         "--if-needed", action="store_true", help="não pareia de novo uma TV que já está pareada"
     )
@@ -1152,6 +1175,7 @@ def main(  # noqa: PLR0911 - um retorno por comando
                     args.name,
                     if_needed=args.if_needed,
                     no_browser=args.no_browser,
+                    installing=args.installing,
                 )
             )
         if command == "status":
@@ -1164,6 +1188,7 @@ def main(  # noqa: PLR0911 - um retorno por comando
                     args.name,
                     args.kind,
                     open_store(),
+                    ask_code_in_window if args.installing else _ask_tv_code,
                     if_needed=args.if_needed,
                     identify=identify_tv,
                 )
