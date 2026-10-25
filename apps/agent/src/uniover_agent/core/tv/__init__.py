@@ -33,6 +33,8 @@ from uniover_agent.core.tv.session import (
 )
 from uniover_agent.core.tv.state_publisher import TvStatePublisher
 from uniover_agent.core.tv.text_edit import AdbTyping, TextReconciler
+from uniover_agent.core.tv.watchdog import TvWatchdog
+from uniover_agent.core.tv.watchdog_events import WatchdogEvents
 
 __all__ = [
     "CLEANUP_FAILED",
@@ -61,6 +63,8 @@ __all__ = [
     "TvSessionError",
     "TvSessionManager",
     "TvStatePublisher",
+    "TvWatchdog",
+    "WatchdogEvents",
     "describe_apps",
     "is_protected",
     "tv_app_launch_handler",

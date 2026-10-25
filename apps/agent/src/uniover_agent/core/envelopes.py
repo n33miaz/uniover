@@ -145,6 +145,19 @@ class EnvelopeFactory:
         }
         return self._build("tv.cleanup.result.v1", body, correlation_id)
 
+    def tv_watchdog(
+        self, kind: str, severity: str, detail: str, attempts: int, at: str | None = None
+    ) -> dict[str, Any]:
+        """`tv.watchdog.v1`: um acontecimento do vigia que religa o serviço do controle da TV."""
+        body: dict[str, Any] = {
+            "kind": kind,
+            "severity": severity,
+            "detail": detail,
+            "attempts": attempts,
+            "at": at or self._utc_now(),
+        }
+        return self._build("tv.watchdog.v1", body, None)
+
     def tv_apps_v2(
         self,
         apps: Sequence[tuple[str, str, AppIcon | None]],
