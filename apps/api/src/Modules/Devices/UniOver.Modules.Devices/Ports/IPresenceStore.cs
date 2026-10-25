@@ -13,7 +13,7 @@ internal interface IPresenceStore
     AgentPresenceInfo MarkConnected(string agentId, DateTimeOffset now);
 
     /// <summary>Marca como desconectado, mantendo o que se sabia dele; nulo se ele nunca foi visto.</summary>
-    AgentPresenceInfo? MarkDisconnected(string agentId);
+    AgentPresenceInfo? MarkDisconnected(string agentId, DateTimeOffset now);
 
     /// <summary>Guarda versão e capacidades do <c>agent.hello.v1</c>; nulo se o agente não está conectado.</summary>
     AgentPresenceInfo? RecordHello(string agentId, string agentVersion, IReadOnlyList<string> capabilities, DateTimeOffset now);

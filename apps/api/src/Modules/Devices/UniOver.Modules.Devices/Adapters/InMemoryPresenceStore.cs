@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Options;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Devices.Features.Agents;
 using UniOver.Modules.Devices.Ports;
 
 namespace UniOver.Modules.Devices.Adapters;
@@ -7,8 +9,10 @@ namespace UniOver.Modules.Devices.Adapters;
 /// Presença em memória. O estado é da instância (singleton do módulo), não estático, e some quando a API reinicia:
 /// os agentes reconectam e a presença se refaz sozinha. Um lock simples basta: são poucos agentes e operações curtas.
 /// </summary>
-internal sealed class InMemoryPresenceStore : IPresenceStore, IAgentPresenceReader
+internal sealed class InMemoryPresenceStore(TimeProvider time, IOptions<DevicesTransportOptions> options)
+    : IPresenceStore, IAgentPresenceReader
 {
+    private readonly DateTimeOffset _startedAt = time.GetUtcNow();
     private readonly object _gate = new();
     private readonly Dictionary<string, AgentPresenceInfo> _agents = new(StringComparer.Ordinal);
 
@@ -23,7 +27,22 @@ internal sealed class InMemoryPresenceStore : IPresenceStore, IAgentPresenceRead
         return info;
     }
 
-    public AgentPresenceInfo? MarkDisconnected(string agentId)
+    public TimeSpan ReconnectGrace => options.Value.ReconnectGrace;
+
+    public DateTimeOffset? OfflineSince(string agentId)
+    {
+        lock (_gate)
+        {
+            if (!_agents.TryGetValue(agentId, out var current))
+            {
+                return _startedAt;
+            }
+
+            return current.Connected ? null : current.DisconnectedAt ?? _startedAt;
+        }
+    }
+
+    public AgentPresenceInfo? MarkDisconnected(string agentId, DateTimeOffset now)
     {
         lock (_gate)
         {
@@ -32,7 +51,7 @@ internal sealed class InMemoryPresenceStore : IPresenceStore, IAgentPresenceRead
                 return null;
             }
 
-            var info = current with { Connected = false };
+            var info = current with { Connected = false, DisconnectedAt = now };
             _agents[agentId] = info;
             return info;
         }

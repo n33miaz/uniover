@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Ports;
@@ -17,6 +18,7 @@ internal sealed record TvCommandOrigin(Guid UserId, ClientInfo Client);
 internal sealed partial class TvCommandRunner(
     IOptions<TvModuleOptions> options,
     ITvAgentResolver agents,
+    ITvAgentPresence presence,
     ITvCommandSender sender,
     ITvStateStore state,
     ITvCommandAudit audit,
@@ -56,6 +58,13 @@ internal sealed partial class TvCommandRunner(
         if (string.IsNullOrWhiteSpace(agentId))
         {
             outcome = TvSendOutcome.Failed(TvSendStatus.NotConfigured, NotConfiguredCode);
+        }
+        // Falha rápida só para quem está fora há mais que a janela de reconexão do gateway: manter a requisição aberta
+        // só atrasa o 503 de que a tela precisa. Dentro da janela é a queda curta de sempre (o agente volta em um ou
+        // dois segundos), e o gateway espera a sessão voltar para entregar o comando.
+        else if (presence.IsOfflineBeyondReconnectGrace(agentId))
+        {
+            outcome = TvSendOutcome.Failed(TvSendStatus.AgentOffline, AgentErrors.OfflineCode);
         }
         else if (waitForReply)
         {
