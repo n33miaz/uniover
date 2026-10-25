@@ -30,7 +30,7 @@
   min-width: 44px;
   min-height: 44px;
   border: 1px solid var(--a-line);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--a-surface-raised);
   color: var(--a-ink);
   font: inherit;
@@ -59,7 +59,7 @@
   min-height: 62px;
   padding: 2px 0;
   border: 1px solid var(--a-line);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--a-surface-raised);
   color: var(--a-ink);
   font: inherit;
@@ -194,7 +194,7 @@
   min-height: 44px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--a-ink);
   font: inherit;
@@ -222,7 +222,7 @@
 .day-detail {
   padding: var(--space-3);
   border: 1px solid var(--a-line);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
 .day-detail h3 {
   margin: 0 0 var(--space-2);
