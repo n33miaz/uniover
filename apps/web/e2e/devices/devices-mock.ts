@@ -7,7 +7,7 @@ export interface DevicesRequest {
   readonly body: Record<string, unknown> | null;
 }
 
-interface StoredAgent {
+export interface StoredAgent {
   id: string;
   slug: string;
   name: string;
@@ -15,7 +15,90 @@ interface StoredAgent {
   createdAt: string;
   revoked: boolean;
   lastSeenAt: string | null;
+  connected: boolean;
+  agentVersion: string | null;
+  agentBuild: string | null;
+  os: string | null;
+  tvKind: string | null;
+  tvHost: string | null;
+  canReadLogs: boolean;
+  canMaintain: boolean;
+  canRollback: boolean;
+  /** O estado da auto-atualização; `null` é o agente antigo, que nunca o contou. */
+  update: StoredUpdate | null;
 }
+
+export interface StoredUpdate {
+  state: 'current' | 'updating' | 'pending' | 'failed' | 'blocked' | 'rolled_back' | 'unchecked';
+  installedSha: string | null;
+  installedAt: string | null;
+  latestSha: string | null;
+  checkedAt: string | null;
+  nextCheckAt: string | null;
+  reason: string | null;
+  blockedSha: string | null;
+  previousSha: string | null;
+  rolledBack: boolean;
+}
+
+export const INSTALLED_SHA = '3f2a9c1d4e5b6a7988776655443322110fedcba9';
+export const NEWER_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+export const PREVIOUS_SHA = '0a1b2c3d4e5f60718293a4b5c6d7e8f901234567';
+
+/** O estado de um agente em dia; cada teste troca o que precisa. */
+export function storedUpdate(overrides: Partial<StoredUpdate> = {}): StoredUpdate {
+  return {
+    state: 'current',
+    installedSha: INSTALLED_SHA,
+    installedAt: '2026-10-20T09:15:00Z',
+    latestSha: INSTALLED_SHA,
+    checkedAt: '2026-10-24T13:40:00Z',
+    nextCheckAt: '2026-10-24T19:55:00Z',
+    reason: null,
+    blockedSha: null,
+    previousSha: null,
+    rolledBack: false,
+    ...overrides,
+  };
+}
+
+/** Um agente como a API o lista, de versão nova e conectado; cada teste ajusta o que precisa. */
+export function storedAgent(overrides: Partial<StoredAgent> = {}): StoredAgent {
+  return {
+    id: '00000000-0000-4000-8000-000000000001',
+    slug: 'agent:pc-de-casa',
+    name: 'PC de casa',
+    platform: 'windows',
+    createdAt: '2026-10-18T12:00:00Z',
+    revoked: false,
+    lastSeenAt: '2026-10-18T15:30:00Z',
+    connected: true,
+    agentVersion: '0.1.0',
+    agentBuild: '3f2a9c1d4e5b',
+    os: 'Windows 11 (10.0.26200)',
+    tvKind: 'android',
+    tvHost: '192.168.0.20',
+    canReadLogs: true,
+    canMaintain: true,
+    canRollback: false,
+    update: storedUpdate(),
+    ...overrides,
+  };
+}
+
+/** O que a API simulada responde ao pedido do registro de um agente (a de verdade fala com o agente pelo canal). */
+export interface LogReply {
+  /** Texto devolvido; omitido, a API responde com o problema `problem`. */
+  text?: string;
+  truncated?: boolean;
+  problem?: { status: number; kind: string };
+}
+
+export const DEFAULT_LOG = Array.from(
+  { length: 120 },
+  (_, n) =>
+    `2026-10-24 14:${String(Math.floor(n / 60)).padStart(2, '0')}:${String(n % 60).padStart(2, '0')},000 INFO uniover_agent.core.connection: linha ${n + 1} do registro, com bastante texto para passar da largura da tela`,
+).join('\n');
 
 /** A TV que a API real cria junto da aprovação quando o corpo traz `tvMemberIds`. */
 export interface StoredTv {
@@ -30,6 +113,10 @@ export interface DevicesMock {
   readonly tvs: StoredTv[];
   /** Códigos que o agente "mostrou" e que ainda esperam decisão (forma guardada, sem hífen). */
   readonly openCodes: Set<string>;
+  /** Resposta ao pedido de registro; o padrão é um registro comprido, sem corte. */
+  log: LogReply;
+  /** Problema que a manutenção devolve em vez de aceitar (depois da passkey). */
+  maintenanceProblem: { status: number; kind: string } | null;
 }
 
 /** Código que a API simulada responde com 429 e `Retry-After: 7`. */
@@ -61,7 +148,14 @@ export async function mockDevicesApi(
   context: BrowserContext,
   identity: IdentityMock,
 ): Promise<DevicesMock> {
-  const mock: DevicesMock = { requests: [], agents: [], tvs: [], openCodes: new Set() };
+  const mock: DevicesMock = {
+    requests: [],
+    agents: [],
+    tvs: [],
+    openCodes: new Set(),
+    log: { text: DEFAULT_LOG },
+    maintenanceProblem: null,
+  };
 
   await context.route('**/api/v1/devices/**', async (route) => {
     const request = route.request();
@@ -114,15 +208,21 @@ export async function mockDevicesApi(
       mock.openCodes.delete(code);
       identity.stepUpValid = false;
       const name = (body?.['name'] as string | null) ?? 'Agente';
-      const agent: StoredAgent = {
+      const agent: StoredAgent = storedAgent({
         id: `00000000-0000-4000-8000-00000000000${mock.agents.length + 1}`,
         slug: `agent:${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
         name,
-        platform: 'windows',
-        createdAt: '2026-10-18T12:00:00Z',
-        revoked: false,
         lastSeenAt: null,
-      };
+        connected: false,
+        agentVersion: null,
+        agentBuild: null,
+        os: null,
+        tvKind: null,
+        tvHost: null,
+        canReadLogs: false,
+        canMaintain: false,
+        update: null,
+      });
       mock.agents.push(agent);
       // Como a API: a lista de pessoas (mesmo vazia) cria, na mesma aprovação, a TV ligada ao novo agente.
       const members = body?.['tvMemberIds'];
@@ -151,6 +251,65 @@ export async function mockDevicesApi(
         return problem(route, 404, 'pairing-not-found', 'Não encontrado.');
       mock.openCodes.delete(code);
       return route.fulfill({ status: 204 });
+    }
+
+    // Só o dono chega aqui (o convidado leva 403 antes): o registro e a manutenção de um agente.
+    const logs = /^\/agents\/([^/]+)\/logs$/.exec(path);
+    if (method === 'POST' && logs) {
+      const agent = mock.agents.find((a) => a.id === logs[1] && !a.revoked);
+      if (!agent) return route.fulfill({ status: 404 });
+      if (!agent.connected)
+        return problem(route, 503, 'agent-offline', 'O agente não está conectado.');
+      if (!agent.canReadLogs) {
+        return problem(route, 409, 'agent-outdated', 'O agente precisa ser atualizado para isto.');
+      }
+      if (mock.log.problem) {
+        return problem(route, mock.log.problem.status, mock.log.problem.kind, 'Falhou.');
+      }
+      const text = mock.log.text ?? '';
+      return route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+        body: JSON.stringify({
+          text,
+          lines: text === '' ? 0 : text.split('\n').length,
+          truncated: mock.log.truncated ?? false,
+          at: '2026-10-24T14:02:00Z',
+        }),
+      });
+    }
+
+    const maintenance = /^\/agents\/([^/]+)\/maintenance$/.exec(path);
+    if (method === 'POST' && maintenance) {
+      // Como a API: a confirmação vem antes de tudo, e vale por alguns minutos (não é gasta por uma ação).
+      if (!identity.stepUpValid) {
+        return problem(route, 403, 'step-up-required', 'Confirme com a passkey.', {
+          code: 'step_up_required',
+          action: 'devices.agent-maintenance',
+        });
+      }
+      const agent = mock.agents.find((a) => a.id === maintenance[1] && !a.revoked);
+      if (!agent) return route.fulfill({ status: 404 });
+      const action = body?.['action'];
+      if (action !== 'update' && action !== 'restart' && action !== 'rollback') {
+        return problem(route, 400, 'validation', 'Escolha update, restart ou rollback.');
+      }
+      if (action === 'rollback' && !agent.canRollback) {
+        return problem(route, 409, 'no-previous-version', 'Sem versão anterior.');
+      }
+      if (mock.maintenanceProblem) {
+        return problem(
+          route,
+          mock.maintenanceProblem.status,
+          mock.maintenanceProblem.kind,
+          'Falhou.',
+        );
+      }
+      return route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action, accepted: true }),
+      });
     }
 
     const revoke = /^\/agents\/([^/]+)\/revoke$/.exec(path);
