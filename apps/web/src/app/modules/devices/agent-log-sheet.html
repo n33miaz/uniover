@@ -1,0 +1,58 @@
+<dialog #dialog class="sheet ui-dialog" aria-labelledby="log-title" (cancel)="close($event)">
+  <span class="grabber" aria-hidden="true"></span>
+  <h2 id="log-title">{{ title() }}</h2>
+
+  <div class="body" [attr.aria-live]="'polite'">
+    @if (loading()) {
+      <p class="hint" role="status">
+        <span class="ui-spinner" aria-hidden="true"></span>
+        <span i18n="@@devices.log.loading">Pedindo o registro ao agente…</span>
+      </p>
+    } @else if (error(); as text) {
+      <p class="error ui-notice bad ui-rise" role="alert">{{ text }}</p>
+    } @else if (log(); as current) {
+      <p class="hint summary">{{ summary() }}</p>
+      @if (current.lines > 0) {
+        <pre
+          #output
+          class="output"
+          tabindex="0"
+          i18n-aria-label="@@devices.log.output-label"
+          aria-label="Registro do agente"
+          >{{ current.text }}</pre>
+      }
+    }
+    @if (copyNote(); as note) {
+      <p class="hint" role="status">{{ note }}</p>
+    }
+    @if (!online()) {
+      <p class="note ui-notice warn ui-rise" role="status" i18n="@@devices.log.offline">
+        Sem conexão: ver o registro precisa de rede.
+      </p>
+    }
+  </div>
+
+  <div class="footer">
+    <button type="button" class="secondary ui-btn" (click)="close()" i18n="@@devices.log.close">
+      Fechar
+    </button>
+    <button
+      type="button"
+      class="secondary ui-btn"
+      [disabled]="loading() || !online()"
+      (click)="load()"
+      i18n="@@devices.log.refresh"
+    >
+      Atualizar
+    </button>
+    <button
+      type="button"
+      class="primary ui-btn"
+      [disabled]="!log() || log()!.lines === 0"
+      (click)="copy()"
+      i18n="@@devices.log.copy"
+    >
+      Copiar
+    </button>
+  </div>
+</dialog>

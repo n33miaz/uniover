@@ -1,18 +1,26 @@
 import { Component, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { problemOf } from '../../core/auth/api-problem';
+import { isStepUpRequired, problemOf } from '../../core/auth/api-problem';
 import { canUseModule } from '../../core/auth/guest-home';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
 import { SessionState } from '../../core/session/session-state';
 import { ConnectSheet } from './connect-sheet';
-import { DeviceAgent, DevicesApi } from './devices-api';
+import { AgentLogSheet } from './agent-log-sheet';
+import { DeviceAgent, DevicesApi, MaintenanceAction } from './devices-api';
 import { PairOutcome, PairSheet } from './pair-sheet';
 import { formatCodeInput } from './pairing-code';
 import { CONNECTOR_URL, isWindowsPc } from './windows-pc';
 
 /** Parâmetro do endereço que o QR do agente traz (`?codigo=XXXX-XXXX`). */
 const CODE_PARAM = 'codigo';
+
+/** Quantos caracteres do commit instalado a tela mostra. */
+const SHORT_BUILD = 7;
+
+/** Agente de uma versão que não sabe fazer o pedido: ele se atualiza sozinho em algumas horas. */
+const outdatedText = () =>
+  $localize`:@@devices.outdated:Este computador ainda roda uma versão do agente sem essa função. Atualize o agente: ele se atualiza sozinho em algumas horas, e depois é só tentar de novo.`;
 
 /**
  * Aparelhos: lista dos agentes pareados, pareamento por código (com passkey), recusa de código e revogação.
@@ -21,10 +29,14 @@ const CODE_PARAM = 'codigo';
  * O QR que o agente mostra no PC abre esta tela com o código no endereço: a folha de aprovação já sobe com ele
  * preenchido e o parâmetro sai do endereço na hora (o código não fica no histórico nem em cópia do link). Quem não
  * pode aprovar (convidado) vê só o aviso, sem lista nem folha; se a conta dele tem a TV, vê também o botão que baixa o conector. Em PC com Windows há ainda a folha "Conectar este PC".
+ *
+ * Manutenção remota (só o administrador, que é quem chega até aqui): cada aparelho mostra a versão instalada, o sistema,
+ * a TV e o último contato, e oferece "Ver registro" (folha com o fim do registro do agente), "Atualizar agora" e
+ * "Reiniciar o agente". As duas últimas pedem uma confirmação na tela e a passkey (o interceptador abre o diálogo).
  */
 @Component({
   selector: 'app-devices-page',
-  imports: [RouterLink, PairSheet, ConnectSheet],
+  imports: [RouterLink, PairSheet, ConnectSheet, AgentLogSheet],
   templateUrl: './devices.page.html',
   styleUrl: './devices.page.css',
 })
@@ -54,10 +66,18 @@ export class DevicesPage {
   /** O conector só existe para Windows: nos outros aparelhos a tela diz isso em vez de oferecer o download. */
   protected readonly windowsPc = isWindowsPc(navigator);
   protected readonly revokingId = signal<string | null>(null);
+  /** O pedido de atualizar ou reiniciar que espera a confirmação do dono, ou que está em andamento. */
+  protected readonly maintaining = signal<{ id: string; action: MaintenanceAction } | null>(null);
+  /** O aparelho cujo registro está aberto na folha. */
+  protected readonly viewingLog = signal<DeviceAgent | null>(null);
   protected readonly busy = signal(false);
   protected readonly message = signal<string | null>(null);
   protected readonly messageIsError = signal(false);
   protected readonly dateFormat = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium' });
+  protected readonly contactFormat = new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
 
   constructor() {
     if (this.canManage) void this.load();
@@ -76,12 +96,257 @@ export class DevicesPage {
 
   protected lastSeen(agent: DeviceAgent): string {
     return agent.lastSeenAt
-      ? $localize`:@@devices.last-seen:Último uso em ${this.dateFormat.format(new Date(agent.lastSeenAt))}:date:`
-      : $localize`:@@devices.never-seen:Sem uso registrado`;
+      ? $localize`:@@devices.last-seen:Último contato em ${this.contactFormat.format(new Date(agent.lastSeenAt))}:date:`
+      : $localize`:@@devices.never-seen:Sem contato registrado`;
   }
 
   protected platform(agent: DeviceAgent): string {
-    return $localize`:@@devices.platform:Sistema: ${agent.platform}:platform:`;
+    const system = agent.os ?? agent.platform;
+    return $localize`:@@devices.platform:Sistema: ${system}:platform:`;
+  }
+
+  /** "Versão 0.1.0 · 3f2a9c1": o pacote e o começo do commit instalado (o que diz de fato qual código roda). */
+  protected version(agent: DeviceAgent): string | null {
+    if (!agent.agentVersion) return null;
+    const build = agent.agentBuild ? agent.agentBuild.slice(0, SHORT_BUILD) : null;
+    const version = agent.agentVersion;
+    return build
+      ? $localize`:@@devices.version-build:Versão ${version}:version: · ${build}:build:`
+      : $localize`:@@devices.version:Versão ${version}:version:`;
+  }
+
+  protected tv(agent: DeviceAgent): string | null {
+    if (!agent.tvKind && !agent.tvHost) return null;
+    const kind =
+      agent.tvKind === 'samsung'
+        ? $localize`:@@devices.tv-samsung:Samsung`
+        : agent.tvKind === 'android'
+          ? $localize`:@@devices.tv-android:Android TV`
+          : $localize`:@@devices.tv-generic:TV`;
+    const host = agent.tvHost;
+    return host
+      ? $localize`:@@devices.tv-info:TV: ${kind}:kind: · ${host}:host:`
+      : $localize`:@@devices.tv-kind:TV: ${kind}:kind:`;
+  }
+
+  /**
+   * O estado da auto-atualização em uma frase. Agente conectado que nunca contou isso é de uma versão antiga: a tela diz
+   * que a versão é desconhecida e pede para atualizar. Sem ter falado nunca (sem versão), não há o que dizer.
+   */
+  protected updateState(agent: DeviceAgent): string | null {
+    const update = agent.update;
+    if (!update) {
+      return agent.agentVersion
+        ? $localize`:@@devices.update.unknown:Versão desconhecida: atualize o agente`
+        : null;
+    }
+    const when = this.updateTime(update.checkedAt);
+    switch (update.state) {
+      case 'current':
+        return $localize`:@@devices.update.current:Atualizado`;
+      case 'updating':
+        return $localize`:@@devices.update.updating:Atualizando…`;
+      case 'pending':
+        return update.nextCheckAt
+          ? $localize`:@@devices.update.pending-next:Atualização pendente: próxima checagem em ${this.updateTime(update.nextCheckAt)}:next:`
+          : $localize`:@@devices.update.pending:Atualização pendente`;
+      case 'failed': {
+        const reason = update.reason ?? $localize`:@@devices.update.no-reason:sem detalhe`;
+        return when
+          ? $localize`:@@devices.update.failed-at:Falhou: ${reason}:reason: (${when}:time:)`
+          : $localize`:@@devices.update.failed:Falhou: ${reason}:reason:`;
+      }
+      case 'blocked':
+        return $localize`:@@devices.update.blocked:Versão nova bloqueada: ela caiu repetidamente`;
+      case 'rolled_back':
+        return $localize`:@@devices.update.rolled-back:Voltou para a versão anterior`;
+      case 'unchecked':
+        return $localize`:@@devices.update.unchecked:Aguardando a primeira checagem`;
+      default:
+        return null;
+    }
+  }
+
+  /** Falha e bloqueio pedem o chip de erro; pendência e volta, o de aviso; versão desconhecida também. */
+  protected updateTone(agent: DeviceAgent): 'bad' | 'warn' | 'ok' | '' {
+    switch (agent.update?.state) {
+      case 'failed':
+      case 'blocked':
+        return 'bad';
+      case 'pending':
+      case 'updating':
+      case 'rolled_back':
+        return 'warn';
+      case 'current':
+        return 'ok';
+      default:
+        return agent.update ? '' : 'warn';
+    }
+  }
+
+  /** "Instalada: 3f2a9c1 em 20 de out. de 2026, 09:15". */
+  protected installed(agent: DeviceAgent): string | null {
+    const update = agent.update;
+    if (!update?.installedSha) return null;
+    const sha = update.installedSha.slice(0, SHORT_BUILD);
+    const when = this.updateTime(update.installedAt);
+    return when
+      ? $localize`:@@devices.update.installed-at:Instalada: ${sha}:sha: em ${when}:time:`
+      : $localize`:@@devices.update.installed:Instalada: ${sha}:sha:`;
+  }
+
+  /** A mais nova que a última checagem viu; igual à instalada, a tela diz que não há nada novo. */
+  protected newest(agent: DeviceAgent): string | null {
+    const update = agent.update;
+    if (!update?.latestSha) return null;
+    if (update.latestSha === update.installedSha) {
+      return $localize`:@@devices.update.newest-same:Mais nova disponível: a mesma instalada`;
+    }
+    const sha = update.latestSha.slice(0, SHORT_BUILD);
+    return $localize`:@@devices.update.newest:Mais nova disponível: ${sha}:sha:`;
+  }
+
+  /** O que a última checagem concluiu, com a hora. */
+  protected lastCheck(agent: DeviceAgent): string | null {
+    const update = agent.update;
+    const when = this.updateTime(update?.checkedAt);
+    if (!update || !when) return null;
+    switch (update.state) {
+      case 'failed':
+        return $localize`:@@devices.update.check-failed:Última checagem: ${when}:time:, falhou`;
+      case 'updating':
+        return $localize`:@@devices.update.check-running:Checagem em andamento desde ${when}:time:`;
+      case 'blocked':
+        return $localize`:@@devices.update.check-blocked:Última checagem: ${when}:time:, versão bloqueada`;
+      case 'rolled_back':
+        return $localize`:@@devices.update.check-rolled-back:Voltou à versão anterior em ${when}:time:`;
+      case 'pending':
+        return $localize`:@@devices.update.check-pending:Última checagem: ${when}:time:, há versão nova`;
+      case 'current':
+        return $localize`:@@devices.update.check-current:Última checagem: ${when}:time:, sem novidade`;
+      default:
+        return $localize`:@@devices.update.check:Última checagem: ${when}:time:`;
+    }
+  }
+
+  /** A volta à versão anterior e a versão que ficou de fora, quando houve. */
+  protected rollbackNote(agent: DeviceAgent): string | null {
+    const update = agent.update;
+    if (!update?.rolledBack) return null;
+    const blocked = update.blockedSha?.slice(0, SHORT_BUILD);
+    return blocked
+      ? $localize`:@@devices.update.rolled-back-blocked:Houve volta à versão anterior; a versão ${blocked}:sha: não será instalada de novo.`
+      : $localize`:@@devices.update.rolled-back-note:Houve volta à versão anterior.`;
+  }
+
+  private updateTime(value: string | null | undefined): string | null {
+    return value ? this.contactFormat.format(new Date(value)) : null;
+  }
+
+  protected connection(agent: DeviceAgent): string {
+    return agent.connected
+      ? $localize`:@@devices.connected:Conectado agora`
+      : $localize`:@@devices.disconnected:Desconectado`;
+  }
+
+  protected viewLogLabel(agent: DeviceAgent): string {
+    return $localize`:@@devices.view-log-label:Ver registro de ${agent.name}:name:`;
+  }
+
+  protected updateLabel(agent: DeviceAgent): string {
+    return $localize`:@@devices.update-label:Atualizar agora: ${agent.name}:name:`;
+  }
+
+  protected restartLabel(agent: DeviceAgent): string {
+    return $localize`:@@devices.restart-label:Reiniciar o agente de ${agent.name}:name:`;
+  }
+
+  protected rollbackLabel(agent: DeviceAgent): string {
+    return $localize`:@@devices.rollback-label:Voltar para a versão anterior de ${agent.name}:name:`;
+  }
+
+  protected maintenanceQuestion(agent: DeviceAgent, action: MaintenanceAction): string {
+    if (action === 'rollback') {
+      const previous = agent.update?.previousSha?.slice(0, SHORT_BUILD) ?? '';
+      return $localize`:@@devices.rollback-question:Voltar o agente de ${agent.name}:name: para a versão anterior (${previous}:sha:)? A versão de agora fica bloqueada e ele reinicia sozinho em até 15 segundos.`;
+    }
+    return action === 'update'
+      ? $localize`:@@devices.update-question:Atualizar o agente de ${agent.name}:name: agora? Se houver versão nova, ele reinicia sozinho em até 15 segundos.`
+      : $localize`:@@devices.restart-question:Reiniciar o agente de ${agent.name}:name:? Ele sai do ar por alguns segundos e volta sozinho.`;
+  }
+
+  /** O registro: sem a capacidade (agente antigo) a tela já explica, sem gastar um pedido que a API recusaria. */
+  protected openLog(agent: DeviceAgent): void {
+    this.say(null);
+    this.revokingId.set(null);
+    this.maintaining.set(null);
+    if (!agent.canReadLogs) {
+      this.say(outdatedText(), true);
+      return;
+    }
+    this.viewingLog.set(agent);
+  }
+
+  protected askMaintenance(agent: DeviceAgent, action: MaintenanceAction): void {
+    this.say(null);
+    this.revokingId.set(null);
+    if (!agent.canMaintain || (action === 'rollback' && !agent.canRollback)) {
+      this.maintaining.set(null);
+      this.say(outdatedText(), true);
+      return;
+    }
+    this.maintaining.set({ id: agent.id, action });
+  }
+
+  protected async confirmMaintenance(agent: DeviceAgent): Promise<void> {
+    const pending = this.maintaining();
+    if (!pending || pending.id !== agent.id || this.busy() || !this.online()) return;
+    this.busy.set(true);
+    try {
+      await this.api.maintain(agent.id, pending.action);
+      this.maintaining.set(null);
+      this.say(this.sentText(pending.action), false);
+    } catch (error) {
+      this.maintaining.set(null);
+      this.say(this.maintenanceError(error), true);
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  private sentText(action: MaintenanceAction): string {
+    switch (action) {
+      case 'update':
+        return $localize`:@@devices.update-sent:Pedido de atualização enviado. Se houver versão nova, o agente reinicia sozinho em até 15 segundos.`;
+      case 'rollback':
+        return $localize`:@@devices.rollback-sent:Pedido enviado. O agente volta para a versão anterior e reinicia sozinho em até 15 segundos.`;
+      default:
+        return $localize`:@@devices.restart-sent:Pedido de reinício enviado. O agente volta sozinho em alguns segundos.`;
+    }
+  }
+
+  private maintenanceError(error: unknown): string {
+    const problem = problemOf(error);
+    if (problem && isStepUpRequired(problem)) {
+      return $localize`:@@devices.maintenance.unconfirmed:A ação não foi confirmada com a passkey. Nada foi feito.`;
+    }
+    if (problem?.isNetwork) {
+      return $localize`:@@devices.network:Sem conexão com o servidor. Tente de novo.`;
+    }
+    switch (problem?.kind) {
+      case 'agent-outdated':
+        return outdatedText();
+      case 'no-previous-version':
+        return $localize`:@@devices.maintenance.no-previous:Este computador não guardou uma versão anterior para voltar.`;
+      case 'agent-offline':
+        return $localize`:@@devices.maintenance.offline:O agente está desconectado. Ligue o PC e tente de novo.`;
+      case 'agent-timeout':
+        return $localize`:@@devices.maintenance.timeout:O agente não respondeu a tempo. Tente de novo.`;
+      default:
+        return problem?.status === 429
+          ? $localize`:@@devices.maintenance.rate-limited:Muitos pedidos seguidos. Espere um pouco e tente de novo.`
+          : $localize`:@@devices.maintenance.failed:Não foi possível fazer isso agora. Tente de novo.`;
+    }
   }
 
   protected revokeLabel(agent: DeviceAgent): string {
@@ -147,6 +412,7 @@ export class DevicesPage {
 
   protected askRevoke(agent: DeviceAgent): void {
     this.say(null);
+    this.maintaining.set(null);
     this.revokingId.set(agent.id);
   }
 
