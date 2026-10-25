@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { INSTALL_ENV, InstallHintService } from '../../../core/pwa/install-hint.service';
 import { TvPrefs } from '../data/tv-prefs';
+import { TvSelection } from '../data/tv-selection';
+import { makeTv } from '../tv-test-kit';
 import { CustomizeSheet } from './customize-sheet';
 
 function clickBackdrop(dialog: HTMLDialogElement): void {
@@ -138,6 +140,75 @@ describe('CustomizeSheet', () => {
           .filter((text) => ['Concluir', 'Restaurar padrão'].includes(text ?? '')),
       ).toEqual(['Restaurar padrão', 'Concluir']);
       expect(button('Restaurar padrão').disabled).toBe(true);
+    });
+  });
+
+  describe('extra buttons', () => {
+    const chips = () => [...root.querySelectorAll<HTMLButtonElement>('.chips .chip')];
+    const on = () =>
+      chips()
+        .filter((chip) => chip.getAttribute('aria-pressed') === 'true')
+        .map((chip) => chip.textContent?.trim());
+    const useSamsung = () =>
+      TestBed.inject(TvSelection).setTvs([
+        makeTv('tv', {
+          isDefault: true,
+          kind: 'samsung',
+          capabilities: [
+            'tv.remote',
+            'tv.kind.samsung',
+            'tv.key.v3',
+            ...['INPUT', 'GUIDE', 'INFO', 'RED'].map((key) => `tv.key.${key}`),
+          ],
+        }),
+      ]);
+    beforeEach(async () => {
+      useSamsung();
+      await open();
+    });
+
+    it('lists only the keys the TV declares, and shows as on the ones the grid already carries', () => {
+      expect(chips().map((chip) => chip.textContent?.trim())).toEqual([
+        'Fonte',
+        'Guia',
+        'Informações',
+        'Vermelho',
+      ]);
+      expect(on()).toEqual(['Fonte']);
+      expect(chips()[0]!.classList.contains('auto')).toBe(true);
+      expect(root.querySelector('#tv-custom-extras-label')?.textContent?.trim()).toBe(
+        'Botões extras',
+      );
+    });
+
+    it('chooses a key, keeps the choice on the device and shows it as a choice, not as filler', () => {
+      chips()[1]!.click();
+      fixture.detectChanges();
+      expect(prefs().extraKeys()).toEqual(['GUIDE']);
+      expect(prefs().customized()).toBe(true);
+      expect(on()).toEqual(['Guia']);
+      expect(chips()[1]!.classList.contains('auto')).toBe(false);
+    });
+
+    it('takes a choice back with a second tap, and with Restaurar padrão brings the automatic one back', () => {
+      chips()[1]!.click();
+      fixture.detectChanges();
+      chips()[1]!.click();
+      fixture.detectChanges();
+      expect(prefs().extraKeys()).toBeNull();
+      chips()[2]!.click();
+      fixture.detectChanges();
+      button('Restaurar padrão').click();
+      fixture.detectChanges();
+      expect(prefs().extraKeys()).toBeNull();
+      expect(on()).toEqual(['Fonte']);
+    });
+
+    it('turns off a key the grid could not complete, instead of choosing it in vain', () => {
+      chips()[3]!.click();
+      fixture.detectChanges();
+      // Vermelho escolhido: com a Fonte e o Guia o total não fecha a fileira, então as outras ficam desligadas.
+      expect(chips()[1]!.disabled).toBe(true);
     });
   });
 
