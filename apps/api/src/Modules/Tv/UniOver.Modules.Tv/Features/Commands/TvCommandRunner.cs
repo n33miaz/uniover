@@ -49,9 +49,7 @@ internal sealed partial class TvCommandRunner(
         ArgumentNullException.ThrowIfNull(message);
 
         var settings = options.Value;
-        var target = selection is not null && selection.TryGet(out var selected)
-            ? selected!
-            : new TvTarget(Guid.Empty, (await agents.ResolveAsync(cancellationToken)).AgentSlug ?? string.Empty, ConfiguredTv.DefaultName, true);
+        var target = await ResolveTargetAsync(cancellationToken);
         var agentId = target.AgentSlug;
 
         TvSendOutcome outcome;
@@ -84,6 +82,12 @@ internal sealed partial class TvCommandRunner(
         await RecordAsync(origin, target.Id, agentId, command, detail, outcome);
         return outcome;
     }
+
+    /// <summary>A TV (e o agente) a que o comando desta requisição se destina: a escolhida, ou a de reserva.</summary>
+    internal async ValueTask<TvTarget> ResolveTargetAsync(CancellationToken cancellationToken) =>
+        selection is not null && selection.TryGet(out var selected)
+            ? selected!
+            : new TvTarget(Guid.Empty, (await agents.ResolveAsync(cancellationToken)).AgentSlug ?? string.Empty, ConfiguredTv.DefaultName, true);
 
     private TimeSpan TimeoutFor(string agentId, TvModuleOptions settings) =>
         string.Equals(state.Last(agentId)?.Connection, TvStateText.ConnectionHibernating, StringComparison.Ordinal)
