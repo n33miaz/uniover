@@ -380,8 +380,8 @@ public sealed class AuditEndpointTests(PostgresFixture postgres)
         var (app, owner, ownerId) = await StartAsync();
         await using var lifetime = app;
         await ExecuteAsync(app.Database.OwnerConnection,
-            "INSERT INTO tv.command_audit (id, user_id, command, ok, detail, occurred_at) " +
-            $"SELECT gen_random_uuid(), '{ownerId}', 'tv.key', true, 'k' || g, '2026-10-01T12:00:00Z'::timestamptz + (g * interval '1 second') " +
+            "INSERT INTO tv.command_audit (id, user_id, tv_id, command, ok, detail, occurred_at) " +
+            $"SELECT gen_random_uuid(), '{ownerId}', gen_random_uuid(), 'tv.key', true, 'k' || g, '2026-10-01T12:00:00Z'::timestamptz + (g * interval '1 second') " +
             "FROM generate_series(1, 5001) g");
 
         using var response = await GetAsync(app, owner.AccessToken, $"?{Window}", "/export");
