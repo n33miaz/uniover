@@ -338,6 +338,34 @@ APK pelo ADB (sem a trava dos comandos curtos), lê só a imagem de dentro dele 
   cada atualização da lista). Uma mensagem sem `icon` quer dizer "mantenha o que já tem": app que ficou sem ícone
   não apaga o que a API já guardava.
 
+## Manutenção remota
+
+Só o administrador, pela tela de Aparelhos do app, sem a pessoa do PC fazer nada. O agente anuncia as capacidades
+`agent.logs.v1` e `agent.maintenance.v1` no `hello` (que também traz o commit instalado, o sistema e a TV controlada).
+
+- **Ver registro** (`agent.logs.request.v1`). O agente lê o fim do **próprio** arquivo de registro (o da
+  configuração local, `logs\agent.log`; nunca um caminho vindo da rede), tira o que parece segredo e responde
+  `agent.logs.v1`. A higienização (`core/redaction.py`) vem **antes** do corte por tamanho e troca por `[removido]`:
+  `Bearer ...`, o cabeçalho `Authorization` inteiro, JWT, `uo_dev_...`, campos `token`, `access_token`,
+  `refresh_token`, `device_code`, `password`, `senha`, `secret`, `codigo`..., o código curto do pareamento
+  (`ABCD-EFGH`), o `deviceCode` (43 caracteres em base64url) e o token deste agente por igualdade. O quadro cabe nos
+  64 KB do canal: linhas antigas saem até caber (`truncated`). Lê no máximo os últimos 512 KB do arquivo.
+- **Atualizar agora** e **Reiniciar o agente** (`agent.maintenance.v1`). O agente cria `runtime\update-now` ou
+  `runtime\restart-now`, os mesmos arquivos do menu da bandeja, e responde. Quem age é o supervisor (`run-agent.ps1`,
+  a cada 15 s): atualizar só reinicia se houver versão nova; reiniciar mata e sobe o agente. O agente **não sai por
+  conta própria**: uma saída passaria pela contagem de quedas do supervisor, que pode reverter uma atualização em
+  teste e aumenta a espera. Rodando em um terminal, sem supervisor, o arquivo fica esperando um.
+- **Voltar para a versão anterior** (`agent.maintenance.v1`, `rollback`). Só vale se `app.previous` existe (a última
+  atualização o guarda): o agente cria `runtime\rollback-now` e o supervisor, se o pedido tem menos de 10 minutos,
+  encerra o agente, troca `app` por `app.previous`, guarda a versão que saiu em `app.rejected-*` e em
+  `runtime\.blocked-versions` (a auto-atualização não a instala de novo) e reinicia.
+- **Estado da atualização** (`runtime\update-status.json`). O `self-update` grava `updating` ao começar e o resultado
+  ao terminar (`updated`, `up_to_date`, `failed` com o motivo, `blocked`); o supervisor grava a próxima checagem, a falha
+  do próprio processo de atualização e a volta à versão anterior. O agente conectado manda esse estado no `hello`
+  (`update`), relê o arquivo a cada 30 s e avisa a API com `agent.update.status.v1` quando muda, além de repetir o
+  `hello` a cada 5 minutos. Tudo isso é informativo: arquivo ausente, corrompido ou recusado pelo contrato nunca
+  impede o agente de subir, conectar nem de se atualizar.
+
 ## Conexão
 
 - `wss://<api>/api/v1/devices/agents/<agentId>/ws`, `ping` a cada 20 s, mensagens de texto JSON de até 64 KB.

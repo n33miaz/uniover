@@ -48,9 +48,48 @@ class EnvelopeFactory:
         self._gate.check_outbound(envelope)
         return envelope
 
-    def hello(self, agent_version: str, capabilities: Sequence[str]) -> dict[str, Any]:
-        body = {"agentVersion": agent_version, "capabilities": list(capabilities)}
+    def hello(
+        self,
+        agent_version: str,
+        capabilities: Sequence[str],
+        *,
+        os_description: str | None = None,
+        tv: tuple[str, str] | None = None,
+        update: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """`agent.hello.v1`. `os_description`, `tv` (tipo, endereço) e `update` (estado da
+        auto-atualização) são só informativos."""
+        body: dict[str, Any] = {"agentVersion": agent_version, "capabilities": list(capabilities)}
+        if os_description:
+            body["os"] = os_description
+        if tv is not None:
+            body["tv"] = {"kind": tv[0], "host": tv[1]}
+        if update is not None:
+            body["update"] = update
         return self._build("agent.hello.v1", body, None)
+
+    def agent_update_status(self, body: dict[str, Any]) -> dict[str, Any]:
+        """`agent.update.status.v1`: o estado da auto-atualização, quando a checagem roda."""
+        return self._build("agent.update.status.v1", body, None)
+
+    def agent_logs(
+        self,
+        request_id: str,
+        correlation_id: str,
+        text: str,
+        lines: int,
+        *,
+        truncated: bool,
+    ) -> dict[str, Any]:
+        """`agent.logs.v1`: o fim do registro já higienizado, com o comando e o `requestId`."""
+        body: dict[str, Any] = {
+            "requestId": request_id,
+            "text": text,
+            "lines": lines,
+            "truncated": truncated,
+            "at": self._utc_now(),
+        }
+        return self._build("agent.logs.v1", body, correlation_id)
 
     def keepalive(self) -> dict[str, Any]:
         """`agent.keepalive.v1`: mantém o canal ativo sem efeito de negócio."""

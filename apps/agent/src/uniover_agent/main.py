@@ -12,12 +12,14 @@ import socket
 import sys
 from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from importlib import metadata
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from uniover_agent.adapters.agent_log_file import FileLogSource
 from uniover_agent.adapters.apk_tools import (
     Aapt2Inspector,
     FileIconCache,
@@ -25,8 +27,9 @@ from uniover_agent.adapters.apk_tools import (
     default_icons_dir,
     locate_aapt2,
 )
-from uniover_agent.adapters.installation import migrate_layout
+from uniover_agent.adapters.installation import installation_base, migrate_layout
 from uniover_agent.adapters.local_config import ConfigValue, save_agent_config, update_config
+from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
 from uniover_agent.adapters.pairing_http import HttpPairingClient, probe_api
 from uniover_agent.adapters.pairing_page import (
     can_open_browser,
@@ -37,7 +40,7 @@ from uniover_agent.adapters.pairing_page import (
 )
 from uniover_agent.adapters.qr_terminal import render_ascii, render_for
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
-from uniover_agent.adapters.self_update import self_update
+from uniover_agent.adapters.self_update import read_version, self_update
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.transport_ws import WebSocketTransport, build_ws_url
 from uniover_agent.adapters.tray_status import TrayStatus
@@ -58,6 +61,13 @@ from uniover_agent.adapters.tv_pairing import TvPairingError, is_paired, pair_tv
 from uniover_agent.adapters.tv_remote_v2 import AndroidTvRemoteV2
 from uniover_agent.adapters.tv_samsung import SamsungTvDriver
 from uniover_agent.adapters.tv_samsung_pairing import SamsungPairingError, pair_samsung_tv
+from uniover_agent.adapters.update_status import (
+    FileUpdateStatus,
+    default_status_path,
+    record_failure,
+    record_result,
+    record_updating,
+)
 from uniover_agent.adapters.wol import send_wake_on_lan
 from uniover_agent.config import (
     ConfigError,
@@ -71,6 +81,10 @@ from uniover_agent.config import (
     tv_cert_dir,
 )
 from uniover_agent.core import (
+    LOGS_CAPABILITY,
+    LOGS_REQUEST_TYPE,
+    MAINTENANCE_CAPABILITY,
+    MAINTENANCE_TYPE,
     AppIconPublisher,
     AppsAnnouncer,
     ConnectionSupervisor,
@@ -90,6 +104,9 @@ from uniover_agent.core import (
     TvRelocator,
     TvSessionManager,
     TvStatePublisher,
+    UpdateStatusWatcher,
+    agent_logs_handler,
+    agent_maintenance_handler,
     tv_app_launch_handler,
     tv_apps_refresh_handler,
     tv_cleanup_handler,
@@ -97,6 +114,7 @@ from uniover_agent.core import (
     tv_text_handler,
     tv_wake_handler,
     unsupported_handler,
+    update_body,
 )
 from uniover_agent.ports import (
     AdbUnauthorized,
@@ -129,6 +147,35 @@ def agent_version() -> str:
         return metadata.version("uniover-agent")
     except metadata.PackageNotFoundError:
         return "0.0.0"
+
+
+_BUILD_DIGITS = 12
+
+
+def build_version() -> str:
+    """Versão do pacote e, quando se sabe, o commit instalado (`0.1.0+3f2a9c1d4e5b`).
+
+    É o que a tela do dono mostra: o número do pacote quase nunca muda, o commit diz de fato qual
+    código está rodando. O arquivo `.version` é o que a auto-atualização grava.
+    """
+    version = agent_version()
+    try:
+        commit = read_version(agent_source_dir())
+    except OSError:
+        commit = None
+    if commit and re.fullmatch(r"[0-9a-f]{7,40}", commit):
+        return f"{version}+{commit[:_BUILD_DIGITS]}"
+    return version
+
+
+def describe_os() -> str | None:
+    """Sistema do PC para a tela do dono (ex.: `Windows 11 (10.0.26200)`); nunca falha."""
+    try:
+        system, release, version = platform.system(), platform.release(), platform.version()
+    except OSError:
+        return None
+    text = f"{system} {release} ({version})" if version else f"{system} {release}"
+    return text.strip()[:80] or None
 
 
 def silence_noisy_loggers() -> None:
@@ -443,10 +490,40 @@ def compose_icons(
     return publisher
 
 
-def build_handler(clock: Clock, tv: TvSetup | None = None) -> HandleCommand:
-    """Comandos que este agente sabe executar. Sem aparelhos habilitados, nenhum: todo comando
-    é recusado e registrado (nada finge que apertou uma tecla)."""
-    return HandleCommand(tv.handlers if tv is not None else {}, clock)
+def build_handler(
+    clock: Clock, tv: TvSetup | None = None, care: dict[str, Handler] | None = None
+) -> HandleCommand:
+    """Comandos que este agente sabe executar. Sem aparelhos habilitados, só os da manutenção
+    remota (registro e atualização, que valem sem TV): todo outro comando é recusado e registrado
+    (nada finge que apertou uma tecla)."""
+    return HandleCommand({**(tv.handlers if tv is not None else {}), **(care or {})}, clock)
+
+
+def log_file_path(settings: Settings) -> Path:
+    """O registro do próprio agente: o que a configuração local diz, nunca algo vindo da rede."""
+    if settings.log_file:
+        return Path(settings.log_file)
+    return installation_base() / "logs" / "agent.log"
+
+
+def build_remote_care(
+    settings: Settings,
+    transport: Transport,
+    envelopes: EnvelopeFactory,
+    secrets: SecretStore,
+    agent_id: str,
+) -> dict[str, Handler]:
+    """Manutenção remota: registro sem segredos e pedidos de atualizar ou reiniciar."""
+    source = FileLogSource(log_file_path(settings), fallback=installation_base() / "agent.log")
+
+    def known_secrets() -> list[str]:
+        token = secrets.get(agent_id)
+        return [token] if token else []
+
+    return {
+        LOGS_REQUEST_TYPE: agent_logs_handler(source, transport, envelopes, known_secrets),
+        MAINTENANCE_TYPE: agent_maintenance_handler(RuntimeFlagSignals()),
+    }
 
 
 def _sanitize(text: str, pattern: str, limit: int, fallback: str) -> str:
@@ -634,7 +711,7 @@ async def supervise(supervisor: ConnectionSupervisor, relocator: TvRelocator | N
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def run(settings: Settings, open_store: StoreFactory) -> int:
+async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR0915 - composição
     agent_id = settings.agent_id
     if not agent_id:
         print(_NOT_PAIRED, file=sys.stderr)
@@ -661,7 +738,9 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
     process = ProcessMessage(
         agent_id,
         gate,
-        build_handler(clock, tv),
+        build_handler(
+            clock, tv, build_remote_care(settings, transport, envelopes, secrets, agent_id)
+        ),
         envelopes,
         transport,
         background_types=tv.background_commands if tv is not None else (),
@@ -685,24 +764,32 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:
         for step in after_hello:
             await step()
 
+    update_source = FileUpdateStatus(default_status_path(), agent_source_dir())
     supervisor = ConnectionSupervisor(
         transport,
         process,
         envelopes,
         clock,
         random.SystemRandom().random,
-        agent_version=agent_version(),
+        agent_version=build_version(),
         capabilities=(
             "transport.keepalive.v1",
+            LOGS_CAPABILITY,
+            MAINTENANCE_CAPABILITY,
             *(tuple(tv.capabilities) if tv is not None else ()),
         ),
         on_connected=on_connected,
         on_disconnected=tray.disconnected,
+        os_description=describe_os(),
+        tv=(settings.tv_kind, settings.tv_host) if tv is not None and settings.tv_host else None,
+        update_status=lambda: update_body(update_source.read()),
     )
     _log.info("agente %s iniciando (api %s)", agent_id, api_url)
-    jobs: list[Callable[[], Coroutine[Any, Any, None]]] = []
+    jobs: list[Callable[[], Coroutine[Any, Any, None]]] = [
+        UpdateStatusWatcher(update_source, transport, envelopes, clock).run
+    ]
     if tv is not None:
-        jobs = [tv.manager.watch, *tv.background]
+        jobs = [*jobs, tv.manager.watch, *tv.background]
     background = [asyncio.create_task(job()) for job in jobs]
     relocator = (
         build_relocator(
@@ -902,8 +989,32 @@ async def tv_find(
 def update_agent(*, sync: bool) -> int:
     """Atualiza o agente instalado pela `main`. Nunca falha: o agente atual continua valendo."""
     migrate_layout()
-    print(self_update(agent_source_dir(), sync=sync).message)
+    status_file = default_status_path()
+    _safely(record_updating, status_file, datetime.now(UTC))
+    try:
+        result = self_update(agent_source_dir(), sync=sync)
+    except Exception as exc:
+        # Não devia acontecer (a atualização devolve o motivo); se ocorrer, o estado diz que falhou.
+        _log.exception("a auto-atualização falhou de forma inesperada")
+        _safely(
+            record_failure,
+            status_file,
+            f"erro inesperado na atualização ({type(exc).__name__})",
+            datetime.now(UTC),
+        )
+        print("A atualização falhou; o agente atual continua valendo.")
+        return EXIT_OK
+    _safely(record_result, status_file, result, datetime.now(UTC))
+    print(result.message)
     return EXIT_OK
+
+
+def _safely(action: Callable[..., None], *arguments: Any) -> None:
+    """O estado da atualização é só informativo: nada nele pode atrapalhar o agente."""
+    try:
+        action(*arguments)
+    except Exception:
+        _log.exception("não consegui registrar o estado da atualização")
 
 
 def _parser() -> argparse.ArgumentParser:
