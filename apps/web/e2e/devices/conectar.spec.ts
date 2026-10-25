@@ -83,11 +83,36 @@ test.describe('página pública /conectar', () => {
       expect(download.suggestedFilename()).toBe('conectar-uniover.cmd');
     });
 
-    test('logado também abre, fora da casca do app', async ({ page }) => {
+    test('sem login oferece Entrar (e voltar aqui), além do download sem conta', async ({
+      page,
+    }) => {
+      await page.goto('/conectar');
+      const login = page.getByRole('link', { name: 'Entrar' });
+      await expect(login).toHaveAttribute('href', '/entrar?next=%2Fconectar');
+      await expect(page.getByRole('link', { name: 'Baixar o conector' })).toBeVisible();
+      await expect(page.getByText('Você entrou como')).toHaveCount(0);
+
+      await login.click();
+      await expect(page).toHaveURL(/\/entrar\?next=%2Fconectar$/);
+    });
+
+    test('logado mostra quem é, não pede para entrar e abre fora da casca do app', async ({
+      page,
+    }, info) => {
       identity.loggedIn = true;
       await page.goto('/conectar');
       await expect(page.getByRole('link', { name: 'Baixar o conector' })).toBeVisible();
       await expect(page.locator('app-shell')).toHaveCount(0);
+      await expect(page.getByText(`Você entrou como ${identity.owner.displayName}.`)).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Entrar' })).toHaveCount(0);
+      await expect(
+        page.getByText('Na janela que abrir, toque em Aprovar neste computador'),
+      ).toBeVisible();
+      await expectNoHorizontalScroll(page);
+      await settle(page);
+      await screenshot(page, info.outputPath('conectar-logado.png'));
+      const { violations } = await new AxeBuilder({ page }).analyze();
+      expect(seriousViolations(violations)).toEqual([]);
     });
   });
 
@@ -115,7 +140,7 @@ test.describe('página pública /conectar', () => {
 test.describe('convidado com a TV', () => {
   test.use({ userAgent: WINDOWS_UA });
 
-  test('vê o botão de baixar o conector em Aparelhos, sem lista nem aprovação', async ({
+  test('vê o botão de baixar o conector em Aparelhos e aprova só o próprio PC, sem lista', async ({
     page,
   }, info) => {
     seedGuest(['module:tv', 'tv:control']);
@@ -123,7 +148,8 @@ test.describe('convidado com a TV', () => {
     await page.getByRole('link', { name: /^Aparelhos/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/dispositivos$/);
 
-    await expect(page.getByText('Peça ao administrador para aprovar.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Aprovar este computador' })).toBeVisible();
+    await expect(page.getByText('Peça ao administrador para aprovar.')).toHaveCount(0);
     const link = page.getByRole('link', { name: 'Baixar conector' });
     await expect(link).toHaveAttribute('href', '/conectar/conectar-uniover.cmd');
     await expect(page.getByRole('button', { name: 'Parear aparelho' })).toHaveCount(0);
@@ -140,6 +166,96 @@ test.describe('convidado com a TV', () => {
     await expect(page.getByRole('link', { name: 'Baixar conector' })).toHaveCount(0);
     await page.goto('/ajustes');
     await expect(page.getByRole('link', { name: /^Aparelhos/ })).toHaveCount(0);
+  });
+
+  test('aprova o próprio PC: senha de novo, TV só dele e nunca a padrão', async ({
+    page,
+  }, info) => {
+    seedGuest(['module:tv', 'tv:control']);
+    devices.openCodes.add('BCDF2345');
+
+    // É o endereço do botão "Aprovar neste computador" da página local do PC.
+    await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
+    const sheet = page.getByRole('dialog', { name: 'Aprovar este computador' });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByLabel('Código do computador')).toHaveValue('BCDF-2345');
+    await expect(sheet.getByLabel('Nome da TV')).toHaveValue(`TV de ${GUEST.displayName}`);
+    // Nada de escolher pessoas: a TV é só dele.
+    await expect(sheet.getByRole('switch')).toHaveCount(0);
+    await expect(sheet.getByRole('button', { name: 'Aprovar' })).toBeDisabled();
+    await sheet.getByLabel('Sua senha').fill(GUEST.password);
+    await expectNoHorizontalScroll(page);
+    await settle(page);
+    await screenshot(page, info.outputPath('guest-pair-sheet.png'));
+    const { violations } = await new AxeBuilder({ page }).analyze();
+    expect(seriousViolations(violations)).toEqual([]);
+
+    await sheet.getByRole('button', { name: 'Aprovar' }).click();
+    await expect(
+      page.getByText('Computador conectado. A sua TV já aparece no controle.'),
+    ).toBeVisible();
+
+    expect(identity.passwordConfirmations).toEqual([
+      { action: 'devices.pair-self', password: GUEST.password },
+    ]);
+    // A senha vem antes da aprovação e esta não leva lista de pessoas.
+    const approve = devices.requests.find((r) => r.path === '/pairing/approve-own')!;
+    expect(approve.body).toEqual({
+      userCode: 'BCDF2345',
+      name: null,
+      tvName: `TV de ${GUEST.displayName}`,
+    });
+    expect(devices.requests.some((r) => r.path === '/pairing/approve')).toBe(false);
+    expect(devices.tvs).toEqual([
+      {
+        name: `TV de ${GUEST.displayName}`,
+        agentSlug: devices.agents[0].slug,
+        memberIds: [GUEST_ID],
+      },
+    ]);
+  });
+
+  test('senha errada não aprova nada', async ({ page }) => {
+    seedGuest(['module:tv']);
+    devices.openCodes.add('BCDF2345');
+
+    await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
+    const sheet = page.getByRole('dialog', { name: 'Aprovar este computador' });
+    await sheet.getByLabel('Sua senha').fill('senha-errada');
+    await sheet.getByRole('button', { name: 'Aprovar' }).click();
+
+    await expect(sheet.getByText('Senha incorreta. Confira e tente de novo.')).toBeVisible();
+    expect(devices.requests.some((r) => r.path === '/pairing/approve-own')).toBe(false);
+    expect(devices.agents).toEqual([]);
+    expect(devices.openCodes.has('BCDF2345')).toBe(true);
+  });
+
+  test('no limite de computadores explica e pede ao administrador', async ({ page }) => {
+    seedGuest(['module:tv']);
+    devices.guestLimit = 0;
+    devices.openCodes.add('BCDF2345');
+
+    await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
+    const sheet = page.getByRole('dialog', { name: 'Aprovar este computador' });
+    await sheet.getByLabel('Sua senha').fill(GUEST.password);
+    await sheet.getByRole('button', { name: 'Aprovar' }).click();
+
+    await expect(
+      sheet.getByText('Peça ao administrador para revogar um.', { exact: false }),
+    ).toBeVisible();
+    expect(devices.tvs).toEqual([]);
+  });
+
+  test('sem o código no endereço o botão abre a folha em branco', async ({ page }) => {
+    seedGuest(['module:tv']);
+    await page.goto('/ajustes/dispositivos');
+    await page.getByRole('button', { name: 'Aprovar este computador' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Aprovar este computador' });
+    await expect(sheet.getByLabel('Código do computador')).toHaveValue('');
+    await expect(sheet.getByRole('button', { name: 'Aprovar' })).toBeDisabled();
+    await sheet.getByRole('button', { name: 'Cancelar' }).click();
+    await expect(sheet).toHaveCount(0);
+    expect(devices.requests).toHaveLength(0);
   });
 });
 

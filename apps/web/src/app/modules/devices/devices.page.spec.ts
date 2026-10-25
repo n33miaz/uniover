@@ -479,7 +479,13 @@ describe('DevicesPage', () => {
 });
 
 describe('DevicesPage deep link and connector', () => {
-  const api = { list: vi.fn(), approve: vi.fn(), deny: vi.fn(), revoke: vi.fn() };
+  const api = {
+    list: vi.fn(),
+    approve: vi.fn(),
+    approveOwn: vi.fn(),
+    deny: vi.fn(),
+    revoke: vi.fn(),
+  };
   const WINDOWS =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36';
 
@@ -533,23 +539,49 @@ describe('DevicesPage deep link and connector', () => {
     expect(el.querySelector('app-pair-sheet')).toBeNull();
   });
 
-  it('tells a guest to ask the administrator, without sheet, list or API call', async () => {
+  it('opens the guest sheet with the code and a suggested TV name for a guest with the TV', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(WINDOWS);
+    TestBed.overrideProvider(AuthService, {
+      useValue: { authorized: (call: (token: string) => unknown) => call('token') },
+    });
+    TestBed.overrideProvider(AuthApi, { useValue: { stepUpWithPassword: vi.fn() } });
+    TestBed.inject(SessionState).setUser({
+      id: 'guest-1',
+      email: 'g@example.com',
+      displayName: 'Raphael',
+      role: 'guest',
+      permissions: ['module:tv'],
+    });
+    const { harness, el } = await open('/ajustes/dispositivos?codigo=bcdf2345');
+    await vi.waitFor(() => {
+      harness.detectChanges();
+      expect(el.querySelector('app-guest-pair-sheet')).not.toBeNull();
+    });
+    expect(el.querySelector('app-pair-sheet')).toBeNull();
+    expect(el.querySelector<HTMLInputElement>('#guest-pair-code')!.value).toBe('BCDF-2345');
+    expect(el.querySelector<HTMLInputElement>('#guest-pair-name')!.value).toBe('TV de Raphael');
+    await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/ajustes/dispositivos'));
+    expect(api.list).not.toHaveBeenCalled();
+  });
+
+  it('tells a guest without the TV to ask the administrator, without sheet, list or API call', async () => {
     TestBed.inject(SessionState).setUser({
       id: 'guest-1',
       email: 'g@example.com',
       displayName: 'Convidada',
       role: 'guest',
-      permissions: ['module:tv'],
+      permissions: ['module:training'],
     });
     const { el } = await open('/ajustes/dispositivos?codigo=bcdf2345');
     await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/ajustes/dispositivos'));
     expect(el.textContent).toContain('Peça ao administrador para aprovar.');
     expect(el.querySelector('app-pair-sheet')).toBeNull();
+    expect(el.querySelector('app-guest-pair-sheet')).toBeNull();
     expect(el.querySelector('button')).toBeNull();
     expect(api.list).not.toHaveBeenCalled();
   });
 
-  it('lets a guest with the TV download the connector on Windows, without approving', async () => {
+  it('lets a guest with the TV download the connector on Windows and approve only his own PC', async () => {
     vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(WINDOWS);
     TestBed.inject(SessionState).setUser({
       id: 'guest-1',
@@ -562,7 +594,11 @@ describe('DevicesPage deep link and connector', () => {
     const link = el.querySelector<HTMLAnchorElement>('a.download')!;
     expect(link.textContent?.trim()).toBe('Baixar conector');
     expect(link.getAttribute('href')).toBe('/conectar/conectar-uniover.cmd');
-    expect(el.querySelector('button')).toBeNull();
+    // Sem lista de aparelhos nem "Parear aparelho" (isso é do administrador): só a aprovação do próprio PC.
+    expect(Array.from(el.querySelectorAll('button')).map((b) => b.textContent?.trim())).toEqual([
+      'Aprovar este computador',
+    ]);
+    expect(el.textContent).not.toContain('Peça ao administrador para aprovar.');
     expect(api.list).not.toHaveBeenCalled();
   });
 
@@ -577,6 +613,8 @@ describe('DevicesPage deep link and connector', () => {
     });
     const { el } = await open('/ajustes/dispositivos');
     expect(el.querySelector('a.download')).toBeNull();
+    expect(el.querySelector('button')).toBeNull();
+    expect(el.textContent).toContain('Peça ao administrador para aprovar.');
   });
 
   it('offers Connect this PC only on Windows and opens its sheet', async () => {

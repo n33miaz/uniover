@@ -84,6 +84,7 @@ test.describe('link do QR do agente', () => {
       password: GUEST.password,
       createdAt: '2026-10-19T15:00:00Z',
       disabledAt: null,
+      permissions: ['module:training'],
     });
     identity.role = 'guest';
     identity.loggedIn = true;

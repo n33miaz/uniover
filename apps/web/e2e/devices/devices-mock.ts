@@ -117,6 +117,8 @@ export interface DevicesMock {
   log: LogReply;
   /** Problema que a manutenção devolve em vez de aceitar (depois da passkey). */
   maintenanceProblem: { status: number; kind: string } | null;
+  /** Quantos computadores ativos o convidado pode ter (a API real: 2). */
+  guestLimit: number;
 }
 
 /** Código que a API simulada responde com 429 e `Retry-After: 7`. */
@@ -155,6 +157,7 @@ export async function mockDevicesApi(
     openCodes: new Set(),
     log: { text: DEFAULT_LOG },
     maintenanceProblem: null,
+    guestLimit: 2,
   };
 
   await context.route('**/api/v1/devices/**', async (route) => {
@@ -233,6 +236,52 @@ export async function mockDevicesApi(
           memberIds: members as string[],
         });
       }
+      return route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          id: agent.id,
+          slug: agent.slug,
+          name: agent.name,
+          platform: 'windows',
+        }),
+      });
+    }
+
+    // O convidado com a TV aprova o PC dele como a própria TV: a senha reconfirmada, uma TV só dele, nunca a padrão e
+    // um teto de computadores ativos (a API real confere o resto: permissão da TV e o corpo sem lista de pessoas).
+    if (method === 'POST' && path === '/pairing/approve-own') {
+      const guest = identity.role === 'guest' ? identity.guests.at(-1) : undefined;
+      if (!guest) return problem(route, 403, 'forbidden', 'Só para convidados.');
+      if (!identity.stepUpValid) {
+        return problem(route, 403, 'step-up-required', 'Confirme com a senha.', {
+          code: 'step_up_required',
+          action: 'devices.pair-self',
+        });
+      }
+      const code = String(body?.['userCode'] ?? '');
+      if (mock.agents.filter((a) => !a.revoked).length >= mock.guestLimit) {
+        return problem(route, 409, 'guest-agent-limit', 'Limite de computadores.');
+      }
+      if (!mock.openCodes.has(code))
+        return problem(route, 404, 'pairing-not-found', 'Não encontrado.');
+      mock.openCodes.delete(code);
+      identity.stepUpValid = false;
+      const agent: StoredAgent = {
+        id: `00000000-0000-4000-8000-00000000000${mock.agents.length + 1}`,
+        slug: `agent:pc-${mock.agents.length + 1}`,
+        name: 'PC do convidado',
+        platform: 'windows',
+        createdAt: '2026-10-18T12:00:00Z',
+        revoked: false,
+        lastSeenAt: null,
+      };
+      mock.agents.push(agent);
+      mock.tvs.push({
+        name: (body?.['tvName'] as string | null) ?? agent.name,
+        agentSlug: agent.slug,
+        memberIds: [guest.id],
+      });
       return route.fulfill({
         status: 200,
         headers: { 'content-type': 'application/json' },
