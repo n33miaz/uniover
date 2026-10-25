@@ -19,6 +19,8 @@ internal static class AgentMessageDirections
     {
         AgentMessageTypes.AgentHelloV1,
         AgentKeepAlive,
+        AgentMessageTypes.AgentLogsV1,
+        AgentMessageTypes.AgentUpdateStatusV1,
         AgentMessageTypes.CommandResultV1,
         AgentMessageTypes.TvAppsV1,
         AgentMessageTypes.TvAppsV2,
@@ -31,6 +33,8 @@ internal static class AgentMessageDirections
     public static FrozenSet<string> ToAgent { get; } = new[]
     {
         ApiKeepAlive,
+        AgentMessageTypes.AgentLogsRequestV1,
+        AgentMessageTypes.AgentMaintenanceV1,
         AgentMessageTypes.TvAppLaunchV1,
         AgentMessageTypes.TvAppsRefreshV1,
         AgentMessageTypes.TvCleanupV1,

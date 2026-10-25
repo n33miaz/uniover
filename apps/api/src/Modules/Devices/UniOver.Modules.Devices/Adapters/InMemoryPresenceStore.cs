@@ -57,7 +57,13 @@ internal sealed class InMemoryPresenceStore(TimeProvider time, IOptions<DevicesT
         }
     }
 
-    public AgentPresenceInfo? RecordHello(string agentId, string agentVersion, IReadOnlyList<string> capabilities, DateTimeOffset now)
+    public AgentPresenceInfo? RecordHello(
+        string agentId,
+        string agentVersion,
+        IReadOnlyList<string> capabilities,
+        DateTimeOffset now,
+        AgentHostInfo? host = null,
+        AgentUpdateInfo? update = null)
     {
         lock (_gate)
         {
@@ -66,9 +72,20 @@ internal sealed class InMemoryPresenceStore(TimeProvider time, IOptions<DevicesT
                 return null;
             }
 
-            var info = current with { AgentVersion = agentVersion, Capabilities = [.. capabilities], LastMessageAt = now };
+            var info = current with { AgentVersion = agentVersion, Capabilities = [.. capabilities], LastMessageAt = now, Host = host, Update = update };
             _agents[agentId] = info;
             return info;
+        }
+    }
+
+    public void RecordUpdate(string agentId, AgentUpdateInfo update, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            if (_agents.TryGetValue(agentId, out var current) && current.Connected)
+            {
+                _agents[agentId] = current with { Update = update, LastMessageAt = now };
+            }
         }
     }
 

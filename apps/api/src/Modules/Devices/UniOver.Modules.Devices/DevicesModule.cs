@@ -14,6 +14,7 @@ using UniOver.Modules.Devices.Features.DenyPairing;
 using UniOver.Modules.Devices.Features.GetModuleInfo;
 using UniOver.Modules.Devices.Features.ListAgents;
 using UniOver.Modules.Devices.Features.PollPairing;
+using UniOver.Modules.Devices.Features.RemoteCare;
 using UniOver.Modules.Devices.Features.RevokeAgent;
 using UniOver.Modules.Devices.Features.StartPairing;
 using UniOver.Modules.Devices.Features.Tokens;
@@ -69,6 +70,12 @@ public static class DevicesModule
         services.AddScoped<DenyPairingHandler>();
         services.AddScoped<ListAgentsHandler>();
         services.AddScoped<RevokeAgentHandler>();
+        services.AddSingleton(sp => new PublishedBuild(
+            sp.GetRequiredService<IConfiguration>()["RENDER_GIT_COMMIT"]?.Trim().ToLowerInvariant(),
+            sp.GetRequiredService<TimeProvider>().GetUtcNow()));
+        services.AddScoped<RemoteCareResolver>();
+        services.AddScoped<AgentLogsHandler>();
+        services.AddScoped<AgentMaintenanceHandler>();
         return services;
     }
 
@@ -85,6 +92,8 @@ public static class DevicesModule
         group.MapDenyPairing();
         group.MapListAgents();
         group.MapRevokeAgent();
+        group.MapAgentLogs();
+        group.MapAgentMaintenance();
         return endpoints;
     }
 }
