@@ -69,3 +69,19 @@ public sealed class StepUpRequirement(string action) : IAuthorizationRequirement
 {
     public string Action { get; } = action;
 }
+
+/// <summary>
+/// Ações que uma conta de CONVIDADO confirma com a senha de novo (ela não tem passkey: o passo forte do dono não existe
+/// para ela). A lista é fechada de propósito: a senha nunca vira um atalho para as ações que pedem passkey (criar convite,
+/// mudar permissões, trocar o computador de uma TV...). Cada ação aqui só vale na rota que a exige, e a rota limita o que
+/// o convidado alcança (a própria TV, nada além).
+/// </summary>
+public static class GuestStepUpActions
+{
+    /// <summary>Aprovar o pareamento de um computador como a própria TV (<c>POST /devices/pairing/approve-own</c>).</summary>
+    public const string PairSelf = "devices.pair-self";
+
+    public static IReadOnlyList<string> All { get; } = [PairSelf];
+
+    public static bool IsAllowed(string? action) => action is not null && All.Contains(action, StringComparer.Ordinal);
+}

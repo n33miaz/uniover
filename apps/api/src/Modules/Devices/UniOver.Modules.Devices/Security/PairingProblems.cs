@@ -12,6 +12,7 @@ internal static class PairingProblems
     public const string DeniedType = "pairing-denied";
     public const string NotFoundType = "pairing-not-found";
     public const string TooManyType = "too-many-pairings";
+    public const string GuestLimitType = "guest-agent-limit";
 
     /// <summary>
     /// Pareamento ou código desconhecido: a mesma resposta para id inexistente e <c>deviceCode</c> errado, e para
@@ -51,6 +52,13 @@ internal static class PairingProblems
             title: "Há pareamentos demais em aberto. Tente de novo mais tarde.",
             type: ProblemDetailsExtensions.TypeBase + TooManyType);
     }
+
+    /// <summary>O convidado já tem o máximo de computadores ativos; só o administrador libera um (revogando).</summary>
+    public static IResult GuestLimit() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: "Você já tem o máximo de computadores conectados. Peça ao administrador para revogar um.",
+            type: ProblemDetailsExtensions.TypeBase + GuestLimitType);
 
     public static IResult Unauthenticated() =>
         Results.Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Sessão inválida ou expirada.");

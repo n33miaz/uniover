@@ -36,7 +36,7 @@ internal sealed class PairedTvRegistrar(TimeProvider time) : IPairedTvRegistrar
         var name = registration.Name is not null && BindAgentValidator.ValidateName(registration.Name).Count == 0
             ? registration.Name
             : registration.AgentName;
-        var tv = ConfiguredTv.Create(name, registration.AgentSlug, !hasDefault, registration.OwnerId, now);
+        var tv = ConfiguredTv.Create(name, registration.AgentSlug, registration.CanBeDefault && !hasDefault, registration.OwnerId, now);
         db.Tvs.Add(tv);
         db.TvMembers.AddRange(registration.MemberIds.Distinct().Select(userId => TvMember.Create(tv.Id, userId, now)));
         await db.SaveChangesAsync(cancellationToken);
