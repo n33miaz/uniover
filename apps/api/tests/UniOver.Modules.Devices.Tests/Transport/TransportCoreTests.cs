@@ -208,6 +208,49 @@ public sealed class AgentConnectionsTests
     }
 }
 
+public sealed class AgentConnectionsRepeatedHelloTests
+{
+    private static readonly DateTimeOffset Now = new(2026, 10, 24, 12, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void ARepeatedHello_WithNothingNew_NotifiesNoOne_ButStillRecordsWhatTheAgentSaid()
+    {
+        var presence = TransportTestStores.Create();
+        var events = new SseBroadcaster<PresenceUpdate>(new SseStreamOptions());
+        var connections = new AgentConnections(presence, events);
+        var session = new StubSession("pc-casa");
+        connections.Attach(session, Now);
+        connections.RecordHello(session, "1.0.0", ["agent.maintenance.v1"], Now.AddSeconds(1));
+        using var stream = events.Subscribe("dono");
+
+        var update = new AgentUpdateInfo("up_to_date", null, null, null, null, null, null, null, null, false);
+        connections.RecordHello(session, "1.0.0", ["agent.maintenance.v1"], Now.AddMinutes(5), null, update);
+
+        stream.Reader.TryRead(out _).Should().BeFalse("nada que a tela veja mudou: sem aviso, sem leitura de banco do módulo da TV");
+        presence.Get("pc-casa")!.Update.Should().Be(update);
+        presence.Get("pc-casa")!.LastMessageAt.Should().Be(Now.AddMinutes(5));
+    }
+
+    [Theory]
+    [InlineData("1.0.1", "agent.maintenance.v1")]
+    [InlineData("1.0.0", "agent.maintenance.v1,agent.logs.v1")]
+    public void AHelloWithANewVersionOrCapability_StillNotifies(string version, string capabilities)
+    {
+        var presence = TransportTestStores.Create();
+        var events = new SseBroadcaster<PresenceUpdate>(new SseStreamOptions());
+        var connections = new AgentConnections(presence, events);
+        var session = new StubSession("pc-casa");
+        connections.Attach(session, Now);
+        connections.RecordHello(session, "1.0.0", ["agent.maintenance.v1"], Now.AddSeconds(1));
+        using var stream = events.Subscribe("dono");
+
+        connections.RecordHello(session, version, capabilities.Split(','), Now.AddMinutes(5));
+
+        stream.Reader.TryRead(out var message).Should().BeTrue();
+        message!.Data.Agents[0].AgentVersion.Should().Be(version);
+    }
+}
+
 public sealed class SseBroadcasterTests
 {
     private static SseMessage<int> Message(int value) => new("teste", value);

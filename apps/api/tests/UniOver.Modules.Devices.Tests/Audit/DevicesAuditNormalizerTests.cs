@@ -20,6 +20,10 @@ public class DevicesAuditNormalizerTests
     [InlineData(PairingEvents.Expired, "pairing_expired", AuditOutcome.Failure)]
     [InlineData(PairingEvents.TokenIssued, "pairing_token_issued", AuditOutcome.Success)]
     [InlineData(PairingEvents.AgentRevoked, "agent_revoked", AuditOutcome.Success)]
+    [InlineData(PairingEvents.AgentLogsViewed, "agent_logs_viewed", AuditOutcome.Success)]
+    [InlineData(PairingEvents.AgentUpdateRequested, "agent_update_requested", AuditOutcome.Success)]
+    [InlineData(PairingEvents.AgentRestartRequested, "agent_restart_requested", AuditOutcome.Success)]
+    [InlineData(PairingEvents.AgentRollbackRequested, "agent_rollback_requested", AuditOutcome.Success)]
     public void EachStoredEvent_BecomesAnUnambiguousActionWithAnOutcome(string stored, string action, AuditOutcome outcome)
     {
         var record = DevicesAuditNormalizer.Normalize(

@@ -214,6 +214,8 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
             (HttpMethod.Get, "/api/v1/tv/config", null),
             (HttpMethod.Put, "/api/v1/tv/config/agent", new { agentSlug = "pc-casa" }),
             (HttpMethod.Post, $"/api/v1/devices/agents/{Guid.NewGuid()}/revoke", null),
+            (HttpMethod.Post, $"/api/v1/devices/agents/{Guid.NewGuid()}/logs", new { lines = 10 }),
+            (HttpMethod.Post, $"/api/v1/devices/agents/{Guid.NewGuid()}/maintenance", new { action = "restart" }),
             (HttpMethod.Post, "/api/v1/devices/pairing/approve", new { userCode = "ABCD-EFGH" }),
             (HttpMethod.Post, "/api/v1/devices/pairing/deny", new { userCode = "ABCD-EFGH" }),
             (HttpMethod.Get, "/api/v1/training/exercises", null),
