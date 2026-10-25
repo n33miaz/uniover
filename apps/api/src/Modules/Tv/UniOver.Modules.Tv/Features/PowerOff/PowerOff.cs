@@ -22,7 +22,7 @@ internal sealed class PowerOffHandler(TvCommandRunner runner)
         // Com "power" a TV sai da rede e só o infravermelho a religa (ela não tem botão físico). O dono decidiu que
         // desligar não pede a passkey: o freio é o limite de comandos e a trilha, que guarda este comando com nome próprio.
         return runner.RunAsync(
-            command.Origin, TvCommandNames.PowerOff, "POWER", TvMessages.Key(TvKeyV2BodyKey.Power), waitForReply: true, cancellationToken);
+            command.Origin, TvCommandNames.PowerOff, "POWER", TvMessages.Key(TvKeyV3BodyKey.Power), waitForReply: true, cancellationToken);
     }
 }
 

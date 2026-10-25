@@ -15,7 +15,7 @@ namespace UniOver.Modules.Tv.Features.SendKey;
 internal sealed record SendKeyRequest(string? Key, string? Direction);
 
 internal sealed record SendKeyCommand(
-    TvCommandOrigin Origin, string KeyName, TvKeyV2BodyKey Key, TvKeyV2BodyDirection? Direction);
+    TvCommandOrigin Origin, string KeyName, TvKeyV3BodyKey Key, TvKeyV2BodyDirection? Direction);
 
 internal static class SendKeyValidator
 {
@@ -31,7 +31,7 @@ internal static class SendKeyValidator
         var errors = new Dictionary<string, string[]>();
 
         var keyName = request?.Key?.Trim();
-        TvKeyV2BodyKey key = default;
+        TvKeyV3BodyKey key = default;
         if (string.IsNullOrEmpty(keyName) || !TvMessages.Keys.TryGetValue(keyName, out key))
         {
             errors["key"] = ["Informe uma tecla válida (ex.: VOLUME_UP)."];
@@ -63,7 +63,7 @@ internal static class SendKeyValidator
     }
 }
 
-internal sealed record SendKeyParsed(string KeyName, TvKeyV2BodyKey Key, TvKeyV2BodyDirection? Direction);
+internal sealed record SendKeyParsed(string KeyName, TvKeyV3BodyKey Key, TvKeyV2BodyDirection? Direction);
 
 internal sealed class SendKeyHandler(TvCommandRunner runner)
 {
