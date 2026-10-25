@@ -9,6 +9,7 @@ export const PWA_ENABLED = new InjectionToken<boolean>('PWA_ENABLED', {
 });
 
 export const UPDATE_ACTIVATION_TIMEOUT_MS = 15_000;
+export const UPDATE_CHECK_THROTTLE_MS = 60_000;
 
 /**
  * Cuida do ciclo de vida do service worker: registra, avisa quando há versão nova esperando e, quando o
@@ -23,6 +24,7 @@ export class PwaUpdateService {
   private registering = false;
   private applying = false;
   private reloading = false;
+  private lastUpdateCheckAt: number | null = null;
   private activationTimer: number | undefined;
   private readonly watchedWorkers = new WeakSet<ServiceWorker>();
 
@@ -35,9 +37,14 @@ export class PwaUpdateService {
     const win = this.win;
     if (this.started || !win || !this.enabled) return;
     this.started = true;
-    const run = () => void this.register(win);
+    const run = () => this.checkForUpdate(win);
     if (win.document.readyState === 'complete') run();
     else win.addEventListener('load', run, { once: true });
+    // Uma primeira tentativa offline não impede a próxima: a conexão e a volta à aba são novas oportunidades.
+    win.addEventListener('online', run);
+    win.document.addEventListener('visibilitychange', () => {
+      if (win.document.visibilityState === 'visible') run();
+    });
   }
 
   /** O usuário aceitou a versão nova: o worker que espera passa a controlar e a página recarrega. */
@@ -68,8 +75,15 @@ export class PwaUpdateService {
   private async register(win: Window): Promise<void> {
     if (this.registering || this.registration) return;
     this.registering = true;
-    const registration = await registerServiceWorker(win, this.enabled);
-    this.registering = false;
+    let registration: ServiceWorkerRegistration | undefined;
+    try {
+      registration = await registerServiceWorker(win, this.enabled);
+    } catch {
+      // A rede pode estar indisponível na abertura; os eventos de conexão tentam novamente sem afetar a tela.
+      return;
+    } finally {
+      this.registering = false;
+    }
     if (!registration) return;
     this.registration = registration;
     const container = win.navigator.serviceWorker;
@@ -100,12 +114,20 @@ export class PwaUpdateService {
         win.location.reload();
       }
     });
-    // Ao voltar para o app, confere se há versão nova (o navegador só confere sozinho ao navegar).
-    win.document.addEventListener('visibilitychange', () => {
-      if (win.document.visibilityState === 'visible')
-        void registration.update().catch(() => undefined);
-    });
     // Pede armazenamento durável para o navegador não limpar a casca e os dados locais por falta de uso.
     void win.navigator.storage?.persist?.().catch(() => undefined);
+  }
+
+  /** Registra quando ainda não há worker; depois disso, pede uma atualização no máximo uma vez por minuto. */
+  private checkForUpdate(win: Window): void {
+    if (!this.registration) {
+      void this.register(win);
+      return;
+    }
+    const now = Date.now();
+    if (this.lastUpdateCheckAt !== null && now - this.lastUpdateCheckAt < UPDATE_CHECK_THROTTLE_MS)
+      return;
+    this.lastUpdateCheckAt = now;
+    void this.registration.update().catch(() => undefined);
   }
 }
