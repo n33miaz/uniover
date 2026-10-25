@@ -1,5 +1,5 @@
 /** Painéis flutuantes da tela da TV. */
-export type TvPanelName = 'apps' | 'keyboard';
+export type TvPanelName = 'apps' | 'keyboard' | 'keys';
 
 /**
  * Parâmetro de endereço que abre um painel ao chegar em `/tv` (`/tv?painel=apps`). Existe para os endereços antigos
@@ -11,6 +11,7 @@ export const TV_PANEL_PARAM = 'painel';
 export const TV_PANEL_VALUES: Record<TvPanelName, string> = {
   apps: 'apps',
   keyboard: 'teclado',
+  keys: 'botoes',
 };
 
 /** Lê o valor do parâmetro e devolve o painel, ou `null` se não for um painel conhecido. */

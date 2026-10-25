@@ -3,11 +3,12 @@ import { RouterLink } from '@angular/router';
 import { SessionState } from '../../../core/session/session-state';
 import { TvAccess } from '../data/tv-access';
 import { TvPrefs } from '../data/tv-prefs';
+import { TvRoundKeys } from '../data/tv-round-keys';
 import { TvStore } from '../data/tv-store';
 import { TvIcon } from './tv-icon';
 
-/** O que o menu pede à tela: abrir o painel Apps ou a folha Personalizar (o menu fecha antes). */
-export type TvMenuChoice = 'apps' | 'customize';
+/** O que o menu pede à tela: abrir o painel Apps, o Mais botões ou a folha Personalizar (o menu fecha antes). */
+export type TvMenuChoice = 'apps' | 'keys' | 'customize';
 
 /** Onde o administrador gerencia as TVs: quais existem, qual computador controla cada uma e quem usa (ajustes do sistema). */
 export const TV_BINDING_ROUTE = '/ajustes/sistema';
@@ -28,6 +29,7 @@ export const TV_BINDING_ROUTE = '/ajustes/sistema';
 export class TvMenu {
   protected readonly access = inject(TvAccess);
   protected readonly prefs = inject(TvPrefs);
+  protected readonly roundKeys = inject(TvRoundKeys);
   private readonly store = inject(TvStore);
   private readonly isGuest = inject(SessionState).isGuest;
 

@@ -17,9 +17,11 @@ import { GearIcon } from '../../core/layout/gear-icon';
 import { SessionState } from '../../core/session/session-state';
 import { TvAccess } from './data/tv-access';
 import { TvPrefs } from './data/tv-prefs';
+import { TvRoundKeys } from './data/tv-round-keys';
 import { TvStore } from './data/tv-store';
 import { AppsPanel } from './panels/apps-panel';
 import { KeyboardPanel } from './panels/keyboard-panel';
+import { MoreKeysPanel } from './panels/more-keys-panel';
 import { CustomizeSheet } from './ui/customize-sheet';
 import { SuggestionSheet } from './ui/suggestion-sheet';
 import { TvMenu, TvMenuChoice } from './ui/tv-menu';
@@ -70,6 +72,7 @@ const TITLE_MEDIUM_MAX = 12;
     SuggestionSheet,
     AppsPanel,
     KeyboardPanel,
+    MoreKeysPanel,
   ],
   templateUrl: './tv-page.html',
   styleUrl: './tv-page.css',
@@ -79,6 +82,7 @@ export class TvPage {
   protected readonly prefs = inject(TvPrefs);
   /** O que a conta pode fazer na TV: o que ela não pode, a tela não mostra. */
   protected readonly access = inject(TvAccess);
+  protected readonly roundKeys = inject(TvRoundKeys);
   /** Convidado vê só o controle: sem o retorno ao Início (ele não tem Início); no lugar, o botão de configurações. */
   protected readonly isGuest = inject(SessionState).isGuest;
 
@@ -119,6 +123,7 @@ export class TvPage {
       : $localize`:@@tv.options.open:Opções da TV`,
   );
   protected readonly keyboardTitle = $localize`:@@tv.keyboard.title:Teclado`;
+  protected readonly keysTitle = $localize`:@@tv.keys.title:Mais botões`;
   protected readonly menuTitle = $localize`:@@tv.menu.title:Mais opções`;
   protected readonly switchTitle = $localize`:@@tv.switch.title:Escolher a TV`;
 
@@ -199,13 +204,17 @@ export class TvPage {
       if (!this.access.editShortcuts()) this.suggestion.set(null);
       const apps = this.access.apps();
       const text = this.access.text();
+      const keys = this.access.control() && this.roundKeys.more().length > 0;
       this.panel.update((open) =>
-        (open === 'apps' && !apps) || (open === 'keyboard' && !text) ? null : open,
+        (open === 'apps' && !apps) || (open === 'keyboard' && !text) || (open === 'keys' && !keys)
+          ? null
+          : open,
       );
     });
   }
 
   private canOpen(panel: TvPanelName): boolean {
+    if (panel === 'keys') return this.access.control() && this.roundKeys.more().length > 0;
     return panel === 'apps' ? this.access.apps() : this.access.text();
   }
 
@@ -253,7 +262,7 @@ export class TvPage {
     if (!choice || !opener) return;
     // Com o menu ainda no DOM a tela está inerte: o painel seguinte só abre depois que ele sair.
     afterNextRender(
-      () => (choice === 'apps' ? this.open('apps', opener) : this.openCustomize(opener)),
+      () => (choice === 'customize' ? this.openCustomize(opener) : this.open(choice, opener)),
       { injector: this.injector },
     );
   }

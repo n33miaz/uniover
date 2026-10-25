@@ -1,0 +1,80 @@
+:host {
+  display: block;
+}
+
+.keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+  gap: var(--space-3, 12px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.key {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a-ink);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.key:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* O mesmo disco dos botões redondos do controle. */
+.face {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  aspect-ratio: 1;
+  border: 1px solid var(--a-line);
+  border-radius: 50%;
+  background: var(--a-surface);
+  font-size: 1.5rem;
+}
+.key.pressed .face {
+  background: var(--a-elev);
+}
+
+.word {
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.swatch {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: var(--swatch, currentColor);
+}
+.swatch[data-color='red'] {
+  --swatch: #d93a3a;
+}
+.swatch[data-color='green'] {
+  --swatch: #2e9d4b;
+}
+.swatch[data-color='yellow'] {
+  --swatch: #e6b422;
+}
+.swatch[data-color='blue'] {
+  --swatch: #2f6fdb;
+}
+
+.name {
+  font-size: var(--fs-small, 0.85rem);
+  color: var(--a-ink2);
+  text-align: center;
+  line-height: 1.2;
+}

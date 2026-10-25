@@ -12,6 +12,19 @@
         </span>
       </button>
     }
+    @if (access.control() && roundKeys.more().length > 0) {
+      <button
+        type="button"
+        class="ui-row"
+        [attr.aria-haspopup]="'dialog'"
+        (click)="choose.emit('keys')"
+      >
+        <span class="ui-tile"><app-tv-icon name="grid" /></span>
+        <span class="ui-row-text">
+          <span class="ui-row-title" i18n="@@tv.menu.more-keys">Mais botões</span>
+        </span>
+      </button>
+    }
     @if (access.control()) {
       <button
         type="button"

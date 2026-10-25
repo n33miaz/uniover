@@ -1,8 +1,8 @@
-import type { TvKeyV2BodyKey, TvWatchdogV1Body } from '../../../core/api/generated/agent';
+import type { TvKeyV3BodyKey, TvWatchdogV1Body } from '../../../core/api/generated/agent';
 import type { components } from '../../../core/api/generated/schema';
 
 /** Teclas que o controle envia por `/keys`. `POWER` não está aqui: desligar tem rota e botão próprios. */
-export type TvKey = Exclude<TvKeyV2BodyKey, 'POWER'>;
+export type TvKey = Exclude<TvKeyV3BodyKey, 'POWER'>;
 
 /** Atalho como a API entrega (tipo gerado do OpenAPI). */
 export type TvShortcut = components['schemas']['TvShortcut'];

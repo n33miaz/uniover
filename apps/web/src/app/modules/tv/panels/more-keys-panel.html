@@ -1,0 +1,18 @@
+<ul class="keys">
+  @for (extra of keys.more(); track extra.key) {
+    <li>
+      <button type="button" class="key" [appKey]="extra.key">
+        <span class="face" aria-hidden="true">
+          @if (extra.icon) {
+            <app-tv-icon [name]="extra.icon" />
+          } @else if (extra.color) {
+            <span class="swatch" [attr.data-color]="extra.color"></span>
+          } @else {
+            <span class="word">{{ extra.short }}</span>
+          }
+        </span>
+        <span class="name">{{ extra.label }}</span>
+      </button>
+    </li>
+  }
+</ul>

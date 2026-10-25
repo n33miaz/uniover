@@ -1,5 +1,6 @@
 import { Component, ElementRef, afterNextRender, inject, output, viewChild } from '@angular/core';
 import { InstallHintRow } from '../../../core/pwa/install-hint-row';
+import { TvExtraKey } from '../data/tv-extras';
 import {
   closeDialog,
   onDialogBackdropClick,
@@ -14,6 +15,7 @@ import {
   TvPrefsValue,
   TvStartPage,
 } from '../data/tv-prefs';
+import { TvRoundKeys } from '../data/tv-round-keys';
 import { leaveSheet } from './sheet-motion';
 
 interface Choice<T extends string> {
@@ -23,7 +25,7 @@ interface Choice<T extends string> {
 
 /**
  * Folha "Personalizar": o apelido da TV, o tamanho dos botões, a disposição das pílulas de volume e canal, que grupos
- * de teclas aparecem, a vibração, a página com que o palco abre e a sensibilidade do touchpad. Sobe de baixo como a de
+ * de teclas aparecem, os botões extras da tela principal, a vibração, a página com que o palco abre e a sensibilidade do touchpad. Sobe de baixo como a de
  * desligar. Cada mudança vale na hora (o controle fica atrás da folha, com a escolha à vista) e é guardada neste
  * aparelho pelo `TvPrefs`; por isso não há "Aplicar", só "Concluir". "Restaurar padrão" volta tudo ao que o controle
  * era.
@@ -36,6 +38,7 @@ interface Choice<T extends string> {
 })
 export class CustomizeSheet {
   protected readonly prefs = inject(TvPrefs);
+  protected readonly roundKeys = inject(TvRoundKeys);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private readonly nameField = viewChild.required<ElementRef<HTMLInputElement>>('nameField');
   private readonly doneButton = viewChild.required<ElementRef<HTMLButtonElement>>('done');
@@ -85,6 +88,16 @@ export class CustomizeSheet {
 
   protected setName(text: string): void {
     this.prefs.set({ name: text });
+  }
+
+  /** O extra está na tela principal agora (escolhido, ou posto pela grade para fechar a última fileira). */
+  protected isShown(extra: TvExtraKey): boolean {
+    return this.roundKeys.shown().includes(extra);
+  }
+
+  /** Foi a pessoa que o escolheu (e não o preenchimento automático). */
+  protected isChosen(extra: TvExtraKey): boolean {
+    return this.roundKeys.chosen().includes(extra.key);
   }
 
   protected change(patch: Partial<TvPrefsValue>): void {
