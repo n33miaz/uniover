@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, expectNoHorizontalScroll, test } from '../fixtures';
+import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import { openTraining, startTraining } from './support/training-pages';
 
 test.use({ serviceWorkers: 'block', timezoneId: 'America/Sao_Paulo', locale: 'pt-BR' });
@@ -81,5 +81,5 @@ test('guarda uma avaliação e as fotos do relatório só neste aparelho, sem re
   ).toBeVisible();
   await openTraining(page, '/treino/corpo');
   await expect(page.getByRole('button', { name: /Peso 82,4\s+kg/ })).toBeVisible();
-  await page.screenshot({ path: 'test-results/assessment-body-transfer.png', fullPage: true });
+  await screenshot(page, 'test-results/assessment-body-transfer.png', { fullPage: true });
 });
