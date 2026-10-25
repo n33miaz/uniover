@@ -88,7 +88,7 @@ internal sealed partial class AgentHub(
             await heartbeatStop.CancelAsync();
             await AwaitKeepAliveAsync(heartbeat);
             // Só a dona da conexão derruba a presença; quem foi substituída sai sem mexer (ver AgentConnections).
-            if (connections.Detach(session))
+            if (connections.Detach(session, time.GetUtcNow()))
             {
                 correlator.FailAll(agentId);
             }

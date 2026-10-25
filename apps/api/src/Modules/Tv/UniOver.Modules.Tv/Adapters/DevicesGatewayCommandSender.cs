@@ -54,7 +54,12 @@ internal sealed class DevicesGatewayCommandSender(IAgentGateway gateway, TimePro
 }
 
 /// <summary>Presença do agente lida do Devices (só em memória, nunca vai ao banco).</summary>
-internal sealed class DevicesAgentPresence(IAgentPresenceReader presence) : ITvAgentPresence
+internal sealed class DevicesAgentPresence(IAgentPresenceReader presence, TimeProvider time) : ITvAgentPresence
 {
     public bool IsOnline(string agentId) => !string.IsNullOrEmpty(agentId) && presence.Get(agentId)?.Connected == true;
+
+    public bool IsOfflineBeyondReconnectGrace(string agentId) =>
+        !string.IsNullOrEmpty(agentId)
+        && presence.OfflineSince(agentId) is { } since
+        && time.GetUtcNow() - since > presence.ReconnectGrace;
 }
