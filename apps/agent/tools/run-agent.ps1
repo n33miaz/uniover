@@ -97,9 +97,21 @@ function Note-Run([double]$Seconds) {
     } catch { }
 }
 
+# Nenhum processo novo pode abrir (nem piscar) uma janela. Este script ja roda num console oculto, e os filhos
+# chamados direto (`& $Uv ...`, `& taskkill.exe ...`) herdam esse console. Para o que precisa ficar vivo em paralelo
+# usamos a classe Process com CreateNoWindow: o Start-Process cria um console novo e so depois o esconde (pisca).
+function Start-Hidden([string]$File, [string]$Arguments) {
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = $File
+    $info.Arguments = $Arguments
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    return [System.Diagnostics.Process]::Start($info)
+}
+
 function Start-Tray([string]$Uv) {
     $arguments = 'run --project "' + $source + '" uniover-agent tray'
-    return Start-Process -FilePath $Uv -ArgumentList $arguments -PassThru -WindowStyle Hidden
+    return Start-Hidden $Uv $arguments
 }
 
 # Estado da atualizacao (runtime/update-status.json) e volta a versao anterior. Tudo isto e
@@ -184,7 +196,7 @@ while ($true) {
     # O icone sobe depois do sync: antes, ele prenderia o executavel que o sync troca.
     if ($null -eq $tray -or $tray.HasExited) { $tray = Start-Tray $uv }
     $arguments = 'run --project "' + $source + '" uniover-agent run'
-    $process = Start-Process -FilePath $uv -ArgumentList $arguments -PassThru -WindowStyle Hidden
+    $process = Start-Hidden $uv $arguments
     $started = Get-Date
     $restartForUpdate = $false
     while (-not $process.HasExited) {
