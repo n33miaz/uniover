@@ -138,4 +138,10 @@ public sealed record TvWatchdogEntry(
 public interface ITvAgentPresence
 {
     bool IsOnline(string agentId);
+
+    /// <summary>
+    /// O agente está sem sessão há mais que a janela de reconexão do gateway. Dentro da janela é só uma queda curta
+    /// (o agente volta em um ou dois segundos) e o comando deve esperar a sessão voltar, não falhar.
+    /// </summary>
+    bool IsOfflineBeyondReconnectGrace(string agentId);
 }

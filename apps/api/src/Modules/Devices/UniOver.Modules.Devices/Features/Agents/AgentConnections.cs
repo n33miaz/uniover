@@ -43,7 +43,7 @@ internal sealed class AgentConnections(
     /// Tira a sessão se ainda for a atual (comparar e remover, nunca remover pelo nome): sessão substituída não
     /// mexe na presença. Devolve se mudou o estado do agente.
     /// </summary>
-    public bool Detach(IAgentSession session)
+    public bool Detach(IAgentSession session, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(session);
         lock (_gate)
@@ -54,7 +54,7 @@ internal sealed class AgentConnections(
             }
 
             _sessions.Remove(session.AgentId);
-            if (presence.MarkDisconnected(session.AgentId) is { } info)
+            if (presence.MarkDisconnected(session.AgentId, now) is { } info)
             {
                 Announce(info);
             }
