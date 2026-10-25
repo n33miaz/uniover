@@ -716,13 +716,15 @@ describe('ControlPage', () => {
       TestBed.inject(TvSelection).setTvs([makeTv('tv', { isDefault: true, ...overrides })]);
       render();
     };
+    // Um agente de antes de declarar teclas: só tem a Fonte, que o contrato antigo já trazia.
     const SAMSUNG = { kind: 'samsung', capabilities: ['tv.remote', 'tv.kind.samsung'] } as const;
 
     afterEach(() => localStorage.clear());
 
-    it('has no Keyboard button on a TV that does not take text, and no gap where it was', () => {
+    it('has no Keyboard button on a TV that does not take text, and no empty cell where it was', () => {
       useTv(SAMSUNG);
       expect(byLabel('Teclado')).toBeNull();
+      // Sete botões fixos em quatro colunas deixariam uma célula vazia: a Fonte, que toda TV tem, a fecha.
       expect(roundLabels()).toEqual([
         'Voltar',
         'Início da TV',
@@ -731,15 +733,16 @@ describe('ControlPage', () => {
         'Reproduzir ou pausar',
         'Próxima',
         'Mudo',
+        'Fonte',
       ]);
-      // Sete botões em quatro colunas: a última fileira, de três, fica no meio.
       expect(cols()).toBe('4');
-      expect(root.querySelector('.round-grid')!.hasAttribute('data-short')).toBe(true);
+      expect(root.querySelector('.round-grid')!.hasAttribute('data-short')).toBe(false);
     });
 
-    it('keeps the Keyboard on an Android, whatever else it lacks', () => {
-      useTv({ capabilities: ['tv.remote', 'tv.kind.android'] });
+    it('keeps the Keyboard on an Android, whatever else it lacks, and adds nothing to a full grid', () => {
+      useTv({ capabilities: ['tv.remote', 'tv.kind.android', 'tv.key.v3', 'tv.key.INPUT'] });
       expect(byLabel('Teclado')).not.toBeNull();
+      expect(roundLabels()).toHaveLength(8);
       expect(root.querySelector('.round-grid')!.hasAttribute('data-short')).toBe(false);
     });
 
@@ -753,6 +756,72 @@ describe('ControlPage', () => {
       prefs().set({ pillLayout: 'row' });
       render();
       expect(cols()).toBe('3');
+    });
+
+    describe('extra buttons', () => {
+      const FULL_SAMSUNG = {
+        kind: 'samsung',
+        capabilities: [
+          'tv.remote',
+          'tv.kind.samsung',
+          'tv.key.v3',
+          ...['INPUT', 'GUIDE', 'INFO', 'TOOLS', 'RED', 'BLUE', 'PLAY'].map(
+            (key) => `tv.key.${key}`,
+          ),
+        ],
+      } as const;
+      const extras = () => roundLabels().slice(7);
+
+      it('completes the last row of a Samsung with the most important key it declares', () => {
+        useTv(FULL_SAMSUNG);
+        expect(extras()).toEqual(['Fonte']);
+        expect(root.querySelectorAll('.round-grid .round')).toHaveLength(8);
+      });
+
+      it('shows the keys the person chose, in the grid and by their names, with the row completed', () => {
+        useTv(FULL_SAMSUNG);
+        prefs().set({ extraKeys: ['GUIDE'] });
+        render();
+        expect(extras()).toEqual(['Guia']);
+        prefs().set({ extraKeys: ['RED', 'BLUE'] });
+        render();
+        expect(extras()).toEqual(['Vermelho', 'Azul', 'Fonte', 'Guia', 'Informações']);
+        expect(roundLabels().length % 4).toBe(0);
+      });
+
+      it('draws a colour key as a coloured disc, an icon key as its icon and the others as a short word', () => {
+        useTv(FULL_SAMSUNG);
+        prefs().set({ extraKeys: ['RED', 'PLAY', 'TOOLS'] });
+        render();
+        const faces = [...root.querySelectorAll('.round-grid .round')].slice(7);
+        expect(faces[0]!.querySelector('.swatch')?.getAttribute('data-color')).toBe('red');
+        expect(faces[1]!.querySelector('app-tv-icon')).not.toBeNull();
+        expect(faces[2]!.querySelector('.word')?.textContent).toBe('Ferram.');
+      });
+
+      it('sends the extra key the button names', () => {
+        useTv(FULL_SAMSUNG);
+        prefs().set({ extraKeys: ['GUIDE'] });
+        render();
+        byLabel('Guia').click();
+        expect(store.sendKey).toHaveBeenCalledWith('GUIDE');
+      });
+
+      it('keeps every combination of options without an empty cell', () => {
+        useTv(FULL_SAMSUNG);
+        for (const buttonSize of ['compact', 'comfortable', 'large'] as const) {
+          for (const showMedia of [true, false]) {
+            for (const pillLayout of ['sides', 'row'] as const) {
+              for (const extraKeys of [null, ['BLUE'], ['RED', 'BLUE', 'GUIDE']] as const) {
+                prefs().set({ buttonSize, showMedia, pillLayout, extraKeys });
+                render();
+                const columns = Number(cols());
+                expect(roundLabels().length % columns).toBe(0);
+              }
+            }
+          }
+        }
+      });
     });
 
     it('does not hide anything while nothing is known about the TV (agent off)', () => {

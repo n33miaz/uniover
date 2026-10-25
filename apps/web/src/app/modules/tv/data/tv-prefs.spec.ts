@@ -52,6 +52,7 @@ describe('TvPrefs', () => {
       startPage: 'numbers',
       padSpeed: 'fast',
       pillLayout: 'row',
+      extraKeys: ['GUIDE', 'BLUE'],
       dismissedSuggestions: ['netflix'],
     });
     expect(saved()).toEqual({
@@ -63,6 +64,7 @@ describe('TvPrefs', () => {
       startPage: 'numbers',
       padSpeed: 'fast',
       pillLayout: 'row',
+      extraKeys: ['GUIDE', 'BLUE'],
       dismissedSuggestions: ['netflix'],
     });
 
@@ -78,6 +80,56 @@ describe('TvPrefs', () => {
     expect(again.pillLayout()).toBe('row');
     expect(again.dismissedSuggestions()).toEqual(['netflix']);
     expect(again.customized()).toBe(true);
+  });
+
+  describe('extra buttons', () => {
+    it('start automatic: nothing chosen, so the important keys fill the empty cells', () => {
+      localStorage.setItem(accountKey(), JSON.stringify({ name: '' }));
+      const prefs = fresh();
+      expect(prefs.extraKeys()).toBeNull();
+      expect(prefs.customized()).toBe(false);
+    });
+
+    it('keep the chosen keys in order, count as a customization and go back with "Restaurar padrão"', () => {
+      const prefs = fresh();
+      prefs.set({ extraKeys: ['GUIDE', 'RED'] });
+      expect(fresh().extraKeys()).toEqual(['GUIDE', 'RED']);
+      expect(prefs.customized()).toBe(true);
+      prefs.reset();
+      expect(prefs.extraKeys()).toBeNull();
+      expect(prefs.customized()).toBe(false);
+    });
+
+    it('can be an empty choice (no extras at all), which is not the automatic one', () => {
+      const prefs = fresh();
+      prefs.set({ extraKeys: [] });
+      expect(fresh().extraKeys()).toEqual([]);
+      expect(prefs.customized()).toBe(true);
+    });
+
+    it('drop what the app has no button for, repeats and anything past the main screen limit', () => {
+      localStorage.setItem(
+        accountKey(),
+        JSON.stringify({
+          extraKeys: [
+            'GUIDE',
+            'GUIDE',
+            'POWER',
+            'NUM_1',
+            7,
+            null,
+            ...Array.from({ length: 20 }, () => 'RED'),
+            'BLUE',
+          ],
+        }),
+      );
+      expect(fresh().extraKeys()).toEqual(['GUIDE', 'RED', 'BLUE']);
+    });
+
+    it('fall back to automatic when the stored value is not a list', () => {
+      localStorage.setItem(accountKey(), JSON.stringify({ extraKeys: 'GUIDE' }));
+      expect(fresh().extraKeys()).toBeNull();
+    });
   });
 
   describe('removed shortcut suggestions', () => {

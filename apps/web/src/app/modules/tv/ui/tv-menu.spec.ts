@@ -2,8 +2,9 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { SessionState } from '../../../core/session/session-state';
 import { TvPrefs } from '../data/tv-prefs';
+import { TvSelection } from '../data/tv-selection';
 import { TvStore } from '../data/tv-store';
-import { FakeTvStore, createFakeTvStore } from '../tv-test-kit';
+import { FakeTvStore, createFakeTvStore, makeTv } from '../tv-test-kit';
 import { TvMenu, TvMenuChoice } from './tv-menu';
 
 describe('TvMenu', () => {
@@ -47,20 +48,38 @@ describe('TvMenu', () => {
 
   it('gathers apps and customization for the person, and, apart, the one thing that affects everybody', () => {
     mount();
-    expect(rows()).toEqual(['Apps da TV', 'Personalizar', 'Gerenciar TVs']);
+    expect(rows()).toEqual(['Apps da TV', 'Mais botões', 'Personalizar', 'Gerenciar TVs']);
     expect(root.querySelectorAll('.ui-group')).toHaveLength(2);
     const bind = root.querySelector<HTMLAnchorElement>('a.ui-row')!;
     expect(bind.getAttribute('href')).toBe('/ajustes/sistema');
     expect(bind.querySelector('.ui-chip')?.textContent?.trim()).toBe('Afeta todos');
   });
 
-  it('asks the screen to open Apps or Customize, and leaves the closing to the screen', () => {
+  it('asks the screen to open Apps, More buttons or Customize, and leaves the closing to the screen', () => {
     mount();
-    const [apps, customize] = [...root.querySelectorAll<HTMLButtonElement>('button.ui-row')];
+    const [apps, keys, customize] = [...root.querySelectorAll<HTMLButtonElement>('button.ui-row')];
     apps!.click();
+    keys!.click();
     customize!.click();
-    expect(chosen).toEqual(['apps', 'customize']);
+    expect(chosen).toEqual(['apps', 'keys', 'customize']);
     expect(customize!.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(keys!.getAttribute('aria-haspopup')).toBe('dialog');
+  });
+
+  it('has no "Mais botões" row when every key the TV has is already on the main screen', () => {
+    mount();
+    // Uma Android com a grade cheia e só a Fonte declarada: a Fonte ainda cabe em Mais botões.
+    expect(rows()).toContain('Mais botões');
+    // Uma Samsung de agente antigo só tem a Fonte, e ela já fecha a fileira da tela principal.
+    TestBed.inject(TvSelection).setTvs([
+      makeTv('tv', {
+        isDefault: true,
+        kind: 'samsung',
+        capabilities: ['tv.remote', 'tv.kind.samsung'],
+      }),
+    ]);
+    fixture.detectChanges();
+    expect(rows()).not.toContain('Mais botões');
   });
 
   it('names the Apps row as the panel it opens, so it reads "Opções da TV" for who only controls', () => {
@@ -79,7 +98,7 @@ describe('TvMenu', () => {
 
   it('never shows the guest what changes the TV for everybody', () => {
     mount(GUEST_TV);
-    expect(rows()).toEqual(['Apps da TV', 'Personalizar']);
+    expect(rows()).toEqual(['Apps da TV', 'Mais botões', 'Personalizar']);
     expect(root.querySelector('a.ui-row')).toBeNull();
     expect(root.querySelector('.ui-chip')).toBeNull();
   });
