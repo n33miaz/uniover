@@ -38,6 +38,14 @@ internal sealed record TrainingAppOptions
 
     public IOffClient? Off { get; init; }
 
+    public bool PhotoStorageEnabled { get; init; }
+
+    public IProgressPhotoObjectStore? Photos { get; init; }
+
+    public long? PhotoMaxAccountBytes { get; init; }
+
+    public int? PhotoMaxAccountPhotos { get; init; }
+
     public string? OffContact { get; init; }
 
     public int MaxItems { get; init; } = 1000;
@@ -144,6 +152,18 @@ internal sealed class TrainingApp : IAsyncDisposable
             ["UNIOVER_OWNER_PASSWORD"] = password,
         };
         if (options.OffContact is not null) settings["TRAINING_OFF_CONTACT"] = options.OffContact;
+        if (options.PhotoStorageEnabled)
+        {
+            settings["Modules:Training:Photos:Storage:Enabled"] = "true";
+            settings["Modules:Training:Photos:Storage:ServiceUrl"] = "https://objects.example.test";
+            settings["Modules:Training:Photos:Storage:Bucket"] = "private-test";
+            settings["Modules:Training:Photos:Storage:AccessKey"] = "synthetic-access";
+            settings["Modules:Training:Photos:Storage:SecretKey"] = "synthetic-secret";
+        }
+        if (options.PhotoMaxAccountBytes is { } maxAccountBytes)
+            settings["Modules:Training:Photos:MaxAccountBytes"] = maxAccountBytes.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (options.PhotoMaxAccountPhotos is { } maxAccountPhotos)
+            settings["Modules:Training:Photos:MaxAccountPhotos"] = maxAccountPhotos.ToString(System.Globalization.CultureInfo.InvariantCulture);
         if (options.CaptureSql)
         {
             settings["Logging:LogLevel:Microsoft.EntityFrameworkCore.Database.Command"] = "Information";
@@ -169,6 +189,13 @@ internal sealed class TrainingApp : IAsyncDisposable
             {
                 services.RemoveAll<IOffClient>();
                 services.AddSingleton(off);
+            }
+
+            if (options.Photos is { } photos)
+            {
+                services.RemoveAll<IProgressPhotoObjectStore>();
+                services.AddSingleton(photos);
+                services.AddSingleton<IProgressPhotoObjectStore>(photos);
             }
         }));
 
