@@ -9,6 +9,7 @@ import { TV_CONFIG } from './tv-config';
 import { describeCleanup } from './tv-cleanup';
 import { TvFailure, TvFailureContext, describeFailure, forbiddenMessage } from './tv-errors';
 import { withOrder } from './tv-order';
+import { powerOffNotice } from './tv-power';
 import { TvSelection } from './tv-selection';
 import {
   TV_STREAM_EVENTS,
@@ -22,6 +23,7 @@ import {
   parseState,
   parseWatchdog,
   shortcutLabel,
+  tvCanPowerOffSafely,
 } from './tv-types';
 
 /** Chip de estado do cabeçalho. `hibernating` é "controle dormindo": a TV não está desligada, só a sessão dorme. */
@@ -136,6 +138,8 @@ export class TvStore {
   /** As TVs que a conta vê (`null` sem lista) e a que está em uso; o seletor do cabeçalho vive disto. */
   readonly tvs = this.selection.tvs;
   readonly selectedTv = this.selection.selected;
+  /** O agente desta TV desliga com leitura: só aperta `POWER` com a TV lida como ligada e confirma o resultado. */
+  readonly safePowerOff = computed(() => tvCanPowerOffSafely(this.selection.selected()));
   /** Há mais de uma TV: só então o título vira seletor. */
   readonly multiple = this.selection.multiple;
 
@@ -395,6 +399,10 @@ export class TvStore {
   /**
    * Desliga a TV com um único pedido (sem passkey: decisão do dono). Devolve a falha, se houver, para a folha
    * mostrar dentro dela. Depois disso a tela não promete que a TV volta: o estado vem do servidor.
+   *
+   * Com agente que declara o desligamento com leitura o pedido é explícito ("desligar", nunca a tecla às cegas): o
+   * agente só aperta `POWER` com a TV lida como ligada, e o aviso diz o que de fato aconteceu. Com agente antigo, ou sem
+   * saber o que o agente faz, segue o pedido de antes.
    */
   async powerOff(): Promise<TvFailure | null> {
     if (!this.access.power()) return forbidden();
@@ -406,17 +414,13 @@ export class TvStore {
       };
     }
     const epoch = this.epoch;
+    const safe = this.safePowerOff();
     try {
-      await this.api.powerOff();
-      if (epoch === this.epoch) {
-        this.showNotice(
-          'info',
-          $localize`:@@tv.power.sent:Pedido de desligar enviado. A TV só volta com o controle original.`,
-        );
-      }
+      const outcome = await this.api.powerOff(safe);
+      if (epoch === this.epoch) this.showNotice('info', powerOffNotice(outcome));
       return null;
     } catch (error) {
-      const failure = describeFailure(error);
+      const failure = describeFailure(error, safe ? 'power-off' : undefined);
       if (epoch === this.epoch) this.absorb(failure);
       return failure;
     }

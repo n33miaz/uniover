@@ -2,13 +2,19 @@
   #dialog
   class="sheet"
   aria-labelledby="power-title"
-  aria-describedby="power-text"
+  [attr.aria-describedby]="store.safePowerOff() ? 'power-text power-checked' : 'power-text'"
   (cancel)="cancel($event)"
 >
   <h2 id="power-title" i18n="@@tv.power.title">Desligar a TV?</h2>
   <p id="power-text" class="text" i18n="@@tv.power.text">
     Sem o emissor infravermelho, a TV só volta com o controle original.
   </p>
+  @if (store.safePowerOff()) {
+    <p id="power-checked" class="text" i18n="@@tv.power.checked">
+      O agente só desliga se a TV estiver ligada e confirma o resultado. Se não conseguir confirmar,
+      não repete a tecla.
+    </p>
+  }
 
   <!-- Ainda não existe no agente: é só um aviso do que vem, por isso não é botão. -->
   <div

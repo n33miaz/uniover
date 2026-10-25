@@ -48,7 +48,28 @@ export interface TvSummary {
 export type TvFeature = 'cleanup' | 'text' | 'apps';
 
 /** Capacidades que o agente anuncia no `agent.hello` e que a web usa para decidir o que mostrar. */
-export const TV_CAPABILITY = { adb: 'tv.adb' } as const;
+export const TV_CAPABILITY = { adb: 'tv.adb', powerOff: 'tv.power.off.v1' } as const;
+
+/**
+ * O que o servidor respondeu ao pedido de desligar: `off` (o agente leu a TV ligada, apertou `POWER` uma vez e confirmou),
+ * `already_off` (leu a TV desligada e não enviou tecla nenhuma) ou `sent` (agente que não confirma: a tecla foi entregue e
+ * só). Resposta sem o campo, de um servidor mais antigo, vale `sent`.
+ */
+export type TvPowerOffOutcome = 'sent' | 'off' | 'already_off';
+
+export function parsePowerOffOutcome(value: unknown): TvPowerOffOutcome {
+  const outcome = (value as { outcome?: unknown } | null)?.outcome;
+  return outcome === 'off' || outcome === 'already_off' ? outcome : 'sent';
+}
+
+/**
+ * O agente desta TV declarou saber desligar com leitura (`tv.power.off.v1`)? Aqui, sem a lista de capacidades (agente
+ * desligado, servidor sem a lista), vale "não": pedir o desligamento com leitura a quem não o conhece não adianta, e o
+ * pedido de antes continua servindo.
+ */
+export function tvCanPowerOffSafely(tv: TvSummary | null): boolean {
+  return tv?.capabilities.includes(TV_CAPABILITY.powerOff) === true;
+}
 
 /**
  * A TV oferece o recurso? Sem lista de TVs, ou com a TV sem capacidades nem tipo (agente desligado: a API não sabe o que
