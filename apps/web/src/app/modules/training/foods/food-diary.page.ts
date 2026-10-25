@@ -521,17 +521,13 @@ export class FoodDiaryPage {
         this.searching.set(false);
         if (this.searchState() === 'loading') this.searchState.set('idle');
       }
+      if (this.savingOwnFoodQuery === query) return;
       if (!query) {
         ++this.foodResultsRequest;
         this.foods.set([]);
         return;
       }
-      if (
-        this.pendingOnlineQuery === query ||
-        this.onlineResultsQuery === query ||
-        this.savingOwnFoodQuery === query
-      )
-        return;
+      if (this.pendingOnlineQuery === query || this.onlineResultsQuery === query) return;
       void this.refreshLocalSearch(query, ++this.foodResultsRequest);
     });
   }
