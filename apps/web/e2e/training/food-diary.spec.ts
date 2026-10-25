@@ -1,9 +1,12 @@
 import { join } from 'node:path';
 import { expect, screenshot, test } from '../fixtures';
 import type { Page, TestInfo } from '@playwright/test';
-import { openTraining, startTraining } from './support/training-pages';
+import { expectSynced, openTraining, startTraining } from './support/training-pages';
 
 test.use({ serviceWorkers: 'block', timezoneId: 'America/Sao_Paulo', locale: 'pt-BR' });
+
+// O envio pendente e a passada de atualização passam dos 5 s de uma verificação comum quando a máquina está ocupada.
+const SYNC_WAIT = { timeout: 25_000 };
 
 const SHOTS = process.env['TRAINING_SHOTS_DIR'] ?? 'test-results/training-food-diary';
 
@@ -31,6 +34,17 @@ async function takeShot(page: Page, info: TestInfo, scheme: string, state: strin
   });
 }
 
+/**
+ * Muda o dia do diário. O WebKit dispara mais um `change` quando o campo de data perde o foco; o diário zera o
+ * formulário a cada `change`, então o foco sai agora, e não no próximo toque (onde apagaria uma edição já começada).
+ */
+async function setDay(page: Page, value: string): Promise<void> {
+  const day = page.locator('#diary-day');
+  await day.fill(value);
+  await day.dispatchEvent('change');
+  await day.blur();
+}
+
 async function useOffFixture(page: Page): Promise<() => string[]> {
   const queries: string[] = [];
   await page.route('**/api/v1/training/foods/off/search**', (route) => {
@@ -55,6 +69,8 @@ for (const scheme of ['light', 'dark'] as const) {
       context,
       cspViolations,
     }, info) => {
+      // Fluxo longo (cerca de 50 passos, com capturas de tela): o prazo de 30 s é para um teste curto.
+      test.slow();
       const server = await startTraining(context, page);
       expect(cspViolations).toEqual([]);
       const offSearchQueries = await useOffFixture(page);
@@ -73,6 +89,9 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.getByRole('button', { name: 'Registrar refeição' }).click();
       await expect(page.locator('.entry-main strong')).toHaveText(['Registro de demonstração']);
       expect(cspViolations).toEqual([]);
+      // A faixa "Sincronizar agora" aparece enquanto o envio está pendente e empurra a tela: quem toca nesse meio tempo
+      // erra o alvo. Cada passo espera o aparelho voltar a "em dia" antes do toque seguinte.
+      await expectSynced(page, SYNC_WAIT);
 
       const day = page.locator('#diary-day');
       const today = await day.inputValue();
@@ -81,21 +100,22 @@ for (const scheme of ['light', 'dark'] as const) {
         date.setDate(date.getDate() - 1);
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       }, today);
-      await day.fill(yesterday);
-      await day.dispatchEvent('change');
+      await setDay(page, yesterday);
       await expect(page.getByText('Nada registrado neste dia')).toBeVisible();
-      await day.fill(today);
-      await day.dispatchEvent('change');
+      await setDay(page, today);
       await expect(page.locator('.entry-main strong')).toHaveText(['Registro de demonstração']);
+      await expect(page.getByRole('status', { name: 'Carregando lançamentos…' })).toBeHidden();
 
       await page.getByRole('button', { name: 'Editar Registro de demonstração' }).click();
       await page.getByLabel('Descrição do lançamento').fill('Registro revisado');
       await page.getByRole('button', { name: 'Salvar alterações' }).click();
       await expect(page.locator('.entry-main strong')).toHaveText(['Registro revisado']);
+      await expectSynced(page, SYNC_WAIT);
       await page.getByRole('button', { name: 'Apagar Registro revisado' }).click();
       await page.getByRole('button', { name: 'Confirmar' }).click();
       await expect(page.getByText('Nada registrado neste dia')).toBeVisible();
       expect(cspViolations).toEqual([]);
+      await expectSynced(page, SYNC_WAIT);
 
       // Alimento próprio fica disponível na busca local mesmo sem consultar o catálogo externo.
       await page.locator('.own-food summary').click();
@@ -108,6 +128,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.locator('.selected-food strong')).toHaveText('Aveia de demonstração');
       await page.getByRole('button', { name: 'Registrar refeição' }).click();
       await expect(page.locator('.entry-main strong')).toHaveText(['Aveia de demonstração']);
+      await expectSynced(page, SYNC_WAIT);
 
       // Resultado do catálogo externo mantém a atribuição junto ao alimento.
       const search = page.getByRole('searchbox', { name: 'Buscar alimento' });
@@ -125,6 +146,7 @@ for (const scheme of ['light', 'dark'] as const) {
         'Aveia de demonstração',
         'Banana de demonstração',
       ]);
+      await expectSynced(page, SYNC_WAIT);
 
       // Sem rede, a cópia local continua pesquisável e o registro fica no aparelho.
       server.offline = true;

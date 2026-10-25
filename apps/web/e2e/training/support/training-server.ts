@@ -144,6 +144,8 @@ const NEW_ROW_DEFAULTS: Record<string, (id: string, body: Record<string, unknown
     stepKg: null,
     stepClientUpdatedAt: null,
   }),
+  // O alimento que a pessoa cadastra volta do servidor como "próprio" e sem atribuição (a resposta sempre traz os dois).
+  foods: () => ({ source: 'own', attribution: null }),
 };
 
 interface Stored {
