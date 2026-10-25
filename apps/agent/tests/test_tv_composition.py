@@ -186,9 +186,13 @@ async def test_run_declares_the_capability_and_serves_tv_commands(
     assert hello["type"] == "agent.hello.v1"
     assert hello["body"]["capabilities"] == [
         "transport.keepalive.v1",
+        "agent.logs.v1",
+        "agent.maintenance.v1",
         "tv.remote",
         "tv.kind.android",
     ]
+    # A tela do dono mostra o tipo e o endereço da TV que este PC controla.
+    assert hello["body"]["tv"] == {"kind": "android", "host": TV_HOST}
 
     # Logo depois do `hello`, a API recebe o estado atual: controle dormindo, poder desconhecido.
     first_state = api.received[1]
@@ -239,7 +243,7 @@ async def test_run_without_certificate_declares_no_capability(
         )
         await run(settings, lambda: store)
     assert [m["body"]["capabilities"] for m in api.received if m["type"] == "agent.hello.v1"] == [
-        ["transport.keepalive.v1"]
+        ["transport.keepalive.v1", "agent.logs.v1", "agent.maintenance.v1"]
     ]
     assert not [m for m in api.received if m["type"] == "tv.state.v1"]
 
@@ -294,6 +298,8 @@ async def test_later_deliveries_extend_the_composition_with_one_line_each(
 
     assert api.received[0]["body"]["capabilities"] == [
         "transport.keepalive.v1",
+        "agent.logs.v1",
+        "agent.maintenance.v1",
         "tv.remote",
         "tv.kind.android",
         "tv.adb",

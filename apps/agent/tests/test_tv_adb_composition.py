@@ -172,6 +172,8 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
 
     assert api.received[0]["body"]["capabilities"] == [
         "transport.keepalive.v1",
+        "agent.logs.v1",
+        "agent.maintenance.v1",
         "tv.remote",
         "tv.kind.android",
         "tv.adb",
