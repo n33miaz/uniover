@@ -49,7 +49,7 @@ describe('ExerciseLibraryPage', () => {
       'Supino reto com barra',
     ]);
     expect(count(el)).toBe('5 exercícios');
-    expect(el.querySelector('h2')?.textContent).toContain('Catálogo em português');
+    expect(el.textContent).not.toContain('Catálogo em português');
     expect(rows(el)[4].querySelector('.sub')?.textContent).toContain('Peito · Barra');
   });
 
