@@ -29,13 +29,21 @@
   place-items: center;
   min-width: 44px;
   min-height: 44px;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius-sm);
-  background: var(--a-surface-raised);
-  color: var(--a-ink);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--a-ink2);
   font: inherit;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
+  line-height: 1;
   cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+.nav-button:active {
+  transform: scale(0.94);
 }
 .nav-button:focus-visible,
 .day:focus-visible,
@@ -56,20 +64,22 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
-  min-height: 62px;
-  padding: 2px 0;
-  border: 1px solid var(--a-line);
+  min-height: 64px;
+  padding: 4px 0;
+  border: 0;
   border-radius: var(--radius-sm);
-  background: var(--a-surface-raised);
+  background: var(--a-surface-2);
   color: var(--a-ink);
   font: inherit;
   cursor: pointer;
-  animation: appear 0.24s var(--ease-out, ease-out) both;
+  animation: appear 0.24s var(--ease-out, ease-out) backwards;
   transition:
-    border-color 160ms ease,
     background-color 160ms ease,
     transform 160ms ease,
     box-shadow 160ms ease;
+}
+.day:active {
+  transform: scale(0.96);
 }
 .day:nth-child(2) {
   animation-delay: 24ms;
@@ -91,25 +101,31 @@
 }
 .day.today,
 .month-day.today {
-  border-color: var(--a-accent);
-  box-shadow: inset 0 0 0 1px var(--a-accent);
+  box-shadow: inset 0 0 0 2px var(--a-accent);
 }
-.day.done,
+.day.future .number {
+  color: var(--a-ink2);
+  font-weight: 500;
+}
+.day.done {
+  background: var(--a-accent-soft);
+}
 .month-day.done {
   background: var(--a-accent-soft);
   color: var(--a-accent-ink);
-  border-color: var(--a-accent);
 }
 .day.done::after {
   content: '✓';
+  color: var(--a-ok);
 }
 .weekday {
-  font-size: 0.67rem;
+  color: var(--a-ink3);
+  font-size: var(--fs-label);
   line-height: 1.2;
 }
 .number {
   font-size: 1rem;
-  font-weight: 800;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.25;
 }
@@ -121,7 +137,8 @@
   line-height: 1;
 }
 .week-bottom {
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: baseline;
 }
 .week-progress {
   display: flex;
@@ -138,6 +155,7 @@
 .calendar-link {
   flex: none;
   min-height: 44px;
+  margin-left: auto;
   padding: 0 2px;
   border: 0;
   background: transparent;
@@ -201,7 +219,7 @@
   font: inherit;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
-  animation: appear 0.2s ease-out both;
+  animation: appear 0.2s ease-out backwards;
 }
 .month-day.selected {
   outline: 2px solid var(--a-ink);
@@ -223,7 +241,7 @@
 .day-detail {
   padding: var(--space-3);
   border: 1px solid var(--a-line);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
 }
 .day-detail h3 {
   margin: 0 0 var(--space-2);
@@ -261,14 +279,12 @@
   }
 }
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .nav-button:hover {
+    background: var(--a-surface-2);
+  }
   .day:hover,
   .month-day:hover {
-    border-color: var(--a-accent);
     transform: translateY(-2px);
-  }
-  .day.done:hover,
-  .month-day.done:hover {
-    box-shadow: 0 3px 10px color-mix(in srgb, var(--a-accent) 24%, transparent);
   }
 }
 @media (prefers-reduced-motion: reduce) {

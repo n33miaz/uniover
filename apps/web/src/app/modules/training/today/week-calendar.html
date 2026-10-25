@@ -35,6 +35,7 @@
         class="day"
         [class.done]="hasWorkout(day.key, weekWorkouts())"
         [class.today]="isToday(day.key)"
+        [class.future]="isFuture(day.key)"
         [attr.aria-label]="weekDayLabel(day, index, weekWorkouts())"
         [attr.aria-current]="isToday(day.key) ? 'date' : null"
         (click)="openDay(day)"
