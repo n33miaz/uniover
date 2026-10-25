@@ -18,6 +18,7 @@ export * from './tv_cleanup_v1';
 export * from './tv_key_v1';
 export * from './tv_key_v2';
 export * from './tv_key_v3';
+export * from './tv_power_off_v1';
 export * from './tv_state_v1';
 export * from './tv_text_v1';
 export * from './tv_wake_v1';

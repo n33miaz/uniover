@@ -80,6 +80,7 @@ def test_new_tv_messages_have_at_least_one_invalid_example() -> None:
     invalid_types = {document["type"] for _, document in load("invalid")}
     for message_type in (
         "tv.key.v2",
+        "tv.power.off.v1",
         "tv.key.v3",
         "tv.wake.v1",
         "tv.app.launch.v1",

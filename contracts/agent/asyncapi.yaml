@@ -45,6 +45,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.key.v3.schema.json'
+      tvPowerOff:
+        name: tv.power.off.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.power.off.v1.schema.json'
       tvWake:
         name: tv.wake.v1
         contentType: application/json
@@ -191,6 +196,13 @@ operations:
     summary: A API envia ao agente uma tecla que só a v3 conhece (guia, ferramentas, cores, mídia...).
     messages:
       - $ref: '#/channels/agentCommands/messages/tvKeyV3'
+  sendTvPowerOff:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API pede o desligamento seguro da TV; o agente só aperta POWER depois de ler que ela está ligada, e nunca a liga.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvPowerOff'
   sendTvWake:
     action: send
     channel:
