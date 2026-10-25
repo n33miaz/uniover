@@ -34,6 +34,9 @@ export type ModuleInfo = Readonly<Schemas['IdentityModuleInfo']>;
 export type GuestInviteSummary = Readonly<Schemas['GuestInviteSummary']>;
 export type GuestInviteCreated = Readonly<Schemas['CreateGuestInviteResponse']>;
 export type GuestSummary = Readonly<Schemas['GuestSummary']>;
+export type QrLoginStarted = Readonly<Schemas['StartQrLoginResponse']>;
+export type QrLoginPoll = Readonly<Schemas['PollQrLoginResponse']>;
+export type QrLoginInfo = Readonly<Schemas['QrLoginInfoResponse']>;
 
 interface RequestOptions {
   readonly token?: string | null;
@@ -86,6 +89,37 @@ export class AuthApi {
   acceptInvite(token: string, email: string, password: string): Promise<TokenResponse> {
     const body: Schemas['AcceptGuestInviteRequest'] = { token, email, password };
     return this.send('POST', '/guest-invites/accept', { body });
+  }
+
+  /** Computador sem sessão pede um QR de entrada. O `pollSecret` só este navegador guarda; o `code` vai no QR. */
+  qrStart(): Promise<QrLoginStarted> {
+    return this.send('POST', '/auth/qr/start');
+  }
+
+  /** Consulta do computador. Aprovado, a resposta traz o token de acesso e o cookie de refresh já vem junto. */
+  qrPoll(secret: string): Promise<QrLoginPoll> {
+    const body: Schemas['PollQrLoginRequest'] = { secret };
+    return this.send('POST', '/auth/qr/poll', { body });
+  }
+
+  /** O celular (logado) vê o que o computador informou antes de confirmar. */
+  qrInfo(token: string, code: string): Promise<QrLoginInfo> {
+    const body: Schemas['QrLoginCodeRequest'] = { code };
+    return this.send('POST', '/auth/qr/info', { token, body });
+  }
+
+  /**
+   * Confirma a entrada do computador. Com passkey a API pede a confirmação (o `AuthService` abre o diálogo e repete); sem
+   * passkey e com a sessão antiga, pede a senha.
+   */
+  qrApprove(token: string, code: string, password: string | null): Promise<void> {
+    const body: Schemas['ApproveQrLoginRequest'] = { code, password };
+    return this.send('POST', '/auth/qr/approve', { token, body });
+  }
+
+  qrDeny(token: string, code: string): Promise<void> {
+    const body: Schemas['QrLoginCodeRequest'] = { code };
+    return this.send('POST', '/auth/qr/deny', { token, body });
   }
 
   guestInvites(token: string): Promise<readonly GuestInviteSummary[]> {

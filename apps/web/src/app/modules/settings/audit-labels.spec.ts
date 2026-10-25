@@ -35,6 +35,9 @@ const IDENTITY_ACTIONS = [
   'guest_revoked',
   'permissions_changed',
   'profile_updated',
+  'qr_login_approved',
+  'qr_login_denied',
+  'qr_login_succeeded',
   'audit_exported',
 ];
 const DEVICES_ACTIONS = [

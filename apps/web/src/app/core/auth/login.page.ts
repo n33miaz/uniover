@@ -16,6 +16,7 @@ import { AuthLayout } from './auth-layout';
 import { AuthBanner, AuthCountdown, AuthNotice, AuthTone } from './auth-notice';
 import { AuthGlyphName } from './auth-glyph';
 import { isPlausibleEmail } from './auth-validation';
+import { QrLoginPanel } from './qr/qr-login-panel';
 import { AuthService } from './auth.service';
 import { createCountdown, describeWait, formatCountdown } from './countdown';
 import { safeNextUrl } from './next-url';
@@ -32,7 +33,7 @@ type LoginError = 'invalid' | 'bad-request' | 'network' | 'failed' | 'locked' | 
  */
 @Component({
   selector: 'app-login-page',
-  imports: [AuthLayout, AuthField, AuthNotice, RouterLink],
+  imports: [AuthLayout, AuthField, AuthNotice, QrLoginPanel, RouterLink],
   templateUrl: './login.page.html',
   styleUrl: './login.page.css',
 })
@@ -133,6 +134,11 @@ export class LoginPage {
     void this.auth.init().then(() => {
       if (this.auth.status() === 'authenticated') void this.leave();
     });
+  }
+
+  /** O celular confirmou a entrada pelo QR e a sessão já está aberta: segue para o destino, como depois da senha. */
+  protected onQrSignedIn(): void {
+    void this.leave();
   }
 
   protected async submit(event: Event): Promise<void> {

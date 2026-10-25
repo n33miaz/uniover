@@ -1,0 +1,48 @@
+@if (visible()) {
+  <section class="qr" aria-labelledby="qr-login-title">
+    <h2 id="qr-login-title" i18n="@@auth.qr.title">Entrar com o celular</h2>
+
+    <div class="stage">
+      @switch (phase()) {
+        @case ('waiting') {
+          <app-qr-code
+            [value]="link()"
+            label="QR para entrar pelo celular"
+            i18n-label="@@auth.qr.image-label"
+          />
+          <p class="hint" i18n="@@auth.qr.hint">Escaneie com o celular onde você já entrou.</p>
+        }
+        @case ('approved') {
+          <p class="state ok" role="status">
+            <app-auth-glyph name="check-circle" />
+            <span i18n="@@auth.qr.approved">Pronto, entrando…</span>
+          </p>
+        }
+        @case ('denied') {
+          <p class="state" role="status">
+            <app-auth-glyph name="alert-circle" />
+            <span i18n="@@auth.qr.denied">Recusado no celular.</span>
+          </p>
+          <button type="button" class="ui-btn secondary block" (click)="retry()">
+            <span i18n="@@auth.qr.again">Gerar outro QR</span>
+          </button>
+        }
+        @case ('error') {
+          <p class="state" role="alert">
+            <app-auth-glyph name="wifi-off" />
+            <span i18n="@@auth.qr.error">Não foi possível gerar o QR.</span>
+          </p>
+          <button type="button" class="ui-btn secondary block" (click)="retry()">
+            <span i18n="@@auth.qr.retry">Tentar de novo</span>
+          </button>
+        }
+        @default {
+          <p class="state" role="status">
+            <span class="ui-spinner" aria-hidden="true"></span>
+            <span i18n="@@auth.qr.starting">Gerando o QR…</span>
+          </p>
+        }
+      }
+    </div>
+  </section>
+}

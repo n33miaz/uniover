@@ -1,0 +1,10 @@
+<svg [attr.viewBox]="viewBox()" role="img" [attr.aria-label]="label()" focusable="false">
+  <rect
+    [attr.x]="origin"
+    [attr.y]="origin"
+    [attr.width]="extent()"
+    [attr.height]="extent()"
+    fill="#ffffff"
+  />
+  <path [attr.d]="drawing().path" fill="#000000" />
+</svg>

@@ -1,0 +1,79 @@
+/* Título centrado, como nas outras telas de entrada; o resto ocupa a largura toda do cartão. */
+h1 {
+  margin-bottom: var(--space-5);
+  font-size: 1.75rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.facts li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-elev);
+  font-size: var(--fs-body);
+}
+
+.facts li.warn {
+  border-color: color-mix(in srgb, var(--a-warn) 45%, var(--a-line));
+  background: color-mix(in srgb, var(--a-warn) 10%, var(--a-surface));
+}
+
+.device {
+  font-weight: 650;
+}
+
+.caution {
+  margin: 0 0 var(--space-4);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+
+app-auth-field {
+  margin-bottom: var(--space-4);
+}
+
+.problem {
+  margin-bottom: var(--space-4);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.actions .ui-btn {
+  min-height: 48px;
+}
+
+.done {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-5);
+  color: var(--a-ink2);
+  text-align: center;
+}
+
+.done.ok {
+  color: var(--a-ok);
+}
+
+a.ui-btn {
+  text-decoration: none;
+}

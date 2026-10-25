@@ -8,6 +8,7 @@ describe('actionLabel', () => {
     ['identity.password-change', 'trocar a senha'],
     ['tv.bind-agent', 'ligar um computador à TV'],
     ['identity.permissions-change', 'mudar as permissões de uma pessoa'],
+    ['identity.qr-login-approve', 'liberar a entrada de um computador'],
   ])('names %s in plain words', (action, text) => {
     expect(actionLabel(action)).toBe(text);
   });

@@ -50,6 +50,43 @@ describe('AuthApi', () => {
     expect(lastCall().headers['X-UniOver-Client']).toBe('web');
   });
 
+  it('the QR sign-in calls are POSTs with the client header; secret and code travel in the body, never in the URL', async () => {
+    fetchFn.mockResolvedValue(reply(200, { status: 'pending' }));
+    await api().qrStart();
+    expect([lastCall().init.method, lastCall().url]).toEqual([
+      'POST',
+      '/api/v1/identity/auth/qr/start',
+    ]);
+    expect(lastCall().headers['Authorization']).toBeUndefined();
+
+    await api().qrPoll('segredo-de-consulta');
+    expect(lastCall().url).toBe('/api/v1/identity/auth/qr/poll');
+    expect(lastCall().headers['X-UniOver-Client']).toBe('web');
+    expect(lastCall().headers['Authorization']).toBeUndefined();
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({ secret: 'segredo-de-consulta' });
+
+    await api().qrInfo('jwt', 'CODIGO');
+    expect(lastCall().url).toBe('/api/v1/identity/auth/qr/info');
+    expect(lastCall().headers['Authorization']).toBe('Bearer jwt');
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({ code: 'CODIGO' });
+
+    fetchFn.mockResolvedValue(new Response(null, { status: 204 }));
+    await expect(api().qrApprove('jwt', 'CODIGO', 'minha-senha')).resolves.toBeUndefined();
+    expect(lastCall().url).toBe('/api/v1/identity/auth/qr/approve');
+    expect(lastCall().headers['X-UniOver-Client']).toBe('web');
+    expect(JSON.parse(lastCall().init.body as string)).toEqual({
+      code: 'CODIGO',
+      password: 'minha-senha',
+    });
+    await expect(api().qrDeny('jwt', 'CODIGO')).resolves.toBeUndefined();
+    expect(lastCall().url).toBe('/api/v1/identity/auth/qr/deny');
+
+    for (const [url] of fetchFn.mock.calls) {
+      expect(url).not.toContain('segredo-de-consulta');
+      expect(url).not.toContain('CODIGO');
+    }
+  });
+
   it('authenticated calls carry the Bearer token; the token never appears in a URL', async () => {
     fetchFn.mockResolvedValue(reply(200, []));
     await api().passkeys('jwt-secreto');
