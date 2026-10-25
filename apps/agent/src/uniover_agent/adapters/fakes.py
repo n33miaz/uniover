@@ -176,6 +176,9 @@ class FakeTvAdb:
         self.connects = 0
         self.disconnects = 0
         self.errors: list[AdbError] = []
+        # Vigia do serviço do controle: quantas vezes foi religado e o que falha (um por chamada).
+        self.restarts = 0
+        self.restart_errors: list[Exception] = []
         self._connected = False
         # Limpeza da TV: o que o dublê "lê" da TV e a ordem em que recebe os comandos.
         self.memory_mb: list[int | None] = [300, 700]
@@ -217,6 +220,11 @@ class FakeTvAdb:
         self._fail_if_scripted()
         self.typed.append(text)
         self.events.append(("adb", text))
+
+    async def restart_remote_service(self) -> None:
+        self.restarts += 1
+        if self.restart_errors:
+            raise self.restart_errors.pop(0)
 
     # --- limpeza da TV: cada operação entra em `cleanup_log` e falha se `cleanup_errors` mandar ---
 

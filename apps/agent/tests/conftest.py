@@ -17,9 +17,13 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     trocam de novo)."""
     from uniover_agent import main as main_module  # noqa: PLC0415
     from uniover_agent.adapters import tv_locate, tv_samsung, wol  # noqa: PLC0415
+    from uniover_agent.adapters.tv_discovery import PortState  # noqa: PLC0415
 
     async def alive(host: str, port: int, wait: float = 1.0) -> bool:
         return True
+
+    async def open_probe(host: str, port: int, wait: float = 1.0) -> PortState:
+        return PortState.OPEN
 
     async def no_info(host: str) -> None:
         return None
@@ -40,7 +44,7 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
         return None
 
     monkeypatch.setattr(tv_locate, "tcp_open", alive)
-    monkeypatch.setattr(main_module, "tcp_open", alive)
+    monkeypatch.setattr(main_module, "tcp_probe", open_probe)
     monkeypatch.setattr(main_module, "identify_tv", no_identity)
     monkeypatch.setattr(tv_locate, "http_json", no_json)
     monkeypatch.setattr(tv_locate, "ssdp_search", no_ssdp)

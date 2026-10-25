@@ -47,10 +47,12 @@ from uniover_agent.adapters.tray_status import TrayStatus
 from uniover_agent.adapters.tv_adb import AdbTv, locate_adb
 from uniover_agent.adapters.tv_discovery import (
     ANDROID_REMOTE_PORT,
+    REFUSAL_WAIT_SECONDS,
     DiscoveredTv,
+    PortState,
     TvKindName,
     find_tvs,
-    tcp_open,
+    tcp_probe,
 )
 from uniover_agent.adapters.tv_locate import (
     build_liveness,
@@ -104,7 +106,9 @@ from uniover_agent.core import (
     TvRelocator,
     TvSessionManager,
     TvStatePublisher,
+    TvWatchdog,
     UpdateStatusWatcher,
+    WatchdogEvents,
     agent_logs_handler,
     agent_maintenance_handler,
     tv_app_launch_handler,
@@ -138,6 +142,8 @@ EXIT_CREDENTIAL_REJECTED = 3
 EXIT_TV_MOVED = 4
 # De quanto em quanto tempo o vigia olha o ARP atrás do MAC da TV, enquanto não o aprendeu.
 ARP_LEARN_SECONDS = 600.0
+# Portas do serviço do controle remoto da Android TV: só se dá por de pé com as duas abertas.
+REMOTE_SERVICE_PORTS = (ANDROID_REMOTE_PORT, 6467)
 
 _NOT_PAIRED = "não pareado. Rode `uniover-agent pair` para parear este PC."
 
@@ -233,6 +239,8 @@ class TvSetup:
     background_commands: set[str] = field(default_factory=set)
     # O que se sabe da TV (dica de identificador e MAC): o vigia do endereço e o Wake-on-LAN usam.
     known: TvKnown = field(default_factory=TvKnown)
+    # O vigia do serviço do controle (só Android TV com `adb`): quem vê uma porta recusada o avisa.
+    watchdog: TvWatchdog | None = None
 
 
 def build_tv(
@@ -296,8 +304,8 @@ def build_tv(
         known=TvKnown(settings.tv_id_hint, settings.tv_mac),
     )
     # Cada tarefa seguinte insere aqui só a linha dela; o gerenciador é o único dono da conexão.
-    compose_adb(setup, settings, host, clock)  # [composição: adb]
-    # [composição: vigia]
+    adb = compose_adb(setup, settings, host, clock)  # [composição: adb]
+    compose_watchdog(setup, settings, host, clock, adb)  # [composição: vigia]
     return setup
 
 
@@ -405,12 +413,12 @@ def remember_tv_identity(known: TvKnown, identity: TvIdentity) -> None:
         _log.info("identidade da TV guardada para reencontrá-la se o endereço mudar")
 
 
-def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> None:
+def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> AdbTv | None:
     """Liga o canal ADB: lista de apps, abertura por pacote e digitação pelo `input text`.
 
     Sem o `adb` neste PC nada é registrado e a TV segue só com o controle remoto. O canal entra na
     sessão como opcional (abre e hiberna junto, mas a falta dele não derruba as teclas) e os
-    handlers dele são os únicos que o usam.
+    handlers dele são os únicos que o usam. Devolve o adaptador (ou `None`, sem `adb`) para o vigia.
     """
     # Valida a lista do dono antes de qualquer coisa: lista errada para o agente com o motivo.
     keep = require_cleanup_keep(settings)
@@ -420,7 +428,7 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
             "adb não encontrado (UNIOVER_ADB_PATH, PATH ou Android SDK): "
             "lista de apps e abertura por pacote ficam desligadas"
         )
-        return
+        return None
     adb = AdbTv(
         path,
         host,
@@ -467,6 +475,34 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
         setup.capabilities.append("tv.adb")
 
     setup.prepare.append(declare_when_usable)
+    return adb
+
+
+def compose_watchdog(
+    setup: TvSetup, settings: Settings, host: str, clock: Clock, adb: AdbTv | None
+) -> None:
+    """Liga o vigia que religa o serviço do controle da TV pelo ADB quando as portas fecham.
+
+    Sem o `adb` neste PC não há como religar, e com `tv_watchdog` desligado o dono não o quer:
+    nos dois casos nada é registrado. O vigia não tem sondagem própria (ver `core/tv/watchdog.py`).
+    """
+    if adb is None or not settings.tv_watchdog:
+        return
+
+    async def ports_open() -> bool | None:
+        for port in REMOTE_SERVICE_PORTS:
+            state = await tcp_probe(host, port, wait=REFUSAL_WAIT_SECONDS)
+            if state is PortState.SILENT:
+                return None
+            if state is PortState.REFUSED:
+                return False
+        return True
+
+    events = WatchdogEvents(setup.transport, setup.envelopes, clock)
+    watchdog = TvWatchdog(clock, setup.manager, ports_open, adb.restart_remote_service, events)
+    setup.watchdog = watchdog
+    setup.background.append(watchdog.run)
+    setup.after_hello.append(events.flush)
 
 
 def compose_icons(
@@ -647,7 +683,11 @@ async def pair(
 
 
 def build_relocator(
-    settings: Settings, clock: Clock, is_hot: Callable[[], bool], known: TvKnown | None = None
+    settings: Settings,
+    clock: Clock,
+    is_hot: Callable[[], bool],
+    known: TvKnown | None = None,
+    on_refused: Callable[[], None] | None = None,
 ) -> TvRelocator | None:
     """Vigia do endereço da TV: só existe com `tv_host`.
 
@@ -655,6 +695,8 @@ def build_relocator(
     se **a TV certa** atende no endereço (o IP velho pode ter virado de um celular) e, se não,
     procura-a pelo MAC na tabela ARP, depois SSDP, depois numa varredura lenta do /24 dela.
     `known` é compartilhado com o resto do agente, que aprende o MAC na primeira conexão.
+    `on_refused` é avisado quando a Android TV está na rede e **recusa** a porta do controle (o
+    serviço morreu): a conferência é a mesma de sempre, o vigia do serviço só aproveita o resultado.
     """
     host = settings.tv_host
     if not host:
@@ -664,7 +706,10 @@ def build_relocator(
 
     async def reachable() -> bool:
         if settings.tv_kind == "android":
-            return await tcp_open(host, ANDROID_REMOTE_PORT, wait=2.0)
+            state = await tcp_probe(host, ANDROID_REMOTE_PORT, wait=REFUSAL_WAIT_SECONDS)
+            if state is PortState.REFUSED and on_refused is not None:
+                on_refused()
+            return state is PortState.OPEN
         return await locator.is_at(host)
 
     async def rescan() -> str | None:
@@ -803,7 +848,11 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
     background = [asyncio.create_task(job()) for job in jobs]
     relocator = (
         build_relocator(
-            settings, clock, lambda: tv.manager.snapshot().connection == "hot", tv.known
+            settings,
+            clock,
+            lambda: tv.manager.snapshot().connection == "hot",
+            tv.known,
+            tv.watchdog.request if tv.watchdog is not None else None,
         )
         if tv is not None
         else None

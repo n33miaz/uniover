@@ -100,6 +100,9 @@ class Settings(BaseSettings):
     # uma pausa entre as teclas, para o caso de a TV perder letras quando elas chegam coladas.
     tv_text_by_keys: bool = False
     tv_text_key_pause_ms: int = Field(default=0, ge=0, le=500)
+    # Vigia do serviço do controle da Android TV: religa por ADB quando as portas 6466/6467 fecham.
+    # Só age com `adb` neste PC; desligue se outra coisa (o vigia antigo do PC) já faz isso.
+    tv_watchdog: bool = True
     # ADB: caminho do `adb` (padrão: procura no PATH e no Android SDK), porta e tempo por comando.
     adb_path: str | None = None
     tv_adb_port: int = Field(default=5555, ge=1, le=65535)
