@@ -13,6 +13,18 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>agent.keepalive.v1</c>.</summary>
     public const string AgentKeepaliveV1 = "agent.keepalive.v1";
 
+    /// <summary>Tipo de mensagem <c>agent.logs.request.v1</c>.</summary>
+    public const string AgentLogsRequestV1 = "agent.logs.request.v1";
+
+    /// <summary>Tipo de mensagem <c>agent.logs.v1</c>.</summary>
+    public const string AgentLogsV1 = "agent.logs.v1";
+
+    /// <summary>Tipo de mensagem <c>agent.maintenance.v1</c>.</summary>
+    public const string AgentMaintenanceV1 = "agent.maintenance.v1";
+
+    /// <summary>Tipo de mensagem <c>agent.update.status.v1</c>.</summary>
+    public const string AgentUpdateStatusV1 = "agent.update.status.v1";
+
     /// <summary>Tipo de mensagem <c>api.keepalive.v1</c>.</summary>
     public const string ApiKeepaliveV1 = "api.keepalive.v1";
 
@@ -60,6 +72,10 @@ public static class AgentMessageTypes
     [
         AgentHelloV1,
         AgentKeepaliveV1,
+        AgentLogsRequestV1,
+        AgentLogsV1,
+        AgentMaintenanceV1,
+        AgentUpdateStatusV1,
         ApiKeepaliveV1,
         CommandResultV1,
         TvAppLaunchV1,

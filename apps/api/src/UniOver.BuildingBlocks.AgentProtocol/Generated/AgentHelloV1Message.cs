@@ -16,7 +16,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     using System.Globalization;
 
     /// <summary>
-    /// Agente para API ao conectar: versão do agente e capacidades.
+    /// Agente para API ao conectar: versão do agente, capacidades e, opcionalmente, o que a
+    /// manutenção remota mostra (sistema do PC, a TV que ele controla e o estado da
+    /// auto-atualização).
     /// </summary>
     public partial class AgentHelloV1Message
     {
@@ -48,14 +50,84 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     public partial class AgentHelloV1Body
     {
         [JsonPropertyName("agentVersion")]
-        [JsonConverter(typeof(AgentHelloV1MessageMinMaxLengthCheckConverter))]
+        [JsonConverter(typeof(AgentHelloV1MessagePurpleMinMaxLengthCheckConverter))]
         public string AgentVersion { get; set; }
 
         [JsonPropertyName("capabilities")]
         public AgentHelloV1BodyCapabilitiesItem[] Capabilities { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("os")]
+        [JsonConverter(typeof(AgentHelloV1MessageFluffyMinMaxLengthCheckConverter))]
+        public string? Os { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("tv")]
+        public AgentHelloV1BodyTv? Tv { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("update")]
+        public AgentHelloV1BodyUpdate? Update { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { TransportKeepaliveV1, TvAdb, TvKindAndroid, TvKindSamsung, TvRemote };
+    public partial class AgentHelloV1BodyTv
+    {
+        [JsonPropertyName("host")]
+        [JsonConverter(typeof(AgentHelloV1MessageTentacledMinMaxLengthCheckConverter))]
+        public string Host { get; set; }
+
+        [JsonPropertyName("kind")]
+        public AgentHelloV1BodyTvKind Kind { get; set; }
+    }
+
+    public partial class AgentHelloV1BodyUpdate
+    {
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("blockedSha")]
+        public string? BlockedSha { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("checkedAt")]
+        public DateTimeOffset? CheckedAt { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("installedAt")]
+        public DateTimeOffset? InstalledAt { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("installedSha")]
+        public string? InstalledSha { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("latestSha")]
+        public string? LatestSha { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("nextCheckAt")]
+        public DateTimeOffset? NextCheckAt { get; set; }
+
+        [JsonPropertyName("outcome")]
+        public AgentHelloV1BodyUpdateOutcome Outcome { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("previousSha")]
+        public string? PreviousSha { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("reason")]
+        [JsonConverter(typeof(AgentHelloV1MessageStickyMinMaxLengthCheckConverter))]
+        public string? Reason { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("rolledBack")]
+        public bool? RolledBack { get; set; }
+    }
+
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentLogsV1, AgentMaintenanceV1, TransportKeepaliveV1, TvAdb, TvKindAndroid, TvKindSamsung, TvRemote };
+
+    public enum AgentHelloV1BodyTvKind { Android, Samsung };
+
+    public enum AgentHelloV1BodyUpdateOutcome { Blocked, Failed, NotChecked, RolledBack, UpToDate, Updated, Updating };
 
     public partial class AgentHelloV1Message
     {
@@ -74,12 +146,14 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             Converters =
             {
                 AgentHelloV1MessageAgentHelloV1BodyCapabilitiesItemConverter.Singleton,
+                AgentHelloV1MessageAgentHelloV1BodyTvKindConverter.Singleton,
+                AgentHelloV1MessageAgentHelloV1BodyUpdateOutcomeConverter.Singleton,
                 AgentHelloV1MessageIsoDateTimeOffsetConverter.Singleton
             },
         };
     }
 
-    internal class AgentHelloV1MessageMinMaxLengthCheckConverter : JsonConverter<string>
+    internal class AgentHelloV1MessagePurpleMinMaxLengthCheckConverter : JsonConverter<string>
     {
         public override bool CanConvert(Type t) => t == typeof(string);
 
@@ -103,7 +177,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             throw new Exception("Cannot marshal type string");
         }
 
-        public static readonly AgentHelloV1MessageMinMaxLengthCheckConverter Singleton = new AgentHelloV1MessageMinMaxLengthCheckConverter();
+        public static readonly AgentHelloV1MessagePurpleMinMaxLengthCheckConverter Singleton = new AgentHelloV1MessagePurpleMinMaxLengthCheckConverter();
     }
 
     internal class AgentHelloV1MessageAgentHelloV1BodyCapabilitiesItemConverter : JsonConverter<AgentHelloV1BodyCapabilitiesItem>
@@ -115,6 +189,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             var value = reader.GetString();
             switch (value)
             {
+                case "agent.logs.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.AgentLogsV1;
+                case "agent.maintenance.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.AgentMaintenanceV1;
                 case "transport.keepalive.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TransportKeepaliveV1;
                 case "tv.adb":
@@ -133,6 +211,12 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         {
             switch (value)
             {
+                case AgentHelloV1BodyCapabilitiesItem.AgentLogsV1:
+                    JsonSerializer.Serialize(writer, "agent.logs.v1", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.AgentMaintenanceV1:
+                    JsonSerializer.Serialize(writer, "agent.maintenance.v1", options);
+                    return;
                 case AgentHelloV1BodyCapabilitiesItem.TransportKeepaliveV1:
                     JsonSerializer.Serialize(writer, "transport.keepalive.v1", options);
                     return;
@@ -153,6 +237,180 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         }
 
         public static readonly AgentHelloV1MessageAgentHelloV1BodyCapabilitiesItemConverter Singleton = new AgentHelloV1MessageAgentHelloV1BodyCapabilitiesItemConverter();
+    }
+
+    internal class AgentHelloV1MessageFluffyMinMaxLengthCheckConverter : JsonConverter<string>
+    {
+        public override bool CanConvert(Type t) => t == typeof(string);
+
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            if (value.Length >= 1 && value.Length <= 80)
+            {
+                return value;
+            }
+            throw new Exception("Cannot unmarshal type string");
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        {
+            if (value.Length >= 1 && value.Length <= 80)
+            {
+                JsonSerializer.Serialize(writer, value, options);
+                return;
+            }
+            throw new Exception("Cannot marshal type string");
+        }
+
+        public static readonly AgentHelloV1MessageFluffyMinMaxLengthCheckConverter Singleton = new AgentHelloV1MessageFluffyMinMaxLengthCheckConverter();
+    }
+
+    internal class AgentHelloV1MessageTentacledMinMaxLengthCheckConverter : JsonConverter<string>
+    {
+        public override bool CanConvert(Type t) => t == typeof(string);
+
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            if (value.Length >= 1 && value.Length <= 64)
+            {
+                return value;
+            }
+            throw new Exception("Cannot unmarshal type string");
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        {
+            if (value.Length >= 1 && value.Length <= 64)
+            {
+                JsonSerializer.Serialize(writer, value, options);
+                return;
+            }
+            throw new Exception("Cannot marshal type string");
+        }
+
+        public static readonly AgentHelloV1MessageTentacledMinMaxLengthCheckConverter Singleton = new AgentHelloV1MessageTentacledMinMaxLengthCheckConverter();
+    }
+
+    internal class AgentHelloV1MessageAgentHelloV1BodyTvKindConverter : JsonConverter<AgentHelloV1BodyTvKind>
+    {
+        public override bool CanConvert(Type t) => t == typeof(AgentHelloV1BodyTvKind);
+
+        public override AgentHelloV1BodyTvKind Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            switch (value)
+            {
+                case "android":
+                    return AgentHelloV1BodyTvKind.Android;
+                case "samsung":
+                    return AgentHelloV1BodyTvKind.Samsung;
+            }
+            throw new Exception("Cannot unmarshal type AgentHelloV1BodyTvKind");
+        }
+
+        public override void Write(Utf8JsonWriter writer, AgentHelloV1BodyTvKind value, JsonSerializerOptions options)
+        {
+            switch (value)
+            {
+                case AgentHelloV1BodyTvKind.Android:
+                    JsonSerializer.Serialize(writer, "android", options);
+                    return;
+                case AgentHelloV1BodyTvKind.Samsung:
+                    JsonSerializer.Serialize(writer, "samsung", options);
+                    return;
+            }
+            throw new Exception("Cannot marshal type AgentHelloV1BodyTvKind");
+        }
+
+        public static readonly AgentHelloV1MessageAgentHelloV1BodyTvKindConverter Singleton = new AgentHelloV1MessageAgentHelloV1BodyTvKindConverter();
+    }
+
+    internal class AgentHelloV1MessageAgentHelloV1BodyUpdateOutcomeConverter : JsonConverter<AgentHelloV1BodyUpdateOutcome>
+    {
+        public override bool CanConvert(Type t) => t == typeof(AgentHelloV1BodyUpdateOutcome);
+
+        public override AgentHelloV1BodyUpdateOutcome Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            switch (value)
+            {
+                case "blocked":
+                    return AgentHelloV1BodyUpdateOutcome.Blocked;
+                case "failed":
+                    return AgentHelloV1BodyUpdateOutcome.Failed;
+                case "not_checked":
+                    return AgentHelloV1BodyUpdateOutcome.NotChecked;
+                case "rolled_back":
+                    return AgentHelloV1BodyUpdateOutcome.RolledBack;
+                case "up_to_date":
+                    return AgentHelloV1BodyUpdateOutcome.UpToDate;
+                case "updated":
+                    return AgentHelloV1BodyUpdateOutcome.Updated;
+                case "updating":
+                    return AgentHelloV1BodyUpdateOutcome.Updating;
+            }
+            throw new Exception("Cannot unmarshal type AgentHelloV1BodyUpdateOutcome");
+        }
+
+        public override void Write(Utf8JsonWriter writer, AgentHelloV1BodyUpdateOutcome value, JsonSerializerOptions options)
+        {
+            switch (value)
+            {
+                case AgentHelloV1BodyUpdateOutcome.Blocked:
+                    JsonSerializer.Serialize(writer, "blocked", options);
+                    return;
+                case AgentHelloV1BodyUpdateOutcome.Failed:
+                    JsonSerializer.Serialize(writer, "failed", options);
+                    return;
+                case AgentHelloV1BodyUpdateOutcome.NotChecked:
+                    JsonSerializer.Serialize(writer, "not_checked", options);
+                    return;
+                case AgentHelloV1BodyUpdateOutcome.RolledBack:
+                    JsonSerializer.Serialize(writer, "rolled_back", options);
+                    return;
+                case AgentHelloV1BodyUpdateOutcome.UpToDate:
+                    JsonSerializer.Serialize(writer, "up_to_date", options);
+                    return;
+                case AgentHelloV1BodyUpdateOutcome.Updated:
+                    JsonSerializer.Serialize(writer, "updated", options);
+                    return;
+                case AgentHelloV1BodyUpdateOutcome.Updating:
+                    JsonSerializer.Serialize(writer, "updating", options);
+                    return;
+            }
+            throw new Exception("Cannot marshal type AgentHelloV1BodyUpdateOutcome");
+        }
+
+        public static readonly AgentHelloV1MessageAgentHelloV1BodyUpdateOutcomeConverter Singleton = new AgentHelloV1MessageAgentHelloV1BodyUpdateOutcomeConverter();
+    }
+
+    internal class AgentHelloV1MessageStickyMinMaxLengthCheckConverter : JsonConverter<string>
+    {
+        public override bool CanConvert(Type t) => t == typeof(string);
+
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            if (value.Length >= 1 && value.Length <= 200)
+            {
+                return value;
+            }
+            throw new Exception("Cannot unmarshal type string");
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        {
+            if (value.Length >= 1 && value.Length <= 200)
+            {
+                JsonSerializer.Serialize(writer, value, options);
+                return;
+            }
+            throw new Exception("Cannot marshal type string");
+        }
+
+        public static readonly AgentHelloV1MessageStickyMinMaxLengthCheckConverter Singleton = new AgentHelloV1MessageStickyMinMaxLengthCheckConverter();
     }
 
     internal class AgentHelloV1MessageIsoDateTimeOffsetConverter : JsonConverter<DateTimeOffset>

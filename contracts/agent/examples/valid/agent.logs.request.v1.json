@@ -1,0 +1,2 @@
+{ "v": 1, "id": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e9f", "type": "agent.logs.request.v1", "source": "api", "target": "agent:pc-casa",
+  "ts": "2026-10-24T14:00:00Z", "correlationId": null, "body": { "requestId": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea0", "lines": 300 } }

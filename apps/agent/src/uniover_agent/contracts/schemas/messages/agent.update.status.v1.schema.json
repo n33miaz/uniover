@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/agent.update.status.v1.schema.json",
+  "title": "agent.update.status.v1",
+  "description": "Agente para API quando a checagem de atualização roda (ou termina, falha ou volta à versão anterior): o estado da auto-atualização, o mesmo objeto que o agent.hello.v1 leva em `update`. Só informativo, para a tela do administrador.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "type", "source", "target", "ts", "correlationId", "body"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+    "type": { "const": "agent.update.status.v1" },
+    "source": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "target": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "ts": { "$ref": "../envelope.schema.json#/$defs/timestamp" },
+    "correlationId": { "type": "null" },
+    "body": {
+      "type": "object", "additionalProperties": false,
+      "required": ["outcome"],
+      "properties": {
+        "outcome": {"enum": ["not_checked", "updating", "updated", "up_to_date", "failed", "blocked", "rolled_back"]},
+        "installedSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "installedAt": {"$ref": "../envelope.schema.json#/$defs/timestamp"},
+        "latestSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "checkedAt": {"$ref": "../envelope.schema.json#/$defs/timestamp"},
+        "nextCheckAt": {"$ref": "../envelope.schema.json#/$defs/timestamp"},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 200},
+        "blockedSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "previousSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "rolledBack": {"type": "boolean"}
+      }
+    }
+  }
+}

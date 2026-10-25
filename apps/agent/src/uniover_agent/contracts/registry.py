@@ -10,6 +10,10 @@ from pydantic import BaseModel
 from .envelope import Envelope
 from .agent_hello_v1 import AgentHelloV1Message
 from .agent_keepalive_v1 import AgentKeepaliveV1Message
+from .agent_logs_request_v1 import AgentLogsRequestV1Message
+from .agent_logs_v1 import AgentLogsV1Message
+from .agent_maintenance_v1 import AgentMaintenanceV1Message
+from .agent_update_status_v1 import AgentUpdateStatusV1Message
 from .api_keepalive_v1 import ApiKeepaliveV1Message
 from .command_result_v1 import CommandResultV1Message
 from .tv_app_launch_v1 import TvAppLaunchV1Message
@@ -30,6 +34,10 @@ ENVELOPE_MODEL: type[BaseModel] = Envelope
 MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "agent.hello.v1": AgentHelloV1Message,
     "agent.keepalive.v1": AgentKeepaliveV1Message,
+    "agent.logs.request.v1": AgentLogsRequestV1Message,
+    "agent.logs.v1": AgentLogsV1Message,
+    "agent.maintenance.v1": AgentMaintenanceV1Message,
+    "agent.update.status.v1": AgentUpdateStatusV1Message,
     "api.keepalive.v1": ApiKeepaliveV1Message,
     "command.result.v1": CommandResultV1Message,
     "tv.app.launch.v1": TvAppLaunchV1Message,

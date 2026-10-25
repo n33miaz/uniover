@@ -35,6 +35,24 @@ existe, a API não envia o batimento novo para preservar a compatibilidade duran
 | `tv.cleanup.v1` | API para agente | `requestId` (UUID gerado pela API): fecha os apps abertos na TV e libera memória pelo ADB, sem derrubar o controle remoto. |
 | `tv.cleanup.result.v1` | agente para API | O que a limpeza fez: `requestId` (o do pedido), `closedApps`, `memoryBeforeMb`, `memoryAfterMb` e `freedMb` (inteiros, ou `null` quando a memória não pôde ser lida; `freedMb` nunca é negativo), `failedSteps` (etapas que não deram certo, como `force-stop:com.exemplo.app`) e `at`. |
 
+## Manutenção remota
+
+Só o administrador, e só por agente: ver o registro e pedir ao agente que se atualize ou reinicie. As capacidades
+`agent.logs.v1` e `agent.maintenance.v1` (no `agent.hello.v1`) dizem se o agente sabe fazer; sem elas a API não manda
+o pedido e a tela diz para atualizar o agente. O `hello` também pode trazer `os` (sistema do PC) e `tv` (`kind` e `host`
+da TV que ele controla) e `update` (o estado da auto-atualização, abaixo), todos opcionais.
+
+| `type` | Direção | Corpo |
+|---|---|---|
+| `agent.logs.request.v1` | API para agente | `requestId` (UUID gerado pela API) e `lines` (1 a 1000). Nunca leva caminho: o agente lê só o próprio arquivo de registro. |
+| `agent.logs.v1` | agente para API | `requestId` (o do pedido), `text` (até 49152 caracteres, já sem tokens, `Authorization`, códigos de pareamento e senhas), `lines`, `truncated` (o agente tirou linhas antigas para caber) e `at`. |
+| `agent.maintenance.v1` | API para agente | `action`: `update` (o supervisor roda a auto-atualização agora; o agente só reinicia se houver versão nova) `restart` (o supervisor reinicia o agente) ou `rollback` (o supervisor volta para a versão anterior guardada em `app.previous`, bloqueia a que sai e reinicia; o agente recusa com `no_previous_version` se não houver). |
+| `agent.update.status.v1` | agente para API | O estado da auto-atualização, o mesmo objeto de `update` no `hello`: `outcome` (`not_checked`, `updating`, `updated`, `up_to_date`, `failed`, `blocked` ou `rolled_back`), `installedSha` e `installedAt` (a versão instalada), `latestSha` (o commit mais novo que a última checagem viu), `checkedAt`, `nextCheckAt`, `reason` (curto, já sem segredos, até 200 caracteres), `blockedSha` (versão que caiu repetidamente) e `rolledBack` (houve volta à versão anterior). Só `outcome` é obrigatório. O agente manda quando a checagem roda; agente antigo não manda nada e a tela diz "versão desconhecida". |
+
+Como na limpeza da TV, `agent.logs.v1` sai **antes** do `command.result.v1` do mesmo comando. `agent.maintenance.v1` só é
+respondido com `command.result.v1`, assim que o pedido foi entregue ao supervisor do Windows (o mesmo mecanismo do menu da
+bandeja). O agente reinicia por conta do supervisor, nunca por um código de saída do próprio processo.
+
 O transporte recusa mensagens acima de 64 KB. Por isso o agente pode mandar a mesma lista de `tv.apps.v2` mais de uma vez, cada mensagem
 levando só parte dos ícones.
 
