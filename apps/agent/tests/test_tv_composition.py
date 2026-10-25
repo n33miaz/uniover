@@ -79,6 +79,7 @@ def test_host_with_certificate_builds_the_session(monkeypatch: pytest.MonkeyPatc
         "tv.key.v1",
         "tv.key.v2",
         "tv.key.v3",
+        "tv.power.off.v1",
         "tv.text.v1",
         "tv.wake.v1",
         "tv.app.launch.v1",
