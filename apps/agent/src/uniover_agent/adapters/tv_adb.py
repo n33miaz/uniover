@@ -73,6 +73,19 @@ _LEANBACK: Final = "android.intent.category.LEANBACK_LAUNCHER"
 _LAUNCHER: Final = "android.intent.category.LAUNCHER"
 _HOME: Final = "android.intent.category.HOME"
 _MAX_TEXT_LENGTH: Final = 200
+# Serviço do controle remoto da Android TV (portas 6466 e 6467). Os comandos de religar são os do
+# `reparar` do projeto da TV do dono (`ESP32/01-controle-tv/tv.ps1`): proteger o serviço do
+# matador de processos por falta de memória e iniciá-lo de novo. Fixos, sem dado externo.
+_REMOTE_SERVICE: Final = "com.google.android.tv.remote.service"
+_SHIELD_REMOTE_SERVICE: Final = (
+    f"dumpsys deviceidle whitelist +{_REMOTE_SERVICE}",
+    f"cmd appops set {_REMOTE_SERVICE} RUN_ANY_IN_BACKGROUND allow",
+    f"am set-standby-bucket {_REMOTE_SERVICE} active",
+)
+_START_REMOTE_SERVICE: Final = (
+    "am start-foreground-service -a com.android.athome.START_SERVICE "
+    f"-n {_REMOTE_SERVICE}/.RemoteService"
+)
 
 Runner = Callable[[Sequence[str], float], Awaitable[AdbOutput]]
 
@@ -319,6 +332,20 @@ class AdbTv:
             raise ValueError("nome de pacote inválido")
         output = await self._locked_shell(f"am force-stop {quote_for_device_shell(package)}")
         self._require_success(output, "a TV não fechou o app")
+
+    async def restart_remote_service(self) -> None:
+        """Religa o serviço do controle remoto da TV (o vigia chama quando as portas fecham).
+
+        Conecta de novo antes (o estado guardado pode ser de antes de a TV reiniciar) e roda, numa
+        só vez da trava, a proteção e a partida. Só a partida decide o resultado: a proteção é
+        melhor esforço, e quem chama confere as portas depois.
+        """
+        async with self._lock:
+            await self._connect_locked()
+            for command in _SHIELD_REMOTE_SERVICE:
+                await self._shell(command)
+            output = await self._shell(_START_REMOTE_SERVICE)
+        self._require_success(output, "a TV não religou o serviço do controle")
 
     # --- APKs (para os ícones) ----------------------------------------------------------------
 
