@@ -30,12 +30,21 @@ public sealed class TvModuleOptions
     /// </summary>
     public int CleanupTimeoutSeconds { get; set; } = 30;
 
+    /// <summary>
+    /// Tempo que a API espera o desligamento com leitura. É o maior dos comandos de uma tecla: o agente pode abrir a sessão
+    /// (1, 2 e 4 s de espera), ler a energia, apertar <c>POWER</c> uma vez e esperar a confirmação, e sem confirmação ele não
+    /// repete a tecla. Responder a tempo importa: um 504 depois de a tecla ter saído levaria a pessoa a repetir o pedido.
+    /// </summary>
+    public int PowerOffTimeoutSeconds { get; set; } = 25;
+
     /// <summary>Espera antes de gravar uma mudança de estado, para juntar oscilações rápidas numa escrita só.</summary>
     public int StateDebounceSeconds { get; set; } = 2;
 
     public SseStreamOptions Sse { get; set; } = new();
 
     public TimeSpan CommandTimeout => TimeSpan.FromSeconds(CommandTimeoutSeconds);
+
+    public TimeSpan PowerOffTimeout => TimeSpan.FromSeconds(PowerOffTimeoutSeconds);
 
     public TimeSpan CleanupTimeout => TimeSpan.FromSeconds(CleanupTimeoutSeconds);
 
@@ -50,6 +59,7 @@ public sealed class TvModuleOptions
         return options.CommandTimeoutSeconds > 0
             && options.HibernatingTimeoutSeconds > 0
             && options.CleanupTimeoutSeconds > 0
+            && options.PowerOffTimeoutSeconds > 0
             && options.StateDebounceSeconds >= 0
             && options.Sse.IsValid()
             && options.AgentId.Length <= 40;

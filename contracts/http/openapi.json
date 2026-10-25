@@ -2060,6 +2060,20 @@
         ],
         "type": "object"
       },
+      "PowerOffRequest": {
+        "properties": {
+          "mode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
       "ProblemDetails": {
         "properties": {
           "detail": {
@@ -3436,6 +3450,26 @@
         },
         "required": [
           "userIds"
+        ],
+        "type": "object"
+      },
+      "TvPowerOffOk": {
+        "properties": {
+          "latencyMs": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "outcome": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "latencyMs",
+          "outcome"
         ],
         "type": "object"
       },
@@ -9905,16 +9939,42 @@
     },
     "/api/v1/tv/power/off": {
       "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PowerOffRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TvCommandOk"
+                  "$ref": "#/components/schemas/TvPowerOffOk"
                 }
               }
             },
             "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
           },
           "401": {
             "content": {
