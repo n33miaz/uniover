@@ -14,7 +14,12 @@ import { ApiProblem, isStepUpRequired, problemOf } from '../../core/auth/api-pro
 import { AuthApi, GuestSummary } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
-import { leaveDialog } from '../../shared/ui/dialog-motion';
+import {
+  closeDialog,
+  leaveDialog,
+  onDialogBackdropClick,
+  restoreDialogFocus,
+} from '../../shared/ui/dialog-motion';
 import { DevicesApi } from './devices-api';
 import { MAX_DEVICE_NAME, formatCodeInput, isValidDeviceName, normalizeCode } from './pairing-code';
 
@@ -39,6 +44,7 @@ export class PairSheet {
   private readonly authApi = inject(AuthApi);
   private readonly connectivity = inject(ConnectivityService);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
+  private opener: Element | null = null;
 
   /** Código já conhecido (o QR do agente abre a página com ele): entra normalizado e pronto para aprovar. */
   readonly initialCode = input('');
@@ -77,7 +83,11 @@ export class PairSheet {
   constructor() {
     afterNextRender(() => {
       // showModal prende o foco na folha, deixa o resto da tela inerte e trata o Esc.
-      this.dialog().nativeElement.showModal();
+      const dialog = this.dialog().nativeElement;
+      this.opener = document.activeElement;
+      dialog.showModal();
+      // O fundo escurecido é o próprio <dialog>; só fecha se o toque começou e terminou fora da folha.
+      onDialogBackdropClick(dialog, () => this.cancel());
     });
     void this.loadPeople();
   }
@@ -157,7 +167,12 @@ export class PairSheet {
   private leave(then: () => void): void {
     if (this.leaving()) return;
     this.leaving.set(true);
-    leaveDialog(this.dialog().nativeElement, then);
+    const dialog = this.dialog().nativeElement;
+    leaveDialog(dialog, () => {
+      closeDialog(dialog);
+      restoreDialogFocus(this.opener);
+      then();
+    });
   }
 
   /**

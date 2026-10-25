@@ -12,7 +12,7 @@ import {
 } from '@angular/core';
 import { ApiProblem, isStepUpRequired, problemOf } from '../../core/auth/api-problem';
 import type { GuestSummary } from '../../core/auth/auth-api';
-import { leaveDialog } from '../../shared/ui/dialog-motion';
+import { closeDialog, leaveDialog, onDialogBackdropClick } from '../../shared/ui/dialog-motion';
 import { GuestPermissions, PeopleApi } from './people-api';
 import { PeoplePermissionPicker } from './people-permission-picker';
 import {
@@ -77,7 +77,10 @@ export class PeoplePermissionsSheet {
   constructor() {
     afterNextRender(() => {
       // showModal prende o foco na folha, deixa o resto da tela inerte e trata o Esc.
-      this.dialog().nativeElement.showModal();
+      const dialog = this.dialog().nativeElement;
+      dialog.showModal();
+      // O fundo escurecido é o próprio <dialog>; só fecha se o toque começou e terminou fora da folha.
+      onDialogBackdropClick(dialog, () => this.cancel());
     });
   }
 
@@ -110,7 +113,11 @@ export class PeoplePermissionsSheet {
   private leave(then: () => void): void {
     if (this.leaving()) return;
     this.leaving.set(true);
-    leaveDialog(this.dialog().nativeElement, then);
+    const dialog = this.dialog().nativeElement;
+    leaveDialog(dialog, () => {
+      closeDialog(dialog);
+      then();
+    });
   }
 
   /**

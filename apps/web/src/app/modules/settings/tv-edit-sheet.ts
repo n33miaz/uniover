@@ -14,7 +14,12 @@ import {
 import { ApiProblem, isStepUpRequired, problemOf } from '../../core/auth/api-problem';
 import { AuthApi, GuestSummary } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
-import { leaveDialog } from '../../shared/ui/dialog-motion';
+import {
+  closeDialog,
+  leaveDialog,
+  onDialogBackdropClick,
+  restoreDialogFocus,
+} from '../../shared/ui/dialog-motion';
 import { SettingsGlyph } from './settings-glyph';
 import { SystemApi, TvComputer, TvItem } from './system-api';
 
@@ -50,6 +55,7 @@ export class TvEditSheet implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly authApi = inject(AuthApi);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
+  private opener: Element | null = null;
 
   /** A TV a editar; `null` cria uma nova. */
   readonly tv = input<TvItem | null>(null);
@@ -118,7 +124,11 @@ export class TvEditSheet implements OnInit {
   constructor() {
     afterNextRender(() => {
       // showModal prende o foco na folha, deixa o resto da tela inerte e trata o Esc.
-      this.dialog().nativeElement.showModal();
+      const dialog = this.dialog().nativeElement;
+      this.opener = document.activeElement;
+      dialog.showModal();
+      // O fundo escurecido é o próprio <dialog>; só fecha se o toque começou e terminou fora da folha.
+      onDialogBackdropClick(dialog, () => this.cancel());
     });
   }
 
@@ -247,7 +257,12 @@ export class TvEditSheet implements OnInit {
   private leave(changed: boolean): void {
     if (this.leaving()) return;
     this.leaving.set(true);
-    leaveDialog(this.dialog().nativeElement, () => this.closed.emit(changed));
+    const dialog = this.dialog().nativeElement;
+    leaveDialog(dialog, () => {
+      closeDialog(dialog);
+      restoreDialogFocus(this.opener);
+      this.closed.emit(changed);
+    });
   }
 
   /**

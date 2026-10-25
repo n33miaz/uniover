@@ -1,6 +1,11 @@
 import { Component, ElementRef, afterNextRender, inject, output, viewChild } from '@angular/core';
 import { InstallHintRow } from '../../../core/pwa/install-hint-row';
 import {
+  closeDialog,
+  onDialogBackdropClick,
+  restoreDialogFocus,
+} from '../../../shared/ui/dialog-motion';
+import {
   TV_NAME_MAX,
   TvButtonSize,
   TvPadSpeed,
@@ -34,6 +39,7 @@ export class CustomizeSheet {
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private readonly nameField = viewChild.required<ElementRef<HTMLInputElement>>('nameField');
   private readonly doneButton = viewChild.required<ElementRef<HTMLButtonElement>>('done');
+  private opener: Element | null = null;
 
   readonly closed = output<void>();
 
@@ -69,7 +75,11 @@ export class CustomizeSheet {
     afterNextRender(() => {
       // showModal prende o foco na folha (em "Concluir", para o teclado do aparelho não abrir sozinho), deixa o resto
       // inerte e trata o Esc.
-      this.dialog().nativeElement.showModal();
+      const dialog = this.dialog().nativeElement;
+      this.opener = document.activeElement;
+      dialog.showModal();
+      // O fundo escurecido é o próprio <dialog>; só fecha se o toque começou e terminou fora da folha.
+      onDialogBackdropClick(dialog, () => this.close());
     });
   }
 
@@ -90,6 +100,11 @@ export class CustomizeSheet {
 
   protected close(event?: Event): void {
     event?.preventDefault(); // quem tira a folha do DOM é a página; evita o fechamento duplo do navegador
-    leaveSheet(this.dialog().nativeElement, () => this.closed.emit());
+    const dialog = this.dialog().nativeElement;
+    leaveSheet(dialog, () => {
+      closeDialog(dialog);
+      restoreDialogFocus(this.opener);
+      this.closed.emit();
+    });
   }
 }
