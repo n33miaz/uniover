@@ -90,8 +90,19 @@ export const panel = (page: Page) => page.locator('app-body-panel');
 export const listChip = (page: Page, muscle: string) =>
   page.locator(`app-muscle-list .chip[data-muscle="${muscle}"]`);
 
-export const showFace = (page: Page, face: 'Frente' | 'Costas') =>
-  page.getByRole('button', { name: face, exact: true }).click();
+/** Vira a figura e espera o giro de 240 ms terminar: medir ou tocar durante a animação pega a figura de lado. */
+export async function showFace(page: Page, face: 'Frente' | 'Costas'): Promise<void> {
+  await page.getByRole('button', { name: face, exact: true }).click();
+  await page.evaluate(async () => {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    );
+  });
+}
 
 /** Os exercícios do painel, na ordem. */
 export const panelRows = (page: Page) => page.locator('app-body-panel .row-name');
