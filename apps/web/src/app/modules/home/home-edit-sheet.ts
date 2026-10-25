@@ -11,7 +11,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { WidgetPref, moveWidget, moveWidgetTo } from '../../core/modules/module-prefs';
-import { ModuleRegistry, WidgetSize } from '../../core/modules/module-registry';
+import { ModuleRegistry } from '../../core/modules/module-registry';
 import { leaveDialog, onDialogBackdropClick } from '../../shared/ui/dialog-motion';
 import { HomeGlyph, HomeGlyphName, moduleGlyph } from './home-glyph';
 
@@ -36,7 +36,6 @@ export class HomeEditSheet implements OnInit {
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   protected readonly draft = signal<readonly WidgetPref[]>([]);
   protected readonly dragging = signal<string | null>(null);
-  protected readonly sizes: readonly WidgetSize[] = ['small', 'wide'];
   private leaving = false;
 
   ngOnInit(): void {
@@ -61,22 +60,16 @@ export class HomeEditSheet implements OnInit {
     return module ? moduleGlyph(module.icon) : 'grid';
   }
 
+  protected showLabel(id: string): string {
+    return $localize`:@@home.sheet.show:Mostrar ${this.title(id)}:title: na Início`;
+  }
+
   protected upLabel(id: string): string {
     return $localize`:@@home.sheet.up:Subir ${this.title(id)}:title:`;
   }
 
   protected downLabel(id: string): string {
     return $localize`:@@home.sheet.down:Descer ${this.title(id)}:title:`;
-  }
-
-  protected sizeLabel(size: WidgetSize): string {
-    return size === 'small'
-      ? $localize`:@@home.size.small:Pequeno`
-      : $localize`:@@home.size.wide:Largo`;
-  }
-
-  protected setSize(id: string, size: WidgetSize): void {
-    this.draft.update((list) => list.map((item) => (item.id === id ? { ...item, size } : item)));
   }
 
   protected setEnabled(id: string, enabled: boolean): void {

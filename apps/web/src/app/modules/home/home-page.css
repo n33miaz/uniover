@@ -77,10 +77,18 @@ h1 {
 .chips {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: var(--space-2);
 }
 
-/* Atalhos. */
+/* Atalhos e cartões de módulo compartilham raio, toque e foco. */
+.shortcut,
+.card {
+  -webkit-tap-highlight-color: transparent;
+  border-radius: var(--radius);
+}
+
+/* Atalhos: ladrilho e nome, centrados na meia linha. */
 .shortcuts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -90,15 +98,27 @@ h1 {
 .shortcut {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  gap: var(--space-2);
   height: 100%;
   min-height: 64px;
-  padding: 10px var(--space-3);
+  padding: var(--space-2) var(--space-3);
   color: var(--a-ink);
+  font-size: clamp(0.875rem, 4vw, 1rem);
+  font-weight: 700;
   text-decoration: none;
 }
 
-/* Cabeçalho da seção de módulos. */
+.shortcut:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+.shortcut:active {
+  transform: scale(0.97);
+}
+
+/* Cabeçalho da seção de módulos: título e "Editar" na mesma linha, a ação discreta à direita. */
 .section-head {
   display: flex;
   align-items: center;
@@ -108,18 +128,42 @@ h1 {
 }
 
 .edit {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  padding: 0 var(--space-4) 0 var(--space-3);
-  border-radius: var(--radius-pill);
+  min-width: var(--tap);
+  min-height: var(--tap);
+  margin-right: calc(-1 * var(--space-2));
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
   color: var(--a-accent-ink);
+  font: inherit;
   font-size: var(--fs-small);
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--dur-fast) linear;
+}
+
+.edit:active {
+  background: var(--a-accent-soft);
+}
+
+.edit:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
 }
 
 .edit app-home-glyph {
   --glyph-size: 18px;
 }
 
-/* Grade de módulos: dois por linha; "Largo" ocupa a linha toda. */
+/*
+ * Grade de módulos: todos do mesmo tamanho. Duas colunas no celular; a partir de 600px, três (grade de seis
+ * partes, para a última linha, se incompleta, dividir ou tomar a largura toda em vez de deixar meia linha vazia).
+ */
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -131,9 +175,33 @@ h1 {
   min-width: 0;
 }
 
-.widget.full,
 .empty {
   grid-column: 1 / -1;
+}
+
+@media (max-width: 599.98px) {
+  .widget:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 600px) {
+  .grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .widget {
+    grid-column: span 2;
+  }
+
+  .widget:last-child:nth-child(3n + 1) {
+    grid-column: span 6;
+  }
+
+  .widget:last-child:nth-child(3n + 2),
+  .widget:nth-last-child(2):nth-child(3n + 1) {
+    grid-column: span 3;
+  }
 }
 
 .card {
@@ -141,126 +209,87 @@ h1 {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: var(--space-3);
-  min-width: 0;
-  padding: var(--space-4);
-}
-
-.card-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
   gap: var(--space-2);
-}
-
-.badges {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-1);
   min-width: 0;
+  padding: var(--space-4) var(--space-2) var(--space-3);
+  text-align: center;
 }
 
-.card-text {
-  flex: 1 1 auto;
+/* Ladrilho: cor do módulo em tom suave; o desenho leva o traço na cor cheia. O cartão calmo (sem tela) fica neutro. */
+.card {
+  --mod: var(--a-accent);
+}
+
+.card[data-module='training'] {
+  --mod: var(--a-ok);
+}
+
+.ico {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--mod) 14%, var(--a-surface));
+  color: color-mix(in srgb, var(--mod) 78%, var(--a-ink));
+}
+
+.card.calm .ico {
+  background: var(--a-elev);
+  color: var(--a-ink2);
 }
 
 h3 {
+  max-width: 100%;
   margin: 0;
-  font-size: 1.125rem;
-  font-weight: 750;
-  letter-spacing: -0.01em;
-}
-
-.desc {
-  margin: 2px 0 0;
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-  line-height: 1.3;
-}
-
-/* A ação principal; o link se estende por cima do cartão inteiro, então o cartão todo é o alvo de toque. */
-.action {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  min-height: var(--tap);
-  padding: 0 14px;
-  border-radius: var(--radius);
-  background: var(--a-accent-soft);
-  color: var(--a-accent-ink);
+  font-size: clamp(0.8125rem, 3.7vw, 1.0625rem);
   font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+/* O link se estende por cima do cartão inteiro, então o cartão todo é o alvo de toque. */
+.card-link {
+  /* A caixa do link cresce (e a margem negativa devolve o espaço) para ter 44 px de toque também medida sozinha. */
+  display: block;
+  box-sizing: border-box;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  margin: calc(-1 * var(--space-3)) calc(-1 * var(--space-2));
+  padding: var(--space-3) var(--space-2);
+  color: inherit;
   text-decoration: none;
 }
 
-.action app-home-glyph {
-  --glyph-size: 20px;
-  transition: transform var(--dur-base) var(--ease-out);
-}
-
-.action::after {
+.card-link::after {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
 }
 
-/* Na metade da linha não cabe a seta ao lado do texto. */
-.widget:not(.full) .action {
-  justify-content: center;
-}
-
-.widget:not(.full) .action app-home-glyph {
-  display: none;
-}
-
-.action:focus-visible {
+.card-link:focus-visible {
   outline: none;
 }
 
-.action:focus-visible::after {
+.card-link:focus-visible::after {
   outline: 3px solid var(--a-accent);
   outline-offset: 2px;
 }
 
-/* "Largo": ícone à esquerda, texto no meio e selos à direita; a ação desce para a linha de baixo. */
-.widget.full .card {
-  display: grid;
-  grid-template-areas:
-    'ico text badges'
-    'action action action';
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: var(--space-3);
+.card.ui-press:active {
+  transform: scale(0.97);
 }
 
-.widget.full .card-top {
-  display: contents;
-}
-
-.ico {
-  grid-area: ico;
-}
-
-.card-text {
-  grid-area: text;
-}
-
-.action,
-.quiet {
-  grid-area: action;
-}
-
+/* A faixa de selos tem sempre a altura de um selo: cartão com e sem selo fica no mesmo ritmo. */
 .badges {
-  grid-area: badges;
-}
-
-.widget.full .badges {
-  flex-direction: column;
-  align-items: flex-end;
-  align-self: start;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: 26px;
 }
 
 /* Estado vazio. */
@@ -287,9 +316,14 @@ h3 {
   opacity: 0.85;
 }
 
-@media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  .card:hover .action app-home-glyph {
-    transform: translateX(3px);
+@media (prefers-reduced-motion: reduce) {
+  .shortcut:active,
+  .card.ui-press:active {
+    transform: none;
+  }
+
+  .edit {
+    transition: none;
   }
 }
 

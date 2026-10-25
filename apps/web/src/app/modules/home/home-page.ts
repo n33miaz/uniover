@@ -29,7 +29,6 @@ interface Shortcut {
   readonly link: string;
   readonly glyph: HomeGlyphName;
   readonly title: string;
-  readonly hint: string;
 }
 
 /** Parte do dia: manhã até 11h59, tarde até 17h59, noite no resto (a mesma régua da saudação). */
@@ -82,27 +81,8 @@ export class HomePage {
   }
 
   protected readonly editing = signal(false);
-  /**
-   * Blocos na ordem escolhida, já com a largura de fato: "Largo" ocupa a linha toda; um "Pequeno" que ficaria
-   * sozinho na linha (porque o próximo é largo, ou porque é o último) também a ocupa, sem deixar buraco.
-   */
-  protected readonly widgets = computed(() => {
-    const visible = this.prefs.visible();
-    let column = 0;
-    return visible.map((widget, index) => {
-      let full = widget.size === 'wide';
-      if (full) {
-        column = 0;
-      } else if (column === 0) {
-        const next = visible[index + 1];
-        full = !next || next.size === 'wide';
-        column = full ? 0 : 1;
-      } else {
-        column = 0;
-      }
-      return { ...widget, full };
-    });
-  });
+  /** Blocos na ordem escolhida; todos do mesmo tamanho, numa grade regular (o tamanho antigo guardado é ignorado). */
+  protected readonly widgets = this.prefs.visible;
   protected readonly allWidgets = this.prefs.widgets;
 
   protected readonly dayPart = computed(() => dayPartFor(this.clock.now().getHours()));
@@ -132,14 +112,12 @@ export class HomePage {
       link: '/ajustes/aparelhos',
       glyph: 'laptop',
       title: $localize`:@@home.shortcut.devices:Aparelhos`,
-      hint: $localize`:@@home.shortcut.devices-hint:Parear o PC de casa`,
     },
     {
       id: 'settings',
       link: '/ajustes',
       glyph: 'sliders',
       title: $localize`:@@home.shortcut.settings:Ajustes`,
-      hint: $localize`:@@home.shortcut.settings-hint:Conta, tema e convidados`,
     },
   ];
 
@@ -180,6 +158,13 @@ export class HomePage {
     }
     return chips;
   });
+
+  /** Nome do link do cartão: o nome visível primeiro e a ação depois, para o leitor de tela dizer o que acontece. */
+  protected linkLabel(module: ModuleDefinition): string {
+    return module.actionLabel
+      ? $localize`:@@home.module-link:${module.title}:title:: ${module.actionLabel}:action:`
+      : module.title;
+  }
 
   protected glyphFor(module: ModuleDefinition): HomeGlyphName {
     return moduleGlyph(module.icon);
