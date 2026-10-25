@@ -206,6 +206,20 @@ export class WeekCalendar {
       : $localize`:@@training.today.calendar.day-empty:${date}:date:, sem treino`;
   }
 
+  protected weekDayLabel(
+    day: CalendarDay,
+    index: number,
+    workouts: readonly Workout[] | null,
+  ): string {
+    const visibleDate = `${this.weekdays[index]} ${day.day}`;
+    const count = workouts?.filter((workout) => workout.dayKey === day.key).length ?? 0;
+    return count === 0
+      ? $localize`:@@training.today.calendar.week-day-empty:${visibleDate}:date:, sem treino`
+      : count === 1
+        ? $localize`:@@training.today.calendar.week-day-one:${visibleDate}:date:, 1 treino`
+        : $localize`:@@training.today.calendar.week-day-many:${visibleDate}:date:, ${count}:count: treinos`;
+  }
+
   protected formatVolume(value: number): string {
     return formatKg(value);
   }

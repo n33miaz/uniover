@@ -100,8 +100,8 @@
   color: var(--a-accent-ink);
   border-color: var(--a-accent);
 }
-.day.done .mark {
-  color: var(--a-accent-ink);
+.day.done::after {
+  content: '✓';
 }
 .weekday {
   font-size: 0.67rem;
@@ -113,7 +113,8 @@
   font-variant-numeric: tabular-nums;
   line-height: 1.25;
 }
-.mark {
+.day::after {
+  content: '';
   min-height: 14px;
   font-size: 0.78rem;
   font-weight: 900;
