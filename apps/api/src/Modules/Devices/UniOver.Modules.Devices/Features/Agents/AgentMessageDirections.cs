@@ -40,6 +40,7 @@ internal static class AgentMessageDirections
         AgentMessageTypes.TvCleanupV1,
         AgentMessageTypes.TvKeyV1,
         AgentMessageTypes.TvKeyV2,
+        AgentMessageTypes.TvKeyV3,
         AgentMessageTypes.TvTextV1,
         AgentMessageTypes.TvWakeV1,
     }.ToFrozenSet(StringComparer.Ordinal);
