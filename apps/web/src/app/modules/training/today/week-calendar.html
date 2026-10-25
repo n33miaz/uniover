@@ -35,15 +35,12 @@
         class="day"
         [class.done]="hasWorkout(day.key, weekWorkouts())"
         [class.today]="isToday(day.key)"
-        [attr.aria-label]="dayLabel(day, weekWorkouts())"
+        [attr.aria-label]="weekDayLabel(day, index, weekWorkouts())"
         [attr.aria-current]="isToday(day.key) ? 'date' : null"
         (click)="openDay(day)"
       >
-        <span class="weekday">{{ weekdays[index] }}</span>
-        <span class="number">{{ day.day }}</span>
-        <span class="mark" aria-hidden="true">{{
-          hasWorkout(day.key, weekWorkouts()) ? '✓' : ' '
-        }}</span>
+        <span class="weekday">{{ weekdays[index] }}</span
+        >&ngsp;<span class="number">{{ day.day }}</span>
       </button>
     }
   </div>
