@@ -15,8 +15,17 @@ internal interface IPresenceStore
     /// <summary>Marca como desconectado, mantendo o que se sabia dele; nulo se ele nunca foi visto.</summary>
     AgentPresenceInfo? MarkDisconnected(string agentId, DateTimeOffset now);
 
-    /// <summary>Guarda versão e capacidades do <c>agent.hello.v1</c>; nulo se o agente não está conectado.</summary>
-    AgentPresenceInfo? RecordHello(string agentId, string agentVersion, IReadOnlyList<string> capabilities, DateTimeOffset now);
+    /// <summary>Guarda versão, capacidades e dados do PC do <c>agent.hello.v1</c>; nulo se o agente não está conectado.</summary>
+    AgentPresenceInfo? RecordHello(
+        string agentId,
+        string agentVersion,
+        IReadOnlyList<string> capabilities,
+        DateTimeOffset now,
+        AgentHostInfo? host = null,
+        AgentUpdateInfo? update = null);
+
+    /// <summary>Guarda o estado da auto-atualização (<c>agent.update.status.v1</c>); não é mudança de presença, ninguém é notificado.</summary>
+    void RecordUpdate(string agentId, AgentUpdateInfo update, DateTimeOffset now);
 
     /// <summary>Só anota o instante da última mensagem (não é mudança de estado: ninguém é notificado).</summary>
     void Touch(string agentId, DateTimeOffset now);

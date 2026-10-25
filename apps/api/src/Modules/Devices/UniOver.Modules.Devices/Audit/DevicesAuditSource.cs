@@ -22,6 +22,10 @@ internal static class DevicesAuditActions
         (PairingEvents.Expired, "pairing_expired"),
         (PairingEvents.TokenIssued, "pairing_token_issued"),
         (PairingEvents.AgentRevoked, "agent_revoked"),
+        (PairingEvents.AgentLogsViewed, "agent_logs_viewed"),
+        (PairingEvents.AgentUpdateRequested, "agent_update_requested"),
+        (PairingEvents.AgentRestartRequested, "agent_restart_requested"),
+        (PairingEvents.AgentRollbackRequested, "agent_rollback_requested"),
     ];
 
     public static IReadOnlyList<string> All { get; } = [.. Map.Select(m => m.Action)];

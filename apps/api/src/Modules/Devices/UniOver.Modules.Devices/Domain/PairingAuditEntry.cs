@@ -21,6 +21,12 @@ public static class PairingEvents
     public const string Expired = "expired";
     public const string TokenIssued = "token_issued";
     public const string AgentRevoked = "agent_revoked";
+
+    // Manutenção remota (só o administrador): ver o registro do agente e pedir que atualize ou reinicie.
+    public const string AgentLogsViewed = "agent_logs_viewed";
+    public const string AgentUpdateRequested = "agent_update_requested";
+    public const string AgentRestartRequested = "agent_restart_requested";
+    public const string AgentRollbackRequested = "agent_rollback_requested";
 }
 
 /// <summary>

@@ -14,6 +14,7 @@ using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Contracts.Pairing;
 using UniOver.Modules.Devices.Features.Events;
 using UniOver.Modules.Devices.Features.Presence;
+using UniOver.Modules.Devices.Features.RemoteCare;
 using UniOver.Modules.Devices.Ports;
 using UniOver.SharedKernel;
 
@@ -51,6 +52,7 @@ public static class DevicesTransportModule
         services.AddSingleton<AgentConnections>();
         services.AddSingleton<IAgentSessionCloser>(sp => sp.GetRequiredService<AgentConnections>());
         services.AddSingleton<IReplyCorrelator, ReplyCorrelator>();
+        services.AddSingleton<IAgentLogReports, InMemoryAgentLogReports>();
         services.AddSingleton<AgentHub>();
         services.AddSingleton<AgentGateway>();
         services.AddSingleton<IAgentGateway>(sp => sp.GetRequiredService<AgentGateway>());
