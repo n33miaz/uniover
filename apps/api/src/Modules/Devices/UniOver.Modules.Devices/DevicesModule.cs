@@ -76,6 +76,7 @@ public static class DevicesModule
         services.AddScoped<RemoteCareResolver>();
         services.AddScoped<AgentLogsHandler>();
         services.AddScoped<AgentMaintenanceHandler>();
+        services.AddAuthorizationBuilder().AddPolicy(PairingPolicies.ApproveOwn, PairingPolicies.Configure);
         return services;
     }
 
@@ -89,6 +90,7 @@ public static class DevicesModule
         group.MapStartPairing();
         group.MapPollPairing();
         group.MapApprovePairing();
+        group.MapApproveOwnPairing();
         group.MapDenyPairing();
         group.MapListAgents();
         group.MapRevokeAgent();

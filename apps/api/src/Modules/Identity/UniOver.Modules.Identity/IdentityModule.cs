@@ -12,6 +12,7 @@ using UniOver.Modules.Identity.Features.AcceptGuestInvite;
 using UniOver.Modules.Identity.Features.BeginPasskeyRegistration;
 using UniOver.Modules.Identity.Features.CompletePasskeyRegistration;
 using UniOver.Modules.Identity.Features.ConfirmStepUp;
+using UniOver.Modules.Identity.Features.ConfirmStepUpWithPassword;
 using UniOver.Modules.Identity.Features.CreateGuestInvite;
 using UniOver.Modules.Identity.Features.GetMe;
 using UniOver.Modules.Identity.Features.GetModuleInfo;
@@ -143,6 +144,7 @@ public static class IdentityModule
         group.MapRemovePasskey();
         group.MapRequestStepUp();
         group.MapConfirmStepUp();
+        group.MapConfirmStepUpWithPassword();
         return endpoints;
     }
 }

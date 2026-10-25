@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using UniOver.Modules.Identity.Features.BeginPasskeyRegistration;
 using UniOver.Modules.Identity.Features.CompletePasskeyRegistration;
 using UniOver.Modules.Identity.Features.ConfirmStepUp;
+using UniOver.Modules.Identity.Features.ConfirmStepUpWithPassword;
 using UniOver.Modules.Identity.Features.ListPasskeys;
 using UniOver.Modules.Identity.Features.RemovePasskey;
 using UniOver.Modules.Identity.Features.RenamePasskey;
@@ -44,6 +45,7 @@ public static class IdentityPasskeys
         services.AddScoped<RemovePasskeyHandler>();
         services.AddScoped<RequestStepUpHandler>();
         services.AddScoped<ConfirmStepUpHandler>();
+        services.AddScoped<ConfirmStepUpWithPasswordHandler>();
 
         // Replace e não Add: o provedor e o respondedor padrão já existem (ou virão depois, via TryAdd) e só pode haver um.
         services.Replace(ServiceDescriptor.Singleton<IAuthorizationPolicyProvider, StepUpPolicyProvider>());
