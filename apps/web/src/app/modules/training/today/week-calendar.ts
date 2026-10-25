@@ -199,6 +199,11 @@ export class WeekCalendar {
     return key === dateKey(this.runtime.now(), this.zone);
   }
 
+  /** Dias depois de hoje ficam mais apagados; a chave é AAAA-MM-DD, então a ordem do texto é a do calendário. */
+  protected isFuture(key: string): boolean {
+    return key > dateKey(this.runtime.now(), this.zone);
+  }
+
   protected dayLabel(day: CalendarDay, workouts: readonly Workout[] | null): string {
     const date = fullDate.format(dateAt(day));
     return this.hasWorkout(day.key, workouts)
