@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using UniOver.BuildingBlocks.Persistence;
 using UniOver.IntegrationTests.Identity;
+using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Identity.Passkeys;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.IntegrationTests.Messaging;
@@ -221,6 +222,44 @@ internal sealed class DevicesApp : IAsyncDisposable
     }
 
     public static Task<JsonElement> JsonAsync(HttpResponseMessage response) => IdentityApp.JsonAsync(response);
+
+    // ---- convidado que pareia a própria TV ----
+
+    /// <summary>Ação que o convidado confirma com a senha para aprovar a própria TV.</summary>
+    public const string PairSelfAction = "devices.pair-self";
+
+    /// <summary>Convidado novo, ativo, com as permissões dadas (padrão: só ver a TV).</summary>
+    public Task<GuestSession> NewGuestAsync(IReadOnlyCollection<string>? permissions = null, string label = "Raphael") =>
+        GuestSeed.CreateGuestAsync(Client, Database, Time.GetUtcNow(), label, permissions ?? ["module:tv"]);
+
+    /// <summary>Entra de novo com o e-mail e a senha do convidado: uma sessão nova, sem nenhuma confirmação.</summary>
+    public async Task<LoggedIn> LoginAsync(GuestSession guest)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/identity/auth/login")
+        {
+            Content = JsonContent.Create(new { email = guest.Email, password = guest.Password }),
+        };
+        request.Headers.Add(IdentityApp.ClientHeader, "web");
+        using var response = await Client.SendAsync(request, TestContext.Current.CancellationToken);
+        return await GuestSeed.ReadLoginAsync(response);
+    }
+
+    /// <summary>Reconfirma a ação com a senha (o passo forte do convidado, que não tem passkey).</summary>
+    public Task<HttpResponseMessage> ConfirmWithPasswordRawAsync(LoggedIn login, string password, string action = PairSelfAction) =>
+        SendAsync(HttpMethod.Post, "/api/v1/identity/step-up/password", new { action, password }, login.AccessToken);
+
+    public async Task ConfirmWithPasswordAsync(GuestSession guest, string action = PairSelfAction)
+    {
+        using var response = await ConfirmWithPasswordRawAsync(guest.Login, guest.Password, action);
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+    }
+
+    /// <summary>Aprova pela rota do convidado (corpo livre, para testar o que sobra e o que é ignorado).</summary>
+    public Task<HttpResponseMessage> ApproveOwnRawAsync(LoggedIn? login, object body) =>
+        SendAsync(HttpMethod.Post, "/api/v1/devices/pairing/approve-own", body, login?.AccessToken);
+
+    public Task<HttpResponseMessage> ListAgentsRawAsync(LoggedIn? login) =>
+        SendAsync(HttpMethod.Get, "/api/v1/devices/agents", null, login?.AccessToken);
 
     // ---- pareamento ----
 

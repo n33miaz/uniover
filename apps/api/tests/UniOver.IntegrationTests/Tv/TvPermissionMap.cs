@@ -92,6 +92,9 @@ internal static class TvPermissionMap
     /// <summary>A chamada chegou à rota: a autorização deixou passar (o que veio depois é assunto do tratamento dela).</summary>
     public static bool Reached(HttpStatusCode status) => status is not (HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden);
 
+    /// <summary>A rota do módulo de aparelhos em que o convidado aprova o pareamento do PC dele como a própria TV.</summary>
+    public const string OwnPairingRoute = "/api/v1/devices/pairing/approve-own";
+
     /// <summary>
     /// Confere as rotas contra a tabela: cada rota da TV (fora a pública) declara exatamente a permissão da sua linha, com
     /// papel conhecido e conta ativa; o fluxo ao vivo autentica só pelo bilhete; nenhuma rota de outro módulo carrega
@@ -115,6 +118,19 @@ internal static class TvPermissionMap
 
             if (!pattern.StartsWith(TvPrefix, StringComparison.Ordinal))
             {
+                // Única exceção, declarada: o convidado que pareia o PC como a própria TV. A rota mora no módulo de aparelhos,
+                // exige só 'module:tv' e, junto, a reconfirmação da senha dessa ação; qualquer outra combinação é violação.
+                // Em Development com a confirmação desligada (como nos hosts de teste da TV) vale só a permissão; que a senha é
+                // exigida no host de produção quem prova é o GuestSelfApprovalTests.
+                var stepUps = policy?.Requirements.OfType<StepUpRequirement>().Select(r => r.Action).ToList() ?? [];
+                var isOwnPairing = pattern == OwnPairingRoute
+                    && permissions.SequenceEqual([AccessPermissions.TvModule])
+                    && (stepUps.Count == 0 || stepUps.SequenceEqual([GuestStepUpActions.PairSelf]));
+                if (isOwnPairing)
+                {
+                    continue;
+                }
+
                 found.AddRange(permissions
                     .Where(p => p == AccessPermissions.TvModule || p.StartsWith("tv:", StringComparison.Ordinal))
                     .Select(p => $"{label}: rota fora da TV com a permissão da TV '{p}'"));
