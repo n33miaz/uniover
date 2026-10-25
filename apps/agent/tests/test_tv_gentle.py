@@ -358,7 +358,7 @@ async def test_the_wake_prewarm_never_sends_wake_on_lan() -> None:
     assert wol.calls == 0
 
 
-# --- volume: lido só depois de uma tecla de volume -------------------------------------------
+# --- volume: lido ao abrir a sessão e depois de uma tecla de volume ----------------------
 
 
 class VolumeReader:
@@ -374,16 +374,18 @@ class VolumeReader:
         return self.level
 
 
-async def test_the_volume_is_read_once_after_a_volume_key_and_published() -> None:
+async def test_the_volume_is_read_on_open_and_once_after_a_volume_key() -> None:
     reader = VolumeReader(17)
     rig = Rig(alive=True, volume_reader=reader)
     await rig.wake()
     await rig.manager.settle()
-    assert reader.calls == 0  # abrir a sessão não lê o volume
+    assert reader.calls == 1  # uma leitura ao abrir a sessão: o contador já aparece
+    assert rig.manager.snapshot().volume == 17
+    reader.level = 20
     await rig.manager.send_key("VOLUME_UP")
     await rig.manager.settle()
-    assert reader.calls == 1
-    assert rig.manager.snapshot().volume == 17
+    assert reader.calls == 2
+    assert rig.manager.snapshot().volume == 20
 
 
 async def test_a_burst_of_volume_keys_is_one_read() -> None:
@@ -392,20 +394,20 @@ async def test_a_burst_of_volume_keys_is_one_read() -> None:
     for _ in range(6):
         await rig.manager.send_key("VOLUME_DOWN")
     await rig.manager.settle()
-    assert reader.calls <= 2
+    assert reader.calls <= 3  # a abertura da sessão e a rajada, que vira uma ou duas leituras
     assert rig.manager.snapshot().volume == 30
 
 
-async def test_other_keys_and_a_long_press_start_do_not_read_the_volume() -> None:
+async def test_other_keys_and_a_long_press_start_do_not_read_the_volume_again() -> None:
     reader = VolumeReader()
     rig = Rig(alive=True, volume_reader=reader)
     await rig.manager.send_key("HOME")
     await rig.manager.send_key("VOLUME_UP", "START_LONG")
     await rig.manager.settle()
-    assert reader.calls == 0
+    assert reader.calls == 1  # só a leitura da abertura da sessão
     await rig.manager.send_key("VOLUME_UP", "END_LONG")
     await rig.manager.settle()
-    assert reader.calls == 1
+    assert reader.calls == 2
 
 
 async def test_a_volume_read_that_fails_is_silent_and_does_not_break_the_key() -> None:

@@ -30,7 +30,7 @@ from uniover_agent.main import (
     silence_noisy_loggers,
 )
 
-from .support import AGENT_ID, TOKEN, FakeApi, dump, envelope
+from .support import AGENT_ID, ANDROID_KEYS, TOKEN, FakeApi, dump, envelope
 from .support_tv import write_certificate
 
 TV_HOST = "192.168.0.4"
@@ -74,10 +74,11 @@ def test_host_with_certificate_builds_the_session(monkeypatch: pytest.MonkeyPatc
     assert setup is not None
     assert built == [(TV_HOST, "Casa", tv_cert_dir("tv"))]
     assert setup.manager.snapshot().connection == "hibernating"
-    assert setup.capabilities == ["tv.remote", "tv.kind.android"]
+    assert setup.capabilities == ["tv.remote", "tv.kind.android", *ANDROID_KEYS]
     assert set(setup.handlers) == {
         "tv.key.v1",
         "tv.key.v2",
+        "tv.key.v3",
         "tv.text.v1",
         "tv.wake.v1",
         "tv.app.launch.v1",
@@ -190,6 +191,7 @@ async def test_run_declares_the_capability_and_serves_tv_commands(
         "agent.maintenance.v1",
         "tv.remote",
         "tv.kind.android",
+        *ANDROID_KEYS,
     ]
     # A tela do dono mostra o tipo e o endereço da TV que este PC controla.
     assert hello["body"]["tv"] == {"kind": "android", "host": TV_HOST}
@@ -302,6 +304,7 @@ async def test_later_deliveries_extend_the_composition_with_one_line_each(
         "agent.maintenance.v1",
         "tv.remote",
         "tv.kind.android",
+        *ANDROID_KEYS,
         "tv.adb",
     ]
     assert sorted(ran) == ["apps", "fundo"]
