@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from uniover_agent.adapters.tv_adb import AdbTv, locate_adb, run_process
+from uniover_agent.adapters.tv_adb_parsing import AdbOutput
 from uniover_agent.ports import (
     AdbCommandFailed,
     AdbNotReady,
@@ -479,3 +480,59 @@ def test_locate_adb_searches_the_path_then_the_android_sdk(
     on_path = tmp_path / "bin-adb"
     monkeypatch.setattr("shutil.which", lambda name: str(on_path))
     assert locate_adb(None) == on_path
+
+
+# --- religar o serviço do controle (vigia) -------------------------------------------------------
+
+REMOTE_SERVICE = "com.google.android.tv.remote.service"
+SHIELD = (
+    f"dumpsys deviceidle whitelist +{REMOTE_SERVICE}",
+    f"cmd appops set {REMOTE_SERVICE} RUN_ANY_IN_BACKGROUND allow",
+    f"am set-standby-bucket {REMOTE_SERVICE} active",
+)
+START = (
+    "am start-foreground-service -a com.android.athome.START_SERVICE "
+    f"-n {REMOTE_SERVICE}/.RemoteService"
+)
+
+
+def restart_script(start_reply: AdbOutput | None = None) -> FakeAdbRunner:
+    runner = authorized()
+    for command in SHIELD:
+        runner.script[shell(command)] = ok("")
+    runner.script[shell(START)] = start_reply or ok("Starting service: Intent { act=x }\r\n")
+    return runner
+
+
+async def test_restart_remote_service_reconnects_then_shields_then_starts_it() -> None:
+    runner = restart_script()
+    adb = make(runner)
+    await adb.restart_remote_service()
+    assert runner.calls == [CONNECT, GET_STATE, *(shell(c) for c in (*SHIELD, START))]
+    assert runner.executables == {str(ADB)}
+
+
+async def test_restart_remote_service_does_not_trust_a_connection_from_before_a_reboot() -> None:
+    runner = restart_script()
+    adb = make(runner)
+    await adb.connect()
+    runner.calls.clear()
+    await adb.restart_remote_service()
+    assert runner.calls[:2] == [CONNECT, GET_STATE]
+
+
+async def test_restart_remote_service_ignores_a_shield_that_fails_but_not_a_failed_start() -> None:
+    runner = restart_script(ok("Error: Not found; no service started.\r\n"))
+    runner.script[shell(SHIELD[1])] = ok("Unknown option: RUN_ANY_IN_BACKGROUND", returncode=255)
+    with pytest.raises(AdbCommandFailed):
+        await make(runner).restart_remote_service()
+    assert runner.shell_commands() == [*SHIELD, START]
+
+
+async def test_restart_remote_service_without_authorization_runs_no_shell_command() -> None:
+    runner = FakeAdbRunner(
+        {CONNECT: ok(f"failed to authenticate to {SERIAL}\r\n"), GET_STATE: ok("unauthorized")}
+    )
+    with pytest.raises(AdbUnauthorized):
+        await make(runner).restart_remote_service()
+    assert runner.shell_commands() == []
