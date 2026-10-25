@@ -23,7 +23,12 @@
             <app-auth-glyph name="alert-circle" />
             <span i18n="@@auth.qr.denied">Recusado no celular.</span>
           </p>
-          <button type="button" class="ui-btn secondary block" (click)="retry()">
+          <button
+            type="button"
+            class="ui-btn secondary block"
+            (mousedown)="$event.preventDefault()"
+            (click)="retry()"
+          >
             <span i18n="@@auth.qr.again">Gerar outro QR</span>
           </button>
         }
@@ -32,7 +37,12 @@
             <app-auth-glyph name="wifi-off" />
             <span i18n="@@auth.qr.error">Não foi possível gerar o QR.</span>
           </p>
-          <button type="button" class="ui-btn secondary block" (click)="retry()">
+          <button
+            type="button"
+            class="ui-btn secondary block"
+            (mousedown)="$event.preventDefault()"
+            (click)="retry()"
+          >
             <span i18n="@@auth.qr.retry">Tentar de novo</span>
           </button>
         }
