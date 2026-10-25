@@ -58,6 +58,9 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>tv.key.v3</c>.</summary>
     public const string TvKeyV3 = "tv.key.v3";
 
+    /// <summary>Tipo de mensagem <c>tv.power.off.v1</c>.</summary>
+    public const string TvPowerOffV1 = "tv.power.off.v1";
+
     /// <summary>Tipo de mensagem <c>tv.state.v1</c>.</summary>
     public const string TvStateV1 = "tv.state.v1";
 
@@ -90,6 +93,7 @@ public static class AgentMessageTypes
         TvKeyV1,
         TvKeyV2,
         TvKeyV3,
+        TvPowerOffV1,
         TvStateV1,
         TvTextV1,
         TvWakeV1,
