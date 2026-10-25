@@ -341,6 +341,126 @@ public sealed class CommandTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task PowerOff_Safe_ToAnAgentWithTheCapability_SendsTheSafeMessage_AndAnswersOff()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await DeclarePowerOffAsync(app, agent);
+
+        var request = app.PostAsync("/api/v1/tv/power/off", new { mode = "safe" });
+        var command = await TvApp.NextCommandAsync(agent);
+        command.GetProperty("type").GetString().Should().Be("tv.power.off.v1");
+        command.GetProperty("body").GetRawText().Should().Be("{}");
+        await TvApp.ReplyAsync(agent, command);
+
+        using var response = await Within(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await TvApp.JsonAsync(response);
+        body.GetProperty("ok").GetBoolean().Should().BeTrue();
+        body.GetProperty("outcome").GetString().Should().Be("off");
+        await using var db = app.Db();
+        var row = await db.CommandAudit.SingleAsync(Ct);
+        row.Command.Should().Be("tv.power-off");
+        row.Ok.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task PowerOff_Safe_ToAnAgentWithoutTheCapability_StillSendsThePowerKey()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.kind.android");
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(TvApp.AgentSlug)?.Capabilities.Contains("tv.remote") == true, "capacidades do agente");
+
+        var request = app.PostAsync("/api/v1/tv/power/off", new { mode = "safe" });
+        var command = await TvApp.NextCommandAsync(agent);
+        command.GetProperty("type").GetString().Should().Be("tv.key.v2");
+        command.GetProperty("body").GetProperty("key").GetString().Should().Be("POWER");
+        await TvApp.ReplyAsync(agent, command);
+
+        using var response = await Within(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await TvApp.JsonAsync(response)).GetProperty("outcome").GetString().Should().Be("sent");
+    }
+
+    [Fact]
+    public async Task PowerOff_WithoutTheSafeMode_KeepsSendingThePowerKey_EvenToAnAgentWithTheCapability()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await DeclarePowerOffAsync(app, agent);
+
+        var request = app.PostAsync("/api/v1/tv/power/off");
+        var command = await TvApp.NextCommandAsync(agent);
+        command.GetProperty("type").GetString().Should().Be("tv.key.v2");
+        await TvApp.ReplyAsync(agent, command);
+
+        using var response = await Within(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await TvApp.JsonAsync(response)).GetProperty("outcome").GetString().Should().Be("sent");
+    }
+
+    [Fact]
+    public async Task PowerOff_Safe_WhenTheAgentFoundTheTvAlreadyOff_AnswersAnOutcomeInsteadOfAnError()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await DeclarePowerOffAsync(app, agent);
+
+        var request = app.PostAsync("/api/v1/tv/power/off", new { mode = "safe" });
+        var command = await TvApp.NextCommandAsync(agent);
+        await TvApp.ReplyAsync(agent, command, TvApp.Failed("already_off"));
+
+        using var response = await Within(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await TvApp.JsonAsync(response)).GetProperty("outcome").GetString().Should().Be("already_off");
+    }
+
+    [Theory]
+    [InlineData("uncertain")]
+    [InlineData("offline")]
+    [InlineData("failed")]
+    public async Task PowerOff_Safe_WhenTheAgentCouldNotTurnItOff_Answers502WithItsCode(string code)
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await DeclarePowerOffAsync(app, agent);
+
+        var request = app.PostAsync("/api/v1/tv/power/off", new { mode = "safe" });
+        var command = await TvApp.NextCommandAsync(agent);
+        await TvApp.ReplyAsync(agent, command, TvApp.Failed(code));
+
+        using var response = await Within(request);
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        (await TvApp.JsonAsync(response)).GetProperty("agentError").GetString().Should().Be(code);
+        await using var db = app.Db();
+        var row = await db.CommandAudit.SingleAsync(Ct);
+        row.Ok.Should().BeFalse();
+        row.ErrorCode.Should().Be(code);
+    }
+
+    [Fact]
+    public async Task PowerOff_WithAModeOutsideTheContract_Returns400_AndNothingReachesTheAgent()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await DeclarePowerOffAsync(app, agent);
+
+        using var response = await Within(app.PostAsync("/api/v1/tv/power/off", new { mode = "force" }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await using var db = app.Db();
+        (await db.CommandAudit.CountAsync(Ct)).Should().Be(0);
+    }
+
+    private static async Task DeclarePowerOffAsync(TvApp app, FakeAgent agent)
+    {
+        await agent.SendHelloAsync("1.0.0", "tv.remote", "tv.kind.android", "tv.power.off.v1");
+        await TvApp.WaitUntilAsync(
+            () => app.Presence.Get(TvApp.AgentSlug)?.Capabilities.Contains("tv.power.off.v1") == true, "capacidades do agente");
+    }
+
+    [Fact]
     public async Task PowerOff_Anonymous_Returns401()
     {
         await using var app = await TvApp.StartAsync(postgres);
