@@ -4,6 +4,8 @@
     <!-- Mesma versão do EF Core central: sem isto o provedor do Npgsql puxa uma Relational mais antiga e os projetos
          que referenciam o módulo acusam conflito de versão (o Design, privado, só alinha o próprio módulo). -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="AWSSDK.S3" />
+    <PackageReference Include="JpegLibrary" />
     <!-- Só para gerar as migrations e o bundle com o dotnet ef; não vai para quem referenciar o módulo. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <PrivateAssets>all</PrivateAssets>
