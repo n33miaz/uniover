@@ -8,7 +8,13 @@ import segno
 
 from uniover_agent import main as main_module
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore
-from uniover_agent.adapters.pairing_page import pairing_page_html
+from uniover_agent.adapters.pairing_page import (
+    connected_page_html,
+    failed_page_html,
+    pairing_page_html,
+    write_connected_page,
+    write_pairing_page,
+)
 from uniover_agent.adapters.qr_terminal import (
     render_ascii,
     render_blocks,
@@ -120,6 +126,48 @@ def test_pairing_page_is_light_dark_and_keeps_the_qr_on_white() -> None:
     assert "#ffffff" in page
     assert "Aprovar neste computador" in page
     assert "http://" not in page.replace(LINK, "")
+
+
+def test_waiting_page_reloads_itself_to_show_the_outcome() -> None:
+    page = pairing_page_html(LINK, "ABCD-2345")
+    assert '<meta http-equiv="refresh" content="3">' in page
+
+
+def test_success_and_failure_pages_never_reload() -> None:
+    for page in (connected_page_html(), failed_page_html()):
+        assert "http-equiv" not in page
+        assert "refresh" not in page
+
+
+def test_approve_here_is_the_main_action_above_the_qr_and_keeps_the_page_open() -> None:
+    page = pairing_page_html(LINK, "ABCD-2345")
+    link = page.index(f'href="{LINK}"')
+    assert 'class="approve"' in page[link - 40 : link + 10]
+    assert page.index("Aprovar neste computador") < page.index("<img")
+    # Abre em outra aba: a de espera continua aqui para mostrar "PC conectado".
+    assert 'target="_blank" rel="noopener"' in page
+
+
+def test_the_page_is_replaced_whole_and_leaves_no_temporary_file(tmp_path: Path) -> None:
+    page = tmp_path / "web" / "conectar.html"
+    write_pairing_page(page, LINK, "ABCD-2345")
+    assert page.read_text(encoding="utf-8") == pairing_page_html(LINK, "ABCD-2345")
+    write_connected_page(page)
+    assert page.read_text(encoding="utf-8") == connected_page_html()
+    assert [item.name for item in page.parent.iterdir()] == ["conectar.html"]
+
+
+def test_the_page_is_still_written_when_the_swap_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse(*_: object) -> None:
+        raise PermissionError("arquivo em uso")
+
+    monkeypatch.setattr("uniover_agent.adapters.pairing_page.os.replace", refuse)
+    page = tmp_path / "conectar.html"
+    write_connected_page(page)
+    assert page.read_text(encoding="utf-8") == connected_page_html()
+    assert [item.name for item in tmp_path.iterdir()] == ["conectar.html"]
 
 
 def test_connection_page_sits_next_to_the_config_file(isolated_env: Path) -> None:
