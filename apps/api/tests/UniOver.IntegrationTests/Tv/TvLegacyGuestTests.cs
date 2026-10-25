@@ -78,6 +78,7 @@ public sealed class TvLegacyGuestTests(PostgresFixture postgres)
     public async Task TheGuestThatExistedBeforeThePermissions_ReachesWhatSheReached_AndIsRefusedWhereSheWas()
     {
         await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { SeedBeforeGrants = SeedTheOldSchemaAsync });
+        app.PassReconnectGrace();
         var login = await LoginAsync(app);
 
         // O backfill deu a ela, exatamente, o que ela tinha (e nada de editar atalhos).

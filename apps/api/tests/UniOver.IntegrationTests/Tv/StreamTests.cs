@@ -146,6 +146,7 @@ public sealed class StreamTests(PostgresFixture postgres)
 
         await agent.DisposeAsync();
         await TvApp.WaitUntilAsync(() => app.Presence.Get(TvApp.AgentSlug)?.Connected == false, "agente caiu");
+        app.PassReconnectGrace();
         (await app.PostAsync("/api/v1/tv/keys", new { key = "HOME" })).Dispose();
 
         var offline = (await reader.NextAsync())!;

@@ -70,14 +70,14 @@ public class TvCommandRunnerTests
     }
 
     private static (TvCommandRunner Runner, FakeSender Sender, FakeAudit Audit, FakeStream Stream, InMemoryTvStateStore State) Build(
-        TvSendOutcome outcome, string agentId = "pc-casa", bool auditFails = false)
+        TvSendOutcome outcome, string agentId = "pc-casa", bool auditFails = false, FakePresence? presence = null)
     {
         var sender = new FakeSender(outcome);
         var audit = new FakeAudit(auditFails);
         var stream = new FakeStream();
         var state = new InMemoryTvStateStore();
         var options = Options.Create(new TvModuleOptions { AgentId = agentId, CommandTimeoutSeconds = 8, HibernatingTimeoutSeconds = 15 });
-        var runner = new TvCommandRunner(options, new FixedAgentResolver(agentId), sender, state, audit, stream, TimeProvider.System, NullLogger<TvCommandRunner>.Instance);
+        var runner = new TvCommandRunner(options, new FixedAgentResolver(agentId), presence ?? new FakePresence(), sender, state, audit, stream, TimeProvider.System, NullLogger<TvCommandRunner>.Instance);
         return (runner, sender, audit, stream, state);
     }
 
@@ -113,6 +113,32 @@ public class TvCommandRunnerTests
         audit.Entries.Should().HaveCount(2);
         audit.Entries.Should().OnlyContain(e => !e.Ok && e.ErrorCode == "agent_offline" && e.LatencyMs == null);
         stream.States.Should().ContainSingle().Which.Connection.Should().Be("disconnected");
+    }
+
+    [Fact]
+    public async Task AgentOfflineBeyondTheReconnectWindow_FailsFast_WithoutTouchingTheGateway()
+    {
+        var (runner, sender, audit, stream, _) = Build(TvSendOutcome.Ok(TimeSpan.Zero), presence: new FakePresence(offlineBeyondGrace: true));
+
+        var outcome = await runner.RunAsync(Origin, TvCommandNames.Key, "OK", Message, waitForReply: true, CancellationToken.None);
+        await runner.RunAsync(Origin, TvCommandNames.Wake, null, Message, waitForReply: false, CancellationToken.None);
+
+        outcome.Status.Should().Be(TvSendStatus.AgentOffline);
+        sender.Requests.Should().Be(0);
+        sender.Posts.Should().Be(0);
+        audit.Entries.Should().HaveCount(2).And.OnlyContain(e => !e.Ok && e.ErrorCode == "agent_offline");
+        stream.States.Should().ContainSingle().Which.Connection.Should().Be("disconnected");
+    }
+
+    [Fact]
+    public async Task AgentDisconnectedWithinTheReconnectWindow_StillGoesToTheGatewayToWaitForTheSession()
+    {
+        var (runner, sender, _, _, _) = Build(TvSendOutcome.Ok(TimeSpan.FromMilliseconds(5)), presence: new FakePresence(offlineBeyondGrace: false));
+
+        var outcome = await runner.RunAsync(Origin, TvCommandNames.Key, "OK", Message, waitForReply: true, CancellationToken.None);
+
+        outcome.IsDelivered.Should().BeTrue();
+        sender.Requests.Should().Be(1);
     }
 
     [Fact]
@@ -170,6 +196,7 @@ public class TvCommandRunnerTests
         var runner = new TvCommandRunner(
             Options.Create(new TvModuleOptions { AgentId = "pc-casa" }),
             new FixedAgentResolver("pc-casa"),
+            new FakePresence(),
             new FakeSender(TvSendOutcome.Ok(TimeSpan.FromMilliseconds(5))),
             new InMemoryTvStateStore(),
             new SecretFailingAudit(),
