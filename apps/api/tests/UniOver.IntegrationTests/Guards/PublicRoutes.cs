@@ -42,6 +42,12 @@ internal static class PublicRoutes
         // uso único, validade curta, só o hash no banco), no corpo e nunca na URL; o limite por IP é próprio (balde separado do login).
         new("POST", "/api/v1/identity/guest-invites/accept", "convidado aceita o convite do dono e define a própria senha: ainda não existe sessão"),
 
+        // Entrada pelo QR: o computador que mostra o QR ainda não tem sessão. `start` só cria um pedido (limite por IP baixo, teto de
+        // pedidos abertos); `poll` se autentica pelo segredo de consulta (32 bytes aleatórios, só o hash no banco, no corpo), que só
+        // o navegador que pediu conhece, e entrega a sessão uma única vez depois que o celular logado confirma.
+        new("POST", "/api/v1/identity/auth/qr/start", "computador pede um QR de entrada: ainda não existe sessão"),
+        new("POST", "/api/v1/identity/auth/qr/poll", "computador consulta o QR com o segredo de consulta para receber a sessão"),
+
         // O PWA é público: o navegador precisa do HTML antes de qualquer login.
         new("GET", "/", "página inicial do PWA"),
         new("GET", "/index.html", "página inicial do PWA pelo nome do arquivo"),

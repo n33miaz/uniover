@@ -35,6 +35,9 @@ public class IdentityAuditNormalizerTests
     [InlineData(AuditEvents.GuestRevoked, AuditOutcome.Success)]
     [InlineData(AuditEvents.PermissionsChanged, AuditOutcome.Success)]
     [InlineData(AuditEvents.ProfileUpdated, AuditOutcome.Success)]
+    [InlineData(AuditEvents.QrLoginApproved, AuditOutcome.Success)]
+    [InlineData(AuditEvents.QrLoginDenied, AuditOutcome.Success)]
+    [InlineData(AuditEvents.QrLoginSucceeded, AuditOutcome.Success)]
     [InlineData(AuditEvents.AuditExported, AuditOutcome.Success)]
     public void Outcome_IsDerivedFromTheEventName(string eventName, AuditOutcome expected)
     {
@@ -207,6 +210,9 @@ public class IdentityAuditNormalizerTests
     [InlineData(AuditEvents.PasskeyRegistered)]
     [InlineData(AuditEvents.PasskeyRenamed)]
     [InlineData(AuditEvents.PasskeyRemoved)]
+    [InlineData(AuditEvents.QrLoginApproved)]
+    [InlineData(AuditEvents.QrLoginDenied)]
+    [InlineData(AuditEvents.QrLoginSucceeded)]
     public void EventsAboutAnObject_UseItsIdAsTarget(string eventName)
     {
         var id = Guid.Parse("44444444-4444-7444-8444-444444444444");

@@ -37,6 +37,13 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("PUT", "/api/v1/identity/guests/{id:guid}/permissions", RateLimitPolicies.Login),
         ("PATCH", "/api/v1/identity/me", RateLimitPolicies.Profile),
 
+        // Entrada pelo QR: abrir e consultar são anônimos (um balde por IP cada); ver, confirmar e recusar são por conta.
+        ("POST", "/api/v1/identity/auth/qr/start", RateLimitPolicies.QrStart),
+        ("POST", "/api/v1/identity/auth/qr/poll", RateLimitPolicies.QrPoll),
+        ("POST", "/api/v1/identity/auth/qr/info", RateLimitPolicies.QrDecide),
+        ("POST", "/api/v1/identity/auth/qr/approve", RateLimitPolicies.QrDecide),
+        ("POST", "/api/v1/identity/auth/qr/deny", RateLimitPolicies.QrDecide),
+
         // Pareamento de aparelhos: qualquer rota sob o prefixo (o '*' final significa "começa com").
         ("*", "/api/v1/devices/pairing/*", RateLimitPolicies.Pairing),
 
