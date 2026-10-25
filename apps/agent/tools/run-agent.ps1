@@ -49,13 +49,22 @@ function Sync-Agent([string]$Uv) {
     return ($LASTEXITCODE -eq 0)
 }
 
-function Schedule-NextUpdate { return (Get-Date).AddHours(6).AddMinutes((Get-Random -Minimum 0 -Maximum 46)) }
+function Schedule-NextUpdate {
+    $when = (Get-Date).AddHours(6).AddMinutes((Get-Random -Minimum 0 -Maximum 46))
+    Set-UpdateState @{ nextCheckAt = (Get-UtcStamp $when) } | Out-Null
+    return $when
+}
 
 function Invoke-Update([string]$Uv) {
     $before = Get-Version
     $env:UV = $Uv
+    Set-UpdateState @{ outcome = 'updating'; checkedAt = (Get-UtcStamp (Get-Date)); reason = $null } | Out-Null
     & $Uv run --project $source uniover-agent self-update *> $null
+    $exitCode = $LASTEXITCODE
     $after = Get-Version
+    if ($exitCode -ne 0 -and $before -eq $after) {
+        Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = ('o processo de atualizacao terminou com erro (codigo ' + $exitCode + ')') } | Out-Null
+    }
     if ($before -and $after -and $before -ne $after) {
         [System.IO.File]::WriteAllText($trial, ($after + '|0'), [System.Text.Encoding]::ASCII)
         return $true
@@ -84,12 +93,73 @@ function Note-Run([double]$Seconds) {
             Add-Content -LiteralPath $blocked -Value $parts[0] -Encoding ASCII
         }
         Remove-Item -LiteralPath $trial -Force -ErrorAction SilentlyContinue
+        Set-UpdateState @{ outcome = 'rolled_back'; rolledBack = $true; blockedSha = $parts[0]; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'a versao nova caiu repetidamente; voltei para a anterior' } | Out-Null
     } catch { }
 }
 
 function Start-Tray([string]$Uv) {
     $arguments = 'run --project "' + $source + '" uniover-agent tray'
     return Start-Process -FilePath $Uv -ArgumentList $arguments -PassThru -WindowStyle Hidden
+}
+
+# Estado da atualizacao (runtime/update-status.json) e volta a versao anterior. Tudo isto e
+# informativo ou pedido pelo dono: nada aqui pode derrubar o supervisor, entao nada levanta erro.
+function Get-UtcStamp([DateTime]$Moment) {
+    return $Moment.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Set-UpdateState([hashtable]$Changes) {
+    try {
+        $path = Join-Path $runtime 'update-status.json'
+        Add-Type -AssemblyName System.Web.Extensions
+        $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+        $state = @{}
+        if (Test-Path -LiteralPath $path) {
+            try {
+                $old = $serializer.DeserializeObject([System.IO.File]::ReadAllText($path))
+                foreach ($name in $old.Keys) { $state[$name] = $old[$name] }
+            } catch { $state = @{} }
+        }
+        foreach ($key in @($Changes.Keys)) {
+            if ($null -eq $Changes[$key]) { [void]$state.Remove($key) } else { $state[$key] = $Changes[$key] }
+        }
+        $temp = $path + '.tmp'
+        [System.IO.File]::WriteAllText($temp, $serializer.Serialize($state), (New-Object System.Text.UTF8Encoding($false)))
+        Move-Item -LiteralPath $temp -Destination $path -Force
+    } catch { }
+}
+
+function Test-FreshFlag([string]$Path) {
+    # Um pedido esquecido (agente rodando sem supervisor) nao vale depois de 10 minutos.
+    try { return ((Get-Item -LiteralPath $Path).LastWriteTimeUtc -gt [DateTime]::UtcNow.AddMinutes(-10)) }
+    catch { return $false }
+}
+
+function Invoke-Rollback {
+    # Volta para `app.previous` (a versao que a ultima atualizacao guardou) e bloqueia a que sai.
+    try {
+        if (-not (Test-Path -LiteralPath $previous)) { return $false }
+        $bad = Get-Version
+        $tag = 'manual'
+        if ($bad -and $bad.Length -ge 12) { $tag = $bad.Substring(0, 12) }
+        $rejected = Join-Path $runtime ('app.rejected-' + $tag)
+        Remove-Item -LiteralPath $rejected -Recurse -Force -ErrorAction SilentlyContinue
+        Move-Item -LiteralPath $source -Destination $rejected -ErrorAction Stop
+        try { Move-Item -LiteralPath $previous -Destination $source -ErrorAction Stop }
+        catch {
+            Move-Item -LiteralPath $rejected -Destination $source -ErrorAction SilentlyContinue
+            throw
+        }
+        if ($bad -and -not (Select-String -LiteralPath $blocked -SimpleMatch $bad -Quiet -ErrorAction SilentlyContinue)) {
+            Add-Content -LiteralPath $blocked -Value $bad -Encoding ASCII
+        }
+        Remove-Item -LiteralPath $trial -Force -ErrorAction SilentlyContinue
+        Set-UpdateState @{ outcome = 'rolled_back'; rolledBack = $true; blockedSha = $bad; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'voltei para a versao anterior a pedido do administrador' } | Out-Null
+        return $true
+    } catch {
+        Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'nao consegui voltar para a versao anterior' } | Out-Null
+        return $false
+    }
 }
 
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
@@ -123,6 +193,18 @@ while ($true) {
             Remove-Item -LiteralPath (Join-Path $runtime 'restart-now') -Force -ErrorAction SilentlyContinue
             & taskkill.exe /PID $process.Id /T /F *> $null
             $restartForUpdate = $true
+        }
+        $rollbackFlag = Join-Path $runtime 'rollback-now'
+        if (Test-Path -LiteralPath $rollbackFlag) {
+            $fresh = Test-FreshFlag $rollbackFlag
+            Remove-Item -LiteralPath $rollbackFlag -Force -ErrorAction SilentlyContinue
+            if ($fresh -and (Test-Path -LiteralPath $previous)) {
+                & taskkill.exe /PID $process.Id /T /F *> $null
+                if ($null -ne $tray -and -not $tray.HasExited) { & taskkill.exe /PID $tray.Id /T /F *> $null }
+                if (Get-Command Stop-VenvUsers -ErrorAction SilentlyContinue) { Stop-VenvUsers }
+                $restartForUpdate = $true
+                if (Invoke-Rollback) { exit 42 }
+            }
         }
         if ((Get-Date) -ge $nextUpdate -or (Test-Path (Join-Path $runtime 'update-now'))) {
             Remove-Item -LiteralPath (Join-Path $runtime 'update-now') -Force -ErrorAction SilentlyContinue
