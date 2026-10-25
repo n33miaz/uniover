@@ -149,6 +149,28 @@ describe('QrLoginPanel', () => {
     expect(el.querySelector('app-qr-code')).not.toBeNull();
   });
 
+  it('keeps the focus where it was when the retry buttons are pressed', async () => {
+    // Sem isso o Safari tira o foco do campo de e-mail ao apertar, o erro dele aparece e empurra o botão antes de soltar.
+    api.qrStart
+      .mockRejectedValueOnce(new ApiProblem(0, 'network', 'x'))
+      .mockResolvedValueOnce(started('CODE1234CODE1234', 'primeiro'));
+    api.qrPoll.mockResolvedValueOnce({ status: 'denied' });
+    const { fixture, el } = await render();
+    const pressed = () => {
+      const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+      el.querySelector<HTMLButtonElement>('button')!.dispatchEvent(down);
+      return down.defaultPrevented;
+    };
+
+    expect(text(el)).toContain('Não foi possível gerar o QR');
+    expect(pressed()).toBe(true);
+
+    el.querySelector<HTMLButtonElement>('button')!.click();
+    await settle(fixture, 1_000);
+    expect(text(el)).toContain('Recusado no celular');
+    expect(pressed()).toBe(true);
+  });
+
   it('shows an error with a retry when the QR cannot be requested', async () => {
     api.qrStart.mockRejectedValueOnce(new ApiProblem(0, 'network', 'x'));
     api.qrStart.mockResolvedValueOnce(started('CODE1234CODE1234', 'segredo'));
