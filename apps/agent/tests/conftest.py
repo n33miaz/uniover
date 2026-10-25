@@ -70,6 +70,8 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         "ADB_PULL_TIMEOUT_SECONDS",
         "ICONS_DIR",
         "TV_CLEANUP_KEEP",
+        "UPDATE_DRILL",
+        "UPDATE_SOURCE_URL",
     ):
         monkeypatch.delenv(f"UNIOVER_{name}", raising=False)
     # A pasta do certificado da TV vive em `%LOCALAPPDATA%`: nenhum teste toca na real.

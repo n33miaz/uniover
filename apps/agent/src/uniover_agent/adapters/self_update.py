@@ -25,6 +25,7 @@ import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -35,6 +36,12 @@ _log = logging.getLogger(__name__)
 REPOSITORY = "n33miaz/uniover"
 COMMIT_URL = f"https://api.github.com/repos/{REPOSITORY}/commits/main"
 ARCHIVE_URL = f"https://github.com/{REPOSITORY}/archive/{{sha}}.zip"
+# Ensaio de atualização (`tools/upgrade-drill.ps1`): com `UNIOVER_UPDATE_DRILL=1`, as duas
+# consultas deste módulo vão para um servidor local em vez do GitHub. Sem a variável de modo
+# nada disso é lido, e em produção ela nunca existe.
+DRILL_ENV = "UNIOVER_UPDATE_DRILL"
+DRILL_SOURCE_ENV = "UNIOVER_UPDATE_SOURCE_URL"
+_DRILL_HOSTS = frozenset({"127.0.0.1", "localhost"})
 VERSION_FILE = ".version"
 BLOCKED_VERSIONS_FILE = ".blocked-versions"
 AGENT_PREFIX = ("apps", "agent")
@@ -52,11 +59,40 @@ class SelfUpdateError(Exception):
     """A atualização não pôde ser concluída; a instalação atual ficou intacta."""
 
 
+def drill_origin() -> str | None:
+    """Origem local do ensaio de atualização, ou `None` fora do modo ensaio (o normal).
+
+    No modo ensaio a origem precisa ser `http://` de `127.0.0.1`/`localhost` com porta: qualquer
+    outra coisa é recusada em vez de cair no GitHub, para o ensaio nunca baixar código de fora."""
+    if os.environ.get(DRILL_ENV) != "1":
+        return None
+    value = os.environ.get(DRILL_SOURCE_ENV, "").strip().rstrip("/")
+    try:
+        parts = urlsplit(value)
+        valid = parts.scheme == "http" and parts.hostname in _DRILL_HOSTS and parts.port is not None
+    except ValueError:
+        valid = False
+    if not valid or parts.path:
+        raise SelfUpdateError("modo ensaio sem origem local válida (http://127.0.0.1:porta)")
+    return value
+
+
+def commit_url() -> str:
+    origin = drill_origin()
+    return COMMIT_URL if origin is None else f"{origin}/commit"
+
+
+def archive_url(sha: str) -> str:
+    origin = drill_origin()
+    return ARCHIVE_URL.format(sha=sha) if origin is None else f"{origin}/archive/{sha}.zip"
+
+
 def latest_commit() -> str:
     """Commit atual da `main` (40 hexadecimais)."""
+    url = commit_url()
     try:
         response = httpx.get(
-            COMMIT_URL,
+            url,
             headers={"Accept": "application/vnd.github+json", "User-Agent": "uniover-agent"},
             timeout=_TIMEOUT,
         )
@@ -72,11 +108,12 @@ def latest_commit() -> str:
 def download_archive(sha: str, destination: Path) -> None:
     """Baixa o zip do commit para `destination` (arquivo)."""
     total = 0
+    url = archive_url(sha)
     try:
         with (
             httpx.stream(
                 "GET",
-                ARCHIVE_URL.format(sha=sha),
+                url,
                 headers={"User-Agent": "uniover-agent"},
                 follow_redirects=True,
                 timeout=_TIMEOUT,
