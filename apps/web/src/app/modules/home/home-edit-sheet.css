@@ -38,15 +38,12 @@
 }
 
 h2 {
-  font-size: var(--fs-title);
+  margin: 0 0 var(--space-4);
+  font-size: clamp(1.125rem, 5vw, 1.25rem);
   font-weight: 750;
   letter-spacing: -0.01em;
-}
-
-.hint {
-  margin: var(--space-1) 0 var(--space-4);
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
+  text-align: center;
+  white-space: nowrap;
 }
 
 .rows {
@@ -60,15 +57,13 @@ h2 {
 
 .row {
   display: grid;
-  grid-template-areas:
-    'grip ico name moves'
-    'controls controls controls controls';
-  grid-template-columns: 36px auto minmax(0, 1fr) auto;
+  grid-template-areas: 'grip ico name moves show';
+  grid-template-columns: 28px 40px minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: var(--space-2) 10px;
-  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-1);
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
   border: 1px solid var(--a-line);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   background: var(--a-surface-2);
   transition:
     border-color var(--dur-fast) linear,
@@ -80,7 +75,8 @@ h2 {
   box-shadow: var(--shadow-2);
 }
 
-.row.off .ico {
+.row.off .ico,
+.row.off .name {
   opacity: 0.55;
 }
 
@@ -89,83 +85,48 @@ h2 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
+  width: 28px;
   height: var(--tap);
   color: var(--a-ink2);
   cursor: grab;
   touch-action: none;
 }
 
+/* Mesmo ladrilho dos cartões da Início: cor do módulo em tom suave. */
 .ico {
   grid-area: ico;
+  --mod: var(--a-accent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--mod) 14%, var(--a-surface));
+  color: color-mix(in srgb, var(--mod) 78%, var(--a-ink));
+}
+
+.row[data-id='training'] .ico {
+  --mod: var(--a-ok);
 }
 
 .name {
   grid-area: name;
+  min-width: 0;
+  padding-left: var(--space-1);
+  font-size: var(--fs-small);
   font-weight: 700;
-  overflow-wrap: anywhere;
+  line-height: 1.25;
 }
 
 .moves {
   grid-area: moves;
   display: flex;
-  gap: var(--space-1);
 }
 
-.controls {
-  grid-area: controls;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-3);
-  padding-left: var(--space-2);
-}
-
-/* Tamanho: controle segmentado; o selecionado "sobe" para a superfície. */
-.sizes {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: var(--radius-pill);
-  background: var(--a-elev);
-}
-
-.size {
-  min-width: var(--tap);
-  min-height: var(--tap);
-  padding: 0 var(--space-4);
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
-  background: none;
-  color: var(--a-ink2);
-  font: inherit;
-  font-size: var(--fs-small);
-  font-weight: 650;
-  cursor: pointer;
-  transition:
-    background-color var(--dur-fast) linear,
-    color var(--dur-fast) linear,
-    transform var(--dur-fast) var(--ease-out);
-}
-
-.size:active {
-  transform: scale(0.96);
-}
-
-.size[aria-pressed='true'] {
-  border-color: var(--a-line);
-  background: var(--a-surface);
-  color: var(--a-accent-ink);
-  box-shadow: var(--shadow-1);
-}
-
+/* O interruptor ganha a área toda do rótulo: 44 px de altura, sem texto ao lado. */
 .show {
+  grid-area: show;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  min-width: 52px;
   min-height: var(--tap);
-  font-size: var(--fs-small);
-  font-weight: 650;
 }
 
 .icon-button {
@@ -175,11 +136,12 @@ h2 {
   min-width: var(--tap);
   min-height: var(--tap);
   padding: 0;
-  border: 1px solid var(--a-line);
+  border: 0;
   border-radius: var(--radius);
-  background: var(--a-surface);
+  background: none;
   color: var(--a-ink);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   transition: transform var(--dur-fast) var(--ease-out);
 }
 
@@ -187,8 +149,13 @@ h2 {
   transform: scale(0.94);
 }
 
+.icon-button:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: -3px;
+}
+
 .icon-button:disabled {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: default;
 }
 
@@ -211,13 +178,11 @@ h2 {
 
 @media (prefers-reduced-motion: reduce) {
   .row,
-  .size,
   .icon-button {
     transition: none;
   }
 
-  .icon-button:active:not(:disabled),
-  .size:active {
+  .icon-button:active:not(:disabled) {
     transform: none;
   }
 }

@@ -2,9 +2,6 @@
   <span class="grabber" aria-hidden="true"></span>
   <header class="head">
     <h2 id="sheet-title" i18n="@@home.sheet.title">Editar a Início</h2>
-    <p class="hint" i18n="@@home.sheet.hint">
-      Mova, redimensione ou oculte os blocos. A escolha vale só neste aparelho.
-    </p>
   </header>
 
   <ul class="rows">
@@ -48,31 +45,16 @@
           </button>
         </div>
 
-        <div class="controls">
-          <div class="sizes" role="group" aria-label="Tamanho" i18n-aria-label="@@home.sheet.size">
-            @for (size of sizes; track size) {
-              <button
-                type="button"
-                class="size"
-                [attr.aria-pressed]="item.size === size"
-                (click)="setSize(item.id, size)"
-              >
-                {{ sizeLabel(size) }}
-              </button>
-            }
-          </div>
-
-          <label class="show">
-            <span i18n="@@home.sheet.show">Mostrar na Início</span>
-            <input
-              type="checkbox"
-              role="switch"
-              class="ui-switch"
-              [checked]="item.enabled"
-              (change)="setEnabled(item.id, $any($event.target).checked)"
-            />
-          </label>
-        </div>
+        <label class="show">
+          <input
+            type="checkbox"
+            role="switch"
+            class="ui-switch"
+            [attr.aria-label]="showLabel(item.id)"
+            [checked]="item.enabled"
+            (change)="setEnabled(item.id, $any($event.target).checked)"
+          />
+        </label>
       </li>
     }
   </ul>
