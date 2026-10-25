@@ -376,6 +376,21 @@ describe('TvPage', () => {
       expect(document.activeElement).toBe(dots);
     });
 
+    it('the Mais botões row of the menu opens the panel with the keys left off the main screen', async () => {
+      menuButton().click();
+      await render();
+      menuRow('Mais botões').click();
+      await render();
+      await render();
+      expect(dialogs()).toHaveLength(1);
+      expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Mais botões');
+      expect(root.querySelector('app-tv-more-keys')).not.toBeNull();
+      expect(root.querySelector('app-tv-menu')).toBeNull();
+      root.querySelector<HTMLButtonElement>('app-tv-panel .x')!.click();
+      await render();
+      expect(dialogs()).toHaveLength(0);
+    });
+
     it('the keyboard button opens the Keyboard panel at the top, with no header close (it has its own Fechar)', async () => {
       const button = byLabel('Teclado');
       button.focus();
@@ -526,7 +541,7 @@ describe('TvPage', () => {
       expect(root.querySelector('app-tv-panel .grab')).not.toBeNull();
       expect(
         [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
-      ).toEqual(['Apps da TV', 'Personalizar', 'Gerenciar TVs']);
+      ).toEqual(['Apps da TV', 'Mais botões', 'Personalizar', 'Gerenciar TVs']);
     });
 
     it('closes with Esc and with its own close button, and gives the focus back to the three dots', async () => {
@@ -895,7 +910,7 @@ describe('TvPage for a guest', () => {
     fixture.detectChanges();
     expect(
       [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
-    ).toEqual(['Apps da TV', 'Personalizar']);
+    ).toEqual(['Apps da TV', 'Mais botões', 'Personalizar']);
     expect(root.querySelector('app-tv-menu a')).toBeNull();
     expect(root.querySelector('app-tv-menu .ui-chip')).toBeNull();
   });
@@ -1006,7 +1021,7 @@ describe('TvPage by permission', () => {
     await render();
     expect(
       [...root.querySelectorAll('app-tv-menu .ui-row-title')].map((el) => el.textContent?.trim()),
-    ).toEqual(['Opções da TV', 'Personalizar']);
+    ).toEqual(['Opções da TV', 'Mais botões', 'Personalizar']);
     [...root.querySelectorAll<HTMLButtonElement>('app-tv-menu button.ui-row')]
       .find((row) => row.textContent?.includes('Opções da TV'))!
       .click();

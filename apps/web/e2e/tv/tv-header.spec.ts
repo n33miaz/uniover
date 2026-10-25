@@ -730,23 +730,21 @@ test.describe('botões de baixo e o tamanho escolhido', () => {
     await screenshot(page, `test-results/tv-header-channel-off-${info.project.name}.png`);
   });
 
-  test('o tamanho grande põe os botões redondos em três colunas, com a última fileira no meio', async ({
+  test('o tamanho grande põe os botões redondos em três colunas, e a Fonte fecha a última fileira', async ({
     page,
   }) => {
     await openTv(page, { buttonSize: 'large' });
     const rounds = await page.locator('.round-grid .round').evaluateAll((els) =>
       els.map((el) => {
         const r = el.getBoundingClientRect();
-        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
       }),
     );
-    expect(rounds).toHaveLength(8);
-    const rows = [...new Set(rounds.map((r) => Math.round(r.y)))];
+    // Oito botões fixos em três colunas deixariam um buraco: a Fonte, que a TV tem, é o nono.
+    expect(rounds).toHaveLength(9);
+    const rows = [...new Set(rounds.map((r) => r.y))];
     expect(rows).toHaveLength(3);
-    const lastRow = rounds.slice(6);
-    const grid = await box(page.locator('.round-grid'));
-    const gridCenter = grid.x + grid.width / 2;
-    expect((lastRow[0].x + lastRow[1].x) / 2).toBeCloseTo(gridCenter, 0);
+    for (const y of rows) expect(rounds.filter((r) => r.y === y)).toHaveLength(3);
     await expectNoHorizontalScroll(page);
   });
 

@@ -3,7 +3,7 @@ import { TV_PANEL_PARAM, TV_PANEL_VALUES, panelFromParam } from './tv-panels';
 describe('tv panels', () => {
   it('keeps the old address names as the parameter values', () => {
     expect(TV_PANEL_PARAM).toBe('painel');
-    expect(TV_PANEL_VALUES).toEqual({ apps: 'apps', keyboard: 'teclado' });
+    expect(TV_PANEL_VALUES).toEqual({ apps: 'apps', keyboard: 'teclado', keys: 'botoes' });
   });
 
   it('reads a known value as its panel, and anything else as none', () => {

@@ -19,7 +19,34 @@ test.use({ serviceWorkers: 'block' });
 const SHOTS = process.env['TV_MULTI_SHOTS'] ?? 'test-results';
 
 const ANDROID_CAPS = ['tv.remote', 'tv.kind.android', 'tv.adb'];
-const SAMSUNG_CAPS = ['tv.remote', 'tv.kind.samsung'];
+// O que o agente de uma Samsung declara: o tipo, a mensagem de teclas e uma capacidade por tecla opcional.
+const SAMSUNG_KEYS = [
+  'INPUT',
+  'INFO',
+  'GUIDE',
+  'TOOLS',
+  'CHANNEL_LIST',
+  'EXIT',
+  'PLAY',
+  'PAUSE',
+  'STOP',
+  'REWIND',
+  'FAST_FORWARD',
+  'RED',
+  'GREEN',
+  'YELLOW',
+  'BLUE',
+  'SUBTITLE',
+  'ASPECT',
+  'SLEEP',
+  'E_MANUAL',
+];
+const SAMSUNG_CAPS = [
+  'tv.remote',
+  'tv.kind.samsung',
+  'tv.key.v3',
+  ...SAMSUNG_KEYS.map((key) => `tv.key.${key}`),
+];
 
 const CASA: MockTv = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -57,6 +84,11 @@ const RAPHAEL: MockTv = {
   },
   shortcuts: [shortcut(1, 'Netflix')],
 };
+
+/** A Samsung como a única TV da conta (então a padrão): abre direto, sem passar pelo seletor. */
+const ALONE: MockTv = { ...RAPHAEL, isDefault: true };
+/** Com a Casa ao lado (uma TV sozinha não mostra o nome no cabeçalho). */
+const withHome = (raphael: MockTv): MockTv[] => [raphael, { ...CASA, isDefault: false }];
 
 function shortcut(position: number, label: string): MockShortcut {
   return {
@@ -276,7 +308,9 @@ async function menuDialogOpen(page: Page) {
 }
 
 test.describe('capacidades da TV', () => {
-  test('uma Samsung não tem teclado nem limpeza, e uma Android tem os dois', async ({ page }) => {
+  test('uma Samsung não tem teclado nem limpeza, e uma Android tem os dois', async ({
+    page,
+  }, info) => {
     serve([CASA, RAPHAEL]);
     await openTv(page, 'Casa');
     await expect(page.getByRole('button', { name: 'Teclado', exact: true })).toBeVisible();
@@ -290,9 +324,45 @@ test.describe('capacidades da TV', () => {
     await pickTv(page, 'Raphael');
     await expect(page.getByRole('heading', { level: 1, name: 'Raphael' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Teclado', exact: true })).toHaveCount(0);
-    // Sete botões redondos, sem sobra no layout.
-    await expect(page.locator('.round-grid .round')).toHaveCount(7);
+    // Registra o buraco que a regra antiga fabricava (oito colunas de meia largura, a segunda fileira de três no meio)
+    // para comparar a correção no mesmo aparelho.
+    // (Folha de estilo construída pelo script: a política de segurança da página não deixa injetar `<style>`.)
+    await page.evaluate(() => {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(`
+        .round-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+        .round-grid > .round:nth-child(n+8) { display: none; }
+        .round-grid > .round { grid-column: span 2; }
+        .round-grid > .round:nth-child(5) { grid-column: 2 / span 2; }
+      `);
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+      (window as unknown as { oldSheet: CSSStyleSheet }).oldSheet = sheet;
+    });
+    await screenshot(page, join(SHOTS, 'tv-samsung-before', `${info.project.name}.png`));
+    await page.evaluate(() => {
+      const holder = window as unknown as { oldSheet: CSSStyleSheet };
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter(
+        (sheet) => sheet !== holder.oldSheet,
+      );
+    });
+
+    // Sete botões fixos mais a Fonte: duas fileiras de quatro, sem célula vazia.
+    await expect(page.locator('.round-grid .round')).toHaveCount(8);
+    await expect(page.getByRole('button', { name: 'Fonte', exact: true })).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Volume 7' })).toBeVisible();
+    const rows = await page.locator('.round-grid .round').evaluateAll((buttons) => {
+      const byTop = new Map<number, number[]>();
+      for (const button of buttons) {
+        const box = button.getBoundingClientRect();
+        const top = Math.round(box.top);
+        byTop.set(top, [...(byTop.get(top) ?? []), Math.round(box.left)]);
+      }
+      return [...byTop.values()].map((row) => row.sort((a, b) => a - b));
+    });
+    expect(rows.map((row) => row.length)).toEqual([4, 4]);
+    expect(rows[1]).toEqual(rows[0]);
     await expectNoHorizontalScroll(page);
+    await screenshot(page, join(SHOTS, 'tv-samsung-after', `${info.project.name}.png`));
 
     // Os apps seguem (a Samsung os abre pelo canal dela); o que some é a limpeza.
     await menuDialogOpen(page);
@@ -300,6 +370,155 @@ test.describe('capacidades da TV', () => {
     await expect(apps).toBeVisible();
     await expect(apps.getByRole('button', { name: 'Limpar a TV' })).toHaveCount(0);
     await expect(apps.getByRole('button', { name: 'Atualizar lista' })).toBeVisible();
+  });
+
+  test('os botões extras: Personalizar escolhe, a grade se completa e o resto fica em Mais botões', async ({
+    page,
+  }, info) => {
+    serve(withHome(ALONE));
+    await openTv(page, 'Raphael');
+    const grid = page.locator('.round-grid .round');
+    await expect(grid).toHaveCount(8);
+
+    await menuDialogOpen(page);
+    await menuDialog(page).getByRole('button', { name: 'Personalizar', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Personalizar' });
+    await expect(sheet).toBeVisible();
+    const chips = sheet.getByRole('group', { name: 'Botões extras' });
+    await expect(chips.getByRole('button', { name: 'Fonte', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(chips.getByRole('button', { name: 'Guia', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    await chips.scrollIntoViewIfNeeded();
+    await screenshot(page, join(SHOTS, 'tv-samsung-personalizar', `${info.project.name}.png`));
+
+    // Escolher o Guia o põe na tela principal, no lugar que a Fonte preenchia sozinha.
+    await chips.getByRole('button', { name: 'Guia', exact: true }).click();
+    await expect(chips.getByRole('button', { name: 'Guia', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(chips.getByRole('button', { name: 'Fonte', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    await sheet.getByRole('button', { name: 'Concluir' }).click();
+    await expect(sheet).toBeHidden();
+    await expect(grid).toHaveCount(8);
+    await expect(
+      page.locator('.round-grid').getByRole('button', { name: 'Guia', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.locator('.round-grid').getByRole('button', { name: 'Fonte', exact: true }),
+    ).toHaveCount(0);
+
+    // Tocar no botão manda a tecla.
+    await page.locator('.round-grid').getByRole('button', { name: 'Guia', exact: true }).click();
+    await expect.poll(() => tv.keysSent()).toContain('GUIDE');
+
+    // O que ficou de fora está em Mais botões.
+    await menuDialogOpen(page);
+    await menuDialog(page).getByRole('button', { name: 'Mais botões', exact: true }).click();
+    const more = page.getByRole('dialog', { name: 'Mais botões' });
+    await expect(more).toBeVisible();
+    await expect(more.getByRole('button', { name: 'Fonte', exact: true })).toBeVisible();
+    await expect(more.getByRole('button', { name: 'Vermelho', exact: true })).toBeVisible();
+    await expect(more.getByRole('button', { name: 'Guia', exact: true })).toHaveCount(0);
+    await settle(page);
+    await screenshot(page, join(SHOTS, 'tv-samsung-mais-botoes', `${info.project.name}.png`));
+    await more.getByRole('button', { name: 'Vermelho', exact: true }).click();
+    await expect.poll(() => tv.keysSent()).toContain('RED');
+    await expectNoHorizontalScroll(page);
+  });
+
+  test('a grade fecha sem célula vazia com o agente antigo e com o novo, em qualquer tamanho', async ({
+    page,
+  }, info) => {
+    const oldAgent: MockTv = {
+      ...ALONE,
+      capabilities: ['transport.keepalive.v1', 'tv.remote', 'tv.kind.samsung'],
+      state: { ...ALONE.state!, volume: null },
+    };
+    const cases = [
+      { label: 'novo', tvs: withHome(ALONE), prefs: {} },
+      { label: 'novo-grande', tvs: withHome(ALONE), prefs: { buttonSize: 'large' } },
+      { label: 'novo-fileira', tvs: withHome(ALONE), prefs: { pillLayout: 'row' } },
+      { label: 'antigo', tvs: withHome(oldAgent), prefs: {} },
+      { label: 'antigo-grande', tvs: withHome(oldAgent), prefs: { buttonSize: 'large' } },
+      { label: 'antigo-fileira', tvs: withHome(oldAgent), prefs: { pillLayout: 'row' } },
+      { label: 'antigo-sem-midia', tvs: withHome(oldAgent), prefs: { showMedia: false } },
+    ];
+    for (const item of cases) {
+      serve(item.tvs);
+      await openTv(page, 'Raphael');
+      await page.evaluate(
+        (prefs) =>
+          localStorage.setItem(
+            `uniover.tv.prefs.v2.${localStorage.getItem('uniover.account-id') ?? ''}`,
+            JSON.stringify(prefs),
+          ),
+        item.prefs,
+      );
+      await page.reload();
+      await expect(page.getByRole('heading', { level: 1, name: 'Raphael' })).toBeVisible();
+      await settle(page);
+
+      const layout = await page.locator('.round-grid .round').evaluateAll((buttons) => {
+        const grid = buttons[0]!.parentElement!;
+        const columns = getComputedStyle(grid).gridTemplateColumns.split(' ').length;
+        const rows = new Map<number, number>();
+        for (const button of buttons) {
+          const top = Math.round(button.getBoundingClientRect().top);
+          rows.set(top, (rows.get(top) ?? 0) + 1);
+        }
+        return {
+          total: buttons.length,
+          perRow: [...rows.values()],
+          display: getComputedStyle(grid).display,
+          columns,
+        };
+      });
+      // Toda fileira tem o mesmo número de botões: nenhuma célula vazia, nem no meio nem no fim.
+      expect(new Set(layout.perRow).size, `${item.label}: ${JSON.stringify(layout)}`).toBe(1);
+      await expectNoHorizontalScroll(page);
+      await screenshot(
+        page,
+        join(SHOTS, 'tv-samsung-grade', `${item.label}-${info.project.name}.png`),
+      );
+    }
+
+    // Os botões que o dono citou estão na tela principal de uma Samsung de agente novo.
+    serve(withHome(ALONE));
+    await page.evaluate(() =>
+      localStorage.removeItem(
+        `uniover.tv.prefs.v2.${localStorage.getItem('uniover.account-id') ?? ''}`,
+      ),
+    );
+    await openTv(page, 'Raphael');
+    for (const name of [
+      'Fonte',
+      'Menu',
+      'Próximo canal',
+      'Canal anterior',
+      'Reproduzir ou pausar',
+    ]) {
+      await expect(page.getByRole('button', { name, exact: true }).first()).toBeVisible();
+    }
+  });
+
+  test('o volume lido aparece no contador, e sem leitura o contador mostra um traço', async ({
+    page,
+  }) => {
+    serve(withHome(ALONE));
+    await openTv(page, 'Raphael');
+    await expect(page.getByRole('img', { name: 'Volume 7' })).toBeVisible();
+    serve(withHome({ ...ALONE, state: { ...ALONE.state!, volume: null } }));
+    await openTv(page, 'Raphael');
+    await expect(page.locator('.pill.volume .level strong')).toHaveText('–');
   });
 
   test('com o agente desligado a TV não perde botões (a API não sabe o que ele faz)', async ({
