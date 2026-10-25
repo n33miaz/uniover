@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.handle_command import Handler
-from uniover_agent.core.tv.session import TvSessionError
+from uniover_agent.core.tv.session import PowerOffResult, TvSessionError
 from uniover_agent.core.tv.text_edit import TextReconciler
 
 _log = logging.getLogger(__name__)
@@ -17,6 +17,9 @@ _log = logging.getLogger(__name__)
 # Esquemas de link que podem ser abertos na TV. `intent://` e afins ficam de fora de propósito: o
 # contrato só fixa o formato do link, quem decide o que pode ser aberto é este agente.
 DEFAULT_LINK_SCHEMES: Final = frozenset({"https", "http", "market", "vnd.youtube"})
+
+# Declarada no `agent.hello.v1`: a API só manda `tv.power.off.v1` a quem a tem.
+POWER_OFF_CAPABILITY: Final = "tv.power.off.v1"
 
 KEY_BLOCKED: Final = "key_blocked"
 UNSUPPORTED: Final = "unsupported"
@@ -40,6 +43,8 @@ class TvControl(Protocol):
     async def send_text(self, text: str) -> None: ...
 
     async def wake(self) -> None: ...
+
+    async def power_off(self) -> PowerOffResult: ...
 
 
 def failed_result(command: Command, exc: TvSessionError) -> CommandResult:
@@ -140,6 +145,32 @@ def tv_wake_handler(tv: TvControl) -> Handler:
         except TvSessionError as exc:
             return failed_result(command, exc)
         return CommandResult(command.id, ResultStatus.OK)
+
+    return handle
+
+
+_POWER_OFF_MESSAGES: Final = {
+    PowerOffResult.ALREADY_OFF: "a TV já estava desligada; nenhuma tecla foi enviada",
+    PowerOffResult.UNCERTAIN: "não deu para confirmar o estado da TV; a tecla não foi repetida",
+    PowerOffResult.OFFLINE: "a TV não respondeu ao controle; nenhuma tecla foi enviada",
+    PowerOffResult.FAILED: "o agente não conseguiu desligar a TV",
+}
+
+
+def tv_power_off_handler(tv: TvControl) -> Handler:
+    """`tv.power.off.v1`: desliga só com a TV lida como ligada e nunca a liga.
+
+    O resultado é `ok` só quando o desligamento foi confirmado; nos demais casos o código estável
+    (`already_off`, `uncertain`, `offline`, `failed`) diz à API o que dizer ao dono.
+    """
+
+    async def handle(command: Command) -> CommandResult:
+        result = await tv.power_off()
+        if result is PowerOffResult.OFF:
+            return CommandResult(command.id, ResultStatus.OK)
+        return CommandResult(
+            command.id, ResultStatus.FAILED, _POWER_OFF_MESSAGES[result], result.value
+        )
 
     return handle
 

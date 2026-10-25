@@ -63,6 +63,8 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_TV_NAME` | nome da pasta do certificado desta TV (padrão `tv`) |
 | `UNIOVER_TV_SAMSUNG_APPS` | IDs Tizen extras a procurar, separados por vírgula; a TV só publica os instalados |
 | `UNIOVER_TV_HIBERNATE_SECONDS` | segundos sem comando até a sessão com a TV hibernar (padrão `300`) |
+| `UNIOVER_TV_POWER_OFF_READ_TIMEOUT_SECONDS` | quanto o desligar com leitura espera a TV informar se está ligada, antes de apertar `POWER` (padrão `2`) |
+| `UNIOVER_TV_POWER_OFF_CONFIRMATION_TIMEOUT_SECONDS` | quanto espera a confirmação depois da tecla (padrão `5`); sem ela o resultado é `uncertain` e a tecla não é repetida |
 | `UNIOVER_ADB_PATH` | caminho do `adb` (padrão: procura no `PATH` e em `%LOCALAPPDATA%\Android\Sdk\platform-tools`); habilita lista de apps, abrir app por pacote e digitação pelo ADB |
 | `UNIOVER_TV_WATCHDOG` | `0` desliga o vigia do serviço do controle (padrão: ligado; só age com o `adb` neste PC; ver "Vigia do serviço do controle") |
 | `UNIOVER_TV_ADB_PORT` | porta do ADB da TV (padrão `5555`) |
@@ -251,6 +253,18 @@ Comportamentos que valem saber:
   tentativa depois de um tempo esgotado): o segundo religaria a TV. Falha de envio não conta, e pressão longa
   (`START_LONG`/`END_LONG`) não passa por essa regra. O mecanismo `blocked_keys` de `tv_key_handler` continua
   disponível para bloquear teclas (resposta `key_blocked`), mas a lista padrão é vazia.
+- **Desligar com leitura (`tv.power.off.v1`).** O agente que declara a capacidade `tv.power.off.v1` (Android e Samsung)
+  atende o pedido explícito de desligar, e é só a ele que a API o manda. Antes de apertar `POWER` ele **lê a energia
+  da TV**: no Android vale o aviso que a TV empurra na conexão aberta agora (um aviso de uma sessão antiga nunca vale), na
+  Samsung é uma consulta nova ao REST da TV (`PowerState`, em que `standby` conta como desligada). Só com a TV lida como
+  ligada a tecla sai, **uma vez**, direto no driver (sem a repetição que os outros comandos fazem depois de uma queda do
+  canal), e o agente espera a confirmação: o aviso de desligada, a consulta que diz desligada, ou a sessão que cai com a TV
+  sumindo da rede. O resultado vai no `command.result.v1`: `ok` é `off`; as falhas trazem o código `already_off` (leu a
+  TV desligada, nenhuma tecla), `uncertain` (sem leitura, sem confirmação, ou falha no envio: a tecla **não é
+  repetida**), `offline` (a TV não atende; nada é enviado) e `failed`. Este caminho **nunca** usa o Wake-on-LAN: desligar
+  não pode ligar a TV, ao contrário da tecla `POWER` comum com a TV fora da rede. Dentro dos 60 s de um Wake-on-LAN ou dos
+  10 s de um `POWER` anterior, nenhuma tecla é enviada. Os dois tempos de espera acima são valores iniciais, a ajustar
+  depois de medir na TV real; agente sem esta capacidade segue com o `POWER` de sempre.
 - **Depois do `POWER`** a TV em standby derruba a sessão: se ela avisou antes (`power: off` com `connection: hot`)
   o estado sai assim; em seguida a sessão cai (`disconnected`, `power: unknown`) e o agente tenta reabrir com a
   espera de 1, 2 e 4 s, uma vez, sem laço. A reabertura em segundo plano acontece **uma vez por uso**: se a TV
