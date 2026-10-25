@@ -3,6 +3,19 @@ import { TvStore } from '../data/tv-store';
 import { FakeTvStore, createFakeTvStore } from '../tv-test-kit';
 import { CleanupSheet } from './cleanup-sheet';
 
+function clickBackdrop(dialog: HTMLDialogElement): void {
+  Object.defineProperty(dialog, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ left: 10, top: 10, right: 300, bottom: 500 }),
+  });
+  dialog.dispatchEvent(
+    Object.assign(new MouseEvent('pointerdown', { button: 0, clientX: 0, clientY: 0 }), {
+      isPrimary: true,
+    }),
+  );
+  dialog.dispatchEvent(new MouseEvent('click', { clientX: 0, clientY: 0 }));
+}
+
 describe('CleanupSheet', () => {
   let store: FakeTvStore;
   let fixture: ReturnType<typeof TestBed.createComponent<CleanupSheet>>;
@@ -50,6 +63,33 @@ describe('CleanupSheet', () => {
     expect(event.defaultPrevented).toBe(true);
     expect(closed).toHaveBeenCalledTimes(1);
     expect(store.cleanup).not.toHaveBeenCalled();
+  });
+
+  it('a touch that begins and ends on the backdrop cancels the same way', () => {
+    clickBackdrop(root.querySelector('dialog')!);
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(store.cleanup).not.toHaveBeenCalled();
+  });
+
+  it('closes the dialog before notifying the page and returns focus to the opener', async () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+    const second = TestBed.createComponent(CleanupSheet);
+    second.detectChanges();
+    await second.whenStable();
+    const dialog = (second.nativeElement as HTMLElement).querySelector('dialog')!;
+    const secondClosed = vi.fn<() => void>();
+    second.componentInstance.closed.subscribe(() => {
+      expect(dialog.open).toBe(false);
+      secondClosed();
+    });
+
+    clickBackdrop(dialog);
+
+    expect(secondClosed).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
   });
 
   it('Limpar starts the cleanup once and closes right away: the progress lives outside the sheet', () => {

@@ -211,6 +211,24 @@ describe('AuditFilterSheet', () => {
     expect(second.closed).toHaveBeenCalledTimes(1);
   });
 
+  it('leaves on a touch that begins and ends on the dimmed background', async () => {
+    const { el, closed } = await render();
+    const dialog = el.querySelector<HTMLDialogElement>('dialog')!;
+    Object.defineProperty(dialog, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ left: 10, top: 10, right: 300, bottom: 500 }),
+    });
+    dialog.dispatchEvent(
+      Object.assign(new MouseEvent('pointerdown', { button: 0, clientX: 0, clientY: 0 }), {
+        isPrimary: true,
+      }),
+    );
+    dialog.dispatchEvent(new MouseEvent('click', { clientX: 0, clientY: 0 }));
+
+    expect(closed).toHaveBeenCalledOnce();
+    expect(dialog.open).toBe(false);
+  });
+
   it('says the people are loading, and shows the person already chosen meanwhile', async () => {
     const { el, chips, checked } = await render({
       people: null,

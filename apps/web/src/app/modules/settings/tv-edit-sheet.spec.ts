@@ -7,6 +7,19 @@ import { TvEditSheet } from './tv-edit-sheet';
 
 const PROBLEM = 'https://uniover.app/problems/';
 
+function clickBackdrop(dialog: HTMLDialogElement): void {
+  Object.defineProperty(dialog, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ left: 10, top: 10, right: 300, bottom: 500 }),
+  });
+  dialog.dispatchEvent(
+    Object.assign(new MouseEvent('pointerdown', { button: 0, clientX: 0, clientY: 0 }), {
+      isPrimary: true,
+    }),
+  );
+  dialog.dispatchEvent(new MouseEvent('click', { clientX: 0, clientY: 0 }));
+}
+
 function problem(status: number, kind = '', extra: Record<string, unknown> = {}) {
   return new HttpErrorResponse({
     status,
@@ -170,6 +183,21 @@ describe('TvEditSheet', () => {
     expect(el.querySelector('#tv-edit-title')?.textContent).toBe('Nova TV');
     expect(button('Cancelar')).toBeDefined();
     expect(button('Salvar')).toBeDefined();
+  });
+
+  it('a touch that begins and ends on the backdrop cancels, and focus goes back to the opener', async () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+    const { el, closed } = await render(null, [FREE]);
+    const dialog = el.querySelector('dialog')!;
+
+    clickBackdrop(dialog);
+
+    expect(dialog.open).toBe(false);
+    expect(closed).toEqual([false]);
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
   });
 
   describe('creating', () => {

@@ -177,6 +177,21 @@ describe('TrainingSheet', () => {
     expect(fixture.componentInstance.closed()).toBe(1);
   });
 
+  it('closes before telling the page and returns focus to the opener', async () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+    const { fixture, el, dialog } = render();
+    await fixture.whenStable();
+
+    el.querySelector<HTMLButtonElement>('.footer button.secondary')!.click();
+
+    expect(dialog.open).toBe(false);
+    expect(fixture.componentInstance.closed()).toBe(1);
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+  });
+
   it('closes on Esc and on a touch on the dimmed background, not on a touch in the content', async () => {
     const first = render();
     await first.fixture.whenStable();

@@ -92,6 +92,19 @@ describe('PairSheet', () => {
     expect(approve.disabled).toBe(true);
   });
 
+  function clickBackdrop(dialog: HTMLDialogElement): void {
+    Object.defineProperty(dialog, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ left: 10, top: 10, right: 300, bottom: 500 }),
+    });
+    dialog.dispatchEvent(
+      Object.assign(new MouseEvent('pointerdown', { button: 0, clientX: 0, clientY: 0 }), {
+        isPrimary: true,
+      }),
+    );
+    dialog.dispatchEvent(new MouseEvent('click', { clientX: 0, clientY: 0 }));
+  }
+
   it('opens as a modal sheet without a close button and with the right input hints', async () => {
     const { el, code, name, buttons } = await render();
     const dialog = el.querySelector('dialog')!;
@@ -313,6 +326,24 @@ describe('PairSheet', () => {
     const withEsc = await render();
     withEsc.el.querySelector('dialog')!.dispatchEvent(new Event('cancel', { cancelable: true }));
     expect(withEsc.closed()).toBe(1);
+
+    const withBackdrop = await render();
+    clickBackdrop(withBackdrop.el.querySelector('dialog')!);
+    expect(withBackdrop.closed()).toBe(1);
+  });
+
+  it('closes before notifying the page and returns focus to the opener', async () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+    const { el, button, closed } = await render();
+
+    button('Cancelar').click();
+
+    expect(el.querySelector('dialog')!.open).toBe(false);
+    expect(closed()).toBe(1);
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
   });
 
   describe('exit', () => {
