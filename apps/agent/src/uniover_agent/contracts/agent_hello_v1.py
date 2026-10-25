@@ -11,10 +11,10 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
 
 
 class AgentHelloV1BodyCapabilitiesItem(
-    RootModel[Literal['transport.keepalive.v1', 'agent.logs.v1', 'agent.maintenance.v1', 'tv.remote', 'tv.adb', 'tv.kind.android', 'tv.kind.samsung']]
+    RootModel[Literal['transport.keepalive.v1', 'agent.logs.v1', 'agent.maintenance.v1', 'tv.remote', 'tv.adb', 'tv.kind.android', 'tv.kind.samsung', 'tv.key.v3', 'tv.key.INPUT', 'tv.key.INFO', 'tv.key.GUIDE', 'tv.key.TOOLS', 'tv.key.CHANNEL_LIST', 'tv.key.PREVIOUS_CHANNEL', 'tv.key.EXIT', 'tv.key.PLAY', 'tv.key.PAUSE', 'tv.key.STOP', 'tv.key.REWIND', 'tv.key.FAST_FORWARD', 'tv.key.RED', 'tv.key.GREEN', 'tv.key.YELLOW', 'tv.key.BLUE', 'tv.key.SUBTITLE', 'tv.key.ASPECT', 'tv.key.SLEEP', 'tv.key.E_MANUAL']]
 ):
     root: Annotated[
-        Literal['transport.keepalive.v1', 'agent.logs.v1', 'agent.maintenance.v1', 'tv.remote', 'tv.adb', 'tv.kind.android', 'tv.kind.samsung'],
+        Literal['transport.keepalive.v1', 'agent.logs.v1', 'agent.maintenance.v1', 'tv.remote', 'tv.adb', 'tv.kind.android', 'tv.kind.samsung', 'tv.key.v3', 'tv.key.INPUT', 'tv.key.INFO', 'tv.key.GUIDE', 'tv.key.TOOLS', 'tv.key.CHANNEL_LIST', 'tv.key.PREVIOUS_CHANNEL', 'tv.key.EXIT', 'tv.key.PLAY', 'tv.key.PAUSE', 'tv.key.STOP', 'tv.key.REWIND', 'tv.key.FAST_FORWARD', 'tv.key.RED', 'tv.key.GREEN', 'tv.key.YELLOW', 'tv.key.BLUE', 'tv.key.SUBTITLE', 'tv.key.ASPECT', 'tv.key.SLEEP', 'tv.key.E_MANUAL'],
         Field(title='AgentHelloV1BodyCapabilitiesItem'),
     ]
 
