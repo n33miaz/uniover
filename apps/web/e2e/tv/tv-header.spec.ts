@@ -1476,6 +1476,7 @@ test.describe('cabeçalho da convidada: botão redondo de configurações no lug
     await expect(page.locator('a.ui-row .ui-row-title')).toHaveText([
       'Perfil',
       'Aparência',
+      'Aparelhos',
       'Sobre',
     ]);
     await page.getByRole('link', { name: 'Voltar ao controle' }).click();
