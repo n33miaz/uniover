@@ -115,7 +115,7 @@ internal static class AuditKit
 
     public static CommandAuditEntry Command(
         Guid user, string command, string? detail, bool ok, DateTimeOffset at, string? error = null, string ip = "203.0.113.5", string agent = "UA-tv") =>
-        CommandAuditEntry.Create(user, "pc-casa", command, detail, ok, error, ok ? 100 : null, new UniOver.Modules.Tv.Domain.ClientInfo(ip, agent), at);
+        CommandAuditEntry.Create(user, "pc-casa", command, detail, ok, error, ok ? 100 : null, new UniOver.Modules.Tv.Domain.ClientInfo(ip, agent), at, Guid.NewGuid());
 
     public static async Task<HttpResponseMessage> GetAsync(IdentityApp app, string bearer, string query = "", string path = "") =>
         await app.GetAsync(Route + path + query, bearer);

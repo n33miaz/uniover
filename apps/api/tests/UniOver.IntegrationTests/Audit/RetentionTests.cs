@@ -36,7 +36,7 @@ public sealed class RetentionTests(PostgresFixture postgres)
 
     private static readonly AuditSchema Tv = new(
         "tv", "command_audit", AuditRetentionPolicy.CommandDays, "detail",
-        "INSERT INTO tv.command_audit (id, user_id, command, ok, occurred_at, detail) VALUES (gen_random_uuid(), gen_random_uuid(), 'tv.key', true, now() - make_interval(days => {0}), '{1}')");
+        "INSERT INTO tv.command_audit (id, user_id, tv_id, command, ok, occurred_at, detail) VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'tv.key', true, now() - make_interval(days => {0}), '{1}')");
 
     public static TheoryData<AuditSchema> Schemas => [Identity, Devices, Tv];
 

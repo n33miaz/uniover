@@ -61,10 +61,10 @@ public sealed class AppendOnlyTests(PostgresFixture postgres)
     {
         var (database, _) = await MigrateEverythingAsync(postgres);
         await ExecuteAsync(database.OwnerConnection,
-            "INSERT INTO tv.command_audit (id, user_id, command, ok, occurred_at) VALUES (gen_random_uuid(), gen_random_uuid(), 'tv.key', true, now())");
+            "INSERT INTO tv.command_audit (id, user_id, tv_id, command, ok, occurred_at) VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'tv.key', true, now())");
 
         await ExecuteAsync(database.RuntimeConnection,
-            "INSERT INTO tv.command_audit (id, user_id, command, ok, occurred_at) VALUES (gen_random_uuid(), gen_random_uuid(), 'tv.key', true, now())");
+            "INSERT INTO tv.command_audit (id, user_id, tv_id, command, ok, occurred_at) VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'tv.key', true, now())");
 
         foreach (var sql in new[]
         {
