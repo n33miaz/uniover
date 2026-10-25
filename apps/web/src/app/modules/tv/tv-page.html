@@ -211,6 +211,12 @@
   </app-tv-panel>
 }
 
+@if (panel() === 'keys' && access.control()) {
+  <app-tv-panel #keysPanel [heading]="keysTitle" [opener]="panelOpener()" (closed)="closePanel()">
+    <app-tv-more-keys />
+  </app-tv-panel>
+}
+
 @if (panel() === 'keyboard' && access.text()) {
   <app-tv-panel
     #keyboardPanel

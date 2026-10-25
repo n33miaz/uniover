@@ -173,11 +173,7 @@
 </ng-template>
 
 <ng-template #roundButtons>
-  <div
-    class="round-grid"
-    [attr.data-cols]="roundColumns()"
-    [attr.data-short]="shortRow() ? '' : null"
-  >
+  <div class="round-grid" [attr.data-cols]="roundKeys.gridColumns()">
     <button
       type="button"
       class="round"
@@ -255,6 +251,18 @@
         i18n-aria-label="@@tv.key.mute"
       >
         <app-tv-icon name="mute" />
+      </button>
+    }
+    <!-- Os extras que a TV tem fecham a última fileira: a grade nunca fica com um espaço vazio. -->
+    @for (extra of roundKeys.shown(); track extra.key) {
+      <button type="button" class="round" [appKey]="extra.key" [attr.aria-label]="extra.label">
+        @if (extra.icon) {
+          <app-tv-icon [name]="extra.icon" />
+        } @else if (extra.color) {
+          <span class="swatch" [attr.data-color]="extra.color" aria-hidden="true"></span>
+        } @else {
+          <span class="word" aria-hidden="true">{{ extra.short }}</span>
+        }
       </button>
     }
   </div>

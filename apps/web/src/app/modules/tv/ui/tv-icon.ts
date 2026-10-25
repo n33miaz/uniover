@@ -18,6 +18,12 @@ export type TvIconName =
   | 'previous'
   | 'next'
   | 'input'
+  | 'play'
+  | 'pause'
+  | 'stop'
+  | 'rewind'
+  | 'forward'
+  | 'grid'
   | 'apps'
   | 'more'
   | 'refresh'
@@ -49,6 +55,13 @@ const PATHS: Record<TvIconName, string> = {
   previous: 'M7 5v14 M19 5l-9 7 9 7z',
   next: 'M17 5v14 M5 5l9 7-9 7z',
   input: 'M4 12h12 M12 7l5 5-5 5 M20 4v16',
+  play: 'M7 4l12 8-12 8z',
+  pause: 'M8 5v14 M16 5v14',
+  stop: 'M6 6h12v12H6z',
+  rewind: 'M11 5L3 12l8 7z M21 5l-8 7 8 7z',
+  forward: 'M13 5l8 7-8 7z M3 5l8 7-8 7z',
+  // Nove pontos: "Mais botões".
+  grid: 'M5 5h.01 M12 5h.01 M19 5h.01 M5 12h.01 M12 12h.01 M19 12h.01 M5 19h.01 M12 19h.01 M19 19h.01',
   apps: 'M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z',
   // Três pontos na vertical (o botão de opções do cabeçalho): cada um é um círculo de raio 1,2 que o traço de 2 enche, e vira um disco de uns 4,4 px.
   more: 'M10.8 5a1.2 1.2 0 1 0 2.4 0 1.2 1.2 0 1 0-2.4 0 M10.8 12a1.2 1.2 0 1 0 2.4 0 1.2 1.2 0 1 0-2.4 0 M10.8 19a1.2 1.2 0 1 0 2.4 0 1.2 1.2 0 1 0-2.4 0',
