@@ -17,6 +17,8 @@ public sealed class TrainingDbContext(DbContextOptions<TrainingDbContext> option
 
     internal DbSet<Exercise> Exercises => Set<Exercise>();
 
+    internal DbSet<Domain.ProgressPhoto> ProgressPhotos => Set<Domain.ProgressPhoto>();
+
     internal DbSet<ExerciseOverride> ExerciseOverrides => Set<ExerciseOverride>();
 
     internal DbSet<CatalogMeta> CatalogMeta => Set<CatalogMeta>();

@@ -763,6 +763,83 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.ProgressPhoto", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<long>("ByteLength")
+                        .HasColumnType("bigint")
+                        .HasColumnName("byte_length");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("integer")
+                        .HasColumnName("height");
+
+                    b.Property<string>("ObjectKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("object_key");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("sha256");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("state");
+
+                    b.Property<DateOnly>("TakenOn")
+                        .HasColumnType("date")
+                        .HasColumnName("taken_on");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("integer")
+                        .HasColumnName("width");
+
+                    b.HasKey("Id")
+                        .HasName("pk_progress_photos");
+
+                    b.HasIndex("ObjectKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_progress_photos_object_key");
+
+                    b.HasIndex("UserId", "TakenOn", "CreatedAt", "Id")
+                        .HasDatabaseName("ix_progress_photos_user_id_taken_on_created_at_id")
+                        .HasFilter("state = 'ready'");
+
+                    b.ToTable("progress_photos", "training", t =>
+                        {
+                            t.HasCheckConstraint("ck_progress_photos_bytes", "byte_length BETWEEN 4 AND 5242880");
+
+                            t.HasCheckConstraint("ck_progress_photos_deleted_at", "(state = 'deleted') = (deleted_at IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_progress_photos_dimensions", "width BETWEEN 1 AND 1280 AND height BETWEEN 1 AND 1280 AND (width::bigint * height) <= 1638400");
+
+                            t.HasCheckConstraint("ck_progress_photos_sha256", "sha256 ~ '^[0-9a-f]{64}$'");
+
+                            t.HasCheckConstraint("ck_progress_photos_state", "state IN ('pending', 'ready', 'deleted')");
+                        });
+                });
+
             modelBuilder.Entity("UniOver.Modules.Training.Domain.Routines.Routine", b =>
                 {
                     b.Property<Guid>("Id")
