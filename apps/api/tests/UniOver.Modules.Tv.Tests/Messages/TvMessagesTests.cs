@@ -16,6 +16,15 @@ public class TvMessagesTests
     }
 
     [Fact]
+    public void PowerOff_BuildsTheSafeTurnOffMessageWithAnEmptyBody()
+    {
+        var message = TvMessages.PowerOff();
+
+        message.Type.Should().Be("tv.power.off.v1");
+        message.Body.GetRawText().Should().Be("{}");
+    }
+
+    [Fact]
     public void Key_OutsideTheV2List_GoesInTheV3Message()
     {
         var message = TvMessages.Key(TvKeyV3BodyKey.Guide, TvKeyV2BodyDirection.Short);
