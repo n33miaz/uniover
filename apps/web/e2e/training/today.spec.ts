@@ -62,6 +62,8 @@ test.describe('Hoje', () => {
     await expect(week.locator('.week-days .day.done')).toHaveCount(1);
     await expect(week.getByText('Tá pago!')).toBeVisible();
     const firstDay = week.locator('.week-days .day').first();
+    const visibleDate = `${await firstDay.locator('.weekday').innerText()} ${await firstDay.locator('.number').innerText()}`;
+    await expect(firstDay).toHaveAccessibleName(new RegExp(`^${visibleDate},`));
     const currentDayLabel = await firstDay.getAttribute('aria-label');
     await week.getByRole('button', { name: 'Próxima semana' }).click();
     await expect(firstDay).not.toHaveAttribute('aria-label', currentDayLabel ?? '');
