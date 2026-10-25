@@ -80,8 +80,38 @@ interface StoredPasskey {
   lastUsedAt: string | null;
 }
 
+/** Um pedido de entrada pelo QR no servidor simulado (compartilhado entre o "computador" e o "celular" de um teste). */
+export interface MockQrRequest {
+  readonly code: string;
+  readonly secret: string;
+  readonly userAgent: string;
+  status: 'pending' | 'approved' | 'denied' | 'consumed';
+  /** Quem confirmou: a sessão do celular (o computador passa a ser esta conta). */
+  approver?: { role: 'owner' | 'guest'; guest?: MockGuest };
+}
+
+/**
+ * O lado do servidor da entrada pelo QR. Um teste com dois contextos (computador e celular) cria UM e o passa aos dois
+ * `mockIdentityApi`: é o que faz o celular ver o pedido que o computador abriu.
+ */
+export interface QrServerMock {
+  readonly requests: MockQrRequest[];
+  /** Quanto o QR vale, em segundos (a tela o troca pouco antes de vencer). */
+  expiresIn: number;
+  /** A prova que a API pede ao celular: nada (sessão recente), a senha ou a passkey. */
+  verification: 'none' | 'password' | 'passkey';
+  /** O celular está na mesma rede que o computador? */
+  sameNetwork: boolean;
+}
+
+export function newQrServer(): QrServerMock {
+  return { requests: [], expiresIn: 120, verification: 'none', sameNetwork: true };
+}
+
 export interface IdentityMock {
   readonly requests: RecordedRequest[];
+  /** O servidor simulado da entrada pelo QR (o mesmo objeto nos dois contextos de um teste de entrada cruzada). */
+  readonly qr: QrServerMock;
   /** Há sessão no servidor (equivale ao cookie de refresh válido). */
   loggedIn: boolean;
   /** A confirmação com a passkey está em vigor. */
@@ -200,11 +230,15 @@ function problem(
  * mesmo formato da API real. Use junto de `serviceWorkers: 'block'`: o Playwright não intercepta o que passa
  * pelo service worker.
  */
-export async function mockIdentityApi(context: BrowserContext): Promise<IdentityMock> {
+export async function mockIdentityApi(
+  context: BrowserContext,
+  options: { qr?: QrServerMock } = {},
+): Promise<IdentityMock> {
   let tokenCounter = 0;
   let refreshInFlight = 0;
   const mock: IdentityMock = {
     requests: [],
+    qr: options.qr ?? newQrServer(),
     loggedIn: false,
     stepUpValid: false,
     offline: false,
@@ -339,6 +373,38 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
       return json(route, 200, tokenBody());
     }
 
+    // Entrada pelo QR, lado do computador (anônimo): abre o pedido e consulta com o segredo que só ele tem.
+    if (method === 'POST' && path === '/auth/qr/start') {
+      if (!hasClientHeader) return problem(route, 400, 'validation-failed', 'Cabeçalho ausente.');
+      const entry: MockQrRequest = {
+        code: `Qr${mock.qr.requests.length + 1}aaaaaaaaaaaaaa`.slice(0, 16),
+        secret: randomBytes(32).toString('base64url'),
+        userAgent: headers['user-agent'] ?? '',
+        status: 'pending',
+      };
+      mock.qr.requests.push(entry);
+      return json(route, 200, {
+        code: entry.code,
+        pollSecret: entry.secret,
+        expiresAt: '2026-10-24T12:02:00Z',
+        expiresIn: mock.qr.expiresIn,
+      });
+    }
+    if (method === 'POST' && path === '/auth/qr/poll') {
+      if (!hasClientHeader) return problem(route, 400, 'validation-failed', 'Cabeçalho ausente.');
+      const entry = mock.qr.requests.find((r) => r.secret === body?.['secret']);
+      if (!entry || entry.status === 'consumed') return json(route, 200, { status: 'expired' });
+      if (entry.status === 'pending') return json(route, 200, { status: 'pending' });
+      if (entry.status === 'denied') return json(route, 200, { status: 'denied' });
+      // Aprovado: este computador vira uma sessão da MESMA conta que confirmou, uma vez só.
+      entry.status = 'consumed';
+      mock.role = entry.approver?.role ?? 'owner';
+      const guest = entry.approver?.guest;
+      if (guest && !mock.guests.some((g) => g.id === guest.id)) mock.guests.push(guest);
+      mock.loggedIn = true;
+      return json(route, 200, { status: 'approved', ...tokenBody() });
+    }
+
     if (method === 'POST' && path === '/auth/logout') {
       if (!authorized) return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
       mock.loggedIn = false;
@@ -347,6 +413,46 @@ export async function mockIdentityApi(context: BrowserContext): Promise<Identity
 
     // Tudo abaixo exige o token no cabeçalho.
     if (!authorized) return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
+
+    // Entrada pelo QR, lado do celular (com sessão): ver, confirmar e recusar.
+    if (method === 'POST' && path.startsWith('/auth/qr/')) {
+      const entry = mock.qr.requests.find((r) => r.code === body?.['code']);
+      if (!entry || entry.status !== 'pending') {
+        return problem(route, 410, 'qr-invalid', 'Este QR não vale mais.');
+      }
+      if (path === '/auth/qr/info') {
+        return json(route, 200, {
+          userAgent: entry.userAgent,
+          sameNetwork: mock.qr.sameNetwork,
+          expiresAt: '2026-10-24T12:02:00Z',
+          verification: mock.qr.verification,
+        });
+      }
+      if (path === '/auth/qr/deny') {
+        entry.status = 'denied';
+        return route.fulfill({ status: 204 });
+      }
+      if (path === '/auth/qr/approve') {
+        if (mock.qr.verification === 'passkey' && !mock.stepUpValid) {
+          return problem(route, 403, 'step-up-required', 'Confirme com a passkey.', {
+            code: 'step_up_required',
+            action: 'identity.qr-login-approve',
+          });
+        }
+        const account = mock.role === 'guest' ? mock.guests.at(-1) : undefined;
+        if (mock.qr.verification === 'password') {
+          if (!body?.['password']) {
+            return problem(route, 403, 'qr-reauth-required', 'Digite a sua senha.');
+          }
+          if (body['password'] !== (account?.password ?? OWNER.password)) {
+            return problem(route, 403, 'invalid-password', 'Senha incorreta.');
+          }
+        }
+        entry.status = 'approved';
+        entry.approver = { role: mock.role, guest: account };
+        return route.fulfill({ status: 204 });
+      }
+    }
 
     if (method === 'POST' && path === '/auth/stream-ticket')
       return json(route, 200, { expiresIn: 120 });
