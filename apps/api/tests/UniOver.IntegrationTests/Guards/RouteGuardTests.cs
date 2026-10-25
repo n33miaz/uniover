@@ -50,6 +50,10 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         // Canal do agente: cada abertura valida o token de dispositivo, então o limite segura tentativas em massa.
         ("GET", "/api/v1/devices/agents/{agentId}/ws", RateLimitPolicies.Pairing),
 
+        // Manutenção remota de um agente (ver o registro, atualizar, reiniciar): limite por conta, baixo.
+        ("POST", "/api/v1/devices/agents/{id:guid}/logs", RateLimitPolicies.Maintenance),
+        ("POST", "/api/v1/devices/agents/{id:guid}/maintenance", RateLimitPolicies.Maintenance),
+
         // Comandos da TV: segurar uma tecla repete várias vezes por segundo, então o limite é por usuário e alto.
         ("POST", "/api/v1/tv/keys", RateLimitPolicies.Commands),
         ("POST", "/api/v1/tv/text", RateLimitPolicies.Commands),

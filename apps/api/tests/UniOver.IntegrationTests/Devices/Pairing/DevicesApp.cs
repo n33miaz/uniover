@@ -302,10 +302,14 @@ internal sealed class DevicesApp : IAsyncDisposable
     }
 
     /// <summary>Confirma a ação de aprovar pareamento com a passkey virtual (vale alguns minutos nesta sessão).</summary>
-    public async Task ConfirmApproveAsync(LoggedIn login, VirtualAuthenticator authenticator)
+    public Task ConfirmApproveAsync(LoggedIn login, VirtualAuthenticator authenticator) =>
+        ConfirmStepUpAsync(login, authenticator, ApproveAction);
+
+    /// <summary>Confirma uma ação perigosa qualquer com a passkey virtual (vale alguns minutos nesta sessão).</summary>
+    public async Task ConfirmStepUpAsync(LoggedIn login, VirtualAuthenticator authenticator, string action)
     {
         using var begin = await SendAsync(
-            HttpMethod.Post, "/api/v1/identity/step-up/options", new { action = ApproveAction }, login.AccessToken);
+            HttpMethod.Post, "/api/v1/identity/step-up/options", new { action }, login.AccessToken);
         begin.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
         var opened = await JsonAsync(begin);
 
