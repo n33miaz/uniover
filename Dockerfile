@@ -10,7 +10,7 @@ COPY apps/web/ ./
 RUN npm run build
 
 # --- Etapa 2: publicação da API ---
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa AS api
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:747cbade5bfd918a175ac32f8f1d931edec2c7d0d5397a3de72eaef1ac1f66d2 AS api
 WORKDIR /src
 # Os esquemas do agente são embutidos no assembly do protocolo.
 COPY contracts/agent/ contracts/agent/
