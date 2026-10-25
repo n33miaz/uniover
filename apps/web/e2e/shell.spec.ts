@@ -88,7 +88,7 @@ test.describe('início e navegação', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   });
 
-  test('folha de edição: reordena, redimensiona, cancela e aplica', async ({ page }, info) => {
+  test('folha de edição: reordena, cancela e aplica', async ({ page }, info) => {
     await page.goto('/');
     const titles = blocks(page).locator('h3');
     await expect(titles).toHaveText(['TV', 'Treino', ...PLANNED]);
@@ -119,14 +119,12 @@ test.describe('início e navegação', () => {
     await expect(sheet).toBeHidden();
     await expect(titles).toHaveText(['TV', 'Treino', ...PLANNED]);
 
-    // Aplicar guarda a nova ordem e o novo tamanho.
+    // Aplicar guarda a nova ordem.
     await page.getByRole('button', { name: 'Editar' }).click();
     await sheet.getByRole('button', { name: 'Descer TV' }).click();
-    await sheet.locator('li', { hasText: 'TV' }).getByRole('button', { name: 'Largo' }).click();
     await sheet.getByRole('button', { name: 'Aplicar' }).click();
     await expect(sheet).toBeHidden();
     await expect(titles).toHaveText(['Treino', 'TV', ...PLANNED]);
-    await expect(page.locator('li.widget.wide')).toHaveCount(2);
 
     // A escolha fica no aparelho: sobrevive ao recarregamento.
     await page.reload();
@@ -134,16 +132,13 @@ test.describe('início e navegação', () => {
 
     // Módulo desligado some da grade.
     await page.getByRole('button', { name: 'Editar' }).click();
-    await sheet.locator('li', { hasText: 'Treino' }).getByLabel('Mostrar na Início').uncheck();
+    await sheet.locator('li', { hasText: 'Treino' }).getByRole('switch').uncheck();
     await sheet.getByRole('button', { name: 'Aplicar' }).click();
     await expect(titles).toHaveText(['TV', ...PLANNED]);
 
     // Um módulo em breve também pode ser ocultado.
     await page.getByRole('button', { name: 'Editar' }).click();
-    await sheet
-      .locator('li', { hasText: 'Rede da casa' })
-      .getByLabel('Mostrar na Início')
-      .uncheck();
+    await sheet.locator('li', { hasText: 'Rede da casa' }).getByRole('switch').uncheck();
     await sheet.getByRole('button', { name: 'Aplicar' }).click();
     await expect(titles).toHaveText(['TV', ...PLANNED.filter((name) => name !== 'Rede da casa')]);
   });

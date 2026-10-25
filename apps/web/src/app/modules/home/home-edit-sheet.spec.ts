@@ -65,11 +65,10 @@ describe('HomeEditSheet', () => {
     expect(up[1].getAttribute('aria-label')).toBe('Subir Treino');
   });
 
-  it('applies the edited order, size and visibility', async () => {
+  it('applies the edited order and visibility', async () => {
     const { host, el, fixture } = await render();
     el.querySelector<HTMLButtonElement>('.down')!.click();
     await fixture.whenStable();
-    el.querySelectorAll<HTMLButtonElement>('.size')[1].click(); // primeiro item (agora Treino): Largo já; mexe no segundo
     const checkbox = el.querySelectorAll<HTMLInputElement>('.show input')[1];
     checkbox.checked = false;
     checkbox.dispatchEvent(new Event('change'));
@@ -77,6 +76,15 @@ describe('HomeEditSheet', () => {
     el.querySelector<HTMLButtonElement>('.primary')!.click();
     expect(host.applied?.map((w) => w.id)).toEqual(['training', 'tv']);
     expect(host.applied?.[1].enabled).toBe(false);
+  });
+
+  it('names each switch after its module and has no size choice or explanatory text', async () => {
+    const { el } = await render();
+    const labels = Array.from(el.querySelectorAll('.show input')).map((i) =>
+      i.getAttribute('aria-label'),
+    );
+    expect(labels).toEqual(['Mostrar TV na Início', 'Mostrar Treino na Início']);
+    expect(el.querySelectorAll('.size, .hint')).toHaveLength(0);
   });
 
   it('cancels with Cancelar and with the native cancel event (Esc)', async () => {
