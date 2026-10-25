@@ -230,7 +230,7 @@ public sealed class TrainingProgramTests(PostgresFixture postgres)
                 (await insert.ExecuteNonQueryAsync(Ct)).Should().Be(1);
             }
 
-            (await training.Database.GetPendingMigrationsAsync(Ct)).Should().Equal("20261024120000_AddTrainingPrograms");
+            (await training.Database.GetPendingMigrationsAsync(Ct)).Should().Equal("20261024120000_AddTrainingPrograms", "20261024130000_AddProgressPhotos");
             await training.Database.MigrateAsync(Ct);
             (await training.Database.GetPendingMigrationsAsync(Ct)).Should().BeEmpty();
         }

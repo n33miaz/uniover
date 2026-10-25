@@ -78,6 +78,10 @@ internal static class TrainingPermissionMap
         new("GET", "/api/v1/training/foods/off/barcode/{barcode}", Module),
         new("GET", "/api/v1/training/meals", Module),
         new("PUT", "/api/v1/training/meals/{id:guid}", Module, new { eatenOn = DateOnly.FromDateTime(DateTime.UtcNow), mealType = "lunch", name = "Maçã", quantityG = 100m, kcal = 52m, proteinG = .3m, carbG = 14m, fatG = .2m, clientUpdatedAt = DateTimeOffset.UtcNow }),
+        new("GET", "/api/v1/training/progress-photos", Module),
+        new("PUT", "/api/v1/training/progress-photos/{id:guid}", Module, new { }),
+        new("GET", "/api/v1/training/progress-photos/{id:guid}/content", Module),
+        new("PUT", "/api/v1/training/progress-photos/{id:guid}/deletion", Module),
     ];
 
     /// <summary>

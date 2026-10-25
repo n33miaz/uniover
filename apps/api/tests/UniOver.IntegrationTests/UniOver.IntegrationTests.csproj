@@ -6,6 +6,7 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="JpegLibrary" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <!-- Só para gerar a migration do contexto de teste com o dotnet ef; não vai para quem referenciar. -->
