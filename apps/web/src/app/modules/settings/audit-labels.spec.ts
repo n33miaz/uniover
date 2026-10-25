@@ -47,6 +47,10 @@ const DEVICES_ACTIONS = [
   'pairing_expired',
   'pairing_token_issued',
   'agent_revoked',
+  'agent_logs_viewed',
+  'agent_update_requested',
+  'agent_restart_requested',
+  'agent_rollback_requested',
 ];
 const TV_ACTIONS = [
   'tv.key',

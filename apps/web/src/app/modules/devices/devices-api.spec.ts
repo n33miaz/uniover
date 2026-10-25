@@ -64,4 +64,35 @@ describe('DevicesApi', () => {
     request.flush({ id: 'a1', revoked: true });
     await done;
   });
+
+  it('asks for the log with a JSON body and reads the numbers the API may send as text', async () => {
+    const done = api.logs('a 1');
+    const request = http.expectOne('/api/v1/devices/agents/a%201/logs');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ lines: 300 });
+    request.flush({ text: 'a\nb', lines: '2', truncated: true, at: '2026-10-24T14:00:00Z' });
+    expect(await done).toEqual({
+      text: 'a\nb',
+      lines: 2,
+      truncated: true,
+      at: '2026-10-24T14:00:00Z',
+    });
+  });
+
+  it('asks for as many lines as the caller wants', async () => {
+    const done = api.logs('a1', 50);
+    const request = http.expectOne('/api/v1/devices/agents/a1/logs');
+    expect(request.request.body).toEqual({ lines: 50 });
+    request.flush({ text: '', lines: 0, truncated: false, at: 'x' });
+    await done;
+  });
+
+  it.each(['update', 'restart'] as const)('asks to %s with a JSON body', async (action) => {
+    const done = api.maintain('a1', action);
+    const request = http.expectOne('/api/v1/devices/agents/a1/maintenance');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ action });
+    request.flush({ action, accepted: true });
+    await done;
+  });
 });

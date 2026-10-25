@@ -18,12 +18,55 @@ const PC: DeviceAgent = {
   createdAt: '2026-10-18T12:00:00Z',
   revoked: false,
   lastSeenAt: '2026-10-19T09:00:00Z',
+  connected: true,
+  agentVersion: '0.1.0',
+  agentBuild: '3f2a9c1d4e5b',
+  os: 'Windows 11 (10.0.26200)',
+  tvKind: 'android',
+  tvHost: '192.168.0.20',
+  canReadLogs: true,
+  canMaintain: true,
+  canRollback: false,
 };
 
+const INSTALLED = '3f2a9c1d4e5b6a7988776655443322110fedcba9';
+const NEWER = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+const PREVIOUS = '0a1b2c3d4e5f60718293a4b5c6d7e8f901234567';
+
+function withUpdate(update: Partial<NonNullable<DeviceAgent['update']>>): DeviceAgent {
+  return {
+    ...PC,
+    update: {
+      state: 'current',
+      installedSha: INSTALLED,
+      installedAt: '2026-10-20T09:15:00Z',
+      latestSha: INSTALLED,
+      checkedAt: '2026-10-24T13:40:00Z',
+      nextCheckAt: '2026-10-24T19:55:00Z',
+      reason: null,
+      blockedSha: null,
+      previousSha: null,
+      rolledBack: false,
+      ...update,
+    },
+  };
+}
+
 describe('DevicesPage', () => {
-  const api = { list: vi.fn(), approve: vi.fn(), deny: vi.fn(), revoke: vi.fn() };
+  const api = {
+    list: vi.fn(),
+    approve: vi.fn(),
+    deny: vi.fn(),
+    revoke: vi.fn(),
+    logs: vi.fn(),
+    maintain: vi.fn(),
+  };
 
   beforeEach(() => {
+    api.logs
+      .mockReset()
+      .mockResolvedValue({ text: 'linha 1\nlinha 2', lines: 2, truncated: false, at: 'x' });
+    api.maintain.mockReset().mockResolvedValue(undefined);
     api.list.mockReset().mockResolvedValue([PC]);
     api.approve.mockReset().mockResolvedValue(undefined);
     api.deny.mockReset().mockResolvedValue(undefined);
@@ -60,13 +103,303 @@ describe('DevicesPage', () => {
     expect(item.querySelector('.name')?.textContent).toBe('PC de casa');
     expect(item.textContent).toContain('Pareado em');
     expect(item.textContent).toContain('Ativo');
-    expect(item.querySelector('.last-seen')?.textContent).toContain('Último uso em');
+    expect(item.querySelector('.last-seen')?.textContent).toContain('Último contato em');
   });
 
   it('says so when the device has no recorded use yet', async () => {
     api.list.mockResolvedValue([{ ...PC, lastSeenAt: null }]);
     const { el } = await render();
-    expect(el.querySelector('.last-seen')?.textContent).toContain('Sem uso registrado');
+    expect(el.querySelector('.last-seen')?.textContent).toContain('Sem contato registrado');
+  });
+
+  it('shows what the agent told about the computer: version, system, TV and connection', async () => {
+    const { el } = await render();
+    const item = el.querySelector('.item')!;
+    expect(item.querySelector('.version')?.textContent).toBe('Versão 0.1.0 · 3f2a9c1');
+    expect(item.textContent).toContain('Sistema: Windows 11 (10.0.26200)');
+    expect(item.querySelector('.tv')?.textContent).toBe('TV: Android TV · 192.168.0.20');
+    expect(item.querySelector('.chip.connection')?.textContent).toContain('Conectado agora');
+  });
+
+  it('falls back to the pairing platform and leaves out what an old agent never told', async () => {
+    api.list.mockResolvedValue([
+      {
+        ...PC,
+        connected: false,
+        agentVersion: null,
+        agentBuild: null,
+        os: null,
+        tvKind: null,
+        tvHost: null,
+        canReadLogs: false,
+        canMaintain: false,
+      },
+    ]);
+    const { el } = await render();
+    const item = el.querySelector('.item')!;
+    expect(item.textContent).toContain('Sistema: windows');
+    expect(item.querySelector('.version')).toBeNull();
+    expect(item.querySelector('.tv')).toBeNull();
+    expect(item.querySelector('.chip.connection')?.textContent).toContain('Desconectado');
+  });
+
+  it('writes a Samsung TV and a version without a commit in plain words', async () => {
+    api.list.mockResolvedValue([{ ...PC, agentBuild: null, tvKind: 'samsung' }]);
+    const { el } = await render();
+    expect(el.querySelector('.version')?.textContent).toBe('Versão 0.1.0');
+    expect(el.querySelector('.tv')?.textContent).toBe('TV: Samsung · 192.168.0.20');
+  });
+
+  describe('update state', () => {
+    async function updateText(agent: DeviceAgent): Promise<HTMLElement> {
+      api.list.mockResolvedValue([agent]);
+      const { el } = await render();
+      return el.querySelector<HTMLElement>('.update')!;
+    }
+
+    it('says "Atualizado" with the installed version, when it was installed and the last check', async () => {
+      const update = await updateText(withUpdate({}));
+      expect(update.querySelector('.update-state')?.textContent).toContain('Atualizado');
+      expect(update.querySelector('.update-state')?.classList).toContain('ok');
+      expect(update.querySelector('.update-installed')?.textContent).toContain(
+        'Instalada: 3f2a9c1',
+      );
+      expect(update.querySelector('.update-installed')?.textContent).toContain('2026');
+      expect(update.querySelector('.update-newest')?.textContent).toContain('a mesma instalada');
+      expect(update.querySelector('.update-check')?.textContent).toContain('sem novidade');
+    });
+
+    it('says "Atualizando…" while the check is running', async () => {
+      const update = await updateText(withUpdate({ state: 'updating', latestSha: NEWER }));
+      expect(update.querySelector('.update-state')?.textContent).toContain('Atualizando…');
+      expect(update.querySelector('.update-check')?.textContent).toContain('em andamento');
+    });
+
+    it('says the update is pending, with the newer version and the next check', async () => {
+      const update = await updateText(withUpdate({ state: 'pending', latestSha: NEWER }));
+      const state = update.querySelector('.update-state')!;
+      expect(state.textContent).toContain('Atualização pendente');
+      expect(state.textContent).toContain('próxima checagem em');
+      expect(state.classList).toContain('warn');
+      expect(update.querySelector('.update-newest')?.textContent).toContain('a1b2c3d');
+    });
+
+    it('says why and when the update failed', async () => {
+      const update = await updateText(
+        withUpdate({
+          state: 'failed',
+          latestSha: NEWER,
+          reason: 'não consegui baixar o pacote (ConnectError)',
+        }),
+      );
+      const state = update.querySelector('.update-state')!;
+      expect(state.textContent).toContain('Falhou: não consegui baixar o pacote (ConnectError)');
+      expect(state.textContent).toMatch(/\(.*2026.*\)/);
+      expect(state.classList).toContain('bad');
+      expect(update.querySelector('.update-check')?.textContent).toContain('falhou');
+    });
+
+    it('tells a blocked version and a return to the previous one', async () => {
+      const blocked = await updateText(
+        withUpdate({ state: 'blocked', latestSha: NEWER, blockedSha: NEWER, rolledBack: true }),
+      );
+      expect(blocked.querySelector('.update-state')?.textContent).toContain('bloqueada');
+      expect(blocked.querySelector('.update-rollback')?.textContent).toContain(
+        'a versão a1b2c3d não será instalada de novo',
+      );
+    });
+
+    it('says the agent is waiting for its first check', async () => {
+      const update = await updateText(withUpdate({ state: 'unchecked', latestSha: null }));
+      expect(update.querySelector('.update-state')?.textContent).toContain(
+        'Aguardando a primeira checagem',
+      );
+      expect(update.querySelector('.update-newest')).toBeNull();
+    });
+
+    it('says "versão desconhecida" and asks to update an old agent that never told its state', async () => {
+      const update = await updateText({ ...PC });
+      expect(update.querySelector('.update-state')?.textContent).toContain(
+        'Versão desconhecida: atualize o agente',
+      );
+      expect(update.querySelector('.update-state')?.classList).toContain('warn');
+      expect(update.querySelector('.update-installed')).toBeNull();
+    });
+
+    it('shows nothing about updates for a computer that never connected', async () => {
+      api.list.mockResolvedValue([{ ...PC, agentVersion: null, connected: false }]);
+      const { el } = await render();
+      expect(el.querySelector('.update')).toBeNull();
+    });
+  });
+
+  describe('rollback', () => {
+    it('offers going back only when the agent kept a previous version', async () => {
+      const { el } = await render();
+      expect(el.querySelector('.rollback')).toBeNull();
+      api.list.mockResolvedValue([withUpdate({ previousSha: PREVIOUS })]);
+      const second = await render();
+      expect(second.el.querySelector('.rollback')).toBeNull();
+      api.list.mockResolvedValue([{ ...withUpdate({ previousSha: PREVIOUS }), canRollback: true }]);
+      const third = await render();
+      expect(third.el.querySelector('.rollback')?.textContent).toContain(
+        'Voltar para a versão anterior',
+      );
+    });
+
+    it('confirms inline naming the previous version, then asks the API', async () => {
+      api.list.mockResolvedValue([{ ...withUpdate({ previousSha: PREVIOUS }), canRollback: true }]);
+      const { fixture, el, button } = await render();
+      button('Voltar para a versão anterior').click();
+      fixture.detectChanges();
+      expect(el.textContent).toContain('para a versão anterior (0a1b2c3)');
+      expect(api.maintain).not.toHaveBeenCalled();
+      el.querySelector<HTMLButtonElement>('.maintenance-confirm')!.click();
+      await vi.waitFor(() => {
+        fixture.detectChanges();
+        expect(el.querySelector('.message')?.textContent).toContain('volta para a versão anterior');
+      });
+      expect(api.maintain).toHaveBeenCalledWith('a1', 'rollback');
+    });
+
+    it('explains a computer that kept no previous version', async () => {
+      api.maintain.mockRejectedValueOnce(
+        new HttpErrorResponse({
+          status: 409,
+          error: { type: 'https://uniover.app/problems/no-previous-version' },
+        }),
+      );
+      api.list.mockResolvedValue([{ ...withUpdate({ previousSha: PREVIOUS }), canRollback: true }]);
+      const { fixture, el, button } = await render();
+      button('Voltar para a versão anterior').click();
+      fixture.detectChanges();
+      el.querySelector<HTMLButtonElement>('.maintenance-confirm')!.click();
+      await vi.waitFor(() => {
+        fixture.detectChanges();
+        expect(el.querySelector('.message')?.textContent).toContain(
+          'não guardou uma versão anterior',
+        );
+      });
+    });
+
+    it('keeps the button off for a disconnected agent', async () => {
+      api.list.mockResolvedValue([
+        { ...withUpdate({ previousSha: PREVIOUS }), canRollback: true, connected: false },
+      ]);
+      const { button } = await render();
+      expect(button('Voltar para a versão anterior').disabled).toBe(true);
+    });
+  });
+
+  it('opens the log sheet for a connected agent that can read its log', async () => {
+    const { fixture, el, button } = await render();
+    button('Ver registro').click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(el.querySelector('app-agent-log-sheet pre')?.textContent).toBe('linha 1\nlinha 2');
+    });
+    expect(api.logs).toHaveBeenCalledExactlyOnceWith('a1');
+    expect(el.querySelector('app-agent-log-sheet h2')?.textContent).toBe('Registro de PC de casa');
+  });
+
+  it('tells an old agent to update instead of asking the API', async () => {
+    api.list.mockResolvedValue([{ ...PC, canReadLogs: false, canMaintain: false }]);
+    const { fixture, el, button } = await render();
+    button('Ver registro').click();
+    fixture.detectChanges();
+    expect(el.querySelector('app-agent-log-sheet')).toBeNull();
+    expect(api.logs).not.toHaveBeenCalled();
+    expect(el.querySelector('.message')?.textContent).toContain('Atualize o agente');
+    button('Atualizar agora').click();
+    fixture.detectChanges();
+    expect(api.maintain).not.toHaveBeenCalled();
+    expect(el.querySelector('.maintenance-confirm')).toBeNull();
+  });
+
+  it('confirms inline before updating, then asks the API and says what happens next', async () => {
+    const { fixture, el, button } = await render();
+    button('Atualizar agora').click();
+    fixture.detectChanges();
+    expect(el.textContent).toContain('Atualizar o agente de PC de casa agora?');
+    expect(api.maintain).not.toHaveBeenCalled();
+    el.querySelector<HTMLButtonElement>('.maintenance-confirm')!.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(el.querySelector('.message')?.textContent).toContain('Pedido de atualização enviado');
+    });
+    expect(api.maintain).toHaveBeenCalledExactlyOnceWith('a1', 'update');
+    expect(el.querySelector('.maintenance-confirm')).toBeNull();
+  });
+
+  it('can cancel the restart without asking anything', async () => {
+    const { fixture, el, button } = await render();
+    button('Reiniciar o agente').click();
+    fixture.detectChanges();
+    expect(el.textContent).toContain('Reiniciar o agente de PC de casa?');
+    button('Cancelar').click();
+    fixture.detectChanges();
+    expect(api.maintain).not.toHaveBeenCalled();
+    expect(el.querySelector('.maintenance-confirm')).toBeNull();
+    expect(button('Reiniciar o agente')).toBeDefined();
+  });
+
+  it('restarts after the confirmation and reports a refusal of the passkey', async () => {
+    api.maintain.mockRejectedValueOnce(
+      new HttpErrorResponse({
+        status: 403,
+        error: {
+          type: 'https://uniover.app/problems/step-up-required',
+          code: 'step_up_required',
+          action: 'devices.agent-maintenance',
+        },
+      }),
+    );
+    const { fixture, el, button } = await render();
+    button('Reiniciar o agente').click();
+    fixture.detectChanges();
+    el.querySelector<HTMLButtonElement>('.maintenance-confirm')!.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(el.querySelector('.message')?.textContent).toContain(
+        'A ação não foi confirmada com a passkey. Nada foi feito.',
+      );
+    });
+    expect(api.maintain).toHaveBeenCalledWith('a1', 'restart');
+  });
+
+  it.each([
+    ['agent-offline', 'O agente está desconectado'],
+    ['agent-timeout', 'O agente não respondeu a tempo'],
+    ['agent-outdated', 'Atualize o agente'],
+  ])('explains a %s answer in plain words', async (kind, text) => {
+    api.maintain.mockRejectedValueOnce(
+      new HttpErrorResponse({
+        status: 503,
+        error: { type: `https://uniover.app/problems/${kind}` },
+      }),
+    );
+    const { fixture, el, button } = await render();
+    button('Reiniciar o agente').click();
+    fixture.detectChanges();
+    el.querySelector<HTMLButtonElement>('.maintenance-confirm')!.click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(el.querySelector('.message')?.textContent).toContain(text);
+    });
+  });
+
+  it('keeps the maintenance buttons off for a disconnected agent and without a network', async () => {
+    api.list.mockResolvedValue([{ ...PC, connected: false }]);
+    const { fixture, el, button } = await render();
+    expect(button('Ver registro').disabled).toBe(true);
+    expect(button('Atualizar agora').disabled).toBe(true);
+    expect(button('Reiniciar o agente').disabled).toBe(true);
+    expect(button('Revogar').disabled).toBe(false);
+    api.list.mockResolvedValue([PC]);
+    TestBed.inject(ConnectivityService).online.set(false);
+    fixture.detectChanges();
+    expect(button('Revogar').disabled).toBe(true);
+    expect(el.textContent).toContain('Sem conexão');
   });
 
   it('explains the empty state', async () => {
