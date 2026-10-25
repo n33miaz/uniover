@@ -19,6 +19,13 @@ const SETTINGS_BACK: ShellBack = {
 // um módulo vai ao primeiro que pode; quem não tem nenhum, à tela de "sem acesso".
 export const routes: Routes = [
   {
+    // O celular onde a pessoa já entrou abre o QR de um computador aqui e confirma. Exige sessão: quem ainda não entrou
+    // passa pelo login e volta (o `next` aceita esta rota). Vem antes de `entrar` e fora da casca.
+    path: 'entrar/qr',
+    canMatch: [authGuard],
+    loadComponent: () => import('./core/auth/qr/qr-approve.page').then((m) => m.QrApprovePage),
+  },
+  {
     path: 'entrar',
     loadComponent: () => import('./core/auth/login.page').then((m) => m.LoginPage),
   },

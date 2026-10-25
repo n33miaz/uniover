@@ -1,0 +1,117 @@
+<app-auth-layout>
+  @switch (view()) {
+    @case ('ready') {
+      <h1 i18n="@@auth.qr-approve.title">Entrar no computador?</h1>
+
+      <ul class="facts ui-plain">
+        <li>
+          <app-auth-glyph name="shield" />
+          <span class="device">{{ device() }}</span>
+        </li>
+        <li [class.warn]="!info()?.sameNetwork">
+          <app-auth-glyph [name]="info()?.sameNetwork ? 'check-circle' : 'alert-circle'" />
+          @if (info()?.sameNetwork) {
+            <span i18n="@@auth.qr-approve.same-network">Na mesma rede deste celular</span>
+          } @else {
+            <span i18n="@@auth.qr-approve.other-network">Em outra rede</span>
+          }
+        </li>
+      </ul>
+
+      <p class="caution" i18n="@@auth.qr-approve.caution">
+        Confirme só se foi você quem abriu o QR.
+      </p>
+
+      @if (needsPassword()) {
+        <app-auth-field
+          [fieldId]="'qr-password'"
+          [name]="'password'"
+          label="Senha"
+          i18n-label="@@auth.qr-approve.password"
+          [kind]="'password'"
+          [autocomplete]="'current-password'"
+          [enterKeyHint]="'go'"
+          toggleLabel="Mostrar senha"
+          i18n-toggleLabel="@@auth.qr-approve.show-password"
+          [error]="passwordError()"
+          [(value)]="password"
+          (blurred)="passwordTouched.set(true)"
+        />
+      }
+
+      @if (problem(); as current) {
+        @if (current !== 'wrong-password') {
+          <p class="problem ui-notice bad" role="alert">
+            @switch (current) {
+              @case ('locked') {
+                <span i18n="@@auth.qr-approve.locked">Muitas tentativas. Espere um pouco.</span>
+              }
+              @case ('network') {
+                <span i18n="@@auth.qr-approve.network">Sem conexão com o servidor.</span>
+              }
+              @default {
+                <span i18n="@@auth.qr-approve.failed">Não foi possível confirmar agora.</span>
+              }
+            }
+          </p>
+        }
+      }
+
+      <div class="actions">
+        <button type="button" class="ui-btn primary block" [disabled]="busy()" (click)="confirm()">
+          @if (busy()) {
+            <span class="ui-spinner" aria-hidden="true"></span>
+          }
+          <span i18n="@@auth.qr-approve.confirm">Confirmar</span>
+        </button>
+        <button type="button" class="ui-btn block" [disabled]="busy()" (click)="deny()">
+          <span i18n="@@auth.qr-approve.deny">Cancelar</span>
+        </button>
+      </div>
+    }
+    @case ('approved') {
+      <h1 i18n="@@auth.qr-approve.approved-title">Computador liberado</h1>
+      <p class="done ok" role="status">
+        <app-auth-glyph name="check-circle" />
+        <span i18n="@@auth.qr-approve.approved">Ele já está entrando na sua conta.</span>
+      </p>
+      <a class="ui-btn block" routerLink="/" i18n="@@auth.qr-approve.home-approved"
+        >Voltar ao início</a
+      >
+    }
+    @case ('denied') {
+      <h1 i18n="@@auth.qr-approve.denied-title">Entrada cancelada</h1>
+      <p class="done" role="status">
+        <app-auth-glyph name="alert-circle" />
+        <span i18n="@@auth.qr-approve.denied">O computador não entrou.</span>
+      </p>
+      <a class="ui-btn block" routerLink="/" i18n="@@auth.qr-approve.home-denied"
+        >Voltar ao início</a
+      >
+    }
+    @case ('invalid') {
+      <h1 i18n="@@auth.qr-approve.invalid-title">QR vencido</h1>
+      <p class="done" role="status">
+        <app-auth-glyph name="clock" />
+        <span i18n="@@auth.qr-approve.invalid">Peça outro na tela do computador.</span>
+      </p>
+      <a class="ui-btn block" routerLink="/" i18n="@@auth.qr-approve.home-invalid"
+        >Voltar ao início</a
+      >
+    }
+    @case ('error') {
+      <h1 i18n="@@auth.qr-approve.error-title">Sem conexão</h1>
+      <p class="done" role="alert">
+        <app-auth-glyph name="wifi-off" />
+        <span i18n="@@auth.qr-approve.error">Não foi possível abrir este QR.</span>
+      </p>
+    }
+    @default {
+      <h1 i18n="@@auth.qr-approve.loading-title">Entrar no computador?</h1>
+      <p class="done" role="status">
+        <span class="ui-spinner" aria-hidden="true"></span>
+        <span i18n="@@auth.qr-approve.loading">Abrindo…</span>
+      </p>
+    }
+  }
+</app-auth-layout>

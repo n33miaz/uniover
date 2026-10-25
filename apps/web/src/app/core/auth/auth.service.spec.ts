@@ -263,6 +263,20 @@ describe('AuthService', () => {
       expect(stored).not.toContain('eyJ');
     });
 
+    it('signInWithTokens opens the session of an entry done elsewhere (the QR confirmed on the phone), in memory only', async () => {
+      await service().signInWithTokens(tokens('eyJ.do-qr.token'));
+      expect(service().status()).toBe('authenticated');
+      expect(session().bearer()).toBe('eyJ.do-qr.token');
+      expect(api.me).toHaveBeenCalledWith('eyJ.do-qr.token');
+      expect(api.login).not.toHaveBeenCalled();
+      const stored = JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage });
+      expect(stored).not.toContain('eyJ');
+      // Renovação agendada como em qualquer entrada: pouco antes de o token vencer o refresh é chamado.
+      api.refresh.mockResolvedValue(tokens('renovado'));
+      await vi.advanceTimersByTimeAsync(600 * 1000 * 0.8 + 1000);
+      expect(api.refresh).toHaveBeenCalled();
+    });
+
     it('login lets the API problem reach the caller', async () => {
       api.login.mockRejectedValue(problem(401));
       await expect(service().login('a@b.c', 'x')).rejects.toBeInstanceOf(ApiProblem);

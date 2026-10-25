@@ -1,0 +1,55 @@
+:host {
+  display: block;
+}
+
+/* Separa do formulário de senha: a outra forma de entrar, logo abaixo, na largura toda do cartão. */
+.qr {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--a-line);
+}
+
+h2 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--fs-body);
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Altura mínima do palco: a troca entre "gerando", o QR e os avisos não faz o cartão pular. */
+.stage {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+  min-height: 14rem;
+  justify-content: center;
+}
+
+.hint {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+
+.state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-align: center;
+}
+
+.state app-auth-glyph {
+  width: 20px;
+  height: 20px;
+}
+
+.state.ok {
+  color: var(--a-ok);
+}
