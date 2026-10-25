@@ -12,7 +12,12 @@ param(
 # Dois modos:
 #  - Automatico (sem -TvHost): acha a TV na rede, pareia o agente (QR), pareia a TV e deixa o agente
 #    iniciando sozinho com o Windows, sem perguntar nada. E o que o conectar-uniover.cmd roda.
+#    Roda SEM console: todo o andamento aparece numa pagina local no navegador (a mesma do QR).
 #  - Manual (com -TvHost): o comportamento de sempre, com a pergunta antes de criar a tarefa.
+#
+# Regra: nenhuma janela de console pode aparecer para a pessoa. Aqui os programas de console sao chamados direto
+# (herdam o console oculto deste processo) e o que precisa de um processo novo usa CreateNoWindow. A unica janela
+# aceitavel e o pedido de permissao do Windows (UAC), feito uma vez.
 
 $ErrorActionPreference = 'Stop'
 # A barra de progresso do Windows PowerShell 5.1 deixa o download dezenas de vezes mais lento.
@@ -34,9 +39,47 @@ $base = Join-Path $env:LOCALAPPDATA 'UniOver'
 $source = Join-Path $base 'app'
 $config = Join-Path $base 'config\agent.toml'
 $launcher = Join-Path $base 'launcher.ps1'
+$launcherVbs = Join-Path $base 'launcher.vbs'
 $fallback = Join-Path $base 'run-agent.fallback.ps1'
+$pageFile = Join-Path $base 'web\conectar.html'
 $installerUrl = 'https://raw.githubusercontent.com/n33miaz/uniover/main/apps/agent/tools/install-windows.ps1'
 $automatic = -not $PSBoundParameters.ContainsKey('TvHost')
+$tvKindGiven = $PSBoundParameters.ContainsKey('TvKind')
+
+function Write-Page([string]$Html, [bool]$Reload = $true) {
+    # Pagina de andamento (modo automatico). $Html ja vem com as entidades HTML (o arquivo e so ASCII). Troca por
+    # renomeacao: a pagina se recarrega sozinha e nunca pode ler meio arquivo.
+    $refresh = ''
+    if ($Reload) {
+        $refresh = '<meta http-equiv="refresh" content="3">'
+    }
+    $page = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">' + $refresh +
+        '<meta name="viewport" content="width=device-width, initial-scale=1"><title>UniOver</title>' +
+        '<style>body{margin:0;background:#f8fafc;color:#111827;font:24px/1.5 system-ui,sans-serif}' +
+        'main{box-sizing:border-box;max-width:720px;margin:0 auto;padding:64px 24px;text-align:center}' +
+        'h1{margin:0;font-size:32px}@media(prefers-color-scheme:dark){body{background:#0f172a;color:#f1f5f9}}' +
+        '</style></head><body><main><h1>' + $Html + '</h1></main></body></html>'
+    try {
+        New-Item -ItemType Directory -Path (Split-Path $pageFile -Parent) -Force | Out-Null
+        $temporary = $pageFile + '.new'
+        [System.IO.File]::WriteAllText($temporary, $page, [System.Text.UTF8Encoding]::new($false))
+        try {
+            Move-Item -LiteralPath $temporary -Destination $pageFile -Force
+        }
+        catch {
+            [System.IO.File]::WriteAllText($pageFile, $page, [System.Text.UTF8Encoding]::new($false))
+            Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+        }
+    }
+    catch { }
+}
+
+function Open-Page {
+    try {
+        Start-Process -FilePath $pageFile
+    }
+    catch { }
+}
 
 function Stop-Agent {
     # Parar a tarefa e os processos que ela deixou: pasta em uso nao pode ser trocada.
@@ -62,6 +105,7 @@ if ($Uninstall) {
     Stop-Agent
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $launcher -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $launcherVbs -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $fallback -Force -ErrorAction SilentlyContinue
     Write-Host 'A tarefa agendada do UniOver foi removida e o agente parou.'
     Write-Host "Configuracao e pareamento ficaram em $base; apague a pasta se quiser tirar tudo."
@@ -191,10 +235,18 @@ function Get-AgentSource([string]$Destination) {
     }
 }
 
-function Register-AgentTask([string]$Arguments) {
-    # O padrao do Agendador mata a tarefa depois de 72 h e nao a inicia na bateria: o agente
-    # precisa ficar de pe o tempo todo. O Windows PowerShell existe em todo Windows.
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $Arguments
+function Register-AgentTask {
+    # A tarefa abre o launcher.vbs pelo WScript, que nao tem console: o PowerShell nasce oculto e nada pisca no logon
+    # (o PowerShell direto na tarefa pisca um console). So se o Windows nao tiver o Script Host
+    # cai no PowerShell oculto. O padrao do Agendador mata a tarefa depois de 72 h e nao a inicia na bateria: o agente
+    # precisa ficar de pe o tempo todo.
+    $wscript = Join-Path $env:SystemRoot 'System32\wscript.exe'
+    if ((Test-Path -LiteralPath $wscript) -and (Test-Path -LiteralPath $launcherVbs)) {
+        $action = New-ScheduledTaskAction -Execute $wscript -Argument ('//B //Nologo "' + $launcherVbs + '"')
+    }
+    else {
+        $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '"')
+    }
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
     $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -StartWhenAvailable
@@ -250,170 +302,91 @@ function Write-StartMenuShortcut {
     catch { }
 }
 
-# So ASCII, de proposito: o Windows PowerShell 5.1 le arquivo sem BOM como ANSI. O agente roda
-# daqui, confere atualizacao a cada 6 h e, se cair, volta com espera crescente (ate 5 min).
-$wrapperTemplate = @'
-$ErrorActionPreference = 'Continue'
-$ProgressPreference = 'SilentlyContinue'
-$base = Join-Path $env:LOCALAPPDATA 'UniOver'
-$source = Join-Path $base 'agent-src'
-$previous = Join-Path $base 'agent-src.previous'
-$blocked = Join-Path $base '.blocked-versions'
-$trial = Join-Path $base 'update-trial.txt'
-$env:UNIOVER_CONFIG_FILE = Join-Path $base 'agent.toml'
-$env:UNIOVER_LOG_FILE = Join-Path $base 'agent.log'
-$env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'venv'
-$env:PYTHONUTF8 = '1'
-
-function Find-Uv {
-    $configured = '__UV__'
-    if (Test-Path -LiteralPath $configured) { return $configured }
-    $found = Get-Command uv -ErrorAction SilentlyContinue
-    if ($found) { return $found.Source }
-    foreach ($relative in @('Microsoft\WinGet\Links\uv.exe', 'Microsoft\WindowsApps\uv.exe', '.local\bin\uv.exe')) {
-        $candidate = Join-Path $env:LOCALAPPDATA $relative
-        if (Test-Path -LiteralPath $candidate) { return $candidate }
-    }
-    return $null
-}
-
-function Get-Version {
-    try { return [System.IO.File]::ReadAllText((Join-Path $source '.version')).Trim() }
-    catch { return $null }
-}
-
-function Sync-Agent([string]$Uv) {
-    & $Uv sync --project $source --quiet *> $null
-    if ($LASTEXITCODE -eq 0) { return $true }
-    # Uma atualizacao do Windows pode deixar o venv parcialmente quebrado. Ele e descartavel.
-    $venv = Join-Path $base 'venv'
-    if (Test-Path -LiteralPath $venv) { Remove-Item -LiteralPath $venv -Recurse -Force -ErrorAction SilentlyContinue }
-    & $Uv sync --project $source --quiet *> $null
-    return ($LASTEXITCODE -eq 0)
-}
-
-function Schedule-NextUpdate {
-    return (Get-Date).AddHours(6).AddMinutes((Get-Random -Minimum 0 -Maximum 46))
-}
-
-function Invoke-Update([string]$Uv) {
-    $before = Get-Version
-    $env:UV = $Uv
-    & $Uv run --project $source uniover-agent self-update *> $null
-    $after = Get-Version
-    if ($before -and $after -and $before -ne $after) {
-        [System.IO.File]::WriteAllText($trial, ($after + '|0'), [System.Text.Encoding]::ASCII)
-        return $true
-    }
-    return $false
-}
-
-function Note-Run([double]$Seconds) {
-    if (-not (Test-Path -LiteralPath $trial)) { return }
-    $parts = (Get-Content -LiteralPath $trial -ErrorAction SilentlyContinue) -split '\|', 2
-    if ($parts.Count -ne 2 -or $parts[0] -ne (Get-Version)) { return }
-    if ($Seconds -ge 600) {
-        Remove-Item -LiteralPath $trial -Force -ErrorAction SilentlyContinue
-        return
-    }
-    $falls = 0
-    [void][int]::TryParse($parts[1], [ref]$falls)
-    $falls++
-    if ($falls -lt 3 -or -not (Test-Path -LiteralPath $previous)) {
-        [System.IO.File]::WriteAllText($trial, ($parts[0] + '|' + $falls), [System.Text.Encoding]::ASCII)
-        return
-    }
-    $bad = Join-Path $base ('agent-src.rejected-' + $parts[0].Substring(0, 12))
-    Remove-Item -LiteralPath $bad -Recurse -Force -ErrorAction SilentlyContinue
-    try {
-        Move-Item -LiteralPath $source -Destination $bad -ErrorAction Stop
-        Move-Item -LiteralPath $previous -Destination $source -ErrorAction Stop
-        if (-not (Select-String -LiteralPath $blocked -SimpleMatch $parts[0] -Quiet -ErrorAction SilentlyContinue)) {
-            Add-Content -LiteralPath $blocked -Value $parts[0] -Encoding ASCII
-        }
-        Remove-Item -LiteralPath $trial -Force -ErrorAction SilentlyContinue
-    }
-    catch {
-        # Na proxima tentativa o wrapper ainda tem a versao atual e tenta se recuperar de novo.
-    }
-}
-
-Set-Location -LiteralPath $base
-$wait = 5
-$nextUpdate = [DateTime]::MinValue
-while ($true) {
-    $uv = Find-Uv
-    if (-not $uv -or -not (Test-Path -LiteralPath $source)) {
-        Start-Sleep -Seconds 300
-        continue
-    }
-    $updated = $false
-    if ((Get-Date) -ge $nextUpdate) {
-        $updated = Invoke-Update $uv
-        $nextUpdate = Schedule-NextUpdate
-    }
-    if (-not (Sync-Agent $uv)) {
-        Start-Sleep -Seconds $wait
-        $wait = [Math]::Min($wait * 2, 300)
-        continue
-    }
-    $arguments = 'run --project "' + $source + '" uniover-agent run'
-    $process = Start-Process -FilePath $uv -ArgumentList $arguments -PassThru -WindowStyle Hidden
-    $started = Get-Date
-    $restartForUpdate = $false
-    while (-not $process.HasExited) {
-        Start-Sleep -Seconds 15
-        if ((Get-Date) -ge $nextUpdate) {
-            if (Invoke-Update $uv) {
-                # O uv run abre um python filho: derrubar so o uv deixaria o agente antigo vivo.
-                & taskkill.exe /PID $process.Id /T /F *> $null
-                $restartForUpdate = $true
-            }
-            $nextUpdate = Schedule-NextUpdate
-        }
-    }
-    $seconds = ((Get-Date) - $started).TotalSeconds
-    if (-not $restartForUpdate) { Note-Run $seconds }
-    if ($seconds -gt 600) { $wait = 5 }
-    if ($restartForUpdate) { $wait = 5 }
-    Start-Sleep -Seconds $wait
-    $wait = [Math]::Min($wait * 2, 300)
-}
-'@
-
-function Write-AgentWrapper([string]$Uv) {
-    $wrapperText = $wrapperTemplate.Replace('__UV__', $Uv.Replace("'", "''"))
-    # Mantido apenas para atualizar instalacoes muito antigas que ainda chamam este nome.
-    [System.IO.File]::WriteAllText((Join-Path $base 'run-agent.ps1'), $wrapperText, [System.Text.Encoding]::ASCII)
-}
-
 function Write-AgentLauncher {
     $updatedWrapper = Join-Path $source 'tools\run-agent.ps1'
     $updatedLauncher = Join-Path $source 'tools\launcher.ps1'
+    $updatedVbs = Join-Path $source 'tools\launcher.vbs'
     if (-not (Test-Path -LiteralPath $updatedWrapper) -or -not (Test-Path -LiteralPath $updatedLauncher)) {
         throw 'O pacote do agente nao tem os arquivos de inicializacao.'
     }
     # O lancador nao muda: ele sempre delega para o supervisor que veio dentro de app atualizado.
     Copy-Item -LiteralPath $updatedLauncher -Destination $launcher -Force
+    if (Test-Path -LiteralPath $updatedVbs) {
+        Copy-Item -LiteralPath $updatedVbs -Destination $launcherVbs -Force
+    }
     # Esta copia fica conhecida boa ate o proximo instalador; protege contra um supervisor futuro ruim.
     Copy-Item -LiteralPath $updatedWrapper -Destination $fallback -Force
 }
 
-$uv = Find-Uv
-New-Item -ItemType Directory -Path $base -Force | Out-Null
-# O instalador e um caminho manual de recuperacao: pare o supervisor antigo antes de mover
-# qualquer pasta que ele possa estar usando. A auto-atualizacao usa o lancador estavel acima.
-Stop-Agent
-Move-LegacyLayout
-Write-Readme
-Write-StartMenuShortcut
-$env:UNIOVER_CONFIG_FILE = $config
-$env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'runtime\venv'
+function Set-SystemSettings {
+    # UMA elevacao (UAC), so para o que exige administrador e evita manutencao depois. A parte elevada roda num
+    # PowerShell separado e oculto com -EncodedCommand (nao ha arquivo em pasta de usuario que alguem possa trocar antes
+    # de ele rodar elevado) e NAO mexe em nada do usuario: sem LOCALAPPDATA, sem tarefa, sem Cofre de Credenciais, sem
+    # donos de pasta. O resto deste instalador segue sem elevacao, como o usuario original. Devolve um texto de uma linha.
+    $elevated = @'
+$ErrorActionPreference = 'Continue'
+$failed = 0
+# Na tomada o PC nao suspende nem hiberna (o agente precisa dele acordado); a tela pode apagar.
+& powercfg.exe /change standby-timeout-ac 0
+if ($LASTEXITCODE -ne 0) { $failed = $failed -bor 1 }
+& powercfg.exe /change hibernate-timeout-ac 0
+if ($LASTEXITCODE -ne 0) { $failed = $failed -bor 1 }
+# O Windows desliga o adaptador de rede "para economizar energia" e derruba o Wi-Fi. Vale a partir do proximo
+# reinicio do adaptador (nao o reiniciamos aqui para nao derrubar a internet no meio da instalacao).
+try {
+    $class = 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}'
+    foreach ($adapter in @(Get-NetAdapter -Physical -ErrorAction Stop)) {
+        foreach ($key in @(Get-ChildItem -LiteralPath $class -ErrorAction SilentlyContinue)) {
+            $id = (Get-ItemProperty -LiteralPath $key.PSPath -Name NetCfgInstanceId -ErrorAction SilentlyContinue).NetCfgInstanceId
+            if ($id -eq $adapter.InterfaceGuid) {
+                Set-ItemProperty -LiteralPath $key.PSPath -Name PnPCapabilities -Value 24 -Type DWord -ErrorAction Stop
+            }
+        }
+    }
+}
+catch { $failed = $failed -bor 2 }
+# Regra de entrada da descoberta da TV (SSDP, UDP 1900), so em redes privadas ou de dominio e so da propria sub-rede.
+try {
+    Get-NetFirewallRule -Name 'UniOver-SSDP-In' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction Stop
+    New-NetFirewallRule -Name 'UniOver-SSDP-In' -DisplayName 'UniOver descoberta da TV (SSDP)' -Direction Inbound -Protocol UDP -LocalPort 1900 -Action Allow -Profile Private,Domain -RemoteAddress LocalSubnet -ErrorAction Stop | Out-Null
+}
+catch { $failed = $failed -bor 4 }
+exit $failed
+'@
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($elevated))
+    try {
+        $process = Start-Process -FilePath 'powershell.exe' -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded)
+    }
+    catch {
+        return 'Sem a permissao de administrador, o PC pode suspender e perder o Wi-Fi; rode de novo e aceite o aviso do Windows.'
+    }
+    if ($process.ExitCode -eq 0) {
+        return 'Energia, rede e firewall ajustados para o agente.'
+    }
+    return 'Alguns ajustes do sistema nao puderam ser aplicados; o agente funciona, mas o PC pode suspender ou perder o Wi-Fi.'
+}
 
-if ($automatic) {
+function Invoke-AutomaticInstall {
+    Write-Page 'Instalando o UniOver&hellip;'
+    Open-Page
+
+    $uv = Find-Uv
+    New-Item -ItemType Directory -Path $base -Force | Out-Null
+    # O instalador e um caminho manual de recuperacao: pare o supervisor antigo antes de mover
+    # qualquer pasta que ele possa estar usando. A auto-atualizacao usa o lancador estavel acima.
+    Stop-Agent
+    Move-LegacyLayout
+    Write-Readme
+    Write-StartMenuShortcut
+    $env:UNIOVER_CONFIG_FILE = $config
     # O ambiente Python fica FORA da pasta do agente e o uv roda com --project: assim a
     # auto-atualizacao consegue trocar a pasta do agente por renomeacao (pasta em uso nao troca).
     $env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'runtime\venv'
+
+    # A unica janela que aparece e o pedido de permissao do Windows, uma vez; depois disso nenhuma atualizacao pede.
+    Write-Page 'Aceite o aviso de permiss&atilde;o do Windows (s&oacute; desta vez).'
+    $system = Set-SystemSettings
+    Write-Page 'Instalando o UniOver&hellip;'
 
     Get-AgentSource $source
     # A instalacao direta ja foi testada abaixo; uma versao anterior de outra instalacao nao e um
@@ -429,51 +402,38 @@ if ($automatic) {
     }
 
     # 1. Acha a TV na rede. O agente grava tipo, endereco e identificador no agent.toml.
+    Write-Page 'Procurando a TV&hellip;'
     $findArguments = @('run', '--project', $source, 'uniover-agent', 'tv-find')
-    if ($PSBoundParameters.ContainsKey('TvKind')) {
+    if ($tvKindGiven) {
         $findArguments += @('--kind', $TvKind)
     }
     & $uv @findArguments
     $tvFound = ($LASTEXITCODE -eq 0)
-    if (-not $tvFound) {
-        Write-Host ''
-        Write-Host 'Nao achei a TV sozinho. Confira se ela esta ligada e no mesmo Wi-Fi deste computador.'
-        $typed = Read-Host 'Se souber o endereco IP da TV, digite aqui (ou aperte Enter para seguir sem a TV)'
-        if ($typed) {
-            $isSamsung = Read-Host 'A TV e Samsung? (s/N)'
-            $kind = 'android'
-            if ($isSamsung -match '^[sS]') {
-                $kind = 'samsung'
-            }
-            Set-ConfigValues $config @{ tv_kind = $kind; tv_host = $typed.Trim() }
-            $tvFound = $true
-        }
-    }
 
-    # 2. Pareia este PC com a conta (codigo + QR). Ja pareado: nao pede de novo.
-    & $uv run --project $source uniover-agent pair --if-needed
+    # 2. Pareia este PC com a conta (codigo + QR na pagina local, que se atualiza sozinha). Ja pareado: nao pede de novo.
+    # A pagina ja esta aberta: o agente so a reescreve (--no-browser evita uma segunda aba).
+    & $uv run --project $source uniover-agent pair --if-needed --no-browser --installing
     if ($LASTEXITCODE -ne 0) {
         throw 'O pareamento do agente nao foi concluido.'
     }
 
-    # 3. Pareia a TV (na Samsung, aceite o aviso Permitir na tela da TV).
+    # 3. Pareia a TV (na Samsung, aceite o aviso Permitir na tela da TV; na Android TV o codigo e pedido numa janela).
     $tvPaired = $false
     if ($tvFound) {
-        & $uv run --project $source uniover-agent tv-pair --if-needed
+        Write-Page 'Pareando a TV&hellip; Aceite Permitir na tela da TV, ou digite o c&oacute;digo na janela que abrir.'
+        & $uv run --project $source uniover-agent tv-pair --if-needed --installing
         $tvPaired = ($LASTEXITCODE -eq 0)
-        if (-not $tvPaired) {
-            Write-Host 'O pareamento da TV nao foi concluido. Rode este arquivo de novo com a TV ligada.'
-        }
     }
 
     # 4. O agente passa a iniciar com o Windows, sem janela, sem perguntar.
     Write-AgentLauncher
-    Register-AgentTask "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$launcher`""
+    Register-AgentTask
     Start-ScheduledTask -TaskName $taskName
 
     Write-Host ''
     Write-Host 'Pronto. O que foi feito:'
     Write-Host "  - O agente foi instalado em $source e se atualiza sozinho."
+    Write-Host "  - $system"
     if ($tvPaired) {
         Write-Host '  - A TV foi encontrada e pareada.'
     }
@@ -484,10 +444,38 @@ if ($automatic) {
     Write-Host "  - O que o agente faz fica registrado em $(Join-Path $base 'logs\agent.log')."
     Write-Host 'Para remover, rode o comando abaixo (a configuracao e o pareamento ficam):'
     Write-Host ('  powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ' + $installerUrl + '))) -Uninstall"')
-    exit 0
+
+    if ($tvPaired) {
+        Write-Page 'Pronto. Pode fechar esta janela.' $false
+    }
+    else {
+        Write-Page 'Pronto, mas a TV ainda n&atilde;o foi pareada. Ligue a TV e abra o conector de novo.' $false
+    }
 }
 
-# --- Modo manual (-TvHost informado) ---------------------------------------------------------
+if ($automatic) {
+    try {
+        Invoke-AutomaticInstall
+        exit 0
+    }
+    catch {
+        $reason = [System.Net.WebUtility]::HtmlEncode($_.Exception.Message)
+        Write-Host ("Falha: " + $_.Exception.Message)
+        Write-Page ('A instala&ccedil;&atilde;o n&atilde;o terminou: ' + $reason + ' Feche esta janela e abra o conector de novo.') $false
+        exit 1
+    }
+}
+
+# --- Modo manual (-TvHost informado), pensado para um terminal visivel ------------------------------
+$uv = Find-Uv
+New-Item -ItemType Directory -Path $base -Force | Out-Null
+Stop-Agent
+Move-LegacyLayout
+Write-Readme
+Write-StartMenuShortcut
+$env:UNIOVER_CONFIG_FILE = $config
+$env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'runtime\venv'
+
 Get-AgentSource $source
 Remove-Item -LiteralPath (Join-Path $base 'app.previous') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
@@ -520,7 +508,7 @@ if ($LASTEXITCODE -ne 0) {
 $answer = Read-Host "Registrar a tarefa '$taskName' para iniciar ao entrar no Windows? (s/N)"
 if ($answer -match '^[sS]') {
     Write-AgentLauncher
-    Register-AgentTask "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$launcher`""
+    Register-AgentTask
     Start-ScheduledTask -TaskName $taskName
     Write-Host 'Tarefa registrada e iniciada.'
 }
