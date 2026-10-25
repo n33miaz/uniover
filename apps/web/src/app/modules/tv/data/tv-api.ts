@@ -7,10 +7,12 @@ import { TvSelection } from './tv-selection';
 import {
   TvCleanupResult,
   TvKey,
+  TvPowerOffOutcome,
   TvShortcut,
   TvState,
   TvSummary,
   normalizeShortcut,
+  parsePowerOffOutcome,
   parseShortcuts,
   parseState,
   parseTvs,
@@ -91,9 +93,17 @@ export class TvApi {
     await firstValueFrom(this.http.post(`${BASE}/text`, body, this.target()));
   }
 
-  /** Sem passkey (decisão do dono): o freio é o limite de comandos e a trilha de auditoria da API. */
-  async powerOff(): Promise<void> {
-    await firstValueFrom(this.http.post(`${BASE}/power/off`, null, this.target()));
+  /**
+   * Sem passkey (decisão do dono): o freio é o limite de comandos e a trilha de auditoria da API. Com `safe` o pedido é o
+   * desligamento com leitura, que só se faz a agente que o declara: o agente lê a energia, aperta `POWER` uma vez se a
+   * TV estiver ligada e confirma. Sem `safe` é o pedido de antes, sem corpo.
+   */
+  async powerOff(safe = false): Promise<TvPowerOffOutcome> {
+    const body: components['schemas']['PowerOffRequest'] | null = safe ? { mode: 'safe' } : null;
+    const dto = await firstValueFrom(
+      this.http.post<unknown>(`${BASE}/power/off`, body, this.target()),
+    );
+    return parsePowerOffOutcome(dto);
   }
 
   /**
