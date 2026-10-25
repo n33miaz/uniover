@@ -55,6 +55,19 @@ export class DevicesApi {
     await firstValueFrom(this.http.post(`${BASE}/pairing/approve`, body));
   }
 
+  /**
+   * O convidado com a TV aprova o pareamento do PC dele para a PRÓPRIA TV: a TV nasce só com ele (nunca a padrão), com
+   * o nome dado (ou o do PC). Exige a senha reconfirmada pouco antes (ver `AuthApi.stepUpWithPassword`).
+   */
+  async approveOwn(userCode: string, tvName: string | null): Promise<void> {
+    const body: components['schemas']['ApproveOwnPairingRequest'] = {
+      userCode,
+      name: null,
+      tvName,
+    };
+    await firstValueFrom(this.http.post(`${BASE}/pairing/approve-own`, body));
+  }
+
   async deny(userCode: string): Promise<void> {
     const body: components['schemas']['DenyPairingRequest'] = { userCode };
     await firstValueFrom(this.http.post(`${BASE}/pairing/deny`, body));

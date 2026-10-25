@@ -90,3 +90,8 @@ h1 {
   padding-inline: var(--space-3);
   color: var(--a-ink2);
 }
+
+.who {
+  margin: 0 0 var(--space-4);
+  text-align: center;
+}

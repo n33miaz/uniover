@@ -1,0 +1,95 @@
+<dialog
+  #dialog
+  class="sheet ui-dialog"
+  aria-labelledby="guest-pair-title"
+  (cancel)="cancel($event)"
+>
+  <span class="grabber" aria-hidden="true"></span>
+  <form (submit)="approve($event)" novalidate>
+    <h2 id="guest-pair-title" i18n="@@devices.guest-pair.title">Aprovar este computador</h2>
+    <p class="hint" i18n="@@devices.guest-pair.hint">
+      Este PC passa a controlar a sua TV. Digite a sua senha para confirmar.
+    </p>
+
+    <label for="guest-pair-code" i18n="@@devices.guest-pair.code">Código do computador</label>
+    <input
+      id="guest-pair-code"
+      class="code ui-input"
+      type="text"
+      [attr.inputmode]="'text'"
+      autocomplete="one-time-code"
+      [attr.autocapitalize]="'characters'"
+      [attr.autocorrect]="'off'"
+      spellcheck="false"
+      maxlength="12"
+      placeholder="XXXX-XXXX"
+      i18n-placeholder="@@devices.pair.code-placeholder"
+      [value]="code()"
+      (input)="onCodeInput($event)"
+    />
+
+    <label for="guest-pair-name" i18n="@@devices.guest-pair.name">Nome da TV</label>
+    <input
+      id="guest-pair-name"
+      class="ui-input"
+      type="text"
+      autocomplete="off"
+      [attr.maxlength]="maxName"
+      [attr.aria-invalid]="nameValid() ? null : 'true'"
+      [value]="tvName()"
+      (input)="onNameInput($event)"
+    />
+    @if (!nameValid()) {
+      <p class="error ui-notice bad ui-rise" role="alert" i18n="@@devices.guest-pair.name-invalid">
+        Use letras, números, espaço e . _ ( ) -, começando por letra ou número.
+      </p>
+    }
+
+    <label for="guest-pair-password" i18n="@@devices.guest-pair.password">Sua senha</label>
+    <input
+      id="guest-pair-password"
+      class="ui-input"
+      type="password"
+      autocomplete="current-password"
+      [value]="password()"
+      (input)="onPasswordInput($event)"
+    />
+
+    <div class="messages" [attr.aria-live]="'polite'">
+      @if (error(); as text) {
+        <p class="error ui-notice bad ui-rise" role="alert">{{ text }}</p>
+      }
+      @if (!online()) {
+        <p class="note ui-notice warn ui-rise" role="status" i18n="@@devices.offline">
+          Sem conexão: parear, recusar e revogar precisam de rede.
+        </p>
+      }
+      @if (busy()) {
+        <p class="note ui-notice ui-rise" role="status">
+          <span class="ui-spinner" aria-hidden="true"></span>
+          <span i18n="@@devices.pair.busy">Enviando…</span>
+        </p>
+      }
+    </div>
+
+    <div class="footer">
+      <button
+        type="button"
+        class="secondary ui-btn"
+        [disabled]="busy() || leaving()"
+        (click)="cancel()"
+        i18n="@@devices.pair.cancel"
+      >
+        Cancelar
+      </button>
+      <button
+        type="submit"
+        class="primary ui-btn"
+        [disabled]="!canApprove()"
+        i18n="@@devices.pair.approve"
+      >
+        Aprovar
+      </button>
+    </div>
+  </form>
+</dialog>
