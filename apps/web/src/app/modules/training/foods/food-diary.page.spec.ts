@@ -101,6 +101,34 @@ describe('FoodDiaryPage', () => {
     expect(fixture.nativeElement.textContent).toContain('Iogurte natural');
   });
 
+  it('selects the own food just saved even when saving it bumps the food revision with an empty search', async () => {
+    const fixture = await open();
+    const own = food;
+    foods.saveOwn.mockImplementation(async () => {
+      foodRevision.update((value) => value + 1);
+      await fixture.whenStable();
+      return { status: 'saved', food: own };
+    });
+    (fixture.nativeElement.querySelector('.own-food summary') as HTMLElement).click();
+    fixture.detectChanges();
+    const name = fixture.nativeElement.querySelector('#own-name') as HTMLInputElement;
+    name.value = 'Iogurte natural';
+    name.dispatchEvent(new Event('input'));
+    for (const selector of ['#own-kcal', '#own-protein', '#own-carbs', '#own-fat']) {
+      const input = fixture.nativeElement.querySelector(selector) as HTMLInputElement;
+      input.value = '1';
+      input.dispatchEvent(new Event('input'));
+    }
+    fixture.detectChanges();
+    button(fixture, 'Salvar alimento').click();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.selected-food strong')?.textContent).toBe(
+        'Iogurte natural',
+      );
+    });
+  });
+
   it('ignores an older search response after the query changes', async () => {
     const fixture = await open();
     let finishOld!: (value: { status: 'ok'; foods: (typeof food)[] }) => void;
