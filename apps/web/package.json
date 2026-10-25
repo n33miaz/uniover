@@ -9,7 +9,7 @@
     "audit:pwa": "node scripts/audit-pwa.mjs",
     "watch": "ng build --watch --configuration development",
     "serve:dist": "node e2e/server/static-server.mjs 4300",
-    "lint": "ng lint && tsc -p tsconfig.sw.json --noEmit",
+    "lint": "node scripts/check-css-vars.mjs && ng lint && tsc -p tsconfig.sw.json --noEmit",
     "test": "ng test --no-watch",
     "test:coverage": "ng test --no-watch --coverage",
     "e2e": "playwright test",
