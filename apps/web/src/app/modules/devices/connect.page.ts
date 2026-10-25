@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AuthLayout } from '../../core/auth/auth-layout';
+import { QrLoginPanel } from '../../core/auth/qr/qr-login-panel';
 import { CONNECTOR_URL, isWindowsPc } from './windows-pc';
 
 /**
@@ -11,7 +12,7 @@ import { CONNECTOR_URL, isWindowsPc } from './windows-pc';
  */
 @Component({
   selector: 'app-connect-page',
-  imports: [AuthLayout, RouterLink],
+  imports: [AuthLayout, QrLoginPanel, RouterLink],
   templateUrl: './connect.page.html',
   styleUrl: './connect.page.css',
 })

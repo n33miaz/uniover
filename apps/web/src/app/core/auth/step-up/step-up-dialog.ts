@@ -16,6 +16,8 @@ export function actionLabel(action: string | null): string {
       return $localize`:@@auth.step-up.action.tv-bind-agent:ligar um computador à TV`;
     case 'identity.permissions-change':
       return $localize`:@@auth.step-up.action.permissions-change:mudar as permissões de uma pessoa`;
+    case 'identity.qr-login-approve':
+      return $localize`:@@auth.step-up.action.qr-login-approve:liberar a entrada de um computador`;
     default:
       return $localize`:@@auth.step-up.action.generic:fazer uma ação protegida`;
   }

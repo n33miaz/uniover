@@ -11,6 +11,10 @@ describe('safeNextUrl', () => {
     '/treino#topo',
     '/a/b/c',
     '/boas-vindasx',
+    '/entrarx',
+    // O celular que abre o QR de outro aparelho passa pelo login e volta a esta tela com o código.
+    '/entrar/qr',
+    '/entrar/qr?codigo=AbC_123-xyz45678',
   ])('accepts the same-origin path %s', (path) => expect(safeNextUrl(path, ORIGIN)).toBe(path));
 
   it.each([
@@ -39,6 +43,8 @@ describe('safeNextUrl', () => {
     ['the first-access name page itself', '/boas-vindas'],
     ['the first-access name page with query', '/boas-vindas?next=%2Ftv'],
     ['below the first-access name page', '/boas-vindas/x'],
+    ['below the sign-in page', '/entrar/outra'],
+    ['below the sign-in QR page', '/entrar/qr/x'],
     ['too long', '/' + 'a'.repeat(600)],
   ])('rejects %s', (_label, candidate) => {
     expect(safeNextUrl(candidate, ORIGIN)).toBeNull();

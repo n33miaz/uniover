@@ -10,6 +10,12 @@ function startsLikeAuthority(path: string): boolean {
 const ENTRY_PATHS = ['/entrar', '/boas-vindas'];
 
 /**
+ * A exceção: a tela em que o celular confirma a entrada de um computador pelo QR mora sob `/entrar`, mas exige sessão. Quem
+ * a abre sem ter entrado passa pelo login e precisa voltar a ela (com o `?codigo=`), senão perderia o QR.
+ */
+const QR_APPROVE_PATH = '/entrar/qr';
+
+/**
  * Valida o caminho de retorno (`?next=`) do login e da pergunta do nome. Só passa caminho relativo da própria
  * origem; qualquer coisa que o navegador pudesse resolver para outro destino (`//host`, `/\host`, esquema,
  * codificação disfarçada) é rejeitada, e o retorno nunca leva a uma das telas de entrada.
@@ -36,6 +42,7 @@ export function safeNextUrl(candidate: unknown, origin: string): string | null {
   }
   if (resolved.origin !== new URL(origin).origin) return null;
   if (
+    resolved.pathname !== QR_APPROVE_PATH &&
     ENTRY_PATHS.some(
       (path) => resolved.pathname === path || resolved.pathname.startsWith(path + '/'),
     )

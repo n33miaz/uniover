@@ -48,6 +48,12 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.permissions-changed:Permissões alteradas`;
     case 'profile_updated':
       return $localize`:@@settings.audit.action.profile-updated:Perfil atualizado`;
+    case 'qr_login_approved':
+      return $localize`:@@settings.audit.action.qr-login-approved:Confirmou a entrada de um computador`;
+    case 'qr_login_denied':
+      return $localize`:@@settings.audit.action.qr-login-denied:Recusou a entrada de um computador`;
+    case 'qr_login_succeeded':
+      return $localize`:@@settings.audit.action.qr-login-succeeded:Computador entrou pelo QR`;
     case 'audit_exported':
       return $localize`:@@settings.audit.action.audit-exported:Auditoria exportada`;
     // Aparelhos

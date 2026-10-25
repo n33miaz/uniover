@@ -9,7 +9,7 @@ import {
   networkProblem,
   problemOf,
 } from './api-problem';
-import { AuthApi, MeResponse } from './auth-api';
+import { AuthApi, MeResponse, TokenResponse } from './auth-api';
 import { safeNextUrl } from './next-url';
 import { StepUpService } from './step-up/step-up.service';
 
@@ -137,16 +137,19 @@ export class AuthService {
   }
 
   async login(email: string, password: string): Promise<void> {
-    const tokens = await this.api.login(email, password);
-    this.session.setToken(tokens.accessToken, tokens.expiresIn);
-    this.scheduleRenewal(tokens.expiresIn);
-    this.stopPendingRetry();
-    await this.loadUser(tokens.accessToken);
+    await this.signInWithTokens(await this.api.login(email, password));
   }
 
   /** Aceita o convite do dono e já abre a sessão do convidado (mesmo caminho do login depois da resposta). */
   async acceptInvite(token: string, email: string, password: string): Promise<void> {
-    const tokens = await this.api.acceptInvite(token, email, password);
+    await this.signInWithTokens(await this.api.acceptInvite(token, email, password));
+  }
+
+  /**
+   * Abre a sessão com os tokens de uma entrada que acabou de dar certo (senha, convite ou QR confirmado no celular): o
+   * token de acesso fica em memória, a renovação é agendada e a conta é lida. O cookie de refresh já veio na resposta.
+   */
+  async signInWithTokens(tokens: TokenResponse): Promise<void> {
     this.session.setToken(tokens.accessToken, tokens.expiresIn);
     this.scheduleRenewal(tokens.expiresIn);
     this.stopPendingRetry();
