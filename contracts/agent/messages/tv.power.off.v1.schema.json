@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/tv.power.off.v1.schema.json",
+  "title": "tv.power.off.v1",
+  "description": "API para agente: desliga a TV somente depois de ler que ela está ligada e nunca a liga. Só é enviada a agente que declara a capacidade tv.power.off.v1. O resultado é command.result.v1: ok=true significa off; ok=false usa em error.code um destes: already_off, uncertain, offline ou failed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "type", "source", "target", "ts", "correlationId", "body"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+    "type": { "const": "tv.power.off.v1" },
+    "source": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "target": { "$ref": "../envelope.schema.json#/$defs/endpoint" },
+    "ts": { "$ref": "../envelope.schema.json#/$defs/timestamp" },
+    "correlationId": { "oneOf": [{ "$ref": "../envelope.schema.json#/$defs/uuid" }, { "type": "null" }] },
+    "body": { "type": "object", "additionalProperties": false, "maxProperties": 0 }
+  }
+}
