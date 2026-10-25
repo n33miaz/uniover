@@ -56,6 +56,10 @@ internal static class IdentityAuditNormalizer
             case AuditEvents.PasskeyRegistered:
             case AuditEvents.PasskeyRenamed:
             case AuditEvents.PasskeyRemoved:
+            case AuditEvents.QrLoginApproved:
+            case AuditEvents.QrLoginDenied:
+            case AuditEvents.QrLoginSucceeded:
+                // O id do convite, da passkey ou do pedido de entrada pelo QR (o mesmo nos três eventos do QR) é o alvo.
                 if (IsId(entry.Detail))
                 {
                     (target, detail) = (entry.Detail, null);

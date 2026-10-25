@@ -28,6 +28,8 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<UserGrant> UserGrants => Set<UserGrant>();
 
+    public DbSet<QrLoginRequest> QrLoginRequests => Set<QrLoginRequest>();
+
     /// <summary>
     /// A lista do catálogo como texto SQL (<c>'module:tv', 'tv:control', ...</c>) para as restrições do banco. Só
     /// constantes do código entram aqui (nenhum dado de usuário). Quando o catálogo muda, o modelo muda e o EF exige uma
@@ -149,6 +151,28 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             e.HasIndex(x => x.CreatedBy);
 
             // Sem FK de propósito: quem criou e quem aceitou são contas, e a trilha do convite sobrevive à exclusão manual delas.
+        });
+
+        modelBuilder.Entity<QrLoginRequest>(e =>
+        {
+            e.ToTable("qr_login_requests");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+
+            // Só hashes: o código do QR e o segredo de consulta nunca ficam legíveis no banco.
+            e.Property(x => x.CodeHash).HasColumnType("bytea").IsRequired();
+            e.HasIndex(x => x.CodeHash).IsUnique();
+            e.Property(x => x.PollSecretHash).HasColumnType("bytea").IsRequired();
+            e.HasIndex(x => x.PollSecretHash).IsUnique();
+            e.Property(x => x.RequesterIp).HasMaxLength(AuditText.IpMax);
+            e.Property(x => x.RequesterUserAgent).HasMaxLength(AuditText.UserAgentMax);
+            e.Property(x => x.ApproverIp).HasMaxLength(AuditText.IpMax);
+            e.Property(x => x.ApproverUserAgent).HasMaxLength(AuditText.UserAgentMax);
+
+            // A limpeza oportunista e o teto de pedidos abertos filtram por vencimento.
+            e.HasIndex(x => x.ExpiresAt);
+
+            // Sem FK de propósito: `approved_by` é só o id de quem confirmou, e a trilha sobrevive à exclusão manual da conta.
         });
 
         modelBuilder.Entity<UserGrant>(e =>

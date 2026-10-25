@@ -175,6 +175,44 @@ internal static class IdentityProblems
             ],
         });
 
+    public const string QrInvalidType = "qr-invalid";
+    public const string QrReauthRequiredType = "qr-reauth-required";
+
+    /// <summary>
+    /// QR desconhecido, vencido, já decidido ou já usado: a mesma resposta para todos, sem dizer qual (quem tem só um
+    /// palpite não aprende nada).
+    /// </summary>
+    public static IResult QrInvalid() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status410Gone,
+            title: "Este QR não vale mais. Peça um novo na tela do computador.",
+            type: ProblemDetailsExtensions.TypeBase + QrInvalidType);
+
+    /// <summary>
+    /// Falta a senha: a sessão já não é recente e a conta não tem passkey. 403 com tipo próprio, e não 401, pelo mesmo motivo da
+    /// senha errada (o app trataria como sessão vencida).
+    /// </summary>
+    public static IResult QrReauthRequired() =>
+        Results.Problem(
+            statusCode: StatusCodes.Status403Forbidden,
+            title: "Digite a sua senha para confirmar a entrada.",
+            type: ProblemDetailsExtensions.TypeBase + QrReauthRequiredType);
+
+    /// <summary>
+    /// O mesmo 403 de <c>step-up-required</c> que as rotas protegidas por política devolvem (tipo, <c>code</c> e <c>action</c>),
+    /// para o app abrir o fluxo da passkey e repetir o pedido sem tratar este caso à parte.
+    /// </summary>
+    public static IResult StepUpRequired(string action) =>
+        Results.Problem(
+            statusCode: StatusCodes.Status403Forbidden,
+            title: "Esta ação precisa da confirmação com a passkey.",
+            type: ProblemDetailsExtensions.TypeBase + StepUp.RequiredProblemType,
+            extensions: new Dictionary<string, object?>
+            {
+                ["code"] = StepUp.RequiredCode,
+                ["action"] = action,
+            });
+
     public static IResult Conflict() =>
         Results.Problem(
             statusCode: StatusCodes.Status409Conflict,

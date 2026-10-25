@@ -198,6 +198,83 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                     b.ToTable("passkeys", "identity");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.QrLoginRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ApprovedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("approved_at");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("approved_by");
+
+                    b.Property<string>("ApproverIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("approver_ip");
+
+                    b.Property<string>("ApproverUserAgent")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("approver_user_agent");
+
+                    b.Property<byte[]>("CodeHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("code_hash");
+
+                    b.Property<DateTimeOffset?>("ConsumedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consumed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeniedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("denied_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<byte[]>("PollSecretHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("poll_secret_hash");
+
+                    b.Property<string>("RequesterIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("requester_ip");
+
+                    b.Property<string>("RequesterUserAgent")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("requester_user_agent");
+
+                    b.HasKey("Id")
+                        .HasName("pk_qr_login_requests");
+
+                    b.HasIndex("CodeHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_qr_login_requests_code_hash");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_qr_login_requests_expires_at");
+
+                    b.HasIndex("PollSecretHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_qr_login_requests_poll_secret_hash");
+
+                    b.ToTable("qr_login_requests", "identity");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")

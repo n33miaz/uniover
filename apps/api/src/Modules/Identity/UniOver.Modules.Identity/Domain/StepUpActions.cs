@@ -14,6 +14,9 @@ public static class StepUpActions
     /// <summary>Mudar as permissões de um convidado: concede (ou amplia) acesso, então pede a passkey.</summary>
     public const string PermissionsChange = "identity.permissions-change";
 
+    /// <summary>Confirmar, no celular, a entrada de um computador pelo QR: dá uma sessão inteira a quem estiver na tela, então pede a passkey.</summary>
+    public const string QrLoginApprove = "identity.qr-login-approve";
+
     /// <summary>Reservada: o endpoint de trocar a senha ainda não existe, mas o nome já fica separado.</summary>
     public const string PasswordChange = "identity.password-change";
 }

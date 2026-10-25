@@ -21,6 +21,7 @@ using UniOver.Modules.Identity.Features.ListGuests;
 using UniOver.Modules.Identity.Features.ListPasskeys;
 using UniOver.Modules.Identity.Features.Login;
 using UniOver.Modules.Identity.Features.Logout;
+using UniOver.Modules.Identity.Features.QrLogin;
 using UniOver.Modules.Identity.Features.Refresh;
 using UniOver.Modules.Identity.Features.RemovePasskey;
 using UniOver.Modules.Identity.Features.RevokeGuest;
@@ -72,6 +73,9 @@ public static class IdentityModule
         services.AddScoped<LoginHandler>();
         services.AddScoped<RefreshHandler>();
         services.AddScoped<LogoutHandler>();
+        services.AddScoped<StartQrLoginHandler>();
+        services.AddScoped<PollQrLoginHandler>();
+        services.AddScoped<QrLoginDecisionHandler>();
         services.AddScoped<StreamTicketHandler>();
         services.AddScoped<GetMeHandler>();
         services.AddScoped<CreateGuestInviteHandler>();
@@ -118,6 +122,9 @@ public static class IdentityModule
         group.MapLogin();
         group.MapRefresh();
         group.MapLogout();
+        group.MapStartQrLogin();
+        group.MapPollQrLogin();
+        group.MapQrLoginDecisions();
         group.MapStreamTicket();
         group.MapGetMe();
         group.MapUpdateProfile();
