@@ -12,6 +12,15 @@ from uniover_agent.core.envelopes import INVALID_MESSAGE, EnvelopeFactory
 from uniover_agent.core.handle_command import HandleCommand, Handler
 from uniover_agent.core.pair_agent import PairAgent, PairedAgent
 from uniover_agent.core.process_message import ProcessMessage
+from uniover_agent.core.redaction import redact, redact_line
+from uniover_agent.core.remote_care import (
+    LOGS_CAPABILITY,
+    LOGS_REQUEST_TYPE,
+    MAINTENANCE_CAPABILITY,
+    MAINTENANCE_TYPE,
+    agent_logs_handler,
+    agent_maintenance_handler,
+)
 from uniover_agent.core.tv import (
     CLEANUP_FAILED,
     CLEANUP_IN_PROGRESS,
@@ -49,12 +58,17 @@ from uniover_agent.core.tv import (
     tv_wake_handler,
     unsupported_handler,
 )
+from uniover_agent.core.update_report import UpdateStatusWatcher, update_body
 
 __all__ = [
     "CLEANUP_FAILED",
     "CLEANUP_IN_PROGRESS",
     "DEFAULT_LINK_SCHEMES",
     "INVALID_MESSAGE",
+    "LOGS_CAPABILITY",
+    "LOGS_REQUEST_TYPE",
+    "MAINTENANCE_CAPABILITY",
+    "MAINTENANCE_TYPE",
     "REVOKED_MESSAGE",
     "TV_NOT_PAIRED",
     "TV_UNREACHABLE",
@@ -96,8 +110,13 @@ __all__ = [
     "TvSessionManager",
     "TvState",
     "TvStatePublisher",
+    "UpdateStatusWatcher",
+    "agent_logs_handler",
+    "agent_maintenance_handler",
     "describe_apps",
     "is_protected",
+    "redact",
+    "redact_line",
     "tv_app_launch_handler",
     "tv_apps_refresh_handler",
     "tv_cleanup_handler",
@@ -105,4 +124,5 @@ __all__ = [
     "tv_text_handler",
     "tv_wake_handler",
     "unsupported_handler",
+    "update_body",
 ]

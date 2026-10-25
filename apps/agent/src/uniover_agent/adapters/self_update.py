@@ -23,7 +23,7 @@ import tempfile
 import time
 import zipfile
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
@@ -343,6 +343,11 @@ def run_uv_check(source: Path) -> None:
 class UpdateResult:
     updated: bool
     message: str
+    # Para o estado que a tela do dono mostra (`update-status.json`); `None` = nada a registrar.
+    # Fora da comparação: quem compara resultados olha só `updated` e `message`.
+    outcome: str | None = field(default=None, compare=False)
+    latest: str | None = field(default=None, compare=False)
+    blocked: str | None = field(default=None, compare=False)
 
 
 def self_update(  # noqa: PLR0913 - dependências injetadas deixam a atualização testável sem rede
@@ -358,12 +363,21 @@ def self_update(  # noqa: PLR0913 - dependências injetadas deixam a atualizaç�
     rede nem de disco: devolve o motivo em `message`."""
     if not source.is_dir():
         return UpdateResult(False, "agente não instalado pelo instalador; nada a atualizar")
+    sha: str | None = None
     try:
         sha = fetch_latest()
         if read_version(source) == sha:
-            return UpdateResult(False, "o agente já está na versão mais recente")
+            return UpdateResult(
+                False, "o agente já está na versão mais recente", "up_to_date", latest=sha
+            )
         if sha in blocked_versions(source):
-            return UpdateResult(False, "a versão nova caiu repetidamente; aguardando outro commit")
+            return UpdateResult(
+                False,
+                "a versão nova caiu repetidamente; aguardando outro commit",
+                "blocked",
+                latest=sha,
+                blocked=sha,
+            )
         workspace = Path(tempfile.mkdtemp(prefix="uniover-update-", dir=source.parent))
         try:
             archive = workspace / "main.zip"
@@ -387,6 +401,6 @@ def self_update(  # noqa: PLR0913 - dependências injetadas deixam a atualizaç�
             shutil.rmtree(workspace, ignore_errors=True)
     except (SelfUpdateError, OSError) as exc:
         _log.warning("auto-atualização adiada: %s", exc)
-        return UpdateResult(False, f"não atualizei agora: {exc}")
+        return UpdateResult(False, f"não atualizei agora: {exc}", "failed", latest=sha)
     _log.info("agente atualizado")
-    return UpdateResult(True, "agente atualizado")
+    return UpdateResult(True, "agente atualizado", "updated", latest=sha)
