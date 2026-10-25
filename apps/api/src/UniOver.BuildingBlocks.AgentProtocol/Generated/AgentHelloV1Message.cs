@@ -123,7 +123,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentLogsV1, AgentMaintenanceV1, TransportKeepaliveV1, TvAdb, TvKindAndroid, TvKindSamsung, TvRemote };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentLogsV1, AgentMaintenanceV1, TransportKeepaliveV1, TvAdb, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvRemote };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -197,6 +197,48 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.TransportKeepaliveV1;
                 case "tv.adb":
                     return AgentHelloV1BodyCapabilitiesItem.TvAdb;
+                case "tv.key.ASPECT":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyAspect;
+                case "tv.key.BLUE":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyBlue;
+                case "tv.key.CHANNEL_LIST":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyChannelList;
+                case "tv.key.EXIT":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyExit;
+                case "tv.key.E_MANUAL":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyEManual;
+                case "tv.key.FAST_FORWARD":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyFastForward;
+                case "tv.key.GREEN":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyGreen;
+                case "tv.key.GUIDE":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyGuide;
+                case "tv.key.INFO":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyInfo;
+                case "tv.key.INPUT":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyInput;
+                case "tv.key.PAUSE":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyPause;
+                case "tv.key.PLAY":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyPlay;
+                case "tv.key.PREVIOUS_CHANNEL":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyPreviousChannel;
+                case "tv.key.RED":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyRed;
+                case "tv.key.REWIND":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyRewind;
+                case "tv.key.SLEEP":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeySleep;
+                case "tv.key.STOP":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyStop;
+                case "tv.key.SUBTITLE":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeySubtitle;
+                case "tv.key.TOOLS":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyTools;
+                case "tv.key.YELLOW":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyYellow;
+                case "tv.key.v3":
+                    return AgentHelloV1BodyCapabilitiesItem.TvKeyV3;
                 case "tv.kind.android":
                     return AgentHelloV1BodyCapabilitiesItem.TvKindAndroid;
                 case "tv.kind.samsung":
@@ -222,6 +264,69 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvAdb:
                     JsonSerializer.Serialize(writer, "tv.adb", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyAspect:
+                    JsonSerializer.Serialize(writer, "tv.key.ASPECT", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyBlue:
+                    JsonSerializer.Serialize(writer, "tv.key.BLUE", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyChannelList:
+                    JsonSerializer.Serialize(writer, "tv.key.CHANNEL_LIST", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyExit:
+                    JsonSerializer.Serialize(writer, "tv.key.EXIT", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyEManual:
+                    JsonSerializer.Serialize(writer, "tv.key.E_MANUAL", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyFastForward:
+                    JsonSerializer.Serialize(writer, "tv.key.FAST_FORWARD", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyGreen:
+                    JsonSerializer.Serialize(writer, "tv.key.GREEN", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyGuide:
+                    JsonSerializer.Serialize(writer, "tv.key.GUIDE", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyInfo:
+                    JsonSerializer.Serialize(writer, "tv.key.INFO", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyInput:
+                    JsonSerializer.Serialize(writer, "tv.key.INPUT", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyPause:
+                    JsonSerializer.Serialize(writer, "tv.key.PAUSE", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyPlay:
+                    JsonSerializer.Serialize(writer, "tv.key.PLAY", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyPreviousChannel:
+                    JsonSerializer.Serialize(writer, "tv.key.PREVIOUS_CHANNEL", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyRed:
+                    JsonSerializer.Serialize(writer, "tv.key.RED", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyRewind:
+                    JsonSerializer.Serialize(writer, "tv.key.REWIND", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeySleep:
+                    JsonSerializer.Serialize(writer, "tv.key.SLEEP", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyStop:
+                    JsonSerializer.Serialize(writer, "tv.key.STOP", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeySubtitle:
+                    JsonSerializer.Serialize(writer, "tv.key.SUBTITLE", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyTools:
+                    JsonSerializer.Serialize(writer, "tv.key.TOOLS", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyYellow:
+                    JsonSerializer.Serialize(writer, "tv.key.YELLOW", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvKeyV3:
+                    JsonSerializer.Serialize(writer, "tv.key.v3", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvKindAndroid:
                     JsonSerializer.Serialize(writer, "tv.kind.android", options);

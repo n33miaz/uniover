@@ -25,6 +25,7 @@ existe, a API não envia o batimento novo para preservar a compatibilidade duran
 |---|---|---|
 | `tv.key.v1` | API para agente | `key` (14 teclas). Segue válido e inalterado. |
 | `tv.key.v2` | API para agente | `key` (as 14 do `v1` mais `MENU`, `NUM_0` a `NUM_9`, `MEDIA_NEXT`, `MEDIA_PREVIOUS`, `INPUT`) e `direction` opcional (`SHORT`, padrão, `START_LONG`, `END_LONG`). |
+| `tv.key.v3` | API para agente | `key` (as do `v2` mais `INFO`, `GUIDE`, `TOOLS`, `CHANNEL_LIST`, `PREVIOUS_CHANNEL`, `EXIT`, `PLAY`, `PAUSE`, `STOP`, `REWIND`, `FAST_FORWARD`, `RED`, `GREEN`, `YELLOW`, `BLUE`, `SUBTITLE`, `ASPECT`, `SLEEP`, `E_MANUAL`) e `direction` opcional. A API só a usa para as teclas que o `v2` não tem, e o agente que a entende declara a capacidade `tv.key.v3`. |
 | `tv.wake.v1` | API para agente | `{}`: o app está aberto, aqueça a sessão. |
 | `tv.app.launch.v1` | API para agente | `target`: `{ kind: "package" | "link", value }`. Pacote: nome Android com pontos (até 255); link: `esquema://...` sem espaços nem controles (até 2048). |
 | `tv.apps.refresh.v1` | API para agente | `{}`: pede a lista de apps. |
@@ -52,6 +53,9 @@ da TV que ele controla) e `update` (o estado da auto-atualização, abaixo), tod
 Como na limpeza da TV, `agent.logs.v1` sai **antes** do `command.result.v1` do mesmo comando. `agent.maintenance.v1` só é
 respondido com `command.result.v1`, assim que o pedido foi entregue ao supervisor do Windows (o mesmo mecanismo do menu da
 bandeja). O agente reinicia por conta do supervisor, nunca por um código de saída do próprio processo.
+
+As teclas opcionais que a TV de fato tem são declaradas no `agent.hello.v1` como `tv.key.<TECLA>` (por exemplo `tv.key.INPUT`,
+`tv.key.GUIDE`): é essa lista que o app usa para oferecer os botões extras, e uma TV sem a capacidade não os mostra.
 
 O transporte recusa mensagens acima de 64 KB. Por isso o agente pode mandar a mesma lista de `tv.apps.v2` mais de uma vez, cada mensagem
 levando só parte dos ícones.

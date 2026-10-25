@@ -24,6 +24,7 @@ from .tv_cleanup_result_v1 import TvCleanupResultV1Message
 from .tv_cleanup_v1 import TvCleanupV1Message
 from .tv_key_v1 import TvKeyV1Message
 from .tv_key_v2 import TvKeyV2Message
+from .tv_key_v3 import TvKeyV3Message
 from .tv_state_v1 import TvStateV1Message
 from .tv_text_v1 import TvTextV1Message
 from .tv_wake_v1 import TvWakeV1Message
@@ -48,6 +49,7 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "tv.cleanup.v1": TvCleanupV1Message,
     "tv.key.v1": TvKeyV1Message,
     "tv.key.v2": TvKeyV2Message,
+    "tv.key.v3": TvKeyV3Message,
     "tv.state.v1": TvStateV1Message,
     "tv.text.v1": TvTextV1Message,
     "tv.wake.v1": TvWakeV1Message,
