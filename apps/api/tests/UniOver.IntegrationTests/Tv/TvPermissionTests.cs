@@ -128,6 +128,7 @@ public sealed partial class TvPermissionTests(PostgresFixture postgres)
     public async Task EachTvRoute_IsOpenExactlyToWhoHoldsItsPermission_AndEveryRefusalLooksTheSame()
     {
         await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
         var mistakes = new List<string>();
         var refusals = new HashSet<string>();
         var ip = 10;
@@ -160,6 +161,7 @@ public sealed partial class TvPermissionTests(PostgresFixture postgres)
     public async Task TheOwner_PassesEveryTvRoute_WithoutAnyGrantRow()
     {
         await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
         var ticket = await app.StreamTicketAsync();
 
         foreach (var route in TvPermissionMap.Routes)
@@ -365,6 +367,7 @@ public sealed partial class TvPermissionTests(PostgresFixture postgres)
     public async Task ARevokedGuest_IsRefusedOnEveryTvRoute_AtOnce_AndTheOwnerIsNot()
     {
         await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
         var guest = await app.NewGuestAsync("Revogada", null, 18);
         var token = guest.Login.AccessToken;
         var ticket = await app.StreamTicketAsync(token);
@@ -390,6 +393,7 @@ public sealed partial class TvPermissionTests(PostgresFixture postgres)
     public async Task PermissionClaimsForgedIntoAValidJwt_AreIgnoredOnTheTvRoutes()
     {
         await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
         var guest = await app.NewGuestAsync("So ver", ModuleOnly, 19);
         var now = app.Time.GetUtcNow();
         var forged = IdentityApp.CraftToken(
@@ -417,6 +421,7 @@ public sealed partial class TvPermissionTests(PostgresFixture postgres)
     public async Task AnActionGrantWithoutTheModule_OpensNothingOnTheTv_EvenIfTheTableWasEditedByHand()
     {
         await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
         var guest = await app.NewGuestAsync("Controle", WithControl, 20);
         var token = guest.Login.AccessToken;
         (await KeyStatusAsync(app, token)).Should().NotBe(HttpStatusCode.Forbidden);
@@ -435,6 +440,7 @@ public sealed partial class TvPermissionTests(PostgresFixture postgres)
     public async Task AChangeMadeThroughTheApi_TakesEffectAtOnce_WithTheSameJwt_InBothDirections()
     {
         await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
         using var authenticator = new VirtualAuthenticator();
         await app.RegisterOwnerPasskeyAsync(authenticator);
         var guest = await app.NewGuestAsync("Controle", WithControl, 21);
@@ -458,6 +464,7 @@ public sealed partial class TvPermissionTests(PostgresFixture postgres)
     {
         // Simula outra instância: o banco muda sem passar pela invalidação desta.
         await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
         var guest = await app.NewGuestAsync("Controle", WithControl, 22);
         var token = guest.Login.AccessToken;
         (await KeyStatusAsync(app, token)).Should().NotBe(HttpStatusCode.Forbidden);
@@ -483,6 +490,7 @@ public sealed partial class TvPermissionTests(PostgresFixture postgres)
     public async Task ATrainingOnlyGuest_ReachesNothingOfTheTv_AndTheTvOnlyGuestNothingOfTraining()
     {
         await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
         var training = await app.NewGuestAsync("Raphael", TrainingOnly, 23);
         var tv = await app.NewGuestAsync("So TV", ModuleOnly, 24);
 

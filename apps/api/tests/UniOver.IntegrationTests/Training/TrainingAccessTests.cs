@@ -129,7 +129,7 @@ public sealed class TrainingAccessTests(PostgresFixture postgres)
 
         var forbidden = new List<(string Method, string Url, object? Body)>();
         forbidden.AddRange(TvPermissionMap.Routes.Where(r => !r.IsStream).Select(r => (r.Method, r.Url(), r.Body)));
-        forbidden.AddRange(TvPermissionMap.AdminRoutes.Select(r => (r.Method, r.Pattern, r.Body)));
+        forbidden.AddRange(TvPermissionMap.AdminRoutes.Select(r => (r.Method, r.Url(), r.Body)));
         forbidden.AddRange(
         [
             ("GET", "/api/v1/identity/guests", null),
