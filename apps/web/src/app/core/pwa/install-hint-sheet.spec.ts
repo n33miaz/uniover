@@ -15,6 +15,19 @@ const UA = {
 
 const stored = () => JSON.parse(localStorage.getItem(INSTALL_HINT_KEY) ?? 'null');
 
+function clickBackdrop(dialog: HTMLDialogElement): void {
+  Object.defineProperty(dialog, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ left: 10, top: 10, right: 300, bottom: 500 }),
+  });
+  dialog.dispatchEvent(
+    Object.assign(new MouseEvent('pointerdown', { button: 0, clientX: 0, clientY: 0 }), {
+      isPrimary: true,
+    }),
+  );
+  dialog.dispatchEvent(new MouseEvent('click', { clientX: 0, clientY: 0 }));
+}
+
 function holdExitAnimation(dialog: HTMLDialogElement): () => void {
   let finish!: () => void;
   const finished = new Promise<void>((resolve) => (finish = resolve));
@@ -347,6 +360,22 @@ describe('InstallHintSheet', () => {
       expect(cancel.defaultPrevented).toBe(true);
       expect(closed()).toBe(1);
       expect(stored().dismissedAt).toEqual(expect.any(Number));
+    });
+
+    it('o toque no fundo vale como "Agora não" e devolve o foco a quem abriu a folha', async () => {
+      const opener = document.createElement('button');
+      document.body.append(opener);
+      opener.focus();
+      const { dialog, fixture, closed } = await render({ userAgent: UA.safari });
+
+      clickBackdrop(dialog);
+      await fixture.whenStable();
+
+      expect(dialog.open).toBe(false);
+      expect(closed()).toBe(1);
+      expect(stored().dismissedAt).toEqual(expect.any(Number));
+      expect(document.activeElement).toBe(opener);
+      opener.remove();
     });
 
     it('aberta pela pessoa (manual): só "Fechar", e fechar não adia nem apaga a dica automática', async () => {

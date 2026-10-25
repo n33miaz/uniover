@@ -3,6 +3,19 @@ import { INSTALL_ENV, InstallHintService } from '../../../core/pwa/install-hint.
 import { TvPrefs } from '../data/tv-prefs';
 import { CustomizeSheet } from './customize-sheet';
 
+function clickBackdrop(dialog: HTMLDialogElement): void {
+  Object.defineProperty(dialog, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ left: 10, top: 10, right: 300, bottom: 500 }),
+  });
+  dialog.dispatchEvent(
+    Object.assign(new MouseEvent('pointerdown', { button: 0, clientX: 0, clientY: 0 }), {
+      isPrimary: true,
+    }),
+  );
+  dialog.dispatchEvent(new MouseEvent('click', { clientX: 0, clientY: 0 }));
+}
+
 describe('CustomizeSheet', () => {
   let fixture: ReturnType<typeof TestBed.createComponent<CustomizeSheet>>;
   let root: HTMLElement;
@@ -255,6 +268,26 @@ describe('CustomizeSheet', () => {
       root.querySelector('dialog')!.dispatchEvent(event);
       expect(event.defaultPrevented).toBe(true);
       expect(closed).toHaveBeenCalledTimes(1);
+    });
+
+    it('a touch that begins and ends on the backdrop closes it the same way', () => {
+      clickBackdrop(root.querySelector('dialog')!);
+      expect(closed).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the dialog before notifying the page and returns focus to the opener', async () => {
+      const opener = document.createElement('button');
+      document.body.append(opener);
+      opener.focus();
+      await open();
+      const dialog = root.querySelector('dialog')!;
+      closed.mockImplementation(() => expect(dialog.open).toBe(false));
+
+      button('Concluir').click();
+
+      expect(closed).toHaveBeenCalledTimes(1);
+      expect(document.activeElement).toBe(opener);
+      opener.remove();
     });
   });
 

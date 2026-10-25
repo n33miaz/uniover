@@ -137,6 +137,25 @@ describe('StepUpService', () => {
     await expect(result).resolves.toBe(false);
   });
 
+  it('a touch that begins and ends on the backdrop also cancels the confirmation', async () => {
+    const result = open();
+    await vi.waitFor(() => expect(dialog()?.querySelector('dialog')).toBeTruthy());
+    const sheet = dialog()!.querySelector<HTMLDialogElement>('dialog')!;
+    await vi.waitFor(() => expect(sheet.open).toBe(true));
+    Object.defineProperty(sheet, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ left: 10, top: 10, right: 300, bottom: 500 }),
+    });
+    sheet.dispatchEvent(
+      Object.assign(new MouseEvent('pointerdown', { button: 0, clientX: 0, clientY: 0 }), {
+        isPrimary: true,
+      }),
+    );
+    sheet.dispatchEvent(new MouseEvent('click', { clientX: 0, clientY: 0 }));
+
+    await expect(result).resolves.toBe(false);
+  });
+
   it('without WebAuthn shows a clear message, offers only Cancelar and never starts', async () => {
     delete (window as unknown as Record<string, unknown>)['PublicKeyCredential'];
     const result = service().confirm('identity.passkey-remove');
