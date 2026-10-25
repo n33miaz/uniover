@@ -152,6 +152,7 @@ public sealed class CleanupTests(PostgresFixture postgres)
     public async Task Cleanup_WithTheAgentOffline_Returns503_AndIsAudited()
     {
         await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
 
         using var response = await app.PostAsync("/api/v1/tv/cleanup");
 
@@ -315,6 +316,7 @@ public sealed class CleanupTests(PostgresFixture postgres)
     public async Task Cleanup_PastTheCommandsLimit_Returns429WithRetryAfter()
     {
         await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { CommandsPermitted = 2 });
+        app.PassReconnectGrace();
 
         for (var i = 0; i < 2; i++)
         {

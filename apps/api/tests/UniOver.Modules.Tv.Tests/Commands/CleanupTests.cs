@@ -9,6 +9,7 @@ using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Cleanup;
 using UniOver.Modules.Tv.Features.Commands;
 using UniOver.Modules.Tv.Ports;
+using UniOver.Modules.Tv.Tests.Support;
 
 namespace UniOver.Modules.Tv.Tests.Commands;
 
@@ -87,7 +88,7 @@ public class CleanupTests
         var reports = new InMemoryTvCleanupReports(TimeProvider.System);
         ITvCommandSender sender = agentReports ? new ReportingSender(inner, reports) : inner;
         var options = Options.Create(new TvModuleOptions { AgentId = "pc-casa", CleanupTimeoutSeconds = cleanupTimeoutSeconds });
-        var runner = new TvCommandRunner(options, new FixedAgentResolver("pc-casa"), sender, new InMemoryTvStateStore(), audit, new NoStream(), TimeProvider.System, NullLogger<TvCommandRunner>.Instance);
+        var runner = new TvCommandRunner(options, new FixedAgentResolver("pc-casa"), new FakePresence(), sender, new InMemoryTvStateStore(), audit, new NoStream(), TimeProvider.System, NullLogger<TvCommandRunner>.Instance);
         return (new CleanupHandler(runner, reports, options), inner, audit, reports);
     }
 

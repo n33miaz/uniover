@@ -510,6 +510,12 @@ internal sealed class TvApp : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Deixa o agente "fora há muito tempo": o relógio passa da janela de reconexão do gateway, e daí em diante o comando
+    /// falha na hora com 503 em vez de esperar a sessão voltar.
+    /// </summary>
+    public void PassReconnectGrace() => Time.Advance(Presence.ReconnectGrace + TimeSpan.FromSeconds(1));
+
     /// <summary>Anda o relógio enquanto a tarefa não termina (o prazo de espera do agente corre no relógio injetado).</summary>
     public async Task<T> AdvanceWhilePendingAsync<T>(Task<T> task)
     {

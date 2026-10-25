@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Adapters;
@@ -8,6 +9,12 @@ using UniOver.Modules.Devices.Features.Presence;
 using UniOver.Modules.Devices.Ports;
 
 namespace UniOver.Modules.Devices.Tests.Transport;
+
+internal static class TransportTestStores
+{
+    public static InMemoryPresenceStore Create() =>
+        new(TimeProvider.System, Options.Create(new DevicesTransportOptions()));
+}
 
 internal sealed class StubSession(string agentId) : IAgentSession
 {
@@ -83,9 +90,35 @@ public sealed class PresenceStoreTests
     private static readonly DateTimeOffset Now = new(2026, 10, 19, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public void OfflineSince_IsTheInstantOfTheDrop_OrNullWhileConnected()
+    {
+        var store = TransportTestStores.Create();
+        store.MarkConnected("pc-casa", Now);
+        store.OfflineSince("pc-casa").Should().BeNull();
+
+        store.MarkDisconnected("pc-casa", Now.AddSeconds(30));
+        store.OfflineSince("pc-casa").Should().Be(Now.AddSeconds(30));
+        store.Get("pc-casa")!.DisconnectedAt.Should().Be(Now.AddSeconds(30));
+
+        store.MarkConnected("pc-casa", Now.AddSeconds(32));
+        store.OfflineSince("pc-casa").Should().BeNull();
+        store.Get("pc-casa")!.DisconnectedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public void OfflineSince_OfAnAgentNeverSeen_IsWhenThePresenceStartedCounting()
+    {
+        var before = DateTimeOffset.UtcNow;
+        var store = TransportTestStores.Create();
+
+        store.OfflineSince("pc-casa").Should().BeOnOrAfter(before).And.BeOnOrBefore(DateTimeOffset.UtcNow);
+        store.ReconnectGrace.Should().Be(TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
     public void ConnectHelloAndDisconnect_FollowTheLifeOfTheAgent()
     {
-        var store = new InMemoryPresenceStore();
+        var store = TransportTestStores.Create();
 
         store.Get("pc-casa").Should().BeNull();
         store.MarkConnected("pc-casa", Now).Connected.Should().BeTrue();
@@ -97,7 +130,7 @@ public sealed class PresenceStoreTests
         info.Capabilities.Should().Equal("tv.remote");
         info.LastMessageAt.Should().Be(Now.AddSeconds(5));
 
-        store.MarkDisconnected("pc-casa")!.Connected.Should().BeFalse();
+        store.MarkDisconnected("pc-casa", Now.AddSeconds(10))!.Connected.Should().BeFalse();
         store.Get("pc-casa")!.AgentVersion.Should().Be("1.0.0", "o que se sabia do agente fica");
         store.All().Should().ContainSingle();
     }
@@ -105,7 +138,7 @@ public sealed class PresenceStoreTests
     [Fact]
     public void Hello_OfADisconnectedAgent_IsIgnored_AndANewConnectionForgetsTheOldVersion()
     {
-        var store = new InMemoryPresenceStore();
+        var store = TransportTestStores.Create();
         store.RecordHello("pc-casa", "1.0.0", [], Now).Should().BeNull();
 
         store.MarkConnected("pc-casa", Now);
@@ -124,7 +157,7 @@ public sealed class AgentConnectionsTests
 
     private static (AgentConnections Connections, InMemoryPresenceStore Presence, SseBroadcaster<PresenceUpdate> Events) Create()
     {
-        var presence = new InMemoryPresenceStore();
+        var presence = TransportTestStores.Create();
         var events = new SseBroadcaster<PresenceUpdate>(new SseStreamOptions());
         return (new AgentConnections(presence, events), presence, events);
     }
@@ -139,7 +172,7 @@ public sealed class AgentConnectionsTests
 
         connections.Attach(first, Now).Should().BeNull();
         connections.Attach(second, Now).Should().BeSameAs(first);
-        connections.Detach(first).Should().BeFalse("a antiga já não é a dona da conexão");
+        connections.Detach(first, Now).Should().BeFalse("a antiga já não é a dona da conexão");
 
         presence.Get("pc-casa")!.Connected.Should().BeTrue();
         connections.TryGet("pc-casa", out var current).Should().BeTrue();
@@ -154,7 +187,7 @@ public sealed class AgentConnectionsTests
 
         seen.Should().Equal(true, true);
 
-        connections.Detach(second).Should().BeTrue();
+        connections.Detach(second, Now).Should().BeTrue();
         presence.Get("pc-casa")!.Connected.Should().BeFalse();
     }
 

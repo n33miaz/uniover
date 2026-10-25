@@ -92,6 +92,7 @@ public sealed class CommandTests(PostgresFixture postgres)
     public async Task Command_WithTheAgentOffline_Returns503_AndIsAudited()
     {
         await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
 
         using var response = await app.PostAsync("/api/v1/tv/keys", new { key = "HOME" });
 
@@ -104,6 +105,48 @@ public sealed class CommandTests(PostgresFixture postgres)
         row.Ok.Should().BeFalse();
         row.ErrorCode.Should().Be("agent_offline");
         row.Command.Should().Be("tv.key");
+    }
+
+    [Fact]
+    public async Task Command_SentWhileTheAgentIsReconnecting_WaitsForTheSession_AndIsDelivered()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var dropped = await app.ConnectAndWaitAsync();
+        await dropped.DisposeAsync();
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(TvApp.AgentSlug)?.Connected == false, "agente caiu");
+        app.Time.Advance(TimeSpan.FromSeconds(1));
+
+        // O toque cai dentro da janela: a presença já diz desconectado, mas o comando espera o agente voltar.
+        var request = app.PostAsync("/api/v1/tv/keys", new { key = "HOME" });
+        await Task.Delay(200, Ct);
+        request.IsCompleted.Should().BeFalse("dentro da janela de reconexão o comando espera, não falha");
+
+        await using var back = await app.ConnectAsync();
+        var command = await TvApp.NextCommandAsync(back);
+        command.GetProperty("type").GetString().Should().Be("tv.key.v2");
+        await TvApp.ReplyAsync(back, command);
+        using var response = await Within(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await using var db = app.Db();
+        var row = await db.CommandAudit.SingleAsync(Ct);
+        row.Ok.Should().BeTrue();
+        row.ErrorCode.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Command_AfterTheAgentStayedGonePastTheReconnectWindow_FailsAtOnce()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var dropped = await app.ConnectAndWaitAsync();
+        await dropped.DisposeAsync();
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(TvApp.AgentSlug)?.Connected == false, "agente caiu");
+        app.PassReconnectGrace();
+
+        using var response = await Within(app.PostAsync("/api/v1/tv/keys", new { key = "HOME" }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await TvApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/agent-offline");
     }
 
     [Fact]
@@ -321,6 +364,7 @@ public sealed class CommandTests(PostgresFixture postgres)
     public async Task Wake_WithTheAgentOffline_Returns503()
     {
         await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
 
         using var response = await app.PostAsync("/api/v1/tv/wake");
 
@@ -349,6 +393,7 @@ public sealed class CommandTests(PostgresFixture postgres)
     public async Task Commands_PastTheConfiguredLimit_Return429WithRetryAfter()
     {
         await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { CommandsPermitted = 3 });
+        app.PassReconnectGrace();
 
         for (var i = 0; i < 3; i++)
         {
@@ -366,6 +411,7 @@ public sealed class CommandTests(PostgresFixture postgres)
     public async Task CommandsLimit_IsPerUser_SoTwoUsersDoNotShareABucket()
     {
         await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { CommandsPermitted = 3 });
+        app.PassReconnectGrace();
         var other = app.OtherUserToken();
 
         for (var i = 0; i < 3; i++)
@@ -392,6 +438,7 @@ public sealed class CommandTests(PostgresFixture postgres)
     public async Task RecentCommands_ListsTheLatestFirst_AndValidatesTheLimit()
     {
         await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
         foreach (var key in new[] { "HOME", "BACK", "MENU" })
         {
             (await app.PostAsync("/api/v1/tv/keys", new { key })).Dispose();
@@ -416,6 +463,7 @@ public sealed class CommandTests(PostgresFixture postgres)
     public async Task CommandAudit_IsOnlyAppendedByTheApplication_AndTheRetentionIsTheDatabaseFunction()
     {
         await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
         await app.ExecuteSqlAsync(
             "INSERT INTO tv.command_audit (id, tv_id, user_id, command, ok, occurred_at) " +
             "SELECT gen_random_uuid(), '00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'tv.key', true, now() - interval '40 days' FROM generate_series(1, 20)");

@@ -738,6 +738,8 @@ public sealed class TvConfigTests(PostgresFixture postgres)
 
         // Revogar fecha a sessão do computador; esperar o fechamento deixa o agente falso sem nada pendente ao sair.
         await Within(agent.WaitForCloseAsync());
+        await TvApp.WaitUntilAsync(() => app.Presence.Get(TvApp.AgentSlug)?.Connected == false, "agente caiu");
+        app.PassReconnectGrace();
         using var key = await app.PostAsync("/api/v1/tv/keys", new { key = "HOME" });
 
         key.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);

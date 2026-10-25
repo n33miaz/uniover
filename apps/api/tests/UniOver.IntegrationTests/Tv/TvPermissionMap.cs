@@ -32,6 +32,9 @@ internal sealed record TvAdminRoute(string Method, string Pattern, string? StepU
 {
     public HttpMethod HttpMethod => new(Method);
 
+    /// <summary>O caminho com uma TV de exemplo no lugar do parâmetro.</summary>
+    public string Url(Guid? id = null) => Pattern.Replace("{id:guid}", (id ?? Guid.NewGuid()).ToString(), StringComparison.Ordinal);
+
     public override string ToString() => $"{Method} {Pattern}";
 }
 
