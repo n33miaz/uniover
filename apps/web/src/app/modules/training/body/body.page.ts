@@ -313,7 +313,7 @@ import { BodyNoticeStore } from './notice/notice-store';
       align-items: center;
       padding: 0 var(--space-3);
       border: 1px solid var(--a-line);
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-sm);
       color: var(--a-ink);
       background: var(--a-surface);
       text-decoration: none;
@@ -326,7 +326,7 @@ import { BodyNoticeStore } from './notice/notice-store';
       padding: 3px;
       gap: 3px;
       border-radius: var(--radius-pill, 999px);
-      background: var(--a-surface2);
+      background: var(--a-surface-2);
     }
     .tab-indicator {
       position: absolute;
@@ -425,7 +425,7 @@ import { BodyNoticeStore } from './notice/notice-store';
       padding: 3px;
       gap: 3px;
       border-radius: var(--radius-pill, 999px);
-      background: var(--a-surface2);
+      background: var(--a-surface-2);
     }
     .periods button {
       flex: 1;
@@ -510,8 +510,8 @@ import { BodyNoticeStore } from './notice/notice-store';
     .notice {
       margin: 0;
       padding: var(--space-2);
-      border-radius: var(--radius-md);
-      background: var(--a-surface2);
+      border-radius: var(--radius-sm);
+      background: var(--a-surface-2);
       font-size: var(--fs-small);
     }
     .measure-list {

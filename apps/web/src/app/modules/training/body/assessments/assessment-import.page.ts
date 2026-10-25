@@ -303,7 +303,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
       gap: var(--space-2);
       padding: var(--space-3);
       border: 1px solid var(--a-line);
-      border-radius: var(--radius-md);
+      border-radius: var(--radius);
     }
     fieldset {
       min-width: 0;
@@ -372,17 +372,17 @@ const ALLOWED_IMAGE_TYPES = new Set([
     .privacy {
       padding: var(--space-2);
       border-radius: var(--radius-sm, 8px);
-      background: var(--a-surface2);
+      background: var(--a-surface-2);
     }
     .status {
       padding: var(--space-2);
-      border-radius: var(--radius-md);
-      background: var(--a-surface2);
+      border-radius: var(--radius-sm);
+      background: var(--a-surface-2);
     }
     .primary {
       min-height: var(--tap);
       border: 0;
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-sm);
       color: var(--a-on-accent, white);
       background: var(--a-accent);
       font: inherit;

@@ -354,8 +354,8 @@ import {
       display: grid;
       gap: 7px;
       padding: var(--space-3);
-      border-radius: var(--radius-md);
-      background: var(--a-surface2);
+      border-radius: var(--radius);
+      background: var(--a-surface-2);
     }
     .measurements {
       display: grid;
@@ -376,7 +376,7 @@ import {
     .kind {
       padding: 3px 8px;
       border-radius: var(--radius-pill, 999px);
-      background: var(--a-surface2);
+      background: var(--a-surface-2);
       color: var(--a-ink2);
       font-size: 0.75rem;
     }
@@ -429,7 +429,7 @@ import {
       display: grid;
       place-items: center;
       border: 0;
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-sm);
       font: inherit;
       font-weight: 650;
       text-decoration: none;
@@ -440,7 +440,7 @@ import {
     }
     .secondary {
       color: var(--a-ink);
-      background: var(--a-surface2);
+      background: var(--a-surface-2);
     }
     .danger {
       color: var(--a-danger, #a11);
@@ -448,7 +448,7 @@ import {
     }
     .status {
       padding: var(--space-2);
-      background: var(--a-surface2);
+      background: var(--a-surface-2);
     }
     .transfer-fields {
       display: grid;
@@ -469,7 +469,7 @@ import {
       min-height: var(--tap);
       padding: 8px;
       border: 1px solid var(--a-line);
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-sm);
       background: var(--a-surface);
     }
     .transfer-option input {
@@ -491,7 +491,7 @@ import {
     .transfer-status {
       margin: 0;
       padding: var(--space-2);
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-sm);
       background: var(--a-surface);
     }
     .transfer-note {
@@ -499,7 +499,7 @@ import {
       gap: 4px;
       padding: var(--space-2);
       border: 1px solid var(--a-line);
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-sm);
       background: var(--a-surface);
       overflow-wrap: anywhere;
       font-size: var(--fs-small);
@@ -520,7 +520,7 @@ import {
     .transfer-actions > * {
       min-height: var(--tap);
       border: 0;
-      border-radius: var(--radius-md);
+      border-radius: var(--radius-sm);
       font: inherit;
       font-weight: 650;
     }
