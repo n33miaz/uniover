@@ -30,12 +30,18 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
 
     private static async Task<T> Within<T>(Task<T> task) => await task.WaitAsync(FakeAgent.Patience, Ct);
 
-    /// <summary>As únicas rotas autenticadas (fora da TV) que o convidado alcança: a própria sessão.</summary>
+    /// <summary>
+    /// As únicas rotas autenticadas (fora da TV e do Treino) que o convidado alcança: a própria sessão, inclusive as três
+    /// do login por QR (o celular já conectado vê, confirma ou recusa o pedido do computador), que exigem sessão de conta ativa.
+    /// </summary>
     private static readonly string[] GuestSessionRoutes =
     [
         "/api/v1/identity/me",
         "/api/v1/identity/auth/logout",
         "/api/v1/identity/auth/stream-ticket",
+        "/api/v1/identity/auth/qr/info",
+        "/api/v1/identity/auth/qr/approve",
+        "/api/v1/identity/auth/qr/deny",
     ];
 
     /// <summary>Rotas que se autenticam por credencial própria (o agente do PC), não por papel de pessoa.</summary>
@@ -49,12 +55,19 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
     /// a permissão da rota, que as tabelas de <see cref="TvPermissionMap"/> e <see cref="TrainingPermissionMap"/> conferem e
     /// as chamadas HTTP provam. As rotas de configuração da TV (<see cref="TvPermissionMap.AdminRoutes"/>) e a importação do
     /// catálogo do Treino (<see cref="TrainingPermissionMap.AdminRoutes"/>) são só do administrador, e o convidado nunca as
-    /// alcança.
+    /// alcança. A rota de administrador é identificada por método e caminho: <c>GET /tv/tvs</c> (listar as TVs de que o
+    /// convidado é membro, com <c>module:tv</c>) divide o caminho com <c>POST /tv/tvs</c> (criar, só do administrador).
     /// </summary>
-    private static bool IsGuestRoute(string pattern) =>
-        (pattern.StartsWith("/api/v1/tv/", StringComparison.Ordinal) && !TvPermissionMap.AdminRoutes.Any(r => r.Pattern == pattern))
-        || (pattern.StartsWith("/api/v1/training/", StringComparison.Ordinal) && !TrainingPermissionMap.AdminRoutes.Any(r => r.Pattern == pattern))
+    private static bool IsGuestRoute(string method, string pattern) =>
+        (pattern.StartsWith("/api/v1/tv/", StringComparison.Ordinal) && !TvPermissionMap.AdminRoutes.Any(r => IsRoute(r.Method, r.Pattern, method, pattern)))
+        || (pattern.StartsWith("/api/v1/training/", StringComparison.Ordinal) && !TrainingPermissionMap.AdminRoutes.Any(r => IsRoute(r.Method, r.Pattern, method, pattern)))
         || GuestSessionRoutes.Contains(pattern);
+
+    private static bool IsRoute(string ruleMethod, string rulePattern, string method, string pattern) =>
+        rulePattern == pattern && string.Equals(ruleMethod, method, StringComparison.OrdinalIgnoreCase);
+
+    private static IEnumerable<string> MethodsOf(RouteEndpoint endpoint) =>
+        RouteInspector.Methods(endpoint) is { Count: > 0 } methods ? methods : [string.Empty];
 
     private static ClaimsPrincipal Principal(string? role)
     {
@@ -136,7 +149,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
                 failures.Add($"{label}: aceita um papel que não existe");
             }
 
-            var guestExpected = IsGuestRoute(pattern);
+            var guestExpected = MethodsOf(endpoint).All(method => IsGuestRoute(method, pattern));
             if (asGuest != guestExpected)
             {
                 failures.Add($"{label}: convidado {(asGuest ? "alcança" : "não alcança")} e deveria {(guestExpected ? "alcançar" : "ser barrado")}");
@@ -168,6 +181,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         var authorization = scope.ServiceProvider.GetRequiredService<IAuthorizationService>();
 
         var allowed = new List<string>();
+        var allowedCalls = new List<string>();
         foreach (var endpoint in app.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
             .Where(e => RouteInspector.Classify(e) != RouteKind.Public))
         {
@@ -176,6 +190,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
             if (roles.Count > 0 && (await authorization.AuthorizeAsync(Principal(AccountRoles.Guest), null, roles)).Succeeded)
             {
                 allowed.Add(RouteInspector.Pattern(endpoint));
+                allowedCalls.Add(RouteInspector.Describe(endpoint));
             }
         }
 
@@ -188,7 +203,12 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         // do catálogo do wger (e qualquer rota fora da tabela) não está entre as que ele alcança.
         allowed.Where(p => p.StartsWith("/api/v1/training/", StringComparison.Ordinal)).Distinct()
             .Should().BeEquivalentTo(TrainingPermissionMap.Routes.Select(r => r.Pattern).Distinct());
-        allowed.Should().NotContain(TrainingPermissionMap.AdminRoutes.Select(r => r.Pattern));
+        allowedCalls.Should().NotContain(TrainingPermissionMap.AdminRoutes.Select(r => $"{r.Method} {r.Pattern}"));
+
+        // Na TV o convidado nunca alcança a configuração nem a gestão das TVs (criar, renomear, apagar, filiar), mas lista as
+        // TVs de que é membro: o mesmo caminho /tv/tvs é dele para ler e só do administrador para escrever.
+        allowedCalls.Should().NotContain(TvPermissionMap.AdminRoutes.Select(r => $"{r.Method} {r.Pattern}"));
+        allowedCalls.Should().Contain("GET /api/v1/tv/tvs");
 
         // Renomear e reordenar atalhos entram por papel como o resto da TV: a barreira é a permissão tv:edit-shortcuts, e a
         // tabela abaixo prova que cada rota da TV (e só a TV) exige exatamente a permissão da sua linha.
