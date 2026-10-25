@@ -69,6 +69,14 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.pairing-token:Acesso do aparelho liberado`;
     case 'agent_revoked':
       return $localize`:@@settings.audit.action.agent-revoked:Aparelho revogado`;
+    case 'agent_logs_viewed':
+      return $localize`:@@settings.audit.action.agent-logs-viewed:Registro do aparelho visto`;
+    case 'agent_update_requested':
+      return $localize`:@@settings.audit.action.agent-update-requested:Atualização do aparelho pedida`;
+    case 'agent_restart_requested':
+      return $localize`:@@settings.audit.action.agent-restart-requested:Reinício do aparelho pedido`;
+    case 'agent_rollback_requested':
+      return $localize`:@@settings.audit.action.agent-rollback-requested:Volta do aparelho à versão anterior pedida`;
     // TV
     case 'tv.key':
       return $localize`:@@settings.audit.action.tv-key:Tecla enviada à TV`;
@@ -233,6 +241,10 @@ export function describeTarget(item: AuditItem): string | null {
     case 'pairing_expired':
     case 'pairing_token_issued':
     case 'agent_revoked':
+    case 'agent_logs_viewed':
+    case 'agent_update_requested':
+    case 'agent_restart_requested':
+    case 'agent_rollback_requested':
       // Nesta fonte o alvo é o nome do aparelho no cadastro (texto de gente).
       return target;
     default:

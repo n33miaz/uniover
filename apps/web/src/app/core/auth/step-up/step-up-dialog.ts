@@ -13,6 +13,8 @@ export function actionLabel(action: string | null): string {
       return $localize`:@@auth.step-up.action.guest-invite:criar um convite de convidado`;
     case 'identity.password-change':
       return $localize`:@@auth.step-up.action.password-change:trocar a senha`;
+    case 'devices.agent-maintenance':
+      return $localize`:@@auth.step-up.action.agent-maintenance:atualizar ou reiniciar um computador à distância`;
     case 'tv.bind-agent':
       return $localize`:@@auth.step-up.action.tv-bind-agent:ligar um computador à TV`;
     case 'identity.permissions-change':
