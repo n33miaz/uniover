@@ -182,6 +182,25 @@ test.describe('aparelhos', () => {
     expect(devices.agents).toHaveLength(0);
   });
 
+  test('tocar no fundo fecha a folha de pareamento e devolve o foco ao botão que a abriu', async ({
+    page,
+    browserName,
+  }) => {
+    await openDevices(page, browserName);
+    const opener = page.getByRole('button', { name: 'Parear aparelho' });
+    await opener.focus(); // o WebKit não dá foco ao botão no toque; pelo teclado há para onde voltar
+    await page.keyboard.press('Enter');
+    const sheet = page.getByRole('dialog', { name: 'Parear aparelho' });
+    await expect(sheet).toBeVisible();
+
+    await sheet.getByRole('heading', { name: 'Parear aparelho' }).click();
+    await expect(sheet).toBeVisible(); // toque dentro da folha não fecha
+    await page.mouse.click(4, 4); // fora do retângulo da folha
+    await expect(sheet).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    expect(devices.requests.some((r) => r.path === '/pairing/approve')).toBe(false);
+  });
+
   test('recusa um código sem pedir a passkey', async ({ page, browserName }) => {
     devices.openCodes.add('BCDF2345');
     await openDevices(page, browserName);

@@ -220,6 +220,25 @@ describe('PeoplePermissionsSheet', () => {
     expect(api.setPermissions).not.toHaveBeenCalled();
   });
 
+  it('cancels when a touch begins and ends on the dimmed background', async () => {
+    const { el, closed } = await render();
+    const dialog = el.querySelector<HTMLDialogElement>('dialog')!;
+    Object.defineProperty(dialog, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ left: 10, top: 10, right: 300, bottom: 500 }),
+    });
+    dialog.dispatchEvent(
+      Object.assign(new MouseEvent('pointerdown', { button: 0, clientX: 0, clientY: 0 }), {
+        isPrimary: true,
+      }),
+    );
+    dialog.dispatchEvent(new MouseEvent('click', { clientX: 0, clientY: 0 }));
+
+    expect(closed()).toBe(1);
+    expect(dialog.open).toBe(false);
+    expect(api.setPermissions).not.toHaveBeenCalled();
+  });
+
   describe('errors, one explanation for each kind', () => {
     async function fail(rejection: unknown) {
       api.setPermissions.mockRejectedValue(rejection);
