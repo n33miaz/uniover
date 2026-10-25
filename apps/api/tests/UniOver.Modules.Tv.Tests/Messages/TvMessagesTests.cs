@@ -9,28 +9,39 @@ public class TvMessagesTests
     [Fact]
     public void Key_BuildsTheV2BodyWithTheContractName()
     {
-        var message = TvMessages.Key(TvKeyV2BodyKey.VolumeUp);
+        var message = TvMessages.Key(TvKeyV3BodyKey.VolumeUp);
 
         message.Type.Should().Be("tv.key.v2");
         message.Body.GetRawText().Should().Be("{\"key\":\"VOLUME_UP\"}");
     }
 
     [Fact]
+    public void Key_OutsideTheV2List_GoesInTheV3Message()
+    {
+        var message = TvMessages.Key(TvKeyV3BodyKey.Guide, TvKeyV2BodyDirection.Short);
+
+        message.Type.Should().Be("tv.key.v3");
+        message.Body.GetRawText().Should().Be("{\"direction\":\"SHORT\",\"key\":\"GUIDE\"}");
+    }
+
+    [Fact]
     public void Key_WithADirection_CarriesIt()
     {
-        var message = TvMessages.Key(TvKeyV2BodyKey.Right, TvKeyV2BodyDirection.StartLong);
+        var message = TvMessages.Key(TvKeyV3BodyKey.Right, TvKeyV2BodyDirection.StartLong);
 
         message.Body.GetRawText().Should().Be("{\"direction\":\"START_LONG\",\"key\":\"RIGHT\"}");
     }
 
     [Theory]
-    [InlineData("NUM_0", TvKeyV2BodyKey.Num0)]
-    [InlineData("NUM_9", TvKeyV2BodyKey.Num9)]
-    [InlineData("PLAY_PAUSE", TvKeyV2BodyKey.PlayPause)]
-    [InlineData("MEDIA_NEXT", TvKeyV2BodyKey.MediaNext)]
-    [InlineData("CHANNEL_DOWN", TvKeyV2BodyKey.ChannelDown)]
-    [InlineData("OK", TvKeyV2BodyKey.Ok)]
-    public void Keys_MapsTheContractNameToTheGeneratedEnum(string wire, TvKeyV2BodyKey expected)
+    [InlineData("NUM_0", TvKeyV3BodyKey.Num0)]
+    [InlineData("NUM_9", TvKeyV3BodyKey.Num9)]
+    [InlineData("PLAY_PAUSE", TvKeyV3BodyKey.PlayPause)]
+    [InlineData("MEDIA_NEXT", TvKeyV3BodyKey.MediaNext)]
+    [InlineData("CHANNEL_DOWN", TvKeyV3BodyKey.ChannelDown)]
+    [InlineData("OK", TvKeyV3BodyKey.Ok)]
+    [InlineData("GUIDE", TvKeyV3BodyKey.Guide)]
+    [InlineData("E_MANUAL", TvKeyV3BodyKey.EManual)]
+    public void Keys_MapsTheContractNameToTheGeneratedEnum(string wire, TvKeyV3BodyKey expected)
     {
         TvMessages.Keys.Should().ContainKey(wire).WhoseValue.Should().Be(expected);
     }
@@ -38,8 +49,8 @@ public class TvMessagesTests
     [Fact]
     public void Keys_CoversEveryKeyOfTheContract_AndNothingElse()
     {
-        TvMessages.Keys.Should().HaveCount(Enum.GetValues<TvKeyV2BodyKey>().Length);
-        TvMessages.Keys.Values.Should().BeEquivalentTo(Enum.GetValues<TvKeyV2BodyKey>());
+        TvMessages.Keys.Should().HaveCount(Enum.GetValues<TvKeyV3BodyKey>().Length);
+        TvMessages.Keys.Values.Should().BeEquivalentTo(Enum.GetValues<TvKeyV3BodyKey>());
         TvMessages.Keys.Keys.Should().NotContain("volume_up", "o nome é exatamente o do contrato");
     }
 
