@@ -31,6 +31,18 @@ public static class AuditEvents
     /// <summary>O administrador exportou a trilha (IP e aparelho de terceiros saem do sistema). O detalhe leva só a quantidade de linhas.</summary>
     public const string AuditExported = "audit_exported";
 
+    /// <summary>
+    /// Uma conta confirmou, no celular, a entrada de um computador pelo QR (IP e aparelho do CELULAR). O detalhe é o id do
+    /// pedido, o mesmo do <see cref="QrLoginSucceeded"/> que vem depois (IP e aparelho do COMPUTADOR).
+    /// </summary>
+    public const string QrLoginApproved = "qr_login_approved";
+
+    /// <summary>A conta recusou, no celular, a entrada de um computador pelo QR. O detalhe é o id do pedido.</summary>
+    public const string QrLoginDenied = "qr_login_denied";
+
+    /// <summary>O computador recebeu a sessão da conta (IP e aparelho do COMPUTADOR). O detalhe é o id do pedido.</summary>
+    public const string QrLoginSucceeded = "qr_login_succeeded";
+
     /// <summary>Todos os eventos que esta trilha grava, na ordem em que a tela os lista.</summary>
     public static IReadOnlyList<string> All { get; } =
     [
@@ -52,6 +64,9 @@ public static class AuditEvents
         GuestRevoked,
         PermissionsChanged,
         ProfileUpdated,
+        QrLoginApproved,
+        QrLoginDenied,
+        QrLoginSucceeded,
         AuditExported,
     ];
 }

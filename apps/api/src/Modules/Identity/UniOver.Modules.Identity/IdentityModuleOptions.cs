@@ -50,6 +50,18 @@ public sealed class IdentityModuleOptions
     /// </summary>
     public int GuestStatusCacheSeconds { get; set; } = 30;
 
+    /// <summary>Validade do QR de entrada (padrão 2 min): curto porque o QR fica numa tela que qualquer um pode ver.</summary>
+    public int QrLoginSeconds { get; set; } = 120;
+
+    /// <summary>
+    /// Quanto tempo depois de entrar a conta SEM passkey ainda confirma uma entrada pelo QR sem digitar a senha de novo
+    /// (padrão 5 min). Passado isso, o celular pede a senha. Quem tem passkey sempre confirma com ela.
+    /// </summary>
+    public int QrRecentLoginMinutes { get; set; } = 5;
+
+    /// <summary>Pedidos de entrada pelo QR abertos ao mesmo tempo (padrão 1000): um teto contra quem encheria a tabela.</summary>
+    public int QrMaxPending { get; set; } = 1000;
+
     public IdentityCookieOptions Cookies { get; set; } = new();
 
     public TimeSpan AccessLifetime => TimeSpan.FromMinutes(AccessMinutes);
@@ -59,6 +71,10 @@ public sealed class IdentityModuleOptions
     public TimeSpan GuestStatusCacheLifetime => TimeSpan.FromSeconds(GuestStatusCacheSeconds);
 
     public TimeSpan GuestInviteLifetime => TimeSpan.FromHours(GuestInviteHours);
+
+    public TimeSpan QrLoginLifetime => TimeSpan.FromSeconds(QrLoginSeconds);
+
+    public TimeSpan QrRecentLogin => TimeSpan.FromMinutes(QrRecentLoginMinutes);
 
     public LockoutPolicy Lockout => new(
         LockoutThreshold, TimeSpan.FromSeconds(LockoutBaseSeconds), TimeSpan.FromMinutes(LockoutMaxMinutes));
@@ -79,5 +95,8 @@ public sealed class IdentityModuleOptions
         && o.StreamTicketSeconds >= 1
         && o.GuestInviteHours is >= 1 and <= 24 * 30
         && o.MaxPendingGuestInvites >= 1
-        && o.GuestStatusCacheSeconds is >= 1 and <= 600;
+        && o.GuestStatusCacheSeconds is >= 1 and <= 600
+        && o.QrLoginSeconds is >= 10 and <= 600
+        && o.QrRecentLoginMinutes is >= 0 and <= 60
+        && o.QrMaxPending >= 1;
 }
