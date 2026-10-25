@@ -146,6 +146,28 @@ logon não existe esse cofre disponível; uma tarefa `AtStartup` como `SYSTEM` p
 o pareamento do usuário. No PC configurado para entrar automaticamente, o agente sobe sozinho. Para reparar uma
 instalação, abra o mesmo `conectar-uniover.cmd` de novo: o fluxo é idempotente e preserva pareamento e configuração.
 
+### Ensaio de atualização
+
+Antes de publicar qualquer mudança que toque `apps/agent`, rode **um comando** na raiz do repositório:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File apps\agent\tools\upgrade-drill.ps1
+```
+
+Ele monta uma instalação **isolada** numa pasta temporária (nada de `%LOCALAPPDATA%\UniOver` real, tarefa agendada
+ou Cofre de Credenciais: o ambiente do processo filho é redirecionado e o cofre é falso), instala a versão base
+(`origin/main`, ou `-BaseSha`) com as funções do instalador dela, sobe o supervisor com agente e ícone de verdade e
+força a atualização para a candidata (a árvore local, empacotada como o zip do GitHub; ou `-CandidateRef`). Confere:
+a troca (`app\.version`), o reinício do supervisor, agente e ícone da versão nova de pé por 45 s, nenhum processo
+da versão velha, nenhuma janela visível, um segundo ciclo candidata -> candidata+1 e a recusa de uma candidata que
+não importa (a versão em uso segue rodando). Termina com `APROVADO` ou `REPROVADO` (e o motivo), apaga a pasta
+temporária e só encerra os processos que ele mesmo criou; o código de saída é 0 só se aprovado. Leva de 4 a 8 minutos.
+
+O código publicado na `main` ainda não conhece o modo ensaio do `self_update.py` (`UNIOVER_UPDATE_DRILL=1` e
+`UNIOVER_UPDATE_SOURCE_URL=http://127.0.0.1:porta`, que só trocam de onde vêm o commit e o zip); a primeira troca
+usa por isso um desvio no processo filho (`tools/upgrade_drill_support`). `-InjectDefect window|crash` planta um
+defeito conhecido na candidata para provar que o ensaio reprova.
+
 ### Instalador Windows (manual)
 
 No PowerShell, baixe e rode `apps/agent/tools/install-windows.ps1` com, por exemplo:
