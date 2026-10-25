@@ -11,18 +11,42 @@ test('a figura gira nos dois sentidos com uma única face interativa', async ({ 
   await openMap(page);
 
   for (const face of ['Costas', 'Frente'] as const) {
+    // A animação nasce depois da renderização que o clique agenda e dura 240 ms: olhar `getAnimations()` num quadro
+    // fixo perde a corrida (ainda não nasceu, ou já acabou) quando a máquina está ocupada. Registrar a chamada de
+    // `animate` prova o mesmo (duração e primeiro quadro) sem depender de tempo.
     const turn = await page.evaluate(async (label) => {
-      const button = Array.from(document.querySelectorAll<HTMLButtonElement>('.faces button')).find(
-        (node) => node.textContent?.trim() === label,
-      )!;
-      button.focus();
-      button.click();
-      await new Promise(requestAnimationFrame);
+      const calls: { frames: Keyframe[]; duration: unknown }[] = [];
+      const original = Element.prototype.animate;
+      Element.prototype.animate = function (
+        this: Element,
+        frames: Keyframe[] | PropertyIndexedKeyframes | null,
+        options?: number | KeyframeAnimationOptions,
+      ) {
+        if (this.matches('app-body-figure svg')) {
+          calls.push({
+            frames: frames as Keyframe[],
+            duration: typeof options === 'number' ? options : options?.duration,
+          });
+        }
+        return original.call(this, frames, options);
+      };
+      try {
+        const button = Array.from(
+          document.querySelectorAll<HTMLButtonElement>('.faces button'),
+        ).find((node) => node.textContent?.trim() === label)!;
+        button.focus();
+        button.click();
+        const limit = performance.now() + 4_000;
+        while (calls.length === 0 && performance.now() < limit) {
+          await new Promise(requestAnimationFrame);
+        }
+      } finally {
+        Element.prototype.animate = original;
+      }
       const figure = document.querySelector('app-body-figure svg')!;
-      const animation = figure.getAnimations()[0];
       return {
-        frames: (animation?.effect as KeyframeEffect | undefined)?.getKeyframes(),
-        duration: animation?.effect?.getTiming().duration,
+        frames: calls[0]?.frames,
+        duration: calls[0]?.duration,
         figures: document.querySelectorAll('app-body-figure svg').length,
         height: figure.getBoundingClientRect().height,
       };
