@@ -1139,6 +1139,86 @@ test.describe('desligar', () => {
   });
 });
 
+test.describe('desligar com leitura', () => {
+  /** A única TV da conta, cujo agente declara o desligamento com leitura (o servidor manda as capacidades). */
+  const SAFE_TV = {
+    id: '33333333-3333-4333-8333-333333333333',
+    name: 'Sala',
+    isDefault: true,
+    agentSlug: 'pc-sala',
+    kind: 'android' as const,
+    online: true,
+    capabilities: ['tv.remote', 'tv.kind.android', 'tv.power.off.v1', 'tv.key.v3'],
+  };
+  const sheetOf = (page: Page) => page.getByRole('dialog', { name: 'Desligar a TV?' });
+  const turnOff = async (page: Page) => {
+    await button(page, 'Desligar a TV').click();
+    await sheetOf(page).getByRole('button', { name: 'Desligar', exact: true }).click();
+  };
+
+  test('o agente que declara a capacidade recebe o pedido explícito, e a tela diz que desligou', async ({
+    page,
+  }, info) => {
+    tv.tvs = [{ ...SAFE_TV }];
+    await openTv(page);
+    await button(page, 'Desligar a TV').click();
+    await expect(sheetOf(page)).toContainText('O agente só desliga se a TV estiver ligada');
+    await page.waitForTimeout(300); // fim da animação de subida
+    await screenshot(page, `test-results/tv-power-checked-${info.project.name}.png`);
+    await expectNoSeriousViolations(page);
+    await sheetOf(page).getByRole('button', { name: 'Desligar', exact: true }).click();
+    await expect(sheetOf(page)).toHaveCount(0);
+    await expect(
+      page.getByText('TV desligada. Ela só volta com o controle original.'),
+    ).toBeVisible();
+    expect(tv.powerOffModes()).toEqual(['safe']);
+    expect(tv.keysSent()).not.toContain('POWER');
+  });
+
+  test('a TV que já estava desligada não é erro: o aviso diz que nada foi enviado', async ({
+    page,
+  }) => {
+    tv.tvs = [{ ...SAFE_TV }];
+    tv.powerOffOutcome = 'already_off';
+    await openTv(page);
+    await turnOff(page);
+    await expect(sheetOf(page)).toHaveCount(0);
+    await expect(
+      page.getByText('A TV já estava desligada. Nenhuma tecla foi enviada.'),
+    ).toBeVisible();
+  });
+
+  test('sem confirmação do agente a folha continua aberta e diz que a tecla não foi repetida', async ({
+    page,
+  }) => {
+    tv.tvs = [{ ...SAFE_TV }];
+    tv.commandFailure = {
+      status: 502,
+      kind: 'command-failed',
+      extra: { agentError: 'uncertain' },
+    };
+    await openTv(page);
+    await turnOff(page);
+    await expect(sheetOf(page).getByRole('alert')).toHaveText(
+      'Não deu para confirmar se a TV desligou, e a tecla não foi repetida. Olhe a TV antes de tentar de novo.',
+    );
+    await expect(sheetOf(page)).toBeVisible();
+    expect(tv.powerOffModes()).toEqual(['safe']);
+  });
+
+  test('agente sem a capacidade segue com o pedido de antes, sem corpo', async ({ page }) => {
+    tv.tvs = [{ ...SAFE_TV, capabilities: ['tv.remote', 'tv.kind.android', 'tv.key.v3'] }];
+    await openTv(page);
+    await button(page, 'Desligar a TV').click();
+    await expect(sheetOf(page)).not.toContainText('O agente só desliga se a TV estiver ligada');
+    await sheetOf(page).getByRole('button', { name: 'Desligar', exact: true }).click();
+    await expect(
+      page.getByText('Pedido de desligar enviado. A TV só volta com o controle original.'),
+    ).toBeVisible();
+    expect(tv.powerOffModes()).toEqual([null]);
+  });
+});
+
 test.describe('limpar a TV', () => {
   const cleanButton = (page: Page) => appsDialog(page).locator('button.clean');
   const cleanSheet = (page: Page) => page.getByRole('dialog', { name: 'Limpar a TV?' });

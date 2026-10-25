@@ -101,7 +101,7 @@ describe('TvStore', () => {
     api.wake.mockResolvedValue(undefined);
     api.sendKey.mockResolvedValue(undefined);
     api.sendText.mockResolvedValue(undefined);
-    api.powerOff.mockResolvedValue(undefined);
+    api.powerOff.mockResolvedValue('sent');
     api.launch.mockResolvedValue(undefined);
     api.cleanup.mockResolvedValue({
       ok: true,
@@ -598,6 +598,72 @@ describe('TvStore', () => {
       const failure = await store.powerOff();
       expect(failure).not.toBeNull();
       expect(api.powerOff).toHaveBeenCalledTimes(1);
+    });
+
+    describe('with an agent that powers off after reading', () => {
+      const safeTv: TvSummary = {
+        id: 'sala',
+        name: 'Sala',
+        isDefault: true,
+        agentSlug: null,
+        kind: 'android',
+        online: true,
+        capabilities: ['tv.remote', 'tv.kind.android', 'tv.power.off.v1'],
+      };
+
+      it('asks for the safe power off, and says the TV is off once the agent confirmed it', async () => {
+        api.tvs.mockResolvedValue([safeTv]);
+        api.powerOff.mockResolvedValueOnce('off');
+        await started();
+        expect(store.safePowerOff()).toBe(true);
+        await expect(store.powerOff()).resolves.toBeNull();
+        expect(api.powerOff).toHaveBeenCalledWith(true);
+        expect(store.notice()?.text).toBe('TV desligada. Ela só volta com o controle original.');
+      });
+
+      it('tells the TV was already off instead of calling it an error', async () => {
+        api.tvs.mockResolvedValue([safeTv]);
+        api.powerOff.mockResolvedValueOnce('already_off');
+        await started();
+        await expect(store.powerOff()).resolves.toBeNull();
+        expect(store.notice()).toEqual({
+          kind: 'info',
+          text: 'A TV já estava desligada. Nenhuma tecla foi enviada.',
+        });
+      });
+
+      it('returns the agent reason to the sheet and never repeats the request', async () => {
+        api.tvs.mockResolvedValue([safeTv]);
+        api.powerOff.mockRejectedValueOnce(
+          new HttpErrorResponse({
+            status: 502,
+            error: { type: PROBLEM + 'command-failed', status: 502, agentError: 'uncertain' },
+          }),
+        );
+        await started();
+        const failure = await store.powerOff();
+        expect(failure?.kind).toBe('command-failed');
+        expect(failure?.message).toContain('a tecla não foi repetida');
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(api.powerOff).toHaveBeenCalledTimes(1);
+      });
+
+      it('an agent without the capability keeps the request of before', async () => {
+        api.tvs.mockResolvedValue([{ ...safeTv, capabilities: ['tv.remote', 'tv.kind.android'] }]);
+        await started();
+        expect(store.safePowerOff()).toBe(false);
+        await expect(store.powerOff()).resolves.toBeNull();
+        expect(api.powerOff).toHaveBeenCalledWith(false);
+        expect(store.notice()?.text).toContain('Pedido de desligar enviado');
+      });
+
+      it('without the list of TVs it also keeps the request of before', async () => {
+        api.tvs.mockRejectedValue(problem(404));
+        await started();
+        expect(store.safePowerOff()).toBe(false);
+        await store.powerOff();
+        expect(api.powerOff).toHaveBeenCalledWith(false);
+      });
     });
 
     it('does not call the API when the buttons are disabled', async () => {

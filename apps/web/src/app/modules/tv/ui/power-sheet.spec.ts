@@ -46,6 +46,21 @@ describe('PowerSheet', () => {
     expect(dialog.getAttribute('aria-labelledby')).toBe('power-title');
   });
 
+  it('explains the reading only for an agent that does it, and describes the dialog with it', async () => {
+    const dialog = root.querySelector('dialog')!;
+    expect(root.textContent).not.toContain('O agente só desliga se a TV estiver ligada');
+    expect(dialog.getAttribute('aria-describedby')).toBe('power-text');
+
+    store.safePowerOff.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(root.querySelector('#power-checked')?.textContent).toContain(
+      'O agente só desliga se a TV estiver ligada e confirma o resultado.',
+    );
+    expect(dialog.getAttribute('aria-describedby')).toBe('power-text power-checked');
+  });
+
   it('has only Cancelar and Desligar (no close button)', () => {
     expect(buttons().map((b) => b.textContent?.trim())).toEqual(['Cancelar', 'Desligar']);
   });

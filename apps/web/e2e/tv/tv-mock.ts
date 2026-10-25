@@ -99,8 +99,15 @@ export interface TvMock {
   cleanupResult: MockCleanup;
   /** Enquanto houver uma promessa aqui, `POST /cleanup` espera por ela (para ver o "Limpando…"). */
   cleanupGate: Promise<void> | null;
+  /**
+   * O que `POST /power/off` responde ao pedido com leitura (`{ "mode": "safe" }`) quando dá certo: o desligamento
+   * confirmado ou a TV que já estava desligada. O pedido sem corpo, de antes, responde `sent`.
+   */
+  powerOffOutcome: 'off' | 'already_off';
   /** Pedidos de comando por rota (`/keys`, `/power/off`, ...). */
   count(path: string): number;
+  /** O `mode` de cada `POST /power/off` recebido (`null` é o pedido de antes, sem corpo). */
+  powerOffModes(): (string | null)[];
   keysSent(): string[];
 }
 
@@ -228,6 +235,11 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
       failedSteps: [],
     },
     cleanupGate: null,
+    powerOffOutcome: 'off',
+    powerOffModes: () =>
+      mock.requests
+        .filter((r) => r.method === 'POST' && r.path === '/power/off')
+        .map((r) => (typeof r.body?.['mode'] === 'string' ? r.body['mode'] : null)),
     count: (path) => mock.requests.filter((r) => r.method === 'POST' && r.path === path).length,
     keysSent: () =>
       mock.requests.filter((r) => r.path === '/keys').map((r) => String(r.body?.['key'])),
@@ -334,7 +346,14 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
         return problem(route, { status: 400, kind: 'validation-failed' });
       return json(route, 200, { ok: true, latencyMs: 40 });
     }
-    if (method === 'POST' && (path === '/text' || path === '/power/off')) {
+    if (method === 'POST' && path === '/power/off') {
+      return json(route, 200, {
+        ok: true,
+        latencyMs: 40,
+        outcome: body?.['mode'] === 'safe' ? mock.powerOffOutcome : 'sent',
+      });
+    }
+    if (method === 'POST' && path === '/text') {
       return json(route, 200, { ok: true, latencyMs: 40 });
     }
     if (method === 'POST' && path === '/cleanup') {

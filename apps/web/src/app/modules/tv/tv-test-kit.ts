@@ -110,6 +110,7 @@ export function createFakeTvStore() {
     tvs,
     selectedTv,
     multiple: computed(() => (tvs()?.length ?? 0) > 1),
+    safePowerOff: signal(false),
     selectTv: vi.fn<(id: string) => void>().mockImplementation((id) => selectedId.set(id)),
     refreshTvs: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     state: signal<TvState | null>(HOT),
