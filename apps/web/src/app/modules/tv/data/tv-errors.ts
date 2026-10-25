@@ -35,7 +35,26 @@ function agentErrorOf(error: unknown): string | null {
 /** Códigos do canal ADB do agente: a TV não atendeu pelo ADB (desligada, fora da rede ou sem responder a tempo). */
 const ADB_UNREACHABLE_CODES = new Set(['adb_unreachable', 'adb_unavailable', 'adb_timeout']);
 
-function commandFailedMessage(code: string | null): string {
+/**
+ * Códigos do desligamento com leitura (o agente devolve em minúsculas). Só valem nesse pedido: `offline` e `failed` são
+ * palavras comuns demais para valerem em qualquer comando.
+ */
+function powerOffFailedMessage(code: string | null): string | null {
+  switch (code) {
+    case 'uncertain':
+      return $localize`:@@tv.error.power-off-uncertain:Não deu para confirmar se a TV desligou, e a tecla não foi repetida. Olhe a TV antes de tentar de novo.`;
+    case 'offline':
+      return $localize`:@@tv.error.power-off-offline:A TV não respondeu ao controle e nada foi enviado. Ela pode já estar desligada.`;
+    case 'failed':
+      return $localize`:@@tv.error.power-off-failed:O agente não conseguiu desligar a TV. Olhe a TV antes de tentar de novo.`;
+    default:
+      return null;
+  }
+}
+
+function commandFailedMessage(code: string | null, context?: TvFailureContext): string {
+  const powerOff = context === 'power-off' ? powerOffFailedMessage(code) : null;
+  if (powerOff) return powerOff;
   if (code === 'TV_UNREACHABLE') {
     return $localize`:@@tv.error.tv-unreachable:A TV não respondeu ao controle. Confira se ela está ligada e na rede.`;
   }
@@ -61,8 +80,11 @@ export function forbiddenMessage(): string {
   return $localize`:@@tv.error.forbidden:Você não tem permissão para fazer isso na TV.`;
 }
 
-/** O que se estava fazendo: a limpeza leva até ~25 s, então "tempo esgotado" não quer dizer "não aconteceu". */
-export type TvFailureContext = 'cleanup';
+/**
+ * O que se estava fazendo: a limpeza leva até ~25 s, e o desligamento com leitura espera a TV confirmar, então "tempo
+ * esgotado" não quer dizer "não aconteceu".
+ */
+export type TvFailureContext = 'cleanup' | 'power-off';
 
 /** Traduz a falha de uma chamada do controle na mensagem da tela; nenhuma delas é repetida sozinha. */
 export function describeFailure(error: unknown, context?: TvFailureContext): TvFailure {
@@ -127,7 +149,7 @@ export function describeFailure(error: unknown, context?: TvFailureContext): TvF
       );
     }
     case 502:
-      return make('command-failed', commandFailedMessage(agentErrorOf(error)));
+      return make('command-failed', commandFailedMessage(agentErrorOf(error), context));
     case 503:
       return problem.kind === 'agent-not-configured'
         ? make(
@@ -143,7 +165,9 @@ export function describeFailure(error: unknown, context?: TvFailureContext): TvF
         'timeout',
         context === 'cleanup'
           ? $localize`:@@tv.error.cleanup-timeout:A limpeza demorou mais do que o esperado e a TV pode ter terminado. Confira a TV e tente de novo.`
-          : $localize`:@@tv.error.timeout:A TV não respondeu a tempo. Tente de novo.`,
+          : context === 'power-off'
+            ? $localize`:@@tv.error.power-off-timeout:O desligamento demorou mais do que o esperado e a TV pode ter desligado. Olhe a TV antes de tentar de novo.`
+            : $localize`:@@tv.error.timeout:A TV não respondeu a tempo. Tente de novo.`,
       );
     default:
       return make('unknown', $localize`:@@tv.error.unknown:Não foi possível falar com a TV agora.`);
