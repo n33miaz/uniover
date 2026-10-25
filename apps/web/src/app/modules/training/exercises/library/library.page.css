@@ -90,18 +90,7 @@
 }
 
 .count {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
   min-width: 0;
-}
-
-/* O título da lista cabe numa linha: sem caixa alta nem espaçamento largo (a coluna é estreita ao lado dos dois botões). */
-.eyebrow {
-  padding: 0;
-  font-size: var(--fs-small);
-  letter-spacing: 0;
-  text-transform: none;
 }
 
 .number {
