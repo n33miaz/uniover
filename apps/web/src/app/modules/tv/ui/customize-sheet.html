@@ -121,6 +121,27 @@
   </div>
 
   <div class="block">
+    <span id="tv-custom-extras-label" class="label" i18n="@@tv.custom.extras">Botões extras</span>
+    <div class="chips" role="group" aria-labelledby="tv-custom-extras-label">
+      @for (extra of roundKeys.supported(); track extra.key) {
+        <button
+          type="button"
+          class="chip"
+          [class.auto]="isShown(extra) && !isChosen(extra)"
+          [attr.aria-pressed]="isShown(extra)"
+          [disabled]="!roundKeys.canToggle(extra.key)"
+          (click)="roundKeys.toggle(extra.key)"
+        >
+          {{ extra.label }}
+        </button>
+      }
+    </div>
+    <p class="note" i18n="@@tv.custom.extras-note">
+      A grade se completa sozinha. O que ficar de fora vai para Mais botões, no menu.
+    </p>
+  </div>
+
+  <div class="block">
     <span id="tv-custom-page-label" class="label" i18n="@@tv.custom.page"
       >Página inicial do palco</span
     >

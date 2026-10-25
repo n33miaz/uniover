@@ -188,19 +188,6 @@ button:disabled,
   flex-wrap: wrap;
   justify-content: center;
 }
-/*
- * Sem o botão do Teclado sobram sete: oito colunas de meia largura, cada botão ocupando duas, e o primeiro da segunda
- * fileira começa na segunda coluna, o que deixa os três últimos no meio.
- */
-.round-grid[data-short] {
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-}
-.round-grid[data-short] > .round {
-  grid-column: span 2;
-}
-.round-grid[data-short] > .round:nth-child(5) {
-  grid-column: 2 / span 2;
-}
 .pill {
   display: flex;
   flex-direction: column;
@@ -260,6 +247,31 @@ button:disabled,
   aspect-ratio: 1;
   padding: 0;
   border-radius: 50%;
+}
+
+/* Botões extras sem ícone: o rótulo curto, ou um disco da cor da tecla (vermelha, verde, amarela, azul). */
+.word {
+  font-size: calc(0.66rem * var(--key-scale));
+  font-weight: 700;
+  line-height: 1;
+}
+.swatch {
+  width: 0.75em;
+  height: 0.75em;
+  border-radius: 50%;
+  background: var(--swatch);
+}
+.swatch[data-color='red'] {
+  --swatch: #d93a3a;
+}
+.swatch[data-color='green'] {
+  --swatch: #2e9d4b;
+}
+.swatch[data-color='yellow'] {
+  --swatch: #e6b422;
+}
+.swatch[data-color='blue'] {
+  --swatch: #2f6fdb;
 }
 
 /*

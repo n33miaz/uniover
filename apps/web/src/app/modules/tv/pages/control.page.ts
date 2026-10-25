@@ -12,6 +12,7 @@ import {
 } from '@angular/core';
 import { TvAccess } from '../data/tv-access';
 import { TvPrefs } from '../data/tv-prefs';
+import { TvRoundKeys } from '../data/tv-round-keys';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut } from '../data/tv-types';
 import { KeyButton, vibrate } from '../input/key-button';
@@ -66,6 +67,8 @@ export class ControlPage {
   protected readonly store = inject(TvStore);
   protected readonly prefs = inject(TvPrefs);
   protected readonly access = inject(TvAccess);
+  /** As colunas dos botões redondos e os extras que completam a grade. */
+  protected readonly roundKeys = inject(TvRoundKeys);
   /** Abrir apps pelos atalhos de cima é de quem tem `tv:launch` (esta tela só existe para quem tem `tv:control`). */
   protected readonly canLaunch = this.access.launch;
   private readonly pager = viewChild.required<ElementRef<HTMLElement>>('pager');
@@ -103,24 +106,6 @@ export class ControlPage {
    */
   protected readonly pillParts = computed<readonly PillPart[]>(() =>
     this.rowPills() ? ['less', 'level', 'more'] : ['more', 'level', 'less'],
-  );
-
-  /**
-   * Disposição dos botões redondos. Com as pílulas nas laterais: quatro colunas em duas fileiras; no tamanho grande,
-   * quebra em três por fileira (não cabem mais quatro entre as pílulas numa tela estreita); sem as teclas de mídia
-   * sobram quatro botões, em duas colunas. Com as pílulas em fileira os botões têm a largura toda: sempre quatro
-   * colunas (uma fileira só, sem as teclas de mídia), até no tamanho grande.
-   */
-  protected readonly roundColumns = computed(() => {
-    // Sem o Teclado (a TV não digita) são três botões fixos em vez de quatro: a conta muda com eles.
-    const keyboard = this.access.text();
-    if (this.rowPills()) return keyboard || this.prefs.showMedia() ? 4 : 3;
-    if (!this.prefs.showMedia()) return keyboard ? 2 : 3;
-    return this.prefs.buttonSize() === 'large' ? 3 : 4;
-  });
-  /** Sete botões em quatro colunas (sem o Teclado): a última fileira, de três, fica no meio e não encostada à esquerda. */
-  protected readonly shortRow = computed(
-    () => !this.access.text() && this.prefs.showMedia() && this.roundColumns() === 4,
   );
 
   protected readonly volumeText = computed(() => {

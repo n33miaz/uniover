@@ -1,7 +1,9 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, computed, inject, linkedSignal } from '@angular/core';
 import { SessionState } from '../../../core/session/session-state';
+import { isExtraKey, MAIN_EXTRAS_MAX } from './tv-extras';
 import { TvSelection } from './tv-selection';
+import { TvKey } from './tv-types';
 
 /** Tamanho dos botões de baixo (pílulas e botões redondos); o fator de cada um está em `KEY_SCALE`. */
 export type TvButtonSize = 'compact' | 'comfortable' | 'large';
@@ -56,6 +58,11 @@ export interface TvPrefsValue {
   readonly padSpeed: TvPadSpeed;
   /** Ausente nas escolhas guardadas antes de existir: lê-se como `sides`, a disposição que sempre foi. */
   readonly pillLayout: TvPillLayout;
+  /**
+   * Os botões extras que a pessoa escolheu para a tela principal, na ordem. `null` (o padrão) deixa os mais importantes
+   * da TV preencherem os espaços vazios; ausente nas escolhas guardadas antes de existir.
+   */
+  readonly extraKeys: readonly TvKey[] | null;
   /** Sugestões de atalho que a pessoa removeu (as chaves do catálogo); ausente nas escolhas de antes, lê-se como vazio. */
   readonly dismissedSuggestions: readonly string[];
 }
@@ -70,6 +77,7 @@ export const TV_PREFS_DEFAULTS: TvPrefsValue = {
   startPage: 'last',
   padSpeed: 'normal',
   pillLayout: 'sides',
+  extraKeys: null,
   dismissedSuggestions: [],
 };
 
@@ -90,6 +98,12 @@ function keys(value: unknown): readonly string[] {
   return [...new Set(text)].slice(0, DISMISSED_MAX);
 }
 
+/** A lista de botões extras guardada: só os que o app conhece, sem repetir e até o que cabe na tela principal. */
+function extras(value: unknown): readonly TvKey[] | null {
+  if (!Array.isArray(value)) return null;
+  return [...new Set(value.filter(isExtraKey))].slice(0, MAIN_EXTRAS_MAX);
+}
+
 /** Valida o que veio do armazenamento campo a campo: um valor estragado volta ao padrão sem derrubar os outros. */
 function parsePrefs(raw: unknown): TvPrefsValue {
   const stored = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -103,6 +117,7 @@ function parsePrefs(raw: unknown): TvPrefsValue {
     startPage: oneOf(stored['startPage'], TV_START_PAGES, defaults.startPage),
     padSpeed: oneOf(stored['padSpeed'], TV_PAD_SPEEDS, defaults.padSpeed),
     pillLayout: oneOf(stored['pillLayout'], TV_PILL_LAYOUTS, defaults.pillLayout),
+    extraKeys: extras(stored['extraKeys']),
     dismissedSuggestions: keys(stored['dismissedSuggestions']),
   };
 }
@@ -155,6 +170,7 @@ export class TvPrefs {
   readonly startPage = computed(() => this.value().startPage);
   readonly padSpeed = computed(() => this.value().padSpeed);
   readonly pillLayout = computed(() => this.value().pillLayout);
+  readonly extraKeys = computed(() => this.value().extraKeys);
   readonly dismissedSuggestions = computed(() => this.value().dismissedSuggestions);
   /** Alguma escolha difere do padrão (liga o "Restaurar padrão"). */
   readonly customized = computed(() => !sameAsDefaults(this.value()));
@@ -212,6 +228,7 @@ function sameAsDefaults(value: TvPrefsValue): boolean {
     value.startPage === defaults.startPage &&
     value.padSpeed === defaults.padSpeed &&
     value.pillLayout === defaults.pillLayout &&
+    value.extraKeys === null &&
     value.dismissedSuggestions.length === 0
   );
 }

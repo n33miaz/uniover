@@ -151,6 +151,41 @@ h2 {
   }
 }
 
+/* Vários botões extras podem estar ligados ao mesmo tempo: pastilhas que quebram de linha, a ligada "sobe" como a escolha. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.chip {
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-pill);
+  background: var(--a-elev);
+  color: var(--a-ink2);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 650;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.chip[aria-pressed='true'] {
+  border-color: var(--a-accent);
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
+}
+/* Posto pela grade para completar a fileira: aparece na tela, mas não foi escolha da pessoa (só o contorno). */
+.chip.auto {
+  background: var(--a-elev);
+  color: var(--a-accent-ink);
+}
+.chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* Rodapé fixo na base da folha: as duas saídas sempre à mão, mesmo com a lista rolando. */
 .footer {
   position: sticky;
