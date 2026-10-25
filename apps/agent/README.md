@@ -64,6 +64,7 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_TV_SAMSUNG_APPS` | IDs Tizen extras a procurar, separados por vírgula; a TV só publica os instalados |
 | `UNIOVER_TV_HIBERNATE_SECONDS` | segundos sem comando até a sessão com a TV hibernar (padrão `300`) |
 | `UNIOVER_ADB_PATH` | caminho do `adb` (padrão: procura no `PATH` e em `%LOCALAPPDATA%\Android\Sdk\platform-tools`); habilita lista de apps, abrir app por pacote e digitação pelo ADB |
+| `UNIOVER_TV_WATCHDOG` | `0` desliga o vigia do serviço do controle (padrão: ligado; só age com o `adb` neste PC; ver "Vigia do serviço do controle") |
 | `UNIOVER_TV_ADB_PORT` | porta do ADB da TV (padrão `5555`) |
 | `UNIOVER_ADB_TIMEOUT_SECONDS` | tempo máximo de cada comando `adb` (padrão `5`) |
 | `UNIOVER_ADB_PULL_TIMEOUT_SECONDS` | tempo máximo para copiar o APK de um app da TV (padrão `120`) |
@@ -264,9 +265,39 @@ Comportamentos que valem saber:
 - **TV em standby** desliga a rede e não responde nada: cada comando espera as tentativas (até ~27 s no pior
   caso: 4 tentativas de 5 s mais 1 + 2 + 4 s) e responde `tv_unreachable`. Só uma **recusa ativa** da conexão
   (porta fechada, serviço do controle morto) sinaliza `needs_repair` ao vigia; ficar sem resposta não.
+- **Serviço do controle morto** (porta recusada com a TV na rede): o vigia o religa por ADB (seção abaixo).
 - Medições na TV real (`tools/measure_tv_session.py`, somente leitura): mortes do serviço por hora com e sem
   sessão, memória e tempo de religação. Nunca envia tecla de energia. **Pare o agente e o vigia antigo antes de
   medir**: a ferramenta usa o mesmo certificado e o ADB aceita um cliente por vez.
+
+### Vigia do serviço do controle
+
+Algumas TVs matam o serviço do controle remoto (`com.google.android.tv.remote.service`, portas 6466 e 6467) por
+falta de memória; sem ele a sessão não abre até alguém religá-lo. O vigia faz isso pelo ADB, no lugar da tarefa
+agendada do PC.
+
+- **Sem sondagem própria.** Ele só age quando recebe o aviso de uma porta **recusada** (a TV respondeu e fechou a
+  porta): do vigia do endereço, na conferência que já faz a cada minuto sem sessão, e da sessão, se a conexão
+  chegar a ser recusada (o teste de vida de 1,5 s antes da conexão não distingue recusa de silêncio: no Windows
+  a recusa só aparece depois de ~2 s, e esperar mais atrasaria a resposta de uma TV em standby além do prazo do
+  servidor). Na prática o serviço morto é religado em até um minuto. TV em standby não responde nada, não conta como recusa e nada é feito. Cada aviso vira, no máximo, duas
+  conexões TCP para confirmar.
+- **Reparo limitado.** Confirmadas as portas fechadas, a sessão passa a `repairing` (os comandos recebem
+  `tv_unreachable` com a dica "religando o controle da TV"), o agente reconecta o ADB e roda o `reparar` do projeto
+  da TV: proteger o serviço do matador de memória (`dumpsys deviceidle whitelist`, `cmd appops set ...
+  RUN_ANY_IN_BACKGROUND allow`, `am set-standby-bucket ... active`) e iniciá-lo (`am start-foreground-service`).
+  Confere as portas 3 s depois. No máximo **3 tentativas** (na hora, depois de 15 s e de 45 s), com teto de 240 s
+  para tudo; falhou, descansa **10 minutos**. A sessão nunca fica presa em `repairing` (`finally` e o teto).
+  Sem autorização no ADB ou sem o `adb`, para na primeira tentativa e descansa **1 hora**. Não envia tecla
+  nenhuma, nunca a de energia.
+- **Eventos `tv.watchdog.v1`** (`repair_started`, `repaired`, `repair_failed`, `adb_unreachable`) com texto fixo,
+  sem endereço nem saída de comando: o mesmo tipo não repete em menos de 60 s; sem conexão com a API ficam numa
+  fila em memória (até 100) e saem depois do `hello`.
+- **Desligue o vigia antigo do PC** (tarefa agendada ou laço oculto que roda `vigiar-tv.ps1`): dois reparadores
+  disputando o ADB religam em duplicidade. Na tarefa, `Disable-ScheduledTask -TaskName "ESP32 - vigia da TV"`.
+  `UNIOVER_TV_WATCHDOG=0` desliga o vigia do agente, se preferir manter o antigo.
+- Não faz parte dele: `am kill-all` e fechar apps antes do reparo (existe a limpeza da TV, por comando), e
+  detectar sessão "zumbi" (a biblioteca já fecha a sessão de uma TV que para de pingar, 16 s, e a sessão reabre).
 
 ## Limpeza da TV
 
@@ -400,7 +431,7 @@ nunca trazem token, `deviceCode`, cabeçalhos nem corpo completo (as bibliotecas
 
 - `core/`: casos de uso (`HandleCommand`, `ProcessMessage`, `ConnectionSupervisor`, `PairAgent`) e o `EnvelopeGate`;
   em `core/tv/`, o `TvSessionManager` (sessão quente, hibernação, reconexão), os handlers dos comandos da TV e o
-  publicador de `tv.state.v1`.
+  publicador de `tv.state.v1`, o vigia do serviço do controle (`TvWatchdog`) e a fila dos seus eventos.
 - `ports/`: `Transport`, `SecretStore`, `PairingClient`, `Clock`, `TvChannel`, `TvRemote`, `TvAdb`, `TvAdbCleanup` como `typing.Protocol`.
 - `adapters/`: `transport_ws`, `secret_store_keyring`, `pairing_http`, `system_clock`, `local_config`,
   `tv_remote_v2`, `tv_pairing` e dublês de teste.
