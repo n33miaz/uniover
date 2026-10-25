@@ -45,6 +45,34 @@ public sealed class CommandTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Key_OutsideTheV2List_IsSentAsV3()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+
+        var request = app.PostAsync("/api/v1/tv/keys", new { key = "GUIDE" });
+        var command = await TvApp.NextCommandAsync(agent);
+
+        command.GetProperty("type").GetString().Should().Be("tv.key.v3");
+        command.GetProperty("body").GetRawText().Should().Be("{\"key\":\"GUIDE\"}");
+        await TvApp.ReplyAsync(agent, command);
+
+        using var response = await Within(request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Key_WithANameOutsideTheContract_IsRefusedBeforeReachingTheAgent()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+
+        using var response = await Within(app.PostAsync("/api/v1/tv/keys", new { key = "FACTORY_RESET" }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task Key_WithALongPressDirection_CarriesIt()
     {
         await using var app = await TvApp.StartAsync(postgres);

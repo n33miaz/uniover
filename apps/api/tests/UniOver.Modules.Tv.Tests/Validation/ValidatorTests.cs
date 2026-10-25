@@ -16,14 +16,25 @@ public class ValidatorTests
         var errors = SendKeyValidator.Validate(new SendKeyRequest("VOLUME_UP", null), out var parsed);
 
         errors.Should().BeEmpty();
-        parsed!.Key.Should().Be(TvKeyV2BodyKey.VolumeUp);
+        parsed!.Key.Should().Be(TvKeyV3BodyKey.VolumeUp);
         parsed.Direction.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("GUIDE", TvKeyV3BodyKey.Guide)]
+    [InlineData("BLUE", TvKeyV3BodyKey.Blue)]
+    [InlineData("INPUT", TvKeyV3BodyKey.Input)]
+    public void Key_AcceptsTheExtraKeysOfTheV3Contract(string name, TvKeyV3BodyKey expected)
+    {
+        SendKeyValidator.Validate(new SendKeyRequest(name, null), out var parsed).Should().BeEmpty();
+        parsed!.Key.Should().Be(expected);
     }
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("volume_up")]
+    [InlineData("FACTORY_RESET")]
     [InlineData("HOME; DROP")]
     [InlineData("KEYCODE_HOME")]
     public void Key_RejectsAnythingOutsideTheContract(string? key)
