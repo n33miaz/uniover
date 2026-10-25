@@ -106,7 +106,7 @@ def test_the_modules_that_start_processes_use_the_helper() -> None:
     assert vars(tv_pairing)["run_hidden"] is process.run_hidden
 
 
-def test_the_powershell_launch_in_installation_is_hidden_and_not_detached(
+def test_the_powershell_fallback_launch_in_installation_is_hidden_and_not_detached(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     seen: dict[str, Any] = {}
@@ -117,6 +117,8 @@ def test_the_powershell_launch_in_installation_is_hidden_and_not_detached(
         (root / "app" / "tools" / name).write_text("# x", encoding="utf-8")
     monkeypatch.setenv("SystemRoot", str(tmp_path))
     monkeypatch.setenv("UNIOVER_LEGACY_TAKEOVER", "0")  # a função o liga; o teste desfaz
+    # Com o Script Host funcionando o lançador sobe por ele; este teste cobre o caminho de reserva.
+    monkeypatch.setattr(installation, "_windows_script_host_works", lambda _root: False)
     installation._install_launcher(root, start_now=True)
     if os.name == "nt":
         assert seen["creationflags"] & subprocess.CREATE_NO_WINDOW
