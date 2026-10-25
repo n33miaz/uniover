@@ -12,16 +12,36 @@ namespace UniOver.Modules.Tv.Adapters;
 /// </summary>
 internal static class TvMessages
 {
-    /// <summary>Teclas aceitas na API, pelo nome do contrato (ex.: <c>VOLUME_UP</c>, <c>NUM_0</c>).</summary>
-    public static FrozenDictionary<string, TvKeyV2BodyKey> Keys { get; } = Enum.GetValues<TvKeyV2BodyKey>()
+    /// <summary>
+    /// Teclas aceitas na API, pelo nome do contrato (ex.: <c>VOLUME_UP</c>, <c>NUM_0</c>, <c>GUIDE</c>). A lista permitida é
+    /// a do <c>tv.key.v3</c>, que contém todas as do <c>v2</c>: nada fora do contrato chega ao agente.
+    /// </summary>
+    public static FrozenDictionary<string, TvKeyV3BodyKey> Keys { get; } = Enum.GetValues<TvKeyV3BodyKey>()
+        .ToFrozenDictionary(WireName, key => key, StringComparer.Ordinal);
+
+    /// <summary>As teclas que o <c>tv.key.v2</c> já conhece: seguem nele, para um agente mais velho continuar entendendo.</summary>
+    private static readonly FrozenDictionary<string, TvKeyV2BodyKey> LegacyKeys = Enum.GetValues<TvKeyV2BodyKey>()
         .ToFrozenDictionary(WireName, key => key, StringComparer.Ordinal);
 
     public static FrozenDictionary<string, TvKeyV2BodyDirection> Directions { get; } = Enum.GetValues<TvKeyV2BodyDirection>()
         .ToFrozenDictionary(WireName, direction => direction, StringComparer.Ordinal);
 
-    public static TvMessage Key(TvKeyV2BodyKey key, TvKeyV2BodyDirection? direction = null) =>
-        new(AgentMessageTypes.TvKeyV2, BodyOf(
-            new TvKeyV2Message { Body = new TvKeyV2Body { Key = key, Direction = direction } }.ToJson()));
+    /// <summary>
+    /// A tecla vai no <c>tv.key.v2</c> quando ele a conhece (o agente de antes segue servido) e no <c>v3</c> só quando ela
+    /// é nova (guia, ferramentas, cores, mídia...).
+    /// </summary>
+    public static TvMessage Key(TvKeyV3BodyKey key, TvKeyV2BodyDirection? direction = null)
+    {
+        if (LegacyKeys.TryGetValue(WireName(key), out var legacy))
+        {
+            return new(AgentMessageTypes.TvKeyV2, BodyOf(
+                new TvKeyV2Message { Body = new TvKeyV2Body { Key = legacy, Direction = direction } }.ToJson()));
+        }
+
+        TvKeyV3BodyDirection? v3Direction = direction is { } value ? Enum.Parse<TvKeyV3BodyDirection>(value.ToString()) : null;
+        return new(AgentMessageTypes.TvKeyV3, BodyOf(
+            new TvKeyV3Message { Body = new TvKeyV3Body { Key = key, Direction = v3Direction } }.ToJson()));
+    }
 
     public static TvMessage Text(string text) =>
         new(AgentMessageTypes.TvTextV1, BodyOf(
@@ -54,6 +74,9 @@ internal static class TvMessages
     /// <summary>Nome do valor no contrato (o que viaja no JSON), descoberto pelo próprio conversor gerado.</summary>
     private static string WireName(TvKeyV2BodyKey key) =>
         BodyOf(new TvKeyV2Message { Body = new TvKeyV2Body { Key = key } }.ToJson()).GetProperty("key").GetString()!;
+
+    private static string WireName(TvKeyV3BodyKey key) =>
+        BodyOf(new TvKeyV3Message { Body = new TvKeyV3Body { Key = key } }.ToJson()).GetProperty("key").GetString()!;
 
     private static string WireName(TvKeyV2BodyDirection direction) =>
         BodyOf(new TvKeyV2Message { Body = new TvKeyV2Body { Key = TvKeyV2BodyKey.Ok, Direction = direction } }.ToJson())
