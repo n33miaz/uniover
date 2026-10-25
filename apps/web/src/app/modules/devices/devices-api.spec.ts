@@ -48,6 +48,19 @@ describe('DevicesApi', () => {
     await done;
   });
 
+  it('approves his own PC with only the code and the TV name (no people, no default)', async () => {
+    const done = api.approveOwn('BCDF2345', 'TV de Raphael');
+    const request = http.expectOne('/api/v1/devices/pairing/approve-own');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({
+      userCode: 'BCDF2345',
+      name: null,
+      tvName: 'TV de Raphael',
+    });
+    request.flush({ id: 'a1', slug: 'agent:pc', name: 'PC', platform: 'windows' });
+    await done;
+  });
+
   it('denies with a JSON body', async () => {
     const done = api.deny('BCDF2345');
     const request = http.expectOne('/api/v1/devices/pairing/deny');

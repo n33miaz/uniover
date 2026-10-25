@@ -121,6 +121,19 @@ describe('AuthApi', () => {
     expect(lastCall().url).toBe('/api/v1/identity/passkeys/registration/complete');
   });
 
+  it('the guest confirms an action with the password, sent in the body with the bearer token', async () => {
+    fetchFn.mockResolvedValue(reply(200, { action: 'devices.pair-self', expiresAt: 'x' }));
+    await api().stepUpWithPassword('t', 'devices.pair-self', 'minha-senha');
+    const { url, init, headers } = lastCall();
+    expect(url).toBe('/api/v1/identity/step-up/password');
+    expect(init.method).toBe('POST');
+    expect(headers['Authorization']).toBe('Bearer t');
+    expect(JSON.parse(init.body as string)).toEqual({
+      action: 'devices.pair-self',
+      password: 'minha-senha',
+    });
+  });
+
   it('accepting an invite is a public POST with the client header; the secret goes in the body, never in the URL', async () => {
     fetchFn.mockResolvedValue(reply(200, { accessToken: 't', expiresIn: 600 }));
     await api().acceptInvite('segredo-do-convite', 'ana@exemplo.com', 'uma-senha-longa');

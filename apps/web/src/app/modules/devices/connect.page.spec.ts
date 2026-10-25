@@ -1,12 +1,21 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { AuthService } from '../../core/auth/auth.service';
+import { SessionState } from '../../core/session/session-state';
 import { ConnectPage } from './connect.page';
 
 const WINDOWS =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
 describe('ConnectPage', () => {
-  beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([])] }));
+  const auth = { init: vi.fn() };
+
+  beforeEach(() => {
+    auth.init.mockReset().mockResolvedValue(undefined);
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), { provide: AuthService, useValue: auth }],
+    });
+  });
   afterEach(() => vi.restoreAllMocks());
 
   async function render() {
@@ -32,6 +41,38 @@ describe('ConnectPage', () => {
       'Manter mesmo assim',
       'Mais informações',
       'Executar assim mesmo',
+    ]);
+  });
+
+  it('without a session offers to sign in and come back, besides the download without an account', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(WINDOWS);
+    const el = await render();
+    expect(auth.init).toHaveBeenCalledOnce();
+    expect(el.querySelector('.who')).toBeNull();
+    expect(el.querySelector('a.download')).not.toBeNull();
+    const login = el.querySelector<HTMLAnchorElement>('.login a')!;
+    expect(login.textContent?.trim()).toBe('Entrar');
+    expect(login.getAttribute('href')).toBe('/entrar?next=%2Fconectar');
+  });
+
+  it('with a session says who it is, keeps the download and hides the sign in', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(WINDOWS);
+    TestBed.inject(SessionState).setToken('token', 600);
+    TestBed.inject(SessionState).setUser({
+      id: 'guest-1',
+      email: 'g@example.com',
+      displayName: 'Raphael',
+      role: 'guest',
+      permissions: ['module:tv'],
+    });
+    const el = await render();
+    expect(el.querySelector('.who')?.textContent).toContain('Você entrou como Raphael.');
+    expect(el.querySelector('.login')).toBeNull();
+    expect(el.querySelector('a.download')).not.toBeNull();
+    expect(Array.from(el.querySelectorAll('ol > li')).map((li) => li.textContent?.trim())).toEqual([
+      'Abra o arquivo baixado',
+      'Na janela que abrir, toque em Aprovar neste computador',
+      'Toque em Permitir na TV',
     ]);
   });
 
