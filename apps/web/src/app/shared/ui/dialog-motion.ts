@@ -28,6 +28,22 @@ export function onDialogBackdropClick(dialog: HTMLDialogElement, dismiss: () => 
   });
 }
 
+/** Fecha o diálogo modal antes de quem o chamou tirá-lo do DOM. */
+export function closeDialog(dialog: HTMLDialogElement): void {
+  if (dialog.open) dialog.close();
+}
+
+/** Devolve o foco somente para quem ainda pode recebê-lo depois de o diálogo sair do topo. */
+export function restoreDialogFocus(opener: Element | null): void {
+  if (
+    opener instanceof HTMLElement &&
+    opener.isConnected &&
+    !opener.matches(':disabled, [hidden], [inert], [aria-hidden="true"]')
+  ) {
+    opener.focus();
+  }
+}
+
 /**
  * Toca a saída de um `<dialog class="ui-dialog">` modal e chama `done` quando ela acaba (quem chama tira o
  * diálogo do DOM nesse momento). A saída é a classe `closing` (ver `styles.css`), posta com o diálogo ainda aberto:

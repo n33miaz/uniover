@@ -1,5 +1,10 @@
 import { Component, ElementRef, afterNextRender, inject, output, viewChild } from '@angular/core';
 import { TvStore } from '../data/tv-store';
+import {
+  closeDialog,
+  onDialogBackdropClick,
+  restoreDialogFocus,
+} from '../../../shared/ui/dialog-motion';
 import { leaveSheet } from './sheet-motion';
 
 /**
@@ -18,6 +23,7 @@ import { leaveSheet } from './sheet-motion';
 export class CleanupSheet {
   protected readonly store = inject(TvStore);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
+  private opener: Element | null = null;
 
   readonly closed = output<void>();
 
@@ -27,7 +33,11 @@ export class CleanupSheet {
   constructor() {
     afterNextRender(() => {
       // showModal prende o foco na folha (começa em "Cancelar"), deixa o resto inerte e trata o Esc.
-      this.dialog().nativeElement.showModal();
+      const dialog = this.dialog().nativeElement;
+      this.opener = document.activeElement;
+      dialog.showModal();
+      // O fundo escurecido é o próprio <dialog>; só fecha se o toque começou e terminou fora da folha.
+      onDialogBackdropClick(dialog, () => this.cancel());
     });
   }
 
@@ -46,6 +56,11 @@ export class CleanupSheet {
   private leave(): void {
     if (this.leaving) return;
     this.leaving = true;
-    leaveSheet(this.dialog().nativeElement, () => this.closed.emit());
+    const dialog = this.dialog().nativeElement;
+    leaveSheet(dialog, () => {
+      closeDialog(dialog);
+      restoreDialogFocus(this.opener);
+      this.closed.emit();
+    });
   }
 }
