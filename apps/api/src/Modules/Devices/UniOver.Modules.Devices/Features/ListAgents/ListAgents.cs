@@ -3,14 +3,15 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Devices.Features.RemoteCare;
 using UniOver.Modules.Devices.Persistence;
 
 namespace UniOver.Modules.Devices.Features.ListAgents;
 
 /// <summary>
-/// <c>LastSeenAt</c> é o último sinal do agente desde que a API subiu (conexão ou mensagem); nulo se ele ainda não
-/// apareceu nesta execução. Vem da presença em memória: gravar no banco a cada mensagem acordaria o Postgres.
+/// <c>LastSeenAt</c> é o último sinal persistido do agente; a conexão e as mensagens só o atualizam no banco com
+/// intervalo mínimo de um minuto. Quando ele está conectado, a presença em memória traz o instante mais recente.
 /// Os campos de manutenção vêm do <c>hello</c> do agente e ficam vazios até ele falar: <c>AgentVersion</c> e
 /// <c>AgentBuild</c> (o commit instalado, curto), <c>Os</c>, <c>TvKind</c> e <c>TvHost</c>. <c>CanReadLogs</c> e
 /// <c>CanMaintain</c> dizem o que o agente sabe fazer (falso = a tela pede para atualizar o agente).
@@ -45,7 +46,19 @@ internal sealed class ListAgentsHandler(DevicesDbContext db, IAgentPresenceReade
             .Select(a => new { a.Id, a.Slug, a.Name, a.Platform, a.CreatedAt, Revoked = a.RevokedAt != null })
             .ToListAsync(cancellationToken);
 
-        return [.. agents.Select(a => Summarize(a.Id, a.Slug, a.Name, a.Platform, a.CreatedAt, a.Revoked, presence.Get(a.Slug), publishedBuild))];
+        var snapshots = await db.AgentPresenceSnapshots.AsNoTracking()
+            .ToDictionaryAsync(snapshot => snapshot.AgentId, cancellationToken);
+
+        return [.. agents.Select(a => Summarize(
+            a.Id,
+            a.Slug,
+            a.Name,
+            a.Platform,
+            a.CreatedAt,
+            a.Revoked,
+            presence.Get(a.Slug),
+            snapshots.GetValueOrDefault(a.Id),
+            publishedBuild))];
     }
 
     private static AgentSummary Summarize(
@@ -56,11 +69,19 @@ internal sealed class ListAgentsHandler(DevicesDbContext db, IAgentPresenceReade
         DateTimeOffset createdAt,
         bool revoked,
         AgentPresenceInfo? info,
+        AgentPresenceSnapshot? snapshot,
         PublishedBuild publishedBuild)
     {
+        // Só a conexão viva vence o retrato persistido. Uma desconexão antiga da instância não pode esconder o que
+        // sobreviveu a um deploy.
+        var live = info is { Connected: true } ? info : null;
+        var versionSource = live?.AgentVersion ?? snapshot?.AgentVersion;
+        var host = live?.Host ?? snapshot?.Host;
+        var update = live?.Update ?? snapshot?.Update;
+
         // O hello manda "0.1.0+3f2a9c1d4e5b": o pacote e, depois do mais, o commit instalado.
-        var (version, build) = SplitVersion(info?.AgentVersion);
-        var capabilities = info?.Capabilities ?? [];
+        var (version, build) = SplitVersion(versionSource);
+        var capabilities = live?.Capabilities ?? [];
         return new AgentSummary(
             id,
             slug,
@@ -68,19 +89,19 @@ internal sealed class ListAgentsHandler(DevicesDbContext db, IAgentPresenceReade
             platform,
             createdAt,
             revoked,
-            LastSeen(info),
-            info?.Connected ?? false,
+            LastSeen(live, snapshot),
+            live is not null,
             version,
             build,
-            info?.Host?.Os,
-            info?.Host?.TvKind,
-            info?.Host?.TvHost,
+            host?.Os,
+            host?.TvKind,
+            host?.TvHost,
             !revoked && capabilities.Contains(RemoteCareDefaults.LogsCapability, StringComparer.Ordinal),
             !revoked && capabilities.Contains(RemoteCareDefaults.MaintenanceCapability, StringComparer.Ordinal),
-            AgentUpdateSummary.From(info?.Update, publishedBuild),
+            AgentUpdateSummary.From(update, publishedBuild),
             !revoked
                 && capabilities.Contains(RemoteCareDefaults.MaintenanceCapability, StringComparer.Ordinal)
-                && info?.Update?.PreviousSha is not null);
+                && live?.Update?.PreviousSha is not null);
     }
 
     private static (string? Version, string? Build) SplitVersion(string? raw)
@@ -94,8 +115,8 @@ internal sealed class ListAgentsHandler(DevicesDbContext db, IAgentPresenceReade
         return plus < 0 ? (raw, null) : (raw[..plus], raw[(plus + 1)..]);
     }
 
-    private static DateTimeOffset? LastSeen(AgentPresenceInfo? info) =>
-        info is null ? null : info.LastMessageAt ?? info.ConnectedSince;
+    private static DateTimeOffset? LastSeen(AgentPresenceInfo? live, AgentPresenceSnapshot? snapshot) =>
+        live?.LastMessageAt ?? live?.ConnectedSince ?? snapshot?.LastSeenAt;
 }
 
 internal static class ListAgentsEndpoint

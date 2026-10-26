@@ -3,11 +3,16 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Identity.Passkeys;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.Modules.Devices.Adapters;
+using UniOver.Modules.Devices.Features.Agents;
+using UniOver.Modules.Devices.Features.ListAgents;
+using UniOver.Modules.Devices.Features.RemoteCare;
 
 namespace UniOver.IntegrationTests.Devices.RemoteCare;
 
@@ -458,6 +463,107 @@ public sealed class RemoteCareTests(PostgresFixture postgres)
         item.GetProperty("canReadLogs").GetBoolean().Should().BeTrue();
         item.GetProperty("canMaintain").GetBoolean().Should().BeTrue();
         item.GetProperty("lastSeenAt").ValueKind.Should().Be(JsonValueKind.String);
+    }
+
+    [Fact]
+    public async Task List_WhenDisconnected_UsesTheLastKnownDetailsAfterPresenceRestarts()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var agent = await ConnectWithUpdateAsync(app, UpdateState("failed", Newer, Previous, "sem acesso ao pacote"), Logs, Maintenance);
+        await TransportApp.WaitUntilAsync(async () =>
+        {
+            await using var check = app.App.Db();
+            return await check.AgentPresenceSnapshots.AnyAsync(
+                x => x.AgentId == app.Agent.Id && x.UpdateOutcome == "failed", Ct);
+        }, "estado de atualização persistido");
+        await agent.DisposeAsync();
+        await TransportApp.WaitUntilAsync(
+            () => app.Presence.Get(app.Agent.Slug)?.Connected == false,
+            "agente desconectado");
+
+        await using var db = app.App.Db();
+        var restartedPresence = new InMemoryPresenceStore(
+            app.App.Time,
+            Options.Create(new DevicesTransportOptions()));
+        var handler = new ListAgentsHandler(
+            db,
+            restartedPresence,
+            new PublishedBuild(null, app.App.Time.GetUtcNow()));
+
+        var item = (await handler.HandleAsync(Ct)).Single();
+        item.Connected.Should().BeFalse();
+        item.LastSeenAt.Should().NotBeNull();
+        item.AgentVersion.Should().Be("0.1.0");
+        item.AgentBuild.Should().Be("3f2a9c1d4e5b");
+        item.Os.Should().Be("Windows 11 (10.0.26200)");
+        item.Update!.State.Should().Be("failed");
+        item.Update.PreviousSha.Should().Be(Previous);
+    }
+
+    [Fact]
+    public async Task List_KeepsEachComputersLastKnownDetailsApart()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var other = await app.PairAnotherAsync("Outro PC");
+        await using (var agent = await ConnectWithUpdateAsync(app, UpdateState("failed", Newer, Previous, "sem acesso ao pacote"), Logs, Maintenance))
+        {
+            await TransportApp.WaitUntilAsync(async () =>
+            {
+                await using var check = app.App.Db();
+                return await check.AgentPresenceSnapshots.AnyAsync(
+                    x => x.AgentId == app.Agent.Id && x.UpdateOutcome == "failed", Ct);
+            }, "estado de atualização persistido");
+        }
+
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "agente desconectado");
+
+        using var response = await app.App.SendAsync(HttpMethod.Get, "/api/v1/devices/agents", bearer: app.Login.AccessToken);
+        var items = (await DevicesApp.JsonAsync(response)).EnumerateArray().ToList();
+        var first = items.Single(x => x.GetProperty("id").GetGuid() == app.Agent.Id);
+        var second = items.Single(x => x.GetProperty("id").GetGuid() == other.Id);
+
+        first.GetProperty("agentVersion").GetString().Should().Be("0.1.0");
+        first.GetProperty("update").GetProperty("state").GetString().Should().Be("failed");
+        first.GetProperty("lastSeenAt").ValueKind.Should().Be(JsonValueKind.String);
+        second.GetProperty("agentVersion").ValueKind.Should().Be(JsonValueKind.Null);
+        second.GetProperty("update").ValueKind.Should().Be(JsonValueKind.Null);
+        second.GetProperty("lastSeenAt").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task Presence_ARevokedComputerKeepsTheLastSummaryItHadBeforeRevocation()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var seenAt = app.App.Time.GetUtcNow();
+        var agent = await ConnectWithUpdateAsync(app, UpdateState("up_to_date", Installed), Logs, Maintenance);
+        await TransportApp.WaitUntilAsync(async () =>
+        {
+            await using var check = app.App.Db();
+            return await check.AgentPresenceSnapshots.AnyAsync(
+                x => x.AgentId == app.Agent.Id && x.UpdateOutcome == "up_to_date", Ct);
+        }, "resumo persistido");
+
+        app.App.Time.Advance(TimeSpan.FromMinutes(5));
+        using (var revoke = await app.App.RevokeRawAsync(app.Login, app.Agent.Id))
+        {
+            revoke.EnsureSuccessStatusCode();
+        }
+
+        // A revogação fecha a conexão pelo servidor.
+        await agent.WaitForCloseAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "agente fora do ar");
+        await agent.DisposeAsync();
+
+        // A queda causada pela revogação não pode gravar um "visto por último" depois da revogação.
+        await Task.Delay(300, Ct);
+        await using var db = app.App.Db();
+        var snapshot = await db.AgentPresenceSnapshots.SingleAsync(x => x.AgentId == app.Agent.Id, Ct);
+        snapshot.LastSeenAt.Should().Be(seenAt);
+
+        using var list = await app.App.SendAsync(HttpMethod.Get, "/api/v1/devices/agents", bearer: app.Login.AccessToken);
+        var item = (await DevicesApp.JsonAsync(list)).EnumerateArray().Single();
+        item.GetProperty("revoked").GetBoolean().Should().BeTrue();
+        item.GetProperty("canMaintain").GetBoolean().Should().BeFalse();
     }
 
     [Fact]

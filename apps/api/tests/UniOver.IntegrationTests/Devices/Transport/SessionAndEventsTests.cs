@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.WebSockets;
 using System.Data.Common;
 using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Infrastructure;
@@ -203,34 +204,79 @@ public sealed class SessionAndEventsTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task ConnectingMessagingAndDisconnecting_WriteNothingToTheDatabase()
+    public async Task Presence_WritesTheLastContactAtMostOncePerMinute_BesidesConnectionChanges()
     {
         await using var app = await TransportApp.StartAsync(postgres);
-
-        // Linha de base depois de toda a preparação: pareamento, login, bilhete e a outbox já entregue.
-        var ticket = await app.StreamTicketAsync();
-        await app.App.WaitForOutboxAsync(expectedProcessed: 1);
-        var before = await app.DatabaseFingerprintAsync();
-
-        using var response = await app.OpenEventsAsync(ticket);
-        using var reader = new SseReader(await response.Content.ReadAsStreamAsync(Ct));
-        await reader.NextAsync();
-
-        await using (var agent = await app.ConnectAsync())
+        var connectedAt = app.App.Time.GetUtcNow();
+        await using var agent = await app.ConnectAsync();
+        await TransportApp.WaitUntilAsync(async () =>
         {
-            await agent.SendHelloAsync("1.0.0", "tv.remote");
-            await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "1.0.0", "hello");
-            await agent.SendTextAsync("lixo");
-            await agent.SendTextAsync(agent.Envelope(
-                "tv.state.v1",
-                new System.Text.Json.Nodes.JsonObject { ["power"] = "on", ["volume"] = 10, ["app"] = null, ["connection"] = "hot" }));
-            await agent.SendHelloAsync("1.0.1");
-            await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.AgentVersion == "1.0.1", "segundo hello");
+            await using var db = app.App.Db();
+            return await db.AgentPresenceSnapshots.AnyAsync(x => x.AgentId == app.Agent.Id, Ct);
+        }, "conexão persistida");
+
+        await using (var connected = app.App.Db())
+        {
+            var snapshot = await connected.AgentPresenceSnapshots.SingleAsync(x => x.AgentId == app.Agent.Id, Ct);
+            snapshot.LastSeenAt.Should().Be(connectedAt);
         }
 
-        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "desconexão");
+        app.App.Time.Advance(TimeSpan.FromSeconds(25));
+        await agent.SendTextAsync(agent.Envelope("agent.keepalive.v1", new System.Text.Json.Nodes.JsonObject()));
+        await TransportApp.WaitUntilAsync(
+            () => app.Presence.Get(app.Agent.Slug)?.LastMessageAt > connectedAt,
+            "batimento recebido");
 
-        (await app.DatabaseFingerprintAsync()).Should().Be(before);
+        await using (var beforeMinute = app.App.Db())
+        {
+            var snapshot = await beforeMinute.AgentPresenceSnapshots.SingleAsync(x => x.AgentId == app.Agent.Id, Ct);
+            snapshot.LastSeenAt.Should().Be(connectedAt);
+        }
+
+        app.App.Time.Advance(TimeSpan.FromMinutes(1));
+        await agent.SendTextAsync(agent.Envelope("agent.keepalive.v1", new System.Text.Json.Nodes.JsonObject()));
+        await TransportApp.WaitUntilAsync(
+            () => app.Presence.Get(app.Agent.Slug)?.LastMessageAt > connectedAt + TimeSpan.FromSeconds(25),
+            "batimento após o intervalo");
+
+        await TransportApp.WaitUntilAsync(async () =>
+        {
+            await using var db = app.App.Db();
+            return await db.AgentPresenceSnapshots
+                .Where(x => x.AgentId == app.Agent.Id)
+                .Select(x => x.LastSeenAt)
+                .SingleAsync(Ct) == connectedAt + TimeSpan.FromSeconds(85);
+        }, "batimento persistido após o intervalo");
+
+        await using var afterMinute = app.App.Db();
+        var refreshed = await afterMinute.AgentPresenceSnapshots.SingleAsync(x => x.AgentId == app.Agent.Id, Ct);
+        refreshed.LastSeenAt.Should().Be(connectedAt + TimeSpan.FromSeconds(85));
+    }
+
+    [Fact]
+    public async Task RepeatedIdenticalHello_AndHeartbeats_DoNotRewriteTheSummary()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAsync();
+        await agent.SendHelloAsync("1.0.0", "tv.remote");
+        await TransportApp.WaitUntilAsync(async () =>
+        {
+            await using var db = app.App.Db();
+            return await db.AgentPresenceSnapshots.AnyAsync(
+                x => x.AgentId == app.Agent.Id && x.AgentVersion == "1.0.0", Ct);
+        }, "hello persistido");
+        var before = await app.SnapshotRowVersionAsync();
+        var seenBefore = app.App.Time.GetUtcNow();
+
+        // Dentro do minuto: o hello repetido (como o agente faz de tempos em tempos) e o batimento não gravam nada.
+        app.App.Time.Advance(TimeSpan.FromSeconds(20));
+        await agent.SendHelloAsync("1.0.0", "tv.remote");
+        await agent.SendTextAsync(agent.Envelope("agent.keepalive.v1", new System.Text.Json.Nodes.JsonObject()));
+        await TransportApp.WaitUntilAsync(
+            () => app.Presence.Get(app.Agent.Slug)?.LastMessageAt > seenBefore,
+            "mensagens processadas");
+
+        (await app.SnapshotRowVersionAsync()).Should().Be(before);
     }
 }
 

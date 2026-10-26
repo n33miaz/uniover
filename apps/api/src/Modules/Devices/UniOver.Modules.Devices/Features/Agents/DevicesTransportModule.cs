@@ -42,10 +42,11 @@ public static class DevicesTransportModule
         services.TryAddSingleton<AgentEnvelopeValidator>();
         services.TryAddSingleton<OutboundEnvelopeFactory>();
 
-        // Presença: só em memória, atrás da porta. Escrita e leitura são a mesma instância.
+        // A conexão viva fica em memória; o último contato e os detalhes chegam ao banco por um gravador separado.
         services.AddSingleton<InMemoryPresenceStore>();
         services.AddSingleton<IPresenceStore>(sp => sp.GetRequiredService<InMemoryPresenceStore>());
         services.AddSingleton<IAgentPresenceReader>(sp => sp.GetRequiredService<InMemoryPresenceStore>());
+        services.AddSingleton<AgentPresencePersistence>();
         services.AddSingleton(sp => new SseBroadcaster<PresenceUpdate>(
             sp.GetRequiredService<IOptions<DevicesTransportOptions>>().Value.Sse));
 
