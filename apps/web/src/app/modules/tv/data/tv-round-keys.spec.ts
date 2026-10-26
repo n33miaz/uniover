@@ -72,6 +72,14 @@ describe('TvRoundKeys', () => {
     expect(names(keys().shown())).toEqual(['INPUT']);
   });
 
+  it('ignora escolhas de teclas que a TV atual não declara, inclusive no limite da grade', () => {
+    useTv('samsung');
+    prefs().set({ extraKeys: ['GUIDE', 'INFO', 'TOOLS', 'RED', 'BLUE'] });
+    useTv('android', ['tv.key.INPUT']);
+    expect(keys().chosen()).toEqual([]);
+    expect(names(keys().shown())).not.toContain('GUIDE');
+  });
+
   it('refuses a choice the grid could not complete, and one past the main screen limit', () => {
     useTv(
       'samsung',

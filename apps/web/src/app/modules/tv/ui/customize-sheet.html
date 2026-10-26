@@ -2,7 +2,13 @@
   <span class="grabber" aria-hidden="true"></span>
   <header class="head">
     <h2 id="tv-custom-title" i18n="@@tv.custom.title">Personalizar</h2>
-    <p class="hint" i18n="@@tv.custom.hint">As mudanças valem na hora e ficam só neste aparelho.</p>
+    @if (isGuest()) {
+      <p class="hint" i18n="@@tv.custom.hint-guest">Seus ajustes valem só para você nesta TV.</p>
+    } @else {
+      <p class="hint" i18n="@@tv.custom.hint-owner">
+        As mudanças valem para todos que usam esta TV.
+      </p>
+    }
   </header>
 
   <div class="block">
@@ -186,9 +192,12 @@
       class="secondary ui-btn"
       [disabled]="!prefs.customized()"
       (click)="restore()"
-      i18n="@@tv.custom.restore"
     >
-      Restaurar padrão
+      @if (isGuest()) {
+        <span i18n="@@tv.custom.restore-tv">Voltar ao padrão da TV</span>
+      } @else {
+        <span i18n="@@tv.custom.restore">Restaurar padrão</span>
+      }
     </button>
     <button
       #done

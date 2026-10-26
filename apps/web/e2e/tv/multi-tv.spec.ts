@@ -162,16 +162,14 @@ async function pickTv(page: Page, name: string) {
 }
 
 test.describe('uma TV só', () => {
-  test('nada muda: o nome continua abrindo Personalizar e a API nunca recebe tvId', async ({
-    page,
-  }) => {
+  test('com uma TV só, comandos e fluxo continuam sem tvId', async ({ page }) => {
     serve([CASA]);
     await openTv(page, 'TV');
     await expect(page.getByRole('button', { name: 'TV, personalizar' })).toBeVisible();
     await expect(header(page).locator('.chevron')).toHaveCount(0);
     expect(await sseUrls(page)).toEqual(['/api/v1/tv/events']);
     await expect(chip(page, 'Spotify')).toBeVisible();
-    expect(tv.requests.filter((r) => r.tvId !== null)).toEqual([]);
+    expect(tv.requests.filter((r) => r.path !== '/layout' && r.tvId !== null)).toEqual([]);
     await expect(page.getByRole('button', { name: 'Teclado', exact: true })).toBeVisible();
   });
 
@@ -180,7 +178,7 @@ test.describe('uma TV só', () => {
     await openTv(page, 'TV');
     expect(await sseUrls(page)).toEqual(['/api/v1/tv/events']);
     expect(tv.requests.some((r) => r.path === '/tvs')).toBe(true);
-    expect(tv.requests.filter((r) => r.tvId !== null)).toEqual([]);
+    expect(tv.requests.filter((r) => r.path !== '/layout' && r.tvId !== null)).toEqual([]);
   });
 });
 
@@ -278,6 +276,7 @@ test.describe('duas TVs', () => {
     await sheet.getByRole('button', { name: 'Concluir' }).click();
     await expect(sheet).toBeHidden();
     await expect(page.getByRole('heading', { level: 1, name: 'Quarto' })).toBeVisible();
+    await expect.poll(() => tv.layouts[RAPHAEL.id]?.['name']).toBe('Quarto');
 
     await page.reload();
     await expect(page.getByRole('heading', { level: 1, name: 'Quarto' })).toBeVisible();
@@ -285,6 +284,52 @@ test.describe('duas TVs', () => {
 
     await pickTv(page, 'Casa');
     await expect(page.getByRole('heading', { level: 1, name: 'Casa' })).toBeVisible();
+  });
+
+  test('convidada ajusta uma TV e volta à base sem alterar a outra', async ({ page }) => {
+    const guestId = '00000000-0000-4000-8000-000000000074';
+    identity.guests.push({
+      id: guestId,
+      displayName: GUEST.displayName,
+      email: GUEST.email,
+      password: GUEST.password,
+      createdAt: '2026-10-19T15:00:00Z',
+      disabledAt: null,
+      permissions: ['module:tv', 'tv:control'],
+    });
+    identity.role = 'guest';
+    serve([CASA, RAPHAEL]);
+    tv.members[CASA.id] = [guestId];
+    tv.members[RAPHAEL.id] = [guestId];
+    const layout = (name: string) => ({
+      name,
+      buttonSize: 'comfortable',
+      showMedia: true,
+      showChannel: true,
+      startPage: 'last',
+      padSpeed: 'normal',
+      pillLayout: 'sides',
+      extraKeys: null,
+      dismissedSuggestions: [],
+    });
+    tv.layouts[CASA.id] = layout('Sala');
+    tv.layouts[RAPHAEL.id] = layout('Raphael');
+
+    await openTv(page, 'Sala');
+    await menuDialogOpen(page);
+    await menuDialog(page).getByRole('button', { name: 'Personalizar', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Personalizar' });
+    await sheet.getByLabel('Nome da TV').fill('Minha sala');
+    await expect(page.getByRole('heading', { level: 1, name: 'Minha sala' })).toBeVisible();
+    expect(tv.layouts[CASA.id]?.['name']).toBe('Sala');
+    await sheet.getByRole('button', { name: 'Voltar ao padrão da TV' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Sala' })).toBeVisible();
+    await sheet.getByRole('button', { name: 'Concluir' }).click();
+    await pickTv(page, 'Raphael');
+    await expect(page.getByRole('heading', { level: 1, name: 'Raphael' })).toBeVisible();
+    expect(
+      tv.requests.filter((request) => request.path === '/layout' && request.method === 'PUT'),
+    ).toEqual([]);
   });
 
   test('se a TV guardada sumiu, cai na padrão sem erro', async ({ page }) => {
@@ -556,7 +601,7 @@ test.describe('conta que só vê a TV dela', () => {
     await expect(chip(page, 'Netflix')).toBeVisible();
     await expect(chip(page, 'Spotify')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Teclado', exact: true })).toHaveCount(0);
-    expect(tv.requests.filter((r) => r.tvId !== null)).toEqual([]);
+    expect(tv.requests.filter((r) => r.path !== '/layout' && r.tvId !== null)).toEqual([]);
     expect(tv.denied).toEqual([]);
     await expectSound(page);
   });
@@ -632,8 +677,10 @@ test.describe('conta que só vê a TV dela', () => {
     expect(
       await page.evaluate(() => (window as unknown as { __samePage?: boolean }).__samePage),
     ).toBe(true);
-    // Nenhuma chamada da convidada levou o id de uma TV que ela não vê, nem o fluxo dela foi aberto nessa TV.
-    expect(tv.requests.slice(requestsBefore).filter((r) => r.tvId !== null)).toEqual([]);
+    // Comandos e fluxo não levam o id de uma TV que ela não vê; a base usa o id da TV visível.
+    expect(
+      tv.requests.slice(requestsBefore).filter((r) => r.path !== '/layout' && r.tvId !== null),
+    ).toEqual([]);
     expect(
       (await sseUrls(page)).slice(streamsBefore).filter((url) => url.includes('tvId')),
     ).toEqual([]);
