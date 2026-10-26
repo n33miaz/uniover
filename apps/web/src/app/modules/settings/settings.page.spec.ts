@@ -84,7 +84,7 @@ describe('SettingsPage (a list of screens)', () => {
         { title: 'Aparência', summary: 'Tema automático', href: '/ajustes/aparencia' },
         {
           title: 'Segurança',
-          summary: 'Passkeys que confirmam ações perigosas',
+          summary: 'Sessões e passkeys',
           href: '/ajustes/seguranca',
         },
         { title: 'Pessoas', summary: 'Convites e convidados', href: '/ajustes/pessoas' },

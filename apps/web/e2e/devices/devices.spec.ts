@@ -230,7 +230,7 @@ test.describe('aparelhos', () => {
     devices.agents.push(storedAgent());
     await openDevices(page, browserName);
     await expect(page.locator('.item .name')).toHaveText(['PC de casa']);
-    await expect(page.locator('.item .last-seen')).toContainText('Último contato em');
+    await expect(page.locator('.item .last-seen')).toContainText(/Visto (agora|há)/);
 
     await page.getByRole('button', { name: 'Revogar PC de casa' }).click();
     await expect(
@@ -296,7 +296,7 @@ test.describe('aparelhos', () => {
     await expect(first).toContainText('Sistema: Windows 11 (10.0.26200)');
     await expect(first.locator('.tv')).toHaveText('TV: Android TV · 192.168.0.20');
     await expect(first.locator('.chip.connection')).toHaveText('Conectado agora');
-    await expect(first.locator('.last-seen')).toContainText('Último contato em');
+    await expect(first.locator('.last-seen')).toContainText(/Visto (agora|há)/);
     const second = page.locator('.item').nth(1);
     await expect(second.locator('.chip.connection')).toHaveText('Desconectado');
     await expect(second.locator('.version')).toHaveCount(0);

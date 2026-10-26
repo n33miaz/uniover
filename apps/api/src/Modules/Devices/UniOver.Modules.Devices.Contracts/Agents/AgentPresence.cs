@@ -38,7 +38,8 @@ public sealed record AgentUpdateInfo(
     bool RolledBack);
 
 /// <summary>
-/// Presença de um agente, só em memória: nada disto vai para o banco. <see cref="AgentVersion"/> e
+/// Presença viva de um agente (conexão, em memória). O último contato, a versão e a situação de atualização também são
+/// guardados no banco, num resumo à parte, para valerem com o agente desligado. <see cref="AgentVersion"/> e
 /// <see cref="Capabilities"/> vêm do <c>agent.hello.v1</c> e ficam vazios até ele chegar. <see cref="DisconnectedAt"/>
 /// é o instante em que a sessão caiu (nulo enquanto conectado).
 /// </summary>

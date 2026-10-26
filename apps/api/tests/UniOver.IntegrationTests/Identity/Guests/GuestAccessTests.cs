@@ -33,7 +33,8 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
     /// <summary>
     /// As únicas rotas autenticadas (fora da TV e do Treino) que o convidado alcança: a própria sessão, inclusive as três
     /// do login por QR (o celular já conectado vê, confirma ou recusa o pedido do computador), que exigem sessão de conta ativa,
-    /// e a confirmação da própria senha (o convidado a refaz antes de aprovar o próprio computador).
+    /// a confirmação da própria senha (o convidado a refaz antes de aprovar o próprio computador) e a lista das próprias
+    /// sessões, com o encerramento de uma delas ou de todas as outras (sempre só da própria conta).
     /// </summary>
     private static readonly string[] GuestSessionRoutes =
     [
@@ -44,6 +45,9 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         "/api/v1/identity/auth/qr/approve",
         "/api/v1/identity/auth/qr/deny",
         "/api/v1/identity/step-up/password",
+        "/api/v1/identity/sessions",
+        "/api/v1/identity/sessions/{id:guid}/revoke",
+        "/api/v1/identity/sessions/others/revoke",
     ];
 
     /// <summary>Rotas que se autenticam por credencial própria (o agente do PC), não por papel de pessoa.</summary>

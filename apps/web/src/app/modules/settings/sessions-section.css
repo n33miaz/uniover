@@ -1,0 +1,61 @@
+:host {
+  display: block;
+}
+
+.session-section,
+.sessions,
+.session,
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.session-section {
+  margin-block: var(--space-4);
+}
+
+.sessions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.session {
+  min-width: 0;
+  padding: var(--space-4);
+  overflow-wrap: anywhere;
+}
+
+.session > .ui-btn,
+.session > .ui-chip {
+  align-self: flex-start;
+}
+
+.detail {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.confirm {
+  padding: var(--space-3);
+}
+
+.confirm p {
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ui-btn {
+  min-height: var(--tap);
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-4);
+}

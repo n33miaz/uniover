@@ -27,6 +27,7 @@ using UniOver.Modules.Identity.Features.Refresh;
 using UniOver.Modules.Identity.Features.RemovePasskey;
 using UniOver.Modules.Identity.Features.RevokeGuest;
 using UniOver.Modules.Identity.Features.RevokeGuestInvite;
+using UniOver.Modules.Identity.Features.Sessions;
 using UniOver.Modules.Identity.Features.RenamePasskey;
 using UniOver.Modules.Identity.Features.RequestStepUp;
 using UniOver.Modules.Identity.Features.SetGuestPermissions;
@@ -87,6 +88,7 @@ public static class IdentityModule
         services.AddScoped<RevokeGuestHandler>();
         services.AddScoped<SetGuestPermissionsHandler>();
         services.AddScoped<UpdateProfileHandler>();
+        services.AddScoped<SessionHandler>();
 
         // Revogação imediata na TV: o status do convidado (cache curto) é uma porta usada pelas políticas dos módulos.
         services.AddSingleton<GuestAccountStatus>();
@@ -137,6 +139,7 @@ public static class IdentityModule
         group.MapListGuests();
         group.MapRevokeGuest();
         group.MapSetGuestPermissions();
+        group.MapSessions();
         group.MapBeginPasskeyRegistration();
         group.MapCompletePasskeyRegistration();
         group.MapListPasskeys();

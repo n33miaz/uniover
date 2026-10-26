@@ -44,6 +44,8 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.invite-revoked:Convite revogado`;
     case 'guest_revoked':
       return $localize`:@@settings.audit.action.guest-revoked:Acesso revogado`;
+    case 'session_revoked':
+      return $localize`:@@settings.audit.action.session-revoked:Sessão encerrada`;
     case 'permissions_changed':
       return $localize`:@@settings.audit.action.permissions-changed:Permissões alteradas`;
     case 'profile_updated':

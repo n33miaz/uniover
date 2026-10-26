@@ -175,7 +175,8 @@ internal sealed class AgentConnections(
 
     /// <summary>
     /// O agente repete o <c>hello</c> de tempos em tempos (para valer depois de uma API que o recusou): sem mudança do que
-    /// os ouvintes enxergam (conexão, versão e capacidades) ninguém é avisado, e o banco do plano grátis segue dormindo.
+    /// os ouvintes enxergam (conexão, versão e capacidades) ninguém é avisado; o resumo persistido é atualizado pelo
+    /// hub, fora deste lock.
     /// </summary>
     private static bool SamePublicState(AgentPresenceInfo? before, AgentPresenceInfo after) =>
         before is not null

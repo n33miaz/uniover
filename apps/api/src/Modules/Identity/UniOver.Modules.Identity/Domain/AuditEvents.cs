@@ -18,6 +18,7 @@ public static class AuditEvents
     public const string GuestInviteAccepted = "guest_invite_accepted";
     public const string GuestInviteRevoked = "guest_invite_revoked";
     public const string GuestRevoked = "guest_revoked";
+    public const string SessionRevoked = "session_revoked";
 
     /// <summary>O dono mudou as permissões de um convidado. O detalhe leva o id da conta e o que entrou e saiu (nunca nome nem e-mail).</summary>
     public const string PermissionsChanged = "permissions_changed";
@@ -62,6 +63,7 @@ public static class AuditEvents
         GuestInviteAccepted,
         GuestInviteRevoked,
         GuestRevoked,
+        SessionRevoked,
         PermissionsChanged,
         ProfileUpdated,
         QrLoginApproved,
