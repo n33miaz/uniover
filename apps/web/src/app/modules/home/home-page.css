@@ -58,10 +58,10 @@
 }
 
 h1 {
-  font-size: clamp(1.625rem, 4vw, 2rem);
+  font-size: clamp(1.125rem, 5.5vw, 2rem);
   font-weight: 750;
   letter-spacing: -0.02em;
-  text-wrap: balance;
+  white-space: nowrap;
 }
 
 .time {
@@ -118,7 +118,7 @@ h1 {
   transform: scale(0.97);
 }
 
-/* Cabeçalho da seção de módulos: título e "Editar" na mesma linha, a ação discreta à direita. */
+/* Cabeçalho da seção de módulos: título e edição na mesma linha, com o mesmo toque dos outros botões. */
 .section-head {
   display: flex;
   align-items: center;
@@ -128,42 +128,16 @@ h1 {
 }
 
 .edit {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: var(--tap);
-  min-height: var(--tap);
-  margin-right: calc(-1 * var(--space-2));
-  padding: 0 var(--space-2);
-  border: 0;
-  border-radius: var(--radius);
-  background: none;
+  flex: none;
+  padding-inline: var(--space-3);
   color: var(--a-accent-ink);
-  font: inherit;
-  font-size: var(--fs-small);
-  font-weight: 700;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color var(--dur-fast) linear;
-}
-
-.edit:active {
-  background: var(--a-accent-soft);
-}
-
-.edit:focus-visible {
-  outline: 3px solid var(--a-accent);
-  outline-offset: 2px;
 }
 
 .edit app-home-glyph {
   --glyph-size: 18px;
 }
 
-/*
- * Grade de módulos: todos do mesmo tamanho. Duas colunas no celular; a partir de 600px, três (grade de seis
- * partes, para a última linha, se incompleta, dividir ou tomar a largura toda em vez de deixar meia linha vazia).
- */
+/* Grade de módulos: os pequenos ocupam meia linha; os largos guardados na preferência usam a linha inteira. */
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -175,14 +149,12 @@ h1 {
   min-width: 0;
 }
 
-.empty {
+.widget.wide {
   grid-column: 1 / -1;
 }
 
-@media (max-width: 599.98px) {
-  .widget:last-child:nth-child(odd) {
-    grid-column: 1 / -1;
-  }
+.empty {
+  grid-column: 1 / -1;
 }
 
 @media (min-width: 600px) {
@@ -194,13 +166,8 @@ h1 {
     grid-column: span 2;
   }
 
-  .widget:last-child:nth-child(3n + 1) {
+  .widget.wide {
     grid-column: span 6;
-  }
-
-  .widget:last-child:nth-child(3n + 2),
-  .widget:nth-last-child(2):nth-child(3n + 1) {
-    grid-column: span 3;
   }
 }
 
@@ -211,8 +178,9 @@ h1 {
   flex-direction: column;
   align-items: center;
   gap: var(--space-2);
+  min-height: 220px;
   min-width: 0;
-  padding: var(--space-4) var(--space-2) var(--space-3);
+  padding: var(--space-4) var(--space-3) var(--space-3);
   text-align: center;
 }
 
@@ -245,40 +213,53 @@ h3 {
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.25;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
-/* O link se estende por cima do cartão inteiro, então o cartão todo é o alvo de toque. */
+.card-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+}
+
+.desc {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+/* O link se estende por cima do cartão inteiro, então a ação visível e o cartão levam ao mesmo lugar. */
 .card-link {
-  /* A caixa do link cresce (e a margem negativa devolve o espaço) para ter 44 px de toque também medida sozinha. */
-  display: block;
-  box-sizing: border-box;
-  min-width: var(--tap);
-  min-height: var(--tap);
-  margin: calc(-1 * var(--space-3)) calc(-1 * var(--space-2));
-  padding: var(--space-3) var(--space-2);
-  color: inherit;
-  text-decoration: none;
-}
-
-.card-link::after {
-  content: '';
   position: absolute;
   inset: 0;
   border-radius: var(--radius);
+  cursor: pointer;
 }
 
 .card-link:focus-visible {
-  outline: none;
-}
-
-.card-link:focus-visible::after {
   outline: 3px solid var(--a-accent);
   outline-offset: 2px;
 }
 
 .card.ui-press:active {
   transform: scale(0.97);
+}
+
+.card-foot {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: end;
+  gap: var(--space-2);
+  width: 100%;
 }
 
 /* A faixa de selos tem sempre a altura de um selo: cartão com e sem selo fica no mesmo ritmo. */
@@ -290,6 +271,22 @@ h3 {
   gap: var(--space-1);
   min-width: 0;
   min-height: 26px;
+}
+
+.card-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: var(--tap);
+  color: var(--a-accent-ink);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.card-action app-home-glyph {
+  --glyph-size: 18px;
 }
 
 /* Estado vazio. */

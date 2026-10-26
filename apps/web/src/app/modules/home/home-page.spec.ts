@@ -177,22 +177,27 @@ describe('HomePage', () => {
   it('shows one block per module, TV and Treino first and then the planned ones, in order', async () => {
     const { el } = await render();
     expect(titles(el)).toEqual(['TV', 'Treino', ...PLANNED]);
-    // Grade regular: nenhum bloco ganha classe de tamanho, nem o que foi guardado como "Largo" antes.
-    expect(el.querySelectorAll('li.widget.wide, li.widget.full')).toHaveLength(0);
+    expect(
+      Array.from(el.querySelectorAll<HTMLElement>('li.widget.wide')).map(
+        (widget) => widget.querySelector('article')?.dataset['module'],
+      ),
+    ).toEqual(['training']);
   });
 
   it('links only the modules that have a screen', async () => {
     const { el } = await render();
     const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('article a'));
-    expect(links.map((a) => [a.textContent?.trim(), a.getAttribute('href')])).toEqual([
-      ['TV', '/tv'],
-      ['Treino', '/treino'],
-    ]);
+    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/tv', '/treino']);
     // O nome acessível leva a ação junto do nome que se vê.
     expect(links.map((a) => a.getAttribute('aria-label'))).toEqual([
       'TV: Abrir controle',
       'Treino: Ver treino',
     ]);
+    expect(
+      Array.from(el.querySelectorAll('article .card-action')).map((action) =>
+        action.textContent?.trim(),
+      ),
+    ).toEqual(['Abrir controle', 'Ver treino']);
     expect(el.querySelector('article[data-module="tv"] .chip')?.textContent ?? '').not.toContain(
       'Em breve',
     );
@@ -216,14 +221,28 @@ describe('HomePage', () => {
     const training = el.querySelector('article[data-module="training"]')!;
     expect(training.classList.contains('planned')).toBe(false);
     expect(training.querySelector('.badges')?.textContent).not.toContain('Em breve');
-    expect(training.querySelector('a.card-link')?.textContent?.trim()).toBe('Treino');
     expect(training.querySelector('a.card-link')?.getAttribute('href')).toBe('/treino');
   });
 
-  it('keeps a badge strip in every card, so cards with and without a badge have the same rhythm', async () => {
+  it('keeps the descriptions, badges and actions aligned without adding a second control', async () => {
     const { el } = await render();
     expect(el.querySelectorAll('article .badges')).toHaveLength(8);
-    expect(el.querySelectorAll('article .action, article .quiet, article .desc')).toHaveLength(0);
+    expect(
+      Array.from(el.querySelectorAll('article .desc')).map((description) =>
+        description.textContent?.trim(),
+      ),
+    ).toEqual([
+      'Ligar, volume, canais e apps',
+      'Fichas, séries e progresso',
+      'Aparelhos e linha do tempo',
+      'Seus serviços na internet',
+      'A rede de casa num lugar só',
+      'Cópia das fotos do Android',
+      'Avisos e notificações',
+      'Mais adiante: controlar o PC',
+    ]);
+    expect(el.querySelectorAll('article .card-action')).toHaveLength(2);
+    expect(el.querySelectorAll('article a.card-link')).toHaveLength(2);
   });
 
   it('hides a module that was turned off', async () => {
@@ -245,7 +264,16 @@ describe('HomePage', () => {
         { id: 'tv', size: 'small', enabled: true },
       ]),
     );
-    expect(titles((await render()).el)).toEqual(['Treino', 'TV', ...PLANNED]);
+    const { el } = await render();
+    expect(titles(el)).toEqual(['Treino', 'TV', ...PLANNED]);
+    expect(
+      el
+        .querySelector('article[data-module="training"]')
+        ?.parentElement?.classList.contains('wide'),
+    ).toBe(true);
+    expect(
+      el.querySelector('article[data-module="tv"]')?.parentElement?.classList.contains('wide'),
+    ).toBe(false);
   });
 
   it('offers shortcuts to the devices and settings screens', async () => {
@@ -299,11 +327,12 @@ describe('HomePage', () => {
     ).toContain('Sem agente em casa');
   });
 
-  it('hides every glyph from screen readers and shows no description under the module name', async () => {
+  it('hides every glyph from screen readers while keeping each module description visible', async () => {
     const { el } = await render();
     for (const svg of Array.from(el.querySelectorAll('article svg'))) {
       expect(svg.getAttribute('aria-hidden')).toBe('true');
     }
+    expect(el.querySelectorAll('article .desc')).toHaveLength(8);
   });
 
   it('draws a glyph of its own for every module, planned ones included', async () => {
