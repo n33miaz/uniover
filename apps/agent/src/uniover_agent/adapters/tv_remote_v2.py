@@ -19,7 +19,7 @@ Certificado e chave nunca são lidos nem registrados aqui: a biblioteca recebe s
 
 import asyncio
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any, Final, Protocol
 
@@ -132,7 +132,7 @@ def volume_percent(info: VolumeInfo) -> int | None:
 class AndroidTvRemoteV2:
     """Implementa `TvRemote` por Android TV Remote v2."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - parâmetros de sessão e injeções para o teste
         self,
         host: str,
         client_name: str,
@@ -140,6 +140,7 @@ class AndroidTvRemoteV2:
         *,
         connect_timeout: float = CONNECT_TIMEOUT_SECONDS,
         client_factory: ClientFactory | None = None,
+        on_connected: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._host = host
         self._client_name = client_name
@@ -147,6 +148,7 @@ class AndroidTvRemoteV2:
         self._keyfile = cert_dir / KEY_FILE
         self._connect_timeout = connect_timeout
         self._factory = client_factory or self._default_factory
+        self._on_connected = on_connected
         self._client: RemoteClient | None = None
         self._connected = False
         self._watcher: asyncio.Task[None] | None = None
@@ -186,6 +188,11 @@ class AndroidTvRemoteV2:
             raise TvUnreachable(f"sem resposta da TV ({type(exc).__name__})") from None
         self._connected = True
         self._watcher = asyncio.get_running_loop().create_task(self._watch_loss(client))
+        if self._on_connected is not None:
+            try:
+                await self._on_connected()
+            except Exception:
+                _log.exception("falha ao guardar o que se sabe da TV")
 
     async def disconnect(self) -> None:
         watcher, self._watcher = self._watcher, None

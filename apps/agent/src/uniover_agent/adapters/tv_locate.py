@@ -1,4 +1,4 @@
-"""Rede do reencontro da TV: tabela ARP, consulta SSDP e a conferência de identidade pelo REST.
+"""Rede do reencontro da TV: tabela ARP, SSDP e confirmação pelo REST ou sessão pareada.
 
 Cada função aqui fala com a rede de verdade e é injetada no `TvLocator` (o núcleo). Os endereços
 e os identificadores nunca vão para o registro.
@@ -27,7 +27,7 @@ from uniover_agent.adapters.tv_discovery import (
     subnet_hosts,
     tcp_open,
 )
-from uniover_agent.core.tv.locator import TvIdentity, TvKnown, TvLocator
+from uniover_agent.core.tv.locator import Authenticate, TvIdentity, TvKnown, TvLocator
 from uniover_agent.ports import Clock
 
 _log = logging.getLogger(__name__)
@@ -131,6 +131,8 @@ def build_locator(
     tv_host: str,
     known: TvKnown,
     clock: Clock,
+    *,
+    authenticate: Authenticate | None = None,
 ) -> TvLocator:
     """O `TvLocator` ligado à rede real, preso ao /24 da TV (o do `tv_host`)."""
     port = SAMSUNG_REST_PORT if kind == "samsung" else ANDROID_REMOTE_PORT
@@ -157,5 +159,12 @@ def build_locator(
         return subnet_hosts(base, exclude=interface()) if base else []
 
     return TvLocator(
-        clock, known, arp_table=arp_table, ssdp=ssdp, hosts=hosts, probe=probe, identify=identify
+        clock,
+        known,
+        arp_table=arp_table,
+        ssdp=ssdp,
+        hosts=hosts,
+        probe=probe,
+        identify=identify,
+        authenticate=authenticate if kind == "android" else None,
     )

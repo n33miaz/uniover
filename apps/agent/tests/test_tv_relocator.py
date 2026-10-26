@@ -13,9 +13,11 @@ from uniover_agent import main as main_module
 from uniover_agent.adapters import tv_locate
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTvRemote
 from uniover_agent.adapters.local_config import update_config
+from uniover_agent.adapters.tv_discovery import PortState
 from uniover_agent.config import Settings
 from uniover_agent.core import TvKnown, TvRelocator
 from uniover_agent.main import EXIT_CREDENTIAL_REJECTED, EXIT_TV_MOVED, build_relocator, main, run
+from uniover_agent.ports import TvNotPaired
 
 from .support import AGENT_ID, TOKEN, FakeApi
 from .test_tv_composition import TV_HOST, pair_fake_tv
@@ -338,6 +340,79 @@ async def test_a_tv_that_cannot_be_identified_is_never_guessed(
     assert relocator is not None
     # Sem `duid` nem MAC guardados, qualquer Samsung do /24 seria um palpite: não procura.
     assert await steps_until_moved(relocator, limit=5) is None
+    assert not path_exists(isolated_env)
+
+
+async def test_android_without_saved_identity_uses_the_paired_session_and_saves_the_new_host(
+    monkeypatch: pytest.MonkeyPatch, isolated_env: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    lan = Lan()
+    lan.open = {(NEW_HOST, 6466): True, ("192.168.0.20", 6466): True}
+    lan.arp = {MAC: [NEW_HOST]}
+    lan.install(monkeypatch)
+    monkeypatch.setattr(
+        tv_locate,
+        "subnet_hosts",
+        lambda base, exclude=None: [OLD_HOST, NEW_HOST, "192.168.0.20"],
+    )
+
+    async def silent(host: str, port: int, wait: float) -> PortState:
+        assert (host, port) == (OLD_HOST, 6466)
+        return PortState.SILENT
+
+    monkeypatch.setattr(main_module, "tcp_probe", silent)
+    sessions: list[tuple[str, str]] = []
+
+    class FakeAuthenticatedRemote:
+        def __init__(self, host: str, client_name: str, cert_dir: Path) -> None:
+            self.host = host
+
+        async def connect(self) -> None:
+            sessions.append((self.host, "open"))
+            if self.host != NEW_HOST:
+                raise TvNotPaired("outro aparelho")
+
+        async def disconnect(self) -> None:
+            sessions.append((self.host, "close"))
+
+    monkeypatch.setattr(main_module, "AndroidTvRemoteV2", FakeAuthenticatedRemote)
+    update_config(isolated_env, {"tv_host": OLD_HOST, "tv_text_by_keys": True})
+    relocator = build_relocator(
+        Settings(tv_host=OLD_HOST, tv_kind="android"), FakeClock(), lambda: False
+    )
+    assert relocator is not None
+    with caplog.at_level(logging.INFO):
+        assert await steps_until_moved(relocator) == NEW_HOST
+    saved = read_saved(isolated_env)
+    assert saved["tv_host"] == NEW_HOST
+    assert saved["tv_mac"] == MAC
+    assert saved["tv_text_by_keys"] is True
+    assert sessions.count((NEW_HOST, "open")) == 1
+    assert sessions.count((NEW_HOST, "close")) == 1
+    assert sessions.count(("192.168.0.20", "open")) == 1
+    assert sessions.count(("192.168.0.20", "close")) == 1
+    assert "a TV mudou de endereço na rede" in caplog.text
+    assert NEW_HOST not in caplog.text
+    assert MAC not in caplog.text
+
+
+async def test_android_does_not_learn_arp_from_an_unverified_open_port(
+    monkeypatch: pytest.MonkeyPatch, isolated_env: Path
+) -> None:
+    lan = Lan()
+    lan.open = {(OLD_HOST, 6466): True}
+    lan.arp = {MAC: [OLD_HOST]}
+    lan.install(monkeypatch)
+
+    async def open_port(host: str, port: int, wait: float) -> PortState:
+        return PortState.OPEN
+
+    monkeypatch.setattr(main_module, "tcp_probe", open_port)
+    relocator = build_relocator(
+        Settings(tv_host=OLD_HOST, tv_kind="android"), FakeClock(), lambda: False
+    )
+    assert relocator is not None
+    assert await relocator.step() is None
     assert not path_exists(isolated_env)
 
 

@@ -546,3 +546,30 @@ async def test_volume_without_a_valid_scale_is_not_reported(tmp_path: Path) -> N
     library._volume[0]({"level": 3, "max": 10, "muted": False})
     assert seen == [30]
     await adapter.disconnect()
+
+
+async def test_successful_connection_notifies_identity_learning_without_sending_commands(
+    tmp_path: Path,
+) -> None:
+    write_certificate(tmp_path, "UniOver")
+    library = FakeLibrary()
+    learned = 0
+
+    async def on_connected() -> None:
+        nonlocal learned
+        learned += 1
+
+    adapter = AndroidTvRemoteV2(
+        "10.0.0.4",
+        "UniOver",
+        tmp_path,
+        client_factory=lambda *_args: library,
+        on_connected=on_connected,
+    )
+    await adapter.connect()
+    await adapter.disconnect()
+    await adapter.connect()
+    await adapter.disconnect()
+    assert learned == 2
+    assert library.sent == []
+    assert library.texts == []

@@ -5,12 +5,14 @@ O controle da TV é o dublê (`FakeTvRemote`); a API é o servidor WebSocket fal
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any
 
 import pytest
 from websockets.asyncio.server import ServerConnection
 
 from uniover_agent import main as main_module
+from uniover_agent.adapters import tv_locate
 from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTransport, FakeTvRemote
 from uniover_agent.config import Settings, tv_cert_dir
 from uniover_agent.core import (
@@ -86,6 +88,67 @@ def test_host_with_certificate_builds_the_session(monkeypatch: pytest.MonkeyPatc
     }
     assert setup.background == []
     assert setup.after_hello == []
+
+
+@pytest.mark.parametrize("mac_on_first_connect", [True, False])
+async def test_android_learns_mac_on_the_first_authenticated_session_or_after_hibernation(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_env: Path,
+    mac_on_first_connect: bool,
+) -> None:
+    write_certificate(tv_cert_dir("tv"), "UniOver")
+    checks = 0
+
+    async def arp_mac(host: str) -> str | None:
+        nonlocal checks
+        assert host == TV_HOST
+        checks += 1
+        return "AA:BB:CC:00:00:09" if mac_on_first_connect or checks == 2 else None
+
+    async def open_port(host: str, port: int, wait: float) -> bool:
+        assert (host, port) == (TV_HOST, 6466)
+        return True
+
+    class CallbackRemote(FakeTvRemote):
+        def __init__(self, on_connected: Any) -> None:
+            super().__init__()
+            self._callback = on_connected
+
+        async def connect(self) -> None:
+            await super().connect()
+            await self._callback()
+
+    remotes: list[CallbackRemote] = []
+
+    def fake_adapter(*args: Any, **kwargs: Any) -> CallbackRemote:
+        remote = CallbackRemote(kwargs["on_connected"])
+        remotes.append(remote)
+        return remote
+
+    monkeypatch.setattr(main_module, "AndroidTvRemoteV2", fake_adapter)
+    monkeypatch.setattr(main_module, "arp_mac", arp_mac)
+    monkeypatch.setattr(tv_locate, "tcp_open", open_port)
+    clock = FakeClock()
+    envelopes = EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock)
+    setup = build_tv(
+        Settings(tv_host=TV_HOST, tv_hibernate_seconds=1),
+        clock,
+        FakeTransport(),
+        envelopes,
+    )
+    assert setup is not None
+    await setup.manager.wake()
+    if not mac_on_first_connect:
+        assert setup.known.mac is None
+        clock.advance(1)
+        assert await setup.manager.hibernate_if_idle()
+        await setup.manager.wake()
+    assert setup.known.mac == "AA:BB:CC:00:00:09"
+    assert checks == (1 if mac_on_first_connect else 2)
+    assert remotes[0].sent == []
+    saved = await asyncio.to_thread(isolated_env.read_text, encoding="utf-8")
+    assert saved.count("tv_mac") == 1
+    await setup.manager.aclose()
 
 
 @pytest.mark.parametrize("message_type", ["tv.key.v1", "tv.key.v2"])
