@@ -63,11 +63,14 @@ export class QrLoginPanel {
   /** Cada ciclo (um QR) tem um número; o que ficou para trás (renovação, destruição) se reconhece por ele e para. */
   private cycle = 0;
   private destroyed = false;
+  /** A espera entre duas consultas em andamento: o temporizador e a promessa que ele resolve (ver `wait`). */
+  private waiting: { timer: ReturnType<typeof setTimeout>; release: () => void } | null = null;
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
       this.cycle++;
+      this.cancelWait();
     });
     const win = this.doc.defaultView;
     // Só em computador; sem `matchMedia` (ambiente sem tela) o bloco nem tenta.
@@ -85,6 +88,8 @@ export class QrLoginPanel {
 
   private async run(): Promise<void> {
     const mine = ++this.cycle;
+    // O ciclo anterior (renovação, "tentar de novo") não deixa uma espera para trás: o laço dele acorda e vê que acabou.
+    this.cancelWait();
     this.phase.set('starting');
     let started: QrLoginStarted;
     try {
@@ -106,7 +111,7 @@ export class QrLoginPanel {
     const renewAt = Date.now() + started.expiresIn * 1_000 - this.config.renewLeadMs;
     let wait = this.config.pollMs;
     for (;;) {
-      await sleep(wait);
+      await this.wait(wait);
       if (mine !== this.cycle) return;
       wait = this.config.pollMs;
 
@@ -144,8 +149,25 @@ export class QrLoginPanel {
       if (Date.now() >= renewAt) return void this.run();
     }
   }
-}
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  /**
+   * Espera `ms` entre duas consultas. O temporizador fica guardado para poder ser desfeito: sem isso, sair da tela no meio
+   * da espera deixava um temporizador de até 10 s vivo (e o laço preso nele). Cancelar RESOLVE a espera em vez de recusá-la,
+   * então o laço acorda, vê que o ciclo mudou e termina sem erro solto.
+   */
+  private wait(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      const release = () => {
+        clearTimeout(timer);
+        if (this.waiting?.timer === timer) this.waiting = null;
+        resolve();
+      };
+      const timer = setTimeout(release, ms);
+      this.waiting = { timer, release };
+    });
+  }
+
+  private cancelWait(): void {
+    this.waiting?.release();
+  }
 }
