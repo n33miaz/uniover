@@ -101,9 +101,28 @@ export class DevicesPage {
   }
 
   protected lastSeen(agent: DeviceAgent): string {
-    return agent.lastSeenAt
-      ? $localize`:@@devices.last-seen:Último contato em ${this.contactFormat.format(new Date(agent.lastSeenAt))}:date:`
-      : $localize`:@@devices.never-seen:Sem contato registrado`;
+    if (!agent.lastSeenAt) {
+      return $localize`:@@devices.never-seen:Sem contato registrado`;
+    }
+
+    const elapsed = Math.max(0, Date.now() - new Date(agent.lastSeenAt).getTime());
+    const minutes = Math.floor(elapsed / 60_000);
+    if (minutes < 1) {
+      return $localize`:@@devices.last-seen.now:Visto agora`;
+    }
+    if (minutes < 60) {
+      return $localize`:@@devices.last-seen.minutes:Visto há ${minutes}:count: min`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) {
+      return $localize`:@@devices.last-seen.hours:Visto há ${hours}:count: h`;
+    }
+
+    const days = Math.floor(hours / 24);
+    return days === 1
+      ? $localize`:@@devices.last-seen.day:Visto há 1 dia`
+      : $localize`:@@devices.last-seen.days:Visto há ${days}:count: dias`;
   }
 
   protected platform(agent: DeviceAgent): string {

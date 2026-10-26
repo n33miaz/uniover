@@ -97,13 +97,21 @@ describe('DevicesPage', () => {
     return { fixture, el, button };
   }
 
-  it('lists the paired devices with state and date', async () => {
+  it('lists the paired devices with state and last contact', async () => {
     const { el } = await render();
     const item = el.querySelector('.item')!;
     expect(item.querySelector('.name')?.textContent).toBe('PC de casa');
     expect(item.textContent).toContain('Pareado em');
     expect(item.textContent).toContain('Ativo');
-    expect(item.querySelector('.last-seen')?.textContent).toContain('Último contato em');
+    expect(item.querySelector('.last-seen')?.textContent).toContain('Visto há');
+  });
+
+  it('keeps the last known contact, version and update state visible for a disconnected computer', async () => {
+    api.list.mockResolvedValue([{ ...withUpdate({}), connected: false }]);
+    const { el } = await render();
+    expect(el.querySelector('.last-seen')?.textContent).toContain('Visto há');
+    expect(el.querySelector('.version')?.textContent).toContain('Versão 0.1.0');
+    expect(el.querySelector('.update-state')?.textContent).toContain('Atualizado');
   });
 
   it('says so when the device has no recorded use yet', async () => {
