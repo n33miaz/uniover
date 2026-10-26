@@ -24,6 +24,8 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
 
     public DbSet<TvMemberOptOut> TvMemberOptOuts => Set<TvMemberOptOut>();
 
+    public DbSet<TvLayout> TvLayouts => Set<TvLayout>();
+
     public DbSet<WatchdogEvent> WatchdogEvents => Set<WatchdogEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -107,6 +109,14 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             // Uma linha por conta; o usuário é do Identity, portanto só o UUID, sem FK entre schemas.
             e.HasKey(x => x.UserId);
             e.Property(x => x.UserId).ValueGeneratedNever();
+        });
+
+        modelBuilder.Entity<TvLayout>(e =>
+        {
+            e.ToTable("tv_layouts");
+            e.HasKey(x => x.TvId);
+            e.Property(x => x.TvId).ValueGeneratedNever();
+            e.Property(x => x.Document).HasColumnType("jsonb").IsRequired();
         });
 
         modelBuilder.Entity<WatchdogEvent>(e =>

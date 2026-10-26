@@ -111,6 +111,7 @@ internal sealed class ManageTvsHandler(TvDbContext db, IAgentDirectory agents, I
         }
 
         var members = await db.TvMembers.Where(m => m.TvId == id).ToListAsync(cancellationToken);
+        await db.TvLayouts.Where(layout => layout.TvId == id).ExecuteDeleteAsync(cancellationToken);
         db.TvMembers.RemoveRange(members);
         db.Tvs.Remove(tv);
         await TvMembershipLedger.ReconcileAsync(db, id, [.. members.Select(m => m.UserId)], [], time.GetUtcNow(), cancellationToken);

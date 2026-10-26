@@ -3473,6 +3473,58 @@
         ],
         "type": "object"
       },
+      "TvLayoutDocument": {
+        "properties": {
+          "buttonSize": {
+            "type": "string"
+          },
+          "dismissedSuggestions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "extraKeys": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "padSpeed": {
+            "type": "string"
+          },
+          "pillLayout": {
+            "type": "string"
+          },
+          "showChannel": {
+            "type": "boolean"
+          },
+          "showMedia": {
+            "type": "boolean"
+          },
+          "startPage": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "buttonSize",
+          "showMedia",
+          "showChannel",
+          "startPage",
+          "padSpeed",
+          "pillLayout",
+          "extraKeys",
+          "dismissedSuggestions"
+        ],
+        "type": "object"
+      },
       "TvListResponse": {
         "properties": {
           "items": {
@@ -10156,6 +10208,122 @@
         ]
       }
     },
+    "/api/v1/tv/layout": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvLayoutDocument"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "tags": [
+          "TvLayoutEndpoint"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvLayoutDocument"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "409": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        },
+        "tags": [
+          "TvLayoutEndpoint"
+        ]
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvLayoutDocument"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          }
+        },
+        "tags": [
+          "TvLayoutEndpoint"
+        ]
+      }
+    },
     "/api/v1/tv/power/off": {
       "post": {
         "requestBody": {
@@ -11052,6 +11220,9 @@
     },
     {
       "name": "LaunchShortcutEndpoint"
+    },
+    {
+      "name": "TvLayoutEndpoint"
     },
     {
       "name": "UpdateShortcutEndpoint"
