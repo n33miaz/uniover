@@ -1,8 +1,13 @@
+import { Injector, runInInjectionContext } from '@angular/core';
+import { IDBFactory as FakeIDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
 import { isUuid } from '../../../../core/offline-queue/uuid-v7';
 import { networkError, ok, problem } from '../../../../core/offline-queue/queue-test-kit';
 import { SessionState } from '../../../../core/session/session-state';
 import { TestBed } from '@angular/core/testing';
-import type { SetWriteResult } from './session-repository';
+import { createTrainingTestDb } from '../sync/training-test-kit';
+import { exclusiveLocks, grantEverything, installLocks, removeLocks } from '../tab-lock-test-kit';
+import { TRAINING_DB, TrainingDb } from '../training-db';
+import { SessionRepository, type SetWriteResult } from './session-repository';
 import { toLocalSession, toLocalSet } from './session';
 import { seedExercises, sessionDto, setDto, setupSessions } from './session-data-test-kit';
 
@@ -147,6 +152,80 @@ describe('SessionRepository', () => {
       expect(await t.trainingDb.meta.get('activeSessionId')).toBeUndefined();
       expect(await t.repository.activeSession()).toBeUndefined();
       expect(t.queue().pendingCount()).toBe(0);
+    });
+  });
+
+  describe('start in two tabs at the same time', () => {
+    afterEach(removeLocks);
+
+    /** Uma segunda aba: outra conexão ao MESMO banco do aparelho e outro repositório (a fila é a mesma). */
+    function openOtherTab(factory: IDBFactory, db: TrainingDb) {
+      const otherDb = new TrainingDb(db.name, { indexedDB: factory, IDBKeyRange: FakeIDBKeyRange });
+      const injector = Injector.create({
+        providers: [{ provide: TRAINING_DB, useValue: otherDb }],
+        parent: TestBed.inject(Injector),
+      });
+      return {
+        repository: runInInjectionContext(injector, () => new SessionRepository()),
+        db: otherDb,
+      };
+    }
+
+    async function pressStartInBothTabs() {
+      const factory = new FakeIDBFactory();
+      const t = setupSessions(createTrainingTestDb(factory));
+      const other = openOtherTab(factory, t.trainingDb);
+      try {
+        const results = await Promise.all([
+          t.repository.start('rotina-a'),
+          other.repository.start('rotina-a'),
+        ]);
+        return {
+          t,
+          results,
+          alive: await t.trainingDb.sessions.toArray(),
+          pointer: (await t.trainingDb.meta.get('activeSessionId'))?.value,
+          queued: await t.outbox(),
+        };
+      } finally {
+        other.db.close();
+      }
+    }
+
+    function expectOneSessionAdoptedByTheOtherTab(
+      done: Awaited<ReturnType<typeof pressStartInBothTabs>>,
+    ) {
+      const { results, alive, pointer, queued } = done;
+      expect(results.map((result) => result.status).sort()).toEqual(['already-active', 'started']);
+      const ids = results.map((result) => ('session' in result ? result.session.id : null));
+      // A aba perdedora adota o treino da vencedora (o fluxo que a tela já trata), não abre outro.
+      expect(new Set(ids).size).toBe(1);
+      expect(alive).toHaveLength(1);
+      expect(pointer).toBe(alive[0].id);
+      expect(queued).toHaveLength(1);
+    }
+
+    it('opens a single session and the second tab adopts it', async () => {
+      expectOneSessionAdoptedByTheOtherTab(await pressStartInBothTabs());
+    });
+
+    it('serializes the two starts through an exclusive lock named after the account database', async () => {
+      const locks = exclusiveLocks();
+      installLocks(locks.manager);
+
+      const done = await pressStartInBothTabs();
+
+      expectOneSessionAdoptedByTheOtherTab(done);
+      expect(locks.requested).toEqual([
+        `uniover-training-start:${done.t.trainingDb.name}`,
+        `uniover-training-start:${done.t.trainingDb.name}`,
+      ]);
+    });
+
+    it('still opens a single session when the lock lets both tabs in: the check is inside the write', async () => {
+      installLocks(grantEverything());
+
+      expectOneSessionAdoptedByTheOtherTab(await pressStartInBothTabs());
     });
   });
 
