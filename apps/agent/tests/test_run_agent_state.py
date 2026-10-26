@@ -33,6 +33,7 @@ FUNCTIONS = (
     "Get-UtcStamp",
     "Set-UpdateState",
     "Test-FreshFlag",
+    "Move-Folder",
     "Invoke-Rollback",
     "Invoke-Update",
     "Schedule-NextUpdate",

@@ -39,10 +39,13 @@ function Stop-VenvUsers {
     } | ForEach-Object { & taskkill.exe /PID $_.ProcessId /T /F *> $null }
 }
 
-function Sync-Agent([string]$Uv) {
+function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
     Stop-VenvUsers
     & $Uv sync --project $source --quiet *> $null
     if ($LASTEXITCODE -eq 0) { return $true }
+    # Com uma versao em prova e a anterior guardada para onde voltar, o ambiente nao e apagado: se a segunda tentativa
+    # tambem falhasse, nenhuma das duas versoes teria como rodar. Quem chama conta a falha e reverte ao chegar a tres.
+    if ($KeepEnvironment) { return $false }
     $venv = Join-Path $runtime 'venv'
     if (Test-Path -LiteralPath $venv) { Remove-Item -LiteralPath $venv -Recurse -Force -ErrorAction SilentlyContinue }
     & $Uv sync --project $source --quiet *> $null
@@ -72,6 +75,12 @@ function Invoke-Update([string]$Uv) {
     return $false
 }
 
+function Move-Folder([string]$From, [string]$To) {
+    # Renomeacao de verdade (Directory.Move): ou troca o nome inteiro ou falha sem tocar em nada. O Move-Item, quando ha um
+    # arquivo aberto dentro da pasta, cai para copiar-e-apagar e deixa metade dos arquivos em cada lugar.
+    [System.IO.Directory]::Move([System.IO.Path]::GetFullPath($From), [System.IO.Path]::GetFullPath($To))
+}
+
 function Note-Run([double]$Seconds) {
     if (-not (Test-Path -LiteralPath $trial)) { return }
     $parts = (Get-Content -LiteralPath $trial -ErrorAction SilentlyContinue) -split '\|', 2
@@ -87,8 +96,8 @@ function Note-Run([double]$Seconds) {
     $bad = Join-Path $runtime ('app.rejected-' + $parts[0].Substring(0, 12))
     Remove-Item -LiteralPath $bad -Recurse -Force -ErrorAction SilentlyContinue
     try {
-        Move-Item -LiteralPath $source -Destination $bad -ErrorAction Stop
-        Move-Item -LiteralPath $previous -Destination $source -ErrorAction Stop
+        Move-Folder $source $bad
+        Move-Folder $previous $source
         if (-not (Select-String -LiteralPath $blocked -SimpleMatch $parts[0] -Quiet -ErrorAction SilentlyContinue)) {
             Add-Content -LiteralPath $blocked -Value $parts[0] -Encoding ASCII
         }
@@ -147,7 +156,18 @@ function Test-FreshFlag([string]$Path) {
     catch { return $false }
 }
 
-function Invoke-Rollback {
+function Test-RollbackReady {
+    # Ha uma versao em prova (update-trial.txt e da versao atual) E uma anterior inteira para onde voltar. So nesse caso
+    # uma falha do sync leva a volta atras; versao estavel (sem prova) com ambiente estragado se conserta apagando o ambiente.
+    try {
+        if (-not (Test-Path -LiteralPath $trial)) { return $false }
+        $parts = (Get-Content -LiteralPath $trial -ErrorAction SilentlyContinue) -split '\|', 2
+        if ($parts.Count -ne 2 -or $parts[0] -ne (Get-Version)) { return $false }
+        return ((Test-Path -LiteralPath (Join-Path $previous 'pyproject.toml')) -and (Test-Path -LiteralPath (Join-Path $previous 'tools\run-agent.ps1')))
+    } catch { return $false }
+}
+
+function Invoke-Rollback([string]$Reason = 'voltei para a versao anterior a pedido do administrador') {
     # Volta para `app.previous` (a versao que a ultima atualizacao guardou) e bloqueia a que sai.
     try {
         if (-not (Test-Path -LiteralPath $previous)) { return $false }
@@ -156,17 +176,17 @@ function Invoke-Rollback {
         if ($bad -and $bad.Length -ge 12) { $tag = $bad.Substring(0, 12) }
         $rejected = Join-Path $runtime ('app.rejected-' + $tag)
         Remove-Item -LiteralPath $rejected -Recurse -Force -ErrorAction SilentlyContinue
-        Move-Item -LiteralPath $source -Destination $rejected -ErrorAction Stop
-        try { Move-Item -LiteralPath $previous -Destination $source -ErrorAction Stop }
+        Move-Folder $source $rejected
+        try { Move-Folder $previous $source }
         catch {
-            Move-Item -LiteralPath $rejected -Destination $source -ErrorAction SilentlyContinue
+            try { Move-Folder $rejected $source } catch { }
             throw
         }
         if ($bad -and -not (Select-String -LiteralPath $blocked -SimpleMatch $bad -Quiet -ErrorAction SilentlyContinue)) {
             Add-Content -LiteralPath $blocked -Value $bad -Encoding ASCII
         }
         Remove-Item -LiteralPath $trial -Force -ErrorAction SilentlyContinue
-        Set-UpdateState @{ outcome = 'rolled_back'; rolledBack = $true; blockedSha = $bad; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'voltei para a versao anterior a pedido do administrador' } | Out-Null
+        Set-UpdateState @{ outcome = 'rolled_back'; rolledBack = $true; blockedSha = $bad; checkedAt = (Get-UtcStamp (Get-Date)); reason = $Reason } | Out-Null
         return $true
     } catch {
         Set-UpdateState @{ outcome = 'failed'; checkedAt = (Get-UtcStamp (Get-Date)); reason = 'nao consegui voltar para a versao anterior' } | Out-Null
@@ -177,6 +197,7 @@ function Invoke-Rollback {
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
 Set-Location -LiteralPath $base
 $wait = 5
+$syncFalls = 0
 $nextUpdate = [DateTime]::MinValue
 $tray = $null
 while ($true) {
@@ -192,7 +213,23 @@ while ($true) {
             exit 42
         }
     }
-    if (-not (Sync-Agent $uv)) { Start-Sleep -Seconds $wait; $wait = [Math]::Min($wait * 2, 300); continue }
+    $rollbackReady = Test-RollbackReady
+    if (-not (Sync-Agent $uv $rollbackReady)) {
+        # Versao em prova que nao consegue preparar o proprio ambiente nunca chegaria a rodar, nem a cair: sem esta conta o
+        # laco esperaria para sempre. Na terceira falha seguida volta para a anterior, pela mesma rotina do pedido do dono.
+        if ($rollbackReady) {
+            $syncFalls++
+            if ($syncFalls -ge 3) {
+                if ($null -ne $tray -and -not $tray.HasExited) { & taskkill.exe /PID $tray.Id /T /F *> $null }
+                if (Invoke-Rollback 'a versao nova nao conseguiu preparar o ambiente (3 falhas seguidas); voltei para a anterior') {
+                    exit 42
+                }
+            }
+        }
+        else { $syncFalls = 0 }
+        Start-Sleep -Seconds $wait; $wait = [Math]::Min($wait * 2, 300); continue
+    }
+    $syncFalls = 0
     # O icone sobe depois do sync: antes, ele prenderia o executavel que o sync troca.
     if ($null -eq $tray -or $tray.HasExited) { $tray = Start-Tray $uv }
     $arguments = 'run --project "' + $source + '" uniover-agent run'

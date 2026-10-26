@@ -5,7 +5,6 @@ sem controle para sempre. Aqui se prova cada etapa que a atualização executa l
 """
 
 import os
-import re
 import subprocess
 import time
 import uuid
@@ -37,11 +36,10 @@ class FakeSystem:
         self.calls.append(args)
         name = Path(args[0]).name.lower()
         if name == "wscript.exe" and self.wsh:
-            # O script de prova só cria um arquivo: cria o mesmo que ele criaria.
-            text = Path(args[-1]).read_text(encoding="ascii")
-            match = re.search(r'CreateTextFile\("([^"]+)"', text)
-            assert match
-            Path(match.group(1)).write_text("ok", encoding="ascii")
+            # O script de prova só cria o arquivo que recebe como argumento: cria o mesmo.
+            script, mark = Path(args[-2]), Path(args[-1])
+            assert script.read_bytes() == installation.WSH_PROBE_VBS.encode("ascii")
+            mark.write_text("ok", encoding="ascii")
             return subprocess.CompletedProcess(args, 0, b"", b"")
         if name == "powershell.exe":
             return subprocess.CompletedProcess(args, self.task_code, b"", b"")
