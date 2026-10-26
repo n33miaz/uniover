@@ -5,7 +5,8 @@
 .DESCRIPTION
   Monta uma instalacao isolada numa pasta temporaria com a versao BASE (padrao: origin/main), sobe
   o supervisor de verdade e atualiza para a CANDIDATA (a arvore local) duas vezes, mais o caminho
-  de falha. Imprime APROVADO ou REPROVADO com o motivo; o codigo de saida e 0 so se aprovado.
+  de falha, a recuperacao apos uma troca interrompida e a volta atras por falha de sync. Imprime
+  APROVADO ou REPROVADO com o motivo; o codigo de saida e 0 so se aprovado.
   Nunca toca em %LOCALAPPDATA%\UniOver real, na tarefa agendada nem no Cofre de Credenciais.
 
 .EXAMPLE
