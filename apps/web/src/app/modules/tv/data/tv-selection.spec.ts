@@ -87,6 +87,28 @@ describe('TvSelection', () => {
     expect(next.selected()?.id).toBe('friend');
   });
 
+  it('forgets the list of TVs when another account signs in on the same page, without reloading', () => {
+    // O mesmo injetor de ponta a ponta (sem `fresh`): é o que acontece quando A sai e B entra sem recarregar a página.
+    const selection = fresh('conta-1');
+    selection.setTvs([HOME, FRIEND]);
+    selection.select('friend');
+    expect(selection.tvId()).toBe('friend');
+
+    identify('conta-2');
+    expect(selection.tvs()).toBeNull();
+    expect(selection.selected()).toBeNull();
+    expect(selection.multiple()).toBe(false);
+    // Nada da lista de A vira o `tvId` das chamadas de B (nem a escolha de A, que fica guardada para A).
+    expect(selection.tvId()).toBeNull();
+    expect(selection.scope()).toBeNull();
+
+    selection.setTvs([HOME, FRIEND]);
+    expect(selection.selected()?.id).toBe('home');
+    identify('conta-1');
+    expect(selection.tvs()).toBeNull();
+    expect(stored('conta-1')).toEqual({ id: 'friend', isDefault: false });
+  });
+
   it('does not leak the choice to another account', () => {
     const first = fresh('conta-1');
     first.setTvs([HOME, FRIEND]);

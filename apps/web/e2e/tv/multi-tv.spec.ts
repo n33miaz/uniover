@@ -590,4 +590,61 @@ test.describe('conta que só vê a TV dela', () => {
     await expect(dialog.locator('button.ui-row')).toHaveCount(2);
     await expect(dialog.getByRole('button', { name: /Casa/ })).toHaveCount(0);
   });
+
+  test('sair e entrar noutra conta sem recarregar a página não leva a lista nem o tvId da anterior', async ({
+    page,
+  }) => {
+    const GUEST_ID = '00000000-0000-4000-8000-000000000073';
+    identity.guests.push({
+      id: GUEST_ID,
+      displayName: GUEST.displayName,
+      email: GUEST.email,
+      password: GUEST.password,
+      createdAt: '2026-10-19T15:00:00Z',
+      disabledAt: null,
+      permissions: ['module:tv', 'tv:control'],
+    });
+    serve([CASA, RAPHAEL]);
+    tv.members[RAPHAEL.id] = [GUEST_ID];
+
+    // O dono vê as duas TVs e abre a padrão, com o seletor.
+    await openTv(page, 'Casa');
+    await expect(switcherButton(page)).toBeVisible();
+    // A página não será recarregada daqui até o fim: este marcador some se ela for.
+    await page.evaluate(() => ((window as unknown as { __samePage: boolean }).__samePage = true));
+    const streamsBefore = (await sseUrls(page)).length;
+
+    // Sai pelo roteador (sem `goto`) e entra como a convidada, que só vê a TV do Raphael.
+    await inApp(page, '/ajustes/perfil');
+    await page.getByRole('button', { name: 'Sair' }).click();
+    await expect(page).toHaveURL(/\/entrar/);
+    const requestsBefore = tv.requests.length;
+    await page.getByLabel('E-mail').fill(GUEST.email);
+    await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
+    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+    await expect(page).not.toHaveURL(/\/entrar/);
+    await inApp(page, '/tv');
+
+    // É a TV do Raphael (volume 7, Netflix), sem seletor: nada da lista do dono ficou.
+    await expect(page.locator('[aria-label="Volume 7"]').first()).toBeVisible();
+    await expect(chip(page, 'Netflix')).toBeVisible();
+    await expect(header(page).locator('.chevron')).toHaveCount(0);
+    expect(
+      await page.evaluate(() => (window as unknown as { __samePage?: boolean }).__samePage),
+    ).toBe(true);
+    // Nenhuma chamada da convidada levou o id de uma TV que ela não vê, nem o fluxo dela foi aberto nessa TV.
+    expect(tv.requests.slice(requestsBefore).filter((r) => r.tvId !== null)).toEqual([]);
+    expect(
+      (await sseUrls(page)).slice(streamsBefore).filter((url) => url.includes('tvId')),
+    ).toEqual([]);
+    expect(tv.denied).toEqual([]);
+  });
 });
+
+/** Vai a outra tela pelo roteador, sem recarregar a página (o `goto` do Playwright a recarrega e apaga a memória do app). */
+async function inApp(page: Page, path: string) {
+  await page.evaluate((target) => {
+    history.pushState(null, '', target);
+    window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+  }, path);
+}

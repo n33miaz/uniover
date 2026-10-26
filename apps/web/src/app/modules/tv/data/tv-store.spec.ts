@@ -7,7 +7,13 @@ import { SessionState } from '../../../core/session/session-state';
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
 import { TvApi } from './tv-api';
 import { TvSelection } from './tv-selection';
-import { ICONS_CACHE_MAX_CHARS, TvStore, isValidTvText } from './tv-store';
+import {
+  ICONS_CACHE_MAX_CHARS,
+  TvStore,
+  isValidTvText,
+  tvIconsCacheKey,
+  tvStateCacheKey,
+} from './tv-store';
 import { TvShortcut, TvSummary } from './tv-types';
 
 const PROBLEM = 'https://uniover.app/problems/';
@@ -76,6 +82,23 @@ describe('TvStore', () => {
     store.start();
     await flush();
   };
+  /** A conta de quase todos os testes; os de troca de conta usam outras. */
+  const ACCOUNT = '1';
+  const identify = (id: string) =>
+    TestBed.inject(SessionState).setUser({
+      id,
+      email: `${id}@example.com`,
+      displayName: id,
+      role: 'owner',
+    });
+  const configure = () =>
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: TvApi, useValue: api },
+        { provide: StreamService, useValue: { open } },
+        { provide: ConnectivityService, useValue: { online, serverState } },
+      ],
+    });
 
   beforeEach(() => {
     vi.useFakeTimers({
@@ -113,19 +136,17 @@ describe('TvStore', () => {
       failedSteps: [],
     });
     api.refreshShortcuts.mockResolvedValue(undefined);
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: TvApi, useValue: api },
-        { provide: StreamService, useValue: { open } },
-        { provide: ConnectivityService, useValue: { online, serverState } },
-      ],
-    });
+    configure();
+    // Cada conta tem o próprio último estado guardado: sem conta identificada nada se guarda nem se lê.
+    identify(ACCOUNT);
     store = TestBed.inject(TvStore);
   });
 
   afterEach(() => {
     store.stop();
     vi.useRealTimers();
+    // A conta identificada deixa dicas no armazenamento, que os outros arquivos de teste dividem.
+    localStorage.clear();
   });
 
   describe('opening', () => {
@@ -412,7 +433,7 @@ describe('TvStore', () => {
   describe('offline with a last seen state', () => {
     it('shows the cached state with the time it was seen, disabled', async () => {
       localStorage.setItem(
-        'uniover.tv.last-state',
+        tvStateCacheKey(ACCOUNT),
         JSON.stringify({
           state: { ...hot, connection: 'hibernating' },
           seenAt: new Date(2026, 9, 19, 13, 7).getTime(),
@@ -431,7 +452,7 @@ describe('TvStore', () => {
     });
 
     it('ignores a corrupt cache and a cache when there is network', async () => {
-      localStorage.setItem('uniover.tv.last-state', '{lixo');
+      localStorage.setItem(tvStateCacheKey(ACCOUNT), '{lixo');
       online.set(false);
       await started();
       expect(store.state()).toBeNull();
@@ -440,8 +461,8 @@ describe('TvStore', () => {
   });
 
   describe('app icons in the browser cache', () => {
-    const STATE_KEY = 'uniover.tv.last-state';
-    const ICONS_KEY = 'uniover.tv.app-icons';
+    const STATE_KEY = tvStateCacheKey(ACCOUNT);
+    const ICONS_KEY = tvIconsCacheKey(ACCOUNT);
     /** Um ícone do tamanho do teto da API: cerca de 44 mil caracteres. */
     const bigIcon = (seed: number) => `data:image/png;base64,${String(seed % 10).repeat(43_690)}`;
     const iconsStored = () =>
@@ -918,8 +939,8 @@ describe('TvStore', () => {
   });
 
   describe('reordering the shortcuts', () => {
-    const STATE_KEY = 'uniover.tv.last-state';
-    const ICONS_KEY = 'uniover.tv.app-icons';
+    const STATE_KEY = tvStateCacheKey(ACCOUNT);
+    const ICONS_KEY = tvIconsCacheKey(ACCOUNT);
     const order = () => store.shortcuts()?.map((item) => item.id);
     /** A lista como o servidor a devolve depois de gravar a ordem: os mesmos atalhos, renumerados de 1 a n. */
     const confirmed = (...ids: string[]) =>
@@ -1457,7 +1478,7 @@ describe('TvStore', () => {
       selection().select('amigo');
       api.tvs.mockResolvedValue([CASA, AMIGO]);
       await started();
-      expect(JSON.parse(localStorage.getItem('uniover.tv.last-state') ?? 'null').tv).toBe('amigo');
+      expect(JSON.parse(localStorage.getItem(tvStateCacheKey(ACCOUNT)) ?? 'null').tv).toBe('amigo');
     });
 
     it('shows offline only the last state of the TV in use, never the one of another', async () => {
@@ -1467,7 +1488,7 @@ describe('TvStore', () => {
       selection().setTvs([CASA, AMIGO]);
 
       // A TV padrão, com o guardado de outra TV: nada vale.
-      localStorage.setItem('uniover.tv.last-state', cached('amigo'));
+      localStorage.setItem(tvStateCacheKey(ACCOUNT), cached('amigo'));
       store.start();
       await flush();
       expect(store.state()).toBeNull();
@@ -1475,7 +1496,7 @@ describe('TvStore', () => {
       store.stop();
 
       // A TV padrão com o guardado dela (ou de antes de haver várias, sem o campo): vale.
-      localStorage.setItem('uniover.tv.last-state', cached(null));
+      localStorage.setItem(tvStateCacheKey(ACCOUNT), cached(null));
       store.start();
       await flush();
       expect(store.state()?.volume).toBe(22);
@@ -1504,6 +1525,229 @@ describe('TvStore', () => {
       expect(api.cleanup).not.toHaveBeenCalled();
       await expect(store.sendText('oi')).resolves.toMatchObject({ kind: 'forbidden' });
       expect(api.sendText).not.toHaveBeenCalled();
+    });
+
+    describe('when another account signs in on the same page', () => {
+      const session = () => TestBed.inject(SessionState);
+      const SALA = tvOf('sala', true);
+      const QUARTO = tvOf('quarto');
+      /** O `tvId` com que a API de verdade sairia em cada chamada: ela o lê do `TvSelection` na hora de sair. */
+      let seen: { call: string; tvId: string | null }[];
+      const record = <T>(call: 'state' | 'shortcuts' | 'wake', result: () => Promise<T>) =>
+        api[call].mockImplementation(() => {
+          seen.push({ call, tvId: selection().tvId() });
+          return result();
+        });
+
+      beforeEach(() => {
+        seen = [];
+        // A primeira conta nasce antes do store, como uma página aberta já autenticada; a troca que o grupo exercita é A → B.
+        TestBed.resetTestingModule();
+        configure();
+        identify('conta-a');
+        store = TestBed.inject(TvStore);
+      });
+
+      it('shows nothing of the previous account and asks nothing about its TVs', async () => {
+        identify('conta-a');
+        api.tvs.mockResolvedValue([CASA, AMIGO]);
+        await started();
+        expect(store.multiple()).toBe(true);
+        expect(store.state()?.volume).toBe(22);
+
+        // A sai (a tela da TV se desfaz) e B entra na mesma página, sem recarregar; as respostas de B demoram.
+        store.stop();
+        session().clear();
+        identify('conta-b');
+        const list = deferred<TvSummary[]>();
+        const state = deferred<unknown>();
+        const shortcuts = deferred<TvShortcut[]>();
+        api.tvs.mockReturnValue(list.promise);
+        record('state', () => state.promise);
+        record('shortcuts', () => shortcuts.promise);
+        record('wake', async () => undefined);
+        open.mockClear();
+        store.start();
+        await flush();
+
+        expect(store.tvs()).toBeNull();
+        expect(store.selectedTv()).toBeNull();
+        expect(store.multiple()).toBe(false);
+        expect(store.state()).toBeNull();
+        expect(store.shortcuts()).toBeNull();
+        expect(store.status()).toBe('loading');
+        // Nada vai à API nem ao fluxo antes de a lista da conta nova chegar.
+        expect(seen).toEqual([]);
+        expect(open).not.toHaveBeenCalled();
+
+        list.resolve([SALA, QUARTO]);
+        await flush();
+        expect(store.tvs()?.map((tv) => tv.id)).toEqual(['sala', 'quarto']);
+        expect(open).toHaveBeenCalledTimes(1);
+        expect(open.mock.calls[0][0]).toBe('/api/v1/tv/events?tvId=sala');
+        expect(seen.length).toBeGreaterThan(0);
+        // Nenhuma chamada saiu com o `tvId` de A.
+        expect(seen.every((call) => call.tvId === 'sala')).toBe(true);
+
+        state.resolve({ ...hot, volume: 7 });
+        shortcuts.resolve([shortcut(9)]);
+        await flush();
+        expect(store.state()?.volume).toBe(7);
+        expect(store.shortcuts()?.map((item) => item.id)).toEqual(['s9']);
+      });
+
+      it('drops a list that the previous account asked for and that only arrives after the next one signed in', async () => {
+        identify('conta-a');
+        const late = deferred<TvSummary[]>();
+        api.tvs.mockReturnValueOnce(late.promise);
+        await started();
+
+        // Nenhuma rodada de detecção de mudanças passou entre uma conta e outra: a guarda não pode depender de um efeito.
+        identify('conta-b');
+        late.resolve([CASA, AMIGO]);
+        await flush();
+
+        expect(store.tvs()).toBeNull();
+        expect(selection().tvId()).toBeNull();
+        expect(store.selectedTv()).toBeNull();
+      });
+
+      it('closes the stream of the previous account at once and reopens it only after the list of the new one', async () => {
+        identify('conta-a');
+        api.tvs.mockResolvedValue([CASA, AMIGO]);
+        const lateState = deferred<unknown>();
+        api.state.mockReturnValueOnce(lateState.promise);
+        await started();
+        emit('tv.state', { ...hot, volume: 31 });
+        emit('tv.shortcuts', [shortcut(5)]);
+        expect(open).toHaveBeenCalledTimes(1);
+        expect(events.observed).toBe(true);
+        expect(store.state()?.volume).toBe(31);
+
+        // Outra aba entrou noutra conta e esta página renovou a sessão com ela, com a tela da TV aberta.
+        const list = deferred<TvSummary[]>();
+        api.tvs.mockReturnValue(list.promise);
+        identify('conta-b');
+        // Antes mesmo de o Angular processar o efeito da sessão, a ação não pode reutilizar a TV de A.
+        await expect(store.sendKey('HOME')).resolves.toBe(false);
+        expect(api.sendKey).not.toHaveBeenCalled();
+        expect(store.state()).toBeNull();
+        expect(store.shortcuts()).toBeNull();
+        TestBed.tick();
+        await flush();
+        expect(events.observed).toBe(false);
+        expect(store.tvs()).toBeNull();
+        expect(store.state()).toBeNull();
+        expect(store.shortcuts()).toBeNull();
+        expect(open).toHaveBeenCalledTimes(1);
+
+        // O que A ainda tinha em voo chega tarde e não é pintado.
+        lateState.resolve({ ...hot, volume: 99 });
+        await flush();
+        expect(store.state()).toBeNull();
+
+        list.resolve([SALA]);
+        await flush();
+        expect(open).toHaveBeenCalledTimes(2);
+        expect(open.mock.calls[1][0]).toBe('/api/v1/tv/events');
+        expect(events.observed).toBe(true);
+        expect(store.tvs()?.map((tv) => tv.id)).toEqual(['sala']);
+        expect(store.state()?.volume).toBe(22);
+      });
+
+      it('stops the stream and shows nothing when the session ends with the screen still open', async () => {
+        identify('conta-a');
+        await started();
+        expect(store.state()).not.toBeNull();
+
+        session().clear();
+        TestBed.tick();
+        await flush();
+        expect(events.observed).toBe(false);
+        expect(store.state()).toBeNull();
+        expect(store.shortcuts()).toBeNull();
+        const calls = api.state.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(600_000);
+        expect(api.state.mock.calls.length).toBe(calls);
+      });
+
+      it('does not show the next account, offline, the last state the previous one left on this device', async () => {
+        identify('conta-a');
+        await started();
+        expect(store.state()?.volume).toBe(22);
+        expect(store.shortcuts()).toHaveLength(2);
+        store.stop();
+
+        // A página é recarregada (outro injetor; o armazenamento fica) e B entra sem rede.
+        TestBed.resetTestingModule();
+        configure();
+        identify('conta-b');
+        store = TestBed.inject(TvStore);
+        online.set(false);
+        await started();
+        expect(store.state()).toBeNull();
+        expect(store.shortcuts()).toBeNull();
+        expect(store.status()).toBe('offline');
+        store.stop();
+
+        // O que A deixou continua à espera dela.
+        TestBed.resetTestingModule();
+        configure();
+        identify('conta-a');
+        store = TestBed.inject(TvStore);
+        await started();
+        expect(store.state()?.volume).toBe(22);
+        expect(store.shortcuts()).toHaveLength(2);
+      });
+
+      it.each([
+        ['without network', false],
+        ['with network', true],
+      ])(
+        'drops the caches kept before there were accounts, %s, and gives them to no one',
+        async (_, network) => {
+          localStorage.setItem(
+            'uniover.tv.last-state',
+            JSON.stringify({ state: hot, seenAt: Date.now(), shortcuts: [shortcut(1)] }),
+          );
+          localStorage.setItem(
+            'uniover.tv.app-icons',
+            JSON.stringify({ s1: 'data:image/png;base64,AAAA' }),
+          );
+          online.set(network);
+          api.state.mockRejectedValue(problem(500));
+          api.shortcuts.mockRejectedValue(problem(500));
+          await started();
+
+          expect(store.state()).toBeNull();
+          expect(store.shortcuts()).toBeNull();
+          expect(localStorage.getItem('uniover.tv.last-state')).toBeNull();
+          expect(localStorage.getItem('uniover.tv.app-icons')).toBeNull();
+          expect(localStorage.getItem(tvStateCacheKey(ACCOUNT))).toBeNull();
+          expect(localStorage.getItem(tvIconsCacheKey(ACCOUNT))).toBeNull();
+        },
+      );
+
+      it('keeps the app icons of each account under a key of its own, even when the lists are the same', async () => {
+        const icon = 'data:image/png;base64,AAAA';
+        identify('conta-a');
+        await started();
+        emit('tv.shortcuts', [shortcut(1, { iconDataUri: icon })]);
+        expect(JSON.parse(localStorage.getItem(tvIconsCacheKey('conta-a')) ?? '{}')).toEqual({
+          s1: icon,
+        });
+        store.stop();
+
+        identify('conta-b');
+        // Depois da troca, B só abre o fluxo quando a lista dela chega; sem isso este evento não teria assinante.
+        api.tvs.mockResolvedValue([SALA]);
+        await started();
+        emit('tv.shortcuts', [shortcut(1, { iconDataUri: icon })]);
+        expect(JSON.parse(localStorage.getItem(tvIconsCacheKey('conta-b')) ?? '{}')).toEqual({
+          s1: icon,
+        });
+        expect(localStorage.getItem(tvStateCacheKey('conta-b'))).not.toBeNull();
+      });
     });
   });
 });
