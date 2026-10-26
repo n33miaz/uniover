@@ -3039,6 +3039,46 @@
         ],
         "type": "object"
       },
+      "SessionSummary": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "ip": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "lastUsedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "userAgent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "userAgent",
+          "ip",
+          "createdAt",
+          "lastUsedAt",
+          "isCurrent"
+        ],
+        "type": "object"
+      },
       "SetExerciseStepRequest": {
         "properties": {
           "clientUpdatedAt": {
@@ -6454,6 +6494,71 @@
         ]
       }
     },
+    "/api/v1/identity/guests/{guestId}/sessions": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "guestId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "SessionsEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/guests/{guestId}/sessions/{id}/revoke": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "guestId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "SessionsEndpoint"
+        ]
+      }
+    },
     "/api/v1/identity/guests/{id}/permissions": {
       "put": {
         "parameters": [
@@ -7040,6 +7145,63 @@
         },
         "tags": [
           "RenamePasskeyEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/sessions": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "SessionsEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/sessions/others/revoke": {
+      "post": {
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "SessionsEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/sessions/{id}/revoke": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "SessionsEndpoint"
         ]
       }
     },
@@ -11205,6 +11367,9 @@
     },
     {
       "name": "SetGuestPermissionsEndpoint"
+    },
+    {
+      "name": "SessionsEndpoint"
     },
     {
       "name": "BeginPasskeyRegistrationEndpoint"
