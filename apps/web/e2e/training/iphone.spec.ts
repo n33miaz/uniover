@@ -245,6 +245,33 @@ test.describe('convidado que só tem o Treino', () => {
   });
 });
 
+test.describe('convidado que tem a TV e o Treino', () => {
+  test('o Treino não tem seta de voltar; o controle da TV se alcança pelos Ajustes', async ({
+    context,
+    page,
+  }) => {
+    await mockTvApi(context, identity);
+    await installFakeEventSource(page);
+    signInAsGuest(['module:tv', 'tv:control', 'module:training']);
+    await openTraining(page, '/treino');
+
+    // Só o botão redondo de configurações: nada de "Voltar à TV" nem de "Voltar ao Início".
+    const header = page.locator('.training-header');
+    await expect(header.getByRole('link')).toHaveCount(1);
+    await expect(header.getByRole('link', { name: /^Voltar/ })).toHaveCount(0);
+    await expect(header.locator('a[href="/tv"], a[href="/"]')).toHaveCount(0);
+    await expect(gear(page)).toHaveAttribute('href', '/ajustes');
+
+    // O que ele ainda alcança pelo app: Ajustes e, de lá, o controle da TV.
+    await gear(page).click();
+    await expect(page).toHaveURL(/\/ajustes$/);
+    const toTv = page.getByRole('link', { name: 'Voltar ao controle' });
+    await expect(toTv).toHaveAttribute('href', '/tv');
+    await toTv.click();
+    await expect(page).toHaveURL(/\/tv$/);
+  });
+});
+
 test.describe('convidado sem nenhum módulo liberado', () => {
   test('cai numa tela simples, com Perfil e Sair, e nunca num módulo', async ({ page }, info) => {
     signInAsGuest([]);
