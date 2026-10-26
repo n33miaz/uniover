@@ -14,6 +14,7 @@ import {
   validateSet,
 } from '../../domain/session/session-model';
 import { mergeById } from '../sync/merge';
+import { withTabLock } from '../tab-lock';
 import { TRAINING_DB } from '../training-db';
 import {
   type LocalSession,
@@ -108,6 +109,8 @@ const META_ACTIVE_SESSION = 'activeSessionId';
 /** Fim do descanso (ms); quem lê e escreve é o timer, o repositório só o apaga ao encerrar o treino. */
 export const META_REST_ENDS_AT = 'restEndsAt';
 const META_SKIPPED = 'skippedExercises';
+/** Bloqueio entre abas do "Iniciar" (o nome leva o do banco da conta: cada conta tem o seu). */
+const START_LOCK = 'uniover-training-start';
 /** Fim do intervalo de busca do histórico (o maior inteiro seguro: limite explícito, nunca `Dexie.maxKey`). */
 const MAX_TIME = Number.MAX_SAFE_INTEGER;
 const HISTORY_PAGE = 50;
@@ -189,14 +192,15 @@ export class SessionRepository {
       .sort((a, b) => a.startedAt - b.startedAt);
   }
 
-  /** Abre o treino (a partir de uma rotina ou livre). Ver `StartResult`. */
-  async start(routineId: string | null = null): Promise<StartResult> {
-    const active = await this.activeSession();
-    if (active) return { status: 'already-active', session: active };
+  /**
+   * Abre o treino (a partir de uma rotina ou livre). Ver `StartResult`. Duas abas que tocam "Iniciar" juntas passam uma de
+   * cada vez e a segunda **adota** o treino da primeira (`already-active`), em vez de abrir outro e brigar pelo ponteiro.
+   */
+  start(routineId: string | null = null): Promise<StartResult> {
+    return withTabLock(`${START_LOCK}:${this.db.name}`, () => this.startExclusive(routineId));
+  }
 
-    const [elsewhere] = await this.openSessionsElsewhere();
-    if (elsewhere) return { status: 'open-elsewhere', session: elsewhere };
-
+  private async startExclusive(routineId: string | null): Promise<StartResult> {
     const stamp = this.runtime.now();
     const session: LocalSession = {
       id: uuidV7(),
@@ -216,7 +220,15 @@ export class SessionRepository {
         put: { [META_ACTIVE_SESSION]: session.id },
         remove: [META_REST_ENDS_AT, META_SKIPPED],
       },
+      // O estado é relido DENTRO da transação que grava: nenhuma outra escrita se encaixa entre a conferência e o treino novo.
+      async () => {
+        const active = await this.activeSession();
+        if (active) return { status: 'already-active', session: active } as const;
+        const [elsewhere] = await this.openSessionsElsewhere();
+        return elsewhere ? ({ status: 'open-elsewhere', session: elsewhere } as const) : undefined;
+      },
     );
+    if (typeof saved === 'object') return saved;
     return saved ? { status: 'started', session } : { status: 'storage-full' };
   }
 
@@ -574,22 +586,40 @@ export class SessionRepository {
   /**
    * Grava no banco local (e mexe no `meta`) numa transação e enfileira um `PUT` por escrita, na ordem dada. `false` = a
    * fila recusou por falta de espaço: o que já tinha entrado na fila é descartado e as gravações locais são desfeitas.
+   *
+   * `precondition` (opcional) roda DENTRO da transação, antes de qualquer gravação: devolver algo recusa a escrita (nada é
+   * gravado nem enfileirado) e esse algo é o resultado. A transação do IndexedDB não roda junto com outra sobre as mesmas
+   * tabelas, nem vinda de outra aba, então a decisão e a gravação são uma coisa só.
    */
-  private async commit(writes: readonly PendingWrite[], meta: MetaChange = {}): Promise<boolean> {
+  private async commit<R extends object = never>(
+    writes: readonly PendingWrite[],
+    meta: MetaChange = {},
+    precondition?: () => Promise<R | undefined>,
+  ): Promise<boolean | R> {
     const metaKeys = [...Object.keys(meta.put ?? {}), ...(meta.remove ?? [])];
     const metaBefore = await this.db.meta.bulkGet(metaKeys);
 
-    await this.db.transaction('rw', this.db.sessions, this.db.sets, this.db.meta, async () => {
-      const sessions = writes
-        .filter((w) => w.table === 'sessions')
-        .map((w) => w.written as LocalSession);
-      const sets = writes.filter((w) => w.table === 'sets').map((w) => w.written as LocalSet);
-      if (sessions.length > 0) await this.db.sessions.bulkPut(sessions);
-      if (sets.length > 0) await this.db.sets.bulkPut(sets);
-      for (const [key, value] of Object.entries(meta.put ?? {}))
-        await this.db.meta.put({ key, value });
-      if (meta.remove?.length) await this.db.meta.bulkDelete([...meta.remove]);
-    });
+    const refusal = await this.db.transaction(
+      'rw',
+      this.db.sessions,
+      this.db.sets,
+      this.db.meta,
+      async () => {
+        const reason = precondition ? await precondition() : undefined;
+        if (reason !== undefined) return reason;
+        const sessions = writes
+          .filter((w) => w.table === 'sessions')
+          .map((w) => w.written as LocalSession);
+        const sets = writes.filter((w) => w.table === 'sets').map((w) => w.written as LocalSet);
+        if (sessions.length > 0) await this.db.sessions.bulkPut(sessions);
+        if (sets.length > 0) await this.db.sets.bulkPut(sets);
+        for (const [key, value] of Object.entries(meta.put ?? {}))
+          await this.db.meta.put({ key, value });
+        if (meta.remove?.length) await this.db.meta.bulkDelete([...meta.remove]);
+        return undefined;
+      },
+    );
+    if (refusal !== undefined) return refusal;
     this.touch();
 
     const queued: string[] = [];
