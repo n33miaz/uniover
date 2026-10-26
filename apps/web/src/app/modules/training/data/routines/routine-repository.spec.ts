@@ -1,9 +1,15 @@
+import { Injector, runInInjectionContext } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { IDBFactory as FakeIDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
 import { isUuid } from '../../../../core/offline-queue/uuid-v7';
 import { networkError } from '../../../../core/offline-queue/queue-test-kit';
 import { shape } from '../../domain/routines/routine-test-kit';
-import { localExercise } from '../sync/training-test-kit';
+import { createTrainingTestDb, localExercise } from '../sync/training-test-kit';
+import { exclusiveLocks, grantEverything, installLocks, removeLocks } from '../tab-lock-test-kit';
+import { TRAINING_DB, TrainingDb } from '../training-db';
 import {
   PARTIAL_DRAFT_TEMPLATE_IDS,
+  RoutineRepository,
   type RoutineDraft,
   type RoutineDraftItem,
   type RoutineWriteResult,
@@ -886,6 +892,113 @@ describe('RoutineRepository', () => {
         { id: 'active', programId: 'outro', updatedAt: 30, clientUpdatedAt: 200 },
       ]);
       expect(await t.repository.activeProgramId()).toBe('outro');
+    });
+
+    describe('in two tabs at the same time', () => {
+      afterEach(removeLocks);
+
+      /** Uma segunda aba: outra conexão ao MESMO banco do aparelho e outro repositório (a fila e os modelos são os mesmos). */
+      function openOtherTab(factory: IDBFactory, db: TrainingDb) {
+        const otherDb = new TrainingDb(db.name, {
+          indexedDB: factory,
+          IDBKeyRange: FakeIDBKeyRange,
+        });
+        const injector = Injector.create({
+          providers: [{ provide: TRAINING_DB, useValue: otherDb }],
+          parent: TestBed.inject(Injector),
+        });
+        return {
+          repository: runInInjectionContext(injector, () => new RoutineRepository()),
+          db: otherDb,
+        };
+      }
+
+      async function chooseInBothTabs() {
+        const factory = new FakeIDBFactory();
+        const t = setupRoutines(createTrainingTestDb(factory));
+        withPrograms(t);
+        await seedCatalog(t.trainingDb, SLUGS);
+        const other = openOtherTab(factory, t.trainingDb);
+        try {
+          await Promise.all([
+            t.repository.selectProgram('duplo'),
+            other.repository.selectProgram('duplo'),
+          ]);
+          const alive = (await t.trainingDb.routines.toArray())
+            .filter((row) => row.deletedAt === null && row.programId === 'duplo')
+            .sort((a, b) => a.position - b.position);
+          return {
+            t,
+            alive,
+            program: await t.repository.activeProgramId(),
+            routinePuts: (await t.outbox()).filter((entry) => entry.url.includes('/routines/')),
+          };
+        } finally {
+          other.db.close();
+        }
+      }
+
+      function expectRoutinesCreatedOnce(done: Awaited<ReturnType<typeof chooseInBothTabs>>) {
+        expect(done.alive.map((row) => row.weekdays)).toEqual([[1], [3]]);
+        expect(done.alive.every((row) => row.active)).toBe(true);
+        expect(done.program).toBe('duplo');
+        // Uma ficha, um PUT: a aba que chegou depois não grava as fichas do modelo de novo.
+        expect(done.routinePuts).toHaveLength(2);
+      }
+
+      it('creates the routines of the program once', async () => {
+        expectRoutinesCreatedOnce(await chooseInBothTabs());
+      });
+
+      it('serializes the two choices through an exclusive lock named after the account database', async () => {
+        const locks = exclusiveLocks();
+        installLocks(locks.manager);
+
+        const done = await chooseInBothTabs();
+
+        expectRoutinesCreatedOnce(done);
+        expect(locks.requested).toEqual([
+          `uniover-training-program:${done.t.trainingDb.name}`,
+          `uniover-training-program:${done.t.trainingDb.name}`,
+        ]);
+      });
+
+      it('still creates them once when the lock lets both tabs in: the check is inside the write', async () => {
+        installLocks(grantEverything());
+
+        expectRoutinesCreatedOnce(await chooseInBothTabs());
+      });
+
+      it('does not duplicate the routines when a pull brings them while the choice is being built', async () => {
+        const t = setupRoutines();
+        withPrograms(t);
+        await seedCatalog(t.trainingDb, SLUGS);
+        const repository = t.repository as unknown as {
+          buildRoutines: (...args: unknown[]) => Promise<unknown>;
+        };
+        const build = repository.buildRoutines.bind(repository);
+        vi.spyOn(repository, 'buildRoutines').mockImplementationOnce(async (...args) => {
+          const built = await build(...args);
+          // Outro aparelho já tinha escolhido este programa: o puxar traz as fichas dele no meio da decisão.
+          await t.repository.applyRemote([
+            toLocalRoutine(routineDto('remota-a', { programId: 'duplo', weekdays: [1] })),
+            toLocalRoutine(routineDto('remota-b', { programId: 'duplo', weekdays: [3] })),
+          ]);
+          return built;
+        });
+
+        const result = await t.repository.selectProgram('duplo');
+
+        if (result.status !== 'saved') throw new Error(result.status);
+        expect(result.routines.map((row) => row.id).sort()).toEqual(['remota-a', 'remota-b']);
+        expect(
+          (await t.repository.listAll()).filter((row) => row.programId === 'duplo'),
+        ).toHaveLength(2);
+        expect(await t.repository.activeProgramId()).toBe('duplo');
+        expect((await t.outbox()).map((entry) => entry.url.replace(/.*\/training\//, ''))).toEqual([
+          'program',
+        ]);
+      });
     });
   });
 
