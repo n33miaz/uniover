@@ -186,7 +186,7 @@ describe('TrainingPage: the install sheet and the open workout', () => {
     expect(animate.mock.calls[1][0][0]).toMatchObject({ transform: 'translateX(18px)' });
   });
 
-  it('only offers a way back when another module is available', async () => {
+  it('only the owner has a way back: a guest never sees it, even with the TV as well', async () => {
     const { fixture } = await render();
     const el = fixture.nativeElement as HTMLElement;
     const session = TestBed.inject(SessionState);
@@ -200,6 +200,7 @@ describe('TrainingPage: the install sheet and the open workout', () => {
     await fixture.whenStable();
     expect(el.querySelector('.training-header .back')).toBeNull();
     expect(el.querySelector('.training-header .settings')?.getAttribute('href')).toBe('/ajustes');
+    // Quem tem a TV e o Treino abre cada um pelo próprio ícone da tela inicial: o Treino não leva de volta à TV.
     session.setUser({
       id: '1',
       email: 'a@b.c',
@@ -208,10 +209,13 @@ describe('TrainingPage: the install sheet and the open workout', () => {
       permissions: ['module:training', 'module:tv'],
     });
     await fixture.whenStable();
-    expect(el.querySelector('.training-header .back')?.getAttribute('href')).toBe('/tv');
+    expect(el.querySelector('.training-header .back')).toBeNull();
+    expect(el.querySelector('.training-header .settings')?.getAttribute('href')).toBe('/ajustes');
     session.setUser({ id: '1', email: 'a@b.c', displayName: 'A', role: 'owner' });
     await fixture.whenStable();
-    expect(el.querySelector('.training-header .back')?.getAttribute('href')).toBe('/');
+    const back = el.querySelector('.training-header .back');
+    expect(back?.getAttribute('href')).toBe('/');
+    expect(back?.getAttribute('aria-label')).toBe('Voltar ao Início');
     expect(el.querySelector('.training-header .settings')?.getAttribute('href')).toBe('/ajustes');
   });
 });

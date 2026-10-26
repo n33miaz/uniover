@@ -46,7 +46,7 @@ function isWithin(path: string, section: string): boolean {
     <header class="training-header">
       <div class="header-leading">
         @if (backLink(); as link) {
-          <a class="back ui-tap" [routerLink]="link" [attr.aria-label]="backLabel()">
+          <a class="back ui-tap" [routerLink]="link" [attr.aria-label]="backLabel">
             <svg
               aria-hidden="true"
               viewBox="0 0 24 24"
@@ -378,17 +378,12 @@ export class TrainingPage {
       this.bodyArea() ||
       isWithin(this.url().split(/[?#]/)[0].replace(/\/$/, ''), '/treino/progresso'),
   );
-  protected readonly backLink = computed(() => {
-    if (this.session.role() === 'owner') return '/';
-    return this.session.role() === 'guest' && this.session.knownPermissions()?.includes('module:tv')
-      ? '/tv'
-      : null;
-  });
-  protected readonly backLabel = computed(() =>
-    this.backLink() === '/tv'
-      ? $localize`:@@training.shell.back-tv:Voltar à TV`
-      : $localize`:@@training.shell.back-home:Voltar ao Início`,
-  );
+  /**
+   * Só o dono volta ao Início daqui. O convidado nunca vê a seta, nem com a TV liberada: ele abre o Treino e a TV pelos
+   * ícones próprios da tela inicial do celular, e o Treino é um app dele (o controle da TV segue alcançável pelos Ajustes).
+   */
+  protected readonly backLink = computed(() => (this.session.role() === 'owner' ? '/' : null));
+  protected readonly backLabel = $localize`:@@training.shell.back-home:Voltar ao Início`;
   /** O instante mais novo entre o último envio aceito e o último puxar completo (só para o rótulo do ícone). */
   private readonly lastSyncAt = computed(() => {
     const latest = Math.max(this.queue.lastSyncAt() ?? 0, this.sync.lastPullAt() ?? 0);
