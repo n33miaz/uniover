@@ -20,6 +20,7 @@ public static class TvCommandNames
     /// <summary>Alguém com a permissão de editar atalhos renomeou ou escondeu um: o detalhe leva só os códigos dos campos, nunca o nome novo.</summary>
     public const string ShortcutUpdate = "tv.shortcut.update";
     public const string PowerOff = "tv.power-off";
+    public const string PowerSchedule = "tv.power-schedule";
     public const string Cleanup = "tv.cleanup";
 
     /// <summary>O administrador trocou o computador que controla a TV: não vai à TV, mas redireciona o controle e a trilha guarda quem fez. O detalhe é o computador novo.</summary>

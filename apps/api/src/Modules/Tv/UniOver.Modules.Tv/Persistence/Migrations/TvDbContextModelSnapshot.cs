@@ -233,6 +233,87 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                     b.ToTable("tvs", "tv");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Tv.Domain.PowerSchedule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AgentSlug")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("agent_slug");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("DueAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("due_at_utc");
+
+                    b.Property<DateTimeOffset?>("LeaseUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lease_until");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("reason");
+
+                    b.Property<bool>("RequestedAsOwner")
+                        .HasColumnType("boolean")
+                        .HasColumnName("requested_as_owner");
+
+                    b.Property<Guid>("RequestedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by");
+
+                    b.Property<string>("Result")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("result");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TimeZone")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("time_zone");
+
+                    b.Property<Guid>("TvId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tv_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id")
+                        .HasName("pk_power_schedules");
+
+                    b.HasIndex("TvId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_power_schedules_tv_id")
+                        .HasFilter("status IN ('pending', 'dispatching')");
+
+                    b.HasIndex("Status", "DueAtUtc")
+                        .HasDatabaseName("ix_power_schedules_status_due_at_utc");
+
+                    b.ToTable("power_schedules", "tv");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Tv.Domain.Shortcut", b =>
                 {
                     b.Property<Guid>("Id")
