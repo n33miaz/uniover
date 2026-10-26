@@ -246,7 +246,7 @@ test.describe('convidado que só tem o Treino', () => {
 });
 
 test.describe('convidado que tem a TV e o Treino', () => {
-  test('o Treino não tem seta de voltar; o controle da TV se alcança pelos Ajustes', async ({
+  test('o Treino não tem seta de voltar; os módulos se alternam pelos Ajustes', async ({
     context,
     page,
   }) => {
@@ -262,13 +262,25 @@ test.describe('convidado que tem a TV e o Treino', () => {
     await expect(header.locator('a[href="/tv"], a[href="/"]')).toHaveCount(0);
     await expect(gear(page)).toHaveAttribute('href', '/ajustes');
 
-    // O que ele ainda alcança pelo app: Ajustes e, de lá, o controle da TV.
+    // O controle continua sem seta de volta; a lista discreta dos módulos em Ajustes dá a troca.
     await gear(page).click();
     await expect(page).toHaveURL(/\/ajustes$/);
-    const toTv = page.getByRole('link', { name: 'Voltar ao controle' });
+    // A seta do cabeçalho também leva a /tv; aqui se procura a linha da lista de módulos.
+    const toTv = page.getByRole('link', { name: 'TV Controle da TV' });
     await expect(toTv).toHaveAttribute('href', '/tv');
     await toTv.click();
     await expect(page).toHaveURL(/\/tv$/);
+  });
+
+  test('quem só tem Treino não vê a troca de módulos', async ({ page }) => {
+    await installFakeEventSource(page);
+    signInAsGuest(TRAINING_ONLY);
+    await openTraining(page, '/treino');
+
+    await gear(page).click();
+    await expect(page).toHaveURL(/\/ajustes$/);
+    await expect(page.getByRole('heading', { level: 2, name: 'Módulos' })).toHaveCount(0);
+    await expect(page.locator('a[href="/tv"]')).toHaveCount(0);
   });
 });
 

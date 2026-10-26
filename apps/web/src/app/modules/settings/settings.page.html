@@ -27,6 +27,22 @@
     </ul>
   </section>
 
+  @if (modules().length > 0) {
+    <section class="section ui-rise" aria-labelledby="modules-title">
+      <h2 id="modules-title" class="ui-section-label" i18n="@@settings.list.modules">Módulos</h2>
+      <ul class="ui-group">
+        @for (entry of modules(); track entry.id) {
+          <li>
+            <ng-container
+              [ngTemplateOutlet]="row"
+              [ngTemplateOutletContext]="{ $implicit: entry }"
+            />
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
   @if (administration().length > 0) {
     <section class="section ui-rise" aria-labelledby="admin-title">
       <h2 id="admin-title" class="ui-section-label" i18n="@@settings.list.administration">

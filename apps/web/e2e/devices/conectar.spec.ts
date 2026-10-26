@@ -215,6 +215,18 @@ test.describe('convidado com a TV', () => {
     ]);
   });
 
+  test('a folha de aprovar este computador fecha ao tocar no fundo', async ({ page }) => {
+    seedGuest(['module:tv']);
+    devices.openCodes.add('BCDF2345');
+
+    await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
+    const sheet = page.getByRole('dialog', { name: 'Aprovar este computador' });
+    await expect(sheet).toBeVisible();
+    await page.mouse.click(5, 5);
+    await expect(sheet).toHaveCount(0);
+    expect(devices.requests).toHaveLength(0);
+  });
+
   test('senha errada não aprova nada', async ({ page }) => {
     seedGuest(['module:tv']);
     devices.openCodes.add('BCDF2345');

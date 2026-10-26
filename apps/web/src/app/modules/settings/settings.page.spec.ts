@@ -181,6 +181,24 @@ describe('SettingsPage (a list of screens)', () => {
       api.me.mockResolvedValue({ ...GUEST, permissions: ['module:training'] });
       const { el } = await render();
       expect(rows(el).map((row) => row.title)).toEqual(['Perfil', 'Aparência', 'Sobre']);
+      expect(headings(el)).toEqual(['Conta', 'Aplicativo']);
+      expect(el.querySelector('a[href="/tv"]')).toBeNull();
+    });
+
+    it('shows module links only to a guest who can use both, so he can change modules without a back arrow', async () => {
+      api.me.mockResolvedValue({ ...GUEST, permissions: ['module:tv', 'module:training'] });
+      const { el } = await render();
+      expect(headings(el)).toEqual(['Conta', 'Módulos', 'Aplicativo']);
+      expect(rows(el)).toContainEqual({
+        title: 'TV',
+        summary: 'Controle da TV',
+        href: '/tv',
+      });
+      expect(rows(el)).toContainEqual({
+        title: 'Treino',
+        summary: 'Exercícios e progresso',
+        href: '/treino',
+      });
     });
 
     it('does not even mention the administrator screens', async () => {
