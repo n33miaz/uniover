@@ -97,6 +97,59 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task ADeleteThatWinsBeforeTheUploadTakesTheLock_NeverLetsTheUploadWriteTheObject()
+    {
+        // O teste de cima só para o envio DENTRO do PutAsync, quando o upload já segura a trava. Aqui a parada é antes: a linha
+        // pendente já foi confirmada e o envio ainda não pediu o SELECT ... FOR UPDATE, então a exclusão passa na frente.
+        var store = new FakeProgressPhotoStore();
+        var barrier = new CommandBarrier(sql =>
+            sql.Contains("progress_photos", StringComparison.OrdinalIgnoreCase) && sql.Contains("FOR UPDATE", StringComparison.OrdinalIgnoreCase));
+        await using var app = await TrainingApp.StartAsync(postgres, new TrainingAppOptions { PhotoStorageEnabled = true, Photos = store, CommandInterceptor = barrier });
+        var a = await app.NewGuestAsync("Conta A", ["module:training"], 78);
+        var id = Guid.NewGuid();
+        barrier.Arm();
+
+        var upload = UploadAsync(app, a.Login.AccessToken, id);
+        await barrier.Reached.WaitAsync(CommandBarrier.Ceiling, TestContext.Current.CancellationToken);
+        await using (var pendingDb = app.Db())
+            (await pendingDb.Set<ProgressPhoto>().SingleAsync(photo => photo.Id == id, TestContext.Current.CancellationToken)).State.Should().Be("pending");
+        using (var deleted = await app.SendAsync(HttpMethod.Put, $"/api/v1/training/progress-photos/{id}/deletion", bearer: a.Login.AccessToken))
+            deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        barrier.Release();
+
+        using var uploaded = await upload.WaitAsync(CommandBarrier.Ceiling, TestContext.Current.CancellationToken);
+        uploaded.StatusCode.Should().Be(HttpStatusCode.NotFound, "a exclusão já respondeu 204: o envio relê a linha depois da trava e desiste");
+        store.PutCalls.Should().Be(0, "nenhum JPEG de saúde pode ser gravado depois de a pessoa ver a foto apagada");
+        store.Count.Should().Be(0);
+        await using var db = app.Db();
+        (await db.Set<ProgressPhoto>().SingleAsync(photo => photo.Id == id, TestContext.Current.CancellationToken)).State.Should().Be("deleted");
+    }
+
+    [Fact]
+    public async Task WhenTheFinalCommitFails_TheObjectAlreadyWrittenIsRemoved_AndTheRetryStillWorks()
+    {
+        var store = new FakeProgressPhotoStore();
+        var failure = new FailingCommand(sql =>
+            SqlCommandText.StartsWithUpdate(sql) && sql.Contains("progress_photos", StringComparison.OrdinalIgnoreCase));
+        await using var app = await TrainingApp.StartAsync(postgres, new TrainingAppOptions { PhotoStorageEnabled = true, Photos = store, CommandInterceptor = failure });
+        var a = await app.NewGuestAsync("Conta A", ["module:training"], 79);
+        var id = Guid.NewGuid();
+        failure.Arm();
+
+        using (var failed = await UploadAsync(app, a.Login.AccessToken, id)) failed.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        store.PutCalls.Should().Be(1);
+        store.Count.Should().Be(0, "sem linha ready apontando para o objeto, ele ficaria órfão e invisível");
+        await using (var pendingDb = app.Db())
+            (await pendingDb.Set<ProgressPhoto>().SingleAsync(photo => photo.Id == id, TestContext.Current.CancellationToken)).State.Should().Be("pending");
+
+        failure.Disarm();
+        using (var retry = await UploadAsync(app, a.Login.AccessToken, id)) retry.StatusCode.Should().Be(HttpStatusCode.OK);
+        store.Count.Should().Be(1);
+        await using var db = app.Db();
+        (await db.Set<ProgressPhoto>().SingleAsync(photo => photo.Id == id, TestContext.Current.CancellationToken)).State.Should().Be("ready");
+    }
+
+    [Fact]
     public async Task QuotaAndDisabledStorageHaveClearResponses()
     {
         var store = new FakeProgressPhotoStore();
@@ -327,9 +380,12 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
         public TaskCompletionSource ContinuePut { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public IReadOnlyCollection<string> Keys => objects.Keys.ToArray();
         public int Count => objects.Count;
+        public int PutCalls => Volatile.Read(ref _putCalls);
+        private int _putCalls;
         public byte[] SingleContent => objects.Values.Single();
         public async Task PutAsync(string key, ReadOnlyMemory<byte> content, CancellationToken cancellationToken)
         {
+            Interlocked.Increment(ref _putCalls);
             if (FailPut) throw new IOException("synthetic put failure");
             if (PausePut)
             {
