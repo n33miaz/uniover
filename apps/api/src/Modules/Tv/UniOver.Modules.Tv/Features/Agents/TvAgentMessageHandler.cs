@@ -27,6 +27,7 @@ internal sealed partial class TvAgentMessageHandler(
     ITvStreamPublisher stream,
     ITvCleanupReports cleanupReports,
     ITvShortcutReader shortcutReader,
+    IAgentPresenceReader presence,
     TvDbContext db,
     IEventBus events,
     TimeProvider time,
@@ -121,7 +122,10 @@ internal sealed partial class TvAgentMessageHandler(
         var existing = await db.Shortcuts.Where(s => s.TvId == tvId).ToListAsync(cancellationToken);
         var (added, changed) = ShortcutCatalog.Merge(existing, incoming, time.GetUtcNow(), tvId);
         db.Shortcuts.AddRange(added);
-        if (changed)
+        IReadOnlyList<string> capabilities = presence.Get(message.AgentId)?.Capabilities ?? [];
+        var foreign = existing.Where(shortcut => ShortcutFamily.IsForeignUninstalled(shortcut, capabilities)).ToList();
+        db.Shortcuts.RemoveRange(foreign);
+        if (changed || foreign.Count > 0)
         {
             await db.SaveChangesAsync(cancellationToken);
         }
