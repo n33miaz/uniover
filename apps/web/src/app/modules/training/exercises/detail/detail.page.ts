@@ -71,7 +71,8 @@ export function historyRows(points: readonly DailyPoint[], limit = HISTORY_DAYS)
 /**
  * Ficha do exercício. Uma ação principal ("Adicionar a um treino") logo depois do cabeçalho; o resto é leitura:
  * como fazer, o histórico do próprio usuário e, atrás de linhas próprias, o salto de carga e (só no exercício
- * próprio) editar e apagar. Tudo lido do banco local, sem rede.
+ * próprio) editar e apagar. Quando a fonte fornece autor e licença, o crédito fica no rodapé. Tudo é lido do
+ * banco local, sem rede.
  */
 @Component({
   selector: 'app-exercise-detail-page',
@@ -98,6 +99,8 @@ export class ExerciseDetailPage {
   );
 
   /** `undefined`: ainda lendo · `null`: não existe (ou foi apagado). */
+  /** Link externo da licença: sem acesso de volta à página e sem enviar a origem. */
+  protected readonly linkRel = 'noopener noreferrer';
   protected readonly exercise = signal<LocalExercise | null | undefined>(undefined);
   protected readonly records = signal<PersonalRecords | null>(null);
   protected readonly history = signal<readonly HistoryRow[]>([]);
@@ -114,6 +117,13 @@ export class ExerciseDetailPage {
   protected readonly saveError = signal('');
 
   protected readonly own = computed(() => this.exercise()?.source === 'own');
+  protected readonly credit = computed(() => {
+    const exercise = this.exercise();
+    const author = exercise?.licenseAuthor?.trim();
+    const license = exercise?.license?.trim();
+    if (!author || !license) return null;
+    return { author, license, licenseUrl: httpsOrNull(exercise?.licenseUrl ?? null) };
+  });
   protected readonly hasArt = computed(() => {
     const exercise = this.exercise();
     return exercise ? illustrationFor(exercise.slug) !== undefined : false;
@@ -342,5 +352,15 @@ export class ExerciseDetailPage {
     if (ticket !== this.ticket) return;
     this.records.set(records);
     this.history.set(historyRows(series.points));
+  }
+}
+
+function httpsOrNull(value: string | null): string | null {
+  const text = value?.trim();
+  if (!text) return null;
+  try {
+    return new URL(text).protocol === 'https:' ? text : null;
+  } catch {
+    return null;
   }
 }

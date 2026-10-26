@@ -195,12 +195,15 @@ test.describe('exercícios: lista, busca e ficha', () => {
     }
   });
 
-  test('os créditos individuais do wger ficam na tela de créditos', async ({ page, context }) => {
+  test('a ficha do wger mostra o crédito individual', async ({ page, context }) => {
     await startTraining(context, page);
     await openTraining(page, `/treino/exercicios/${SEED_EXERCISE_IDS.wger}`);
-    await expect(page.locator('.origin')).toHaveCount(0);
-    await expect(page.getByText('Maria Souza')).toHaveCount(0);
-    await expect(page.getByText('CC-BY-SA 4')).toHaveCount(0);
+    const credit = page.locator('.source-credit');
+    await expect(credit).toContainText('Exercício: Maria Souza, CC-BY-SA 4');
+    await expect(credit.getByRole('link', { name: 'CC-BY-SA 4' })).toHaveAttribute(
+      'href',
+      'https://creativecommons.org/licenses/by-sa/4.0/',
+    );
   });
 
   test('adiciona o exercício a uma rotina com 3 séries de 8 a 12 repetições', async ({

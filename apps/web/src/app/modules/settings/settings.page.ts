@@ -2,6 +2,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { canUseModule } from '../../core/auth/guest-home';
+import { userCan } from '../../core/session/access';
 import { AppearanceService, ThemePreference } from '../../core/session/appearance.service';
 import { SessionState } from '../../core/session/session-state';
 import { SettingsGlyph, SettingsGlyphName } from './settings-glyph';
@@ -69,6 +70,37 @@ export class SettingsPage {
     title: SETTINGS_TITLES.appearance,
     summary: themeSummary(this.appearance.preference()),
   }));
+
+  /**
+   * Quem tem mais de um módulo não tem Início para alternar entre eles. A lista curta em Ajustes dá esse caminho sem
+   * recolocar uma seta de volta dentro do Treino. Só aparece com as permissões confirmadas, para não sugerir uma tela
+   * que o servidor ainda pode negar enquanto a sessão é carregada.
+   */
+  protected readonly modules = computed<readonly SettingsEntry[]>(() => {
+    const user = this.session.user();
+    if (user?.role !== 'guest' || user.permissions === undefined) return [];
+
+    const entries: SettingsEntry[] = [];
+    if (userCan(user, 'module:tv')) {
+      entries.push({
+        id: 'tv',
+        link: '/tv',
+        glyph: 'tv',
+        title: $localize`:@@settings.modules.tv:TV`,
+        summary: $localize`:@@settings.modules.tv-summary:Controle da TV`,
+      });
+    }
+    if (userCan(user, 'module:training')) {
+      entries.push({
+        id: 'training',
+        link: '/treino',
+        glyph: 'dumbbell',
+        title: $localize`:@@settings.modules.training:Treino`,
+        summary: $localize`:@@settings.modules.training-summary:Exercícios e progresso`,
+      });
+    }
+    return entries.length >= 2 ? entries : [];
+  });
 
   /** Perfil e Aparência para todos; Segurança só para o administrador. */
   protected readonly account = computed<readonly SettingsEntry[]>(() => {

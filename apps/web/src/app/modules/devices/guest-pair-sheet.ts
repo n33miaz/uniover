@@ -15,7 +15,7 @@ import { AuthApi } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
 import { SessionState } from '../../core/session/session-state';
-import { leaveDialog } from '../../shared/ui/dialog-motion';
+import { leaveDialog, onDialogBackdropClick } from '../../shared/ui/dialog-motion';
 import { DevicesApi } from './devices-api';
 import { MAX_DEVICE_NAME, formatCodeInput, isValidDeviceName, normalizeCode } from './pairing-code';
 
@@ -69,7 +69,9 @@ export class GuestPairSheet {
   constructor() {
     afterNextRender(() => {
       // showModal prende o foco na folha, deixa o resto da tela inerte e trata o Esc.
-      this.dialog().nativeElement.showModal();
+      const dialog = this.dialog().nativeElement;
+      dialog.showModal();
+      onDialogBackdropClick(dialog, () => this.cancel());
     });
   }
 

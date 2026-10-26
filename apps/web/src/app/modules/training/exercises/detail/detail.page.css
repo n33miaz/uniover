@@ -274,6 +274,22 @@
   font-weight: 650;
 }
 
+.source-credit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 6px;
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.source-credit a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+}
+
 .title-skeleton {
   width: 60%;
   height: 28px;

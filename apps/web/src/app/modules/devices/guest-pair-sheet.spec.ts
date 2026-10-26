@@ -42,7 +42,10 @@ describe('GuestPairSheet', () => {
     });
   });
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
 
   async function render(code = 'bcdf2345') {
     const fixture = TestBed.createComponent(GuestPairSheet);
@@ -159,6 +162,25 @@ describe('GuestPairSheet', () => {
       .click();
     fixture.detectChanges();
     await vi.waitFor(() => expect(closed).toHaveBeenCalled());
+    expect(authApi.stepUpWithPassword).not.toHaveBeenCalled();
+    expect(api.approveOwn).not.toHaveBeenCalled();
+  });
+
+  it('closes from the backdrop with the same exit path as Cancelar', async () => {
+    const { el, closed } = await render();
+    const dialog = el.querySelector<HTMLDialogElement>('dialog')!;
+    Object.defineProperty(dialog, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ left: 10, top: 10, right: 300, bottom: 500 }),
+    });
+    dialog.dispatchEvent(
+      Object.assign(new MouseEvent('pointerdown', { button: 0, clientX: 0, clientY: 0 }), {
+        isPrimary: true,
+      }),
+    );
+    dialog.dispatchEvent(new MouseEvent('click', { clientX: 0, clientY: 0 }));
+
+    expect(closed).toHaveBeenCalledOnce();
     expect(authApi.stepUpWithPassword).not.toHaveBeenCalled();
     expect(api.approveOwn).not.toHaveBeenCalled();
   });
