@@ -81,7 +81,7 @@ export class HomePage {
   }
 
   protected readonly editing = signal(false);
-  /** Blocos na ordem escolhida; todos do mesmo tamanho, numa grade regular (o tamanho antigo guardado é ignorado). */
+  /** Blocos na ordem, no tamanho e na visibilidade que a pessoa escolheu. */
   protected readonly widgets = this.prefs.visible;
   protected readonly allWidgets = this.prefs.widgets;
 

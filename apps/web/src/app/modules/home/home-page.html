@@ -43,7 +43,7 @@
 
   <div class="section-head">
     <h2 id="modules-label" class="ui-section-label" i18n="@@home.modules">Módulos</h2>
-    <button #editButton type="button" class="edit" (click)="openEditor()">
+    <button #editButton type="button" class="edit ui-btn secondary" (click)="openEditor()">
       <app-home-glyph name="pencil" />
       <span i18n="@@home.edit">Editar</span>
     </button>
@@ -51,7 +51,7 @@
 
   <ul class="grid ui-stagger ui-plain" aria-labelledby="modules-label">
     @for (widget of widgets(); track widget.definition.id) {
-      <li class="widget ui-rise">
+      <li class="widget ui-rise" [class.wide]="widget.size === 'wide'">
         <!-- Módulo sem tela ainda (sem caminho): cartão calmo, sem link nem resposta ao toque. -->
         @let path = registry.path(widget.definition);
         <article
@@ -64,34 +64,41 @@
           <span class="ico ui-tile lg"
             ><app-home-glyph [name]="glyphFor(widget.definition)"
           /></span>
-          <h3>
-            @if (path) {
-              <!-- O link se estende por cima do cartão inteiro: o cartão todo é o alvo de toque. -->
-              <a
-                class="card-link"
-                [routerLink]="path"
-                [attr.aria-label]="linkLabel(widget.definition)"
-                >{{ widget.definition.title }}</a
-              >
-            } @else {
-              {{ widget.definition.title }}
-            }
-          </h3>
-          <div class="badges">
-            @if (widget.definition.status === 'soon') {
-              <span class="chip ui-chip" i18n="@@home.soon">Em breve</span>
-            }
-            @if (live(widget.definition); as live) {
-              <span
-                class="chip ui-chip"
-                [class.ok]="live.tone === 'ok'"
-                [class.warn]="live.tone === 'warn'"
-              >
-                <span class="dot ui-dot" aria-hidden="true"></span>
-                {{ live.label }}
+          <div class="card-copy">
+            <h3>{{ widget.definition.title }}</h3>
+            <p class="desc">{{ widget.definition.description }}</p>
+          </div>
+          <div class="card-foot">
+            <div class="badges">
+              @if (widget.definition.status === 'soon') {
+                <span class="chip ui-chip" i18n="@@home.soon">Em breve</span>
+              }
+              @if (live(widget.definition); as live) {
+                <span
+                  class="chip ui-chip"
+                  [class.ok]="live.tone === 'ok'"
+                  [class.warn]="live.tone === 'warn'"
+                >
+                  <span class="dot ui-dot" aria-hidden="true"></span>
+                  {{ live.label }}
+                </span>
+              }
+            </div>
+            @if (path && widget.definition.actionLabel; as actionLabel) {
+              <span class="card-action">
+                {{ actionLabel }}
+                <app-home-glyph name="chevron" />
               </span>
             }
           </div>
+          @if (path) {
+            <!-- O link se estende por cima do cartão inteiro: o cartão todo é o alvo de toque. -->
+            <a
+              class="card-link"
+              [routerLink]="path"
+              [attr.aria-label]="linkLabel(widget.definition)"
+            ></a>
+          }
         </article>
       </li>
     } @empty {

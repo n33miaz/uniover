@@ -80,6 +80,19 @@ test.describe('Início: estado real da casa', () => {
       await expect(strip(page).first()).toHaveClass(/\bok\b/);
       await expect(strip(page).nth(1)).not.toHaveClass(/\b(ok|warn)\b/);
       await expect(tvBadge(page)).toContainText('Pronto para usar');
+      const tvCard = page.locator('article[data-module="tv"]');
+      await expect(tvCard.locator('.desc')).toHaveText('Ligar, volume, canais e apps');
+      await expect(tvCard.locator('.card-action')).toHaveText('Abrir controle');
+      await expect(tvCard.locator('a.card-link')).toHaveAttribute(
+        'aria-label',
+        'TV: Abrir controle',
+      );
+      await expect(page.locator('li.widget:has(article[data-module="training"])')).toHaveClass(
+        /\bwide\b/,
+      );
+      await expect(page.locator('li.widget:has(article[data-module="tv"])')).not.toHaveClass(
+        /\bwide\b/,
+      );
       await settle(page);
       await expectNoHorizontalScroll(page);
       await screenshot(page, printPath(info, 'agent-on', scheme));
