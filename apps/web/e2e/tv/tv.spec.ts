@@ -3195,13 +3195,16 @@ test.describe('ícones dos apps', () => {
   }) => {
     tv.shortcuts = iconShortcuts();
     await openTv(page);
-    const stored = await page.evaluate(() => ({
-      state: localStorage.getItem('uniover.tv.last-state') ?? '',
-      icons: JSON.parse(localStorage.getItem('uniover.tv.app-icons') ?? '{}') as Record<
-        string,
-        string
-      >,
-    }));
+    const stored = await page.evaluate(() => {
+      // As duas chaves são por conta: o sufixo é a conta da sessão aberta.
+      const account = encodeURIComponent(localStorage.getItem('uniover.account-id') ?? '');
+      return {
+        state: localStorage.getItem(`uniover.tv.last-state.${account}`) ?? '',
+        icons: JSON.parse(
+          localStorage.getItem(`uniover.tv.app-icons.${account}`) ?? '{}',
+        ) as Record<string, string>,
+      };
+    });
     expect(stored.state).not.toContain('data:image');
     expect(stored.state.length).toBeLessThan(5_000);
     expect(Object.keys(stored.icons)).toHaveLength(4);
@@ -3262,14 +3265,14 @@ test.describe('ícones dos apps', () => {
 
     // O que o navegador guarda: ícones só até o teto, e o estado intacto e pequeno.
     const stored = await page.evaluate(() => {
-      const icons = JSON.parse(localStorage.getItem('uniover.tv.app-icons') ?? '{}') as Record<
-        string,
-        string
-      >;
+      const account = encodeURIComponent(localStorage.getItem('uniover.account-id') ?? '');
+      const icons = JSON.parse(
+        localStorage.getItem(`uniover.tv.app-icons.${account}`) ?? '{}',
+      ) as Record<string, string>;
       return {
         iconChars: Object.values(icons).reduce((sum, uri) => sum + uri.length, 0),
         iconCount: Object.keys(icons).length,
-        stateChars: (localStorage.getItem('uniover.tv.last-state') ?? '').length,
+        stateChars: (localStorage.getItem(`uniover.tv.last-state.${account}`) ?? '').length,
       };
     });
     expect(stored.iconChars).toBeLessThanOrEqual(1_000_000);

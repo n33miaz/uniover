@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { Injectable, computed, inject, linkedSignal, signal } from '@angular/core';
+import { Injectable, computed, inject, linkedSignal } from '@angular/core';
 import { SessionState } from '../../../core/session/session-state';
 import { TvSummary } from './tv-types';
 
@@ -41,7 +41,14 @@ export class TvSelection {
   private readonly session = inject(SessionState);
   private readonly storage = this.openStorage();
 
-  private readonly _tvs = signal<readonly TvSummary[] | null>(null);
+  /**
+   * As TVs que a conta vê. Volta a `null` quando a conta da sessão muda (A sai e B entra sem recarregar a página): a lista é
+   * de quem a pediu, e com ela de A, as chamadas de B levariam o `tvId` de uma TV que ele talvez nem veja.
+   */
+  private readonly _tvs = linkedSignal<string | null, readonly TvSummary[] | null>({
+    source: () => this.session.accountId(),
+    computation: () => null,
+  });
   private readonly stored = linkedSignal<string | null, StoredSelection | null>({
     source: () => this.session.accountId(),
     computation: (accountId) => this.read(accountId),
