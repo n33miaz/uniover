@@ -3,7 +3,7 @@ import {
   PWA_ENABLED,
   PwaUpdateService,
   UPDATE_CHECK_THROTTLE_MS,
-  UPDATE_ACTIVATION_TIMEOUT_MS,
+  UPDATE_RELOAD_FALLBACK_MS,
 } from './pwa-update.service';
 import { registerServiceWorker } from './register-sw';
 
@@ -57,7 +57,10 @@ describe('registerServiceWorker', () => {
 });
 
 describe('PwaUpdateService', () => {
-  afterEach(() => Reflect.deleteProperty(window.navigator, 'serviceWorker'));
+  afterEach(() => {
+    Reflect.deleteProperty(window.navigator, 'serviceWorker');
+    vi.restoreAllMocks();
+  });
 
   function setup(controller: object | null) {
     const registration = new FakeRegistration();
@@ -156,28 +159,59 @@ describe('PwaUpdateService', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it('explains when the waiting worker disappeared instead of making Atualizar a silent no-op', async () => {
-    const { service } = setup({});
+  it('reloads after a short wait when the new controller does not announce itself', async () => {
+    const { registration, container, service } = setup({});
     await flush();
-    service.updateReady.set(true);
-    service.applyUpdate();
-    expect(service.updateError()).toBe(true);
-    expect(service.applyingUpdate()).toBe(false);
-  });
-
-  it('reenables retry if activation never changes the controller', async () => {
-    const { registration, service } = setup({});
-    await flush();
+    const reload = vi.fn();
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, reload } as Location);
     registration.waiting = new FakeWorker();
+
     vi.useFakeTimers();
     try {
       service.applyUpdate();
-      vi.advanceTimersByTime(UPDATE_ACTIVATION_TIMEOUT_MS);
-      expect(service.applyingUpdate()).toBe(false);
-      expect(service.updateError()).toBe(true);
+      vi.advanceTimersByTime(UPDATE_RELOAD_FALLBACK_MS);
+      expect(reload).toHaveBeenCalledTimes(1);
+      container.dispatchEvent(new Event('controllerchange'));
+      expect(reload).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('checks again and reloads even if the waiting worker vanished before the touch', async () => {
+    const { registration, service } = setup({});
+    await flush();
+    const reload = vi.fn();
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, reload } as Location);
+    registration.update.mockClear();
+
+    vi.useFakeTimers();
+    try {
+      service.applyUpdate();
+      expect(registration.update).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(UPDATE_RELOAD_FALLBACK_MS);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(service.updateError()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows an error only when reloading itself is impossible', async () => {
+    const { registration, container, service } = setup({});
+    await flush();
+    registration.waiting = new FakeWorker();
+    vi.spyOn(window, 'location', 'get').mockReturnValue({
+      ...window.location,
+      reload: () => {
+        throw new Error('bloqueado');
+      },
+    } as Location);
+
+    service.applyUpdate();
+    container.dispatchEvent(new Event('controllerchange'));
+    expect(service.updateError()).toBe(true);
+    expect(service.applyingUpdate()).toBe(false);
   });
 
   it('stays out of the way when disabled', () => {
