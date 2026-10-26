@@ -101,6 +101,21 @@ function Stop-Agent {
     Start-Sleep -Seconds 1
 }
 
+function Restore-RunningAgent {
+    # Instalacao que falhou: o Stop-Agent parou a tarefa antes de tudo, entao o agente que ja estava instalado (e que a
+    # falha nao tocou) volta a rodar. Sem instalacao anterior ou sem tarefa registrada, nao ha o que religar.
+    try {
+        if (-not (Test-Path -LiteralPath (Join-Path $source 'tools\run-agent.ps1'))) {
+            return
+        }
+        if (-not (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) {
+            return
+        }
+        Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    }
+    catch { }
+}
+
 if ($Uninstall) {
     Stop-Agent
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
@@ -155,10 +170,21 @@ function Set-ConfigValues([string]$Path, [hashtable]$Values) {
     Write-Config $Path $lines
 }
 
+function Move-Folder([string]$From, [string]$To) {
+    # Renomeacao de verdade (Directory.Move): ou troca o nome inteiro ou falha sem tocar em nada. O Move-Item, quando ha um
+    # arquivo aberto dentro da pasta, cai para copiar-e-apagar e deixa metade dos arquivos em cada lugar.
+    [System.IO.Directory]::Move([System.IO.Path]::GetFullPath($From), [System.IO.Path]::GetFullPath($To))
+}
+
 function Get-AgentSource([string]$Destination) {
     # Baixa o commit exato (e grava .version para a auto-atualizacao saber de onde partiu).
+    # O pacote e extraido e conferido numa pasta candidata ao lado ($Destination.new); so depois disso ela troca de lugar
+    # com a instalacao atual por renomeacao (a atual fica em $Destination.previous), o mesmo desenho da atualizacao
+    # automatica. Download, extracao ou conferencia que falhem deixam a instalacao que funciona exatamente como estava.
     $temporary = Join-Path $env:TEMP ('uniover-agent-' + [guid]::NewGuid())
     $zip = Join-Path $temporary 'main.zip'
+    $candidate = $Destination + '.new'
+    $oldFolder = $Destination + '.previous'
     New-Item -ItemType Directory -Path $temporary -Force | Out-Null
     try {
         try {
@@ -176,12 +202,12 @@ function Get-AgentSource([string]$Destination) {
         Invoke-WebRequest -UseBasicParsing -Uri $address -OutFile $zip
         # So apps/agent sai do zip: o repositorio inteiro tem caminhos (da API) que passam do limite de 260
         # caracteres do Windows e derrubam a extracao completa.
-        if (Test-Path $Destination) {
-            Remove-Item -LiteralPath $Destination -Recurse -Force
+        if (Test-Path -LiteralPath $candidate) {
+            Remove-Item -LiteralPath $candidate -Recurse -Force
         }
-        New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+        New-Item -ItemType Directory -Path $candidate -Force | Out-Null
         Add-Type -AssemblyName System.IO.Compression.FileSystem
-        $root = [System.IO.Path]::GetFullPath($Destination).TrimEnd('\') + '\'
+        $root = [System.IO.Path]::GetFullPath($candidate).TrimEnd('\') + '\'
         $bundle = [System.IO.Compression.ZipFile]::OpenRead($zip)
         $extracted = 0
         try {
@@ -210,11 +236,11 @@ function Get-AgentSource([string]$Destination) {
         finally {
             $bundle.Dispose()
         }
-        if ($extracted -eq 0 -or -not (Test-Path -LiteralPath (Join-Path $Destination 'pyproject.toml'))) {
+        if ($extracted -eq 0 -or -not (Test-Path -LiteralPath (Join-Path $candidate 'pyproject.toml'))) {
             throw 'O pacote baixado nao contem apps\agent.'
         }
-        $png = Join-Path $Destination 'assets\uniover.png'
-        $ico = Join-Path $Destination 'assets\uniover.ico'
+        $png = Join-Path $candidate 'assets\uniover.png'
+        $ico = Join-Path $candidate 'assets\uniover.ico'
         if (Test-Path -LiteralPath $png) {
             try {
                 Add-Type -AssemblyName System.Drawing
@@ -227,8 +253,36 @@ function Get-AgentSource([string]$Destination) {
             Remove-Item -LiteralPath $png -Force -ErrorAction SilentlyContinue
         }
         if ($sha) {
-            [System.IO.File]::WriteAllText((Join-Path $Destination '.version'), $sha + "`n", [System.Text.UTF8Encoding]::new($false))
+            [System.IO.File]::WriteAllText((Join-Path $candidate '.version'), $sha + "`n", [System.Text.UTF8Encoding]::new($false))
         }
+        # A candidata esta inteira: agora sim, a troca. A anterior que sobrou de outra vez sai primeiro (se nao sair, nada
+        # e movido: renomear uma pasta para cima de outra existente poria uma dentro da outra).
+        if (Test-Path -LiteralPath $Destination) {
+            Remove-Item -LiteralPath $oldFolder -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath $oldFolder) {
+                throw 'Nao consegui liberar a pasta da versao anterior do agente. A instalacao atual ficou como estava.'
+            }
+            try {
+                Move-Folder $Destination $oldFolder
+            }
+            catch {
+                throw 'A pasta do agente esta em uso por outro programa. A instalacao atual ficou como estava.'
+            }
+        }
+        try {
+            Move-Folder $candidate $Destination
+        }
+        catch {
+            # A segunda renomeacao falhou: a anterior volta para o lugar e a instalacao nunca fica sem pasta do agente.
+            if ((Test-Path -LiteralPath $oldFolder) -and -not (Test-Path -LiteralPath $Destination)) {
+                try { Move-Folder $oldFolder $Destination } catch { }
+            }
+            throw 'Nao consegui colocar a versao nova no lugar. A instalacao atual ficou como estava.'
+        }
+    }
+    catch {
+        Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue
+        throw
     }
     finally {
         Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue
@@ -326,10 +380,13 @@ function Set-SystemSettings {
     $elevated = @'
 $ErrorActionPreference = 'Continue'
 $failed = 0
+# Caminho absoluto: elevado, nada pode ser achado pelo PATH (uma pasta de usuario antes de System32 poria um
+# powercfg.exe qualquer rodando como administrador). SystemRoot e definido pelo Windows e aponta para a instalacao dele.
+$powercfg = Join-Path $env:SystemRoot 'System32\powercfg.exe'
 # Na tomada o PC nao suspende nem hiberna (o agente precisa dele acordado); a tela pode apagar.
-& powercfg.exe /change standby-timeout-ac 0
+& $powercfg /change standby-timeout-ac 0
 if ($LASTEXITCODE -ne 0) { $failed = $failed -bor 1 }
-& powercfg.exe /change hibernate-timeout-ac 0
+& $powercfg /change hibernate-timeout-ac 0
 if ($LASTEXITCODE -ne 0) { $failed = $failed -bor 1 }
 # O Windows desliga o adaptador de rede "para economizar energia" e derruba o Wi-Fi. Vale a partir do proximo
 # reinicio do adaptador (nao o reiniciamos aqui para nao derrubar a internet no meio da instalacao).
@@ -354,8 +411,10 @@ catch { $failed = $failed -bor 4 }
 exit $failed
 '@
     $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($elevated))
+    # Tambem o PowerShell que sobe elevado vem de um caminho absoluto, nunca do PATH.
+    $systemShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     try {
-        $process = Start-Process -FilePath 'powershell.exe' -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded)
+        $process = Start-Process -FilePath $systemShell -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded)
     }
     catch {
         return 'Sem a permissao de administrador, o PC pode suspender e perder o Wi-Fi; rode de novo e aceite o aviso do Windows.'
@@ -388,10 +447,9 @@ function Invoke-AutomaticInstall {
     $system = Set-SystemSettings
     Write-Page 'Instalando o UniOver&hellip;'
 
+    # A instalacao que existia, se havia, fica em app.previous (a troca e feita dentro de Get-AgentSource, so depois de o
+    # pacote novo estar inteiro): se este processo cair, ainda ha para onde voltar.
     Get-AgentSource $source
-    # A instalacao direta ja foi testada abaixo; uma versao anterior de outra instalacao nao e um
-    # retorno valido caso este primeiro processo caia.
-    Remove-Item -LiteralPath (Join-Path $base 'app.previous') -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
     Set-ConfigValues $config @{ api_url = $ApiUrl }
 
@@ -461,12 +519,15 @@ if ($automatic) {
     catch {
         $reason = [System.Net.WebUtility]::HtmlEncode($_.Exception.Message)
         Write-Host ("Falha: " + $_.Exception.Message)
+        Restore-RunningAgent
         Write-Page ('A instala&ccedil;&atilde;o n&atilde;o terminou: ' + $reason + ' Feche esta janela e abra o conector de novo.') $false
         exit 1
     }
 }
 
 # --- Modo manual (-TvHost informado), pensado para um terminal visivel ------------------------------
+# Qualquer falha daqui para baixo religa antes o agente que ja estava instalado e so entao encerra com o erro.
+trap { Restore-RunningAgent; break }
 $uv = Find-Uv
 New-Item -ItemType Directory -Path $base -Force | Out-Null
 Stop-Agent
@@ -477,7 +538,6 @@ $env:UNIOVER_CONFIG_FILE = $config
 $env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'runtime\venv'
 
 Get-AgentSource $source
-Remove-Item -LiteralPath (Join-Path $base 'app.previous') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
 Write-Config $config @("api_url = " + ($ApiUrl | ConvertTo-Json -Compress))
 

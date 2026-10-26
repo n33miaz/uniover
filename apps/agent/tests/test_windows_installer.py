@@ -333,7 +333,7 @@ def test_no_powershell_script_starts_a_console_process_through_start_process() -
     """Start-Process cria um console novo e so o esconde depois (pisca); filhos herdam o oculto."""
     allowed = (
         "Start-Process -FilePath $pageFile",  # abre o navegador (programa de janela)
-        "Start-Process -FilePath 'powershell.exe' -Verb RunAs -WindowStyle Hidden",  # o UAC, oculto
+        "Start-Process -FilePath $systemShell -Verb RunAs -WindowStyle Hidden",  # o UAC, oculto
     )
     offenders: list[str] = []
     for script in (INSTALLER, LAUNCHER, RUNNER):
@@ -376,8 +376,8 @@ def test_the_elevated_part_only_applies_system_settings() -> None:
     )
     for word in forbidden:
         assert word not in block
-    assert "powercfg.exe /change standby-timeout-ac 0" in block
-    assert "powercfg.exe /change hibernate-timeout-ac 0" in block
+    assert "& $powercfg /change standby-timeout-ac 0" in block
+    assert "& $powercfg /change hibernate-timeout-ac 0" in block
     assert "monitor-timeout" not in block  # a tela pode apagar
     assert "-Protocol UDP -LocalPort 1900" in block
     assert "-Profile Private,Domain" in block
