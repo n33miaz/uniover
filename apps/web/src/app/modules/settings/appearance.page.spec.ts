@@ -4,7 +4,7 @@ import { AuthApi } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { ModulePrefs, modulePrefsStorageKey } from '../../core/modules/module-prefs';
 import { INSTALL_ENV, InstallHintService } from '../../core/pwa/install-hint.service';
-import { THEME_PREFERENCE_KEY } from '../../core/session/appearance.service';
+import { themePreferenceStorageKey } from '../../core/session/appearance.service';
 import { AppearancePage } from './appearance.page';
 
 const ME = { id: '1', email: 'dono@exemplo.com', displayName: 'Dono da Casa' };
@@ -61,7 +61,7 @@ describe('AppearancePage', () => {
       const dark = el.querySelector<HTMLInputElement>('input[name="theme"][value="dark"]')!;
       dark.click();
       fixture.detectChanges();
-      expect(localStorage.getItem(THEME_PREFERENCE_KEY)).toBe('dark');
+      expect(localStorage.getItem(themePreferenceStorageKey(ME.id))).toBe('dark');
       expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
       expect(dark.checked).toBe(true);
     });

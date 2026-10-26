@@ -18,4 +18,24 @@ describe('UpdateBanner', () => {
     el.querySelector('button')!.click();
     expect(apply).toHaveBeenCalled();
   });
+
+  it('keeps the error hidden until reloading was impossible', async () => {
+    const service = TestBed.inject(PwaUpdateService);
+    const fixture = TestBed.createComponent(UpdateBanner);
+    const el = fixture.nativeElement as HTMLElement;
+    service.updateReady.set(true);
+    service.applyingUpdate.set(true);
+    await fixture.whenStable();
+
+    expect(el.querySelector('.error')).toBeNull();
+    expect(el.querySelector<HTMLButtonElement>('button')?.disabled).toBe(true);
+    expect(el.textContent).toContain('Atualizando…');
+
+    service.applyingUpdate.set(false);
+    service.updateError.set(true);
+    await fixture.whenStable();
+    expect(el.querySelector('.error')?.textContent).toContain(
+      'Não foi possível ativar a nova versão',
+    );
+  });
 });
