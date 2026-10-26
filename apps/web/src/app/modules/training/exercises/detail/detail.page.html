@@ -243,6 +243,17 @@
         }
       }
     </section>
+
+    @if (credit(); as credit) {
+      <footer class="source-credit">
+        <span i18n="@@training.detail.source-credit">Exercício: {{ credit.author }},</span>&ngsp;
+        @if (credit.licenseUrl; as url) {
+          <a [href]="url" target="_blank" [attr.rel]="linkRel">{{ credit.license }}</a>
+        } @else {
+          <span>{{ credit.license }}</span>
+        }
+      </footer>
+    }
   </article>
 
   @if (addOpen()) {

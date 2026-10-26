@@ -120,12 +120,29 @@ describe('ExerciseDetailPage', () => {
       licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
     });
 
-    it('keeps per exercise author and license details out of the exercise screen', async () => {
+    it('shows the author and links the license in the exercise footer', async () => {
       const { fixture, el } = await open('wger-1', [wger]);
       await eventually(fixture, () => expect(el.querySelector('.muscle-figure')).not.toBeNull());
-      expect(text(el)).not.toContain('Maria Souza');
-      expect(text(el)).not.toContain('CC-BY-SA 4');
-      expect(el.querySelector('.origin')).toBeNull();
+      const credit = el.querySelector('.source-credit');
+      expect(credit?.textContent?.replace(/\s+/g, ' ')).toContain(
+        'Exercício: Maria Souza, CC-BY-SA 4',
+      );
+      const license = credit?.querySelector<HTMLAnchorElement>('a');
+      expect(license?.getAttribute('href')).toBe('https://creativecommons.org/licenses/by-sa/4.0/');
+      expect(license?.getAttribute('target')).toBe('_blank');
+      expect(license?.getAttribute('rel')).toBe('noopener noreferrer');
+    });
+
+    it('shows an unsafe license address as text instead of a link', async () => {
+      const { fixture, el } = await open('wger-unsafe', [
+        { ...wger, id: 'wger-unsafe', licenseUrl: 'javascript:alert(1)' },
+      ]);
+      await eventually(fixture, () => expect(el.querySelector('.source-credit')).not.toBeNull());
+      const credit = el.querySelector('.source-credit');
+      expect(credit?.textContent?.replace(/\s+/g, ' ')).toContain(
+        'Exercício: Maria Souza, CC-BY-SA 4',
+      );
+      expect(credit?.querySelector('a')).toBeNull();
     });
   });
 
