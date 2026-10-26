@@ -60,6 +60,7 @@
   },
   "overrides": {
     "handlebars": "^4.7.10",
+    "@puppeteer/browsers": "3.2.6",
     "@angular/build": {
       "vite": "^8.3.3"
     },
