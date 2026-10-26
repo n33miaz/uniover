@@ -28,11 +28,9 @@ internal sealed class UpsertSetHandler(TrainingDbContext db, CatalogSeeder seede
         }
 
         // Treino de outra pessoa (ou que nunca chegou) é "não encontrado"; a fila mostra a falha em vez de perder a série.
-        var sessionDeleted = await db.Set<Session>().AsNoTracking()
-            .Where(s => s.Id == command.SessionId && s.UserId == command.UserId)
-            .Select(s => (bool?)(s.DeletedAt != null))
-            .SingleOrDefaultAsync(cancellationToken);
-        if (sessionDeleted is null)
+        // A confirmação do estado fica dentro da trava abaixo: entre esta leitura e a gravação o treino pode ser apagado.
+        if (!await db.Set<Session>().AsNoTracking()
+            .AnyAsync(s => s.Id == command.SessionId && s.UserId == command.UserId, cancellationToken))
         {
             return new UpsertSetResult(UpsertSetOutcome.SessionNotFound);
         }
@@ -43,14 +41,26 @@ internal sealed class UpsertSetHandler(TrainingDbContext db, CatalogSeeder seede
             return new UpsertSetResult(UpsertSetOutcome.ExerciseNotFound);
         }
 
-        var dead = command.Deleted || sessionDeleted.Value;
-        if (!dead && !SetRules.HasValidShape(recordType, command.SetType, command.WeightKg, command.Reps, command.DurationS))
-        {
-            return new UpsertSetResult(UpsertSetOutcome.ShapeInvalid);
-        }
-
         for (var attempt = 0; attempt < MaxAttempts; attempt++)
         {
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            // A lápide da sessão e as séries dela compartilham esta trava. Depois de esperar, a leitura vê o apagamento
+            // confirmado e não deixa uma série viva voltar no pull incremental.
+            var session = await db.Set<Session>()
+                .FromSqlInterpolated($"SELECT * FROM training.sessions WHERE id = {command.SessionId} AND user_id = {command.UserId} FOR UPDATE")
+                .AsNoTracking()
+                .SingleOrDefaultAsync(cancellationToken);
+            if (session is null)
+            {
+                return new UpsertSetResult(UpsertSetOutcome.SessionNotFound);
+            }
+
+            var dead = command.Deleted || session.IsDeleted;
+            if (!dead && !SetRules.HasValidShape(recordType, command.SetType, command.WeightKg, command.Reps, command.DurationS))
+            {
+                return new UpsertSetResult(UpsertSetOutcome.ShapeInvalid);
+            }
+
             var row = await db.Set<SessionSet>().SingleOrDefaultAsync(s => s.Id == command.Id, cancellationToken);
             if (row is null)
             {
@@ -76,6 +86,7 @@ internal sealed class UpsertSetHandler(TrainingDbContext db, CatalogSeeder seede
             try
             {
                 await db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
                 return new UpsertSetResult(UpsertSetOutcome.Ok, SetResponse.From(row));
             }
             catch (DbUpdateConcurrencyException)
