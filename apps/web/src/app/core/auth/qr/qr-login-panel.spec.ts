@@ -226,4 +226,61 @@ describe('QrLoginPanel', () => {
     expect(api.qrPoll).not.toHaveBeenCalled();
     expect(api.qrStart).toHaveBeenCalledTimes(1);
   });
+
+  describe('the wait between two polls', () => {
+    it('leaves no timer pending when the screen goes away while it waits', async () => {
+      api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo', 60));
+      const idle = vi.getTimerCount();
+      const { fixture } = await render();
+      // Esperando a próxima consulta há um temporizador a mais do que antes de a tela nascer.
+      expect(vi.getTimerCount()).toBe(idle + 1);
+
+      fixture.destroy();
+      expect(vi.getTimerCount()).toBe(idle);
+    });
+
+    it('also clears the longer wait that follows a request for calm from the API', async () => {
+      api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo', 60));
+      api.qrPoll.mockRejectedValueOnce(new ApiProblem(429, 'rate-limited', 'x'));
+      const idle = vi.getTimerCount();
+      const { fixture } = await render();
+
+      await settle(fixture, 1_000);
+      expect(api.qrPoll).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(idle + 1);
+
+      fixture.destroy();
+      expect(vi.getTimerCount()).toBe(idle);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(api.qrPoll).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not keep a timer going for a tab that stays hidden once the screen is gone', async () => {
+      api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo', 60));
+      const hidden = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+      const idle = vi.getTimerCount();
+      const { fixture } = await render();
+      await settle(fixture, 3_000);
+      expect(vi.getTimerCount()).toBe(idle + 1);
+
+      fixture.destroy();
+      expect(vi.getTimerCount()).toBe(idle);
+      hidden.mockRestore();
+    });
+
+    it('keeps a single wait going when the QR is renewed, never one for each QR it showed', async () => {
+      api.qrStart
+        .mockResolvedValueOnce(started('CODE1234CODE1234', 'primeiro', 10))
+        .mockResolvedValueOnce(started('OTHER567OTHER567', 'segundo', 10));
+      const idle = vi.getTimerCount();
+      const { fixture } = await render();
+
+      await settle(fixture, 9_000);
+      expect(api.qrStart).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(idle + 1);
+
+      fixture.destroy();
+      expect(vi.getTimerCount()).toBe(idle);
+    });
+  });
 });
