@@ -226,6 +226,16 @@ def _recently_failed(marker: Path) -> bool:
         return False
 
 
+# Script de prova do Script Host: ASCII puro e sem caminho dentro dele. O WScript lê o arquivo na
+# página de código do Windows (ANSI) e não em UTF-8, então um caminho com acento gravado aqui
+# viraria outro caminho; o arquivo de saída chega como argumento (a linha de comando do Windows é
+# Unicode), e funciona com qualquer nome de usuário.
+WSH_PROBE_VBS = (
+    'CreateObject("Scripting.FileSystemObject")'
+    ".CreateTextFile(WScript.Arguments(0), True).Close\r\n"
+)
+
+
 def _windows_script_host_works(root: Path) -> bool:
     """O Script Host roda mesmo neste usuário? (Pode estar desligado por política do PC.)
 
@@ -235,17 +245,13 @@ def _windows_script_host_works(root: Path) -> bool:
     runtime = root / "runtime"
     probe = runtime / "wsh-probe.vbs"
     mark = runtime / "wsh-probe.ok"
-    quoted = str(mark).replace('"', '""')
-    script = (
-        f'CreateObject("Scripting.FileSystemObject").CreateTextFile("{quoted}", True).Close\r\n'
-    )
     try:
         runtime.mkdir(parents=True, exist_ok=True)
         mark.unlink(missing_ok=True)
-        probe.write_bytes(script.encode("ascii"))
-        run_hidden([_wscript(), "//B", "//Nologo", str(probe)], timeout=20)
+        probe.write_bytes(WSH_PROBE_VBS.encode("ascii"))
+        run_hidden([_wscript(), "//B", "//Nologo", str(probe), str(mark)], timeout=20)
         return mark.is_file()
-    except OSError, UnicodeEncodeError, subprocess.TimeoutExpired:
+    except OSError, subprocess.TimeoutExpired:
         return False
     finally:
         probe.unlink(missing_ok=True)
