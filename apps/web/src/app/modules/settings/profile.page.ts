@@ -21,6 +21,7 @@ import {
 } from '../../core/auth/display-name';
 import { SessionState } from '../../core/session/session-state';
 import { SettingsGlyph } from './settings-glyph';
+import { SessionsSection } from './sessions-section';
 import { permissionLabels, roleLabel } from './settings-titles';
 
 /**
@@ -32,7 +33,7 @@ import { permissionLabels, roleLabel } from './settings-titles';
  */
 @Component({
   selector: 'app-profile-page',
-  imports: [SettingsGlyph],
+  imports: [SettingsGlyph, SessionsSection],
   templateUrl: './profile.page.html',
   styleUrl: './profile.page.css',
 })

@@ -52,6 +52,7 @@ describe('GuestsSection', () => {
     guests: vi.fn(),
     revokeGuestInvite: vi.fn(),
     revokeGuest: vi.fn(),
+    sessions: vi.fn(),
   };
   const people = { createInvite: vi.fn(), setPermissions: vi.fn() };
   const stepUp = { confirm: vi.fn() };
@@ -179,10 +180,33 @@ describe('GuestsSection', () => {
         row.textContent?.includes('Bia'),
       )!;
       expect(Array.from(bia.querySelectorAll('button')).map((b) => b.textContent?.trim())).toEqual([
+        'Sessões',
         'Permissões',
         'Revogar acesso',
       ]);
-      expect(bia.querySelector('button')?.getAttribute('aria-label')).toBe('Permissões de Bia');
+      const permissions = Array.from(bia.querySelectorAll('button')).find(
+        (b) => b.textContent?.trim() === 'Permissões',
+      );
+      expect(permissions?.getAttribute('aria-label')).toBe('Permissões de Bia');
+    });
+
+    it('opens the sessions of the person only on demand, through the administrator route', async () => {
+      api.sessions.mockResolvedValue([]);
+      const { fixture, el } = await render();
+      expect(api.sessions).not.toHaveBeenCalled();
+      const bia = Array.from(el.querySelectorAll('.person')).find((row) =>
+        row.textContent?.includes('Bia'),
+      )!;
+      const toggle = Array.from(bia.querySelectorAll('button')).find(
+        (b) => b.textContent?.trim() === 'Sessões',
+      )!;
+      toggle.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(api.sessions).toHaveBeenCalledWith('t', 'g1');
+      expect(bia.textContent).toContain('Sessões de Bia');
     });
 
     it('draws no empty block: with no pending invite there is no pending heading and no empty line', async () => {

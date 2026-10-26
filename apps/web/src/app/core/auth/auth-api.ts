@@ -34,6 +34,7 @@ export type ModuleInfo = Readonly<Schemas['IdentityModuleInfo']>;
 export type GuestInviteSummary = Readonly<Schemas['GuestInviteSummary']>;
 export type GuestInviteCreated = Readonly<Schemas['CreateGuestInviteResponse']>;
 export type GuestSummary = Readonly<Schemas['GuestSummary']>;
+export type LoginSession = Readonly<Schemas['SessionSummary']>;
 export type QrLoginStarted = Readonly<Schemas['StartQrLoginResponse']>;
 export type QrLoginPoll = Readonly<Schemas['PollQrLoginResponse']>;
 export type QrLoginInfo = Readonly<Schemas['QrLoginInfoResponse']>;
@@ -142,6 +143,23 @@ export class AuthApi {
 
   revokeGuest(token: string, id: string): Promise<void> {
     return this.send('POST', `/guests/${encodeURIComponent(id)}/revoke`, { token });
+  }
+
+  sessions(token: string, guestId: string | null = null): Promise<readonly LoginSession[]> {
+    const path = guestId === null ? '/sessions' : `/guests/${encodeURIComponent(guestId)}/sessions`;
+    return this.send('GET', path, { token });
+  }
+
+  revokeSession(token: string, id: string, guestId: string | null = null): Promise<void> {
+    const path =
+      guestId === null
+        ? `/sessions/${encodeURIComponent(id)}/revoke`
+        : `/guests/${encodeURIComponent(guestId)}/sessions/${encodeURIComponent(id)}/revoke`;
+    return this.send('POST', path, { token });
+  }
+
+  revokeOtherSessions(token: string): Promise<void> {
+    return this.send('POST', '/sessions/others/revoke', { token });
   }
 
   info(): Promise<ModuleInfo> {

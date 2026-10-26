@@ -398,9 +398,9 @@ test.describe('convidado: só o controle da TV', () => {
     expect(sent.filter((request) => /passkeys|guests|guest-invites|step-up/.test(request))).toEqual(
       [],
     );
-    // Só a leitura pública da versão, o renovar da sessão, a própria conta e o salvar do nome.
+    // Só a leitura pública da versão, o renovar da sessão, a própria conta, o salvar do nome e a lista das próprias sessões.
     expect(new Set(sent.map((request) => request.replace(/^(GET|POST|PATCH) /, '')))).toEqual(
-      new Set(['/info', '/auth/refresh', '/me']),
+      new Set(['/info', '/auth/refresh', '/me', '/sessions']),
     );
 
     // O servidor recusa o que ela chamar à mão: o papel dela não passa nessas rotas (a API tem o teste dela; aqui o

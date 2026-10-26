@@ -40,6 +40,7 @@ describe('ProfilePage', () => {
     passkeys: vi.fn(),
     guests: vi.fn(),
     guestInvites: vi.fn(),
+    sessions: vi.fn(),
   };
   const problem = (status: number, fieldErrors = {}, retryAfter: number | null = null) =>
     new ApiProblem(status, '', 'x', null, null, retryAfter, fieldErrors);
@@ -48,6 +49,7 @@ describe('ProfilePage', () => {
     localStorage.clear();
     for (const fn of Object.values(api)) fn.mockReset();
     api.refresh.mockResolvedValue({ accessToken: 't', expiresIn: 600 });
+    api.sessions.mockResolvedValue([]);
     api.me.mockResolvedValue(OWNER);
     api.logout.mockResolvedValue(undefined);
     api.updateMe.mockImplementation(async (_token: string, name: string) => ({

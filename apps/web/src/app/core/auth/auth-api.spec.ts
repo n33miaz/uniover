@@ -94,6 +94,26 @@ describe('AuthApi', () => {
     for (const [url] of fetchFn.mock.calls) expect(url).not.toContain('jwt-secreto');
   });
 
+  it('uses the correct account paths for listing and revoking sessions', async () => {
+    fetchFn.mockResolvedValue(reply(200, []));
+    await api().sessions('jwt');
+    expect([lastCall().init.method, lastCall().url]).toEqual(['GET', '/api/v1/identity/sessions']);
+    await api().sessions('jwt', 'guest id');
+    expect(lastCall().url).toBe('/api/v1/identity/guests/guest%20id/sessions');
+
+    fetchFn.mockResolvedValue(new Response(null, { status: 204 }));
+    await api().revokeSession('jwt', 'session id');
+    expect([lastCall().init.method, lastCall().url]).toEqual([
+      'POST',
+      '/api/v1/identity/sessions/session%20id/revoke',
+    ]);
+    await api().revokeSession('jwt', 'session id', 'guest id');
+    expect(lastCall().url).toBe('/api/v1/identity/guests/guest%20id/sessions/session%20id/revoke');
+    await api().revokeOtherSessions('jwt');
+    expect(lastCall().url).toBe('/api/v1/identity/sessions/others/revoke');
+    expect(lastCall().headers['Authorization']).toBe('Bearer jwt');
+  });
+
   it('uses the verbs and paths of the passkey and step-up endpoints', async () => {
     fetchFn.mockResolvedValue(reply(200, {}));
     await api().renamePasskey('t', 'id-1', 'Novo');
