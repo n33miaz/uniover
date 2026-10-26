@@ -16,6 +16,7 @@ import {
   TvStartPage,
 } from '../data/tv-prefs';
 import { TvRoundKeys } from '../data/tv-round-keys';
+import { SessionState } from '../../../core/session/session-state';
 import { leaveSheet } from './sheet-motion';
 
 interface Choice<T extends string> {
@@ -26,9 +27,8 @@ interface Choice<T extends string> {
 /**
  * Folha "Personalizar": o apelido da TV, o tamanho dos botões, a disposição das pílulas de volume e canal, que grupos
  * de teclas aparecem, os botões extras da tela principal, a vibração, a página com que o palco abre e a sensibilidade do touchpad. Sobe de baixo como a de
- * desligar. Cada mudança vale na hora (o controle fica atrás da folha, com a escolha à vista) e é guardada neste
- * aparelho pelo `TvPrefs`; por isso não há "Aplicar", só "Concluir". "Restaurar padrão" volta tudo ao que o controle
- * era.
+ * desligar. Cada mudança vale na hora. O dono grava a base comum; a convidada guarda ajustes pessoais nesta TV.
+ * Por isso não há "Aplicar", só "Concluir".
  */
 @Component({
   selector: 'app-tv-customize-sheet',
@@ -39,6 +39,7 @@ interface Choice<T extends string> {
 export class CustomizeSheet {
   protected readonly prefs = inject(TvPrefs);
   protected readonly roundKeys = inject(TvRoundKeys);
+  protected readonly isGuest = inject(SessionState).isGuest;
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private readonly nameField = viewChild.required<ElementRef<HTMLInputElement>>('nameField');
   private readonly doneButton = viewChild.required<ElementRef<HTMLButtonElement>>('done');
@@ -106,7 +107,7 @@ export class CustomizeSheet {
 
   protected restore(): void {
     this.prefs.reset();
-    this.nameField().nativeElement.value = '';
+    this.nameField().nativeElement.value = this.prefs.name();
     // O botão acabou de ficar desligado (já está no padrão): o foco não pode se perder junto com ele.
     this.doneButton().nativeElement.focus();
   }

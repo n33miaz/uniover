@@ -83,6 +83,7 @@ export interface TvMock {
   tvs: MockTv[] | null;
   /** As contas de cada TV (`tvId` para os ids das contas), como `GET/PUT /tvs/{id}/members`. */
   members: Record<string, string[]>;
+  layouts: Record<string, Record<string, unknown>>;
   /** Enquanto houver uma promessa aqui, `GET /shortcuts` espera por ela (para ver a TV nova ainda sem atalhos). */
   shortcutsGate: Promise<void> | null;
   /** Falha de `/keys`, `/text`, `/power/off`, `/launch`, `/refresh` e `/cleanup` (não de `/wake`). */
@@ -118,7 +119,10 @@ const PROBLEM_BASE = 'https://uniover.app/problems/';
  * atalhos e ler o histórico. `null` é uma rota que o mock não conhece (cai no 404 de sempre).
  */
 function requiredPermission(method: string, path: string): string | null {
-  if (method === 'GET' && (path === '/state' || path === '/shortcuts' || path === '/tvs')) {
+  if (
+    method === 'GET' &&
+    (path === '/state' || path === '/shortcuts' || path === '/tvs' || path === '/layout')
+  ) {
     return 'module:tv';
   }
   if (method === 'GET' && path === '/commands/recent') return 'tv:history';
@@ -219,6 +223,7 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     shortcuts: SHORTCUTS.map((s) => ({ ...s })),
     tvs: null,
     members: {},
+    layouts: {},
     shortcutsGate: null,
     commandFailure: null,
     wakeFailure: null,
@@ -289,6 +294,20 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
         : (visibleTvs(mock, identity)[0] ?? null);
     if (mock.tvs && tvId && !visibleTvs(mock, identity).some((tv) => tv.id === tvId)) {
       return problem(route, { status: 404, kind: 'not-found' });
+    }
+
+    if (path === '/layout' && chosen) {
+      if (method === 'GET') {
+        const layout = mock.layouts[chosen.id];
+        return layout ? json(route, 200, layout) : route.fulfill({ status: 204 });
+      }
+      if (identity.role !== 'owner') return problem(route, { status: 403, kind: 'forbidden' });
+      if (method === 'POST' && mock.layouts[chosen.id])
+        return problem(route, { status: 409, kind: 'conflict' });
+      if (method === 'POST' || method === 'PUT') {
+        mock.layouts[chosen.id] = body ?? {};
+        return json(route, 200, body);
+      }
     }
 
     if (method === 'GET' && path === '/state') {

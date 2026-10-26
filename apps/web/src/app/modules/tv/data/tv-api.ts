@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import type { components } from '../../../core/api/generated/schema';
 import { APP_CONFIG } from '../../../core/config/app-config';
 import { TvSelection } from './tv-selection';
+import type { TvLayoutValue } from './tv-prefs';
 import {
   TvCleanupResult,
   TvKey,
@@ -59,6 +60,26 @@ export class TvApi {
     const list = parseTvs(dto);
     if (!list) throw new Error('Lista de TVs em formato inesperado.');
     return list;
+  }
+
+  /** Base comum da TV; 204 indica que o dono ainda não a definiu. */
+  async layout(tvId: string): Promise<TvLayoutValue | null> {
+    const result = await firstValueFrom(
+      this.http.get<TvLayoutValue | null>(`${BASE}/layout`, { params: { tvId } }),
+    );
+    return result;
+  }
+
+  async seedLayout(tvId: string, value: TvLayoutValue): Promise<TvLayoutValue> {
+    return firstValueFrom(
+      this.http.post<TvLayoutValue>(`${BASE}/layout`, value, { params: { tvId } }),
+    );
+  }
+
+  async saveLayout(tvId: string, value: TvLayoutValue): Promise<TvLayoutValue> {
+    return firstValueFrom(
+      this.http.put<TvLayoutValue>(`${BASE}/layout`, value, { params: { tvId } }),
+    );
   }
 
   async state(): Promise<TvState> {

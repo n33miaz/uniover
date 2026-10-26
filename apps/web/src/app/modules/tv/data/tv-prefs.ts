@@ -1,9 +1,10 @@
 import { DOCUMENT } from '@angular/common';
-import { Injectable, computed, inject, linkedSignal } from '@angular/core';
+import { Injectable, computed, effect, inject, linkedSignal } from '@angular/core';
 import { SessionState } from '../../../core/session/session-state';
 import { isExtraKey, MAIN_EXTRAS_MAX } from './tv-extras';
 import { TvSelection } from './tv-selection';
 import { TvKey } from './tv-types';
+import { TvApi } from './tv-api';
 
 /** Tamanho dos botões de baixo (pílulas e botões redondos); o fator de cada um está em `KEY_SCALE`. */
 export type TvButtonSize = 'compact' | 'comfortable' | 'large';
@@ -67,6 +68,35 @@ export interface TvPrefsValue {
   readonly dismissedSuggestions: readonly string[];
 }
 
+/** Documento comum; a vibração continua vinculada à pessoa e ao aparelho. */
+export type TvLayoutValue = Omit<TvPrefsValue, 'vibration'>;
+
+export function tvLayoutCacheKey(tvId: string): string {
+  return `uniover.tv.layout.v1.${encodeURIComponent(tvId)}`;
+}
+
+function tvLayoutLastKey(accountId: string): string {
+  return `uniover.tv.layout.last.${encodeURIComponent(accountId)}`;
+}
+
+function tvLayoutPendingKey(tvId: string): string {
+  return `uniover.tv.layout.pending.${encodeURIComponent(tvId)}`;
+}
+
+function layoutOf(value: TvPrefsValue): TvLayoutValue {
+  return {
+    name: value.name,
+    buttonSize: value.buttonSize,
+    showMedia: value.showMedia,
+    showChannel: value.showChannel,
+    startPage: value.startPage,
+    padSpeed: value.padSpeed,
+    pillLayout: value.pillLayout,
+    extraKeys: value.extraKeys,
+    dismissedSuggestions: value.dismissedSuggestions,
+  };
+}
+
 export const TV_PREFS_DEFAULTS: TvPrefsValue = {
   name: '',
   buttonSize: 'comfortable',
@@ -89,12 +119,18 @@ function flag(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
 
+// eslint-disable-next-line no-control-regex
+const CONTROL_TEXT = /[\u0000-\u001f\u007f-\u009f]/;
+
 /** Teto da lista de sugestões removidas: o catálogo é curto, e o armazenamento não pode crescer sem limite. */
 const DISMISSED_MAX = 20;
 
 function keys(value: unknown): readonly string[] {
   if (!Array.isArray(value)) return [];
-  const text = value.filter((item): item is string => typeof item === 'string' && item !== '');
+  const text = value.filter(
+    (item): item is string =>
+      typeof item === 'string' && item !== '' && item.length <= 100 && !CONTROL_TEXT.test(item),
+  );
   return [...new Set(text)].slice(0, DISMISSED_MAX);
 }
 
@@ -109,7 +145,10 @@ function parsePrefs(raw: unknown): TvPrefsValue {
   const stored = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const defaults = TV_PREFS_DEFAULTS;
   return {
-    name: typeof stored['name'] === 'string' ? stored['name'].slice(0, TV_NAME_MAX) : defaults.name,
+    name:
+      typeof stored['name'] === 'string' && !CONTROL_TEXT.test(stored['name'])
+        ? stored['name'].slice(0, TV_NAME_MAX)
+        : defaults.name,
     buttonSize: oneOf(stored['buttonSize'], TV_BUTTON_SIZES, defaults.buttonSize),
     showMedia: flag(stored['showMedia'], defaults.showMedia),
     showChannel: flag(stored['showChannel'], defaults.showChannel),
@@ -123,9 +162,9 @@ function parsePrefs(raw: unknown): TvPrefsValue {
 }
 
 /**
- * Preferências do controle da TV: apelido, tamanho dos botões, disposição das pílulas de volume e canal, que grupos
- * de teclas aparecem, vibração, página inicial do palco, sensibilidade do touchpad e as sugestões de atalho removidas. Ficam neste aparelho, em
- * uma chave própria por conta **e por TV** (a TV padrão usa a chave de antes de haver várias, e nada se perde). A chave antiga não identificava a conta que a gravou, então fica preservada e inerte:
+ * Preferências do controle da TV: o dono define uma base no servidor, com cópia local para abrir sem rede. A convidada
+ * guarda ajustes por conta e por TV neste aparelho; a vibração é sempre pessoal. A TV padrão mantém a chave antiga.
+ * A chave ainda mais antiga não identificava a conta que a gravou, então fica preservada e inerte:
  * atribuí-la à primeira pessoa que entrar poderia expor escolhas de outra conta.
  * Nunca guarda dado sensível; sem armazenamento (modo privado) a escolha vale até recarregar.
  */
@@ -136,19 +175,78 @@ export class TvPrefs {
 
   private readonly session = inject(SessionState);
   private readonly selection = inject(TvSelection);
+  private readonly api = inject(TvApi);
   private readonly storage = this.openStorage();
   /** A conta e a TV (nula = a padrão) de quem são as escolhas de agora; trocar de TV troca todas elas. */
-  private readonly owner = computed(() => ({
-    accountId: this.session.accountId(),
-    tvId: this.selection.scope(),
-  }));
-  private readonly value = linkedSignal<
-    { accountId: string | null; tvId: string | null },
-    TvPrefsValue
+  private readonly owner = computed(
+    () => {
+      const accountId = this.session.accountId();
+      const selected = this.selection.selected();
+      const offline = !selected && this.selection.tvs() === null;
+      // Sem a lista: vale a TV escolhida guardada pela seleção; quem nunca escolheu (uma TV só) usa a última vista.
+      const stored = offline ? this.selection.tvId() : null;
+      const last = offline && !stored ? this.readLast(accountId) : null;
+      return {
+        accountId,
+        // Chave local das escolhas pessoais: nula na TV padrão, que mantém a chave de antes de haver várias.
+        tvId: last ? (last.isDefault ? null : last.id) : this.selection.scope(),
+        // Id da TV no servidor (dono da base).
+        serverId: selected?.id ?? stored ?? last?.id ?? null,
+        role: this.session.role(),
+      };
+    },
+    // A lista de TVs é atualizada com objetos novos; só trocar de conta, de TV ou de papel pode reiniciar as escolhas.
+    {
+      equal: (a, b) =>
+        a.accountId === b.accountId &&
+        a.tvId === b.tvId &&
+        a.serverId === b.serverId &&
+        a.role === b.role,
+    },
+  );
+  private readonly personal = linkedSignal<
+    { accountId: string | null; tvId: string | null; serverId: string | null; role: string | null },
+    Partial<TvPrefsValue>
   >({
     source: () => this.owner(),
-    computation: ({ accountId, tvId }) => this.read(accountId, tvId),
+    computation: ({ accountId, tvId }) => this.readPersonal(accountId, tvId),
   });
+  private readonly base = linkedSignal<
+    { accountId: string | null; tvId: string | null; serverId: string | null; role: string | null },
+    TvLayoutValue | null
+  >({
+    source: () => this.owner(),
+    computation: ({ serverId }) => this.readBase(serverId),
+  });
+  private readonly value = computed(() => {
+    const { accountId, serverId, role } = this.owner();
+    const personal = this.personal();
+    const base = this.base();
+    if (!serverId || !accountId || !role || (role === 'owner' && !base))
+      return parsePrefs(personal);
+    return parsePrefs({
+      ...TV_PREFS_DEFAULTS,
+      ...base,
+      ...(role === 'guest' ? personal : { vibration: personal.vibration }),
+    });
+  });
+  private writes: Promise<void> = Promise.resolve();
+  private readonly revisions = new Map<string, number>();
+  private readonly pending = new Map<string, TvLayoutValue>();
+
+  constructor() {
+    effect(() => {
+      const selected = this.selection.selected();
+      const accountId = this.session.accountId();
+      if (selected && accountId) this.writeLast(accountId, selected.id, selected.isDefault);
+    });
+    effect(() => {
+      const { accountId, serverId } = this.owner();
+      // Cada lista nova de TVs (abrir o app, voltar a ter rede) é uma nova leitura da base e reenvia a gravação pendente.
+      this.selection.tvs();
+      if (accountId && serverId) void this.load(accountId, serverId);
+    });
+  }
 
   /** O apelido aparado; vazio quando não há. */
   readonly name = computed(() => this.value().name.trim());
@@ -173,20 +271,61 @@ export class TvPrefs {
   readonly extraKeys = computed(() => this.value().extraKeys);
   readonly dismissedSuggestions = computed(() => this.value().dismissedSuggestions);
   /** Alguma escolha difere do padrão (liga o "Restaurar padrão"). */
-  readonly customized = computed(() => !sameAsDefaults(this.value()));
+  readonly customized = computed(() =>
+    this.owner().role === 'guest' && this.owner().serverId
+      ? Object.keys(this.personal()).length > 0
+      : !sameAsDefaults(this.value()),
+  );
 
   set(patch: Partial<TvPrefsValue>): void {
-    this.apply(parsePrefs({ ...this.value(), ...patch }));
+    this.apply(parsePrefs({ ...this.value(), ...patch }), patch);
   }
 
   reset(): void {
-    this.apply(TV_PREFS_DEFAULTS);
+    if (this.owner().role === 'guest' && this.owner().serverId) {
+      this.personal.set({});
+      this.removePersonal();
+    } else {
+      this.apply(TV_PREFS_DEFAULTS, TV_PREFS_DEFAULTS);
+    }
   }
 
-  private apply(next: TvPrefsValue): void {
-    this.value.set(next);
-    const { accountId, tvId } = this.owner();
-    this.write(accountId, tvId, next);
+  private apply(next: TvPrefsValue, patch: Partial<TvPrefsValue>): void {
+    const { accountId, tvId, serverId, role } = this.owner();
+    if (!serverId || !accountId || !role) {
+      this.personal.set(next);
+      this.writePersonal(accountId, tvId, next);
+      return;
+    }
+    if (role === 'guest') {
+      const sanitizedPatch = Object.fromEntries(
+        Object.keys(patch).map((key) => [key, next[key as keyof TvPrefsValue]]),
+      ) as Partial<TvPrefsValue>;
+      const personal = { ...this.personal(), ...sanitizedPatch };
+      this.personal.set(personal);
+      this.writePersonal(accountId, tvId, personal);
+      return;
+    }
+    const current = this.value();
+    const layout = layoutOf(next);
+    const changed = JSON.stringify(layout) !== JSON.stringify(layoutOf(current));
+    if (changed) this.revisions.set(serverId, (this.revisions.get(serverId) ?? 0) + 1);
+    this.base.set(layout);
+    this.writeBase(serverId, layout);
+    if (next.vibration !== current.vibration) {
+      const personal = { ...this.personal(), vibration: next.vibration };
+      this.personal.set(personal);
+      this.writePersonal(accountId, tvId, personal);
+    }
+    if (changed) {
+      this.writePending(serverId, layout);
+      this.writes = this.writes
+        .then(async () => {
+          await this.api.saveLayout(serverId, layout);
+          this.clearPending(serverId, layout);
+        })
+        .catch(() => undefined);
+    }
   }
 
   private openStorage(): Storage | null {
@@ -197,22 +336,152 @@ export class TvPrefs {
     }
   }
 
-  private read(accountId: string | null, tvId: string | null): TvPrefsValue {
-    if (!accountId) return TV_PREFS_DEFAULTS;
+  private readPersonal(accountId: string | null, tvId: string | null): Partial<TvPrefsValue> {
+    if (!accountId) return {};
     try {
       const raw = this.storage?.getItem(tvPrefsStorageKey(accountId, tvId));
-      return parsePrefs(raw ? JSON.parse(raw) : null);
+      if (!raw) return {};
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      const value = parsed as Record<string, unknown>;
+      const sanitized = parsePrefs(value);
+      return Object.fromEntries(
+        Object.keys(TV_PREFS_DEFAULTS)
+          .filter((key) => Object.hasOwn(value, key))
+          .map((key) => [key, sanitized[key as keyof TvPrefsValue]]),
+      ) as Partial<TvPrefsValue>;
     } catch {
-      return TV_PREFS_DEFAULTS; // JSON corrompido: volta ao padrão em vez de quebrar o controle
+      return {}; // JSON corrompido: volta ao padrão sem quebrar o controle
     }
   }
 
-  private write(accountId: string | null, tvId: string | null, value: TvPrefsValue): void {
+  private writePersonal(
+    accountId: string | null,
+    tvId: string | null,
+    value: Partial<TvPrefsValue>,
+  ): void {
     if (!accountId) return;
     try {
       this.storage?.setItem(tvPrefsStorageKey(accountId, tvId), JSON.stringify(value));
     } catch {
       // sem espaço ou bloqueado: a escolha vale só até recarregar
+    }
+  }
+
+  private removePersonal(): void {
+    const { accountId, tvId } = this.owner();
+    if (!accountId) return;
+    try {
+      this.storage?.removeItem(tvPrefsStorageKey(accountId, tvId));
+    } catch {
+      // Sem armazenamento, a mudança ainda vale nesta sessão.
+    }
+  }
+
+  private readBase(serverId: string | null): TvLayoutValue | null {
+    if (!serverId) return null;
+    try {
+      const raw = this.storage?.getItem(tvLayoutCacheKey(serverId));
+      return raw ? layoutOf(parsePrefs(JSON.parse(raw))) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private readLast(accountId: string | null): { id: string; isDefault: boolean } | null {
+    if (!accountId) return null;
+    try {
+      const raw = this.storage?.getItem(tvLayoutLastKey(accountId));
+      if (!raw) return null;
+      const value: unknown = JSON.parse(raw);
+      if (!value || typeof value !== 'object') return null;
+      const stored = value as Record<string, unknown>;
+      return typeof stored['id'] === 'string' && typeof stored['isDefault'] === 'boolean'
+        ? { id: stored['id'], isDefault: stored['isDefault'] }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeLast(accountId: string, id: string, isDefault: boolean): void {
+    try {
+      this.storage?.setItem(tvLayoutLastKey(accountId), JSON.stringify({ id, isDefault }));
+    } catch {
+      // Sem armazenamento, a TV selecionada continua conhecida nesta sessão.
+    }
+  }
+
+  private writeBase(serverId: string, value: TvLayoutValue): void {
+    try {
+      this.storage?.setItem(tvLayoutCacheKey(serverId), JSON.stringify(value));
+    } catch {
+      // A base recebida segue em memória enquanto o armazenamento estiver bloqueado.
+    }
+  }
+
+  private readPending(serverId: string): TvLayoutValue | null {
+    const inMemory = this.pending.get(serverId);
+    if (inMemory) return inMemory;
+    try {
+      const raw = this.storage?.getItem(tvLayoutPendingKey(serverId));
+      return raw ? layoutOf(parsePrefs(JSON.parse(raw))) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private writePending(serverId: string, layout: TvLayoutValue): void {
+    this.pending.set(serverId, layout);
+    try {
+      this.storage?.setItem(tvLayoutPendingKey(serverId), JSON.stringify(layout));
+    } catch {
+      // Sem armazenamento, a gravação pendente ainda pode ser repetida nesta sessão.
+    }
+  }
+
+  private clearPending(serverId: string, saved: TvLayoutValue): void {
+    if (JSON.stringify(this.readPending(serverId)) !== JSON.stringify(saved)) return;
+    this.pending.delete(serverId);
+    try {
+      this.storage?.removeItem(tvLayoutPendingKey(serverId));
+    } catch {
+      // A resposta do servidor já confirmou a mudança.
+    }
+  }
+
+  private async load(accountId: string, serverId: string): Promise<void> {
+    const revision = this.revisions.get(serverId) ?? 0;
+    try {
+      const pending = this.owner().role === 'owner' ? this.readPending(serverId) : null;
+      if (pending) {
+        await this.api.saveLayout(serverId, pending);
+        this.clearPending(serverId, pending);
+      }
+      let layout = await this.api.layout(serverId);
+      if (this.owner().accountId !== accountId || this.owner().serverId !== serverId) return;
+      if ((this.revisions.get(serverId) ?? 0) !== revision) return;
+      if (!layout && this.owner().role === 'owner') {
+        // A primeira carga leva as escolhas antigas do dono; POST não substitui uma base criada em outro aparelho.
+        const legacy = parsePrefs(this.personal());
+        try {
+          layout = await this.api.seedLayout(serverId, layoutOf(legacy));
+        } catch {
+          layout = await this.api.layout(serverId);
+        }
+      }
+      if (
+        layout &&
+        this.owner().accountId === accountId &&
+        this.owner().serverId === serverId &&
+        (this.revisions.get(serverId) ?? 0) === revision
+      ) {
+        const parsed = layoutOf(parsePrefs(layout));
+        this.base.set(parsed);
+        this.writeBase(serverId, parsed);
+      }
+    } catch {
+      // Sem rede, a última base desta TV continua disponível no aparelho.
     }
   }
 }

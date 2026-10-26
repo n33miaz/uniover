@@ -73,7 +73,10 @@ export class TvRoundKeys {
   });
 
   /** Os extras que a pessoa escolheu de fato (os outros da tela principal foram postos para completar a fileira). */
-  readonly chosen = computed<readonly string[]>(() => this.prefs.extraKeys() ?? []);
+  readonly chosen = computed<readonly string[]>(() => {
+    const supported = new Set(this.supported().map((extra) => extra.key));
+    return (this.prefs.extraKeys() ?? []).filter((key) => supported.has(key));
+  });
 
   /**
    * Escolhe ou tira a escolha de um extra. A grade se completa sozinha depois (ver `mainExtras`): escolher um botão o põe

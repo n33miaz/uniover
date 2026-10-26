@@ -1,6 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../../core/session/session-state';
-import { KEY_SCALE, TV_NAME_MAX, TV_PREFS_KEY, TvPrefs, tvPrefsStorageKey } from './tv-prefs';
+import {
+  KEY_SCALE,
+  TV_NAME_MAX,
+  TV_PREFS_KEY,
+  TvPrefs,
+  tvLayoutCacheKey,
+  tvPrefsStorageKey,
+} from './tv-prefs';
 import { TvSelection, tvSelectedStorageKey } from './tv-selection';
 
 describe('TvPrefs', () => {
@@ -445,10 +452,12 @@ describe('TvPrefs per TV', () => {
     expect(prefs.name()).toBe('Sala');
     expect(prefs.buttonSize()).toBe('large');
     expect(prefs.dismissedSuggestions()).toEqual(['netflix']);
+    // O dono grava na base da TV (cópia local por id); a chave antiga fica como estava, só serve de semente.
     prefs.set({ showMedia: false });
-    expect(JSON.parse(localStorage.getItem(tvPrefsStorageKey(account)) ?? 'null').showMedia).toBe(
+    expect(JSON.parse(localStorage.getItem(tvLayoutCacheKey('casa')) ?? 'null').showMedia).toBe(
       false,
     );
+    expect(localStorage.getItem(tvPrefsStorageKey(account))).toBe(old);
   });
 
   it('gives every other TV its own choices, and the suggestions removed there stay there', () => {
@@ -466,9 +475,10 @@ describe('TvPrefs per TV', () => {
     expect(prefs.buttonSize()).toBe('comfortable');
     expect(prefs.dismissedSuggestions()).toEqual(['netflix']);
 
-    expect(
-      JSON.parse(localStorage.getItem(tvPrefsStorageKey(account, 'amigo')) ?? 'null').name,
-    ).toBe('Quarto');
+    expect(JSON.parse(localStorage.getItem(tvLayoutCacheKey('amigo')) ?? 'null').name).toBe(
+      'Quarto',
+    );
+    expect(JSON.parse(localStorage.getItem(tvLayoutCacheKey('casa')) ?? 'null').name).toBe('Sala');
     expect(tvPrefsStorageKey(account, 'amigo')).not.toBe(tvPrefsStorageKey(account));
   });
 
