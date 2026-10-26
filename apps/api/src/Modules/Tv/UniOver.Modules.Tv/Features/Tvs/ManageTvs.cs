@@ -95,6 +95,10 @@ internal sealed class ManageTvsHandler(TvDbContext db, IAgentDirectory agents, I
 
     public async Task<bool?> DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
+        // Filiações e marcas mudam na mesma transação, sob o bloqueio que serializa quem mexe nelas.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await TvMembershipLedger.LockAsync(db, cancellationToken);
+
         var tv = await db.Tvs.SingleOrDefaultAsync(t => t.Id == id, cancellationToken);
         if (tv is null)
         {
@@ -106,9 +110,12 @@ internal sealed class ManageTvsHandler(TvDbContext db, IAgentDirectory agents, I
             return false;
         }
 
-        db.TvMembers.RemoveRange(db.TvMembers.Where(m => m.TvId == id));
+        var members = await db.TvMembers.Where(m => m.TvId == id).ToListAsync(cancellationToken);
+        db.TvMembers.RemoveRange(members);
         db.Tvs.Remove(tv);
+        await TvMembershipLedger.ReconcileAsync(db, id, [.. members.Select(m => m.UserId)], [], time.GetUtcNow(), cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return true;
     }
 
@@ -130,15 +137,28 @@ internal sealed class ManageTvsHandler(TvDbContext db, IAgentDirectory agents, I
             return null;
         }
 
+        // O que sai e o que entra é calculado sobre as filiações lidas já sob o bloqueio, para a marca de "retirada" sair
+        // certa mesmo com outra gravação de filiação ao mesmo tempo. Quem continua na TV não é regravado.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await TvMembershipLedger.LockAsync(db, cancellationToken);
+
         if (!await db.Tvs.AnyAsync(t => t.Id == id, cancellationToken))
         {
             return null;
         }
 
-        db.TvMembers.RemoveRange(db.TvMembers.Where(m => m.TvId == id));
+        var current = await db.TvMembers.Where(m => m.TvId == id).ToListAsync(cancellationToken);
+        var wanted = userIds.ToHashSet();
+        var present = current.Select(m => m.UserId).ToHashSet();
+        var removed = current.Where(m => !wanted.Contains(m.UserId)).ToList();
+        var added = userIds.Where(userId => !present.Contains(userId)).ToList();
+
         var now = time.GetUtcNow();
-        db.TvMembers.AddRange(userIds.Select(userId => TvMember.Create(id, userId, now)));
+        db.TvMembers.RemoveRange(removed);
+        db.TvMembers.AddRange(added.Select(userId => TvMember.Create(id, userId, now)));
+        await TvMembershipLedger.ReconcileAsync(db, id, [.. removed.Select(m => m.UserId)], added, now, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return new TvMembersResponse([.. userIds.Order()]);
     }
 

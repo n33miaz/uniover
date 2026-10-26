@@ -22,6 +22,8 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
 
     public DbSet<TvMember> TvMembers => Set<TvMember>();
 
+    public DbSet<TvMemberOptOut> TvMemberOptOuts => Set<TvMemberOptOut>();
+
     public DbSet<WatchdogEvent> WatchdogEvents => Set<WatchdogEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -97,6 +99,14 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             e.HasKey(x => new { x.TvId, x.UserId });
             // O usuário é do Identity, portanto fica somente como UUID, sem FK entre schemas.
             e.HasIndex(x => x.UserId);
+        });
+
+        modelBuilder.Entity<TvMemberOptOut>(e =>
+        {
+            e.ToTable("tv_member_optouts");
+            // Uma linha por conta; o usuário é do Identity, portanto só o UUID, sem FK entre schemas.
+            e.HasKey(x => x.UserId);
+            e.Property(x => x.UserId).ValueGeneratedNever();
         });
 
         modelBuilder.Entity<WatchdogEvent>(e =>
