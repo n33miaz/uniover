@@ -8,4 +8,8 @@
     <ProjectReference Include="..\UniOver.Modules.Devices.Contracts\UniOver.Modules.Devices.Contracts.csproj" />
     <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Web\UniOver.BuildingBlocks.Web.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- A sessão é interna; o teste do fechamento a exercita com um socket falso, sem abrir a API pública. -->
+    <InternalsVisibleTo Include="UniOver.Modules.Devices.Tests" />
+  </ItemGroup>
 </Project>

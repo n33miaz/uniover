@@ -9,6 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Modules\Devices\UniOver.Modules.Devices\UniOver.Modules.Devices.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Devices\UniOver.Modules.Devices.Transport.WebSocket\UniOver.Modules.Devices.Transport.WebSocket.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
