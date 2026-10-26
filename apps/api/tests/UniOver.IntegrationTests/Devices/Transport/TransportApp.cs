@@ -18,7 +18,7 @@ internal sealed record PairedAgent(Guid Id, string Slug, string Token);
 /// <summary>
 /// Host real + Postgres real com o dono logado e um agente pareado, para os testes do transporte. Reaproveita o
 /// <see cref="DevicesApp"/> (relógio falso, captura de log) e acrescenta o servidor de teste para o WebSocket, o
-/// bilhete de stream para o SSE e a prova de "nenhuma escrita no banco".
+/// bilhete de stream para o SSE e atalhos para inspecionar a presença persistida.
 /// </summary>
 internal sealed class TransportApp : IAsyncDisposable
 {
@@ -112,9 +112,36 @@ internal sealed class TransportApp : IAsyncDisposable
         throw new TimeoutException($"Condição não atingida a tempo: {what}.");
     }
 
+    public static async Task WaitUntilAsync(Func<Task<bool>> condition, string what)
+    {
+        var deadline = DateTime.UtcNow + FakeAgent.Patience;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await condition())
+            {
+                return;
+            }
+
+            await Task.Delay(25, TestContext.Current.CancellationToken);
+        }
+
+        throw new TimeoutException($"Condição não atingida a tempo: {what}.");
+    }
+
     public static JsonNode TvKeyBody(string key = "VOLUME_UP") => new JsonObject { ["key"] = key };
 
-    // ---- prova de que nada é gravado ----
+    // ---- inspeção do banco ----
+
+    /// <summary>A versão da linha (<c>xmin</c>) do resumo de presença do agente: muda a cada UPDATE, mesmo com os mesmos valores.</summary>
+    public async Task<long> SnapshotRowVersionAsync()
+    {
+        await using var connection = new NpgsqlConnection(App.Database.OwnerConnection);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = new NpgsqlCommand(
+            "SELECT xmin::text::bigint FROM devices.agent_presence_snapshots WHERE agent_id = @id", connection);
+        command.Parameters.AddWithValue("id", Agent.Id);
+        return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+    }
 
     /// <summary>
     /// Impressão de todas as tabelas dos schemas <c>devices</c> e <c>identity</c> (contagem, maior <c>xmin</c> e hash

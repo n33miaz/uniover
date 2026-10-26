@@ -3,9 +3,8 @@ using UniOver.Modules.Devices.Contracts.Agents;
 namespace UniOver.Modules.Devices.Ports;
 
 /// <summary>
-/// Onde a presença mora. Hoje é memória do processo (<c>InMemoryPresenceStore</c>): batimento e presença nunca
-/// escrevem no banco, porque cada escrita acordaria o Postgres do plano grátis. Atrás de porta para o estado em
-/// memória não vazar para o resto do módulo.
+/// Onde a presença viva mora: memória do processo (<c>InMemoryPresenceStore</c>). O retrato persistido é escrito por
+/// outro serviço, com intervalo entre batimentos, para esta porta continuar isolando o estado instantâneo do módulo.
 /// </summary>
 internal interface IPresenceStore
 {

@@ -16,6 +16,8 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
 
     public DbSet<Agent> Agents => Set<Agent>();
 
+    public DbSet<AgentPresenceSnapshot> AgentPresenceSnapshots => Set<AgentPresenceSnapshot>();
+
     public DbSet<PairingAuditEntry> PairingAudit => Set<PairingAuditEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -67,6 +69,22 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
             e.Property(x => x.RevokeReason).HasMaxLength(Agent.ReasonMax);
             // Revogação e entrega do primeiro token não podem vencer com base na mesma leitura antiga.
             e.Property(x => x.RevokedAt).IsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<AgentPresenceSnapshot>(e =>
+        {
+            e.ToTable("agent_presence_snapshots");
+            e.HasKey(x => x.AgentId);
+            e.Property(x => x.AgentId).ValueGeneratedNever();
+            e.Property(x => x.UpdateOutcome).HasMaxLength(AgentPresenceSnapshot.UpdateOutcomeMax);
+            e.Property(x => x.InstalledSha).HasMaxLength(AgentPresenceSnapshot.ShaMax);
+            e.Property(x => x.LatestSha).HasMaxLength(AgentPresenceSnapshot.ShaMax);
+            e.Property(x => x.BlockedSha).HasMaxLength(AgentPresenceSnapshot.ShaMax);
+            e.Property(x => x.PreviousSha).HasMaxLength(AgentPresenceSnapshot.ShaMax);
+            e.Property(x => x.UpdateReason).HasMaxLength(AgentPresenceSnapshot.UpdateReasonMax);
+
+            // Só o agente deste módulo pode ter o resumo; revogar não apaga o histórico que a tela ainda mostra.
+            e.HasOne<Agent>().WithOne().HasForeignKey<AgentPresenceSnapshot>(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<PairingAuditEntry>(e =>

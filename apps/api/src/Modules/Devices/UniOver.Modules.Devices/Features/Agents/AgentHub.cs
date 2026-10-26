@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.AgentProtocol;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Devices.Features.Presence;
 using UniOver.Modules.Devices.Features.RemoteCare;
 using UniOver.Modules.Devices.Ports;
 using UniOver.SharedKernel;
@@ -22,6 +23,7 @@ internal sealed partial class AgentHub(
     AgentEnvelopeValidator validator,
     OutboundEnvelopeFactory factory,
     AgentConnections connections,
+    AgentPresencePersistence persistedPresence,
     IReplyCorrelator correlator,
     IAgentLogReports logReports,
     IServiceScopeFactory scopes,
@@ -41,7 +43,9 @@ internal sealed partial class AgentHub(
         var agentId = session.AgentId;
         var closeReason = AgentCloseReason.Normal;
 
-        var previous = connections.Attach(session, time.GetUtcNow());
+        var connectedAt = time.GetUtcNow();
+        var previous = connections.Attach(session, connectedAt);
+        await persistedPresence.RecordConnectedAsync(agentId, connectedAt, cancellationToken);
         using var heartbeatStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var heartbeat = SendKeepAlivesAsync(session, heartbeatStop.Token);
         LogConnected(agentId);
@@ -90,9 +94,11 @@ internal sealed partial class AgentHub(
             await heartbeatStop.CancelAsync();
             await AwaitKeepAliveAsync(heartbeat);
             // Só a dona da conexão derruba a presença; quem foi substituída sai sem mexer (ver AgentConnections).
-            if (connections.Detach(session, time.GetUtcNow()))
+            var disconnectedAt = time.GetUtcNow();
+            if (connections.Detach(session, disconnectedAt))
             {
                 correlator.FailAll(agentId);
+                await persistedPresence.RecordDisconnectedAsync(agentId, disconnectedAt, CancellationToken.None);
             }
 
             LogDisconnected(agentId, closeReason);
@@ -133,26 +139,50 @@ internal sealed partial class AgentHub(
 
         var now = time.GetUtcNow();
         connections.Touch(session, now);
+        var isCurrent = connections.IsCurrent(session);
+        if (isCurrent && envelope.Type is not AgentMessageTypes.AgentHelloV1 and not AgentMessageTypes.AgentUpdateStatusV1)
+        {
+            await persistedPresence.TouchAsync(agentId, now, cancellationToken);
+        }
 
         switch (envelope.Type)
         {
             case AgentMessageTypes.AgentHelloV1:
+            {
                 var version = envelope.Body.GetProperty("agentVersion").GetString()!;
                 var capabilities = envelope.Body.GetProperty("capabilities").EnumerateArray()
                     .Select(c => c.GetString()!)
                     .ToArray();
+                var host = ReadHost(envelope.Body);
+                var update = envelope.Body.TryGetProperty("update", out var updateElement)
+                    ? ReadUpdate(updateElement)
+                    : null;
                 connections.RecordHello(
                     session,
                     version,
                     capabilities,
                     now,
-                    ReadHost(envelope.Body),
-                    envelope.Body.TryGetProperty("update", out var update) ? ReadUpdate(update) : null);
+                    host,
+                    update);
+                if (isCurrent)
+                {
+                    await persistedPresence.RecordHelloAsync(agentId, version, host, update, now, cancellationToken);
+                }
+
                 break;
+            }
 
             case AgentMessageTypes.AgentUpdateStatusV1:
-                connections.RecordUpdate(session, ReadUpdate(envelope.Body), now);
+            {
+                var status = ReadUpdate(envelope.Body);
+                connections.RecordUpdate(session, status, now);
+                if (isCurrent)
+                {
+                    await persistedPresence.RecordUpdateAsync(agentId, status, now, cancellationToken);
+                }
+
                 break;
+            }
 
             case AgentMessageTypes.AgentLogsV1:
                 CompleteLogs(agentId, envelope);

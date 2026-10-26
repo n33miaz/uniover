@@ -179,6 +179,84 @@ namespace UniOver.Modules.Devices.Persistence.Migrations
                     b.ToTable("agents", "devices");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Devices.Domain.AgentPresenceSnapshot", b =>
+                {
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("AgentVersion")
+                        .HasColumnType("text")
+                        .HasColumnName("agent_version");
+
+                    b.Property<string>("BlockedSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("blocked_sha");
+
+                    b.Property<DateTimeOffset?>("CheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("checked_at");
+
+                    b.Property<DateTimeOffset?>("InstalledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("installed_at");
+
+                    b.Property<string>("InstalledSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("installed_sha");
+
+                    b.Property<DateTimeOffset?>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<string>("LatestSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("latest_sha");
+
+                    b.Property<DateTimeOffset?>("NextCheckAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_check_at");
+
+                    b.Property<string>("Os")
+                        .HasColumnType("text")
+                        .HasColumnName("os");
+
+                    b.Property<string>("PreviousSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("previous_sha");
+
+                    b.Property<bool>("RolledBack")
+                        .HasColumnType("boolean")
+                        .HasColumnName("rolled_back");
+
+                    b.Property<string>("TvHost")
+                        .HasColumnType("text")
+                        .HasColumnName("tv_host");
+
+                    b.Property<string>("TvKind")
+                        .HasColumnType("text")
+                        .HasColumnName("tv_kind");
+
+                    b.Property<string>("UpdateOutcome")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("update_outcome");
+
+                    b.Property<string>("UpdateReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("update_reason");
+
+                    b.HasKey("AgentId")
+                        .HasName("pk_agent_presence_snapshots");
+
+                    b.ToTable("agent_presence_snapshots", "devices");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Devices.Domain.PairingAuditEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -328,6 +406,16 @@ namespace UniOver.Modules.Devices.Persistence.Migrations
                         .HasDatabaseName("ix_pairings_user_code");
 
                     b.ToTable("pairings", "devices");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Devices.Domain.AgentPresenceSnapshot", b =>
+                {
+                    b.HasOne("UniOver.Modules.Devices.Domain.Agent", null)
+                        .WithOne()
+                        .HasForeignKey("UniOver.Modules.Devices.Domain.AgentPresenceSnapshot", "AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_agent_presence_snapshots_agents_agent_id");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Devices.Domain.PairingRequest", b =>
