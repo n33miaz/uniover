@@ -61,31 +61,68 @@ describe('PowerSheet', () => {
     expect(dialog.getAttribute('aria-describedby')).toBe('power-text power-checked');
   });
 
-  it('has only Cancelar and Desligar (no close button)', () => {
-    expect(buttons().map((b) => b.textContent?.trim())).toEqual(['Cancelar', 'Desligar']);
+  it('keeps the power confirmation at the end of the sheet', () => {
+    expect(
+      buttons()
+        .slice(-2)
+        .map((b) => b.textContent?.trim()),
+    ).toEqual(['Cancelar', 'Desligar']);
   });
 
   describe('Agendar desligamento', () => {
     const row = () => root.querySelector<HTMLElement>('.schedule')!;
 
-    it('is a row marked "Em breve", named and described for a screen reader as not available yet', () => {
+    it('shows why scheduling is unavailable without a safe online agent', () => {
       expect(row().textContent).toContain('Agendar desligamento');
-      expect(row().querySelector('.ui-chip')?.textContent?.trim()).toBe('Em breve');
-      expect(row().getAttribute('role')).toBe('group');
-      expect(row().getAttribute('aria-disabled')).toBe('true');
-      const name = root.querySelector(`#${row().getAttribute('aria-labelledby')}`);
-      const note = root.querySelector(`#${row().getAttribute('aria-describedby')}`);
-      expect(name?.textContent?.trim()).toBe('Agendar desligamento');
-      expect(note?.textContent?.trim()).toBe('Ainda não disponível.');
+      expect(row().textContent).toContain('Agendamento disponível com TV configurada');
+      expect(row().querySelector('button, input')).toBeNull();
     });
 
-    it('is not interactive: no button, link or field inside, and a tap on it changes nothing', async () => {
-      expect(row().querySelector('button, a, input, select, [tabindex]')).toBeNull();
-      row().click();
-      row().querySelector<HTMLElement>('.ui-row')!.click();
+    it('confirms the local date and time before saving', async () => {
+      store.canSchedulePowerOff.set(true);
+      fixture.detectChanges();
+      named('30 min').click();
+      fixture.detectChanges();
+      expect(row().textContent).toContain('Desligar em');
+      named('Confirmar agendamento').click();
       await fixture.whenStable();
+      expect(store.savePowerSchedule).toHaveBeenCalledOnce();
+      const [dueAtUtc, zone] = store.savePowerSchedule.mock.calls[0];
+      expect(new Date(dueAtUtc).getTime()).toBeGreaterThan(Date.now());
+      expect(zone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
       expect(closed).not.toHaveBeenCalled();
       expect(store.powerOff).not.toHaveBeenCalled();
+    });
+
+    it('shows the active schedule and cancels it without sending POWER', async () => {
+      store.powerSchedule.set({
+        id: 'schedule',
+        dueAtUtc: new Date(Date.now() + 3600_000).toISOString(),
+        timeZone: 'America/Sao_Paulo',
+        status: 'pending',
+        result: null,
+        reason: null,
+        version: 2,
+      });
+      fixture.detectChanges();
+      named('Cancelar agendamento').click();
+      await fixture.whenStable();
+      expect(store.cancelPowerSchedule).toHaveBeenCalledOnce();
+      expect(store.powerOff).not.toHaveBeenCalled();
+    });
+
+    it('shows the last dispatch result discreetly', () => {
+      store.lastPowerSchedule.set({
+        id: 'anterior',
+        dueAtUtc: new Date().toISOString(),
+        timeZone: 'America/Sao_Paulo',
+        status: 'completed',
+        result: 'uncertain',
+        reason: null,
+        version: 3,
+      });
+      fixture.detectChanges();
+      expect(root.querySelector('.schedule-result')?.textContent).toContain('Estado incerto');
     });
 
     it('sits above the buttons, so the confirmation stays the last thing the eye reaches', () => {
