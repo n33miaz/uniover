@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { AuthApi } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
-import { MODULE_PREFS_KEY, ModulePrefs } from '../../core/modules/module-prefs';
+import { ModulePrefs, modulePrefsStorageKey } from '../../core/modules/module-prefs';
 import { INSTALL_ENV, InstallHintService } from '../../core/pwa/install-hint.service';
 import { THEME_PREFERENCE_KEY } from '../../core/session/appearance.service';
 import { AppearancePage } from './appearance.page';
@@ -99,7 +99,8 @@ describe('AppearancePage', () => {
       fixture.detectChanges();
 
       expect(rows(el)[0].on).toBe(false);
-      expect(JSON.parse(localStorage.getItem(MODULE_PREFS_KEY)!)).toContainEqual(
+      // A escolha é guardada por conta: a da sessão carregada (`ME`).
+      expect(JSON.parse(localStorage.getItem(modulePrefsStorageKey(ME.id))!)).toContainEqual(
         expect.objectContaining({ id: 'tv', enabled: false }),
       );
       expect(

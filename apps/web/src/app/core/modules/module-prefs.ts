@@ -1,5 +1,6 @@
 import { DOCUMENT } from '@angular/common';
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, linkedSignal } from '@angular/core';
+import { SessionState } from '../session/session-state';
 import { ModuleDefinition, ModuleRegistry, WidgetSize } from './module-registry';
 
 export interface WidgetPref {
@@ -8,7 +9,16 @@ export interface WidgetPref {
   readonly enabled: boolean;
 }
 
+/**
+ * A chave de antes de haver contas: guardava a escolha de quem usou o aparelho por último, sem dizer de quem era. Hoje só
+ * serve de prefixo da chave de cada conta (`modulePrefsStorageKey`) e de nome do que se descarta.
+ */
 export const MODULE_PREFS_KEY = 'uniover.home.widgets.v1';
+
+/** Onde ficam, por conta, os módulos ligados, a ordem e o tamanho dos blocos da Início neste aparelho. */
+export function modulePrefsStorageKey(accountId: string): string {
+  return `${MODULE_PREFS_KEY}.${encodeURIComponent(accountId)}`;
+}
 
 /** Troca o item de lugar com o vizinho (`-1` sobe, `1` desce); devolve a mesma lista se não houver para onde ir. */
 export function moveWidget(list: readonly WidgetPref[], id: string, delta: -1 | 1): WidgetPref[] {
@@ -32,14 +42,21 @@ export function moveWidgetTo(list: readonly WidgetPref[], id: string, to: number
 
 /**
  * Preferências da Início: módulos ligados/desligados, ordem e tamanho dos blocos. Ficam só neste aparelho
- * (`localStorage`); sincronizar na conta depende de um endpoint de preferências que ainda não existe.
+ * (`localStorage`), numa chave própria por conta; sincronizar na conta depende de um endpoint de preferências que ainda
+ * não existe. A escolha é relida quando a conta da sessão muda (sair e entrar noutra conta sem recarregar a página), e uma
+ * conta sem escolha guardada usa o padrão. Sem conta conhecida vale o padrão e nada é gravado. A chave de antes, sem conta,
+ * não dizia de quem era a escolha: é descartada, nunca entregue a quem entrar primeiro.
  * Nunca guarda dado sensível.
  */
 @Injectable({ providedIn: 'root' })
 export class ModulePrefs {
   private readonly registry = inject(ModuleRegistry);
+  private readonly session = inject(SessionState);
   private readonly storage = this.openStorage();
-  private readonly stored = signal<readonly WidgetPref[]>(this.read());
+  private readonly stored = linkedSignal<string | null, readonly WidgetPref[]>({
+    source: () => this.session.accountId(),
+    computation: (accountId) => this.read(accountId),
+  });
 
   /** Todos os módulos, na ordem escolhida; módulos novos do catálogo entram no fim com o padrão. */
   readonly widgets = computed<readonly WidgetPref[]>(() => {
@@ -83,9 +100,16 @@ export class ModulePrefs {
     }
   }
 
-  private read(): readonly WidgetPref[] {
+  private read(accountId: string | null): readonly WidgetPref[] {
+    if (!accountId) return [];
     try {
-      const raw = this.storage?.getItem(MODULE_PREFS_KEY);
+      // A escolha de antes das contas não diz de quem foi: dá-la a quem entra agora vazaria a de outra pessoa.
+      this.storage?.removeItem(MODULE_PREFS_KEY);
+    } catch {
+      // armazenamento bloqueado: não há o que apagar nem o que vazar
+    }
+    try {
+      const raw = this.storage?.getItem(modulePrefsStorageKey(accountId));
       const parsed: unknown = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(parsed)) return [];
       return parsed.flatMap((item: unknown) => {
@@ -102,8 +126,10 @@ export class ModulePrefs {
   }
 
   private write(): void {
+    const accountId = this.session.accountId();
+    if (!accountId) return;
     try {
-      this.storage?.setItem(MODULE_PREFS_KEY, JSON.stringify(this.stored()));
+      this.storage?.setItem(modulePrefsStorageKey(accountId), JSON.stringify(this.stored()));
     } catch {
       // sem espaço ou bloqueado: a escolha vale só até recarregar
     }
