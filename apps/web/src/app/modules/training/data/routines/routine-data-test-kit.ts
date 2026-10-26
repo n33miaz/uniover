@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { setupTraining, localExercise } from '../sync/training-test-kit';
+import type { TrainingDb } from '../training-db';
 import type { RoutineDto, RoutineTemplatesDto } from './routine';
 import { RoutineApi } from './routine-api';
 import { RoutineRepository } from './routine-repository';
@@ -81,8 +82,8 @@ export class FakeRoutineApi {
 }
 
 /** Monta o TestBed do Treino com a fila falsa, o banco em memória e os modelos prontos roteirizados. */
-export function setupRoutines() {
-  const training = setupTraining();
+export function setupRoutines(db?: TrainingDb) {
+  const training = setupTraining(db);
   const api = new FakeRoutineApi();
   TestBed.configureTestingModule({ providers: [{ provide: RoutineApi, useValue: api }] });
   // Sem sessão a fila não envia: o teste enxerga o que ficou guardado.

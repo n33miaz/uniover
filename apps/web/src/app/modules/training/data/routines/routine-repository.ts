@@ -16,6 +16,7 @@ import {
 } from '../../domain/routines/supersets';
 import { validateRoutine } from '../../domain/routines/validate-routine';
 import { mergeById } from '../sync/merge';
+import { withTabLock } from '../tab-lock';
 import { TRAINING_DB } from '../training-db';
 import {
   type LocalRoutine,
@@ -104,9 +105,17 @@ interface PendingWrite {
   readonly deleted: boolean;
 }
 
+/** A escolha do programa que vai junto das fichas, com o que havia antes (para desfazer). */
+interface ProgramWrite {
+  readonly written: LocalProgram;
+  readonly previous: LocalProgram | undefined;
+}
+
 const QUEUE_MODULE = 'training';
 /** Chave, na tabela `meta`, da cópia dos modelos prontos (os modelos não mudam, e assim valem sem rede). */
 const TEMPLATES_KEY = 'routineTemplates';
+/** Bloqueio entre abas da escolha do programa (o nome leva o do banco da conta: cada conta tem o seu). */
+const PROGRAM_LOCK = 'uniover-training-program';
 
 /**
  * Único ponto de acesso às rotinas. A tela lê daqui, sempre do banco local e sem rede, e nunca vê lápide: a rotina
@@ -358,10 +367,21 @@ export class RoutineRepository {
    */
   async selectProgram(templateId: string): Promise<TemplateResult> {
     if (templateId === HISTORICAL_REJECTED_TEMPLATE_ID) return { status: 'template-not-found' };
+    // Os modelos podem vir da rede, então ficam fora do bloqueio: ele cobre só ler, decidir e gravar.
     const found = await this.findTemplate(templateId);
     if (!('template' in found)) return found;
     const { template } = found;
 
+    // Duas abas que escolhem o programa juntas passam uma de cada vez: a segunda já encontra as fichas da primeira.
+    return withTabLock(`${PROGRAM_LOCK}:${this.db.name}`, () => this.applyProgram(template));
+  }
+
+  /**
+   * O miolo de `selectProgram`, sob o bloqueio. A decisão de criar as fichas ("ainda não há nenhuma deste programa") é
+   * conferida de novo DENTRO da transação que as grava: se o puxar (ou outra aba, sem o bloqueio) trouxe as fichas no
+   * meio do caminho, nada é criado e a decisão é refeita, agora só reativando as que existem.
+   */
+  private async applyProgram(template: RoutineTemplate, retried = false): Promise<TemplateResult> {
     const all = await this.all();
     const stamp = this.runtime.now();
     const writes: PendingWrite[] = [];
@@ -382,7 +402,8 @@ export class RoutineRepository {
 
     const own = all.filter((row) => row.deletedAt === null && row.programId === template.id);
     let missing: readonly string[] = [];
-    if (own.length === 0) {
+    const creating = own.length === 0;
+    if (creating) {
       const built = await this.buildRoutines(template, {
         active: true,
         programId: template.id,
@@ -402,7 +423,13 @@ export class RoutineRepository {
       updatedAt: stamp,
       clientUpdatedAt: this.nextStamp(previousProgram?.clientUpdatedAt),
     };
-    const saved = await this.commit(writes, { written: program, previous: previousProgram });
+    const saved = await this.commit(
+      writes,
+      { written: program, previous: previousProgram },
+      // Na segunda passada não se confere de novo: as fichas existiam, e só somem se alguém as apagar nesse intervalo.
+      creating && !retried ? () => this.hasNoLiveRoutinesOf(template.id) : undefined,
+    );
+    if (saved === 'refused') return this.applyProgram(template, true);
     if (!saved) return { status: 'storage-full' };
     const written = new Map(writes.map((write) => [write.written.id, write.written]));
     const routines = [
@@ -532,6 +559,12 @@ export class RoutineRepository {
     return Math.max(this.runtime.now(), (previous ?? 0) + 1);
   }
 
+  /** Nenhuma ficha viva é deste programa (lido de novo a cada chamada: serve dentro da transação de gravação). */
+  private async hasNoLiveRoutinesOf(programId: string): Promise<boolean> {
+    const rows = await this.db.routines.toArray();
+    return !rows.some((row) => row.deletedAt === null && row.programId === programId);
+  }
+
   /** Posição da próxima rotina nova: depois da última das vivas. */
   private async nextPosition(): Promise<number> {
     const alive = await this.listAll();
@@ -543,15 +576,29 @@ export class RoutineRepository {
    * locais entram numa transação só. `false` = a fila recusou por falta de espaço: o que já tinha entrado na fila é
    * descartado e as gravações locais são desfeitas. (Se o envio já tiver levado uma das primeiras escritas ao
    * servidor, o descarte não a alcança; o próximo puxar traz a rotina de volta, então nada se perde.)
+   *
+   * `precondition` (opcional) roda DENTRO da transação, antes de gravar: se devolve `false`, nada é gravado nem enfileirado
+   * e o resultado é `'refused'`. A transação do IndexedDB não roda junto com outra sobre as mesmas tabelas, nem vinda de
+   * outra aba, então a conferência e a gravação são uma coisa só.
    */
+  private commit(writes: readonly PendingWrite[], program?: ProgramWrite): Promise<boolean>;
+  private commit(
+    writes: readonly PendingWrite[],
+    program: ProgramWrite | undefined,
+    precondition: (() => Promise<boolean>) | undefined,
+  ): Promise<boolean | 'refused'>;
   private async commit(
     writes: readonly PendingWrite[],
-    program?: { readonly written: LocalProgram; readonly previous: LocalProgram | undefined },
-  ): Promise<boolean> {
-    await this.db.transaction('rw', this.db.routines, this.db.program, async () => {
+    program?: ProgramWrite,
+    precondition?: () => Promise<boolean>,
+  ): Promise<boolean | 'refused'> {
+    const allowed = await this.db.transaction('rw', this.db.routines, this.db.program, async () => {
+      if (precondition && !(await precondition())) return false;
       await this.db.routines.bulkPut(writes.map((write) => write.written));
       if (program) await this.db.program.put(program.written);
+      return true;
     });
+    if (!allowed) return 'refused';
     this.touch();
 
     const queued: string[] = [];
@@ -586,10 +633,7 @@ export class RoutineRepository {
   }
 
   /** Desfaz as gravações locais que a fila recusou; só mexe na linha se ela ainda é a que foi gravada. */
-  private async undoLocal(
-    writes: readonly PendingWrite[],
-    program?: { readonly written: LocalProgram; readonly previous: LocalProgram | undefined },
-  ): Promise<void> {
+  private async undoLocal(writes: readonly PendingWrite[], program?: ProgramWrite): Promise<void> {
     await this.db.transaction('rw', this.db.routines, this.db.program, async () => {
       for (const { written, previous } of writes) {
         const current = await this.db.routines.get(written.id);
