@@ -20,6 +20,7 @@ import { PeoplePermissionPicker } from './people-permission-picker';
 import { PeoplePermissionsSheet } from './people-permissions-sheet';
 import { TV_CONTROL_ONLY, hasModule, permissionSummary } from './people-permissions';
 import { SettingsGlyph } from './settings-glyph';
+import { SessionsSection } from './sessions-section';
 
 /** Limite de caracteres do nome do convidado na API. */
 const MAX_NAME = 100;
@@ -49,7 +50,13 @@ interface Note {
  */
 @Component({
   selector: 'app-guests-section',
-  imports: [NgTemplateOutlet, PeoplePermissionPicker, PeoplePermissionsSheet, SettingsGlyph],
+  imports: [
+    NgTemplateOutlet,
+    PeoplePermissionPicker,
+    PeoplePermissionsSheet,
+    SettingsGlyph,
+    SessionsSection,
+  ],
   templateUrl: './guests-section.html',
   styleUrl: './guests-section.css',
 })
@@ -86,6 +93,7 @@ export class GuestsSection {
   protected readonly editing = signal<GuestSummary | null>(null);
   protected readonly revokingInviteId = signal<string | null>(null);
   protected readonly revokingGuestId = signal<string | null>(null);
+  protected readonly openedSessionGuestId = signal<string | null>(null);
 
   protected readonly pending = computed(() =>
     (this.invites() ?? []).filter((invite) => invite.status === 'pending'),

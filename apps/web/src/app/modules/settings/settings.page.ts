@@ -94,7 +94,7 @@ export class SettingsPage {
         link: '/ajustes/seguranca',
         glyph: 'shield',
         title: SETTINGS_TITLES.security,
-        summary: $localize`:@@settings.list.security-summary:Passkeys que confirmam ações perigosas`,
+        summary: $localize`:@@settings.list.security-summary:Sessões e passkeys`,
       });
     }
     return entries;

@@ -67,6 +67,11 @@
   flex: 0 1 auto;
 }
 
+.sessions-toggle {
+  align-self: flex-start;
+  min-height: var(--tap);
+}
+
 /* Confirmação: aviso em tom de perigo com a pergunta e as duas saídas. */
 .confirm-body {
   display: flex;

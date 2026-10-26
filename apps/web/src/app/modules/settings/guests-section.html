@@ -69,6 +69,20 @@
             </div>
             @if (!guest.disabledAt) {
               <p class="abilities">{{ summary(guest.permissions) }}</p>
+              <button
+                type="button"
+                class="secondary ui-btn sessions-toggle"
+                [attr.aria-expanded]="openedSessionGuestId() === guest.id"
+                (click)="
+                  openedSessionGuestId.set(openedSessionGuestId() === guest.id ? null : guest.id)
+                "
+                i18n="@@settings.guests.sessions"
+              >
+                Sessões
+              </button>
+              @if (openedSessionGuestId() === guest.id) {
+                <app-sessions-section [guestId]="guest.id" [guestName]="guest.displayName" />
+              }
               @if (revokingGuestId() === guest.id) {
                 <div
                   class="confirm ui-notice bad ui-rise"

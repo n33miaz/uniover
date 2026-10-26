@@ -139,10 +139,21 @@ export interface IdentityMock {
   patchForbidden: boolean;
   readonly invites: MockInvite[];
   readonly guests: MockGuest[];
+  sessions: MockSession[];
+  readonly guestSessions: Record<string, MockSession[]>;
   /** Cria um convite pendente já pronto (o segredo do link é o devolvido). */
   seedInvite(displayName?: string, permissions?: string[]): MockInvite;
   /** Tokens emitidos (todos começam com "eyJ", como um JWT). */
   readonly issuedTokens: string[];
+}
+
+export interface MockSession {
+  id: string;
+  userAgent: string | null;
+  ip: string | null;
+  createdAt: string;
+  lastUsedAt: string;
+  isCurrent: boolean;
 }
 
 const PROBLEM_BASE = 'https://uniover.app/problems/';
@@ -257,6 +268,17 @@ export async function mockIdentityApi(
     patchForbidden: false,
     invites: [],
     guests: [],
+    sessions: [
+      {
+        id: '00000000-0000-4000-8000-000000000001',
+        userAgent: 'Mozilla/5.0 (iPhone) Safari/605.1.15',
+        ip: '192.0.2.0/24',
+        createdAt: '2026-10-25T10:00:00Z',
+        lastUsedAt: '2026-10-26T10:00:00Z',
+        isCurrent: true,
+      },
+    ],
+    guestSessions: {},
     seedInvite: (displayName = GUEST.displayName, permissions) => {
       const invite: MockInvite = {
         id: '00000000-0000-4000-8000-0000000000' + String(mock.invites.length + 10),
@@ -417,6 +439,21 @@ export async function mockIdentityApi(
     // Tudo abaixo exige o token no cabeçalho.
     if (!authorized) return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
 
+    if (method === 'GET' && path === '/sessions') return json(route, 200, mock.sessions);
+    if (method === 'POST' && path === '/sessions/others/revoke') {
+      mock.sessions = mock.sessions.filter((session) => session.isCurrent);
+      return route.fulfill({ status: 204 });
+    }
+    const ownSession = /^\/sessions\/([^/]+)\/revoke$/.exec(path);
+    if (method === 'POST' && ownSession) {
+      const id = ownSession[1];
+      const session = mock.sessions.find((item) => item.id === id);
+      if (!session) return problem(route, 404, 'not-found', 'Sessão não encontrada.');
+      mock.sessions = mock.sessions.filter((item) => item.id !== id);
+      if (session.isCurrent) mock.loggedIn = false;
+      return route.fulfill({ status: 204 });
+    }
+
     // Entrada pelo QR, lado do celular (com sessão): ver, confirmar e recusar.
     if (method === 'POST' && path.startsWith('/auth/qr/')) {
       const entry = mock.qr.requests.find((r) => r.code === body?.['code']);
@@ -511,6 +548,19 @@ export async function mockIdentityApi(
     }
     // Como a API: tudo o que é da conta e dos convites é só do dono.
     if (mock.role === 'guest') return problem(route, 403, 'forbidden', 'Sem permissão.');
+
+    const guestSessionList = /^\/guests\/([^/]+)\/sessions$/.exec(path);
+    if (method === 'GET' && guestSessionList) {
+      return json(route, 200, mock.guestSessions[guestSessionList[1]] ?? []);
+    }
+    const guestSessionRevoke = /^\/guests\/([^/]+)\/sessions\/([^/]+)\/revoke$/.exec(path);
+    if (method === 'POST' && guestSessionRevoke) {
+      const list = mock.guestSessions[guestSessionRevoke[1]] ?? [];
+      mock.guestSessions[guestSessionRevoke[1]] = list.filter(
+        (item) => item.id !== guestSessionRevoke[2],
+      );
+      return route.fulfill({ status: 204 });
+    }
 
     if (method === 'GET' && path === '/guest-invites') {
       return json(
