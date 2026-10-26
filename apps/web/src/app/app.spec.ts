@@ -3,6 +3,10 @@ import { provideRouter } from '@angular/router';
 import { App } from './app';
 
 describe('App', () => {
+  // O armazenamento é dividido entre os arquivos do mesmo trabalhador: dicas de conta de outros testes mudariam o tema lido.
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
   it('creates the root with banners and a router outlet', async () => {
     TestBed.configureTestingModule({ providers: [provideRouter([])] });
     const fixture = TestBed.createComponent(App);

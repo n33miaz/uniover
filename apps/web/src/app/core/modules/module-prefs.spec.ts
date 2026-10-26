@@ -212,6 +212,32 @@ describe('ModulePrefs per account', () => {
     expect(localStorage.getItem(MODULE_PREFS_KEY)).toBeNull();
   });
 
+  it('restores the saved order after a reload that starts offline, from the account hint alone', () => {
+    identify('conta-a');
+    const first = TestBed.inject(ModulePrefs);
+    first.apply(moveWidget(first.widgets(), 'training', -1));
+
+    // Recarrega sem rede: nenhum `/me` chegou, só a dica da conta da última sessão está no aparelho.
+    TestBed.resetTestingModule();
+    expect(localStorage.getItem('uniover.account-id')).toBe('conta-a');
+    expect(ids(TestBed.inject(ModulePrefs)).slice(0, 2)).toEqual(['training', 'tv']);
+  });
+
+  it('reads the saved order of the account when it is only confirmed after the service exists', () => {
+    localStorage.setItem(
+      modulePrefsStorageKey('conta-a'),
+      JSON.stringify([
+        { id: 'training', size: 'wide', enabled: true },
+        { id: 'tv', size: 'small', enabled: true },
+      ]),
+    );
+    const prefs = TestBed.inject(ModulePrefs);
+    expect(ids(prefs)).toEqual(registryIds());
+
+    identify('conta-a');
+    expect(ids(prefs).slice(0, 2)).toEqual(['training', 'tv']);
+  });
+
   it('shows the defaults and saves nothing while no account is known, then uses the account when it arrives', () => {
     const prefs = TestBed.inject(ModulePrefs);
     expect(ids(prefs)).toEqual(registryIds());
