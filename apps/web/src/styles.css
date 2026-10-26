@@ -194,6 +194,38 @@ main {
 }
 
 /*
+ * O toque prolongado no iOS não deve abrir a lupa nem o menu do sistema sobre a interface. Campos que recebem texto
+ * restauram explicitamente a seleção e o menu de colar, para que essa proteção não atrapalhe a edição.
+ */
+body,
+body * {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input:not([type]),
+input[type='text' i],
+input[type='search' i],
+input[type='email' i],
+input[type='password' i],
+input[type='number' i],
+input[type='date' i],
+input[type='datetime-local' i],
+input[type='month' i],
+input[type='time' i],
+input[type='week' i],
+input[type='tel' i],
+input[type='url' i],
+textarea,
+[contenteditable],
+[contenteditable] * {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/*
  * Primitivos de interface (prefixo `ui-`): rótulo de seção, grupo e linha, ícone em ladrilho, chip, botão, campo,
  * aviso e carregamento. Não colidem com as classes locais das outras telas (`.card`, `.chip`, `.row`, `.primary`),
  * que continuam encapsuladas em cada componente. Quem quiser adotar o visual novo usa estas classes.
@@ -272,7 +304,9 @@ button.ui-row {
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color var(--dur-fast) linear;
+  transition:
+    background-color var(--dur-fast) linear,
+    filter var(--dur-fast) linear;
 }
 
 a.ui-row:active,
@@ -389,7 +423,8 @@ button.ui-row:active {
   /* Sem transição de cor de fundo: ao trocar o tema o texto não pode ficar sobre um fundo a meio caminho. */
   transition:
     transform var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-fast) linear;
+    box-shadow var(--dur-fast) linear,
+    filter var(--dur-fast) linear;
 }
 
 .ui-btn:active:not(:disabled) {
@@ -661,7 +696,8 @@ button.ui-row:active {
   transition:
     transform var(--dur-fast) var(--ease-out),
     border-color var(--dur-fast) linear,
-    box-shadow var(--dur-base) linear;
+    box-shadow var(--dur-base) linear,
+    filter var(--dur-fast) linear;
 }
 
 .ui-press:active {
@@ -694,7 +730,9 @@ button.ui-row:active {
 
 /* Resposta ao toque para controles pequenos (o ui-press é para cartões). */
 .ui-tap {
-  transition: transform var(--dur-fast) var(--ease-out);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    filter var(--dur-fast) linear;
 }
 
 .ui-tap:active:not(:disabled) {
@@ -867,4 +905,82 @@ button.ui-row:active {
 
 .ui-tile.lg > * {
   --glyph-size: 28px;
+}
+
+/*
+ * Resposta comum de toque: o realce do navegador some e o próprio controle escurece de forma breve. O controle da TV
+ * já interpreta pressão contínua e gestos no carrossel, por isso conserva exclusivamente os estados que ele define.
+ * Quando um cartão ui-press envolve um link, somente o cartão responde para o toque não parecer duplicado.
+ */
+:where(button, a[href], [role='button'], [role='tab'], label.ui-row, .ui-btn, .ui-tap, .ui-press) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:where(
+    button:not(:disabled):not([aria-disabled='true']),
+    a[href]:not([aria-disabled='true']),
+    [role='button']:not([aria-disabled='true']),
+    [role='tab']:not([aria-disabled='true']),
+    label.ui-row:not([aria-disabled='true']),
+    .ui-btn:not(:disabled):not([aria-disabled='true']),
+    .ui-tap:not(:disabled):not([aria-disabled='true']),
+    .ui-press:not(:disabled):not([aria-disabled='true'])
+  ):where(:not(app-tv-control *)):where(:not(.ui-press *)) {
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    filter var(--dur-fast) linear;
+}
+
+:where(
+    button:not(:disabled):not([aria-disabled='true']),
+    a[href]:not([aria-disabled='true']),
+    [role='button']:not([aria-disabled='true']),
+    [role='tab']:not([aria-disabled='true']),
+    label.ui-row:not([aria-disabled='true']),
+    .ui-btn:not(:disabled):not([aria-disabled='true']),
+    .ui-tap:not(:disabled):not([aria-disabled='true']),
+    .ui-press:not(:disabled):not([aria-disabled='true'])
+  ):where(:not(app-tv-control *)):where(:not(.ui-press *)):where(:active) {
+  filter: brightness(0.96);
+  transform: scale(0.98);
+}
+
+/* Linhas e cartões mantêm a resposta menos intensa que já usam, para não parecer que a seção toda saltou. */
+a.ui-row:active,
+button.ui-row:active,
+label.ui-row:active {
+  transform: none;
+}
+
+.ui-press:active {
+  transform: scale(0.985);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(
+      button:not(:disabled):not([aria-disabled='true']),
+      a[href]:not([aria-disabled='true']),
+      [role='button']:not([aria-disabled='true']),
+      [role='tab']:not([aria-disabled='true']),
+      label.ui-row:not([aria-disabled='true']),
+      .ui-btn:not(:disabled):not([aria-disabled='true']),
+      .ui-tap:not(:disabled):not([aria-disabled='true']),
+      .ui-press:not(:disabled):not([aria-disabled='true'])
+    ):where(:not(app-tv-control *)):where(:not(.ui-press *)) {
+    transition: filter var(--dur-fast) linear;
+  }
+
+  :where(
+      button:not(:disabled):not([aria-disabled='true']),
+      a[href]:not([aria-disabled='true']),
+      [role='button']:not([aria-disabled='true']),
+      [role='tab']:not([aria-disabled='true']),
+      label.ui-row:not([aria-disabled='true']),
+      .ui-btn:not(:disabled):not([aria-disabled='true']),
+      .ui-tap:not(:disabled):not([aria-disabled='true']),
+      .ui-press:not(:disabled):not([aria-disabled='true'])
+    ):where(:not(app-tv-control *)):where(:not(.ui-press *)):where(:active),
+  .ui-press:active {
+    transform: none;
+  }
 }

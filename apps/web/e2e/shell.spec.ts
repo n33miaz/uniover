@@ -88,6 +88,48 @@ test.describe('início e navegação', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   });
 
+  test('remove a seleção da interface sem bloquear campos de texto', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    const styles = await page.evaluate(() => {
+      const input = document.createElement('input');
+      input.type = 'text';
+      const textarea = document.createElement('textarea');
+      document.body.append(input, textarea);
+
+      const read = (element: Element) => {
+        const computed = getComputedStyle(element);
+        return {
+          userSelect: computed.userSelect,
+          webkitUserSelect: computed.getPropertyValue('-webkit-user-select'),
+        };
+      };
+
+      const bodyTouchCallout = getComputedStyle(document.body).getPropertyValue(
+        '-webkit-touch-callout',
+      );
+      const result = {
+        text: read(document.querySelector('h1')!),
+        button: read(document.querySelector('button')!),
+        input: read(input),
+        textarea: read(textarea),
+        bodyTouchCallout,
+      };
+      input.remove();
+      textarea.remove();
+      return result;
+    });
+
+    expect(styles.text).toMatchObject({ userSelect: 'none', webkitUserSelect: 'none' });
+    expect(styles.button).toMatchObject({ userSelect: 'none', webkitUserSelect: 'none' });
+    expect(styles.input).toMatchObject({ userSelect: 'text', webkitUserSelect: 'text' });
+    expect(styles.textarea).toMatchObject({ userSelect: 'text', webkitUserSelect: 'text' });
+    if (styles.bodyTouchCallout) {
+      expect(styles.bodyTouchCallout).toBe('none');
+    }
+  });
+
   test('folha de edição: reordena, cancela e aplica', async ({ page }, info) => {
     await page.goto('/');
     const titles = blocks(page).locator('h3');
