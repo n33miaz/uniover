@@ -2,6 +2,7 @@ import {
   addDays,
   civilDateOf,
   dateKey,
+  deviceTimeZone,
   monthRange,
   periodRange,
   startOfDay,
@@ -157,28 +158,85 @@ describe('monthRange', () => {
 
 describe('periodRange', () => {
   const now = Date.UTC(2026, 9, 19, 12, 0, 0);
+  /** Um instante pelo relógio de Tóquio (UTC+9, sem horário de verão). */
+  const tokyo = (year: number, month: number, day: number, hour = 0, minute = 0) =>
+    Date.UTC(year, month - 1, day, hour - 9, minute);
 
-  it('8w goes back 56 days', () => {
-    expect(periodRange('8w', now)).toEqual({ from: now - 56 * 24 * HOUR, to: now });
+  it('8w goes back 56 days, whatever the time zone', () => {
+    expect(periodRange('8w', now, 'UTC')).toEqual({ from: now - 56 * 24 * HOUR, to: now });
+    expect(periodRange('8w', now, SP)).toEqual({ from: now - 56 * 24 * HOUR, to: now });
   });
 
   it('6m goes back six calendar months', () => {
-    expect(periodRange('6m', now)).toEqual({ from: Date.UTC(2026, 3, 19, 12, 0, 0), to: now });
+    expect(periodRange('6m', now, 'UTC')).toEqual({
+      from: Date.UTC(2026, 3, 19, 12, 0, 0),
+      to: now,
+    });
   });
 
   it('6m clamps the day to the last day of the target month', () => {
     const end = Date.UTC(2026, 7, 31, 8, 0, 0);
 
-    expect(periodRange('6m', end).from).toBe(Date.UTC(2026, 1, 28, 8, 0, 0));
+    expect(periodRange('6m', end, 'UTC').from).toBe(Date.UTC(2026, 1, 28, 8, 0, 0));
   });
 
   it('6m crosses the year', () => {
-    expect(periodRange('6m', Date.UTC(2026, 2, 15, 0, 0, 0)).from).toBe(
+    expect(periodRange('6m', Date.UTC(2026, 2, 15, 0, 0, 0), 'UTC').from).toBe(
       Date.UTC(2025, 8, 15, 0, 0, 0),
     );
   });
 
   it('all has no start', () => {
-    expect(periodRange('all', now)).toEqual({ from: null, to: now });
+    expect(periodRange('all', now, SP)).toEqual({ from: null, to: now });
+  });
+
+  describe('6m in the calendar of the person', () => {
+    // Na virada do ano a conta em UTC por acaso dá o mesmo instante (dezembro e janeiro caem em meses de destino de
+    // tamanho igual): estes casos fixam o resultado certo, mas não distinguem as duas contas.
+    it.each([
+      ['31/12 at 23:30 in UTC-3', SP, sp(2026, 12, 31, 23, 30), sp(2026, 6, 30, 23, 30)],
+      ['01/01 at 00:30 in UTC-3', SP, sp(2027, 1, 1, 0, 30), sp(2026, 7, 1, 0, 30)],
+      [
+        '31/12 at 23:30 in UTC+9',
+        'Asia/Tokyo',
+        tokyo(2026, 12, 31, 23, 30),
+        tokyo(2026, 6, 30, 23, 30),
+      ],
+      ['01/01 at 00:30 in UTC+9', 'Asia/Tokyo', tokyo(2027, 1, 1, 0, 30), tokyo(2026, 7, 1, 0, 30)],
+    ])('starts at the same local time six months back: %s', (_name, zone, at, from) => {
+      expect(periodRange('6m', at, zone)).toEqual({ from, to: at });
+    });
+
+    it('uses the local day, not the UTC one, when they fall in different months (UTC-3)', () => {
+      // 28/02 às 23:30 em Brasília já é 01/03 em UTC: seis meses antes é 28/08, e não 31/08 (conta em UTC).
+      const at = sp(2026, 2, 28, 23, 30);
+
+      expect(periodRange('6m', at, SP).from).toBe(sp(2025, 8, 28, 23, 30));
+      expect(periodRange('6m', at, 'UTC').from).toBe(Date.UTC(2025, 8, 1, 2, 30));
+    });
+
+    it('uses the local day, not the UTC one, when they fall in different months (UTC+9)', () => {
+      // 01/03 às 00:30 em Tóquio ainda é 28/02 em UTC: seis meses antes é 01/09, e não 28/08 (conta em UTC).
+      const at = tokyo(2026, 3, 1, 0, 30);
+
+      expect(periodRange('6m', at, 'Asia/Tokyo').from).toBe(tokyo(2025, 9, 1, 0, 30));
+    });
+
+    it('clamps the day in the local month: 31/08 in Tokyo goes back to 28/02', () => {
+      const at = tokyo(2026, 8, 31, 1, 0);
+
+      expect(periodRange('6m', at, 'Asia/Tokyo').from).toBe(tokyo(2026, 2, 28, 1, 0));
+    });
+
+    it('keeps the local clock time across a daylight saving change (New York)', () => {
+      // 15/12 ao meio-dia é horário de inverno (UTC-5); seis meses antes, 15/06 ao meio-dia, é de verão (UTC-4).
+      const at = Date.UTC(2026, 11, 15, 17, 0);
+
+      expect(periodRange('6m', at, NY).from).toBe(Date.UTC(2026, 5, 15, 16, 0));
+    });
+
+    it('uses the time zone of the device when none is given', () => {
+      expect(periodRange('6m', now).from).toBe(periodRange('6m', now, deviceTimeZone()).from);
+    });
   });
 });

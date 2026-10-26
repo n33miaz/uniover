@@ -139,26 +139,26 @@ export function monthRange(year: number, month: number, timeZone: string): Month
 
 /**
  * Janela de tempo de um período do gráfico. `8w` = os últimos 56 dias corridos; `6m` = seis meses de calendário para
- * trás (na conta do UTC, sem fuso: a diferença de algumas horas na borda não muda o desenho do gráfico; o dia do mês
- * é limitado ao último do mês de destino); `all` = sem início.
+ * trás, **no dia e na hora do relógio do fuso pedido** (o dia do mês é limitado ao último do mês de destino, e a hora
+ * local se mantém mesmo que o horário de verão mude no meio do caminho); `all` = sem início.
+ *
+ * A conta é feita no calendário do fuso, nunca no UTC: perto da meia-noite o dia local e o dia UTC caem em meses
+ * diferentes (28/02 às 23:30 em Brasília já é 01/03 em UTC), e a janela de quem treina começaria dias fora do lugar.
  */
 export function periodRange(
   period: ProgressPeriod,
   now: number,
+  timeZone: string = deviceTimeZone(),
 ): { readonly from: number | null; readonly to: number } {
   if (period === 'all') return { from: null, to: now };
   if (period === '8w') return { from: now - 56 * 24 * 60 * 60 * 1000, to: now };
-  const at = new Date(now);
-  const target = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth() - 6 + 1, 0));
-  const day = Math.min(at.getUTCDate(), target.getUTCDate());
-  const from = Date.UTC(
-    target.getUTCFullYear(),
-    target.getUTCMonth(),
-    day,
-    at.getUTCHours(),
-    at.getUTCMinutes(),
-    at.getUTCSeconds(),
-    at.getUTCMilliseconds(),
-  );
-  return { from, to: now };
+  const today = civilDateOf(now, timeZone);
+  const monthIndex = today.year * 12 + (today.month - 1) - 6;
+  const year = Math.floor(monthIndex / 12);
+  const month = (monthIndex % 12) + 1;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const target: CivilDate = { year, month, day: Math.min(today.day, lastDay) };
+  // Quanto do dia local já passou em `now` é somado ao começo do dia de destino: a mesma hora no relógio daquele dia.
+  const elapsed = now - startOfDay(today, timeZone);
+  return { from: startOfDay(target, timeZone) + elapsed, to: now };
 }

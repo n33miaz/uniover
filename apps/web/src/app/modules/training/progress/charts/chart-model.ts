@@ -57,6 +57,8 @@ export interface ChartInput {
   /** O "agora" (ms): fecha a janela do período. */
   readonly now: number;
   readonly goalKg?: number | null;
+  /** O fuso de quem treina: a mesma janela de 6 meses que cortou os dados (padrão: o do aparelho). */
+  readonly timeZone?: string;
 }
 
 /** As linhas do dia que têm valor na métrica (o 1RM falta em dia só com séries de mais de 10 repetições). */
@@ -126,7 +128,7 @@ export function buildChartModel(input: ChartInput): ChartModel {
   // primeiro treino a hoje. Termina em hoje, mesmo que o último treino tenha sido antes.
   const firstAt = rows.length > 0 ? rows[0].at : null;
   const lastAt = rows.length > 0 ? rows[rows.length - 1].at : null;
-  const { from } = periodRange(period, now);
+  const { from } = periodRange(period, now, input.timeZone);
   let low = from ?? Math.min(firstAt ?? now, now - MIN_WINDOW_DAYS * DAY_MS);
   if (firstAt !== null) low = Math.min(low, firstAt);
   const high = Math.max(now, lastAt ?? now);

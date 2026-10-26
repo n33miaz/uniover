@@ -14,7 +14,7 @@ import { QUEUE_RUNTIME } from '../../../../core/offline-queue/queue-ports';
 import { GoalRepository } from '../../data/goals/goal-repository';
 import { type ExerciseSeries, ProgressRepository } from '../../data/progress/progress-repository';
 import { SessionRepository } from '../../data/sessions/session-repository';
-import type { ProgressPeriod } from '../../domain/progress/calendar';
+import { type ProgressPeriod, deviceTimeZone } from '../../domain/progress/calendar';
 import type { SeriesMetric } from '../../domain/progress/series';
 import { formatDayMonth, formatKg } from '../../shell/format';
 import { type ChipOption, TrainingChips } from '../../shell/training-chips';
@@ -44,6 +44,7 @@ interface Loaded {
   readonly key: string;
   readonly series: ExerciseSeries;
   readonly now: number;
+  readonly timeZone: string;
   /** O exercício tem algum registro (em qualquer período)? */
   readonly anyHistory: boolean;
 }
@@ -141,6 +142,7 @@ export class ProgressEvolution {
       metric: this.metric(),
       period: this.period(),
       now: loaded.now,
+      timeZone: loaded.timeZone,
       goalKg: this.goalKg(),
     });
   });
@@ -350,15 +352,18 @@ export class ProgressEvolution {
   private async load(id: string, period: ProgressPeriod): Promise<void> {
     const ticket = ++this.ticket;
     const now = this.runtime.now();
-    const series = await this.progress.exerciseSeries(id, period, { now });
+    // Um só fuso para cortar os dados e desenhar a janela do gráfico: os dois nunca discordam na borda do período.
+    const timeZone = deviceTimeZone();
+    const series = await this.progress.exerciseSeries(id, period, { now, timeZone });
     let anyHistory = series.points.length > 0;
     if (!anyHistory && period !== 'all') {
-      anyHistory = (await this.progress.exerciseSeries(id, 'all', { now })).points.length > 0;
+      anyHistory =
+        (await this.progress.exerciseSeries(id, 'all', { now, timeZone })).points.length > 0;
     }
     if (ticket !== this.ticket) return;
     const key = `${id}|${period}`;
     if (key !== this.read()?.key) this.picked.set(null);
-    this.read.set({ key, series, now, anyHistory });
+    this.read.set({ key, series, now, timeZone, anyHistory });
   }
 
   private async loadGoal(id: string): Promise<void> {

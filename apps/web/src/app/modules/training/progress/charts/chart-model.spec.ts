@@ -131,6 +131,22 @@ describe('buildChartModel', () => {
     expect(model.longSpan).toBe(false);
   });
 
+  it('starts the 6 months window at the local day of the person, the same cut the data uses', () => {
+    // 28/02 às 23:30 em Brasília já é 01/03 em UTC: seis meses antes é 28/08 (e não 31/08) no relógio de quem treina.
+    const now = at('2026-02-28', 23, 30);
+
+    const model = buildChartModel({
+      points: [],
+      metric: 'oneRepMax',
+      period: '6m',
+      now,
+      timeZone: SAO_PAULO,
+    });
+
+    expect(model.xTicks[0]).toBe(at('2025-08-28', 23, 30) / 1000);
+    expect(model.xTicks[TIME_TICKS - 1]).toBe(now / 1000);
+  });
+
   it('goes from the first training to today in "all", and marks a span of more than ten months', () => {
     const model = buildChartModel({
       points: golden(),
