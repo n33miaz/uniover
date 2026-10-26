@@ -1,9 +1,11 @@
 import { TestBed } from '@angular/core/testing';
+import { SessionState } from '../session/session-state';
 import { ModuleRegistry } from './module-registry';
 import {
   MODULE_PREFS_KEY,
   ModulePrefs,
   WidgetPref,
+  modulePrefsStorageKey,
   moveWidget,
   moveWidgetTo,
 } from './module-prefs';
@@ -30,9 +32,28 @@ describe('moveWidget helpers', () => {
   });
 });
 
+/** Identifica a conta que usa o aparelho (as escolhas são guardadas por conta). */
+const identify = (id: string) =>
+  TestBed.inject(SessionState).setUser({
+    id,
+    email: `${id}@example.com`,
+    displayName: id,
+    role: 'owner',
+  });
+
 describe('ModulePrefs', () => {
-  beforeEach(() => localStorage.clear());
-  afterEach(() => vi.restoreAllMocks());
+  const ACCOUNT = 'conta-1';
+  const KEY = modulePrefsStorageKey(ACCOUNT);
+
+  beforeEach(() => {
+    localStorage.clear();
+    identify(ACCOUNT);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    // A conta identificada deixa dicas no armazenamento, que os outros arquivos de teste dividem.
+    localStorage.clear();
+  });
 
   const registryIds = () => TestBed.inject(ModuleRegistry).modules.map((m) => m.id);
 
@@ -53,7 +74,7 @@ describe('ModulePrefs', () => {
   it('keeps a preference saved before the planned modules existed and appends them at the end', () => {
     // O que um aparelho antigo guardou: só TV e Treino, na ordem e nos tamanhos que o dono escolheu.
     localStorage.setItem(
-      MODULE_PREFS_KEY,
+      KEY,
       JSON.stringify([
         { id: 'training', size: 'small', enabled: true },
         { id: 'tv', size: 'wide', enabled: false },
@@ -100,7 +121,7 @@ describe('ModulePrefs', () => {
 
   it('appends modules missing from storage and drops unknown ones', () => {
     localStorage.setItem(
-      MODULE_PREFS_KEY,
+      KEY,
       JSON.stringify([
         { id: 'ghost', size: 'small', enabled: true },
         { id: 'training', size: 'small', enabled: false },
@@ -113,7 +134,7 @@ describe('ModulePrefs', () => {
   });
 
   it.each(['not json', '{"a":1}', '[{"id":1}]'])('ignores corrupted storage (%s)', (raw) => {
-    localStorage.setItem(MODULE_PREFS_KEY, raw);
+    localStorage.setItem(KEY, raw);
     expect(TestBed.inject(ModulePrefs).widgets()).toHaveLength(registryIds().length);
   });
 
@@ -126,5 +147,79 @@ describe('ModulePrefs', () => {
     expect(prefs.visible().map((w) => w.definition.id)).toEqual(
       registryIds().filter((id) => id !== 'tv'),
     );
+  });
+});
+
+describe('ModulePrefs per account', () => {
+  const ids = (prefs: ModulePrefs) => prefs.widgets().map((w) => w.id);
+  const registryIds = () => TestBed.inject(ModuleRegistry).modules.map((m) => m.id);
+
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
+  it('does not hand the choice of one account to the next one that signs in on the same page', () => {
+    identify('conta-a');
+    const prefs = TestBed.inject(ModulePrefs);
+    prefs.setEnabled('tv', false);
+    prefs.apply(moveWidget(prefs.widgets(), 'training', -1));
+    expect(ids(prefs).slice(0, 2)).toEqual(['training', 'tv']);
+    expect(prefs.visible().map((w) => w.definition.id)).not.toContain('tv');
+
+    // A sai e B entra sem recarregar: o mesmo serviço, outra conta.
+    TestBed.inject(SessionState).clear();
+    identify('conta-b');
+    expect(ids(prefs)).toEqual(registryIds());
+    expect(prefs.visible().map((w) => w.definition.id)).toEqual(registryIds());
+
+    prefs.setEnabled('network', false);
+    expect(
+      JSON.parse(localStorage.getItem(modulePrefsStorageKey('conta-b')) ?? '[]'),
+    ).toContainEqual(expect.objectContaining({ id: 'network', enabled: false }));
+
+    // A volta: o que ela escolheu continua com ela, e o de B não vaza para cá.
+    identify('conta-a');
+    expect(ids(prefs).slice(0, 2)).toEqual(['training', 'tv']);
+    expect(prefs.visible().map((w) => w.definition.id)).not.toContain('tv');
+    expect(prefs.visible().map((w) => w.definition.id)).toContain('network');
+  });
+
+  it('does not hand the choice of one account to the next after the page is reloaded either', () => {
+    identify('conta-a');
+    TestBed.inject(ModulePrefs).setEnabled('tv', false);
+
+    TestBed.resetTestingModule();
+    identify('conta-b');
+    expect(
+      TestBed.inject(ModulePrefs)
+        .visible()
+        .map((w) => w.definition.id),
+    ).toContain('tv');
+  });
+
+  it('discards the choice kept before there were accounts instead of giving it to whoever signs in first', () => {
+    localStorage.setItem(
+      MODULE_PREFS_KEY,
+      JSON.stringify([{ id: 'tv', size: 'small', enabled: false }]),
+    );
+    identify('conta-a');
+    const prefs = TestBed.inject(ModulePrefs);
+    expect(prefs.visible().map((w) => w.definition.id)).toContain('tv');
+    expect(localStorage.getItem(MODULE_PREFS_KEY)).toBeNull();
+    expect(localStorage.getItem(modulePrefsStorageKey('conta-a'))).toBeNull();
+
+    identify('conta-b');
+    expect(prefs.visible().map((w) => w.definition.id)).toContain('tv');
+    expect(localStorage.getItem(MODULE_PREFS_KEY)).toBeNull();
+  });
+
+  it('shows the defaults and saves nothing while no account is known, then uses the account when it arrives', () => {
+    const prefs = TestBed.inject(ModulePrefs);
+    expect(ids(prefs)).toEqual(registryIds());
+    prefs.setEnabled('tv', false);
+    expect(prefs.visible().map((w) => w.definition.id)).not.toContain('tv');
+    expect(Object.keys(localStorage).filter((key) => key.startsWith(MODULE_PREFS_KEY))).toEqual([]);
+
+    identify('conta-a');
+    expect(prefs.visible().map((w) => w.definition.id)).toContain('tv');
   });
 });

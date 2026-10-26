@@ -1,6 +1,6 @@
 import { Page, Route, TestInfo } from '@playwright/test';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
-import { IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
+import { IdentityMock, OWNER, OWNER_ID, mockIdentityApi } from '../auth/identity-mock';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
 import { expectNoA11yViolations, settle, smallTargets } from './screen-helpers';
 
@@ -177,16 +177,19 @@ test.describe('Início', () => {
   });
 
   test('estado vazio da Início com todos os módulos ocultos', async ({ page }, info) => {
-    await page.addInitScript(() =>
-      localStorage.setItem(
-        'uniover.home.widgets.v1',
-        // Todos os módulos do catálogo desligados (os planejados entram ligados se não estiverem na lista).
-        JSON.stringify(
-          ['tv', 'training', 'health', 'monitor', 'network', 'backup', 'notifications', 'pc'].map(
-            (id) => ({ id, size: 'small', enabled: false }),
+    await page.addInitScript(
+      (account) =>
+        localStorage.setItem(
+          // A escolha da Início é guardada por conta: esta é a da conta da sessão simulada.
+          `uniover.home.widgets.v1.${account}`,
+          // Todos os módulos do catálogo desligados (os planejados entram ligados se não estiverem na lista).
+          JSON.stringify(
+            ['tv', 'training', 'health', 'monitor', 'network', 'backup', 'notifications', 'pc'].map(
+              (id) => ({ id, size: 'small', enabled: false }),
+            ),
           ),
         ),
-      ),
+      OWNER_ID,
     );
     for (const scheme of SCHEMES) {
       await page.emulateMedia({ colorScheme: scheme });

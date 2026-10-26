@@ -9,12 +9,13 @@ import {
 } from '../fixtures';
 import { settle } from '../screens/screen-helpers';
 import { expectNoA11yViolations } from './entry-helpers';
-import { IdentityMock, OWNER, mockIdentityApi } from './identity-mock';
+import { IdentityMock, OWNER, OWNER_ID, mockIdentityApi } from './identity-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
 
-const MODULE_PREFS_KEY = 'uniover.home.widgets.v1';
+// A escolha da Início é guardada por conta: esta é a chave da conta da sessão simulada.
+const MODULE_PREFS_KEY = `uniover.home.widgets.v1.${OWNER_ID}`;
 // Módulos planejados, que a Início mostra como "Em breve" depois de TV e Treino.
 const PLANNED_MODULES = [
   'Saúde e eventos',
