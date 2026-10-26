@@ -33,6 +33,7 @@ public class IdentityAuditNormalizerTests
     [InlineData(AuditEvents.GuestInviteAccepted, AuditOutcome.Success)]
     [InlineData(AuditEvents.GuestInviteRevoked, AuditOutcome.Success)]
     [InlineData(AuditEvents.GuestRevoked, AuditOutcome.Success)]
+    [InlineData(AuditEvents.SessionRevoked, AuditOutcome.Success)]
     [InlineData(AuditEvents.PermissionsChanged, AuditOutcome.Success)]
     [InlineData(AuditEvents.ProfileUpdated, AuditOutcome.Success)]
     [InlineData(AuditEvents.QrLoginApproved, AuditOutcome.Success)]
@@ -74,6 +75,18 @@ public class IdentityAuditNormalizerTests
         record.UserAgent.Should().Be("navegador/1.0");
         record.Target.Should().BeNull();
         record.TargetUserId.Should().BeNull();
+        record.Detail.Should().BeNull();
+    }
+
+    [Fact]
+    public void SessionRevocation_IdentifiesTheAffectedAccountAndFamily()
+    {
+        var family = Guid.Parse("33333333-3333-7333-8333-333333333333");
+        var record = Normalize(AuditEvents.SessionRevoked, Admin, $"{Guest:N}|{family:N}");
+
+        record.ActorId.Should().Be(Admin);
+        record.TargetUserId.Should().Be(Guest);
+        record.Target.Should().Be(family.ToString("N"));
         record.Detail.Should().BeNull();
     }
 
