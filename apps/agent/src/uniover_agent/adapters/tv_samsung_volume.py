@@ -235,7 +235,9 @@ class SamsungVolume:
                 continue
             control = await self._control_of(location)
             if control is not None and urlsplit(control).hostname == self._host:
-                _log.info("volume da TV Samsung: serviço UPnP em %s", control)
+                # O registro sai do PC pela manutenção remota: o endereço interno da TV (host, porta
+                # e caminho do serviço) não pode ir junto. Basta saber que o serviço foi achado.
+                _log.info("volume da TV Samsung: serviço UPnP encontrado")
                 return control
         _log.info("a TV Samsung não expõe RenderingControl; o volume fica desconhecido")
         return None
