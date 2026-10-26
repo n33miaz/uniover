@@ -8,7 +8,8 @@ export const PWA_ENABLED = new InjectionToken<boolean>('PWA_ENABLED', {
   factory: () => !isDevMode(),
 });
 
-export const UPDATE_ACTIVATION_TIMEOUT_MS = 15_000;
+/** Tempo curto para a troca de controlador; sem ela, ainda recarregamos para buscar a casca nova. */
+export const UPDATE_RELOAD_FALLBACK_MS = 1_500;
 export const UPDATE_CHECK_THROTTLE_MS = 60_000;
 
 /**
@@ -25,7 +26,7 @@ export class PwaUpdateService {
   private applying = false;
   private reloading = false;
   private lastUpdateCheckAt: number | null = null;
-  private activationTimer: number | undefined;
+  private reloadTimer: number | undefined;
   private readonly watchedWorkers = new WeakSet<ServiceWorker>();
 
   readonly updateReady = signal(false);
@@ -47,29 +48,32 @@ export class PwaUpdateService {
     });
   }
 
-  /** O usuário aceitou a versão nova: o worker que espera passa a controlar e a página recarrega. */
+  /** O usuário aceitou a versão nova: pede a troca da casca e sempre termina recarregando a página. */
   applyUpdate(): void {
     if (this.applyingUpdate()) return;
     const waiting = this.registration?.waiting;
-    if (!waiting) {
-      this.updateError.set(true);
-      return;
-    }
     this.updateError.set(false);
     this.applyingUpdate.set(true);
     this.applying = true;
-    try {
-      waiting.postMessage({ type: 'SKIP_WAITING' });
-    } catch {
-      this.applying = false;
-      this.applyingUpdate.set(false);
-      this.updateError.set(true);
+    if (waiting) {
+      try {
+        waiting.postMessage({ type: 'SKIP_WAITING' });
+      } catch {
+        // Mesmo se o worker terminou entre a leitura e a mensagem, o recarregamento ainda busca a versão publicada.
+      }
+    } else {
+      // Pode ter chegado uma casca nova entre o aviso e o toque; peça nova busca sem deixar o botão virar um beco sem saída.
+      try {
+        void this.registration?.update()?.catch(() => undefined);
+      } catch {
+        // `update()` é só uma oportunidade extra: o recarregamento abaixo continua sendo o desfecho do toque.
+      }
+    }
+    if (!this.win) {
+      this.reload();
       return;
     }
-    this.activationTimer = this.win?.setTimeout(() => {
-      this.applyingUpdate.set(false);
-      this.updateError.set(true);
-    }, UPDATE_ACTIVATION_TIMEOUT_MS);
+    this.reloadTimer = this.win.setTimeout(() => this.reload(), UPDATE_RELOAD_FALLBACK_MS);
   }
 
   private async register(win: Window): Promise<void> {
@@ -108,11 +112,7 @@ export class PwaUpdateService {
     watchInstalling();
     checkWaiting();
     container.addEventListener('controllerchange', () => {
-      if (this.applying && !this.reloading) {
-        this.reloading = true;
-        if (this.activationTimer) win.clearTimeout(this.activationTimer);
-        win.location.reload();
-      }
+      if (this.applying) this.reload();
     });
     // Pede armazenamento durável para o navegador não limpar a casca e os dados locais por falta de uso.
     void win.navigator.storage?.persist?.().catch(() => undefined);
@@ -129,5 +129,23 @@ export class PwaUpdateService {
       return;
     this.lastUpdateCheckAt = now;
     void this.registration.update().catch(() => undefined);
+  }
+
+  /** Um único caminho de recarregamento protege contra o prazo e `controllerchange` chegarem quase juntos. */
+  private reload(): void {
+    if (this.reloading) return;
+    this.reloading = true;
+    if (this.reloadTimer !== undefined) this.win?.clearTimeout(this.reloadTimer);
+    try {
+      const location = this.win?.location;
+      if (!location) throw new Error('Janela indisponível para recarregar.');
+      location.reload();
+    } catch {
+      // Só mostra erro se o último recurso também falhou; enquanto ele é possível, o toque sempre recarrega.
+      this.reloading = false;
+      this.applying = false;
+      this.applyingUpdate.set(false);
+      this.updateError.set(true);
+    }
   }
 }
