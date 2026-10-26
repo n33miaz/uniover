@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
 using UniOver.Modules.Tv.Features.Selection;
@@ -44,6 +45,7 @@ internal sealed partial class ReorderShortcutsHandler(
     TvDbContext db,
     ITvCurrentSelection selection,
     ITvShortcutReader reader,
+    IAgentPresenceReader presence,
     ITvStreamPublisher stream,
     ITvCommandAudit audit,
     TimeProvider time,
@@ -60,6 +62,8 @@ internal sealed partial class ReorderShortcutsHandler(
         ArgumentNullException.ThrowIfNull(command);
 
         var existing = await db.Shortcuts.Where(s => s.TvId == selection.Current.Id).ToListAsync(cancellationToken);
+        IReadOnlyList<string> capabilities = presence.Get(selection.Current.AgentSlug)?.Capabilities ?? [];
+        existing = existing.Where(shortcut => !ShortcutFamily.IsForeignUninstalled(shortcut, capabilities)).ToList();
         var now = time.GetUtcNow();
         if (!ShortcutCatalog.TryReorder(existing, command.Ids, now, out var changed))
         {
