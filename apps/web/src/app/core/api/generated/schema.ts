@@ -6035,6 +6035,83 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/tv/power/schedule': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PowerScheduleResponse'];
+          };
+        };
+      };
+    };
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['SavePowerScheduleRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PowerScheduleView'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete: {
+      parameters: {
+        query: {
+          version: number | string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/shortcuts': {
     parameters: {
       query?: never;
@@ -7356,6 +7433,22 @@ export interface components {
     PowerOffRequest: {
       mode: null | string;
     };
+    PowerScheduleResponse: {
+      active: null | components['schemas']['PowerScheduleView'];
+      last: null | components['schemas']['PowerScheduleView'];
+    };
+    PowerScheduleView: {
+      /** Format: date-time */
+      dueAtUtc: string;
+      /** Format: uuid */
+      id: string;
+      reason: null | string;
+      result: null | string;
+      status: string;
+      timeZone: string;
+      /** Format: int64 */
+      version: number | string;
+    };
     ProblemDetails: {
       detail?: null | string;
       instance?: null | string;
@@ -7532,6 +7625,13 @@ export interface components {
     };
     RoutineTemplatesResponse: {
       items: components['schemas']['RoutineTemplate'][];
+    };
+    SavePowerScheduleRequest: {
+      /** Format: date-time */
+      dueAtUtc: string;
+      timeZone: null | string;
+      /** Format: int64 */
+      version: null | number | string;
     };
     SelectTrainingProgramRequest: {
       /** Format: date-time */

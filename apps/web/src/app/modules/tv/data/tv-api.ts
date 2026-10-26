@@ -21,6 +21,21 @@ import {
 
 const BASE = `${APP_CONFIG.apiBase}/v1/tv`;
 
+export interface TvPowerSchedule {
+  id: string;
+  dueAtUtc: string;
+  timeZone: string;
+  status: 'pending' | 'dispatching' | 'completed' | 'cancelled';
+  result: string | null;
+  reason: string | null;
+  version: number;
+}
+
+export interface TvPowerScheduleResponse {
+  active: TvPowerSchedule | null;
+  last: TvPowerSchedule | null;
+}
+
 /** Caminho do fluxo de eventos (o cookie de bilhete do `StreamService` é a credencial, nunca um token na URL). */
 export const TV_EVENTS_PATH = `${BASE}/events`;
 
@@ -125,6 +140,36 @@ export class TvApi {
       this.http.post<unknown>(`${BASE}/power/off`, body, this.target()),
     );
     return parsePowerOffOutcome(dto);
+  }
+
+  async powerSchedule(): Promise<TvPowerScheduleResponse> {
+    return firstValueFrom(
+      this.http.get<TvPowerScheduleResponse>(`${BASE}/power/schedule`, this.target()),
+    );
+  }
+
+  async savePowerSchedule(
+    dueAtUtc: string,
+    timeZone: string,
+    version: number | null,
+  ): Promise<TvPowerSchedule> {
+    return firstValueFrom(
+      this.http.put<TvPowerSchedule>(
+        `${BASE}/power/schedule`,
+        { dueAtUtc, timeZone, version },
+        this.target(),
+      ),
+    );
+  }
+
+  async cancelPowerSchedule(version: number): Promise<void> {
+    const target = this.target();
+    await firstValueFrom(
+      this.http.delete(`${BASE}/power/schedule`, {
+        ...target,
+        params: { ...(target.params ?? {}), version: String(version) },
+      }),
+    );
   }
 
   /**

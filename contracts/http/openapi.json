@@ -2123,6 +2123,83 @@
         ],
         "type": "object"
       },
+      "PowerScheduleResponse": {
+        "properties": {
+          "active": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PowerScheduleView"
+              }
+            ]
+          },
+          "last": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PowerScheduleView"
+              }
+            ]
+          }
+        },
+        "required": [
+          "active",
+          "last"
+        ],
+        "type": "object"
+      },
+      "PowerScheduleView": {
+        "properties": {
+          "dueAtUtc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "result": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "timeZone": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "dueAtUtc",
+          "timeZone",
+          "status",
+          "result",
+          "reason",
+          "version"
+        ],
+        "type": "object"
+      },
       "ProblemDetails": {
         "properties": {
           "detail": {
@@ -2911,6 +2988,35 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "SavePowerScheduleRequest": {
+        "properties": {
+          "dueAtUtc": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "timeZone": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "version": {
+            "format": "int64",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "dueAtUtc",
+          "timeZone",
+          "version"
         ],
         "type": "object"
       },
@@ -10581,6 +10687,83 @@
         ]
       }
     },
+    "/api/v1/tv/power/schedule": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "PowerScheduleEndpoint"
+        ]
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PowerScheduleResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PowerScheduleEndpoint"
+        ]
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SavePowerScheduleRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PowerScheduleView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "PowerScheduleEndpoint"
+        ]
+      }
+    },
     "/api/v1/tv/shortcuts": {
       "get": {
         "responses": {
@@ -11379,6 +11562,9 @@
     },
     {
       "name": "PowerOffEndpoint"
+    },
+    {
+      "name": "PowerScheduleEndpoint"
     },
     {
       "name": "LaunchShortcutEndpoint"

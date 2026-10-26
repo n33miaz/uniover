@@ -26,6 +26,8 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
 
     public DbSet<TvLayout> TvLayouts => Set<TvLayout>();
 
+    public DbSet<PowerSchedule> PowerSchedules => Set<PowerSchedule>();
+
     public DbSet<WatchdogEvent> WatchdogEvents => Set<WatchdogEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -117,6 +119,22 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             e.HasKey(x => x.TvId);
             e.Property(x => x.TvId).ValueGeneratedNever();
             e.Property(x => x.Document).HasColumnType("jsonb").IsRequired();
+        });
+
+        modelBuilder.Entity<PowerSchedule>(e =>
+        {
+            e.ToTable("power_schedules");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.AgentSlug).HasMaxLength(ConfiguredTv.AgentSlugMax).IsRequired();
+            e.Property(x => x.TimeZone).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Status).HasMaxLength(20).IsRequired();
+            e.Property(x => x.Result).HasMaxLength(30);
+            e.Property(x => x.Reason).HasMaxLength(40);
+            e.Property(x => x.Version).IsConcurrencyToken();
+            // A unicidade continua valendo com duas instâncias da API criando no mesmo instante.
+            e.HasIndex(x => x.TvId).IsUnique().HasFilter("status IN ('pending', 'dispatching')");
+            e.HasIndex(x => new { x.Status, x.DueAtUtc });
         });
 
         modelBuilder.Entity<WatchdogEvent>(e =>

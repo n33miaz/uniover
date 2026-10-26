@@ -6,6 +6,7 @@ import { SessionState } from '../../../core/session/session-state';
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
 import { TvAccess } from './tv-access';
 import { TvApi, tvEventsPath } from './tv-api';
+import type { TvPowerSchedule } from './tv-api';
 import { TV_CONFIG } from './tv-config';
 import { describeCleanup } from './tv-cleanup';
 import { TvFailure, TvFailureContext, describeFailure, forbiddenMessage } from './tv-errors';
@@ -136,6 +137,9 @@ export class TvStore {
   private readonly _notice = signal<TvNotice | null>(null);
   private readonly _inFlightKeys = signal(0);
   private readonly _cleaning = signal(false);
+  private readonly _powerSchedule = signal<TvPowerSchedule | null>(null);
+  private readonly _lastPowerSchedule = signal<TvPowerSchedule | null>(null);
+  private readonly _powerScheduleLoaded = signal(false);
   /** O último texto gravado em `ICONS_KEY`, para não regravar o mesmo. */
   private iconsSaved = '';
   /** A última lista que o servidor confirmou, guardada enquanto a ordem nova não é confirmada (volta para ela se for recusada). */
@@ -165,6 +169,10 @@ export class TvStore {
   readonly inFlightKeys = computed(() => (this.currentAccount() ? this._inFlightKeys() : 0));
   /** Há uma limpeza da TV em andamento (leva alguns segundos): um pedido por vez, e o resto do controle segue. */
   readonly cleaning = computed(() => this.currentAccount() && this._cleaning());
+  readonly powerSchedule = computed(() => (this.currentAccount() ? this._powerSchedule() : null));
+  readonly lastPowerSchedule = computed(() =>
+    this.currentAccount() ? this._lastPowerSchedule() : null,
+  );
 
   readonly hibernateMinutes = this.config.hibernateMinutes;
 
@@ -173,6 +181,14 @@ export class TvStore {
   readonly selectedTv = this.selection.selected;
   /** O agente desta TV desliga com leitura: só aperta `POWER` com a TV lida como ligada e confirma o resultado. */
   readonly safePowerOff = computed(() => tvCanPowerOffSafely(this.selection.selected()));
+  readonly canSchedulePowerOff = computed(
+    () =>
+      this._powerScheduleLoaded() &&
+      this.access.power() &&
+      this.safePowerOff() &&
+      this.selection.selected()?.online === true &&
+      this.link() === 'ok',
+  );
   /** Há mais de uma TV: só então o título vira seletor. */
   readonly multiple = this.selection.multiple;
 
@@ -542,6 +558,57 @@ export class TvStore {
     }
   }
 
+  async refreshPowerSchedule(): Promise<void> {
+    const epoch = this.begin();
+    if (!this.access.power() || this.account === null || this.link() !== 'ok') return;
+    try {
+      const response = await this.api.powerSchedule();
+      if (this.live(epoch)) {
+        this._powerSchedule.set(response.active);
+        this._lastPowerSchedule.set(response.last);
+        this._powerScheduleLoaded.set(true);
+      }
+    } catch {
+      // A folha ainda permite desligar agora; a próxima abertura tenta ler de novo.
+    }
+  }
+
+  async savePowerSchedule(dueAtUtc: string, timeZone: string): Promise<TvFailure | null> {
+    const epoch = this.begin();
+    if (!this.access.power()) return forbidden();
+    if (!this.canSchedulePowerOff() || this.account === null)
+      return {
+        kind: 'agent-offline',
+        message: this.disabledReason() ?? '',
+        retryAfterSeconds: null,
+      };
+    try {
+      const saved = await this.api.savePowerSchedule(
+        dueAtUtc,
+        timeZone,
+        this._powerSchedule()?.version ?? null,
+      );
+      if (this.live(epoch)) this._powerSchedule.set(saved);
+      return null;
+    } catch (error) {
+      return describeFailure(error);
+    }
+  }
+
+  async cancelPowerSchedule(): Promise<TvFailure | null> {
+    const epoch = this.begin();
+    if (!this.access.power()) return forbidden();
+    const active = this._powerSchedule();
+    if (!active) return null;
+    try {
+      await this.api.cancelPowerSchedule(active.version);
+      if (this.live(epoch)) this._powerSchedule.set(null);
+      return null;
+    } catch (error) {
+      return describeFailure(error);
+    }
+  }
+
   /**
    * Abre o app na TV. Vale para qualquer app instalado, esteja ele fixado no controle ou não: `enabled` só decide quem
    * aparece na fileira de atalhos. Um app que saiu da TV não tem o que abrir (a API também o recusa).
@@ -861,6 +928,9 @@ export class TvStore {
     this._watchdog.set(null);
     this._notConfigured.set(false);
     this._cleaning.set(false);
+    this._powerSchedule.set(null);
+    this._lastPowerSchedule.set(null);
+    this._powerScheduleLoaded.set(false);
     this._inFlightKeys.set(0);
     this.reorderBase = null;
     this.reorderWanted = null;

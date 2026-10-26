@@ -12,4 +12,6 @@ internal static class TvAgentCodes
 {
     /// <summary>A TV já estava desligada: o agente não enviou tecla nenhuma.</summary>
     public const string AlreadyOff = "already_off";
+    public const string Uncertain = "uncertain";
+    public const string Offline = "offline";
 }

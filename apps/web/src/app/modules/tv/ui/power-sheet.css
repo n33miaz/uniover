@@ -69,15 +69,67 @@ h2 {
   color: var(--a-ink2);
 }
 
-/* Linha de aviso, não de ação: sem hover nem estado de toque (não é um botão). */
+/* Os atalhos dividem a largura da folha sem apertar os alvos de toque. */
 .schedule {
   flex: none;
   box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
 }
-.schedule .ui-row-title {
+.schedule h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.schedule button,
+.schedule input {
+  min-height: 44px;
+  font: inherit;
+  border-radius: var(--radius);
+}
+.schedule button {
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.schedule button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.schedule-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.schedule-presets button {
+  border: 1px solid var(--a-line);
+  background: var(--a-surface);
+  color: var(--a-ink);
+}
+.schedule-confirm {
+  border: 0;
+  background: var(--a-accent);
+  color: var(--a-on-accent);
+}
+.schedule-result {
+  margin: 0;
+  font-size: 0.85rem;
   color: var(--a-ink2);
 }
-
+.day-time {
+  font-size: 0.9rem;
+}
+.schedule input {
+  max-width: 100%;
+  padding: 0 8px;
+  border: 1px solid var(--a-line);
+  background: var(--a-surface);
+  color: var(--a-ink);
+}
+.schedule :focus-visible {
+  outline: 2px solid var(--a-accent);
+  outline-offset: 2px;
+}
 .sr-only {
   position: absolute;
   width: 1px;
