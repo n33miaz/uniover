@@ -2,6 +2,7 @@ import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
+import { SessionState } from '../../../core/session/session-state';
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
 import { TvAccess } from './tv-access';
 import { TvApi, tvEventsPath } from './tv-api';
@@ -41,15 +42,31 @@ export interface TvNotice {
 /** Limite do texto digitado, o mesmo da API (caracteres Unicode, não unidades UTF-16). */
 export const TV_TEXT_MAX = 200;
 
+/**
+ * O último estado visto da TV. Cada conta guarda o seu (`tvStateCacheKey`): a chave sem conta, de antes, não dizia de quem
+ * era o estado, e a TV padrão é a mesma para todas as contas, então a conta seguinte a receberia. Hoje ela só se descarta.
+ */
 const CACHE_KEY = 'uniover.tv.last-state';
 /**
- * Os ícones dos apps ficam numa chave só deles: cada um pode ter ~44 mil caracteres e o estado é regravado a cada
- * mudança de volume, então dentro do estado eles pesariam a cada toque (e uma lista cheia estouraria a cota do
- * navegador, levando junto o "visto às"). Aqui a gravação só acontece quando a lista muda, e tem teto.
+ * Os ícones dos apps ficam numa chave só deles (também por conta, `tvIconsCacheKey`; a de antes só se descarta): cada um
+ * pode ter ~44 mil caracteres e o estado é regravado a cada mudança de volume, então dentro do estado eles pesariam a cada
+ * toque (e uma lista cheia estouraria a cota do navegador, levando junto o "visto às"). Aqui a gravação só acontece quando
+ * a lista muda, e tem teto.
  */
 const ICONS_KEY = 'uniover.tv.app-icons';
 /** Teto, em caracteres de base64, do que se guarda de ícones: cerca de 1 MB, bem abaixo da cota de 5 MB do navegador. */
 export const ICONS_CACHE_MAX_CHARS = 1_000_000;
+
+/** Onde fica, por conta, o último estado visto da TV (o mesmo padrão das preferências e da escolha da TV). */
+export function tvStateCacheKey(accountId: string): string {
+  return `${CACHE_KEY}.${encodeURIComponent(accountId)}`;
+}
+
+/** Onde ficam, por conta, os ícones dos apps guardados à parte do estado. */
+export function tvIconsCacheKey(accountId: string): string {
+  return `${ICONS_KEY}.${encodeURIComponent(accountId)}`;
+}
+
 const STREAM_EVENTS = [
   TV_STREAM_EVENTS.state,
   TV_STREAM_EVENTS.shortcuts,
@@ -92,6 +109,12 @@ export function isValidTvText(text: string): boolean {
  * Com várias TVs (`TvSelection`) o estado, os atalhos e o fluxo são os da TV escolhida. Trocar de TV (`selectTv`) apaga na
  * hora o que se sabia da anterior (a tela volta a "conectando" até a nova responder), reabre o fluxo na nova e descarta
  * qualquer resposta que ainda chegue da antiga: cada chamada assíncrona confere a `epoch` do instante em que saiu.
+ *
+ * O mesmo vale para a conta da sessão. O store é único para o app inteiro, então sair e entrar noutra conta sem recarregar
+ * a página o deixaria com o estado, os atalhos, a lista de TVs e o último estado guardado da conta anterior. Quando a conta
+ * (`SessionState.accountId`) muda, o store esquece tudo, fecha o fluxo e descarta o que ainda estiver em voo; a tela só volta a
+ * pedir algo ao servidor depois de a lista de TVs da conta nova chegar. O que se guarda no aparelho (último estado e ícones)
+ * é de uma conta só: sem rede, nunca se mostra o que outra conta deixou.
  */
 @Injectable({ providedIn: 'root' })
 export class TvStore {
@@ -102,6 +125,7 @@ export class TvStore {
   private readonly doc = inject(DOCUMENT);
   private readonly access = inject(TvAccess);
   private readonly selection = inject(TvSelection);
+  private readonly session = inject(SessionState);
 
   private readonly _state = signal<TvState | null>(null);
   private readonly _seenAt = signal<number | null>(null);
@@ -123,15 +147,24 @@ export class TvStore {
   /** A lista que chegou do servidor durante o envio, à espera: aplicada por cima, a tela piscaria de volta à ordem de um passo atrás. */
   private heldShortcuts: TvShortcut[] | null = null;
 
-  readonly state = this._state.asReadonly();
-  readonly shortcuts = this._shortcuts.asReadonly();
-  readonly watchdog = this._watchdog.asReadonly();
-  readonly notConfigured = this._notConfigured.asReadonly();
-  readonly streamStatus = this._streamStatus.asReadonly();
-  readonly notice = this._notice.asReadonly();
-  readonly inFlightKeys = this._inFlightKeys.asReadonly();
+  /** Invalida os sinais públicos quando a referência de conta em memória muda. */
+  private readonly accountEpoch = signal(0);
+  /** Nada de uma conta anterior fica visível até a troca ser sincronizada, inclusive antes do próximo ciclo do Angular. */
+  private readonly currentAccount = computed(() => {
+    this.accountEpoch();
+    return this.session.accountId() === this.account;
+  });
+  readonly state = computed(() => (this.currentAccount() ? this._state() : null));
+  readonly shortcuts = computed(() => (this.currentAccount() ? this._shortcuts() : null));
+  readonly watchdog = computed(() => (this.currentAccount() ? this._watchdog() : null));
+  readonly notConfigured = computed(() => this.currentAccount() && this._notConfigured());
+  readonly streamStatus = computed<TvStreamStatus>(() =>
+    this.currentAccount() ? this._streamStatus() : 'connecting',
+  );
+  readonly notice = computed(() => (this.currentAccount() ? this._notice() : null));
+  readonly inFlightKeys = computed(() => (this.currentAccount() ? this._inFlightKeys() : 0));
   /** Há uma limpeza da TV em andamento (leva alguns segundos): um pedido por vez, e o resto do controle segue. */
-  readonly cleaning = this._cleaning.asReadonly();
+  readonly cleaning = computed(() => this.currentAccount() && this._cleaning());
 
   readonly hibernateMinutes = this.config.hibernateMinutes;
 
@@ -144,7 +177,7 @@ export class TvStore {
   readonly multiple = this.selection.multiple;
 
   /** Hora (HH:MM) em que esta tela recebeu o último estado; é o "visto às" mostrado sem rede. */
-  readonly seenAtText = computed(() => clockText(this._seenAt()));
+  readonly seenAtText = computed(() => (this.currentAccount() ? clockText(this._seenAt()) : null));
 
   readonly link = computed<TvLink>(() => {
     if (!this.connectivity.online() || this.connectivity.serverState() === 'offline')
@@ -154,6 +187,7 @@ export class TvStore {
 
   /** O que o último estado recebido diz (`null` se nunca chegou um); vale também sem rede, como "visto às". */
   readonly lastKnownStatus = computed<TvStatus | null>(() => {
+    if (!this.currentAccount()) return null;
     const state = this._state();
     if (!state) return null;
     if (!state.agentOnline || state.connection === 'disconnected') return 'agent-off';
@@ -163,13 +197,19 @@ export class TvStore {
   readonly status = computed<TvStatus>(() => {
     if (this.link() === 'offline') return 'offline';
     if (this.link() === 'waking') return 'waking';
-    if (this._notConfigured()) return 'unconfigured';
+    if (this.currentAccount() && this._notConfigured()) return 'unconfigured';
     return this.lastKnownStatus() ?? 'loading';
   });
 
   /** Dá para mandar comando: há rede, há agente configurado e ele não foi dado como desligado. */
   readonly canSend = computed(
-    () => this.link() === 'ok' && !this._notConfigured() && this._state()?.agentOnline !== false,
+    () =>
+      this.currentAccount() &&
+      this.account !== null &&
+      !this.listFirst() &&
+      this.link() === 'ok' &&
+      !this._notConfigured() &&
+      this._state()?.agentOnline !== false,
   );
 
   /** Por que os botões estão desabilitados (sem falsa promessa); `null` quando estão ativos. */
@@ -185,7 +225,7 @@ export class TvStore {
       case 'waking':
         return $localize`:@@tv.reason.waking:O servidor está acordando. Os botões voltam em instantes.`;
       default:
-        return this._notConfigured()
+        return this.currentAccount() && this._notConfigured()
           ? $localize`:@@tv.reason.not-configured:Nenhum agente foi configurado para controlar a TV.`
           : $localize`:@@tv.reason.agent-off:O agente da TV está desligado, então os botões não funcionam agora.`;
     }
@@ -193,7 +233,7 @@ export class TvStore {
 
   /** "controle religado às HH:MM" quando o vigia consertou o serviço; `null` sem evento recente. */
   readonly watchdogNote = computed<string | null>(() => {
-    const entry = this._watchdog();
+    const entry = this.watchdog();
     if (!entry) return null;
     const time = clockText(entry.at);
     if (!time) return null;
@@ -207,6 +247,14 @@ export class TvStore {
   });
 
   private started = false;
+  /** A conta de quem são o estado, a lista de TVs e o fluxo de agora (`null` = nenhuma): é a dona das chaves do aparelho. */
+  private account: string | null = this.session.accountId();
+  /** Já houve uma conta aqui: a seguinte espera a lista de TVs dela antes de pedir qualquer coisa. */
+  private served = this.account !== null;
+  /** Entrou outra conta e a lista de TVs dela ainda não chegou: nenhuma chamada automática sai antes disso. */
+  private readonly listFirst = signal(false);
+  /** A lista da conta nova está a caminho (um pedido só, mesmo que `connect` seja chamado de novo). */
+  private listing = false;
   /**
    * Conta as trocas de TV. Toda chamada assíncrona guarda o valor de quando saiu e, ao voltar, só aplica o resultado se
    * ele continua o mesmo: uma resposta da TV anterior nunca cai na atual.
@@ -224,6 +272,7 @@ export class TvStore {
 
   private readonly onVisibility = () => {
     if (this.visible()) {
+      this.connect();
       void this.wake();
       void this.refresh();
       this.armWake();
@@ -232,6 +281,7 @@ export class TvStore {
     }
   };
   private readonly onOnline = () => {
+    this.connect();
     void this.refresh();
     void this.wake();
   };
@@ -243,7 +293,10 @@ export class TvStore {
     effect(() => {
       const view = this.access.view();
       const control = this.access.control();
+      // A conta também move o efeito: com a tela aberta, outra aba pode ter trocado de conta e esta página renovado a sessão com ela.
+      this.session.accountId();
       untracked(() => {
+        this.syncAccount();
         if (!this.started) return;
         if (!view) this.disconnect();
         else if (!this.connected) this.connect();
@@ -255,8 +308,10 @@ export class TvStore {
 
   start(): void {
     if (this.started) return;
+    this.syncAccount();
     this.started = true;
     this._streamStatus.set('connecting');
+    this.discardLegacyCaches();
     this.resolvedId = this.selection.tvId();
     this.hydrate();
     this.doc.addEventListener('visibilitychange', this.onVisibility);
@@ -273,8 +328,51 @@ export class TvStore {
     clearTimeout(this.noticeTimer);
   }
 
-  /** Abre o fluxo, busca o estado e os atalhos e começa a aquecer. Sem permissão de ver a TV não faz nada. */
+  /**
+   * Abre o fluxo, busca o estado e os atalhos e começa a aquecer. Sem permissão de ver a TV, ou sem conta, não faz nada. Se
+   * entrou outra conta, antes busca a lista de TVs dela (`openAfterList`).
+   */
   private connect(): void {
+    if (
+      this.connected ||
+      this.listing ||
+      !this.started ||
+      !this.access.view() ||
+      this.account === null
+    ) {
+      return;
+    }
+    if (this.listFirst()) {
+      void this.openAfterList();
+      return;
+    }
+    this.open();
+  }
+
+  /**
+   * Com a conta nova, a primeira coisa pedida é a lista de TVs dela: só com ela se sabe qual TV abrir. Se ela não vier, não
+   * abre o fluxo nem manda comandos sem alvo conhecido; a próxima volta de rede tenta a lista de novo. Uma troca de conta no
+   * meio da espera descarta o resultado: a conta seguinte faz o próprio pedido.
+   */
+  private async openAfterList(): Promise<void> {
+    this.listing = true;
+    const epoch = this.epoch;
+    try {
+      if (this.link() === 'offline') return;
+      const list = await this.fetchTvs();
+      if (!this.live(epoch)) return;
+      if (!list) return;
+      this.selection.setTvs(list);
+    } finally {
+      if (epoch === this.epoch) this.listing = false;
+    }
+    if (!this.started) return;
+    this.listFirst.set(false);
+    this.resolvedId = this.selection.tvId();
+    this.open();
+  }
+
+  private open(): void {
     if (this.connected || !this.started || !this.access.view()) return;
     this.connected = true;
     this._streamStatus.set('connecting');
@@ -299,19 +397,26 @@ export class TvStore {
 
   /** Busca de novo o estado e os atalhos (abertura da tela, volta da rede, volta de aba oculta). */
   async refresh(): Promise<void> {
-    if (this.link() === 'offline' || !this.access.view()) return;
-    const epoch = this.epoch;
+    const epoch = this.begin();
+    if (
+      this.link() === 'offline' ||
+      !this.access.view() ||
+      this.account === null ||
+      this.listFirst()
+    ) {
+      return;
+    }
     const [tvs, state, shortcuts] = await Promise.allSettled([
       this.fetchTvs(),
       this.api.state(),
       this.api.shortcuts(),
     ]);
-    if (epoch !== this.epoch) return;
+    if (!this.live(epoch)) return;
     if (tvs.status === 'fulfilled' && tvs.value) {
       this.selection.setTvs(tvs.value);
       this.reconcile();
       // A lista mostrou que a TV pedida não é a certa: o que veio é de outra, e a troca já buscou o da certa.
-      if (epoch !== this.epoch) return;
+      if (!this.live(epoch)) return;
     }
     if (state.status === 'fulfilled') this.applyState(state.value);
     if (shortcuts.status === 'fulfilled') this.receiveShortcuts(shortcuts.value);
@@ -322,6 +427,7 @@ export class TvStore {
    * e busca o da nova; escolher a que já está em uso não faz nada.
    */
   selectTv(id: string): void {
+    this.syncAccount();
     if (id === this.selection.selected()?.id) return;
     this.selection.select(id);
     this.reconcile();
@@ -332,34 +438,44 @@ export class TvStore {
    * recusa o pedido de quem não tem `tv:control`); falha não vira aviso.
    */
   async wake(): Promise<void> {
-    if (!this.visible() || this.link() !== 'ok' || !this.access.control()) return;
+    const epoch = this.begin();
+    if (
+      !this.visible() ||
+      this.link() !== 'ok' ||
+      !this.access.control() ||
+      this.account === null ||
+      this.listFirst()
+    ) {
+      return;
+    }
     // Com o agente fora do ar não há o que aquecer (e cada pedido recusado ocuparia a trilha de comandos): a volta
     // dele chega pelo fluxo, e a leitura periódica do estado cobre o fluxo caído.
     if (this._state()?.agentOnline === false) return;
-    const epoch = this.epoch;
     try {
       await this.api.wake();
-      if (epoch === this.epoch) this._notConfigured.set(false);
+      if (this.live(epoch)) this._notConfigured.set(false);
     } catch (error) {
-      if (epoch === this.epoch) this.absorb(describeFailure(error));
+      if (this.live(epoch)) this.absorb(describeFailure(error));
     }
   }
 
   /** Manda uma tecla. Devolve `true` se a TV confirmou; em falha o aviso já foi mostrado e a repetição deve parar. */
   async sendKey(key: TvKey): Promise<boolean> {
-    if (!this.canSend() || !this.access.control()) return false;
-    const epoch = this.epoch;
+    const epoch = this.begin();
+    if (!this.canSend() || !this.access.control() || this.account === null || this.listFirst()) {
+      return false;
+    }
     this._inFlightKeys.update((count) => count + 1);
     try {
       await this.api.sendKey(key);
-      if (epoch === this.epoch && this._notice()?.kind === 'error') this.clearNotice();
+      if (this.live(epoch) && this._notice()?.kind === 'error') this.clearNotice();
       return true;
     } catch (error) {
-      if (epoch === this.epoch) this.fail(error);
+      if (this.live(epoch)) this.fail(error);
       return false;
     } finally {
       // A troca de TV já zerou o contador: só a tecla da TV de agora o desconta.
-      if (epoch === this.epoch) this._inFlightKeys.update((count) => count - 1);
+      if (this.live(epoch)) this._inFlightKeys.update((count) => count - 1);
     }
   }
 
@@ -370,8 +486,9 @@ export class TvStore {
    * (que também atualiza o que se sabe do agente, como `agent-offline`).
    */
   async sendText(text: string): Promise<TvFailure | null> {
+    const epoch = this.begin();
     if (!this.access.text()) return forbidden();
-    if (!this.canSend()) {
+    if (!this.canSend() || this.account === null || this.listFirst()) {
       return {
         kind: 'agent-offline',
         message: this.disabledReason() ?? '',
@@ -385,13 +502,12 @@ export class TvStore {
         retryAfterSeconds: null,
       };
     }
-    const epoch = this.epoch;
     try {
       await this.api.sendText(text);
       return null;
     } catch (error) {
       const failure = describeFailure(error);
-      if (epoch === this.epoch) this.absorb(failure);
+      if (this.live(epoch)) this.absorb(failure);
       return failure;
     }
   }
@@ -405,23 +521,23 @@ export class TvStore {
    * saber o que o agente faz, segue o pedido de antes.
    */
   async powerOff(): Promise<TvFailure | null> {
+    const epoch = this.begin();
     if (!this.access.power()) return forbidden();
-    if (!this.canSend()) {
+    if (!this.canSend() || this.account === null || this.listFirst()) {
       return {
         kind: 'agent-offline',
         message: this.disabledReason() ?? '',
         retryAfterSeconds: null,
       };
     }
-    const epoch = this.epoch;
     const safe = this.safePowerOff();
     try {
       const outcome = await this.api.powerOff(safe);
-      if (epoch === this.epoch) this.showNotice('info', powerOffNotice(outcome));
+      if (this.live(epoch)) this.showNotice('info', powerOffNotice(outcome));
       return null;
     } catch (error) {
       const failure = describeFailure(error, safe ? 'power-off' : undefined);
-      if (epoch === this.epoch) this.absorb(failure);
+      if (this.live(epoch)) this.absorb(failure);
       return failure;
     }
   }
@@ -431,17 +547,25 @@ export class TvStore {
    * aparece na fileira de atalhos. Um app que saiu da TV não tem o que abrir (a API também o recusa).
    */
   async launch(shortcut: TvShortcut): Promise<boolean> {
-    if (!this.canSend() || !shortcut.installed || !this.access.launch()) return false;
-    const epoch = this.epoch;
+    const epoch = this.begin();
+    if (
+      !this.canSend() ||
+      !shortcut.installed ||
+      !this.access.launch() ||
+      this.account === null ||
+      this.listFirst()
+    ) {
+      return false;
+    }
     try {
       await this.api.launch(shortcut.id);
-      if (epoch === this.epoch) {
+      if (this.live(epoch)) {
         const name = shortcutLabel(shortcut);
         this.showNotice('info', $localize`:@@tv.apps.launched:${name}:name: aberto na TV.`);
       }
       return true;
     } catch (error) {
-      if (epoch === this.epoch) this.fail(error);
+      if (this.live(epoch)) this.fail(error);
       return false;
     }
   }
@@ -452,35 +576,45 @@ export class TvStore {
    * mostrado. Não trava o resto do controle: só `cleaning` muda enquanto espera.
    */
   async cleanup(): Promise<boolean> {
-    if (!this.canSend() || this._cleaning() || !this.access.cleanup()) return false;
-    const epoch = this.epoch;
+    const epoch = this.begin();
+    if (
+      !this.canSend() ||
+      this._cleaning() ||
+      !this.access.cleanup() ||
+      this.account === null ||
+      this.listFirst()
+    ) {
+      return false;
+    }
     this._cleaning.set(true);
     try {
       const result = await this.api.cleanup();
-      if (epoch === this.epoch) this.showNotice('info', describeCleanup(result));
+      if (this.live(epoch)) this.showNotice('info', describeCleanup(result));
       return true;
     } catch (error) {
-      if (epoch === this.epoch) this.fail(error, 'cleanup');
+      if (this.live(epoch)) this.fail(error, 'cleanup');
       return false;
     } finally {
       // A limpeza da TV anterior já foi desligada na troca; a flag agora pode ser de uma limpeza da atual.
-      if (epoch === this.epoch) this._cleaning.set(false);
+      if (this.live(epoch)) this._cleaning.set(false);
     }
   }
 
   async refreshShortcuts(): Promise<boolean> {
-    if (!this.canSend() || !this.access.launch()) return false;
-    const epoch = this.epoch;
+    const epoch = this.begin();
+    if (!this.canSend() || !this.access.launch() || this.account === null || this.listFirst()) {
+      return false;
+    }
     try {
       await this.api.refreshShortcuts();
       // A lista nova chega pelo fluxo; buscar de novo cobre o caso de o fluxo estar reconectando.
       const list = await this.api.shortcuts();
-      if (epoch !== this.epoch) return true;
+      if (!this.live(epoch)) return true;
       this.receiveShortcuts(list);
       this.showNotice('info', $localize`:@@tv.apps.refreshed:Lista de apps atualizada.`);
       return true;
     } catch (error) {
-      if (epoch === this.epoch) this.fail(error);
+      if (this.live(epoch)) this.fail(error);
       return false;
     }
   }
@@ -502,8 +636,9 @@ export class TvStore {
    * sem agente.
    */
   async reorder(ids: readonly string[]): Promise<boolean> {
+    this.begin();
     if (!this.access.editShortcuts()) return false;
-    if (this.link() !== 'ok') {
+    if (this.link() !== 'ok' || this.account === null || this.listFirst()) {
       this.showNotice('error', this.disabledReason() ?? '');
       return false;
     }
@@ -527,34 +662,34 @@ export class TvStore {
     id: string,
     change: { customLabel?: string; enabled?: boolean },
   ): Promise<boolean> {
+    const epoch = this.begin();
     if (!this.access.editShortcuts()) return false;
-    if (this.link() !== 'ok') {
+    if (this.link() !== 'ok' || this.account === null || this.listFirst()) {
       this.showNotice('error', this.disabledReason() ?? '');
       return false;
     }
-    const epoch = this.epoch;
     try {
       const updated = await this.api.updateShortcut(id, change);
-      if (epoch !== this.epoch) return true;
+      if (!this.live(epoch)) return true;
       this._shortcuts.update(
         (list) => list?.map((item) => (item.id === id ? updated : item)) ?? list,
       );
       return true;
     } catch (error) {
-      if (epoch === this.epoch) this.fail(error);
+      if (this.live(epoch)) this.fail(error);
       return false;
     }
   }
 
   private async runReorder(): Promise<boolean> {
-    const epoch = this.epoch;
+    const epoch = this.begin();
     try {
       while (this.reorderWanted) {
         const ids = this.reorderWanted;
         this.reorderWanted = null;
         const confirmedNow = await this.api.reorderShortcuts(ids);
         // Trocou de TV no meio do envio: a ordem confirmada é a da outra, e o estado de ordem já foi zerado na troca.
-        if (epoch !== this.epoch) return false;
+        if (!this.live(epoch)) return false;
         this.reorderBase = confirmedNow;
       }
       // Tudo confirmado: vale a lista que o servidor devolveu (renumerada por ele). Nada se espera entre aqui e o fim,
@@ -569,7 +704,7 @@ export class TvStore {
       if (confirmed && held && !sameShortcuts(held, confirmed)) void this.resyncShortcuts();
       return true;
     } catch (error) {
-      if (epoch !== this.epoch) return false;
+      if (!this.live(epoch)) return false;
       const base = this.reorderBase;
       this.reorderBase = null;
       this.reorderWanted = null;
@@ -580,7 +715,7 @@ export class TvStore {
       return false;
     } finally {
       // Depois da troca `reorderRun` já é de outra rodada (ou de nenhuma): só a rodada da TV de agora o limpa.
-      if (epoch === this.epoch) this.reorderRun = null;
+      if (this.live(epoch)) this.reorderRun = null;
     }
   }
 
@@ -598,10 +733,11 @@ export class TvStore {
   }
 
   private async resyncShortcuts(): Promise<void> {
-    const epoch = this.epoch;
+    const epoch = this.begin();
+    if (this.link() !== 'ok' || this.account === null || this.listFirst()) return;
     try {
       const list = await this.api.shortcuts();
-      if (epoch === this.epoch) this.receiveShortcuts(list);
+      if (this.live(epoch)) this.receiveShortcuts(list);
     } catch {
       // sem rede agora: o fluxo ou a próxima busca trazem a lista certa
     }
@@ -617,6 +753,8 @@ export class TvStore {
   }
 
   private onEvent(event: StreamEvent): void {
+    // Um evento do fluxo da conta anterior que ainda chegue depois da troca é dela, não da atual.
+    if (this.syncAccount()) return;
     switch (event.type) {
       case 'open':
         this._streamStatus.set('live');
@@ -670,9 +808,17 @@ export class TvStore {
 
   /** Renova a lista de TVs (os pontos de estado e o que cada uma oferece); o seletor chama ao abrir. */
   async refreshTvs(): Promise<void> {
-    const epoch = this.epoch;
+    const epoch = this.begin();
+    if (
+      this.link() === 'offline' ||
+      !this.access.view() ||
+      this.account === null ||
+      this.listFirst()
+    ) {
+      return;
+    }
     const list = await this.fetchTvs();
-    if (list && epoch === this.epoch) {
+    if (list && this.live(epoch)) {
       this.selection.setTvs(list);
       this.reconcile();
     }
@@ -696,6 +842,18 @@ export class TvStore {
   /** Esquece tudo o que era da TV anterior e passa a falar com a nova (fluxo reaberto, estado e atalhos buscados de novo). */
   private switchTo(target: string): void {
     this.resolvedId = target;
+    this.forget();
+    if (!this.connected) return;
+    this.disconnect();
+    this._streamStatus.set('connecting');
+    this.connect();
+  }
+
+  /**
+   * Esquece o que se sabia (estado, atalhos, avisos, ordem em andamento) e passa a descartar o que ainda estiver em voo: a
+   * `epoch` muda, e cada chamada confere a do instante em que saiu. Serve tanto à troca de TV quanto à de conta.
+   */
+  private forget(): void {
     this.epoch++;
     this._state.set(null);
     this._seenAt.set(null);
@@ -709,10 +867,60 @@ export class TvStore {
     this.reorderRun = null;
     this.heldShortcuts = null;
     this.clearNotice();
-    if (!this.connected) return;
+  }
+
+  /**
+   * A conta da sessão ainda é a do que o store guarda? Se mudou (outra pessoa entrou na mesma página, ou outra aba trocou
+   * de conta), esquece tudo da anterior na hora: fecha o fluxo, descarta o que estava em voo, zera a lista de TVs (feita no
+   * `TvSelection`) e, com a tela aberta e uma conta nova, pede primeiro a lista de TVs dela. Devolve se mudou.
+   *
+   * É síncrono de propósito: toda resposta atrasada confere a conta antes de ser aplicada (`live`), então não depende de um
+   * efeito já ter rodado. O que vai para o aparelho usa `account` (a dona do que está na memória), nunca a conta lida na hora.
+   */
+  private syncAccount(): boolean {
+    const next = this.session.accountId();
+    if (next === this.account) return false;
+    if (this.account !== null) this.served = true;
+    this.account = next;
+    this.accountEpoch.update((value) => value + 1);
+    this.forget();
+    this.resolvedId = null;
+    this.iconsSaved = '';
+    this.listing = false;
+    // A primeira conta de uma página que nasce já identificada não espera: não havia nada de outra para esquecer.
+    this.listFirst.set(next !== null && this.served);
     this.disconnect();
     this._streamStatus.set('connecting');
-    this.connect();
+    this.discardLegacyCaches();
+    if (this.started) {
+      this.hydrate();
+      this.connect();
+    }
+    return true;
+  }
+
+  /** Começa uma chamada: confere a conta e devolve a `epoch` com que ela vai ser conferida na volta. */
+  private begin(): number {
+    this.syncAccount();
+    return this.epoch;
+  }
+
+  /** O resultado que voltou ainda vale: nem a TV nem a conta mudaram desde que a chamada saiu. */
+  private live(epoch: number): boolean {
+    this.syncAccount();
+    return epoch === this.epoch;
+  }
+
+  /** As chaves sem conta, de antes, não dizem de quem é o que guardam: ninguém as lê, e a primeira partida com conta as apaga. */
+  private discardLegacyCaches(): void {
+    if (this.account === null) return;
+    try {
+      const storage = this.doc.defaultView?.localStorage;
+      storage?.removeItem(CACHE_KEY);
+      storage?.removeItem(ICONS_KEY);
+    } catch {
+      // armazenamento bloqueado: não há o que apagar nem o que vazar
+    }
   }
 
   /** Fatos que uma falha revela sobre o agente (sem aviso): o estado verdadeiro continua vindo do servidor. */
@@ -760,9 +968,9 @@ export class TvStore {
   private hydrate(): void {
     // Só vale como "último estado visto" quando não há rede: com rede, o estado novo chega em instantes e um
     // estado antigo, mesmo por um segundo, contaria uma história velha.
-    if (this._state() || this.link() !== 'offline') return;
+    if (this._state() || this.link() !== 'offline' || this.account === null) return;
     try {
-      const raw = this.doc.defaultView?.localStorage.getItem(CACHE_KEY);
+      const raw = this.doc.defaultView?.localStorage.getItem(tvStateCacheKey(this.account));
       if (!raw) return;
       const cached = JSON.parse(raw) as Partial<CachedTv>;
       // O último estado guardado é de uma TV só: o de outra nunca vale como o desta.
@@ -780,12 +988,15 @@ export class TvStore {
   private persist(): void {
     const state = this._state();
     const seenAt = this._seenAt();
-    if (!state || seenAt === null) return;
+    if (this.account === null || !state || seenAt === null) return;
     try {
       // Sem os ícones (ver `ICONS_KEY`): o estado cabe sempre, qualquer que seja o tamanho deles.
       const shortcuts = this._shortcuts()?.map((item) => ({ ...item, iconDataUri: null })) ?? null;
       const cached: CachedTv = { tv: this.selection.scope(), state, seenAt, shortcuts };
-      this.doc.defaultView?.localStorage.setItem(CACHE_KEY, JSON.stringify(cached));
+      this.doc.defaultView?.localStorage.setItem(
+        tvStateCacheKey(this.account),
+        JSON.stringify(cached),
+      );
     } catch {
       // sem armazenamento: o estado só vive nesta tela
     }
@@ -793,6 +1004,7 @@ export class TvStore {
 
   /** Guarda os ícones da lista (os primeiros que couberem no teto); não regrava se nada mudou. */
   private persistIcons(list: TvShortcut[]): void {
+    if (this.account === null) return;
     const icons: Record<string, string> = {};
     let used = 0;
     for (const item of list) {
@@ -807,7 +1019,7 @@ export class TvStore {
     );
     if (text === this.iconsSaved) return;
     try {
-      this.doc.defaultView?.localStorage.setItem(ICONS_KEY, text);
+      this.doc.defaultView?.localStorage.setItem(tvIconsCacheKey(this.account), text);
       this.iconsSaved = text;
     } catch {
       // sem armazenamento ou sem espaço: sem ícones ao abrir sem rede (aparece a inicial), o resto segue igual
@@ -816,10 +1028,10 @@ export class TvStore {
 
   /** Devolve à lista guardada os ícones guardados à parte (a tela offline mostra os mesmos azulejos). */
   private withCachedIcons(list: TvShortcut[] | null): TvShortcut[] | null {
-    if (!list) return null;
+    if (!list || this.account === null) return null;
     let icons: Record<string, unknown> = {};
     try {
-      const raw = this.doc.defaultView?.localStorage.getItem(ICONS_KEY);
+      const raw = this.doc.defaultView?.localStorage.getItem(tvIconsCacheKey(this.account));
       const parsed: unknown = raw ? JSON.parse(raw) : null;
       if (parsed && typeof parsed === 'object') icons = parsed as Record<string, unknown>;
     } catch {

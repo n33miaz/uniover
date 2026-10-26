@@ -76,16 +76,37 @@ internal sealed class ProgressPhotoHandler(TrainingDbContext db, IProgressPhotoO
             .SingleOrDefaultAsync(cancellationToken);
         if (row is null || row.UserId != userId || row.State == "deleted")
             return new ProgressPhotoWriteResult(ProgressPhotoWriteStatus.NotFound);
+        // A consulta de trava pode devolver a instância pendente já rastreada antes da transação. Recarrega depois de
+        // adquirir a trava para não subir o JPEG se a exclusão confirmou a lápide nesse intervalo.
+        await db.Entry(row).ReloadAsync(cancellationToken);
+        if (row.UserId != userId || row.State == "deleted")
+            return new ProgressPhotoWriteResult(ProgressPhotoWriteStatus.NotFound);
         if (row.Sha256 != jpeg.Sha256 || row.TakenOn != takenOn)
             return new ProgressPhotoWriteResult(ProgressPhotoWriteStatus.Conflict);
         if (row.State == "ready") return new ProgressPhotoWriteResult(ProgressPhotoWriteStatus.Ok, ToResponse(row));
 
         // A linha pendente vem antes do objeto: falha/reinício pode ser retomado com a mesma chave e não deixa lixo sem metadados.
-        await store.PutAsync(row.ObjectKey, jpeg.Content, cancellationToken);
-        row.State = "ready";
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return new ProgressPhotoWriteResult(ProgressPhotoWriteStatus.Ok, ToResponse(row));
+        var objectWritten = false;
+        try
+        {
+            await store.PutAsync(row.ObjectKey, jpeg.Content, cancellationToken);
+            objectWritten = true;
+            row.State = "ready";
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new ProgressPhotoWriteResult(ProgressPhotoWriteStatus.Ok, ToResponse(row));
+        }
+        catch
+        {
+            if (objectWritten)
+            {
+                // Sem a confirmação de ready, ninguém pode alcançar esse objeto; a compensação evita JPEG de saúde órfão.
+                try { await store.DeleteAsync(row.ObjectKey, CancellationToken.None); }
+                catch { }
+            }
+
+            throw;
+        }
     }
 
     public async Task<(ProgressPhotoWriteStatus Status, Stream? Content)> ReadAsync(Guid userId, Guid id, CancellationToken cancellationToken)

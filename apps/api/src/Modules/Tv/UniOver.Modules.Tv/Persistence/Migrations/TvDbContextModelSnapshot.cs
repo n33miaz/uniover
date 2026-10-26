@@ -302,6 +302,27 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                     b.ToTable("shortcuts", "tv");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvLayout", b =>
+                {
+                    b.Property<Guid>("TvId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tv_id");
+
+                    b.Property<string>("Document")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("document");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("TvId")
+                        .HasName("pk_tv_layouts");
+
+                    b.ToTable("tv_layouts", "tv");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvMember", b =>
                 {
                     b.Property<Guid>("TvId")
@@ -323,6 +344,22 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                         .HasDatabaseName("ix_tv_members_user_id");
 
                     b.ToTable("tv_members", "tv");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvMemberOptOut", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_tv_member_optouts");
+
+                    b.ToTable("tv_member_optouts", "tv");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvStateRecord", b =>

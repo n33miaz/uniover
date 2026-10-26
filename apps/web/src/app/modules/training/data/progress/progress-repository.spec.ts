@@ -71,6 +71,30 @@ describe('ProgressRepository', () => {
       expect(later.oneRepMaxDelta?.sinceDate).toBe('2026-09-26');
     });
 
+    it('cuts the 6 months by the calendar of the person: 28/02 at night in Brasília is already 01/03 in UTC', async () => {
+      const t = setupProgress();
+      await seedExerciseCatalog(t.trainingDb);
+      await t.trainingDb.sessions.bulkPut([
+        session('s-0828', '2025-08-28'),
+        session('s-0829', '2025-08-29'),
+        session('s-0220', '2026-02-20'),
+      ]);
+      await t.trainingDb.sets.bulkPut([
+        ...sets('a', 's-0828', 'supino', 1, '2025-08-28', { weightKg: 30 }, 12),
+        ...sets('b', 's-0829', 'supino', 1, '2025-08-29', { weightKg: 35 }, 12),
+        ...sets('c', 's-0220', 'supino', 1, '2026-02-20', { weightKg: 40 }, 12),
+      ]);
+
+      // Seis meses antes de 28/02/2026 23:30 (Brasília) é 28/08/2025 23:30: 29/08 cabe, 28/08 ao meio-dia não. Pela conta
+      // em UTC, "agora" já era 01/03 e a janela começaria em 31/08, deixando 29/08 de fora.
+      const series = await t.repository.exerciseSeries('supino', '6m', {
+        timeZone: SAO_PAULO,
+        now: at('2026-02-28', 23, 30),
+      });
+
+      expect(series.points.map((point) => point.date)).toEqual(['2025-08-29', '2026-02-20']);
+    });
+
     it('does not use sets after "now"', async () => {
       const t = setupProgress();
       await seedBenchHistory(t);

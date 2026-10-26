@@ -1,6 +1,7 @@
 """Reencontro da TV na rede quando o IP dela muda (o roteador reparte os endereços de novo).
 
-A procura anda do mais barato para o mais caro e para na primeira TV confirmada:
+A procura anda do mais barato para o mais caro e, quando já conhece a identidade, para na primeira
+TV confirmada:
 
 1. **Tabela ARP**: o MAC da TV (que o agente guardou) mapeia direto para o IP atual. Não manda
    nada à rede: só lê o que o Windows já sabe.
@@ -9,9 +10,9 @@ A procura anda do mais barato para o mais caro e para na primeira TV confirmada:
    no máximo uma a cada `sweep_seconds` (dez minutos). Uma TV com a pilha de rede travada não
    aguenta rajada de conexões.
 
-Nenhum candidato vale só por ser "uma Samsung": `identify` pergunta à própria TV quem ela é (o
-`duid` e o MAC Wi-Fi do REST) e só a que casa com o que foi guardado é aceita. O núcleo não sabe
-fazer rede: tudo vem por injeção, e os testes andam o tempo à mão.
+Nenhum candidato vale só por ter a porta aberta: `identify` compara os identificadores guardados;
+sem identificador, a Android TV precisa completar uma sessão com o certificado pareado. O núcleo
+não sabe fazer rede: tudo vem por injeção, e os testes andam o tempo à mão.
 """
 
 import asyncio
@@ -117,6 +118,7 @@ ArpTable = Callable[[], Awaitable[dict[str, list[str]]]]
 SsdpSearch = Callable[[], Awaitable[list[str]]]
 Identify = Callable[[str], Awaitable[TvIdentity | None]]
 Probe = Callable[[str], Awaitable[bool]]
+Authenticate = Callable[[str], Awaitable[bool]]
 Hosts = Callable[[], list[str]]
 
 
@@ -138,6 +140,7 @@ class TvLocator:
         hosts: Hosts,
         probe: Probe,
         identify: Identify,
+        authenticate: Authenticate | None = None,
         ssdp_seconds: float = DEFAULT_SSDP_SECONDS,
         sweep_seconds: float = DEFAULT_SWEEP_SECONDS,
         concurrency: int = DEFAULT_CONCURRENCY,
@@ -151,6 +154,7 @@ class TvLocator:
         self._hosts = hosts
         self._probe = probe
         self._identify = identify
+        self._authenticate = authenticate
         self._ssdp_seconds = ssdp_seconds
         self._sweep_seconds = sweep_seconds
         self._concurrency = max(1, concurrency)
@@ -170,8 +174,8 @@ class TvLocator:
     async def find(self, current_host: str) -> Located | None:
         """Procura a TV; devolve onde ela está agora, ou `None` (não achou, ou não mudou)."""
         if not self.known.can_identify:
-            _log.debug("sem identificador da TV: ainda não dá para reencontrá-la")
-            return None
+            # Sem MAC, só a sessão com o certificado pareado pode confirmar um candidato.
+            return await self._by_sweep(current_host) if self._authenticate is not None else None
         found = await self._by_arp(current_host)
         if found is not None or self._at_same_place:
             return found
@@ -219,7 +223,7 @@ class TvLocator:
 
         Numa TV no cabo o ARP mostra o MAC da placa de rede, que não é o `wifiMac` do REST: é ele
         que reencontra a TV pelo ARP e que o Wake-on-LAN precisa. Só vale com a TV confirmada
-        naquele endereço (o chamador garante: a sessão está quente ou o REST respondeu).
+        naquele endereço (o chamador garante: sessão pareada, sessão quente ou REST respondeu).
         """
         try:
             table = await self._arp_table()
@@ -268,6 +272,7 @@ class TvLocator:
             queue.put_nowait(host)
         result: list[Located] = []
         stop = asyncio.Event()
+        needs_unique = not self.known.can_identify
 
         async def worker() -> None:
             while not stop.is_set():
@@ -278,23 +283,37 @@ class TvLocator:
                 located = await self._inspect(host)
                 if located is not None:
                     result.append(located)
-                    stop.set()
-                    return
+                    if not needs_unique:
+                        stop.set()
+                        return
                 # Pausa entre os endereços: cada trabalhador só chega ao próximo depois dela.
                 await self._clock.sleep(self._spacing)
 
         workers = [asyncio.create_task(worker()) for _ in range(min(self._concurrency, len(hosts)))]
+        pending: set[asyncio.Task[None]] = set()
+        failed = False
         if workers:
             _, pending = await asyncio.wait(workers, timeout=self._sweep_deadline)
             for task in pending:
                 task.cancel()
-            await asyncio.gather(*workers, return_exceptions=True)
+            outcomes = await asyncio.gather(*workers, return_exceptions=True)
+            failed = any(isinstance(outcome, BaseException) for outcome in outcomes)
+        if needs_unique and len(result) > 1:
+            _log.warning("mais de uma TV respondeu à confirmação; continuo procurando")
+            return None
+        # Prazo estourado deixa endereços sem conferir: um único sucesso ainda seria ambíguo.
+        if needs_unique and (pending or failed):
+            return None
         _log.info("varredura limitada da rede terminou: %s", "achou" if result else "não achou")
         return result[0] if result else None
 
     async def _inspect(self, host: str) -> Located | None:
         try:
             if not await self._probe(host):
+                return None
+            if not self.known.can_identify:
+                if self._authenticate is not None and await self._authenticate(host):
+                    return Located(host, None, "varredura")
                 return None
             identity = await self._identify(host)
         except OSError:

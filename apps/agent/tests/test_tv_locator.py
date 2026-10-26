@@ -1,6 +1,8 @@
 """O reencontro da TV pelo núcleo: ARP, depois SSDP, depois varredura lenta (relógio falso)."""
 
 import asyncio
+import logging
+from collections.abc import Awaitable, Callable
 
 import pytest
 
@@ -50,7 +52,13 @@ class World:
         self.in_flight -= 1
         return host in self.open_hosts
 
-    def locator(self, known: TvKnown | None = None, **limits: float) -> TvLocator:
+    def locator(
+        self,
+        known: TvKnown | None = None,
+        *,
+        authenticate: Callable[[str], Awaitable[bool]] | None = None,
+        **limits: float,
+    ) -> TvLocator:
         return TvLocator(
             self.clock,
             known or TvKnown(DUID, MAC),
@@ -59,6 +67,7 @@ class World:
             hosts=lambda: self.hosts,
             probe=self.probe,
             identify=self.identify,
+            authenticate=authenticate,
             **limits,  # type: ignore[arg-type]
         )
 
@@ -173,6 +182,88 @@ async def test_a_tv_that_is_not_identified_yet_is_never_searched() -> None:
     lan = world()
     assert await lan.locator(TvKnown()).find("192.168.0.11") is None
     assert lan.calls == []
+
+
+async def test_without_identity_only_one_authenticated_tv_is_adopted() -> None:
+    lan = world()
+    lan.hosts = ["192.168.0.11", "192.168.0.14", "192.168.0.20", "192.168.0.30"]
+    lan.open_hosts = {"192.168.0.14", "192.168.0.20"}
+    checked: list[str] = []
+
+    async def authenticate(host: str) -> bool:
+        checked.append(host)
+        return host == "192.168.0.20"
+
+    found = await lan.locator(TvKnown(), authenticate=authenticate).find("192.168.0.11")
+    assert found is not None
+    assert (found.host, found.via) == ("192.168.0.20", "varredura")
+    assert checked == ["192.168.0.14", "192.168.0.20"]
+    assert len(lan.probed) == 3
+    assert not [call for call in lan.calls if call.startswith("identify")]
+
+
+async def test_without_identity_two_authenticated_tvs_are_not_guessed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    lan = world()
+    lan.hosts = ["192.168.0.14", "192.168.0.20"]
+    lan.open_hosts = set(lan.hosts)
+
+    async def authenticate(host: str) -> bool:
+        return True
+
+    with caplog.at_level(logging.WARNING):
+        assert await lan.locator(TvKnown(), authenticate=authenticate).find("192.168.0.11") is None
+    assert "mais de uma TV respondeu" in caplog.text
+    assert "192.168" not in caplog.text
+
+
+async def test_without_identity_a_failed_sweep_respects_the_ten_minute_interval() -> None:
+    lan = world()
+    lan.hosts = ["192.168.0.14"]
+    lan.open_hosts = set(lan.hosts)
+    calls = 0
+
+    async def authenticate(host: str) -> bool:
+        nonlocal calls
+        calls += 1
+        return False
+
+    locator = lan.locator(TvKnown(), authenticate=authenticate)
+    assert await locator.find("192.168.0.11") is None
+    lan.clock.advance(599)
+    assert await locator.find("192.168.0.11") is None
+    assert calls == 1
+    lan.clock.advance(1)
+    assert await locator.find("192.168.0.11") is None
+    assert calls == 2
+
+
+async def test_an_incomplete_sweep_cannot_claim_uniqueness() -> None:
+    lan = world()
+    lan.hosts = ["192.168.0.14", "192.168.0.20"]
+    lan.open_hosts = set(lan.hosts)
+
+    async def authenticate(host: str) -> bool:
+        if host == "192.168.0.20":
+            await asyncio.sleep(60)
+        return True
+
+    locator = lan.locator(TvKnown(), authenticate=authenticate, sweep_deadline_seconds=0.05)
+    assert await locator.find("192.168.0.11") is None
+
+
+async def test_a_failed_authentication_cannot_make_an_incomplete_sweep_unique() -> None:
+    lan = world()
+    lan.hosts = ["192.168.0.14", "192.168.0.20"]
+    lan.open_hosts = set(lan.hosts)
+
+    async def authenticate(host: str) -> bool:
+        if host == "192.168.0.20":
+            raise RuntimeError("certificado inválido")
+        return True
+
+    assert await lan.locator(TvKnown(), authenticate=authenticate).find("192.168.0.11") is None
 
 
 async def test_the_android_hint_that_is_a_mac_is_used_for_the_arp_lookup() -> None:

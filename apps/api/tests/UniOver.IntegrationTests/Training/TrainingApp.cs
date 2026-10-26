@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -60,6 +61,12 @@ internal sealed record TrainingAppOptions
     /// (o cache curto das permissões). Desligado por padrão: os testes de dados do Treino usam o relógio de verdade.
     /// </summary>
     public bool FakeClock { get; init; }
+
+    /// <summary>
+    /// Interceptador de comandos SQL do <see cref="TrainingDbContext"/> da aplicação: os testes de corrida o usam para
+    /// parar um pedido num ponto exato (entre dois comandos) e deixar outro passar, sem espera fixa.
+    /// </summary>
+    public DbCommandInterceptor? CommandInterceptor { get; init; }
 }
 
 /// <summary>
@@ -189,6 +196,11 @@ internal sealed class TrainingApp : IAsyncDisposable
             {
                 services.RemoveAll<IOffClient>();
                 services.AddSingleton(off);
+            }
+
+            if (options.CommandInterceptor is { } commandInterceptor)
+            {
+                services.ConfigureDbContext<TrainingDbContext>(builder => builder.AddInterceptors(commandInterceptor));
             }
 
             if (options.Photos is { } photos)

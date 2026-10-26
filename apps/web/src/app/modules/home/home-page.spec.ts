@@ -1,8 +1,9 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { MODULE_PREFS_KEY } from '../../core/modules/module-prefs';
+import { modulePrefsStorageKey } from '../../core/modules/module-prefs';
 import { ModuleRegistry } from '../../core/modules/module-registry';
+import { SessionState } from '../../core/session/session-state';
 import { HomeStatus, HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
 import { HomePage, dayPartFor, firstNameOf, greetingFor } from './home-page';
@@ -49,6 +50,14 @@ describe('HomePage', () => {
   });
   const release = vi.fn();
   const watch = vi.fn(() => release);
+  /** A escolha da Início é guardada por conta: a do dono que usa a tela nestes testes. */
+  const ACCOUNT = 'conta-dono';
+  const KEY = modulePrefsStorageKey(ACCOUNT);
+
+  afterEach(() => {
+    // A conta identificada deixa dicas no armazenamento, que os outros arquivos de teste dividem.
+    localStorage.clear();
+  });
 
   beforeEach(() => {
     localStorage.clear();
@@ -59,6 +68,12 @@ describe('HomePage', () => {
       providers: [provideRouter([]), { provide: HomeStatusPort, useValue: { status, watch } }],
     });
     TestBed.inject(ClockService).now.set(new Date('2026-10-18T09:30:00'));
+    TestBed.inject(SessionState).setUser({
+      id: ACCOUNT,
+      email: 'dono@exemplo.com',
+      displayName: 'Dono',
+      role: 'owner',
+    });
   });
 
   async function render() {
@@ -79,7 +94,7 @@ describe('HomePage', () => {
   /** Preferência guardada com todos os módulos do catálogo, ligados ou desligados, na ordem do catálogo. */
   const storeAll = (enabled: (id: string) => boolean) =>
     localStorage.setItem(
-      MODULE_PREFS_KEY,
+      KEY,
       JSON.stringify(
         TestBed.inject(ModuleRegistry).modules.map((m) => ({
           id: m.id,
@@ -224,7 +239,7 @@ describe('HomePage', () => {
   it('still reads a preference saved before the planned modules existed', async () => {
     // Só TV e Treino, como um aparelho antigo guardou: os planejados entram no fim, ligados.
     localStorage.setItem(
-      MODULE_PREFS_KEY,
+      KEY,
       JSON.stringify([
         { id: 'training', size: 'wide', enabled: true },
         { id: 'tv', size: 'small', enabled: true },
@@ -336,6 +351,6 @@ describe('HomePage', () => {
     await press('.moves .down');
     await press('.footer .primary'); // Aplicar
     expect(titles(el)).toEqual(['Treino', 'TV', ...PLANNED]);
-    expect(JSON.parse(localStorage.getItem(MODULE_PREFS_KEY)!)[0].id).toBe('training');
+    expect(JSON.parse(localStorage.getItem(KEY)!)[0].id).toBe('training');
   });
 });

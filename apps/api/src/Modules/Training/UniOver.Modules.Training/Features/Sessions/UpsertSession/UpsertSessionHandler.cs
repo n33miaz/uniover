@@ -48,7 +48,12 @@ internal sealed class UpsertSessionHandler(TrainingDbContext db, TimeProvider ti
 
         for (var attempt = 0; attempt < MaxAttempts; attempt++)
         {
-            var row = await db.Set<Session>().SingleOrDefaultAsync(s => s.Id == command.Id, cancellationToken);
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            // A série usa a mesma trava antes de gravar. Assim, quem apagar o treino enxerga toda série que entrou
+            // primeiro, e quem chegar depois enxerga a lápide antes de decidir se a série está viva.
+            var row = await db.Set<Session>()
+                .FromSqlInterpolated($"SELECT * FROM training.sessions WHERE id = {command.Id} FOR UPDATE")
+                .SingleOrDefaultAsync(cancellationToken);
             if (row is null)
             {
                 if (willBeOpen && await FindOtherOpenAsync(command, cancellationToken) is { } other)
@@ -88,6 +93,7 @@ internal sealed class UpsertSessionHandler(TrainingDbContext db, TimeProvider ti
             try
             {
                 await db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
                 return new UpsertSessionResult(UpsertSessionOutcome.Ok, SessionResponse.From(row));
             }
             catch (DbUpdateConcurrencyException)

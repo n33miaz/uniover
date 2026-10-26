@@ -108,7 +108,7 @@ export class ProgressRepository {
     period: ProgressPeriod,
     options: ProgressOptions = {},
   ): Promise<ExerciseSeries> {
-    const { from, to } = periodRange(period, this.now(options));
+    const { from, to } = periodRange(period, this.now(options), this.zone(options));
     const sets = (await this.exerciseSets(exerciseId)).filter(
       (set) => (from === null || set.completedAt >= from) && set.completedAt <= to,
     );

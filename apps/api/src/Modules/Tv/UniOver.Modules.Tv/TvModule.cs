@@ -21,6 +21,7 @@ using UniOver.Modules.Tv.Features.GetModuleInfo;
 using UniOver.Modules.Tv.Features.GetState;
 using UniOver.Modules.Tv.Features.LaunchShortcut;
 using UniOver.Modules.Tv.Features.ListShortcuts;
+using UniOver.Modules.Tv.Features.Layout;
 using UniOver.Modules.Tv.Features.PowerOff;
 using UniOver.Modules.Tv.Features.RecentCommands;
 using UniOver.Modules.Tv.Features.RefreshShortcuts;
@@ -135,6 +136,7 @@ public static class TvModule
         group.MapPowerOff();
         group.MapLaunchShortcut();
         group.MapListShortcuts();
+        group.MapTvLayout();
         group.MapUpdateShortcut();
         group.MapReorderShortcuts();
         group.MapRefreshShortcuts();

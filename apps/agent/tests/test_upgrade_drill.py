@@ -108,6 +108,15 @@ def test_the_variants_have_other_contents_and_other_shas() -> None:
     }
 
 
+def test_the_sync_failure_wrapper_fails_only_the_first_three_syncs() -> None:
+    wrapper = drill.sync_failure_wrapper()
+    assert wrapper.isascii()
+    assert 'if /I not "%~1"=="sync" goto real_uv' in wrapper
+    assert 'if /I not "%~3"=="%UNIOVER_DRILL_APP%" goto real_uv' in wrapper
+    assert "if %count% LEQ 3 exit /b 1" in wrapper
+    assert '"%UNIOVER_DRILL_REAL_UV%" %*' in wrapper
+
+
 def proc(pid: int, ppid: int, name: str, cmd: str, created: int = 100) -> object:
     return drill.Proc(pid, ppid, name, "", cmd, created)
 

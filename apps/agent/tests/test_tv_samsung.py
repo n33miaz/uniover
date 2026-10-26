@@ -322,6 +322,23 @@ async def test_samsung_volume_reads_nothing_when_the_service_fails() -> None:
     assert reader.available is True
 
 
+async def test_the_log_never_carries_the_internal_address_of_the_tv(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # O registro sai do PC pela manutenção remota: nem host, nem porta, nem caminho do serviço.
+    reader = SamsungVolume(
+        "192.168.0.11",
+        transport=upnp_tv(37),
+        discover=discover("http://192.168.0.11:9080", "http://192.168.0.11:9197/dmr"),
+    )
+    with caplog.at_level(logging.DEBUG, logger=volume_module.__name__):
+        assert await reader.read() == 37
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("serviço UPnP encontrado" in message for message in messages)
+    for leaked in ("192.168", "9197", "9080", "/dmr", "RenderingControl1", "http"):
+        assert not any(leaked in message for message in messages), leaked
+
+
 def test_samsung_rendering_control_url_needs_xml_with_the_service() -> None:
     assert rendering_control_url("status=ok", "http://tv:9080/") is None
     assert rendering_control_url("<root/>", "http://tv:9080/") is None

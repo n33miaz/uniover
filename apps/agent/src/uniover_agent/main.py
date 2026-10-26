@@ -27,6 +27,7 @@ from uniover_agent.adapters.apk_tools import (
     default_icons_dir,
     locate_aapt2,
 )
+from uniover_agent.adapters.arp import arp_mac
 from uniover_agent.adapters.installation import installation_base, migrate_layout
 from uniover_agent.adapters.local_config import ConfigValue, save_agent_config, update_config
 from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
@@ -138,6 +139,8 @@ from uniover_agent.ports import (
     PairingTicket,
     SecretStore,
     Transport,
+    TvNotPaired,
+    TvUnreachable,
 )
 
 _log = logging.getLogger("uniover_agent")
@@ -273,7 +276,21 @@ def build_tv(
     if not is_paired(cert_dir):
         _log.warning("TV configurada, mas ainda não pareada. Rode `uniover-agent tv-pair`.")
         return None
-    remote = AndroidTvRemoteV2(host, settings.tv_client_name, cert_dir)
+    known = TvKnown(settings.tv_id_hint, settings.tv_mac)
+
+    async def learn_android_mac() -> None:
+        # A sessão autenticada prova que o ARP deste endereço pertence à TV pareada.
+        if known.mac is not None:
+            return
+        mac = await arp_mac(host)
+        if mac is not None:
+            update_config(config_path(), {"tv_mac": mac})
+            known.mac = mac
+            _log.info("MAC da TV guardado a partir da tabela ARP")
+
+    remote = AndroidTvRemoteV2(
+        host, settings.tv_client_name, cert_dir, on_connected=learn_android_mac
+    )
     manager = TvSessionManager(
         clock,
         remote,
@@ -317,7 +334,7 @@ def build_tv(
             *key_capabilities(ANDROID_OPTIONAL_KEYS),
         ],
         text=text,
-        known=TvKnown(settings.tv_id_hint, settings.tv_mac),
+        known=known,
     )
     # Cada tarefa seguinte insere aqui só a linha dela; o gerenciador é o único dono da conexão.
     adb = compose_adb(setup, settings, host, clock)  # [composição: adb]
@@ -726,6 +743,7 @@ def build_relocator(
     `is_hot` diz se a sessão com a TV está aberta (prova de que ela responde). Fora isso, confere
     se **a TV certa** atende no endereço (o IP velho pode ter virado de um celular) e, se não,
     procura-a pelo MAC na tabela ARP, depois SSDP, depois numa varredura lenta do /24 dela.
+    Sem identidade Android guardada, confirma os candidatos pela sessão com certificado pareado.
     `known` é compartilhado com o resto do agente, que aprende o MAC na primeira conexão.
     `on_refused` é avisado quando a Android TV está na rede e **recusa** a porta do controle (o
     serviço morreu): a conferência é a mesma de sempre, o vigia do serviço só aproveita o resultado.
@@ -734,7 +752,26 @@ def build_relocator(
     if not host:
         return None
     identity = known if known is not None else TvKnown(settings.tv_id_hint, settings.tv_mac)
-    locator = build_locator(settings.tv_kind, host, identity, clock)
+
+    async def authenticate(candidate: str) -> bool:
+        remote = AndroidTvRemoteV2(
+            candidate, settings.tv_client_name, tv_cert_dir(settings.tv_name)
+        )
+        try:
+            await remote.connect()
+            return True
+        except TvNotPaired, TvUnreachable:
+            return False
+        finally:
+            await remote.disconnect()
+
+    locator = build_locator(
+        settings.tv_kind,
+        host,
+        identity,
+        clock,
+        authenticate=authenticate if settings.tv_kind == "android" else None,
+    )
 
     async def reachable() -> bool:
         if settings.tv_kind == "android":
@@ -748,6 +785,8 @@ def build_relocator(
         located = await locator.find(host)
         if located is None or located.host == host:
             return None
+        if settings.tv_kind == "android" and identity.mac is None:
+            await locator.learn_mac(located.host)
         values: dict[str, ConfigValue] = {"tv_host": located.host}
         if identity.mac is not None:
             values["tv_mac"] = identity.mac
@@ -761,6 +800,8 @@ def build_relocator(
     async def learn_arp_mac() -> None:
         """Com a TV confirmada no endereço, guarda o MAC que o ARP mostra (a TV pode estar no
         cabo). Só olha a tabela de tempos em tempos e para de olhar depois de aprender."""
+        if settings.tv_kind == "android" and not is_hot():
+            return
         now = clock.monotonic()
         if learned_at and (learned_at[0] < 0 or now - learned_at[0] < ARP_LEARN_SECONDS):
             return

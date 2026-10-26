@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Threading.Channels;
 using UniOver.Modules.Devices.Features.Agents;
@@ -206,7 +207,10 @@ internal sealed class WebSocketAgentSession : IAgentSession
             return;
         }
 
-        // Deixa a fila de saída esvaziar antes de fechar: a resposta de erro precede o fechamento.
+        // Deixa a fila de saída esvaziar antes de fechar: a resposta de erro precede o fechamento. Esvaziar a fila e tomar o
+        // cadeado de escrita dividem UM prazo (a graça de fechamento): quem chama espera no máximo isso, mesmo com o
+        // escritor preso.
+        var clock = Stopwatch.StartNew();
         _outbound.Writer.TryComplete();
         try
         {
@@ -217,7 +221,12 @@ internal sealed class WebSocketAgentSession : IAgentSession
             // Agente sem ler: fecha mesmo assim.
         }
 
-        await _sendLock.WaitAsync(CancellationToken.None);
+        var remaining = _options.CloseGrace - clock.Elapsed;
+        if (!await TryTakeSendLockAsync(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero))
+        {
+            return;
+        }
+
         try
         {
             if (_socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
@@ -235,6 +244,26 @@ internal sealed class WebSocketAgentSession : IAgentSession
         }
 
         _ = AbortAfterGraceAsync();
+    }
+
+    /// <summary>
+    /// Toma o cadeado de escrita por no máximo <paramref name="wait"/>. O escritor o segura enquanto espera o envio, e um
+    /// agente que parou de ler deixa esse envio pendurado sem falhar; esperar sem prazo faria a revogação ou a substituição
+    /// da sessão nunca terminar. Esgotado o prazo, derruba a conexão e cancela o escritor e devolve falso: quem chamou
+    /// segue sem escrever, porque já não há como fechar com educação. O cadeado pode continuar preso até o envio reagir ao
+    /// abortamento, mas não pode mais atrasar quem está liberando a sessão. O cadeado só é solto por quem o tomou, então no
+    /// falso não há nada a soltar.
+    /// </summary>
+    private async Task<bool> TryTakeSendLockAsync(TimeSpan wait)
+    {
+        if (await _sendLock.WaitAsync(wait))
+        {
+            return true;
+        }
+
+        _socket.Abort();
+        await _stop.CancelAsync();
+        return false;
     }
 
     /// <summary>O agente que não responde ao fechamento é derrubado depois do prazo.</summary>
@@ -262,7 +291,13 @@ internal sealed class WebSocketAgentSession : IAgentSession
         }
 
         _outbound.Writer.TryComplete();
-        await _sendLock.WaitAsync(CancellationToken.None);
+
+        // O leitor é quem está aqui: preso no cadeado de um escritor pendurado, a sessão nunca seria concluída.
+        if (!await TryTakeSendLockAsync(_options.CloseGrace))
+        {
+            return;
+        }
+
         try
         {
             if (_socket.State == WebSocketState.CloseReceived)

@@ -3,6 +3,7 @@ using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using UniOver.IntegrationTests.Devices.Transport;
+using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Identity.Passkeys;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Tv.Domain;
@@ -95,7 +96,7 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
         {
             legacyList.StatusCode.Should().Be(HttpStatusCode.OK);
             var item = (await TvApp.JsonAsync(legacyList)).GetProperty("items").EnumerateArray().Should().ContainSingle().Subject;
-            item.GetProperty("id").GetGuid().Should().Be(defaultTvId, "sem filiação, a conta antiga continua na TV padrão");
+            item.GetProperty("id").GetGuid().Should().Be(defaultTvId, "quem nunca teve filiação continua na TV padrão (conta de antes das várias TVs)");
         }
 
         using var repeated = await app.PostAsync("/api/v1/tv/tvs", new { agentSlug = raphaelAgent.Slug, name = "Duplicada" });
@@ -229,5 +230,230 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
 
         using var afterRemoval = await app.GetAsync($"/api/v1/tv/shortcuts?tvId={raphaelTvId}");
         afterRemoval.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ---- quem perde a última TV não herda a TV padrão do dono ----
+
+    private static async Task<bool> HasOptOutAsync(TvApp app, Guid userId)
+    {
+        await using var db = app.Db();
+        return await db.TvMemberOptOuts.AsNoTracking().AnyAsync(o => o.UserId == userId, Ct);
+    }
+
+    private static async Task<int> MembershipCountAsync(TvApp app, Guid userId)
+    {
+        await using var db = app.Db();
+        return await db.TvMembers.AsNoTracking().CountAsync(m => m.UserId == userId, Ct);
+    }
+
+    private static async Task<List<Guid>> VisibleTvIdsAsync(TvApp app, string bearer)
+    {
+        using var response = await app.GetAsync("/api/v1/tv/tvs", bearer);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return [.. (await TvApp.JsonAsync(response)).GetProperty("items").EnumerateArray().Select(item => item.GetProperty("id").GetGuid())];
+    }
+
+    /// <summary>
+    /// A conta não alcança TV nenhuma: lista vazia e 404 em toda rota de controle, com e sem <c>tvId</c>. Sem o teste
+    /// sem <c>tvId</c> a reserva do agente do ambiente passaria despercebida como segunda porta para a TV do dono.
+    /// </summary>
+    private static async Task AssertReachesNoTvAsync(TvApp app, GuestSession guest, Guid otherTvId)
+    {
+        (await VisibleTvIdsAsync(app, guest.Login.AccessToken)).Should().BeEmpty();
+
+        var statuses = new List<(string Name, HttpStatusCode Status)>();
+
+        async Task RecordAsync(string name, Task<HttpResponseMessage> request)
+        {
+            using var response = await request;
+            statuses.Add((name, response.StatusCode));
+        }
+
+        var bearer = guest.Login.AccessToken;
+        await RecordAsync("GET state", app.GetAsync("/api/v1/tv/state", bearer));
+        await RecordAsync("GET shortcuts", app.GetAsync("/api/v1/tv/shortcuts", bearer));
+        await RecordAsync("POST keys", app.SendAsync(HttpMethod.Post, "/api/v1/tv/keys", new { key = "HOME" }, bearer));
+        await RecordAsync("GET state?tvId", app.GetAsync($"/api/v1/tv/state?tvId={otherTvId}", bearer));
+        await RecordAsync("POST keys?tvId", app.SendAsync(HttpMethod.Post, $"/api/v1/tv/keys?tvId={otherTvId}", new { key = "HOME" }, bearer));
+        await RecordAsync("GET events", app.OpenEventsAsync(await app.StreamTicketAsync(bearer)));
+
+        statuses.Where(attempt => attempt.Status != HttpStatusCode.NotFound).Should().BeEmpty(
+            "sem filiação e já retirada, a conta não enxerga TV nenhuma");
+    }
+
+    [Fact]
+    public async Task MemberRemovedFromTheOnlyTv_SeesNoTv_InsteadOfFallingBackToTheOwnersDefault()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        var defaultTvId = await BindDefaultAsync(app);
+        var raphaelAgent = await app.PairAsync("PC Raphael");
+        var raphaelTvId = await CreateTvAsync(app, raphaelAgent.Slug, "TV Raphael");
+        var guest = await app.NewGuestAsync("Raphael", ["module:tv", "tv:control"], 86);
+        await SetMembersAsync(app, raphaelTvId, guest.UserId);
+        (await VisibleTvIdsAsync(app, guest.Login.AccessToken)).Should().Equal(raphaelTvId);
+        (await HasOptOutAsync(app, guest.UserId)).Should().BeFalse("enquanto é membro, não há marca de retirada");
+
+        await SetMembersAsync(app, raphaelTvId);
+
+        await AssertReachesNoTvAsync(app, guest, defaultTvId);
+        (await HasOptOutAsync(app, guest.UserId)).Should().BeTrue();
+
+        // O administrador não muda: vê todas e cai na padrão sem tvId.
+        (await VisibleTvIdsAsync(app, app.Login.AccessToken)).Should().BeEquivalentTo([defaultTvId, raphaelTvId]);
+        using var asOwner = await app.GetAsync("/api/v1/tv/shortcuts");
+        asOwner.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task MemberWhoseOnlyTvIsDeleted_SeesNoTv_InsteadOfFallingBackToTheOwnersDefault()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        var defaultTvId = await BindDefaultAsync(app);
+        var raphaelAgent = await app.PairAsync("PC Raphael");
+        var raphaelTvId = await CreateTvAsync(app, raphaelAgent.Slug, "TV Raphael");
+        var guest = await app.NewGuestAsync("Raphael", ["module:tv", "tv:control"], 87);
+        await SetMembersAsync(app, raphaelTvId, guest.UserId);
+
+        using (var deleted = await app.SendAsync(HttpMethod.Delete, $"/api/v1/tv/tvs/{raphaelTvId}"))
+        {
+            deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        await AssertReachesNoTvAsync(app, guest, defaultTvId);
+        (await HasOptOutAsync(app, guest.UserId)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task MemberRemovedFromOneOfTwoTvs_KeepsTheOther_AndGetsNoOptOut()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var firstTvId = await CreateTvAsync(app, (await app.PairAsync("PC Um")).Slug, "TV Um");
+        var secondTvId = await CreateTvAsync(app, (await app.PairAsync("PC Dois")).Slug, "TV Dois");
+        var guest = await app.NewGuestAsync("Dois lares", ["module:tv", "tv:control"], 88);
+        await SetMembersAsync(app, firstTvId, guest.UserId);
+        await SetMembersAsync(app, secondTvId, guest.UserId);
+
+        await SetMembersAsync(app, firstTvId);
+
+        (await VisibleTvIdsAsync(app, guest.Login.AccessToken)).Should().Equal(secondTvId);
+        (await HasOptOutAsync(app, guest.UserId)).Should().BeFalse("ainda é membro de outra TV");
+
+        using var deleted = await app.SendAsync(HttpMethod.Delete, $"/api/v1/tv/tvs/{secondTvId}");
+        deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await VisibleTvIdsAsync(app, guest.Login.AccessToken)).Should().BeEmpty("a última filiação saiu com a TV apagada");
+        (await HasOptOutAsync(app, guest.UserId)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AccountThatNeverHadAMembership_KeepsTheDefaultTv_EvenAfterOthersAreRemoved()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        var defaultTvId = await BindDefaultAsync(app);
+        var raphaelTvId = await CreateTvAsync(app, (await app.PairAsync("PC Raphael")).Slug, "TV Raphael");
+        var removed = await app.NewGuestAsync("Retirado", ["module:tv", "tv:control"], 89);
+        var legacy = await app.NewGuestAsync("Nunca membro", ["module:tv", "tv:control"], 90);
+        await SetMembersAsync(app, raphaelTvId, removed.UserId);
+        await SetMembersAsync(app, raphaelTvId);
+
+        (await VisibleTvIdsAsync(app, legacy.Login.AccessToken)).Should().Equal(defaultTvId);
+        using (var shortcuts = await app.GetAsync("/api/v1/tv/shortcuts", legacy.Login.AccessToken))
+        {
+            shortcuts.StatusCode.Should().Be(HttpStatusCode.OK, "sem tvId, quem nunca foi membro cai na TV padrão");
+        }
+
+        using var explicitDefault = await app.GetAsync($"/api/v1/tv/shortcuts?tvId={defaultTvId}", legacy.Login.AccessToken);
+        explicitDefault.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await HasOptOutAsync(app, legacy.UserId)).Should().BeFalse();
+        (await HasOptOutAsync(app, removed.UserId)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RemovedMemberWhoBecomesAMemberAgain_SeesOnlyThatTv_AndTheOptOutIsGone()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        var defaultTvId = await BindDefaultAsync(app);
+        var raphaelTvId = await CreateTvAsync(app, (await app.PairAsync("PC Raphael")).Slug, "TV Raphael");
+        var guest = await app.NewGuestAsync("Raphael", ["module:tv", "tv:control"], 91);
+        await SetMembersAsync(app, raphaelTvId, guest.UserId);
+        await SetMembersAsync(app, raphaelTvId);
+        (await HasOptOutAsync(app, guest.UserId)).Should().BeTrue();
+
+        await SetMembersAsync(app, raphaelTvId, guest.UserId);
+
+        (await VisibleTvIdsAsync(app, guest.Login.AccessToken)).Should().Equal(raphaelTvId);
+        (await HasOptOutAsync(app, guest.UserId)).Should().BeFalse("voltou a ser membro");
+        using (var shortcuts = await app.GetAsync("/api/v1/tv/shortcuts", guest.Login.AccessToken))
+        {
+            shortcuts.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        using (var notDefault = await app.GetAsync($"/api/v1/tv/shortcuts?tvId={defaultTvId}", guest.Login.AccessToken))
+        {
+            notDefault.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        // Retirada de novo: a marca volta (uma linha por conta, sem duplicar).
+        await SetMembersAsync(app, raphaelTvId);
+        (await VisibleTvIdsAsync(app, guest.Login.AccessToken)).Should().BeEmpty();
+        await using var db = app.Db();
+        (await db.TvMemberOptOuts.CountAsync(o => o.UserId == guest.UserId, Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ReplacingTheMembers_KeepsTheOnesThatStay_AndOnlyMarksWhoLostTheirLastTv()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var tvId = await CreateTvAsync(app, (await app.PairAsync("PC Raphael")).Slug, "TV Raphael");
+        var stays = await app.NewGuestAsync("Fica", ["module:tv", "tv:control"], 92);
+        var leaves = await app.NewGuestAsync("Sai", ["module:tv", "tv:control"], 93);
+        var arrives = await app.NewGuestAsync("Chega", ["module:tv", "tv:control"], 94);
+        await SetMembersAsync(app, tvId, stays.UserId, leaves.UserId);
+
+        await SetMembersAsync(app, tvId, stays.UserId, arrives.UserId);
+
+        await using var db = app.Db();
+        (await db.TvMembers.Where(m => m.TvId == tvId).Select(m => m.UserId).ToListAsync(Ct)).Should().BeEquivalentTo([stays.UserId, arrives.UserId]);
+        (await db.TvMemberOptOuts.Select(o => o.UserId).ToListAsync(Ct)).Should().Equal(leaves.UserId);
+    }
+
+    [Fact]
+    public async Task ConcurrentRemovalsOfTwoMemberships_NeverLeaveTheAccountWithoutTheOptOut()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var firstTvId = await CreateTvAsync(app, (await app.PairAsync("PC Um")).Slug, "TV Um");
+        var secondTvId = await CreateTvAsync(app, (await app.PairAsync("PC Dois")).Slug, "TV Dois");
+        var guest = await app.NewGuestAsync("Dois lares", ["module:tv", "tv:control"], 95);
+        await SetMembersAsync(app, firstTvId, guest.UserId);
+        await SetMembersAsync(app, secondTvId, guest.UserId);
+
+        // Segura o COMMIT de quem apaga uma filiação por meio segundo: as duas gravações se sobrepõem de forma
+        // determinística, como numa máquina lenta, e cada transação só enxergaria a filiação que a outra está tirando.
+        await app.ExecuteSqlAsync("""
+            CREATE FUNCTION tv.hold_membership_commit() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN PERFORM pg_sleep(0.5); RETURN NULL; END $$;
+            CREATE CONSTRAINT TRIGGER hold_membership_commit AFTER DELETE ON tv.tv_members
+                DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION tv.hold_membership_commit();
+            """);
+
+        var first = app.SendAsync(HttpMethod.Put, $"/api/v1/tv/tvs/{firstTvId}/members", new { userIds = Array.Empty<Guid>() });
+        var second = app.SendAsync(HttpMethod.Put, $"/api/v1/tv/tvs/{secondTvId}/members", new { userIds = Array.Empty<Guid>() });
+        using var firstResponse = await first;
+        using var secondResponse = await second;
+
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await MembershipCountAsync(app, guest.UserId)).Should().Be(0);
+        (await HasOptOutAsync(app, guest.UserId)).Should().BeTrue("sem filiação nenhuma e sem a marca, a conta cairia na TV padrão do dono");
+        (await VisibleTvIdsAsync(app, guest.Login.AccessToken)).Should().BeEmpty();
     }
 }

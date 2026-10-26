@@ -544,6 +544,29 @@ def read_text(path: Path) -> str:
         return ""
 
 
+def sync_failure_wrapper() -> str:
+    """`uv.cmd` do ensaio: falha so os tres primeiros syncs do supervisor e depois chama o uv real.
+
+    So conta o `uv sync --project <app>` do supervisor: a atualizacao automatica tambem sincroniza
+    (a candidata, em `app.new`) pelo mesmo `uv` e nao pode gastar as tres falhas.
+    """
+    return "\r\n".join(
+        (
+            "@echo off",
+            'if /I not "%~1"=="sync" goto real_uv',
+            'if /I not "%~3"=="%UNIOVER_DRILL_APP%" goto real_uv',
+            "set count=0",
+            'if exist "%UNIOVER_DRILL_SYNC_COUNT%" set /p count=<"%UNIOVER_DRILL_SYNC_COUNT%"',
+            "set /a count=%count%+1",
+            '>"%UNIOVER_DRILL_SYNC_COUNT%" echo %count%',
+            "if %count% LEQ 3 exit /b 1",
+            ":real_uv",
+            '"%UNIOVER_DRILL_REAL_UV%" %*',
+            "",
+        )
+    )
+
+
 class Drill:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
@@ -579,6 +602,13 @@ class Drill:
 
     def log_text(self) -> str:
         return read_text(self.base / "logs" / "agent.log")
+
+    def update_state(self) -> dict[str, object]:
+        try:
+            loaded = json.loads((self.base / "runtime" / "update-status.json").read_text("utf-8"))
+        except OSError, json.JSONDecodeError:
+            return {}
+        return loaded if isinstance(loaded, dict) else {}
 
     def tree(self) -> list[Proc]:
         procs = snapshot()
@@ -892,6 +922,132 @@ class Drill:
         say(f"  ({time.monotonic() - phase_start:.0f} s)")
         return ok
 
+    def stop_everything(self) -> bool:
+        """Derruba o lancador (e com ele supervisor, agente e icone), como um reinicio do PC."""
+        if self.launcher is not None:
+            self.kill(self.launcher.pid)
+        return wait_until(
+            lambda: not self.roles(self.tree(), "launcher", "supervisor", "agent", "tray"), 30, 0.5
+        )
+
+    def recover_interrupted_swap(self, sha: str) -> bool:
+        """Deixa o estado entre as duas renomeacoes e espera o lancador conserta-lo.
+
+        O lancador que recupera e o que o proprio agente instalado copiou para a raiz (e a unica
+        via pela qual a recuperacao chega a quem ja esta instalado); depois da queda, como depois
+        de um reinicio do PC, quem sobe e um lancador novo lido do disco.
+        """
+        say("\n== E. queda entre as renomeacoes da troca ==")
+        old = read_text(self.base / "app.previous" / ".version")
+        delivered = (self.base / "launcher.ps1").read_bytes() == (
+            self.app / "tools" / "launcher.ps1"
+        ).read_bytes()
+        stopped = self.stop_everything()
+        candidate = self.base / "app.new"
+        if candidate.exists() or not stopped:
+            return self.verdict.check(
+                "o ensaio parou tudo e nao ha candidata sobrando antes da queda simulada",
+                False,
+                f"parado={stopped} candidata={candidate.exists()}",
+            )
+        shutil.move(str(self.app), str(candidate))
+        self.start_supervisor()
+        restored = wait_until(
+            lambda: (
+                self.version() == sha
+                and not candidate.exists()
+                and bool(self.roles(self.tree(), "supervisor"))
+            ),
+            self.args.timeout,
+        )
+        results = [
+            self.verdict.check(
+                "o lancador instalado e o da versao instalada (a atualizacao o entregou)", delivered
+            ),
+            self.verdict.check(
+                "o lancador recupera app.new quando app some entre as renomeacoes",
+                restored,
+                f"ficou {self.version()[:12]}",
+            ),
+            self.verdict.check(
+                "a versao anterior continua guardada depois da recuperacao",
+                old == read_text(self.base / "app.previous" / ".version"),
+            ),
+            self.verdict.check(
+                "a recuperacao deixa a versao promovida em teste",
+                read_text(self.base / "runtime" / "update-trial.txt") == f"{sha}|0",
+            ),
+            self.verdict.check(
+                # O estado (update-status.json) nao entra: o supervisor que sobe em seguida faz a
+                # propria checagem e o reescreve; o teste de unidade do lancador o cobre.
+                "a recuperacao registra o ocorrido no log do agente",
+                "promovi app.new" in self.log_text(),
+            ),
+        ]
+        return all(results)
+
+    def rollback_after_sync_failure(self, bad: str) -> bool:
+        """Faz tres syncs falharem na versao em teste e confere a volta automatica."""
+        say("\n== F. sync falha depois da promocao ==")
+        previous = read_text(self.base / "app.previous" / ".version")
+        if not previous:
+            return self.verdict.check(
+                "ha uma versao anterior para voltar depois da falha de sync", False
+            )
+        trial = self.base / "runtime" / "update-trial.txt"
+        trial.write_text(f"{bad}|0", encoding="ascii")
+        marker = self.base / "runtime" / "venv" / "marca-antes-do-sync.txt"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("ambiente que funcionava", encoding="utf-8")
+        fake_bin = self.root / "sync-failure-bin"
+        fake_bin.mkdir(exist_ok=True)
+        (fake_bin / "uv.cmd").write_text(sync_failure_wrapper(), encoding="ascii", newline="")
+        counter = self.root / "sync-count.txt"
+        environment = {
+            **self.env,
+            "PATH": os.pathsep.join((str(fake_bin), self.env["PATH"])),
+            "UNIOVER_DRILL_REAL_UV": self.uv,
+            "UNIOVER_DRILL_SYNC_COUNT": str(counter),
+            "UNIOVER_DRILL_APP": str(self.app),
+        }
+        stopped = self.stop_everything()
+        self.env = environment
+        self.start_supervisor()
+        rolled_back = wait_until(
+            lambda: (
+                self.version() == previous
+                and bad[:12] in self.blocked()
+                and self.update_state().get("rolledBack") is True
+            ),
+            self.args.timeout,
+        )
+        # O estado guarda a volta (rolledBack, blockedSha) mesmo depois de o supervisor da versao
+        # anterior reescrever `outcome` e `reason` na propria checagem; o texto do motivo e o
+        # `outcome` ficam para o teste de unidade do supervisor.
+        current = self.update_state()
+        results = [
+            self.verdict.check("o supervisor anterior parou antes do sync com falha", stopped),
+            self.verdict.check(
+                "tres falhas de sync na versao em teste voltam para a anterior", rolled_back
+            ),
+            self.verdict.check(
+                "o ambiente que funcionava nao foi apagado durante as tres falhas",
+                marker.is_file()
+                and marker.read_text(encoding="utf-8") == "ambiente que funcionava",
+            ),
+            self.verdict.check(
+                "a versao recusada foi bloqueada e saiu de teste",
+                not trial.exists()
+                and (self.base / "runtime" / f"app.rejected-{bad[:12]}").is_dir(),
+            ),
+            self.verdict.check(
+                "a volta por sync fica registrada no estado, com a versao bloqueada",
+                current.get("rolledBack") is True and current.get("blockedSha") == bad,
+                str(current),
+            ),
+        ]
+        return all(results)
+
     def leftovers(self) -> list[str]:
         names = sorted(p.name for p in self.base.iterdir())
         return [
@@ -1154,6 +1310,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915 - roteiro linea
             proceed = drill.offer(
                 label, tree, sha, expect_swap=expect_swap, source=f"codigo da {code}"
             )
+        if proceed:
+            proceed = drill.recover_interrupted_swap(next_sha)
+        if proceed:
+            proceed = drill.rollback_after_sync_failure(next_sha)
         say("")
         drill.windows_check()
     except KeyboardInterrupt:

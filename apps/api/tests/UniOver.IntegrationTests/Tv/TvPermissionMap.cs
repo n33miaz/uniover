@@ -56,10 +56,13 @@ internal static class TvPermissionMap
 
     private static readonly object OrderBody = new { ids = new[] { Guid.NewGuid() } };
 
+    private static readonly object LayoutBody = new { buttonSize = "large" };
+
     public static IReadOnlyList<TvRoute> Routes { get; } =
     [
         new("GET", "/api/v1/tv/state", "module:tv"),
         new("GET", "/api/v1/tv/shortcuts", "module:tv"),
+        new("GET", "/api/v1/tv/layout", "module:tv"),
         new("GET", "/api/v1/tv/events", "module:tv"),
         new("GET", "/api/v1/tv/tvs", "module:tv"),
         new("POST", "/api/v1/tv/keys", "tv:control", KeyBody),
@@ -87,6 +90,8 @@ internal static class TvPermissionMap
         new("DELETE", "/api/v1/tv/tvs/{id:guid}", "tv.bind-agent"),
         new("GET", "/api/v1/tv/tvs/{id:guid}/members"),
         new("PUT", "/api/v1/tv/tvs/{id:guid}/members", "tv.bind-agent", new { userIds = new[] { Guid.NewGuid() } }),
+        new("POST", "/api/v1/tv/layout", Body: LayoutBody),
+        new("PUT", "/api/v1/tv/layout", Body: LayoutBody),
     ];
 
     /// <summary>A chamada chegou à rota: a autorização deixou passar (o que veio depois é assunto do tratamento dela).</summary>

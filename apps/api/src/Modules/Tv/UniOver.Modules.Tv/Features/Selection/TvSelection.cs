@@ -42,16 +42,37 @@ internal sealed class TvCurrentSelection : ITvCurrentSelection
 
 /// <summary>
 /// Centraliza a regra de visibilidade para que uma rota nova não consiga, por esquecimento, operar uma TV de outra conta.
-/// A ausência completa de filiação preserva as contas antigas na TV padrão; basta uma filiação existir para a conta sair
-/// desse modo de compatibilidade.
+/// Quem tem filiação vê as TVs das quais é membro. Quem NUNCA teve filiação é a conta de antes das várias TVs e continua na
+/// TV padrão. Quem já teve e foi retirado (marca <see cref="TvMemberOptOut"/>) não vê TV nenhuma: perder a última TV não
+/// pode entregar a TV do dono. O administrador vê todas.
 /// </summary>
 internal sealed class TvSelectionService(TvDbContext db, ITvAgentResolver defaultAgent)
 {
+    private enum MemberScope
+    {
+        Memberships,
+        DefaultTv,
+        Nothing,
+    }
+
     public async Task<IReadOnlyList<TvTarget>> ListVisibleAsync(Guid userId, bool isOwner, CancellationToken cancellationToken)
     {
-        IQueryable<ConfiguredTv> visible = isOwner
-            ? db.Tvs.AsNoTracking()
-            : await VisibleForMemberAsync(userId, cancellationToken);
+        IQueryable<ConfiguredTv> visible;
+        if (isOwner)
+        {
+            visible = db.Tvs.AsNoTracking();
+        }
+        else
+        {
+            var scope = await ScopeOfMemberAsync(userId, cancellationToken);
+            if (scope == MemberScope.Nothing)
+            {
+                return [];
+            }
+
+            visible = VisibleFor(scope, userId);
+        }
+
         return await visible.OrderByDescending(t => t.IsDefault).ThenBy(t => t.Name).Select(ToTarget).ToListAsync(cancellationToken);
     }
 
@@ -64,7 +85,14 @@ internal sealed class TvSelectionService(TvDbContext db, ITvAgentResolver defaul
         }
         else
         {
-            visible = await VisibleForMemberAsync(userId, cancellationToken);
+            var scope = await ScopeOfMemberAsync(userId, cancellationToken);
+            if (scope == MemberScope.Nothing)
+            {
+                // Retirada da última TV: nem a reserva do agente do ambiente abaixo vale, ela também é a TV do dono.
+                return null;
+            }
+
+            visible = VisibleFor(scope, userId);
         }
 
         if (await visible.AnyAsync(cancellationToken))
@@ -94,13 +122,25 @@ internal sealed class TvSelectionService(TvDbContext db, ITvAgentResolver defaul
     public Task<ConfiguredTv?> FindByAgentAsync(string agentSlug, CancellationToken cancellationToken) =>
         db.Tvs.SingleOrDefaultAsync(t => t.AgentSlug == agentSlug, cancellationToken);
 
-    private async Task<IQueryable<ConfiguredTv>> VisibleForMemberAsync(Guid userId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Filiação primeiro (vence a marca, que pode sobrar de antes de a conta voltar a uma TV), depois a marca, depois a
+    /// compatibilidade. As duas leituras vão numa só consulta para virem do mesmo instante: separadas, uma conta que entra
+    /// ou sai de uma TV bem no meio poderia aparecer, por um instante, como "nunca teve filiação".
+    /// </summary>
+    private async Task<MemberScope> ScopeOfMemberAsync(Guid userId, CancellationToken cancellationToken)
     {
-        var hasMembership = await db.TvMembers.AsNoTracking().AnyAsync(m => m.UserId == userId, cancellationToken);
-        return hasMembership
-            ? db.Tvs.AsNoTracking().Where(t => db.TvMembers.Any(m => m.TvId == t.Id && m.UserId == userId))
-            : db.Tvs.AsNoTracking().Where(t => t.IsDefault);
+        var evidence = await db.TvMembers.AsNoTracking().Where(m => m.UserId == userId).Select(m => 1)
+            .Concat(db.TvMemberOptOuts.AsNoTracking().Where(o => o.UserId == userId).Select(o => 2))
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        return evidence.Contains(1) ? MemberScope.Memberships
+            : evidence.Contains(2) ? MemberScope.Nothing
+            : MemberScope.DefaultTv;
     }
+
+    private IQueryable<ConfiguredTv> VisibleFor(MemberScope scope, Guid userId) => scope == MemberScope.Memberships
+        ? db.Tvs.AsNoTracking().Where(t => db.TvMembers.Any(m => m.TvId == t.Id && m.UserId == userId))
+        : db.Tvs.AsNoTracking().Where(t => t.IsDefault);
 
     private static readonly System.Linq.Expressions.Expression<Func<ConfiguredTv, TvTarget>> ToTarget =
         tv => new TvTarget(tv.Id, tv.AgentSlug, tv.Name, tv.IsDefault);

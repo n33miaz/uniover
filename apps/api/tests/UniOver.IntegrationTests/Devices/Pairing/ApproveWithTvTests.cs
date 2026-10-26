@@ -37,6 +37,29 @@ public sealed class ApproveWithTvTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Approve_WithAMemberWhoLostHisTv_ClearsTheOptOutInTheSameTransaction()
+    {
+        await using var app = await DevicesApp.StartAsync(postgres, NoStepUp);
+        var login = await app.LoginAsync();
+        var returning = Guid.NewGuid();
+        var untouched = Guid.NewGuid();
+        await using (var seed = TvApp.CreateContext(app.Database.OwnerConnection))
+        {
+            seed.TvMemberOptOuts.AddRange(
+                TvMemberOptOut.Create(returning, DateTimeOffset.UtcNow), TvMemberOptOut.Create(untouched, DateTimeOffset.UtcNow));
+            await seed.SaveChangesAsync(Ct);
+        }
+
+        var started = await app.StartAsync("PC Raphael");
+        using var response = await app.ApproveWithTvRawAsync(login, started.UserCode, [returning]);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await using var tv = TvApp.CreateContext(app.Database.OwnerConnection);
+        (await tv.TvMembers.Select(m => m.UserId).ToListAsync(Ct)).Should().Equal(returning);
+        (await tv.TvMemberOptOuts.Select(o => o.UserId).ToListAsync(Ct)).Should().Equal(untouched);
+    }
+
+    [Fact]
     public async Task Approve_WithAnEmptyList_CreatesTheTvOnlyForTheOwner_AndUsesTheTvNameWhenGiven()
     {
         await using var app = await DevicesApp.StartAsync(postgres, NoStepUp);
