@@ -89,6 +89,9 @@ test.describe('início e navegação', () => {
   });
 
   test('folha de edição: reordena, cancela e aplica', async ({ page }, info) => {
+    // A escolha da Início é guardada por conta, e sem conta conhecida nada é gravado. Aqui não há API: o aparelho abre
+    // como numa partida sem rede de quem já entrou antes, com a dica da conta da última sessão.
+    await page.addInitScript(() => localStorage.setItem('uniover.account-id', 'u1'));
     await page.goto('/');
     const titles = blocks(page).locator('h3');
     await expect(titles).toHaveText(['TV', 'Treino', ...PLANNED]);
