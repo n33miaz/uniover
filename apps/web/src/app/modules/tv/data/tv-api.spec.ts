@@ -120,6 +120,31 @@ describe('TvApi', () => {
     await expect(done).resolves.toBe('already_off');
   });
 
+  it('reads, changes and cancels the selected TV schedule with its version', async () => {
+    const read = api.powerSchedule();
+    const get = http.expectOne('/api/v1/tv/power/schedule');
+    expect(get.request.method).toBe('GET');
+    get.flush({ active: null, last: null });
+    expect((await read).active).toBeNull();
+
+    const save = api.savePowerSchedule('2026-10-27T02:00:00.000Z', 'America/Sao_Paulo', 3);
+    const put = http.expectOne('/api/v1/tv/power/schedule');
+    expect(put.request.method).toBe('PUT');
+    expect(put.request.body).toEqual({
+      dueAtUtc: '2026-10-27T02:00:00.000Z',
+      timeZone: 'America/Sao_Paulo',
+      version: 3,
+    });
+    put.flush({ id: 'agendamento', version: 4 });
+    expect((await save).version).toBe(4);
+
+    const cancel = api.cancelPowerSchedule(4);
+    const del = http.expectOne('/api/v1/tv/power/schedule?version=4');
+    expect(del.request.method).toBe('DELETE');
+    del.flush(null, { status: 204, statusText: 'No Content' });
+    await cancel;
+  });
+
   it('treats an answer without an outcome (older server) as sent', async () => {
     const done = api.powerOff(true);
     http.expectOne('/api/v1/tv/power/off').flush({ ok: true, latencyMs: 30 });

@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import { computed, signal } from '@angular/core';
 import { TvFailure } from './data/tv-errors';
+import type { TvPowerSchedule } from './data/tv-api';
 import { TvLink, TvNotice, TvStatus, TvStreamStatus } from './data/tv-store';
 import { withOrder } from './data/tv-order';
 import { TvShortcut, TvState, TvSummary, TvWatchdog } from './data/tv-types';
@@ -111,6 +112,14 @@ export function createFakeTvStore() {
     selectedTv,
     multiple: computed(() => (tvs()?.length ?? 0) > 1),
     safePowerOff: signal(false),
+    canSchedulePowerOff: signal(false),
+    powerSchedule: signal<TvPowerSchedule | null>(null),
+    lastPowerSchedule: signal<TvPowerSchedule | null>(null),
+    refreshPowerSchedule: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    savePowerSchedule: vi
+      .fn<(dueAtUtc: string, timeZone: string) => Promise<TvFailure | null>>()
+      .mockResolvedValue(null),
+    cancelPowerSchedule: vi.fn<() => Promise<TvFailure | null>>().mockResolvedValue(null),
     selectTv: vi.fn<(id: string) => void>().mockImplementation((id) => selectedId.set(id)),
     refreshTvs: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     state: signal<TvState | null>(HOT),

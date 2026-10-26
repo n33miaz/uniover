@@ -1037,33 +1037,57 @@ test.describe('disposição das pílulas de volume e canal', () => {
 });
 
 test.describe('folha de desligar', () => {
-  test('tem a linha "Agendar desligamento" marcada "Em breve", que não é um botão', async ({
-    page,
-  }) => {
+  test('explica quando o agente ainda não oferece agendamento seguro', async ({ page }) => {
     await openTv(page);
     await powerButton(page).click();
     const sheet = powerDialog(page);
     await expect(sheet).toBeVisible();
 
-    // Continua com só dois botões, e o desligar segue pedindo a confirmação.
+    // O desligar imediato continua disponível, mesmo quando o agente não oferece a operação segura.
     await expect(sheet.getByRole('button')).toHaveText(['Cancelar', 'Desligar']);
-    const row = sheet.getByRole('group', { name: 'Agendar desligamento' });
+    const row = sheet.getByRole('region', { name: 'Agendar desligamento' });
     await expect(row).toBeVisible();
-    await expect(row).toContainText('Em breve');
-    await expect(row).toHaveAttribute('aria-disabled', 'true');
-    await expect(row).toHaveAccessibleDescription('Ainda não disponível.');
-    await expect(row.locator('button, a, input, [tabindex]')).toHaveCount(0);
-
-    // Tocar nela não faz nada, e o teclado não para nela.
-    await row.click({ force: true });
-    await expect(sheet).toBeVisible();
+    await expect(row).toContainText('Agendamento disponível com TV configurada');
+    await expect(row.locator('button, input')).toHaveCount(0);
     expect(tv.count('/power/off')).toBe(0);
-    for (let presses = 0; presses < 4; presses++) {
-      await page.keyboard.press('Tab');
-      expect(
-        await page.evaluate(() => document.activeElement?.closest('[aria-disabled]')),
-      ).toBeNull();
-    }
+  });
+
+  test('confirma a hora local, altera e cancela o agendamento', async ({ page }) => {
+    tv.tvs = [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'TV',
+        isDefault: true,
+        agentSlug: 'pc-casa',
+        kind: 'android',
+        online: true,
+        capabilities: ['tv.remote', 'tv.kind.android', 'tv.power.off.v1'],
+      },
+    ];
+    await openTv(page);
+    await powerButton(page).click();
+    const sheet = powerDialog(page);
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole('button', { name: '30 min' }).click();
+    await expect(sheet).toContainText('Desligar em');
+    await sheet.getByRole('button', { name: 'Confirmar agendamento' }).click();
+    await expect(sheet).toContainText('Agendado para');
+    await sheet.getByRole('button', { name: '1 h' }).click();
+    await sheet.getByRole('button', { name: 'Confirmar agendamento' }).click();
+    await expect
+      .poll(
+        () =>
+          tv.requests.filter(
+            (request) => request.method === 'PUT' && request.path === '/power/schedule',
+          ).length,
+      )
+      .toBe(2);
+    await sheet.getByRole('button', { name: 'Cancelar agendamento' }).click();
+    await expect(sheet).not.toContainText('Agendado para');
+    expect(tv.count('/power/off')).toBe(0);
+    expect(await smallTargets(page)).toEqual([]);
+    await expectNoHorizontalScroll(page);
+    await expectNoA11yViolations(page);
   });
 
   test('entra por transição (parte do @starting-style) e sai marcada como saindo antes de sumir', async ({

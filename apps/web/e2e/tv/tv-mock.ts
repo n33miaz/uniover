@@ -69,6 +69,7 @@ export interface MockFailure {
 
 export interface TvMock {
   readonly requests: TvRequest[];
+  powerSchedule: { active: Record<string, unknown> | null; last: Record<string, unknown> | null };
   /**
    * Os pedidos que a API real recusaria com 403 por falta de permissão (o mock os recusa do mesmo jeito). A tela que
    * esconde o que a pessoa não pode nunca os faz: os testes de permissão afirmam que esta lista fica vazia.
@@ -129,6 +130,7 @@ function requiredPermission(method: string, path: string): string | null {
   if (method === 'POST' && ['/wake', '/keys', '/text', '/cleanup'].includes(path))
     return 'tv:control';
   if (method === 'POST' && path === '/power/off') return 'tv:power';
+  if (path === '/power/schedule' && ['GET', 'PUT', 'DELETE'].includes(method)) return 'tv:power';
   if (
     method === 'POST' &&
     (path === '/shortcuts/refresh' || /^\/shortcuts\/[^/]+\/launch$/.test(path))
@@ -224,6 +226,7 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     tvs: null,
     members: {},
     layouts: {},
+    powerSchedule: { active: null, last: null },
     shortcutsGate: null,
     commandFailure: null,
     wakeFailure: null,
@@ -317,6 +320,32 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
     if (method === 'GET' && path === '/shortcuts') {
       if (mock.shortcutsGate) await mock.shortcutsGate;
       return json(route, 200, chosen?.shortcuts ?? mock.shortcuts);
+    }
+
+    if (path === '/power/schedule') {
+      if (method === 'GET') return json(route, 200, mock.powerSchedule);
+      if (method === 'PUT') {
+        const version = mock.powerSchedule.active?.['version'];
+        if ((version ?? null) !== (body?.['version'] ?? null))
+          return problem(route, { status: 409, kind: 'conflict' });
+        const active = {
+          id: 'agendamento',
+          dueAtUtc: body?.['dueAtUtc'],
+          timeZone: body?.['timeZone'],
+          status: 'pending',
+          result: null,
+          reason: null,
+          version: typeof version === 'number' ? version + 1 : 1,
+        };
+        mock.powerSchedule.active = active;
+        return json(route, 200, active);
+      }
+      if (method === 'DELETE') {
+        if (url.searchParams.get('version') !== String(mock.powerSchedule.active?.['version']))
+          return problem(route, { status: 409, kind: 'conflict' });
+        mock.powerSchedule.active = null;
+        return route.fulfill({ status: 204 });
+      }
     }
 
     if (method === 'POST' && path === '/wake') {

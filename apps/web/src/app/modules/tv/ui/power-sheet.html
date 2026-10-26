@@ -16,27 +16,94 @@
     </p>
   }
 
-  <!-- Ainda não existe no agente: é só um aviso do que vem, por isso não é botão. -->
-  <div
-    class="ui-group schedule"
-    role="group"
-    aria-labelledby="power-schedule-title"
-    aria-describedby="power-schedule-note"
-    aria-disabled="true"
-  >
-    <div class="ui-row">
-      <span class="ui-tile"><app-tv-icon name="clock" /></span>
-      <span class="ui-row-text">
-        <span id="power-schedule-title" class="ui-row-title" i18n="@@tv.power.schedule"
-          >Agendar desligamento</span
+  <section class="ui-group schedule" aria-labelledby="power-schedule-title">
+    <h3 id="power-schedule-title" i18n="@@tv.power.schedule">Agendar desligamento</h3>
+    @if (store.powerSchedule(); as active) {
+      <p class="text" i18n="@@tv.power.schedule.active">
+        Agendado para {{ localTime(active.dueAtUtc, active.timeZone) }} ({{ active.timeZone }})
+      </p>
+      @if (active.status === 'dispatching') {
+        <p class="text" i18n="@@tv.power.schedule.dispatching">Desligamento em andamento.</p>
+      }
+      <button
+        type="button"
+        class="secondary"
+        [disabled]="busy() || active.status !== 'pending'"
+        (click)="cancelSchedule()"
+        i18n="@@tv.power.schedule.cancel"
+      >
+        Cancelar agendamento
+      </button>
+    }
+    @if (store.canSchedulePowerOff()) {
+      @if (store.powerSchedule()) {
+        <p class="text" i18n="@@tv.power.schedule.change">Escolha outro horário para alterar.</p>
+      }
+      <div class="schedule-presets" role="group" aria-labelledby="power-schedule-title">
+        <button
+          type="button"
+          [disabled]="busy()"
+          (click)="chooseMinutes(30)"
+          i18n="@@tv.power.schedule.half-hour"
         >
-      </span>
-      <span class="ui-chip" i18n="@@tv.power.soon">Em breve</span>
-    </div>
-    <span id="power-schedule-note" class="sr-only" i18n="@@tv.power.schedule-note"
-      >Ainda não disponível.</span
-    >
-  </div>
+          30 min
+        </button>
+        <button
+          type="button"
+          [disabled]="busy()"
+          (click)="chooseMinutes(60)"
+          i18n="@@tv.power.schedule.one-hour"
+        >
+          1 h
+        </button>
+        <button
+          type="button"
+          [disabled]="busy()"
+          (click)="chooseMinutes(120)"
+          i18n="@@tv.power.schedule.two-hours"
+        >
+          2 h
+        </button>
+      </div>
+      <label class="day-time" for="power-day-time" i18n="@@tv.power.schedule.day-time"
+        >Horário do dia</label
+      >
+      <input
+        id="power-day-time"
+        type="time"
+        [value]="dayTime()"
+        [disabled]="busy()"
+        (change)="updateDayTime($event)"
+      />
+      @if (chosen(); as date) {
+        <p class="text" i18n="@@tv.power.schedule.confirm-time">
+          Desligar em {{ localTime(date) }} ({{ zone }})?
+        </p>
+        <button
+          type="button"
+          class="schedule-confirm"
+          [disabled]="busy()"
+          (click)="saveSchedule()"
+          i18n="@@tv.power.schedule.confirm"
+        >
+          Confirmar agendamento
+        </button>
+      }
+    } @else if (!store.powerSchedule()) {
+      <p class="text" i18n="@@tv.power.schedule.unavailable">
+        Agendamento disponível com TV configurada e agente online com desligamento seguro.
+      </p>
+    }
+    @if (store.lastPowerSchedule(); as last) {
+      @if (
+        last.status === 'completed' || (last.status === 'cancelled' && last.reason !== 'requested')
+      ) {
+        <p class="schedule-result" i18n="@@tv.power.schedule.last-result">
+          Último agendamento: {{ lastResult(last.reason ?? last.result) }}
+        </p>
+      }
+    }
+  </section>
 
   @if (error(); as text) {
     <p class="error" role="alert">{{ text }}</p>

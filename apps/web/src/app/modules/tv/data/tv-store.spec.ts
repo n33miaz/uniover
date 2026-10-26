@@ -59,6 +59,9 @@ describe('TvStore', () => {
     sendKey: vi.fn(),
     sendText: vi.fn(),
     powerOff: vi.fn(),
+    powerSchedule: vi.fn(),
+    savePowerSchedule: vi.fn(),
+    cancelPowerSchedule: vi.fn(),
     launch: vi.fn(),
     cleanup: vi.fn(),
     refreshShortcuts: vi.fn(),
@@ -125,6 +128,9 @@ describe('TvStore', () => {
     api.sendKey.mockResolvedValue(undefined);
     api.sendText.mockResolvedValue(undefined);
     api.powerOff.mockResolvedValue('sent');
+    api.powerSchedule.mockResolvedValue({ active: null, last: null });
+    api.savePowerSchedule.mockResolvedValue(null);
+    api.cancelPowerSchedule.mockResolvedValue(undefined);
     api.launch.mockResolvedValue(undefined);
     api.cleanup.mockResolvedValue({
       ok: true,
@@ -631,6 +637,37 @@ describe('TvStore', () => {
         online: true,
         capabilities: ['tv.remote', 'tv.kind.android', 'tv.power.off.v1'],
       };
+
+      it('loads, changes and cancels only the schedule of the current TV', async () => {
+        api.tvs.mockResolvedValue([safeTv]);
+        await started();
+        const active = {
+          id: 'agendamento',
+          dueAtUtc: '2026-10-20T01:00:00Z',
+          timeZone: 'America/Sao_Paulo',
+          status: 'pending',
+          result: null,
+          reason: null,
+          version: 1,
+        };
+        api.powerSchedule.mockResolvedValue({ active, last: null });
+        await store.refreshPowerSchedule();
+        expect(store.powerSchedule()).toEqual(active);
+        expect(store.canSchedulePowerOff()).toBe(true);
+        api.savePowerSchedule.mockResolvedValue({ ...active, version: 2 });
+        await expect(
+          store.savePowerSchedule('2026-10-20T02:00:00Z', 'America/Sao_Paulo'),
+        ).resolves.toBeNull();
+        expect(api.savePowerSchedule).toHaveBeenCalledWith(
+          '2026-10-20T02:00:00Z',
+          'America/Sao_Paulo',
+          1,
+        );
+        await expect(store.cancelPowerSchedule()).resolves.toBeNull();
+        expect(api.cancelPowerSchedule).toHaveBeenCalledWith(2);
+        expect(store.powerSchedule()).toBeNull();
+        expect(api.powerOff).not.toHaveBeenCalled();
+      });
 
       it('asks for the safe power off, and says the TV is off once the agent confirmed it', async () => {
         api.tvs.mockResolvedValue([safeTv]);
