@@ -10,6 +10,18 @@ const TOOL_STYLE_GRACE_MS = 1500;
 const TOOL_STYLE_EVENT = /^style-src-elem inline\b/;
 const TOOL_STYLE_CONSOLE = /stylesheet|style-src/i;
 
+/**
+ * O WebKit (projeto `iphone-12`) escreve por dentro de todo `<select>` um `style` em linha próprio, e a CSP o barra:
+ * o evento `style-src-attr` chega com o próprio `<select>` como alvo e, junto, o console registra "Refused to apply a
+ * stylesheet" (sem dizer de quem). Provado fora do app: uma página estática, sem Angular nem código nosso, só com um
+ * `<select>` e esta mesma CSP, gera exatamente esse par no WebKit e nenhum no Chromium; sem `<select>` não gera nada.
+ * Nenhum `<select>` do app tem atributo `style`. É ruído do motor, não do app, e nada do app deixa de ser aplicado.
+ * O alvo do evento identifica a origem; a mensagem do console, que não tem alvo, só é tolerada na mesma quantidade
+ * de eventos assim (um por `<select>`), conferida no fim do teste.
+ */
+const WEBKIT_SELECT_CONSOLE =
+  /^Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline'/;
+
 function lateToolStyle(page: Page, pattern: RegExp, detail: string): boolean {
   return pattern.test(detail) && Date.now() < (toolStyleUntil.get(page) ?? 0);
 }
@@ -54,27 +66,48 @@ export const test = base.extend<{
     { auto: true },
   ],
   cspViolations: [
-    async ({ page }, use) => {
+    async ({ page, browserName }, use) => {
       const violations: string[] = [];
+      // Só no WebKit: lá o `<select>` provoca o par descrito em WEBKIT_SELECT_CONSOLE; no Chromium nada é tolerado.
+      const tolerateSelect = browserName === 'webkit';
+      let selectEvents = 0;
+      const selectConsole: string[] = [];
       await page.exposeFunction('__reportCsp', (detail: string) => {
         if (muted.has(page) || lateToolStyle(page, TOOL_STYLE_EVENT, detail)) return;
         violations.push(detail);
       });
-      await page.addInitScript(() => {
+      await page.exposeFunction('__reportSelectStyle', () => {
+        if (!muted.has(page)) selectEvents++;
+      });
+      await page.addInitScript((tolerate) => {
         document.addEventListener('securitypolicyviolation', (event) => {
+          const target = event.target;
+          if (
+            tolerate &&
+            event.violatedDirective === 'style-src-attr' &&
+            target instanceof HTMLSelectElement &&
+            !target.hasAttribute('style')
+          ) {
+            (window as unknown as { __reportSelectStyle(): void }).__reportSelectStyle();
+            return;
+          }
           (window as unknown as { __reportCsp(detail: string): void }).__reportCsp(
             `${event.violatedDirective} ${event.blockedURI} ${event.sample} ${event.sourceFile}:${event.lineNumber}`,
           );
         });
-      });
+      }, tolerateSelect);
       page.on('console', (message) => {
         if (muted.has(page)) return;
         const text = message.text();
         if (/Content Security Policy|Refused to (apply|execute|load)/i.test(text)) {
-          if (!lateToolStyle(page, TOOL_STYLE_CONSOLE, text)) violations.push(text);
+          if (lateToolStyle(page, TOOL_STYLE_CONSOLE, text)) return;
+          if (tolerateSelect && WEBKIT_SELECT_CONSOLE.test(text)) selectConsole.push(text);
+          else violations.push(text);
         }
       });
       await use(violations);
+      // A mensagem do console não tem alvo: o que passar da quantidade de `<select>` que o evento identificou é violação.
+      violations.push(...selectConsole.slice(selectEvents));
       expect(violations, 'violações de CSP').toEqual([]);
     },
     { auto: true },
