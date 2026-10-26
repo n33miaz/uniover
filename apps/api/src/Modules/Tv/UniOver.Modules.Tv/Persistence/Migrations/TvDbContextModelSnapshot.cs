@@ -325,6 +325,22 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                     b.ToTable("tv_members", "tv");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvMemberOptOut", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_tv_member_optouts");
+
+                    b.ToTable("tv_member_optouts", "tv");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvStateRecord", b =>
                 {
                     b.Property<string>("AgentId")

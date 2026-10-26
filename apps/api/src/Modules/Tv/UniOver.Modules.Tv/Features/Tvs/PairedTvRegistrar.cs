@@ -30,6 +30,10 @@ internal sealed class PairedTvRegistrar(TimeProvider time) : IPairedTvRegistrar
         await using var db = new TvDbContext(builder.Options);
         await db.Database.UseTransactionAsync(transaction, cancellationToken);
 
+        // Entrar numa TV apaga a marca de "retirada" da conta; o bloqueio é o mesmo de quem remove filiações e vale até o
+        // commit da transação do Devices.
+        await TvMembershipLedger.LockAsync(db, cancellationToken);
+
         var now = time.GetUtcNow();
         var hasDefault = await db.Tvs.AnyAsync(tv => tv.IsDefault, cancellationToken);
         // Nome recusado pelas regras da TV (invisíveis, longo demais) não derruba a aprovação: cai no nome do computador.
@@ -38,7 +42,9 @@ internal sealed class PairedTvRegistrar(TimeProvider time) : IPairedTvRegistrar
             : registration.AgentName;
         var tv = ConfiguredTv.Create(name, registration.AgentSlug, registration.CanBeDefault && !hasDefault, registration.OwnerId, now);
         db.Tvs.Add(tv);
-        db.TvMembers.AddRange(registration.MemberIds.Distinct().Select(userId => TvMember.Create(tv.Id, userId, now)));
+        var members = registration.MemberIds.Distinct().ToList();
+        db.TvMembers.AddRange(members.Select(userId => TvMember.Create(tv.Id, userId, now)));
+        await TvMembershipLedger.ReconcileAsync(db, tv.Id, [], members, now, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
     }
 }
