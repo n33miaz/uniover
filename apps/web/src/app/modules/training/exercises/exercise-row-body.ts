@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import type { LocalExercise } from '../data/catalog/exercise';
 import { equipmentLabel, muscleGroupLabel, muscleGroupOf, muscleLabel } from '../domain/taxonomy';
+import { illustrationFor, illustrationUrl } from '../illustrations/illustration-map';
+import { TrainingGlyph } from '../shell/training-glyph';
 
 /**
  * O miolo de uma linha da lista de exercícios: o nome e uma linha de apoio curta ("Peito · Barra · seu último: 42,5
@@ -9,7 +11,15 @@ import { equipmentLabel, muscleGroupLabel, muscleGroupOf, muscleLabel } from '..
  */
 @Component({
   selector: 'app-exercise-row-body',
+  imports: [TrainingGlyph],
   template: `
+    <span class="thumb" aria-hidden="true">
+      @if (imageUrl(); as source) {
+        <img [src]="source" [alt]="''" width="44" height="44" />
+      } @else {
+        <app-training-glyph name="dumbbell" />
+      }
+    </span>
     <span class="text">
       <span class="name">{{ exercise().name }}</span>
       <span class="sub">{{ support() }}</span>
@@ -44,5 +54,11 @@ export class ExerciseRowBody {
       );
     }
     return parts.join(' · ');
+  });
+
+  /** A miniatura usa somente a primeira pose de uma ilustração confirmada; no espaço curto da lista, ela não anima. */
+  protected readonly imageUrl = computed(() => {
+    const entry = illustrationFor(this.exercise().slug);
+    return entry === undefined ? null : illustrationUrl(entry.frames[0]);
   });
 }
