@@ -29,8 +29,28 @@ env:
   APP_URL: ${{ vars.APP_URL || 'https://uniover.onrender.com' }}
 
 jobs:
+  # Trava a publicação sem versão nova: VERSION precisa ser SemVer, maior que a maior tag v* (ou igual a ela, se a tag
+  # aponta para este mesmo commit: redeploy) e igual ao que o package.json, o lock, o agente e a API repetem. Roda antes
+  # das migrations: um deploy barrado aqui não mexe no banco. A versão é preparada no PR com
+  # `node scripts/release-version.mjs --prepare patch|minor|major`.
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # as tags precisam vir junto
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Conferir a versão da publicação
+        run: node scripts/release-version.mjs --verify
+
   migrate:
     name: migrate
+    needs: version
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
@@ -287,3 +307,56 @@ jobs:
           allow_issue_writing: false
           fail_action: true
           artifact_name: zap-baseline-producao
+
+  # Depois do deploy confirmado: a tag v<VERSION> no commit publicado e o GitHub Release com a entrada do CHANGELOG.
+  # Idempotente: se a tag já existe neste mesmo commit só garante o Release; se aponta para outro commit, falha. A tag
+  # nasce do próprio `gh release create --target`, então nada aqui faz push de git e o checkout não guarda credencial.
+  # É o único job com permissão de escrita.
+  release:
+    name: release
+    needs: deploy
+    if: needs.deploy.outputs.deployed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Criar a tag e o Release da versão publicada
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version=$(tr -d '\r\n' < VERSION)
+          tag="v$version"
+          awk -v heading="## [$version]" '
+            index($0, heading) == 1 { printing = 1; next }
+            printing && /^## / { exit }
+            printing { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::não achei a entrada $version no CHANGELOG.md."
+            exit 1
+          fi
+          # Tag existente: precisa apontar para o commit publicado. Tag nova: o Release a cria neste commit.
+          if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            tagged_sha=$(git rev-list -n 1 "$tag")
+            if [ "$tagged_sha" != "$GITHUB_SHA" ]; then
+              echo "::error::a tag $tag já aponta para $tagged_sha, não para o commit publicado $GITHUB_SHA."
+              exit 1
+            fi
+            echo "A tag $tag já aponta para este commit."
+            target=(--verify-tag)
+          else
+            target=(--target "$GITHUB_SHA")
+          fi
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "O Release $tag já existe; nada a fazer."
+          else
+            gh release create "$tag" "${target[@]}" --title "UniOver $version" --notes-file release-notes.md
+            echo "Release $tag criado."
+          fi
