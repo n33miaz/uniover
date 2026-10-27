@@ -1,6 +1,8 @@
 import type { LocalBodyEntry } from '../../data/body/body-entry';
 import {
   buildWeightChart,
+  daySeconds,
+  formatWeightDateRange,
   periodStart,
   rowsInPeriod,
   summarizeWeight,
@@ -48,19 +50,36 @@ describe('body weight view model', () => {
     expect(chart?.trendYs[1]).toBeCloseTo(82.3);
   });
 
-  it('fits the time window to the data when a long period has only a few weights', () => {
-    const rows = weightRows([
-      row('2026-10-14', 82),
-      row('2026-10-20', 81.8),
-      row('2026-10-26', 81.5),
-    ]);
+  it.each([
+    ['one', ['2026-04-27']],
+    ['two', ['2026-05-10', '2026-05-17']],
+    ['five', ['2026-05-10', '2026-05-17', '2026-05-24', '2026-05-31', '2026-06-07']],
+  ])('fits %s old weights to their dates inside a fixed period', (_count, dates) => {
+    const rows = weightRows(dates.map((date, index) => row(date, 82 - index * 0.3)));
     const few = buildWeightChart({ rows, period: '6m', today: '2026-10-27', selected: null });
     const day = 86_400;
     const spanDays = ((few?.xRange[1] ?? 0) - (few?.xRange[0] ?? 0)) / day;
-    expect(spanDays).toBeLessThan(21);
+    expect(spanDays).toBeGreaterThanOrEqual(14);
+    expect(few?.xRange[1]).toBeLessThan(daySeconds('2026-10-27'));
     expect(few?.xRange[0]).toBeLessThan(few?.xs[0] ?? 0);
-    expect(few?.xRange[1]).toBeGreaterThan(few?.xs[2] ?? 0);
+    expect(few?.xRange[1]).toBeGreaterThan(few?.xs[rows.length - 1] ?? 0);
     expect(few?.xTicks.every((tick) => Number.isInteger(tick / day))).toBe(true);
+    expect(few?.dataRange).toEqual([dates[0], dates[dates.length - 1]]);
+  });
+
+  it('keeps the minimum data window when the only weight is from today', () => {
+    const rows = weightRows([row('2026-10-27', 82)]);
+    const chart = buildWeightChart({ rows, period: '6m', today: '2026-10-27', selected: null });
+    const spanDays = ((chart?.xRange[1] ?? 0) - (chart?.xRange[0] ?? 0)) / 86_400;
+
+    expect(spanDays).toBeGreaterThanOrEqual(14);
+    expect(chart?.xRange[0]).toBeLessThan(chart?.xs[0] ?? 0);
+    expect(chart?.xRange[1]).toBeGreaterThan(chart?.xs[0] ?? 0);
+    expect(chart?.dataRange).toEqual(['2026-10-27', '2026-10-27']);
+  });
+
+  it('formats the short date range that accompanies a fitted fixed period', () => {
+    expect(formatWeightDateRange('2026-03-15', '2026-04-02')).toBe('Mar–Abr');
   });
 
   it('keeps the whole period as the window when there are enough weights', () => {
@@ -76,5 +95,8 @@ describe('body weight view model', () => {
     const many = buildWeightChart({ rows, period: '6m', today: '2026-10-27', selected: null });
     const spanDays = ((many?.xRange[1] ?? 0) - (many?.xRange[0] ?? 0)) / 86_400;
     expect(spanDays).toBeGreaterThan(180);
+    expect(many?.xRange[0]).toBeLessThan(daySeconds('2026-04-27'));
+    expect(many?.xRange[1]).toBeGreaterThan(daySeconds('2026-10-27'));
+    expect(many?.dataRange).toBeNull();
   });
 });
