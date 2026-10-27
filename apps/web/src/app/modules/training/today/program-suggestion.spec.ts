@@ -57,7 +57,10 @@ describe('ProgramSuggestion', () => {
     await vi.waitFor(async () =>
       expect(await TestBed.inject(RoutineRepository).activeProgramId()).toBe('duplo'),
     );
-    expect(await TestBed.inject(OfflineQueue).items()).toHaveLength(3);
+    // A fila recebe os pedidos depois de o programa ficar ativo: sob carga, a terceira entrada chega um pouco depois.
+    await vi.waitFor(async () =>
+      expect(await TestBed.inject(OfflineQueue).items()).toHaveLength(3),
+    );
   });
 
   it('shows nothing when no template declares its days', async () => {
