@@ -649,7 +649,7 @@ describe('DevicesPage deep link and connector', () => {
 });
 
 describe('devices route', () => {
-  it('renders the page lazily, inside the shell, under Ajustes', async () => {
+  it('renders the page lazily, inside the shell, under Configurações', async () => {
     TestBed.configureTestingModule({
       providers: [
         provideRouter(routes),
@@ -661,7 +661,7 @@ describe('devices route', () => {
     const root = harness.routeNativeElement as HTMLElement;
     expect(root.matches('app-shell')).toBe(true);
     expect(root.querySelector('app-devices-page')).not.toBeNull();
-    expect(root.querySelector('h1')?.textContent).toBe('Aparelhos');
+    expect(root.querySelector('h1')?.textContent).toBe('Dispositivos');
   });
 
   it('serves the same page at the address the agent QR points to', async () => {

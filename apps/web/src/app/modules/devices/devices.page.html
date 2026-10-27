@@ -1,5 +1,7 @@
 <div class="devices">
-  <a routerLink="/ajustes" class="back ui-btn secondary" i18n="@@devices.back">&larr; Ajustes</a>
+  <a routerLink="/ajustes" class="back ui-btn secondary" i18n="@@devices.back"
+    >&larr; Configurações</a
+  >
 
   @if (!canManage) {
     @if (canPairSelf) {
@@ -48,7 +50,9 @@
     }
   } @else {
     <section class="section" aria-labelledby="devices-title">
-      <h2 id="devices-title" class="ui-section-label" i18n="@@devices.title">Aparelhos pareados</h2>
+      <h2 id="devices-title" class="ui-section-label" i18n="@@devices.title">
+        Dispositivos pareados
+      </h2>
 
       @if (agents(); as list) {
         @if (list.length === 0) {

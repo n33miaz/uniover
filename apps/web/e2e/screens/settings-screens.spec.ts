@@ -127,7 +127,7 @@ async function check(
 }
 
 const OWNER_SCREENS = [
-  { name: 'list', path: '/ajustes', title: 'Ajustes' },
+  { name: 'list', path: '/ajustes', title: 'Configurações' },
   { name: 'profile', path: '/ajustes/perfil', title: 'Perfil' },
   { name: 'appearance', path: '/ajustes/aparencia', title: 'Aparência' },
   { name: 'security', path: '/ajustes/seguranca', title: 'Segurança' },
@@ -136,7 +136,7 @@ const OWNER_SCREENS = [
 ] as const;
 
 const GUEST_SCREENS = [
-  { name: 'guest-list', path: '/ajustes', title: 'Ajustes' },
+  { name: 'guest-list', path: '/ajustes', title: 'Configurações' },
   { name: 'guest-profile', path: '/ajustes/perfil', title: 'Perfil' },
   { name: 'guest-appearance', path: '/ajustes/aparencia', title: 'Aparência' },
   { name: 'guest-about', path: '/ajustes/sobre', title: 'Sobre' },
@@ -209,7 +209,7 @@ test.describe('navegação dentro de Ajustes', () => {
     page,
   }) => {
     await page.goto('/ajustes');
-    await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
     for (const [row, title] of [
       [/^Perfil/, 'Perfil'],
       [/^Aparência/, 'Aparência'],
@@ -222,7 +222,7 @@ test.describe('navegação dentro de Ajustes', () => {
       // O foco está no título da tela nova (o link clicado já não existe).
       await expect(page.getByRole('heading', { level: 1, name: title })).toBeFocused();
       await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
-      await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeFocused();
+      await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeFocused();
     }
   });
 

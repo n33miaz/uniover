@@ -24,7 +24,7 @@ const outdatedText = () =>
   $localize`:@@devices.outdated:Este computador ainda roda uma versão do agente sem essa função. Atualize o agente: ele se atualiza sozinho em algumas horas, e depois é só tentar de novo.`;
 
 /**
- * Aparelhos: lista dos agentes pareados, pareamento por código (com passkey), recusa de código e revogação.
+ * Dispositivos: lista dos agentes pareados, pareamento por código (com passkey), recusa de código e revogação.
  * Escrita nunca passa pela fila offline: sem rede, os botões ficam desabilitados e a tela explica.
  *
  * O QR que o agente mostra no PC abre esta tela com o código no endereço: a folha de aprovação já sobe com ele

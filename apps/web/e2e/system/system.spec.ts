@@ -198,7 +198,7 @@ test.describe('Ajustes > Sistema > TVs', () => {
 
       await expect(page.getByText('Nenhuma TV ainda.')).toBeVisible();
       await expect(page.getByText('Todo computador pareado já tem uma TV.')).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Ir para Aparelhos' })).toHaveAttribute(
+      await expect(page.getByRole('link', { name: 'Ir para Dispositivos' })).toHaveAttribute(
         'href',
         '/ajustes/aparelhos',
       );

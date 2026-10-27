@@ -270,7 +270,7 @@ describe('TvEditSheet', () => {
 
     it('says when there is no free computer', async () => {
       const { el, button } = await render(null, []);
-      expect(el.textContent).toContain('Nenhum computador livre. Pareie um em Aparelhos.');
+      expect(el.textContent).toContain('Nenhum computador livre. Pareie um em Dispositivos.');
       expect(button('Salvar').disabled).toBe(true);
     });
   });

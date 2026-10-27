@@ -48,7 +48,7 @@ async function signIn(page: Page) {
   await expect(page).toHaveURL(/\/$/);
 }
 
-/** Entra, (no Chromium) cadastra uma passkey no autenticador virtual e abre Ajustes > Aparelhos. */
+/** Entra, (no Chromium) cadastra uma passkey no autenticador virtual e abre Configurações > Dispositivos. */
 async function openDevices(page: Page, browserName: string) {
   if (browserName === 'chromium') await addVirtualAuthenticator(page);
   await signIn(page);
@@ -61,9 +61,11 @@ async function openDevices(page: Page, browserName: string) {
     await expect(page.getByText('Passkey cadastrada.', { exact: true })).toBeVisible();
   }
   await page.goto('/ajustes');
-  await page.getByRole('link', { name: /^Aparelhos/ }).click();
+  await page.getByRole('link', { name: /^Dispositivos/ }).click();
   await expect(page).toHaveURL(/\/ajustes\/aparelhos$/);
-  await expect(page.getByRole('heading', { level: 2, name: 'Aparelhos pareados' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { level: 2, name: 'Dispositivos pareados' }),
+  ).toBeVisible();
 }
 
 async function typeCode(page: Page, code: string) {

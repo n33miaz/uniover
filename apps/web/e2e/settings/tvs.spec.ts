@@ -206,7 +206,7 @@ test.describe('Ajustes > Sistema > TVs', () => {
 
     // Todo computador já tem uma TV: a ação some e a tela leva a Aparelhos.
     await expect(page.getByRole('button', { name: 'Adicionar TV' })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Ir para Aparelhos' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'Ir para Dispositivos' })).toHaveAttribute(
       'href',
       '/ajustes/aparelhos',
     );
