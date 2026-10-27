@@ -426,23 +426,23 @@ test.describe('Ajustes > Auditoria', () => {
     // Trocar também o ID simularia uma resposta de outra conta, corretamente descartada pela sessão.
     identity.role = 'guest';
     await page.getByRole('button', { name: 'Carregar mais' }).click();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
   });
 });
 
 test.describe('Ajustes > Auditoria para quem não é administrador', () => {
-  test('a convidada não vê o item, e o endereço digitado à mão a leva ao controle sem nenhuma chamada à trilha', async ({
+  test('a convidada não vê o item, e o endereço digitado à mão a leva à Início sem nenhuma chamada à trilha', async ({
     page,
   }) => {
     audit.items = seedTrail();
     signInAsGuest();
     await page.goto('/ajustes');
-    await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
     await expect(page.getByText('Auditoria')).toHaveCount(0);
     await expect(page.locator('a[href="/ajustes/auditoria"]')).toHaveCount(0);
 
     await page.goto('/ajustes/auditoria');
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
     expect(audit.requests).toEqual([]);
   });
 });

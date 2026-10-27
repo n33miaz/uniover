@@ -1,10 +1,4 @@
-import {
-  NO_ACCESS_PATH,
-  UNKNOWN_GUEST_HOME,
-  canUseModule,
-  homeFor,
-  modulePermission,
-} from './guest-home';
+import { UNKNOWN_GUEST_HOME, canUseModule, homeFor, modulePermission } from './guest-home';
 
 // A ordem é a do registro de módulos: a TV antes do Treino; um módulo só planejado não tem caminho (sem `slug`).
 const MODULES = [
@@ -50,37 +44,15 @@ describe('homeFor', () => {
   });
 
   it.each([
-    ['only the TV', ['module:tv', 'tv:control'], '/tv'],
-    ['only the Treino', ['module:training'], '/treino'],
-    ['both (the TV comes first in the registry)', ['module:training', 'module:tv'], '/tv'],
-  ])('takes a guest with %s to the first module he can use', (_name, permissions, home) => {
-    expect(homeFor('guest', permissions, MODULES)).toBe(home);
+    ['only the TV', ['module:tv', 'tv:control']],
+    ['only the Treino', ['module:training']],
+    ['both modules', ['module:training', 'module:tv']],
+    ['no modules', []],
+  ])('takes a guest with %s to Início', (_name, permissions) => {
+    expect(homeFor('guest', permissions, MODULES)).toBe('/');
   });
 
-  it('takes a guest with no module to the "no access" screen, never to a module', () => {
-    expect(homeFor('guest', [], MODULES)).toBe(NO_ACCESS_PATH);
-    expect(homeFor('guest', ['tv:control'], MODULES)).toBe(NO_ACCESS_PATH);
-  });
-
-  it('ignores a module that is only planned (no screen to open)', () => {
-    expect(homeFor('guest', ['module:health'], MODULES)).toBe(NO_ACCESS_PATH);
-  });
-
-  it('keeps the TV when the list is not known', () => {
+  it('keeps Início when the list is not known', () => {
     expect(homeFor('guest', null, MODULES)).toBe(UNKNOWN_GUEST_HOME);
-  });
-
-  it('never points to a module the same account cannot use', () => {
-    for (const permissions of [
-      [],
-      ['module:tv'],
-      ['module:training'],
-      ['module:tv', 'module:training'],
-    ]) {
-      const home = homeFor('guest', permissions, MODULES);
-      const module = MODULES.find((item) => 'slug' in item && `/${item.slug}` === home);
-      if (module) expect(canUseModule('guest', permissions, module.id)).toBe(true);
-      else expect(home).toBe(NO_ACCESS_PATH);
-    }
   });
 });

@@ -174,7 +174,7 @@ test.describe('convite: requisitos ao vivo', () => {
 });
 
 test.describe('convite: aceite', () => {
-  test('feliz: mostra "tudo pronto", segue sozinho para o controle e o segredo só viaja no corpo', async ({
+  test('feliz: mostra "tudo pronto", segue sozinho para a Início e o segredo só viaja no corpo', async ({
     page,
   }) => {
     // A tela seguinte (carregada sob demanda) fica retida: o "tudo pronto" permanece até o teste soltá-la.
@@ -190,12 +190,12 @@ test.describe('convite: aceite', () => {
 
     // Sem clicar em nada, ele segue sozinho.
     gate.release();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
     expect(mock.requests.every((r) => !r.url.includes(invite.token))).toBe(true);
     expect(mock.requests.filter((r) => r.path === '/guest-invites/accept')).toHaveLength(1);
   });
 
-  test('"Continuar" leva ao controle sem esperar o tempo do "tudo pronto"', async ({ page }) => {
+  test('"Continuar" leva à Início sem esperar o tempo do "tudo pronto"', async ({ page }) => {
     const gate = await gateScripts(page);
     await openForm(page);
     gate.hold();
@@ -205,7 +205,7 @@ test.describe('convite: aceite', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Tudo pronto' })).toBeVisible();
     await page.getByRole('button', { name: 'Continuar', exact: true }).click();
     gate.release();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
   });
 
   test('senha curta e senhas diferentes são barradas no aparelho, com o foco no campo certo', async ({
@@ -280,7 +280,7 @@ test.describe('convite: aceite', () => {
     await email(page).fill(GUEST.email);
     await expect(page.locator('#invite-email-error')).toHaveCount(0);
     await submit(page).click();
-    await expect(page).toHaveURL(/\/tv$/, { timeout: 8_000 });
+    await expect(page).toHaveURL(/\/$/, { timeout: 8_000 });
   });
 });
 

@@ -154,8 +154,8 @@ test.describe('convite do dono (passkey)', () => {
   });
 });
 
-test.describe('convidado: só o controle da TV', () => {
-  test('aceita o convite, define a própria senha e cai direto no controle, sem Início nem voltar', async ({
+test.describe('convidado: Início só com os módulos permitidos', () => {
+  test('aceita o convite, define a própria senha e cai na Início sem atalhos de administrador', async ({
     page,
   }, info) => {
     // Além dos três do controle, um app instalado que o dono não fixou (o convidado o abre) e um que saiu da TV (não aparece).
@@ -210,12 +210,19 @@ test.describe('convidado: só o controle da TV', () => {
     await page.getByLabel('Repita a senha').fill(GUEST.password);
     await page.getByRole('button', { name: 'Continuar', exact: true }).click();
 
-    // Visão única: cai no controle, sem Início, sem voltar, sem abas.
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('article.card h3')).toHaveText([
+      'TV',
+      'Controle do PC',
+      'Rede da casa',
+      'Backup de fotos',
+    ]);
+    await expect(page.locator('.shortcuts a.shortcut')).toHaveText(['Configurações']);
+    await expect(page.locator('.agent-status')).toBeVisible();
+    await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
+    // O controle tem cabeçalho próprio: a engrenagem fica no lugar da seta, e a volta à Início é pelas Configurações.
     await expect(page.getByRole('link', { name: /Início/ })).toHaveCount(0);
-    await expect(page.getByText('Início', { exact: true })).toHaveCount(0);
-    await expect(page.locator('a[href="/"]')).toHaveCount(0);
     await expect(page.getByRole('navigation')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Desligar a TV' })).toBeVisible();
 
@@ -277,13 +284,12 @@ test.describe('convidado: só o controle da TV', () => {
     }
   });
 
-  test('as telas do dono o devolvem ao controle, e nenhuma chamada fora da TV é feita', async ({
+  test('as telas do dono o devolvem à Início, e nenhuma chamada administrativa é feita', async ({
     page,
   }) => {
     const invite = identity.seedInvite();
     await acceptInvite(page, invite.token);
-    await expect(page).toHaveURL(/\/tv$/);
-    await showTv(page);
+    await expect(page).toHaveURL(/\/$/);
 
     const urls: string[] = [];
     page.on('request', (request) => urls.push(new URL(request.url()).pathname));
@@ -298,14 +304,19 @@ test.describe('convidado: só o controle da TV', () => {
       '/nao-existe',
     ]) {
       await page.goto(path);
-      await expect(page).toHaveURL(/\/tv$/);
-      await expect(page.getByRole('heading', { level: 1, name: 'TV' })).toBeVisible();
-      await expect(page.getByRole('link', { name: /Início/ })).toHaveCount(0);
+      await expect(page).toHaveURL(/\/$/);
+      await expect(page.locator('article.card h3')).toHaveText([
+        'TV',
+        'Controle do PC',
+        'Rede da casa',
+        'Backup de fotos',
+      ]);
+      await expect(page.locator('.shortcuts a.shortcut')).toHaveText(['Configurações']);
     }
 
-    // Recarregar mantém a sessão (cookie) e o papel: continua só no controle.
+    // Recarregar mantém a sessão (cookie) e o papel: continua na Início filtrada.
     await page.reload();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
 
     const outside = urls.filter(
       (path) =>
@@ -318,12 +329,11 @@ test.describe('convidado: só o controle da TV', () => {
     expect(identity.requests.map((r) => r.path)).not.toContain('/passkeys');
   });
 
-  test('o botão redondo do cabeçalho leva aos Ajustes da convidada: Perfil, Aparência, Aparelhos e Sobre', async ({
-    page,
-  }) => {
+  test('o botão redondo do cabeçalho leva às Configurações da convidada', async ({ page }) => {
     const invite = identity.seedInvite();
     await acceptInvite(page, invite.token);
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
 
     const settings = page.locator('header.head').getByRole('link', { name: 'Ajustes' });
@@ -347,15 +357,15 @@ test.describe('convidado: só o controle da TV', () => {
 
     await settings.click();
     await expect(page).toHaveURL(/\/ajustes$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
     await expect(page.locator('a.ui-row .ui-row-title')).toHaveText([
       'Perfil',
       'Aparência',
-      'Aparelhos',
+      'Dispositivos',
       'Sobre',
     ]);
-    // "Aparelhos" é só o download do conector do PC (a convidada tem a TV); o resto do administrador não aparece.
-    await expect(page.getByRole('link', { name: /Aparelhos/ })).toHaveAttribute(
+    // "Dispositivos" é só o download do conector do PC (a convidada tem a TV); o resto do administrador não aparece.
+    await expect(page.getByRole('link', { name: /Dispositivos/ })).toHaveAttribute(
       'href',
       '/ajustes/dispositivos',
     );
@@ -365,9 +375,8 @@ test.describe('convidado: só o controle da TV', () => {
     }
     await expect(page.getByText(`${GUEST.displayName} · Convidado`)).toBeVisible();
 
-    // A seta leva de volta ao controle (a convidada não tem Início).
-    await page.getByRole('link', { name: 'Voltar ao controle' }).click();
-    await expect(page).toHaveURL(/\/tv$/);
+    await page.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await expect(page).toHaveURL(/\/$/);
   });
 
   test('a sessão da convidada nunca chama rota de administrador nos Ajustes, e o servidor recusa se ela chamar à mão', async ({
@@ -375,7 +384,8 @@ test.describe('convidado: só o controle da TV', () => {
   }) => {
     const invite = identity.seedInvite();
     await acceptInvite(page, invite.token);
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
 
     const urls: string[] = [];
@@ -424,7 +434,8 @@ test.describe('convidado: só o controle da TV', () => {
   }) => {
     const invite = identity.seedInvite();
     await acceptInvite(page, invite.token);
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
     await page.goto('/ajustes/perfil');
     await expect(page.getByText('Convidado', { exact: true })).toBeVisible();
@@ -462,7 +473,7 @@ test.describe('convidado: só o controle da TV', () => {
   }) => {
     const invite = identity.seedInvite();
     await acceptInvite(page, invite.token);
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
     identity.loggedIn = false;
     identity.role = 'owner';
 
@@ -470,15 +481,14 @@ test.describe('convidado: só o controle da TV', () => {
     await page.getByLabel('E-mail').fill(GUEST.email);
     await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
     await page.getByRole('button', { name: 'Entrar', exact: true }).click();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
   });
 });
 
-test.describe('convidado sem nenhum módulo: tela simples', () => {
-  test('o cartão fica no meio da altura, e não colado no alto com a tela vazia embaixo', async ({
-    page,
-  }) => {
+test.describe('convidado sem módulo liberado', () => {
+  test('vê só os três planejados, com o último centralizado', async ({ page }) => {
     identity.guests.push({
       id: '00000000-0000-4000-8000-000000000071',
       displayName: GUEST.displayName,
@@ -491,19 +501,22 @@ test.describe('convidado sem nenhum módulo: tela simples', () => {
     identity.role = 'guest';
     identity.loggedIn = true;
     await page.goto('/');
-    await expect(page).toHaveURL(/\/sem-acesso$/);
-    const card = page.locator('app-no-access-page .card');
-    await expect(card).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+    const cards = page.locator('article.card');
+    await expect(cards.locator('h3')).toHaveText([
+      'Controle do PC',
+      'Rede da casa',
+      'Backup de fotos',
+    ]);
+    await expect(page.locator('.agent-status')).toHaveCount(0);
+    await expect(page.locator('.shortcuts a.shortcut')).toHaveText(['Configurações']);
     await expectNoHorizontalScroll(page);
 
-    // Geometria, não texto: o vão em cima do cartão (abaixo do cabeçalho) e o de baixo são parecidos. Sobra uma folga
-    // para o centro cair um pouco acima do meio, de propósito.
-    const header = (await page.locator('header.bar').boundingBox())!;
-    const box = (await card.boundingBox())!;
-    const viewport = page.viewportSize()!;
-    const above = box.y - (header.y + header.height);
-    const below = viewport.height - (box.y + box.height);
-    expect(above).toBeGreaterThan(24);
-    expect(Math.abs(above - below)).toBeLessThan(64);
+    // A última linha tem só um cartão: ele conserva a mesma largura e fica no eixo da própria grade.
+    const grid = (await page.locator('.guest-grid').boundingBox())!;
+    const first = (await cards.nth(0).boundingBox())!;
+    const last = (await cards.nth(2).boundingBox())!;
+    expect(last.width).toBeCloseTo(first.width, 1);
+    expect(Math.abs(last.x + last.width / 2 - (grid.x + grid.width / 2))).toBeLessThan(1);
   });
 });

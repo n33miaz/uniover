@@ -1498,20 +1498,22 @@ test.describe('cabeçalho da convidada: botão redondo de configurações no lug
     }
   });
 
-  test('tocar nele abre os Ajustes da convidada, e a seta volta ao controle', async ({ page }) => {
+  test('tocar nele abre as Configurações da convidada, e a seta volta à Início', async ({
+    page,
+  }) => {
     await openTvAsGuest(page);
     await settingsButton(page).click();
     await expect(page).toHaveURL(/\/ajustes$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
     await expect(page.locator('a.ui-row .ui-row-title')).toHaveText([
       'Perfil',
       'Aparência',
-      'Aparelhos',
+      'Dispositivos',
       'Sobre',
     ]);
-    await page.getByRole('link', { name: 'Voltar ao controle' }).click();
-    await expect(page).toHaveURL(/\/tv$/);
-    await expect(settingsButton(page)).toBeVisible();
+    await page.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('article[data-module="tv"]')).toBeVisible();
   });
 
   test('o dono continua com a seta e não ganha o botão de configurações no controle', async ({

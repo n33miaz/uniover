@@ -30,7 +30,7 @@ describe('ownerOnlyGuard', () => {
               { path: 'tv', component: Screen },
               { path: 'treino', component: Screen, canMatch: [ownerOnlyGuard] },
               { path: 'ajustes', component: Screen, canMatch: [ownerOnlyGuard] },
-              { path: '', pathMatch: 'full', component: Screen, canMatch: [ownerOnlyGuard] },
+              { path: '', pathMatch: 'full', component: Screen },
             ],
           },
           { path: '**', redirectTo: '' },
@@ -58,11 +58,11 @@ describe('ownerOnlyGuard', () => {
     expect(await go('/ajustes')).toBe('/ajustes');
   });
 
-  it.each(['/', '/treino', '/ajustes', '/nada-aqui'])(
-    'sends the guest from %s straight to the TV',
+  it.each(['/treino', '/ajustes', '/nada-aqui'])(
+    'sends the guest from %s to Início',
     async (url) => {
       api.me.mockResolvedValue(me('guest'));
-      expect(await go(url)).toBe('/tv');
+      expect(await go(url)).toBe('/');
     },
   );
 
@@ -77,10 +77,10 @@ describe('ownerOnlyGuard', () => {
     expect(await go('/ajustes')).toBe('/ajustes');
   });
 
-  it('uses the remembered role while the session cannot be confirmed (a guest offline stays on the TV)', async () => {
+  it('uses the remembered role while the session cannot be confirmed (a guest offline goes to Início)', async () => {
     localStorage.setItem('uniover.account-role', 'guest');
     api.refresh.mockRejectedValue(networkProblem());
-    expect(await go('/treino')).toBe('/tv');
+    expect(await go('/treino')).toBe('/');
   });
 
   it('does not use a remembered role once the server says the session is gone', async () => {
@@ -91,7 +91,7 @@ describe('ownerOnlyGuard', () => {
   });
 });
 
-describe('the guest goes to the first module the account can use', () => {
+describe('the guest goes to Início, where the account sees its permitted modules', () => {
   const api = { refresh: vi.fn(), me: vi.fn() };
   const guest = (permissions?: string[]) => ({
     id: '1',
@@ -119,7 +119,7 @@ describe('the guest goes to the first module the account can use', () => {
               { path: 'treino', component: Screen, canMatch: [moduleGuard('training')] },
               { path: 'sem-acesso', component: Screen, canMatch: [noAccessGuard] },
               { path: 'ajustes', component: Screen, canMatch: [ownerOnlyGuard] },
-              { path: '', pathMatch: 'full', component: Screen, canMatch: [ownerOnlyGuard] },
+              { path: '', pathMatch: 'full', component: Screen },
             ],
           },
           { path: '**', redirectTo: '' },
@@ -141,10 +141,10 @@ describe('the guest goes to the first module the account can use', () => {
   };
 
   it.each(['/', '/ajustes', '/nada-aqui'])(
-    'sends a guest who only has the Treino from %s straight to the Treino, never through the TV',
+    'sends a guest who only has the Treino from %s to Início',
     async (url) => {
       api.me.mockResolvedValue(guest(TRAINING));
-      expect(await go(url)).toBe('/treino');
+      expect(await go(url)).toBe('/');
     },
   );
 
@@ -154,30 +154,30 @@ describe('the guest goes to the first module the account can use', () => {
   });
 
   it.each(['/', '/treino', '/ajustes'])(
-    'sends a guest who only has the TV from %s to the TV',
+    'sends a guest who only has the TV from %s to Início',
     async (url) => {
       api.me.mockResolvedValue(guest(TV));
-      expect(await go(url)).toBe('/tv');
+      expect(await go(url)).toBe('/');
     },
   );
 
-  it('prefers the TV to the Treino when the guest has both (the order of the registry)', async () => {
+  it('keeps Início when the guest has both modules', async () => {
     api.me.mockResolvedValue(guest([...TV, ...TRAINING]));
-    expect(await go('/')).toBe('/tv');
+    expect(await go('/')).toBe('/');
     expect(await go('/treino')).toBe('/treino');
   });
 
   it.each(['/', '/treino', '/ajustes'])(
-    'sends a guest without any module from %s to the "no access" screen, which stays put',
+    'sends a guest without any module from %s to Início',
     async (url) => {
       api.me.mockResolvedValue(guest([]));
-      expect(await go(url)).toBe('/sem-acesso');
+      expect(await go(url)).toBe('/');
     },
   );
 
-  it('does not leave a guest with a module parked on the "no access" screen', async () => {
+  it('does not leave a guest with a module parked on the old "no access" screen', async () => {
     api.me.mockResolvedValue(guest(TRAINING));
-    expect(await go('/sem-acesso')).toBe('/treino');
+    expect(await go('/sem-acesso')).toBe('/');
   });
 
   it('sends the owner away from the "no access" screen, to the Início', async () => {
@@ -199,17 +199,17 @@ describe('the guest goes to the first module the account can use', () => {
     },
   );
 
-  it('keeps the TV for a guest whose list is unknown (an answer without the list)', async () => {
+  it('keeps Início for a guest whose list is unknown (an answer without the list)', async () => {
     api.me.mockResolvedValue(guest(undefined));
-    expect(await go('/')).toBe('/tv');
+    expect(await go('/')).toBe('/');
     expect(await go('/treino')).toBe('/treino');
   });
 
-  it('uses the remembered list while offline: the guest of the Treino stays in the Treino', async () => {
+  it('uses the remembered list while offline: the guest of the Treino sees Início', async () => {
     localStorage.setItem('uniover.account-role', 'guest');
     localStorage.setItem('uniover.account-permissions', JSON.stringify(TRAINING));
     api.refresh.mockRejectedValue(networkProblem());
-    expect(await go('/')).toBe('/treino');
+    expect(await go('/')).toBe('/');
     expect(await go('/treino')).toBe('/treino');
   });
 
@@ -217,7 +217,7 @@ describe('the guest goes to the first module the account can use', () => {
     localStorage.setItem('uniover.account-role', 'guest');
     api.refresh.mockRejectedValue(networkProblem());
     expect(await go('/treino')).toBe('/treino');
-    expect(await go('/')).toBe('/tv');
+    expect(await go('/')).toBe('/');
   });
 
   it('lets the owner into every module', async () => {

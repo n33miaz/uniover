@@ -119,7 +119,7 @@ test.describe('entrada e sessão', () => {
     expect(me?.headers['authorization']).toMatch(/^Bearer eyJ/);
   });
 
-  test('a saudação usa o nome da conta e o link Ajustes leva à tela de ajustes', async ({
+  test('a saudação usa o nome da conta e o link Configurações leva à tela de configurações', async ({
     page,
   }) => {
     await page.goto('/entrar');
@@ -129,7 +129,7 @@ test.describe('entrada e sessão', () => {
       new RegExp('(Bom dia|Boa tarde|Boa noite), ' + OWNER.displayName.split(' ')[0] + '$'),
     );
     await expect(page.locator('app-session-notice .notice')).toHaveCount(0);
-    await page.getByRole('link', { name: 'Ajustes' }).click();
+    await page.getByRole('link', { name: 'Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
   });
 
@@ -303,7 +303,7 @@ test.describe('ajustes', () => {
       'Aparência',
       'Segurança',
       'Pessoas',
-      'Aparelhos',
+      'Dispositivos',
       'Auditoria',
       'Sistema',
       'Sobre',
@@ -314,7 +314,7 @@ test.describe('ajustes', () => {
       ['Aparência', '/ajustes/aparencia'],
       ['Segurança', '/ajustes/seguranca'],
       ['Pessoas', '/ajustes/pessoas'],
-      ['Aparelhos', '/ajustes/aparelhos'],
+      ['Dispositivos', '/ajustes/aparelhos'],
       ['Auditoria', '/ajustes/auditoria'],
       ['Sistema', '/ajustes/sistema'],
       ['Sobre', '/ajustes/sobre'],
@@ -338,7 +338,7 @@ test.describe('ajustes', () => {
     await expect(page.getByText('Administrador', { exact: true })).toBeVisible();
     await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
   });
 
   test('a Aparência tem o tema e os módulos com chip', async ({ page }) => {
