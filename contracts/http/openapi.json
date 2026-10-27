@@ -3034,6 +3034,17 @@
         ],
         "type": "object"
       },
+      "SaveSystemSettingRequest": {
+        "properties": {
+          "value": {
+            "$ref": "#/components/schemas/JsonElement"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
       "SelectTrainingProgramRequest": {
         "properties": {
           "clientUpdatedAt": {
@@ -3444,6 +3455,25 @@
         },
         "required": [
           "expiresIn"
+        ],
+        "type": "object"
+      },
+      "SystemSettingValue": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonElement"
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "source"
         ],
         "type": "object"
       },
@@ -7968,6 +7998,133 @@
         ]
       }
     },
+    "/api/v1/identity/system-settings": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SystemSettingValue"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "SystemSettingsEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/system-settings/{key}": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SaveSystemSettingRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemSettingValue"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        },
+        "tags": [
+          "SystemSettingsEndpoint"
+        ]
+      }
+    },
     "/api/v1/training/body/entries": {
       "get": {
         "parameters": [
@@ -12376,6 +12533,9 @@
     },
     {
       "name": "SetGuestPermissionsEndpoint"
+    },
+    {
+      "name": "SystemSettingsEndpoint"
     },
     {
       "name": "SessionsEndpoint"

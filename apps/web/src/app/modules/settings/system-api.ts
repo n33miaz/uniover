@@ -33,6 +33,16 @@ export interface TvItem {
 }
 
 const BASE = `${APP_CONFIG.apiBase}/v1/tv`;
+const SETTINGS_BASE = `${APP_CONFIG.apiBase}/v1/identity/system-settings`;
+
+export type SystemSettingKey =
+  'training.off-contact' | 'devices.max-per-guest' | 'training.photo-storage-enabled';
+
+export interface SystemSettingValue {
+  readonly key: SystemSettingKey;
+  readonly value: string | number | boolean;
+  readonly source: 'app' | 'server';
+}
 
 function readTv(value: unknown): TvItem | null {
   if (!value || typeof value !== 'object') return null;
@@ -65,6 +75,19 @@ function readTvOrThrow(value: unknown): TvItem {
 @Injectable({ providedIn: 'root' })
 export class SystemApi {
   private readonly http = inject(HttpClient);
+
+  systemSettings(): Promise<SystemSettingValue[]> {
+    return firstValueFrom(this.http.get<SystemSettingValue[]>(SETTINGS_BASE));
+  }
+
+  saveSystemSetting(
+    key: SystemSettingKey,
+    value: string | number | boolean,
+  ): Promise<SystemSettingValue> {
+    return firstValueFrom(
+      this.http.put<SystemSettingValue>(`${SETTINGS_BASE}/${encodeURIComponent(key)}`, { value }),
+    );
+  }
 
   tvConfig(): Promise<TvConfig> {
     return firstValueFrom(this.http.get<TvConfig>(`${BASE}/config`));
