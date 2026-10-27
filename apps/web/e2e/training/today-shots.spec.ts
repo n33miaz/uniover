@@ -15,6 +15,7 @@ import {
   installClock,
   menu,
   openToday,
+  skipProgramChoice,
   stubDevice,
   tap,
   DeviceStubs,
@@ -304,6 +305,7 @@ for (const scheme of ['light', 'dark'] as const) {
         await launch(context, page, { history: false });
         await openToday(page, { history: false });
         await page.getByRole('button', { name: 'Treino livre' }).click();
+        await skipProgramChoice(page);
         await expect(page.getByText('Treino livre: escolha o primeiro exercício')).toBeVisible();
         await shot(page, info, 'sessao-livre-vazio', scheme);
         await page.getByRole('button', { name: 'Escolher exercício' }).click();

@@ -74,7 +74,9 @@ def run(
     (tmp_path / "T").mkdir(exist_ok=True)
     environment = os.environ | {
         "UNIOVER_TEST_INSTALLER": str(INSTALLER),
-        "UNIOVER_TEST_FUNCTIONS": ",".join(functions or ("Get-AgentSource", "Move-Folder")),
+        "UNIOVER_TEST_FUNCTIONS": ",".join(
+            functions or ("Get-AgentSource", "Get-MoveFailureReason", "Move-Folder")
+        ),
         "UNIOVER_TEST_DEST": str(destination),
         "UNIOVER_TEST_ZIP": str(zipped),
         "UNIOVER_TEST_SHA": SHA,
@@ -183,6 +185,28 @@ def test_a_folder_in_use_is_not_renamed_and_the_install_stays_as_it_was(tmp_path
     untouched(app)
 
 
+def test_a_transient_lock_on_a_new_folder_is_retried_before_the_rename(tmp_path: Path) -> None:
+    body = r"""
+$from = Join-Path $env:TEMP 'candidata'
+$to = Join-Path $env:TEMP 'destino'
+New-Item -ItemType Directory -Path $from | Out-Null
+$file = Join-Path $from 'marca.txt'
+[System.IO.File]::WriteAllText($file, 'nova')
+$stream = [System.IO.File]::Open($file, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+$script:waits = 0
+function Start-Sleep {
+    param([int]$Milliseconds)
+    $script:waits++
+    $stream.Dispose()
+}
+Move-Folder $from $to
+"$script:waits $(Test-Path -LiteralPath $to)"
+"""
+    done = run(tmp_path, body, b"", "Move-Folder")
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "1 True"
+
+
 def test_when_the_second_rename_fails_the_old_install_comes_back(tmp_path: Path) -> None:
     app = installed(tmp_path)
     body = r"""
@@ -197,6 +221,7 @@ Get-AgentSource $source
 """
     done = run(tmp_path, body, package(GOOD))
     assert done.returncode != 0
+    assert "simulado: a segunda renomeacao falhou" in done.stderr
     untouched(app)
 
 

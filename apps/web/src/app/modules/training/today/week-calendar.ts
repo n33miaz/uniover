@@ -7,6 +7,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
+import { Router } from '@angular/router';
 import { QUEUE_RUNTIME } from '../../../core/offline-queue/queue-ports';
 import { GoalRepository } from '../data/goals/goal-repository';
 import { RoutineRepository } from '../data/routines/routine-repository';
@@ -23,6 +24,7 @@ import {
 } from './week-calendar-model';
 
 interface Workout {
+  readonly sessionId: string;
   readonly dayKey: string;
   readonly name: string;
   readonly sets: number;
@@ -70,6 +72,7 @@ export class WeekCalendar {
   private readonly routines = inject(RoutineRepository);
   private readonly goals = inject(GoalRepository);
   private readonly runtime = inject(QUEUE_RUNTIME);
+  private readonly router = inject(Router);
   private readonly zone = deviceTimeZone();
 
   protected readonly weekdays = weekdays;
@@ -181,6 +184,13 @@ export class WeekCalendar {
 
   protected openDay(day?: CalendarDay): void {
     if (day) {
+      const workouts = this.weekWorkouts()?.filter((workout) => workout.dayKey === day.key) ?? [];
+      if (workouts.length === 1) {
+        this.openWorkout(workouts[0]);
+        return;
+      }
+    }
+    if (day) {
       this.month.set({ year: day.year, month: day.month });
       this.selectedKey.set(day.key);
     } else {
@@ -189,6 +199,16 @@ export class WeekCalendar {
       this.selectedKey.set(dateKey(this.runtime.now(), this.zone));
     }
     this.sheetOpen.set(true);
+  }
+
+  /** No mês aberto, um único treino no dia vai direto ao detalhe; vários ficam para a lista daquele dia. */
+  protected openMonthDay(day: CalendarDay): void {
+    const workouts = this.monthWorkouts()?.filter((workout) => workout.dayKey === day.key) ?? [];
+    if (workouts.length === 1) {
+      this.openWorkout(workouts[0]);
+      return;
+    }
+    this.selectedKey.set(day.key);
   }
 
   protected hasWorkout(key: string, workouts: readonly Workout[] | null): boolean {
@@ -231,6 +251,14 @@ export class WeekCalendar {
 
   protected formatSets(count: number): string {
     return setsText(count);
+  }
+
+  /** O resumo reutiliza a página que já edita e apaga séries, sempre a partir do banco local. */
+  protected openWorkout(workout: Workout): void {
+    this.sheetOpen.set(false);
+    void this.router.navigate(['/treino'], {
+      queryParams: { resumo: workout.sessionId, historico: '1' },
+    });
   }
 
   private currentMonth(): CalendarMonth {
@@ -282,6 +310,7 @@ export class WeekCalendar {
         const working = sets.filter((set) => set.setType !== 'warmup');
         if (working.length === 0) return null;
         return {
+          sessionId: session.id,
           dayKey: dateKey(session.startedAt, this.zone),
           name: routine?.name ?? $localize`:@@training.today.calendar.free:Treino livre`,
           sets: working.length,

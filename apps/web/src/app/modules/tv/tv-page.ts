@@ -35,15 +35,14 @@ import { TvPanel } from './ui/tv-panel';
 /**
  * Até quantas letras o nome cabe numa linha no tamanho inteiro (curto) e no médio. A coluna do meio do cabeçalho é a
  * tela menos duas colunas iguais (os botões dos lados e o ponto de estado ficam com elas), então o nome vai encolhendo
- * e, se preciso, passa a usar até duas linhas. Os limites são os de antes de o Apps ir para a esquerda, quando a coluna
- * era mais estreita; seguem valendo porque só dependem do número de letras, sem medir a tela.
+ * e, se preciso, passa a usar até duas linhas. Os limites só dependem do número de letras, sem medir a tela.
  */
 const TITLE_SHORT_MAX = 6;
 const TITLE_MEDIUM_MAX = 12;
 
 /**
- * Tela única do módulo da TV: cabeçalho (à esquerda voltar ao Início e a energia, no meio o nome com o ponto de estado e
- * à direita os três pontos do menu), o controle e, por cima dele, o menu, os painéis flutuantes de Apps, Teclado e da
+ * Tela única do módulo da TV: cabeçalho (à esquerda voltar ao Início e os três pontos do menu, no meio o nome com o ponto
+ * de estado e à direita a energia), o controle e, por cima dele, o menu, os painéis flutuantes de Apps, Teclado e da
  * sugestão de atalho e as folhas de Personalizar, de desligar e de trocar de TV. O menu reúne os apps da TV, Personalizar e,
  * para o administrador, gerenciar as TVs; escolher uma linha fecha o menu e só então abre o painel dela, um modal por vez. Sem TV
  * configurada o controle dá lugar a um estado vazio com a ação certa para cada conta. O nome é o apelido

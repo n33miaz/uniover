@@ -239,17 +239,20 @@ for (const screen of SCREENS) {
 }
 
 test.describe('menu dos três pontos', () => {
-  test('abre com os três pontos à direita e traz apps, personalizar e, para o dono, trocar a TV', async ({
+  test('abre ao lado de voltar, à esquerda, e traz apps, personalizar e, para o dono, trocar a TV', async ({
     page,
   }, info) => {
     await openTv(page);
     const dots = menuButton(page);
     const head = await box(header(page));
+    const back = await box(header(page).getByRole('link', { name: 'Voltar ao Início' }));
     const size = await box(dots);
     expect(size.width).toBeCloseTo(44, 0);
     expect(size.height).toBeCloseTo(44, 0);
-    expect(Math.abs(size.x + size.width - (head.x + head.width)), 'na ponta direita').toBeLessThan(
-      1.5,
+    expect(Math.abs(back.x - head.x), 'voltar na ponta esquerda').toBeLessThan(1.5);
+    expect(size.x - (back.x + back.width), 'menu logo depois de voltar').toBeGreaterThanOrEqual(4);
+    expect(size.x - (back.x + back.width), 'menu alinhado ao grupo esquerdo').toBeLessThanOrEqual(
+      10,
     );
 
     await dots.click();

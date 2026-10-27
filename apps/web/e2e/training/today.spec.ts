@@ -16,6 +16,7 @@ import {
   fieldValue,
   installClock,
   menu,
+  skipProgramChoice,
   openToday,
   stubDevice,
   tap,
@@ -42,6 +43,33 @@ async function launch(
   if (options.history !== false) seedBenchHistory(server);
   return server;
 }
+
+/** Um programa semanal de segunda a sexta: só modelos com os dias declarados entram na escolha do programa. */
+const START_PROGRAM = {
+  items: [
+    {
+      id: 'programa-teste',
+      name: 'Programa de teste',
+      description: 'Um treino de segunda a sexta.',
+      routines: [
+        {
+          name: 'Dia de peito',
+          weekdays: [1, 2, 3, 4, 5],
+          items: [
+            {
+              exerciseSlug: 'supino-reto-com-barra',
+              targetSets: 2,
+              repMin: 8,
+              repMax: 12,
+              restSeconds: 60,
+              supersetGroup: null,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
 
 /** O relógio do descanso ("1:45"). */
 const restTime = (page: Page) => page.locator('.rest .time');
@@ -82,6 +110,60 @@ test.describe('Hoje', () => {
     await expect(calendar.locator('.month-nav h3')).not.toHaveText(currentMonth ?? '');
     await calendar.getByRole('button', { name: 'Fechar' }).click();
     await expect(calendar).toBeHidden();
+  });
+
+  test('iniciar oferece o programa mesmo depois de dispensar o cartão, e permite seguir sem ele', async ({
+    page,
+    context,
+  }) => {
+    const server = await launch(context, page);
+    server.templates = START_PROGRAM;
+    await openToday(page);
+
+    await page.getByRole('button', { name: 'Agora não' }).click();
+    await page.getByRole('button', { name: 'Iniciar treino' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Programa da semana' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Seguir sem programa' }).click();
+
+    await expect(page.getByRole('heading', { level: 1, name: /Treino A/ })).toBeVisible();
+  });
+
+  test('a escolha de um programa começa a rotina do dia', async ({ page, context }) => {
+    const server = await launch(context, page);
+    server.templates = START_PROGRAM;
+    await openToday(page);
+
+    await page.getByRole('button', { name: 'Iniciar treino' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Programa da semana' });
+    await expect(dialog).toBeVisible();
+    await dialog.locator('button.ui-row').first().click();
+
+    await expect(page.locator('app-live-session')).toBeVisible();
+  });
+
+  test('um dia concluído abre o resumo local com séries, tipo, duração e volume', async ({
+    page,
+    context,
+  }) => {
+    const server = await launch(context, page);
+    seedPastWorkout(server, 14, 10 * 60_000, [
+      { exerciseId: SEED_EXERCISE_IDS.bench, weightKg: 40, reps: 10 },
+    ]);
+    await openToday(page);
+
+    await page.locator('app-week-calendar .day.done').click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
+    const stats = page.locator('.stat');
+    await expect(stats.nth(0)).toContainText('400 kg');
+    await expect(stats.nth(1)).toContainText('50 min');
+
+    const set = page.locator('.sets .ui-row').first();
+    await expect(set).toContainText('Supino reto com barra');
+    await expect(set).toContainText('40 kg × 10 · Trabalho');
+    await set.click();
+    await expect(page.getByRole('dialog', { name: 'Editar série' })).toBeVisible();
   });
 
   test('o resumo da semana vem em cima, a rotina do dia embaixo, e o botão de iniciar fica acima da lista', async ({
@@ -723,6 +805,7 @@ test.describe('treino ao vivo', () => {
     await launch(context, page);
     await openToday(page);
     await page.getByRole('button', { name: 'Treino livre' }).click();
+    await skipProgramChoice(page);
     await expect(page.getByRole('heading', { level: 1, name: 'Treino livre' })).toBeVisible();
     await expect(page.getByText('Treino livre: escolha o primeiro exercício')).toBeVisible();
 

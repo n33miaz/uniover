@@ -40,6 +40,8 @@ async function openElsewhere(t: Awaited<ReturnType<typeof setup>>, ageMs: number
 }
 
 describe('TodayStore', () => {
+  afterEach(() => localStorage.clear());
+
   describe('workouts open somewhere', () => {
     it('knows there is no open workout, here or elsewhere', async () => {
       await setup();
@@ -152,6 +154,21 @@ describe('TodayStore', () => {
         await store.loadHome();
 
         expect(store.suggestProgram()).toBe(false);
+      });
+
+      it('asks for a program again when starting after the card was dismissed, then stays quiet for the day', async () => {
+        await setup();
+        const store = TestBed.inject(TodayStore);
+        const routine = await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
+        await store.loadCore();
+        await store.loadHome();
+
+        store.dismissSuggestion();
+        expect(store.suggestProgram()).toBe(false);
+        expect(await store.start(routine.id)).toBe('program-choice');
+
+        store.dismissProgramBeforeStart();
+        expect(await store.start(routine.id)).toBe('started');
       });
     });
 

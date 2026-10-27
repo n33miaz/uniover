@@ -47,6 +47,21 @@ describe('TodayPage', () => {
       expect(button(el, 'Treino livre')).toBeDefined();
     });
 
+    it('offers the program choice when starting without a weekly program, and does not start until it is answered', async () => {
+      const kit = await open();
+      await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
+      const { el, fixture } = await show(kit);
+
+      await eventually(fixture, () => expect(button(el, 'Iniciar treino')).toBeDefined());
+      button(el, 'Iniciar treino').click();
+
+      await eventually(fixture, () =>
+        expect(el.querySelector('app-training-sheet')).not.toBeNull(),
+      );
+      expect(text(el)).toContain('Programa da semana');
+      expect(el.querySelector('app-live-session')).toBeNull();
+    });
+
     it('puts the week on top and the routine of the day below it, with one main button above the list', async () => {
       const kit = await open();
       await seedHistory(kit.trainingDb, 'supino-reto', [[1, 40, 10]]);
@@ -160,6 +175,11 @@ describe('TodayPage', () => {
       const view = await show(kit);
       await eventually(view.fixture, () => expect(button(view.el, 'Iniciar treino')).toBeDefined());
       button(view.el, 'Iniciar treino').click();
+      // Sem programa semanal, iniciar oferece a escolha; estes testes seguem sem programa.
+      await eventually(view.fixture, () =>
+        expect(button(view.el, 'Seguir sem programa')).toBeDefined(),
+      );
+      button(view.el, 'Seguir sem programa').click();
       await eventually(view.fixture, () =>
         expect(view.el.querySelector('app-live-session')).not.toBeNull(),
       );

@@ -122,7 +122,7 @@
             [class.selected]="selectedKey() === day.key"
             [attr.aria-label]="dayLabel(day, monthWorkouts())"
             [attr.aria-pressed]="selectedKey() === day.key"
-            (click)="selectedKey.set(day.key)"
+            (click)="openMonthDay(day)"
           >
             {{ day.day }}
             @if (hasWorkout(day.key, monthWorkouts())) {
@@ -147,11 +147,15 @@
         <ul class="ui-plain">
           @for (workout of selectedWorkouts(); track $index) {
             <li>
-              <strong>{{ workout.name }}</strong
-              ><span i18n="@@training.today.calendar.session-detail"
-                >{{ formatSets(workout.sets) }} · {{ formatVolume(workout.volumeKg) }} de
-                volume</span
-              >
+              <button type="button" class="ui-row" (click)="openWorkout(workout)">
+                <span class="ui-row-text">
+                  <span class="ui-row-title">{{ workout.name }}</span>
+                  <span class="ui-row-sub" i18n="@@training.today.calendar.session-detail"
+                    >{{ formatSets(workout.sets) }} · {{ formatVolume(workout.volumeKg) }} de
+                    volume</span
+                  >
+                </span>
+              </button>
             </li>
           }
         </ul>
