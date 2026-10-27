@@ -8,12 +8,14 @@ import {
   seedBenchHistory,
   seedOpenElsewhere,
   seedPastWorkout,
+  seedSupersetRoutine,
 } from './support/today-seed';
 import {
   beginWorkout,
   concludeSet,
   deviceLog,
   fieldValue,
+  finishFromDay,
   installClock,
   menu,
   skipProgramChoice,
@@ -127,7 +129,9 @@ test.describe('Hoje', () => {
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Seguir sem programa' }).click();
 
-    await expect(page.getByRole('heading', { level: 1, name: /Treino A/ })).toBeVisible();
+    await expect(page.locator('app-workout-day .routine-name')).toHaveText(
+      'Treino A - peito tríceps',
+    );
   });
 
   test('a escolha de um programa começa a rotina do dia', async ({ page, context }) => {
@@ -140,7 +144,7 @@ test.describe('Hoje', () => {
     await expect(dialog).toBeVisible();
     await dialog.locator('button.ui-row').first().click();
 
-    await expect(page.locator('app-live-session')).toBeVisible();
+    await expect(page.locator('app-workout-day')).toBeVisible();
   });
 
   test('um dia concluído abre o resumo local com séries, tipo, duração e volume', async ({
@@ -316,6 +320,181 @@ test.describe('Hoje', () => {
 });
 
 test.describe('treino ao vivo', () => {
+  test('a tela do treino deixa escolher qualquer exercício e o voltar retorna a ela', async ({
+    page,
+    context,
+  }) => {
+    await launch(context, page);
+    await openToday(page);
+    await page.getByRole('button', { name: 'Iniciar treino' }).click();
+    await skipProgramChoice(page);
+
+    const day = page.locator('app-workout-day');
+    await expect(day.locator('.exercise')).toHaveCount(3);
+    await expect(day.locator('.exercise.suggested')).toContainText('Supino reto com barra');
+
+    await day.locator('.exercise').nth(1).click();
+    await expect(
+      page.getByRole('heading', { level: 2, name: 'Supino inclinado com halteres' }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Voltar ao treino' }).click();
+    await expect(day).toBeVisible();
+    await expect(day.locator('.exercise.suggested')).toContainText('Supino reto com barra');
+  });
+
+  test('ao concluir um exercício volta à escolha e o descanso oferece os atalhos de encerramento', async ({
+    page,
+    context,
+  }) => {
+    await launch(context, page);
+    await openToday(page);
+    await beginWorkout(page);
+
+    await concludeSet(page);
+    const rest = page.locator('.rest');
+    await expect(rest).toBeVisible();
+    await expect(rest.getByRole('button', { name: 'Encerrar exercício' })).toBeVisible();
+    await expect(rest.getByRole('button', { name: 'Encerrar treino' })).toBeVisible();
+    await expect(rest).toContainText('Última carga');
+    await expect(rest).toContainText('Próxima');
+    await rest.getByRole('button', { name: 'Pular Descanso' }).click();
+
+    await concludeSet(page);
+    await concludeSet(page);
+    await concludeSet(page);
+    const day = page.locator('app-workout-day');
+    await expect(day).toBeVisible();
+    await expect(day.locator('.exercise.suggested')).toContainText('Supino inclinado com halteres');
+
+    await day.locator('.exercise.suggested').click();
+    // Halteres e polia começam sem carga: o + dá o primeiro valor.
+    await tap(page, 'Aumentar a carga');
+    await concludeSet(page);
+    await page.getByRole('button', { name: 'Encerrar exercício' }).click();
+    await expect(day).toBeVisible();
+    await expect(day.locator('.exercise.suggested')).toContainText('Tríceps na polia com corda');
+
+    await day.locator('.exercise.suggested').click();
+    await tap(page, 'Aumentar a carga');
+    await concludeSet(page);
+    await page.getByRole('button', { name: 'Encerrar treino' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
+  });
+
+  test('na supersérie a tela só volta à lista quando a rodada do par fecha, e a última série não deixa descanso', async ({
+    page,
+    context,
+  }) => {
+    const server = await launch(context, page);
+    seedSupersetRoutine(server);
+    await openToday(page);
+    await page.getByRole('button', { name: 'Escolher outra rotina' }).click();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: /Treino C/ })
+      .click();
+    await beginWorkout(page, /Treino C/);
+
+    // Três rodadas do par (supino e polia): seis séries, e a lista só volta depois da última.
+    for (let done = 1; done <= 6; done++) {
+      if (done === 2) {
+        // A polia começa sem carga: espera ela entrar em foco antes de dar o primeiro valor.
+        await expect(
+          page.getByRole('heading', { level: 2, name: 'Tríceps na polia com corda' }),
+        ).toBeVisible();
+        await tap(page, 'Aumentar a carga');
+      }
+      await concludeSet(page);
+      if (done < 6) {
+        await expect(page.locator('app-workout-day')).toHaveCount(0);
+        await expect(
+          page.getByRole('button', { name: 'Concluir série' }).or(page.locator('.rest')),
+        ).toBeVisible();
+      }
+    }
+    await expect(page.locator('app-workout-day')).toBeVisible();
+    await expect(page.locator('.rest')).toHaveCount(0);
+    // O treino segue aberto e o descanso não ficou guardado: nada de relógio ao abrir de novo.
+    await page.locator('app-workout-day .exercise').first().click();
+    await expect(page.locator('.rest')).toHaveCount(0);
+  });
+
+  test('o fim do descanso só anima para quem não pediu menos movimento', async ({
+    page,
+    context,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await launch(context, page);
+    await openToday(page);
+    await beginWorkout(page);
+    await concludeSet(page);
+    await expect(page.locator('.rest')).toBeVisible();
+    await page.clock.fastForward(125_000);
+    await expect(page.getByRole('heading', { name: 'Descanso terminou' })).toBeVisible();
+    const animation = () =>
+      page.locator('.rest').evaluate((node) => getComputedStyle(node).animationName);
+    await expect.poll(animation).toBe('none');
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await expect.poll(animation).not.toBe('none');
+  });
+
+  test('durante o descanso o botão fixo de baixo sai e os atalhos ficam à vista', async ({
+    page,
+    context,
+  }) => {
+    await launch(context, page);
+    await openToday(page);
+    await beginWorkout(page);
+    await concludeSet(page);
+    const rest = page.locator('.rest');
+    await expect(rest).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Concluir série' })).toBeHidden();
+    // Nada cobre os atalhos: o clique chega neles.
+    await expect(rest.getByRole('button', { name: 'Encerrar treino' })).toBeInViewport({
+      ratio: 1,
+    });
+    await rest.getByRole('button', { name: 'Pular Descanso' }).click();
+    await expect(page.getByRole('button', { name: 'Concluir série' })).toBeVisible();
+  });
+
+  test('a ilustração do exercício alterna sozinha, para depois de um tempo e o toque a retoma', async ({
+    page,
+    context,
+  }) => {
+    await launch(context, page);
+    await openToday(page);
+    await beginWorkout(page);
+
+    const art = page.locator('.thumb app-exercise-illustration');
+    const frames = art.locator('.frame');
+    const shown = () =>
+      frames.evaluateAll((list) => list.map((node) => node.classList.contains('on')));
+    await expect(frames).toHaveCount(2);
+    await expect.poll(shown).toEqual([true, false]);
+    // As duas poses ocupam exatamente a mesma caixa.
+    expect(await frames.nth(1).boundingBox()).toEqual(await frames.nth(0).boundingBox());
+    await expect(page.getByText('Ver outra posição')).toHaveCount(0);
+
+    await page.clock.runFor(1600);
+    await expect.poll(shown).toEqual([false, true]);
+
+    // Depois de uns 30 s ela para na pose em que estava.
+    await page.clock.runFor(40_000);
+    const stopped = await shown();
+    await page.clock.runFor(10_000);
+    await expect.poll(shown).toEqual(stopped);
+
+    // Um toque troca a pose já e volta a alternar.
+    await art.getByRole('button').click();
+    await expect.poll(shown).not.toEqual(stopped);
+    await page.clock.runFor(1600);
+    await expect.poll(shown).toEqual(stopped);
+    await page.clock.runFor(60_000);
+    const running = await shown();
+    await page.clock.runFor(1600);
+    await expect.poll(shown).not.toEqual(running);
+  });
+
   test('abre na série 1, com a última vez já preenchida, a sugestão do dia e o motivo atrás de um toque', async ({
     page,
     context,
@@ -327,7 +506,7 @@ test.describe('treino ao vivo', () => {
     await expect(
       page.getByRole('heading', { level: 2, name: 'Supino reto com barra' }),
     ).toBeVisible();
-    await expect(page.getByText('exercício 1 de 3 · série 1 de 4')).toBeVisible();
+    await expect(page.locator('.set-title')).toContainText('Série 1 de 4');
     await expect(fieldValue(page, 'Carga')).toHaveValue('40');
     await expect(fieldValue(page, 'Repetições')).toHaveValue('10');
     const hint = page.locator('app-focus-hint');
@@ -423,7 +602,7 @@ test.describe('treino ao vivo', () => {
     await expect(record).toContainText('carga máxima 42,5 kg (antes 40 kg)');
     await expect(record).toContainText('1RM estimado 53,8 kg (antes 53,3 kg)');
     await expect(page.locator('.done .ui-chip', { hasText: 'recorde' })).toBeVisible();
-    await expect(page.locator('.sub')).toContainText('série 2 de 4');
+    await expect(page.locator('.set-title')).toContainText('Série 2 de 4');
 
     // A série seguinte já vem com a mesma carga e as mesmas repetições.
     await expect(fieldValue(page, 'Carga')).toHaveValue('42,5');
@@ -433,11 +612,12 @@ test.describe('treino ao vivo', () => {
     await expect(page.getByRole('heading', { name: 'Descanso' })).toBeVisible();
     await expect(restTime(page)).toHaveText(/^(2:00|1:5\d)$/);
     await expect(page.locator('.rest .goal')).toHaveText('meta 2:00');
+    await expect(page.locator('.rest')).toContainText('Recorde');
     await page.clock.fastForward(30_000);
     await expect(restTime(page)).toHaveText(/^1:[23]\d$/);
     await page.getByRole('button', { name: '+15 s' }).click();
     await expect(restTime(page)).toHaveText(/^1:[45]\d$/);
-    await page.getByRole('button', { name: 'Pular', exact: true }).click();
+    await page.getByRole('button', { name: 'Pular Descanso', exact: true }).click();
     await expect(page.locator('.rest')).toHaveCount(0);
 
     // Sem histórico anterior e com a mesma carga, a segunda série não repete o aviso.
@@ -558,18 +738,18 @@ test.describe('treino ao vivo', () => {
       page.getByRole('heading', { level: 2, name: 'Supino reto com halteres' }),
     ).toBeVisible();
     await expect(page.locator('.chips')).toContainText('trocado só hoje');
-    await expect(page.getByText('exercício 1 de 3 · série 1 de 4')).toBeVisible();
+    await expect(page.locator('.set-title')).toContainText('Série 1 de 4');
     // Halteres: salto de 2 kg, e o exercício ainda não tem histórico (a carga começa vazia).
     await tap(page, 'Aumentar a carga');
     await expect(fieldValue(page, 'Carga')).toHaveValue('2');
     await concludeSet(page);
-    await expect(page.locator('.sub')).toContainText('série 2 de 4');
+    await expect(page.locator('.set-title')).toContainText('Série 2 de 4');
 
     await menu(page, /Pular exercício/);
     await expect(
       page.getByRole('heading', { level: 2, name: 'Supino inclinado com halteres' }),
     ).toBeVisible();
-    await expect(page.getByText('exercício 2 de 3 · série 1 de 3')).toBeVisible();
+    await expect(page.locator('.set-title')).toContainText('Série 1 de 3');
 
     await menu(page, /Exercícios do treino/);
     const plan = page.getByRole('dialog', { name: 'Exercícios do treino' });
@@ -578,7 +758,7 @@ test.describe('treino ao vivo', () => {
     await expect(
       page.getByRole('heading', { level: 2, name: 'Supino reto com halteres' }),
     ).toBeVisible();
-    await expect(page.locator('.sub')).toContainText('série 2 de 4');
+    await expect(page.locator('.set-title')).toContainText('Série 2 de 4');
   });
 
   test('recarregar SEM REDE no meio do treino mantém tudo; ao voltar a rede o servidor recebe cada série uma vez, em ordem', async ({
@@ -604,7 +784,7 @@ test.describe('treino ao vivo', () => {
     await goOffline(page);
     await tap(page, 'Aumentar a carga');
     await concludeSet(page);
-    await expect(page.locator('.sub')).toContainText('série 4 de 4');
+    await expect(page.locator('.set-title')).toContainText('Série 4 de 4');
     await expect(page.getByRole('heading', { name: 'Descanso' })).toBeVisible();
     // Só a série feita sem rede espera envio (as outras duas já subiram), e a tela diz isso.
     await expect(page.locator('.sending')).toContainText('1 série aguardando envio');
@@ -612,12 +792,12 @@ test.describe('treino ao vivo', () => {
 
     // Recarrega ainda sem rede: sessão, série atual, troca e descanso continuam do aparelho.
     await page.reload();
-    await expect(page.getByRole('heading', { level: 1, name: /Treino A/ })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
     await expect(
       page.getByRole('heading', { level: 2, name: 'Supino reto com halteres' }),
     ).toBeVisible();
     await expect(page.locator('.chips')).toContainText('trocado só hoje');
-    await expect(page.getByText('exercício 1 de 3 · série 4 de 4')).toBeVisible();
+    await expect(page.locator('.set-title')).toContainText('Série 4 de 4');
     await expect(page.getByRole('heading', { name: 'Descanso' })).toBeVisible();
     await expect(restTime(page)).toHaveText(/^\d:\d\d$/);
     await expect(fieldValue(page, 'Carga')).toHaveValue('4');
@@ -686,10 +866,10 @@ test.describe('treino ao vivo', () => {
 
     // Recarrega no meio, ainda sem rede: tudo continua do aparelho.
     await page.reload();
-    await expect(page.locator('.sub')).toContainText('série 4 de 4');
+    await expect(page.locator('.set-title')).toContainText('Série 4 de 4');
     await expect(page.locator('.sending')).toContainText('3 séries aguardando envio');
     await concludeSet(page); // série 4
-    await menu(page, /Terminar treino/);
+    await finishFromDay(page);
 
     await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
     await expect(page.getByText('Salvo no aparelho · 4 séries aguardam envio')).toBeVisible();
@@ -795,7 +975,7 @@ test.describe('treino ao vivo', () => {
     ).toBeVisible();
     await sheet.getByRole('button', { name: 'Sim, apagar' }).click();
     await expect(page.locator('.done')).toHaveCount(0);
-    await expect(page.locator('.sub')).toContainText('série 1 de 4');
+    await expect(page.locator('.set-title')).toContainText('Série 1 de 4');
   });
 
   test('treino livre: escolhe o exercício, registra com descanso padrão de 90 s e cancela o treino com confirmação', async ({
@@ -806,12 +986,11 @@ test.describe('treino ao vivo', () => {
     await openToday(page);
     await page.getByRole('button', { name: 'Treino livre' }).click();
     await skipProgramChoice(page);
-    await expect(page.getByRole('heading', { level: 1, name: 'Treino livre' })).toBeVisible();
-    await expect(page.getByText('Treino livre: escolha o primeiro exercício')).toBeVisible();
-
+    await expect(page.locator('app-workout-day .routine-name')).toHaveText('Treino livre');
     await page.getByRole('button', { name: 'Escolher exercício' }).click();
     const chooser = page.getByRole('dialog', { name: 'Adicionar exercício' });
     await chooser.getByRole('button', { name: /Agachamento livre com barra/ }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
     await expect(
       page.getByRole('heading', { level: 2, name: 'Agachamento livre com barra' }),
     ).toBeVisible();

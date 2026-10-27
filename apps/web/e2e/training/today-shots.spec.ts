@@ -155,7 +155,9 @@ for (const scheme of ['light', 'dark'] as const) {
         await openToday(page);
         await beginWorkout(page);
         await concludeSet(page);
-        await page.getByRole('button', { name: 'Voltar a Hoje' }).click();
+        await page.getByRole('button', { name: 'Voltar ao treino' }).click();
+        await expect(page.locator('app-workout-day .exercise.suggested')).toBeVisible();
+        await page.getByRole('link', { name: 'Voltar a Hoje' }).click();
         await expect(page.getByRole('button', { name: 'Continuar treino' })).toBeVisible();
         await expect(page.getByText('O servidor não aceitou um treino')).toBeVisible();
         await shot(page, info, 'hoje-em-andamento', scheme);
@@ -239,7 +241,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.locator('.chips')).toContainText('trocado só hoje');
       await shot(page, info, 'sessao-trocado', scheme);
 
-      await page.getByRole('button', { name: /Ver como fazer/ }).click();
+      await menu(page, /Como fazer/);
       await expect(page.getByRole('dialog', { name: 'Supino reto com halteres' })).toBeVisible();
       await shot(page, info, 'sessao-como-fazer', scheme);
     });
@@ -250,8 +252,8 @@ for (const scheme of ['light', 'dark'] as const) {
         await launch(context, page);
         await openToday(page);
         await beginWorkout(page);
-        await expect(page.locator('.thumb img')).toBeVisible();
-        await page.getByRole('button', { name: /Ver como fazer Supino reto com barra/ }).click();
+        await expect(page.locator('.thumb app-exercise-illustration img').first()).toBeVisible();
+        await menu(page, /Como fazer/);
         const dialog = page.getByRole('dialog', { name: 'Supino reto com barra' });
         await expect(dialog.locator('app-exercise-illustration img').first()).toBeVisible();
         await shot(page, info, 'sessao-como-fazer-arte', scheme);
@@ -293,7 +295,6 @@ for (const scheme of ['light', 'dark'] as const) {
       await beginWorkout(page);
       for (let index = 0; index < 3; index++) {
         await menu(page, /Pular exercício/);
-        if (index < 2) await expect(page.getByText(`exercício ${index + 2} de 3`)).toBeVisible();
       }
       await expect(page.getByText('O plano de hoje acabou')).toBeVisible();
       await shot(page, info, 'sessao-plano-concluido', scheme);
@@ -306,7 +307,7 @@ for (const scheme of ['light', 'dark'] as const) {
         await openToday(page, { history: false });
         await page.getByRole('button', { name: 'Treino livre' }).click();
         await skipProgramChoice(page);
-        await expect(page.getByText('Treino livre: escolha o primeiro exercício')).toBeVisible();
+        await expect(page.locator('app-workout-day .routine-name')).toHaveText('Treino livre');
         await shot(page, info, 'sessao-livre-vazio', scheme);
         await page.getByRole('button', { name: 'Escolher exercício' }).click();
         await page

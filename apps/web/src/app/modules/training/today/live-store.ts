@@ -20,11 +20,11 @@ import {
 import { isWorkingSet } from '../domain/session/session-model';
 import { coalesced, quiet } from './coalesce';
 import { ExerciseHistory } from './exercise-history';
-import { type LivePlan, buildLivePlan, extraKey, itemKey } from './live-plan';
+import { type LiveFocus, type LivePlan, buildLivePlan, extraKey, itemKey } from './live-plan';
 import { type SessionRecord, type SessionSet, recordsBySet, sessionRecords } from './records-view';
 import { type SetFields, toRepositoryDraft } from './set-draft';
 import { SwapStore } from './swap-store';
-import { setIssueText } from './today-text';
+import { liveRoutineName, setIssueText } from './today-text';
 
 /** Duração com que a série de um exercício de tempo começa, sem histórico (a pessoa ajusta de 5 em 5 s). */
 const DEFAULT_DURATION_S = 30;
@@ -137,6 +137,17 @@ export class LiveStore {
     }),
   );
   readonly focus = computed(() => this.plan().focus);
+  /**
+   * O nome compacto do treino ("Treino A - peito tríceps"). Vazio até o treino abrir: a rotina e a sessão chegam juntas,
+   * então a tela não mostra "Treino livre" por um instante antes de o plano carregar.
+   */
+  readonly workoutName = computed(() => {
+    if (this.session() === undefined) return '';
+    const routine = this.routine();
+    return routine === undefined
+      ? $localize`:@@training.live.free:Treino livre`
+      : liveRoutineName(routine.name);
+  });
   readonly focusExercise = computed(() => {
     const focus = this.focus();
     return focus === null ? undefined : this.exercises().get(focus.exerciseId);
@@ -296,6 +307,25 @@ export class LiveStore {
     this.recordFlags.set(recordsBySet(past, sets.map(toProgress)));
   }
 
+  /**
+   * A série em foco, ao ser gravada, fecha o exercício? Só a última série da meta fecha; numa supersérie o exercício só
+   * fecha quando a rodada do par inteiro fecha (os outros do grupo já cumpriram a meta, ou foram pulados).
+   */
+  closesExercise(focus: LiveFocus | null = this.focus()): boolean {
+    if (focus === null || focus.itemId === null || focus.targetSets === null || focus.extra) {
+      return false;
+    }
+    if (focus.setNumber < focus.targetSets) return false;
+    if (focus.supersetGroup === null) return true;
+    const entries = this.plan().entries;
+    return (this.routine()?.items ?? [])
+      .filter((item) => item.supersetGroup === focus.supersetGroup && item.id !== focus.itemId)
+      .every((item) => {
+        const entry = entries.find((candidate) => candidate.itemId === item.id);
+        return entry === undefined || entry.skipped || entry.doneSets >= item.targetSets;
+      });
+  }
+
   /** Conclui a série: grava no aparelho, olha o recorde e só então inicia o descanso. */
   async completeSet(fields: SetFields): Promise<CompleteOutcome> {
     const focus = this.focus();
@@ -303,6 +333,7 @@ export class LiveStore {
     const session = this.session();
     if (focus === null || exercise === undefined || session === undefined) return 'failed';
 
+    const closes = this.closesExercise(focus);
     const now = this.runtime.now();
     if (this.busy() || now - this.lastTapAt < DOUBLE_TAP_MS) {
       this.say(
@@ -340,8 +371,11 @@ export class LiveStore {
 
       this.issue.set(null);
 
-      // O descanso é o da série que acabou de ser feita; no meio de uma supersérie não há descanso.
-      if (focus.rest) {
+      // O descanso é o da série que acabou de ser feita; no meio de uma supersérie não há descanso, e a última série do
+      // exercício também não tem: a pessoa vai até o próximo aparelho, e um descanso guardado abriria o próximo já correndo.
+      if (closes) {
+        await this.timer.skip();
+      } else if (focus.rest) {
         this.restGoalS.set(focus.restSeconds);
         await this.timer.start(focus.restSeconds);
       }
@@ -553,7 +587,12 @@ export class LiveStore {
     const chosen = this.chosen();
     if (chosen === null) return;
     const entry = this.plan().entries.find((candidate) => candidate.key === chosen);
-    if (entry?.itemId != null && entry.targetSets !== null && entry.doneSets >= entry.targetSets) {
+    // Na supersérie o foco segue o par (a outra metade da rodada), então a escolha só vale para a primeira série.
+    const inSuperset = (this.focus()?.supersetGroup ?? null) !== null;
+    if (
+      inSuperset ||
+      (entry?.itemId != null && entry.targetSets !== null && entry.doneSets >= entry.targetSets)
+    ) {
       this.chosen.set(null);
     }
   }

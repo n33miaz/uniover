@@ -62,7 +62,11 @@ const EXTRAS: readonly ExtraShot[] = [
       server.offline = true;
       await context.setOffline(true);
       await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-      await expect(page.getByText(/Sem rede/).first()).toBeVisible();
+      // O estado sem rede mora no ícone do cabeçalho (a faixa de texto só existe com envio pendente, e isso depende da fila).
+      await expect(page.locator('.training-header .status')).toHaveAttribute(
+        'data-state',
+        'offline',
+      );
       await expectChartDrawn(page);
     },
   },

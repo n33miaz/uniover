@@ -1,10 +1,17 @@
 @if (data(); as summary) {
   <section class="summary" aria-labelledby="summary-title">
-    <header class="hero">
-      <span class="ui-tile ok lg"><app-training-glyph name="check" /></span>
+    <header class="head">
+      <button type="button" class="icon ui-tap" [attr.aria-label]="backLabel" (click)="done.emit()">
+        <app-training-glyph name="back" />
+      </button>
       <h1 id="summary-title" #title class="title" tabindex="-1" i18n="@@training.summary.title">
         Treino concluído
       </h1>
+      <span class="head-space" aria-hidden="true"></span>
+    </header>
+
+    <div class="hero">
+      <span class="ui-tile ok lg"><app-training-glyph name="check" /></span>
       <p class="sub">
         {{ summary.routineName ?? freeName }}
         @if (minutes() !== null) {
@@ -15,7 +22,7 @@
         <app-training-glyph name="check" />
         <span i18n="@@training.summary.saved">Salvo no aparelho · {{ sendText() }}</span>
       </p>
-    </header>
+    </div>
 
     <dl class="stats">
       <div class="stat">

@@ -144,14 +144,20 @@ test.describe('pendências e movimento', () => {
     expect(await smallTargets(page)).toEqual([]);
   });
 
-  test('a ilustração só se mexe sem o pedido de movimento reduzido; com ele, há o botão', async ({
+  test('a ilustração só se mexe sem o pedido de movimento reduzido; com ele, o toque troca a posição', async ({
     page,
     context,
   }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await startTraining(context, page);
     await openTraining(page, `/treino/exercicios/${SEED_EXERCISE_IDS.bench}`);
-    await expect(page.getByRole('button', { name: 'Ver outra posição' })).toBeVisible();
+    const art = page.getByRole('button', { name: /trocar de posição/ });
+    await expect(art).toBeVisible();
+    await expect(page.getByText('Ver outra posição')).toHaveCount(0);
+    const frames = page.locator('app-exercise-illustration .frame');
+    await expect(frames.nth(0)).toHaveClass(/on/);
+    await art.click();
+    await expect(frames.nth(1)).toHaveClass(/on/);
   });
 
   test('o foco aparece em quem recebe a tabulação (busca e primeira linha)', async ({

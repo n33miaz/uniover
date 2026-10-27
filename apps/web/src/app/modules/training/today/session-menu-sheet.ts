@@ -91,17 +91,19 @@ export type MenuAction =
 
       <h3 class="ui-section-label" i18n="@@training.menu.workout">Treino</h3>
       <ul class="ui-group ui-plain">
-        <li>
-          <button type="button" class="ui-row" (click)="action.emit('plan')">
-            <span class="ui-tile"><app-training-glyph name="list" /></span>
-            <span class="ui-row-text">
-              <span class="ui-row-title" i18n="@@training.menu.plan">Exercícios do treino</span>
-              <span class="ui-row-sub" i18n="@@training.menu.plan-sub"
-                >Voltar a um exercício ou fazer mais uma série.</span
-              >
-            </span>
-          </button>
-        </li>
+        @if (showPlan()) {
+          <li>
+            <button type="button" class="ui-row" (click)="action.emit('plan')">
+              <span class="ui-tile"><app-training-glyph name="list" /></span>
+              <span class="ui-row-text">
+                <span class="ui-row-title" i18n="@@training.menu.plan">Exercícios do treino</span>
+                <span class="ui-row-sub" i18n="@@training.menu.plan-sub"
+                  >Voltar a um exercício ou fazer mais uma série.</span
+                >
+              </span>
+            </button>
+          </li>
+        }
         <li>
           <button type="button" class="ui-row" (click)="action.emit('add')">
             <span class="ui-tile"><app-training-glyph name="plus" /></span>
@@ -181,6 +183,8 @@ export class SessionMenuSheet {
   readonly canSwitch = input(false);
   /** A pessoa escolheu um exercício fora do plano: aparece "Seguir o plano". */
   readonly chosen = input(false);
+  /** A lista dos exercícios do treino (a tela do dia já é essa lista, então lá a linha não aparece). */
+  readonly showPlan = input(true);
   /** Só se termina um treino que tem série gravada; sem série, o caminho é cancelar. */
   readonly canFinish = input(false);
   readonly screenSupported = input(false);

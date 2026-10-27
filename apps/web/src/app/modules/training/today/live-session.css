@@ -13,10 +13,14 @@
   padding-bottom: calc(96px + env(safe-area-inset-bottom));
 }
 
+.live:has(.resting) {
+  padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+}
+
 .head {
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--tap) 1fr var(--tap);
   align-items: center;
-  gap: var(--space-3);
 }
 
 .icon {
@@ -41,12 +45,9 @@
   box-shadow: none;
 }
 
-.titles {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
 .title {
+  margin: 0;
+  text-align: center;
   font-size: 1.25rem;
   font-weight: 750;
   letter-spacing: -0.01em;
@@ -55,27 +56,6 @@
 
 .title:focus {
   outline: none;
-}
-
-.sub {
-  margin: 2px 0 0;
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-}
-
-.bar {
-  height: 4px;
-  overflow: hidden;
-  border-radius: var(--radius-pill);
-  background: var(--a-elev);
-}
-
-.fill {
-  display: block;
-  width: var(--progress, 0%);
-  height: 100%;
-  background: var(--a-accent);
-  transition: width var(--dur-base) var(--ease-out);
 }
 
 /* Séries gravadas no aparelho que ainda não chegaram ao servidor (sem rede, é o estado normal). */
@@ -95,32 +75,49 @@
   gap: var(--space-3);
 }
 
+.routine-name {
+  min-height: 1.4em;
+  margin: 0;
+  text-align: center;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
 /* O exercício: a miniatura (toque amplia, com o passo a passo) ao lado do nome. */
 .exercise {
-  display: flex;
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
   align-items: center;
   gap: var(--space-3);
 }
 
+/* A ilustração (as duas poses, alternando) ocupa a coluna inteira; o toque nela repete a animação. */
 .thumb {
-  flex: none;
-  width: 56px;
-  height: 56px;
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius-sm);
-  /* O desenho é preto sobre branco e não se recolore (nem no tema escuro). */
-  background: #fff;
-  box-shadow: var(--shadow-1);
-  cursor: pointer;
+  width: 136px;
 }
 
-.thumb img {
-  display: block;
+.thumb app-exercise-illustration {
   width: 100%;
-  height: 100%;
-  object-fit: contain;
+}
+
+/* No descanso, o cronômetro é o foco: a ilustração encolhe e o resto do cabeçalho sai, para o cartão e os atalhos caberem sem rolar. */
+.body.resting .routine-name,
+.body.resting .chips {
+  display: none;
+}
+
+.body.resting .exercise {
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.body.resting .thumb {
+  width: 56px;
+}
+
+.body.resting .name {
+  font-size: 1.125rem;
 }
 
 .who {
@@ -310,14 +307,35 @@
   box-shadow: var(--shadow-2);
 }
 
+/*
+ * No descanso a ação principal é a do cartão ("Pular Descanso"): o botão fixo e a faixa de baixo saem, e o recado de
+ * "gravado" continua só para o leitor de tela. Nada cobre os atalhos.
+ */
+.dock.resting {
+  padding: 0;
+  border-top: 0;
+  background: none;
+  pointer-events: none;
+}
+
+.dock.resting > .go {
+  display: none;
+}
+
+.dock.resting .notice {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
 @media (hover: hover) {
   .icon:hover {
     background: var(--a-surface-2);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .fill {
-    transition: none;
   }
 }
