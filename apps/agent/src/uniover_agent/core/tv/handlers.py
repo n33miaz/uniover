@@ -4,11 +4,12 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Final, Protocol
 from urllib.parse import urlsplit
 
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
-from uniover_agent.core.handle_command import Handler
+from uniover_agent.core.handle_command import FreshKeyHandler, Handler
 from uniover_agent.core.tv.session import PowerOffResult, TvSessionError
 from uniover_agent.core.tv.text_edit import TextReconciler
 
@@ -25,6 +26,20 @@ KEY_BLOCKED: Final = "key_blocked"
 UNSUPPORTED: Final = "unsupported"
 LINK_SCHEME_BLOCKED: Final = "link_scheme_not_allowed"
 INVALID_TARGET: Final = "invalid_target"
+# A tecla perde o sentido depois da espera pela sessão; a API já pode ter desistido do toque.
+KEY_MAX_AGE_SECONDS: Final = 1.5
+# Toques que chegam juntos com a sessão pronta são todos intencionais. Só se junta uma repetição
+# depois desta espera, que indica que a abertura da sessão segurou a fila.
+KEY_COALESCE_AFTER_SECONDS: Final = 0.3
+AGENT_TIMEOUT: Final = "agent_timeout"
+
+
+@dataclass(frozen=True, slots=True)
+class TimedKeyCommand(Command):
+    """Chegada no agente e tecla mais recente, sem mudar o contrato recebido."""
+
+    received_at: float = 0.0
+    is_latest: Callable[[], bool] | None = None
 
 
 class PackageLauncher(Protocol):
@@ -36,7 +51,9 @@ class PackageLauncher(Protocol):
 class TvControl(Protocol):
     """O que os handlers pedem à sessão da TV (o `TvSessionManager` implementa)."""
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None: ...
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, validate: Callable[[], None] | None = None
+    ) -> None: ...
 
     async def launch_link(self, link: str) -> None: ...
 
@@ -60,8 +77,13 @@ def unsupported_handler(message: str) -> Handler:
     return handle
 
 
-def tv_key_handler(tv: TvControl, *, blocked_keys: frozenset[str] = frozenset()) -> Handler:
-    """Trata `tv.key.v1` e `tv.key.v2` (a direção só existe na v2; o padrão é `SHORT`).
+def tv_key_handler(
+    tv: TvControl,
+    *,
+    blocked_keys: frozenset[str] = frozenset(),
+    monotonic: Callable[[], float] = time.monotonic,
+) -> Handler:
+    """Trata `tv.key.v1`, `v2` e `v3` (a direção existe nas duas últimas).
 
     Nenhuma tecla é recusada por padrão, nem `POWER`: quem decide o desligamento é o app (a folha
     de confirmação) e a API (a rota própria, que a rota genérica de teclas recusa). Quem montar o
@@ -69,7 +91,11 @@ def tv_key_handler(tv: TvControl, *, blocked_keys: frozenset[str] = frozenset())
     abrir a sessão com a TV.
     """
 
+    latest: dict[str, int] = {}
+    discarded_by_age = 0
+
     async def handle(command: Command) -> CommandResult:
+        nonlocal discarded_by_age
         key = command.body.get("key")
         if not isinstance(key, str) or not key:
             return CommandResult(command.id, ResultStatus.REJECTED, "campo 'key' ausente")
@@ -82,13 +108,49 @@ def tv_key_handler(tv: TvControl, *, blocked_keys: frozenset[str] = frozenset())
                 KEY_BLOCKED,
             )
         direction = command.body.get("direction") or "SHORT"
+        # Só toques curtos podem substituir um igual ainda esperando a sessão abrir. Pressões
+        # longas têm início e fim próprios; POWER mantém a proteção de repetição da sessão.
+        coalesce = key != "POWER" and direction == "SHORT"
+        sequence = 0
+        if coalesce and not isinstance(command, TimedKeyCommand):
+            latest[key] = latest.get(key, 0) + 1
+            sequence = latest[key]
+
+        def validate() -> None:
+            nonlocal discarded_by_age
+            if key == "POWER":
+                return
+            received_at = command.received_at if isinstance(command, TimedKeyCommand) else arrived
+            waited = monotonic() - received_at
+            if waited > KEY_MAX_AGE_SECONDS:
+                discarded_by_age += 1
+                # O total evita uma linha por tecla durante a rajada, sem identificar a TV.
+                if discarded_by_age == 1 or discarded_by_age % 10 == 0:
+                    _log.info("teclas descartadas por idade: total=%d", discarded_by_age)
+                raise TvSessionError(AGENT_TIMEOUT, "a tecla expirou antes de chegar à TV")
+            if coalesce:
+                if isinstance(command, TimedKeyCommand):
+                    superseded = command.is_latest is not None and not command.is_latest()
+                else:
+                    superseded = sequence != latest[key]
+                if waited > KEY_COALESCE_AFTER_SECONDS and superseded:
+                    raise TvSessionError(
+                        AGENT_TIMEOUT, "a tecla foi substituída por um toque mais recente"
+                    )
+
+        arrived = monotonic()
         try:
-            await tv.send_key(key, str(direction))
+            if key == "POWER":
+                await tv.send_key(key, str(direction))
+            else:
+                await tv.send_key(key, str(direction), validate=validate)
         except TvSessionError as exc:
             return failed_result(command, exc)
         return CommandResult(command.id, ResultStatus.OK)
 
-    return handle
+    # O receptor só pode seguir lendo mensagens durante a abertura da TV se este handler estiver
+    # instalado: é ele que impede o envio tardio ao driver.
+    return FreshKeyHandler(handle)
 
 
 def tv_text_handler(

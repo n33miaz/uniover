@@ -2,12 +2,14 @@
 
 import asyncio
 import logging
-from collections.abc import Collection
+import time
+from collections.abc import Callable, Collection
 
 from uniover_agent.core.domain import Command
 from uniover_agent.core.envelope_gate import Accepted, EnvelopeGate, Rejected
 from uniover_agent.core.envelopes import INVALID_MESSAGE, EnvelopeFactory
 from uniover_agent.core.handle_command import HandleCommand
+from uniover_agent.core.tv.handlers import TimedKeyCommand
 from uniover_agent.ports import Transport, TransportError
 
 _log = logging.getLogger(__name__)
@@ -18,10 +20,9 @@ _KEEPALIVE_TYPE = "api.keepalive.v1"
 class ProcessMessage:
     """Valida a mensagem, executa o comando e responde.
 
-    As mensagens são atendidas uma a uma. Um comando longo (a limpeza da TV leva vários segundos)
-    seguraria todas as teclas atrás dele até a API desistir de esperá-las, então os tipos em
-    `background_types` rodam em tarefa própria: as teclas seguem e o resultado desse comando sai
-    quando ele termina.
+    As mensagens comuns são atendidas uma a uma. Comandos em `background_types` e teclas cujo
+    handler confere a idade rodam em tarefa própria: a recepção não espera a TV abrir a sessão.
+    Texto e POWER aguardam as teclas anteriores para conservar a ordem dos comandos.
     """
 
     def __init__(  # noqa: PLR0913 - dependências injetadas, todas necessárias
@@ -33,6 +34,7 @@ class ProcessMessage:
         transport: Transport,
         *,
         background_types: Collection[str] = (),
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._agent_id = agent_id
         self._gate = gate
@@ -40,7 +42,11 @@ class ProcessMessage:
         self._envelopes = envelopes
         self._transport = transport
         self._background_types = frozenset(background_types)
+        self._monotonic = monotonic
         self._tasks: set[asyncio.Task[None]] = set()
+        self._key_tasks: set[asyncio.Task[None]] = set()
+        self._last_key_task: asyncio.Task[None] | None = None
+        self._latest_key: dict[str, int] = {}
 
     async def __call__(self, raw: str | bytes) -> None:
         outcome = self._gate.check_inbound(raw)
@@ -52,12 +58,57 @@ class ProcessMessage:
         if command.type == _KEEPALIVE_TYPE:
             # Batimento da API: já chegou pelo canal; não executa comando nem produz resultado.
             return
+        if (
+            command.type.startswith("tv.key.")
+            and command.body.get("key") != "POWER"
+            and self._handle_command.handles_fresh_keys(command.type)
+        ):
+            # A recepção continua durante a abertura lenta da sessão. Só o relógio monotônico
+            # deste agente mede a espera; o horário da API pode diferir do relógio deste PC.
+            key = command.body["key"]
+            direction = command.body.get("direction") or "SHORT"
+            is_latest = self._newest_press(key) if direction == "SHORT" else None
+            command = TimedKeyCommand(
+                command.id,
+                command.type,
+                command.body,
+                command.correlation_id,
+                self._monotonic(),
+                is_latest,
+            )
+            task = asyncio.create_task(self._execute_key(command, self._last_key_task))
+            self._last_key_task = task
+            self._tasks.add(task)
+            self._key_tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+            task.add_done_callback(self._key_tasks.discard)
+            return
         if command.type in self._background_types:
             task = asyncio.create_task(self._execute_detached(command))
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
             return
+        # Texto e POWER preservam a ordem que tinham no laço serial com as teclas anteriores.
+        await asyncio.gather(*tuple(self._key_tasks))
         await self._execute(command)
+
+    def _newest_press(self, key: str) -> Callable[[], bool]:
+        self._latest_key[key] = self._latest_key.get(key, 0) + 1
+        sequence = self._latest_key[key]
+
+        def is_latest() -> bool:
+            return self._latest_key[key] == sequence
+
+        return is_latest
+
+    async def _execute_key(
+        self, command: TimedKeyCommand, previous: asyncio.Task[None] | None
+    ) -> None:
+        # O envio de RIGHT seguido de OK não pode ser invertido por duas tarefas que aquecem
+        # ou reabrem o mesmo canal ao mesmo tempo. A recepção segue livre enquanto elas esperam.
+        if previous is not None:
+            await previous
+        await self._execute_detached(command)
 
     async def aclose(self) -> None:
         """Ao encerrar o agente: cancela o que ainda roda em tarefa (e espera terminar)."""
