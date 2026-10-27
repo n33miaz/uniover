@@ -266,11 +266,13 @@ class TvSessionManager:
         self._state = SessionState.HIBERNATING
         self._set_connection("hibernating")
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, validate: Callable[[], None] | None = None
+    ) -> None:
         if key == POWER_KEY and direction == "SHORT":
             await self._send_power()
             return
-        await self._run(lambda remote: remote.send_key(key, direction))
+        await self._run(lambda remote: remote.send_key(key, direction), validate=validate)
         if key in VOLUME_KEYS and direction in {"SHORT", "END_LONG"}:
             self._schedule_volume_read()
 
@@ -546,18 +548,39 @@ class TvSessionManager:
 
     # --- comandos ----------------------------------------------------------------------------
 
-    async def _run(self, action: Callable[[TvDriver], Awaitable[None]]) -> None:
+    async def _run(
+        self,
+        action: Callable[[TvDriver], Awaitable[None]],
+        *,
+        validate: Callable[[], None] | None = None,
+    ) -> None:
         self.touch()
         self._reopened_unattended = False
-        await self._ensure_hot()
+        if validate is not None:
+            validate()
         try:
+            await self._ensure_hot()
+        except TvSessionError:
+            if validate is not None:
+                validate()
+            raise
+        try:
+            if validate is not None:
+                validate()
             await action(self._remote)
         except TvChannelError as exc:
             # O canal caiu entre a conferência e o envio: reabre uma vez e repete.
             _log.info("canal da TV caiu durante o comando (%s); reabrindo", exc)
             self._channel_lost()
-            await self._ensure_hot()
             try:
+                await self._ensure_hot()
+            except TvSessionError:
+                if validate is not None:
+                    validate()
+                raise
+            try:
+                if validate is not None:
+                    validate()
                 await action(self._remote)
             except TvChannelError as again:
                 raise TvSessionError(TV_UNREACHABLE, str(again)) from None
