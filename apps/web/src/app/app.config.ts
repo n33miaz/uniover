@@ -1,17 +1,19 @@
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import {
   ApplicationConfig,
+  ErrorHandler,
   Injector,
   inject,
   provideAppInitializer,
   provideBrowserGlobalErrorListeners,
 } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, withNavigationErrorHandler } from '@angular/router';
 import { routes } from './app.routes';
 import { idempotencyInterceptor } from './core/api/idempotency.interceptor';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { AuthService } from './core/auth/auth.service';
 import { connectivityInterceptor } from './core/connectivity/connectivity.interceptor';
+import { ChunkAwareErrorHandler, recoverFromChunkNavigationError } from './core/pwa/chunk-error';
 import { InstallHintService } from './core/pwa/install-hint.service';
 import { ModuleHeadService } from './core/pwa/module-head.service';
 import { PwaUpdateService } from './core/pwa/pwa-update.service';
@@ -24,7 +26,9 @@ export const appConfig: ApplicationConfig = {
     // Sem `withViewTransitions`: no WebKit do Playwright (Windows), a transição nativa de tela junto das animações de
     // entrada (`ui-rise`) derrubava a página em cerca de 1 a cada 4 execuções do mesmo fluxo; sem uma das duas, nunca.
     // A tela nova entra pelas animações de entrada dela mesma (`ui-rise` e `ui-stagger`, em styles.css).
-    provideRouter(routes),
+    // Um pedaço de código que sumiu (a casca aberta é de antes do deploy) atualiza o app sozinho em vez de deixar a tela vazia.
+    provideRouter(routes, withNavigationErrorHandler(recoverFromChunkNavigationError)),
+    { provide: ErrorHandler, useClass: ChunkAwareErrorHandler },
     // A Início lê o estado da casa pela porta; o adaptador real fala com a API e com o fluxo em tempo real.
     { provide: HomeStatusPort, useExisting: LiveHomeStatus },
     provideHttpClient(

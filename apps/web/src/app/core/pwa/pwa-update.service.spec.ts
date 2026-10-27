@@ -1,9 +1,17 @@
 import { TestBed } from '@angular/core/testing';
 import {
+  AUTO_RECOVERY_GUARD_MS,
+  CHUNK_RECOVERY_KEY,
+  FIRST_CONTENT_WATCHDOG_MS,
   PWA_ENABLED,
   PwaUpdateService,
+  UPDATE_ACTIVATE_TIMEOUT_MS,
+  UPDATE_CACHE_CLEAR_TIMEOUT_MS,
   UPDATE_CHECK_THROTTLE_MS,
-  UPDATE_RELOAD_FALLBACK_MS,
+  UPDATE_FLAG_MAX_AGE_MS,
+  UPDATE_INSTALL_TIMEOUT_MS,
+  UPDATE_REFRESHING_KEY,
+  UPDATE_WATCHDOG_KEY,
 } from './pwa-update.service';
 import { registerServiceWorker } from './register-sw';
 
@@ -28,6 +36,16 @@ function stubServiceWorker(registration: FakeRegistration, controller: object | 
     configurable: true,
   });
   return container;
+}
+
+/** O jsdom não tem `caches`: este substituto guarda só os nomes e conta o que foi apagado. */
+function stubCaches(names: string[]) {
+  const storage = {
+    keys: vi.fn().mockResolvedValue(names),
+    delete: vi.fn().mockResolvedValue(true),
+  };
+  Object.defineProperty(window, 'caches', { value: storage, configurable: true });
+  return storage;
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve));
@@ -57,8 +75,21 @@ describe('registerServiceWorker', () => {
 });
 
 describe('PwaUpdateService', () => {
+  const realFetch = window.fetch;
+
+  /** O último recurso pede a página à rede sem cache; aqui a rede é um substituto. */
+  function stubFetch() {
+    const fetchSpy = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window, 'fetch', { value: fetchSpy, configurable: true });
+    return fetchSpy;
+  }
+
   afterEach(() => {
+    Object.defineProperty(window, 'fetch', { value: realFetch, configurable: true });
     Reflect.deleteProperty(window.navigator, 'serviceWorker');
+    Reflect.deleteProperty(window, 'caches');
+    sessionStorage.clear();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -69,6 +100,23 @@ describe('PwaUpdateService', () => {
     const service = TestBed.inject(PwaUpdateService);
     service.start();
     return { registration, container, service };
+  }
+
+  function stubReload() {
+    const reload = vi.fn();
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, reload } as Location);
+    return reload;
+  }
+
+  function stubAssign() {
+    const assign = vi.fn();
+    const reload = vi.fn();
+    vi.spyOn(window, 'location', 'get').mockReturnValue({
+      ...window.location,
+      assign,
+      reload,
+    } as unknown as Location);
+    return { assign, reload };
   }
 
   it('does not offer an update on the very first install', async () => {
@@ -127,91 +175,10 @@ describe('PwaUpdateService', () => {
     expect(registration.update).toHaveBeenCalledTimes(1);
 
     vi.useFakeTimers();
-    try {
-      vi.advanceTimersByTime(UPDATE_CHECK_THROTTLE_MS);
-      window.dispatchEvent(new Event('online'));
-      await vi.runAllTimersAsync();
-      expect(registration.update).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('asks the waiting worker to take over and reloads only after the user accepted', async () => {
-    const { registration, container, service } = setup({});
-    await flush();
-    const reload = vi.fn();
-    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, reload } as Location);
-
-    container.dispatchEvent(new Event('controllerchange'));
-    expect(reload).not.toHaveBeenCalled();
-
-    const waiting = new FakeWorker();
-    registration.waiting = waiting;
-    service.applyUpdate();
-    expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
-    expect(service.applyingUpdate()).toBe(true);
-    service.applyUpdate();
-    expect(waiting.postMessage).toHaveBeenCalledTimes(1);
-    container.dispatchEvent(new Event('controllerchange'));
-    expect(reload).toHaveBeenCalledTimes(1);
-    container.dispatchEvent(new Event('controllerchange'));
-    expect(reload).toHaveBeenCalledTimes(1);
-  });
-
-  it('reloads after a short wait when the new controller does not announce itself', async () => {
-    const { registration, container, service } = setup({});
-    await flush();
-    const reload = vi.fn();
-    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, reload } as Location);
-    registration.waiting = new FakeWorker();
-
-    vi.useFakeTimers();
-    try {
-      service.applyUpdate();
-      vi.advanceTimersByTime(UPDATE_RELOAD_FALLBACK_MS);
-      expect(reload).toHaveBeenCalledTimes(1);
-      container.dispatchEvent(new Event('controllerchange'));
-      expect(reload).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('checks again and reloads even if the waiting worker vanished before the touch', async () => {
-    const { registration, service } = setup({});
-    await flush();
-    const reload = vi.fn();
-    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, reload } as Location);
-    registration.update.mockClear();
-
-    vi.useFakeTimers();
-    try {
-      service.applyUpdate();
-      expect(registration.update).toHaveBeenCalledTimes(1);
-      vi.advanceTimersByTime(UPDATE_RELOAD_FALLBACK_MS);
-      expect(reload).toHaveBeenCalledTimes(1);
-      expect(service.updateError()).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('shows an error only when reloading itself is impossible', async () => {
-    const { registration, container, service } = setup({});
-    await flush();
-    registration.waiting = new FakeWorker();
-    vi.spyOn(window, 'location', 'get').mockReturnValue({
-      ...window.location,
-      reload: () => {
-        throw new Error('bloqueado');
-      },
-    } as Location);
-
-    service.applyUpdate();
-    container.dispatchEvent(new Event('controllerchange'));
-    expect(service.updateError()).toBe(true);
-    expect(service.applyingUpdate()).toBe(false);
+    vi.advanceTimersByTime(UPDATE_CHECK_THROTTLE_MS);
+    window.dispatchEvent(new Event('online'));
+    await vi.runAllTimersAsync();
+    expect(registration.update).toHaveBeenCalledTimes(2);
   });
 
   it('stays out of the way when disabled', () => {
@@ -219,5 +186,336 @@ describe('PwaUpdateService', () => {
     TestBed.configureTestingModule({ providers: [{ provide: PWA_ENABLED, useValue: false }] });
     TestBed.inject(PwaUpdateService).start();
     expect(container.register).not.toHaveBeenCalled();
+  });
+
+  describe('applying an update', () => {
+    it('waits for the new worker to take control, clears only runtime caches, then reloads once', async () => {
+      const { registration, container, service } = setup({});
+      await flush();
+      const reload = stubReload();
+      const caches = stubCaches([
+        'workbox-precache-v2-http://localhost/',
+        'exercise-art',
+        'workbox-runtime-http://localhost/',
+        'dados-velhos',
+      ]);
+      const waiting = new FakeWorker();
+      registration.waiting = waiting;
+
+      // Uma troca de controlador que ninguém pediu (outra aba) não recarrega esta.
+      container.dispatchEvent(new Event('controllerchange'));
+      expect(reload).not.toHaveBeenCalled();
+
+      service.applyUpdate();
+      expect(service.showSkeleton()).toBe(true);
+      expect(service.applyingUpdate()).toBe(true);
+      expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+      service.applyUpdate();
+      expect(waiting.postMessage).toHaveBeenCalledTimes(1);
+
+      // Enquanto o worker novo não assume, nada de recarregar (era aqui que a casca antiga voltava).
+      await flush();
+      expect(reload).not.toHaveBeenCalled();
+      expect(caches.delete).not.toHaveBeenCalled();
+
+      container.dispatchEvent(new Event('controllerchange'));
+      await flush();
+      expect(caches.delete.mock.calls.map(([name]) => name).sort()).toEqual([
+        'dados-velhos',
+        'workbox-runtime-http://localhost/',
+      ]);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(sessionStorage.getItem(UPDATE_REFRESHING_KEY)).not.toBeNull();
+      container.dispatchEvent(new Event('controllerchange'));
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('also accepts the worker reaching the activated state as the signal', async () => {
+      const { registration, service } = setup({});
+      await flush();
+      const reload = stubReload();
+      const waiting = new FakeWorker();
+      registration.waiting = waiting;
+      service.applyUpdate();
+      await flush();
+      waiting.state = 'activated';
+      waiting.dispatchEvent(new Event('statechange'));
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('reloads anyway when the new worker never takes control within the deadline', async () => {
+      const { registration, container, service } = setup({});
+      await flush();
+      const reload = stubReload();
+      const fetchSpy = stubFetch();
+      registration.waiting = new FakeWorker();
+
+      vi.useFakeTimers();
+      service.applyUpdate();
+      await vi.advanceTimersByTimeAsync(UPDATE_ACTIVATE_TIMEOUT_MS - 1);
+      expect(reload).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      // Último recurso: a página é pedida à rede ignorando o cache HTTP antes da recarga.
+      expect(fetchSpy).toHaveBeenCalledWith(window.location.href, {
+        cache: 'reload',
+        credentials: 'same-origin',
+      });
+      expect(reload).toHaveBeenCalledTimes(1);
+      container.dispatchEvent(new Event('controllerchange'));
+      await vi.advanceTimersByTimeAsync(1);
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('asks for a check and waits for the install when no worker was waiting', async () => {
+      const { registration, container, service } = setup({});
+      await flush();
+      const reload = stubReload();
+      registration.update.mockClear();
+      const incoming = new FakeWorker();
+      registration.update.mockImplementation(() => {
+        registration.installing = incoming;
+        return Promise.resolve();
+      });
+
+      service.applyUpdate();
+      await flush();
+      expect(registration.update).toHaveBeenCalledTimes(1);
+      expect(incoming.postMessage).not.toHaveBeenCalled();
+
+      incoming.state = 'installed';
+      registration.waiting = incoming;
+      incoming.dispatchEvent(new Event('statechange'));
+      await flush();
+      expect(incoming.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+      expect(reload).not.toHaveBeenCalled();
+
+      container.dispatchEvent(new Event('controllerchange'));
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('reloads right away when the check finds nothing newer', async () => {
+      const { registration, service } = setup({});
+      await flush();
+      const reload = stubReload();
+      const fetchSpy = stubFetch();
+      registration.update.mockClear();
+
+      service.applyUpdate();
+      await flush();
+      expect(registration.update).toHaveBeenCalledTimes(1);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(service.updateError()).toBe(false);
+      // Nada mais novo a ativar não é falha: sem o último recurso.
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('gives up on an install that never finishes and reloads at the deadline', async () => {
+      const { registration, service } = setup({});
+      await flush();
+      const reload = stubReload();
+      const fetchSpy = stubFetch();
+      registration.update.mockImplementation(() => {
+        registration.installing = new FakeWorker();
+        return Promise.resolve();
+      });
+
+      vi.useFakeTimers();
+      service.applyUpdate();
+      await vi.advanceTimersByTimeAsync(UPDATE_INSTALL_TIMEOUT_MS - 1);
+      expect(reload).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps going when the check for a new version fails', async () => {
+      const { registration, service } = setup({});
+      await flush();
+      const reload = stubReload();
+      registration.update.mockRejectedValue(new Error('offline'));
+      service.applyUpdate();
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not let a stuck cache cleanup hold the reload', async () => {
+      const { service } = setup({});
+      await flush();
+      const reload = stubReload();
+      const caches = stubCaches(['velho']);
+      caches.keys.mockReturnValue(new Promise(() => undefined));
+
+      vi.useFakeTimers();
+      service.applyUpdate();
+      await vi.advanceTimersByTimeAsync(UPDATE_CACHE_CLEAR_TIMEOUT_MS);
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('survives a cache cleanup that fails', async () => {
+      const { service } = setup({});
+      await flush();
+      const reload = stubReload();
+      stubCaches(['velho']).keys.mockRejectedValue(new Error('bloqueado'));
+      service.applyUpdate();
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows an error only when reloading itself is impossible', async () => {
+      const { registration, container, service } = setup({});
+      await flush();
+      registration.waiting = new FakeWorker();
+      vi.spyOn(window, 'location', 'get').mockReturnValue({
+        ...window.location,
+        reload: () => {
+          throw new Error('bloqueado');
+        },
+      } as Location);
+
+      service.applyUpdate();
+      container.dispatchEvent(new Event('controllerchange'));
+      await flush();
+      expect(service.updateError()).toBe(true);
+      expect(service.applyingUpdate()).toBe(false);
+      expect(service.showSkeleton()).toBe(false);
+      expect(sessionStorage.getItem(UPDATE_REFRESHING_KEY)).toBeNull();
+    });
+  });
+
+  describe('recovering from a stale shell', () => {
+    it('runs the update path once and refuses a second automatic recovery inside the window', async () => {
+      const { service } = setup({});
+      await flush();
+      const reload = stubReload();
+
+      expect(service.recoverFromStaleShell()).toBe(true);
+      expect(service.showSkeleton()).toBe(true);
+      // Já em curso: o mesmo erro, de novo, é tratado como o mesmo socorro.
+      expect(service.recoverFromStaleShell()).toBe(true);
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(sessionStorage.getItem(CHUNK_RECOVERY_KEY)).not.toBeNull();
+
+      // A página nova, ainda dentro da janela, falhando de novo: a guarda nega e o erro segue o caminho normal.
+      TestBed.resetTestingModule();
+      sessionStorage.removeItem(UPDATE_REFRESHING_KEY);
+      setup({});
+      const again = TestBed.inject(PwaUpdateService);
+      expect(again.recoverFromStaleShell()).toBe(false);
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('goes straight to the route that failed, and only to paths inside the app', async () => {
+      const { service } = setup({});
+      await flush();
+      const { assign, reload } = stubAssign();
+      expect(service.recoverFromStaleShell('/conectar?x=1')).toBe(true);
+      await flush();
+      expect(assign).toHaveBeenCalledWith('/conectar?x=1');
+      expect(reload).not.toHaveBeenCalled();
+
+      sessionStorage.clear();
+      TestBed.resetTestingModule();
+      const other = setup({}).service;
+      expect(other.recoverFromStaleShell('//evil.example/x')).toBe(true);
+      await flush();
+      expect(assign).toHaveBeenCalledTimes(1);
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows a new recovery once the guard window has passed', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const { service } = setup({});
+      await flush();
+      const reload = stubReload();
+      expect(service.recoverFromStaleShell()).toBe(true);
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+
+      vi.setSystemTime(Date.now() + AUTO_RECOVERY_GUARD_MS + 1);
+      sessionStorage.removeItem(UPDATE_REFRESHING_KEY);
+      TestBed.resetTestingModule();
+      setup({});
+      expect(TestBed.inject(PwaUpdateService).recoverFromStaleShell()).toBe(true);
+    });
+
+    it('works without a service worker or browser storage', async () => {
+      TestBed.configureTestingModule({ providers: [{ provide: PWA_ENABLED, useValue: false }] });
+      const service = TestBed.inject(PwaUpdateService);
+      const reload = stubReload();
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('bloqueado');
+      });
+      expect(service.recoverFromStaleShell()).toBe(true);
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('after the reload', () => {
+    function boot() {
+      TestBed.configureTestingModule({ providers: [{ provide: PWA_ENABLED, useValue: false }] });
+      return TestBed.inject(PwaUpdateService);
+    }
+
+    it('keeps the skeleton until the first real content and disarms the watchdog', async () => {
+      sessionStorage.setItem(UPDATE_REFRESHING_KEY, String(Date.now()));
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      const service = boot();
+      const reload = stubReload();
+      expect(service.showSkeleton()).toBe(true);
+      // A marca vale para uma recarga só.
+      expect(sessionStorage.getItem(UPDATE_REFRESHING_KEY)).toBeNull();
+
+      service.markContentReady();
+      expect(service.showSkeleton()).toBe(false);
+      await vi.advanceTimersByTimeAsync(FIRST_CONTENT_WATCHDOG_MS * 2);
+      expect(reload).not.toHaveBeenCalled();
+    });
+
+    it('ignores an old mark and a mark nobody set', () => {
+      expect(boot().showSkeleton()).toBe(false);
+      TestBed.resetTestingModule();
+      sessionStorage.setItem(
+        UPDATE_REFRESHING_KEY,
+        String(Date.now() - UPDATE_FLAG_MAX_AGE_MS - 1),
+      );
+      expect(boot().showSkeleton()).toBe(false);
+    });
+
+    it('reloads once when no content shows up in time, and then gives up', async () => {
+      sessionStorage.setItem(UPDATE_REFRESHING_KEY, String(Date.now()));
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      boot();
+      const reload = stubReload();
+      await vi.advanceTimersByTimeAsync(FIRST_CONTENT_WATCHDOG_MS);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(sessionStorage.getItem(UPDATE_WATCHDOG_KEY)).not.toBeNull();
+      expect(sessionStorage.getItem(UPDATE_REFRESHING_KEY)).not.toBeNull();
+
+      // A recarga trouxe a mesma falta de conteúdo: a segunda vez só libera a tela, sem recarregar.
+      TestBed.resetTestingModule();
+      const second = boot();
+      expect(second.showSkeleton()).toBe(true);
+      await vi.advanceTimersByTimeAsync(FIRST_CONTENT_WATCHDOG_MS);
+      expect(second.showSkeleton()).toBe(false);
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing when the content arrived before the watchdog fires', async () => {
+      sessionStorage.setItem(UPDATE_REFRESHING_KEY, String(Date.now()));
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      const service = boot();
+      const reload = stubReload();
+      service.markContentReady();
+      service.markContentReady();
+      await vi.advanceTimersByTimeAsync(FIRST_CONTENT_WATCHDOG_MS);
+      expect(reload).not.toHaveBeenCalled();
+    });
   });
 });
