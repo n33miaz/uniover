@@ -170,10 +170,54 @@ function Set-ConfigValues([string]$Path, [hashtable]$Values) {
     Write-Config $Path $lines
 }
 
+function Get-MoveFailureReason([Exception]$Exception) {
+    # A excecao pode trazer o perfil do usuario no caminho. O tipo, HRESULT e texto sem o caminho ainda dizem por que a
+    # troca falhou, sem gravar esse dado no diagnostico exibido.
+    $reasons = @()
+    $current = $Exception
+    while ($null -ne $current) {
+        $message = $current.Message -replace '[A-Za-z]:\\[^\r\n''"]*', '<caminho omitido>'
+        $hresult = [Convert]::ToString($current.HResult, 16).PadLeft(8, '0')
+        $reasons += "$($current.GetType().Name): $message (HRESULT 0x$hresult)"
+        $current = $current.InnerException
+    }
+    return $reasons -join ' <- '
+}
+
 function Move-Folder([string]$From, [string]$To) {
     # Renomeacao de verdade (Directory.Move): ou troca o nome inteiro ou falha sem tocar em nada. O Move-Item, quando ha um
     # arquivo aberto dentro da pasta, cai para copiar-e-apagar e deixa metade dos arquivos em cada lugar.
-    [System.IO.Directory]::Move([System.IO.Path]::GetFullPath($From), [System.IO.Path]::GetFullPath($To))
+    $fromFull = [System.IO.Path]::GetFullPath($From)
+    $toFull = [System.IO.Path]::GetFullPath($To)
+    $fromVolume = [System.IO.Path]::GetPathRoot($fromFull)
+    $toVolume = [System.IO.Path]::GetPathRoot($toFull)
+    if (-not [string]::Equals($fromVolume, $toVolume, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "A candidata e o destino estao em volumes diferentes ($fromVolume e $toVolume)."
+    }
+    # Antivirus e indexador podem segurar por instantes um arquivo que acabou de ser extraido. So repetimos os erros
+    # transitorios de compartilhamento/acesso; os demais continuam a mostrar o defeito real imediatamente.
+    $retryable = @(-2147024891, -2147024864, -2147024863) # acesso negado, arquivo em uso, bloqueio de arquivo
+    for ($attempt = 0; $attempt -lt 5; $attempt++) {
+        try {
+            [System.IO.Directory]::Move($fromFull, $toFull)
+            return
+        }
+        catch {
+            $current = $_.Exception
+            $retry = $false
+            while ($null -ne $current) {
+                if ($retryable -contains $current.HResult) {
+                    $retry = $true
+                    break
+                }
+                $current = $current.InnerException
+            }
+            if (-not $retry -or $attempt -eq 4) {
+                throw
+            }
+            Start-Sleep -Milliseconds (200 * ($attempt + 1))
+        }
+    }
 }
 
 function Get-AgentSource([string]$Destination) {
@@ -266,7 +310,8 @@ function Get-AgentSource([string]$Destination) {
                 Move-Folder $Destination $oldFolder
             }
             catch {
-                throw 'A pasta do agente esta em uso por outro programa. A instalacao atual ficou como estava.'
+                $reason = Get-MoveFailureReason $_.Exception
+                throw "A pasta do agente esta em uso por outro programa. A instalacao atual ficou como estava. Motivo: $reason"
             }
         }
         try {
@@ -274,10 +319,11 @@ function Get-AgentSource([string]$Destination) {
         }
         catch {
             # A segunda renomeacao falhou: a anterior volta para o lugar e a instalacao nunca fica sem pasta do agente.
+            $reason = Get-MoveFailureReason $_.Exception
             if ((Test-Path -LiteralPath $oldFolder) -and -not (Test-Path -LiteralPath $Destination)) {
                 try { Move-Folder $oldFolder $Destination } catch { }
             }
-            throw 'Nao consegui colocar a versao nova no lugar. A instalacao atual ficou como estava.'
+            throw "Nao consegui colocar a versao nova no lugar. A instalacao atual ficou como estava. Motivo: $reason"
         }
     }
     catch {

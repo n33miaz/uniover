@@ -117,8 +117,10 @@ def test_the_sync_failure_wrapper_fails_only_the_first_three_syncs() -> None:
     assert '"%UNIOVER_DRILL_REAL_UV%" %*' in wrapper
 
 
-def proc(pid: int, ppid: int, name: str, cmd: str, created: int = 100) -> object:
-    return drill.Proc(pid, ppid, name, "", cmd, created)
+def proc(  # noqa: PLR0913 - horario e sessao por nome, so nos casos que importam
+    pid: int, ppid: int, name: str, cmd: str, *, created: int = 100, session: int = 1
+) -> object:
+    return drill.Proc(pid, ppid, name, "", cmd, created, session)
 
 
 @pytest.mark.parametrize(
@@ -158,9 +160,25 @@ def test_the_tracker_takes_the_root_folder_and_its_descendants_but_never_the_rea
 
 
 def test_the_tracker_ignores_a_process_that_is_not_a_descendant() -> None:
-    tracker = drill.Tracker(r"C:\t\ud1", r"C:\real", launcher_pid=10)
+    tracker = drill.Tracker(r"C:\t\ud1", r"C:\real")
     procs = [proc(10, 1, "powershell.exe", "x launcher.ps1"), proc(60, 99, "x.exe", "x.exe")]
-    assert [p.pid for p in tracker.current(procs)] == [10]
+    assert tracker.current(procs) == []
+
+
+def test_the_tracker_never_includes_system_or_old_or_reused_processes() -> None:
+    root = r"C:\t\ud1"
+    procs = [
+        proc(0, 0, "System Idle Process", "", created=1, session=0),
+        proc(4, 0, "System", "", created=1, session=0),
+        proc(8, 0, "smss.exe", "", created=101, session=0),
+        proc(10, 1, "powershell.exe", f"{root}\\launcher.ps1", created=99),
+        proc(11, 10, "python.exe", "python.exe", created=100),
+        proc(20, 1, "powershell.exe", f"{root}\\launcher.ps1", created=100),
+        proc(21, 20, "python.exe", "python.exe", created=101),
+        proc(22, 20, "python.exe", "python.exe", created=99),
+    ]
+    tracker = drill.Tracker(root, r"C:\real", started=100)
+    assert [p.pid for p in tracker.current(procs)] == [20, 21]
 
 
 def test_the_child_environment_points_everything_at_the_temporary_folder(tmp_path: Path) -> None:
@@ -290,5 +308,13 @@ def test_the_drill_scripts_are_ascii_and_parse_in_windows_powershell(tmp_path: P
 
 def test_the_installer_functions_the_drill_borrows_still_exist() -> None:
     installer = (TOOLS / "install-windows.ps1").read_text(encoding="utf-8")
-    for name in ("Write-Config", "Set-ConfigValues", "Get-AgentSource", "Write-AgentLauncher"):
+    for name in (
+        "Write-Config",
+        "Set-ConfigValues",
+        "Move-Folder",
+        "Get-MoveFailureReason",
+        "Get-AgentSource",
+        "Write-AgentLauncher",
+    ):
         assert f"function {name}" in installer, name
+    assert "'Move-Folder'" in drill.INSTALL_BASE

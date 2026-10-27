@@ -44,6 +44,8 @@ AGENT_REL = "apps/agent"
 ICON_REL = "apps/web/public/icons/icon-192.png"
 MAIN_REL = "apps/agent/src/uniover_agent/main.py"
 INSTALLER_REL = "apps/agent/tools/install-windows.ps1"
+# Abaixo disso ficam o Ocioso (0) e o System (4): nunca sao processos do ensaio.
+LAST_SYSTEM_PID = 4
 SUPPORT = Path(__file__).resolve().parent / "upgrade_drill_support"
 SHA = re.compile(r"[0-9a-f]{40}")
 AGENT_ID = "drill-agent"
@@ -215,6 +217,7 @@ class Proc:
     exe: str
     cmd: str
     created: int
+    session: int
 
     @property
     def key(self) -> tuple[int, int]:
@@ -246,7 +249,8 @@ _LIST_PROCESSES = (
     "$ErrorActionPreference='SilentlyContinue';"
     "@(Get-CimInstance Win32_Process|ForEach-Object{[pscustomobject]@{"
     "p=[int]$_.ProcessId;pp=[int]$_.ParentProcessId;n=$_.Name;e=$_.ExecutablePath;"
-    "c=$_.CommandLine;t=[int64]$_.CreationDate.ToFileTimeUtc()}})|ConvertTo-Json -Compress"
+    "c=$_.CommandLine;t=[int64]$_.CreationDate.ToFileTimeUtc();s=[int]$_.SessionId}})"
+    "|ConvertTo-Json -Compress"
 )
 
 
@@ -263,7 +267,8 @@ def snapshot() -> list[Proc]:
     if isinstance(rows, dict):
         rows = [rows]
     return [
-        Proc(r["p"], r["pp"], r["n"] or "", r["e"] or "", r["c"] or "", r["t"] or 0) for r in rows
+        Proc(r["p"], r["pp"], r["n"] or "", r["e"] or "", r["c"] or "", r["t"] or 0, r["s"] or 0)
+        for r in rows
     ]
 
 
@@ -283,18 +288,22 @@ class Tracker:
 
     root: str
     real_base: str
-    launcher_pid: int = 0
+    started: int = 0
     known: dict[tuple[int, int], Proc] = field(default_factory=dict)
     protected: set[int] = field(default_factory=set)
+
+    def is_candidate(self, proc: Proc) -> bool:
+        """Processo que pode pertencer ao ensaio: criado depois dele e fora da sessao do sistema."""
+        return proc.pid > LAST_SYSTEM_PID and proc.session != 0 and proc.created >= self.started
 
     def current(self, procs: list[Proc]) -> list[Proc]:
         root, real = self.root.lower(), self.real_base.lower()
         member: dict[int, Proc] = {}
         for proc in procs:
             text = f"{proc.exe}\n{proc.cmd}".lower()
-            if proc.pid in self.protected or real in text:
+            if proc.pid in self.protected or real in text or not self.is_candidate(proc):
                 continue
-            if root in text or proc.pid == self.launcher_pid:
+            if root in text:
                 member[proc.pid] = proc
         grew = True
         while grew:
@@ -304,6 +313,8 @@ class Tracker:
                     proc.ppid in member
                     and proc.pid not in member
                     and proc.pid not in self.protected
+                    and self.is_candidate(proc)
+                    and proc.created >= member[proc.ppid].created
                 ):
                     member[proc.pid] = proc
                     grew = True
@@ -491,10 +502,14 @@ $tokens = $null
 $errors = $null
 $parser = [System.Management.Automation.Language.Parser]
 $ast = $parser::ParseFile($Installer, [ref]$tokens, [ref]$errors)
-foreach ($name in @('Write-Config', 'Set-ConfigValues', 'Get-AgentSource', 'Write-AgentLauncher')) {
+$names = @('Write-Config', 'Set-ConfigValues', 'Move-Folder', 'Get-MoveFailureReason')
+$names += @('Get-AgentSource', 'Write-AgentLauncher')
+foreach ($name in $names) {
     $wanted = $name
     $kind = [System.Management.Automation.Language.FunctionDefinitionAst]
     $found = $ast.Find({ param($node) ($node -is $kind) -and ($node.Name -eq $wanted) }, $true)
+    # Instaladores anteriores a este diagnostico nao tem essa funcao; as demais sao indispensaveis.
+    if (-not $found -and $wanted -eq 'Get-MoveFailureReason') { continue }
     if (-not $found) { throw "funcao $wanted nao encontrada no instalador da base" }
     Invoke-Expression $found.Extent.Text
 }
@@ -579,7 +594,11 @@ class Drill:
         self.base = self.root / "L" / "UniOver"
         real_local = os.environ.get("LOCALAPPDATA", "")
         self.real_base = Path(os.path.realpath(real_local)) / "UniOver" if real_local else Path("?")
-        self.tracker = Tracker(str(self.root), str(self.real_base))
+        self.tracker = Tracker(
+            str(self.root),
+            str(self.real_base),
+            started=int(self.started * 10_000_000) + 116_444_736_000_000_000,
+        )
         self.watch: WindowWatch | None = None
         self.server: http.server.ThreadingHTTPServer | None = None
         self.env: dict[str, str] = {}
@@ -832,7 +851,6 @@ class Drill:
             startupinfo=info,
             creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP,
         )
-        self.tracker.launcher_pid = self.launcher.pid
 
     def stable_pair(self, seconds: float, since: float = 0.0) -> tuple[bool, str]:
         """Agente e ícone de pé, e os mesmos processos durante `seconds` (sem queda e sem
