@@ -7,6 +7,7 @@ import {
   input,
   linkedSignal,
   output,
+  signal,
 } from '@angular/core';
 import { illustrationFor, illustrationUrl } from './illustration-map';
 import { PrefersReducedMotion } from './prefers-reduced-motion';
@@ -15,12 +16,17 @@ import { PrefersReducedMotion } from './prefers-reduced-motion';
 export type IllustrationState = 'ready' | 'missing';
 
 /** Tempo entre uma pose e a outra. */
-export const FRAME_INTERVAL_MS = 1000;
+export const FRAME_INTERVAL_MS = 1500;
+/** Quanto tempo a ilustração alterna sozinha ao aparecer; depois para na pose em que estiver. */
+export const AUTO_RUN_MS = 30_000;
+/** Quanto tempo ela volta a alternar depois de um toque. */
+export const TAP_RUN_MS = 120_000;
 
 /**
- * Mostra as duas poses (início e fim do movimento) de um exercício, alternando a cada segundo, sobre um cartão claro:
- * os arquivos são desenhos de linha em fundo branco e não são recoloridos para o tema escuro (seriam uma adaptação).
- * Com `prefers-reduced-motion: reduce` nada se move: aparece a primeira pose e um botão troca de posição.
+ * Mostra as duas poses (início e fim do movimento) de um exercício, alternando sozinha com uma transição suave, sobre um
+ * cartão claro: os arquivos são desenhos de linha em fundo branco e não são recoloridos para o tema escuro. As duas poses
+ * ocupam a mesma caixa. A animação para depois de ~30 s; um toque na ilustração a retoma por ~2 min (e já troca a pose).
+ * Com `prefers-reduced-motion: reduce` nada se move sozinho: aparece a primeira pose e o toque troca de posição.
  *
  * Sem ilustração segura para o `slug`, não desenha imagem nenhuma e emite `missing`; quem usa o componente mostra
  * o texto (músculo e equipamento). Nunca se cai na figura de outro exercício.
@@ -54,19 +60,36 @@ export class ExerciseIllustration {
     computation: () => 0,
   });
 
+  /** Cada toque abre uma nova janela de animação (o número troca para o efeito recomeçar). */
+  private readonly run = signal({ id: 0, ms: AUTO_RUN_MS });
+
+  protected readonly label = computed(() => {
+    const name = this.name();
+    return this.motion.reduced()
+      ? $localize`:@@training.art.toggle:${name}:name:, trocar de posição`
+      : $localize`:@@training.art.replay:${name}:name:, repetir a animação`;
+  });
+
   constructor() {
     effect(() => this.stateChange.emit(this.entry() ? 'ready' : 'missing'));
     effect((onCleanup) => {
+      // Exercício novo recomeça a janela de ~30 s.
+      this.slug();
+      const { ms } = this.run();
       if (!this.animated()) return;
       const timer = setInterval(() => this.flip(), FRAME_INTERVAL_MS);
-      onCleanup(() => clearInterval(timer));
+      const stop = setTimeout(() => clearInterval(timer), ms);
+      onCleanup(() => {
+        clearInterval(timer);
+        clearTimeout(stop);
+      });
     });
   }
 
-  protected altText(index: number): string {
-    const name = this.name();
-    const pose = index + 1;
-    return $localize`:@@training.art.alt:${name}:name:, posição ${pose}:pose: de 2`;
+  /** O toque troca a pose já; sem movimento reduzido, ainda retoma a alternância por mais tempo. */
+  protected tap(): void {
+    this.flip();
+    if (this.animated()) this.run.update((current) => ({ id: current.id + 1, ms: TAP_RUN_MS }));
   }
 
   protected flip(): void {

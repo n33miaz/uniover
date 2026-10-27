@@ -366,6 +366,28 @@ describe('ExerciseDetailPage', () => {
     });
   });
 
+  it('has a single way back, before the name in the reading order, that leads to the exercise list', async () => {
+    const { fixture, el, router } = await open('supino-reto');
+    await eventually(fixture, () =>
+      expect(el.querySelector('h2')?.textContent).toContain('Supino'),
+    );
+    expect(el.querySelectorAll('.back')).toHaveLength(1);
+    const back = el.querySelector<HTMLButtonElement>('.back')!;
+    expect(back.getAttribute('aria-label')).toBe('Voltar para Exercícios');
+    // Voltar e título vêm antes da ilustração e dos chips na ordem do DOM.
+    const order = (a: Element, b: Element) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(order(back, el.querySelector('h2')!)).toBeTruthy();
+    expect(
+      order(el.querySelector('h2')!, el.querySelector('app-exercise-illustration')!),
+    ).toBeTruthy();
+    expect(order(el.querySelector('h2')!, el.querySelector('.chips')!)).toBeTruthy();
+
+    const navigate = vi.spyOn(router, 'navigateByUrl');
+    back.click();
+    expect(navigate).toHaveBeenCalledWith('/treino/exercicios');
+  });
+
   it('says the exercise was not found, with a way back', async () => {
     const { fixture, el, router } = await open('nada');
     await eventually(fixture, () => expect(text(el)).toContain('Exercício não encontrado'));
