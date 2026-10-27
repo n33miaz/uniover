@@ -20,8 +20,8 @@ interface DisplayPhoto extends PhotoInfo {
   imports: [TrainingSheet],
   template: `
     <section class="photos" aria-labelledby="photos-title">
-      <h2 id="photos-title" i18n="@@training.body.photos.title">Fotos de progresso</h2>
-      <p class="local-only" i18n="@@training.body.photos.local">Só neste aparelho</p>
+      <h2 id="photos-title" i18n="@@training.body.photos.title">Fotos de Progresso</h2>
+      <p class="local-only" i18n="@@training.body.photos.local">Só Neste Aparelho</p>
       <p class="usage" aria-live="polite" i18n-aria-live="@@common.aria.polite">
         <span i18n="@@training.body.photos.usage">Fotos: {{ photoBytesText() }}</span>
         @if (usage()?.quotaBytes; as quota) {
@@ -35,7 +35,7 @@ interface DisplayPhoto extends PhotoInfo {
         Se o navegador apagar os dados do site, suas fotos somem. Salve uma cópia de vez em quando.
       </p>
       <label class="primary ui-btn add-photo">
-        <span i18n="@@training.body.photos.add">Tirar foto</span>
+        <span i18n="@@training.body.photos.add">Tirar Foto</span>
         <input
           type="file"
           [attr.accept]="'image/*'"
@@ -76,7 +76,7 @@ interface DisplayPhoto extends PhotoInfo {
                     (click)="remove(photo.id)"
                     i18n="@@training.body.photos.confirm-delete"
                   >
-                    Apagar foto
+                    Apagar Foto
                   </button>
                   <button
                     class="secondary ui-btn"

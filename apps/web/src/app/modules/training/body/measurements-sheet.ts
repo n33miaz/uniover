@@ -154,7 +154,7 @@ type MeasureField = 'fat' | 'waist' | 'neck' | 'hip' | 'arm' | 'thigh';
         <p class="error" role="alert" [id]="errorId">{{ message }}</p>
       }
       <button sheetAction type="button" class="primary ui-btn" (click)="save()">
-        <span i18n="@@training.body.measure.save">Salvar medidas</span>
+        <span i18n="@@training.body.measure.save">Salvar Medidas</span>
       </button>
     </app-training-sheet>
   `,
@@ -168,7 +168,7 @@ export class BodyMeasurementsSheet {
   readonly age = input<number | null>(null);
   readonly today = input.required<string>();
   readonly closed = output<void>();
-  protected readonly heading = $localize`:@@training.body.measure.sheet:Registrar gordura e medidas`;
+  protected readonly heading = $localize`:@@training.body.measure.sheet:Registrar Medidas e Gordura`;
   protected readonly cancelLabel = $localize`:@@training.body.measure.cancel:Cancelar`;
   protected readonly dateId = `measure-date-${nextMeasuresId}`;
   protected readonly waistId = `measure-waist-${nextMeasuresId}`;
