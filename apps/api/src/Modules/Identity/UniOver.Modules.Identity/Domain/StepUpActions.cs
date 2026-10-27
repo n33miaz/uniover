@@ -13,6 +13,7 @@ public static class StepUpActions
 
     /// <summary>Mudar as permissões de um convidado: concede (ou amplia) acesso, então pede a passkey.</summary>
     public const string PermissionsChange = "identity.permissions-change";
+    public const string SystemSettingsChange = "identity.system-settings-change";
 
     /// <summary>Confirmar, no celular, a entrada de um computador pelo QR: dá uma sessão inteira a quem estiver na tela, então pede a passkey.</summary>
     public const string QrLoginApprove = "identity.qr-login-approve";

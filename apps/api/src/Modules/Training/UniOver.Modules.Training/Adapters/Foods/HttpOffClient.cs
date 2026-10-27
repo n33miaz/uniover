@@ -1,19 +1,21 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using UniOver.Modules.Identity.Contracts;
+using UniOver.Modules.Training;
 using UniOver.Modules.Training.Ports.Foods;
 
 namespace UniOver.Modules.Training.Adapters.Foods;
 
 /// <summary>Cliente OFF com host e rotas fixos. O endpoint CGI é legado, porém é o único oficial documentado hoje com busca textual.</summary>
-internal sealed class HttpOffClient(HttpClient http, IOptions<TrainingModuleOptions> options) : IOffClient
+internal sealed class HttpOffClient(HttpClient http, IOptions<TrainingModuleOptions> options, ISystemSettings settings) : IOffClient
 {
     private const string Host = "https://world.openfoodfacts.org";
     private static readonly string[] Fields = ["code", "product_name", "brands", "nutriments"];
 
     public async Task<OffSearchPage> SearchAsync(string query, CancellationToken cancellationToken)
     {
-        EnsureConfigured();
+        await EnsureConfiguredAsync(cancellationToken);
         var url = $"{Host}/cgi/search.pl?search_simple=1&json=1&action=process&search_terms={Uri.EscapeDataString(query)}&fields={string.Join(',', Fields)}&page_size=20";
         using var response = await http.GetAsync(url, cancellationToken);
         EnsureSuccess(response);
@@ -25,7 +27,7 @@ internal sealed class HttpOffClient(HttpClient http, IOptions<TrainingModuleOpti
 
     public async Task<OffFoodData?> LookupAsync(string barcode, CancellationToken cancellationToken)
     {
-        EnsureConfigured();
+        await EnsureConfiguredAsync(cancellationToken);
         var url = $"{Host}/api/v3.6/product/{Uri.EscapeDataString(barcode)}.json?fields={string.Join(',', Fields)}";
         using var response = await http.GetAsync(url, cancellationToken);
         EnsureSuccess(response);
@@ -35,12 +37,13 @@ internal sealed class HttpOffClient(HttpClient http, IOptions<TrainingModuleOpti
         return json.RootElement.TryGetProperty("product", out var product) ? ParseProduct(product) : null;
     }
 
-    private void EnsureConfigured()
+    private async Task EnsureConfiguredAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(options.Value.Foods.OffContact)) throw new InvalidOperationException("OFF não configurado.");
+        var contact = await settings.OffContactAsync(cancellationToken);
+        if (!OffContactRules.IsValid(contact)) throw new InvalidOperationException("OFF não configurado.");
         var version = string.IsNullOrWhiteSpace(options.Value.Version) ? "0.0.0" : options.Value.Version;
         http.DefaultRequestHeaders.UserAgent.Clear();
-        http.DefaultRequestHeaders.UserAgent.ParseAdd($"UniOver/{version} ({options.Value.Foods.OffContact})");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd($"UniOver/{version} ({contact})");
         http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
     }
 

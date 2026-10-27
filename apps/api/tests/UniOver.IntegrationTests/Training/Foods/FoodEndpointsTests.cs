@@ -11,6 +11,8 @@ using Npgsql;
 using UniOver.IntegrationTests.Identity;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.IntegrationTests.Training;
+using UniOver.Modules.Identity.Domain;
+using UniOver.Modules.Identity.Features.SystemSettings;
 using UniOver.Modules.Training.Domain.Foods;
 using UniOver.Modules.Training.Persistence;
 using UniOver.Modules.Training.Ports.Foods;
@@ -37,6 +39,47 @@ public sealed class FoodEndpointsTests(PostgresFixture postgres)
         lookup.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         off.SearchCalls.Should().Be(0);
         off.LookupCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task OpenFoodFacts_InvalidStoredContact_Returns503AndDoesNotCallClient()
+    {
+        var off = new FakeOff();
+        await using var app = await TrainingApp.StartAsync(postgres, new TrainingAppOptions { Off = off });
+        await using (var identity = IdentityApp.CreateContext(app.Database.OwnerConnection))
+        {
+            identity.SystemSettings.Add(new SystemSetting
+            {
+                Key = SystemSettingKeys.OffContact,
+                ValueJson = JsonSerializer.Serialize("nome <foods@example.test>"),
+                UpdatedBy = Guid.NewGuid(),
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            await identity.SaveChangesAsync(Ct);
+        }
+        var owner = await app.LoginAsync();
+
+        using var search = await app.SendAsync(HttpMethod.Get, "/api/v1/training/foods/off/search?q=arroz", bearer: owner.AccessToken);
+        using var lookup = await app.SendAsync(HttpMethod.Get, "/api/v1/training/foods/off/barcode/12345678", bearer: owner.AccessToken);
+
+        search.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        lookup.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        off.SearchCalls.Should().Be(0);
+        off.LookupCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task OpenFoodFacts_InvalidEnvironmentContact_PreventsStartup()
+    {
+        var start = async () =>
+        {
+            await using var app = await TrainingApp.StartAsync(postgres, new TrainingAppOptions
+            {
+                OffContact = "nome <foods@example.test>",
+            });
+        };
+
+        await start.Should().ThrowAsync<Microsoft.Extensions.Options.OptionsValidationException>();
     }
 
     [Fact]

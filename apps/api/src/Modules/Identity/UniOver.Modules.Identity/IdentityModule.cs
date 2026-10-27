@@ -33,6 +33,7 @@ using UniOver.Modules.Identity.Features.RenamePasskey;
 using UniOver.Modules.Identity.Features.RequestStepUp;
 using UniOver.Modules.Identity.Features.SetGuestPermissions;
 using UniOver.Modules.Identity.Features.StreamTicket;
+using UniOver.Modules.Identity.Features.SystemSettings;
 using UniOver.Modules.Identity.Features.UpdateProfile;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -69,6 +70,8 @@ public static class IdentityModule
         services.AddSingleton<AccessTokenIssuer>();
         services.AddSingleton<AuthCookieWriter>();
         services.AddScoped<LoginAuditWriter>();
+        services.AddSingleton<SystemSettingsService>();
+        services.AddSingleton<UniOver.Modules.Identity.Contracts.ISystemSettings>(sp => sp.GetRequiredService<SystemSettingsService>());
 
         // Auditoria: a trilha de login é uma fonte (cada módulo com tabela de auditoria registra a sua) e este módulo junta
         // todas para o administrador. A retenção roda no banco; a aplicação só chama a função, periodicamente.
@@ -144,6 +147,7 @@ public static class IdentityModule
         group.MapListGuests();
         group.MapRevokeGuest();
         group.MapSetGuestPermissions();
+        group.MapSystemSettings();
         group.MapSessions();
         group.MapBeginPasskeyRegistration();
         group.MapCompletePasskeyRegistration();

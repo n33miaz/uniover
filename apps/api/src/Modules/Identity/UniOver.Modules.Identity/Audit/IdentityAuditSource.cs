@@ -118,6 +118,10 @@ internal static class IdentityAuditNormalizer
                 (target, detail) = (entry.Detail, null);
                 break;
 
+            case AuditEvents.SystemSettingChanged:
+                (target, detail) = (entry.Detail, null);
+                break;
+
             case AuditEvents.StepUpFailed:
                 // acao|motivo, ou só o motivo quando a ação nem foi identificada.
                 if (entry.Detail is { } failure && failure.Contains('|', StringComparison.Ordinal))

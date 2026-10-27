@@ -461,6 +461,32 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                     b.ToTable("step_up_confirmations", "identity");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.SystemSetting", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("key");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<string>("ValueJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("value_json");
+
+                    b.HasKey("Key")
+                        .HasName("pk_system_settings");
+
+                    b.ToTable("system_settings", "identity");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.User", b =>
                 {
                     b.Property<Guid>("Id")

@@ -22,6 +22,7 @@ public static class AuditEvents
 
     /// <summary>O dono mudou as permissões de um convidado. O detalhe leva o id da conta e o que entrou e saiu (nunca nome nem e-mail).</summary>
     public const string PermissionsChanged = "permissions_changed";
+    public const string SystemSettingChanged = "system_setting_changed";
 
     /// <summary>A pessoa mudou o próprio perfil (o nome). O detalhe diz só QUAL campo mudou, nunca o valor.</summary>
     public const string ProfileUpdated = "profile_updated";
@@ -65,6 +66,7 @@ public static class AuditEvents
         GuestRevoked,
         SessionRevoked,
         PermissionsChanged,
+        SystemSettingChanged,
         ProfileUpdated,
         QrLoginApproved,
         QrLoginDenied,

@@ -1,12 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.Options;
 using Npgsql;
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.Modules.Devices.Contracts.Pairing;
 using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Devices.Persistence;
 using UniOver.Modules.Devices.Security;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Contracts;
 using UniOver.SharedKernel;
 
@@ -57,7 +57,7 @@ internal sealed class ApprovePairingHandler(
     IPairedTvRegistrar tvs,
     PairingAuditWriter audit,
     TimeProvider time,
-    IOptions<DevicesModuleOptions> options)
+    ISystemSettings settings)
 {
     private const string UniqueViolation = "23505";
     private const int SlugAttempts = 5;
@@ -135,7 +135,7 @@ internal sealed class ApprovePairingHandler(
         var lockKey = $"uniover:pair-own:{userId:N}";
         await db.Database.ExecuteSqlInterpolatedAsync($"select pg_advisory_xact_lock(hashtextextended({lockKey}, 0))", cancellationToken);
         var active = await db.Agents.CountAsync(a => a.PairedBy == userId && a.RevokedAt == null, cancellationToken);
-        return active >= options.Value.Pairing.MaxPerGuest;
+        return active >= await settings.MaxComputersPerGuestAsync(cancellationToken);
     }
 
     /// <summary>O slug pedido se estiver livre; senão o primeiro sufixo livre (<c>-2</c>, <c>-3</c>...).</summary>
