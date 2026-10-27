@@ -19,6 +19,7 @@ import { IllustrationPrefetcher } from '../illustrations/illustration-prefetcher
 import type { RoutineEntry } from '../routines/routine-stats';
 import { formatKg } from '../shell/format';
 import { TrainingGlyph } from '../shell/training-glyph';
+import { TrainingSheet } from '../shell/training-sheet';
 import { ProgramSuggestion } from './program-suggestion';
 import { RoutinePickerSheet } from './routine-picker-sheet';
 import { TodayGlyph } from './today-glyph';
@@ -40,6 +41,7 @@ import { WeekCalendar } from './week-calendar';
     TodayGlyph,
     RoutinePickerSheet,
     ProgramSuggestion,
+    TrainingSheet,
     WeekCalendar,
   ],
   templateUrl: './today-home.html',
@@ -67,6 +69,8 @@ export class TodayHome {
   private warmedKey = '';
 
   protected readonly pickerOpen = signal(false);
+  protected readonly programChoiceOpen = signal(false);
+  private readonly pendingRoutineId = signal<string | null>(null);
   protected readonly starting = signal(false);
   protected readonly confirmingClose = signal(false);
   protected readonly message = signal<{
@@ -75,6 +79,8 @@ export class TodayHome {
   } | null>(null);
 
   protected readonly freeName = $localize`:@@training.today.free-name:Treino livre`;
+  protected readonly programHeading = $localize`:@@training.today.program-heading:Programa da semana`;
+  protected readonly programSkipLabel = $localize`:@@training.today.program-skip:Seguir sem programa`;
   protected readonly confirmLabel = $localize`:@@training.today.forgotten-label:Confirmar o encerramento do treino do outro aparelho`;
   protected readonly linesLabel = $localize`:@@training.today.lines-label:Exercícios da rotina`;
   protected readonly missingName = $localize`:@@training.today.missing-name:Exercício removido`;
@@ -162,6 +168,9 @@ export class TodayHome {
         this.started.emit();
       } else if (outcome === 'blocked') {
         await this.store.loadCore();
+      } else if (outcome === 'program-choice') {
+        this.pendingRoutineId.set(routineId);
+        this.programChoiceOpen.set(true);
       } else {
         this.message.set({
           tone: 'warn',
@@ -171,6 +180,19 @@ export class TodayHome {
     } finally {
       this.starting.set(false);
     }
+  }
+
+  protected async chooseProgram(): Promise<void> {
+    this.programChoiceOpen.set(false);
+    await this.store.loadHome();
+    await this.start(this.entry()?.routine.id ?? null);
+  }
+
+  protected async continueWithoutProgram(): Promise<void> {
+    const routineId = this.pendingRoutineId();
+    this.store.dismissProgramBeforeStart();
+    this.programChoiceOpen.set(false);
+    await this.start(routineId);
   }
 
   protected async closeForgotten(): Promise<void> {

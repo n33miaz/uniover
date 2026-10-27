@@ -28,9 +28,21 @@ export async function openToday(
   }
 }
 
+/**
+ * Sem programa semanal, iniciar abre antes a escolha do programa; a maioria dos testes quer só treinar, então segue
+ * sem programa. Com programa ativo (ou treino já aberto) a folha não aparece e nada acontece.
+ */
+export async function skipProgramChoice(page: Page): Promise<void> {
+  const skip = page.getByRole('button', { name: 'Seguir sem programa' });
+  const live = page.locator('app-live-session');
+  await expect(skip.or(live)).toBeVisible();
+  if (await skip.isVisible()) await skip.click();
+}
+
 /** Toca em "Iniciar treino" e espera a tela do treino ao vivo. */
 export async function beginWorkout(page: Page, title = /Treino A/): Promise<void> {
   await page.getByRole('button', { name: 'Iniciar treino' }).click();
+  await skipProgramChoice(page);
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Concluir série' })).toBeEnabled();
 }
