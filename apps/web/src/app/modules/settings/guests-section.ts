@@ -15,7 +15,7 @@ import { problemOf } from '../../core/auth/api-problem';
 import { AuthApi, GuestInviteSummary, GuestSummary } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { SessionState } from '../../core/session/session-state';
-import { GuestPermissions, PeopleApi } from './people-api';
+import { GuestPermissions, PeopleApi, PersonUsage, UsageCounts } from './people-api';
 import { PeoplePermissionPicker } from './people-permission-picker';
 import { PeoplePermissionsSheet } from './people-permissions-sheet';
 import { TV_CONTROL_ONLY, hasModule, permissionSummary } from './people-permissions';
@@ -79,6 +79,8 @@ export class GuestsSection {
   protected readonly maxName = MAX_NAME;
   protected readonly invites = signal<readonly GuestInviteSummary[] | null>(null);
   protected readonly guests = signal<readonly GuestSummary[] | null>(null);
+  /** O uso de cada conta, por id. Falhar em lê-lo nunca atrapalha a lista de pessoas. */
+  protected readonly usage = signal<ReadonlyMap<string, PersonUsage>>(new Map());
   protected readonly loadFailed = signal(false);
   protected readonly busy = signal(false);
   /** Avisos de cada lugar, perto de onde a pessoa acabou de agir: a lista (no alto), o formulário e o link. */
@@ -337,7 +339,39 @@ export class GuestsSection {
       this.loadFailed.set(false);
     } catch {
       this.loadFailed.set(true);
+      return;
     }
+    try {
+      const rows = await this.people.usage();
+      this.usage.set(new Map(rows.map((row) => [row.id, row])));
+    } catch {
+      this.usage.set(new Map());
+    }
+  }
+
+  /** O próprio administrador: a primeira conta do mapa com esse papel. */
+  protected readonly ownerUsage = computed(() => {
+    for (const row of this.usage().values()) if (row.role === 'owner') return row;
+    return null;
+  });
+
+  protected lastAccess(row: PersonUsage): string {
+    if (!row.lastAccessAt) return $localize`:@@settings.usage.never:Nunca entrou`;
+    const minutes = Math.max(
+      0,
+      Math.floor((Date.now() - new Date(row.lastAccessAt).getTime()) / 60_000),
+    );
+    if (minutes < 1) return $localize`:@@settings.usage.now:Agora`;
+    if (minutes < 60) return $localize`:@@settings.usage.minutes:há ${minutes}:count: min`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return $localize`:@@settings.usage.hours:há ${hours}:count: h`;
+    const days = Math.floor(hours / 24);
+    return $localize`:@@settings.usage.days:há ${days}:count: d`;
+  }
+
+  /** "12 / 40": últimos 7 dias, depois 30 (a legenda do cartão explica). */
+  protected pair(counts: UsageCounts): string {
+    return `${counts.last7Days} / ${counts.last30Days}`;
   }
 
   private say(text: string | null, isError = false): void {
