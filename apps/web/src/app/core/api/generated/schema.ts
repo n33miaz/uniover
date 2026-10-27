@@ -85,6 +85,110 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/devices/agent-alerts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AgentAlert'][];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/devices/agent-alerts/seen': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/devices/agents': {
     parameters: {
       query?: never;
@@ -2860,6 +2964,59 @@ export interface paths {
         };
       };
     };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/identity/people-usage': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PersonUsage'][];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -7504,6 +7661,19 @@ export interface components {
       password: null | string;
       token: null | string;
     };
+    AgentAlert: {
+      /** Format: uuid */
+      agentId: string;
+      agentName: string;
+      /** Format: date-time */
+      detectedAt: string;
+      /** Format: uuid */
+      id: string;
+      /** Format: date-time */
+      lastSeenAt: null | string;
+      /** Format: date-time */
+      recoveredAt: null | string;
+    };
     AgentLogsRequest: {
       /** Format: int32 */
       lines: null | number | string;
@@ -7982,6 +8152,26 @@ export interface components {
       /** Format: date-time */
       lastUsedAt: null | string;
       name: string;
+    };
+    PersonUsage: {
+      /** Format: int32 */
+      activeSessions: number | string;
+      /** Format: date-time */
+      disabledAt: null | string;
+      displayName: string;
+      /** Format: uuid */
+      id: string;
+      /** Format: date-time */
+      lastAccessAt: null | string;
+      role: string;
+      tvCommands: components['schemas']['PersonUsageCounts'];
+      workouts: components['schemas']['PersonUsageCounts'];
+    };
+    PersonUsageCounts: {
+      /** Format: int32 */
+      last7Days: number | string;
+      /** Format: int32 */
+      last30Days: number | string;
     };
     PollPairingRequest: {
       deviceCode: null | string;

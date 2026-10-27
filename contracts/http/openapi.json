@@ -29,6 +29,48 @@
         ],
         "type": "object"
       },
+      "AgentAlert": {
+        "properties": {
+          "agentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "detectedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "recoveredAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "agentName",
+          "detectedAt",
+          "lastSeenAt",
+          "recoveredAt"
+        ],
+        "type": "object"
+      },
       "AgentLogsRequest": {
         "properties": {
           "lines": {
@@ -2030,6 +2072,84 @@
           "name",
           "createdAt",
           "lastUsedAt"
+        ],
+        "type": "object"
+      },
+      "PersonUsage": {
+        "properties": {
+          "activeSessions": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "disabledAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lastAccessAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "tvCommands": {
+            "$ref": "#/components/schemas/PersonUsageCounts"
+          },
+          "workouts": {
+            "$ref": "#/components/schemas/PersonUsageCounts"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "role",
+          "disabledAt",
+          "lastAccessAt",
+          "activeSessions",
+          "tvCommands",
+          "workouts"
+        ],
+        "type": "object"
+      },
+      "PersonUsageCounts": {
+        "properties": {
+          "last30Days": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "last7Days": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "last7Days",
+          "last30Days"
         ],
         "type": "object"
       },
@@ -4847,6 +4967,80 @@
         ]
       }
     },
+    "/api/v1/devices/agent-alerts": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentAlert"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "UniOver.Host"
+        ]
+      }
+    },
+    "/api/v1/devices/agent-alerts/seen": {
+      "post": {
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "UniOver.Host"
+        ]
+      }
+    },
     "/api/v1/devices/agents": {
       "get": {
         "responses": {
@@ -7657,6 +7851,48 @@
         },
         "tags": [
           "RenamePasskeyEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/people-usage": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PersonUsage"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "PeopleUsageEndpoint"
         ]
       }
     },
@@ -12531,6 +12767,9 @@
     },
     {
       "name": "ListGuestsEndpoint"
+    },
+    {
+      "name": "PeopleUsageEndpoint"
     },
     {
       "name": "RevokeGuestEndpoint"
