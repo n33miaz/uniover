@@ -2,8 +2,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Training;
 using UniOver.Modules.Training.Adapters.Foods;
 using UniOver.Modules.Training.Domain.Foods;
 using UniOver.Modules.Training.Persistence;
@@ -12,11 +13,11 @@ using UniOver.Modules.Training.Ports.Foods;
 namespace UniOver.Modules.Training.Features.Foods.SearchOffFoods;
 
 internal sealed class SearchOffFoodsHandler(IOffClient off, OffRateLimiter limiter, TrainingDbContext db,
-    IOptions<TrainingModuleOptions> options, TimeProvider time)
+    ISystemSettings settings, TimeProvider time)
 {
     public async Task<(int Status, IReadOnlyList<FoodResponse>? Items, int Retry)> SearchAsync(string query, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(options.Value.Foods.OffContact)) return (503, null, 0);
+        if (!OffContactRules.IsValid(await settings.OffContactAsync(ct))) return (503, null, 0);
         if (!limiter.TryAcquire(search: true, out var retry)) return (429, null, retry);
         try
         {

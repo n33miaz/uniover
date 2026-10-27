@@ -1,6 +1,7 @@
 using System.Net;
 using AwesomeAssertions;
 using Microsoft.Extensions.Options;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Training;
 using UniOver.Modules.Training.Adapters.Foods;
 
@@ -13,8 +14,8 @@ public sealed class HttpOffClientTests
     {
         var handler = new CaptureHandler("""{"products":[{"code":"12345678","product_name":"Arroz","brands":"Marca","nutriments":{"energy-kcal_100g":130,"proteins_100g":2,"carbohydrates_100g":28,"fat_100g":0.3}}]}""");
         using var http = new HttpClient(handler);
-        var options = Options.Create(new TrainingModuleOptions { Version = "0.1.0", Foods = new FoodsOptions { OffContact = "foods@uniover.test" } });
-        var client = new HttpOffClient(http, options);
+        var options = Options.Create(new TrainingModuleOptions { Version = "0.1.0" });
+        var client = new HttpOffClient(http, options, new FakeSettings("foods@uniover.test"));
 
         var result = await client.SearchAsync("arroz integral", CancellationToken.None);
 
@@ -31,7 +32,7 @@ public sealed class HttpOffClientTests
     {
         var handler = new CaptureHandler("""{"status":1,"product":{"code":"12345678","product_name":"Arroz","nutriments":{"energy-kcal_100g":130,"proteins_100g":2,"carbohydrates_100g":28,"fat_100g":0.3}}}""");
         using var http = new HttpClient(handler);
-        var client = new HttpOffClient(http, Options.Create(new TrainingModuleOptions { Foods = new FoodsOptions { OffContact = "foods@uniover.test" } }));
+        var client = new HttpOffClient(http, Options.Create(new TrainingModuleOptions()), new FakeSettings("foods@uniover.test"));
 
         var result = await client.LookupAsync("12345678", CancellationToken.None);
 
@@ -46,7 +47,7 @@ public sealed class HttpOffClientTests
         const string body = """{"products":[{"code":"11111111","product_name":"Sem energia","nutriments":{"proteins_100g":2,"carbohydrates_100g":3,"fat_100g":4}},{"code":"22222222","product_name":"Sem proteína","nutriments":{"energy-kcal_100g":10,"carbohydrates_100g":3,"fat_100g":4}},{"code":"33333333","product_name":"Completo","nutriments":{"energy_100g":41.84,"proteins_100g":2,"carbohydrates_100g":3,"fat_100g":4}}]}""";
         var handler = new CaptureHandler(body);
         using var http = new HttpClient(handler);
-        var client = new HttpOffClient(http, Options.Create(new TrainingModuleOptions { Foods = new FoodsOptions { OffContact = "foods@uniover.test" } }));
+        var client = new HttpOffClient(http, Options.Create(new TrainingModuleOptions()), new FakeSettings("foods@uniover.test"));
 
         var search = await client.SearchAsync("produto", CancellationToken.None);
         search.Items.Should().ContainSingle().Which.Should().BeEquivalentTo(
@@ -61,10 +62,43 @@ public sealed class HttpOffClientTests
     {
         var handler = new CaptureHandler("{}");
         using var http = new HttpClient(handler);
-        var client = new HttpOffClient(http, Options.Create(new TrainingModuleOptions()));
+        var client = new HttpOffClient(http, Options.Create(new TrainingModuleOptions()), new FakeSettings(""));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.LookupAsync("12345678", CancellationToken.None));
         handler.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task InvalidContact_RefusesBeforeNetworkCall()
+    {
+        var handler = new CaptureHandler("{}");
+        using var http = new HttpClient(handler);
+        var client = new HttpOffClient(http, Options.Create(new TrainingModuleOptions()), new FakeSettings("nome <foods@example.test>"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.LookupAsync("12345678", CancellationToken.None));
+
+        handler.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Search_UsesUpdatedContactOnTheNextRequest()
+    {
+        var handler = new CaptureHandler("""{"products":[]}""");
+        using var http = new HttpClient(handler);
+        var settings = new FakeSettings("first@example.test");
+        var client = new HttpOffClient(http, Options.Create(new TrainingModuleOptions()), settings);
+        await client.SearchAsync("arroz", CancellationToken.None);
+        settings.Contact = "next@example.test";
+        await client.SearchAsync("arroz", CancellationToken.None);
+        handler.UserAgent.Should().Contain("next@example.test");
+    }
+
+    private sealed class FakeSettings(string contact) : ISystemSettings
+    {
+        public string Contact { get; set; } = contact;
+        public Task<string> OffContactAsync(CancellationToken cancellationToken = default) => Task.FromResult(Contact);
+        public Task<int> MaxComputersPerGuestAsync(CancellationToken cancellationToken = default) => Task.FromResult(2);
+        public Task<bool> PhotoStorageEnabledAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
     }
 
     private sealed class CaptureHandler(string body) : HttpMessageHandler

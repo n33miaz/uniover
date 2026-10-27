@@ -2,8 +2,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Training;
 using UniOver.Modules.Training.Adapters.Foods;
 using UniOver.Modules.Training.Domain.Foods;
 using UniOver.Modules.Training.Features.Foods.SearchOffFoods;
@@ -13,11 +14,11 @@ using UniOver.Modules.Training.Ports.Foods;
 namespace UniOver.Modules.Training.Features.Foods.LookupOffFood;
 
 internal sealed class LookupOffFoodHandler(IOffClient off, OffRateLimiter limiter, TrainingDbContext db,
-    IOptions<TrainingModuleOptions> options, TimeProvider time)
+    ISystemSettings settings, TimeProvider time)
 {
     public async Task<(int Status, FoodResponse? Food, int Retry)> LookupAsync(string barcode, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(options.Value.Foods.OffContact)) return (503, null, 0);
+        if (!OffContactRules.IsValid(await settings.OffContactAsync(ct))) return (503, null, 0);
         var cached = await db.Set<Food>().AsNoTracking().SingleOrDefaultAsync(f => f.Source == FoodSources.Off && f.SourceRef == barcode && f.DeletedAt == null, ct);
         if (cached is not null) return (200, FoodResponse.From(cached), 0);
         if (!limiter.TryAcquire(search: false, out var retry)) return (429, null, retry);

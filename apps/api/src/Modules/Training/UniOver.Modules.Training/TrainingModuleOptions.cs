@@ -36,6 +36,20 @@ public sealed class FoodsOptions
     public string OffContact { get; set; } = string.Empty;
 }
 
+/// <summary>O contato entra no User-Agent: precisa ser um endereço simples e seguro para esse cabeçalho.</summary>
+internal static class OffContactRules
+{
+    public static bool IsValid(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length is < 3 or > 200 || value.Any(char.IsControl))
+        {
+            return false;
+        }
+
+        return MailAddress.TryCreate(value, out var address) && address.Address == value;
+    }
+}
+
 /// <summary>Tudo que é ajustável do módulo, em <c>Modules:Training</c>.</summary>
 public sealed class TrainingModuleOptions
 {
@@ -57,6 +71,6 @@ public sealed class TrainingModuleOptions
             && wger.PageSize is >= 1 and <= 100
             && wger.LanguageId >= 1
             && wger.TimeoutSeconds is >= 1 and <= 120
-            && (string.IsNullOrWhiteSpace(o.Foods.OffContact) || MailAddress.TryCreate(o.Foods.OffContact, out _));
+            && (string.IsNullOrWhiteSpace(o.Foods.OffContact) || OffContactRules.IsValid(o.Foods.OffContact));
     }
 }
