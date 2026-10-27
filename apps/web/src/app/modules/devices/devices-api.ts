@@ -7,6 +7,24 @@ import { APP_CONFIG } from '../../core/config/app-config';
 /** Aparelho pareado, como a API lista (tipo gerado do OpenAPI). */
 export type DeviceAgent = components['schemas']['AgentSummary'];
 
+/** Um aviso de queda de computador: `recoveredAt` preenchido quer dizer que ele já voltou. */
+export interface AgentAlert {
+  readonly id: string;
+  readonly agentId: string;
+  readonly agentName: string;
+  readonly detectedAt: string;
+  readonly lastSeenAt: string | null;
+  readonly recoveredAt: string | null;
+}
+
+/** Uma TV e o computador que a controla, só o que a tela de Dispositivos mostra. */
+export interface DeviceTv {
+  readonly id: string;
+  readonly name: string;
+  readonly agentSlug: string | null;
+  readonly online: boolean;
+}
+
 /** O fim do registro de um agente, já sem segredos (o agente os remove antes de enviar). */
 export interface AgentLog {
   readonly text: string;
@@ -26,6 +44,7 @@ export type MaintenanceAction = 'update' | 'restart' | 'rollback';
 export const LOG_LINES = 300;
 
 const BASE = `${APP_CONFIG.apiBase}/v1/devices`;
+const TV_BASE = `${APP_CONFIG.apiBase}/v1/tv`;
 
 /**
  * Cliente da API de aparelhos. Usa o `HttpClient`, cujos interceptadores já levam o Bearer, renovam a sessão e,
@@ -37,6 +56,35 @@ export class DevicesApi {
 
   list(): Promise<readonly DeviceAgent[]> {
     return firstValueFrom(this.http.get<DeviceAgent[]>(`${BASE}/agents`));
+  }
+
+  /** Avisos de queda ainda não vistos (só o administrador). */
+  alerts(): Promise<readonly AgentAlert[]> {
+    return firstValueFrom(this.http.get<AgentAlert[]>(`${BASE}/agent-alerts`));
+  }
+
+  /** O administrador viu os avisos: saem da Início e desta tela. */
+  async markAlertsSeen(): Promise<void> {
+    await firstValueFrom(this.http.post(`${BASE}/agent-alerts/seen`, null));
+  }
+
+  /** As TVs com o computador de cada uma; leitura do módulo da TV, só o administrador. */
+  async tvs(): Promise<readonly DeviceTv[]> {
+    const dto = await firstValueFrom(this.http.get<{ items?: unknown }>(`${TV_BASE}/tvs`));
+    if (!Array.isArray(dto?.items)) return [];
+    return dto.items.flatMap((item: unknown): DeviceTv[] => {
+      if (!item || typeof item !== 'object') return [];
+      const dto = item as Record<string, unknown>;
+      if (typeof dto['id'] !== 'string' || typeof dto['name'] !== 'string') return [];
+      return [
+        {
+          id: dto['id'],
+          name: dto['name'],
+          agentSlug: typeof dto['agentSlug'] === 'string' ? dto['agentSlug'] : null,
+          online: dto['online'] === true,
+        },
+      ];
+    });
   }
 
   /** Aprova o código e cria a TV já ligada ao computador. Exige a mesma confirmação com passkey usada ao criar uma TV. */

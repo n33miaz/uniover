@@ -224,6 +224,32 @@ describe('HomePage', () => {
     ).toBe(false);
   });
 
+  it('shows a discreet badge to Dispositivos while the computer is down, and when it is back', async () => {
+    status.set({
+      userName: null,
+      agent: 'offline',
+      watcher: 'unknown',
+      serviceDown: false,
+      agentAlert: { name: 'PC da sala', recovered: false },
+    });
+    const { fixture, el } = await render();
+    const badge = el.querySelector<HTMLAnchorElement>('.agent-alert')!;
+    expect(badge.textContent?.trim()).toBe('PC da sala sem sinal');
+    expect(badge.getAttribute('href')).toBe('/ajustes/dispositivos');
+    status.set({
+      userName: null,
+      agent: 'online',
+      watcher: 'unknown',
+      serviceDown: false,
+      agentAlert: { name: 'PC da sala', recovered: true },
+    });
+    fixture.detectChanges();
+    expect(el.querySelector('.agent-alert')?.textContent?.trim()).toBe('PC da sala voltou');
+    status.set({ userName: null, agent: 'online', watcher: 'unknown', serviceDown: false });
+    fixture.detectChanges();
+    expect(el.querySelector('.agent-alert')).toBeNull();
+  });
+
   it('offers shortcuts to Dispositivos and Configurações', async () => {
     const { el } = await render();
     const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('.shortcuts a.shortcut'));

@@ -62,10 +62,8 @@ async function openDevices(page: Page, browserName: string) {
   }
   await page.goto('/ajustes');
   await page.getByRole('link', { name: /^Dispositivos/ }).click();
-  await expect(page).toHaveURL(/\/ajustes\/aparelhos$/);
-  await expect(
-    page.getByRole('heading', { level: 2, name: 'Dispositivos pareados' }),
-  ).toBeVisible();
+  await expect(page).toHaveURL(/\/ajustes\/dispositivos$/);
+  await expect(page.getByRole('heading', { level: 2, name: 'Computadores' })).toBeVisible();
 }
 
 async function typeCode(page: Page, code: string) {

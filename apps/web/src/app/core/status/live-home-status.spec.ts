@@ -149,6 +149,7 @@ describe('LiveHomeStatus', () => {
         agent: 'online',
         watcher: 'unknown',
         serviceDown: false,
+        agentAlert: null,
       });
     });
 
@@ -437,9 +438,70 @@ describe('LiveHomeStatus', () => {
         agent: 'unknown',
         watcher: 'unknown',
         serviceDown: false,
+        agentAlert: null,
       });
       advance(120_000);
       http.expectNone(STATE);
+    });
+  });
+  describe('agent alert', () => {
+    beforeEach(() => signIn());
+
+    const ALERTS = '/api/v1/devices/agent-alerts';
+    const alert = (recoveredAt: string | null, name = 'PC da sala') => ({
+      id: 'o1',
+      agentId: 'a1',
+      agentName: name,
+      detectedAt: '2026-10-20T09:00:00Z',
+      lastSeenAt: null,
+      recoveredAt,
+    });
+
+    it('shows the computer that is down, from the same poll as the state', () => {
+      watch();
+      answer({ agentOnline: false });
+      http.expectOne(ALERTS).flush([alert(null)]);
+      expect(live.status().agentAlert).toEqual({ name: 'PC da sala', recovered: false });
+    });
+
+    it('says it is back when the only notice is a recovered one', () => {
+      watch();
+      answer();
+      http.expectOne(ALERTS).flush([alert('2026-10-20T09:30:00Z')]);
+      expect(live.status().agentAlert).toEqual({ name: 'PC da sala', recovered: true });
+    });
+
+    it('prefers an open outage over a recovered one', () => {
+      watch();
+      answer();
+      http
+        .expectOne(ALERTS)
+        .flush([alert('2026-10-20T09:30:00Z', 'PC antigo'), alert(null, 'PC da sala')]);
+      expect(live.status().agentAlert).toEqual({ name: 'PC da sala', recovered: false });
+    });
+
+    it('clears the notice when the list comes back empty', () => {
+      watch();
+      answer();
+      http.expectOne(ALERTS).flush([alert(null)]);
+      advance(30_000);
+      answer();
+      http.expectOne(ALERTS).flush([]);
+      expect(live.status().agentAlert).toBeNull();
+    });
+
+    it('ignores a failed read: no notice and no "service down"', () => {
+      watch();
+      answer();
+      http.expectOne(ALERTS).flush(null, { status: 500, statusText: 'x' });
+      expect(live.status().agentAlert).toBeNull();
+      expect(live.status().serviceDown).toBe(false);
+    });
+
+    it('never asks a guest', () => {
+      signIn('guest');
+      watch();
+      http.expectNone(ALERTS);
     });
   });
 });

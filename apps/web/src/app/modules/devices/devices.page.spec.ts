@@ -60,6 +60,9 @@ describe('DevicesPage', () => {
     revoke: vi.fn(),
     logs: vi.fn(),
     maintain: vi.fn(),
+    alerts: vi.fn(),
+    markAlertsSeen: vi.fn(),
+    tvs: vi.fn(),
   };
 
   beforeEach(() => {
@@ -67,6 +70,9 @@ describe('DevicesPage', () => {
       .mockReset()
       .mockResolvedValue({ text: 'linha 1\nlinha 2', lines: 2, truncated: false, at: 'x' });
     api.maintain.mockReset().mockResolvedValue(undefined);
+    api.alerts.mockReset().mockResolvedValue([]);
+    api.markAlertsSeen.mockReset().mockResolvedValue(undefined);
+    api.tvs.mockReset().mockResolvedValue([]);
     api.list.mockReset().mockResolvedValue([PC]);
     api.approve.mockReset().mockResolvedValue(undefined);
     api.deny.mockReset().mockResolvedValue(undefined);
@@ -251,14 +257,14 @@ describe('DevicesPage', () => {
       api.list.mockResolvedValue([{ ...withUpdate({ previousSha: PREVIOUS }), canRollback: true }]);
       const third = await render();
       expect(third.el.querySelector('.rollback')?.textContent).toContain(
-        'Voltar para a versão anterior',
+        'Voltar para a Versão Anterior',
       );
     });
 
     it('confirms inline naming the previous version, then asks the API', async () => {
       api.list.mockResolvedValue([{ ...withUpdate({ previousSha: PREVIOUS }), canRollback: true }]);
       const { fixture, el, button } = await render();
-      button('Voltar para a versão anterior').click();
+      button('Voltar para a Versão Anterior').click();
       fixture.detectChanges();
       expect(el.textContent).toContain('para a versão anterior (0a1b2c3)');
       expect(api.maintain).not.toHaveBeenCalled();
@@ -279,7 +285,7 @@ describe('DevicesPage', () => {
       );
       api.list.mockResolvedValue([{ ...withUpdate({ previousSha: PREVIOUS }), canRollback: true }]);
       const { fixture, el, button } = await render();
-      button('Voltar para a versão anterior').click();
+      button('Voltar para a Versão Anterior').click();
       fixture.detectChanges();
       el.querySelector<HTMLButtonElement>('.maintenance-confirm')!.click();
       await vi.waitFor(() => {
@@ -295,13 +301,13 @@ describe('DevicesPage', () => {
         { ...withUpdate({ previousSha: PREVIOUS }), canRollback: true, connected: false },
       ]);
       const { button } = await render();
-      expect(button('Voltar para a versão anterior').disabled).toBe(true);
+      expect(button('Voltar para a Versão Anterior').disabled).toBe(true);
     });
   });
 
   it('opens the log sheet for a connected agent that can read its log', async () => {
     const { fixture, el, button } = await render();
-    button('Ver registro').click();
+    button('Ver Registro').click();
     await vi.waitFor(() => {
       fixture.detectChanges();
       expect(el.querySelector('app-agent-log-sheet pre')?.textContent).toBe('linha 1\nlinha 2');
@@ -313,12 +319,12 @@ describe('DevicesPage', () => {
   it('tells an old agent to update instead of asking the API', async () => {
     api.list.mockResolvedValue([{ ...PC, canReadLogs: false, canMaintain: false }]);
     const { fixture, el, button } = await render();
-    button('Ver registro').click();
+    button('Ver Registro').click();
     fixture.detectChanges();
     expect(el.querySelector('app-agent-log-sheet')).toBeNull();
     expect(api.logs).not.toHaveBeenCalled();
     expect(el.querySelector('.message')?.textContent).toContain('Atualize o agente');
-    button('Atualizar agora').click();
+    button('Atualizar Agora').click();
     fixture.detectChanges();
     expect(api.maintain).not.toHaveBeenCalled();
     expect(el.querySelector('.maintenance-confirm')).toBeNull();
@@ -326,7 +332,7 @@ describe('DevicesPage', () => {
 
   it('confirms inline before updating, then asks the API and says what happens next', async () => {
     const { fixture, el, button } = await render();
-    button('Atualizar agora').click();
+    button('Atualizar Agora').click();
     fixture.detectChanges();
     expect(el.textContent).toContain('Atualizar o agente de PC de casa agora?');
     expect(api.maintain).not.toHaveBeenCalled();
@@ -341,14 +347,14 @@ describe('DevicesPage', () => {
 
   it('can cancel the restart without asking anything', async () => {
     const { fixture, el, button } = await render();
-    button('Reiniciar o agente').click();
+    button('Reiniciar o Agente').click();
     fixture.detectChanges();
     expect(el.textContent).toContain('Reiniciar o agente de PC de casa?');
     button('Cancelar').click();
     fixture.detectChanges();
     expect(api.maintain).not.toHaveBeenCalled();
     expect(el.querySelector('.maintenance-confirm')).toBeNull();
-    expect(button('Reiniciar o agente')).toBeDefined();
+    expect(button('Reiniciar o Agente')).toBeDefined();
   });
 
   it('restarts after the confirmation and reports a refusal of the passkey', async () => {
@@ -363,7 +369,7 @@ describe('DevicesPage', () => {
       }),
     );
     const { fixture, el, button } = await render();
-    button('Reiniciar o agente').click();
+    button('Reiniciar o Agente').click();
     fixture.detectChanges();
     el.querySelector<HTMLButtonElement>('.maintenance-confirm')!.click();
     await vi.waitFor(() => {
@@ -387,7 +393,7 @@ describe('DevicesPage', () => {
       }),
     );
     const { fixture, el, button } = await render();
-    button('Reiniciar o agente').click();
+    button('Reiniciar o Agente').click();
     fixture.detectChanges();
     el.querySelector<HTMLButtonElement>('.maintenance-confirm')!.click();
     await vi.waitFor(() => {
@@ -399,9 +405,9 @@ describe('DevicesPage', () => {
   it('keeps the maintenance buttons off for a disconnected agent and without a network', async () => {
     api.list.mockResolvedValue([{ ...PC, connected: false }]);
     const { fixture, el, button } = await render();
-    expect(button('Ver registro').disabled).toBe(true);
-    expect(button('Atualizar agora').disabled).toBe(true);
-    expect(button('Reiniciar o agente').disabled).toBe(true);
+    expect(button('Ver Registro').disabled).toBe(true);
+    expect(button('Atualizar Agora').disabled).toBe(true);
+    expect(button('Reiniciar o Agente').disabled).toBe(true);
     expect(button('Revogar').disabled).toBe(false);
     api.list.mockResolvedValue([PC]);
     TestBed.inject(ConnectivityService).online.set(false);
@@ -430,7 +436,7 @@ describe('DevicesPage', () => {
 
   it('opens the pairing sheet and, after approving, shows the message and reloads the list', async () => {
     const { fixture, el, button } = await render();
-    button('Parear aparelho').click();
+    button('Parear Aparelho').click();
     await fixture.whenStable();
     fixture.detectChanges();
     const code = el.querySelector<HTMLInputElement>('#pair-code')!;
@@ -480,9 +486,88 @@ describe('DevicesPage', () => {
     const { fixture, el, button } = await render();
     TestBed.inject(ConnectivityService).online.set(false);
     fixture.detectChanges();
-    expect(button('Parear aparelho').disabled).toBe(true);
+    expect(button('Parear Aparelho').disabled).toBe(true);
     expect(button('Revogar').disabled).toBe(true);
     expect(el.textContent).toContain('Sem conexão: parear, recusar e revogar precisam de rede.');
+  });
+
+  describe('alerts and organization', () => {
+    it('shows an unseen outage and dismisses it with "Entendi"', async () => {
+      api.alerts.mockResolvedValue([
+        {
+          id: 'o1',
+          agentId: 'a1',
+          agentName: 'PC de casa',
+          detectedAt: '2026-10-27T12:00:00Z',
+          lastSeenAt: '2026-10-27T11:50:00Z',
+          recoveredAt: null,
+        },
+      ]);
+      const { fixture, el, button } = await render();
+      expect(el.querySelector('.alert')?.textContent).toContain('PC de casa está sem sinal');
+      expect(el.querySelector('.alert')?.classList.contains('warn')).toBe(true);
+      button('Entendi').click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(api.markAlertsSeen).toHaveBeenCalledOnce();
+      expect(el.querySelector('.alert')).toBeNull();
+    });
+
+    it('says when the computer is back', async () => {
+      api.alerts.mockResolvedValue([
+        {
+          id: 'o1',
+          agentId: 'a1',
+          agentName: 'PC de casa',
+          detectedAt: '2026-10-27T12:00:00Z',
+          lastSeenAt: null,
+          recoveredAt: '2026-10-27T12:20:00Z',
+        },
+      ]);
+      const { el } = await render();
+      expect(el.querySelector('.alert')?.textContent).toContain('PC de casa voltou');
+      expect(el.querySelector('.alert')?.classList.contains('ok')).toBe(true);
+    });
+
+    it('keeps the list when the alerts or the TVs cannot be read', async () => {
+      api.alerts.mockRejectedValue(new Error('x'));
+      api.tvs.mockRejectedValue(new Error('x'));
+      const { el } = await render();
+      expect(el.querySelector('.alert')).toBeNull();
+      expect(el.querySelector('.tv-list')).toBeNull();
+      expect(el.querySelectorAll('.item')).toHaveLength(1);
+    });
+
+    it('lists the TVs with their computer and state, apart from the computers', async () => {
+      api.tvs.mockResolvedValue([
+        { id: 't1', name: 'TV da sala', agentSlug: PC.slug, online: true },
+        { id: 't2', name: 'TV do quarto', agentSlug: null, online: false },
+      ]);
+      const { el } = await render();
+      const rows = Array.from(el.querySelectorAll('.tv-item')).map((row) => row.textContent);
+      expect(rows[0]).toContain('TV da sala');
+      expect(rows[0]).toContain('Computador: PC de casa');
+      expect(rows[0]).toContain('Online');
+      expect(rows[1]).toContain('Sem computador');
+      expect(rows[1]).toContain('Sem Conexão');
+    });
+
+    it('keeps the main actions apart from the dangerous ones', async () => {
+      const { el } = await render();
+      const main = Array.from(el.querySelectorAll('.actions.main button')).map((b) =>
+        b.textContent?.trim(),
+      );
+      const danger = Array.from(el.querySelectorAll('.danger-zone button')).map((b) =>
+        b.textContent?.trim(),
+      );
+      expect(main).toEqual(['Ver Registro', 'Atualizar Agora']);
+      expect(danger).toEqual(['Reiniciar o Agente', 'Revogar']);
+    });
+
+    it('has no back link of its own: the header arrow is the only one', async () => {
+      const { el } = await render();
+      expect(el.querySelector('a.back')).toBeNull();
+    });
   });
 });
 
@@ -630,9 +715,9 @@ describe('DevicesPage deep link and connector', () => {
     const { harness, el } = await open('/ajustes/dispositivos');
     const find = (text: string) =>
       Array.from(el.querySelectorAll('button')).find((b) => b.textContent?.trim() === text)!;
-    expect(find('Conectar este PC').classList.contains('primary')).toBe(true);
+    expect(find('Conectar Este PC').classList.contains('primary')).toBe(true);
     expect(el.textContent).not.toContain('abra esta tela nele');
-    find('Conectar este PC').click();
+    find('Conectar Este PC').click();
     harness.detectChanges();
     expect(el.querySelector('app-connect-sheet')).not.toBeNull();
     find('Fechar').click();
@@ -643,7 +728,7 @@ describe('DevicesPage deep link and connector', () => {
   it('on other systems hides the action and says the connector is for a Windows PC', async () => {
     const { el } = await open('/ajustes/dispositivos');
     const labels = Array.from(el.querySelectorAll('button')).map((b) => b.textContent?.trim());
-    expect(labels).not.toContain('Conectar este PC');
+    expect(labels).not.toContain('Conectar Este PC');
     expect(el.textContent).toContain('Para conectar um PC, abra esta tela nele (Windows).');
   });
 });

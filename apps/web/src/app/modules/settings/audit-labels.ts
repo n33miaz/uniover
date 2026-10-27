@@ -77,6 +77,10 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.agent-update-requested:Atualização do aparelho pedida`;
     case 'agent_restart_requested':
       return $localize`:@@settings.audit.action.agent-restart-requested:Reinício do aparelho pedido`;
+    case 'agent_offline':
+      return $localize`:@@settings.audit.action.agent-offline:Computador sem sinal`;
+    case 'agent_online':
+      return $localize`:@@settings.audit.action.agent-online:Computador de volta`;
     case 'agent_rollback_requested':
       return $localize`:@@settings.audit.action.agent-rollback-requested:Volta do aparelho à versão anterior pedida`;
     // TV
@@ -247,6 +251,8 @@ export function describeTarget(item: AuditItem): string | null {
     case 'agent_update_requested':
     case 'agent_restart_requested':
     case 'agent_rollback_requested':
+    case 'agent_offline':
+    case 'agent_online':
       // Nesta fonte o alvo é o nome do aparelho no cadastro (texto de gente).
       return target;
     default:

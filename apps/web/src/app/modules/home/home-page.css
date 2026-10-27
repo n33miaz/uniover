@@ -71,6 +71,30 @@
   --tone: var(--a-warn);
 }
 
+/* Aviso de queda: um selo pequeno ao lado do ponto, sem ocupar a faixa. */
+.agent-alert {
+  position: absolute;
+  top: calc(var(--space-3) - 5px);
+  left: calc(var(--space-3) + 24px);
+  max-width: calc(100% - 3.5rem);
+  padding: 2px 10px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--a-warn) 55%, var(--a-line));
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--a-warn) 18%, var(--a-surface));
+  color: var(--a-ink);
+  font-size: var(--fs-small);
+  font-weight: 650;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-alert.ok {
+  border-color: color-mix(in srgb, var(--a-ok) 55%, var(--a-line));
+  background: color-mix(in srgb, var(--a-ok) 18%, var(--a-surface));
+}
+
 @keyframes agent-pulse {
   50% {
     opacity: 0.42;
