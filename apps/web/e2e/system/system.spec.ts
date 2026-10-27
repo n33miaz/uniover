@@ -115,7 +115,7 @@ const row = (page: Page, name: string) =>
 const sheet = (page: Page) => page.locator('app-tv-edit-sheet dialog');
 const requestsTo = (method: string) => tv.requests.filter((r) => r.method === method);
 
-test.describe('Ajustes > Sistema > TVs', () => {
+test.describe('Configurações > Sistema > TVs', () => {
   test('edita o limite pelo app após confirmar com a passkey', async ({ page, browserName }) => {
     seedPaired();
     await preparePasskey(page, browserName);
@@ -143,7 +143,7 @@ test.describe('Ajustes > Sistema > TVs', () => {
     await page.getByRole('link', { name: /^Sistema/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/sistema$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Sistema' })).toBeVisible();
-    await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
+    await page.getByRole('link', { name: 'Voltar às Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
   });
 
@@ -200,7 +200,7 @@ test.describe('Ajustes > Sistema > TVs', () => {
       await expect(page.getByText('Todo computador pareado já tem uma TV.')).toBeVisible();
       await expect(page.getByRole('link', { name: 'Ir para Dispositivos' })).toHaveAttribute(
         'href',
-        '/ajustes/aparelhos',
+        '/ajustes/dispositivos',
       );
       await expect(page.getByRole('button', { name: 'Adicionar TV' })).toHaveCount(0);
       await check(page, info, 'system-empty', scheme);

@@ -46,7 +46,7 @@ test.describe('primeiro acesso: como devemos te chamar', () => {
     await expect(page).toHaveURL(/\/boas-vindas$/);
     await expect(greeting(page)).toHaveText('Como devemos te chamar?');
     await expect(nameField(page)).toHaveValue(OWNER.displayName);
-    await expect(page.getByText('Dá para mudar depois, em Ajustes.')).toBeVisible();
+    await expect(page.getByText('Dá para mudar depois, em Configurações.')).toBeVisible();
 
     await nameField(page).fill('  Neemias   ');
     await submit(page).click();
@@ -62,7 +62,7 @@ test.describe('primeiro acesso: como devemos te chamar', () => {
     await expect(greeting(page)).toContainText('Neemias');
   });
 
-  test('guarda o destino: quem queria ir a Ajustes volta para lá depois de responder', async ({
+  test('guarda o destino: quem queria ir a Configurações volta para lá depois de responder', async ({
     page,
   }) => {
     mock.owner.confirmed = false;
@@ -287,7 +287,7 @@ test.describe('o Perfil muda o nome a qualquer hora', () => {
     expect(mock.owner.displayName).toBe('Neemias Jr');
 
     // Volta pela seta (Perfil -> lista -> Início): a saudação já traz o nome novo, sem recarregar a página.
-    await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
+    await page.getByRole('link', { name: 'Voltar às Configurações' }).click();
     await page.getByRole('link', { name: 'Voltar ao Início' }).click();
     await expect(page).toHaveURL(/\/$/);
     // A saudação traz só o primeiro nome: "Neemias Jr" vira "Neemias".

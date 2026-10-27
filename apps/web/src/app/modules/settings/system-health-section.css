@@ -26,6 +26,17 @@
   font-size: var(--fs-body);
 }
 
-.health-row .ok { color: var(--a-ok-ink); }
-.health-row .bad, .error { color: var(--a-bad-ink); }
-.empty, .api-version { margin: 0; padding: var(--space-3) var(--space-4); color: var(--a-ink2); font-size: var(--fs-small); }
+.health-row .ok {
+  color: var(--a-ok-ink);
+}
+.health-row .bad,
+.error {
+  color: var(--a-bad-ink);
+}
+.empty,
+.api-version {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}

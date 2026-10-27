@@ -1,16 +1,14 @@
 import { TestBed } from '@angular/core/testing';
-import { DevicesApi } from '../devices/devices-api';
 import { SessionState } from '../../core/session/session-state';
 import { SystemApi } from './system-api';
 import { SystemHealthSection } from './system-health-section';
 
 describe('SystemHealthSection', () => {
-  const devices = { list: vi.fn() };
-  const system = { tvs: vi.fn(), deploymentVersion: vi.fn() };
+  const system = { agents: vi.fn(), tvs: vi.fn(), deploymentVersion: vi.fn() };
 
   beforeEach(() => {
     localStorage.clear();
-    devices.list.mockReset().mockResolvedValue([
+    system.agents.mockReset().mockResolvedValue([
       {
         id: 'agent-1',
         slug: 'sala',
@@ -35,10 +33,7 @@ describe('SystemHealthSection', () => {
     ]);
     system.deploymentVersion.mockReset().mockResolvedValue({ commit: 'abc1234' });
     TestBed.configureTestingModule({
-      providers: [
-        { provide: DevicesApi, useValue: devices },
-        { provide: SystemApi, useValue: system },
-      ],
+      providers: [{ provide: SystemApi, useValue: system }],
     });
   });
 
@@ -65,7 +60,7 @@ describe('SystemHealthSection', () => {
     const fixture = TestBed.createComponent(SystemHealthSection);
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(devices.list).not.toHaveBeenCalled();
+    expect(system.agents).not.toHaveBeenCalled();
     expect(system.tvs).not.toHaveBeenCalled();
   });
 });

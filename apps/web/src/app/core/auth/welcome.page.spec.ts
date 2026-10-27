@@ -85,10 +85,10 @@ describe('WelcomePage', () => {
     expect(el.querySelector('h1 + *')?.tagName).toBe('FORM');
   });
 
-  it('says honestly that the name can be changed later, in Ajustes', async () => {
+  it('says honestly that the name can be changed later, in Configurações', async () => {
     const { el } = await open();
     expect(el.querySelector('#welcome-name-hint')?.textContent?.trim()).toBe(
-      'Dá para mudar depois, em Ajustes.',
+      'Dá para mudar depois, em Configurações.',
     );
   });
 

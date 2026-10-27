@@ -291,10 +291,10 @@ test.describe('ajustes', () => {
     await signIn(page);
     await expect(page).toHaveURL(/\/$/);
     await page.goto('/ajustes');
-    await expect(page.getByRole('heading', { level: 2, name: 'Conta' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Você' })).toBeVisible();
   });
 
-  test('é uma lista: cada tela de Ajustes tem a sua linha, com resumo e o caminho', async ({
+  test('é uma lista: cada tela de Configurações tem a sua linha, com resumo e o caminho', async ({
     page,
   }, info) => {
     const rows = page.locator('a.ui-row');
@@ -302,10 +302,10 @@ test.describe('ajustes', () => {
       'Perfil',
       'Aparência',
       'Segurança',
-      'Pessoas',
+      'Pessoas e Permissões',
       'Dispositivos',
-      'Auditoria',
       'Sistema',
+      'Auditoria',
       'Sobre',
     ]);
     await expect(rows).toHaveCount(8);
@@ -314,7 +314,7 @@ test.describe('ajustes', () => {
       ['Aparência', '/ajustes/aparencia'],
       ['Segurança', '/ajustes/seguranca'],
       ['Pessoas', '/ajustes/pessoas'],
-      ['Dispositivos', '/ajustes/aparelhos'],
+      ['Dispositivos', '/ajustes/dispositivos'],
       ['Auditoria', '/ajustes/auditoria'],
       ['Sistema', '/ajustes/sistema'],
       ['Sobre', '/ajustes/sobre'],
@@ -336,7 +336,7 @@ test.describe('ajustes', () => {
     await expect(page.getByText(OWNER.displayName, { exact: true }).first()).toBeVisible();
     await expect(page.getByText(OWNER.email)).toBeVisible();
     await expect(page.getByText('Administrador', { exact: true })).toBeVisible();
-    await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
+    await page.getByRole('link', { name: 'Voltar às Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
   });
@@ -431,7 +431,7 @@ test.describe('acessibilidade da tela de entrada', () => {
 test.describe('casca offline com o service worker', () => {
   test.use({ serviceWorkers: 'allow' });
 
-  test('offline a casca abre em Ajustes sem mandar para a entrada e mostra a sessão a confirmar', async ({
+  test('offline a casca abre em Configurações sem mandar para a entrada e mostra a sessão a confirmar', async ({
     page,
     context,
   }) => {

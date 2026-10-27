@@ -47,6 +47,15 @@ export interface SystemSettingValue {
   readonly source: 'app' | 'server';
 }
 
+/** Um computador pareado, só o que a leitura de saúde mostra (o módulo de dispositivos tem o tipo completo). */
+export interface HealthAgent {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly connected: boolean;
+  readonly lastSeenAt: string | null;
+}
+
 /** Identificação pública da versão da API em execução. */
 export interface DeploymentVersion {
   readonly commit: string | null;
@@ -86,6 +95,20 @@ export class SystemApi {
 
   systemSettings(): Promise<SystemSettingValue[]> {
     return firstValueFrom(this.http.get<SystemSettingValue[]>(SETTINGS_BASE));
+  }
+
+  /** Os computadores pareados e o estado de cada um (só o administrador). */
+  async agents(): Promise<HealthAgent[]> {
+    const items = await firstValueFrom(
+      this.http.get<HealthAgent[]>(`${APP_CONFIG.apiBase}/v1/devices/agents`),
+    );
+    return items.map(({ id, slug, name, connected, lastSeenAt }) => ({
+      id,
+      slug,
+      name,
+      connected,
+      lastSeenAt: lastSeenAt ?? null,
+    }));
   }
 
   /** O endpoint de saúde é público e não lê dados da conta. */
