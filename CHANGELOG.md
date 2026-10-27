@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.3](https://github.com/n33miaz/uniover/compare/v0.4.2...v0.4.3) (2026-10-27)
+
+
+### Features
+
+* **training:** body signals panel
+* **training:** title case body labels
+
+
 ## [0.4.2](https://github.com/n33miaz/uniover/compare/v0.4.1...v0.4.2) (2026-10-27)
 
 
