@@ -238,20 +238,22 @@ jobs:
           echo "deployed=true" >> "$GITHUB_OUTPUT"
       # O serviço antigo continua respondendo enquanto o Render constrói a imagem nova; a pausa inicial evita
       # dar por pronta a versão anterior. O plano grátis também pode estar dormindo: a primeira resposta demora.
-      - name: Esperar o serviço ficar saudável
+      - name: Esperar o serviço publicar o commit esperado
         if: steps.hook.outputs.deployed == 'true'
         run: |
+          expected_sha="${GITHUB_SHA,,}"
           sleep 90
           for i in $(seq 1 76); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$APP_URL/health/live" || true)
-            if [ "$code" = "200" ]; then
-              echo "/health/live respondeu 200 (tentativa $i)."
+            response=$(curl -fsS --max-time 30 "$APP_URL/health/version" || true)
+            commit=$(jq -r '.commit // empty' <<< "$response" 2>/dev/null || true)
+            if [ "$commit" = "$expected_sha" ]; then
+              echo "/health/version confirmou o commit $expected_sha (tentativa $i)."
               exit 0
             fi
-            echo "Tentativa $i: /health/live respondeu '${code:-sem resposta}'."
+            echo "Tentativa $i: /health/version informou '${commit:-sem sha}', aguardando '$expected_sha'."
             sleep 15
           done
-          echo "::error::o serviço não respondeu 200 em /health/live em cerca de 20 minutos."
+          echo "::error::a API não confirmou o commit $expected_sha em /health/version em cerca de 20 minutos."
           exit 1
       - name: Conferir o PWA e a API
         if: steps.hook.outputs.deployed == 'true'
