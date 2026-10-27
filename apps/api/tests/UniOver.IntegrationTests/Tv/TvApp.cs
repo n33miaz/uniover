@@ -242,7 +242,8 @@ internal sealed class TvApp : IAsyncDisposable
     }
 
     public async Task<HttpResponseMessage> SendAsync(
-        HttpMethod method, string url, object? body = null, string? bearer = "", string? forwardedFor = ClientIp, string? userAgent = UserAgentText)
+        HttpMethod method, string url, object? body = null, string? bearer = "", string? forwardedFor = ClientIp, string? userAgent = UserAgentText,
+        Guid? idempotencyKey = null)
     {
         using var request = new HttpRequestMessage(method, url);
         if (body is not null)
@@ -265,6 +266,11 @@ internal sealed class TvApp : IAsyncDisposable
         if (userAgent is not null)
         {
             request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
+        }
+
+        if (method == HttpMethod.Post || method == HttpMethod.Put || method == HttpMethod.Patch || method == HttpMethod.Delete)
+        {
+            request.Headers.Add("Idempotency-Key", (idempotencyKey ?? Guid.NewGuid()).ToString());
         }
 
         return await Client.SendAsync(request, TestContext.Current.CancellationToken);

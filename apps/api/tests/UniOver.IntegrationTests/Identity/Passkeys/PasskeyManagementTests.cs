@@ -132,8 +132,10 @@ public sealed class PasskeyManagementTests(PostgresFixture postgres)
         {
             using var firstRequest = new HttpRequestMessage(HttpMethod.Delete, PasskeyUrl(firstId));
             firstRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", login.AccessToken);
+            firstRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
             using var secondRequest = new HttpRequestMessage(HttpMethod.Delete, PasskeyUrl(secondId));
             secondRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", login.AccessToken);
+            secondRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
 
             var responses = await Task.WhenAll(app.Client.SendAsync(firstRequest, Ct), app.Client.SendAsync(secondRequest, Ct));
             using var firstResponse = responses[0];

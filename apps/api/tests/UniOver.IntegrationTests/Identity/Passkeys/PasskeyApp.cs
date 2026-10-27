@@ -155,7 +155,8 @@ internal sealed class PasskeyApp : IAsyncDisposable
     /// <summary>Contexto com o papel dono, só para o teste inspecionar o banco.</summary>
     public IdentityDbContext Db() => IdentityApp.CreateContext(Database.OwnerConnection);
 
-    public async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, object? body = null, string? bearer = null)
+    public async Task<HttpResponseMessage> SendAsync(
+        HttpMethod method, string url, object? body = null, string? bearer = null, Guid? idempotencyKey = null)
     {
         using var request = new HttpRequestMessage(method, url);
         if (body is not null)
@@ -166,6 +167,11 @@ internal sealed class PasskeyApp : IAsyncDisposable
         if (bearer is not null)
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+        }
+
+        if (method == HttpMethod.Post || method == HttpMethod.Put || method == HttpMethod.Patch || method == HttpMethod.Delete)
+        {
+            request.Headers.Add("Idempotency-Key", (idempotencyKey ?? Guid.NewGuid()).ToString());
         }
 
         return await Client.SendAsync(request, TestContext.Current.CancellationToken);

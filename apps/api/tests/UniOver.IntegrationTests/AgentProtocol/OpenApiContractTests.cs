@@ -41,6 +41,23 @@ public class OpenApiContractTests
         committed.Should().Be(generated, "o OpenAPI versionado deve refletir a API; rode `npm --prefix contracts run generate`");
     }
 
+    [Fact]
+    public async Task IdempotencyOperation_DeclaresTheOptionalHeaderAndItsProblemResponses()
+    {
+        await using var factory = new EdgeFactory("Development");
+        using var client = factory.CreateClient();
+        var document = JsonNode.Parse(await client.GetStringAsync("/openapi/v1.json", TestContext.Current.CancellationToken))!;
+        var operation = document["paths"]!["/api/v1/identity/me"]!["patch"]!.AsObject();
+
+        var header = operation["parameters"]!.AsArray()
+            .Select(parameter => parameter!.AsObject())
+            .Single(parameter => parameter["name"]?.GetValue<string>() == "Idempotency-Key");
+
+        header["in"]!.GetValue<string>().Should().Be("header");
+        (header["required"]?.GetValue<bool>() ?? false).Should().BeFalse();
+        operation["responses"]!.AsObject().Should().ContainKeys("409", "422");
+    }
+
     /// <summary>Saída determinística: chaves ordenadas, sem servidores (dependem do host), versão fixa e LF.</summary>
     private static string Normalize(string json)
     {

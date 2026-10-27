@@ -49,7 +49,7 @@ public sealed class UpsertBodyProfileTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task SameKey_SameBody_ReturnsTheStoredResponse_AndSameKeyDifferentBodyReturns422()
+    public async Task SameKey_SameBody_ReplaysTheStoredResponse_DifferentBodyReturns422_MissingKeyRunsWithoutReplay()
     {
         await using var app = await TrainingApp.StartAsync(postgres);
         var login = await app.LoginAsync();
@@ -67,7 +67,8 @@ public sealed class UpsertBodyProfileTests(PostgresFixture postgres)
         (await second.Content.ReadAsStringAsync(Ct)).Should().Be(await first.Content.ReadAsStringAsync(Ct));
         reused.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         (await TrainingAssertions.ProblemTypeAsync(reused)).Should().EndWith("idempotency-key-reused");
-        missing.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        missing.StatusCode.Should().Be(HttpStatusCode.OK, "sem chave a escrita segue sem proteção, nesta transição");
+        missing.Headers.Contains("Idempotent-Replayed").Should().BeFalse();
     }
 
     [Fact]

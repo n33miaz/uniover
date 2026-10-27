@@ -78,10 +78,48 @@ public sealed class WgerImportTests(PostgresFixture postgres)
         Item("00000000-0000-4000-8000-000000000007", "Flexão do wger", muscles: [12], equipment: []),
     ];
 
-    private static async Task<HttpResponseMessage> ImportAsync(TrainingApp app, LoggedIn? login, bool? dryRun)
+    private static async Task<HttpResponseMessage> ImportAsync(TrainingApp app, LoggedIn? login, bool? dryRun, Guid? idempotencyKey = null)
     {
         var url = "/api/v1/training/catalog/imports/wger" + (dryRun is null ? string.Empty : $"?dryRun={dryRun.Value.ToString().ToLowerInvariant()}");
-        return await app.SendAsync(HttpMethod.Post, url, bearer: login?.AccessToken);
+        return await app.SendAsync(HttpMethod.Post, url, bearer: login?.AccessToken, idempotencyKey: idempotencyKey ?? Guid.NewGuid());
+    }
+
+    [Fact]
+    public async Task SameKey_ReplaysTheImportWithoutCallingWgerAgain()
+    {
+        var fake = new FakeWgerClient(Funnel());
+        await using var app = await TrainingApp.StartAsync(postgres, new TrainingAppOptions { Wger = fake });
+        var login = await app.LoginAsync();
+        var key = Guid.NewGuid();
+
+        using var first = await ImportAsync(app, login, false, key);
+        var firstBody = await first.Content.ReadAsStringAsync(Ct);
+        var callsAfterFirst = fake.Calls;
+        using var replay = await ImportAsync(app, login, false, key);
+
+        replay.StatusCode.Should().Be(HttpStatusCode.OK);
+        replay.Headers.GetValues("Idempotent-Replayed").Should().ContainSingle().Which.Should().Be("true");
+        (await replay.Content.ReadAsStringAsync(Ct)).Should().Be(firstBody);
+        fake.Calls.Should().Be(callsAfterFirst, "a repetição recebe a resposta guardada sem iniciar outra importação");
+        await using var db = app.Db();
+        (await db.Exercises.CountAsync(e => e.Source == ExerciseSources.Wger, Ct)).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task SameKeyWithAnotherDryRunValue_Gets422()
+    {
+        var fake = new FakeWgerClient(Funnel());
+        await using var app = await TrainingApp.StartAsync(postgres, new TrainingAppOptions { Wger = fake });
+        var login = await app.LoginAsync();
+        var key = Guid.NewGuid();
+
+        using var first = await ImportAsync(app, login, true, key);
+        using var changed = await ImportAsync(app, login, false, key);
+
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        changed.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await TrainingAssertions.ProblemTypeAsync(changed)).Should().EndWith("idempotency-key-reused");
+        fake.Calls.Should().Be(1, "a query faz parte do pedido protegido pela chave");
     }
 
     [Fact]

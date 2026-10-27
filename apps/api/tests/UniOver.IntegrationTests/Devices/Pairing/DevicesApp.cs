@@ -181,7 +181,8 @@ internal sealed class DevicesApp : IAsyncDisposable
     public DevicesDbContext Db() => CreateContext(Database.OwnerConnection);
 
     public async Task<HttpResponseMessage> SendAsync(
-        HttpMethod method, string url, object? body = null, string? bearer = null, string? forwardedFor = null, string? userAgent = null)
+        HttpMethod method, string url, object? body = null, string? bearer = null, string? forwardedFor = null, string? userAgent = null,
+        Guid? idempotencyKey = null)
     {
         using var request = new HttpRequestMessage(method, url);
         if (body is not null)
@@ -202,6 +203,11 @@ internal sealed class DevicesApp : IAsyncDisposable
         if (userAgent is not null)
         {
             request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
+        }
+
+        if (method == HttpMethod.Post || method == HttpMethod.Put || method == HttpMethod.Patch || method == HttpMethod.Delete)
+        {
+            request.Headers.Add("Idempotency-Key", (idempotencyKey ?? Guid.NewGuid()).ToString());
         }
 
         return await Client.SendAsync(request, TestContext.Current.CancellationToken);

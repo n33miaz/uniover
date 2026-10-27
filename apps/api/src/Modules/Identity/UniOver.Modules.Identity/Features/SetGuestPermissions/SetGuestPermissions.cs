@@ -111,6 +111,7 @@ internal static class SetGuestPermissionsEndpoint
         group.MapPut("/guests/{id:guid}/permissions", HandleAsync)
             .RequireAuthorization(StepUp.Policy(StepUpActions.PermissionsChange))
             .RequireRateLimiting(RateLimitPolicies.Login)
+            .RequireIdempotency<IdentityDbContext>()
             .Produces<GuestSummary>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)

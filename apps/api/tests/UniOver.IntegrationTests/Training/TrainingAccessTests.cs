@@ -113,7 +113,8 @@ public sealed class TrainingAccessTests(PostgresFixture postgres)
 
         // O administrador continua alcançando a importação (a mesma rota, com o cliente de mentira).
         var owner = await app.LoginAsync();
-        using var asOwner = await app.SendAsync(HttpMethod.Post, "/api/v1/training/catalog/imports/wger?dryRun=false", bearer: owner.AccessToken);
+        using var asOwner = await app.SendAsync(
+            HttpMethod.Post, "/api/v1/training/catalog/imports/wger?dryRun=false", bearer: owner.AccessToken, idempotencyKey: Guid.NewGuid());
         asOwner.StatusCode.Should().Be(HttpStatusCode.OK);
         wger.Calls.Should().BeGreaterThan(0);
         await using var after = app.Db();
@@ -219,7 +220,8 @@ public sealed class TrainingAccessTests(PostgresFixture postgres)
         var member = await app.NewGuestAsync("Raphael", TrainingOnly, 48);
         (await StatusAsync(app, "/api/v1/training/routines", member.Login.AccessToken)).Should().Be(HttpStatusCode.OK);
 
-        using var revoke = await app.SendAsync(HttpMethod.Post, $"/api/v1/identity/guests/{member.UserId}/revoke", bearer: owner.AccessToken);
+        using var revoke = await app.SendAsync(
+            HttpMethod.Post, $"/api/v1/identity/guests/{member.UserId}/revoke", bearer: owner.AccessToken, idempotencyKey: Guid.NewGuid());
 
         revoke.StatusCode.Should().Be(HttpStatusCode.NoContent);
         (await StatusAsync(app, "/api/v1/training/routines", member.Login.AccessToken)).Should().Be(HttpStatusCode.Forbidden);
@@ -241,7 +243,8 @@ public sealed class TrainingAccessTests(PostgresFixture postgres)
         {
             await app.ConfirmAsync(owner, authenticator, StepUpActions.PermissionsChange);
             using var response = await app.SendAsync(
-                HttpMethod.Put, $"/api/v1/identity/guests/{member.UserId}/permissions", new { permissions }, owner.AccessToken);
+                HttpMethod.Put, $"/api/v1/identity/guests/{member.UserId}/permissions", new { permissions }, owner.AccessToken,
+                idempotencyKey: Guid.NewGuid());
             return response.StatusCode;
         }
 
@@ -263,7 +266,8 @@ public sealed class TrainingAccessTests(PostgresFixture postgres)
         // O administrador cria o convite "Só o Treino" (com a confirmação por passkey que a rota exige).
         await app.ConfirmAsync(owner, authenticator, StepUpActions.GuestInvite);
         using var created = await app.SendAsync(
-            HttpMethod.Post, "/api/v1/identity/guest-invites", new { displayName = "Raphael", permissions = TrainingOnly }, owner.AccessToken);
+            HttpMethod.Post, "/api/v1/identity/guest-invites", new { displayName = "Raphael", permissions = TrainingOnly }, owner.AccessToken,
+            idempotencyKey: Guid.NewGuid());
         created.StatusCode.Should().Be(HttpStatusCode.OK);
         var invite = await TrainingApp.JsonAsync(created);
         invite.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()).Should().Equal(TrainingOnly);

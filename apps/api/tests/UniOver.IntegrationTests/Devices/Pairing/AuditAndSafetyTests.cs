@@ -202,7 +202,7 @@ public sealed class AuditAndSafetyTests(PostgresFixture postgres)
 
         var tables = await Tables(database.OwnerConnection);
         tables.Should().Equal(
-            "__ef_migrations_history", "agent_presence_snapshots", "agents", "dead_letters", "outbox_messages", "pairing_audit",
+            "__ef_migrations_history", "agent_presence_snapshots", "agents", "dead_letters", "idempotency_keys", "outbox_messages", "pairing_audit",
             "pairings");
 
         await using var runtime = new NpgsqlConnection(database.RuntimeConnection);
