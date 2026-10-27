@@ -134,6 +134,8 @@ export function rowsInPeriod(
 export interface WeightChartSpec extends ChartSpec {
   /** A tendência, uma por ponto (mesma posição de `xs`): é a linha; os pontos são as pesagens. */
   readonly trendYs: readonly number[];
+  /** Pesagens que delimitam a janela curta, quando ela substitui o período escolhido. */
+  readonly dataRange: readonly [string, string] | null;
 }
 
 /** O dia como segundos desde a época, à meia-noite UTC (o eixo é de calendário, o fuso não entra). */
@@ -155,6 +157,7 @@ const monthYearUtc = new Intl.DateTimeFormat('pt-BR', {
   year: '2-digit',
   timeZone: 'UTC',
 });
+const monthUtc = new Intl.DateTimeFormat('pt-BR', { month: 'short', timeZone: 'UTC' });
 const axisNumber = new Intl.NumberFormat('pt-BR', {
   minimumFractionDigits: 1,
   maximumFractionDigits: 1,
@@ -164,6 +167,26 @@ const axisNumber = new Intl.NumberFormat('pt-BR', {
 export function formatAxisDay(seconds: number, longSpan: boolean): string {
   const ms = seconds * MS_PER_SECOND;
   return longSpan ? monthYearUtc.format(ms).replace('.', '') : dayMonthUtc.format(ms);
+}
+
+/** Intervalo mensal curto que explica por que uma janela de período fixo foi aproximada dos pontos. */
+export function formatWeightDateRange(from: string, to: string): string {
+  const first = daySeconds(from) * MS_PER_SECOND;
+  const last = daySeconds(to) * MS_PER_SECOND;
+  const formatMonth = (ms: number) => {
+    const month = monthUtc.format(ms).replace('.', '');
+    return `${month[0]?.toUpperCase() ?? ''}${month.slice(1)}`;
+  };
+  const firstDate = new Date(first);
+  const lastDate = new Date(last);
+  const firstMonth = formatMonth(first);
+  const lastMonth = formatMonth(last);
+  if (firstDate.getUTCFullYear() === lastDate.getUTCFullYear()) {
+    return firstDate.getUTCMonth() === lastDate.getUTCMonth()
+      ? firstMonth
+      : `${firstMonth}–${lastMonth}`;
+  }
+  return `${firstMonth} ${firstDate.getUTCFullYear()}–${lastMonth} ${lastDate.getUTCFullYear()}`;
 }
 
 /** Número do eixo de peso, sem unidade ("82,5"). */
@@ -185,14 +208,18 @@ export function buildWeightChart(input: WeightChartInput): WeightChartSpec | nul
   const last = daySeconds(rows[rows.length - 1].date);
   const todaySeconds = daySeconds(today);
   const start = periodStart(period, today);
-  // Período fixo: a janela é o período inteiro (a posição no tempo é parte da informação). "Tudo": da primeira pesagem a hoje.
-  // Com poucas pesagens a janela também acompanha os dados (com uma folga mínima), senão os pontos colam na borda direita.
+  // Nos períodos fixos com poucas pesagens, a janela acompanha os pontos: meses vazios não ajudam a ver a tendência.
+  // A janela mínima e a folga preservam espaço para tocar o ponto único sem fazê-lo parecer colado na borda.
   const minWindow = MIN_WINDOW_DAYS * SECONDS_PER_DAY;
-  const fitToData = start === null || rows.length < FEW_POINTS;
-  let low = fitToData ? Math.min(first, todaySeconds - minWindow) : daySeconds(start);
+  const fitToData = start !== null && rows.length < FEW_POINTS;
+  let low = fitToData
+    ? Math.min(first, last - minWindow)
+    : start === null
+      ? Math.min(first, todaySeconds - minWindow)
+      : daySeconds(start);
   if (start !== null) low = Math.max(low, daySeconds(start));
   low = Math.min(low, first);
-  const high = Math.max(todaySeconds, last);
+  const high = fitToData ? Math.max(last, low + minWindow) : Math.max(todaySeconds, last);
   const pad = (high - low) * 0.06;
 
   const ys = rows.map((row) => row.weightKg);
@@ -206,6 +233,7 @@ export function buildWeightChart(input: WeightChartInput): WeightChartSpec | nul
     xs: rows.map((row) => daySeconds(row.date)),
     ys,
     trendYs,
+    dataRange: fitToData ? [rows[0].date, rows[rows.length - 1].date] : null,
     xRange: [low - pad, high + pad],
     yRange: range,
     xTicks: Array.from(

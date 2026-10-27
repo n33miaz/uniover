@@ -11,7 +11,12 @@ import { HealthNotice } from './notice/health-notice';
 import { BodyNoticeStore } from './notice/notice-store';
 import { BodyPhotoPanel } from './photo-panel';
 import { WEIGHT_CHART_PROVIDER } from './weight/weight-chart-engine';
-import { type WeightPeriod, buildWeightChart, rowsInPeriod } from './weight/weight-model';
+import {
+  type WeightPeriod,
+  buildWeightChart,
+  formatWeightDateRange,
+  rowsInPeriod,
+} from './weight/weight-model';
 import { WeightSheet } from './weight/weight-sheet';
 
 type BodyView = 'summary' | 'records' | 'photos';
@@ -101,6 +106,11 @@ type BodyView = 'summary' | 'records' | 'photos';
                 <p class="chart-caption" i18n="@@training.body.chart.caption">
                   Pontos: pesagens · linha: tendência
                 </p>
+                @if (spec.dataRange; as range) {
+                  <p class="chart-caption" i18n="@@training.body.chart.data-range">
+                    Intervalo exibido: {{ formatWeightDateRange(range[0], range[1]) }}
+                  </p>
+                }
                 <details class="chart-table">
                   <summary i18n="@@training.body.chart.table">Ver Dados do Período</summary>
                   @for (row of chartRows(); track row.id) {
@@ -730,6 +740,7 @@ export class BodyPage {
   protected readonly formatPercent = formatPercent;
   protected readonly formatCm = formatCm;
   protected readonly formatDate = formatFullDate;
+  protected readonly formatWeightDateRange = formatWeightDateRange;
   protected readonly signedWeight = signedWeight;
 
   protected selectView(next: BodyView): void {

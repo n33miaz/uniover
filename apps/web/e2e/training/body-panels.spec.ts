@@ -55,9 +55,59 @@ test('prioriza sinais e mantém calorias e fotos acessíveis', async ({ page, co
   await expect(energy.locator('.target strong')).toHaveText('2.400');
   await expect.poll(() => server.writes('goals'), { timeout: 15_000 }).toBe(1);
 
-  await page.getByRole('button', { name: 'Resumo' }).click();
-  await page.getByRole('button', { name: 'Fotos de Progresso Ver Fotos' }).click();
-  await expect(page.getByRole('heading', { name: 'Fotos de Progresso' })).toBeVisible();
+  await page.getByRole('button', { name: 'Fotos' }).click();
+  const photos = page.locator('app-body-photo-panel');
+  await expect(photos.getByRole('heading', { name: 'Fotos de Progresso' })).toBeVisible();
+  await expect(photos.getByText('Tirar Foto', { exact: true })).toBeVisible();
+  const png = Buffer.from(
+    await page.evaluate(() => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 2;
+      canvas.height = 2;
+      const context = canvas.getContext('2d');
+      if (context === null) throw new Error('Canvas indisponível para a imagem de teste.');
+      context.fillStyle = '#457b62';
+      context.fillRect(0, 0, 2, 2);
+      return canvas.toDataURL('image/png').split(',')[1];
+    }),
+    'base64',
+  );
+  const upload = photos.locator('input[type="file"]');
+  await upload.setInputFiles({ name: 'progresso.png', mimeType: 'image/png', buffer: png });
+  await expect(photos.locator('p[role="status"]')).toContainText('Foto salva só neste aparelho');
+  await upload.setInputFiles({ name: 'progresso-2.png', mimeType: 'image/png', buffer: png });
+  await expect(photos.locator('.photo-card')).toHaveCount(2);
+  await expect(photos.locator('.comparison')).toHaveCount(0);
+  const compare = photos.getByRole('button', { name: 'Comparar' });
+  await compare.nth(0).click();
+  await compare.nth(1).click();
+  await expect(photos.locator('.comparison figure')).toHaveCount(2);
+  expect(
+    await photos
+      .locator('.photo-card img')
+      .evaluateAll((images) =>
+        images.every((image) => image.getAttribute('src')?.startsWith('data:image/')),
+      ),
+  ).toBe(true);
+
+  server.offline = true;
+  await context.setOffline(true);
+  await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+  await upload.setInputFiles({ name: 'progresso-offline.png', mimeType: 'image/png', buffer: png });
+  await expect(photos.locator('.photo-card')).toHaveCount(3);
+  await photos
+    .getByRole('button', { name: /^Apagar foto de/ })
+    .first()
+    .click();
+  await photos.getByRole('button', { name: 'Apagar Foto', exact: true }).click();
+  await expect(photos.locator('.photo-card')).toHaveCount(2);
+  await upload.setInputFiles({
+    name: 'progresso-depois-de-apagar.png',
+    mimeType: 'image/png',
+    buffer: png,
+  });
+  await expect(photos.locator('.photo-card')).toHaveCount(3);
+
   // A troca de aba esmaece o conteúdo por 200 ms: o axe só mede o contraste depois que a animação termina.
   await expect(page.locator('.section-content')).not.toHaveClass(/forward|backward/);
   await expectNoHorizontalScroll(page);
