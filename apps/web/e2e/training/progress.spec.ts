@@ -37,6 +37,14 @@ test.describe('gráfico de evolução', () => {
     await expect(delta(page)).toHaveText('+10,7 kg desde 02/09');
     await expect(pressed(page, '1RM estimado')).toBeVisible();
     await expect(pressed(page, '8 semanas')).toBeVisible();
+    const evolutionBeforeSections = await page.locator('.progress').evaluate((progress) => {
+      const evolution = progress.querySelector('app-progress-evolution')!;
+      const sections = progress.querySelector('.sections')!;
+      return Boolean(
+        evolution.compareDocumentPosition(sections) & Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    });
+    expect(evolutionBeforeSections).toBe(true);
     await expect(chart(page)).toHaveAttribute(
       'aria-label',
       'Gráfico de linha: 1RM estimado de Supino reto com barra nas últimas 8 semanas. ' +

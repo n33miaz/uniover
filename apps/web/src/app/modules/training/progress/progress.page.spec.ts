@@ -65,6 +65,22 @@ describe('ProgressPage', () => {
     await eventually(fixture, () => expect(text(el.querySelector('.value'))).toBe('76 kg'));
   });
 
+  it('keeps evolution before every secondary progress section', async () => {
+    const { fixture, el } = await open('/treino/progresso', seedTwo);
+    await eventually(fixture, () =>
+      expect(el.querySelector('app-progress-evolution')).not.toBeNull(),
+    );
+
+    const main = el.querySelector('.progress')!;
+    expect(main.firstElementChild?.tagName.toLowerCase()).toBe('app-progress-evolution');
+    const evolution = main.querySelector('app-progress-evolution')!;
+    const sections = main.querySelector('.sections')!;
+    expect(Boolean(sections)).toBe(true);
+    expect(
+      evolution.compareDocumentPosition(sections) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('opens on the exercise of the address, the one the exercise sheet links to', async () => {
     const { fixture, el } = await open('/treino/progresso?exercise=supino-reto', seedTwo);
     await eventually(fixture, () => expect(pressedChip(el)).toBe('Supino reto com barra'));
