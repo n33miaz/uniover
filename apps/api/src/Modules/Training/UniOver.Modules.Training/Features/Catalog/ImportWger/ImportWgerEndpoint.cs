@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Training.Persistence;
 
 namespace UniOver.Modules.Training.Features.Catalog.ImportWger;
 
@@ -14,6 +15,7 @@ internal static class ImportWgerEndpoint
         group.MapPost("/catalog/imports/wger", HandleAsync)
             .RequireAuthorization(TrainingAuth.AdminOnly)
             .RequireRateLimiting(RateLimitPolicies.Commands)
+            .RequireIdempotency<TrainingDbContext>()
             .Produces<ImportWgerResponse>()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)

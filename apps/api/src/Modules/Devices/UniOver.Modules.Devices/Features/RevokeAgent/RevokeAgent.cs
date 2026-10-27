@@ -70,6 +70,7 @@ internal static class RevokeAgentEndpoint
     // Revogar é ação protetora (tira poder do agente): só pede login, sem passkey.
     public static void MapRevokeAgent(this IEndpointRouteBuilder group) =>
         group.MapPost("/agents/{id:guid}/revoke", HandleAsync).RequireAuthorization()
+            .RequireIdempotency<DevicesDbContext>()
             .Produces<RevokeAgentResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)

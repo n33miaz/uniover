@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity.Domain;
+using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
 
 namespace UniOver.Modules.Identity.Features.RemovePasskey;
@@ -12,6 +13,7 @@ internal static class RemovePasskeyEndpoint
     public static void MapRemovePasskey(this IEndpointRouteBuilder group) =>
         group.MapDelete("/passkeys/{id:guid}", HandleAsync)
             .RequireAuthorization(StepUp.Policy(StepUpActions.PasskeyRemove))
+            .RequireIdempotency<IdentityDbContext>()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)

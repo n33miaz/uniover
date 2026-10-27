@@ -25,6 +25,9 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
         ArgumentNullException.ThrowIfNull(modelBuilder);
         base.OnModelCreating(modelBuilder);
 
+        // Chaves de idempotência das escritas de aparelhos: devices.idempotency_keys.
+        modelBuilder.AddIdempotency();
+
         modelBuilder.Entity<PairingRequest>(e =>
         {
             e.ToTable("pairings");

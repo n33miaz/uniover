@@ -42,6 +42,9 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
         ArgumentNullException.ThrowIfNull(modelBuilder);
         base.OnModelCreating(modelBuilder);
 
+        // Chaves de idempotência das escritas da conta: identity.idempotency_keys.
+        modelBuilder.AddIdempotency();
+
         modelBuilder.Entity<User>(e =>
         {
             e.ToTable("users", t => t.HasCheckConstraint("ck_users_role", "role IN ('owner', 'guest')"));

@@ -33,6 +33,13 @@ internal static class IdempotencyRequestHandler<TContext>
             return;
         }
 
+        if (!context.Request.Headers.ContainsKey(KeyHeader))
+        {
+            // A chave passa a ser obrigatória só depois que os clientes antigos tiverem atualizado.
+            await inner(context);
+            return;
+        }
+
         if (!TryReadKey(context.Request, out var key))
         {
             await WriteProblemAsync(context, StatusCodes.Status400BadRequest, "idempotency-key-required",
@@ -47,7 +54,7 @@ internal static class IdempotencyRequestHandler<TContext>
             return;
         }
 
-        var requestHash = await TryHashBodyAsync(context);
+        var requestHash = await TryHashRequestAsync(context);
         if (requestHash is null)
         {
             await WriteProblemAsync(context, StatusCodes.Status413PayloadTooLarge, "payload-too-large",
@@ -95,22 +102,36 @@ internal static class IdempotencyRequestHandler<TContext>
         return values.Count == 1 && Guid.TryParseExact(values[0], "D", out key);
     }
 
-    /// <summary>Hash SHA-256 do corpo cru, ou <c>null</c> se passar do limite. Deixa o corpo legível para o endpoint.</summary>
-    private static async Task<byte[]?> TryHashBodyAsync(HttpContext context)
+    /// <summary>Hash SHA-256 do corpo e da query canônica, ou <c>null</c> se passar do limite. Deixa o corpo legível para o endpoint.</summary>
+    private static async Task<byte[]?> TryHashRequestAsync(HttpContext context)
     {
         var request = context.Request;
         request.EnableBuffering(bufferThreshold: 64 * 1024, bufferLimit: MaxRequestBodyBytes);
         try
         {
-            var hash = await SHA256.HashDataAsync(request.Body, context.RequestAborted);
+            var bodyHash = await SHA256.HashDataAsync(request.Body, context.RequestAborted);
             request.Body.Position = 0;
-            return hash;
+            if (request.Query.Count == 0)
+            {
+                return bodyHash;
+            }
+
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            hash.AppendData(bodyHash);
+            hash.AppendData(Encoding.UTF8.GetBytes(CanonicalQuery(request.Query)));
+            return hash.GetHashAndReset();
         }
         catch (InvalidDataException)
         {
             return null;
         }
     }
+
+    private static string CanonicalQuery(IQueryCollection query) => string.Join('&', query
+        .OrderBy(parameter => parameter.Key, StringComparer.Ordinal)
+        .SelectMany(parameter => parameter.Value
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .Select(value => $"{Uri.EscapeDataString(parameter.Key)}={Uri.EscapeDataString(value ?? string.Empty)}")));
 
     private static bool SameRequest(IdempotencyGatewayEntry existing, string method, string route, byte[] requestHash) =>
         string.Equals(existing.Method, method, StringComparison.Ordinal)
@@ -149,6 +170,7 @@ internal static class IdempotencyRequestHandler<TContext>
         var location = response.Headers.Location.ToString();
 
         // Sem o token da requisição: se o cliente desistiu, o resultado ainda precisa ser guardado.
+        // Se o processo cair entre o efeito e CompleteAsync, o reenvio após o lease pode repetir a ação.
         await gateway.CompleteAsync(userId, key, leaseId, status, body, contentType,
             location.Length == 0 ? null : Truncate(location, 2000), CancellationToken.None);
     }

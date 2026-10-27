@@ -51,6 +51,7 @@ internal static class DenyPairingEndpoint
         group.MapPost("/pairing/deny", HandleAsync)
             .RequireAuthorization()
             .RequireRateLimiting(RateLimitPolicies.Pairing)
+            .RequireIdempotency<DevicesDbContext>()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)

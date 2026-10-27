@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Devices.Features.StartPairing;
+using UniOver.Modules.Devices.Persistence;
 using UniOver.Modules.Devices.Security;
 using UniOver.Modules.Tv.Contracts;
 
@@ -28,6 +29,7 @@ internal static class ApprovePairingEndpoint
     public static void MapApprovePairing(this IEndpointRouteBuilder group)
     {
         var route = group.MapPost("/pairing/approve", HandleAsync).RequireRateLimiting(RateLimitPolicies.Pairing)
+            .RequireIdempotency<DevicesDbContext>()
             .Produces<ApprovePairingResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
@@ -58,6 +60,7 @@ internal static class ApprovePairingEndpoint
     public static void MapApproveOwnPairing(this IEndpointRouteBuilder group)
     {
         var route = group.MapPost("/pairing/approve-own", HandleOwnAsync).RequireRateLimiting(RateLimitPolicies.Pairing)
+            .RequireIdempotency<DevicesDbContext>()
             .Produces<ApprovePairingResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)

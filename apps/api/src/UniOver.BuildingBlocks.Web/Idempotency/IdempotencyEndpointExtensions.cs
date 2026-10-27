@@ -9,8 +9,8 @@ namespace UniOver.BuildingBlocks.Web;
 /// Contrato com o cliente (a fila offline do PWA depende dele):
 /// </para>
 /// <list type="bullet">
-/// <item>cabeçalho <c>Idempotency-Key: &lt;uuid&gt;</c> obrigatório em POST, PUT, PATCH e DELETE; ausente ou fora do
-/// formato dá 400 <c>idempotency-key-required</c> (outros métodos passam direto);</item>
+/// <item>cabeçalho opcional <c>Idempotency-Key: &lt;uuid&gt;</c> em POST, PUT, PATCH e DELETE; ausente passa direto nesta
+/// transição, mas presente fora do formato dá 400 <c>idempotency-key-required</c> (outros métodos passam direto);</item>
 /// <item>chave nova: executa e guarda status e corpo das respostas 2xx e 4xx determinísticas; 5xx (e 408, 425, 429)
 /// não guarda e libera a chave, para o reenvio executar de novo;</item>
 /// <item>chave concluída com o mesmo pedido: devolve a resposta guardada com <c>Idempotent-Replayed: true</c>;
@@ -27,6 +27,9 @@ public static class IdempotencyEndpointExtensions
     public static RouteHandlerBuilder RequireIdempotency<TContext>(this RouteHandlerBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
+        builder.WithMetadata(IdempotencyMetadata.Instance);
+        builder.ProducesProblem(StatusCodes.Status409Conflict);
+        builder.ProducesProblem(StatusCodes.Status422UnprocessableEntity);
         builder.Finally(Wrap<TContext>);
         return builder;
     }
@@ -46,4 +49,10 @@ public static class IdempotencyEndpointExtensions
 
         endpoint.RequestDelegate = context => IdempotencyRequestHandler<TContext>.HandleAsync(context, inner);
     }
+}
+
+/// <summary>Marca as operações que expõem o contrato de idempotência no OpenAPI.</summary>
+public sealed class IdempotencyMetadata
+{
+    internal static IdempotencyMetadata Instance { get; } = new();
 }

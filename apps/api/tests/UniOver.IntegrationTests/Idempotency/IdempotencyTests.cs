@@ -154,6 +154,35 @@ public class IdempotencyTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task SameKeyWithAnotherQuery_Gets422()
+    {
+        await using var host = await StartHostAsync();
+        var key = Guid.NewGuid();
+        await SendAsync(host.Client, HttpMethod.Post, "/api/test/orders?dryRun=true", key: key);
+
+        var other = await SendAsync(host.Client, HttpMethod.Post, "/api/test/orders?dryRun=false", key: key);
+
+        other.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await ProblemTypeAsync(other)).Should().EndWith("/idempotency-key-reused");
+        host.Probe.ExecutionsOf(key.ToString()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SameKeyWithEquivalentQueriesInAnotherOrder_Replays()
+    {
+        await using var host = await StartHostAsync();
+        var key = Guid.NewGuid();
+
+        var first = await SendAsync(host.Client, HttpMethod.Post, "/api/test/orders?z=2&a=1&a=0", key: key);
+        var replay = await SendAsync(host.Client, HttpMethod.Post, "/api/test/orders?a=0&a=1&z=2", key: key);
+
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+        replay.StatusCode.Should().Be(HttpStatusCode.Created);
+        Replayed(replay).Should().BeTrue();
+        host.Probe.ExecutionsOf(key.ToString()).Should().Be(1);
+    }
+
+    [Fact]
     public async Task SameKeyOnAnotherRoute_Gets422()
     {
         await using var host = await StartHostAsync();
@@ -319,20 +348,21 @@ public class IdempotencyTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task MissingOrMalformedKey_Gets400_AndTheHandlerDoesNotRun()
+    public async Task MissingKey_PassesThroughButMalformedKeyGets400()
     {
         await using var host = await StartHostAsync();
 
         var missing = await SendAsync(host.Client, HttpMethod.Post, "/api/test/orders");
         var malformed = await SendAsync(host.Client, HttpMethod.Post, "/api/test/orders", rawKey: "nao-e-uuid");
 
-        foreach (var response in new[] { missing, malformed })
-        {
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            (await ProblemTypeAsync(response)).Should().EndWith("/idempotency-key-required");
-        }
+        missing.StatusCode.Should().Be(HttpStatusCode.Created);
+        malformed.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ProblemTypeAsync(malformed)).Should().EndWith("/idempotency-key-required");
 
-        host.Probe.Total.Should().Be(0);
+        host.Probe.Total.Should().Be(1);
+        await using var scope = host.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<IdempotencyTestDbContext>()
+            .Set<IdempotencyRecord>().AnyAsync(TestContext.Current.CancellationToken)).Should().BeFalse();
     }
 
     [Fact]
@@ -384,7 +414,7 @@ public class IdempotencyTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task PutAndDelete_AlsoRequireTheKey_ButGetPassesThrough()
+    public async Task PutAndDeleteAreProtectedWhenKeyIsPresent_ButPassThroughWithoutOne()
     {
         await using var host = await StartHostAsync();
         var id = Guid.NewGuid();
@@ -395,11 +425,12 @@ public class IdempotencyTests(PostgresFixture postgres)
         var putAgain = await SendAsync(host.Client, HttpMethod.Put, $"/api/test/orders/{id}", key: key);
         var get = await SendAsync(host.Client, HttpMethod.Get, "/api/test/ping", null);
 
-        putWithoutKey.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        putWithoutKey.StatusCode.Should().Be(HttpStatusCode.OK);
         put.StatusCode.Should().Be(HttpStatusCode.OK);
         Replayed(putAgain).Should().BeTrue();
         get.StatusCode.Should().Be(HttpStatusCode.OK);
         host.Probe.ExecutionsOf(key.ToString()).Should().Be(1);
+        host.Probe.ExecutionsOf(string.Empty).Should().Be(1);
     }
 
     [Fact]

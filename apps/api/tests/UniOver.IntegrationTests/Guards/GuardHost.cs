@@ -8,7 +8,7 @@ namespace UniOver.IntegrationTests.Guards;
 /// <summary>O Host real, como vai para o ar, para as varreduras de guarda (sem rotas nem serviços de teste).</summary>
 internal static class GuardHost
 {
-    public static async Task<EdgeFactory> StartAsync(PostgresFixture postgres, string environment)
+    public static async Task<EdgeFactory> StartAsync(PostgresFixture postgres, string environment, string? deployedCommit = null)
     {
         ArgumentNullException.ThrowIfNull(postgres);
 
@@ -23,6 +23,7 @@ internal static class GuardHost
             ["RateLimiting:refresh:Permitted"] = "100000",
             ["RateLimiting:pairing:Permitted"] = "100000",
             ["RateLimiting:commands:Permitted"] = "100000",
+            ["RENDER_GIT_COMMIT"] = deployedCommit,
         };
 
         var factory = new EdgeFactory(environment, settings);
