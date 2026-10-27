@@ -58,7 +58,7 @@ public sealed class IdentityPersistenceTests(PostgresFixture postgres) : IDispos
             + "WHERE schema_name NOT IN ('public', 'information_schema', 'identity') AND schema_name NOT LIKE 'pg_%'");
 
         tables.Should().Equal(
-            "__ef_migrations_history", "guest_invites", "login_audit", "passkeys", "qr_login_requests", "refresh_tokens", "step_up_confirmations", "user_grants", "users",
+            "__ef_migrations_history", "guest_invites", "idempotency_keys", "login_audit", "passkeys", "qr_login_requests", "refresh_tokens", "step_up_confirmations", "user_grants", "users",
             "webauthn_challenges");
         publicTables.Should().BeEmpty();
         otherSchemas.Should().BeEmpty();

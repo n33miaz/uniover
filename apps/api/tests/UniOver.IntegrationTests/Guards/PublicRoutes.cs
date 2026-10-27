@@ -17,6 +17,7 @@ internal static class PublicRoutes
     [
         // Monitor externo chama a cada poucos minutos, sem credencial; não toca no banco.
         new("*", "/health/live", "sonda de vida usada pelo monitor externo"),
+        new("GET", "/health/version", "versão pública conferida pela esteira após o deploy"),
 
         // Só existe em Development; documenta a API para quem desenvolve.
         new("*", "/openapi/{documentName}.json", "documento OpenAPI, mapeado apenas em Development"),

@@ -58,6 +58,7 @@ internal static class RevokeGuestEndpoint
     public static void MapRevokeGuest(this IEndpointRouteBuilder group) =>
         group.MapPost("/guests/{id:guid}/revoke", HandleAsync)
             .RequireAuthorization(UniOverAuth.OwnerPolicy)
+            .RequireIdempotency<IdentityDbContext>()
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden)

@@ -51,6 +51,7 @@ internal static class UpdateProfileEndpoint
         group.MapPatch("/me", HandleAsync)
             .RequireAuthorization(IdentityAuth.ActiveAccountSessionPolicy)
             .RequireRateLimiting(RateLimitPolicies.Profile)
+            .RequireIdempotency<IdentityDbContext>()
             .Produces<MeResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)

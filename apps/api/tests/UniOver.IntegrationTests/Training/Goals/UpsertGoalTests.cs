@@ -111,7 +111,7 @@ public sealed class UpsertGoalTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task SameKey_DifferentBody_Returns422KeyReused_AndMissingKeyReturns400()
+    public async Task SameKey_DifferentBody_Returns422KeyReused_AndMissingKeyRunsWithoutReplay()
     {
         await using var app = await TrainingApp.StartAsync(postgres);
         var login = await app.LoginAsync();
@@ -126,7 +126,8 @@ public sealed class UpsertGoalTests(PostgresFixture postgres)
 
         reused.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         (await TrainingAssertions.ProblemTypeAsync(reused)).Should().EndWith("idempotency-key-reused");
-        missing.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        missing.StatusCode.Should().Be(HttpStatusCode.OK, "sem chave a escrita segue sem proteção, nesta transição");
+        missing.Headers.Contains("Idempotent-Replayed").Should().BeFalse();
     }
 
     [Theory]

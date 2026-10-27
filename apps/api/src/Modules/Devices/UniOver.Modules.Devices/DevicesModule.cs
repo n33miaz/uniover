@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Persistence;
+using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Adapters;
 using UniOver.Modules.Devices.Audit;
 using UniOver.Modules.Devices.Contracts.Agents;
@@ -43,6 +44,10 @@ public static class DevicesModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddModuleDbContext<DevicesDbContext>(
             configuration, DevicesDbContext.SchemaName, typeof(DevicesDbContext).Assembly);
+
+        // Aprovações e revogações podem ser reenviadas pela fila offline; as chaves ficam no schema devices.
+        services.AddIdempotencyStore<DevicesDbContext>();
+        services.AddScoped<IIdempotencyGateway<DevicesDbContext>, DevicesIdempotencyGateway>();
 
         // Eventos pela outbox do schema devices. Os dois tipos precisam estar registrados para o despachante
         // reconhecê-los; só a revogação tem assinante (o cache de tokens).

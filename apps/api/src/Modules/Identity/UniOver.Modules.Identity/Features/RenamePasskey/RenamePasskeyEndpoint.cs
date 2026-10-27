@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Features.ListPasskeys;
+using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
 
 namespace UniOver.Modules.Identity.Features.RenamePasskey;
@@ -14,6 +15,7 @@ internal static class RenamePasskeyEndpoint
 {
     public static void MapRenamePasskey(this IEndpointRouteBuilder group) =>
         group.MapPatch("/passkeys/{id:guid}", HandleAsync).RequireAuthorization()
+            .RequireIdempotency<IdentityDbContext>()
             .Produces<PasskeySummary>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)

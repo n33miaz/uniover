@@ -118,15 +118,18 @@ internal static class SessionsEndpoint
             .Produces<IReadOnlyList<SessionSummary>>();
         group.MapPost("/sessions/{id:guid}/revoke", RevokeOwnAsync)
             .RequireAuthorization(IdentityAuth.ActiveAccountSessionPolicy)
+            .RequireIdempotency<IdentityDbContext>()
             .Produces(StatusCodes.Status204NoContent);
         group.MapPost("/sessions/others/revoke", RevokeOthersAsync)
             .RequireAuthorization(IdentityAuth.ActiveAccountSessionPolicy)
+            .RequireIdempotency<IdentityDbContext>()
             .Produces(StatusCodes.Status204NoContent);
         group.MapGet("/guests/{guestId:guid}/sessions", ListGuestAsync)
             .RequireAuthorization(UniOverAuth.OwnerPolicy)
             .Produces<IReadOnlyList<SessionSummary>>();
         group.MapPost("/guests/{guestId:guid}/sessions/{id:guid}/revoke", RevokeGuestAsync)
             .RequireAuthorization(UniOverAuth.OwnerPolicy)
+            .RequireIdempotency<IdentityDbContext>()
             .Produces(StatusCodes.Status204NoContent);
     }
 

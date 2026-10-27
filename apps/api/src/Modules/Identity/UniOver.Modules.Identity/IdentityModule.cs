@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using UniOver.BuildingBlocks.Persistence;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Adapters;
 using UniOver.Modules.Identity.Audit;
 using UniOver.Modules.Identity.Bootstrap;
 using UniOver.Modules.Identity.Features.AcceptGuestInvite;
@@ -59,6 +60,10 @@ public static class IdentityModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddModuleDbContext<IdentityDbContext>(
             configuration, IdentityDbContext.SchemaName, typeof(IdentityDbContext).Assembly);
+
+        // Cada escrita reenviável usa uma chave no schema identity; a ponte mantém o filtro HTTP sem referência ao EF.
+        services.AddIdempotencyStore<IdentityDbContext>();
+        services.AddScoped<IIdempotencyGateway<IdentityDbContext>, IdentityIdempotencyGateway>();
 
         services.AddSingleton<PasswordService>();
         services.AddSingleton<AccessTokenIssuer>();

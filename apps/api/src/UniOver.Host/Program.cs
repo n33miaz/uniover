@@ -21,7 +21,7 @@ builder.Services.AddUniOverRateLimiting(builder.Configuration);
 builder.Services.AddUniOverSecurityHeaders(builder.Configuration);
 builder.Services.AddUniOverPwa(builder.Configuration);
 builder.Services.AddHealthChecks();
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options => options.AddIdempotencyHeader());
 
 // [composição: eventos]
 builder.Services.AddUniOverMessaging(builder.Configuration);
@@ -63,6 +63,7 @@ if (app.Environment.IsDevelopment())
 // /health/live e /openapi nunca tocam no banco: o monitor externo os chama a cada 5 min e uma consulta
 // manteria o compute do Neon acordado o mês inteiro.
 app.MapHealthChecks("/health/live").AllowAnonymous();
+app.MapDeploymentVersion(builder.Configuration);
 app.MapTvEndpoints();
 app.MapTrainingEndpoints();
 app.MapIdentityEndpoints();

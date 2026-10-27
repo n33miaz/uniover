@@ -48,6 +48,8 @@ public sealed class EmptyBodyAndLastSeenTests(PostgresFixture postgres)
             Content = new ByteArrayContent(Encoding.UTF8.GetBytes($"{{\"userCode\":\"{started.UserCode}\"}}")),
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", login.AccessToken);
+        // A rota exige a chave de idempotência: sem ela a resposta seria 400, e este teste existe para o 415.
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
         using var response = await app.Client.SendAsync(request, Ct);
 
         response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);

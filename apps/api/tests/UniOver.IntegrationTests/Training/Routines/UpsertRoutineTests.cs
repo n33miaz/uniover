@@ -167,16 +167,20 @@ public sealed class UpsertRoutineTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task MissingIdempotencyKey_Returns400()
+    public async Task MissingIdempotencyKey_RunsEveryTime_WithoutReplay()
     {
         await using var app = await TrainingApp.StartAsync(postgres);
         var login = await app.LoginAsync();
 
-        using var response = await app.SendAsync(
-            HttpMethod.Put, $"/api/v1/training/routines/{Guid.CreateVersion7()}", Body(DateTimeOffset.UtcNow), login.AccessToken);
+        var url = $"/api/v1/training/routines/{Guid.CreateVersion7()}";
+        var body = Body(DateTimeOffset.UtcNow);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await TrainingAssertions.ProblemTypeAsync(response)).Should().EndWith("idempotency-key-required");
+        using var first = await app.SendAsync(HttpMethod.Put, url, body, login.AccessToken);
+        using var second = await app.SendAsync(HttpMethod.Put, url, body, login.AccessToken);
+
+        first.IsSuccessStatusCode.Should().BeTrue("sem chave a escrita segue sem proteção, nesta transição");
+        second.IsSuccessStatusCode.Should().BeTrue();
+        second.Headers.Contains("Idempotent-Replayed").Should().BeFalse("sem chave nada é guardado nem repetido");
     }
 
     [Fact]

@@ -88,6 +88,7 @@ internal static class AgentMaintenanceEndpoint
         group.MapPost("/agents/{id:guid}/maintenance", HandleAsync)
             .RequireAuthorization(StepUp.Policy(RemoteCareDefaults.StepUpAction))
             .RequireRateLimiting(RateLimitPolicies.Maintenance)
+            .RequireIdempotency<DevicesDbContext>()
             .Produces<AgentMaintenanceResponse>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
