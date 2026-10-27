@@ -46,6 +46,37 @@
   position: relative;
 }
 
+/* O ponto informa o estado sem competir com data, hora e saudação. O anel na cor da tinta (clara no tema escuro, escura no
+   claro) o separa do fundo verde da faixa nos dois temas, e o brilho na cor do estado o destaca sem texto. */
+.agent-status {
+  --tone: var(--a-ink3);
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--tone);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--a-ink) 58%, transparent),
+    0 0 10px 3px color-mix(in srgb, var(--tone) 50%, transparent);
+}
+
+.agent-status.ok {
+  --tone: var(--a-ok);
+  animation: agent-pulse 2.4s ease-in-out infinite;
+}
+
+.agent-status.warn {
+  --tone: var(--a-warn);
+}
+
+@keyframes agent-pulse {
+  50% {
+    opacity: 0.42;
+  }
+}
+
 .date {
   margin: 0 0 var(--space-1);
   color: var(--a-ink2);
@@ -73,14 +104,6 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
-/* Faixa de informações úteis. */
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2);
-}
-
 /* Atalhos e cartões de módulo compartilham raio, toque e foco. */
 .shortcut,
 .card {
@@ -93,6 +116,11 @@ h1 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
+}
+
+/* Um atalho só (o da pessoa convidada) usa a linha inteira, com o conteúdo no centro. */
+.shortcuts li:only-child {
+  grid-column: 1 / -1;
 }
 
 .shortcut {
@@ -118,19 +146,37 @@ h1 {
   transform: scale(0.97);
 }
 
-/* Cabeçalho da seção de módulos: título e edição na mesma linha, com o mesmo toque dos outros botões. */
+/* Cabeçalho da seção: o título tem peso próprio, e a ação não concorre com ele. */
 .section-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
   margin-top: var(--space-1);
 }
 
+.section-head h2 {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .edit {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
   flex: none;
-  padding-inline: var(--space-3);
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--a-accent-ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .edit app-home-glyph {
@@ -149,8 +195,13 @@ h1 {
   min-width: 0;
 }
 
-.widget.wide {
-  grid-column: 1 / -1;
+/* Com quantidade ímpar, o último cartão do convidado ocupa meia linha e fica no eixo da grade. */
+@media (max-width: 599px) {
+  .guest-grid .widget:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+    width: calc((100% - var(--space-3)) / 2);
+    justify-self: center;
+  }
 }
 
 .empty {
@@ -166,8 +217,13 @@ h1 {
     grid-column: span 2;
   }
 
-  .widget.wide {
-    grid-column: span 6;
+  /* Na grade de três cartões por linha, um ou dois itens finais também permanecem no centro. */
+  .guest-grid .widget:last-child:nth-child(3n + 1) {
+    grid-column: 3 / span 2;
+  }
+
+  .guest-grid .widget:nth-last-child(2):nth-child(3n + 1) {
+    grid-column: 2 / span 2;
   }
 }
 
@@ -177,33 +233,24 @@ h1 {
   flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
-  min-height: 220px;
+  min-height: 188px;
   min-width: 0;
-  padding: var(--space-4) var(--space-3) var(--space-3);
+  /* Ícone e nome formam um bloco no centro; a folga em cima e embaixo é a mesma e deixa o selo livre. */
+  padding: calc(var(--space-4) + 24px) var(--space-3);
   text-align: center;
 }
 
-/* Ladrilho: cor do módulo em tom suave; o desenho leva o traço na cor cheia. O cartão calmo (sem tela) fica neutro. */
-.card {
-  --mod: var(--a-accent);
-}
-
-.card[data-module='training'] {
-  --mod: var(--a-ok);
-}
-
+/* Os módulos que já existem usam a cor da marca; os planejados ficam em verde-cinza discreto. */
 .ico {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--mod) 14%, var(--a-surface));
-  color: color-mix(in srgb, var(--mod) 78%, var(--a-ink));
+  --module-app-bg: var(--a-accent);
+  --a-on-module-app: #fff;
+  --module-icon-radius: var(--radius-sm);
 }
 
-.card.calm .ico {
-  background: var(--a-elev);
-  color: var(--a-ink2);
+.card.planned .ico {
+  --module-app-bg: color-mix(in srgb, var(--a-ink2) 88%, var(--a-elev));
 }
 
 h3 {
@@ -215,24 +262,6 @@ h3 {
   line-height: 1.25;
   overflow-wrap: anywhere;
   text-wrap: balance;
-}
-
-.card-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-  width: 100%;
-  min-width: 0;
-}
-
-.desc {
-  margin: 0;
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  text-wrap: pretty;
 }
 
 /* O link se estende por cima do cartão inteiro, então a ação visível e o cartão levam ao mesmo lugar. */
@@ -252,41 +281,45 @@ h3 {
   transform: scale(0.97);
 }
 
-.card-foot {
-  display: flex;
-  flex: 1 0 auto;
-  flex-direction: column;
-  align-items: center;
-  justify-content: end;
-  gap: var(--space-2);
-  width: 100%;
-}
-
-/* A faixa de selos tem sempre a altura de um selo: cartão com e sem selo fica no mesmo ritmo. */
+/* O selo fica no canto superior direito, com folga da borda, e a folga em cima do bloco central o mantém longe do ícone. */
 .badges {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
+  justify-content: end;
   gap: var(--space-1);
+  max-width: calc(100% - (2 * var(--space-3)));
   min-width: 0;
-  min-height: 26px;
 }
 
-.card-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-height: var(--tap);
-  color: var(--a-accent-ink);
-  font-size: var(--fs-small);
-  font-weight: 700;
-  line-height: 1.2;
+/* O verde claro do tema escuro é bom para texto, mas não para o desenho branco dentro do ícone. */
+@media (prefers-color-scheme: dark) {
+  .ico {
+    --module-app-bg: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
+  }
+
+  .card.planned .ico {
+    --module-app-bg: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
+  }
 }
 
-.card-action app-home-glyph {
-  --glyph-size: 18px;
+:host-context([data-theme='dark']) .ico {
+  --module-app-bg: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
+}
+
+:host-context([data-theme='dark']) .card.planned .ico {
+  --module-app-bg: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
+}
+
+:host-context([data-theme='light']) .ico {
+  --module-app-bg: var(--a-accent);
+}
+
+:host-context([data-theme='light']) .card.planned .ico {
+  --module-app-bg: color-mix(in srgb, var(--a-ink2) 88%, var(--a-elev));
 }
 
 /* Estado vazio. */
@@ -317,6 +350,10 @@ h3 {
   .shortcut:active,
   .card.ui-press:active {
     transform: none;
+  }
+
+  .agent-status.ok {
+    animation: none;
   }
 
   .edit {
