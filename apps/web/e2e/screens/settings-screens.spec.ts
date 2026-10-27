@@ -142,7 +142,7 @@ const GUEST_SCREENS = [
   { name: 'guest-about', path: '/ajustes/sobre', title: 'Sobre' },
 ] as const;
 
-test.describe('Ajustes do administrador: cada tela', () => {
+test.describe('Configurações do administrador: cada tela', () => {
   for (const scheme of SCHEMES) {
     for (const screen of OWNER_SCREENS) {
       test(`${screen.title}: print, alvos e acessibilidade no tema ${scheme}`, async ({
@@ -175,7 +175,7 @@ test.describe('Ajustes do administrador: cada tela', () => {
   }
 });
 
-test.describe('Ajustes da convidada: cada tela', () => {
+test.describe('Configurações da convidada: cada tela', () => {
   for (const scheme of SCHEMES) {
     for (const screen of GUEST_SCREENS) {
       test(`${screen.name}: print, alvos e acessibilidade no tema ${scheme}`, async ({
@@ -204,7 +204,7 @@ test.describe('Ajustes da convidada: cada tela', () => {
   }
 });
 
-test.describe('navegação dentro de Ajustes', () => {
+test.describe('navegação dentro de Configurações', () => {
   test('cada linha leva à sua tela, o foco vai para o título e a seta volta para a lista', async ({
     page,
   }) => {
@@ -221,7 +221,7 @@ test.describe('navegação dentro de Ajustes', () => {
       await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
       // O foco está no título da tela nova (o link clicado já não existe).
       await expect(page.getByRole('heading', { level: 1, name: title })).toBeFocused();
-      await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
+      await page.getByRole('link', { name: 'Voltar às Configurações' }).click();
       await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeFocused();
     }
   });
@@ -249,7 +249,7 @@ test.describe('navegação dentro de Ajustes', () => {
     await expect(page.locator('header a[href="/ajustes"]')).toHaveCount(0);
   });
 
-  test('um endereço de Ajustes que não existe leva à Início', async ({ page }) => {
+  test('um endereço de Configurações que não existe leva à Início', async ({ page }) => {
     await page.goto('/ajustes/nada');
     await expect(page).toHaveURL(/\/$/);
   });
@@ -273,6 +273,7 @@ test.describe('Pessoas: cada estado', () => {
       await expect(page.getByText('Bruno', { exact: true })).toBeVisible();
       await check(page, info, 'people-list', scheme, here);
 
+      await page.getByRole('tab', { name: 'Convites' }).click();
       await page.getByRole('button', { name: 'Convidar alguém' }).click();
       await page.getByLabel('Nome do convidado').fill('Raphael');
       await settle(page);
@@ -291,6 +292,7 @@ test.describe('Pessoas: cada estado', () => {
       seedAccount();
       mock.stepUpValid = true;
       await people(page, scheme);
+      await page.getByRole('tab', { name: 'Convites' }).click();
       await page.getByRole('button', { name: 'Convidar alguém' }).click();
       await page.getByLabel('Nome do convidado').fill('Raphael');
       await page.getByRole('button', { name: /O que essa pessoa poderá fazer/ }).click();

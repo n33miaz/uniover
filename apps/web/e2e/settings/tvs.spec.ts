@@ -133,7 +133,7 @@ const row = (page: Page, name: string) =>
 const sheet = (page: Page) => page.locator('app-tv-edit-sheet dialog');
 const writes = (method: string) => tv.requests.filter((r) => r.method === method);
 
-test.describe('Ajustes > Sistema > TVs', () => {
+test.describe('Configurações > Sistema > TVs', () => {
   test('a linha Sistema leva à tela das TVs', async ({ page }) => {
     seed();
     await page.goto('/ajustes');
@@ -208,7 +208,7 @@ test.describe('Ajustes > Sistema > TVs', () => {
     await expect(page.getByRole('button', { name: 'Adicionar TV' })).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Ir para Dispositivos' })).toHaveAttribute(
       'href',
-      '/ajustes/aparelhos',
+      '/ajustes/dispositivos',
     );
   });
 

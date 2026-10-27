@@ -25,9 +25,9 @@ describe('CreditsPage', () => {
       (row) => row.querySelector('dt')?.textContent?.trim() === label,
     );
 
-  it('goes back to Ajustes', async () => {
+  it('has no back link of its own: the header arrow is the only one', async () => {
     const el = await render();
-    expect(el.querySelector('a.back')?.getAttribute('href')).toBe('/ajustes');
+    expect(el.querySelector('a.back')).toBeNull();
   });
 
   it('lists every source with title, author, source, license, what was done and where it shows', async () => {

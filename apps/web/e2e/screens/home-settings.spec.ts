@@ -227,7 +227,7 @@ test.describe('Início', () => {
   });
 });
 
-test.describe('Ajustes', () => {
+test.describe('Configurações', () => {
   for (const scheme of SCHEMES) {
     test(`a lista: prints e acessibilidade no tema ${scheme}`, async ({ page }, info) => {
       seedAccount();

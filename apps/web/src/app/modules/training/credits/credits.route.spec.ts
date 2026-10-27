@@ -9,11 +9,11 @@ describe('credits route', () => {
   const settings = (shell.children ?? []).find((child) => child.path === 'ajustes')!;
   const children = settings.children ?? [];
 
-  it('is one of the screens of Ajustes, next to the others', () => {
+  it('is one of the screens of Configurações, next to the others', () => {
     expect(children.map((route) => route.path)).toContain('creditos');
   });
 
-  it('is inside the shell, behind the same guard, with its own title and the way back to Ajustes', () => {
+  it('is inside the shell, behind the same guard, with its own title and the way back to Configurações', () => {
     expect(shell.canMatch).toBeDefined();
     const route = children.find((child) => child.path === 'creditos')!;
     const data = route.data as { title: string; back: { link: string } };

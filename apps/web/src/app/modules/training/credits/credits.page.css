@@ -4,14 +4,6 @@
   gap: 12px;
 }
 
-.back {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  min-height: 44px;
-  font-weight: 600;
-}
-
 .intro,
 .note {
   margin: 0;

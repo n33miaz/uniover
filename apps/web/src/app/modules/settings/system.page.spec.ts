@@ -2,11 +2,10 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from '../../app.routes';
-import { DevicesApi } from '../devices/devices-api';
 import { SystemApi } from './system-api';
 
 describe('system route', () => {
-  it('renders the page lazily, inside the shell, under Ajustes, with the TV section', async () => {
+  it('renders the page lazily, inside the shell, under Configurações, with the TV section', async () => {
     TestBed.configureTestingModule({
       providers: [
         provideRouter(routes),
@@ -15,11 +14,11 @@ describe('system route', () => {
           useValue: {
             tvConfig: () => new Promise(() => undefined),
             systemSettings: () => new Promise(() => undefined),
+            agents: () => Promise.resolve([]),
             tvs: () => Promise.resolve([]),
             deploymentVersion: () => Promise.resolve({ commit: null }),
           },
         },
-        { provide: DevicesApi, useValue: { list: () => Promise.resolve([]) } },
       ],
     });
     const harness = await RouterTestingHarness.create();

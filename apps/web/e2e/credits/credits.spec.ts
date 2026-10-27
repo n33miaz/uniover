@@ -33,7 +33,7 @@ function seriousViolations(
 }
 
 test.describe('créditos', () => {
-  test('abre por Ajustes e mostra título, autor, fonte e licença de cada material', async ({
+  test('abre por Configurações e mostra título, autor, fonte e licença de cada material', async ({
     page,
   }, info) => {
     await signIn(page);
@@ -65,11 +65,9 @@ test.describe('créditos', () => {
     await expectNoHorizontalScroll(page);
     await screenshot(page, `test-results/credits-${info.project.name}.png`);
 
-    // A seta do cabeçalho e o botão da própria tela levam à lista de Ajustes.
-    await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
-    await expect(page).toHaveURL(/\/ajustes$/);
-    await page.goBack();
-    await page.getByRole('link', { name: '← Ajustes' }).click();
+    // Um só voltar: a seta do cabeçalho leva à lista de Configurações.
+    await expect(page.getByRole('link', { name: '← Ajustes' })).toHaveCount(0);
+    await page.getByRole('link', { name: 'Voltar às Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
   });
 
