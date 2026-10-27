@@ -1,13 +1,13 @@
 import { Component, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { isStepUpRequired, problemOf } from '../../core/auth/api-problem';
 import { canUseModule } from '../../core/auth/guest-home';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
 import { SessionState } from '../../core/session/session-state';
 import { ConnectSheet } from './connect-sheet';
 import { AgentLogSheet } from './agent-log-sheet';
-import { DeviceAgent, DevicesApi, MaintenanceAction } from './devices-api';
+import { AgentAlert, DeviceAgent, DeviceTv, DevicesApi, MaintenanceAction } from './devices-api';
 import { GuestPairSheet } from './guest-pair-sheet';
 import { PairOutcome, PairSheet } from './pair-sheet';
 import { formatCodeInput } from './pairing-code';
@@ -38,7 +38,7 @@ const outdatedText = () =>
  */
 @Component({
   selector: 'app-devices-page',
-  imports: [RouterLink, PairSheet, ConnectSheet, AgentLogSheet, GuestPairSheet],
+  imports: [PairSheet, ConnectSheet, AgentLogSheet, GuestPairSheet],
   templateUrl: './devices.page.html',
   styleUrl: './devices.page.css',
 })
@@ -52,6 +52,10 @@ export class DevicesPage {
   protected readonly online = this.connectivity.online;
   protected readonly agents = signal<readonly DeviceAgent[] | null>(null);
   protected readonly loadFailed = signal(false);
+  /** Avisos de queda ainda não vistos; falhar em lê-los nunca atrapalha a lista. */
+  protected readonly alerts = signal<readonly AgentAlert[]>([]);
+  /** As TVs e o computador de cada uma; sem elas a seção some. */
+  protected readonly tvs = signal<readonly DeviceTv[]>([]);
   protected readonly pairing = signal(false);
   protected readonly connecting = signal(false);
   /** Código vindo do endereço (já no formato da tela) para a folha de aprovação. */
@@ -384,11 +388,63 @@ export class DevicesPage {
 
   protected async load(): Promise<void> {
     this.loadFailed.set(false);
+    void this.loadExtras();
     try {
       this.agents.set(await this.api.list());
     } catch {
       this.loadFailed.set(true);
     }
+  }
+
+  /** Avisos e TVs são acréscimos: se falharem, a lista de computadores segue como está. */
+  private async loadExtras(): Promise<void> {
+    // `then` captura também o erro síncrono de um cliente incompleto: ler o acréscimo nunca derruba a tela.
+    const [alerts, tvs] = await Promise.allSettled([
+      Promise.resolve().then(() => this.api.alerts()),
+      Promise.resolve().then(() => this.api.tvs()),
+    ]);
+    this.alerts.set(alerts.status === 'fulfilled' ? alerts.value : []);
+    this.tvs.set(tvs.status === 'fulfilled' ? tvs.value : []);
+  }
+
+  protected alertTitle(alert: AgentAlert): string {
+    const name = alert.agentName;
+    return alert.recoveredAt
+      ? $localize`:@@devices.alert.back:${name}:name: voltou`
+      : $localize`:@@devices.alert.down:${name}:name: está sem sinal`;
+  }
+
+  protected alertDetail(alert: AgentAlert): string {
+    const since = this.contactFormat.format(new Date(alert.recoveredAt ?? alert.detectedAt));
+    return alert.recoveredAt
+      ? $localize`:@@devices.alert.back-at:Voltou em ${since}:time:`
+      : $localize`:@@devices.alert.down-at:Sem sinal desde ${since}:time:`;
+  }
+
+  protected async seeAlerts(): Promise<void> {
+    try {
+      await this.api.markAlertsSeen();
+      this.alerts.set([]);
+    } catch {
+      this.say(
+        $localize`:@@devices.alert.seen-failed:Não foi possível dispensar o aviso agora.`,
+        true,
+      );
+    }
+  }
+
+  /** O computador que controla a TV, pelo nome (a TV só guarda o identificador dele). */
+  protected tvComputer(tv: DeviceTv): string {
+    const agent = this.agents()?.find((item) => item.slug === tv.agentSlug);
+    return agent
+      ? $localize`:@@devices.tv.computer:Computador: ${agent.name}:name:`
+      : $localize`:@@devices.tv.no-computer:Sem computador`;
+  }
+
+  protected tvState(tv: DeviceTv): string {
+    return tv.online
+      ? $localize`:@@devices.tv.online:Online`
+      : $localize`:@@devices.tv.offline:Sem Conexão`;
   }
 
   protected openPair(code = ''): void {

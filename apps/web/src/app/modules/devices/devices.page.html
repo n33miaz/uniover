@@ -1,8 +1,4 @@
 <div class="devices">
-  <a routerLink="/ajustes" class="back ui-btn secondary" i18n="@@devices.back"
-    >&larr; Configurações</a
-  >
-
   @if (!canManage) {
     @if (canPairSelf) {
       <p class="empty ui-rise" role="status" i18n="@@devices.guest-pair.intro">
@@ -49,10 +45,38 @@
       />
     }
   } @else {
+    @if (alerts().length > 0) {
+      <section
+        class="alerts ui-stagger"
+        aria-label="Avisos"
+        i18n-aria-label="@@devices.alerts-label"
+      >
+        @for (alert of alerts(); track alert.id) {
+          <div
+            class="alert ui-notice ui-rise"
+            [class.warn]="!alert.recoveredAt"
+            [class.ok]="alert.recoveredAt"
+            role="status"
+          >
+            <p class="alert-text">
+              <strong>{{ alertTitle(alert) }}</strong>
+              <span>{{ alertDetail(alert) }}</span>
+            </p>
+          </div>
+        }
+        <button
+          type="button"
+          class="seen secondary ui-btn"
+          (click)="seeAlerts()"
+          i18n="@@devices.alert.seen"
+        >
+          Entendi
+        </button>
+      </section>
+    }
+
     <section class="section" aria-labelledby="devices-title">
-  <a routerLink="/ajustes" class="back ui-btn secondary" i18n="@@devices.back"
-    >&larr; Configurações</a
-  >
+      <h2 id="devices-title" class="ui-section-label" i18n="@@devices.title">Computadores</h2>
 
       @if (agents(); as list) {
         @if (list.length === 0) {
@@ -64,8 +88,26 @@
             @for (agent of list; track agent.id) {
               <li class="item ui-card ui-rise">
                 <div class="info">
-                  <strong class="name">{{ agent.name }}</strong>
-                  <span class="meta">{{ platform(agent) }}</span>
+                  <div class="head">
+                    <div class="title">
+                      <strong class="name">{{ agent.name }}</strong>
+                      <span class="meta">{{ platform(agent) }}</span>
+                    </div>
+                    <div class="chips">
+                      @if (agent.revoked) {
+                        <span class="chip revoked ui-chip bad" i18n="@@devices.state.revoked"
+                          >Revogado</span
+                        >
+                      } @else {
+                        <span class="chip active ui-chip accent" i18n="@@devices.state.active"
+                          >Ativo</span
+                        >
+                        <span class="chip connection ui-chip" [class.accent]="agent.connected">{{
+                          connection(agent)
+                        }}</span>
+                      }
+                    </div>
+                  </div>
                   @if (version(agent); as text) {
                     <span class="meta version">{{ text }}</span>
                   }
@@ -97,20 +139,6 @@
                       }
                     </div>
                   }
-                  <div class="chips">
-                    @if (agent.revoked) {
-                      <span class="chip revoked ui-chip bad" i18n="@@devices.state.revoked"
-                        >Revogado</span
-                      >
-                    } @else {
-                      <span class="chip active ui-chip accent" i18n="@@devices.state.active"
-                        >Ativo</span
-                      >
-                      <span class="chip connection ui-chip" [class.accent]="agent.connected">{{
-                        connection(agent)
-                      }}</span>
-                    }
-                  </div>
                 </div>
                 @if (!agent.revoked) {
                   @if (revokingId() === agent.id) {
@@ -175,7 +203,7 @@
                       </div>
                     </div>
                   } @else {
-                    <div class="actions">
+                    <div class="actions main">
                       <button
                         type="button"
                         class="view-log secondary ui-btn"
@@ -184,7 +212,7 @@
                         (click)="openLog(agent)"
                         i18n="@@devices.view-log"
                       >
-                        Ver registro
+                        Ver Registro
                       </button>
                       <button
                         type="button"
@@ -194,40 +222,52 @@
                         (click)="askMaintenance(agent, 'update')"
                         i18n="@@devices.update-now"
                       >
-                        Atualizar agora
+                        Atualizar Agora
                       </button>
-                      @if (agent.canRollback) {
+                    </div>
+                    <div
+                      class="danger-zone"
+                      role="group"
+                      aria-label="Cuidado"
+                      i18n-aria-label="@@devices.danger"
+                    >
+                      <span class="zone-label ui-section-label" i18n="@@devices.danger-label"
+                        >Cuidado</span
+                      >
+                      <div class="actions">
+                        @if (agent.canRollback) {
+                          <button
+                            type="button"
+                            class="rollback secondary ui-btn"
+                            [disabled]="!online() || !agent.connected"
+                            [attr.aria-label]="rollbackLabel(agent)"
+                            (click)="askMaintenance(agent, 'rollback')"
+                            i18n="@@devices.rollback"
+                          >
+                            Voltar para a Versão Anterior
+                          </button>
+                        }
                         <button
                           type="button"
-                          class="rollback secondary ui-btn"
+                          class="restart secondary ui-btn"
                           [disabled]="!online() || !agent.connected"
-                          [attr.aria-label]="rollbackLabel(agent)"
-                          (click)="askMaintenance(agent, 'rollback')"
-                          i18n="@@devices.rollback"
+                          [attr.aria-label]="restartLabel(agent)"
+                          (click)="askMaintenance(agent, 'restart')"
+                          i18n="@@devices.restart"
                         >
-                          Voltar para a versão anterior
+                          Reiniciar o Agente
                         </button>
-                      }
-                      <button
-                        type="button"
-                        class="restart secondary ui-btn"
-                        [disabled]="!online() || !agent.connected"
-                        [attr.aria-label]="restartLabel(agent)"
-                        (click)="askMaintenance(agent, 'restart')"
-                        i18n="@@devices.restart"
-                      >
-                        Reiniciar o agente
-                      </button>
-                      <button
-                        type="button"
-                        class="revoke secondary ui-btn"
-                        [disabled]="!online()"
-                        [attr.aria-label]="revokeLabel(agent)"
-                        (click)="askRevoke(agent)"
-                        i18n="@@devices.revoke"
-                      >
-                        Revogar
-                      </button>
+                        <button
+                          type="button"
+                          class="revoke secondary ui-btn"
+                          [disabled]="!online()"
+                          [attr.aria-label]="revokeLabel(agent)"
+                          (click)="askRevoke(agent)"
+                          i18n="@@devices.revoke"
+                        >
+                          Revogar
+                        </button>
+                      </div>
                     </div>
                   }
                 }
@@ -257,6 +297,23 @@
           <span class="ui-skeleton bar"></span>
           <span class="ui-skeleton bar"></span>
         </div>
+      }
+
+      @if (tvs().length > 0) {
+        <h2 id="tvs-title" class="ui-section-label tvs-label" i18n="@@devices.tvs-title">TVs</h2>
+        <ul class="tv-list ui-plain" aria-labelledby="tvs-title">
+          @for (tv of tvs(); track tv.id) {
+            <li class="tv-item ui-card">
+              <div class="title">
+                <strong class="name">{{ tv.name }}</strong>
+                <span class="meta">{{ tvComputer(tv) }}</span>
+              </div>
+              <span class="chip tv-state ui-chip" [class.accent]="tv.online">{{
+                tvState(tv)
+              }}</span>
+            </li>
+          }
+        </ul>
       }
 
       <div class="messages" [attr.aria-live]="'polite'">
@@ -291,7 +348,7 @@
             (click)="openConnect()"
             i18n="@@devices.connect"
           >
-            Conectar este PC
+            Conectar Este PC
           </button>
         }
         <button
@@ -303,7 +360,7 @@
           (click)="openPair()"
           i18n="@@devices.pair"
         >
-          Parear aparelho
+          Parear Aparelho
         </button>
       </div>
       @if (!windowsPc) {

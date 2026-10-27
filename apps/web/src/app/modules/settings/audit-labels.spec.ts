@@ -52,6 +52,8 @@ const DEVICES_ACTIONS = [
   'agent_update_requested',
   'agent_restart_requested',
   'agent_rollback_requested',
+  'agent_offline',
+  'agent_online',
 ];
 const TV_ACTIONS = [
   'tv.key',

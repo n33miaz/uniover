@@ -13,6 +13,15 @@
         [attr.title]="agent.label"
       ></span>
     }
+    @if (agentAlert(); as alert) {
+      <a
+        class="agent-alert"
+        [class.ok]="alert.recovered"
+        routerLink="/ajustes/dispositivos"
+        [attr.aria-label]="alert.label"
+        >{{ alert.label }}</a
+      >
+    }
     <div class="hero-text">
       <p class="date">{{ dateLabel() }}</p>
       <h1>{{ greeting() }}</h1>

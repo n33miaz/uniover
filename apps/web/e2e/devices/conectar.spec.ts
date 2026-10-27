@@ -159,7 +159,7 @@ test.describe('convidado com a TV', () => {
     await screenshot(page, info.outputPath('guest-download.png'));
   });
 
-  test('sem a TV não ganha o botão nem a linha em Ajustes', async ({ page }) => {
+  test('sem a TV não ganha o botão nem a linha em Configurações', async ({ page }) => {
     seedGuest(['module:training']);
     await page.goto('/ajustes/dispositivos');
     await expect(page.getByText('Peça ao administrador para aprovar.')).toBeVisible();

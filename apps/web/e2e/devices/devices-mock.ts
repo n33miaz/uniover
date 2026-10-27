@@ -108,8 +108,20 @@ export interface StoredTv {
   readonly memberIds: readonly string[];
 }
 
+/** Um aviso de queda do computador, como a API o devolve. */
+export interface StoredAlert {
+  id: string;
+  agentId: string;
+  agentName: string;
+  detectedAt: string;
+  lastSeenAt: string | null;
+  recoveredAt: string | null;
+}
+
 export interface DevicesMock {
   readonly requests: DevicesRequest[];
+  /** Avisos de queda ainda não vistos; "Entendi" os esvazia. */
+  readonly alerts: StoredAlert[];
   readonly agents: StoredAgent[];
   readonly tvs: StoredTv[];
   /** Códigos que o agente "mostrou" e que ainda esperam decisão (forma guardada, sem hífen). */
@@ -153,6 +165,7 @@ export async function mockDevicesApi(
 ): Promise<DevicesMock> {
   const mock: DevicesMock = {
     requests: [],
+    alerts: [],
     agents: [],
     tvs: [],
     openCodes: new Set(),
@@ -187,6 +200,19 @@ export async function mockDevicesApi(
         'idempotency-key-required',
         'Informe o cabeçalho Idempotency-Key com um UUID.',
       );
+    }
+
+    if (method === 'GET' && path === '/agent-alerts') {
+      return route.fulfill({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(mock.alerts),
+      });
+    }
+
+    if (method === 'POST' && path === '/agent-alerts/seen') {
+      mock.alerts.length = 0;
+      return route.fulfill({ status: 204 });
     }
 
     if (method === 'GET' && path === '/agents') {

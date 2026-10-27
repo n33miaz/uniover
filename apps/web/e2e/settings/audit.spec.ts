@@ -185,14 +185,14 @@ async function applyFilters(page: Page, ...labels: string[]) {
   await expect(sheet(page)).toHaveCount(0);
 }
 
-test.describe('Ajustes > Auditoria', () => {
+test.describe('Configurações > Auditoria', () => {
   test('a linha Auditoria da lista leva à tela e a seta volta para a lista', async ({ page }) => {
     audit.items = seedTrail();
     await page.goto('/ajustes');
     await page.getByRole('link', { name: /^Auditoria/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/auditoria$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Auditoria' })).toBeVisible();
-    await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
+    await page.getByRole('link', { name: 'Voltar às Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
   });
 
@@ -430,7 +430,7 @@ test.describe('Ajustes > Auditoria', () => {
   });
 });
 
-test.describe('Ajustes > Auditoria para quem não é administrador', () => {
+test.describe('Configurações > Auditoria para quem não é administrador', () => {
   test('a convidada não vê o item, e o endereço digitado à mão a leva à Início sem nenhuma chamada à trilha', async ({
     page,
   }) => {

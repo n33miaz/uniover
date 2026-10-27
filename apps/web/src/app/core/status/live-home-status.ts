@@ -19,7 +19,13 @@ import { ConnectivityService } from '../connectivity/connectivity.service';
 import { SessionState } from '../session/session-state';
 import { StreamEvent, StreamService } from '../sse/stream.service';
 import { ClockService } from '../time/clock.service';
-import { AgentState, HomeStatus, HomeStatusPort, WatcherState } from './home-status.port';
+import {
+  AgentAlertNote,
+  AgentState,
+  HomeStatus,
+  HomeStatusPort,
+  WatcherState,
+} from './home-status.port';
 
 export interface HomeStatusConfig {
   /** Intervalo entre leituras do estado enquanto a Início está à vista e a aba visível. */
@@ -38,6 +44,8 @@ export const HOME_STATUS_CONFIG = new InjectionToken<HomeStatusConfig>('HOME_STA
 });
 
 const STATE_PATH = `${APP_CONFIG.apiBase}/v1/tv/state`;
+/** Avisos de queda do computador, ainda não vistos pelo dono. */
+const ALERTS_PATH = `${APP_CONFIG.apiBase}/v1/devices/agent-alerts`;
 /** Fluxo de eventos da TV; o cookie de bilhete do `StreamService` é a credencial, nunca um token na URL. */
 const EVENTS_PATH = `${APP_CONFIG.apiBase}/v1/tv/events`;
 const STATE_EVENT = 'tv.state';
@@ -70,6 +78,20 @@ function verdictOf(body: unknown): Verdict['state'] | null {
   if (severity === 'error' || kind === 'repair_failed') return 'alert';
   if (kind === 'repaired' || kind === 'recovered') return 'ok';
   return null;
+}
+
+/** O aviso mais recente que vale: uma queda em aberto vence uma volta já anotada. Lista vazia ou fora do formato = sem aviso. */
+function alertOf(body: unknown): AgentAlertNote | null {
+  if (!Array.isArray(body)) return null;
+  const items = body.filter(
+    (item): item is { agentName: string; recoveredAt: string | null } =>
+      !!item &&
+      typeof item === 'object' &&
+      typeof (item as { agentName?: unknown }).agentName === 'string',
+  );
+  const down = items.find((item) => !item.recoveredAt);
+  const shown = down ?? items[0];
+  return shown ? { name: shown.agentName, recovered: !down } : null;
 }
 
 function parseJson(data: string): unknown {
@@ -105,6 +127,7 @@ export class LiveHomeStatus extends HomeStatusPort {
   private readonly agent = signal<AgentState>('unknown');
   private readonly serviceDown = signal(false);
   private readonly verdict = signal<Verdict | null>(null);
+  private readonly agentAlert = signal<AgentAlertNote | null>(null);
 
   /**
    * Só o dono confirmado consulta: sem sessão, com a sessão ainda a confirmar ou como convidado não há chamada
@@ -133,6 +156,7 @@ export class LiveHomeStatus extends HomeStatusPort {
     agent: this.agent(),
     watcher: this.watcher(),
     serviceDown: this.serviceDown(),
+    agentAlert: this.agentAlert(),
   }));
 
   constructor() {
@@ -191,8 +215,21 @@ export class LiveHomeStatus extends HomeStatusPort {
       );
     };
 
+    // O aviso de queda é um acréscimo: falhar em lê-lo não muda nada (nem vira "serviço fora do ar").
+    const refreshAlert = () =>
+      work.add(
+        this.http.get<unknown>(ALERTS_PATH).subscribe({
+          next: (body) => this.agentAlert.set(alertOf(body)),
+          error: () => undefined,
+        }),
+      );
+
     refresh();
-    const timer = setInterval(refresh, this.config.pollMs);
+    refreshAlert();
+    const timer = setInterval(() => {
+      refresh();
+      refreshAlert();
+    }, this.config.pollMs);
     work.add(() => clearInterval(timer));
     work.add(
       this.stream.open(EVENTS_PATH, [STATE_EVENT, WATCHDOG_EVENT]).subscribe((event) => {
@@ -250,5 +287,6 @@ export class LiveHomeStatus extends HomeStatusPort {
     this.agent.set('unknown');
     this.serviceDown.set(false);
     this.verdict.set(null);
+    this.agentAlert.set(null);
   }
 }

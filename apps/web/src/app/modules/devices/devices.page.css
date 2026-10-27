@@ -6,11 +6,6 @@
   margin-inline: auto;
 }
 
-.back {
-  align-self: flex-start;
-  text-decoration: none;
-}
-
 .section {
   display: flex;
   flex-direction: column;
@@ -146,4 +141,81 @@
   align-items: flex-start;
   gap: 0.2rem;
   margin-block: 0.25rem;
+}
+
+/* Avisos de queda: faixa discreta no alto, com o "Entendi" ao lado do texto. */
+.alerts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.alert {
+  align-self: stretch;
+}
+
+.alert-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.alert-text span {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+/* Nome e estado na mesma linha; o estado quebra para baixo só em tela estreita. */
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  align-self: stretch;
+}
+
+.title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.head .chips {
+  margin-top: 0;
+}
+
+/* Ações principais à mão; as que mudam ou desfazem algo ficam separadas, num grupo com a borda do perigo. */
+.danger-zone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--a-bad) 35%, var(--a-line));
+  border-radius: var(--radius-sm);
+}
+
+.zone-label {
+  margin: 0;
+}
+
+.tvs-label {
+  margin-top: var(--space-2);
+}
+
+.tv-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tv-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
 }

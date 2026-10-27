@@ -190,6 +190,18 @@ export class HomePage {
     this.chips().find((chip) => chip.id === 'agent')!,
   );
 
+  /** Selo discreto do aviso de queda do computador (só o dono recebe): leva a Dispositivos, onde o aviso é dispensado. */
+  protected readonly agentAlert = computed(() => {
+    const alert = this.status().agentAlert;
+    if (!alert) return null;
+    return {
+      recovered: alert.recovered,
+      label: alert.recovered
+        ? $localize`:@@home.alert.back:${alert.name}:name: voltou`
+        : $localize`:@@home.alert.down:${alert.name}:name: sem sinal`,
+    };
+  });
+
   /** Só quem pode ver a TV recebe o estado do agente na Início. */
   protected readonly canSeeAgent = computed(() => this.canSeeModule('tv'));
 
