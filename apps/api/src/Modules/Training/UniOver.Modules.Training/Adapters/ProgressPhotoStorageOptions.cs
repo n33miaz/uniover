@@ -25,6 +25,9 @@ public sealed class ProgressPhotoStorageOptions
     public string AccessKey { get; set; } = string.Empty;
     public string SecretKey { get; set; } = string.Empty;
     public bool IsValid() => !Enabled ||
+        IsConfigured();
+
+    public bool IsConfigured() =>
         (Uri.TryCreate(ServiceUrl, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps &&
          !string.IsNullOrWhiteSpace(Region) && !string.IsNullOrWhiteSpace(Bucket) &&
          !string.IsNullOrWhiteSpace(AccessKey) && !string.IsNullOrWhiteSpace(SecretKey));

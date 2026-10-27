@@ -14,6 +14,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\UniOver.Modules.Training.Contracts\UniOver.Modules.Training.Contracts.csproj" />
+    <ProjectReference Include="..\..\Identity\UniOver.Modules.Identity.Contracts\UniOver.Modules.Identity.Contracts.csproj" />
     <ProjectReference Include="..\..\..\UniOver.SharedKernel\UniOver.SharedKernel.csproj" />
     <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Persistence\UniOver.BuildingBlocks.Persistence.csproj" />
     <ProjectReference Include="..\..\..\UniOver.BuildingBlocks.Web\UniOver.BuildingBlocks.Web.csproj" />

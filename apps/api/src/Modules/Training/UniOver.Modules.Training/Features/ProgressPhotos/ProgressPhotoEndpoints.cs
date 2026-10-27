@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Data.Common;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Training.Persistence;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Training.Ports;
 
 namespace UniOver.Modules.Training.Features.ProgressPhotos;
@@ -31,18 +32,18 @@ internal static class ProgressPhotoEndpoints
             .ProducesProblem(401).ProducesProblem(403).ProducesProblem(503);
     }
 
-    private static async Task<IResult> ListAsync(ICurrentUser current, IProgressPhotoObjectStore store, ProgressPhotoHandler handler, CancellationToken cancellationToken)
+    private static async Task<IResult> ListAsync(ICurrentUser current, IProgressPhotoObjectStore store, ProgressPhotoHandler handler, ISystemSettings settings, CancellationToken cancellationToken)
     {
         if (current.UserId is not { } userId) return Results.Problem(statusCode: 401, title: "Sessão inválida ou expirada.");
-        if (!store.IsAvailable) return StorageDisabled();
+        if (!await settings.PhotoStorageEnabledAsync(cancellationToken) || !store.IsAvailable) return StorageDisabled();
         try { return Results.Ok(await handler.ListAsync(userId, cancellationToken)); }
         catch (Exception exception) when (exception is DbException or InvalidOperationException) { return StorageUnavailable(); }
     }
 
-    private static async Task<IResult> PutAsync(Guid id, [FromQuery] DateOnly? takenOn, HttpRequest request, ICurrentUser current, IProgressPhotoObjectStore store, ProgressPhotoHandler handler, CancellationToken cancellationToken)
+    private static async Task<IResult> PutAsync(Guid id, [FromQuery] DateOnly? takenOn, HttpRequest request, ICurrentUser current, IProgressPhotoObjectStore store, ProgressPhotoHandler handler, ISystemSettings settings, CancellationToken cancellationToken)
     {
         if (current.UserId is not { } userId) return Results.Problem(statusCode: 401, title: "Sessão inválida ou expirada.");
-        if (!store.IsAvailable) return StorageDisabled();
+        if (!await settings.PhotoStorageEnabledAsync(cancellationToken) || !store.IsAvailable) return StorageDisabled();
         var mediaType = request.ContentType?.Split(';', 2)[0].Trim();
         if (!string.Equals(mediaType, "image/jpeg", StringComparison.OrdinalIgnoreCase))
             return Results.Problem(statusCode: 415, title: "Envie uma foto JPEG (image/jpeg).");
@@ -69,10 +70,10 @@ internal static class ProgressPhotoEndpoints
         { return StorageUnavailable(); }
     }
 
-    private static async Task<IResult> ReadAsync(Guid id, ICurrentUser current, IProgressPhotoObjectStore store, ProgressPhotoHandler handler, CancellationToken cancellationToken)
+    private static async Task<IResult> ReadAsync(Guid id, ICurrentUser current, IProgressPhotoObjectStore store, ProgressPhotoHandler handler, ISystemSettings settings, CancellationToken cancellationToken)
     {
         if (current.UserId is not { } userId) return Results.Problem(statusCode: 401, title: "Sessão inválida ou expirada.");
-        if (!store.IsAvailable) return StorageDisabled();
+        if (!await settings.PhotoStorageEnabledAsync(cancellationToken) || !store.IsAvailable) return StorageDisabled();
         try
         {
             var result = await handler.ReadAsync(userId, id, cancellationToken);
@@ -84,10 +85,10 @@ internal static class ProgressPhotoEndpoints
         { return StorageUnavailable(); }
     }
 
-    private static async Task<IResult> DeleteAsync(Guid id, ICurrentUser current, IProgressPhotoObjectStore store, ProgressPhotoHandler handler, CancellationToken cancellationToken)
+    private static async Task<IResult> DeleteAsync(Guid id, ICurrentUser current, IProgressPhotoObjectStore store, ProgressPhotoHandler handler, ISystemSettings settings, CancellationToken cancellationToken)
     {
         if (current.UserId is not { } userId) return Results.Problem(statusCode: 401, title: "Sessão inválida ou expirada.");
-        if (!store.IsAvailable) return StorageDisabled();
+        if (!await settings.PhotoStorageEnabledAsync(cancellationToken) || !store.IsAvailable) return StorageDisabled();
         try
         {
             var status = await handler.DeleteAsync(userId, id, cancellationToken);

@@ -46,7 +46,7 @@ public static class TrainingModule
         services.AddSingleton(photoOptions);
         services.AddSingleton(photoOptions.Storage);
         var photoStorage = photoOptions.Storage;
-        if (photoStorage.Enabled)
+        if (photoStorage.IsConfigured())
         {
             services.AddSingleton<IAmazonS3>(_ => new AmazonS3Client(
                 new BasicAWSCredentials(photoStorage.AccessKey, photoStorage.SecretKey),
