@@ -1,0 +1,101 @@
+<app-system-tv-section class="ui-rise" />
+<section class="config ui-rise" aria-labelledby="system-config-title">
+  <h2 id="system-config-title" class="ui-section-label" i18n="@@settings.system.config.title">
+    Configuração
+  </h2>
+  @if (settings()) {
+    <div class="ui-group">
+      <form
+        class="config-row"
+        (submit)="$event.preventDefault(); save('training.off-contact', contact())"
+      >
+        <label for="off-contact" i18n="@@settings.system.config.contact"
+          >Contato de alimentos</label
+        >
+        <span class="source">{{ source('training.off-contact') }}</span>
+        <input
+          id="off-contact"
+          class="ui-input"
+          type="email"
+          [value]="contact()"
+          (input)="contact.set($any($event.target).value)"
+          required
+          maxlength="200"
+        />
+        <button
+          type="submit"
+          class="ui-btn secondary"
+          [disabled]="busy() !== null"
+          i18n="@@settings.system.config.save-contact"
+        >
+          Salvar contato
+        </button>
+      </form>
+      <form
+        class="config-row"
+        (submit)="$event.preventDefault(); save('devices.max-per-guest', limit())"
+      >
+        <label for="guest-limit" i18n="@@settings.system.config.limit"
+          >Computadores por convidado</label
+        >
+        <span class="source">{{ source('devices.max-per-guest') }}</span>
+        <input
+          id="guest-limit"
+          class="ui-input"
+          type="number"
+          min="1"
+          max="20"
+          [value]="limit()"
+          (input)="limit.set(+$any($event.target).value)"
+          required
+        />
+        <button
+          type="submit"
+          class="ui-btn secondary"
+          [disabled]="busy() !== null"
+          i18n="@@settings.system.config.save-limit"
+        >
+          Salvar limite
+        </button>
+      </form>
+      <div class="config-row">
+        <label class="switch-line" for="photo-storage">
+          <span i18n="@@settings.system.config.photos">Fotos na nuvem</span>
+          <input
+            id="photo-storage"
+            type="checkbox"
+            role="switch"
+            class="ui-switch"
+            [checked]="photos()"
+            (change)="photos.set($any($event.target).checked)"
+          />
+        </label>
+        <span class="source">{{ source('training.photo-storage-enabled') }}</span>
+        <button
+          type="button"
+          class="ui-btn secondary"
+          [disabled]="busy() !== null"
+          (click)="save('training.photo-storage-enabled', photos())"
+          i18n="@@settings.system.config.save-photos"
+        >
+          Salvar fotos
+        </button>
+      </div>
+    </div>
+  } @else {
+    <button
+      type="button"
+      class="ui-btn secondary"
+      (click)="load()"
+      i18n="@@settings.system.config.retry"
+    >
+      Carregar configuração
+    </button>
+  }
+  @if (saved()) {
+    <p role="status" i18n="@@settings.system.config.saved">Configuração salva.</p>
+  }
+  @if (error(); as message) {
+    <p role="alert" class="error">{{ message }}</p>
+  }
+</section>

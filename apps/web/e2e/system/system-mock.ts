@@ -23,6 +23,7 @@ export interface SystemMock {
   source: 'saved' | 'environment' | 'none';
   /** Quantas leituras seguintes respondem 500 (para o estado de erro e o "Tentar de novo"). */
   failReads: number;
+  settings: { key: string; value: string | number | boolean; source: 'app' | 'server' }[];
 }
 
 const PROBLEM_BASE = 'https://uniover.app/problems/';
@@ -80,7 +81,53 @@ export async function mockSystemApi(
     current: null,
     source: 'none',
     failReads: 0,
+    settings: [
+      { key: 'training.off-contact', value: 'foods@example.test', source: 'server' },
+      { key: 'devices.max-per-guest', value: 2, source: 'server' },
+      { key: 'training.photo-storage-enabled', value: false, source: 'server' },
+    ],
   };
+
+  await context.route('**/api/v1/identity/system-settings**', async (route) => {
+    const request = route.request();
+    if (identity.offline) return route.abort('internetdisconnected');
+    const bearer = request.headers()['authorization']?.replace(/^Bearer /, '');
+    if (!bearer || !identity.issuedTokens.includes(bearer))
+      return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
+    if (identity.role !== 'owner') return route.fulfill({ status: 403 });
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET')
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(mock.settings),
+      });
+    if (request.method() !== 'PUT') return route.fulfill({ status: 404 });
+    if (!identity.stepUpValid)
+      return problem(route, 403, 'step-up-required', 'Confirme com a passkey.', {
+        code: 'step_up_required',
+        action: 'identity.system-settings-change',
+      });
+    const key = decodeURIComponent(path.split('/').at(-1) ?? '');
+    const setting = mock.settings.find((item) => item.key === key);
+    if (!setting) return route.fulfill({ status: 400 });
+    const value = (request.postDataJSON() as { value: unknown }).value;
+    if (
+      (key === 'training.off-contact' && (typeof value !== 'string' || !value.includes('@'))) ||
+      (key === 'devices.max-per-guest' && (typeof value !== 'number' || value < 1 || value > 20)) ||
+      (key === 'training.photo-storage-enabled' && typeof value !== 'boolean')
+    ) {
+      return problem(route, 400, 'validation-failed', 'Valor inválido.');
+    }
+    setting.value = value as string | number | boolean;
+    setting.source = 'app';
+    identity.stepUpValid = false;
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(setting),
+    });
+  });
 
   await context.route('**/api/v1/tv/config**', async (route) => {
     const request = route.request();

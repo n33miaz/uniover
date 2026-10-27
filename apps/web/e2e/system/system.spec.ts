@@ -116,6 +116,27 @@ const sheet = (page: Page) => page.locator('app-tv-edit-sheet dialog');
 const requestsTo = (method: string) => tv.requests.filter((r) => r.method === method);
 
 test.describe('Ajustes > Sistema > TVs', () => {
+  test('edita o limite pelo app após confirmar com a passkey', async ({ page, browserName }) => {
+    seedPaired();
+    await preparePasskey(page, browserName);
+    await open(page);
+    await expect(page.getByLabel('Computadores por convidado')).toHaveValue('2');
+    await expect(page.getByText('do servidor').first()).toBeVisible();
+    await page.getByLabel('Computadores por convidado').fill('4');
+    await page.getByRole('button', { name: 'Salvar limite' }).click();
+    if (browserName === 'chromium') {
+      const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole('button', { name: 'Confirmar' }).click();
+    }
+    await expect(page.getByText('Configuração salva.')).toBeVisible();
+    await expect(page.getByLabel('Computadores por convidado')).toHaveValue('4');
+    expect(system.settings.find((item) => item.key === 'devices.max-per-guest')).toMatchObject({
+      value: 4,
+      source: 'app',
+    });
+  });
+
   test('a linha Sistema da lista leva à tela', async ({ page }) => {
     seedPaired();
     await page.goto('/ajustes');

@@ -1,0 +1,49 @@
+.config {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: 1.5rem;
+}
+
+.config-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.75rem;
+}
+
+.config-row label {
+  font-weight: 600;
+}
+
+.config-row .source {
+  color: var(--a-ink3);
+  font-size: 0.85rem;
+}
+
+.config-row input:not([type='checkbox']) {
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  grid-column: 1 / -1;
+}
+
+.config-row button {
+  grid-column: 1 / -1;
+  min-height: 44px;
+}
+
+/* O rótulo inteiro é o alvo de toque do interruptor. */
+.switch-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 44px;
+  font-weight: 600;
+}
+
+.error {
+  color: var(--a-bad);
+}

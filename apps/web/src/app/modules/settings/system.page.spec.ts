@@ -9,7 +9,13 @@ describe('system route', () => {
     TestBed.configureTestingModule({
       providers: [
         provideRouter(routes),
-        { provide: SystemApi, useValue: { tvConfig: () => new Promise(() => undefined) } },
+        {
+          provide: SystemApi,
+          useValue: {
+            tvConfig: () => new Promise(() => undefined),
+            systemSettings: () => new Promise(() => undefined),
+          },
+        },
       ],
     });
     const harness = await RouterTestingHarness.create();
