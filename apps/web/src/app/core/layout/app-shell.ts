@@ -13,42 +13,25 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
 import { AuthService } from '../auth/auth.service';
-import { guestHome } from '../auth/role.guard';
-import { ModuleRegistry } from '../modules/module-registry';
 import { InstallHint } from '../pwa/install-hint';
 import { SessionState } from '../session/session-state';
 import { TabBar } from '../../shared/ui/tab-bar/tab-bar';
 import { GearIcon } from './gear-icon';
 import { ShellBack, collectShellData } from './route-data';
 
-/** Para onde a seta leva por padrão: o dono volta ao Início; o convidado, que não tem Início, volta ao módulo dele. */
-const OWNER_BACK: ShellBack = {
+/** Para onde a seta leva por padrão: toda conta volta ao Início. */
+const HOME_BACK: ShellBack = {
   link: '/',
   label: $localize`:@@shell.back-home-label:Voltar ao Início`,
 };
-
-/** A seta do convidado dentro de Ajustes: leva à tela inicial dele (o controle da TV, o Treino ou "sem acesso"). */
-function guestBack(link: string): ShellBack {
-  switch (link) {
-    case '/treino':
-      return { link, label: $localize`:@@shell.back-training-label:Voltar ao Treino` };
-    case '/tv':
-      return { link, label: $localize`:@@shell.back-control-label:Voltar ao controle` };
-    default:
-      return { link, label: $localize`:@@shell.back-label:Voltar` };
-  }
-}
-
-/** O que ocupa o primeiro lugar do cabeçalho: a seta de voltar ou, para quem não tem Início, o botão de configurações. */
-type ShellLead = ({ readonly kind: 'back' } & ShellBack) | { readonly kind: 'settings' };
 
 /**
  * Casca de tela: na Início só o conteúdo; dentro de um módulo, cabeçalho com a seta de voltar ao Início e o
  * título, e a barra de abas embaixo. Quem decide é o `data` da rota (`title`, `tabs` e `back`). Hospeda também a
  * folha do atalho na tela de início (`app-install-hint`), que vale para dono e convidado.
  *
- * Quem não tem Início (o convidado) não ganha seta ali: no lugar dela fica um botão redondo de configurações do
- * sistema. Dentro de Ajustes ele tem a seta (para o controle, ou para a lista), porque ali o botão não levaria a lugar nenhum.
+ * Toda conta tem a seta de volta ao Início. A pessoa convidada ganha, no fim do cabeçalho, o botão de configurações,
+ * menos dentro de Ajustes, onde ele não levaria a lugar nenhum.
  */
 @Component({
   selector: 'app-shell',
@@ -57,35 +40,34 @@ type ShellLead = ({ readonly kind: 'back' } & ShellBack) | { readonly kind: 'set
     @if (data().shellStyle !== 'training' && data().title; as title) {
       <header class="bar" [class.training]="data().shellStyle === 'training'">
         @let current = lead();
-        @if (current.kind === 'back') {
-          <a [routerLink]="current.link" class="back ui-tap" [attr.aria-label]="current.label">
-            <svg
-              viewBox="0 0 24 24"
-              width="22"
-              height="22"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              @for (d of backArrow; track d) {
-                <path [attr.d]="d" />
-              }
-            </svg>
-          </a>
-        } @else {
+        <a [routerLink]="current.link" class="back ui-tap" [attr.aria-label]="current.label">
+          <svg
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            @for (d of backArrow; track d) {
+              <path [attr.d]="d" />
+            }
+          </svg>
+        </a>
+        <h1 #pageTitle tabindex="-1">{{ title }}</h1>
+        @if (showSettings()) {
           <a
             routerLink="/ajustes"
             class="back settings ui-tap"
-            aria-label="Ajustes"
+            aria-label="Configurações"
             i18n-aria-label="@@shell.settings-label"
           >
             <app-gear-icon />
           </a>
         }
-        <h1 #pageTitle tabindex="-1">{{ title }}</h1>
       </header>
     }
     <main
@@ -212,6 +194,7 @@ type ShellLead = ({ readonly kind: 'back' } & ShellBack) | { readonly kind: 'set
       }
     }
     h1 {
+      flex: 1 1 auto;
       min-width: 0;
       font-size: 1.5rem;
       overflow-wrap: anywhere;
@@ -240,13 +223,11 @@ export class AppShell {
   private readonly router = inject(Router);
   private readonly auth = inject(AuthService);
   private readonly session = inject(SessionState);
-  private readonly registry = inject(ModuleRegistry);
   private readonly injector = inject(Injector);
 
   /** Traços da seta de voltar (a mesma seta da tela da TV): a haste e a ponta. */
   protected readonly backArrow = ['M19 12H5', 'M11 18l-6-6 6-6'] as const;
 
-  /** Convidado: sem Início, então sem a seta para ele (no lugar vai o botão de configurações). */
   protected readonly isGuest = this.session.isGuest;
 
   protected readonly data = toSignal(
@@ -260,14 +241,13 @@ export class AppShell {
 
   protected readonly tabs = computed(() => this.data().tabs ?? []);
 
-  /** A seta (para o destino da rota, ou o Início, ou o controle) ou, para quem não tem Início, o botão de configurações. */
-  protected readonly lead = computed<ShellLead>(() => {
+  /** A seta: para o destino da rota (dentro de Ajustes, a lista) ou, no resto, o Início. */
+  protected readonly lead = computed<ShellBack>(() => this.data().back ?? HOME_BACK);
+
+  /** Só a pessoa convidada, fora de Ajustes: o dono chega às configurações pela Início. */
+  protected readonly showSettings = computed(() => {
     const data = this.data();
-    if (data.back) return { kind: 'back', ...data.back };
-    if (!this.isGuest()) return { kind: 'back', ...OWNER_BACK };
-    return data.settings
-      ? { kind: 'back', ...guestBack(guestHome(this.session, this.registry)) }
-      : { kind: 'settings' };
+    return this.isGuest() && !data.settings && !data.back;
   });
 
   private readonly pageTitle = viewChild<ElementRef<HTMLElement>>('pageTitle');

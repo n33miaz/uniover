@@ -94,7 +94,6 @@ describe('app routes for a guest', () => {
   const TRAINING = ['module:training'];
   // Telas só do dono: o convidado nunca as abre, qualquer que seja o módulo que a conta dele libera.
   const OWNER_ONLY = [
-    '/',
     '/ajustes/seguranca',
     '/ajustes/pessoas',
     '/ajustes/aparelhos',
@@ -138,6 +137,18 @@ describe('app routes for a guest', () => {
         { provide: AuthApi, useValue: api },
         // O Treino só abre com uma conta conhecida (o banco local é por conta): estas rotas só olham o roteamento.
         { provide: AccountScope, useValue: new FakeAccountScope() },
+        {
+          provide: HomeStatusPort,
+          useValue: {
+            status: signal<HomeStatus>({
+              userName: null,
+              agent: 'unknown',
+              watcher: 'unknown',
+              serviceDown: false,
+            }),
+            watch: () => () => undefined,
+          },
+        },
       ],
     });
   });
@@ -146,21 +157,21 @@ describe('app routes for a guest', () => {
 
   describe('who only has the TV', () => {
     it.each([...OWNER_ONLY, '/treino', '/ajustes/creditos'])(
-      'sends %s to the TV: it is not a screen this guest may use',
+      'sends %s to Início: it is not a screen this guest may use',
       async (url) => {
         const { url: landed, root } = await go(url);
-        expect(landed).toBe('/tv');
-        expect(root.querySelector('app-tv-page')).not.toBeNull();
+        expect(landed).toBe('/');
+        expect(root.querySelector('app-home-page')).not.toBeNull();
       },
     );
   });
 
   describe('who only has the Treino', () => {
-    it.each(OWNER_ONLY)('sends %s straight to the Treino, never through the TV', async (url) => {
+    it.each(OWNER_ONLY)('sends %s to Início, never through the TV', async (url) => {
       signInAs(TRAINING);
       const { url: landed, root } = await go(url);
-      expect(landed).toBe('/treino');
-      expect(root.querySelector('app-training-page')).not.toBeNull();
+      expect(landed).toBe('/');
+      expect(root.querySelector('app-home-page')).not.toBeNull();
       expect(root.querySelector('app-tv-page')).toBeNull();
     });
 
@@ -186,10 +197,17 @@ describe('app routes for a guest', () => {
     });
   });
 
+  it('does not let a guest with only Treino open the TV by address', async () => {
+    signInAs(TRAINING);
+    const { url, root } = await go('/tv');
+    expect(url).toBe('/');
+    expect(root.querySelector('app-home-page')).not.toBeNull();
+  });
+
   describe('who has both modules', () => {
-    it('starts on the TV (the first in the registry) and may open the Treino too', async () => {
+    it('starts on Início and may open the Treino too', async () => {
       signInAs([...TV, ...TRAINING]);
-      expect((await go('/')).url).toBe('/tv');
+      expect((await go('/')).url).toBe('/');
       const { url, root } = await go('/treino');
       expect(url).toBe('/treino');
       expect(root.querySelector('app-training-page')).not.toBeNull();
@@ -198,25 +216,25 @@ describe('app routes for a guest', () => {
 
   describe('who has no module at all', () => {
     it.each([...OWNER_ONLY, '/treino', '/ajustes/creditos'])(
-      'sends %s to the "no access" screen, not to a module',
+      'sends %s to Início, not to a module',
       async (url) => {
         signInAs([]);
         const { url: landed, root } = await go(url);
-        expect(landed).toBe('/sem-acesso');
-        expect(root.querySelector('app-no-access-page')).not.toBeNull();
+        expect(landed).toBe('/');
+        expect(root.querySelector('app-home-page')).not.toBeNull();
         expect(root.querySelector('app-tv-page, app-training-page')).toBeNull();
       },
     );
   });
 
-  it('keeps the TV as the home when the list of permissions is not known (an older answer)', async () => {
+  it('keeps Início as the home when the list of permissions is not known (an older answer)', async () => {
     signInAs(undefined);
-    expect((await go('/')).url).toBe('/tv');
+    expect((await go('/')).url).toBe('/');
   });
 
-  it('never leaves the "no access" screen to someone who does have a module', async () => {
+  it('sends the old "no access" screen to Início when the guest does have a module', async () => {
     signInAs(TRAINING);
-    expect((await go('/sem-acesso')).url).toBe('/treino');
+    expect((await go('/sem-acesso')).url).toBe('/');
   });
 
   it.each([
@@ -231,9 +249,9 @@ describe('app routes for a guest', () => {
     expect(root.querySelector(selector)).not.toBeNull();
   });
 
-  it('has no way out of the control but the round settings button (no Início, no tabs)', async () => {
+  it('has the round settings button in the control (no tabs)', async () => {
     const { root } = await go('/tv');
-    expect(root.querySelector('a[href="/"], app-tab-bar, header .back')).toBeNull();
+    expect(root.querySelector('a[href="/"], app-tab-bar')).toBeNull();
     const settings = root.querySelector('header.head a.settings');
     expect(settings?.getAttribute('href')).toBe('/ajustes');
     expect(settings?.getAttribute('aria-label')).toBe('Ajustes');

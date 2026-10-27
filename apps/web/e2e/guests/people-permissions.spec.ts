@@ -450,7 +450,7 @@ test.describe('Pessoas: mudar o que alguém pode fazer', () => {
 });
 
 test.describe('Pessoas: quem não é administrador nunca vê a tela', () => {
-  test('a convidada é levada ao controle e o servidor recusa o que ela chamar à mão', async ({
+  test('a convidada é levada à Início e o servidor recusa o que ela chamar à mão', async ({
     context,
     page,
   }) => {
@@ -466,7 +466,8 @@ test.describe('Pessoas: quem não é administrador nunca vê a tela', () => {
     });
     mock.role = 'guest';
     await page.goto('/ajustes/pessoas');
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('.shortcuts a[href="/ajustes/aparelhos"]')).toHaveCount(0);
     await expect(page.getByText('Permissões de', { exact: false })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Convidar alguém' })).toHaveCount(0);
     // A tela dela nunca chamou a rota de administrador.

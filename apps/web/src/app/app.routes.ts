@@ -56,11 +56,11 @@ export const routes: Routes = [
       {
         path: '',
         pathMatch: 'full',
-        canMatch: [ownerOnlyGuard],
         loadChildren: () => import('./modules/home/home.routes').then((m) => m.HOME_ROUTES),
       },
       {
         path: 'tv',
+        canMatch: [moduleGuard('tv')],
         data: { title: $localize`:@@module.tv.title:TV` },
         loadChildren: () => import('./modules/tv/tv.routes').then((m) => m.TV_ROUTES),
       },
@@ -80,7 +80,7 @@ export const routes: Routes = [
       {
         // Ajustes é uma lista; cada linha abre uma tela filha, com a seta voltando para a lista.
         path: 'ajustes',
-        data: { title: $localize`:@@settings.title:Ajustes`, settings: true },
+        data: { title: $localize`:@@settings.title:Configurações`, settings: true },
         children: [
           {
             path: '',
@@ -128,7 +128,7 @@ export const routes: Routes = [
           {
             path: 'aparelhos',
             canMatch: [ownerOnlyGuard],
-            data: { title: $localize`:@@devices.route.title:Aparelhos`, back: SETTINGS_BACK },
+            data: { title: $localize`:@@devices.route.title:Dispositivos`, back: SETTINGS_BACK },
             loadComponent: () =>
               import('./modules/devices/devices.page').then((m) => m.DevicesPage),
           },
@@ -137,7 +137,7 @@ export const routes: Routes = [
             // abre vê o aviso "peça ao administrador" em vez de ser levado embora sem explicação. A tela só mostra o
             // aviso para ele (nenhuma chamada à API), e a API recusa com 403 de qualquer jeito.
             path: 'dispositivos',
-            data: { title: $localize`:@@devices.route.title:Aparelhos`, back: SETTINGS_BACK },
+            data: { title: $localize`:@@devices.route.title:Dispositivos`, back: SETTINGS_BACK },
             loadComponent: () =>
               import('./modules/devices/devices.page').then((m) => m.DevicesPage),
           },

@@ -6,16 +6,15 @@ import { AuthService } from './auth.service';
 import { NO_ACCESS_PATH, canUseModule, homeFor } from './guest-home';
 
 /**
- * Onde o convidado vive: o primeiro módulo que a conta dele pode usar (a TV antes do Treino), ou a tela de "sem acesso" se
- * não tem nenhum. Os Ajustes dele saem de lá pelo botão redondo. O dono não tem "casa" de convidado: o Início.
+ * Toda conta volta à Início; nela cada convidado vê apenas os módulos liberados para a conta.
  */
 export function guestHome(session: SessionState, registry: ModuleRegistry): string {
   return homeFor(session.role(), session.knownPermissions(), registry.modules);
 }
 
 /**
- * Fecha para o convidado as telas que são só do dono (Início e, em Ajustes: Segurança, Pessoas e Aparelhos): ele é levado
- * ao primeiro módulo que pode usar. Só barra quando se SABE que é convidado; papel ainda desconhecido (sessão a confirmar,
+ * Fecha para o convidado as telas que são só do dono (em Ajustes: Segurança, Pessoas e Aparelhos): ele é levado à Início.
+ * Só barra quando se SABE que é convidado; papel ainda desconhecido (sessão a confirmar,
  * sem rede) deixa passar, para nunca trancar o dono para fora. Esconder não é segurança: a API recusa com 403 de qualquer
  * jeito.
  */

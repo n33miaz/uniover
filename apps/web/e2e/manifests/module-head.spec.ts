@@ -128,7 +128,7 @@ test.describe('head por módulo no cliente', () => {
     await expectTargetsRespond(page);
   });
 
-  test('convidada: o convite abre na raiz e, ao cair na /tv sem recarregar, o head é o da TV', async ({
+  test('convidada: o convite abre na raiz e, ao abrir a /tv pela Início sem recarregar, o head é o da TV', async ({
     page,
   }) => {
     const invite = identity.seedInvite();
@@ -144,6 +144,9 @@ test.describe('head por módulo no cliente', () => {
     await page.getByLabel('Repita a senha').fill(GUEST.password);
     await page.getByRole('button', { name: 'Continuar', exact: true }).click();
 
+    await expect(page).toHaveURL(/\/$/);
+    await expectHead(page, ROOT);
+    await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await expect(page).toHaveURL(/\/tv$/);
     await expect(page.getByRole('heading', { level: 1, name: 'TV' })).toBeVisible();
     await expectHead(page, TV);

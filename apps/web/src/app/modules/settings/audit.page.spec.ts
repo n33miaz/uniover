@@ -72,11 +72,7 @@ describe('AuditPage', () => {
     api.guests.mockResolvedValue([{ id: 'g1', name: 'Bruno' }]);
     TestBed.configureTestingModule({
       providers: [
-        provideRouter([
-          { path: 'tv', component: Blank },
-          { path: 'sem-acesso', component: Blank },
-          { path: '', component: Blank },
-        ]),
+        provideRouter([{ path: '', component: Blank }]),
         { provide: AuditApi, useValue: api },
         { provide: AuthApi, useValue: authApi },
         { provide: AuditDownload, useValue: download },
@@ -547,8 +543,9 @@ describe('AuditPage', () => {
       expect(button('Exportar CSV').disabled).toBe(true);
     });
 
-    it('sends the person where the other administrator screens send them when the server says 403 and the role changed', async () => {
+    it('sends the person to the Início, like the other administrator screens, when the server says 403 and the role changed', async () => {
       signIn();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
       api.list.mockRejectedValueOnce(problem(403));
       authApi.me.mockResolvedValue({
         id: 'eu',
@@ -558,13 +555,14 @@ describe('AuditPage', () => {
         permissions: ['module:tv', 'tv:control'],
       });
       const { text } = await render();
-      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/tv'));
+      await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('/', { replaceUrl: true }));
       expect(authApi.me).toHaveBeenCalledTimes(1);
       expect(text()).not.toContain('Não foi possível');
     });
 
-    it('leads a guest who only has the training to the training, not to the TV', async () => {
+    it('leads a guest who only has the training to the Início too, where the training card waits', async () => {
       signIn();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
       api.list.mockRejectedValueOnce(problem(403));
       authApi.me.mockResolvedValue({
         id: 'eu',
@@ -573,12 +571,9 @@ describe('AuditPage', () => {
         role: 'guest',
         permissions: ['module:training'],
       });
-      TestBed.inject(Router).resetConfig([
-        { path: 'treino', component: Blank },
-        { path: '', component: Blank },
-      ]);
       await render();
-      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/treino'));
+      await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('/', { replaceUrl: true }));
+      expect(navigate).not.toHaveBeenCalledWith('/treino', expect.anything());
     });
 
     it('shows the common error, and never loops, when a 403 comes but the role is still administrator', async () => {
@@ -669,8 +664,9 @@ describe('AuditPage', () => {
       expect(api.export).toHaveBeenCalledTimes(1);
     });
 
-    it('also leaves when the export is refused with 403 because the role changed', async () => {
+    it('also leaves, to the Início, when the export is refused with 403 because the role changed', async () => {
       signIn();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
       api.export.mockRejectedValueOnce(problem(403));
       authApi.me.mockResolvedValue({
         id: 'eu',
@@ -682,7 +678,7 @@ describe('AuditPage', () => {
       const t = await render();
       t.button('Exportar CSV').click();
       await settle(t.fixture);
-      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/tv'));
+      await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('/', { replaceUrl: true }));
     });
   });
 

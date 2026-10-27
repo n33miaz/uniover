@@ -76,7 +76,7 @@ test.describe('primeiro acesso: como devemos te chamar', () => {
     await expect(page.locator('.person')).toHaveText('Neemias');
   });
 
-  test('a convidada responde antes do controle da TV e depois cai nele', async ({ page }) => {
+  test('a convidada responde antes da Início e depois cai nela', async ({ page }) => {
     mock.guestsStartUnconfirmed = true;
     await acceptInvite(page);
     await expect(page).toHaveURL(/\/boas-vindas$/);
@@ -84,16 +84,16 @@ test.describe('primeiro acesso: como devemos te chamar', () => {
     await expect(nameField(page)).toHaveValue(GUEST.displayName);
     await nameField(page).fill('Alice Souza');
     await submit(page).click();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
     expect(mock.guests.at(-1)?.displayName).toBe('Alice Souza');
     expect(mock.guests.at(-1)?.nameConfirmed).toBe(true);
   });
 
-  test('a convidada que já escolheu o nome vai direto ao controle', async ({ page }) => {
+  test('a convidada que já escolheu o nome vai direto à Início', async ({ page }) => {
     await acceptInvite(page);
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
     await page.goto('/boas-vindas');
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
   });
 
   test('sem sessão, o endereço da pergunta leva à entrada', async ({ page }) => {

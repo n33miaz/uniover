@@ -7,7 +7,6 @@ import { ApiProblem, networkProblem } from './api-problem';
 import { AuthApi } from './auth-api';
 import { AuthService } from './auth.service';
 import { AcceptInvitePage, WELCOME_MS } from './accept-invite.page';
-import { ownerOnlyGuard } from './role.guard';
 
 @Component({ template: '' })
 class Blank {}
@@ -31,8 +30,8 @@ describe('AcceptInvitePage', () => {
         provideRouter([
           { path: 'convite', component: AcceptInvitePage },
           { path: 'entrar', component: Blank },
-          { path: 'tv', component: Blank },
-          { path: '', component: Blank, canMatch: [ownerOnlyGuard] },
+          // A Início é de toda conta, a do convidado também: sem guarda de papel, a rota `''` nunca redireciona a si mesma.
+          { path: '', component: Blank },
         ]),
         { provide: AuthApi, useValue: api },
       ],
@@ -286,7 +285,7 @@ describe('AcceptInvitePage', () => {
   });
 
   describe('submitting', () => {
-    it('sends the secret, the e-mail and the password, and a guest lands straight on the TV', async () => {
+    it('sends the secret, the e-mail and the password, and a guest lands on the Início', async () => {
       api.acceptInvite.mockResolvedValue({ accessToken: 't', expiresIn: 600 });
       const el = await render();
       await fillAndSubmit(el, '  ana@exemplo.com ');
@@ -294,7 +293,7 @@ describe('AcceptInvitePage', () => {
       expect(TestBed.inject(SessionState).status()).toBe('authenticated');
       expect(TestBed.inject(SessionState).isGuest()).toBe(true);
       // Sem clicar em nada, o "tudo pronto" segue sozinho.
-      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/tv'), {
+      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/'), {
         timeout: WELCOME_MS + 2_000,
       });
     });
@@ -318,7 +317,7 @@ describe('AcceptInvitePage', () => {
       next.click();
       next.click();
       expect(navigate).toHaveBeenCalledTimes(1);
-      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/tv'));
+      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/'));
     });
 
     it('keeps the secret and the passwords out of every storage', async () => {

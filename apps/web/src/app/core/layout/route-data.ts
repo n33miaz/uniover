@@ -9,7 +9,7 @@ export interface ShellBack {
 
 /**
  * O que o shell lê da árvore de rotas: título do módulo (mostra o cabeçalho), abas (mostram a barra), o destino da seta
- * (`back`, quando não é o Início) e se a tela é de Ajustes (`settings`: lá o convidado tem seta, e não o botão de
+ * (`back`, quando não é o Início) e se a tela é de Ajustes (`settings`: lá o convidado não ganha o botão de
  * configurações, e o foco vai para o título ao navegar).
  */
 export interface ShellRouteData {
