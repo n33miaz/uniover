@@ -27,6 +27,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
     public DbSet<GuestInvite> GuestInvites => Set<GuestInvite>();
 
     public DbSet<UserGrant> UserGrants => Set<UserGrant>();
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
 
     public DbSet<QrLoginRequest> QrLoginRequests => Set<QrLoginRequest>();
 
@@ -187,6 +188,14 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             // `granted_by` é só o id de quem concedeu: sem FK (a trilha sobrevive à exclusão manual da conta do dono).
             // Apagar a conta (recuperação manual) leva as concessões junto, dentro do mesmo schema.
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SystemSetting>(e =>
+        {
+            e.ToTable("system_settings");
+            e.HasKey(x => x.Key);
+            e.Property(x => x.Key).HasMaxLength(64).IsRequired();
+            e.Property(x => x.ValueJson).HasColumnType("jsonb").IsRequired();
         });
     }
 }
