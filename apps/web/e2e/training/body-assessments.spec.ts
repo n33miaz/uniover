@@ -80,6 +80,8 @@ test('guarda uma avaliação e as fotos do relatório só neste aparelho, sem re
     page.getByText('Os campos selecionados foram registrados no Corpo', { exact: false }),
   ).toBeVisible();
   await openTraining(page, '/treino/corpo');
-  await expect(page.getByRole('button', { name: /Peso 82,4\s+kg/ })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Peso', exact: true }).getByText(/82,4\s+kg/),
+  ).toBeVisible();
   await screenshot(page, 'test-results/assessment-body-transfer.png', { fullPage: true });
 });

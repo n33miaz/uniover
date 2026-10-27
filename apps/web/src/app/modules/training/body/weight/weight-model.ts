@@ -23,6 +23,9 @@ const PERIOD_DAYS = 30;
 /** Janela mínima do eixo do tempo: com poucas pesagens os pontos não colam numa borda. */
 const MIN_WINDOW_DAYS = 14;
 const LONG_SPAN_DAYS = 300;
+/** Até quantas pesagens a janela se ajusta aos dados em vez de abrir o período inteiro (seis meses com três pontos espremem tudo à direita). */
+const FEW_POINTS = 6;
+const SECONDS_PER_DAY = 86_400;
 const TIME_TICKS = 4;
 const MS_PER_SECOND = 1000;
 
@@ -152,7 +155,10 @@ const monthYearUtc = new Intl.DateTimeFormat('pt-BR', {
   year: '2-digit',
   timeZone: 'UTC',
 });
-const axisNumber = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
+const axisNumber = new Intl.NumberFormat('pt-BR', {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
 
 /** Marca do eixo do tempo: "18/10" (ou "out. de 25" quando a janela passa de dez meses). */
 export function formatAxisDay(seconds: number, longSpan: boolean): string {
@@ -180,16 +186,21 @@ export function buildWeightChart(input: WeightChartInput): WeightChartSpec | nul
   const todaySeconds = daySeconds(today);
   const start = periodStart(period, today);
   // Período fixo: a janela é o período inteiro (a posição no tempo é parte da informação). "Tudo": da primeira pesagem a hoje.
-  const minWindow = MIN_WINDOW_DAYS * 86_400;
-  let low = start === null ? Math.min(first, todaySeconds - minWindow) : daySeconds(start);
+  // Com poucas pesagens a janela também acompanha os dados (com uma folga mínima), senão os pontos colam na borda direita.
+  const minWindow = MIN_WINDOW_DAYS * SECONDS_PER_DAY;
+  const fitToData = start === null || rows.length < FEW_POINTS;
+  let low = fitToData ? Math.min(first, todaySeconds - minWindow) : daySeconds(start);
+  if (start !== null) low = Math.max(low, daySeconds(start));
   low = Math.min(low, first);
   const high = Math.max(todaySeconds, last);
-  const pad = (high - low) * 0.04;
+  const pad = (high - low) * 0.06;
 
   const ys = rows.map((row) => row.weightKg);
   const trendYs = rows.map((row) => row.trendKg);
   const { range, ticks } = niceScale([...ys, ...trendYs]);
-  const longSpan = high - low > LONG_SPAN_DAYS * 86_400;
+  const longSpan = high - low > LONG_SPAN_DAYS * SECONDS_PER_DAY;
+  // Marcas em dias inteiros, igualmente espaçadas: não existe "27/04" no meio de um dia.
+  const spanDays = Math.round((high - low) / SECONDS_PER_DAY);
 
   return {
     xs: rows.map((row) => daySeconds(row.date)),
@@ -199,7 +210,7 @@ export function buildWeightChart(input: WeightChartInput): WeightChartSpec | nul
     yRange: range,
     xTicks: Array.from(
       { length: TIME_TICKS },
-      (_, index) => low + ((high - low) * index) / (TIME_TICKS - 1),
+      (_, index) => low + Math.round((spanDays * index) / (TIME_TICKS - 1)) * SECONDS_PER_DAY,
     ),
     yTicks: ticks,
     goal: null,

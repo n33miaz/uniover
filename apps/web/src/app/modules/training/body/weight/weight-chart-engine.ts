@@ -70,8 +70,8 @@ export const weightChartEngine: ChartEngine = {
         {
           stroke: () => colors.ink2,
           font: font(12),
-          size: 28,
-          gap: 4,
+          size: 36,
+          gap: 12,
           ticks: { show: false },
           grid: { show: false },
           border: { show: false },
@@ -81,8 +81,8 @@ export const weightChartEngine: ChartEngine = {
         {
           stroke: () => colors.ink2,
           font: font(12),
-          size: 38,
-          gap: 4,
+          size: 44,
+          gap: 8,
           ticks: { show: false },
           grid: { stroke: () => colors.line, width: 1 },
           border: { show: false },
