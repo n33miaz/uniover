@@ -101,13 +101,39 @@ describe('TrainingPage: the install sheet and the open workout', () => {
     expect(el.querySelector('[role="status"].ui-visually-hidden')?.textContent).toContain(
       'Atualizado',
     );
-    // A rotação só solta no fim de uma volta, para parar em zero sem salto.
+    // A rotação só solta no fim de uma volta, para parar em zero sem salto; só então entra o ícone de "em dia".
     const svg = icon.querySelector('svg')!;
     expect(svg.classList.contains('spin')).toBe(true);
     svg.dispatchEvent(new Event('animationiteration'));
     fixture.detectChanges();
-    expect(svg.classList.contains('spin')).toBe(false);
+    expect(icon.querySelector('svg.spin')).toBeNull();
+    expect(icon.querySelector('svg')).not.toBeNull();
     pull.mockRestore();
+  });
+
+  it('names every state of the sync icon and shows the count only when there is something to count', async () => {
+    const { fixture, queue, store } = await render();
+    const icon = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
+      '.training-header .status',
+    )!;
+    await eventually(fixture, () => expect(icon.dataset['state']).toBe('ok'));
+    expect(icon.getAttribute('aria-label')).toMatch(/^Sincroniza(do às \d{2}:\d{2}|ção em dia)\./);
+    expect(icon.querySelector('.count')).toBeNull();
+    expect(icon.querySelector('svg.spin')).toBeNull();
+
+    TestBed.inject(ConnectivityService).online.set(false);
+    await eventually(fixture, () => expect(icon.dataset['state']).toBe('offline'));
+    expect(icon.getAttribute('aria-label')).toBe('Sem rede. Toque para tentar de novo.');
+    TestBed.inject(ConnectivityService).online.set(true);
+    await eventually(fixture, () => expect(icon.dataset['state']).toBe('ok'));
+
+    const id = await queue().enqueue({ ...NEW_ITEM, url: '/api/v1/training/routines/1' });
+    await store().markFailed(id, (await store().get(id))!.revision, 'http-422');
+    await eventually(fixture, () => expect(icon.dataset['state']).toBe('failed'));
+    expect(icon.getAttribute('aria-label')).toBe(
+      '1 alteração com erro. Toque para ver e tentar de novo.',
+    );
+    expect(icon.querySelector('.count')?.textContent).toBe('1');
   });
 
   it('opens the refused changes from the icon when something failed, and syncs otherwise', async () => {
