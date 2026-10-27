@@ -54,7 +54,7 @@ describe('GuestsSection', () => {
     revokeGuest: vi.fn(),
     sessions: vi.fn(),
   };
-  const people = { createInvite: vi.fn(), setPermissions: vi.fn() };
+  const people = { createInvite: vi.fn(), setPermissions: vi.fn(), usage: vi.fn() };
   const stepUp = { confirm: vi.fn() };
 
   const created = (name = 'Dani', permissions: string[] = [...TV_CONTROL_ONLY]) => ({
@@ -83,6 +83,7 @@ describe('GuestsSection', () => {
     ]);
     api.guests.mockResolvedValue([guest('g1', 'Bia'), guest('g2', 'Caio', '2026-10-20T10:00:00Z')]);
     people.createInvite.mockResolvedValue(created());
+    people.usage.mockResolvedValue([]);
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
@@ -595,6 +596,53 @@ describe('GuestsSection', () => {
       expect(el.querySelector('app-people-permissions-sheet .error')?.textContent).toContain(
         'já foi revogado',
       );
+    });
+  });
+
+  describe('usage by person', () => {
+    const usage = (id: string, role: string, extra: object = {}) => ({
+      id,
+      displayName: role === 'owner' ? 'Dono' : 'Bia',
+      role,
+      disabledAt: null,
+      lastAccessAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+      activeSessions: 2,
+      tvCommands: { last7Days: 12, last30Days: 40 },
+      workouts: { last7Days: 3, last30Days: 9 },
+      ...extra,
+    });
+
+    it('shows compact cards of usage for each person and for the owner', async () => {
+      people.usage.mockResolvedValue([usage('1', 'owner'), usage('g1', 'guest')]);
+      const { el } = await render();
+      const cards = Array.from(el.querySelectorAll('.usage'));
+      expect(cards).toHaveLength(2);
+      const text = cards.map((card) => card.textContent ?? '');
+      expect(text[1]).toContain('há 3 h');
+      expect(text[1]).toContain('12 / 40');
+      expect(text[1]).toContain('3 / 9');
+      expect(el.querySelector('.owner-usage')?.textContent).toContain('Você');
+    });
+
+    it('says "Nunca entrou" for an account without access yet', async () => {
+      people.usage.mockResolvedValue([
+        usage('g1', 'guest', { lastAccessAt: null, activeSessions: 0 }),
+      ]);
+      const { el } = await render();
+      expect(el.querySelector('.usage')?.textContent).toContain('Nunca entrou');
+    });
+
+    it('keeps the list when the usage cannot be read', async () => {
+      people.usage.mockRejectedValue(new Error('x'));
+      const { el } = await render();
+      expect(el.querySelector('.usage')).toBeNull();
+      expect(el.textContent).toContain('Bia');
+    });
+
+    it('does not show usage for revoked access', async () => {
+      people.usage.mockResolvedValue([usage('g2', 'guest', { displayName: 'Caio' })]);
+      const { el } = await render();
+      expect(el.querySelector('.usage')).toBeNull();
     });
   });
 

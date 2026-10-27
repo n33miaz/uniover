@@ -103,7 +103,9 @@ test.describe('convite do dono (passkey)', () => {
     // O convite mora em Pessoas.
     await page.goto('/ajustes/pessoas');
     await expect(page.getByRole('heading', { level: 1, name: 'Pessoas' })).toBeVisible();
-    await expect(page.getByRole('heading', { level: 2, name: 'Pessoas e Permissões' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { level: 2, name: 'Pessoas e Permissões' }),
+    ).toBeVisible();
     await expect(page.getByText('Ninguém foi convidado ainda.')).toBeVisible();
     await page.getByRole('tab', { name: 'Convites' }).click();
     await page.getByRole('button', { name: 'Convidar alguém' }).click();
@@ -150,6 +152,7 @@ test.describe('convite do dono (passkey)', () => {
     await page.getByRole('button', { name: `Revogar o convite de ${GUEST.displayName}` }).click();
     await page.getByRole('button', { name: 'Revogar', exact: true }).click();
     await expect(page.getByText('Convite revogado.')).toBeVisible();
+    await page.getByRole('tab', { name: 'Pessoas' }).click();
     await expect(page.getByText('Ninguém foi convidado ainda.')).toBeVisible();
     expect(identity.invites[0].status).toBe('revoked');
   });
@@ -381,7 +384,7 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     await expect(page).toHaveURL(/\/$/);
   });
 
-  test('a sessão da convidada nunca chama rota de administrador nos Ajustes, e o servidor recusa se ela chamar à mão', async ({
+  test('a sessão da convidada nunca chama rota de administrador nas Configurações, e o servidor recusa se ela chamar à mão', async ({
     page,
   }) => {
     const invite = identity.seedInvite();
