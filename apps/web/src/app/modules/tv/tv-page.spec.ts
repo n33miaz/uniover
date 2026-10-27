@@ -72,7 +72,7 @@ describe('TvPage', () => {
   });
 
   describe('header', () => {
-    it('has back to Início and power on the left, the name TV as the h1 with the state dot beside it, and the three dots of the menu on the right', () => {
+    it('has back and menu on the left, the name TV as the h1 with the state dot beside it, and power on the right', () => {
       const back = root.querySelector('a.back')!;
       expect(back.getAttribute('href')).toBe('/');
       expect(back.getAttribute('aria-label')).toBe('Voltar ao Início');
@@ -82,15 +82,15 @@ describe('TvPage', () => {
       expect(h1.querySelector('app-status-indicator')).toBeNull();
       expect(h1.nextElementSibling?.matches('app-status-indicator')).toBe(true);
       expect(byLabel('Desligar a TV')).not.toBeNull();
-      // Só o menu fica à direita; a saída e o desligar formam o grupo da esquerda, nessa ordem.
+      // O menu fica ao lado da saída, e o desligar fecha a navegação do cabeçalho à direita.
       expect(
         [...root.querySelectorAll('.head .actions button')].map((b) =>
           b.getAttribute('aria-label'),
         ),
-      ).toEqual(['Mais opções']);
+      ).toEqual(['Desligar a TV']);
       expect(
         [...root.querySelectorAll('.head .lead > *')].map((b) => b.getAttribute('aria-label')),
-      ).toEqual(['Voltar ao Início', 'Desligar a TV']);
+      ).toEqual(['Voltar ao Início', 'Mais opções']);
     });
 
     it('lays the header out as the left group, the name and the right group, in that order', () => {
@@ -136,13 +136,13 @@ describe('TvPage', () => {
       ]);
     });
 
-    it('gives back, power and the menu the same circle', () => {
+    it('gives back, the menu and power the same circle', () => {
       const circles = [...root.querySelectorAll('.head .circle')];
       expect(circles).toHaveLength(3);
       expect(circles.map((c) => c.getAttribute('aria-label'))).toEqual([
         'Voltar ao Início',
-        'Desligar a TV',
         'Mais opções',
+        'Desligar a TV',
       ]);
     });
 
@@ -892,14 +892,14 @@ describe('TvPage for a guest', () => {
     expect(root.querySelector('app-tv-control')).not.toBeNull();
   });
 
-  it('keeps power beside the settings button, on the left, and only the menu on the right', async () => {
+  it('keeps the menu beside the settings button, on the left, and only power on the right', async () => {
     await open();
     expect(
       [...root.querySelectorAll('.head .lead > *')].map((el) => el.getAttribute('aria-label')),
-    ).toEqual(['Ajustes', 'Desligar a TV']);
+    ).toEqual(['Ajustes', 'Mais opções']);
     expect(
       [...root.querySelectorAll('.head .actions > *')].map((el) => el.getAttribute('aria-label')),
-    ).toEqual(['Mais opções']);
+    ).toEqual(['Desligar a TV']);
   });
 
   it('shows the guest the menu without the one thing that changes the TV for everybody', async () => {
@@ -1072,7 +1072,7 @@ describe('TvPage by permission', () => {
 
   it('everything, as the owner: the same page as always', async () => {
     await open('owner', ...ALL);
-    expect(labels()).toEqual(['Voltar ao Início', 'Desligar a TV', 'Mais opções']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Mais opções', 'Desligar a TV']);
     expect(root.querySelector('app-tv-control')).not.toBeNull();
     expect(root.querySelector('app-tv-view-only')).toBeNull();
     expect(titleButton()?.getAttribute('aria-label')).toBe('TV, personalizar');
@@ -1093,7 +1093,7 @@ describe('TvPage by permission', () => {
     fixture = TestBed.createComponent(TvPage);
     root = fixture.nativeElement as HTMLElement;
     await render();
-    expect(labels()).toEqual(['Voltar ao Início', 'Desligar a TV', 'Mais opções']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Mais opções', 'Desligar a TV']);
   });
 
   it('power alone shows the power button, and the header keeps its three groups', async () => {
@@ -1133,7 +1133,7 @@ describe('TvPage by permission', () => {
     await render();
     expect(root.querySelector('app-tv-control')).not.toBeNull();
     expect(root.querySelector('app-tv-view-only')).toBeNull();
-    expect(labels()).toEqual(['Ajustes', 'Desligar a TV', 'Mais opções']);
+    expect(labels()).toEqual(['Ajustes', 'Mais opções', 'Desligar a TV']);
 
     grant('guest', 'module:tv');
     await render();

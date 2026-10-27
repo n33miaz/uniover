@@ -2,7 +2,7 @@
   <header class="head">
     <!--
       Grupo da esquerda: o botão de saída (a seta de voltar do administrador ou a engrenagem do convidado) e, logo depois,
-      o de desligar. À direita fica só o dos três pontos, que abre o menu. As duas colunas dos lados têm a mesma largura
+      o dos três pontos, que abre o menu. À direita ficam o desligar e o ponto de estado. As duas colunas dos lados têm a mesma largura
       (a do grupo da esquerda, dois botões), então o nome continua no meio da tela. Cada botão só existe para quem pode
       usá-lo (desligar: `tv:power`; menu: ter alguma linha nele): as colunas seguem do mesmo tamanho com um botão a menos,
       e o nome não se mexe.
@@ -44,16 +44,17 @@
           </svg>
         </a>
       }
-      @if (access.power()) {
+      @if (hasMenu()) {
         <button
+          #menuButton
           type="button"
-          class="circle power"
-          aria-label="Desligar a TV"
-          i18n-aria-label="@@tv.power.label"
-          [disabled]="!store.canSend()"
-          (click)="powerOpen.set(true)"
+          class="circle"
+          [attr.aria-haspopup]="'dialog'"
+          aria-label="Mais opções"
+          i18n-aria-label="@@tv.menu.open"
+          (click)="openMenu(menuButton)"
         >
-          <app-tv-icon name="power" />
+          <app-tv-icon name="more" />
         </button>
       }
     </div>
@@ -96,17 +97,16 @@
       }
     </div>
     <div class="actions">
-      @if (hasMenu()) {
+      @if (access.power()) {
         <button
-          #menuButton
           type="button"
-          class="circle"
-          [attr.aria-haspopup]="'dialog'"
-          aria-label="Mais opções"
-          i18n-aria-label="@@tv.menu.open"
-          (click)="openMenu(menuButton)"
+          class="circle power"
+          aria-label="Desligar a TV"
+          i18n-aria-label="@@tv.power.label"
+          [disabled]="!store.canSend()"
+          (click)="powerOpen.set(true)"
         >
-          <app-tv-icon name="more" />
+          <app-tv-icon name="power" />
         </button>
       }
     </div>
