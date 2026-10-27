@@ -10,9 +10,11 @@ name: Deploy
 # - O Render deve ficar com o auto-deploy DESLIGADO: quem dispara a troca do código é o deploy hook, depois das
 #   migrations. Sem o segredo RENDER_DEPLOY_HOOK_URL, as migrations rodam e o deploy é pulado com aviso.
 
+# Por enquanto a develop é a produção (pedido do dono em 27/10): cada merge na develop publica. Para voltar a
+# publicar pela main, troque a branch abaixo.
 on:
   push:
-    branches: [main]
+    branches: [develop]
   workflow_dispatch:
 
 permissions:
@@ -218,7 +220,9 @@ jobs:
           fi
           echo "::add-mask::$HOOK_URL"
           # A URL do hook é credencial: sem -v, sem eco, e o erro do curl (que poderia citá-la) é descartado.
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 -X POST "$HOOK_URL" 2>/dev/null || true)
+          # O ref fixa o commit deste push, qualquer que seja a branch ligada ao serviço no Render.
+          case "$HOOK_URL" in *\?*) sep='&' ;; *) sep='?' ;; esac
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 -X POST "${HOOK_URL}${sep}ref=${GITHUB_SHA}" 2>/dev/null || true)
           case "$code" in
             200)
               echo "Deploy iniciado no Render."
