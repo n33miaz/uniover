@@ -34,6 +34,8 @@ describe('training routes', () => {
     const paths = children.map((child) => child.path);
     expect(paths).toEqual([
       '',
+      'sessao',
+      'sessao/exercicio',
       'exercicios',
       'exercicios/novo',
       'exercicios/mapa',
@@ -98,6 +100,8 @@ describe('training routes', () => {
 
     it.each([
       '/treino/exercicios/novo',
+      '/treino/sessao',
+      '/treino/sessao/exercicio',
       '/treino/exercicios/abc/editar',
       '/treino/rotinas/nova',
       '/treino/rotinas/abc',
