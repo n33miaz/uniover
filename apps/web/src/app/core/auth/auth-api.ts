@@ -32,6 +32,7 @@ export type WebAuthnChallenge = Readonly<Schemas['RequestStepUpResponse']>;
 export type StepUpConfirmation = Readonly<Schemas['ConfirmStepUpResponse']>;
 export type StreamTicket = Readonly<Schemas['StreamTicketResponse']>;
 export type ModuleInfo = Readonly<Schemas['IdentityModuleInfo']>;
+export type DeploymentVersion = Readonly<Schemas['DeploymentVersion']>;
 export type GuestInviteSummary = Readonly<Schemas['GuestInviteSummary']>;
 export type GuestInviteCreated = Readonly<Schemas['CreateGuestInviteResponse']>;
 export type GuestSummary = Readonly<Schemas['GuestSummary']>;
@@ -166,6 +167,31 @@ export class AuthApi {
 
   info(): Promise<ModuleInfo> {
     return this.send('GET', '/info');
+  }
+
+  /** A versão publicada é pública e serve para mostrar exatamente o produto que está em execução. */
+  async deploymentVersion(): Promise<DeploymentVersion> {
+    let response: Response;
+    try {
+      response = await this.doFetch(`${APP_CONFIG.apiBase}/health/version`, {
+        headers: { Accept: 'application/json, application/problem+json' },
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
+    } catch {
+      this.connectivity.reportRequestFailure();
+      throw networkProblem();
+    }
+    this.connectivity.reportRequestSuccess();
+
+    if (!response.ok) {
+      throw problemFrom(
+        response.status,
+        await readJson(response),
+        response.headers.get('Retry-After'),
+      );
+    }
+    return (await readJson(response)) as DeploymentVersion;
   }
 
   stepUpOptions(token: string, action: string): Promise<WebAuthnChallenge> {

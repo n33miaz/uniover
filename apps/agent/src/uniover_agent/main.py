@@ -170,10 +170,10 @@ _BUILD_DIGITS = 12
 
 
 def build_version() -> str:
-    """Versão do pacote e, quando se sabe, o commit instalado (`0.1.0+3f2a9c1d4e5b`).
+    """Versão SemVer do produto e, quando se sabe, o commit instalado (`0.5.0+3f2a9c1d4e5b`).
 
-    É o que a tela do dono mostra: o número do pacote quase nunca muda, o commit diz de fato qual
-    código está rodando. O arquivo `.version` é o que a auto-atualização grava.
+    É o que a tela do dono mostra: o número identifica a publicação e o commit diz de fato qual
+    código está rodando. O arquivo `.version` é o que a auto-atualização grava e compara.
     """
     version = agent_version()
     try:

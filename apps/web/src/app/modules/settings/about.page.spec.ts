@@ -9,13 +9,13 @@ import { AboutPage } from './about.page';
 const ME = { id: '1', email: 'dono@exemplo.com', displayName: 'Dono da Casa' };
 
 describe('AboutPage', () => {
-  const api = { refresh: vi.fn(), me: vi.fn(), info: vi.fn() };
+  const api = { refresh: vi.fn(), me: vi.fn(), deploymentVersion: vi.fn() };
 
   beforeEach(() => {
     localStorage.clear();
     api.refresh.mockReset().mockResolvedValue({ accessToken: 't', expiresIn: 600 });
     api.me.mockReset().mockResolvedValue(ME);
-    api.info.mockReset().mockResolvedValue({ module: 'identity', version: '1.2.3', dependsOn: [] });
+    api.deploymentVersion.mockReset().mockResolvedValue({ commit: 'abc', version: '0.5.0' });
     TestBed.configureTestingModule({
       providers: [provideRouter([]), { provide: AuthApi, useValue: api }],
     });
@@ -34,21 +34,21 @@ describe('AboutPage', () => {
   it('shows the app version from package.json and the API version', async () => {
     const { el } = await render();
     const versions = el.querySelector('#versions-title + dl')!.textContent!;
-    expect(versions).toContain('1.2.3');
+    expect(versions).toContain('0.5.0');
     expect(versions).toContain(version);
   });
 
   it('handles an API that does not answer', async () => {
-    api.info.mockRejectedValue(new ApiProblem(0, 'network', 'x'));
+    api.deploymentVersion.mockRejectedValue(new ApiProblem(0, 'network', 'x'));
     const { el } = await render();
     expect(el.querySelector('#versions-title + dl')!.textContent).toContain('indisponível agora');
   });
 
-  it('asks only for the public information route, without a token (it is not an administrator route)', async () => {
+  it('asks only for the public deployment version route, without a token', async () => {
     api.refresh.mockRejectedValue(networkProblem());
     await render();
-    expect(api.info).toHaveBeenCalledTimes(1);
-    expect(api.info.mock.calls[0]).toEqual([]);
+    expect(api.deploymentVersion).toHaveBeenCalledTimes(1);
+    expect(api.deploymentVersion.mock.calls[0]).toEqual([]);
   });
 
   it('links the credits entry to the credits screen for the administrator', async () => {
@@ -65,6 +65,6 @@ describe('AboutPage', () => {
     expect(el.querySelector('a[href="/ajustes/creditos"]')).toBeNull();
     expect(el.textContent).not.toContain('Créditos');
     // As versões continuam valendo para todos.
-    expect(el.querySelector('#versions-title + dl')!.textContent).toContain('1.2.3');
+    expect(el.querySelector('#versions-title + dl')!.textContent).toContain('0.5.0');
   });
 });

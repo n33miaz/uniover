@@ -6,8 +6,8 @@ import { version as appVersion } from '../../../../package.json';
 import { SettingsGlyph } from './settings-glyph';
 
 /**
- * Sobre: a versão do app (lida do `package.json` na compilação) e a da API (a rota de informação é pública: não é de
- * administrador), e o caminho para os Créditos. Serve a todos os papéis; a tela de Créditos, porém, é do administrador,
+ * Sobre: a versão do app (lida do `package.json` na compilação) e a da API publicada, e o caminho para os Créditos. Serve
+ * a todos os papéis; a tela de Créditos, porém, é do administrador,
  * então a linha dela só aparece para ele.
  */
 @Component({
@@ -33,7 +33,7 @@ export class AboutPage {
 
   private async loadApiVersion(): Promise<void> {
     try {
-      this.apiVersion.set((await this.api.info()).version || null);
+      this.apiVersion.set((await this.api.deploymentVersion()).version || null);
     } catch {
       this.apiVersion.set(null);
     }

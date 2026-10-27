@@ -7798,6 +7798,7 @@ export interface components {
     };
     DeploymentVersion: {
       commit: null | string;
+      version: string;
     };
     DevicesModuleInfo: {
       module: string;
