@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/n33miaz/uniover/compare/v0.4.3...v0.5.0) (2026-10-27)
+
+
+### Features
+
+* **release:** version every publication from one VERSION file, with a tag and a GitHub Release
+* **api:** report the product version in the deployment check
+* **web:** show the published version on the about screen
+* **agent:** report the product version
+
+
 ## [0.4.3](https://github.com/n33miaz/uniover/compare/v0.4.2...v0.4.3) (2026-10-27)
 
 
