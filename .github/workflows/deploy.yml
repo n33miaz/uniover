@@ -40,7 +40,7 @@ jobs:
         with:
           global-json-file: apps/api/global.json
       - name: Instalar o dotnet-ef
-        run: dotnet tool install --global dotnet-ef --version 10.0.13
+        run: dotnet tool install --global dotnet-ef --version 10.0.14
       - name: Restaurar os pacotes
         working-directory: apps/api
         run: dotnet restore UniOver.slnx
