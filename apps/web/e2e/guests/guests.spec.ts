@@ -410,7 +410,7 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     );
     // Só a leitura pública da versão, o renovar da sessão, a própria conta, o salvar do nome e a lista das próprias sessões.
     expect(new Set(sent.map((request) => request.replace(/^(GET|POST|PATCH) /, '')))).toEqual(
-      new Set(['/info', '/auth/refresh', '/me', '/sessions']),
+      new Set(['/health/version', '/auth/refresh', '/me', '/sessions']),
     );
 
     // O servidor recusa o que ela chamar à mão: o papel dela não passa nessas rotas (a API tem o teste dela; aqui o

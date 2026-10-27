@@ -63,7 +63,8 @@ if (app.Environment.IsDevelopment())
 // /health/live e /openapi nunca tocam no banco: o monitor externo os chama a cada 5 min e uma consulta
 // manteria o compute do Neon acordado o mês inteiro.
 app.MapHealthChecks("/health/live").AllowAnonymous();
-app.MapDeploymentVersion(builder.Configuration);
+var productVersion = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+app.MapDeploymentVersion(builder.Configuration, productVersion);
 app.MapTvEndpoints();
 app.MapTrainingEndpoints();
 app.MapIdentityEndpoints();

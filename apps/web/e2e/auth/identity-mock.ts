@@ -322,6 +322,23 @@ export async function mockIdentityApi(
     };
   };
 
+  await context.route('**/health/version', async (route) => {
+    const request = route.request();
+    const method = request.method();
+    const headers = request.headers();
+    mock.requests.push({
+      method,
+      url: request.url(),
+      path: '/health/version',
+      headers,
+      body: null,
+    });
+
+    if (mock.offline) return route.abort('internetdisconnected');
+    if (method !== 'GET') return problem(route, 405, 'method-not-allowed', 'Método não aceito.');
+    return json(route, 200, { commit: 'a'.repeat(40), version: '0.5.0-teste' });
+  });
+
   await context.route('**/api/v1/identity/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());

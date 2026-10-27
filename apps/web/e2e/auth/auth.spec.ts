@@ -359,7 +359,7 @@ test.describe('ajustes', () => {
   test('o Sobre mostra as versões e leva aos Créditos', async ({ page }) => {
     await page.getByRole('link', { name: /^Sobre/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/sobre$/);
-    await expect(page.getByText('0.9.0-teste')).toBeVisible();
+    await expect(page.getByText('0.5.0-teste')).toBeVisible();
     await expect(page.getByRole('link', { name: /^Créditos/ })).toHaveAttribute(
       'href',
       '/ajustes/creditos',
