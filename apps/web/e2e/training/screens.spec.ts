@@ -186,7 +186,7 @@ for (const scheme of ['light', 'dark'] as const) {
     shotTest('Rotinas: folha de modelos', async ({ page, context }, info) => {
       await startTraining(context, page);
       await openTraining(page, '/treino/rotinas');
-      await page.getByRole('button', { name: 'Usar modelo' }).click();
+      await page.getByRole('button', { name: 'Comparar Modelos' }).click();
       await expect(page.getByRole('button', { name: /Full body/ })).toBeVisible();
       await shot(page, info, 'rotinas-modelos', scheme);
     });

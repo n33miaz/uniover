@@ -67,7 +67,7 @@ const SCREENS: readonly Screen[] = [
     name: 'lista de rotinas',
     open: async (page) => {
       await openTraining(page, '/treino/rotinas');
-      await expect(page.locator('.list .ui-row').first()).toBeVisible();
+      await expect(page.locator('.next-card')).toBeVisible();
     },
   },
   {
@@ -93,7 +93,7 @@ const SCREENS: readonly Screen[] = [
     name: 'folha de modelos',
     open: async (page) => {
       await openTraining(page, '/treino/rotinas');
-      await page.getByRole('button', { name: 'Usar modelo' }).click();
+      await page.getByRole('button', { name: 'Comparar Modelos' }).click();
       await expect(page.getByRole('button', { name: /Full body/ })).toBeVisible();
     },
   },
