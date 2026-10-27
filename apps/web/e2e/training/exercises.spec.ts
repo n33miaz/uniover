@@ -57,6 +57,19 @@ test.describe('exercícios: lista, busca e ficha', () => {
       'Supino reto com halteres',
     ]);
     await expect(page.getByText('3 exercícios achados')).toBeVisible();
+    const firstRow = page.locator('.list .ui-row').first();
+    await expect(firstRow.locator('.thumb img')).toBeVisible();
+    const layout = await firstRow.evaluate((row) => {
+      const thumb = row.querySelector('.thumb')!.getBoundingClientRect();
+      const text = row.querySelector('.text')!.getBoundingClientRect();
+      return { thumbRight: thumb.right, textLeft: text.left };
+    });
+    expect(layout.thumbRight).toBeLessThanOrEqual(layout.textLeft);
+    const support = firstRow.locator('.sub');
+    await expect(support).toContainText('sem registro');
+    await expect
+      .poll(() => support.evaluate((node) => node.scrollWidth <= node.clientWidth))
+      .toBe(true);
 
     await page.getByRole('button', { name: 'Equipamento' }).click();
     await page.getByRole('button', { name: 'Halteres', exact: true }).click();
