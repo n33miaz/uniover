@@ -71,21 +71,59 @@ function isWithin(path: string, section: string): boolean {
           (click)="onStatusTap($event)"
           (animationend)="onRippleEnd($event)"
         >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            [class.spin]="spinning()"
-            (animationiteration)="onSpinIteration()"
-          >
-            <path [attr.d]="'M20 7v5h-5M4 17v-5h5'" />
-            <path [attr.d]="'M5.64 5.64A9 9 0 0 1 20 12M4 12a9 9 0 0 0 14.36 6.36'" />
-          </svg>
-          <span class="state" [class.pulse]="pulsing()" aria-hidden="true"></span>
+          <span class="chip" [class.pulse]="pulsing()">
+            @if (showSpinner()) {
+              <svg
+                class="spin"
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                (animationiteration)="onSpinIteration()"
+              >
+                <path [attr.d]="'M20 7v5h-5M4 17v-5h5'" />
+                <path [attr.d]="'M5.64 5.64A9 9 0 0 1 20 12M4 12a9 9 0 0 0 14.36 6.36'" />
+              </svg>
+            } @else {
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                @switch (syncState()) {
+                  @case ('pending') {
+                    <path [attr.d]="'M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z'" />
+                    <path [attr.d]="'M12 17v-5m0 0-2.2 2.2M12 12l2.2 2.2'" />
+                  }
+                  @case ('offline') {
+                    <path
+                      [attr.d]="'M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3'"
+                    />
+                    <path [attr.d]="'M2 2l20 20'" />
+                  }
+                  @case ('failed') {
+                    <path
+                      [attr.d]="'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4m0 4h.01'"
+                    />
+                  }
+                  @default {
+                    <path [attr.d]="'M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z'" />
+                    <path [attr.d]="'m9 14.5 2 2 4-4'" />
+                  }
+                }
+              </svg>
+            }
+            @if (badge(); as count) {
+              <span class="count" aria-hidden="true">{{ count }}</span>
+            }
+          </span>
         </button>
         <a
           routerLink="/ajustes"
@@ -181,7 +219,7 @@ function isWithin(path: string, section: string): boolean {
       display: inline-grid;
       flex: none;
       place-items: center;
-      width: var(--tap);
+      min-width: var(--tap);
       height: var(--tap);
       padding: 0;
       border: 0;
@@ -189,8 +227,11 @@ function isWithin(path: string, section: string): boolean {
       color: var(--a-ink);
       text-decoration: none;
     }
-    .back svg,
-    .status svg {
+    .back,
+    .settings {
+      width: var(--tap);
+    }
+    .back svg {
       width: 22px;
       height: 22px;
     }
@@ -205,21 +246,50 @@ function isWithin(path: string, section: string): boolean {
       outline: 3px solid var(--a-accent);
       outline-offset: -2px;
     }
-    .status svg {
-      color: var(--a-ink2);
+    /* O estado vive numa pastilha pequena dentro do alvo de 44 px: em dia é só um ícone verde; o resto ganha fundo. */
+    .status .chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-width: 32px;
+      height: 32px;
+      padding: 0 6px;
+      border-radius: var(--radius-pill);
+      color: var(--a-ok-ink);
+      font-size: var(--fs-label);
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
       transition:
+        background-color var(--dur-fast) var(--ease-out),
         color var(--dur-fast) var(--ease-out),
-        opacity var(--dur-fast) var(--ease-out),
         scale var(--dur-fast) var(--ease-out);
     }
-    .status:active svg {
-      scale: 0.9;
+    .status svg {
+      width: 20px;
+      height: 20px;
     }
-    .status[data-state='busy'] svg {
-      color: var(--a-accent);
+    .count {
+      padding-right: 2px;
     }
-    .status[data-state='offline'] svg {
-      opacity: 0.5;
+    .status:active .chip {
+      scale: 0.92;
+    }
+    .status[data-state='busy'] .chip {
+      background: var(--a-accent-soft);
+      color: var(--a-accent-ink);
+    }
+    .status[data-state='pending'] .chip {
+      background: var(--a-warn-soft);
+      color: var(--a-warn-ink);
+    }
+    .status[data-state='offline'] .chip {
+      color: var(--a-ink2);
+    }
+    .status[data-state='failed'] .chip {
+      background: var(--a-bad-soft);
+      color: var(--a-bad-ink);
     }
     /* Uma volta por 0,9 s; o movimento só é solto no fim de uma volta, para parar em 0 sem salto. */
     .status svg.spin {
@@ -253,40 +323,12 @@ function isWithin(path: string, section: string): boolean {
         scale: 1.15;
       }
     }
-    .state {
-      position: absolute;
-      right: 7px;
-      bottom: 9px;
-      box-sizing: border-box;
-      width: 6px;
-      height: 6px;
-      border: 1px solid transparent;
-      border-radius: 50%;
-      background: var(--a-ok-ink);
-      box-shadow: 0 0 0 2px var(--a-surface);
-      transition:
-        background-color var(--dur-fast) var(--ease-out),
-        border-color var(--dur-fast) var(--ease-out);
-    }
-    .status[data-state='busy'] .state {
-      background: var(--a-accent);
-    }
-    .status[data-state='pending'] .state {
-      background: var(--a-warn-ink);
-    }
-    .status[data-state='offline'] .state {
-      border-color: var(--a-ink2);
-      background: transparent;
-    }
-    .status[data-state='failed'] .state {
-      background: var(--a-bad-ink);
-    }
-    .state.pulse {
+    .chip.pulse {
       animation: sync-pulse 500ms var(--ease-out);
     }
     @keyframes sync-pulse {
       40% {
-        scale: 2;
+        scale: 1.18;
       }
     }
     /* O que fica abaixo do cabeçalho mantém o respiro lateral e inferior que o <main> dava às outras telas. */
@@ -322,16 +364,15 @@ function isWithin(path: string, section: string): boolean {
       box-shadow: var(--shadow-1);
     }
     @media (prefers-reduced-motion: reduce) {
-      .status svg,
-      .state {
+      .status .chip {
         transition: none;
       }
       .status svg.spin,
       .status.ripple::before,
-      .state.pulse {
+      .chip.pulse {
         animation: none;
       }
-      .status:active svg {
+      .status:active .chip {
         scale: 1;
       }
     }
@@ -373,6 +414,10 @@ export class TrainingPage {
   protected readonly bodyArea = computed(() =>
     isWithin(this.url().split(/[?#]/)[0].replace(/\/$/, ''), '/treino/corpo'),
   );
+  /** Detalhe, formulário e editor de exercícios e rotinas: telas internas, que trazem o próprio voltar (um só). */
+  private readonly innerScreen = computed(() =>
+    /^\/treino\/(exercicios|rotinas)\/[^/]+/.test(this.url().split(/[?#]/)[0]),
+  );
   protected readonly progressArea = computed(
     () =>
       this.bodyArea() ||
@@ -382,7 +427,9 @@ export class TrainingPage {
    * Só o dono volta ao Início daqui. O convidado nunca vê a seta, nem com a TV liberada: ele abre o Treino e a TV pelos
    * ícones próprios da tela inicial do celular, e o Treino é um app dele (o controle da TV segue alcançável pelos Ajustes).
    */
-  protected readonly backLink = computed(() => (this.session.role() === 'owner' ? '/' : null));
+  protected readonly backLink = computed(() =>
+    this.session.role() === 'owner' && !this.innerScreen() ? '/' : null,
+  );
   protected readonly backLabel = $localize`:@@training.shell.back-home:Voltar ao Início`;
   /** O instante mais novo entre o último envio aceito e o último puxar completo (só para o rótulo do ícone). */
   private readonly lastSyncAt = computed(() => {
@@ -398,19 +445,40 @@ export class TrainingPage {
     if (this.pending() > 0) return 'pending';
     return 'ok';
   });
+  /** O ícone que gira fica à vista enquanto sincroniza e até o fim da volta em curso, para parar em 0 sem salto. */
+  protected readonly showSpinner = computed(() => this.syncState() === 'busy' || this.spinning());
+  /** A contagem ao lado do ícone: o que espera envio, ou o que o servidor recusou. Nada em dia. */
+  protected readonly badge = computed(() => {
+    const count =
+      this.syncState() === 'pending'
+        ? this.pending()
+        : this.syncState() === 'failed'
+          ? this.failed()
+          : 0;
+    return count === 0 ? null : count > 9 ? '9+' : String(count);
+  });
   /** Sem texto à vista: o rótulo do botão diz o estado e o que o toque faz. */
   protected readonly statusLabel = computed(() => {
     switch (this.syncState()) {
-      case 'failed':
-        return this.failed() > 0
-          ? $localize`:@@training.shell.sync-failed:Falhas de sincronização. Toque para ver detalhes.`
-          : $localize`:@@training.shell.sync-error:Falha ao atualizar. Toque para tentar de novo.`;
+      case 'failed': {
+        const count = this.failed();
+        if (count === 0) {
+          return $localize`:@@training.shell.sync-error:Falha ao atualizar. Toque para tentar de novo.`;
+        }
+        return count === 1
+          ? $localize`:@@training.shell.sync-failed-one:1 alteração com erro. Toque para ver e tentar de novo.`
+          : $localize`:@@training.shell.sync-failed-many:${count}:count: alterações com erro. Toque para ver e tentar de novo.`;
+      }
       case 'busy':
-        return $localize`:@@training.shell.sync-pending:Sincronização em andamento.`;
+        return $localize`:@@training.shell.sync-pending:Sincronizando.`;
       case 'offline':
-        return $localize`:@@training.shell.sync-offline:Sem rede. Toque para tentar atualizar.`;
-      case 'pending':
-        return $localize`:@@training.shell.sync-waiting:Alterações aguardando envio. Toque para sincronizar.`;
+        return $localize`:@@training.shell.sync-offline:Sem rede. Toque para tentar de novo.`;
+      case 'pending': {
+        const count = this.pending();
+        return count === 1
+          ? $localize`:@@training.shell.sync-waiting-one:1 alteração aguardando envio. Toque para sincronizar.`
+          : $localize`:@@training.shell.sync-waiting:${count}:count: alterações aguardando envio. Toque para sincronizar.`;
+      }
       default: {
         const at = this.lastSyncAt();
         return at === null
@@ -461,6 +529,8 @@ export class TrainingPage {
     if (this.manualPull()) return;
     this.announcement.set('');
     if (!this.online()) {
+      // Sem rede o toque ainda tenta esvaziar a fila (o envio forçado não espera o recuo): se a rede voltou sem aviso, sobe.
+      void this.queue.syncNow().catch(() => undefined);
       this.announcement.set(
         $localize`:@@training.shell.announce-offline:Sem rede. Os dados salvos no aparelho continuam disponíveis.`,
       );

@@ -88,6 +88,28 @@ describe('RoutinesListPage', () => {
     expect(rows(el)[1].querySelector('.eyebrow')?.textContent?.trim()).toBe('Fora da Sequência');
   });
 
+  it('never calls a routine "próxima" when none of them is in the sequence', async () => {
+    const { fixture, el } = await open();
+    const first = await saveRoutine('Histórico A', [item('a1', 'supino-reto', 0)], {
+      active: false,
+    });
+    const second = await saveRoutine('Histórico B', [item('b1', 'agachamento', 0)], {
+      active: false,
+    });
+    await eventually(fixture, () => expect(rows(el)).toHaveLength(2));
+    expect(el.querySelector('.next')).toBeNull();
+    expect(text(el)).not.toContain('próxima');
+    expect(rows(el).map((row) => row.querySelector('.eyebrow')?.textContent?.trim())).toEqual([
+      'fora da sequência',
+      'fora da sequência',
+    ]);
+    // Cada linha abre a rotina dela, não a primeira da lista.
+    expect(rows(el).map((row) => row.getAttribute('href'))).toEqual([
+      `/treino/rotinas/${first.id}`,
+      `/treino/rotinas/${second.id}`,
+    ]);
+  });
+
   it('opens a routine in the editor', async () => {
     const { fixture, el } = await open();
     const routine = await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
