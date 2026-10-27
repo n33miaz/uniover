@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.0](https://github.com/n33miaz/uniover/compare/v0.5.2...v0.6.0) (2026-10-27)
+
+
+### Features
+
+* **api:** count usage per person
+* **api:** alert when an agent goes offline
+* **web:** show usage per person
+* **web:** show agent offline alerts
+
 ## [0.5.2](https://github.com/n33miaz/uniover/compare/v0.5.1...v0.5.2) (2026-10-27)
 
 
