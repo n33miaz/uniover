@@ -89,7 +89,7 @@ describe('SettingsPage (a list of screens)', () => {
         },
         { title: 'Pessoas', summary: 'Convites e convidados', href: '/ajustes/pessoas' },
         {
-          title: 'Aparelhos',
+          title: 'Dispositivos',
           summary: 'Parear o agente do PC de casa',
           href: '/ajustes/aparelhos',
         },
@@ -106,7 +106,7 @@ describe('SettingsPage (a list of screens)', () => {
     it('keeps the device row with a link name that starts with its title (what the other screens look for)', async () => {
       const { el } = await render();
       const link = el.querySelector<HTMLAnchorElement>('a[href="/ajustes/aparelhos"]');
-      expect(link?.textContent?.trim().startsWith('Aparelhos')).toBe(true);
+      expect(link?.textContent?.trim().startsWith('Dispositivos')).toBe(true);
     });
 
     it('opens the real Auditoria screen: a link in the administration group, no longer a "coming soon" card', async () => {
@@ -162,14 +162,14 @@ describe('SettingsPage (a list of screens)', () => {
   describe('for a guest', () => {
     beforeEach(() => api.me.mockResolvedValue(GUEST));
 
-    it('shows Perfil, Aparência, Aparelhos (só o download do conector, com a TV) e Sobre', async () => {
+    it('shows Perfil, Aparência, Dispositivos (só o download do conector, com a TV) e Sobre', async () => {
       const { el } = await render();
       expect(headings(el)).toEqual(['Conta', 'Aplicativo']);
       expect(rows(el)).toEqual([
         { title: 'Perfil', summary: 'Alice · Convidado', href: '/ajustes/perfil' },
         { title: 'Aparência', summary: 'Tema automático', href: '/ajustes/aparencia' },
         {
-          title: 'Aparelhos',
+          title: 'Dispositivos',
           summary: 'Baixar o conector do PC',
           href: '/ajustes/dispositivos',
         },
@@ -177,7 +177,7 @@ describe('SettingsPage (a list of screens)', () => {
       ]);
     });
 
-    it('hides Aparelhos from a guest without the TV', async () => {
+    it('hides Dispositivos from a guest without the TV', async () => {
       api.me.mockResolvedValue({ ...GUEST, permissions: ['module:training'] });
       const { el } = await render();
       expect(rows(el).map((row) => row.title)).toEqual(['Perfil', 'Aparência', 'Sobre']);

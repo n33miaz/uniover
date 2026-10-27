@@ -116,7 +116,7 @@ export class SettingsPage {
         id: 'devices',
         link: '/ajustes/dispositivos',
         glyph: 'laptop',
-        title: $localize`:@@settings.devices.link:Aparelhos`,
+        title: $localize`:@@settings.devices.link:Dispositivos`,
         summary: $localize`:@@settings.devices.guest-hint:Baixar o conector do PC`,
       });
     }
@@ -146,7 +146,7 @@ export class SettingsPage {
             id: 'devices',
             link: '/ajustes/aparelhos',
             glyph: 'laptop',
-            title: $localize`:@@settings.devices.link:Aparelhos`,
+            title: $localize`:@@settings.devices.link:Dispositivos`,
             summary: $localize`:@@settings.devices.hint:Parear o agente do PC de casa`,
           },
           {

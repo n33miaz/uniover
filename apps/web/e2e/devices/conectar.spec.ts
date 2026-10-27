@@ -140,12 +140,12 @@ test.describe('página pública /conectar', () => {
 test.describe('convidado com a TV', () => {
   test.use({ userAgent: WINDOWS_UA });
 
-  test('vê o botão de baixar o conector em Aparelhos e aprova só o próprio PC, sem lista', async ({
+  test('vê o botão de baixar o conector em Dispositivos e aprova só o próprio PC, sem lista', async ({
     page,
   }, info) => {
     seedGuest(['module:tv', 'tv:control']);
     await page.goto('/ajustes');
-    await page.getByRole('link', { name: /^Aparelhos/ }).click();
+    await page.getByRole('link', { name: /^Dispositivos/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/dispositivos$/);
 
     await expect(page.getByRole('button', { name: 'Aprovar este computador' })).toBeVisible();
@@ -165,7 +165,7 @@ test.describe('convidado com a TV', () => {
     await expect(page.getByText('Peça ao administrador para aprovar.')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Baixar conector' })).toHaveCount(0);
     await page.goto('/ajustes');
-    await expect(page.getByRole('link', { name: /^Aparelhos/ })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /^Dispositivos/ })).toHaveCount(0);
   });
 
   test('aprova o próprio PC: senha de novo, TV só dele e nunca a padrão', async ({

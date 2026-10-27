@@ -180,7 +180,7 @@ describe('SystemTvSection', () => {
     ).toEqual(['pc-amigo', 'pc-livre']);
   });
 
-  it('has no add button when every paired computer already has a TV: it explains and leads to Aparelhos', async () => {
+  it('has no add button when every paired computer already has a TV: it explains and leads to Dispositivos', async () => {
     signIn();
     api.tvConfig.mockResolvedValue(config([CASA_PC, AMIGO_PC]));
     const { el, add } = await render();
