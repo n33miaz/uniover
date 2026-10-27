@@ -23,6 +23,7 @@ import { illustrationFor, illustrationUrl } from '../illustrations/illustration-
 import { equipmentLabel, muscleLabel } from '../domain/taxonomy';
 import { formatKg } from '../shell/format';
 import { TrainingGlyph } from '../shell/training-glyph';
+import { ExerciseIllustration } from '../illustrations/exercise-illustration';
 import { ExerciseChooserSheet } from './exercise-chooser-sheet';
 import { FocusHint, type Tip } from './focus-hint';
 import { HowToSheet } from './how-to-sheet';
@@ -35,7 +36,13 @@ import { LiveSetFields } from './set-fields';
 import { type MenuAction, SessionMenuSheet } from './session-menu-sheet';
 import { TodayGlyph } from './today-glyph';
 import { TodayStore } from './today-store';
-import { repsRangeText, setText, suggestionReasonText, suggestionText } from './today-text';
+import {
+  awaitingSetsText,
+  repsRangeText,
+  setText,
+  suggestionReasonText,
+  suggestionText,
+} from './today-text';
 
 type Sheet = 'menu' | 'plan' | 'swap' | 'add' | 'steps' | 'edit' | null;
 
@@ -69,6 +76,7 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
     ExerciseChooserSheet,
     HowToSheet,
     SetEditSheet,
+    ExerciseIllustration,
   ],
   templateUrl: './live-session.html',
   styleUrl: './live-session.css',
@@ -82,10 +90,12 @@ export class LiveSession {
   private readonly injector = inject(Injector);
   private readonly win = inject(DOCUMENT).defaultView;
 
-  /** Voltar a Hoje (o treino continua aberto). */
+  /** Voltar ao treino em andamento. */
   readonly back = output<void>();
   /** Terminou o treino: o id dele, para abrir o resumo. */
   readonly finished = output<string>();
+  /** Uma ficha do plano acabou; a escolha do próximo aparelho volta para a tela do dia. */
+  readonly exerciseCompleted = output<void>();
   /** Cancelou o treino. */
   readonly discarded = output<void>();
 
@@ -107,31 +117,7 @@ export class LiveSession {
   protected readonly exercise = this.live.focusExercise;
   protected readonly focus = this.live.focus;
 
-  protected readonly heading = computed(
-    () => this.live.routine()?.name ?? $localize`:@@training.live.free:Treino livre`,
-  );
-
-  protected readonly subtitle = computed(() => {
-    const focus = this.focus();
-    if (focus === null) {
-      return this.live.plan().planDone
-        ? $localize`:@@training.live.plan-done-sub:plano concluído`
-        : $localize`:@@training.live.free-sub:escolha um exercício`;
-    }
-    const set = focus.setNumber;
-    if (focus.position === null) {
-      return this.live.routine() === null
-        ? $localize`:@@training.live.sub-free:série ${set}:set:`
-        : $localize`:@@training.live.sub-extra:exercício extra · série ${set}:set:`;
-    }
-    const position = focus.position;
-    const total = focus.total;
-    if (focus.extra) {
-      return $localize`:@@training.live.sub-more:exercício ${position}:position: de ${total}:total: · série extra`;
-    }
-    const planned = focus.targetSets ?? 0;
-    return $localize`:@@training.live.sub-plan:exercício ${position}:position: de ${total}:total: · série ${set}:set: de ${planned}:planned:`;
-  });
+  protected readonly heading = this.live.workoutName;
 
   /** "Série 2 de 3", "Série extra" ou "Série 3" (exercício fora da rotina, sem meta). */
   protected readonly setTitle = computed(() => {
@@ -149,19 +135,6 @@ export class LiveSession {
   protected readonly repsRange = computed(() => {
     const focus = this.focus();
     return focus === null ? '' : repsRangeText(focus.repMin, focus.repMax);
-  });
-
-  /** Quanto do plano já foi feito, para a barra fina embaixo do cabeçalho (nada no treino livre). */
-  protected readonly progress = computed(() => {
-    const entries = this.live
-      .plan()
-      .entries.filter((entry) => entry.targetSets !== null && !entry.skipped);
-    const planned = entries.reduce((sum, entry) => sum + (entry.targetSets ?? 0), 0);
-    const done = entries.reduce(
-      (sum, entry) => sum + Math.min(entry.doneSets, entry.targetSets ?? 0),
-      0,
-    );
-    return planned === 0 ? null : Math.round((100 * done) / planned);
   });
 
   protected readonly thumb = computed(() => {
@@ -291,13 +264,7 @@ export class LiveSession {
   );
 
   /** "3 séries aguardando envio": só as séries deste treino que ainda não chegaram ao servidor. */
-  protected readonly awaitingText = computed(() => {
-    const count = this.today.awaitingSets();
-    if (count === 0) return null;
-    return count === 1
-      ? $localize`:@@training.live.awaiting-one:1 série aguardando envio`
-      : $localize`:@@training.live.awaiting-many:${count}:count: séries aguardando envio`;
-  });
+  protected readonly awaitingText = computed(() => awaitingSetsText(this.today.awaitingSets()));
 
   protected readonly canSwitch = computed(() => this.focus()?.itemId != null);
   protected readonly hasSteps = computed(() => {
@@ -307,7 +274,7 @@ export class LiveSession {
 
   protected readonly swapHeading = $localize`:@@training.live.swap-title:Substituir exercício`;
   protected readonly addHeading = $localize`:@@training.live.add-title:Adicionar exercício`;
-  protected readonly backLabel = $localize`:@@training.live.back:Voltar a Hoje`;
+  protected readonly backLabel = $localize`:@@training.live.back:Voltar ao treino`;
   protected readonly menuLabel = $localize`:@@training.live.menu:Opções do treino`;
   protected readonly dismissLabel = $localize`:@@training.live.record-dismiss:Dispensar o aviso de recorde`;
 
@@ -345,18 +312,20 @@ export class LiveSession {
     inject(DestroyRef).onDestroy(() => void this.wake.release());
   }
 
-  protected howToLabel(name: string): string {
-    return $localize`:@@training.live.how-to:Ver como fazer ${name}:name:`;
-  }
-
   protected setWarmup(checked: boolean): void {
     this.draft.update((current) => ({ ...current, warmup: checked }));
   }
 
   protected async complete(): Promise<void> {
+    const closes = this.live.closesExercise();
     const outcome = await this.live.completeSet(this.draft());
-    // O foco só volta ao botão depois de gravar: nenhum toque se perde no meio do caminho.
-    if (outcome !== 'ignored') this.dock()?.nativeElement.focus({ preventScroll: true });
+    // O foco só volta ao botão depois de gravar: nenhum toque se perde no meio do caminho. No descanso o botão fica
+    // escondido e o foco vai para o título.
+    if (outcome !== 'ignored') {
+      const target = this.timer.active() ? this.title() : this.dock();
+      target?.nativeElement.focus({ preventScroll: true });
+    }
+    if (outcome === 'saved' && closes) this.exerciseCompleted.emit();
   }
 
   protected async primary(): Promise<void> {
@@ -419,6 +388,13 @@ export class LiveSession {
     }
   }
 
+  protected async finishExerciseFromRest(): Promise<void> {
+    // O descanso era deste exercício: encerrá-lo encerra o relógio, para o próximo não abrir já em descanso.
+    await this.timer.skip();
+    await this.live.skipCurrent();
+    this.exerciseCompleted.emit();
+  }
+
   protected async chooseEntry(key: string): Promise<void> {
     this.sheet.set(null);
     await this.live.choose(key);
@@ -444,7 +420,7 @@ export class LiveSession {
     await this.live.addExercise(exercise);
   }
 
-  private async finish(): Promise<void> {
+  protected async finish(): Promise<void> {
     this.leaving.set(true);
     const id = await this.live.finish();
     if (id === null) {

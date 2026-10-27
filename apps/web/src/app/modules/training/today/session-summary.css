@@ -13,20 +13,47 @@
   padding-bottom: calc(96px + env(safe-area-inset-bottom));
 }
 
+/* O topo é o mesmo das telas da sessão: um voltar redondo, o título no meio e o espaço do outro lado. */
+.head {
+  display: grid;
+  grid-template-columns: var(--tap) 1fr var(--tap);
+  align-items: center;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 1px solid var(--a-line);
+  border-radius: 50%;
+  background: var(--a-surface);
+  color: var(--a-ink);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+}
+
+.head-space {
+  width: var(--tap);
+  height: var(--tap);
+}
+
 .hero {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-1);
-  padding-top: var(--space-2);
   text-align: center;
 }
 
 .title {
-  margin-top: var(--space-2);
-  font-size: var(--fs-display);
+  margin: 0;
+  font-size: clamp(1.125rem, 5vw, 1.35rem);
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
+  text-align: center;
 }
 
 .title:focus {
@@ -124,6 +151,12 @@
 
 .missing .title {
   font-size: var(--fs-title);
+}
+
+@media (hover: hover) {
+  .icon:hover {
+    background: var(--a-surface-2);
+  }
 }
 
 .dock {

@@ -89,10 +89,34 @@ describe('LiveStore', () => {
     });
   });
 
+  describe('the workout name', () => {
+    it('stays empty until the workout loads, then names the routine in the compact form', async () => {
+      await setup();
+      const routine = await saveRoutine('Treino A · Peito e tríceps', [A()]);
+      expect(await TestBed.inject(TodayStore).start(routine.id)).toBe('started');
+      const live = TestBed.inject(LiveStore);
+
+      // Antes da leitura não há treino: a tela não mostra "Treino livre" por engano.
+      expect(live.workoutName()).toBe('');
+      await live.load();
+      expect(live.workoutName()).toBe('Treino A - peito tríceps');
+    });
+
+    it('calls a workout without a routine "Treino livre" only after it loads', async () => {
+      await setup();
+      expect(await TestBed.inject(TodayStore).start(null)).toBe('started');
+      const live = TestBed.inject(LiveStore);
+
+      expect(live.workoutName()).toBe('');
+      await live.load();
+      expect(live.workoutName()).toBe('Treino livre');
+    });
+  });
+
   describe('concluding a set', () => {
     it('saves on the device first, then starts the rest of the set that was just made (not of the next one)', async () => {
       const t = await setup();
-      const { live } = await begin([A({ targetSets: 1 }), B()]);
+      const { live } = await begin([A({ targetSets: 2 }), B()]);
       const sessions = TestBed.inject(SessionRepository);
       const timer = TestBed.inject(RestTimerService);
       const order: string[] = [];
@@ -112,7 +136,7 @@ describe('LiveStore', () => {
 
       expect(order).toEqual(['saved', 'rest 120']);
       expect(timer.endsAt()).toBe(t.runtime.now() + 120_000);
-      expect(live.focus()).toMatchObject({ exerciseId: 'agachamento', setNumber: 1 });
+      expect(live.focus()).toMatchObject({ exerciseId: 'supino-reto', setNumber: 2 });
       expect(await sessions.setsOfSession(live.session()!.id)).toHaveLength(1);
     });
 
@@ -146,6 +170,42 @@ describe('LiveStore', () => {
       await conclude(t, live);
       expect(timer.active()).toBe(true);
       expect(live.focus()).toMatchObject({ exerciseId: 'supino-reto', setNumber: 2 });
+    });
+
+    it('starts no rest after the last set of an exercise, so the next one does not open already resting', async () => {
+      const t = await setup();
+      const timer = TestBed.inject(RestTimerService);
+      const { live } = await begin([A({ targetSets: 2 }), B()]);
+
+      expect(live.closesExercise()).toBe(false);
+      await conclude(t, live);
+      expect(timer.active()).toBe(true);
+      await timer.skip();
+
+      expect(live.closesExercise()).toBe(true);
+      expect(await conclude(t, live)).toBe('saved');
+      expect(timer.active()).toBe(false);
+      expect(live.focus()).toMatchObject({ exerciseId: 'agachamento', setNumber: 1 });
+    });
+
+    it('only closes a superset exercise when the round of the whole pair closes', async () => {
+      const t = await setup();
+      const timer = TestBed.inject(RestTimerService);
+      const { live } = await begin([
+        A({ supersetGroup: 1, targetSets: 2 }),
+        B({ supersetGroup: 1, targetSets: 2 }),
+      ]);
+
+      const closing: boolean[] = [];
+      for (let round = 0; round < 4; round++) {
+        closing.push(live.closesExercise());
+        await conclude(t, live);
+        if (timer.active()) await timer.skip();
+      }
+
+      // Supino 1, agachamento 1, supino 2 (o par ainda deve a série 2 do agachamento), agachamento 2 (fecha).
+      expect(closing).toEqual([false, false, false, true]);
+      expect(timer.active()).toBe(false);
     });
 
     it('records a warm-up without advancing the plan', async () => {

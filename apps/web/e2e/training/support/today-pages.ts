@@ -24,7 +24,10 @@ export async function openToday(
   await openTraining(page, options.path ?? '/treino');
   await expect(page.getByRole('heading', { name: 'Semana', exact: true })).toBeVisible();
   if (options.history !== false) {
-    await expect(page.locator('.lines .ui-row').first()).toContainText('última vez 40 kg × 10');
+    // O histórico vem do servidor simulado: com a máquina ocupada o puxar passa dos 5 s padrão, então a espera é maior.
+    await expect(page.locator('.lines .ui-row').first()).toContainText('última vez 40 kg × 10', {
+      timeout: 20_000,
+    });
   }
 }
 
@@ -34,8 +37,8 @@ export async function openToday(
  */
 export async function skipProgramChoice(page: Page): Promise<void> {
   const skip = page.getByRole('button', { name: 'Seguir sem programa' });
-  const live = page.locator('app-live-session');
-  await expect(skip.or(live)).toBeVisible();
+  const day = page.locator('app-workout-day');
+  await expect(skip.or(day)).toBeVisible();
   if (await skip.isVisible()) await skip.click();
 }
 
@@ -43,7 +46,9 @@ export async function skipProgramChoice(page: Page): Promise<void> {
 export async function beginWorkout(page: Page, title = /Treino A/): Promise<void> {
   await page.getByRole('button', { name: 'Iniciar treino' }).click();
   await skipProgramChoice(page);
-  await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+  await expect(page.locator('app-workout-day .routine-name')).toContainText(title);
+  await page.locator('app-workout-day .exercise.suggested').click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Concluir série' })).toBeEnabled();
 }
 
@@ -65,6 +70,15 @@ export function fieldValue(page: Page, group: 'Carga' | 'Repetições') {
  */
 export async function concludeSet(page: Page): Promise<void> {
   const before = await countRows(page, 'sets');
+  // No descanso o botão fixo de baixo sai: quem segue para a próxima série pula o descanso antes. Enquanto grava, o botão
+  // fica desabilitado, e o descanso já está no ar quando ele volta: esperar o botão habilitado OU o descanso é a ordem certa.
+  const rest = page.locator('.rest');
+  const skip = rest.getByRole('button', { name: /^(Pular Descanso|Fechar)$/ });
+  await expect(page.locator('app-live-session button.go:enabled').or(skip).first()).toBeVisible();
+  if (await skip.isVisible()) {
+    await skip.click();
+    await expect(rest).toHaveCount(0);
+  }
   await page.clock.fastForward(1000);
   await page.getByRole('button', { name: 'Concluir série' }).click();
   await expect.poll(() => countRows(page, 'sets')).toBe(before + 1);
@@ -76,6 +90,15 @@ export async function menu(page: Page, item: string | RegExp): Promise<void> {
   const dialog = page.getByRole('dialog', { name: 'Opções do treino' });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: item }).click();
+}
+
+/**
+ * Termina o treino pelo menu da tela do dia: ao concluir as séries previstas de um exercício o app volta a ela, e só
+ * então o menu que o teste abre é o dela (e não o do registro, que está de saída).
+ */
+export async function finishFromDay(page: Page): Promise<void> {
+  await expect(page.locator('app-workout-day')).toBeVisible();
+  await menu(page, /Terminar treino/);
 }
 
 /** Aparelhos falsos: vibração, áudio e tela acesa, contados pela própria página (sem depender do navegador do teste). */

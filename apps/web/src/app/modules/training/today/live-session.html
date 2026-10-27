@@ -3,10 +3,7 @@
     <button type="button" class="icon ui-tap" [attr.aria-label]="backLabel" (click)="back.emit()">
       <app-training-glyph name="back" />
     </button>
-    <div class="titles">
-      <h1 id="live-title" #title class="title" tabindex="-1">{{ heading() }}</h1>
-      <p class="sub">{{ subtitle() }}</p>
-    </div>
+    <h1 id="live-title" #title class="title" tabindex="-1" i18n="@@training.live.title">Treino</h1>
     <button
       type="button"
       class="icon ui-tap"
@@ -17,11 +14,6 @@
       <app-today-glyph name="dots" />
     </button>
   </header>
-  @if (progress(); as percent) {
-    <div class="bar" aria-hidden="true">
-      <span class="fill" [style.--progress]="percent + '%'"></span>
-    </div>
-  }
   @if (awaitingText(); as waiting) {
     <p class="sending">
       <app-training-glyph name="hourglass" />
@@ -46,19 +38,15 @@
       </section>
     }
   } @else {
-    <div class="body">
+    <div class="body" [class.resting]="timer.active()">
+      <p class="routine-name">{{ heading() }}</p>
       @if (focus(); as current) {
         @if (exercise(); as ex) {
           <div class="exercise">
-            @if (thumb(); as src) {
-              <button
-                type="button"
-                class="thumb ui-tap"
-                [attr.aria-label]="howToLabel(ex.name)"
-                (click)="sheet.set('steps')"
-              >
-                <img [src]="src" alt="" width="56" height="56" [attr.decoding]="'async'" />
-              </button>
+            @if (thumb() !== null) {
+              <div class="thumb">
+                <app-exercise-illustration [slug]="ex.slug" [name]="ex.name" />
+              </div>
             }
             <div class="who">
               <h2 class="name">{{ ex.name }}</h2>
@@ -72,7 +60,14 @@
         }
 
         @if (timer.active()) {
-          <app-rest-card [canVibrate]="canVibrate" />
+          <app-rest-card
+            [canVibrate]="canVibrate"
+            [record]="bannerLines()[0] ?? null"
+            [last]="lastText()"
+            [nextSet]="setTitle()"
+            (finishExercise)="finishExerciseFromRest()"
+            (finishWorkout)="finish()"
+          />
         }
 
         @if (bannerLines().length > 0) {
@@ -197,7 +192,7 @@
       }
     </div>
 
-    <div class="dock">
+    <div class="dock" [class.resting]="timer.active()">
       @if (live.notice(); as note) {
         <p class="notice ui-notice" role="status" [class.warn]="note.tone === 'warn'">
           <app-training-glyph [name]="note.tone === 'warn' ? 'alert' : 'check'" />

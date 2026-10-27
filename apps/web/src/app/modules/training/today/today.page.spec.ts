@@ -1,19 +1,29 @@
 import { TestBed } from '@angular/core/testing';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
+import { RestTimerService } from '../data/session-live/rest-timer.service';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { setupSessions } from '../data/sessions/session-data-test-kit';
 import { catalog, eventually, item, saveRoutine, seedHistory } from '../shell/screen-test-kit';
 import { TrainingSync } from '../data/sync/training-sync';
-import { provideRouter } from '@angular/router';
+import { Location } from '@angular/common';
+import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { DOUBLE_TAP_MS } from './live-store';
 import { TodayPage } from './today.page';
+import { WorkoutDay } from './workout-day';
+import { WorkoutExercise } from './workout-exercise';
 
 const HOUR = 3_600_000;
 
 async function open(url = '/treino') {
   TestBed.configureTestingModule({
-    providers: [provideRouter([{ path: 'treino', component: TodayPage }])],
+    providers: [
+      provideRouter([
+        { path: 'treino', component: TodayPage },
+        { path: 'treino/sessao', component: WorkoutDay },
+        { path: 'treino/sessao/exercicio', component: WorkoutExercise },
+      ]),
+    ],
   });
   const t = setupSessions();
   await TestBed.inject(TrainingSync).start();
@@ -37,6 +47,8 @@ const button = (el: ParentNode, label: string) =>
   buttons(el).find((node) => node.textContent?.replace(/\s+/g, ' ').includes(label))!;
 
 describe('TodayPage', () => {
+  afterEach(() => localStorage.clear());
+
   describe('the day', () => {
     it('says there are no routines yet, and still lets the person train without one', async () => {
       const kit = await open();
@@ -160,12 +172,13 @@ describe('TodayPage', () => {
       expect(buttons(el).some((node) => node.textContent?.includes('Iniciar treino'))).toBe(false);
 
       button(el, 'Continuar treino').click();
-      await eventually(fixture, () => expect(el.querySelector('app-live-session')).not.toBeNull());
+      await eventually(fixture, () => expect(TestBed.inject(Router).url).toBe('/treino/sessao'));
     });
   });
 
   describe('the workout', () => {
-    async function started() {
+    /** Inicia o treino e para na tela do dia (a lista de exercícios), antes de abrir um exercício. */
+    async function atDay() {
       const kit = await open();
       await seedHistory(kit.trainingDb, 'supino-reto', [[1, 40, 10]]);
       await saveRoutine('Treino A', [
@@ -181,17 +194,86 @@ describe('TodayPage', () => {
       );
       button(view.el, 'Seguir sem programa').click();
       await eventually(view.fixture, () =>
-        expect(view.el.querySelector('app-live-session')).not.toBeNull(),
+        expect(kit.harness.routeNativeElement?.matches('app-workout-day')).toBe(true),
       );
-      return { ...kit, ...view };
+      await eventually(view.fixture, () =>
+        expect(kit.harness.routeNativeElement?.querySelector('.exercise')).not.toBeNull(),
+      );
+      return { ...kit, el: kit.harness.routeNativeElement as HTMLElement, fixture: view.fixture };
     }
+
+    async function started() {
+      const kit = await atDay();
+      kit.el.querySelector<HTMLButtonElement>('.exercise')!.click();
+      await eventually(kit.fixture, () =>
+        expect(kit.harness.routeNativeElement?.matches('app-workout-exercise')).toBe(true),
+      );
+      return { ...kit, el: kit.harness.routeNativeElement as HTMLElement };
+    }
+
+    it('shows the day screen with the compact name, one photo card per exercise and the options menu', async () => {
+      const { el, fixture } = await atDay();
+
+      expect(el.querySelector('.routine-name')?.textContent?.trim()).toBe('Treino A');
+      expect(el.querySelectorAll('.exercise')).toHaveLength(2);
+      expect(el.querySelector('.exercise.suggested')?.textContent).toContain(
+        'Supino reto com barra',
+      );
+
+      el.querySelector<HTMLButtonElement>('button[aria-label="Opções do treino"]')!.click();
+      await eventually(fixture, () =>
+        expect(button(document.body, 'Adicionar exercício')).toBeDefined(),
+      );
+      expect(button(document.body, 'Cancelar treino')).toBeDefined();
+      // A lista dos exercícios é a própria tela: a linha que a abriria não aparece aqui.
+      expect(
+        buttons(document.body).some((node) => node.textContent?.includes('Exercícios do treino')),
+      ).toBe(false);
+    });
+
+    it('goes back to the day screen when the last set of an exercise is concluded', async () => {
+      const kit = await started();
+      const { el, fixture } = kit;
+      await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
+      await eventually(fixture, () => expect(button(el, 'Concluir série').disabled).toBe(false));
+
+      kit.runtime.advance(DOUBLE_TAP_MS + 100);
+      button(el, 'Concluir série').click();
+      await eventually(fixture, () => expect(text(el)).toContain('Série 2 de 2'));
+      await eventually(fixture, () => expect(button(el, 'Concluir série').disabled).toBe(false));
+      // O voltar desfaz a entrada do registro no histórico (a lista do dia era a anterior).
+      const back = vi.spyOn(TestBed.inject(Location), 'back');
+      kit.runtime.advance(DOUBLE_TAP_MS + 100);
+      button(el, 'Concluir série').click();
+
+      await eventually(fixture, () => expect(back).toHaveBeenCalledOnce());
+      // A última série do exercício não deixa descanso guardado para o próximo exercício.
+      expect(TestBed.inject(RestTimerService).active()).toBe(false);
+    });
+
+    it('ending the exercise from the rest card stops the clock, so the next exercise does not open resting', async () => {
+      const kit = await started();
+      const { el, fixture } = kit;
+      await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
+      await eventually(fixture, () => expect(button(el, 'Concluir série').disabled).toBe(false));
+      kit.runtime.advance(DOUBLE_TAP_MS + 100);
+      button(el, 'Concluir série').click();
+      await eventually(fixture, () => expect(el.querySelector('.rest')).not.toBeNull());
+      expect(TestBed.inject(RestTimerService).active()).toBe(true);
+
+      const back = vi.spyOn(TestBed.inject(Location), 'back');
+      button(el, 'Encerrar Exercício').click();
+
+      await eventually(fixture, () => expect(back).toHaveBeenCalledOnce());
+      expect(TestBed.inject(RestTimerService).active()).toBe(false);
+    });
 
     it('opens the live screen with the routine, the exercise, the numbers of last time and one main button', async () => {
       const { el, fixture } = await started();
 
       await eventually(fixture, () => expect(text(el)).toContain('Supino reto com barra'));
-      expect(el.querySelector('h1')?.textContent).toContain('Treino A');
-      expect(text(el)).toContain('exercício 1 de 2 · série 1 de 2');
+      expect(el.querySelector('h1')?.textContent).toContain('Treino');
+      expect(text(el)).toContain('Série 1 de 2');
       await eventually(fixture, () => expect(text(el)).toContain('Última vez 40 kg × 10'));
       const inputs = Array.from(el.querySelectorAll<HTMLInputElement>('app-live-stepper input'));
       expect(inputs.map((input) => input.value)).toEqual(['40', '10']);
@@ -209,14 +291,14 @@ describe('TodayPage', () => {
       await eventually(fixture, () => expect(text(el)).toContain('Descanso'));
       expect(text(el)).toContain('2:00');
       await eventually(fixture, () => expect(text(el)).toContain('meta 2:00'));
-      await eventually(fixture, () => expect(text(el)).toContain('série 2 de 2'));
+      await eventually(fixture, () => expect(text(el)).toContain('Série 2 de 2'));
       const sets = await TestBed.inject(SessionRepository).setsOfSession(
         (await TestBed.inject(SessionRepository).activeSession())!.id,
       );
       expect(sets).toHaveLength(1);
       expect(sets[0]).toMatchObject({ exerciseId: 'supino-reto', weightKg: 40, reps: 10 });
 
-      button(el, 'Pular').click();
+      button(el, 'Pular Descanso').click();
       await eventually(fixture, () => expect(el.querySelector('.rest')).toBeNull());
     });
 
@@ -237,7 +319,7 @@ describe('TodayPage', () => {
       await eventually(fixture, () => expect(rpe8().getAttribute('aria-pressed')).toBe('false'));
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
       button(el, 'Concluir série').click();
-      await eventually(fixture, () => expect(text(el)).toContain('série 2 de 2'));
+      await eventually(fixture, () => expect(text(el)).toContain('Série 2 de 2'));
 
       rpe8().click();
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
@@ -316,20 +398,22 @@ describe('TodayPage', () => {
       await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
       button(el, 'Concluir série').click();
-      await eventually(fixture, () => expect(text(el)).toContain('série 2 de 2'));
+      await eventually(fixture, () => expect(text(el)).toContain('Série 2 de 2'));
 
       el.querySelector<HTMLButtonElement>('button[aria-label="Opções do treino"]')!.click();
       await eventually(fixture, () => expect(button(el, 'Terminar treino')).toBeDefined());
       button(el, 'Terminar treino').click();
 
-      await eventually(fixture, () => expect(text(el)).toContain('Treino concluído'));
-      const stats = Array.from(el.querySelectorAll('.stat')).map((node) => text(node));
+      // O resumo é outra rota: a tela do registro já saiu de cena.
+      const summary = () => kit.harness.routeNativeElement as HTMLElement;
+      await eventually(fixture, () => expect(text(summary())).toContain('Treino concluído'));
+      const stats = Array.from(summary().querySelectorAll('.stat')).map((node) => text(node));
       // 40 kg × 10 repetições = 400 kg; uma série de trabalho; nenhum recorde (igualou a última vez).
       expect(stats[0]).toContain('400 kg');
       expect(stats[2]).toContain('1');
       expect(stats[3]).toContain('0');
-      expect(text(el)).toContain('Salvo no aparelho');
-      expect(el.querySelector('.ui-switch')).toBeNull();
+      expect(text(summary())).toContain('Salvo no aparelho');
+      expect(summary().querySelector('.ui-switch')).toBeNull();
     });
   });
 });
