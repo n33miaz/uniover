@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { routes } from './app.routes';
+import { idempotencyInterceptor } from './core/api/idempotency.interceptor';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { AuthService } from './core/auth/auth.service';
 import { connectivityInterceptor } from './core/connectivity/connectivity.interceptor';
@@ -26,7 +27,11 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes),
     // A Início lê o estado da casa pela porta; o adaptador real fala com a API e com o fluxo em tempo real.
     { provide: HomeStatusPort, useExisting: LiveHomeStatus },
-    provideHttpClient(withFetch(), withInterceptors([connectivityInterceptor, authInterceptor])),
+    provideHttpClient(
+      withFetch(),
+      // A chave de idempotência vem depois da autenticação: cada repetição dela (renovação, passkey) decide a sua chave.
+      withInterceptors([connectivityInterceptor, authInterceptor, idempotencyInterceptor]),
+    ),
     // Registra o service worker sem segurar a primeira tela (só em produção).
     provideAppInitializer(() => inject(PwaUpdateService).start()),
     // Guarda o pedido de instalação do navegador (Chromium o entrega uma vez, cedo, antes de a sessão confirmar).

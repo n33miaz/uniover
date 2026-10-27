@@ -1,4 +1,5 @@
 import { BrowserContext, Route } from '@playwright/test';
+import { missingIdempotencyKey } from '../idempotency-guard';
 import { IdentityMock } from '../auth/identity-mock';
 
 export interface DevicesRequest {
@@ -178,6 +179,14 @@ export async function mockDevicesApi(
     const bearer = headers['authorization']?.replace(/^Bearer /, '');
     if (!bearer || !identity.issuedTokens.includes(bearer)) {
       return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
+    }
+    if (missingIdempotencyKey(method, new URL(request.url()).pathname, headers)) {
+      return problem(
+        route,
+        400,
+        'idempotency-key-required',
+        'Informe o cabeçalho Idempotency-Key com um UUID.',
+      );
     }
 
     if (method === 'GET' && path === '/agents') {
