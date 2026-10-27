@@ -47,4 +47,34 @@ describe('body weight view model', () => {
     expect(chart?.ys).toEqual([82.4, 81.4]);
     expect(chart?.trendYs[1]).toBeCloseTo(82.3);
   });
+
+  it('fits the time window to the data when a long period has only a few weights', () => {
+    const rows = weightRows([
+      row('2026-10-14', 82),
+      row('2026-10-20', 81.8),
+      row('2026-10-26', 81.5),
+    ]);
+    const few = buildWeightChart({ rows, period: '6m', today: '2026-10-27', selected: null });
+    const day = 86_400;
+    const spanDays = ((few?.xRange[1] ?? 0) - (few?.xRange[0] ?? 0)) / day;
+    expect(spanDays).toBeLessThan(21);
+    expect(few?.xRange[0]).toBeLessThan(few?.xs[0] ?? 0);
+    expect(few?.xRange[1]).toBeGreaterThan(few?.xs[2] ?? 0);
+    expect(few?.xTicks.every((tick) => Number.isInteger(tick / day))).toBe(true);
+  });
+
+  it('keeps the whole period as the window when there are enough weights', () => {
+    const dates = [
+      '2026-05-01',
+      '2026-06-01',
+      '2026-07-01',
+      '2026-08-01',
+      '2026-09-01',
+      '2026-10-01',
+    ];
+    const rows = weightRows(dates.map((date, index) => row(date, 82 - index * 0.3)));
+    const many = buildWeightChart({ rows, period: '6m', today: '2026-10-27', selected: null });
+    const spanDays = ((many?.xRange[1] ?? 0) - (many?.xRange[0] ?? 0)) / 86_400;
+    expect(spanDays).toBeGreaterThan(180);
+  });
 });

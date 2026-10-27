@@ -146,7 +146,8 @@ describe('training routes', () => {
       const link = harness.routeNativeElement!.querySelector<HTMLAnchorElement>(
         'a[routerlink="/treino/corpo/avaliacoes"]',
       );
-      expect(link?.textContent).toContain('Histórico de avaliações físicas');
+      expect(link?.textContent).toContain('Avaliações Físicas');
+      expect(link?.textContent).toContain('Ver Histórico');
       expect(link?.getAttribute('href')).toBe('/treino/corpo/avaliacoes');
       link!.click();
       await harness.fixture.whenStable();

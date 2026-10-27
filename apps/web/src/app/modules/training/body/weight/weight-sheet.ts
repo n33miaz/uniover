@@ -75,7 +75,7 @@ let nextWeightSheetId = 0;
           </div>
         } @else {
           <button type="button" class="remove" (click)="confirming.set(true)">
-            <span i18n="@@training.body.weight.delete">Apagar pesagem</span>
+            <span i18n="@@training.body.weight.delete">Apagar Pesagem</span>
           </button>
         }
       }
@@ -109,7 +109,7 @@ export class WeightSheet {
 
   protected readonly heading = computed(() => {
     const entry = this.entry();
-    if (entry === null) return $localize`:@@training.body.weight.sheet-new:Registrar peso`;
+    if (entry === null) return $localize`:@@training.body.weight.sheet-new:Registrar Peso`;
     const day = dayMonth(entry.measuredOn);
     return $localize`:@@training.body.weight.sheet-edit:Pesagem de ${day}:day:`;
   });

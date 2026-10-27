@@ -1,26 +1,26 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { BodyStore } from './body-store';
-import { BodySection } from './body-section';
-import { BodyGlyph } from './body-glyph';
-import { formatCm, formatFullDate, formatPercent, formatWeight, signedWeight } from './body-text';
-import { WeightSheet } from './weight/weight-sheet';
-import { BodyProfileSheet } from './profile-sheet';
-import { BodyMeasurementsSheet } from './measurements-sheet';
-import { type WeightPeriod, buildWeightChart, rowsInPeriod } from './weight/weight-model';
-import { WEIGHT_CHART_PROVIDER } from './weight/weight-chart-engine';
 import { ProgressLineChart } from '../progress/charts/line-chart';
-import { HealthNotice } from './notice/health-notice';
+import { BodyMeasurementsSheet } from './measurements-sheet';
+import { BodyProfileSheet } from './profile-sheet';
+import { BodySection } from './body-section';
+import { BodyStore } from './body-store';
+import { formatCm, formatFullDate, formatPercent, formatWeight, signedWeight } from './body-text';
 import { BodyEnergyPanel } from './energy-panel';
-import { BodyPhotoPanel } from './photo-panel';
+import { HealthNotice } from './notice/health-notice';
 import { BodyNoticeStore } from './notice/notice-store';
+import { BodyPhotoPanel } from './photo-panel';
+import { WEIGHT_CHART_PROVIDER } from './weight/weight-chart-engine';
+import { type WeightPeriod, buildWeightChart, rowsInPeriod } from './weight/weight-model';
+import { WeightSheet } from './weight/weight-sheet';
+
+type BodyView = 'summary' | 'records' | 'photos';
 
 @Component({
   selector: 'app-training-body-page',
   imports: [
     RouterLink,
     BodySection,
-    BodyGlyph,
     WeightSheet,
     BodyProfileSheet,
     BodyMeasurementsSheet,
@@ -32,101 +32,59 @@ import { BodyNoticeStore } from './notice/notice-store';
   template: `
     <div class="page" aria-labelledby="body-title">
       <header class="intro"><h1 id="body-title" i18n="@@training.body.title">Corpo</h1></header>
-      <div class="tabs" role="group" [attr.aria-label]="sectionLabel">
+      <div class="tabs" role="group" [attr.aria-label]="viewLabel">
         <span class="tab-indicator" aria-hidden="true"></span>
         <button
           type="button"
-          [attr.aria-pressed]="section() === 'weight'"
-          (click)="selectSection('weight')"
-          i18n="@@training.body.tab.weight"
+          [attr.aria-pressed]="view() === 'summary'"
+          (click)="selectView('summary')"
+          i18n="@@training.body.tab.summary"
         >
-          Peso
+          Resumo
         </button>
         <button
           type="button"
-          [attr.aria-pressed]="section() === 'energy'"
-          (click)="selectSection('energy')"
-          i18n="@@training.body.tab.energy"
+          [attr.aria-pressed]="view() === 'records'"
+          (click)="selectView('records')"
+          i18n="@@training.body.tab.records"
         >
-          Calorias
+          Registros
         </button>
         <button
           type="button"
-          [attr.aria-pressed]="section() === 'photos'"
-          (click)="selectSection('photos')"
+          [attr.aria-pressed]="view() === 'photos'"
+          (click)="selectView('photos')"
           i18n="@@training.body.tab.photos"
         >
           Fotos
         </button>
       </div>
-      <app-body-health-notice />
-      <a
-        class="assessment-entry"
-        routerLink="/treino/corpo/avaliacoes"
-        i18n="@@training.body.assessments-link"
-      >
-        Histórico de avaliações físicas
-      </a>
       <div
         class="section-content"
-        [class.forward]="sectionDirection() === 'forward'"
-        [class.backward]="sectionDirection() === 'backward'"
-        (animationend)="clearSectionDirection($event)"
+        [class.forward]="viewDirection() === 'forward'"
+        [class.backward]="viewDirection() === 'backward'"
+        (animationend)="clearViewDirection($event)"
       >
-        @if (section() === 'weight') {
-          <app-body-section
-            [heading]="weightHeading"
-            [glyph]="'scale'"
-            [summary]="summary()"
-            [open]="true"
-          >
+        @if (view() === 'summary') {
+          <section class="weight-card ui-card" aria-labelledby="weight-panel-title">
+            <div class="card-heading">
+              <h2 id="weight-panel-title" class="eyebrow" i18n="@@training.body.weight.title">
+                Peso
+              </h2>
+              @if (store.weight(); as weight) {
+                <p class="weight-value">{{ formatWeight(weight.latest.weightKg) }}</p>
+              }
+            </div>
             @if (!store.ready()) {
               <p class="muted" i18n="@@training.body.loading">Carregando seus registros…</p>
             } @else if (store.weight(); as weight) {
-              <div class="latest">
-                <div>
-                  <span class="eyebrow">{{
-                    weight.isToday ? todayLabel : lastLabel(weight.latest.date)
-                  }}</span>
-                  <p class="value">{{ formatWeight(weight.latest.weightKg) }}</p>
-                  @if (weight.previousIsYesterday && weight.previous; as previous) {
-                    <span class="eyebrow" i18n="@@training.body.yesterday"
-                      >Ontem · {{ formatWeight(previous.weightKg) }}</span
-                    >
-                  }
-                </div>
+              <div class="weight-meta">
+                <span>{{ weight.isToday ? todayLabel : lastLabel(weight.latest.date) }}</span>
                 @if (weight.delta; as delta) {
-                  <div class="delta">
-                    <span i18n="@@training.body.trend">Tendência · {{ delta.spanDays }} dias</span
-                    ><strong>{{ signedWeight(delta.deltaKg) }}</strong>
-                  </div>
+                  <strong i18n="@@training.body.weight.delta"
+                    >{{ signedWeight(delta.deltaKg) }} · {{ delta.spanDays }} dias</strong
+                  >
                 }
-              </div>
-              <div class="periods" role="group" [attr.aria-label]="periodLabel">
-                <button
-                  type="button"
-                  [attr.aria-pressed]="period() === '30d'"
-                  (click)="period.set('30d')"
-                  i18n="@@training.body.period.30d"
-                >
-                  30 dias
-                </button>
-                <button
-                  type="button"
-                  [attr.aria-pressed]="period() === '6m'"
-                  (click)="period.set('6m')"
-                  i18n="@@training.body.period.6m"
-                >
-                  6 meses
-                </button>
-                <button
-                  type="button"
-                  [attr.aria-pressed]="period() === 'all'"
-                  (click)="period.set('all')"
-                  i18n="@@training.body.period.all"
-                >
-                  Tudo
-                </button>
               </div>
               @if (chart(); as spec) {
                 <app-progress-line-chart
@@ -136,19 +94,15 @@ import { BodyNoticeStore } from './notice/notice-store';
                 />
                 @if (chartFailed()) {
                   <p class="muted" i18n="@@training.body.chart-fallback">
-                    O gráfico não pôde ser exibido. Seus registros continuam disponíveis abaixo.
+                    O gráfico não pôde ser exibido. Seus registros continuam disponíveis em
+                    Registros.
                   </p>
                 }
                 <p class="chart-caption" i18n="@@training.body.chart.caption">
                   Pontos: pesagens · linha: tendência
                 </p>
-                @if (selectedPoint(); as point) {
-                  <p class="chart-detail" [attr.aria-live]="'polite'">
-                    {{ chartPointText(point.date, point.weightKg, point.trendKg) }}
-                  </p>
-                }
                 <details class="chart-table">
-                  <summary i18n="@@training.body.chart.table">Ver dados do período</summary>
+                  <summary i18n="@@training.body.chart.table">Ver Dados do Período</summary>
                   @for (row of chartRows(); track row.id) {
                     <button
                       type="button"
@@ -162,8 +116,108 @@ import { BodyNoticeStore } from './notice/notice-store';
                     </button>
                   }
                 </details>
+                @if (selectedPoint(); as point) {
+                  <p class="chart-detail" aria-live="polite" i18n-aria-live="@@common.aria.polite">
+                    {{ chartPointText(point.date, point.weightKg, point.trendKg) }}
+                  </p>
+                }
               }
-              <div class="entries" aria-label="{{ historyLabel }}">
+            } @else {
+              <p class="muted" i18n="@@training.body.weight.empty">
+                Registre seu primeiro peso para acompanhar como ele muda ao longo do tempo.
+              </p>
+            }
+          </section>
+
+          <div class="signal-grid" aria-label="{{ signalsLabel }}">
+            <button
+              type="button"
+              class="signal-card"
+              (click)="measureSheetOpen.set(true)"
+              [attr.aria-label]="measuresActionLabel"
+            >
+              <span class="eyebrow" i18n="@@training.body.summary.measurements">Medidas</span>
+              @if (store.latest().waistCm; as waist) {
+                <strong>{{ formatCm(waist.value) }}</strong
+                ><small i18n="@@training.body.summary.waist-date"
+                  >Cintura · {{ formatDate(waist.measuredOn) }}</small
+                >
+              } @else {
+                <strong class="none" i18n="@@training.body.summary.none">Sem Registros</strong
+                ><small i18n="@@training.body.summary.measurements-help">Registrar Medidas</small>
+              }
+            </button>
+            <button
+              type="button"
+              class="signal-card"
+              (click)="measureSheetOpen.set(true)"
+              [attr.aria-label]="fatActionLabel"
+            >
+              <span class="eyebrow" i18n="@@training.body.summary.fat">Gordura Corporal</span>
+              @if (store.latest().bodyFatPct; as fat) {
+                <strong>{{ formatPercent(fat.value) }}</strong
+                ><small>{{ fatMethodLabel(fat.fatMethod) }}</small>
+              } @else {
+                <strong class="none" i18n="@@training.body.summary.none">Sem Registros</strong
+                ><small i18n="@@training.body.summary.fat-help">Registrar Percentual</small>
+              }
+            </button>
+          </div>
+
+          <section class="signal-links" [attr.aria-label]="shortcutsLabel">
+            <a class="signal-row" routerLink="/treino/corpo/avaliacoes"
+              ><span i18n="@@training.body.summary.assessments">Avaliações Físicas</span
+              ><small i18n="@@training.body.summary.assessments-action">Ver Histórico</small></a
+            >
+            <a class="signal-row" routerLink="/treino/exercicios/mapa"
+              ><span i18n="@@training.body.summary.map">Mapa do Corpo</span
+              ><small i18n="@@training.body.summary.map-action">Ver Músculos</small></a
+            >
+            <button type="button" class="signal-row" (click)="selectView('photos')">
+              <span i18n="@@training.body.summary.photos">Fotos de Progresso</span
+              ><small i18n="@@training.body.summary.photos-action">Ver Fotos</small>
+            </button>
+          </section>
+          <button type="button" class="primary ui-btn primary-action" (click)="editing.set('new')">
+            <span i18n="@@training.body.weight.add">Registrar Peso</span>
+          </button>
+        } @else if (view() === 'records') {
+          <app-body-section
+            [heading]="weightHeading"
+            [glyph]="'scale'"
+            [summary]="weightSummary()"
+            [open]="true"
+          >
+            @if (store.weight(); as weight) {
+              <div class="latest">
+                <div class="stat">
+                  <span class="eyebrow" i18n="@@training.body.weight.last-title"
+                    >Última Pesagem</span
+                  ><strong>{{
+                    weight.isToday ? todayLabel : formatDate(weight.latest.date)
+                  }}</strong>
+                </div>
+                @if (weight.delta; as delta) {
+                  <div class="stat delta">
+                    <span class="eyebrow" i18n="@@training.body.trend">Tendência</span
+                    ><strong i18n="@@training.body.weight.delta"
+                      >{{ signedWeight(delta.deltaKg) }} · {{ delta.spanDays }} dias</strong
+                    >
+                  </div>
+                }
+              </div>
+              <div class="periods" role="group" [attr.aria-label]="periodLabel">
+                @for (option of periods; track option.value) {
+                  <button
+                    type="button"
+                    [attr.aria-pressed]="period() === option.value"
+                    (click)="period.set(option.value)"
+                  >
+                    {{ option.label }}
+                  </button>
+                }
+              </div>
+              <div class="entries" [attr.aria-label]="historyLabel">
                 @for (row of visibleRows(); track row.id) {
                   <button
                     type="button"
@@ -176,28 +230,16 @@ import { BodyNoticeStore } from './notice/notice-store';
                   </button>
                 }
               </div>
-              <button type="button" class="primary ui-btn block" (click)="editing.set('new')">
-                <app-body-glyph name="scale" /><span i18n="@@training.body.weight.add"
-                  >Registrar peso</span
-                >
-              </button>
             } @else {
-              <div class="empty">
-                <app-body-glyph name="scale" />
-                <p i18n="@@training.body.weight.empty">
-                  Registre seu primeiro peso para acompanhar como ele muda ao longo do tempo.
-                </p>
-                <button
-                  type="button"
-                  class="primary ui-btn"
-                  (click)="editing.set('new')"
-                  i18n="@@training.body.weight.add"
-                >
-                  Registrar peso
-                </button>
-              </div>
+              <p class="muted" i18n="@@training.body.weight.empty">
+                Registre seu primeiro peso para acompanhar como ele muda ao longo do tempo.
+              </p>
             }
+            <button type="button" class="primary ui-btn block" (click)="editing.set('new')">
+              <span i18n="@@training.body.weight.add">Registrar Peso</span>
+            </button>
           </app-body-section>
+
           <app-body-section
             [heading]="profileHeading"
             [glyph]="'user'"
@@ -226,6 +268,7 @@ import { BodyNoticeStore } from './notice/notice-store';
               <span>{{ store.profile() ? editProfileLabel : addProfileLabel }}</span>
             </button>
           </app-body-section>
+
           <app-body-section
             [heading]="measuresHeading"
             [glyph]="'ruler'"
@@ -246,10 +289,7 @@ import { BodyNoticeStore } from './notice/notice-store';
             @if (store.latest().bodyFatPct; as fat) {
               <p class="fat-value">
                 <strong>{{ formatPercent(fat.value) }}</strong
-                ><span
-                  >{{ fatMethodLabel(fat.fatMethod) }} · {{ formatDate(fat.measuredOn) }} ·
-                  {{ fat.fatMethod === 'navy' ? estimatedLabel : '' }}</span
-                >
+                ><span>{{ fatMethodLabel(fat.fatMethod) }} · {{ formatDate(fat.measuredOn) }}</span>
               </p>
             } @else {
               <p class="muted" i18n="@@training.body.measure.empty-card">
@@ -257,10 +297,9 @@ import { BodyNoticeStore } from './notice/notice-store';
               </p>
             }
             <button type="button" class="primary ui-btn block" (click)="measureSheetOpen.set(true)">
-              <span i18n="@@training.body.measure.add">Registrar medidas</span>
+              <span i18n="@@training.body.measure.add">Registrar Medidas</span>
             </button>
           </app-body-section>
-        } @else if (section() === 'energy') {
           <app-body-energy-panel
             [state]="store.energy()"
             (editProfile)="profileSheetOpen.set(true)"
@@ -269,6 +308,7 @@ import { BodyNoticeStore } from './notice/notice-store';
           <app-body-photo-panel />
         }
       </div>
+      <app-body-health-notice />
       @if (editing(); as target) {
         <app-weight-sheet
           [today]="store.today()"
@@ -297,34 +337,30 @@ import { BodyNoticeStore } from './notice/notice-store';
     :host {
       display: block;
     }
-    .page {
+    .page,
+    .section-content {
       display: flex;
       flex-direction: column;
       gap: var(--space-3);
+      min-width: 0;
+    }
+    .page {
       padding: 0 var(--space-4) calc(var(--space-5) + env(safe-area-inset-bottom));
     }
-    .intro h1 {
+    .intro h1,
+    h2,
+    p {
       margin: 0;
-      font-size: var(--fs-title, 1.5rem);
     }
-    .assessment-entry {
-      display: flex;
-      min-height: var(--tap, 44px);
-      align-items: center;
-      padding: 0 var(--space-3);
-      border: 1px solid var(--a-line);
-      border-radius: var(--radius-sm);
-      color: var(--a-ink);
-      background: var(--a-surface);
-      text-decoration: none;
-      font-weight: 600;
+    .intro h1 {
+      font-size: var(--fs-title, 1.5rem);
     }
     .tabs {
       position: relative;
       isolation: isolate;
       display: flex;
-      padding: 3px;
       gap: 3px;
+      padding: 3px;
       border-radius: var(--radius-pill, 999px);
       background: var(--a-surface-2);
     }
@@ -338,7 +374,6 @@ import { BodyNoticeStore } from './notice/notice-store';
       background: var(--a-surface);
       box-shadow: 0 1px 4px #0002;
       transition: transform 220ms var(--ease-out);
-      transform: translateX(0);
     }
     .tabs:has(button:nth-of-type(2)[aria-pressed='true']) .tab-indicator {
       transform: translateX(calc(100% + 3px));
@@ -346,7 +381,8 @@ import { BodyNoticeStore } from './notice/notice-store';
     .tabs:has(button:nth-of-type(3)[aria-pressed='true']) .tab-indicator {
       transform: translateX(calc(200% + 6px));
     }
-    .tabs button {
+    .tabs button,
+    .periods button {
       flex: 1;
       min-height: 40px;
       border: 0;
@@ -356,17 +392,14 @@ import { BodyNoticeStore } from './notice/notice-store';
       font: inherit;
       font-size: var(--fs-small);
     }
-    .tabs button[aria-pressed='true'] {
+    .tabs button[aria-pressed='true'],
+    .periods button[aria-pressed='true'] {
       color: var(--a-ink);
+      background: var(--a-surface);
+      box-shadow: 0 1px 4px #0002;
     }
     .tabs button:focus-visible {
       outline-offset: -3px;
-    }
-    .section-content {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-3);
-      min-width: 0;
     }
     .section-content.forward {
       animation: section-enter-forward 200ms var(--ease-out) both;
@@ -394,74 +427,153 @@ import { BodyNoticeStore } from './notice/notice-store';
         transform: translateX(0);
       }
     }
-    .latest {
+    .weight-card {
+      display: grid;
+      gap: var(--space-3);
+      padding: var(--space-3);
+    }
+    .card-heading,
+    .latest,
+    .weight-meta,
+    .fat-value {
       display: flex;
       justify-content: space-between;
       align-items: end;
       gap: var(--space-3);
     }
+    h2 {
+      font-size: clamp(1.1rem, 4.8vw, 1.25rem);
+    }
     .eyebrow,
-    .delta {
+    .muted,
+    .weight-meta,
+    .chart-caption,
+    .chart-detail,
+    .profile-line,
+    .measure-row small,
+    .fat-value span {
       color: var(--a-ink2);
       font-size: var(--fs-small);
     }
+    .weight-value,
     .value {
-      margin: 2px 0 0;
+      margin: 0;
       font-size: clamp(2rem, 10vw, 2.75rem);
       font-weight: 750;
       letter-spacing: -0.04em;
+      font-variant-numeric: tabular-nums;
     }
-    .delta {
-      display: grid;
-      gap: 3px;
-      text-align: right;
+    .weight-meta {
+      align-items: center;
     }
-    .delta strong {
+    .weight-meta strong,
+    .stat strong {
       color: var(--a-ink);
-      font-size: 1.1rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .chart-caption,
+    .chart-detail {
+      text-align: center;
+    }
+    .chart-table summary {
+      display: flex;
+      min-height: var(--tap);
+      align-items: center;
+      cursor: pointer;
+    }
+    .signal-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-2);
+    }
+    .signal-card {
+      display: grid;
+      min-width: 0;
+      min-height: 104px;
+      align-content: start;
+      gap: 5px;
+      padding: var(--space-3);
+      border: 0;
+      border-radius: var(--radius-sm);
+      color: var(--a-ink);
+      background: var(--a-surface-2);
+      text-align: left;
+      font: inherit;
+    }
+    .signal-card strong {
+      overflow: hidden;
+      font-size: clamp(1.25rem, 6vw, 1.5rem);
+      letter-spacing: -0.03em;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .signal-card strong.none {
+      font-size: var(--fs-body);
+      font-weight: 600;
+      letter-spacing: 0;
+      color: var(--a-ink2);
+    }
+    .signal-card small {
+      color: var(--a-ink2);
+      font-size: var(--fs-small);
+    }
+    .signal-row {
+      display: flex;
+      width: 100%;
+      min-height: var(--tap);
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      padding: 0;
+      border: 0;
+      border-top: 1px solid var(--a-line);
+      color: var(--a-ink);
+      background: transparent;
+      text-align: left;
+      text-decoration: none;
+      font: inherit;
+    }
+    .signal-row:last-child {
+      border-bottom: 1px solid var(--a-line);
+    }
+    .signal-row small {
+      color: var(--a-ink2);
+      font-size: var(--fs-small);
+    }
+    .primary-action,
+    .block {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      justify-content: center;
+    }
+    .primary-action {
+      min-height: var(--tap);
     }
     .periods {
       display: flex;
-      padding: 3px;
       gap: 3px;
+      padding: 3px;
       border-radius: var(--radius-pill, 999px);
       background: var(--a-surface-2);
     }
     .periods button {
-      flex: 1;
       min-height: 36px;
-      border: 0;
-      border-radius: inherit;
-      color: var(--a-ink2);
-      background: transparent;
-      font: inherit;
-      font-size: var(--fs-small);
     }
-    .periods button[aria-pressed='true'] {
-      color: var(--a-ink);
-      background: var(--a-surface);
-      box-shadow: 0 1px 4px #0002;
+    .latest {
+      align-items: start;
     }
-    .chart-caption,
-    .muted {
-      margin: 0;
-      color: var(--a-ink2);
-      font-size: var(--fs-small);
+    .stat {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
     }
-    .chart-caption {
-      text-align: center;
-    }
-    .chart-detail {
-      margin: 0;
-      text-align: center;
-      font-size: var(--fs-small);
+    .stat strong {
       font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
-    .chart-table summary {
-      min-height: var(--tap);
-      display: flex;
-      align-items: center;
-      cursor: pointer;
+    .stat.delta {
+      text-align: right;
     }
     .entries {
       display: grid;
@@ -470,9 +582,9 @@ import { BodyNoticeStore } from './notice/notice-store';
     }
     .entry {
       display: flex;
-      justify-content: space-between;
       min-height: var(--tap);
       align-items: center;
+      justify-content: space-between;
       padding: 0 var(--space-2);
       border: 0;
       border-bottom: 1px solid var(--a-line);
@@ -484,31 +596,7 @@ import { BodyNoticeStore } from './notice/notice-store';
     .entry strong {
       font-variant-numeric: tabular-nums;
     }
-    .empty {
-      display: grid;
-      justify-items: center;
-      gap: var(--space-3);
-      padding: var(--space-5) var(--space-2);
-      color: var(--a-ink2);
-      text-align: center;
-    }
-    .empty p {
-      max-width: 30ch;
-      margin: 0;
-    }
-    .block {
-      display: flex;
-      width: 100%;
-      align-items: center;
-      justify-content: center;
-      gap: var(--space-2);
-    }
-    .profile-line {
-      margin: 0;
-      color: var(--a-ink2);
-    }
     .notice {
-      margin: 0;
       padding: var(--space-2);
       border-radius: var(--radius-sm);
       background: var(--a-surface-2);
@@ -526,18 +614,6 @@ import { BodyNoticeStore } from './notice/notice-store';
       min-height: 44px;
       border-bottom: 1px solid var(--a-line);
     }
-    .measure-row small,
-    .fat-value span {
-      color: var(--a-ink2);
-      font-size: var(--fs-small);
-    }
-    .fat-value {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: var(--space-2);
-      margin: 0;
-    }
     @media (prefers-reduced-motion: reduce) {
       .tab-indicator {
         transition: none;
@@ -553,24 +629,32 @@ import { BodyNoticeStore } from './notice/notice-store';
 })
 export class BodyPage {
   protected readonly store = inject(BodyStore);
+  protected readonly view = signal<BodyView>('summary');
+  protected readonly viewDirection = signal<'forward' | 'backward' | null>(null);
   protected readonly period = signal<WeightPeriod>('6m');
-  protected readonly section = signal<'weight' | 'energy' | 'photos'>('weight');
-  protected readonly sectionDirection = signal<'forward' | 'backward' | null>(null);
-  protected readonly sectionLabel = $localize`:@@training.body.tabs:Seções do corpo`;
   protected readonly selected = signal<number | null>(null);
   protected readonly chartFailed = signal(false);
   protected readonly editing = signal<string | null>(null);
   protected readonly profileSheetOpen = signal(false);
   protected readonly measureSheetOpen = signal(false);
+  protected readonly viewLabel = $localize`:@@training.body.tabs:Seções do corpo`;
+  protected readonly signalsLabel = $localize`:@@training.body.summary.signals:Sinais do corpo`;
+  protected readonly shortcutsLabel = $localize`:@@training.body.summary.shortcuts:Mais informações do corpo`;
+  protected readonly measuresActionLabel = $localize`:@@training.body.summary.measurements-action-label:Registrar ou editar medidas`;
+  protected readonly fatActionLabel = $localize`:@@training.body.summary.fat-action-label:Registrar ou editar percentual de gordura`;
   protected readonly weightHeading = $localize`:@@training.body.weight.title:Peso`;
+  protected readonly profileHeading = $localize`:@@training.body.profile.title:Perfil`;
+  protected readonly measuresHeading = $localize`:@@training.body.measure.title:Medidas e Gordura Corporal`;
   protected readonly todayLabel = $localize`:@@training.body.weight.today:Hoje`;
   protected readonly periodLabel = $localize`:@@training.body.period.label:Período do gráfico`;
   protected readonly historyLabel = $localize`:@@training.body.weight.history:Pesagens recentes`;
-  protected readonly profileHeading = $localize`:@@training.body.profile.title:Perfil`;
-  protected readonly editProfileLabel = $localize`:@@training.body.profile.edit:Editar perfil`;
-  protected readonly addProfileLabel = $localize`:@@training.body.profile.complete:Preencher perfil`;
-  protected readonly measuresHeading = $localize`:@@training.body.measure.title:Gordura e medidas`;
-  protected readonly estimatedLabel = $localize`:@@training.body.fat.estimated:estimado`;
+  protected readonly editProfileLabel = $localize`:@@training.body.profile.edit:Editar Perfil`;
+  protected readonly addProfileLabel = $localize`:@@training.body.profile.complete:Preencher Perfil`;
+  protected readonly periods = [
+    { value: '30d' as const, label: $localize`:@@training.body.period.30d:30 dias` },
+    { value: '6m' as const, label: $localize`:@@training.body.period.6m:6 meses` },
+    { value: 'all' as const, label: $localize`:@@training.body.period.all:Tudo` },
+  ];
   protected readonly chartRows = computed(() =>
     rowsInPeriod(this.store.rows(), this.period(), this.store.today()),
   );
@@ -593,7 +677,7 @@ export class BodyPage {
       : null;
   });
   protected readonly visibleRows = computed(() => [...this.store.rows()].reverse().slice(0, 5));
-  protected readonly summary = computed(() => {
+  protected readonly weightSummary = computed(() => {
     const weight = this.store.weight();
     return weight ? formatWeight(weight.latest.weightKg) : '';
   });
@@ -639,40 +723,40 @@ export class BodyPage {
     ];
   });
   protected readonly measuresSummary = computed(() => {
-    const latest = this.store.latest();
-    return latest.bodyFatPct ? formatPercent(latest.bodyFatPct.value) : '';
+    const fat = this.store.latest().bodyFatPct;
+    return fat ? formatPercent(fat.value) : '';
   });
   protected readonly formatWeight = formatWeight;
+  protected readonly formatPercent = formatPercent;
+  protected readonly formatCm = formatCm;
+  protected readonly formatDate = formatFullDate;
+  protected readonly signedWeight = signedWeight;
 
-  protected selectSection(next: 'weight' | 'energy' | 'photos'): void {
-    const order = { weight: 0, energy: 1, photos: 2 } as const;
-    const current = this.section();
+  protected selectView(next: BodyView): void {
+    const order = { summary: 0, records: 1, photos: 2 } as const;
+    const current = this.view();
     if (current === next) return;
-    this.sectionDirection.set(
+    this.viewDirection.set(
       globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches
         ? null
         : order[next] > order[current]
           ? 'forward'
           : 'backward',
     );
-    this.section.set(next);
+    this.view.set(next);
   }
-
-  protected clearSectionDirection(event: AnimationEvent): void {
-    if (event.target !== event.currentTarget) return;
-    this.sectionDirection.set(null);
+  protected clearViewDirection(event: AnimationEvent): void {
+    if (event.target === event.currentTarget) this.viewDirection.set(null);
   }
-  protected readonly formatPercent = formatPercent;
-  protected readonly signedWeight = signedWeight;
-  protected readonly formatDate = formatFullDate;
-  protected readonly fatMethodLabel = (method: string | null) =>
-    method === 'navy'
+  protected fatMethodLabel(method: string | null): string {
+    return method === 'navy'
       ? $localize`:@@training.body.fat.method.navy:Marinha`
       : method === 'bioimpedance'
         ? $localize`:@@training.body.fat.method.bioimpedance:Bioimpedância`
         : $localize`:@@training.body.fat.method.manual:Informado por você`;
+  }
   protected lastLabel(date: string): string {
-    return $localize`:@@training.body.weight.last:Última pesagem · ${formatFullDate(date)}:date:`;
+    return $localize`:@@training.body.weight.last:Última Pesagem · ${formatFullDate(date)}:date:`;
   }
   protected editLabel(date: string, kg: number): string {
     return $localize`:@@training.body.weight.edit:Editar pesagem de ${formatFullDate(date)}:date:, ${formatWeight(kg)}:weight:`;

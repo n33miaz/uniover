@@ -54,6 +54,10 @@ let nextSectionId = 0;
     .toggle:focus-visible {
       outline-offset: -3px;
     }
+    /* Título numa linha só: "Medidas e Gordura Corporal" cabe no iPhone de 390 px reduzindo a letra aos poucos. */
+    .ui-row-title {
+      font-size: clamp(0.9rem, 3.8vw, 1rem);
+    }
     .chevron {
       color: var(--a-ink2);
     }
