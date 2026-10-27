@@ -137,8 +137,8 @@ async function expectNoVerticalScroll(page: Page) {
 
 /**
  * O centro do nome (o <h1>) tem de coincidir com o centro da TELA, e o ponto de estado não pode tocar nos botões. Vale
- * para o administrador e para a convidada: o botão da esquerda é a seta ou a engrenagem, e depois dele vem o desligar;
- * à direita ficam só os três pontos do menu.
+ * para o administrador e para a convidada: o botão da esquerda é a seta ou a engrenagem, e depois dele vem o menu;
+ * à direita fica o desligar.
  */
 async function expectTitleCentered(page: Page) {
   const viewport = await page.evaluate(() => window.innerWidth);
@@ -151,11 +151,9 @@ async function expectTitleCentered(page: Page) {
   expect(dot.x, 'o ponto fica depois do começo do nome').toBeGreaterThanOrEqual(title.x);
   expect(dot.x + dot.width, 'o ponto cabe na tela').toBeLessThanOrEqual(viewport);
   const menu = await box(menuButton(page));
-  expect(dot.x + dot.width, 'o ponto não encosta nos três pontos').toBeLessThanOrEqual(
-    menu.x + 0.5,
-  );
+  expect(menu.x + menu.width, 'o menu não encosta no nome').toBeLessThanOrEqual(title.x + 0.5);
   const power = await box(powerButton(page));
-  expect(title.x, 'o nome não encosta no desligar').toBeGreaterThanOrEqual(power.x + power.width);
+  expect(dot.x + dot.width, 'o ponto não encosta no desligar').toBeLessThanOrEqual(power.x + 0.5);
   await expect(statusDot(page)).toBeVisible();
 }
 
@@ -272,7 +270,7 @@ test.describe('cabeçalho: voltar, energia, nome e menu', () => {
     await screenshot(page, `test-results/tv-header-default-${info.project.name}.png`);
   });
 
-  test('o desligar fica logo depois da seta, à esquerda, e à direita só os três pontos do menu', async ({
+  test('o menu fica logo depois da seta, à esquerda, e à direita fica só o desligar', async ({
     page,
   }) => {
     await openTv(page);
@@ -282,20 +280,17 @@ test.describe('cabeçalho: voltar, energia, nome e menu', () => {
     const menu = await box(menuButton(page));
     const title = await box(header(page).locator('h1'));
 
-    // A seta na ponta esquerda; o desligar logo ao lado, na mesma linha, com o respiro de 6 px entre os dois.
+    // A seta na ponta esquerda; o menu logo ao lado, na mesma linha, com o respiro de 6 px entre os dois.
     expect(Math.abs(back.x - head.x), 'a seta na ponta esquerda').toBeLessThanOrEqual(1);
-    expect(Math.abs(power.y - back.y), 'mesma linha').toBeLessThanOrEqual(1);
+    expect(Math.abs(menu.y - back.y), 'mesma linha').toBeLessThanOrEqual(1);
+    expect(menu.x - (back.x + back.width), 'o menu logo depois da seta').toBeGreaterThanOrEqual(4);
+    expect(menu.x - (back.x + back.width), 'e perto dela').toBeLessThanOrEqual(10);
+    // O nome vem depois dos dois e o desligar fica sozinho, na ponta direita.
+    expect(title.x).toBeGreaterThanOrEqual(menu.x + menu.width);
+    expect(power.x).toBeGreaterThanOrEqual(title.x + title.width - 1);
     expect(
-      power.x - (back.x + back.width),
-      'o desligar logo depois da seta',
-    ).toBeGreaterThanOrEqual(4);
-    expect(power.x - (back.x + back.width), 'e perto dela').toBeLessThanOrEqual(10);
-    // O nome vem depois dos dois e os três pontos ficam sozinhos, na ponta direita.
-    expect(title.x).toBeGreaterThanOrEqual(power.x + power.width);
-    expect(menu.x).toBeGreaterThanOrEqual(title.x + title.width - 1);
-    expect(
-      Math.abs(menu.x + menu.width - (head.x + head.width)),
-      'os três pontos na ponta direita',
+      Math.abs(power.x + power.width - (head.x + head.width)),
+      'o desligar na ponta direita',
     ).toBeLessThanOrEqual(1);
     await expect(header(page).locator('.actions').getByRole('button')).toHaveCount(1);
     await expect(header(page).locator('.lead').getByRole('button')).toHaveCount(1);
@@ -314,6 +309,19 @@ test.describe('cabeçalho: voltar, energia, nome e menu', () => {
       });
     expect(shape.parts, 'três pontos').toBe(3);
     expect(shape.height, 'na vertical').toBeGreaterThan(shape.width * 4);
+  });
+
+  test('a tabulação segue da esquerda para a direita', async ({ page }) => {
+    await openTv(page);
+    await backLink(page).focus();
+    await page.keyboard.press('Tab');
+    await expect(menuButton(page)).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(titleButton(page)).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(statusDot(page)).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(powerButton(page)).toBeFocused();
   });
 
   test('o nome é o da TV, no meio da tela, com o ponto de estado ao lado', async ({ page }) => {
@@ -1455,18 +1463,16 @@ test.describe('cabeçalho da convidada: botão redondo de configurações no lug
     ).toBeLessThanOrEqual(2);
     expect(title.x, 'o nome não encosta nos botões').toBeGreaterThanOrEqual(place.x + place.width);
 
-    // O desligar fica ao lado da engrenagem, na mesma linha, e antes do nome; à direita só os três pontos do menu.
+    // O menu fica ao lado da engrenagem, na mesma linha, e antes do nome; à direita só o desligar.
     const menu = await box(menuButton(page));
     const power = await box(powerButton(page));
-    expect(Math.abs(power.y - place.y), 'mesma linha').toBeLessThanOrEqual(1);
-    expect(power.x - (place.x + place.width), 'logo depois da engrenagem').toBeGreaterThanOrEqual(
-      4,
-    );
-    expect(power.x - (place.x + place.width), 'e perto dela').toBeLessThanOrEqual(10);
-    expect(title.x, 'o nome vem depois do desligar').toBeGreaterThanOrEqual(power.x + power.width);
+    expect(Math.abs(menu.y - place.y), 'mesma linha').toBeLessThanOrEqual(1);
+    expect(menu.x - (place.x + place.width), 'logo depois da engrenagem').toBeGreaterThanOrEqual(4);
+    expect(menu.x - (place.x + place.width), 'e perto dela').toBeLessThanOrEqual(10);
+    expect(title.x, 'o nome vem depois do menu').toBeGreaterThanOrEqual(menu.x + menu.width);
     expect(
-      Math.abs(menu.x + menu.width - (head.x + head.width)),
-      'os três pontos na ponta direita',
+      Math.abs(power.x + power.width - (head.x + head.width)),
+      'o desligar na ponta direita',
     ).toBeLessThanOrEqual(1);
     await expect(header(page).locator('.actions').getByRole('button')).toHaveCount(1);
 
