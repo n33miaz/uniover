@@ -22,6 +22,7 @@ import { TodayStore } from './today-store';
 export const LIVE_PARAM = 'sessao';
 export const LIVE_VALUE = 'ao-vivo';
 export const SUMMARY_PARAM = 'resumo';
+export const HISTORY_PARAM = 'historico';
 
 /**
  * A aba Hoje. Uma só rota com três visões: o dia (resumo da semana e rotina), o treino ao vivo e o resumo ao terminar.
@@ -40,7 +41,7 @@ export const SUMMARY_PARAM = 'resumo';
     @if (!store.ready()) {
       <div class="ui-card waiting" aria-hidden="true"><span class="ui-skeleton"></span></div>
     } @else if (summaryId(); as id) {
-      <app-session-summary [sessionId]="id" (done)="leave()" />
+      <app-session-summary [sessionId]="id" [showSets]="historyOpen()" (done)="leave()" />
     } @else if (liveOpen()) {
       <app-live-session (back)="leave()" (finished)="openSummary($event)" (discarded)="leave()" />
     } @else {
@@ -83,6 +84,8 @@ export class TodayPage {
   private readonly stale = signal(false);
 
   protected readonly summaryId = computed(() => this.params().get(SUMMARY_PARAM));
+  /** O calendário abre o histórico já com as séries visíveis; ao concluir agora, elas continuam atrás do botão de edição. */
+  protected readonly historyOpen = computed(() => this.params().get(HISTORY_PARAM) === '1');
   /**
    * O treino ao vivo abre pelo endereço. Depois da primeira conferência ele só depende do endereço: terminar ou cancelar o
    * treino muda o endereço (resumo ou Hoje), e a tela não pode sair do lugar por conta própria no meio dessa troca.
@@ -110,11 +113,11 @@ export class TodayPage {
   }
 
   protected openLive(): void {
-    void this.go({ [LIVE_PARAM]: LIVE_VALUE, [SUMMARY_PARAM]: null }, false);
+    void this.go({ [LIVE_PARAM]: LIVE_VALUE, [SUMMARY_PARAM]: null, [HISTORY_PARAM]: null }, false);
   }
 
   protected openSummary(sessionId: string): void {
-    void this.go({ [LIVE_PARAM]: null, [SUMMARY_PARAM]: sessionId }, true);
+    void this.go({ [LIVE_PARAM]: null, [SUMMARY_PARAM]: sessionId, [HISTORY_PARAM]: null }, true);
   }
 
   /** Fecha a visão (o treino ao vivo ou o resumo) e volta ao dia: uma entrada atrás do histórico, ou Hoje direto. */
