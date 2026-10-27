@@ -13,11 +13,18 @@ import { TrainingGlyph } from '../shell/training-glyph';
   selector: 'app-program-suggestion',
   imports: [TrainingGlyph],
   template: `
-    @if (loading() || programs().length > 0 || error()) {
-      <section class="suggest ui-card" aria-labelledby="program-title">
-        <h3 id="program-title" class="title" i18n="@@training.program.title">
-          Escolha seu programa
-        </h3>
+    @if (sheetMode() || loading() || programs().length > 0 || error()) {
+      <section
+        class="suggest ui-card"
+        [attr.aria-labelledby]="sheetMode() ? null : 'program-title'"
+        aria-label="Escolha seu programa"
+        i18n-aria-label="@@training.program.label"
+      >
+        @if (!sheetMode()) {
+          <h3 id="program-title" class="title" i18n="@@training.program.title">
+            Escolha seu programa
+          </h3>
+        }
         @if (loading()) {
           <p class="status" role="status">
             <span class="ui-spinner" aria-hidden="true"></span>
@@ -54,9 +61,12 @@ import { TrainingGlyph } from '../shell/training-glyph';
             <span>{{ message }}</span>
           </p>
         }
+        @if (!loading() && programs().length === 0 && !error() && sheetMode()) {
+          <p class="status" i18n="@@training.program.empty">Nenhum programa disponível agora.</p>
+        }
         @if (dismissible()) {
           <button type="button" class="secondary ui-btn" (click)="dismissed.emit()">
-            <span i18n="@@training.program.dismiss">Agora não</span>
+            <span>{{ dismissLabel() }}</span>
           </button>
         }
       </section>
@@ -104,7 +114,12 @@ export class ProgramSuggestion {
 
   /** Quem já tem fichas livres pode dispensar a sugestão; a conta sem nenhuma ficha não. */
   readonly dismissible = input(false);
+  /** Dentro da folha, o título vem dela e a sugestão também informa quando não há programa local. */
+  readonly sheetMode = input(false);
+  readonly dismissLabel = input($localize`:@@training.program.dismiss:Agora não`);
   readonly dismissed = output<void>();
+  /** A escolha foi gravada no aparelho; quem abriu a folha decide qual treino começar em seguida. */
+  readonly selected = output<RoutineTemplate>();
 
   protected readonly programs = signal<readonly RoutineTemplate[]>([]);
   protected readonly loading = signal(true);
@@ -129,6 +144,7 @@ export class ProgramSuggestion {
       const result = await this.routines.selectProgram(template.id);
       switch (result.status) {
         case 'saved':
+          this.selected.emit(template);
           return;
         case 'no-exercises':
           this.error.set(

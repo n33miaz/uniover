@@ -25,6 +25,11 @@ export function programDismissedKey(accountId: string): string {
   return `uniover.training.program-dismissed.${accountId}`;
 }
 
+/** Chave diária: ao seguir sem programa, a pergunta não interrompe outro início no mesmo dia. */
+export function programStartDismissedKey(accountId: string, day: string): string {
+  return `uniover.training.program-start-dismissed.${accountId}.${day}`;
+}
+
 export const FORGOTTEN_AFTER_MS = 12 * 60 * 60 * 1000;
 
 /** Uma linha da rotina do dia, como a tela de Hoje a mostra. */
@@ -51,7 +56,7 @@ export interface OtherDevice {
 }
 
 /** O que acontece ao pedir para iniciar um treino. */
-export type StartOutcome = 'started' | 'resumed' | 'blocked' | 'storage-full';
+export type StartOutcome = 'started' | 'resumed' | 'blocked' | 'storage-full' | 'program-choice';
 
 const SESSION_URL = /\/sessions\/([^/?]+)(?:\/sets\/([^/?]+))?$/;
 
@@ -95,6 +100,8 @@ export class TodayStore {
   readonly programId = signal<string | null>(null);
   /** A pessoa dispensou a sugestão de programa neste aparelho (só vale com fichas livres; sem fichas ela fica). */
   readonly suggestionDismissed = signal(false);
+  /** A pessoa preferiu seguir sem programa neste dia; amanhã a escolha volta a ficar disponível. */
+  readonly startSuggestionDismissed = signal(false);
   /**
    * Sugerir o programa da semana: a conta ainda não tem programa ativo, não há treino aberto e a sugestão não foi
    * dispensada. Escolhido o programa, ela some sozinha e Hoje abre no treino do dia.
@@ -106,6 +113,15 @@ export class TodayStore {
       this.active() === undefined &&
       this.otherDevice() === undefined &&
       (this.entries().length === 0 || !this.suggestionDismissed()),
+  );
+  /** Antes de abrir uma sessão nova, dá outra chance de escolher um programa semanal. */
+  readonly needsProgramChoice = computed(
+    () =>
+      this.homeReady() &&
+      this.programId() === null &&
+      this.active() === undefined &&
+      this.otherDevice() === undefined &&
+      !this.startSuggestionDismissed(),
   );
   /** O nome da rotina em andamento (para o cartão "Continuar treino"). */
   readonly activeRoutine = signal<LocalRoutine | undefined>(undefined);
@@ -246,6 +262,7 @@ export class TodayStore {
     }
     this.programId.set(programId);
     this.suggestionDismissed.set(this.readDismissed());
+    this.startSuggestionDismissed.set(this.readStartDismissed(day));
     this.plan.set(planForDay(all, sessions, now, programId));
     this.entries.set(entries);
     this.week.set(week);
@@ -264,6 +281,18 @@ export class TodayStore {
     }
   }
 
+  /** Guarda só até o fim do dia a opção de começar sem escolher um programa semanal. */
+  dismissProgramBeforeStart(): void {
+    this.startSuggestionDismissed.set(true);
+    const id = this.account.id();
+    if (id === null) return;
+    try {
+      this.storage?.setItem(programStartDismissedKey(id, this.dayKey()), '1');
+    } catch {
+      // Sem armazenamento (janela privada): a pergunta pode voltar depois de recarregar.
+    }
+  }
+
   private readDismissed(): boolean {
     const id = this.account.id();
     if (id === null) return false;
@@ -274,6 +303,20 @@ export class TodayStore {
     }
   }
 
+  private readStartDismissed(day: string): boolean {
+    const id = this.account.id();
+    if (id === null) return false;
+    try {
+      return this.storage?.getItem(programStartDismissedKey(id, day)) === '1';
+    } catch {
+      return this.startSuggestionDismissed();
+    }
+  }
+
+  private dayKey(): string {
+    return new Date(this.runtime.now()).toDateString();
+  }
+
   /** Escolhe outra rotina para o cartão do dia (só vale até a tela sair). */
   chooseRoutine(routineId: string): void {
     this.chosenRoutineId.set(routineId);
@@ -281,6 +324,7 @@ export class TodayStore {
 
   /** Abre o treino de uma rotina (ou o treino livre, sem rotina). */
   async start(routineId: string | null): Promise<StartOutcome> {
+    if (this.needsProgramChoice()) return 'program-choice';
     const result = await this.sessions.start(routineId);
     switch (result.status) {
       case 'started':

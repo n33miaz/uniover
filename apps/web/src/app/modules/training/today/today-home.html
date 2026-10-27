@@ -245,3 +245,13 @@
     (closed)="pickerOpen.set(false)"
   />
 }
+
+@if (programChoiceOpen()) {
+  <app-training-sheet
+    [heading]="programHeading"
+    [dismissLabel]="programSkipLabel"
+    (closed)="continueWithoutProgram()"
+  >
+    <app-program-suggestion [sheetMode]="true" (selected)="chooseProgram()" />
+  </app-training-sheet>
+}
