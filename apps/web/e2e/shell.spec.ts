@@ -9,7 +9,7 @@ import {
 } from './fixtures';
 import { settle } from './screens/screen-helpers';
 
-const chips = (page: Page) => page.getByRole('list', { name: 'Informações úteis' });
+const agentIndicator = (page: Page) => page.locator('.agent-status');
 const blocks = (page: Page) => page.locator('article.card');
 // TV e Treino, que já têm tela, e os seis planejados, que aparecem como "Em breve".
 const PLANNED = [
@@ -32,19 +32,19 @@ async function expectNoSeriousA11yViolations(page: Page) {
 }
 
 test.describe('início e navegação', () => {
-  test('mostra a faixa e os blocos, entra em /tv e volta pelo Início', async ({ page }, info) => {
+  test('mostra a bolinha e os blocos, entra em /tv e volta pelo Início', async ({ page }, info) => {
     await page.goto('/');
     await expect(page.locator('html')).toHaveAttribute('lang', 'pt-BR');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Bom dia|Boa tarde|Boa noite/);
-    await expect(chips(page)).toContainText('Agente sem dados');
-    await expect(chips(page)).toContainText('Vigia sem dados');
+    await expect(agentIndicator(page)).toHaveAttribute('aria-label', 'Agente sem dados');
+    await expect(agentIndicator(page)).toHaveAttribute('title', 'Agente sem dados');
     await expect(blocks(page)).toHaveCount(MODULE_COUNT);
     await expect(page.getByRole('navigation', { name: 'Abas do módulo' })).toHaveCount(0);
     await expectNoHorizontalScroll(page);
     await settle(page);
     await screenshot(page, `test-results/home-${info.project.name}.png`);
 
-    await page.getByRole('link', { name: 'Abrir controle' }).click();
+    await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await expect(page).toHaveURL(/\/tv$/);
     await expect(page.getByRole('heading', { level: 1, name: 'TV' })).toBeVisible();
     // A TV é uma tela só: não há barra de abas em /tv.
@@ -66,6 +66,14 @@ test.describe('início e navegação', () => {
     await expect(planned.locator('h3')).toHaveText(PLANNED);
     await expect(planned.locator('a, button, [tabindex]')).toHaveCount(0);
     await expect(planned.locator('.badges')).toHaveText(PLANNED.map(() => 'Em breve'));
+    await expect(page.locator('article .desc')).toHaveCount(0);
+    expect(
+      await planned
+        .locator('.badges')
+        .evaluateAll((badges) =>
+          badges.every((badge) => badge.parentElement?.matches('article.card')),
+        ),
+    ).toBe(true);
     // Só TV e Treino levam a algum lugar.
     await expect(page.locator('article.card a')).toHaveCount(2);
 
@@ -220,7 +228,7 @@ test.describe('casca offline e service worker', () => {
 
     await context.setOffline(true);
     await page.reload();
-    await expect(chips(page)).toBeVisible();
+    await expect(agentIndicator(page)).toBeVisible();
     await expect(blocks(page)).toHaveCount(MODULE_COUNT);
     await expect(status(page, 'Sem conexão')).toBeVisible();
     await expect(status(page, 'Acordando')).toHaveCount(0);

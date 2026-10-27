@@ -113,10 +113,23 @@ describe('HomePage', () => {
     expect((await render()).el.querySelector('h1')?.textContent).toBe('Boa noite, Neemias');
   });
 
-  it('says "no data" in the info strip while the status has nothing to tell', async () => {
+  it('shows the agent state in the accessible indicator, without the old info strip', async () => {
     const { el } = await render();
-    const chips = Array.from(el.querySelectorAll('.chips li')).map((c) => c.textContent?.trim());
-    expect(chips).toEqual(['Agente sem dados', 'Vigia sem dados']);
+    const indicator = el.querySelector<HTMLElement>('.agent-status')!;
+    expect(el.querySelector('.chips')).toBeNull();
+    expect(indicator.classList.contains('neutral')).toBe(true);
+    expect(indicator.getAttribute('aria-label')).toBe('Agente sem dados');
+    expect(indicator.getAttribute('title')).toBe('Agente sem dados');
+
+    status.set({ ...status(), agent: 'online' });
+    const online = (await render()).el.querySelector<HTMLElement>('.agent-status')!;
+    expect(online.classList.contains('ok')).toBe(true);
+    expect(online.getAttribute('aria-label')).toBe('Agente ligado');
+
+    status.set({ ...status(), agent: 'offline' });
+    const offline = (await render()).el.querySelector<HTMLElement>('.agent-status')!;
+    expect(offline.classList.contains('warn')).toBe(true);
+    expect(offline.getAttribute('aria-label')).toBe('Agente desligado');
   });
 
   it('asks the status to follow the house while on screen and lets go when it leaves', async () => {
@@ -127,61 +140,10 @@ describe('HomePage', () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
-  it('colours the strip by state and always says it in words as well', async () => {
-    const strip = async (next: Partial<HomeStatus>) => {
-      status.set({
-        userName: null,
-        agent: 'unknown',
-        watcher: 'unknown',
-        serviceDown: false,
-        ...next,
-      });
-      const { el } = await render();
-      return Array.from(el.querySelectorAll('.chips li')).map((chip) => [
-        chip.textContent?.trim(),
-        chip.classList.contains('ok') ? 'ok' : chip.classList.contains('warn') ? 'warn' : 'neutral',
-        chip.querySelector('.dot')?.classList.contains('hollow') ?? false,
-      ]);
-    };
-    expect(await strip({ agent: 'online', watcher: 'ok' })).toEqual([
-      ['Agente ligado', 'ok', false],
-      ['Vigia sem avisos', 'ok', false],
-    ]);
-    expect(await strip({ agent: 'offline' })).toEqual([
-      ['Agente desligado', 'warn', false],
-      ['Vigia sem dados', 'neutral', true],
-    ]);
-    expect(await strip({ agent: 'online', watcher: 'alert' })).toEqual([
-      ['Agente ligado', 'ok', false],
-      ['Vigia com aviso', 'warn', false],
-    ]);
-    expect(await strip({ serviceDown: true })).toEqual([
-      ['Agente sem dados', 'neutral', true],
-      ['Vigia sem dados', 'neutral', true],
-      ['Serviço fora do ar', 'warn', false],
-    ]);
-  });
-
-  it('reflects agent, watcher and service state when known', async () => {
-    status.set({ userName: null, agent: 'offline', watcher: 'alert', serviceDown: true });
-    const { el } = await render();
-    const chips = Array.from(el.querySelectorAll('.chips li')).map((c) => c.textContent?.trim());
-    expect(chips).toEqual(['Agente desligado', 'Vigia com aviso', 'Serviço fora do ar']);
-    status.set({ userName: null, agent: 'online', watcher: 'ok', serviceDown: false });
-    const again = Array.from((await render()).el.querySelectorAll('.chips li')).map((c) =>
-      c.textContent?.trim(),
-    );
-    expect(again).toEqual(['Agente ligado', 'Vigia sem avisos']);
-  });
-
-  it('shows one block per module, TV and Treino first and then the planned ones, in order', async () => {
+  it('keeps all modules for the owner, TV and Treino first and then the planned ones, in order', async () => {
     const { el } = await render();
     expect(titles(el)).toEqual(['TV', 'Treino', ...PLANNED]);
-    expect(
-      Array.from(el.querySelectorAll<HTMLElement>('li.widget.wide')).map(
-        (widget) => widget.querySelector('article')?.dataset['module'],
-      ),
-    ).toEqual(['training']);
+    expect(el.querySelectorAll('li.widget.wide')).toHaveLength(0);
   });
 
   it('links only the modules that have a screen', async () => {
@@ -193,11 +155,7 @@ describe('HomePage', () => {
       'TV: Abrir controle',
       'Treino: Ver treino',
     ]);
-    expect(
-      Array.from(el.querySelectorAll('article .card-action')).map((action) =>
-        action.textContent?.trim(),
-      ),
-    ).toEqual(['Abrir controle', 'Ver treino']);
+    expect(el.querySelectorAll('article .card-action')).toHaveLength(0);
     expect(el.querySelector('article[data-module="tv"] .chip')?.textContent ?? '').not.toContain(
       'Em breve',
     );
@@ -224,24 +182,14 @@ describe('HomePage', () => {
     expect(training.querySelector('a.card-link')?.getAttribute('href')).toBe('/treino');
   });
 
-  it('keeps the descriptions, badges and actions aligned without adding a second control', async () => {
+  it('removes descriptions and keeps badges inside their cards without adding a second control', async () => {
     const { el } = await render();
     expect(el.querySelectorAll('article .badges')).toHaveLength(8);
-    expect(
-      Array.from(el.querySelectorAll('article .desc')).map((description) =>
-        description.textContent?.trim(),
-      ),
-    ).toEqual([
-      'Ligar, volume, canais e apps',
-      'Fichas, séries e progresso',
-      'Aparelhos e linha do tempo',
-      'Seus serviços na internet',
-      'A rede de casa num lugar só',
-      'Cópia das fotos do Android',
-      'Avisos e notificações',
-      'Mais adiante: controlar o PC',
-    ]);
-    expect(el.querySelectorAll('article .card-action')).toHaveLength(2);
+    expect(el.querySelectorAll('article .desc')).toHaveLength(0);
+    for (const card of Array.from(el.querySelectorAll<HTMLElement>('article.card'))) {
+      expect(card.querySelector('.badges')?.parentElement).toBe(card);
+    }
+    expect(el.querySelectorAll('article .card-action')).toHaveLength(0);
     expect(el.querySelectorAll('article a.card-link')).toHaveLength(2);
   });
 
@@ -270,20 +218,20 @@ describe('HomePage', () => {
       el
         .querySelector('article[data-module="training"]')
         ?.parentElement?.classList.contains('wide'),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       el.querySelector('article[data-module="tv"]')?.parentElement?.classList.contains('wide'),
     ).toBe(false);
   });
 
-  it('offers shortcuts to the devices and settings screens', async () => {
+  it('offers shortcuts to Dispositivos and Configurações', async () => {
     const { el } = await render();
     const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('.shortcuts a.shortcut'));
     expect(links.map((a) => a.getAttribute('href'))).toEqual(['/ajustes/aparelhos', '/ajustes']);
     expect(el.querySelectorAll('.shortcut-hint')).toHaveLength(0);
     expect(links.map((a) => a.querySelector('.shortcut-title')?.textContent?.trim())).toEqual([
-      'Aparelhos',
-      'Ajustes',
+      'Dispositivos',
+      'Configurações',
     ]);
     expect(el.querySelector('.shortcuts')?.getAttribute('aria-label')).toBe('Atalhos');
   });
@@ -303,41 +251,56 @@ describe('HomePage', () => {
     expect(new Set(drawings).size).toBe(3);
   });
 
-  it('shows no live state on the TV block while the agent state is unknown', async () => {
+  it('does not put a live state on the TV card', async () => {
     const { el } = await render();
     expect(el.querySelector('article[data-module="tv"] .badges')?.textContent?.trim()).toBe('');
   });
 
-  it('reflects the agent on the TV block when it is known, and never on other modules', async () => {
-    status.set({ ...status(), agent: 'online' });
-    const online = (await render()).el;
-    expect(
-      online.querySelector('article[data-module="tv"] .badges .chip.ok')?.textContent,
-    ).toContain('Pronto para usar');
-    expect(
-      online.querySelector('article[data-module="training"] .badges')?.textContent,
-    ).not.toContain('Em breve');
-    expect(online.querySelector('article[data-module="training"] .chip.ok')).toBeNull();
-    expect(online.querySelector('article[data-module="health"] .chip.ok')).toBeNull();
-
-    status.set({ ...status(), agent: 'offline' });
-    const offline = (await render()).el;
-    expect(
-      offline.querySelector('article[data-module="tv"] .badges .chip.warn')?.textContent,
-    ).toContain('Sem agente em casa');
+  it('gives a guest only the Configurações shortcut, in the same style as the owner', async () => {
+    TestBed.inject(SessionState).setUser({
+      id: ACCOUNT,
+      email: 'convidado@exemplo.com',
+      displayName: 'Convidado',
+      role: 'guest',
+      permissions: ['module:tv'],
+    });
+    const { el } = await render();
+    const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('.shortcuts a.shortcut'));
+    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/ajustes']);
+    expect(links[0].querySelector('.shortcut-title')?.textContent?.trim()).toBe('Configurações');
+    expect(links[0].classList.contains('ui-card')).toBe(true);
+    expect(el.querySelector('.shortcuts')?.getAttribute('aria-label')).toBe('Atalhos');
   });
 
-  it('hides every glyph from screen readers while keeping each module description visible', async () => {
+  it('shows a guest the released modules and the three planned cards at the end, without the owner shortcuts', async () => {
+    TestBed.inject(SessionState).setUser({
+      id: ACCOUNT,
+      email: 'convidado@exemplo.com',
+      displayName: 'Convidado',
+      role: 'guest',
+      permissions: ['module:training'],
+    });
+    const { fixture, el } = await render();
+    expect(titles(el)).toEqual(['Treino', 'Controle do PC', 'Rede da casa', 'Backup de fotos']);
+    expect(el.querySelector('.shortcuts a[href="/ajustes/aparelhos"]')).toBeNull();
+    expect(el.querySelector('.agent-status')).toBeNull();
+    expect(el.querySelector('.grid')?.classList.contains('guest-grid')).toBe(true);
+    el.querySelector<HTMLButtonElement>('button.edit')!.click();
+    await fixture.whenStable();
+    expect(el.querySelectorAll('app-home-edit-sheet [data-id]')).toHaveLength(4);
+  });
+
+  it('hides every module icon from screen readers without rendering descriptions', async () => {
     const { el } = await render();
     for (const svg of Array.from(el.querySelectorAll('article svg'))) {
       expect(svg.getAttribute('aria-hidden')).toBe('true');
     }
-    expect(el.querySelectorAll('article .desc')).toHaveLength(8);
+    expect(el.querySelectorAll('article .desc')).toHaveLength(0);
   });
 
-  it('draws a glyph of its own for every module, planned ones included', async () => {
+  it('draws an app icon of its own for every module, planned ones included', async () => {
     const { el } = await render();
-    const icons = Array.from(el.querySelectorAll('article .ico'));
+    const icons = Array.from(el.querySelectorAll('article app-module-app-icon.ico'));
     expect(icons).toHaveLength(8);
     const drawings = icons.map((icon) =>
       Array.from(icon.querySelectorAll('svg path'))

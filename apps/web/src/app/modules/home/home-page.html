@@ -1,6 +1,18 @@
 <section class="home">
   <header class="hero ui-rise">
     <app-home-glyph class="scene" [name]="dayPart()" />
+    @if (canSeeAgent()) {
+      @let agent = agentIndicator();
+      <span
+        class="agent-status"
+        [class.ok]="agent.tone === 'ok'"
+        [class.warn]="agent.tone === 'warn'"
+        [class.neutral]="agent.tone === 'neutral'"
+        role="status"
+        [attr.aria-label]="agent.label"
+        [attr.title]="agent.label"
+      ></span>
+    }
     <div class="hero-text">
       <p class="date">{{ dateLabel() }}</p>
       <h1>{{ greeting() }}</h1>
@@ -8,50 +20,38 @@
     <p class="time">{{ time() }}</p>
   </header>
 
-  <ul
-    class="chips ui-plain ui-stagger"
-    aria-label="Informações úteis"
-    i18n-aria-label="@@home.chips-label"
-  >
-    <!-- O chip troca de elemento quando o estado muda (o rótulo muda junto): a entrada suave marca a troca. -->
-    @for (chip of chips(); track chip.id + chip.label) {
-      <li
-        class="chip ui-chip outlined ui-rise"
-        [class.ok]="chip.tone === 'ok'"
-        [class.warn]="chip.tone === 'warn'"
-      >
-        <span class="dot ui-dot" [class.hollow]="chip.tone === 'neutral'" aria-hidden="true"></span>
-        {{ chip.label }}
-      </li>
-    }
-  </ul>
-
-  <ul
-    class="shortcuts ui-plain ui-stagger"
-    aria-label="Atalhos"
-    i18n-aria-label="@@home.shortcuts-label"
-  >
-    @for (shortcut of shortcuts; track shortcut.id) {
-      <li class="ui-rise">
-        <a class="shortcut ui-card ui-press" [routerLink]="shortcut.link">
-          <span class="ui-tile"><app-home-glyph [name]="shortcut.glyph" /></span>
-          <span class="shortcut-title">{{ shortcut.title }}</span>
-        </a>
-      </li>
-    }
-  </ul>
+  @if (shortcuts().length > 0) {
+    <ul
+      class="shortcuts ui-plain ui-stagger"
+      aria-label="Atalhos"
+      i18n-aria-label="@@home.shortcuts-label"
+    >
+      @for (shortcut of shortcuts(); track shortcut.id) {
+        <li class="ui-rise">
+          <a class="shortcut ui-card ui-press" [routerLink]="shortcut.link">
+            <span class="ui-tile"><app-home-glyph [name]="shortcut.glyph" /></span>
+            <span class="shortcut-title">{{ shortcut.title }}</span>
+          </a>
+        </li>
+      }
+    </ul>
+  }
 
   <div class="section-head">
-    <h2 id="modules-label" class="ui-section-label" i18n="@@home.modules">Módulos</h2>
-    <button #editButton type="button" class="edit ui-btn secondary" (click)="openEditor()">
-      <app-home-glyph name="pencil" />
+    <h2 id="modules-label" i18n="@@home.modules">Módulos</h2>
+    <button #editButton type="button" class="edit" (click)="openEditor()">
+      <app-home-glyph name="pen-line" />
       <span i18n="@@home.edit">Editar</span>
     </button>
   </div>
 
-  <ul class="grid ui-stagger ui-plain" aria-labelledby="modules-label">
+  <ul
+    class="grid ui-stagger ui-plain"
+    [class.guest-grid]="isGuest()"
+    aria-labelledby="modules-label"
+  >
     @for (widget of widgets(); track widget.definition.id) {
-      <li class="widget ui-rise" [class.wide]="widget.size === 'wide'">
+      <li class="widget ui-rise">
         <!-- Módulo sem tela ainda (sem caminho): cartão calmo, sem link nem resposta ao toque. -->
         @let path = registry.path(widget.definition);
         <article
@@ -61,34 +61,11 @@
           [class.planned]="!path"
           [attr.data-module]="widget.definition.id"
         >
-          <span class="ico ui-tile lg"
-            ><app-home-glyph [name]="glyphFor(widget.definition)"
-          /></span>
-          <div class="card-copy">
-            <h3>{{ widget.definition.title }}</h3>
-            <p class="desc">{{ widget.definition.description }}</p>
-          </div>
-          <div class="card-foot">
-            <div class="badges">
-              @if (widget.definition.status === 'soon') {
-                <span class="chip ui-chip" i18n="@@home.soon">Em breve</span>
-              }
-              @if (live(widget.definition); as live) {
-                <span
-                  class="chip ui-chip"
-                  [class.ok]="live.tone === 'ok'"
-                  [class.warn]="live.tone === 'warn'"
-                >
-                  <span class="dot ui-dot" aria-hidden="true"></span>
-                  {{ live.label }}
-                </span>
-              }
-            </div>
-            @if (path && widget.definition.actionLabel; as actionLabel) {
-              <span class="card-action">
-                {{ actionLabel }}
-                <app-home-glyph name="chevron" />
-              </span>
+          <app-module-app-icon class="ico" [icon]="widget.definition.icon" />
+          <h3>{{ widget.definition.title }}</h3>
+          <div class="badges">
+            @if (widget.definition.status === 'soon') {
+              <span class="chip ui-chip" i18n="@@home.soon">Em breve</span>
             }
           </div>
           @if (path) {
