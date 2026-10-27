@@ -15,32 +15,39 @@ test.describe('rotinas: lista e modelos', () => {
   }) => {
     await startTraining(context, page);
     await openTraining(page, '/treino/rotinas');
+    const next = page.locator('.next-card');
+    await expect(next).toContainText('Treino A · Peito e tríceps');
+    await expect(next).toContainText('Próxima');
+    await expect(next).toContainText('3 exercícios · 10 séries');
+    await page.getByRole('button', { name: 'Ver Mais 2 Rotinas' }).click();
     const rows = page.locator('.list .ui-row');
     await expect(rows).toHaveCount(2);
     await expect(rows.nth(0)).toContainText('Treino A · Peito e tríceps');
-    await expect(rows.nth(0)).toContainText('próxima');
-    await expect(rows.nth(0)).toContainText('3 exercícios · 10 séries');
     await expect(rows.nth(1)).toContainText('Treino B · Costas e bíceps');
+    await expect(page.locator('.routine-line .edit')).toHaveCount(2);
     await rows.nth(1).click();
     await expect(page).toHaveURL(new RegExp(`/treino/rotinas/${SEED_ROUTINE_IDS.b}$`));
     await expect(page.getByRole('heading', { name: 'Editar rotina' })).toBeVisible();
   });
 
-  test('"Usar modelo" escolhe o programa: o aparelho cria as fichas, a lista as mostra e o servidor as recebe', async ({
+  test('compara modelos antes de criar o programa: o aparelho cria as rotinas e o servidor as recebe', async ({
     page,
     context,
   }) => {
     const server = await startTraining(context, page, { routines: false });
     await openTraining(page, '/treino/rotinas');
     await expect(page.getByText('Sem rotinas ainda')).toBeVisible();
-    await page.getByRole('button', { name: 'Usar modelo' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Usar um modelo' });
+    await page.getByRole('button', { name: 'Comparar Modelos' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Comparar Modelos' });
     await expect(sheet.getByRole('button', { name: /Full body/ })).toBeVisible();
     await sheet.getByRole('button', { name: /ABC/ }).click();
-    await expect(page.locator('.list .ui-row')).toHaveCount(3);
-    await expect(
-      page.getByText(/Programa ABC escolhido. Hoje abre no treino do dia./),
-    ).toBeVisible();
+    await expect(sheet).toContainText('A · Peito e tríceps');
+    await expect(sheet).toContainText(
+      'O plano começa pelo modelo; o programa organiza as rotinas da semana.',
+    );
+    await sheet.getByRole('button', { name: 'Usar Este Modelo' }).click();
+    await expect(page.locator('.next-card')).toBeVisible();
+    await expect(page.getByText(/Modelo ABC escolhido. Hoje abre no treino do dia./)).toBeVisible();
     await expect(
       page.getByText('1 exercício do modelo não está no seu catálogo e ficou de fora.'),
     ).toBeVisible();
@@ -48,14 +55,14 @@ test.describe('rotinas: lista e modelos', () => {
     expect(server.rows('routines').every((row) => row['programId'] === 'abc')).toBe(true);
   });
 
-  test('sem rede, "Usar modelo" fica desligado e diz por quê', async ({ page, context }) => {
+  test('sem rede, comparar modelos fica desligado e diz por quê', async ({ page, context }) => {
     await startTraining(context, page);
     await openTraining(page, '/treino/rotinas');
-    await expect(page.locator('.list .ui-row').first()).toBeVisible();
+    await expect(page.locator('.next-card')).toBeVisible();
     await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-    await expect(page.getByRole('button', { name: 'Usar modelo' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Comparar Modelos' })).toBeDisabled();
     await expect(page.getByText('Os modelos prontos precisam de rede')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Nova rotina' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Nova Rotina' })).toBeVisible();
   });
 });
 
@@ -133,8 +140,8 @@ test.describe('rotinas: editor', () => {
     const server = await startTraining(context, page);
     await openTraining(page, '/treino/rotinas');
     // A sugestão de nome conta as rotinas que o aparelho já tem: espera elas chegarem à lista.
-    await expect(page.locator('.list .ui-row')).toHaveCount(2);
-    await page.getByRole('link', { name: 'Nova rotina' }).click();
+    await expect(page.locator('.next-card')).toBeVisible();
+    await page.getByRole('link', { name: 'Nova Rotina' }).click();
     await expect(page.getByLabel('Nome da rotina')).toHaveValue('Treino C');
     await page.getByLabel('Nome da rotina').fill('Pernas');
     await page.getByRole('button', { name: 'Adicionar exercício' }).click();
@@ -144,7 +151,7 @@ test.describe('rotinas: editor', () => {
     await sheet.locator('.ui-row').click();
     await page.getByRole('button', { name: 'Salvar rotina' }).click();
     await expect(page).toHaveURL(/\/treino\/rotinas$/);
-    await expect(page.locator('.list .ui-row')).toHaveCount(3);
+    await expect(page.locator('.next-card')).toBeVisible();
     await expect.poll(() => server.rows('routines').length).toBe(3);
   });
 
@@ -172,11 +179,11 @@ test.describe('rotinas: editor', () => {
   }) => {
     const server = await startTraining(context, page);
     await openTraining(page, '/treino/rotinas');
-    await page.locator('.list .ui-row').first().click();
+    await page.locator('.next-card').click();
     await page.getByRole('button', { name: 'Cancelar' }).click();
     await expect(page).toHaveURL(/\/treino\/rotinas$/);
 
-    await page.locator('.list .ui-row').first().click();
+    await page.locator('.next-card').click();
     await page.getByRole('button', { name: 'Descer Supino reto com barra' }).click();
     await page.getByRole('button', { name: 'Cancelar' }).click();
     await expect(page.getByText('Sair sem salvar?')).toBeVisible();
@@ -198,7 +205,7 @@ test.describe('rotinas: editor', () => {
     await page.getByRole('button', { name: 'Apagar rotina' }).click();
     await page.locator('.ui-notice').getByRole('button', { name: 'Apagar', exact: true }).click();
     await expect(page).toHaveURL(/\/treino\/rotinas$/);
-    await expect(page.locator('.list .ui-row')).toHaveCount(1);
+    await expect(page.locator('.next-card')).toBeVisible();
     await expect
       .poll(() => server.rows('routines').find((row) => row.id === SEED_ROUTINE_IDS.b)?.['deleted'])
       .toBe(true);

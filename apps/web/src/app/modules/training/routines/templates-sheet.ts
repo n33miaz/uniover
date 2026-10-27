@@ -11,6 +11,7 @@ import {
   HISTORICAL_REJECTED_TEMPLATE_ID,
   RoutineRepository,
 } from '../data/routines/routine-repository';
+import { daysText, programSummary } from './program-summary';
 import { TrainingGlyph } from '../shell/training-glyph';
 import { TrainingSheet } from '../shell/training-sheet';
 
@@ -29,8 +30,8 @@ export interface TemplateCreated {
 }
 
 /**
- * Folha "Usar modelo": modelos vêm do servidor e só carregam com rede. Modelos com notas extensas abrem os detalhes
- * antes de disponibilizar a ação de criar; o que o catálogo do aparelho não tem fica de fora, e a lista avisa quantos.
+ * Folha para comparar modelos: a pessoa vê as rotinas e os dias antes de escolher. O modelo é o ponto de partida; ao
+ * escolher, ele vira o programa semanal, que organiza essas rotinas pelos dias. O que o catálogo não tem fica de fora.
  */
 @Component({
   selector: 'app-templates-sheet',
@@ -51,13 +52,9 @@ export interface TemplateCreated {
                 type="button"
                 class="ui-row"
                 [disabled]="creating()"
-                [attr.aria-expanded]="
-                  hasDetails(template) ? expandedTemplate() === template.id : null
-                "
-                [attr.aria-controls]="
-                  hasDetails(template) ? 'template-details-' + template.id : null
-                "
-                (click)="hasDetails(template) ? toggleDetails(template) : use(template)"
+                [attr.aria-expanded]="expandedTemplate() === template.id"
+                [attr.aria-controls]="'template-details-' + template.id"
+                (click)="toggleDetails(template)"
               >
                 <span class="ui-tile"><app-training-glyph name="list" /></span>
                 <span class="ui-row-text">
@@ -65,20 +62,36 @@ export interface TemplateCreated {
                   <span class="ui-row-sub">{{ summary(template) }}</span>
                 </span>
                 <span class="ui-chip">{{ daysText(template) }}</span>
+                <app-training-glyph
+                  class="template-chevron"
+                  [class.expanded]="expandedTemplate() === template.id"
+                  name="next"
+                />
               </button>
-              @if (expandedTemplate() === template.id && hasDetails(template)) {
+              @if (expandedTemplate() === template.id) {
                 <div class="template-details" [id]="'template-details-' + template.id">
-                  <p>{{ details(template) }}</p>
+                  <p class="weekly-plan">{{ weeklyPlan(template) }}</p>
+                  <ul class="routine-preview ui-plain">
+                    @for (routine of template.routines; track routine.name) {
+                      <li>
+                        <span>{{ routine.name }}</span>
+                        <span>{{ routineDays(routine.weekdays) }}</span>
+                      </li>
+                    }
+                  </ul>
+                  @if (details(template); as note) {
+                    <p>{{ note }}</p>
+                  }
                   <button
                     type="button"
-                    class="create-draft"
+                    class="primary ui-btn block create-draft"
                     [disabled]="creating()"
                     (click)="use(template)"
                   >
                     @if (isHistorical(template)) {
                       <span i18n="@@training.templates.use">Criar este rascunho parcial</span>
                     } @else {
-                      <span i18n="@@training.templates.choose">Escolher este programa</span>
+                      <span i18n="@@training.templates.choose">Usar Este Modelo</span>
                     }
                   </button>
                 </div>
@@ -87,7 +100,7 @@ export interface TemplateCreated {
           }
         </ul>
         <p class="note" i18n="@@training.templates.note">
-          Escolha um programa: Hoje abre no treino do dia da semana.
+          O plano começa pelo modelo; o programa organiza as rotinas da semana.
         </p>
       }
       @if (error(); as message) {
@@ -122,16 +135,35 @@ export interface TemplateCreated {
       margin: 0;
       white-space: pre-line;
     }
-    .create-draft {
-      justify-self: start;
-      min-height: 2.75rem;
-      padding: 0.5rem 0.875rem;
-      border: 1px solid var(--a-line);
-      border-radius: 0.75rem;
-      background: var(--a-surface);
+    .weekly-plan {
       color: var(--a-ink);
-      font: inherit;
-      font-weight: 600;
+    }
+    .routine-preview {
+      display: grid;
+      gap: var(--space-2);
+      margin: 0;
+    }
+    .routine-preview li {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-3);
+      padding-top: var(--space-2);
+      border-top: 1px solid var(--a-line);
+    }
+    .routine-preview li span:last-child {
+      flex: none;
+      color: var(--a-ink2);
+    }
+    .template-chevron {
+      flex: none;
+      color: var(--a-ink3);
+      transition: rotate var(--dur-fast) var(--ease-out);
+    }
+    .template-chevron.expanded {
+      rotate: 90deg;
+    }
+    .create-draft {
+      width: 100%;
     }
     .create-draft:disabled {
       opacity: 0.6;
@@ -140,6 +172,11 @@ export interface TemplateCreated {
     button.ui-row:disabled {
       opacity: 0.6;
       cursor: default;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .template-chevron {
+        transition: none;
+      }
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -151,7 +188,7 @@ export class TemplatesSheet {
   readonly created = output<TemplateCreated>();
   readonly closed = output<void>();
 
-  protected readonly heading = $localize`:@@training.templates.title:Usar um modelo`;
+  protected readonly heading = $localize`:@@training.templates.title:Comparar Modelos`;
   protected readonly cancelLabel = $localize`:@@training.templates.cancel:Cancelar`;
   protected readonly templates = signal<readonly RoutineTemplate[]>([]);
   protected readonly loading = signal(true);
@@ -178,12 +215,19 @@ export class TemplatesSheet {
     return template.description.split('\n\n').slice(1).join('\n\n');
   }
 
-  protected isHistorical(template: RoutineTemplate): boolean {
-    return template.id === HISTORICAL_REJECTED_TEMPLATE_ID;
+  protected weeklyPlan(template: RoutineTemplate): string {
+    const summary = programSummary(template.routines);
+    return $localize`:@@training.templates.weekly-plan:Este modelo organiza a semana assim: ${summary}:summary:.`;
   }
 
-  protected hasDetails(template: RoutineTemplate): boolean {
-    return template.description.includes('\n\n');
+  protected routineDays(days: readonly number[]): string {
+    return days.length > 0
+      ? daysText(days)
+      : $localize`:@@training.templates.no-days:Sem dia definido`;
+  }
+
+  protected isHistorical(template: RoutineTemplate): boolean {
+    return template.id === HISTORICAL_REJECTED_TEMPLATE_ID;
   }
 
   protected toggleDetails(template: RoutineTemplate): void {

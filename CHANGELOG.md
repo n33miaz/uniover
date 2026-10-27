@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.1](https://github.com/n33miaz/uniover/compare/v0.4.0...v0.4.1) (2026-10-27)
+
+
+### Features
+
+* **training:** show exercise images first
+* **training:** highlight next routine
+* **training:** keep progress evolution first
+* **settings:** edit system settings
+
+
+### Build
+
+* bump angular, dotnet 10.0.14 and agent dev tools
+
+
 ## [0.4.0](https://github.com/n33miaz/uniover/compare/v0.3.0...v0.4.0) (2026-10-21)
 
 

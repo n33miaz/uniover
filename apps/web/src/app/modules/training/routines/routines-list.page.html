@@ -29,39 +29,81 @@
       </p>
     </section>
   } @else {
-    <div class="meta">
-      <h2 class="ui-section-label" i18n="@@training.routines.heading">Suas rotinas</h2>
-      <p class="count">{{ countText() }}</p>
-    </div>
-    <ul class="list ui-group ui-plain">
-      @for (entry of entries(); track entry.routine.id) {
-        <li>
-          <a class="ui-row" [routerLink]="['/treino/rotinas', entry.routine.id]">
-            <span class="ui-tile" [class.off]="!entry.routine.active">{{ entry.letter }}</span>
-            <span class="ui-row-text">
-              @if (entry.next) {
-                <span class="eyebrow next" i18n="@@training.routines.next">próxima</span>
-              } @else if (!entry.routine.active) {
-                <span class="eyebrow" i18n="@@training.routines.inactive">fora da sequência</span>
-              }
-              <span class="ui-row-title">{{ entry.routine.name }}</span>
-              <span class="ui-row-sub">{{ summary(entry) }}</span>
-            </span>
-            <app-training-glyph class="chevron" name="next" />
-          </a>
-        </li>
-      }
-    </ul>
+    @if (featured(); as next) {
+      <a class="next-card ui-card" [routerLink]="['/treino/rotinas', next.routine.id]">
+        <span class="eyebrow next" i18n="@@training.routines.next">Próxima</span>
+        <span class="next-main">
+          <span class="ui-tile" [class.off]="!next.routine.active">{{ next.letter }}</span>
+          <span class="ui-row-text">
+            <span class="ui-row-title">{{ next.routine.name }}</span>
+            <span class="ui-row-sub">{{ summary(next) }}</span>
+          </span>
+          <app-training-glyph class="chevron" name="next" />
+        </span>
+      </a>
+    }
+
+    @if (hasMore()) {
+      <button
+        type="button"
+        class="show-more secondary ui-btn block"
+        [attr.aria-expanded]="showingAll()"
+        [attr.aria-controls]="'all-routines'"
+        (click)="toggleAll()"
+      >
+        <span>{{ moreLabel() }}</span>
+      </button>
+    }
+
+    @if (showingAll()) {
+      <div id="all-routines" class="all-routines">
+        <div class="meta">
+          <h2 class="ui-section-label" i18n="@@training.routines.heading">Todas as Rotinas</h2>
+          <p class="count">{{ countText() }}</p>
+        </div>
+        <ul class="list ui-group ui-plain">
+          @for (entry of entries(); track entry.routine.id) {
+            <li>
+              <div class="routine-line">
+                <a class="ui-row" [routerLink]="['/treino/rotinas', entry.routine.id]">
+                  <span class="ui-tile" [class.off]="!entry.routine.active">{{
+                    entry.letter
+                  }}</span>
+                  <span class="ui-row-text">
+                    @if (entry.next) {
+                      <span class="eyebrow next" i18n="@@training.routines.next">Próxima</span>
+                    } @else if (!entry.routine.active) {
+                      <span class="eyebrow" i18n="@@training.routines.inactive"
+                        >Fora da Sequência</span
+                      >
+                    }
+                    <span class="ui-row-title">{{ entry.routine.name }}</span>
+                    <span class="ui-row-sub">{{ summary(entry) }}</span>
+                  </span>
+                  <app-training-glyph class="chevron" name="next" />
+                </a>
+                <a
+                  class="edit secondary ui-btn"
+                  [routerLink]="['/treino/rotinas', entry.routine.id]"
+                  i18n="@@training.routines.edit"
+                  >Editar</a
+                >
+              </div>
+            </li>
+          }
+        </ul>
+      </div>
+    }
   }
 
   <div class="actions">
     <a class="primary ui-btn" routerLink="/treino/rotinas/nova">
       <app-training-glyph name="plus" />
-      <span i18n="@@training.routines.new">Nova rotina</span>
+      <span i18n="@@training.routines.new">Nova Rotina</span>
     </a>
     <button type="button" class="secondary ui-btn" [disabled]="!online()" (click)="openTemplates()">
       <app-training-glyph name="list" />
-      <span i18n="@@training.routines.template">Usar modelo</span>
+      <span i18n="@@training.routines.template">Comparar Modelos</span>
     </button>
   </div>
   @if (!online()) {

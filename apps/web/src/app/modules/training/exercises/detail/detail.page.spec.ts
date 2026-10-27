@@ -53,6 +53,8 @@ describe('ExerciseDetailPage', () => {
         'Barra',
       ]);
       expect(el.querySelectorAll('app-exercise-illustration img')).toHaveLength(2);
+      expect(el.querySelector('.detail')?.firstElementChild?.classList.contains('hero')).toBe(true);
+      expect(el.querySelector('.detail .back')).toBeNull();
       const hero = el.querySelector('.hero')!;
       expect(hero.querySelector('.visuals')?.nextElementSibling?.classList.contains('chips')).toBe(
         true,

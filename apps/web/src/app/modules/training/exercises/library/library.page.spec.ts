@@ -59,6 +59,18 @@ describe('ExerciseLibraryPage', () => {
     expect(rows(el)[4].getAttribute('href')).toBe('/treino/exercicios/supino-reto');
   });
 
+  it('puts the exercise illustration at the left edge of each catalog row', async () => {
+    const { fixture, el } = await open();
+    await eventually(fixture, () => expect(rows(el)).toHaveLength(5));
+
+    const row = rows(el)[4];
+    const body = row.querySelector('app-exercise-row-body')!;
+    expect(body.firstElementChild?.classList.contains('thumb')).toBe(true);
+    expect(row.querySelector('.thumb img')?.getAttribute('src')).toContain(
+      '/exercise-art/0042-relaxation.svg',
+    );
+  });
+
   it('finds an exercise without accent and without case, and writes the search in the address', async () => {
     const { fixture, el } = await open();
     await eventually(fixture, () => expect(rows(el)).toHaveLength(5));

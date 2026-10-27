@@ -16,7 +16,7 @@ const item = (exerciseSlug: string, targetSets = 2) => ({
   supersetGroup: null,
 });
 
-/** Um programa seg/ter/qua, no formato do servidor (a descrição sem notas abre direto, sem prévia). */
+/** Um programa seg/ter/qua, no formato do servidor para a prévia de comparação. */
 const WEEK_PROGRAM = {
   items: [
     {
@@ -63,11 +63,12 @@ async function chooseProgram(page: Page, name: RegExp, beforeChoosing?: () => vo
   await openTraining(page, '/treino/rotinas');
   // As fichas nascem no aparelho: o catálogo precisa já ter chegado.
   await expect.poll(() => countRows(page, 'exercises')).toBeGreaterThan(0);
-  await page.getByRole('button', { name: 'Usar modelo' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Usar um modelo' });
+  await page.getByRole('button', { name: 'Comparar Modelos' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Comparar Modelos' });
   await expect(sheet.getByRole('button', { name })).toBeVisible();
   beforeChoosing?.();
   await sheet.getByRole('button', { name }).click();
+  await sheet.getByRole('button', { name: 'Usar Este Modelo' }).click();
   await expect(page.getByText(/escolhido\. Hoje abre no treino do dia/)).toBeVisible();
 }
 

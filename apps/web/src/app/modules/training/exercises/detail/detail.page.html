@@ -18,13 +18,6 @@
 } @else {
   @let ex = exercise()!;
   <article class="detail">
-    <header class="head">
-      <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="goBack()">
-        <app-training-glyph name="back" />
-      </button>
-      <h2 class="name">{{ ex.name }}</h2>
-    </header>
-
     <section class="hero">
       <div class="visuals" [class.with-art]="hasArt()">
         @if (hasArt()) {
@@ -43,6 +36,8 @@
         }
       </ul>
     </section>
+
+    <h2 class="name">{{ ex.name }}</h2>
 
     @if (own()) {
       <p class="own-note" i18n="@@training.detail.origin-own">
