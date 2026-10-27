@@ -1,26 +1,32 @@
 :host {
   display: block;
+  width: 100%;
+  max-width: 320px;
 }
 
-/* Cartão claro nos dois temas: o arquivo é desenho preto sobre branco e não se altera (nem se recolore). */
+/* Cartão claro nos dois temas: o arquivo é desenho preto sobre branco e não se altera (nem se recolore). O cartão é o botão. */
 .card {
   position: relative;
+  display: block;
   width: 100%;
   max-width: 320px;
   aspect-ratio: 268 / 275;
+  padding: 0;
   overflow: hidden;
   border: 1px solid var(--a-line);
   border-radius: var(--radius);
   background: #fff;
+  cursor: pointer;
 }
 
-/* As duas poses ficam empilhadas: trocar é só mudar a opacidade, sem salto de layout e sem recarregar. */
+/* As duas poses ocupam exatamente a mesma caixa, empilhadas: trocar é só mudar a opacidade, sem salto de layout. */
 .frame {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  object-position: center;
   opacity: 0;
 }
 
@@ -28,16 +34,8 @@
   opacity: 1;
 }
 
-.other {
-  min-width: 44px;
-  min-height: 44px;
-  margin-top: 8px;
-  padding: 0 16px;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius);
-  background: var(--a-surface);
-  color: var(--a-ink);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
+@media (prefers-reduced-motion: no-preference) {
+  .frame {
+    transition: opacity 450ms ease-in-out;
+  }
 }
