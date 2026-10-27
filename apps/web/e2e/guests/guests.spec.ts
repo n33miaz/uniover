@@ -329,18 +329,18 @@ test.describe('convidado: só o controle da TV', () => {
     const settings = page.locator('header.head').getByRole('link', { name: 'Ajustes' });
     await expect(settings).toBeVisible();
 
-    // O desligar fica ao lado da engrenagem, na esquerda e antes do nome; à direita só os três pontos do menu.
+    // Os três pontos do menu ficam ao lado da engrenagem, na esquerda e antes do nome; à direita só o desligar.
     const header = page.locator('header.head');
     const gearBox = (await settings.boundingBox())!;
-    const powerBox = (await header.getByRole('button', { name: 'Desligar a TV' }).boundingBox())!;
-    const nameBox = (await header.locator('h1').boundingBox())!;
     const menuBox = (await header
       .getByRole('button', { name: 'Mais opções', exact: true })
       .boundingBox())!;
-    expect(Math.abs(powerBox.y - gearBox.y), 'na mesma linha da engrenagem').toBeLessThanOrEqual(1);
-    expect(powerBox.x, 'depois da engrenagem').toBeGreaterThanOrEqual(gearBox.x + gearBox.width);
-    expect(nameBox.x, 'antes do nome').toBeGreaterThanOrEqual(powerBox.x + powerBox.width);
-    expect(menuBox.x, 'o menu depois do nome').toBeGreaterThanOrEqual(
+    const nameBox = (await header.locator('h1').boundingBox())!;
+    const powerBox = (await header.getByRole('button', { name: 'Desligar a TV' }).boundingBox())!;
+    expect(Math.abs(menuBox.y - gearBox.y), 'na mesma linha da engrenagem').toBeLessThanOrEqual(1);
+    expect(menuBox.x, 'depois da engrenagem').toBeGreaterThanOrEqual(gearBox.x + gearBox.width);
+    expect(nameBox.x, 'antes do nome').toBeGreaterThanOrEqual(menuBox.x + menuBox.width);
+    expect(powerBox.x, 'o desligar depois do nome').toBeGreaterThanOrEqual(
       nameBox.x + nameBox.width - 1,
     );
     await expect(header.locator('.actions').getByRole('button')).toHaveCount(1);
