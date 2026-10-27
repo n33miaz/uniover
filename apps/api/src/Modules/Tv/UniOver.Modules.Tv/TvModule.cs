@@ -36,6 +36,7 @@ using UniOver.Modules.Tv.Features.Wake;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
 using UniOver.SharedKernel.Audit;
+using UniOver.SharedKernel.Usage;
 
 namespace UniOver.Modules.Tv;
 
@@ -95,6 +96,7 @@ public static class TvModule
 
         // Auditoria: os comandos da TV são uma fonte da trilha do administrador. A retenção (30 dias) roda no banco; a aplicação só chama a função.
         services.AddScoped<IAuditSource, TvAuditSource>();
+        services.AddScoped<IPersonUsageSource, TvUsageSource>();
         services.AddAuditPurge<TvDbContext>(configuration, TvDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.CommandDays);
         services.AddScoped<ITvShortcutReader, EfShortcutReader>();
         services.AddScoped<TvCommandRunner>();

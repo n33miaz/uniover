@@ -13,8 +13,9 @@ public static class SystemSettingKeys
 {
     public const string OffContact = "training.off-contact";
     public const string MaxComputersPerGuest = "devices.max-per-guest";
+    public const string AgentOfflineMinutes = "devices.agent-offline-minutes";
     public const string PhotoStorageEnabled = "training.photo-storage-enabled";
-    public static IReadOnlyList<string> All { get; } = [OffContact, MaxComputersPerGuest, PhotoStorageEnabled];
+    public static IReadOnlyList<string> All { get; } = [OffContact, MaxComputersPerGuest, AgentOfflineMinutes, PhotoStorageEnabled];
 }
 
 public sealed record SystemSettingValue(string Key, JsonElement Value, string Source);
@@ -47,6 +48,9 @@ public sealed class SystemSettingsService(IServiceScopeFactory scopes, IConfigur
     public async Task<int> MaxComputersPerGuestAsync(CancellationToken cancellationToken = default) =>
         (await ReadAsync(SystemSettingKeys.MaxComputersPerGuest, cancellationToken)).Value.GetInt32();
 
+    public async Task<int> AgentOfflineMinutesAsync(CancellationToken cancellationToken = default) =>
+        (await ReadAsync(SystemSettingKeys.AgentOfflineMinutes, cancellationToken)).Value.GetInt32();
+
     public async Task<bool> PhotoStorageEnabledAsync(CancellationToken cancellationToken = default) =>
         (await ReadAsync(SystemSettingKeys.PhotoStorageEnabled, cancellationToken)).Value.GetBoolean();
 
@@ -57,6 +61,8 @@ public sealed class SystemSettingsService(IServiceScopeFactory scopes, IConfigur
             SystemSettingKeys.OffContact => configuration["TRAINING_OFF_CONTACT"] ?? configuration["Modules:Training:Foods:OffContact"] ?? string.Empty,
             SystemSettingKeys.MaxComputersPerGuest => int.TryParse(configuration["Modules:Devices:Pairing:MaxPerGuest"], NumberStyles.None,
                 CultureInfo.InvariantCulture, out var limit) && limit > 0 ? limit : 2,
+            SystemSettingKeys.AgentOfflineMinutes => int.TryParse(configuration["Modules:Devices:Alerts:OfflineMinutes"], NumberStyles.None,
+                CultureInfo.InvariantCulture, out var offlineMinutes) && offlineMinutes > 0 ? offlineMinutes : 10,
             _ => bool.TryParse(configuration["Modules:Training:Photos:Storage:Enabled"], out var enabled) && enabled,
         };
         return JsonSerializer.SerializeToElement(value);

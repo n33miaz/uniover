@@ -71,6 +71,7 @@ const invitePosts = () =>
 const permissionPuts = () => mock.requests.filter((r) => r.method === 'PUT');
 
 async function startInvite(page: Page, name: string): Promise<void> {
+  await page.getByRole('tab', { name: 'Convites' }).click();
   await page.getByRole('button', { name: 'Convidar alguém' }).click();
   await page.getByLabel('Nome do convidado').fill(name);
 }
@@ -102,6 +103,7 @@ test.describe('Pessoas: a lista', () => {
     ]);
     await expect(page.locator('.revoked')).toHaveText('Acesso revogado');
     await expect(page.getByRole('button', { name: /^Permissões de Carla/ })).toHaveCount(0);
+    await page.getByRole('tab', { name: 'Convites' }).click();
     await expect(page.getByRole('heading', { level: 3, name: 'Convites pendentes' })).toBeVisible();
 
     await expect(page.getByRole('button', { name: 'Convidar alguém' })).toBeVisible();
@@ -183,6 +185,7 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
       await expect(
         page.locator('.person', { hasText: 'Raphael' }).locator('.abilities'),
       ).toHaveText(scenario.summary);
+      await page.getByRole('tab', { name: 'Convites' }).click();
       await expect(page.getByRole('button', { name: 'Convidar alguém' })).toBeVisible();
     });
   }

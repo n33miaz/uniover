@@ -17,7 +17,30 @@
 </ng-template>
 
 <section class="section" aria-labelledby="guests-title">
-  <h2 id="guests-title" class="ui-section-label" i18n="@@settings.guests.title">Convidados</h2>
+  <h2 id="guests-title" class="ui-section-label" i18n="@@settings.guests.title">Pessoas e Permissões</h2>
+
+  <div class="tabs" role="tablist" aria-label="Pessoas e convites" i18n-aria-label="@@settings.people.tabs-label">
+    <button
+      id="people-tab"
+      type="button"
+      role="tab"
+      class="tab"
+      [attr.aria-selected]="activeTab() === 'people'"
+      [attr.tabindex]="activeTab() === 'people' ? 0 : -1"
+      (click)="activeTab.set('people')"
+      i18n="@@settings.people.people-tab"
+    >Pessoas</button>
+    <button
+      id="invites-tab"
+      type="button"
+      role="tab"
+      class="tab"
+      [attr.aria-selected]="activeTab() === 'invites'"
+      [attr.tabindex]="activeTab() === 'invites' ? 0 : -1"
+      (click)="activeTab.set('invites')"
+      i18n="@@settings.people.invites-tab"
+    >Convites</button>
+  </div>
 
   <div class="messages" [attr.aria-live]="'polite'">
     @if (listNote(); as note) {
@@ -45,6 +68,7 @@
       </div>
     }
   } @else {
+    <div [hidden]="activeTab() !== 'people'" role="tabpanel" aria-labelledby="people-tab">
     @if (sortedGuests().length > 0) {
       <ul
         class="people ui-group ui-stagger"
@@ -145,7 +169,9 @@
         <span i18n="@@settings.guests.empty">Ninguém foi convidado ainda.</span>
       </p>
     }
+    </div>
 
+    <div [hidden]="activeTab() !== 'invites'" role="tabpanel" aria-labelledby="invites-tab">
     @if (pending().length > 0) {
       <h3 class="subhead" i18n="@@settings.guests.pending-title">Convites pendentes</h3>
       <ul class="people ui-group ui-stagger">
@@ -196,8 +222,10 @@
         }
       </ul>
     }
+    </div>
   }
 
+  <div [hidden]="activeTab() !== 'invites'">
   @if (created(); as link) {
     <div #linkBox class="link-box" role="group" tabindex="-1" aria-labelledby="guests-link-title">
       <p id="guests-link-title" class="question" i18n="@@settings.guests.link-title">
@@ -323,6 +351,7 @@
       <span i18n="@@settings.guests.invite">Convidar alguém</span>
     </button>
   }
+  </div>
 </section>
 
 @if (editing(); as guest) {

@@ -103,8 +103,9 @@ test.describe('convite do dono (passkey)', () => {
     // O convite mora em Pessoas.
     await page.goto('/ajustes/pessoas');
     await expect(page.getByRole('heading', { level: 1, name: 'Pessoas' })).toBeVisible();
-    await expect(page.getByRole('heading', { level: 2, name: 'Convidados' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Pessoas e Permissões' })).toBeVisible();
     await expect(page.getByText('Ninguém foi convidado ainda.')).toBeVisible();
+    await page.getByRole('tab', { name: 'Convites' }).click();
     await page.getByRole('button', { name: 'Convidar alguém' }).click();
     await page.getByLabel('Nome do convidado').fill(GUEST.displayName);
     await page.getByRole('button', { name: 'Gerar convite' }).click();
@@ -298,7 +299,6 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
       '/treino',
       '/ajustes/seguranca',
       '/ajustes/pessoas',
-      '/ajustes/aparelhos',
       '/ajustes/sistema',
       '/ajustes/creditos',
       '/nao-existe',
@@ -329,7 +329,9 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     expect(identity.requests.map((r) => r.path)).not.toContain('/passkeys');
   });
 
-  test('o botão redondo do cabeçalho leva às Configurações da convidada', async ({ page }) => {
+  test('o botão redondo do cabeçalho leva às Configurações da convidada: Perfil, Aparência, Dispositivos e Sobre', async ({
+    page,
+  }) => {
     const invite = identity.seedInvite();
     await acceptInvite(page, invite.token);
     await expect(page).toHaveURL(/\/$/);
@@ -370,7 +372,7 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
       '/ajustes/dispositivos',
     );
     await expect(page.getByText('Baixar o conector do PC', { exact: true })).toBeVisible();
-    for (const name of ['Segurança', 'Pessoas', 'Auditoria', 'Sistema']) {
+    for (const name of ['Segurança', 'Pessoas e Permissões', 'Auditoria', 'Sistema']) {
       await expect(page.getByText(name, { exact: true })).toHaveCount(0);
     }
     await expect(page.getByText(`${GUEST.displayName} · Convidado`)).toBeVisible();

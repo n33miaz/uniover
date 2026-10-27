@@ -1,0 +1,31 @@
+.health {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: 1.5rem;
+}
+
+.health-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.health-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.health-row strong {
+  color: var(--a-ink);
+  font-size: var(--fs-body);
+}
+
+.health-row .ok { color: var(--a-ok-ink); }
+.health-row .bad, .error { color: var(--a-bad-ink); }
+.empty, .api-version { margin: 0; padding: var(--space-3) var(--space-4); color: var(--a-ink2); font-size: var(--fs-small); }

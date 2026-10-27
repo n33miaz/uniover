@@ -1,14 +1,14 @@
 import { AccountRole } from '../../core/session/session-state';
 
 /**
- * Nomes das telas de Ajustes: o mesmo texto na lista, no cabeçalho de cada tela (o `data.title` da rota) e no que o
+ * Nomes das telas de Configurações: o mesmo texto na lista, no cabeçalho de cada tela (o `data.title` da rota) e no que o
  * leitor de tela anuncia. Um lugar só, para a lista e as rotas nunca se desencontrarem.
  */
 export const SETTINGS_TITLES = {
   profile: $localize`:@@settings.route.profile:Perfil`,
   appearance: $localize`:@@settings.route.appearance:Aparência`,
   security: $localize`:@@settings.route.security:Segurança`,
-  people: $localize`:@@settings.route.people:Pessoas`,
+  people: $localize`:@@settings.route.people:Pessoas e Permissões`,
   audit: $localize`:@@settings.route.audit:Auditoria`,
   system: $localize`:@@settings.route.system:Sistema`,
   about: $localize`:@@settings.route.about:Sobre`,

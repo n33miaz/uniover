@@ -2,13 +2,12 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { canUseModule } from '../../core/auth/guest-home';
-import { userCan } from '../../core/session/access';
 import { AppearanceService, ThemePreference } from '../../core/session/appearance.service';
 import { SessionState } from '../../core/session/session-state';
 import { SettingsGlyph, SettingsGlyphName } from './settings-glyph';
 import { SETTINGS_TITLES, roleLabel } from './settings-titles';
 
-/** Uma linha da lista de Ajustes: leva a uma tela. O resumo é fixo (ou vem do que já está na memória): a lista nunca chama a API. */
+/** Uma linha da lista de Configurações: leva a uma tela. O resumo é fixo (ou vem do que já está na memória): a lista nunca chama a API. */
 interface SettingsEntry {
   readonly id: string;
   readonly link: string;
@@ -29,8 +28,8 @@ function themeSummary(preference: ThemePreference): string {
 }
 
 /**
- * Ajustes: a lista das telas, cada uma com ícone, nome, um resumo curto e a seta. Todos veem Perfil, Aparência e
- * Sobre; o administrador vê também Segurança, Pessoas, Aparelhos, Auditoria e Sistema.
+ * Configurações: a lista das telas, cada uma com ícone, nome, um resumo curto e a seta. Todos veem a área pessoal e
+ * Sobre; o administrador vê também a administração da casa.
  *
  * Só esconde o que o servidor também recusa, e nunca chama a API: nenhuma linha daqui faz pedido, então quem não é
  * administrador não gera nenhuma chamada a rota de administrador. Com o papel ainda desconhecido (sessão a confirmar, sem
@@ -71,39 +70,8 @@ export class SettingsPage {
     summary: themeSummary(this.appearance.preference()),
   }));
 
-  /**
-   * Quem tem mais de um módulo não tem Início para alternar entre eles. A lista curta em Ajustes dá esse caminho sem
-   * recolocar uma seta de volta dentro do Treino. Só aparece com as permissões confirmadas, para não sugerir uma tela
-   * que o servidor ainda pode negar enquanto a sessão é carregada.
-   */
-  protected readonly modules = computed<readonly SettingsEntry[]>(() => {
-    const user = this.session.user();
-    if (user?.role !== 'guest' || user.permissions === undefined) return [];
-
-    const entries: SettingsEntry[] = [];
-    if (userCan(user, 'module:tv')) {
-      entries.push({
-        id: 'tv',
-        link: '/tv',
-        glyph: 'tv',
-        title: $localize`:@@settings.modules.tv:TV`,
-        summary: $localize`:@@settings.modules.tv-summary:Controle da TV`,
-      });
-    }
-    if (userCan(user, 'module:training')) {
-      entries.push({
-        id: 'training',
-        link: '/treino',
-        glyph: 'dumbbell',
-        title: $localize`:@@settings.modules.training:Treino`,
-        summary: $localize`:@@settings.modules.training-summary:Exercícios e progresso`,
-      });
-    }
-    return entries.length >= 2 ? entries : [];
-  });
-
-  /** Perfil e Aparência para todos; Segurança só para o administrador. */
-  protected readonly account = computed<readonly SettingsEntry[]>(() => {
+  /** A área pessoal: Perfil e Aparência para todos; Segurança só para o administrador, e o conector do PC para quem tem a TV. */
+  protected readonly personal = computed<readonly SettingsEntry[]>(() => {
     const entries = [this.profileEntry(), this.appearanceEntry()];
     // O convidado com a TV chega ao download do conector por aqui; aprovar o PC segue sendo do administrador.
     const permissions = this.session.knownPermissions();
@@ -126,7 +94,7 @@ export class SettingsPage {
         link: '/ajustes/seguranca',
         glyph: 'shield',
         title: SETTINGS_TITLES.security,
-        summary: $localize`:@@settings.list.security-summary:Sessões e passkeys`,
+        summary: $localize`:@@settings.list.security-summary:Sessões de Acesso e passkeys`,
       });
     }
     return entries;
@@ -144,17 +112,10 @@ export class SettingsPage {
           },
           {
             id: 'devices',
-            link: '/ajustes/aparelhos',
+            link: '/ajustes/dispositivos',
             glyph: 'laptop',
             title: $localize`:@@settings.devices.link:Dispositivos`,
-            summary: $localize`:@@settings.devices.hint:Parear o agente do PC de casa`,
-          },
-          {
-            id: 'audit',
-            link: '/ajustes/auditoria',
-            glyph: 'audit',
-            title: SETTINGS_TITLES.audit,
-            summary: $localize`:@@settings.list.audit-summary:Quem fez o quê, e quando`,
+            summary: $localize`:@@settings.devices.hint:Agentes e computadores conectados`,
           },
           {
             id: 'system',
@@ -162,6 +123,13 @@ export class SettingsPage {
             glyph: 'gear',
             title: SETTINGS_TITLES.system,
             summary: $localize`:@@settings.list.system-summary:Qual computador controla a TV`,
+          },
+          {
+            id: 'audit',
+            link: '/ajustes/auditoria',
+            glyph: 'audit',
+            title: SETTINGS_TITLES.audit,
+            summary: $localize`:@@settings.list.audit-summary:Quem fez o quê, e quando`,
           },
         ]
       : [],

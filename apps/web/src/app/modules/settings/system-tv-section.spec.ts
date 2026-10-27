@@ -186,7 +186,7 @@ describe('SystemTvSection', () => {
     const { el, add } = await render();
     expect(add()).toBeNull();
     expect(el.textContent).toContain('Todo computador pareado já tem uma TV');
-    expect(el.querySelector('a.devices-link')?.getAttribute('href')).toBe('/ajustes/aparelhos');
+    expect(el.querySelector('a.devices-link')?.getAttribute('href')).toBe('/ajustes/dispositivos');
   });
 
   it('re-reads the list and confirms when the sheet saved something, and gives the focus back to the button', async () => {

@@ -657,7 +657,7 @@ describe('devices route', () => {
       ],
     });
     const harness = await RouterTestingHarness.create();
-    await harness.navigateByUrl('/ajustes/aparelhos');
+    await harness.navigateByUrl('/ajustes/dispositivos');
     const root = harness.routeNativeElement as HTMLElement;
     expect(root.matches('app-shell')).toBe(true);
     expect(root.querySelector('app-devices-page')).not.toBeNull();

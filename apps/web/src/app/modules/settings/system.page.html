@@ -1,4 +1,5 @@
 <app-system-tv-section class="ui-rise" />
+<app-system-health-section />
 <section class="config ui-rise" aria-labelledby="system-config-title">
   <h2 id="system-config-title" class="ui-section-label" i18n="@@settings.system.config.title">
     Configuração
@@ -56,6 +57,33 @@
           i18n="@@settings.system.config.save-limit"
         >
           Salvar limite
+        </button>
+      </form>
+      <form
+        class="config-row"
+        (submit)="$event.preventDefault(); save('devices.agent-offline-minutes', offlineMinutes())"
+      >
+        <label for="agent-offline-minutes" i18n="@@settings.system.config.agent-offline-minutes"
+          >Avisar Agente Off-line Após (minutos)</label
+        >
+        <span class="source">{{ source('devices.agent-offline-minutes') }}</span>
+        <input
+          id="agent-offline-minutes"
+          class="ui-input"
+          type="number"
+          min="1"
+          max="1440"
+          [value]="offlineMinutes()"
+          (input)="offlineMinutes.set(+$any($event.target).value)"
+          required
+        />
+        <button
+          type="submit"
+          class="ui-btn secondary"
+          [disabled]="busy() !== null"
+          i18n="@@settings.system.config.save-agent-offline-minutes"
+        >
+          Salvar alerta
         </button>
       </form>
       <div class="config-row">

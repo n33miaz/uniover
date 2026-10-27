@@ -6,10 +6,10 @@ import { AppShell } from './core/layout/app-shell';
 import { ShellBack } from './core/layout/route-data';
 import { SETTINGS_TITLES } from './modules/settings/settings-titles';
 
-/** Cada tela de Ajustes volta para a lista, não para o Início. */
+/** Cada tela de Configurações volta para a lista, não para o Início. */
 const SETTINGS_BACK: ShellBack = {
   link: '/ajustes',
-  label: $localize`:@@settings.back-label:Voltar aos Ajustes`,
+  label: $localize`:@@settings.back-label:Voltar às Configurações`,
 };
 
 // Cada módulo de tela é uma rota preguiçosa. O `data.title` de uma rota liga o cabeçalho do shell (com o
@@ -78,7 +78,7 @@ export const routes: Routes = [
         loadComponent: () => import('./core/auth/no-access.page').then((m) => m.NoAccessPage),
       },
       {
-        // Ajustes é uma lista; cada linha abre uma tela filha, com a seta voltando para a lista.
+        // Configurações é uma lista; cada linha abre uma tela filha, com a seta voltando para a lista.
         path: 'ajustes',
         data: { title: $localize`:@@settings.title:Configurações`, settings: true },
         children: [
@@ -126,13 +126,6 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/settings/system.page').then((m) => m.SystemPage),
           },
           {
-            path: 'aparelhos',
-            canMatch: [ownerOnlyGuard],
-            data: { title: $localize`:@@devices.route.title:Dispositivos`, back: SETTINGS_BACK },
-            loadComponent: () =>
-              import('./modules/devices/devices.page').then((m) => m.DevicesPage),
-          },
-          {
             // Destino do QR que o agente mostra no PC (`?codigo=`). Sem `ownerOnlyGuard` de propósito: o convidado que o
             // abre vê o aviso "peça ao administrador" em vez de ser levado embora sem explicação. A tela só mostra o
             // aviso para ele (nenhuma chamada à API), e a API recusa com 403 de qualquer jeito.
@@ -140,6 +133,12 @@ export const routes: Routes = [
             data: { title: $localize`:@@devices.route.title:Dispositivos`, back: SETTINGS_BACK },
             loadComponent: () =>
               import('./modules/devices/devices.page').then((m) => m.DevicesPage),
+          },
+          {
+            // Links e atalhos salvos antes da reorganização seguem chegando à tela nova.
+            path: 'aparelhos',
+            pathMatch: 'full',
+            redirectTo: 'dispositivos',
           },
           {
             path: 'sobre',

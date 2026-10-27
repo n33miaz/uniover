@@ -2,7 +2,7 @@ import { Component } from '@angular/core';
 import { SecuritySection } from './security-section';
 import { SessionsSection } from './sessions-section';
 
-/** Segurança (só do administrador): as passkeys da conta. A rota tem o guarda de papel e a seção só carrega para o administrador. */
+/** Segurança pessoal: passkeys e Sessões de Acesso da conta atual. */
 @Component({
   selector: 'app-security-page',
   imports: [SecuritySection, SessionsSection],

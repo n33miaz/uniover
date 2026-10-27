@@ -58,7 +58,7 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.qr-login-succeeded:Computador entrou pelo QR`;
     case 'audit_exported':
       return $localize`:@@settings.audit.action.audit-exported:Auditoria exportada`;
-    // Aparelhos
+    // Dispositivos
     case 'pairing_started':
       return $localize`:@@settings.audit.action.pairing-started:Pareamento iniciado`;
     case 'pairing_approved':
@@ -116,7 +116,7 @@ export function moduleLabel(code: string): string {
     case 'identity':
       return $localize`:@@settings.audit.module.identity:Conta e acesso`;
     case 'devices':
-      return $localize`:@@settings.audit.module.devices:Aparelhos`;
+      return $localize`:@@settings.audit.module.devices:Dispositivos`;
     case 'tv':
       return $localize`:@@settings.audit.module.tv:TV`;
     default:
