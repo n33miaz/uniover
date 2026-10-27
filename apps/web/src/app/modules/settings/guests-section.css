@@ -8,6 +8,33 @@
   gap: var(--space-3);
 }
 
+/* As abas deixam convites no contexto de Pessoas sem duplicar uma tela de administração. */
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius);
+  background: var(--a-surface-2);
+}
+
+.tab {
+  min-height: var(--tap);
+  border: 0;
+  border-radius: calc(var(--radius) - 3px);
+  background: transparent;
+  color: var(--a-ink2);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  background: var(--a-surface);
+  color: var(--a-ink);
+  box-shadow: var(--shadow-1);
+}
+
 .hint {
   margin: 0;
   color: var(--a-ink2);

@@ -144,6 +144,19 @@ describe('GuestsSection', () => {
   };
 
   describe('the list', () => {
+    it('separates people and pending invitations into accessible tabs', async () => {
+      const { fixture, el } = await render();
+      const tabs = Array.from(el.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+      expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(['Pessoas', 'Convites']);
+      expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+      expect(el.querySelector<HTMLElement>('[aria-labelledby="invites-tab"]')?.hidden).toBe(true);
+      tabs[1].click();
+      fixture.detectChanges();
+      expect(tabs[1].getAttribute('aria-selected')).toBe('true');
+      expect(el.querySelector<HTMLElement>('[aria-labelledby="people-tab"]')?.hidden).toBe(true);
+      expect(el.querySelector('.subhead')?.textContent).toContain('Convites pendentes');
+    });
+
     it('shows who has access first, then the pending invites, and drops invites that are not pending', async () => {
       const { el } = await render();
       const names = Array.from(el.querySelectorAll('.name')).map((n) => n.textContent);

@@ -121,7 +121,7 @@ describe('action labels', () => {
 describe('module and outcome', () => {
   it('names each source in words, with a generic name for a new one', () => {
     expect(moduleLabel('identity')).toBe('Conta e acesso');
-    expect(moduleLabel('devices')).toBe('Aparelhos');
+    expect(moduleLabel('devices')).toBe('Dispositivos');
     expect(moduleLabel('tv')).toBe('TV');
     expect(moduleLabel('novo')).toBe('Outro módulo');
   });
@@ -316,7 +316,7 @@ describe('retentionText', () => {
       'Guardamos por 180 dias (TV: 30 dias)',
     );
     expect(retentionText(sources({ identity: 180, devices: 90, tv: 30 }), [])).toBe(
-      'Guardamos por 180 dias (Aparelhos: 90 dias; TV: 30 dias)',
+      'Guardamos por 180 dias (Dispositivos: 90 dias; TV: 30 dias)',
     );
   });
 

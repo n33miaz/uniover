@@ -126,6 +126,34 @@ public sealed class SystemSettingsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task OwnerCanSaveTheOfflineAgentAlertDelay()
+    {
+        await using var app = await PasskeyApp.StartAsync(postgres, new PasskeyAppOptions
+        {
+            Extra = new Dictionary<string, string?> { ["Modules:Devices:Alerts:OfflineMinutes"] = "12" },
+        });
+        var owner = await app.LoginAsync();
+        using var authenticator = new VirtualAuthenticator();
+        await app.RegisterAsync(owner, authenticator);
+
+        using var before = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
+        var initial = await PasskeyApp.JsonAsync(before);
+        initial.EnumerateArray().Single(item => item.GetProperty("key").GetString() == SystemSettingKeys.AgentOfflineMinutes)
+            .GetProperty("value").GetInt32().Should().Be(12);
+
+        using var confirm = await app.ConfirmAsync(owner, authenticator, StepUpActions.SystemSettingsChange);
+        confirm.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var saved = await app.SendAsync(HttpMethod.Put, Route + "/" + SystemSettingKeys.AgentOfflineMinutes,
+            new { value = 15 }, owner.AccessToken);
+        saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PasskeyApp.JsonAsync(saved)).GetProperty("value").GetInt32().Should().Be(15);
+
+        await using var db = app.Db();
+        (await db.LoginAudit.SingleAsync(a => a.Event == AuditEvents.SystemSettingChanged, Ct)).Detail
+            .Should().Be(SystemSettingKeys.AgentOfflineMinutes);
+    }
+
+    [Fact]
     public async Task PhotoSwitchTakesEffectWithBucketConfiguration()
     {
         await using var app = await PasskeyApp.StartAsync(postgres, new PasskeyAppOptions

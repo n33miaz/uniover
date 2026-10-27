@@ -36,12 +36,20 @@ const BASE = `${APP_CONFIG.apiBase}/v1/tv`;
 const SETTINGS_BASE = `${APP_CONFIG.apiBase}/v1/identity/system-settings`;
 
 export type SystemSettingKey =
-  'training.off-contact' | 'devices.max-per-guest' | 'training.photo-storage-enabled';
+  | 'training.off-contact'
+  | 'devices.max-per-guest'
+  | 'devices.agent-offline-minutes'
+  | 'training.photo-storage-enabled';
 
 export interface SystemSettingValue {
   readonly key: SystemSettingKey;
   readonly value: string | number | boolean;
   readonly source: 'app' | 'server';
+}
+
+/** Identificação pública da versão da API em execução. */
+export interface DeploymentVersion {
+  readonly commit: string | null;
 }
 
 function readTv(value: unknown): TvItem | null {
@@ -78,6 +86,11 @@ export class SystemApi {
 
   systemSettings(): Promise<SystemSettingValue[]> {
     return firstValueFrom(this.http.get<SystemSettingValue[]>(SETTINGS_BASE));
+  }
+
+  /** O endpoint de saúde é público e não lê dados da conta. */
+  deploymentVersion(): Promise<DeploymentVersion> {
+    return firstValueFrom(this.http.get<DeploymentVersion>(`${APP_CONFIG.apiBase}/health/version`));
   }
 
   saveSystemSetting(

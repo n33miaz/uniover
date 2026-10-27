@@ -69,10 +69,17 @@ describe('app routes', () => {
     expect(harness.routeNativeElement?.matches('app-connect-page')).toBe(true);
   });
 
-  it('sends an unknown screen of Ajustes home', async () => {
+  it('sends an unknown screen of Configurações home', async () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/ajustes/nada');
     expect(TestBed.inject(Router).url).toBe('/');
+  });
+
+  it('redirects the saved devices address to Dispositivos', async () => {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/ajustes/aparelhos');
+    expect(TestBed.inject(Router).url).toBe('/ajustes/dispositivos');
+    expect(harness.routeNativeElement?.querySelector('app-devices-page')).not.toBeNull();
   });
 
   it('sends unknown paths home', async () => {
@@ -96,7 +103,6 @@ describe('app routes for a guest', () => {
   const OWNER_ONLY = [
     '/ajustes/seguranca',
     '/ajustes/pessoas',
-    '/ajustes/aparelhos',
     '/ajustes/auditoria',
     '/ajustes/sistema',
     '/nada',

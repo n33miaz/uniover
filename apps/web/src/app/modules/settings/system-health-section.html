@@ -1,0 +1,27 @@
+<section class="health ui-rise" aria-labelledby="health-title">
+  <div class="health-head">
+    <h2 id="health-title" class="ui-section-label" i18n="@@settings.system.health.title">Saúde</h2>
+    <button type="button" class="secondary ui-btn" (click)="load()" i18n="@@settings.system.health.refresh">
+      Atualizar
+    </button>
+  </div>
+  @if (agents(); as list) {
+    <div class="ui-group">
+      @for (agent of list; track agent.id) {
+        <article class="health-row">
+          <strong>{{ agent.name }}</strong>
+          <span [class.ok]="agent.connected" [class.bad]="!agent.connected">{{ agentState(agent) }}</span>
+          <span>{{ lastSeen(agent) }}</span>
+          <span>{{ tvState(agent) }}</span>
+        </article>
+      } @empty {
+        <p class="empty" i18n="@@settings.system.health.no-agents">Nenhum agente pareado.</p>
+      }
+    </div>
+    <p class="api-version">{{ apiVersion() }}</p>
+  } @else if (failed()) {
+    <p class="error" role="alert" i18n="@@settings.system.health.failed">Não foi possível carregar a saúde do sistema.</p>
+  } @else {
+    <p role="status" i18n="@@settings.system.health.loading">Carregando a saúde do sistema…</p>
+  }
+</section>

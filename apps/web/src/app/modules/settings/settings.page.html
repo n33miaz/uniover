@@ -16,32 +16,16 @@
 </ng-template>
 
 <div class="settings ui-stagger">
-  <section class="section ui-rise" aria-labelledby="account-title">
-    <h2 id="account-title" class="ui-section-label" i18n="@@settings.list.account">Conta</h2>
+  <section class="section ui-rise" aria-labelledby="personal-title">
+    <h2 id="personal-title" class="ui-section-label" i18n="@@settings.list.personal">Você</h2>
     <ul class="ui-group">
-      @for (entry of account(); track entry.id) {
+      @for (entry of personal(); track entry.id) {
         <li>
           <ng-container [ngTemplateOutlet]="row" [ngTemplateOutletContext]="{ $implicit: entry }" />
         </li>
       }
     </ul>
   </section>
-
-  @if (modules().length > 0) {
-    <section class="section ui-rise" aria-labelledby="modules-title">
-      <h2 id="modules-title" class="ui-section-label" i18n="@@settings.list.modules">Módulos</h2>
-      <ul class="ui-group">
-        @for (entry of modules(); track entry.id) {
-          <li>
-            <ng-container
-              [ngTemplateOutlet]="row"
-              [ngTemplateOutletContext]="{ $implicit: entry }"
-            />
-          </li>
-        }
-      </ul>
-    </section>
-  }
 
   @if (administration().length > 0) {
     <section class="section ui-rise" aria-labelledby="admin-title">

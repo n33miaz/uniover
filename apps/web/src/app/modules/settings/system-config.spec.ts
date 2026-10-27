@@ -4,13 +4,18 @@ import { SessionState } from '../../core/session/session-state';
 import { SystemApi, SystemSettingValue } from './system-api';
 import { SystemPage } from './system.page';
 import { SystemTvSection } from './system-tv-section';
+import { SystemHealthSection } from './system-health-section';
 
 @Component({ selector: 'app-system-tv-section', template: '' })
 class FakeTvSection {}
 
+@Component({ selector: 'app-system-health-section', template: '' })
+class FakeHealthSection {}
+
 const initial: SystemSettingValue[] = [
   { key: 'training.off-contact', value: 'server@example.test', source: 'server' },
   { key: 'devices.max-per-guest', value: 2, source: 'server' },
+  { key: 'devices.agent-offline-minutes', value: 10, source: 'server' },
   { key: 'training.photo-storage-enabled', value: false, source: 'server' },
 ];
 
@@ -26,8 +31,8 @@ describe('SystemPage configuration', () => {
     }));
     TestBed.configureTestingModule({ providers: [{ provide: SystemApi, useValue: api }] });
     TestBed.overrideComponent(SystemPage, {
-      remove: { imports: [SystemTvSection] },
-      add: { imports: [FakeTvSection] },
+      remove: { imports: [SystemHealthSection, SystemTvSection] },
+      add: { imports: [FakeHealthSection, FakeTvSection] },
     });
   });
 
@@ -65,5 +70,18 @@ describe('SystemPage configuration', () => {
   it('does not request administrator settings for a guest', async () => {
     await render('guest');
     expect(api.systemSettings).not.toHaveBeenCalled();
+  });
+
+  it('saves the delay before an offline agent becomes an alert', async () => {
+    const { fixture, el } = await render('owner');
+    const delay = el.querySelector<HTMLInputElement>('#agent-offline-minutes')!;
+    expect(delay.value).toBe('10');
+    delay.value = '15';
+    delay.dispatchEvent(new Event('input'));
+    el.querySelectorAll<HTMLFormElement>('form')[2].dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await fixture.whenStable();
+    expect(api.saveSystemSetting).toHaveBeenCalledWith('devices.agent-offline-minutes', 15);
   });
 });

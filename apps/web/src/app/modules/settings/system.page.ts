@@ -3,6 +3,7 @@ import { isStepUpRequired, problemOf } from '../../core/auth/api-problem';
 import { SessionState } from '../../core/session/session-state';
 import { SystemApi, SystemSettingKey, SystemSettingValue } from './system-api';
 import { SystemTvSection } from './system-tv-section';
+import { SystemHealthSection } from './system-health-section';
 
 /**
  * Sistema (só do administrador): a configuração do app feita aqui, sem mexer em variáveis do servidor. Cada módulo que
@@ -10,7 +11,7 @@ import { SystemTvSection } from './system-tv-section';
  */
 @Component({
   selector: 'app-system-page',
-  imports: [SystemTvSection],
+  imports: [SystemHealthSection, SystemTvSection],
   templateUrl: './system.page.html',
   styleUrl: './system.page.css',
   styles: `
@@ -27,6 +28,7 @@ export class SystemPage {
   protected readonly settings = signal<readonly SystemSettingValue[] | null>(null);
   protected readonly contact = signal('');
   protected readonly limit = signal(2);
+  protected readonly offlineMinutes = signal(10);
   protected readonly photos = signal(false);
   protected readonly busy = signal<SystemSettingKey | null>(null);
   protected readonly error = signal<string | null>(null);
@@ -54,6 +56,9 @@ export class SystemPage {
       );
       this.limit.set(
         Number(values.find((item) => item.key === 'devices.max-per-guest')?.value ?? 2),
+      );
+      this.offlineMinutes.set(
+        Number(values.find((item) => item.key === 'devices.agent-offline-minutes')?.value ?? 10),
       );
       this.photos.set(
         values.find((item) => item.key === 'training.photo-storage-enabled')?.value === true,

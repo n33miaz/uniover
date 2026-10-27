@@ -13,7 +13,7 @@ export function guestHome(session: SessionState, registry: ModuleRegistry): stri
 }
 
 /**
- * Fecha para o convidado as telas que são só do dono (em Ajustes: Segurança, Pessoas e Aparelhos): ele é levado à Início.
+ * Fecha para o convidado as telas que são só do dono (em Configurações: Pessoas, Auditoria e Sistema): ele é levado à Início.
  * Só barra quando se SABE que é convidado; papel ainda desconhecido (sessão a confirmar,
  * sem rede) deixa passar, para nunca trancar o dono para fora. Esconder não é segurança: a API recusa com 403 de qualquer
  * jeito.

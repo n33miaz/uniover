@@ -91,6 +91,10 @@ internal static class SystemSettingsEndpoint
                 if (!value.TryGetInt32(out var limit) || limit is < 1 or > 20) return false;
                 json = limit.ToString(CultureInfo.InvariantCulture);
                 return true;
+            case SystemSettingKeys.AgentOfflineMinutes when value.ValueKind == JsonValueKind.Number:
+                if (!value.TryGetInt32(out var minutes) || minutes is < 1 or > 1440) return false;
+                json = minutes.ToString(CultureInfo.InvariantCulture);
+                return true;
             case SystemSettingKeys.PhotoStorageEnabled when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                 json = value.GetBoolean() ? "true" : "false";
                 return true;

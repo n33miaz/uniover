@@ -39,6 +39,8 @@ interface Note {
   readonly isError: boolean;
 }
 
+type PeopleTab = 'people' | 'invites';
+
 /**
  * Pessoas: quem já entrou, os convites ainda abertos e o convite de uma nova pessoa. O dono decide, ao convidar, o que a
  * pessoa poderá ver e fazer (e muda isso depois, em "Permissões"); o convite sai com a confirmação da passkey. O sistema
@@ -85,6 +87,8 @@ export class GuestsSection {
   protected readonly linkNote = signal<Note | null>(null);
 
   protected readonly inviteOpen = signal(false);
+  /** Pessoas e convites dividem a mesma tela para manter a ação perto de quem a receberá. */
+  protected readonly activeTab = signal<PeopleTab>('people');
   protected readonly newName = signal('');
   /** O que o convite novo concede: começa no modelo "só controlar a TV" (o mínimo que o dono já entregava). */
   protected readonly permissions = signal<readonly string[]>([...TV_CONTROL_ONLY]);
@@ -164,6 +168,7 @@ export class GuestsSection {
   }
 
   protected openInvite(): void {
+    this.activeTab.set('invites');
     this.listNote.set(null);
     this.formNote.set(null);
     this.inviteOpen.set(true);

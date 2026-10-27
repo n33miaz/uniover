@@ -72,9 +72,9 @@ describe('SettingsPage (a list of screens)', () => {
     }));
 
   describe('for the administrator', () => {
-    it('lists the screens in groups: account, administration and the app', async () => {
+    it('lists the screens in groups: personal, administration and the app', async () => {
       const { el } = await render();
-      expect(headings(el)).toEqual(['Conta', 'Administração', 'Aplicativo']);
+      expect(headings(el)).toEqual(['Você', 'Administração', 'Aplicativo']);
     });
 
     it('has a row for each screen, with a short summary and where it goes', async () => {
@@ -84,28 +84,32 @@ describe('SettingsPage (a list of screens)', () => {
         { title: 'Aparência', summary: 'Tema automático', href: '/ajustes/aparencia' },
         {
           title: 'Segurança',
-          summary: 'Sessões e passkeys',
+          summary: 'Sessões de Acesso e passkeys',
           href: '/ajustes/seguranca',
         },
-        { title: 'Pessoas', summary: 'Convites e convidados', href: '/ajustes/pessoas' },
+        {
+          title: 'Pessoas e Permissões',
+          summary: 'Convites e convidados',
+          href: '/ajustes/pessoas',
+        },
         {
           title: 'Dispositivos',
-          summary: 'Parear o agente do PC de casa',
-          href: '/ajustes/aparelhos',
+          summary: 'Agentes e computadores conectados',
+          href: '/ajustes/dispositivos',
         },
-        { title: 'Auditoria', summary: 'Quem fez o quê, e quando', href: '/ajustes/auditoria' },
         {
           title: 'Sistema',
           summary: 'Qual computador controla a TV',
           href: '/ajustes/sistema',
         },
+        { title: 'Auditoria', summary: 'Quem fez o quê, e quando', href: '/ajustes/auditoria' },
         { title: 'Sobre', summary: 'Versão do app e da API', href: '/ajustes/sobre' },
       ]);
     });
 
     it('keeps the device row with a link name that starts with its title (what the other screens look for)', async () => {
       const { el } = await render();
-      const link = el.querySelector<HTMLAnchorElement>('a[href="/ajustes/aparelhos"]');
+      const link = el.querySelector<HTMLAnchorElement>('a[href="/ajustes/dispositivos"]');
       expect(link?.textContent?.trim().startsWith('Dispositivos')).toBe(true);
     });
 
@@ -162,9 +166,9 @@ describe('SettingsPage (a list of screens)', () => {
   describe('for a guest', () => {
     beforeEach(() => api.me.mockResolvedValue(GUEST));
 
-    it('shows Perfil, Aparência, Dispositivos (só o download do conector, com a TV) e Sobre', async () => {
+    it('shows the personal area (with the connector download when the TV is allowed) and the app group', async () => {
       const { el } = await render();
-      expect(headings(el)).toEqual(['Conta', 'Aplicativo']);
+      expect(headings(el)).toEqual(['Você', 'Aplicativo']);
       expect(rows(el)).toEqual([
         { title: 'Perfil', summary: 'Alice · Convidado', href: '/ajustes/perfil' },
         { title: 'Aparência', summary: 'Tema automático', href: '/ajustes/aparencia' },
@@ -177,36 +181,19 @@ describe('SettingsPage (a list of screens)', () => {
       ]);
     });
 
-    it('hides Dispositivos from a guest without the TV', async () => {
+    it('keeps the same groups for a guest without the TV, and without the connector row', async () => {
       api.me.mockResolvedValue({ ...GUEST, permissions: ['module:training'] });
       const { el } = await render();
       expect(rows(el).map((row) => row.title)).toEqual(['Perfil', 'Aparência', 'Sobre']);
-      expect(headings(el)).toEqual(['Conta', 'Aplicativo']);
+      expect(headings(el)).toEqual(['Você', 'Aplicativo']);
       expect(el.querySelector('a[href="/tv"]')).toBeNull();
-    });
-
-    it('shows module links only to a guest who can use both, so he can change modules without a back arrow', async () => {
-      api.me.mockResolvedValue({ ...GUEST, permissions: ['module:tv', 'module:training'] });
-      const { el } = await render();
-      expect(headings(el)).toEqual(['Conta', 'Módulos', 'Aplicativo']);
-      expect(rows(el)).toContainEqual({
-        title: 'TV',
-        summary: 'Controle da TV',
-        href: '/tv',
-      });
-      expect(rows(el)).toContainEqual({
-        title: 'Treino',
-        summary: 'Exercícios e progresso',
-        href: '/treino',
-      });
     });
 
     it('does not even mention the administrator screens', async () => {
       const { el } = await render();
-      for (const name of ['Segurança', 'Pessoas', 'Auditoria', 'Sistema']) {
+      for (const name of ['Segurança', 'Pessoas e Permissões', 'Auditoria', 'Sistema']) {
         expect(el.textContent).not.toContain(name);
       }
-      expect(el.querySelector('a[href="/ajustes/aparelhos"]')).toBeNull();
       expect(el.querySelector('a[href="/ajustes/auditoria"]')).toBeNull();
     });
   });

@@ -50,9 +50,9 @@
     }
   } @else {
     <section class="section" aria-labelledby="devices-title">
-      <h2 id="devices-title" class="ui-section-label" i18n="@@devices.title">
-        Dispositivos pareados
-      </h2>
+  <a routerLink="/ajustes" class="back ui-btn secondary" i18n="@@devices.back"
+    >&larr; Configurações</a
+  >
 
       @if (agents(); as list) {
         @if (list.length === 0) {

@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from '../../app.routes';
+import { DevicesApi } from '../devices/devices-api';
 import { SystemApi } from './system-api';
 
 describe('system route', () => {
@@ -14,8 +15,11 @@ describe('system route', () => {
           useValue: {
             tvConfig: () => new Promise(() => undefined),
             systemSettings: () => new Promise(() => undefined),
+            tvs: () => Promise.resolve([]),
+            deploymentVersion: () => Promise.resolve({ commit: null }),
           },
         },
+        { provide: DevicesApi, useValue: { list: () => Promise.resolve([]) } },
       ],
     });
     const harness = await RouterTestingHarness.create();

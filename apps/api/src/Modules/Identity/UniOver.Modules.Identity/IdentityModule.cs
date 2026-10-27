@@ -20,6 +20,7 @@ using UniOver.Modules.Identity.Features.GetModuleInfo;
 using UniOver.Modules.Identity.Features.ListAudit;
 using UniOver.Modules.Identity.Features.ListGuestInvites;
 using UniOver.Modules.Identity.Features.ListGuests;
+using UniOver.Modules.Identity.Features.PeopleUsage;
 using UniOver.Modules.Identity.Features.ListPasskeys;
 using UniOver.Modules.Identity.Features.Login;
 using UniOver.Modules.Identity.Features.Logout;
@@ -93,6 +94,7 @@ public static class IdentityModule
         services.AddScoped<RevokeGuestInviteHandler>();
         services.AddScoped<AcceptGuestInviteHandler>();
         services.AddScoped<ListGuestsHandler>();
+        services.AddScoped<PeopleUsageHandler>();
         services.AddScoped<RevokeGuestHandler>();
         services.AddScoped<SetGuestPermissionsHandler>();
         services.AddScoped<UpdateProfileHandler>();
@@ -145,6 +147,7 @@ public static class IdentityModule
         group.MapRevokeGuestInvite();
         group.MapAcceptGuestInvite();
         group.MapListGuests();
+        group.MapPeopleUsage();
         group.MapRevokeGuest();
         group.MapSetGuestPermissions();
         group.MapSystemSettings();

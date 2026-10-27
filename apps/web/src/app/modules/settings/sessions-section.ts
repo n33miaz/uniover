@@ -47,7 +47,7 @@ export class SessionsSection {
     const name = this.guestName();
     return name
       ? $localize`:@@settings.sessions.guest-title:Sessões de ${name}:name:`
-      : $localize`:@@settings.sessions.title:Onde você está conectado`;
+      : $localize`:@@settings.sessions.title:Sessões de Acesso`;
   }
 
   protected device(item: LoginSession): string {
