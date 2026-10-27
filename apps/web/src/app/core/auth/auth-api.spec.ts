@@ -260,4 +260,82 @@ describe('AuthApi', () => {
     expect(lastCall().init.cache).toBe('no-store');
     expect(lastCall().init.credentials).toBe('same-origin');
   });
+
+  describe('Idempotency-Key', () => {
+    const keyOfLastCall = () => lastCall().headers['Idempotency-Key'];
+
+    it('rewrite routes carry a UUID key; read and login/refresh calls do not', async () => {
+      fetchFn.mockResolvedValue(new Response(null, { status: 204 }));
+      await api().revokeGuest('jwt', 'g-1');
+      expect(keyOfLastCall()).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+
+      await api().removePasskey('jwt', 'p-1');
+      expect(keyOfLastCall()).toBeDefined();
+      await api().revokeSession('jwt', 's-1');
+      expect(keyOfLastCall()).toBeDefined();
+      await api().revokeOtherSessions('jwt');
+      expect(keyOfLastCall()).toBeDefined();
+
+      fetchFn.mockResolvedValue(reply(200, []));
+      await api().guests('jwt');
+      expect(keyOfLastCall()).toBeUndefined();
+      fetchFn.mockResolvedValue(reply(200, { accessToken: 't', expiresIn: 1 }));
+      await api().refresh();
+      expect(keyOfLastCall()).toBeUndefined();
+      await api().login('a@b.c', 'senha');
+      expect(keyOfLastCall()).toBeUndefined();
+    });
+
+    it('resending the same action after a network failure reuses the key', async () => {
+      fetchFn.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      await api()
+        .updateMe('jwt', 'Ana')
+        .catch(() => undefined);
+      const first = keyOfLastCall();
+
+      fetchFn.mockResolvedValue(reply(200, { id: 'u1' }));
+      await api().updateMe('jwt', 'Ana');
+      expect(keyOfLastCall()).toBe(first);
+    });
+
+    it('a server error keeps the key; a definitive answer (success or 4xx) makes the next attempt use a new one', async () => {
+      fetchFn.mockResolvedValueOnce(reply(503, {}));
+      await api()
+        .revokeGuest('jwt', 'g-1')
+        .catch(() => undefined);
+      const first = keyOfLastCall();
+
+      fetchFn.mockResolvedValueOnce(
+        reply(403, { type: 'https://uniover/problems/step-up-required', title: 'x' }),
+      );
+      await api()
+        .revokeGuest('jwt', 'g-1')
+        .catch(() => undefined);
+      expect(keyOfLastCall()).toBe(first);
+
+      // A API guardou a recusa sob a chave: a próxima tentativa da ação precisa de chave nova.
+      fetchFn.mockResolvedValueOnce(new Response(null, { status: 204 }));
+      await api().revokeGuest('jwt', 'g-1');
+      const afterRefusal = keyOfLastCall();
+      expect(afterRefusal).not.toBe(first);
+
+      fetchFn.mockResolvedValueOnce(new Response(null, { status: 204 }));
+      await api().revokeGuest('jwt', 'g-1');
+      expect(keyOfLastCall()).not.toBe(afterRefusal);
+    });
+
+    it('another body is another action and gets its own key', async () => {
+      fetchFn.mockRejectedValue(new TypeError('Failed to fetch'));
+      await api()
+        .updateMe('jwt', 'Ana')
+        .catch(() => undefined);
+      const ana = keyOfLastCall();
+      await api()
+        .updateMe('jwt', 'Bia')
+        .catch(() => undefined);
+      expect(keyOfLastCall()).not.toBe(ana);
+    });
+  });
 });

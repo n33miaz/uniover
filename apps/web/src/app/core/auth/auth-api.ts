@@ -1,4 +1,5 @@
 import { Injectable, InjectionToken, inject } from '@angular/core';
+import { IDEMPOTENCY_HEADER, IdempotencyKeys } from '../api/idempotency';
 import { APP_CONFIG } from '../config/app-config';
 import { ConnectivityService } from '../connectivity/connectivity.service';
 import type { components } from '../api/generated/schema';
@@ -53,6 +54,7 @@ interface RequestOptions {
 export class AuthApi {
   private readonly doFetch = inject(FETCH_FN);
   private readonly connectivity = inject(ConnectivityService);
+  private readonly idempotency = inject(IdempotencyKeys);
 
   login(email: string, password: string): Promise<TokenResponse> {
     const body: Schemas['LoginRequest'] = { email, password };
@@ -232,6 +234,10 @@ export class AuthApi {
       body = JSON.stringify(options.body);
     }
 
+    // Escritas reenviáveis (perfil, convites, sessões, passkeys) exigem a chave; o reenvio da mesma ação a reaproveita.
+    const ticket = this.idempotency.begin(method, `${IDENTITY_BASE}${path}`, body ?? '');
+    if (ticket.key !== null) headers[IDEMPOTENCY_HEADER] = ticket.key;
+
     let response: Response;
     try {
       response = await this.doFetch(`${IDENTITY_BASE}${path}`, {
@@ -244,17 +250,21 @@ export class AuthApi {
     } catch {
       // Sem resposta: o serviço de conexão decide entre "offline" e "servidor acordando".
       this.connectivity.reportRequestFailure();
+      ticket.settle(0);
       throw networkProblem();
     }
     this.connectivity.reportRequestSuccess();
 
     if (!response.ok) {
-      throw problemFrom(
+      const problem = problemFrom(
         response.status,
         await readJson(response),
         response.headers.get('Retry-After'),
       );
+      ticket.settle(problem.status, problem.kind);
+      throw problem;
     }
+    ticket.settle(response.status);
     if (response.status === 204) return undefined as T;
     return (await readJson(response)) as T;
   }

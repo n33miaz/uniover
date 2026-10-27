@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { BrowserContext, Route } from '@playwright/test';
+import { missingIdempotencyKey } from '../idempotency-guard';
 
 /** O id da conta do dono no simulador (o `sub` dos tokens dele e o `id` do `/me`): nomeia o banco local dele no aparelho. */
 export const OWNER_ID = 'u1';
@@ -335,6 +336,15 @@ export async function mockIdentityApi(
     const bearer = headers['authorization']?.replace(/^Bearer /, '');
     const authorized = !!bearer && mock.issuedTokens.includes(bearer);
     const hasClientHeader = headers['x-uniover-client'] === 'web';
+    // O mock cobra a chave nas escritas do site novo, embora a API aceite clientes antigos nesta transição.
+    if (authorized && missingIdempotencyKey(method, url.pathname, headers)) {
+      return problem(
+        route,
+        400,
+        'idempotency-key-required',
+        'Informe o cabeçalho Idempotency-Key com um UUID.',
+      );
+    }
 
     if (method === 'GET' && path === '/info') {
       return json(route, 200, { module: 'identity', version: '0.9.0-teste', dependsOn: [] });

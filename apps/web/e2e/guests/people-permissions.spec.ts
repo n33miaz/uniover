@@ -475,7 +475,12 @@ test.describe('Pessoas: quem não é administrador nunca vê a tela', () => {
     const status = await page.evaluate(async (bearer) => {
       const response = await fetch('/api/v1/identity/guests/x/permissions', {
         method: 'PUT',
-        headers: { Authorization: 'Bearer ' + bearer, 'Content-Type': 'application/json' },
+        headers: {
+          Authorization: 'Bearer ' + bearer,
+          'Content-Type': 'application/json',
+          // A rota exige a chave (a recusa por permissão é a que vale aqui, como na API real).
+          'Idempotency-Key': crypto.randomUUID(),
+        },
         body: JSON.stringify({ permissions: ['module:tv', 'tv:edit-shortcuts'] }),
       });
       return response.status;
