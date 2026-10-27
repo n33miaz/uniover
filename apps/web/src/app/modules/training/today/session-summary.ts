@@ -15,6 +15,7 @@ import {
 } from '@angular/core';
 import { OfflineQueue } from '../../../core/offline-queue/offline-queue';
 import type { LocalSet } from '../data/sessions/session';
+import type { SetType } from '../domain/session/session-model';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { formatKg } from '../shell/format';
 import { TrainingGlyph } from '../shell/training-glyph';
@@ -47,6 +48,8 @@ export class SessionSummary {
   private readonly injector = inject(Injector);
 
   readonly sessionId = input.required<string>();
+  /** O histórico do calendário já abre com a lista de séries; o resumo recém-concluído segue compacto. */
+  readonly showSets = input(false);
   /** "Concluir treino": volta a Hoje. */
   readonly done = output<void>();
 
@@ -114,6 +117,19 @@ export class SessionSummary {
 
   protected rowName(set: LocalSet): string {
     return this.data()?.exercises.get(set.exerciseId)?.name ?? this.fallbackName;
+  }
+
+  protected setTypeText(type: SetType): string {
+    switch (type) {
+      case 'warmup':
+        return $localize`:@@training.summary.set-type-warmup:Aquecimento`;
+      case 'failure':
+        return $localize`:@@training.summary.set-type-failure:Falha`;
+      case 'drop':
+        return $localize`:@@training.summary.set-type-drop:Drop set`;
+      default:
+        return $localize`:@@training.summary.set-type-work:Trabalho`;
+    }
   }
 
   protected readonly freeName = $localize`:@@training.summary.free:Treino livre`;

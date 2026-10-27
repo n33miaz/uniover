@@ -61,17 +61,19 @@
       </section>
     }
 
-    <button
-      type="button"
-      class="secondary ui-btn block edit"
-      [attr.aria-expanded]="editing()"
-      (click)="editing.set(!editing())"
-    >
-      <app-training-glyph name="pencil" />
-      <span i18n="@@training.summary.edit">Editar treino</span>
-    </button>
+    @if (!showSets()) {
+      <button
+        type="button"
+        class="secondary ui-btn block edit"
+        [attr.aria-expanded]="editing()"
+        (click)="editing.set(!editing())"
+      >
+        <app-training-glyph name="pencil" />
+        <span i18n="@@training.summary.edit">Editar treino</span>
+      </button>
+    }
 
-    @if (editing()) {
+    @if (showSets() || editing()) {
       <section class="sets" aria-labelledby="sets-title">
         <h2 id="sets-title" class="ui-section-label" i18n="@@training.summary.sets-title">
           Séries do treino
@@ -85,7 +87,9 @@
                 <button type="button" class="ui-row" (click)="editSet.set(set)">
                   <span class="ui-row-text">
                     <span class="ui-row-title">{{ rowName(set) }}</span>
-                    <span class="ui-row-sub">{{ rowText(set) }}</span>
+                    <span class="ui-row-sub"
+                      >{{ rowText(set) }} · {{ setTypeText(set.setType) }}</span
+                    >
                   </span>
                   <app-training-glyph class="pencil" name="pencil" />
                 </button>
