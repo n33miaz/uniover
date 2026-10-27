@@ -17,8 +17,8 @@ import { RoutineEntry, buildRoutineEntries } from './routine-stats';
 import { TemplateCreated, TemplatesSheet } from './templates-sheet';
 
 /**
- * Lista de rotinas, na ordem da sequência (A, B, C...). Cada linha leva ao editor; "Nova rotina" é a ação principal e
- * "Usar modelo" traz os programas prontos (só com rede, porque os modelos vêm do servidor).
+ * Lista de rotinas, na ordem da sequência (A, B, C...). A próxima abre em destaque; a lista compacta fica sob demanda,
+ * e a comparação de modelos usa rede porque os programas prontos vêm do servidor.
  */
 @Component({
   selector: 'app-routines-list-page',
@@ -40,6 +40,18 @@ export class RoutinesListPage {
     readonly text: string;
   } | null>(null);
   protected readonly online = this.connectivity.online;
+  /** A próxima fica visível sem esforço; a lista completa só aparece quando a pessoa pede. */
+  protected readonly showingAll = signal(false);
+
+  protected readonly featured = computed(
+    () => this.entries().find((entry) => entry.next) ?? this.entries()[0] ?? null,
+  );
+  protected readonly hasMore = computed(() => this.entries().length > 1);
+  protected readonly moreLabel = computed(() => {
+    const count = this.entries().length;
+    if (this.showingAll()) return $localize`:@@training.routines.show-less:Ver Menos`;
+    return $localize`:@@training.routines.show-more-many:Ver Mais ${count}:count: Rotinas`;
+  });
 
   protected readonly countText = computed(() => {
     const count = this.entries().length;
@@ -67,7 +79,7 @@ export class RoutinesListPage {
     const parts = [exercises, sets];
     if (entry.minutes !== null) {
       const minutes = entry.minutes;
-      parts.push($localize`:@@training.routines.minutes:cerca de ${minutes}:minutes: min`);
+      parts.push($localize`:@@training.routines.minutes:cerca de ${minutes}:minutes:\u00a0min`);
     }
     return parts.join(' · ');
   }
@@ -81,6 +93,10 @@ export class RoutinesListPage {
     this.templatesOpen.set(false);
   }
 
+  protected toggleAll(): void {
+    this.showingAll.update((showing) => !showing);
+  }
+
   protected onCreated(event: TemplateCreated): void {
     const name = event.name;
     const count = event.count;
@@ -89,7 +105,7 @@ export class RoutinesListPage {
         ? $localize`:@@training.templates.done-one:Criamos 1 rotina do modelo ${name}:name:.`
         : $localize`:@@training.templates.done-many:Criamos ${count}:count: rotinas do modelo ${name}:name:.`;
     const text = event.program
-      ? $localize`:@@training.templates.program-chosen:Programa ${name}:name: escolhido. Hoje abre no treino do dia.`
+      ? $localize`:@@training.templates.model-chosen:Modelo ${name}:name: escolhido. Hoje abre no treino do dia.`
       : event.historical
         ? `${createdText} ${$localize`:@@training.templates.historical-created:Estas rotinas históricas ficaram inativas e não são uma recomendação.`}`
         : event.draft
