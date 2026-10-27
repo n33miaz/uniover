@@ -26,6 +26,8 @@ internal static class DevicesAuditActions
         (PairingEvents.AgentUpdateRequested, "agent_update_requested"),
         (PairingEvents.AgentRestartRequested, "agent_restart_requested"),
         (PairingEvents.AgentRollbackRequested, "agent_rollback_requested"),
+        (PairingEvents.AgentOffline, "agent_offline"),
+        (PairingEvents.AgentOnline, "agent_online"),
     ];
 
     public static IReadOnlyList<string> All { get; } = [.. Map.Select(m => m.Action)];
