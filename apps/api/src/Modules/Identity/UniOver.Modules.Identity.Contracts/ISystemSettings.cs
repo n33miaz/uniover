@@ -5,5 +5,6 @@ public interface ISystemSettings
 {
     Task<string> OffContactAsync(CancellationToken cancellationToken = default);
     Task<int> MaxComputersPerGuestAsync(CancellationToken cancellationToken = default);
+    Task<int> AgentOfflineMinutesAsync(CancellationToken cancellationToken = default);
     Task<bool> PhotoStorageEnabledAsync(CancellationToken cancellationToken = default);
 }

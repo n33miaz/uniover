@@ -27,6 +27,10 @@ public static class PairingEvents
     public const string AgentUpdateRequested = "agent_update_requested";
     public const string AgentRestartRequested = "agent_restart_requested";
     public const string AgentRollbackRequested = "agent_rollback_requested";
+
+    // Presença do computador: o monitor registra a queda (sem sinal além do limite) e a volta. Sem conta, sem IP.
+    public const string AgentOffline = "agent_offline";
+    public const string AgentOnline = "agent_online";
 }
 
 /// <summary>
