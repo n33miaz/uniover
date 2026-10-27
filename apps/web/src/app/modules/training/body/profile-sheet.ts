@@ -74,7 +74,7 @@ let nextProfileId = 0;
         </div>
       </fieldset>
       <fieldset class="choice-group">
-        <legend i18n="@@training.body.profile.factor">Fator de atividade</legend>
+        <legend i18n="@@training.body.profile.factor">Fator de Atividade</legend>
         <div class="choices factors">
           @for (factor of factors; track factor.value) {
             <label class="choice" [for]="factor.id">
@@ -101,7 +101,7 @@ let nextProfileId = 0;
         <p class="error" role="alert" [id]="errorId">{{ message }}</p>
       }
       <button sheetAction type="button" class="primary ui-btn" (click)="save()">
-        <span i18n="@@training.body.profile.save">Salvar perfil</span>
+        <span i18n="@@training.body.profile.save">Salvar Perfil</span>
       </button>
     </app-training-sheet>
   `,
@@ -114,7 +114,7 @@ export class BodyProfileSheet {
   readonly profile = input<LocalBodyProfile | null>(null);
   readonly today = input.required<string>();
   readonly closed = output<void>();
-  protected readonly heading = $localize`:@@training.body.profile.sheet:Seu perfil`;
+  protected readonly heading = $localize`:@@training.body.profile.sheet:Seu Perfil`;
   protected readonly cancelLabel = $localize`:@@training.body.profile.cancel:Cancelar`;
   protected readonly heightId = `body-height-${nextProfileId}`;
   protected readonly birthId = `body-birth-${nextProfileId}`;
