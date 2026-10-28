@@ -245,7 +245,7 @@ describe('TodayPage', () => {
     it('goes back to the day screen when the last set of an exercise is concluded', async () => {
       const kit = await started();
       const { el, fixture } = kit;
-      await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
+      await eventually(fixture, () => expect(text(el)).toContain('Última Vez e Sugestão'));
       await eventually(fixture, () => expect(button(el, 'Concluir Série').disabled).toBe(false));
 
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
@@ -265,7 +265,7 @@ describe('TodayPage', () => {
     it('ending the exercise from the rest card stops the clock, so the next exercise does not open resting', async () => {
       const kit = await started();
       const { el, fixture } = kit;
-      await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
+      await eventually(fixture, () => expect(text(el)).toContain('Última Vez e Sugestão'));
       await eventually(fixture, () => expect(button(el, 'Concluir Série').disabled).toBe(false));
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
       button(el, 'Concluir Série').click();
@@ -285,7 +285,13 @@ describe('TodayPage', () => {
       await eventually(fixture, () => expect(text(el)).toContain('Supino reto com barra'));
       expect(el.querySelector('h1')?.textContent).toContain('Treino');
       expect(text(el)).toContain('Série 1 de 2');
-      await eventually(fixture, () => expect(text(el)).toContain('Última vez 40 kg × 10'));
+      await eventually(fixture, () => expect(text(el)).toContain('Última Vez e Sugestão'));
+      // A referência fica recolhida até a pessoa tocar: o registro da série é o que importa na tela.
+      const hintPanel = () => el.querySelector<HTMLElement>('app-focus-hint .panel')!;
+      expect(hintPanel().hidden).toBe(true);
+      button(el, 'Última Vez e Sugestão').click();
+      await eventually(fixture, () => expect(hintPanel().hidden).toBe(false));
+      expect(hintPanel().textContent).toContain('Última vez 40 kg × 10');
       const inputs = Array.from(el.querySelectorAll<HTMLInputElement>('app-live-stepper input'));
       expect(inputs.map((input) => input.value)).toEqual(['40', '10']);
       expect(button(el, 'Concluir Série')).toBeDefined();
@@ -294,7 +300,7 @@ describe('TodayPage', () => {
     it('concludes a set: it is saved, the rest card appears, and skip closes it', async () => {
       const kit = await started();
       const { el, fixture } = kit;
-      await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
+      await eventually(fixture, () => expect(text(el)).toContain('Última Vez e Sugestão'));
 
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
       button(el, 'Concluir Série').click();
@@ -316,12 +322,18 @@ describe('TodayPage', () => {
     it('keeps the effort (RPE) optional: the same number again clears it, and a chosen one is saved', async () => {
       const kit = await started();
       const { el, fixture } = kit;
-      await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
+      await eventually(fixture, () => expect(text(el)).toContain('Última Vez e Sugestão'));
       const repository = TestBed.inject(SessionRepository);
       const rpe8 = () =>
         Array.from(el.querySelectorAll<HTMLButtonElement>('.rpe-button')).find(
           (node) => node.textContent?.trim() === '8',
         )!;
+      // O esforço nasce recolhido: só o botão "Esforço (RPE) opcional" está na tela.
+      const rpePanel = () => el.querySelector<HTMLElement>('.rpe')!;
+      expect(rpePanel().hidden).toBe(true);
+      expect(button(el, 'Esforço (RPE) opcional').getAttribute('aria-expanded')).toBe('false');
+      button(el, 'Esforço (RPE) opcional').click();
+      await eventually(fixture, () => expect(rpePanel().hidden).toBe(false));
       expect(el.querySelector('.rpe-button[aria-pressed="true"]')).toBeNull();
 
       rpe8().click();
@@ -331,6 +343,13 @@ describe('TodayPage', () => {
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
       button(el, 'Concluir Série').click();
       await eventually(fixture, () => expect(text(el)).toContain('Série 2 de 2'));
+
+      // Na série seguinte o esforço volta recolhido, sem a escolha da anterior.
+      await eventually(fixture, () => expect(rpePanel().hidden).toBe(true));
+      expect(button(el, 'Esforço (RPE) opcional').getAttribute('aria-expanded')).toBe('false');
+      button(el, 'Esforço (RPE) opcional').click();
+      await eventually(fixture, () => expect(rpePanel().hidden).toBe(false));
+      expect(el.querySelector('.rpe-button[aria-pressed="true"]')).toBeNull();
 
       rpe8().click();
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
@@ -346,13 +365,13 @@ describe('TodayPage', () => {
 
     it('tells a device that cannot vibrate (the iPhone) that the end of rest is only on screen, and one that can that it will vibrate', async () => {
       const without = await started();
-      await eventually(without.fixture, () => expect(text(without.el)).toContain('Última vez'));
+      await eventually(without.fixture, () =>
+        expect(text(without.el)).toContain('Última Vez e Sugestão'),
+      );
       without.runtime.advance(DOUBLE_TAP_MS + 100);
       button(without.el, 'Concluir Série').click();
       await eventually(without.fixture, () =>
-        expect(text(without.el)).toContain(
-          'Este aparelho não vibra: olhe a tela quando o tempo acabar.',
-        ),
+        expect(text(without.el)).toContain('Sem vibração: olhe a tela.'),
       );
       TestBed.resetTestingModule();
 
@@ -360,36 +379,39 @@ describe('TodayPage', () => {
       try {
         const withVibration = await started();
         await eventually(withVibration.fixture, () =>
-          expect(text(withVibration.el)).toContain('Última vez'),
+          expect(text(withVibration.el)).toContain('Última Vez e Sugestão'),
         );
         withVibration.runtime.advance(DOUBLE_TAP_MS + 100);
         button(withVibration.el, 'Concluir Série').click();
         await eventually(withVibration.fixture, () =>
-          expect(text(withVibration.el)).toContain('Vai vibrar quando terminar.'),
+          expect(text(withVibration.el)).toContain('Vibra no fim.'),
         );
       } finally {
         delete (navigator as unknown as Record<string, unknown>)['vibrate'];
       }
     });
 
-    it('says in the menu that this browser cannot keep the screen on, with the literal advice, and disables the switch', async () => {
+    it('puts the keep-screen-on switch on the workout screen, and disables it with the reason when the browser cannot', async () => {
       const { el, fixture } = await started();
-      await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
+      await eventually(fixture, () => expect(text(el)).toContain('Última Vez e Sugestão'));
 
+      const toggle = el.querySelector<HTMLInputElement>('header input[role="switch"]')!;
+      expect(toggle.checked).toBe(false);
+      expect(toggle.disabled).toBe(true);
+      expect(toggle.getAttribute('aria-label')).toBe(
+        'Manter a Tela Acesa (indisponível neste navegador)',
+      );
+
+      // O menu do treino não repete o interruptor.
       el.querySelector<HTMLButtonElement>('button[aria-label="Opções do treino"]')!.click();
-      await eventually(fixture, () =>
-        expect(text(el)).toContain('Este navegador não permite manter a tela acesa.'),
-      );
-      expect(text(el)).toContain('Deixe o bloqueio automático em "Nunca" durante o treino.');
-      expect(el.querySelector<HTMLInputElement>('dialog input[role="switch"]')!.disabled).toBe(
-        true,
-      );
+      await eventually(fixture, () => expect(button(el, 'Cancelar Treino')).toBeDefined());
+      expect(el.querySelector('dialog input[role="switch"]')).toBeNull();
     });
 
     it('says how many sets still wait to be sent, and reads "rest is over" in a polite region', async () => {
       const kit = await started();
       const { el, fixture } = kit;
-      await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
+      await eventually(fixture, () => expect(text(el)).toContain('Última Vez e Sugestão'));
       expect(el.querySelector('.sending')).toBeNull();
 
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
@@ -400,13 +422,12 @@ describe('TodayPage', () => {
       expect(region.textContent).toBe('');
       kit.runtime.advance(125_000);
       await eventually(fixture, () => expect(region.textContent).toBe('Descanso terminou'));
-      expect(text(el)).toContain('Hora da próxima série.');
     });
 
     it('ends the workout from the menu and shows the summary with the numbers done by hand', async () => {
       const kit = await started();
       const { el, fixture } = kit;
-      await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
+      await eventually(fixture, () => expect(text(el)).toContain('Última Vez e Sugestão'));
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
       button(el, 'Concluir Série').click();
       await eventually(fixture, () => expect(text(el)).toContain('Série 2 de 2'));
