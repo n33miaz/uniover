@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/n33miaz/uniover/compare/v0.10.0...v0.11.0) (2026-10-28)
+
+
+### Features
+
+* **training:** sync progress photos to the cloud
+
 ## [0.10.0](https://github.com/n33miaz/uniover/compare/v0.9.0...v0.10.0) (2026-10-28)
 
 
