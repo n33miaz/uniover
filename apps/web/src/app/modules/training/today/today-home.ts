@@ -28,9 +28,10 @@ import { ageLabel, dayLabel, repsRangeText, routineSummary } from './today-text'
 import { WeekCalendar } from './week-calendar';
 
 /**
- * A aba Hoje antes (e fora) do treino ao vivo: o resumo da semana em cima e, embaixo, a rotina do dia com uma ação
- * principal ("Iniciar treino"). Também é onde se continua um treino aberto, se escolhe outra rotina, se começa um treino
- * livre e onde aparecem os avisos que importam (treino aberto em outro aparelho, treino recusado pelo servidor).
+ * A aba Hoje antes (e fora) do treino ao vivo: a rotina do dia em cima, com a ação principal ("Iniciar Treino") e o
+ * ícone de configuração no canto, e a semana com meta embaixo, só para confirmar o contexto. Também é onde se continua um
+ * treino aberto, se configura a rotina (trocar de ficha, meta, ausência e nota), se começa um treino livre e onde
+ * aparecem os avisos que importam (treino aberto em outro aparelho, treino recusado pelo servidor).
  * Lê tudo do banco local: sem rede não há erro, só o que está guardado no aparelho.
  */
 @Component({

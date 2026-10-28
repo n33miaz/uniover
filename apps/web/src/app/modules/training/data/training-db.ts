@@ -2,6 +2,7 @@ import { InjectionToken } from '@angular/core';
 import Dexie, { type DexieOptions, type EntityTable } from 'dexie';
 import type { LocalBodyEntry } from './body/body-entry';
 import type { LocalBodyProfile } from './body/body-profile';
+import type { LocalCalendarEntry } from './calendar/calendar-entry';
 import { accountDatabaseName } from '../../../core/session/account-id';
 import type { LocalExercise } from './catalog/exercise';
 import type { LocalFood } from './foods/food';
@@ -58,6 +59,7 @@ export const TRAINING_TABLES = [
   'assessmentDocuments',
   'foods',
   'meals',
+  'calendarEntries',
 ] as const;
 
 /**
@@ -133,6 +135,11 @@ export const TRAINING_SCHEMA_V8 = {
   program: 'id',
 } as const;
 
+/** Esquema da versão 9: ausências planejadas e notas curtas, uma linha por dia civil. */
+export const TRAINING_SCHEMA_V9 = {
+  calendarEntries: 'id, dayKey, updatedAt, deletedAt',
+} as const;
+
 export interface TrainingMetaRow {
   readonly key: string;
   readonly value: unknown;
@@ -163,6 +170,7 @@ export class TrainingDb extends Dexie {
   declare photos: EntityTable<LocalPhoto, 'id'>;
   declare physicalAssessments: EntityTable<LocalPhysicalAssessment, 'id'>;
   declare assessmentDocuments: EntityTable<LocalAssessmentDocument, 'id'>;
+  declare calendarEntries: EntityTable<LocalCalendarEntry, 'id'>;
 
   constructor(name: string = TRAINING_DB_NAME, options?: DexieOptions) {
     super(name, options);
@@ -174,6 +182,7 @@ export class TrainingDb extends Dexie {
     this.version(6).stores(TRAINING_SCHEMA_V6);
     this.version(7).stores(TRAINING_SCHEMA_V7);
     this.version(8).stores(TRAINING_SCHEMA_V8);
+    this.version(9).stores(TRAINING_SCHEMA_V9);
   }
 }
 

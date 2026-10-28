@@ -9,6 +9,7 @@ import { ExercisesResourceSync } from './catalog/exercises-resource-sync';
 import { BodyEntriesResourceSync, BodyProfileResourceSync } from './body/body-resource-sync';
 import { BodyRepository } from './body/body-repository';
 import { ProfileRepository } from './body/profile-repository';
+import { CalendarEntriesResourceSync } from './calendar/calendar-entries-resource-sync';
 import { GoalRepository } from './goals/goal-repository';
 import { GoalsResourceSync } from './goals/goals-resource-sync';
 import { FoodRepository } from './foods/food-repository';
@@ -55,7 +56,7 @@ describe('provideTrainingData', () => {
     expect(TestBed.inject(PhotoStore)).toBeInstanceOf(PhotoStore);
 
     const resources = TestBed.inject(TRAINING_RESOURCE_SYNCS);
-    expect(resources).toHaveLength(10);
+    expect(resources).toHaveLength(11);
     expect(resources[0]).toBeInstanceOf(ExercisesResourceSync);
     expect(resources[0]).toMatchObject({
       resource: 'exercises',
@@ -90,6 +91,11 @@ describe('provideTrainingData', () => {
     expect(resources[9]).toMatchObject({
       resource: 'bodyProfile',
       path: '/api/v1/training/body/profile',
+    });
+    expect(resources[10]).toBeInstanceOf(CalendarEntriesResourceSync);
+    expect(resources[10]).toMatchObject({
+      resource: 'calendarEntries',
+      path: '/api/v1/training/calendar-entries',
     });
   });
 });
@@ -136,6 +142,12 @@ describe('catalog pull, end to end', () => {
       { accountId: 'conta-teste', path: '/api/v1/training/meals', after: null, limit: 200 },
       { accountId: 'conta-teste', path: '/api/v1/training/body/entries', after: null, limit: 200 },
       { accountId: 'conta-teste', path: '/api/v1/training/body/profile', after: null, limit: 200 },
+      {
+        accountId: 'conta-teste',
+        path: '/api/v1/training/calendar-entries',
+        after: null,
+        limit: 200,
+      },
     ]);
     expect(await t.trainingDb.exercises.count()).toBe(203);
     expect(await t.trainingDb.syncState.get('exercises')).toMatchObject({ cursor: 'cursor-2' });

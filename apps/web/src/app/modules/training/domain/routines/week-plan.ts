@@ -41,6 +41,24 @@ function startOfLocalDay(timestamp: number): number {
 }
 
 /**
+ * As fichas vivas e ativas do programa que acontecem num dia ISO (1=segunda ... 7=domingo), na ordem recebida.
+ * Vazio, com programa escolhido, é descanso; a regra é a mesma que decide a ficha de hoje.
+ */
+export function routinesOnWeekday(
+  routines: readonly PlanRoutine[],
+  weekday: number,
+  activeProgramId: string,
+): PlanRoutine[] {
+  return routines.filter(
+    (routine) =>
+      routine.active &&
+      routine.deletedAt === null &&
+      routine.programId === activeProgramId &&
+      ((routine.weekdays?.length ?? 0) === 0 ? WORK_WEEK : routine.weekdays!).includes(weekday),
+  );
+}
+
+/**
  * A ficha de hoje no programa da semana. Calculado no aparelho, com o relógio dele, então vale sem rede.
  * `activeProgramId` é a escolha gravada e sincronizada da conta (nunca inferida das fichas).
  *
@@ -66,9 +84,7 @@ export function planForDay(
   if (program.length === 0) return { routineId: null, resting: false };
 
   const day = isoWeekday(now);
-  const candidates = program.filter((routine) =>
-    ((routine.weekdays?.length ?? 0) === 0 ? WORK_WEEK : routine.weekdays!).includes(day),
-  );
+  const candidates = routinesOnWeekday(routines, day, activeProgramId);
   if (candidates.length === 0) return { routineId: null, resting: true };
   if (candidates.length === 1) return { routineId: candidates[0].id, resting: false };
 

@@ -22,18 +22,19 @@ describe('TrainingDb', () => {
     expect(TRAINING_DB_NAME).not.toBe(OFFLINE_DATABASE_NAME);
   });
 
-  it('opens at version 8 with the existing training data and nutrition tables', async () => {
+  it('opens at version 9 with the existing training data and nutrition tables', async () => {
     const db = new TrainingDb('uniover-training-esquema', {
       indexedDB: new FakeIDBFactory(),
       ...FAKE,
     });
     await db.open();
 
-    expect(db.verno).toBe(8);
+    expect(db.verno).toBe(9);
     expect(db.tables.map((table) => table.name).sort()).toEqual([
       'assessmentDocuments',
       'bodyEntries',
       'bodyProfile',
+      'calendarEntries',
       'exercises',
       'foods',
       'goals',
@@ -86,7 +87,7 @@ describe('TrainingDb', () => {
 
     const migrated = new TrainingDb(name, options);
     await migrated.open();
-    expect(migrated.verno).toBe(8);
+    expect(migrated.verno).toBe(9);
     expect(await migrated.physicalAssessments.get('history')).toMatchObject({
       assessedOn: '2026-10-01',
     });
@@ -147,11 +148,13 @@ describe('TrainingDb', () => {
 
     const migrated = new TrainingDb(name, options);
     await migrated.open();
-    expect(migrated.verno).toBe(8);
+    expect(migrated.verno).toBe(9);
     expect(await migrated.bodyEntries.get('historic')).toMatchObject({
       measuredOn: '2026-10-01',
       weightKg: 80,
     });
+    // A agenda pessoal chega vazia: nenhuma linha antiga é tocada.
+    expect(await migrated.calendarEntries.count()).toBe(0);
     expect(await migrated.physicalAssessments.count()).toBe(0);
     expect(await migrated.assessmentDocuments.count()).toBe(0);
     expect(await migrated.foods.count()).toBe(0);

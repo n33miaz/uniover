@@ -42,11 +42,12 @@ describe('training database, version 2 to the latest', () => {
     const next = new TrainingDb(name, options);
     await next.open();
 
-    expect(next.verno).toBe(8);
+    expect(next.verno).toBe(9);
     expect(next.tables.map((table) => table.name).sort()).toEqual([
       'assessmentDocuments',
       'bodyEntries',
       'bodyProfile',
+      'calendarEntries',
       'exercises',
       'foods',
       'goals',

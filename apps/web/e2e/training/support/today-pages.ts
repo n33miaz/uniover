@@ -22,7 +22,7 @@ export async function openToday(
   options: { path?: string; history?: boolean } = {},
 ): Promise<void> {
   await openTraining(page, options.path ?? '/treino');
-  await expect(page.getByRole('heading', { name: 'Semana', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Semana com Meta', exact: true })).toBeVisible();
   if (options.history !== false) {
     // O histórico vem do servidor simulado: com a máquina ocupada o puxar passa dos 5 s padrão, então a espera é maior.
     await expect(page.locator('.lines .ui-row').first()).toContainText('última vez 40 kg × 10', {
@@ -42,9 +42,9 @@ export async function skipProgramChoice(page: Page): Promise<void> {
   if (await skip.isVisible()) await skip.click();
 }
 
-/** Toca em "Iniciar treino" e espera a tela do treino ao vivo. */
+/** Toca em "Iniciar Treino" e espera a tela do treino ao vivo. */
 export async function beginWorkout(page: Page, title = /Treino A/): Promise<void> {
-  await page.getByRole('button', { name: 'Iniciar treino' }).click();
+  await page.getByRole('button', { name: 'Iniciar Treino' }).click();
   await skipProgramChoice(page);
   await expect(page.locator('app-workout-day .routine-name')).toContainText(title);
   await page.locator('app-workout-day .exercise.suggested').click();

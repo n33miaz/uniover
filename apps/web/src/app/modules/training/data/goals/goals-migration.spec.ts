@@ -64,11 +64,12 @@ describe('training database, version 3 to 4', () => {
     const next = new TrainingDb(name, options);
     await next.open();
 
-    expect(next.verno).toBe(8);
+    expect(next.verno).toBe(9);
     expect(next.tables.map((table) => table.name).sort()).toEqual([
       'assessmentDocuments',
       'bodyEntries',
       'bodyProfile',
+      'calendarEntries',
       'exercises',
       'foods',
       'goals',

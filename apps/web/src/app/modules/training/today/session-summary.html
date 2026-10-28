@@ -24,6 +24,13 @@
       </p>
     </div>
 
+    @if (dayNote()) {
+      <p class="day-note">
+        <strong i18n="@@training.summary.day-note">Nota do Dia</strong>
+        {{ dayNote() }}
+      </p>
+    }
+
     <dl class="stats">
       <div class="stat">
         <dt i18n="@@training.summary.volume">Volume (carga × repetições)</dt>

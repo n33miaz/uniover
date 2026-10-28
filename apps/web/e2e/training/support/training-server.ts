@@ -146,6 +146,8 @@ const NEW_ROW_DEFAULTS: Record<string, (id: string, body: Record<string, unknown
   }),
   // O alimento que a pessoa cadastra volta do servidor como "próprio" e sem atribuição (a resposta sempre traz os dois).
   foods: () => ({ source: 'own', attribution: null }),
+  // A agenda é identificada pelo dia: o servidor devolve a data junto com o registro.
+  'calendar-entries': (id) => ({ dayKey: id }),
 };
 
 /**

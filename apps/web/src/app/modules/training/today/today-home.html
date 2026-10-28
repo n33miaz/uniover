@@ -31,8 +31,6 @@
     </section>
   }
 
-  <app-week-calendar />
-
   @if (store.suggestProgram()) {
     <!-- Sem programa da semana, escolher é o primeiro passo e fica no topo. Quem já tem fichas livres pode dispensar. -->
     <app-program-suggestion
@@ -51,7 +49,7 @@
       <div class="routine-head">
         <span class="ui-tile"><app-training-glyph name="dumbbell" /></span>
         <div class="routine-id">
-          <p class="eyebrow" i18n="@@training.today.running">Treino em andamento</p>
+          <p class="eyebrow" i18n="@@training.today.running">Treino em Andamento</p>
           <h3 id="routine-title" class="routine-name">
             {{ store.activeRoutine()?.name ?? freeName }}
           </h3>
@@ -65,7 +63,7 @@
       </p>
       <button type="button" class="primary ui-btn block go" (click)="started.emit()">
         <app-today-glyph name="play" />
-        <span i18n="@@training.today.continue">Continuar treino</span>
+        <span i18n="@@training.today.continue">Continuar Treino</span>
       </button>
     </section>
   } @else if (store.otherDevice(); as other) {
@@ -153,6 +151,17 @@
           <p class="eyebrow">{{ today() }}</p>
           <h3 id="routine-title" class="routine-name">{{ current.routine.name }}</h3>
         </div>
+        <!-- A folha traz a troca de rotina e também a meta, a ausência e a nota do dia: o ícone vale com uma rotina só. -->
+        <button
+          type="button"
+          class="routine-settings"
+          aria-label="Configurar Rotina"
+          i18n-aria-label="@@training.today.configure-routine"
+          [attr.aria-haspopup]="'dialog'"
+          (click)="pickerOpen.set(true)"
+        >
+          <app-training-glyph name="sliders" />
+        </button>
       </div>
       <p class="meta">{{ summary() }}</p>
       <button
@@ -162,7 +171,7 @@
         (click)="start(current.routine.id)"
       >
         <app-today-glyph name="play" />
-        <span i18n="@@training.today.start">Iniciar treino</span>
+        <span i18n="@@training.today.start">Iniciar Treino</span>
       </button>
     </section>
 
@@ -181,12 +190,6 @@
     </ul>
 
     <div class="actions">
-      @if (store.entries().length > 1) {
-        <button type="button" class="secondary ui-btn" (click)="pickerOpen.set(true)">
-          <app-training-glyph name="list" />
-          <span i18n="@@training.today.choose-other">Escolher outra rotina</span>
-        </button>
-      }
       <button type="button" class="secondary ui-btn" [disabled]="starting()" (click)="start(null)">
         <app-training-glyph name="plus" />
         <span i18n="@@training.today.free">Treino livre</span>
@@ -235,6 +238,8 @@
       </div>
     </section>
   }
+
+  <app-week-calendar (routineChosen)="store.chooseRoutine($event)" />
 </div>
 
 @if (pickerOpen()) {

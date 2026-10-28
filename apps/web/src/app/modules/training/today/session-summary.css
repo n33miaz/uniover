@@ -178,3 +178,18 @@
   min-height: 64px;
   font-size: 1.125rem;
 }
+
+/* Nota deixada no dia do treino: lembra lotação, dor ou equipamento ao abrir o histórico. */
+.day-note {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--a-surface-2);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+.day-note strong {
+  display: block;
+  color: var(--a-ink);
+}

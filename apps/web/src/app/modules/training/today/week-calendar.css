@@ -110,6 +110,27 @@
 .day.done {
   background: var(--a-accent-soft);
 }
+/* Planejado vai tracejado e hoje vai cheio: a diferença não depende só da cor. */
+.day.planned,
+.month-day.planned {
+  border: 1px dashed var(--a-accent);
+}
+.day.rest,
+.month-day.rest {
+  color: var(--a-ink3);
+  background: var(--a-elev);
+}
+.day.absent,
+.month-day.absent {
+  color: var(--a-ink2);
+  background: var(--a-warn-soft);
+  text-decoration: line-through;
+}
+.day-note {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
 .month-day.done {
   background: var(--a-accent-soft);
   color: var(--a-accent-ink);
@@ -231,6 +252,13 @@
   bottom: 1px;
   font-size: 0.7rem;
   font-weight: 900;
+}
+.streak {
+  margin: 0;
+  color: var(--a-accent-ink);
+  text-align: center;
+  font-size: var(--fs-small);
+  font-weight: 750;
 }
 .month-stats,
 .goal-note {

@@ -1,6 +1,7 @@
 import type { Provider } from '@angular/core';
 import { provideBodyExportSections } from './body/body-export-sections';
 import { provideBodyData } from './body/body-resource-sync';
+import { provideCalendarEntriesData } from './calendar/calendar-entries-resource-sync';
 import { CatalogRepository } from './catalog/catalog-repository';
 import { CatalogStore } from './catalog/catalog-store';
 import { CatalogWriter } from './catalog/catalog-writer';
@@ -57,6 +58,9 @@ export function provideTrainingData(): Provider[] {
 
     // Corpo: medições e perfil (acesso aos dados e recursos sincronizáveis).
     ...provideBodyData(),
+
+    // Agenda pessoal: ausências planejadas e notas curtas de cada dia (por último, a ordem dos outros pulls não muda).
+    ...provideCalendarEntriesData(),
 
     // Fotos de progresso: só neste aparelho (sem fila, sem leitura do servidor, fora da exportação).
     ...providePhotoData(),

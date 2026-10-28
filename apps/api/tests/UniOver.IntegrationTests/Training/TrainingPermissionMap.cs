@@ -59,6 +59,8 @@ internal static class TrainingPermissionMap
         new("GET", "/api/v1/training/catalog/credits", Module),
         new("GET", "/api/v1/training/goals", Module),
         new("PUT", "/api/v1/training/goals/{kind}", Module, GoalBody),
+        new("GET", "/api/v1/training/calendar-entries", Module),
+        new("PUT", "/api/v1/training/calendar-entries/{dayKey}", Module, new { absent = true, note = "Viagem", deleted = false, clientUpdatedAt = DateTimeOffset.UtcNow }),
         new("GET", "/api/v1/training/routine-templates", Module),
         new("GET", "/api/v1/training/program", Module),
         new("PUT", "/api/v1/training/program", Module, new { programId = "ppl-superior-inferior", clientUpdatedAt = DateTimeOffset.UtcNow }),
@@ -99,12 +101,13 @@ internal static class TrainingPermissionMap
         Routes.Select(r => (r.Method, r.Pattern, r.Url(), r.Body))
             .Concat(AdminRoutes.Select(r => (r.Method, r.Pattern, r.Url(), r.Body)));
 
-    /// <summary>O caminho com ids de exemplo (e o tipo de meta, que é texto) no lugar dos parâmetros.</summary>
+    /// <summary>O caminho com ids de exemplo (e o tipo de meta e a data, que são texto) no lugar dos parâmetros.</summary>
     public static string Fill(string pattern) => pattern
         .Replace("{sessionId:guid}", Guid.NewGuid().ToString(), StringComparison.Ordinal)
         .Replace("{id:guid}", Guid.NewGuid().ToString(), StringComparison.Ordinal)
         .Replace("{barcode}", "12345678", StringComparison.Ordinal)
-        .Replace("{kind}", "weekly_sessions", StringComparison.Ordinal);
+        .Replace("{kind}", "weekly_sessions", StringComparison.Ordinal)
+        .Replace("{dayKey}", "2026-10-27", StringComparison.Ordinal);
 
     /// <summary>A chamada chegou à rota: a autorização deixou passar (o que veio depois é assunto do tratamento dela).</summary>
     public static bool Reached(HttpStatusCode status) => status is not (HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden);
