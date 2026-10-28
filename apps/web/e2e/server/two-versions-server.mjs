@@ -7,18 +7,21 @@
 //   /use?v=a|b                 qual versão responde daqui em diante
 //   /sw-delay?ms=N             a versão b só obedece ao SKIP_WAITING depois de N ms (um aparelho lento)
 //   /api-delay?ms=N            a API (que no teste responde 404) demora N ms para responder
+//   /me-delay?ms=N             com /owner, só a leitura da conta (/me) demora N ms a mais
+//   /owner?on=1                a API passa a responder como o dono já conectado (sessão, conta e estado da TV)
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createAppServer } from './app-server.mjs';
 import { createNextVersion } from './next-version.mjs';
+import { createOwnerApi } from './owner-api.mjs';
 
 const rootA = resolve(process.argv[2] ?? '');
 const tmp = await mkdtemp(join(tmpdir(), 'uniover-next-'));
 const rootB = join(tmp, 'browser');
 await createNextVersion(rootA, rootB);
 
-const state = { version: 'a', swDelayMs: 0, apiDelayMs: 0 };
+const state = { version: 'a', swDelayMs: 0, apiDelayMs: 0, meDelayMs: 0, owner: false };
 
 const app = createAppServer({
   resolveRoot: () => (state.version === 'b' ? rootB : rootA),
@@ -35,6 +38,7 @@ const app = createAppServer({
   // não guarda, vem da rede, e a rede só tem a versão nova.
   assetCache: 'no-store',
   beforeApi: () => new Promise((done) => setTimeout(done, state.apiDelayMs)),
+  api: createOwnerApi({ isOwner: () => state.owner, meDelayMs: () => state.meDelayMs }),
 });
 
 const server = app.listen(0, () => {
@@ -47,6 +51,8 @@ const control = (await import('node:http')).createServer((req, res) => {
   if (url.pathname === '/use') state.version = url.searchParams.get('v') === 'b' ? 'b' : 'a';
   if (url.pathname === '/sw-delay') state.swDelayMs = Number(url.searchParams.get('ms') ?? 0);
   if (url.pathname === '/api-delay') state.apiDelayMs = Number(url.searchParams.get('ms') ?? 0);
+  if (url.pathname === '/me-delay') state.meDelayMs = Number(url.searchParams.get('ms') ?? 0);
+  if (url.pathname === '/owner') state.owner = url.searchParams.get('on') === '1';
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(state));
 });
 control.listen(0, () => {

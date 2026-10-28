@@ -89,6 +89,8 @@ test.beforeEach(async ({ page }) => {
   await setControl('/use?v=a');
   await setControl('/sw-delay?ms=0');
   await setControl('/api-delay?ms=0');
+  await setControl('/me-delay?ms=0');
+  await setControl('/owner?on=0');
 });
 
 test.afterEach(async ({}, info) => {
@@ -113,6 +115,75 @@ async function openVersionA(page: Page): Promise<string> {
 }
 
 test.describe('atualização com a casca antiga já aberta', () => {
+  /**
+   * O defeito do dono (iPhone, 0.6.0): sessão válida, mas a leitura da conta (`/me`, o banco acordando) demora. O guarda
+   * de boas-vindas esperava essa leitura sem teto, a primeira navegação não terminava, o vigia de 10 s recarregava a
+   * página (e a espera recomeçava), depois liberava o esqueleto sobre uma tela vazia: dois recarregamentos, dezenas de
+   * segundos de brilho sem fim e o fundo vazio até a API responder. Com o teto no guarda, a Início sai em poucos segundos
+   * com uma única recarga e o vigia nem chega a disparar.
+   */
+  test('com a conta do dono lenta, a Início aparece com uma única recarga e sem tela vazia', async ({
+    page,
+    context,
+  }) => {
+    await context.addInitScript(() => {
+      const state = window as unknown as { __blankFrames: number };
+      state.__blankFrames = 0;
+      // Depois que a página nova pintou algo, nenhum quadro pode ficar sem o esqueleto e sem a Início ao mesmo tempo.
+      const tick = () => {
+        const hasSkeleton = !!document.querySelector('app-update-skeleton .overlay');
+        const hasHome = !!document.querySelector('article.card');
+        if (!hasHome && !hasSkeleton && document.querySelector('app-root > *'))
+          state.__blankFrames++;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await setControl('/owner?on=1');
+    await openVersionA(page);
+
+    await setControl('/use?v=b');
+    await setControl(`/sw-delay?ms=${SW_DELAY_MS}`);
+    await setControl('/api-delay?ms=300');
+    await setControl('/me-delay?ms=30000');
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      await registration?.update();
+    });
+    await expect(banner(page)).toBeVisible();
+
+    const timeOrigin = await page.evaluate(() => performance.timeOrigin);
+    // `load` (e não `framenavigated`): o roteador também troca o endereço no mesmo documento, e isso não é recarga.
+    let documents = 0;
+    page.on('load', () => documents++);
+    const tappedAt = Date.now();
+    await banner(page).getByRole('button', { name: 'Atualizar' }).click();
+    await expect(skeleton(page)).toBeVisible({ timeout: 1_000 });
+
+    // Primeiro a recarga (até lá a Início que se vê é a da casca antiga, por baixo do esqueleto).
+    await expect
+      .poll(() => page.evaluate(() => performance.timeOrigin).catch(() => timeOrigin), {
+        message: 'a página recarregou',
+        timeout: 20_000,
+      })
+      .not.toBe(timeOrigin);
+    await expect(homeCards(page).first()).toBeVisible({ timeout: 20_000 });
+    await expect(skeleton(page)).toHaveCount(0);
+    const elapsed = Date.now() - tappedAt;
+    // Uma recarga só: o vigia da carga (10 s) nunca disparou, nem deixou rastro.
+    expect(documents).toBe(1);
+    expect(await page.evaluate(() => sessionStorage.getItem('uniover.update.watchdog'))).toBeNull();
+    // Nem a recuperação de pedaço de código ausente entrou em cena (nenhum pedido de chunk falhou).
+    expect(
+      await page.evaluate(() => sessionStorage.getItem('uniover.update.chunk-recovery')),
+    ).toBeNull();
+    // A leitura da conta leva 30 s; a Início não a espera (só o teto do guarda, 3 s da sessão + 1,5 s da conta).
+    expect(elapsed).toBeLessThan(15_000);
+    expect(
+      await page.evaluate(() => (window as never as { __blankFrames: number }).__blankFrames),
+    ).toBe(0);
+  });
+
   test('o toque em Atualizar cobre a tela com o esqueleto e termina na versão nova com a Início', async ({
     page,
     context,
