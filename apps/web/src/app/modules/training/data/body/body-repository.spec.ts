@@ -8,6 +8,25 @@ import type { BodyWriteResult } from './body-repository';
 // O relógio falso do teste marca 09/10/2025: é o "hoje" do aparelho.
 const TODAY = '2025-10-09';
 
+/** Os campos acrescentados ao corpo seguem no envio como `null` quando não foram medidos (nunca ausentes nem zero). */
+const NEW_FIELDS_EMPTY = {
+  chestCm: null,
+  abdomenCm: null,
+  forearmCm: null,
+  calfCm: null,
+  armRightCm: null,
+  armLeftCm: null,
+  forearmRightCm: null,
+  forearmLeftCm: null,
+  thighRightCm: null,
+  thighLeftCm: null,
+  calfRightCm: null,
+  calfLeftCm: null,
+  chestSkinfoldMm: null,
+  abdomenSkinfoldMm: null,
+  thighSkinfoldMm: null,
+} as const;
+
 const quota = () => Object.assign(new Error('cheio'), { name: 'QuotaExceededError' });
 
 function saved(result: BodyWriteResult): LocalBodyEntry {
@@ -65,10 +84,71 @@ describe('BodyRepository', () => {
         hipCm: null,
         armCm: null,
         thighCm: null,
+        ...NEW_FIELDS_EMPTY,
         note: 'de manhã',
         clientUpdatedAt: new Date(entry.clientUpdatedAt).toISOString(),
         deleted: false,
       });
+    });
+
+    it('stores the new measurements with their side and sends them in the same PUT', async () => {
+      const t = setupBody();
+
+      const entry = saved(
+        await t.repository.saveEntry({
+          chestCm: 98.5,
+          armRightCm: 35,
+          armLeftCm: 33.5,
+          calfLeftCm: 38,
+          chestSkinfoldMm: 9.5,
+        }),
+      );
+
+      expect(entry).toMatchObject({
+        chestCm: 98.5,
+        armRightCm: 35,
+        armLeftCm: 33.5,
+        weightKg: null,
+      });
+      const [queued] = await t.outbox();
+      expect(queued.body).toMatchObject({
+        ...NEW_FIELDS_EMPTY,
+        chestCm: 98.5,
+        armRightCm: 35,
+        armLeftCm: 33.5,
+        calfLeftCm: 38,
+        chestSkinfoldMm: 9.5,
+      });
+    });
+
+    it('refuses new values outside the API limits and queues nothing', async () => {
+      const t = setupBody();
+
+      expect(await t.repository.saveEntry({ chestCm: 9.9 })).toMatchObject({ status: 'invalid' });
+      expect(await t.repository.saveEntry({ armLeftCm: 250.1 })).toMatchObject({
+        status: 'invalid',
+      });
+      expect(await t.repository.saveEntry({ thighSkinfoldMm: 0.9 })).toMatchObject({
+        status: 'invalid',
+      });
+      expect(await t.repository.saveEntry({ abdomenSkinfoldMm: 100.1 })).toMatchObject({
+        status: 'invalid',
+      });
+      expect(await t.outbox()).toHaveLength(0);
+    });
+
+    it('sends null for the new fields of a row saved before they existed', async () => {
+      const t = setupBody();
+      const entry = saved(await t.repository.saveEntry({ weightKg: 80 }));
+      // Linha antiga do banco local: não tem as chaves novas (o Dexie guarda só o que foi escrito).
+      const legacy = { ...entry } as Record<string, unknown>;
+      for (const key of Object.keys(NEW_FIELDS_EMPTY)) delete legacy[key];
+      await t.trainingDb.bodyEntries.put(legacy as unknown as LocalBodyEntry);
+
+      saved(await t.repository.saveEntry({ weightKg: 81 }, entry.id));
+
+      const queued = await t.outbox();
+      expect(queued[1].body).toMatchObject({ weightKg: 81, ...NEW_FIELDS_EMPTY });
     });
 
     it('takes the date the owner picked, and one value alone is enough', async () => {
@@ -444,15 +524,22 @@ describe('BodyRepository', () => {
 
 describe('toLocalBodyEntry', () => {
   it('turns every number into a number, the missing note into an empty text and the tombstone into empty values', () => {
-    expect(toLocalBodyEntry(bodyEntryDto('a', { weightKg: '82.25', note: null }))).toMatchObject({
+    expect(
+      toLocalBodyEntry(
+        bodyEntryDto('a', { weightKg: '82.25', chestCm: '90', armRightCm: '33.5', note: null }),
+      ),
+    ).toMatchObject({
       weightKg: 82.25,
+      chestCm: 90,
+      armRightCm: 33.5,
       note: '',
       deletedAt: null,
     });
     expect(
-      toLocalBodyEntry(bodyEntryDto('a', { deleted: true, weightKg: 80, note: 'x' })),
+      toLocalBodyEntry(bodyEntryDto('a', { deleted: true, weightKg: 80, chestCm: 90, note: 'x' })),
     ).toMatchObject({
       weightKg: null,
+      chestCm: null,
       note: '',
       deletedAt: expect.any(Number),
     });

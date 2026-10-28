@@ -211,11 +211,12 @@ describe('physical assessment screens', () => {
     transferButton.click();
     await eventually({ detectChanges: () => harness.detectChanges() }, () => {
       expect(page.textContent).toContain('Escolher medidas para o Corpo');
-      expect(page.querySelectorAll('.transfer-option')).toHaveLength(2);
+      // Peso, cintura e a panturrilha direita (a medida com lado agora tem campo próprio no Corpo).
+      expect(page.querySelectorAll('.transfer-option')).toHaveLength(3);
     });
 
     const choices = Array.from(page.querySelectorAll<HTMLInputElement>('.transfer-option input'));
-    expect(choices).toHaveLength(2);
+    expect(choices).toHaveLength(3);
     expect(choices.every((choice) => !choice.checked)).toBe(true);
     choices[0].click();
     await eventually({ detectChanges: () => harness.detectChanges() }, () => {

@@ -34,6 +34,21 @@ export interface BodyEntryDraft {
   readonly hipCm?: number | null;
   readonly armCm?: number | null;
   readonly thighCm?: number | null;
+  readonly chestCm?: number | null;
+  readonly abdomenCm?: number | null;
+  readonly forearmCm?: number | null;
+  readonly calfCm?: number | null;
+  readonly armRightCm?: number | null;
+  readonly armLeftCm?: number | null;
+  readonly forearmRightCm?: number | null;
+  readonly forearmLeftCm?: number | null;
+  readonly thighRightCm?: number | null;
+  readonly thighLeftCm?: number | null;
+  readonly calfRightCm?: number | null;
+  readonly calfLeftCm?: number | null;
+  readonly chestSkinfoldMm?: number | null;
+  readonly abdomenSkinfoldMm?: number | null;
+  readonly thighSkinfoldMm?: number | null;
   readonly note?: string;
 }
 
@@ -69,6 +84,21 @@ export interface LatestMeasurements {
   readonly hipCm?: LatestMeasure;
   readonly armCm?: LatestMeasure;
   readonly thighCm?: LatestMeasure;
+  readonly chestCm?: LatestMeasure;
+  readonly abdomenCm?: LatestMeasure;
+  readonly forearmCm?: LatestMeasure;
+  readonly calfCm?: LatestMeasure;
+  readonly armRightCm?: LatestMeasure;
+  readonly armLeftCm?: LatestMeasure;
+  readonly forearmRightCm?: LatestMeasure;
+  readonly forearmLeftCm?: LatestMeasure;
+  readonly thighRightCm?: LatestMeasure;
+  readonly thighLeftCm?: LatestMeasure;
+  readonly calfRightCm?: LatestMeasure;
+  readonly calfLeftCm?: LatestMeasure;
+  readonly chestSkinfoldMm?: LatestMeasure;
+  readonly abdomenSkinfoldMm?: LatestMeasure;
+  readonly thighSkinfoldMm?: LatestMeasure;
 }
 
 const QUEUE_MODULE = 'training';
@@ -83,6 +113,21 @@ const MEASURE_KEYS = [
   'hipCm',
   'armCm',
   'thighCm',
+  'chestCm',
+  'abdomenCm',
+  'forearmCm',
+  'calfCm',
+  'armRightCm',
+  'armLeftCm',
+  'forearmRightCm',
+  'forearmLeftCm',
+  'thighRightCm',
+  'thighLeftCm',
+  'calfRightCm',
+  'calfLeftCm',
+  'chestSkinfoldMm',
+  'abdomenSkinfoldMm',
+  'thighSkinfoldMm',
 ] as const;
 
 /**
@@ -154,7 +199,7 @@ export class BodyRepository {
     const newestFirst = [...(await this.entries())].reverse();
     const found: { -readonly [K in keyof LatestMeasurements]: LatestMeasurements[K] } = {};
     for (const key of MEASURE_KEYS) {
-      const row = newestFirst.find((candidate) => candidate[key] !== null);
+      const row = newestFirst.find((candidate) => candidate[key] != null);
       if (row === undefined) continue;
       const measure = { value: row[key] as number, measuredOn: row.measuredOn };
       if (key === 'bodyFatPct') found.bodyFatPct = { ...measure, fatMethod: row.fatMethod };
@@ -182,6 +227,21 @@ export class BodyRepository {
       hipCm: draft.hipCm ?? null,
       armCm: draft.armCm ?? null,
       thighCm: draft.thighCm ?? null,
+      chestCm: draft.chestCm ?? null,
+      abdomenCm: draft.abdomenCm ?? null,
+      forearmCm: draft.forearmCm ?? null,
+      calfCm: draft.calfCm ?? null,
+      armRightCm: draft.armRightCm ?? null,
+      armLeftCm: draft.armLeftCm ?? null,
+      forearmRightCm: draft.forearmRightCm ?? null,
+      forearmLeftCm: draft.forearmLeftCm ?? null,
+      thighRightCm: draft.thighRightCm ?? null,
+      thighLeftCm: draft.thighLeftCm ?? null,
+      calfRightCm: draft.calfRightCm ?? null,
+      calfLeftCm: draft.calfLeftCm ?? null,
+      chestSkinfoldMm: draft.chestSkinfoldMm ?? null,
+      abdomenSkinfoldMm: draft.abdomenSkinfoldMm ?? null,
+      thighSkinfoldMm: draft.thighSkinfoldMm ?? null,
       note: draft.note ?? '',
     };
     const measuredOn = draft.measuredOn ?? previous?.measuredOn ?? this.today();
