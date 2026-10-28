@@ -92,6 +92,7 @@
 
 .details .wide {
   flex-basis: 100%;
+  white-space: pre-line;
 }
 
 .details span {
@@ -136,8 +137,19 @@
   }
 }
 
-/* O pulso do fim só existe para quem não pediu menos movimento. */
+@keyframes enter {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+}
+
+/* O cartão entra com um deslize curto (a ilustração recolhe ao mesmo tempo); o pulso do fim também só vale para quem não pediu menos movimento. */
 @media (prefers-reduced-motion: no-preference) {
+  .rest {
+    animation: enter 220ms var(--ease-out) both;
+  }
+
   .over {
     animation: done 200ms var(--ease-out) 1;
   }

@@ -7,6 +7,8 @@ import { clockText } from './today-text';
  * O descanso entre as séries: o relógio grande, "+15 s" e os atalhos para encerrar. Quando acaba, o cartão vira o aviso
  * do fim (cor cheia e o texto "Descanso terminou"): o iPhone não vibra, então a tela é o aviso. O app só vibra; não toca som.
  *
+ * O recorde que acabou de sair aparece aqui e só aqui: durante o descanso a tela não repete o aviso próprio dele.
+ *
  * O relógio sai do instante de fim guardado (`RestTimerService`), então voltar à aba ou recarregar mostra o tempo certo.
  */
 @Component({
@@ -70,14 +72,12 @@ import { clockText } from './today-text';
           }
         </div>
       }
-      @if (timer.over()) {
-        <p class="note" i18n="@@training.live.rest-over-note">Hora da próxima série.</p>
-      } @else if (canVibrate()) {
-        <p class="note" i18n="@@training.live.rest-vibrate">Vai vibrar quando terminar.</p>
-      } @else {
-        <p class="note" i18n="@@training.live.rest-no-vibrate">
-          Este aparelho não vibra: olhe a tela quando o tempo acabar.
-        </p>
+      @if (!timer.over()) {
+        @if (canVibrate()) {
+          <p class="note" i18n="@@training.live.rest-vibrate">Vibra no fim.</p>
+        } @else {
+          <p class="note" i18n="@@training.live.rest-no-vibrate">Sem vibração: olhe a tela.</p>
+        }
       }
     </section>
   `,
