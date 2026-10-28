@@ -64,7 +64,7 @@ import { assessmentTitle } from './assessment-format';
     .page {
       display: grid;
       gap: var(--space-3);
-      padding: 0 var(--space-4) calc(var(--space-5) + env(safe-area-inset-bottom));
+      padding: 0 var(--space-4) calc(var(--space-5) + var(--safe-bottom));
     }
     header {
       display: grid;

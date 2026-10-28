@@ -10,11 +10,11 @@
   max-width: 40rem;
   margin-inline: auto;
   padding-top: env(safe-area-inset-top);
-  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  padding-bottom: calc(96px + var(--safe-bottom));
 }
 
 .live:has(.resting) {
-  padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--space-4) + var(--safe-bottom));
 }
 
 /*
@@ -112,8 +112,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  min-height: calc(100vh - var(--live-top) - 96px - env(safe-area-inset-bottom));
-  min-height: calc(100svh - var(--live-top) - 96px - env(safe-area-inset-bottom));
+  min-height: calc(100vh - var(--live-top) - 96px - var(--safe-bottom));
+  min-height: calc(100svh - var(--live-top) - 96px - var(--safe-bottom));
 }
 
 .top {
@@ -359,9 +359,9 @@
 .dock {
   position: fixed;
   inset-inline: 0;
-  bottom: 0;
+  bottom: var(--kb-inset);
   z-index: 2;
-  padding: var(--space-3) var(--gutter) calc(var(--space-3) + env(safe-area-inset-bottom));
+  padding: var(--space-3) var(--gutter) calc(var(--space-3) + var(--safe-bottom));
   border-top: 1px solid var(--a-line);
   background: var(--a-surface);
 }

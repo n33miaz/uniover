@@ -204,7 +204,7 @@ export const SLOW_BOOT_MS = 300;
       display: flex;
       justify-content: space-around;
       align-items: center;
-      padding: var(--space-3) var(--gutter) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+      padding: var(--space-3) var(--gutter) calc(var(--space-3) + var(--safe-bottom));
       border-top: 1px solid var(--a-line);
       background: var(--a-surface);
     }
@@ -217,7 +217,7 @@ export const SLOW_BOOT_MS = 300;
     .page.home {
       max-width: calc(46rem + 2 * var(--gutter));
       padding-top: calc(var(--gutter) + env(safe-area-inset-top, 0px));
-      padding-bottom: calc(var(--gutter) + env(safe-area-inset-bottom, 0px));
+      padding-bottom: calc(var(--gutter) + var(--safe-bottom));
       gap: var(--space-4);
     }
     .home-hero {

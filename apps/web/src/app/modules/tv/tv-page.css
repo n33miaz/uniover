@@ -5,9 +5,7 @@
    * embaixo, mais as áreas seguras do aparelho). Sem barra de abas, o controle usa esta altura inteira, sem
    * rolar a página; abaixo de `--tv-min` ele prefere rolar a espremer os botões.
    */
-  --tv-avail: calc(
-    100dvh - 2 * var(--gutter) - env(safe-area-inset-top) - env(safe-area-inset-bottom)
-  );
+  --tv-avail: calc(100dvh - 2 * var(--gutter) - env(safe-area-inset-top) - var(--safe-bottom));
   --tv-min: 500px;
 }
 
@@ -266,7 +264,7 @@ h1 {
 .toast {
   position: fixed;
   right: var(--gutter);
-  bottom: calc(var(--gutter) + env(safe-area-inset-bottom));
+  bottom: calc(var(--gutter) + var(--safe-bottom) + var(--kb-inset));
   left: var(--gutter);
   z-index: 5;
   max-width: 36rem;
