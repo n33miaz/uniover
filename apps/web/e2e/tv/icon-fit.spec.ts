@@ -444,7 +444,7 @@ test.describe('atalhos maiores e centralizados', () => {
     });
   });
 
-  test('para o convidado (sem a seta de voltar) a fileira também é de 60 px e centralizada', async ({
+  test('para o convidado (com a seta de volta à Início) a fileira também é de 60 px e centralizada', async ({
     page,
   }) => {
     tv.shortcuts = shortcutsFor(FIT_CASES.slice(0, 4));
@@ -462,7 +462,9 @@ test.describe('atalhos maiores e centralizados', () => {
     await page.locator('article[data-module="tv"] a.card-link').click();
     await expect(page).toHaveURL(/\/tv$/);
     await showTv(page);
-    await expect(page.getByRole('link', { name: /Início/ })).toHaveCount(0);
+    await expect(
+      page.locator('header.head').getByRole('link', { name: 'Voltar ao Início' }),
+    ).toHaveAttribute('href', '/');
     await expect(page.locator('.shortcuts .shortcut')).toHaveCount(4);
     const gaps = await rowGaps(page);
     expect(gaps.width).toBeCloseTo(TILE, 0);

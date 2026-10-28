@@ -134,9 +134,21 @@ test.describe('Início', () => {
       await expectNoA11yViolations(page);
 
       await page.getByRole('button', { name: 'Editar' }).click();
-      const sheet = page.getByRole('dialog', { name: 'Editar a Início' });
+      const sheet = page.getByRole('dialog', { name: 'Personalizar' });
       await expect(sheet).toBeVisible();
       await settle(page);
+      // O foco inicial é o título (nenhuma seta ganha anel sem a pessoa ter tocado) e cada nome cabe numa linha, sem corte.
+      await expect(sheet.getByRole('heading', { name: 'Personalizar' })).toBeFocused();
+      const names = await sheet.locator('.name').evaluateAll((items) =>
+        items.map((item) => ({
+          text: item.textContent?.trim(),
+          oneLine:
+            item.getBoundingClientRect().height <
+            parseFloat(getComputedStyle(item).lineHeight) * 1.5,
+          cut: item.scrollWidth > item.clientWidth,
+        })),
+      );
+      expect(names.filter((name) => !name.oneLine || name.cut)).toEqual([]);
       await screenshot(page, printPath(info, 'home-sheet', scheme));
       expect(await smallTargets(page)).toEqual([]);
       await expectNoA11yViolations(page);
@@ -154,7 +166,7 @@ test.describe('Início', () => {
         expect(await smallTargets(page)).toEqual([]);
       }
       await page.getByRole('button', { name: 'Editar' }).click();
-      await expect(page.getByRole('dialog', { name: 'Editar a Início' })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Personalizar' })).toBeVisible();
       await settle(page);
       await screenshot(page, printPath(info, 'home-sheet-landscape', scheme));
       await expectNoHorizontalScroll(page);
@@ -200,7 +212,7 @@ test.describe('Início', () => {
       await expectNoA11yViolations(page);
     }
     await page.getByRole('button', { name: 'Escolher módulos' }).click();
-    await expect(page.getByRole('dialog', { name: 'Editar a Início' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Personalizar' })).toBeVisible();
   });
 
   test('com movimento reduzido nada anima e o foco por teclado é visível', async ({ page }) => {

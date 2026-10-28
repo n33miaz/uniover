@@ -47,7 +47,7 @@ async function openHome(page: Page) {
 
 const toSettings = (page: Page) =>
   page
-    .getByRole('link', { name: /Ajustes/ })
+    .getByRole('link', { name: /Configurações/ })
     .first()
     .click();
 const settingsReady = (page: Page) =>
@@ -87,7 +87,7 @@ test.describe('troca de tela', () => {
     await expect(page.locator('article.card')).toHaveCount(8);
     await settle(page);
     await page.getByRole('button', { name: 'Editar' }).click();
-    await expect(page.getByRole('dialog', { name: 'Editar a Início' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Personalizar' })).toBeVisible();
   });
 
   test('a tela nova não é coberta por nenhuma camada de transição durante a troca', async ({
@@ -121,7 +121,7 @@ test.describe('folhas e avisos', () => {
   test('a folha sobe ao abrir e desce antes de sair do DOM', async ({ page }) => {
     await openHome(page);
     await page.getByRole('button', { name: 'Editar' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Editar a Início' });
+    const sheet = page.getByRole('dialog', { name: 'Personalizar' });
     await expect(sheet).toBeVisible();
     // Entrada: a folha parte de um estado transparente e deslocado e vai ao estado final por transição.
     const entering = await sheet.evaluate((dialog) =>
@@ -216,7 +216,7 @@ test.describe('movimento reduzido', () => {
     expect(await longAnimations(page)).toEqual([]);
 
     await page.getByRole('button', { name: 'Editar' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Editar a Início' });
+    const sheet = page.getByRole('dialog', { name: 'Personalizar' });
     await expect(sheet).toBeVisible();
     expect(await longAnimations(page)).toEqual([]);
     expect(await sheet.evaluate((dialog) => getComputedStyle(dialog).transitionDuration)).toBe(
