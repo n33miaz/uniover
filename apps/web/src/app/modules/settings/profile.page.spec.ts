@@ -131,6 +131,13 @@ describe('ProfilePage', () => {
       ).toEqual(['Editar atalhos', 'Usar o Treino']);
     });
 
+    it('keeps an unknown permission visible without exposing its technical identifier', async () => {
+      api.me.mockResolvedValue({ ...GUEST, permissions: ['module:training', 'new:permission'] });
+      const { el } = await render();
+      expect(el.querySelector('.abilities')?.textContent).toContain('Permissão adicional');
+      expect(el.querySelector('.abilities')?.textContent).not.toContain('new:permission');
+    });
+
     it('says plainly when the guest has nothing released yet', async () => {
       api.me.mockResolvedValue({ ...GUEST, permissions: [] });
       const { el } = await render();

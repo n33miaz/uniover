@@ -16,16 +16,6 @@ test.use({ serviceWorkers: 'block' });
 
 // A escolha da Início é guardada por conta: esta é a chave da conta da sessão simulada.
 const MODULE_PREFS_KEY = `uniover.home.widgets.v1.${OWNER_ID}`;
-// Módulos planejados, que a Início mostra como "Em breve" depois de TV e Treino.
-const PLANNED_MODULES = [
-  'Saúde e eventos',
-  'Monitor dos serviços',
-  'Rede da casa',
-  'Backup de fotos',
-  'Avisos',
-  'Controle do PC',
-];
-
 async function expectNoSeriousA11yViolations(page: Page) {
   const { violations } = await new AxeBuilder({ page }).analyze();
   const serious = violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
@@ -341,19 +331,14 @@ test.describe('ajustes', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
   });
 
-  test('a Aparência tem o tema e os módulos com chip', async ({ page }) => {
+  test('a Aparência tem só o tema e o atalho: os módulos ficam em Personalizar', async ({
+    page,
+  }) => {
     await page.getByRole('link', { name: /^Aparência/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/aparencia$/);
-    await expect(page.getByRole('heading', { level: 2, name: 'Módulos' })).toBeVisible();
-    await expect(page.locator('.module', { hasText: 'TV' }).locator('.chip')).toHaveText(
-      'Disponível',
-    );
-    await expect(page.locator('.module', { hasText: 'Treino' }).locator('.chip')).toHaveText(
-      'Disponível',
-    );
-    await expect(
-      page.locator('.module', { hasText: 'Saúde e eventos' }).locator('.chip'),
-    ).toHaveText('Em breve');
+    await expect(page.getByRole('radio', { name: 'Escuro' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Módulos' })).toHaveCount(0);
+    await expect(page.getByRole('switch', { name: /TV/ })).toHaveCount(0);
   });
 
   test('o Sobre mostra as versões e leva aos Créditos', async ({ page }) => {
@@ -370,17 +355,6 @@ test.describe('ajustes', () => {
     await page.getByRole('link', { name: /^Segurança/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/seguranca$/);
     await expect(page.getByText('A passkey só confirma ações perigosas')).toBeVisible();
-  });
-
-  test('módulo desligado some da grade do Início', async ({ page }) => {
-    await page.goto('/ajustes/aparencia');
-    await page.getByRole('switch', { name: /TV/ }).uncheck();
-    await page.goto('/');
-    await expect(page.locator('article.card h3')).toHaveText(['Treino', ...PLANNED_MODULES]);
-    await page.goto('/ajustes/aparencia');
-    await page.getByRole('switch', { name: /TV/ }).check();
-    await page.goto('/');
-    await expect(page.locator('article.card h3')).toHaveText(['TV', 'Treino', ...PLANNED_MODULES]);
   });
 
   test('tema escuro fica salvo no aparelho e volta ao recarregar', async ({ page }) => {

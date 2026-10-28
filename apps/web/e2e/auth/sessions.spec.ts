@@ -19,7 +19,7 @@ test('the owner reviews and ends another session in Security', async ({ page, co
   await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
   await page.goto('/ajustes/seguranca');
-  await expect(page.getByRole('heading', { name: 'Onde você está conectado' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sessões de Acesso' })).toBeVisible();
   await expect(page.getByText('Chrome · Windows')).toBeVisible();
   await expectNoHorizontalScroll(page);
   const smallTargets = await page.locator('app-sessions-section button').evaluateAll(
@@ -74,6 +74,8 @@ test('the owner ends a guest session without revoking the account', async ({ pag
   await expect(page.getByRole('heading', { name: 'Sessões de Bia' })).toBeVisible();
   await expect(page.getByText('Chrome · Android')).toBeVisible();
   await expectNoHorizontalScroll(page);
+  // Os detalhes e o Encerrar vêm dobrados atrás do nome do aparelho.
+  await page.getByText('Chrome · Android').click();
   await page.getByRole('button', { name: 'Encerrar', exact: true }).click();
   await page
     .getByRole('group', { name: 'Confirmar encerramento' })

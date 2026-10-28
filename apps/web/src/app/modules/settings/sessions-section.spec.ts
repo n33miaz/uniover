@@ -84,6 +84,14 @@ describe('SessionsSection', () => {
     expect(api.revokeSession).toHaveBeenCalledWith('jwt', 'other', null);
   });
 
+  it('keeps session details folded until the person asks for them', async () => {
+    const { el } = await render();
+    const details = el.querySelector<HTMLDetailsElement>('li details')!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector('summary')?.textContent).toContain('Safari · iPhone/iPad');
+    expect(details.textContent).toContain('Último uso:');
+  });
+
   it('ends the other sessions only after confirmation', async () => {
     const { fixture, click } = await render();
     click('Encerrar as outras');
