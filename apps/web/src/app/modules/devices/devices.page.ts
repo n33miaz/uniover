@@ -75,6 +75,8 @@ export class DevicesPage {
   /** O conector só existe para Windows: nos outros aparelhos a tela diz isso em vez de oferecer o download. */
   protected readonly windowsPc = isWindowsPc(navigator);
   protected readonly revokingId = signal<string | null>(null);
+  /** Computadores com a manutenção aberta: a dobra sobrevive à confirmação em linha, que troca o bloco inteiro. */
+  protected readonly maintenanceOpen = signal<ReadonlySet<string>>(new Set());
   /** O pedido de atualizar ou reiniciar que espera a confirmação do dono, ou que está em andamento. */
   protected readonly maintaining = signal<{ id: string; action: MaintenanceAction } | null>(null);
   /** O aparelho cujo registro está aberto na folha. */
@@ -154,8 +156,23 @@ export class DevicesPage {
           : $localize`:@@devices.tv-generic:TV`;
     const host = agent.tvHost;
     return host
-      ? $localize`:@@devices.tv-info:TV: ${kind}:kind: · ${host}:host:`
-      : $localize`:@@devices.tv-kind:TV: ${kind}:kind:`;
+      ? $localize`:@@devices.tv-info:${kind}:kind: · ${host}:host:`
+      : $localize`:@@devices.tv-kind:${kind}:kind:`;
+  }
+
+  protected toggleMaintenance(agent: DeviceAgent, event: Event): void {
+    const open = (event.target as HTMLDetailsElement).open;
+    this.maintenanceOpen.update((current) => {
+      if (current.has(agent.id) === open) return current;
+      const next = new Set(current);
+      if (open) next.add(agent.id);
+      else next.delete(agent.id);
+      return next;
+    });
+  }
+
+  protected tvSummary(agent: DeviceAgent): string {
+    return this.tv(agent) ?? $localize`:@@devices.summary.no-tv:Sem TV vinculada`;
   }
 
   /**
