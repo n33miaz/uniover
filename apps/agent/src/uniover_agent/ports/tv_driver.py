@@ -5,9 +5,21 @@ fabricante traduz as teclas e o protocolo de rede no adaptador que o implementa.
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Protocol
 
 from uniover_agent.ports.tv_channel import TvChannel
+
+
+@dataclass(frozen=True, slots=True)
+class TextFieldStatus:
+    """Estado do campo em foco que a Android TV informa pelo Remote v2."""
+
+    value: str
+    start: int
+    end: int
+    label: str
+    counter: int
 
 
 class TvDriver(TvChannel, Protocol):

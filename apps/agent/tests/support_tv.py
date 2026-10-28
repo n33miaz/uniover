@@ -120,6 +120,35 @@ class FakeTvServer:
         for writer in self._writers:
             writer.write(frame(message))
 
+    def push_text_field(  # noqa: PLR0913 - espelha os campos da mensagem da TV
+        self,
+        value: str,
+        *,
+        counter: int = 1,
+        label: str = "",
+        start: int = 0,
+        end: int = 0,
+        show_request: bool = False,
+        app: str | None = None,
+    ) -> None:
+        """A TV informa o campo de texto em foco: pela edição (`remote_ime_key_inject`) ou pelo
+        pedido de teclado (`remote_ime_show_request`)."""
+        message = RemoteMessage()
+        field = (
+            message.remote_ime_show_request.remote_text_field_status
+            if show_request
+            else message.remote_ime_key_inject.text_field_status
+        )
+        if app is not None and not show_request:
+            message.remote_ime_key_inject.app_info.app_package = app
+        field.counter_field = counter
+        field.value = value
+        field.start = start
+        field.end = end
+        field.label = label
+        for writer in self._writers:
+            writer.write(frame(message))
+
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         task = asyncio.current_task()
         assert task is not None

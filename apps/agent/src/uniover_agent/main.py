@@ -318,6 +318,12 @@ def build_tv(
         key_pause_seconds=settings.tv_text_key_pause_ms / 1000,
         sleep=clock.sleep,
     )
+    # O estado real do campo (quando a TV o manda) semeia o diff da digitação; outro app em foco ou
+    # uma sessão nova o tornam velho, e então vale o comportamento de antes.
+    remote.on_text_field(text.observe_field)
+    remote.on_app(text.observe_app)
+    manager.on_session_opened(lambda _elapsed: text.forget_field())
+    manager.subscribe(lambda state: text.forget_field() if state.connection != "hot" else None)
     _log.info(
         "digitação na TV: teclas do controle remoto %s",
         "ligadas" if settings.tv_text_by_keys else "desligadas (padrão)",
