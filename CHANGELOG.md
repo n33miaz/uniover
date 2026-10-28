@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/n33miaz/uniover/compare/v0.11.0...v0.11.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **web:** never reload into the old shell
+
 ## [0.11.0](https://github.com/n33miaz/uniover/compare/v0.10.0...v0.11.0) (2026-10-28)
 
 
