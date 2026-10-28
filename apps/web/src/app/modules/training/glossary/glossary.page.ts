@@ -1,11 +1,12 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { BackNavigation } from '../shell/back-navigation';
 import { TrainingGlyph } from '../shell/training-glyph';
 
 /** Referência curta dos nomes do Treino, aberta sem acrescentar explicações às telas principais. */
 @Component({
   selector: 'app-training-glossary-page',
-  imports: [TrainingGlyph],
+  imports: [RouterLink, TrainingGlyph],
   templateUrl: './glossary.page.html',
   styleUrl: './glossary.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
