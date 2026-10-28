@@ -427,6 +427,30 @@ test.describe('controle: tela única, sem abas', () => {
 });
 
 test.describe('controle: fileira de atalhos', () => {
+  test('o painel Apps mantém a forma da busca e da grade enquanto a lista chega', async ({
+    page,
+  }) => {
+    let release!: () => void;
+    tv.shortcutsGate = new Promise<void>((resolve) => (release = resolve));
+
+    await signIn(page);
+    await page.goto('/tv');
+    await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
+    await emitSse(page, 'tv.state', tv.state);
+    await openApps(page);
+
+    const skeleton = appsDialog(page).locator('.loading');
+    await expect(skeleton).toBeVisible();
+    await expect(skeleton.locator('.loading-bar')).toBeVisible();
+    await expect(skeleton.locator('.loading-tiles span')).toHaveCount(4);
+    await expect(appsDialog(page).getByText('Ainda não temos a lista de apps da TV')).toHaveCount(
+      0,
+    );
+
+    release();
+    await expect(appsDialog(page).locator('.bar')).toBeVisible();
+  });
+
   test('os atalhos são azulejos que abrem o app ao toque, como "Atalho n" quando nada os nomeia', async ({
     page,
   }) => {
@@ -1154,6 +1178,16 @@ test.describe('desligar com leitura', () => {
     await sheetOf(page).getByRole('button', { name: 'Desligar', exact: true }).click();
   };
 
+  test('com mais de uma TV, a confirmação diz qual TV vai desligar', async ({ page }) => {
+    tv.tvs = [
+      { ...SAFE_TV },
+      { ...SAFE_TV, id: '44444444-4444-4444-8444-444444444444', name: 'Quarto', isDefault: false },
+    ];
+    await openTv(page);
+    await button(page, 'Desligar a TV').click();
+    await expect(sheetOf(page).getByText('Para: Sala', { exact: true })).toBeVisible();
+  });
+
   test('o agente que declara a capacidade recebe o pedido explícito, e a tela diz que desligou', async ({
     page,
   }, info) => {
@@ -1222,6 +1256,31 @@ test.describe('limpar a TV', () => {
   const cleanSheet = (page: Page) => page.getByRole('dialog', { name: 'Limpar a TV?' });
   const notice = (page: Page) => appsDialog(page).locator('.notice');
 
+  test('com o interruptor da TV ligado, a folha diz que fecha apps em segundo plano e poupa o da frente', async ({
+    page,
+  }) => {
+    tv.tvs = [
+      {
+        id: '55555555-5555-4555-8555-555555555555',
+        name: 'Sala',
+        isDefault: true,
+        agentSlug: 'pc-sala',
+        kind: 'android',
+        online: true,
+        capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb'],
+        allowBackgroundAppClosing: true,
+      },
+    ];
+    await openTv(page);
+    await openApps(page);
+    await cleanButton(page).click();
+    await expect(
+      cleanSheet(page).getByText(
+        'Fecha os apps em segundo plano e libera memória. O app que está passando agora continua aberto, e a conexão com o controle também.',
+      ),
+    ).toBeVisible();
+  });
+
   test('a folha confirma, o pedido sai uma vez e o resultado volta como aviso no painel', async ({
     page,
   }, info) => {
@@ -1235,9 +1294,7 @@ test.describe('limpar a TV', () => {
     const sheet = cleanSheet(page);
     await expect(sheet).toBeVisible();
     await expect(
-      sheet.getByText(
-        'Isso fecha todos os apps abertos, inclusive o que está passando agora, e libera memória. A conexão com o controle continua.',
-      ),
+      sheet.getByText('Libera memória sem fechar nenhum app. A conexão com o controle continua.'),
     ).toBeVisible();
     await expect(sheet.getByRole('button', { name: /fechar|close/i })).toHaveCount(0);
     await expect(sheet.getByRole('button')).toHaveText(['Cancelar', 'Limpar']);
