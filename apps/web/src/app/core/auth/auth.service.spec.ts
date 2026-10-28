@@ -415,6 +415,50 @@ describe('AuthService', () => {
       expect(service().user()).toBeNull();
     });
 
+    it('ensureUser stops waiting for a slow /me and the read finishes in the background (no second request)', async () => {
+      let answer!: (value: typeof ME) => void;
+      api.refresh.mockResolvedValue(tokens('jwt'));
+      api.me.mockReturnValue(new Promise<typeof ME>((resolve) => (answer = resolve)));
+      const init = service().init();
+      // O token chegou e a conta ainda não: a primeira confirmação desiste da conta no prazo dela (3 s).
+      await vi.advanceTimersByTimeAsync(3_000);
+      await init;
+      expect(service().status()).toBe('authenticated');
+      expect(service().user()).toBeNull();
+
+      // O guarda de boas-vindas espera só a metade desse prazo e libera a tela, sem abrir uma segunda leitura.
+      let released = false;
+      const ensured = service()
+        .ensureUser()
+        .then(() => (released = true));
+      await vi.advanceTimersByTimeAsync(1_499);
+      expect(released).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await ensured;
+      expect(released).toBe(true);
+      expect(api.me).toHaveBeenCalledTimes(1);
+
+      // A leitura que seguiu em voo entrega a conta quando chegar.
+      answer(ME);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(service().user()).toEqual(ME);
+    });
+
+    it('ensureUser returns as soon as the read in flight answers, before its limit', async () => {
+      let answer!: (value: typeof ME) => void;
+      api.refresh.mockResolvedValue(tokens('jwt'));
+      api.me.mockReturnValue(new Promise<typeof ME>((resolve) => (answer = resolve)));
+      const init = service().init();
+      await vi.advanceTimersByTimeAsync(3_000);
+      await init;
+      const ensured = service().ensureUser();
+      await vi.advanceTimersByTimeAsync(200);
+      answer(ME);
+      await ensured;
+      expect(service().user()).toEqual(ME);
+      expect(api.me).toHaveBeenCalledTimes(1);
+    });
+
     it('builds the first-access address with a safe next, and without one for the home page or an unsafe path', () => {
       const router = TestBed.inject(Router);
       expect(router.serializeUrl(service().welcomeUrlTree('/tv?painel=apps'))).toBe(
