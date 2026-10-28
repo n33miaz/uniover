@@ -31,7 +31,11 @@
             <app-exercise-illustration [slug]="ex.slug" [name]="ex.name" />
           </div>
         }
-        <app-exercise-muscles [primary]="primaryMuscles()" [secondary]="secondaryMuscles()" />
+        <app-exercise-muscles
+          [primary]="primaryMuscles()"
+          [secondary]="secondaryMuscles()"
+          [fill]="hasArt()"
+        />
       </div>
       <ul class="chips ui-plain" [attr.aria-label]="chipsLabel">
         @for (chip of chips(); track chip.text) {
@@ -89,7 +93,7 @@
                 <span i18n="@@training.detail.steps-less">Ver Menos</span>
               } @else {
                 <span i18n="@@training.detail.steps-more"
-                  >Ver todos os {{ steps().length }} passos</span
+                  >Ver Todos os {{ steps().length }} Passos</span
                 >
               }
             </button>

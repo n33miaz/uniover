@@ -62,6 +62,10 @@ describe('ExerciseDetailPage', () => {
       );
       expect(hero.querySelectorAll('.visuals > *')).toHaveLength(2);
       expect(hero.querySelector('.visuals app-exercise-muscles')).not.toBeNull();
+      // Com ilustração, o cartão dos músculos acompanha o tamanho do cartão dela.
+      expect(hero.querySelector('.visuals app-exercise-muscles')?.classList.contains('fill')).toBe(
+        true,
+      );
       expect(hero.querySelector('h3')).toBeNull();
       expect(hero.querySelector('.muscle-legend')).toBeNull();
       expect(el.querySelectorAll('.muscle-figure')).toHaveLength(2);
@@ -80,7 +84,7 @@ describe('ExerciseDetailPage', () => {
     it('shows the first three steps and the rest after "Ver todos"', async () => {
       const { fixture, el } = await open('supino-reto');
       await eventually(fixture, () => expect(el.querySelectorAll('.steps li')).toHaveLength(3));
-      const more = button(el, /Ver todos os 5 passos/);
+      const more = button(el, /Ver Todos os 5 Passos/);
       expect(more.getAttribute('aria-expanded')).toBe('false');
       more.click();
       fixture.detectChanges();
@@ -101,6 +105,7 @@ describe('ExerciseDetailPage', () => {
       expect(el.querySelector('.muscle-figure figcaption')?.textContent).toBe('Frente');
       expect(chips(el)).toEqual(['Abdômen', 'Peso do corpo', 'Tempo']);
       expect(el.querySelectorAll('.visuals > *')).toHaveLength(1);
+      expect(el.querySelector('app-exercise-muscles')?.classList.contains('fill')).toBe(false);
       expect(el.querySelector('.visuals')?.nextElementSibling?.classList.contains('chips')).toBe(
         true,
       );
