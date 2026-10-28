@@ -32,6 +32,8 @@ public static class BodyLimits
 
     public const decimal CircumferenceMinCm = 10m;
     public const decimal CircumferenceMaxCm = 250m;
+    public const decimal SkinfoldMinMm = 1m;
+    public const decimal SkinfoldMaxMm = 100m;
 
     public const int NoteMax = 300;
 
@@ -54,6 +56,9 @@ public static class BodyLimits
 
     public static bool IsValidCircumference(decimal value) =>
         IsValid(value, CircumferenceMinCm, CircumferenceMaxCm, OneDecimalScale);
+
+    public static bool IsValidSkinfold(decimal value) =>
+        IsValid(value, SkinfoldMinMm, SkinfoldMaxMm, OneDecimalScale);
 
     public static bool IsValidHeight(decimal value) => IsValid(value, HeightMinCm, HeightMaxCm, OneDecimalScale);
 
@@ -121,6 +126,36 @@ public sealed class BodyEntry
 
     public decimal? ThighCm { get; set; }
 
+    public decimal? ChestCm { get; set; }
+
+    public decimal? AbdomenCm { get; set; }
+
+    public decimal? ForearmCm { get; set; }
+
+    public decimal? CalfCm { get; set; }
+
+    public decimal? ArmRightCm { get; set; }
+
+    public decimal? ArmLeftCm { get; set; }
+
+    public decimal? ForearmRightCm { get; set; }
+
+    public decimal? ForearmLeftCm { get; set; }
+
+    public decimal? ThighRightCm { get; set; }
+
+    public decimal? ThighLeftCm { get; set; }
+
+    public decimal? CalfRightCm { get; set; }
+
+    public decimal? CalfLeftCm { get; set; }
+
+    public decimal? ChestSkinfoldMm { get; set; }
+
+    public decimal? AbdomenSkinfoldMm { get; set; }
+
+    public decimal? ThighSkinfoldMm { get; set; }
+
     public string? Note { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
@@ -138,7 +173,11 @@ public sealed class BodyEntry
     /// <summary>Tem ao menos um valor medido (a anotação sozinha não conta).</summary>
     public bool HasAnyValue =>
         WeightKg is not null || BodyFatPct is not null || WaistCm is not null || NeckCm is not null
-        || HipCm is not null || ArmCm is not null || ThighCm is not null;
+        || HipCm is not null || ArmCm is not null || ThighCm is not null || ChestCm is not null || AbdomenCm is not null
+        || ForearmCm is not null || CalfCm is not null || ArmRightCm is not null || ArmLeftCm is not null
+        || ForearmRightCm is not null || ForearmLeftCm is not null || ThighRightCm is not null || ThighLeftCm is not null
+        || CalfRightCm is not null || CalfLeftCm is not null || ChestSkinfoldMm is not null || AbdomenSkinfoldMm is not null
+        || ThighSkinfoldMm is not null;
 }
 
 /// <summary>

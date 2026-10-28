@@ -7867,13 +7867,37 @@ export interface components {
     };
     BodyEntryResponse: {
       /** Format: double */
+      abdomenCm: null | number | string;
+      /** Format: double */
+      abdomenSkinfoldMm: null | number | string;
+      /** Format: double */
       armCm: null | number | string;
       /** Format: double */
+      armLeftCm: null | number | string;
+      /** Format: double */
+      armRightCm: null | number | string;
+      /** Format: double */
       bodyFatPct: null | number | string;
+      /** Format: double */
+      calfCm: null | number | string;
+      /** Format: double */
+      calfLeftCm: null | number | string;
+      /** Format: double */
+      calfRightCm: null | number | string;
+      /** Format: double */
+      chestCm: null | number | string;
+      /** Format: double */
+      chestSkinfoldMm: null | number | string;
       /** Format: date-time */
       clientUpdatedAt: string;
       deleted: boolean;
       fatMethod: null | string;
+      /** Format: double */
+      forearmCm: null | number | string;
+      /** Format: double */
+      forearmLeftCm: null | number | string;
+      /** Format: double */
+      forearmRightCm: null | number | string;
       /** Format: double */
       hipCm: null | number | string;
       /** Format: uuid */
@@ -7885,6 +7909,12 @@ export interface components {
       note: null | string;
       /** Format: double */
       thighCm: null | number | string;
+      /** Format: double */
+      thighLeftCm: null | number | string;
+      /** Format: double */
+      thighRightCm: null | number | string;
+      /** Format: double */
+      thighSkinfoldMm: null | number | string;
       /** Format: date-time */
       updatedAt: string;
       /** Format: double */
@@ -8628,13 +8658,37 @@ export interface components {
     };
     UpsertBodyEntryRequest: {
       /** Format: double */
+      abdomenCm?: null | number | string;
+      /** Format: double */
+      abdomenSkinfoldMm?: null | number | string;
+      /** Format: double */
       armCm: null | number | string;
       /** Format: double */
+      armLeftCm?: null | number | string;
+      /** Format: double */
+      armRightCm?: null | number | string;
+      /** Format: double */
       bodyFatPct: null | number | string;
+      /** Format: double */
+      calfCm?: null | number | string;
+      /** Format: double */
+      calfLeftCm?: null | number | string;
+      /** Format: double */
+      calfRightCm?: null | number | string;
+      /** Format: double */
+      chestCm?: null | number | string;
+      /** Format: double */
+      chestSkinfoldMm?: null | number | string;
       /** Format: date-time */
       clientUpdatedAt: null | string;
       deleted: boolean;
       fatMethod: null | string;
+      /** Format: double */
+      forearmCm?: null | number | string;
+      /** Format: double */
+      forearmLeftCm?: null | number | string;
+      /** Format: double */
+      forearmRightCm?: null | number | string;
       /** Format: double */
       hipCm: null | number | string;
       /** Format: date */
@@ -8644,6 +8698,12 @@ export interface components {
       note: null | string;
       /** Format: double */
       thighCm: null | number | string;
+      /** Format: double */
+      thighLeftCm?: null | number | string;
+      /** Format: double */
+      thighRightCm?: null | number | string;
+      /** Format: double */
+      thighSkinfoldMm?: null | number | string;
       /** Format: double */
       waistCm: null | number | string;
       /** Format: double */

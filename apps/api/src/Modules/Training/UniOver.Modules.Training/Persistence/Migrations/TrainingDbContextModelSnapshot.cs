@@ -19,7 +19,7 @@ namespace UniOver.Modules.Training.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("training")
-                .HasAnnotation("ProductVersion", "10.0.13")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -103,15 +103,60 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<decimal?>("AbdomenCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("abdomen_cm");
+
+                    b.Property<decimal?>("AbdomenSkinfoldMm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("abdomen_skinfold_mm");
+
                     b.Property<decimal?>("ArmCm")
                         .HasPrecision(4, 1)
                         .HasColumnType("numeric(4,1)")
                         .HasColumnName("arm_cm");
 
+                    b.Property<decimal?>("ArmLeftCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("arm_left_cm");
+
+                    b.Property<decimal?>("ArmRightCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("arm_right_cm");
+
                     b.Property<decimal?>("BodyFatPct")
                         .HasPrecision(4, 1)
                         .HasColumnType("numeric(4,1)")
                         .HasColumnName("body_fat_pct");
+
+                    b.Property<decimal?>("CalfCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("calf_cm");
+
+                    b.Property<decimal?>("CalfLeftCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("calf_left_cm");
+
+                    b.Property<decimal?>("CalfRightCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("calf_right_cm");
+
+                    b.Property<decimal?>("ChestCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("chest_cm");
+
+                    b.Property<decimal?>("ChestSkinfoldMm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("chest_skinfold_mm");
 
                     b.Property<DateTimeOffset>("ClientUpdatedAt")
                         .IsConcurrencyToken()
@@ -130,6 +175,21 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                         .HasMaxLength(12)
                         .HasColumnType("character varying(12)")
                         .HasColumnName("fat_method");
+
+                    b.Property<decimal?>("ForearmCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("forearm_cm");
+
+                    b.Property<decimal?>("ForearmLeftCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("forearm_left_cm");
+
+                    b.Property<decimal?>("ForearmRightCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("forearm_right_cm");
 
                     b.Property<decimal?>("HipCm")
                         .HasPrecision(4, 1)
@@ -154,6 +214,21 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                         .HasPrecision(4, 1)
                         .HasColumnType("numeric(4,1)")
                         .HasColumnName("thigh_cm");
+
+                    b.Property<decimal?>("ThighLeftCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("thigh_left_cm");
+
+                    b.Property<decimal?>("ThighRightCm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("thigh_right_cm");
+
+                    b.Property<decimal?>("ThighSkinfoldMm")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)")
+                        .HasColumnName("thigh_skinfold_mm");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -184,13 +259,37 @@ namespace UniOver.Modules.Training.Persistence.Migrations
 
                     b.ToTable("body_entries", "training", t =>
                         {
+                            t.HasCheckConstraint("ck_body_entries_abdomen", "abdomen_cm IS NULL OR abdomen_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_abdomen_skinfold", "abdomen_skinfold_mm IS NULL OR abdomen_skinfold_mm BETWEEN 1 AND 100");
+
                             t.HasCheckConstraint("ck_body_entries_arm", "arm_cm IS NULL OR arm_cm BETWEEN 10 AND 250");
 
+                            t.HasCheckConstraint("ck_body_entries_arm_left", "arm_left_cm IS NULL OR arm_left_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_arm_right", "arm_right_cm IS NULL OR arm_right_cm BETWEEN 10 AND 250");
+
                             t.HasCheckConstraint("ck_body_entries_body_fat", "body_fat_pct IS NULL OR body_fat_pct BETWEEN 2 AND 70");
+
+                            t.HasCheckConstraint("ck_body_entries_calf", "calf_cm IS NULL OR calf_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_calf_left", "calf_left_cm IS NULL OR calf_left_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_calf_right", "calf_right_cm IS NULL OR calf_right_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_chest", "chest_cm IS NULL OR chest_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_chest_skinfold", "chest_skinfold_mm IS NULL OR chest_skinfold_mm BETWEEN 1 AND 100");
 
                             t.HasCheckConstraint("ck_body_entries_fat_method", "fat_method IS NULL OR fat_method IN ('navy', 'manual', 'bioimpedance')");
 
                             t.HasCheckConstraint("ck_body_entries_fat_pair", "(body_fat_pct IS NULL) = (fat_method IS NULL)");
+
+                            t.HasCheckConstraint("ck_body_entries_forearm", "forearm_cm IS NULL OR forearm_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_forearm_left", "forearm_left_cm IS NULL OR forearm_left_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_forearm_right", "forearm_right_cm IS NULL OR forearm_right_cm BETWEEN 10 AND 250");
 
                             t.HasCheckConstraint("ck_body_entries_hip", "hip_cm IS NULL OR hip_cm BETWEEN 10 AND 250");
 
@@ -198,11 +297,17 @@ namespace UniOver.Modules.Training.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_body_entries_neck", "neck_cm IS NULL OR neck_cm BETWEEN 10 AND 250");
 
-                            t.HasCheckConstraint("ck_body_entries_not_empty", "(weight_kg IS NOT NULL OR body_fat_pct IS NOT NULL OR waist_cm IS NOT NULL OR neck_cm IS NOT NULL OR hip_cm IS NOT NULL OR arm_cm IS NOT NULL OR thigh_cm IS NOT NULL) OR deleted_at IS NOT NULL");
+                            t.HasCheckConstraint("ck_body_entries_not_empty", "(weight_kg IS NOT NULL OR body_fat_pct IS NOT NULL OR waist_cm IS NOT NULL OR neck_cm IS NOT NULL OR hip_cm IS NOT NULL OR arm_cm IS NOT NULL OR thigh_cm IS NOT NULL OR chest_cm IS NOT NULL OR abdomen_cm IS NOT NULL OR forearm_cm IS NOT NULL OR calf_cm IS NOT NULL OR arm_right_cm IS NOT NULL OR arm_left_cm IS NOT NULL OR forearm_right_cm IS NOT NULL OR forearm_left_cm IS NOT NULL OR thigh_right_cm IS NOT NULL OR thigh_left_cm IS NOT NULL OR calf_right_cm IS NOT NULL OR calf_left_cm IS NOT NULL OR chest_skinfold_mm IS NOT NULL OR abdomen_skinfold_mm IS NOT NULL OR thigh_skinfold_mm IS NOT NULL) OR deleted_at IS NOT NULL");
 
                             t.HasCheckConstraint("ck_body_entries_note", "note IS NULL OR char_length(note) <= 300");
 
                             t.HasCheckConstraint("ck_body_entries_thigh", "thigh_cm IS NULL OR thigh_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_thigh_left", "thigh_left_cm IS NULL OR thigh_left_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_thigh_right", "thigh_right_cm IS NULL OR thigh_right_cm BETWEEN 10 AND 250");
+
+                            t.HasCheckConstraint("ck_body_entries_thigh_skinfold", "thigh_skinfold_mm IS NULL OR thigh_skinfold_mm BETWEEN 1 AND 100");
 
                             t.HasCheckConstraint("ck_body_entries_waist", "waist_cm IS NULL OR waist_cm BETWEEN 10 AND 250");
 

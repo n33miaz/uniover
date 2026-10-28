@@ -93,6 +93,21 @@ internal sealed class UpsertBodyEntryHandler(TrainingDbContext db, TimeProvider 
         row.HipCm = keep ? command.HipCm : null;
         row.ArmCm = keep ? command.ArmCm : null;
         row.ThighCm = keep ? command.ThighCm : null;
+        row.ChestCm = keep ? command.ChestCm : null;
+        row.AbdomenCm = keep ? command.AbdomenCm : null;
+        row.ForearmCm = keep ? command.ForearmCm : null;
+        row.CalfCm = keep ? command.CalfCm : null;
+        row.ArmRightCm = keep ? command.ArmRightCm : null;
+        row.ArmLeftCm = keep ? command.ArmLeftCm : null;
+        row.ForearmRightCm = keep ? command.ForearmRightCm : null;
+        row.ForearmLeftCm = keep ? command.ForearmLeftCm : null;
+        row.ThighRightCm = keep ? command.ThighRightCm : null;
+        row.ThighLeftCm = keep ? command.ThighLeftCm : null;
+        row.CalfRightCm = keep ? command.CalfRightCm : null;
+        row.CalfLeftCm = keep ? command.CalfLeftCm : null;
+        row.ChestSkinfoldMm = keep ? command.ChestSkinfoldMm : null;
+        row.AbdomenSkinfoldMm = keep ? command.AbdomenSkinfoldMm : null;
+        row.ThighSkinfoldMm = keep ? command.ThighSkinfoldMm : null;
         row.Note = keep ? command.Note : null;
         row.DeletedAt = command.Deleted ? now : null;
         row.ClientUpdatedAt = command.ClientUpdatedAt;
@@ -115,6 +130,21 @@ internal sealed class UpsertBodyEntryHandler(TrainingDbContext db, TimeProvider 
                 && row.HipCm == command.HipCm
                 && row.ArmCm == command.ArmCm
                 && row.ThighCm == command.ThighCm
+                && row.ChestCm == command.ChestCm
+                && row.AbdomenCm == command.AbdomenCm
+                && row.ForearmCm == command.ForearmCm
+                && row.CalfCm == command.CalfCm
+                && row.ArmRightCm == command.ArmRightCm
+                && row.ArmLeftCm == command.ArmLeftCm
+                && row.ForearmRightCm == command.ForearmRightCm
+                && row.ForearmLeftCm == command.ForearmLeftCm
+                && row.ThighRightCm == command.ThighRightCm
+                && row.ThighLeftCm == command.ThighLeftCm
+                && row.CalfRightCm == command.CalfRightCm
+                && row.CalfLeftCm == command.CalfLeftCm
+                && row.ChestSkinfoldMm == command.ChestSkinfoldMm
+                && row.AbdomenSkinfoldMm == command.AbdomenSkinfoldMm
+                && row.ThighSkinfoldMm == command.ThighSkinfoldMm
                 && row.Note == command.Note);
     }
 }
