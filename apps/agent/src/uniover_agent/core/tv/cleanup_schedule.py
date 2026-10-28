@@ -56,6 +56,7 @@ class TvCleanupScheduler:
         transport: Transport,
         envelopes: EnvelopeFactory,
         foreground: Callable[[], str | None],
+        is_focused: Callable[[], bool] = lambda: False,
     ) -> None:
         self._cleanup = cleanup
         self._adb = adb
@@ -63,6 +64,7 @@ class TvCleanupScheduler:
         self._transport = transport
         self._envelopes = envelopes
         self._foreground = foreground
+        self._is_focused = is_focused
         self._configuration = CleanupConfiguration()
         self._last_light: float | None = None
         self._last_deep: float | None = None
@@ -139,7 +141,14 @@ class TvCleanupScheduler:
         self._closed = True
         self._wake.set()
 
+    def resume(self) -> None:
+        """O foco terminou: o que ficou pendente durante a trégua volta a ser avaliado."""
+        self._wake.set()
+
     async def run_pending(self) -> None:
+        if self._is_focused():
+            # Enquanto há mídia confirmada, a limpeza (até a leve) espera; o gatilho fica pendente.
+            return
         if (
             self._pending_light
             and self._configuration.light_enabled

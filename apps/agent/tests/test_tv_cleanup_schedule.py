@@ -172,3 +172,29 @@ async def test_a_deep_cleanup_waiting_for_quiet_does_not_hold_back_the_light_one
 
     sent = [(m["body"]["kind"], m["body"]["result"]) for m in transport.sent]
     assert sent == [("light", "completed"), ("deep", "skipped")]
+
+
+async def test_cleanup_waits_while_focus_is_active_and_runs_after_it_releases() -> None:
+    clock = FakeClock()
+    adb = FakeTvAdb([LaunchableApp(FOREGROUND, ".Main")])
+    transport = FakeTransport()
+    focused = [True]
+    scheduler = TvCleanupScheduler(
+        TvCleanup(adb, clock, allow_app_closing=False),
+        adb,
+        clock,
+        transport,
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        lambda: FOREGROUND,
+        lambda: focused[0],
+    )
+    scheduler.configure(True, False, 160)
+    scheduler.note_session_opened(1)
+
+    await scheduler.run_pending()
+    assert transport.sent == []
+
+    focused[0] = False
+    scheduler.resume()
+    await scheduler.run_pending()
+    assert transport.sent[0]["body"]["kind"] == "light"

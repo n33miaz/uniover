@@ -184,6 +184,9 @@ class TvSessionManager:
         self._volume: int | None = None
         self._app: str | None = None
         self._last_activity = clock.monotonic()
+        # O modo foco só segura a sessão enquanto a mídia está comprovadamente tocando. Não renova
+        # atividade: ao sair, a sessão volta a obedecer o mesmo relógio de antes.
+        self._keep_hot = False
         # Serializa abrir e fechar: dois comandos chegando juntos esperam o mesmo aquecimento.
         self._lock = asyncio.Lock()
         # Quando o último `POWER` chegou à TV (relógio monotônico) e a fila de quem o repete.
@@ -514,17 +517,21 @@ class TvSessionManager:
 
     async def hibernate_if_idle(self) -> bool:
         """Fecha os canais se passou o tempo sem comando; devolve se hibernou."""
-        if self._state is not SessionState.HOT or not self._is_idle():
+        if self._state is not SessionState.HOT or not self._is_idle() or self._keep_hot:
             return False
         async with self._lock:
             # Reconfere dentro do lock: um comando pode ter chegado enquanto se esperava.
-            if self._state is not SessionState.HOT or not self._is_idle():
+            if self._state is not SessionState.HOT or not self._is_idle() or self._keep_hot:
                 return False
             await self._close_channels()
             self._state = SessionState.HIBERNATING
             self._set_connection("hibernating")
             _log.info("TV hibernada depois de %.0f s sem uso", self._hibernate_seconds)
             return True
+
+    def set_keep_hot(self, keep_hot: bool) -> None:
+        """Impede temporariamente a hibernação, sem abrir sessão nem enviar tecla."""
+        self._keep_hot = keep_hot
 
     async def watch(self) -> None:
         """Laço de fundo: confere a inatividade até ser cancelado."""

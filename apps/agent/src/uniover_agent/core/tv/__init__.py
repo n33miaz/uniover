@@ -25,6 +25,7 @@ from uniover_agent.core.tv.handlers import (
     unsupported_handler,
 )
 from uniover_agent.core.tv.icons import AppIconPublisher, IconResolver
+from uniover_agent.core.tv.light_settings import TvLightSettings, can_restrict_background
 from uniover_agent.core.tv.locator import Located, TvIdentity, TvKnown, TvLocator
 from uniover_agent.core.tv.relocator import TvRelocator
 from uniover_agent.core.tv.samsung_apps import SamsungTvApps
@@ -66,6 +67,7 @@ __all__ = [
     "TvControl",
     "TvIdentity",
     "TvKnown",
+    "TvLightSettings",
     "TvLocator",
     "TvRelocator",
     "TvSessionError",
@@ -73,6 +75,7 @@ __all__ = [
     "TvStatePublisher",
     "TvWatchdog",
     "WatchdogEvents",
+    "can_restrict_background",
     "describe_apps",
     "is_protected",
     "tv_app_launch_handler",

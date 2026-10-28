@@ -60,6 +60,17 @@ async def test_hibernates_at_300_seconds_and_not_before() -> None:
     assert rig.remote.disconnects == 1
 
 
+async def test_kept_hot_session_does_not_hibernate_until_focus_releases_it() -> None:
+    rig = Rig()
+    await rig.manager.wake()
+    rig.manager.set_keep_hot(True)
+    rig.clock.advance(600)
+    assert await rig.manager.hibernate_if_idle() is False
+
+    rig.manager.set_keep_hot(False)
+    assert await rig.manager.hibernate_if_idle() is True
+
+
 async def test_default_hibernation_is_five_minutes() -> None:
     rig = Rig()
     await rig.manager.wake()

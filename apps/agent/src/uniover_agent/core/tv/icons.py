@@ -293,7 +293,9 @@ class AppIconPublisher:
         pause: float = PAUSE_BETWEEN_APKS_SECONDS,
         monotonic: Callable[[], float] | None = None,
         versions_ttl: float = VERSIONS_TTL_SECONDS,
+        is_paused: Callable[[], bool] = lambda: False,
     ) -> None:
+        self._is_paused = is_paused
         self._resolver = resolver
         self._source = source
         self._transport = transport
@@ -331,11 +333,20 @@ class AppIconPublisher:
         if state.connection == "hot" and self._unfinished and self._latest:
             self._trigger.set()
 
+    def resume(self) -> None:
+        """O modo foco terminou: o que ficou pela metade durante a trégua é retomado."""
+        if self._unfinished and self._latest:
+            self._trigger.set()
+
     async def run(self) -> None:
         while True:
             await self._trigger.wait()
             self._trigger.clear()
             self._dirty = False
+            if self._is_paused():
+                # Modo foco: nem ADB nem download enquanto há vídeo na frente; `resume` retoma.
+                self._unfinished = True
+                continue
             try:
                 await self._pass()
             except Exception:
@@ -370,10 +381,14 @@ class AppIconPublisher:
         for app, version in misses:
             if self._dirty:
                 return  # lista nova pedida no meio: o laço recomeça com ela
-            if not self._is_hot():
+            if not self._is_hot() or self._is_paused():
                 self._unfinished = True
                 return
             await self._sleep(self._pause)
+            if self._is_paused():
+                # O foco pode ter começado durante a pausa entre APKs: para antes da operação cara.
+                self._unfinished = True
+                return
             try:
                 icon = await self._resolver.resolve(app.package, version)
             except AdbNotReady as exc:

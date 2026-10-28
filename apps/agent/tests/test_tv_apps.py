@@ -351,3 +351,20 @@ async def test_the_announcer_survives_an_unexpected_error() -> None:
     assert not task.done()
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_the_announcement_is_deferred_during_focus_and_made_when_it_ends() -> None:
+    env = Env()
+    paused = [True]
+    announcer = AppsAnnouncer(env.apps, lambda: True, is_paused=lambda: paused[0])
+    task = asyncio.create_task(announcer.run())
+    await announcer.after_hello()
+    await settle()
+    assert env.apps_messages() == []
+
+    paused[0] = False
+    announcer.resume()
+    await settle()
+    assert len(env.apps_messages()) == 1
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)

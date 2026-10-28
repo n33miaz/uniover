@@ -91,6 +91,13 @@ _START_REMOTE_SERVICE: Final = (
     "am start-foreground-service -a com.android.athome.START_SERVICE "
     f"-n {_REMOTE_SERVICE}/.RemoteService"
 )
+_GLOBAL_SETTINGS: Final = frozenset(
+    {"window_animation_scale", "transition_animation_scale", "animator_duration_scale"}
+)
+# Decimal sem sinal nem expoente: o que o Android guarda nas escalas de animação.
+_DECIMAL: Final = re.compile(r"\d{1,6}(?:\.\d{1,6})?")
+_SHORT_ANIMATION_SCALE: Final = "0.5"
+_APP_BACKGROUND_MODES: Final = frozenset({"allow", "ignore", "default"})
 
 Runner = Callable[[Sequence[str], float], Awaitable[AdbOutput]]
 
@@ -334,6 +341,60 @@ class AdbTv:
         if not states or any(state not in _PLAYBACK_STATES for state in states):
             raise AdbCommandFailed("a TV informou uma sessão de mídia ambígua")
         return _PLAYBACK_PLAYING in states
+
+    async def global_setting(self, name: str) -> str | None:
+        if name not in _GLOBAL_SETTINGS:
+            raise ValueError("configuração global inválida")
+        output = await self._locked_shell(f"settings get global {name}")
+        self._require_success(output, "a TV não informou a configuração")
+        value = parse_setting_value(output.text)
+        if value is not None and _DECIMAL.fullmatch(value) is None:
+            # Um original que não se sabe devolver não pode ser guardado: nada é alterado.
+            raise AdbCommandFailed("a TV informou um valor de animação que não é decimal")
+        return value
+
+    async def put_global_setting(self, name: str, value: str) -> None:
+        """Aplica o ajuste leve: só a escala curta, nunca texto livre."""
+        if name not in _GLOBAL_SETTINGS or value != _SHORT_ANIMATION_SCALE:
+            raise ValueError("configuração global inválida")
+        output = await self._locked_shell(f"settings put global {name} {value}")
+        self._require_success(output, "a TV não conseguiu mudar a configuração")
+
+    async def restore_global_setting(self, name: str, original: str | None) -> None:
+        """Devolve o que `global_setting` leu (qualquer decimal) ou apaga o que não existia."""
+        if name not in _GLOBAL_SETTINGS or (
+            original is not None and _DECIMAL.fullmatch(original) is None
+        ):
+            raise ValueError("configuração global inválida")
+        command = (
+            f"settings delete global {name}"
+            if original is None
+            else f"settings put global {name} {original}"
+        )
+        output = await self._locked_shell(command)
+        self._require_success(output, "a TV não conseguiu restaurar a configuração")
+
+    async def app_background_mode(self, package: str) -> str | None:
+        if not is_valid_package(package):
+            raise ValueError("nome de pacote inválido")
+        output = await self._locked_shell(
+            f"cmd appops get {quote_for_device_shell(package)} RUN_ANY_IN_BACKGROUND"
+        )
+        self._require_success(output, "a TV não informou a permissão do app")
+        match = re.search(r"RUN_ANY_IN_BACKGROUND:\s*(allow|ignore|default)\b", output.text)
+        if match is not None:
+            return match.group(1)
+        if "RUN_ANY_IN_BACKGROUND" in output.text:
+            raise AdbCommandFailed("a TV informou uma permissão de app ambígua")
+        return None
+
+    async def set_app_background_mode(self, package: str, mode: str) -> None:
+        if not is_valid_package(package) or mode not in _APP_BACKGROUND_MODES:
+            raise ValueError("configuração de app inválida")
+        output = await self._locked_shell(
+            f"cmd appops set {quote_for_device_shell(package)} RUN_ANY_IN_BACKGROUND {mode}"
+        )
+        self._require_success(output, "a TV não conseguiu mudar a permissão do app")
 
     async def go_home(self) -> None:
         output = await self._locked_shell("input keyevent KEYCODE_HOME")
