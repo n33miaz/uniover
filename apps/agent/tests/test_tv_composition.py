@@ -31,6 +31,7 @@ from uniover_agent.main import (
     run,
     silence_noisy_loggers,
 )
+from uniover_agent.ports import TextFieldStatus
 
 from .support import AGENT_ID, ANDROID_KEYS, TOKEN, FakeApi, dump, envelope
 from .support_tv import write_certificate
@@ -194,6 +195,63 @@ async def test_typing_by_keys_is_off_unless_the_settings_turn_it_on(
     assert "teclas do controle remoto ligadas" in caplog.text
     await wired.handlers["tv.text.v1"](Command("2", "tv.text.v1", {"text": "mat"}))
     assert (remote.keys, remote.texts) == (["TYPE_M", "TYPE_A", "TYPE_T"], [])
+
+
+async def test_the_text_field_the_tv_reports_reaches_the_composed_typing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote = FakeTvRemote()
+    pair_fake_tv(monkeypatch, remote)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None
+    remote.push_text_field(TextFieldStatus("abc", 3, 3, "Buscar", 1))
+    await setup.handlers["tv.text.v1"](Command("1", "tv.text.v1", {"text": "abcd"}))
+    assert (remote.keys, remote.texts) == ([], ["d"])
+
+
+async def test_the_composed_typing_forgets_the_field_when_the_session_goes_to_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote = FakeTvRemote()
+    pair_fake_tv(monkeypatch, remote)
+    clock = FakeClock()
+    envelopes = EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock)
+    setup = build_tv(
+        Settings(tv_host=TV_HOST, tv_hibernate_seconds=1), clock, FakeTransport(), envelopes
+    )
+    assert setup is not None
+    await setup.manager.wake()
+    remote.push_text_field(TextFieldStatus("abc", 3, 3, "Buscar", 1))
+    clock.advance(60)
+    assert await setup.manager.hibernate_if_idle()
+    # Estado de antes de a sessão dormir não vale: volta a pausa de antes, que nunca apaga às cegas.
+    await setup.handlers["tv.text.v1"](Command("1", "tv.text.v1", {"text": "xyz"}))
+    assert (remote.keys, remote.texts) == ([], ["xyz"])
+    await setup.manager.aclose()
+
+
+async def test_the_composed_typing_forgets_the_field_when_another_app_takes_focus(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote = FakeTvRemote()
+    pair_fake_tv(monkeypatch, remote)
+    clock = FakeClock()
+    envelopes = EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock)
+    setup = build_tv(Settings(tv_host=TV_HOST), clock, FakeTransport(), envelopes)
+    assert setup is not None
+    await setup.manager.wake()
+    remote.push_app("com.exemplo.video")
+    remote.push_text_field(TextFieldStatus("abc", 3, 3, "Buscar", 1))
+    remote.push_app("com.exemplo.video")  # o eco da mesma edição repete o app: nada muda
+    clock.advance(60)
+    await setup.handlers["tv.text.v1"](Command("1", "tv.text.v1", {"text": "abcd"}))
+    assert remote.texts == ["d"]
+    remote.push_app("com.exemplo.musica")
+    clock.advance(60)
+    await setup.handlers["tv.text.v1"](Command("2", "tv.text.v1", {"text": "xyz"}))
+    assert remote.keys == []
+    assert remote.texts == ["d", "xyz"]
+    await setup.manager.aclose()
 
 
 async def test_without_a_tv_the_tv_commands_are_refused() -> None:

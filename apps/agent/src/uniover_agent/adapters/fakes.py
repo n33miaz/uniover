@@ -11,6 +11,7 @@ from uniover_agent.ports import (
     PairingInfo,
     PairingTicket,
     PollResult,
+    TextFieldStatus,
     TvUnreachable,
 )
 
@@ -62,6 +63,7 @@ class FakeTvRemote:
         self._app: list[Callable[[str], None]] = []
         self._volume: list[Callable[[int], None]] = []
         self._available: list[Callable[[bool], None]] = []
+        self._text_field: list[Callable[[TextFieldStatus], None]] = []
 
     @property
     def connected(self) -> bool:
@@ -112,6 +114,9 @@ class FakeTvRemote:
     def on_available(self, callback: Callable[[bool], None]) -> None:
         self._available.append(callback)
 
+    def on_text_field(self, callback: Callable[[TextFieldStatus], None]) -> None:
+        self._text_field.append(callback)
+
     # --- o que a TV empurra (usado pelos testes) ---
 
     def push_power(self, is_on: bool) -> None:
@@ -125,6 +130,10 @@ class FakeTvRemote:
     def push_volume(self, level: int) -> None:
         for callback in self._volume:
             callback(level)
+
+    def push_text_field(self, field: TextFieldStatus) -> None:
+        for callback in self._text_field:
+            callback(field)
 
     def drop(self) -> None:
         """A TV derrubou a sessão sem o agente pedir."""
