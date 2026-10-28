@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/auth/auth.guard';
-import { moduleGuard, noAccessGuard, ownerOnlyGuard } from './core/auth/role.guard';
+import { moduleGuard, ownerOnlyGuard } from './core/auth/role.guard';
 import { welcomeGuard } from './core/auth/welcome.guard';
 import { AppShell } from './core/layout/app-shell';
 import { ShellBack } from './core/layout/route-data';
@@ -16,7 +16,7 @@ const SETTINGS_BACK: ShellBack = {
 // retorno ao Início) e as abas vêm do `data.tabs` da rota filha do próprio módulo. O convidado alcança os módulos que a
 // conta dele libera (a TV e o Treino, cada um pela permissão `module:*`) e a parte de Ajustes que é dele (lista, Perfil,
 // Aparência e Sobre): o que sobra leva `ownerOnlyGuard` (e a API recusa com 403 de qualquer jeito). Quem não pode usar
-// um módulo vai ao primeiro que pode; quem não tem nenhum, à tela de "sem acesso".
+// um módulo volta à Início, que mostra somente o que a conta pode abrir.
 export const routes: Routes = [
   {
     // O celular onde a pessoa já entrou abre o QR de um computador aqui e confirma. Exige sessão: quem ainda não entrou
@@ -71,12 +71,8 @@ export const routes: Routes = [
         loadChildren: () =>
           import('./modules/training/training.routes').then((m) => m.TRAINING_ROUTES),
       },
-      {
-        path: 'sem-acesso',
-        canMatch: [noAccessGuard],
-        data: { title: $localize`:@@no-access.route-title:Sem acesso` },
-        loadComponent: () => import('./core/auth/no-access.page').then((m) => m.NoAccessPage),
-      },
+      // Endereços antigos continuam úteis, mas a tela deixou de existir: toda conta tem a própria Início.
+      { path: 'sem-acesso', pathMatch: 'full', redirectTo: '/' },
       {
         // Configurações é uma lista; cada linha abre uma tela filha, com a seta voltando para a lista.
         path: 'ajustes',

@@ -21,8 +21,11 @@ describe('TrainingPage: the install sheet and the open workout', () => {
     userAgent: `Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) ${WEBKIT} Version/17.5 Mobile/15E148 Safari/604.1`,
   };
 
-  async function render(beforeRender?: (repository: SessionRepository) => Promise<unknown>) {
-    const kit = await setupScreen([], [{ provide: INSTALL_ENV, useValue: SAFARI }]);
+  async function render(
+    beforeRender?: (repository: SessionRepository) => Promise<unknown>,
+    env: InstallEnvInput = SAFARI,
+  ) {
+    const kit = await setupScreen([], [{ provide: INSTALL_ENV, useValue: env }]);
     const repository = TestBed.inject(SessionRepository);
     await beforeRender?.(repository);
     const fixture = TestBed.createComponent(TrainingPage);
@@ -212,7 +215,7 @@ describe('TrainingPage: the install sheet and the open workout', () => {
     expect(animate.mock.calls[1][0][0]).toMatchObject({ transform: 'translateX(18px)' });
   });
 
-  it('only the owner has a way back: a guest never sees it, even with the TV as well', async () => {
+  it('every account has the way back to Início, the guest too, next to the settings button', async () => {
     const { fixture } = await render();
     const el = fixture.nativeElement as HTMLElement;
     const session = TestBed.inject(SessionState);
@@ -224,9 +227,12 @@ describe('TrainingPage: the install sheet and the open workout', () => {
       permissions: ['module:training'],
     });
     await fixture.whenStable();
-    expect(el.querySelector('.training-header .back')).toBeNull();
+    expect(el.querySelector('.training-header .back')?.getAttribute('href')).toBe('/');
     expect(el.querySelector('.training-header .settings')?.getAttribute('href')).toBe('/ajustes');
-    // Quem tem a TV e o Treino abre cada um pelo próprio ícone da tela inicial: o Treino não leva de volta à TV.
+    expect(el.querySelector('.training-header .settings')?.getAttribute('aria-label')).toBe(
+      'Configurações',
+    );
+    // Com a TV também: a seta leva à Início, nunca à TV.
     session.setUser({
       id: '1',
       email: 'a@b.c',
@@ -235,7 +241,7 @@ describe('TrainingPage: the install sheet and the open workout', () => {
       permissions: ['module:training', 'module:tv'],
     });
     await fixture.whenStable();
-    expect(el.querySelector('.training-header .back')).toBeNull();
+    expect(el.querySelector('.training-header .back')?.getAttribute('href')).toBe('/');
     expect(el.querySelector('.training-header .settings')?.getAttribute('href')).toBe('/ajustes');
     session.setUser({ id: '1', email: 'a@b.c', displayName: 'A', role: 'owner' });
     await fixture.whenStable();
@@ -243,5 +249,40 @@ describe('TrainingPage: the install sheet and the open workout', () => {
     expect(back?.getAttribute('href')).toBe('/');
     expect(back?.getAttribute('aria-label')).toBe('Voltar ao Início');
     expect(el.querySelector('.training-header .settings')?.getAttribute('href')).toBe('/ajustes');
+  });
+
+  describe('no app instalado do Treino (escopo /treino/)', () => {
+    const INSTALLED: InstallEnvInput = { ...SAFARI, standalone: true };
+    const guest = (permissions: string[]) =>
+      ({ id: '1', email: 'a@b.c', displayName: 'A', role: 'guest', permissions }) as const;
+
+    it('quem só tem o Treino não vê a seta: a Início fica fora do app e não há outro módulo', async () => {
+      const { fixture } = await render(undefined, INSTALLED);
+      const el = fixture.nativeElement as HTMLElement;
+      TestBed.inject(SessionState).setUser(guest(['module:training']));
+      await fixture.whenStable();
+      expect(el.querySelector('.training-header .back')).toBeNull();
+      expect(el.querySelector('.training-header .settings')).not.toBeNull();
+    });
+
+    it('quem tem a TV e o Treino, e o dono, continuam com a seta para trocar de módulo', async () => {
+      const { fixture } = await render(undefined, INSTALLED);
+      const el = fixture.nativeElement as HTMLElement;
+      const session = TestBed.inject(SessionState);
+      session.setUser(guest(['module:training', 'module:tv']));
+      await fixture.whenStable();
+      expect(el.querySelector('.training-header .back')?.getAttribute('href')).toBe('/');
+      session.setUser({ id: '1', email: 'a@b.c', displayName: 'A', role: 'owner' });
+      await fixture.whenStable();
+      expect(el.querySelector('.training-header .back')?.getAttribute('href')).toBe('/');
+    });
+
+    it('no navegador comum (fora do app instalado) quem só tem o Treino volta à Início', async () => {
+      const { fixture } = await render();
+      const el = fixture.nativeElement as HTMLElement;
+      TestBed.inject(SessionState).setUser(guest(['module:training']));
+      await fixture.whenStable();
+      expect(el.querySelector('.training-header .back')?.getAttribute('href')).toBe('/');
+    });
   });
 });

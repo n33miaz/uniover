@@ -12,10 +12,12 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
+import { canUseModule } from '../../../core/auth/guest-home';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { GearIcon } from '../../../core/layout/gear-icon';
 import { OfflineQueue } from '../../../core/offline-queue/offline-queue';
-import { InstallHintService } from '../../../core/pwa/install-hint.service';
+import { isStandalone } from '../../../core/pwa/install-env';
+import { INSTALL_ENV, InstallHintService } from '../../../core/pwa/install-hint.service';
 import { SessionState } from '../../../core/session/session-state';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { ProgressPhotoSync } from '../data/photos/progress-photo-sync';
@@ -129,7 +131,7 @@ function isWithin(path: string, section: string): boolean {
         <a
           routerLink="/ajustes"
           class="settings ui-tap"
-          aria-label="Ajustes"
+          aria-label="Configurações"
           i18n-aria-label="@@shell.settings-label"
           ><app-gear-icon
         /></a>
@@ -430,13 +432,21 @@ export class TrainingPage {
       this.bodyArea() ||
       isWithin(this.url().split(/[?#]/)[0].replace(/\/$/, ''), '/treino/progresso'),
   );
+  /** O app instalado do Treino (escopo `/treino/`): é de onde a pessoa abre o Treino na tela de início do iPhone. */
+  private readonly installed = isStandalone(inject(INSTALL_ENV));
   /**
-   * Só o dono volta ao Início daqui. O convidado nunca vê a seta, nem com a TV liberada: ele abre o Treino e a TV pelos
-   * ícones próprios da tela inicial do celular, e o Treino é um app dele (o controle da TV segue alcançável pelos Ajustes).
+   * Toda conta volta à Início daqui, e é por ela que quem tem a TV e o Treino troca de módulo. Uma exceção: quem só tem
+   * o Treino e o abriu pelo app instalado não tem para onde ir (a Início fica fora do escopo `/treino/`, e o iOS o
+   * tiraria do app); para ele a seta não existe e o Treino é o app inteiro.
    */
-  protected readonly backLink = computed(() =>
-    this.session.role() === 'owner' && !this.innerScreen() ? '/' : null,
-  );
+  protected readonly backLink = computed(() => {
+    // Numa tela interna quem volta é a seta da própria tela; aqui só a raiz do Treino leva à Início.
+    if (!this.session.user() || this.innerScreen()) return null;
+    const onlyTraining =
+      this.session.isGuest() &&
+      !canUseModule(this.session.role(), this.session.knownPermissions(), 'tv');
+    return this.installed && onlyTraining ? null : '/';
+  });
   protected readonly backLabel = $localize`:@@training.shell.back-home:Voltar ao Início`;
   /** O instante mais novo entre o último envio aceito e o último puxar completo (só para o rótulo do ícone). */
   private readonly lastSyncAt = computed(() => {

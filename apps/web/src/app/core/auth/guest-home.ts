@@ -1,16 +1,7 @@
 import type { AccountRole } from '../session/session-state';
 
-/** Quem não tem módulo nenhum: uma tela simples, com Perfil e Sair (nunca um módulo que a pessoa não pode usar). */
-export const NO_ACCESS_PATH = '/sem-acesso';
-
 /** A Início é a entrada de toda conta, inclusive quando a lista de permissões ainda não chegou. */
 export const UNKNOWN_GUEST_HOME = '/';
-
-/** O que o guarda precisa saber de um módulo: o `id` do catálogo (a permissão é `module:<id>`) e o caminho da tela. */
-export interface HomeModule {
-  readonly id: string;
-  readonly slug?: string;
-}
 
 /** A permissão que libera um módulo, no catálogo da API (`module:tv`, `module:training`). */
 export function modulePermission(id: string): string {
@@ -34,17 +25,7 @@ export function canUseModule(
   return permissions.includes(modulePermission(id));
 }
 
-/**
- * A Início é a entrada de todo mundo. O catálogo continua no argumento porque as guardas de módulo compartilham esta
- * assinatura, mas a grade filtra cada cartão pela permissão da conta.
- */
-export function homeFor(
-  role: AccountRole | null,
-  permissions: readonly string[] | null,
-  modules: readonly HomeModule[],
-): string {
-  void role;
-  void permissions;
-  void modules;
+/** A Início é a entrada de toda conta; a grade filtra cada cartão pela permissão da conta. */
+export function homeFor(): string {
   return '/';
 }

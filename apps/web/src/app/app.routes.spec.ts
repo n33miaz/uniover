@@ -47,6 +47,7 @@ describe('app routes', () => {
               watcher: 'unknown',
               serviceDown: false,
             }),
+            loading: signal(false),
             watch: () => () => undefined,
           },
         },
@@ -102,6 +103,13 @@ describe('app routes', () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/nada');
     expect(TestBed.inject(Router).url).toBe('/');
+  });
+
+  it('redireciona o endereço antigo sem acesso para Início', async () => {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/sem-acesso');
+    expect(TestBed.inject(Router).url).toBe('/');
+    expect(harness.routeNativeElement?.querySelector('app-home-page')).not.toBeNull();
   });
 
   it('serves the invite page outside the shell and without a session', async () => {
@@ -169,6 +177,7 @@ describe('app routes for a guest', () => {
               watcher: 'unknown',
               serviceDown: false,
             }),
+            loading: signal(false),
             watch: () => () => undefined,
           },
         },
@@ -209,14 +218,17 @@ describe('app routes for a guest', () => {
       expect(root.querySelector(selector)).not.toBeNull();
     });
 
-    it('has the round settings button in the Treino, with no way to the Início', async () => {
+    it('gives the guest the Início arrow and Configurações in the Treino header', async () => {
       signInAs(TRAINING);
       const { root } = await go('/treino');
       const header = root.querySelector('header')!;
-      expect(header.querySelector('a[href="/"]')).toBeNull();
-      expect(header.querySelectorAll('a')).toHaveLength(1);
-      expect(header.querySelector('a')?.getAttribute('href')).toBe('/ajustes');
-      expect(header.querySelector('a')?.getAttribute('aria-label')).toBe('Ajustes');
+      expect(header.querySelector('a[href="/"]')?.getAttribute('aria-label')).toBe(
+        'Voltar ao Início',
+      );
+      expect(header.querySelectorAll('a')).toHaveLength(2);
+      expect(header.querySelector('a[href="/ajustes"]')?.getAttribute('aria-label')).toBe(
+        'Configurações',
+      );
     });
   });
 
@@ -272,12 +284,13 @@ describe('app routes for a guest', () => {
     expect(root.querySelector(selector)).not.toBeNull();
   });
 
-  it('has the round settings button in the control (no tabs)', async () => {
+  it('has the Início arrow and Configurações in the control header (no tabs)', async () => {
     const { root } = await go('/tv');
-    expect(root.querySelector('a[href="/"], app-tab-bar')).toBeNull();
+    expect(root.querySelector('a[href="/"]')?.getAttribute('aria-label')).toBe('Voltar ao Início');
+    expect(root.querySelector('app-tab-bar')).toBeNull();
     const settings = root.querySelector('header.head a.settings');
     expect(settings?.getAttribute('href')).toBe('/ajustes');
-    expect(settings?.getAttribute('aria-label')).toBe('Ajustes');
+    expect(settings?.getAttribute('aria-label')).toBe('Configurações');
   });
 });
 
