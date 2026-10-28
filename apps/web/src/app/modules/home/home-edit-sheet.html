@@ -1,7 +1,7 @@
 <dialog #dialog class="sheet ui-dialog" aria-labelledby="sheet-title" (cancel)="cancel($event)">
   <span class="grabber" aria-hidden="true"></span>
   <header class="head">
-    <h2 id="sheet-title" i18n="@@home.sheet.title">Editar a Início</h2>
+    <h2 id="sheet-title" tabindex="-1" i18n="@@home.sheet.title">Personalizar</h2>
   </header>
 
   <ul class="rows">
@@ -21,7 +21,11 @@
           (pointercancel)="endDrag()"
           ><app-home-glyph name="grip"
         /></span>
-        <span class="ico ui-tile"><app-home-glyph [name]="glyph(item.id)" /></span>
+        <app-module-app-icon
+          class="ico"
+          [class.planned]="isPlanned(item.id)"
+          [icon]="iconOf(item.id)"
+        />
         <span class="name">{{ title(item.id) }}</span>
 
         <div class="moves">
@@ -58,6 +62,10 @@
       </li>
     }
   </ul>
+
+  <button type="button" class="restore" (click)="restoreDefaults()" i18n="@@home.sheet.restore">
+    Voltar ao Padrão
+  </button>
 
   <div class="footer">
     <button type="button" class="secondary ui-btn" (click)="cancel()" i18n="@@home.sheet.cancel">

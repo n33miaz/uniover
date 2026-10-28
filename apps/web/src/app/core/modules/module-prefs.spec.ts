@@ -61,7 +61,7 @@ describe('ModulePrefs', () => {
     const prefs = TestBed.inject(ModulePrefs);
     expect(prefs.widgets()).toEqual([
       { id: 'tv', size: 'small', enabled: true },
-      { id: 'training', size: 'wide', enabled: true },
+      { id: 'training', size: 'small', enabled: true },
       { id: 'health', size: 'small', enabled: true },
       { id: 'monitor', size: 'small', enabled: true },
       { id: 'network', size: 'small', enabled: true },
@@ -77,13 +77,13 @@ describe('ModulePrefs', () => {
       KEY,
       JSON.stringify([
         { id: 'training', size: 'small', enabled: true },
-        { id: 'tv', size: 'wide', enabled: false },
+        { id: 'tv', size: 'small', enabled: false },
       ]),
     );
     const widgets = TestBed.inject(ModulePrefs).widgets();
     expect(widgets.slice(0, 2)).toEqual([
       { id: 'training', size: 'small', enabled: true },
-      { id: 'tv', size: 'wide', enabled: false },
+      { id: 'tv', size: 'small', enabled: false },
     ]);
     expect(widgets.slice(2).map((w) => [w.id, w.size, w.enabled])).toEqual(
       registryIds()
@@ -95,7 +95,7 @@ describe('ModulePrefs', () => {
   it('saves on the device and restores in a new instance', () => {
     TestBed.inject(ModulePrefs).apply([
       { id: 'training', size: 'small', enabled: true },
-      { id: 'tv', size: 'wide', enabled: true },
+      { id: 'tv', size: 'small', enabled: true },
     ]);
     TestBed.resetTestingModule();
     expect(
@@ -105,8 +105,28 @@ describe('ModulePrefs', () => {
         .map((w) => [w.id, w.size]),
     ).toEqual([
       ['training', 'small'],
-      ['tv', 'wide'],
+      ['tv', 'small'],
     ]);
+  });
+
+  it('turns a saved wide size (the old Treino default) into small, keeping order and visibility', () => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify([
+        { id: 'training', size: 'wide', enabled: true },
+        { id: 'tv', size: 'wide', enabled: false },
+      ]),
+    );
+    const prefs = TestBed.inject(ModulePrefs);
+    expect(prefs.widgets().slice(0, 2)).toEqual([
+      { id: 'training', size: 'small', enabled: true },
+      { id: 'tv', size: 'small', enabled: false },
+    ]);
+    expect(prefs.visible().map((item) => item.size)).not.toContain('wide');
+    // Gravar de novo leva o `small` ao disco.
+    prefs.setEnabled('tv', true);
+    const saved = JSON.parse(localStorage.getItem(KEY)!) as { size: string }[];
+    expect(saved.every((item) => item.size === 'small')).toBe(true);
   });
 
   it('hides a module that is turned off and brings it back', () => {

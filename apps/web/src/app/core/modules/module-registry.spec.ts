@@ -24,10 +24,10 @@ describe('ModuleRegistry', () => {
         .modules.slice(2)
         .map((m) => m.title),
     ).toEqual([
-      'Saúde e eventos',
-      'Monitor dos serviços',
-      'Rede da casa',
-      'Backup de fotos',
+      'Saúde e Eventos',
+      'Monitor dos Serviços',
+      'Rede da Casa',
+      'Backup de Fotos',
       'Avisos',
       'Controle do PC',
     ]);

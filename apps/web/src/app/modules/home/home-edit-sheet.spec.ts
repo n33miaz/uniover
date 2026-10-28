@@ -38,8 +38,9 @@ class Host {
 }
 
 describe('HomeEditSheet', () => {
-  async function render() {
+  async function render(saved?: WidgetPref[]) {
     const fixture = TestBed.createComponent(Host);
+    if (saved) fixture.componentInstance.widgets.set(saved);
     await fixture.whenStable();
     return { host: fixture.componentInstance, el: fixture.nativeElement as HTMLElement, fixture };
   }
@@ -49,10 +50,42 @@ describe('HomeEditSheet', () => {
     const dialog = el.querySelector('dialog')!;
     expect(dialog.hasAttribute('open')).toBe(true);
     expect(dialog.getAttribute('aria-labelledby')).toBe('sheet-title');
+    expect(dialog.querySelector('h2')?.textContent?.trim()).toBe('Personalizar');
     const buttons = Array.from(dialog.querySelectorAll('.footer button')).map((b) =>
       b.textContent?.trim(),
     );
     expect(buttons).toEqual(['Cancelar', 'Aplicar']);
+  });
+
+  it('puts the initial focus on the title, not on the first arrow', async () => {
+    const { el } = await render();
+    const title = el.querySelector<HTMLElement>('#sheet-title')!;
+    expect(title.getAttribute('tabindex')).toBe('-1');
+    expect(document.activeElement).toBe(title);
+  });
+
+  it('restores the visible modules and order before applying', async () => {
+    // A ordem salva já não é a do catálogo: "Voltar ao Padrão" a devolve, não só reabilita os módulos.
+    const { host, el, fixture } = await render([
+      { id: 'training', size: 'small', enabled: true },
+      { id: 'tv', size: 'wide', enabled: true },
+    ]);
+    const order = () =>
+      Array.from(el.querySelectorAll('[data-id]')).map((r) => r.getAttribute('data-id'));
+    expect(order()).toEqual(['training', 'tv']);
+    el.querySelector<HTMLButtonElement>('.down')!.click();
+    const checkbox = el.querySelectorAll<HTMLInputElement>('.show input')[1];
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    el.querySelector<HTMLButtonElement>('.restore')!.click();
+    await fixture.whenStable();
+    expect(order()).toEqual(['tv', 'training']);
+    el.querySelector<HTMLButtonElement>('.primary')!.click();
+    expect(host.applied?.map((item) => item.id)).toEqual(['tv', 'training']);
+    expect(host.applied?.every((item) => item.enabled)).toBe(true);
+    expect(host.applied?.every((item) => item.size === 'small')).toBe(true);
   });
 
   it('disables moving up the first and down the last, with accessible names', async () => {
@@ -143,10 +176,10 @@ describe('HomeEditSheet', () => {
     expect(names).toEqual([
       'TV',
       'Treino',
-      'Saúde e eventos',
-      'Monitor dos serviços',
-      'Rede da casa',
-      'Backup de fotos',
+      'Saúde e Eventos',
+      'Monitor dos Serviços',
+      'Rede da Casa',
+      'Backup de Fotos',
       'Avisos',
       'Controle do PC',
     ]);

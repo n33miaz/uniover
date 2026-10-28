@@ -15,23 +15,18 @@ import { SessionState } from '../../core/session/session-state';
 import { HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
 import { HomeEditSheet } from './home-edit-sheet';
-import { HomeGlyph, HomeGlyphName } from './home-glyph';
+import { HomeGlyph } from './home-glyph';
 import { ModuleAppIcon } from './module-app-icon';
+import { HomeSoonBadge } from './home-soon-badge';
+import { Skeleton } from '../../shared/ui/skeleton/skeleton';
 
-type ChipTone = 'neutral' | 'ok' | 'warn';
+type ChipTone = 'neutral' | 'ok' | 'warn' | 'connecting';
 type DayPart = 'morning' | 'afternoon' | 'evening';
 
 interface InfoChip {
   readonly id: string;
   readonly label: string;
   readonly tone: ChipTone;
-}
-
-interface Shortcut {
-  readonly id: string;
-  readonly link: string;
-  readonly glyph: HomeGlyphName;
-  readonly title: string;
 }
 
 /** Planejados que a Início do convidado apresenta no fim da grade, na ordem escolhida. */
@@ -63,12 +58,12 @@ export function greetingFor(hour: number): string {
 }
 
 /**
- * Início: saudação com data e hora, estado discreto do agente, atalhos e um bloco por módulo, que o usuário
+ * Início: saudação com data e hora, estado discreto do agente e um bloco por módulo, que o usuário
  * reordena e redimensiona.
  */
 @Component({
   selector: 'app-home-page',
-  imports: [RouterLink, HomeGlyph, HomeEditSheet, ModuleAppIcon],
+  imports: [RouterLink, HomeGlyph, HomeEditSheet, ModuleAppIcon, HomeSoonBadge, Skeleton],
   templateUrl: './home-page.html',
   styleUrl: './home-page.css',
 })
@@ -76,6 +71,7 @@ export class HomePage {
   private readonly clock = inject(ClockService);
   private readonly statusPort = inject(HomeStatusPort);
   private readonly status = this.statusPort.status;
+  protected readonly loading = this.statusPort.loading;
   private readonly prefs = inject(ModulePrefs);
   private readonly session = inject(SessionState);
   protected readonly registry = inject(ModuleRegistry);
@@ -126,74 +122,41 @@ export class HomePage {
     ),
   );
 
-  /** Atalhos para o que mais se procura fora dos módulos; só rotas que existem hoje. */
-  protected readonly shortcuts = computed<readonly Shortcut[]>(() => {
-    const settings: Shortcut = {
-      id: 'settings',
-      link: '/ajustes',
-      glyph: 'gear',
-      title: $localize`:@@home.shortcut.settings:Configurações`,
-    };
-    // Dispositivos é só do dono; a pessoa convidada fica com as configurações dela (perfil, aparência e sair).
-    if (this.session.isGuest()) return [settings];
-    return [
-      {
-        id: 'devices',
-        link: '/ajustes/aparelhos',
-        glyph: 'devices',
-        title: $localize`:@@home.shortcut.devices:Dispositivos`,
-      },
-      settings,
-    ];
-  });
-
-  /** Estados conhecidos da casa. O vigia continua aqui, mas a Início o oculta por enquanto. */
-  protected readonly chips = computed<readonly InfoChip[]>(() => {
+  /** Estado curto do agente: enquanto a primeira leitura demora, a bolinha comunica a conexão sem inventar resultado. */
+  protected readonly agentIndicator = computed<InfoChip>(() => {
     const status = this.status();
-    const agent: InfoChip =
-      status.agent === 'online'
-        ? { id: 'agent', label: $localize`:@@home.chip.agent-on:Agente ligado`, tone: 'ok' }
-        : status.agent === 'offline'
-          ? { id: 'agent', label: $localize`:@@home.chip.agent-off:Agente desligado`, tone: 'warn' }
-          : {
-              id: 'agent',
-              label: $localize`:@@home.chip.agent-unknown:Agente sem dados`,
-              tone: 'neutral',
-            };
-    const watcher: InfoChip =
-      status.watcher === 'ok'
-        ? { id: 'watcher', label: $localize`:@@home.chip.watcher-ok:Vigia sem avisos`, tone: 'ok' }
-        : status.watcher === 'alert'
-          ? {
-              id: 'watcher',
-              label: $localize`:@@home.chip.watcher-alert:Vigia com aviso`,
-              tone: 'warn',
-            }
-          : {
-              id: 'watcher',
-              label: $localize`:@@home.chip.watcher-unknown:Vigia sem dados`,
-              tone: 'neutral',
-            };
-    const chips = [agent, watcher];
-    if (status.serviceDown) {
-      chips.push({
-        id: 'service',
-        label: $localize`:@@home.chip.service-down:Serviço fora do ar`,
-        tone: 'warn',
-      });
+    if (this.loading()) {
+      return {
+        id: 'agent',
+        label: $localize`:@@home.agent-connecting:Conectando ao agente`,
+        tone: 'connecting',
+      };
     }
-    return chips;
+    if (status.agent === 'online')
+      return { id: 'agent', label: $localize`:@@home.chip.agent-on:Agente ligado`, tone: 'ok' };
+    if (status.serviceDown)
+      return {
+        id: 'agent',
+        label: $localize`:@@home.agent-unresponsive:Agente sem resposta`,
+        tone: 'warn',
+      };
+    if (status.agent === 'offline')
+      return {
+        id: 'agent',
+        label: $localize`:@@home.chip.agent-off:Agente desligado`,
+        tone: 'warn',
+      };
+    return {
+      id: 'agent',
+      label: $localize`:@@home.chip.agent-unknown:Agente sem dados`,
+      tone: 'neutral',
+    };
   });
-
-  /** A bolinha substitui a faixa de chips; o vigia permanece calculado, mas fica oculto por enquanto. */
-  protected readonly agentIndicator = computed(() =>
-    this.chips().find((chip) => chip.id === 'agent')!,
-  );
 
   /** Selo discreto do aviso de queda do computador (só o dono recebe): leva a Dispositivos, onde o aviso é dispensado. */
   protected readonly agentAlert = computed(() => {
     const alert = this.status().agentAlert;
-    if (!alert) return null;
+    if (!alert || this.isGuest()) return null;
     return {
       recovered: alert.recovered,
       label: alert.recovered
@@ -202,8 +165,8 @@ export class HomePage {
     };
   });
 
-  /** Só quem pode ver a TV recebe o estado do agente na Início. */
-  protected readonly canSeeAgent = computed(() => this.canSeeModule('tv'));
+  /** Estado técnico (bolinha do agente e aviso de queda) é do dono: o convidado vê só a engrenagem no cartão. */
+  protected readonly canSeeAgent = computed(() => !this.isGuest() && this.canSeeModule('tv'));
 
   /** Nome do link do cartão: o nome visível primeiro e a ação depois, para o leitor de tela dizer o que acontece. */
   protected linkLabel(module: ModuleDefinition): string {

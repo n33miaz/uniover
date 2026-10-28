@@ -46,6 +46,13 @@ h2 {
   white-space: nowrap;
 }
 
+/* O título recebe o foco ao abrir só para o leitor de tela e o teclado começarem ali. Ele não é um controle e o WebKit trata esse
+   foco por script como "de teclado" mesmo depois de um toque: um anel nele apareceria sem ninguém ter usado o teclado. Os
+   controles da folha seguem com o anel de `:focus-visible` deles. */
+h2:focus {
+  outline: none;
+}
+
 .rows {
   display: flex;
   flex-direction: column;
@@ -55,13 +62,27 @@ h2 {
   list-style: none;
 }
 
+.restore {
+  min-height: var(--tap);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--a-accent-ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .row {
   display: grid;
   grid-template-areas: 'grip ico name moves show';
-  grid-template-columns: 28px 40px minmax(0, 1fr) auto auto;
+  grid-template-columns: 36px 36px minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+  /* Folga mínima entre as colunas: nos 390 px cada pixel a mais para o nome evita quebrar ou cortar o texto. */
+  gap: 2px;
+  padding: var(--space-1) var(--space-1) var(--space-1) 0;
   border: 1px solid var(--a-line);
   border-radius: var(--radius);
   background: var(--a-surface-2);
@@ -85,33 +106,65 @@ h2 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  /* A alça é só um atalho de arrastar (as setas fazem o mesmo por toque): mais estreita que 44 px para sobrar largura ao nome. */
+  width: 36px;
   height: var(--tap);
   color: var(--a-ink2);
   cursor: grab;
   touch-action: none;
 }
 
-/* Mesmo ladrilho dos cartões da Início: cor do módulo em tom suave. */
+/* O mesmo ícone de app dos cartões da Início, em 36 px: marca verde nos módulos que abrem, cinza nos "Em Breve". */
 .ico {
   grid-area: ico;
-  --mod: var(--a-accent);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--mod) 14%, var(--a-surface));
-  color: color-mix(in srgb, var(--mod) 78%, var(--a-ink));
+  --module-icon-size: 36px;
+  --module-icon-radius: var(--radius-sm);
+  --a-on-module-app: #fff;
+  --module-app-bg: var(--a-accent);
 }
 
-.row[data-id='training'] .ico {
-  --mod: var(--a-ok);
+.ico.planned {
+  --module-app-bg: color-mix(in srgb, var(--a-ink2) 88%, var(--a-elev));
+}
+
+@media (prefers-color-scheme: dark) {
+  .ico {
+    --module-app-bg: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
+  }
+
+  .ico.planned {
+    --module-app-bg: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
+  }
+}
+
+:host-context([data-theme='dark']) .ico {
+  --module-app-bg: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
+}
+
+:host-context([data-theme='dark']) .ico.planned {
+  --module-app-bg: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
+}
+
+:host-context([data-theme='light']) .ico {
+  --module-app-bg: var(--a-accent);
+}
+
+:host-context([data-theme='light']) .ico.planned {
+  --module-app-bg: color-mix(in srgb, var(--a-ink2) 88%, var(--a-elev));
 }
 
 .name {
   grid-area: name;
   min-width: 0;
-  padding-left: var(--space-1);
-  font-size: var(--fs-small);
+  /* Nome ao lado de grip, ícone, setas e chave: nos 390 px sobra pouco, então a fonte acompanha a largura e o nome
+     fica numa linha só ("Monitor dos Serviços"); se ainda assim faltar, termina em reticências. */
+  overflow: hidden;
+  padding-inline-start: 6px;
+  font-size: clamp(0.75rem, 3.1vw, 0.875rem);
   font-weight: 700;
   line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .moves {
