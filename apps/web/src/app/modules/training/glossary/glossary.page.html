@@ -1,0 +1,32 @@
+<article class="glossary">
+  <header class="head">
+    <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="goBack()">
+      <app-training-glyph name="back" />
+    </button>
+    <h2 i18n="@@training.glossary.title">Entenda o Treino</h2>
+  </header>
+
+  <ol class="terms ui-plain">
+    <li class="ui-card">
+      <span class="order" aria-hidden="true">1</span>
+      <div>
+        <h3 i18n="@@training.glossary.program.title">Programa Semanal</h3>
+        <p i18n="@@training.glossary.program.text">Organiza suas rotinas nos dias da semana.</p>
+      </div>
+    </li>
+    <li class="ui-card">
+      <span class="order" aria-hidden="true">2</span>
+      <div>
+        <h3 i18n="@@training.glossary.routine.title">Rotina</h3>
+        <p i18n="@@training.glossary.routine.text">É a lista de exercícios de um treino.</p>
+      </div>
+    </li>
+    <li class="ui-card">
+      <span class="order" aria-hidden="true">3</span>
+      <div>
+        <h3 i18n="@@training.glossary.exercise.title">Exercício</h3>
+        <p i18n="@@training.glossary.exercise.text">É o movimento que você registra nas séries.</p>
+      </div>
+    </li>
+  </ol>
+</article>

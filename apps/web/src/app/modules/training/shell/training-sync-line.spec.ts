@@ -73,13 +73,13 @@ describe('TrainingSyncLine', () => {
     );
   });
 
-  it('offers "Sincronizar agora" when there is something waiting to be sent, and uses it', async () => {
+  it('offers "Sincronizar Agora" when there is something waiting to be sent, and uses it', async () => {
     const { fixture, el, queue } = await render();
     await queue().enqueue({ ...NEW_ITEM, url: '/api/v1/training/routines/1' });
     await eventually(fixture, () => expect(text(el)).toContain('1 ainda não sincronizado'));
     const pull = vi.spyOn(TestBed.inject(TrainingSync), 'pullNow').mockResolvedValue();
     const action = el.querySelector<HTMLButtonElement>('.act')!;
-    expect(action.textContent?.trim()).toBe('Sincronizar agora');
+    expect(action.textContent?.trim()).toBe('Sincronizar Agora');
     action.click();
     expect(pull).toHaveBeenCalledOnce();
   });
@@ -139,7 +139,7 @@ describe('TrainingSyncLine: install advice (iPhone outside the home screen)', ()
     await pendingOffline(kit);
     await eventually(kit.fixture, () => expect(text(kit.el)).toContain(ADVICE));
     const button = advice(kit.el)!;
-    expect(button.textContent?.replace(/\s+/g, ' ').trim()).toBe(`${ADVICE} Ver como`);
+    expect(button.textContent?.replace(/\s+/g, ' ').trim()).toBe(`${ADVICE} Ver Como`);
     // Um único botão de ação na linha; a sugestão é o botão inteiro (alvo de toque da altura de um dedo).
     expect(kit.el.querySelectorAll('.act')).toHaveLength(0);
 

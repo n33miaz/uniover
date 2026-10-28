@@ -53,6 +53,11 @@ export const TRAINING_ROUTES: Routes = [
         loadComponent: () => import('./today/workout-exercise').then((m) => m.WorkoutExercise),
       },
       {
+        path: 'glossario',
+        data: NO_TABS,
+        loadComponent: () => import('./glossary/glossary.page').then((m) => m.TrainingGlossaryPage),
+      },
+      {
         path: 'exercicios',
         pathMatch: 'full',
         loadComponent: () =>
