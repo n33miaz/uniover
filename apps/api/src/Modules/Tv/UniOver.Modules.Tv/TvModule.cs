@@ -9,6 +9,7 @@ using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Persistence;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Audit;
 using UniOver.Modules.Tv.Contracts;
@@ -84,6 +85,7 @@ public static class TvModule
         services.AddSingleton<ITvAgentPresence, DevicesAgentPresence>();
         services.AddSingleton<IAgentPresenceListener, TvPresenceListener>();
         services.AddSingleton<ITvCommandSender, DevicesGatewayCommandSender>();
+        services.AddSingleton<ITvCleanupSettingsPublisher, CleanupSettingsPublisher>();
         services.AddSingleton<ITvCleanupReports, InMemoryTvCleanupReports>();
         services.AddSingleton<TvStatePersister>();
         services.AddScoped<TvStateProvider>();

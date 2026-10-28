@@ -72,12 +72,12 @@ internal sealed partial class TvAgentMessageHandler(
                 await HandleWatchdogAsync(tvId, message, cancellationToken);
                 break;
             case AgentMessageTypes.TvCleanupResultV1:
-                HandleCleanupResult(tvId, message);
+                await HandleCleanupResultAsync(tvId, message, cancellationToken);
                 break;
         }
     }
 
-    private void HandleCleanupResult(Guid tvId, InboundMessage message)
+    private async Task HandleCleanupResultAsync(Guid tvId, InboundMessage message, CancellationToken cancellationToken)
     {
         var body = message.Body;
         var steps = body.GetProperty("failedSteps").EnumerateArray().Select(s => s.GetString()!).ToList();
@@ -89,11 +89,46 @@ internal sealed partial class TvAgentMessageHandler(
                 OptionalMegabytes(body, "memoryBeforeMb"),
                 OptionalMegabytes(body, "memoryAfterMb"),
                 OptionalMegabytes(body, "freedMb"),
-                steps));
+                steps,
+                body.TryGetProperty("closedPackages", out var closedPackages)
+                    ? closedPackages.EnumerateArray().Select(package => package.GetString()!).ToList()
+                    : null));
+
+        // Relatórios automáticos não têm uma requisição HTTP esperando. Eles precisam entrar no
+        // banco aqui, inclusive os pulos que explicam por que a TV não foi tocada.
+        if (!body.TryGetProperty("kind", out var kindValue) || kindValue.GetString() is not { } kind)
+            return;
+        var trigger = body.TryGetProperty("trigger", out var triggerValue)
+            ? triggerValue.GetString() ?? "automatic" : "automatic";
+        var result = body.TryGetProperty("result", out var resultValue)
+            ? resultValue.GetString() ?? "completed" : "completed";
+        if (string.Equals(result, "skipped", StringComparison.Ordinal))
+        {
+            var reason = body.TryGetProperty("reason", out var reasonValue)
+                ? reasonValue.GetString() ?? "unknown" : "unknown";
+            db.CleanupReports.Add(CleanupReportEntry.Skipped(tvId, kind, trigger, message.Timestamp, reason));
+        }
+        else
+        {
+            var duration = body.TryGetProperty("durationMs", out var durationValue)
+                && durationValue.TryGetInt32(out var milliseconds) ? milliseconds : 0;
+            db.CleanupReports.Add(CleanupReportEntry.Completed(
+                tvId, kind, trigger, message.Timestamp, duration,
+                OptionalMegabytes(body, "memoryBeforeMb"), OptionalMegabytes(body, "memoryAfterMb"),
+                body.GetProperty("closedApps").GetInt32(),
+                JsonSerializer.Serialize(body.TryGetProperty("closedPackages", out var packages)
+                    ? packages.EnumerateArray().Select(package => package.GetString()!).ToArray()
+                    : Array.Empty<string>()),
+                OptionalInt(body, "backgroundProcesses"), OptionalInt(body, "sessionOpenMs")));
+        }
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private static int? OptionalMegabytes(JsonElement body, string name) =>
         body.GetProperty(name) is { ValueKind: JsonValueKind.Number } value ? value.GetInt32() : null;
+
+    private static int? OptionalInt(JsonElement body, string name) =>
+        body.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number ? value.GetInt32() : null;
 
     private void HandleState(Guid tvId, InboundMessage message)
     {

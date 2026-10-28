@@ -5,6 +5,8 @@ using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
+using UniOver.Modules.Identity.Contracts;
+using UniOver.Modules.Tv.Features.Cleanup;
 
 namespace UniOver.Modules.Tv.Adapters;
 
@@ -25,6 +27,12 @@ internal sealed partial class TvPresenceListener(
     {
         ArgumentNullException.ThrowIfNull(info);
 
+        if (info.Connected && scopes is not null
+            && info.Capabilities.Contains(CleanupSettingsPublisher.Capability, StringComparer.Ordinal))
+        {
+            _ = PublishCleanupSettingsAsync(info.AgentId);
+        }
+
         if (scopes is null && agents.TryGetLast(out var binding))
         {
             Apply(Guid.Empty, binding.AgentSlug!, info);
@@ -34,6 +42,22 @@ internal sealed partial class TvPresenceListener(
         // A presença chega no escopo da conexão do agente, mas a tabela de TVs decide para qual fluxo SSE o aviso vai.
         // A leitura breve em um escopo próprio mantém o listener singleton sem capturar o DbContext da conexão.
         _ = ApplyAfterReadAsync(info);
+    }
+
+    private async Task PublishCleanupSettingsAsync(string agentSlug)
+    {
+        try
+        {
+            // Resolvido na hora, e não no construtor: o publicador chega ao transporte do Devices, que por sua vez
+            // recebe este ouvinte, e um construtor assim fecharia um ciclo de dependências.
+            await using var scope = scopes!.CreateAsyncScope();
+            if (scope.ServiceProvider.GetService<ITvCleanupSettingsPublisher>() is { } publisher)
+                await publisher.PublishAsync(agentSlug);
+        }
+        catch (Exception)
+        {
+            // A próxima repetição do hello tenta de novo; presença não pode cair por configuração.
+        }
     }
 
     private async Task ApplyAfterReadAsync(AgentPresenceInfo info)

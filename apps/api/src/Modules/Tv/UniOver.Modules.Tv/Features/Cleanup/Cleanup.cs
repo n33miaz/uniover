@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
@@ -10,6 +12,7 @@ using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
 using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Ports;
+using UniOver.Modules.Tv.Persistence;
 
 namespace UniOver.Modules.Tv.Features.Cleanup;
 
@@ -32,7 +35,9 @@ internal sealed record TvCleanupOk(
 /// <summary>Como terminou: já havia outra limpeza, o agente não executou, ou o relatório que prova o que fez.</summary>
 internal sealed record CleanupResult(bool Busy, TvSendOutcome? Outcome, TvCleanupReport? Report);
 
-internal sealed class CleanupHandler(TvCommandRunner runner, ITvCleanupReports reports, IOptions<TvModuleOptions> options)
+internal sealed class CleanupHandler(
+    TvCommandRunner runner, ITvCleanupReports reports, IOptions<TvModuleOptions> options,
+    TvDbContext? db = null, TimeProvider? time = null)
 {
     /// <summary>
     /// Folga para o relatório chegar depois do resultado do comando. O agente o manda antes e o Devices trata os quadros
@@ -46,6 +51,7 @@ internal sealed class CleanupHandler(TvCommandRunner runner, ITvCleanupReports r
     public async Task<CleanupResult> HandleAsync(CleanupCommand command, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
+        var startedAt = time?.GetUtcNow();
 
         // Uma limpeza por TV: a vez só volta quando esta termina, com ou sem erro.
         using var ticket = reports.TryBegin(command.TvId);
@@ -69,6 +75,14 @@ internal sealed class CleanupHandler(TvCommandRunner runner, ITvCleanupReports r
         }
 
         var report = await ticket.WaitAsync(ReportGrace, cancellationToken);
+        if (report is not null && db is not null && time is not null)
+        {
+            db.CleanupReports.Add(CleanupReportEntry.Completed(
+                command.TvId, "manual", "manual", startedAt ?? time.GetUtcNow(), (int)outcome.Latency.TotalMilliseconds,
+                report.MemoryBeforeMb, report.MemoryAfterMb, report.ClosedApps,
+                JsonSerializer.Serialize(report.ClosedPackages ?? [])));
+            await db.SaveChangesAsync(cancellationToken);
+        }
         return new CleanupResult(false, outcome, report);
     }
 }
@@ -78,7 +92,8 @@ internal static class CleanupEndpoint
     public const string BusyType = "cleanup-in-progress";
     public const string ReportMissingCode = "cleanup_report_missing";
 
-    public static void MapCleanup(this IEndpointRouteBuilder group) =>
+    public static void MapCleanup(this IEndpointRouteBuilder group)
+    {
         group.MapPost("/cleanup", HandleAsync).RequireAuthorization(TvAuth.Control)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces<TvCleanupOk>()
@@ -89,6 +104,10 @@ internal static class CleanupEndpoint
             .ProducesProblem(StatusCodes.Status502BadGateway)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status504GatewayTimeout);
+        group.MapGet("/cleanup/latest", LatestAsync).RequireAuthorization(TvAuth.Control)
+            .Produces<CleanupReportView>().Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status401Unauthorized).ProducesProblem(StatusCodes.Status403Forbidden);
+    }
 
     private static async Task<IResult> HandleAsync(
         ICurrentUser current, HttpContext http, ITvCurrentSelection selection, CleanupHandler handler, CancellationToken cancellationToken)
@@ -99,6 +118,22 @@ internal static class CleanupEndpoint
         }
 
         return ToResult(await handler.HandleAsync(new CleanupCommand(origin, selection.Current.Id), cancellationToken));
+    }
+
+    private static async Task<IResult> LatestAsync(ITvCurrentSelection selection, TvDbContext db, CancellationToken cancellationToken)
+    {
+        var tvId = selection.Current.Id;
+        var latest = await db.CleanupReports.AsNoTracking().Where(report => report.TvId == tvId)
+            .OrderByDescending(report => report.StartedAt).FirstOrDefaultAsync(cancellationToken);
+        if (latest is null)
+        {
+            return Results.NoContent();
+        }
+
+        int? freed = latest.MemoryBeforeMb is { } before && latest.MemoryAfterMb is { } after ? Math.Max(0, after - before) : null;
+        return TypedResults.Ok(new CleanupReportView(
+            latest.Kind, latest.Trigger, latest.StartedAt, latest.DurationMs, latest.MemoryBeforeMb,
+            latest.MemoryAfterMb, freed, latest.ClosedApps, latest.Result, latest.Reason));
     }
 
     /// <summary>Separado do HTTP para ser testado sem subir o servidor.</summary>
@@ -136,3 +171,7 @@ internal static class CleanupEndpoint
             report.FailedSteps));
     }
 }
+
+internal sealed record CleanupReportView(
+    string Kind, string Trigger, DateTimeOffset StartedAt, int DurationMs, int? MemoryBeforeMb,
+    int? MemoryAfterMb, int? FreedMb, int ClosedApps, string Result, string? Reason);

@@ -23,6 +23,9 @@ public static class TvCommandNames
     public const string PowerSchedule = "tv.power-schedule";
     public const string Cleanup = "tv.cleanup";
 
+    /// <summary>O administrador ligou ou desligou, numa TV, o fechamento de apps em segundo plano da limpeza: não vai à TV, mas muda o que o agente pode fazer. O detalhe é o novo valor.</summary>
+    public const string CleanupSetting = "tv.cleanup.setting";
+
     /// <summary>O administrador trocou o computador que controla a TV: não vai à TV, mas redireciona o controle e a trilha guarda quem fez. O detalhe é o computador novo.</summary>
     public const string ConfigBind = "tv.config.bind";
 

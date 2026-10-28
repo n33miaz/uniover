@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -27,6 +28,10 @@ internal static class SystemSettingsEndpoint
             .RequireAuthorization(StepUp.Policy(StepUpActions.SystemSettingsChange))
             .RequireRateLimiting(RateLimitPolicies.Login)
             .Produces<SystemSettingValue>().ProducesProblem(400).ProducesProblem(401).ProducesProblem(403).ProducesProblem(409);
+        group.MapDelete("/system-settings/{key}", ResetAsync)
+            .RequireAuthorization(StepUp.Policy(StepUpActions.SystemSettingsChange))
+            .RequireRateLimiting(RateLimitPolicies.Login)
+            .Produces<SystemSettingValue>().ProducesProblem(401).ProducesProblem(403);
     }
 
     private static async Task<IResult> ReadAsync(SystemSettingsService settings, CancellationToken cancellationToken)
@@ -40,7 +45,8 @@ internal static class SystemSettingsEndpoint
     private static async Task<IResult> SaveAsync(
         string key, SaveSystemSettingRequest? request, HttpContext http, ICurrentUser current,
         IdentityDbContext db, SystemSettingsService settings, LoginAuditWriter audit,
-        IConfiguration configuration, TimeProvider time, CancellationToken cancellationToken)
+        IConfiguration configuration, TimeProvider time, ITvCleanupSettingsPublisher? cleanupPublisher,
+        CancellationToken cancellationToken)
     {
         if (current.UserId is not { } ownerId) return IdentityProblems.Unauthenticated();
         if (!TryNormalize(key, request?.Value ?? default, out var valueJson))
@@ -73,6 +79,8 @@ internal static class SystemSettingsEndpoint
                 type: ProblemDetailsExtensions.TypeBase + "system-setting-conflict");
         }
         settings.Invalidate(key);
+        if (IsTvCleanupKey(key) && cleanupPublisher is not null)
+            await cleanupPublisher.PublishAsync(cancellationToken: cancellationToken);
         return TypedResults.Ok(await settings.ReadAsync(key, cancellationToken));
     }
 
@@ -96,12 +104,41 @@ internal static class SystemSettingsEndpoint
                 json = minutes.ToString(CultureInfo.InvariantCulture);
                 return true;
             case SystemSettingKeys.PhotoStorageEnabled when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+            case SystemSettingKeys.TvLightCleanupEnabled when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+            case SystemSettingKeys.TvDeepCleanupEnabled when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                 json = value.GetBoolean() ? "true" : "false";
+                return true;
+            case SystemSettingKeys.TvDeepCleanupMemoryThresholdMb when value.ValueKind == JsonValueKind.Number:
+                if (!value.TryGetInt32(out var threshold) || threshold is < 64 or > 512) return false;
+                json = threshold.ToString(CultureInfo.InvariantCulture);
                 return true;
             default:
                 return false;
         }
     }
+
+    private static async Task<IResult> ResetAsync(
+        string key, HttpContext http, ICurrentUser current, IdentityDbContext db, SystemSettingsService settings,
+        LoginAuditWriter audit, ITvCleanupSettingsPublisher? cleanupPublisher, CancellationToken cancellationToken)
+    {
+        if (current.UserId is not { } ownerId) return IdentityProblems.Unauthenticated();
+        if (!SystemSettingKeys.All.Contains(key, StringComparer.Ordinal)) return Results.BadRequest();
+
+        var row = await db.SystemSettings.SingleOrDefaultAsync(s => s.Key == key, cancellationToken);
+        if (row is not null)
+        {
+            db.SystemSettings.Remove(row);
+            audit.Add(ownerId, AuditEvents.SystemSettingChanged, ClientInfo.From(http), key);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        settings.Invalidate(key);
+        if (IsTvCleanupKey(key) && cleanupPublisher is not null)
+            await cleanupPublisher.PublishAsync(cancellationToken: cancellationToken);
+        return TypedResults.Ok(await settings.ReadAsync(key, cancellationToken));
+    }
+
+    private static bool IsTvCleanupKey(string key) => key is SystemSettingKeys.TvLightCleanupEnabled
+        or SystemSettingKeys.TvDeepCleanupEnabled or SystemSettingKeys.TvDeepCleanupMemoryThresholdMb;
 
     // A região fica de fora: o Treino tem um padrão para ela (us-east-2), então "sem região no ambiente" ainda é um bucket
     // completo para ele, e exigi-la aqui travaria quem usa o padrão.

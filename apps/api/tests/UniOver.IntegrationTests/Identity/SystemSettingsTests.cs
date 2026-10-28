@@ -179,4 +179,15 @@ public sealed class SystemSettingsTests(PostgresFixture postgres)
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         (await settings.PhotoStorageEnabledAsync(Ct)).Should().BeTrue();
     }
+
+    [Fact]
+    public async Task TvCleanupSettings_DefaultToEnabledWithASafeMemoryThreshold()
+    {
+        await using var app = await PasskeyApp.StartAsync(postgres);
+        var settings = app.Services.GetRequiredService<ISystemSettings>();
+
+        (await settings.TvLightCleanupEnabledAsync(Ct)).Should().BeTrue();
+        (await settings.TvDeepCleanupEnabledAsync(Ct)).Should().BeTrue();
+        (await settings.TvDeepCleanupMemoryThresholdMbAsync(Ct)).Should().Be(160);
+    }
 }

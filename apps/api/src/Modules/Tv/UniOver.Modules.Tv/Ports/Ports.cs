@@ -67,7 +67,8 @@ public interface ITvCommandAudit
 
 /// <summary>O que a limpeza da TV fez, como o agente relatou (<c>tv.cleanup.result.v1</c>). Memória em MB.</summary>
 public sealed record TvCleanupReport(
-    int ClosedApps, int? MemoryBeforeMb, int? MemoryAfterMb, int? FreedMb, IReadOnlyList<string> FailedSteps);
+    int ClosedApps, int? MemoryBeforeMb, int? MemoryAfterMb, int? FreedMb, IReadOnlyList<string> FailedSteps,
+    IReadOnlyList<string>? ClosedPackages = null);
 
 /// <summary>Uma limpeza em andamento: o pedido e a espera pelo relatório do agente. Descartar libera a vez.</summary>
 public interface ITvCleanupTicket : IDisposable
