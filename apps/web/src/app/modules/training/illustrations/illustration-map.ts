@@ -94,6 +94,8 @@ export const EXERCISE_ILLUSTRATIONS: Readonly<Record<string, ExerciseIllustratio
   'crucifixo-reto-com-halteres': art('Dumbbell Flys', '0056'),
   'crucifixo-reto-na-polia': art('Flat Bench Cable Flys', '0057'),
   'crucifixo-unilateral-com-halter': art('One Arm Flat Bench Fly\u2019s', '0071'),
+  'crucifixo-na-maquina-voador': pngArt('Butterfly Machine', 'butterfly-machine'),
+  'supino-inclinado-articulado-na-maquina': pngArt('Incline Chest Press', 'incline-chest-press'),
   'flexao-de-bracos': art('Push Ups', '0077'),
   'flexao-de-bracos-fechada': art('Close Triceps Pushup', '0188'),
   'paralelas-para-peito': art('Chest Dips', '0054'),
@@ -160,6 +162,17 @@ export const EXERCISE_ILLUSTRATIONS: Readonly<Record<string, ExerciseIllustratio
   ),
   'desenvolvimento-militar-sentado-com-barra': art('Seated Military Press', '0004'),
   'desenvolvimento-com-halteres': pngArt('Dumbbell Shoulder Press', 'dumbbell-shoulder-press'),
+  'desenvolvimento-arnold': pngArt('Arnold Press', 'arnold-press'),
+  'desenvolvimento-na-maquina': pngArt(
+    'Seated Shoulder Press Machine',
+    'seated-shoulder-press-machine',
+  ),
+  'desenvolvimento-sentado-com-barra': pngArt(
+    'Seated Barbell Shoulder Press',
+    'barbell-shoulder-press',
+  ),
+  // Na origem, a pose com a barra baixa, junto às coxas, é a segunda imagem.
+  'elevacao-frontal-com-barra': pngArt('Front Barbell Raises', 'front-barbell-raises', [2, 1]),
   'desenvolvimento-unilateral-com-halter': art('One Arm Dumbbell Shoulder Press', '0038'),
   'elevacao-frontal-com-halteres': art('Front Dumbbell Raise', '0033'),
   'elevacao-frontal-na-polia': art('Front Cable Raises', '0008'),

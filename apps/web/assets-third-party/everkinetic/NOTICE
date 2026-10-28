@@ -20,11 +20,18 @@ Conteúdo desta pasta:
   e NNNN-tension.svg) de 127 exercícios que o catálogo do app tem de forma equivalente. Os nomes e o conteúdo
   são os originais, sem nenhuma modificação (nem recorte, nem recolorização, nem otimização). O restante do
   repositório de origem (textos em Markdown, outras imagens) NÃO foi obtido, salvo o subconjunto PNG abaixo.
-- png/: 4 arquivos originais de src/images-web, sem nenhuma modificação: dumbbell-shoulder-press-{1,2}.png
-  (0012, Dumbbell Shoulder Press) e wide-grip-lat-pull-down-{1,2}.png (0097, Wide Grip Lat Pull Down).
-  Esses dois exercícios não têm o par em dist/svg no commit fixado. Obtidos em 22/10/2026 no mesmo commit.
-  Na puxada, o mapa exibe a imagem 2 primeiro (braços estendidos), depois a 1 (barra junto ao peito), sem
-  alterar os arquivos. Os quatro arquivos também são publicados em /exercise-art/ e recebem o mesmo crédito.
+- png/: 16 arquivos originais de src/images-web, sem nenhuma modificação, oito pares de exercícios que não têm o
+  par em dist/svg no commit fixado: dumbbell-shoulder-press-{1,2}.png (0012, Dumbbell Shoulder Press),
+  wide-grip-lat-pull-down-{1,2}.png (0097, Wide Grip Lat Pull Down), arnold-press-{1,2}.png (0006, Arnold Press),
+  front-barbell-raises-{1,2}.png (0007, Front Barbell Raises), seated-shoulder-press-machine-{1,2}.png (0003, Seated
+  Shoulder Press Machine), barbell-shoulder-press-{1,2}.png (0011, Seated Barbell Shoulder Press),
+  butterfly-machine-{1,2}.png (0047, Butterfly Machine) e incline-chest-press-{1,2}.png (0084, Incline Chest Press).
+  Os dois primeiros pares foram obtidos em 22/10/2026 e os seis seguintes em 28/10/2026, todos no mesmo commit.
+  Cada arquivo foi baixado do raw desse commit e o hash de blob do git conferiu com o da árvore; nenhum deles é
+  cópia de arquivo de src/images-png-unknown (a pasta de origem "unknown" não é usada). Na puxada, o mapa exibe a
+  imagem 2 primeiro (braços estendidos), depois a 1 (barra junto ao peito); na elevação frontal com barra, a 2
+  (barra junto às coxas) e depois a 1 (barra à altura do peito), sem alterar os arquivos. Os dezesseis arquivos
+  também são publicados em /exercise-art/ e recebem o mesmo crédito.
 
 Esta pasta fica dentro do app web (apps/web/assets-third-party/) porque o Angular só publica arquivos de dentro do
 workspace; o build os publica em /exercise-art/. Quais exercícios do app usam cada arquivo está em
