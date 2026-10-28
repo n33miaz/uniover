@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.16.0](https://github.com/n33miaz/uniover/compare/v0.15.0...v0.16.0) (2026-10-28)
+
+
+### Features
+
+* **agent:** type with the real field state
+* **agent:** find the tv by mdns
+* **web:** tips when tv services stop
+
 ## [0.15.0](https://github.com/n33miaz/uniover/compare/v0.14.0...v0.15.0) (2026-10-28)
 
 
