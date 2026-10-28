@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import type {
@@ -107,6 +107,17 @@ const ALLOWED_IMAGE_TYPES = new Set([
             A avaliação e os arquivos selecionados serão guardados apenas neste aparelho.
           </p>
         </section>
+        <p
+          class="preview-count"
+          role="status"
+          aria-live="polite"
+          i18n-aria-live="@@common.aria.polite"
+        >
+          {{ recognizedCount() }}
+          <span i18n="@@training.assessments.import-recognized">dados reconhecidos</span>
+          · {{ reviewCount() }}
+          <span i18n="@@training.assessments.import-review-count">para revisar</span>
+        </p>
         <fieldset>
           <legend i18n="@@training.assessments.confirm-fields">
             Confirme cada campo a importar
@@ -379,6 +390,12 @@ const ALLOWED_IMAGE_TYPES = new Set([
       border-radius: var(--radius-sm);
       background: var(--a-surface-2);
     }
+    .preview-count {
+      margin: 0;
+      color: var(--a-ink2);
+      font-size: var(--fs-small);
+      text-align: center;
+    }
     .primary {
       min-height: var(--tap);
       border: 0;
@@ -403,6 +420,10 @@ export class PhysicalAssessmentImportPage {
   protected readonly importedDocuments = signal<ImportedDocument[]>([]);
   protected readonly status = signal('');
   protected readonly saving = signal(false);
+  protected readonly recognizedCount = computed(() => this.candidates().length);
+  protected readonly reviewCount = computed(
+    () => this.candidates().filter((candidate) => !candidate.selected).length,
+  );
   protected readonly unitLabel = $localize`:@@training.assessments.unit:Unidade`;
   protected readonly title = (row: ImportAssessment) =>
     row.assessedOn
