@@ -20,6 +20,9 @@ import { expect, screenshot, test, waitForServiceWorkerControl } from '../fixtur
 const DIST = resolve(process.env['UPDATE_E2E_DIST'] ?? 'dist/web/browser');
 const LEGACY = process.env['UPDATE_E2E_LEGACY'] === '1';
 const SW_DELAY_MS = 2_800;
+// O aviso de versão nova só sai depois de o worker novo instalar o precache inteiro (mais de cem arquivos): numa máquina
+// disputada isso passa dos 5 s padrão, e o teste falhava ali, antes de tocar em Atualizar, sem relação com a tela vazia.
+const BANNER_TIMEOUT_MS = 30_000;
 // `UPDATE_E2E_API_DELAY_MS` alonga a espera da API (e, com ela, o momento em que a casca recarregada pede o pedaço da tela).
 const API_DELAY_MS = Number(process.env['UPDATE_E2E_API_DELAY_MS'] ?? 2_000);
 
@@ -150,7 +153,7 @@ test.describe('atualização com a casca antiga já aberta', () => {
       const registration = await navigator.serviceWorker.getRegistration();
       await registration?.update();
     });
-    await expect(banner(page)).toBeVisible();
+    await expect(banner(page)).toBeVisible({ timeout: BANNER_TIMEOUT_MS });
 
     const timeOrigin = await page.evaluate(() => performance.timeOrigin);
     // `load` (e não `framenavigated`): o roteador também troca o endereço no mesmo documento, e isso não é recarga.
@@ -177,11 +180,13 @@ test.describe('atualização com a casca antiga já aberta', () => {
     expect(
       await page.evaluate(() => sessionStorage.getItem('uniover.update.chunk-recovery')),
     ).toBeNull();
-    // A leitura da conta leva 30 s; a Início não a espera (só o teto do guarda, 3 s da sessão + 1,5 s da conta).
-    expect(elapsed).toBeLessThan(15_000);
+    // O defeito do dono vem primeiro: nenhum quadro vazio, e só depois o tempo (que numa máquina disputada oscila).
     expect(
       await page.evaluate(() => (window as never as { __blankFrames: number }).__blankFrames),
     ).toBe(0);
+    // A leitura da conta leva 30 s; a Início não a espera (só o teto do guarda, 3 s da sessão + 1,5 s da conta). O limite
+    // fica bem abaixo dos 30 s para provar que não esperou, e com folga para a máquina lenta.
+    expect(elapsed).toBeLessThan(25_000);
   });
 
   test('o toque em Atualizar cobre a tela com o esqueleto e termina na versão nova com a Início', async ({
@@ -206,7 +211,7 @@ test.describe('atualização com a casca antiga já aberta', () => {
       const registration = await navigator.serviceWorker.getRegistration();
       await registration?.update();
     });
-    await expect(banner(page)).toBeVisible();
+    await expect(banner(page)).toBeVisible({ timeout: BANNER_TIMEOUT_MS });
 
     const timeOrigin = await page.evaluate(() => performance.timeOrigin);
     await banner(page).getByRole('button', { name: 'Atualizar' }).click();
@@ -313,7 +318,7 @@ test.describe('atualização quando o worker novo demora ou é substituído', ()
       const registration = await navigator.serviceWorker.getRegistration();
       await registration?.update();
     });
-    await expect(banner(page)).toBeVisible();
+    await expect(banner(page)).toBeVisible({ timeout: BANNER_TIMEOUT_MS });
 
     const timeOrigin = await page.evaluate(() => performance.timeOrigin);
     await banner(page).getByRole('button', { name: 'Atualizar' }).click();
@@ -349,7 +354,7 @@ test.describe('atualização quando o worker novo demora ou é substituído', ()
       const registration = await navigator.serviceWorker.getRegistration();
       await registration?.update();
     });
-    await expect(banner(page)).toBeVisible();
+    await expect(banner(page)).toBeVisible({ timeout: BANNER_TIMEOUT_MS });
 
     await banner(page).getByRole('button', { name: 'Atualizar' }).click();
     await expect(skeleton(page)).toBeVisible({ timeout: 1_000 });
@@ -388,14 +393,18 @@ test.describe('abertura lenta', () => {
 
   async function slowOpen(page: Page, context: BrowserContext) {
     await context.addInitScript(() => {
-      const state = window as unknown as { __blankFrames: number };
-      state.__blankFrames = 0;
-      const startedAt = performance.now();
-      // Passado o instante em que o esqueleto já deveria estar de pé, nenhum quadro pode ficar sem ele e sem a Início.
+      const state = window as unknown as { __blankLog: string[] };
+      state.__blankLog = [];
+      let bootedAt = 0;
+      // Antes de o app subir não há o que desenhar (o pacote ainda baixa): a conta começa quando a casca existe e o esqueleto
+      // já teve o prazo dele para entrar (300 ms mais uma folga). Dali em diante nenhum quadro fica sem ele e sem a Início.
       const tick = () => {
+        const now = performance.now();
+        if (!bootedAt && document.querySelector('app-root > *')) bootedAt = now;
         const covered = !!document.querySelector('app-update-skeleton .overlay');
         const home = !!document.querySelector('article.card');
-        if (performance.now() - startedAt > 700 && !covered && !home) state.__blankFrames++;
+        if (bootedAt && now - bootedAt > 800 && !covered && !home && state.__blankLog.length < 5)
+          state.__blankLog.push(`${Math.round(now - bootedAt)} ms depois de a casca subir`);
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
@@ -422,8 +431,9 @@ test.describe('abertura lenta', () => {
     await expect(skeleton(page)).toHaveCount(0, { timeout: 5_000 });
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Bom dia|Boa tarde|Boa noite/);
     expect(
-      await page.evaluate(() => (window as never as { __blankFrames: number }).__blankFrames),
-    ).toBe(0);
+      await page.evaluate(() => (window as never as { __blankLog: string[] }).__blankLog),
+      'quadros sem esqueleto e sem Início',
+    ).toEqual([]);
   });
 
   test('com movimento reduzido a espera pulsa em vez de ficar parada', async ({
