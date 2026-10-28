@@ -74,6 +74,7 @@ describe('TvEditSheet', () => {
     deleteTv: vi.fn(),
     tvMembers: vi.fn(),
     tvCleanupReports: vi.fn(),
+    tvApps: vi.fn(),
     setTvMembers: vi.fn(),
   };
   const authApi = { guests: vi.fn() };
@@ -93,6 +94,7 @@ describe('TvEditSheet', () => {
     api.deleteTv.mockReset().mockResolvedValue(undefined);
     api.tvMembers.mockReset().mockResolvedValue(['g1']);
     api.tvCleanupReports.mockReset().mockResolvedValue([]);
+    api.tvApps.mockReset().mockResolvedValue([]);
     api.setTvMembers
       .mockReset()
       .mockImplementation(async (_id: string, ids: readonly string[]) => [...ids]);
@@ -335,6 +337,118 @@ describe('TvEditSheet', () => {
 
       const creating = await render(null, [OWN]);
       expect(creating.el.querySelector('label.toggle')).toBeNull();
+    });
+
+    it('shows that the light settings are unsupported on Samsung without offering a switch', async () => {
+      const { el } = await render(TV, [OWN]);
+      expect(el.textContent).toContain('Não suportado nesta TV.');
+      expect(el.textContent).not.toContain('Animações Mais Curtas');
+    });
+
+    it('starts every light setting off on an Android TV and sends them together when one is turned on', async () => {
+      api.tvApps.mockResolvedValue([
+        { package: 'com.example.video', label: 'Vídeo' },
+        { package: 'com.example.musica', label: 'Música' },
+      ]);
+      const android: TvItem = { ...TV, kind: 'android', capabilities: ['tv.remote', 'tv.adb'] };
+      const { el, save, settle, closed } = await render(android, [OWN]);
+      const switches = () =>
+        Array.from(el.querySelectorAll<HTMLInputElement>('label.toggle input')).slice(0, 4);
+      expect(switches().map((item) => item.checked)).toEqual([false, false, false, false]);
+      expect(el.textContent).toContain('Atualização automática da Play Store');
+      expect(el.textContent).toContain('Disponível em breve');
+
+      switches()[0]!.click();
+      switches()[3]!.click();
+      await settle();
+      await save();
+
+      expect(api.updateTv).toHaveBeenCalledWith('tv-2', {
+        focusModeEnabled: true,
+        shortAnimationsEnabled: false,
+        restrictedBackgroundPackages: ['com.example.musica'],
+      });
+      expect(closed).toEqual([true]);
+    });
+
+    const ANDROID: TvItem = { ...TV, kind: 'android', capabilities: ['tv.remote', 'tv.adb'] };
+
+    it('shows the unsupported-TV text for its own 409 and not the computer-in-use one', async () => {
+      api.updateTv.mockRejectedValueOnce(problem(409, 'tv-light-settings-unsupported'));
+      const { el, save, settle, error } = await render(ANDROID, [OWN]);
+      el.querySelector<HTMLInputElement>('label.toggle input')!.click();
+      await settle();
+      await save();
+      expect(error()).toBe('Não Suportado Nesta TV.');
+    });
+
+    it('keeps the computer-in-use text for the 409 of another kind', async () => {
+      api.updateTv.mockRejectedValueOnce(problem(409));
+      const { el, save, settle, error } = await render(ANDROID, [OWN]);
+      el.querySelector<HTMLInputElement>('label.toggle input')!.click();
+      await settle();
+      await save();
+      expect(error()).toBe('Esse computador já controla outra TV. Escolha outro.');
+    });
+
+    it('explains a 400 on the app list instead of the generic failure', async () => {
+      api.updateTv.mockRejectedValueOnce(
+        problem(400, 'validation-failed', {
+          errors: { restrictedBackgroundPackages: ['inválida'] },
+        }),
+      );
+      const { el, save, settle, error } = await render(ANDROID, [OWN]);
+      el.querySelector<HTMLInputElement>('label.toggle input')!.click();
+      await settle();
+      await save();
+      expect(error()).toContain('A lista de apps tem algo inválido');
+    });
+
+    it('tells loading, failed (with a retry) and empty apart in the app list', async () => {
+      let resolveApps: (value: { package: string; label: string }[]) => void = () => undefined;
+      api.tvApps.mockReturnValueOnce(new Promise((resolve) => (resolveApps = resolve)));
+      const { el, settle, button } = await render(ANDROID, [OWN]);
+      expect(el.textContent).toContain('Carregando apps');
+      expect(el.textContent).not.toContain('Nenhum app disponível');
+
+      resolveApps([]);
+      await settle();
+      expect(el.textContent).toContain('Nenhum app disponível para escolher ainda.');
+      expect(button('Tentar de Novo')).toBeUndefined();
+    });
+
+    it('shows the failure with Tentar de Novo and recovers on the retry', async () => {
+      api.tvApps.mockRejectedValueOnce(new Error('falhou'));
+      const { el, settle, button } = await render(ANDROID, [OWN]);
+      expect(el.textContent).toContain('Não foi possível carregar os apps agora.');
+      expect(el.textContent).not.toContain('Nenhum app disponível');
+
+      api.tvApps.mockResolvedValueOnce([{ package: 'com.example.video', label: 'Vídeo' }]);
+      button('Tentar de Novo').click();
+      await settle();
+      expect(el.textContent).toContain('Vídeo');
+      expect(el.textContent).not.toContain('Não foi possível carregar os apps agora.');
+    });
+
+    it('turns every light setting off with Voltar ao Original so the agent restores the values it read', async () => {
+      const android: TvItem = {
+        ...TV,
+        kind: 'android',
+        capabilities: ['tv.remote', 'tv.adb'],
+        focusModeEnabled: true,
+        shortAnimationsEnabled: true,
+        restrictedBackgroundPackages: ['com.example.video'],
+      };
+      const { button, save, settle } = await render(android, [OWN]);
+      button('Voltar ao Original').click();
+      await settle();
+      await save();
+
+      expect(api.updateTv).toHaveBeenCalledWith('tv-2', {
+        focusModeEnabled: false,
+        shortAnimationsEnabled: false,
+        restrictedBackgroundPackages: [],
+      });
     });
 
     it('sends only the background app closing option when only the switch changed', async () => {

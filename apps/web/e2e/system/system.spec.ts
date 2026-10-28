@@ -349,7 +349,7 @@ test.describe('Configurações > Sistema > TVs', () => {
 
     await toggle.check();
     await expect(sheet(page).getByRole('button', { name: 'Salvar' })).toBeEnabled();
-    await sheet(page).locator('.cleanup-hint').scrollIntoViewIfNeeded();
+    await sheet(page).locator('.cleanup-hint').last().scrollIntoViewIfNeeded();
     await settle(page);
     await screenshot(page, shot(info, 'system-cleanup-switch', 'light'));
     await sheet(page).getByRole('button', { name: 'Salvar' }).click();

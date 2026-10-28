@@ -464,7 +464,7 @@ async function handleTvs(
     return true;
   }
 
-  const target = /^\/tvs(?:\/([^/]+)(\/members|\/cleanup-reports)?)?$/.exec(path);
+  const target = /^\/tvs(?:\/([^/]+)(\/members|\/cleanup-reports|\/apps)?)?$/.exec(path);
   if (!target) return false;
   if (!owner) {
     await problem(route, { status: 403, kind: 'forbidden' });
@@ -544,6 +544,17 @@ async function handleTvs(
     mock.tvs = tvs.filter((tv) => tv.id !== found.id);
     delete mock.members[found.id];
     await route.fulfill({ status: 204 });
+    return true;
+  }
+
+  if (target[2] === '/apps' && method === 'GET') {
+    const items = (found.shortcuts ?? [])
+      .filter((shortcut) => shortcut.installed)
+      .map((shortcut) => ({
+        package: shortcut.package,
+        label: shortcut.customLabel ?? shortcut.tvLabel ?? shortcut.package,
+      }));
+    await json(route, 200, { items });
     return true;
   }
 
