@@ -11,7 +11,7 @@
         (submit)="$event.preventDefault(); save('training.off-contact', contact())"
       >
         <label for="off-contact" i18n="@@settings.system.config.contact"
-          >Contato de alimentos</label
+          >Contato de Alimentos</label
         >
         <span class="source">{{ source('training.off-contact') }}</span>
         <input
@@ -29,7 +29,7 @@
           [disabled]="busy() !== null"
           i18n="@@settings.system.config.save-contact"
         >
-          Salvar contato
+          Salvar Contato
         </button>
       </form>
       <form
@@ -37,7 +37,7 @@
         (submit)="$event.preventDefault(); save('devices.max-per-guest', limit())"
       >
         <label for="guest-limit" i18n="@@settings.system.config.limit"
-          >Computadores por convidado</label
+          >Computadores por Convidado</label
         >
         <span class="source">{{ source('devices.max-per-guest') }}</span>
         <input
@@ -56,7 +56,7 @@
           [disabled]="busy() !== null"
           i18n="@@settings.system.config.save-limit"
         >
-          Salvar limite
+          Salvar Limite
         </button>
       </form>
       <form
@@ -83,22 +83,37 @@
           [disabled]="busy() !== null"
           i18n="@@settings.system.config.save-agent-offline-minutes"
         >
-          Salvar alerta
+          Salvar Alerta
         </button>
       </form>
       <div class="config-row">
         <label class="switch-line" for="photo-storage">
-          <span i18n="@@settings.system.config.photos">Fotos na nuvem</span>
+          <span i18n="@@settings.system.config.photos">Fotos na Nuvem</span>
           <input
             id="photo-storage"
             type="checkbox"
             role="switch"
             class="ui-switch"
             [checked]="photos()"
+            [disabled]="bucketConfigured() === false && !photos()"
             (change)="photos.set($any($event.target).checked)"
           />
         </label>
         <span class="source">{{ source('training.photo-storage-enabled') }}</span>
+        <p class="hint" i18n="@@settings.system.config.photos-hint">
+          Ligado, as fotos de progresso ficam guardadas na nuvem privada, em cada aparelho que
+          aceitar. Desligado, continuam só no aparelho.
+        </p>
+        @if (bucketStatus(); as status) {
+          <p
+            class="hint bucket"
+            [class.ok]="bucketConfigured()"
+            [class.bad]="!bucketConfigured()"
+            role="status"
+          >
+            {{ status }}
+          </p>
+        }
         <button
           type="button"
           class="ui-btn secondary"
@@ -106,12 +121,12 @@
           (click)="save('training.photo-storage-enabled', photos())"
           i18n="@@settings.system.config.save-photos"
         >
-          Salvar fotos
+          Salvar Fotos
         </button>
       </div>
       <div class="config-row">
         <label class="switch-line" for="light-cleanup">
-          <span i18n="@@settings.system.config.light-cleanup">Limpeza leve automática</span>
+          <span i18n="@@settings.system.config.light-cleanup">Limpeza Leve Automática</span>
           <input
             id="light-cleanup"
             type="checkbox"
@@ -129,12 +144,12 @@
           (click)="save('tv.light-cleanup-enabled', lightCleanup())"
           i18n="@@settings.system.config.save-light-cleanup"
         >
-          Salvar limpeza leve
+          Salvar Limpeza Leve
         </button>
       </div>
       <div class="config-row">
         <label class="switch-line" for="deep-cleanup">
-          <span i18n="@@settings.system.config.deep-cleanup">Limpeza profunda automática</span>
+          <span i18n="@@settings.system.config.deep-cleanup">Limpeza Profunda Automática</span>
           <input
             id="deep-cleanup"
             type="checkbox"
@@ -152,7 +167,7 @@
           (click)="save('tv.deep-cleanup-enabled', deepCleanup())"
           i18n="@@settings.system.config.save-deep-cleanup"
         >
-          Salvar limpeza profunda
+          Salvar Limpeza Profunda
         </button>
       </div>
       <form
@@ -163,7 +178,7 @@
         "
       >
         <label for="deep-cleanup-threshold" i18n="@@settings.system.config.deep-cleanup-threshold"
-          >Memória mínima para limpeza profunda (MB)</label
+          >Memória Mínima para Limpeza Profunda (MB)</label
         >
         <span class="source">{{ source('tv.deep-cleanup-memory-threshold-mb') }}</span>
         <input
@@ -182,7 +197,7 @@
           [disabled]="busy() !== null"
           i18n="@@settings.system.config.save-deep-cleanup-threshold"
         >
-          Salvar memória mínima
+          Salvar Memória Mínima
         </button>
       </form>
       <button
@@ -192,7 +207,7 @@
         (click)="resetCleanupDefaults()"
         i18n="@@settings.system.config.reset-cleanup"
       >
-        Voltar ao padrão da limpeza
+        Voltar ao Padrão da Limpeza
       </button>
     </div>
   } @else {
@@ -202,7 +217,7 @@
       (click)="load()"
       i18n="@@settings.system.config.retry"
     >
-      Carregar configuração
+      Carregar Configuração
     </button>
   }
   @if (saved()) {

@@ -10,22 +10,41 @@
       Atualizar
     </button>
   </div>
-  @if (agents(); as list) {
-    <div class="ui-group">
-      @for (agent of list; track agent.id) {
-        <article class="health-row">
-          <strong>{{ agent.name }}</strong>
-          <span [class.ok]="agent.connected" [class.bad]="!agent.connected">{{
-            agentState(agent)
-          }}</span>
-          <span>{{ lastSeen(agent) }}</span>
-          <span>{{ tvState(agent) }}</span>
-        </article>
-      } @empty {
-        <p class="empty" i18n="@@settings.system.health.no-agents">Nenhum agente pareado.</p>
-      }
+  @if (agents()) {
+    <div
+      class="metrics"
+      aria-label="Resumo da saúde"
+      i18n-aria-label="@@settings.system.health.metrics-label"
+    >
+      <article class="metric">
+        <span class="metric-label" i18n="@@settings.system.health.metric-agent">Agente</span>
+        <strong [class.ok]="agentTone() === 'ok'" [class.bad]="agentTone() === 'bad'">
+          {{ agentMetric() }}
+        </strong>
+        <span class="metric-detail">{{ agentDetail() }}</span>
+      </article>
+      <article class="metric">
+        <span class="metric-label" i18n="@@settings.system.health.metric-tv">TV</span>
+        <strong [class.ok]="tvTone() === 'ok'" [class.bad]="tvTone() === 'bad'">
+          {{ tvMetric() }}
+        </strong>
+        <span class="metric-detail">{{ tvDetail() }}</span>
+      </article>
+      <article class="metric">
+        <span class="metric-label" i18n="@@settings.system.health.metric-api">API</span>
+        <strong class="ok">{{ apiMetric() }}</strong>
+        <span class="metric-detail" i18n="@@settings.system.health.api-detail"
+          >Resposta do servidor</span
+        >
+      </article>
+      <article class="metric">
+        <span class="metric-label" i18n="@@settings.system.health.metric-version">Versão</span>
+        <strong>{{ versionMetric() }}</strong>
+        <span class="metric-detail" i18n="@@settings.system.health.version-detail"
+          >API publicada</span
+        >
+      </article>
     </div>
-    <p class="api-version">{{ apiVersion() }}</p>
   } @else if (failed()) {
     <p class="error" role="alert" i18n="@@settings.system.health.failed">
       Não foi possível carregar a saúde do sistema.
