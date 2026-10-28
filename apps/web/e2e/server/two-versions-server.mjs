@@ -23,6 +23,20 @@ await createNextVersion(rootA, rootB);
 
 const state = { version: 'a', swDelayMs: 0, apiDelayMs: 0, meDelayMs: 0, owner: false };
 
+// `/health/version` responde como a API de verdade: o app o usa de sonda de rede antes de desfazer um worker travado.
+const ownerApi = (() => {
+  const owner = createOwnerApi({ isOwner: () => state.owner, meDelayMs: () => state.meDelayMs });
+  return async (req, res, pathname) => {
+    if (req.method === 'GET' && pathname === '/health/version') {
+      res
+        .writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+        .end(JSON.stringify({ version: 'e2e', commit: 'e2e' }));
+      return true;
+    }
+    return owner(req, res, pathname);
+  };
+})();
+
 const app = createAppServer({
   resolveRoot: () => (state.version === 'b' ? rootB : rootA),
   transformSw: (body) => {
@@ -38,7 +52,7 @@ const app = createAppServer({
   // não guarda, vem da rede, e a rede só tem a versão nova.
   assetCache: 'no-store',
   beforeApi: () => new Promise((done) => setTimeout(done, state.apiDelayMs)),
-  api: createOwnerApi({ isOwner: () => state.owner, meDelayMs: () => state.meDelayMs }),
+  api: ownerApi,
 });
 
 const server = app.listen(0, () => {

@@ -283,3 +283,88 @@ test.describe('atualização com a casca antiga já aberta', () => {
     ).not.toBeNull();
   });
 });
+
+/**
+ * O toque em Atualizar tem de terminar na versão nova mesmo quando o worker novo não assume depressa ou é trocado no
+ * meio. O defeito (iPhone, "o botão de atualizar ainda está bugado"): o prazo de ativação estourava, ou o worker que
+ * recebeu o pedido virava `redundant` porque outro deploy chegou, e a página recarregava mesmo assim. Sob o worker antigo
+ * a recarga devolve a casca antiga (ele a serve do próprio precache): o esqueleto piscava, a versão não mudava e o aviso
+ * continuava na tela.
+ */
+test.describe('atualização quando o worker novo demora ou é substituído', () => {
+  const registrationState = (page: Page) =>
+    page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      return { waiting: registration?.waiting?.state ?? null };
+    });
+
+  test('worker novo que não obedece no prazo: a recarga vem da rede e já na versão nova', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(90_000);
+    await setControl('/owner?on=1');
+    const before = await openVersionA(page);
+
+    await setControl('/use?v=b');
+    // Bem acima do prazo de ativação (8 s): o pedido de troca não é obedecido a tempo.
+    await setControl('/sw-delay?ms=25000');
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      await registration?.update();
+    });
+    await expect(banner(page)).toBeVisible();
+
+    const timeOrigin = await page.evaluate(() => performance.timeOrigin);
+    await banner(page).getByRole('button', { name: 'Atualizar' }).click();
+    await expect
+      .poll(() => page.evaluate(() => performance.timeOrigin).catch(() => timeOrigin), {
+        message: 'a página recarregou',
+        timeout: 30_000,
+      })
+      .not.toBe(timeOrigin);
+    await expect(homeCards(page).first()).toBeVisible({ timeout: 20_000 });
+    await expect(skeleton(page)).toHaveCount(0);
+    expect(await mainScript(page)).not.toBe(before);
+    await expect(banner(page)).toHaveCount(0);
+
+    // O worker foi desfeito e a página nova registrou outro: sem rede a casca ainda abre (o precache foi remontado).
+    await waitForServiceWorkerControl(page);
+    await context.setOffline(true);
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Bom dia|Boa tarde|Boa noite/);
+    await context.setOffline(false);
+  });
+
+  test('worker trocado por outro deploy durante o toque: não recarrega na casca antiga e o aviso some', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await setControl('/owner?on=1');
+    await openVersionA(page);
+
+    await setControl('/use?v=b');
+    await setControl('/sw-delay?ms=6000');
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      await registration?.update();
+    });
+    await expect(banner(page)).toBeVisible();
+
+    await banner(page).getByRole('button', { name: 'Atualizar' }).click();
+    await expect(skeleton(page)).toBeVisible({ timeout: 1_000 });
+    // Outro deploy chega enquanto o worker `b` ainda não obedeceu: o servidor passa a servir outros bytes de worker, o
+    // `b` vira `redundant` e o novo fica esperando.
+    await setControl('/use?v=a');
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      await registration?.update();
+    });
+
+    await expect(homeCards(page).first()).toBeVisible({ timeout: 30_000 });
+    await expect(skeleton(page)).toHaveCount(0, { timeout: 30_000 });
+    // O toque deixa a página sob o worker mais novo: nada esperando e nenhum aviso de versão.
+    await expect(banner(page)).toHaveCount(0);
+    await expect.poll(async () => (await registrationState(page)).waiting).toBeNull();
+  });
+});
