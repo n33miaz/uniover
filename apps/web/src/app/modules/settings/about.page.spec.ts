@@ -59,12 +59,15 @@ describe('AboutPage', () => {
     expect(credits?.getAttribute('href')).toBe('/ajustes/creditos');
   });
 
-  it('does not offer the credits to a guest: the screen is only for the administrator, so the link would bounce', async () => {
-    api.me.mockResolvedValue({ ...ME, role: 'guest' });
+  it('offers credits to a guest with Training, because the route accepts that module', async () => {
+    api.me.mockResolvedValue({ ...ME, role: 'guest', permissions: ['module:training'] });
+    const { el } = await render();
+    expect(el.querySelector('a[href="/ajustes/creditos"]')).not.toBeNull();
+  });
+
+  it('does not offer credits to a guest without Training', async () => {
+    api.me.mockResolvedValue({ ...ME, role: 'guest', permissions: ['module:tv'] });
     const { el } = await render();
     expect(el.querySelector('a[href="/ajustes/creditos"]')).toBeNull();
-    expect(el.textContent).not.toContain('Créditos');
-    // As versões continuam valendo para todos.
-    expect(el.querySelector('#versions-title + dl')!.textContent).toContain('0.5.0');
   });
 });

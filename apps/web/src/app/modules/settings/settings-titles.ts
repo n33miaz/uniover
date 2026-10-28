@@ -29,7 +29,7 @@ export function roleLabel(role: AccountRole | null): string | null {
 /**
  * O que cada permissão do catálogo da API quer dizer, em linguagem de gente. A permissão de módulo da TV (`module:tv`)
  * só vira uma linha quando é a única da TV: com qualquer ação da TV ela já está dita ("Controlar a TV"). Permissão
- * que a tela ainda não conhece fica de fora (a lista nunca mostra um identificador técnico).
+ * que a tela ainda não conhece vira uma indicação genérica (a lista nunca mostra um identificador técnico).
  */
 export function permissionLabels(permissions: readonly string[]): readonly string[] {
   const has = (permission: string) => permissions.includes(permission);
@@ -47,6 +47,10 @@ export function permissionLabels(permissions: readonly string[]): readonly strin
   if (has('tv:history')) labels.push($localize`:@@settings.permission.tv-history:Ver o histórico`);
   if (has('module:training')) {
     labels.push($localize`:@@settings.permission.training:Usar o Treino`);
+  }
+  const known = new Set(['module:tv', ...tvActions, 'module:training']);
+  if (permissions.some((permission) => !known.has(permission))) {
+    labels.push($localize`:@@settings.permission.additional:Permissão adicional`);
   }
   return labels;
 }
