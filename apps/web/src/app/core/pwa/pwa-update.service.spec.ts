@@ -24,6 +24,7 @@ class FakeRegistration extends EventTarget {
   waiting: FakeWorker | null = null;
   installing: FakeWorker | null = null;
   update = vi.fn().mockResolvedValue(undefined);
+  unregister = vi.fn().mockResolvedValue(true);
 }
 
 function stubServiceWorker(registration: FakeRegistration, controller: object | null) {
@@ -77,9 +78,9 @@ describe('registerServiceWorker', () => {
 describe('PwaUpdateService', () => {
   const realFetch = window.fetch;
 
-  /** O último recurso pede a página à rede sem cache; aqui a rede é um substituto. */
-  function stubFetch() {
-    const fetchSpy = vi.fn().mockResolvedValue(undefined);
+  /** O último recurso sonda a rede antes de desfazer o registro; aqui a rede é um substituto (de pé por padrão). */
+  function stubFetch(ok = true) {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok });
     Object.defineProperty(window, 'fetch', { value: fetchSpy, configurable: true });
     return fetchSpy;
   }
@@ -245,27 +246,101 @@ describe('PwaUpdateService', () => {
       expect(reload).toHaveBeenCalledTimes(1);
     });
 
-    it('reloads anyway when the new worker never takes control within the deadline', async () => {
+    it('drops the stale registration and reloads when the new worker never takes control in time', async () => {
       const { registration, container, service } = setup({});
       await flush();
       const reload = stubReload();
       const fetchSpy = stubFetch();
+      const caches = stubCaches(['workbox-precache-v2-http://localhost/', 'exercise-art', 'velho']);
       registration.waiting = new FakeWorker();
 
       vi.useFakeTimers();
       service.applyUpdate();
       await vi.advanceTimersByTimeAsync(UPDATE_ACTIVATE_TIMEOUT_MS - 1);
       expect(reload).not.toHaveBeenCalled();
-      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(registration.unregister).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
-      // Último recurso: a página é pedida à rede ignorando o cache HTTP antes da recarga.
-      expect(fetchSpy).toHaveBeenCalledWith(window.location.href, {
-        cache: 'reload',
+      // Recarregar sob o worker antigo devolveria a casca antiga: o registro cai e a recarga vem da rede.
+      expect(fetchSpy).toHaveBeenCalledWith('/health/version', {
+        cache: 'no-store',
         credentials: 'same-origin',
       });
+      expect(registration.unregister).toHaveBeenCalledTimes(1);
+      // O precache antigo sai (o registro desfeito ainda serviria a casca velha por ele); a arte dos exercícios fica.
+      expect(caches.delete.mock.calls.map(([name]) => name).sort()).toEqual([
+        'velho',
+        'workbox-precache-v2-http://localhost/',
+      ]);
       expect(reload).toHaveBeenCalledTimes(1);
       container.dispatchEvent(new Event('controllerchange'));
       await vi.advanceTimersByTimeAsync(1);
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the worker, and still reloads, when the network does not answer', async () => {
+      const { registration, service } = setup({});
+      await flush();
+      const reload = stubReload();
+      const fetchSpy = stubFetch(false);
+      const caches = stubCaches(['workbox-precache-v2-http://localhost/']);
+      registration.waiting = new FakeWorker();
+
+      vi.useFakeTimers();
+      service.applyUpdate();
+      await vi.advanceTimersByTimeAsync(UPDATE_ACTIVATE_TIMEOUT_MS);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      // Sem rede o app depende do worker para abrir: nada de desfazer o registro.
+      expect(registration.unregister).not.toHaveBeenCalled();
+      expect(caches.delete).not.toHaveBeenCalled();
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not count a replaced worker as taking over: it retries with the one that replaced it', async () => {
+      const { registration, container, service } = setup({});
+      await flush();
+      const reload = stubReload();
+      const fetchSpy = stubFetch();
+      const first = new FakeWorker();
+      registration.waiting = first;
+
+      service.applyUpdate();
+      await flush();
+      expect(first.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+
+      // Outro deploy chegou: o worker que esperava virou `redundant` e há um mais novo esperando.
+      const second = new FakeWorker();
+      second.state = 'installed';
+      registration.waiting = second;
+      first.state = 'redundant';
+      first.dispatchEvent(new Event('statechange'));
+      await flush();
+      // Antes do conserto isto recarregava aqui, sob o worker antigo, e o aviso voltava.
+      expect(reload).not.toHaveBeenCalled();
+      expect(second.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+
+      container.dispatchEvent(new Event('controllerchange'));
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(registration.unregister).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('falls back to dropping the registration when the replacement never takes control either', async () => {
+      const { registration, service } = setup({});
+      await flush();
+      const reload = stubReload();
+      stubFetch();
+      const first = new FakeWorker();
+      registration.waiting = first;
+
+      vi.useFakeTimers();
+      service.applyUpdate();
+      await vi.advanceTimersByTimeAsync(0);
+      registration.waiting = new FakeWorker();
+      first.state = 'redundant';
+      first.dispatchEvent(new Event('statechange'));
+      await vi.advanceTimersByTimeAsync(UPDATE_ACTIVATE_TIMEOUT_MS);
+      expect(registration.unregister).toHaveBeenCalledTimes(1);
       expect(reload).toHaveBeenCalledTimes(1);
     });
 
@@ -329,6 +404,7 @@ describe('PwaUpdateService', () => {
       expect(reload).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
       expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(registration.unregister).toHaveBeenCalledTimes(1);
       expect(reload).toHaveBeenCalledTimes(1);
     });
 

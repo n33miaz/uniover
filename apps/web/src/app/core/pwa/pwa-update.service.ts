@@ -185,37 +185,46 @@ export class PwaUpdateService {
       // Qualquer tropeço aqui ainda termina na recarga abaixo: o toque nunca vira um beco sem saída.
     }
     await this.clearRuntimeCaches();
-    // Último recurso: o worker novo não assumiu no prazo. Antes de recarregar, pede a página à rede ignorando o cache HTTP,
-    // para a recarga não partir de uma cópia velha guardada pelo navegador. (Não desregistra o worker: o app precisa do
-    // offline; e uma navegação sob worker ativo não olha o cache HTTP, por isso o que limpa de fato é a troca acima.)
-    if (!tookOver) await this.bypassHttpCache();
+    // Último recurso: o worker novo não assumiu. Recarregar sob o worker antigo só devolve a casca antiga (ele a serve do
+    // próprio precache) e o aviso voltaria; então o registro é desfeito para a recarga vir da rede e a página nova
+    // registrar o worker de novo.
+    if (!tookOver) await this.dropStaleWorker();
     this.reload();
   }
 
   /**
    * Faz o worker novo assumir a página. Com um worker esperando, pede a troca e espera o `controllerchange`; sem nenhum,
-   * pede uma busca e espera a instalação. Cada espera tem prazo: se o worker não responde, a recarga vem mesmo assim.
-   * Nunca desregistra o worker, porque o app precisa continuar funcionando offline. Devolve `false` só quando um prazo
-   * estourou (há um worker novo que não assumiu): nada mais novo para ativar conta como sucesso.
+   * pede uma busca e espera a instalação. Cada espera tem prazo: se o worker não responde, devolve `false`. Um worker que
+   * vira `redundant` no meio do pedido (outro deploy chegou e o substituiu) não é sucesso: o ciclo recomeça uma vez com o
+   * que estiver esperando. Devolve `true` só quando a página passou a ser controlada pelo worker novo ou quando não há
+   * nada mais novo para ativar.
    */
   private async takeOverNewWorker(): Promise<boolean> {
     const win = this.win;
     const registration = this.registration;
     if (!win || !registration) return true;
     const container = win.navigator.serviceWorker;
-    const waiting =
-      registration.waiting ??
-      (await this.withTimeout(this.findNewWorker(registration), UPDATE_INSTALL_TIMEOUT_MS));
-    // Sem nada instalado e nada instalando: não há versão mais nova. Instalando ainda, passado o prazo: não deu tempo.
-    if (!waiting) return !registration.installing;
-    // Os ouvintes entram antes da mensagem: o worker pode assumir antes de o `postMessage` voltar.
-    const activated = this.whenActivated(container, waiting);
-    try {
-      waiting.postMessage({ type: 'SKIP_WAITING' });
-    } catch {
-      // O worker pode ter terminado entre a leitura e a mensagem; o prazo abaixo cobre.
+    const controllerBefore = container.controller;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const waiting =
+        registration.waiting ??
+        (await this.withTimeout(this.findNewWorker(registration), UPDATE_INSTALL_TIMEOUT_MS));
+      // Sem nada instalado e nada instalando: não há versão mais nova. Instalando ainda, passado o prazo: não deu tempo.
+      if (!waiting) return !registration.installing;
+      // Os ouvintes entram antes da mensagem: o worker pode assumir antes de o `postMessage` voltar.
+      const outcome = this.whenActivated(container, waiting);
+      try {
+        waiting.postMessage({ type: 'SKIP_WAITING' });
+      } catch {
+        // O worker pode ter terminado entre a leitura e a mensagem; o prazo abaixo cobre.
+      }
+      const result = await this.withTimeout(outcome, UPDATE_ACTIVATE_TIMEOUT_MS);
+      if (result === 'taken') return true;
+      if (result === undefined) return false;
+      // `redundant`: o substituto já pode ter assumido sozinho.
+      if (container.controller !== controllerBefore) return true;
     }
-    return (await this.withTimeout(activated, UPDATE_ACTIVATE_TIMEOUT_MS)) !== undefined;
+    return false;
   }
 
   /** Pede a busca de uma versão nova e devolve o worker instalado, se houve um. */
@@ -240,18 +249,26 @@ export class PwaUpdateService {
     });
   }
 
-  /** Resolve quando o worker passou a controlar a página (ou, o que dá no mesmo, terminou de ativar). */
-  private whenActivated(container: ServiceWorkerContainer, worker: ServiceWorker): Promise<true> {
-    return new Promise<true>((resolve) => {
-      const done = () => {
-        container.removeEventListener('controllerchange', done);
+  /**
+   * Resolve `taken` quando o worker passou a controlar a página (ou, o que dá no mesmo, terminou de ativar) e `redundant`
+   * quando ele foi descartado antes disso (um worker mais novo o substituiu).
+   */
+  private whenActivated(
+    container: ServiceWorkerContainer,
+    worker: ServiceWorker,
+  ): Promise<'taken' | 'redundant'> {
+    return new Promise((resolve) => {
+      const done = (outcome: 'taken' | 'redundant') => {
+        container.removeEventListener('controllerchange', onControl);
         worker.removeEventListener('statechange', onState);
-        resolve(true);
+        resolve(outcome);
       };
+      const onControl = () => done('taken');
       const onState = () => {
-        if (worker.state === 'activated' || worker.state === 'redundant') done();
+        if (worker.state === 'activated') done('taken');
+        else if (worker.state === 'redundant') done('redundant');
       };
-      container.addEventListener('controllerchange', done);
+      container.addEventListener('controllerchange', onControl);
       worker.addEventListener('statechange', onState);
       onState();
     });
@@ -281,27 +298,45 @@ export class PwaUpdateService {
    * assumir acabou de montar) e a arte dos exercícios ficam, para o uso offline não se perder.
    */
   private async clearRuntimeCaches(): Promise<void> {
+    await this.deleteCaches((name) => !isProtectedCache(name));
+  }
+
+  /** Apaga os caches que o filtro aceita, com prazo: a limpeza nunca segura a recarga e nunca lança. */
+  private async deleteCaches(matches: (name: string) => boolean): Promise<void> {
     const storage = this.win?.caches;
     if (!storage) return;
     const clear = async () => {
       const names = await storage.keys();
-      await Promise.all(
-        names.filter((name) => !isProtectedCache(name)).map((name) => storage.delete(name)),
-      );
+      await Promise.all(names.filter(matches).map((name) => storage.delete(name)));
     };
     await this.withTimeout(clear(), UPDATE_CACHE_CLEAR_TIMEOUT_MS);
   }
 
-  /** Pede a página à rede ignorando o cache HTTP (com prazo curto e sem falhar: é só uma ajuda antes da recarga). */
-  private async bypassHttpCache(): Promise<void> {
+  /**
+   * Desfaz o worker que não largou a página, mas só com a rede de pé: sem rede o app precisa do worker (e do precache)
+   * para abrir, então ali a recarga segue sob o worker antigo. A sonda usa `/health/`, que o worker não intercepta, para
+   * saber se a rede responde de verdade. Só desregistrar não basta: o registro continua valendo para esta página até ela
+   * fechar e a recarga ainda seria servida do precache antigo; sem o precache o worker busca a página na rede, e a
+   * página nova registra o worker de novo (que remonta o precache).
+   */
+  private async dropStaleWorker(): Promise<void> {
     const win = this.win;
-    if (!win || typeof win.fetch !== 'function') return;
-    await this.withTimeout(
-      win
-        .fetch(win.location.href, { cache: 'reload', credentials: 'same-origin' })
-        .catch(() => undefined),
-      UPDATE_CACHE_CLEAR_TIMEOUT_MS,
-    );
+    const registration = this.registration;
+    if (!win || !registration || typeof win.fetch !== 'function') return;
+    try {
+      const reachable = await this.withTimeout(
+        win
+          .fetch('/health/version', { cache: 'no-store', credentials: 'same-origin' })
+          .then((response) => response.ok)
+          .catch(() => false),
+        UPDATE_CACHE_CLEAR_TIMEOUT_MS,
+      );
+      if (!reachable) return;
+      await this.withTimeout(registration.unregister(), UPDATE_CACHE_CLEAR_TIMEOUT_MS);
+      await this.deleteCaches((name) => name.startsWith('workbox-precache'));
+    } catch {
+      // Sem desfazer o worker a recarga ainda acontece.
+    }
   }
 
   private async register(win: Window): Promise<void> {
