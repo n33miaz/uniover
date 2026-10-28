@@ -109,6 +109,91 @@
           Salvar fotos
         </button>
       </div>
+      <div class="config-row">
+        <label class="switch-line" for="light-cleanup">
+          <span i18n="@@settings.system.config.light-cleanup">Limpeza leve automática</span>
+          <input
+            id="light-cleanup"
+            type="checkbox"
+            role="switch"
+            class="ui-switch"
+            [checked]="lightCleanup()"
+            (change)="lightCleanup.set($any($event.target).checked)"
+          />
+        </label>
+        <span class="source">{{ source('tv.light-cleanup-enabled') }}</span>
+        <button
+          type="button"
+          class="ui-btn secondary"
+          [disabled]="busy() !== null"
+          (click)="save('tv.light-cleanup-enabled', lightCleanup())"
+          i18n="@@settings.system.config.save-light-cleanup"
+        >
+          Salvar limpeza leve
+        </button>
+      </div>
+      <div class="config-row">
+        <label class="switch-line" for="deep-cleanup">
+          <span i18n="@@settings.system.config.deep-cleanup">Limpeza profunda automática</span>
+          <input
+            id="deep-cleanup"
+            type="checkbox"
+            role="switch"
+            class="ui-switch"
+            [checked]="deepCleanup()"
+            (change)="deepCleanup.set($any($event.target).checked)"
+          />
+        </label>
+        <span class="source">{{ source('tv.deep-cleanup-enabled') }}</span>
+        <button
+          type="button"
+          class="ui-btn secondary"
+          [disabled]="busy() !== null"
+          (click)="save('tv.deep-cleanup-enabled', deepCleanup())"
+          i18n="@@settings.system.config.save-deep-cleanup"
+        >
+          Salvar limpeza profunda
+        </button>
+      </div>
+      <form
+        class="config-row"
+        (submit)="
+          $event.preventDefault();
+          save('tv.deep-cleanup-memory-threshold-mb', deepCleanupThreshold())
+        "
+      >
+        <label for="deep-cleanup-threshold" i18n="@@settings.system.config.deep-cleanup-threshold"
+          >Memória mínima para limpeza profunda (MB)</label
+        >
+        <span class="source">{{ source('tv.deep-cleanup-memory-threshold-mb') }}</span>
+        <input
+          id="deep-cleanup-threshold"
+          class="ui-input"
+          type="number"
+          min="64"
+          max="512"
+          [value]="deepCleanupThreshold()"
+          (input)="deepCleanupThreshold.set(+$any($event.target).value)"
+          required
+        />
+        <button
+          type="submit"
+          class="ui-btn secondary"
+          [disabled]="busy() !== null"
+          i18n="@@settings.system.config.save-deep-cleanup-threshold"
+        >
+          Salvar memória mínima
+        </button>
+      </form>
+      <button
+        type="button"
+        class="ui-btn secondary"
+        [disabled]="busy() !== null"
+        (click)="resetCleanupDefaults()"
+        i18n="@@settings.system.config.reset-cleanup"
+      >
+        Voltar ao padrão da limpeza
+      </button>
     </div>
   } @else {
     <button

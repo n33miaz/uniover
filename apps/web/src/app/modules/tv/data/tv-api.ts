@@ -36,6 +36,19 @@ export interface TvPowerScheduleResponse {
   last: TvPowerSchedule | null;
 }
 
+export interface TvCleanupReport {
+  kind: string;
+  trigger: string;
+  startedAt: string;
+  durationMs: number;
+  memoryBeforeMb: number | null;
+  memoryAfterMb: number | null;
+  freedMb: number | null;
+  closedApps: number;
+  result: string;
+  reason: string | null;
+}
+
 /** Caminho do fluxo de eventos (o cookie de bilhete do `StreamService` é a credencial, nunca um token na URL). */
 export const TV_EVENTS_PATH = `${BASE}/events`;
 
@@ -178,6 +191,12 @@ export class TvApi {
    */
   async cleanup(): Promise<TvCleanupResult> {
     return firstValueFrom(this.http.post<TvCleanupResult>(`${BASE}/cleanup`, null, this.target()));
+  }
+
+  latestCleanup(): Promise<TvCleanupReport | null> {
+    return firstValueFrom(
+      this.http.get<TvCleanupReport | null>(`${BASE}/cleanup/latest`, this.target()),
+    );
   }
 
   async launch(id: string): Promise<void> {

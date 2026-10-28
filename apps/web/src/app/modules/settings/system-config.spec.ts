@@ -17,10 +17,20 @@ const initial: SystemSettingValue[] = [
   { key: 'devices.max-per-guest', value: 2, source: 'server' },
   { key: 'devices.agent-offline-minutes', value: 10, source: 'server' },
   { key: 'training.photo-storage-enabled', value: false, source: 'server' },
+  { key: 'tv.light-cleanup-enabled', value: true, source: 'server' },
+  { key: 'tv.deep-cleanup-enabled', value: true, source: 'server' },
+  { key: 'tv.deep-cleanup-memory-threshold-mb', value: 160, source: 'server' },
 ];
 
+/** O botão pelo texto que a pessoa lê (o atributo `i18n` não existe no DOM renderizado). */
+function buttonByText(el: HTMLElement, text: string): HTMLButtonElement {
+  return Array.from(el.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+    b.textContent?.includes(text),
+  )!;
+}
+
 describe('SystemPage configuration', () => {
-  const api = { systemSettings: vi.fn(), saveSystemSetting: vi.fn() };
+  const api = { systemSettings: vi.fn(), saveSystemSetting: vi.fn(), resetSystemSetting: vi.fn() };
 
   beforeEach(() => {
     api.systemSettings.mockReset().mockResolvedValue(initial);
@@ -29,6 +39,10 @@ describe('SystemPage configuration', () => {
       value,
       source: 'app',
     }));
+    api.resetSystemSetting.mockReset().mockImplementation(async (key: string) => {
+      const value = initial.find((item) => item.key === key)!;
+      return value;
+    });
     TestBed.configureTestingModule({ providers: [{ provide: SystemApi, useValue: api }] });
     TestBed.overrideComponent(SystemPage, {
       remove: { imports: [SystemHealthSection, SystemTvSection] },
@@ -83,5 +97,23 @@ describe('SystemPage configuration', () => {
     );
     await fixture.whenStable();
     expect(api.saveSystemSetting).toHaveBeenCalledWith('devices.agent-offline-minutes', 15);
+  });
+
+  it('shows the automatic cleanup switches and saves their values', async () => {
+    const { fixture, el } = await render('owner');
+    const light = el.querySelector<HTMLInputElement>('#light-cleanup')!;
+    light.checked = false;
+    light.dispatchEvent(new Event('change'));
+    buttonByText(el, 'Salvar limpeza leve').click();
+    await fixture.whenStable();
+    expect(api.saveSystemSetting).toHaveBeenCalledWith('tv.light-cleanup-enabled', false);
+    expect(el.querySelector<HTMLInputElement>('#deep-cleanup-threshold')!.value).toBe('160');
+  });
+
+  it('restores all cleanup settings to their server defaults together', async () => {
+    const { fixture, el } = await render('owner');
+    buttonByText(el, 'Voltar ao padrão da limpeza').click();
+    await fixture.whenStable();
+    expect(api.resetSystemSetting).toHaveBeenCalledTimes(3);
   });
 });

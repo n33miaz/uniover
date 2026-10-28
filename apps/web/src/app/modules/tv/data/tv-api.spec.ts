@@ -48,6 +48,14 @@ describe('TvApi', () => {
     expect(await result).toEqual(report);
   });
 
+  it('reads the latest persisted cleanup result', async () => {
+    const result = api.latestCleanup();
+    const request = http.expectOne('/api/v1/tv/cleanup/latest');
+    expect(request.request.method).toBe('GET');
+    request.flush({ result: 'completed', startedAt: '2026-10-27T16:05:00Z', freedMb: 120 });
+    expect((await result)?.freedMb).toBe(120);
+  });
+
   it('reads and normalizes the state', async () => {
     const state = api.state();
     const request = http.expectOne('/api/v1/tv/state');

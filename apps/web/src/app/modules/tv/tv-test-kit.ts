@@ -137,6 +137,12 @@ export function createFakeTvStore() {
     notConfigured: signal(false),
     inFlightKeys: signal(0),
     cleaning: signal(false),
+    lastCleanup: signal<{
+      at: Date;
+      freedMb: number | null;
+      result: 'completed' | 'skipped';
+      reason: string | null;
+    } | null>(null),
     hibernateMinutes: 5,
     start: vi.fn(),
     stop: vi.fn(),

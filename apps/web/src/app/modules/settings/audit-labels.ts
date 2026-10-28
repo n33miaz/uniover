@@ -96,6 +96,8 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.tv-power-off:TV desligada`;
     case 'tv.cleanup':
       return $localize`:@@settings.audit.action.tv-cleanup:Limpeza da TV`;
+    case 'tv.cleanup.setting':
+      return $localize`:@@settings.audit.action.tv-cleanup-setting:Fechar apps em segundo plano alterado`;
     case 'tv.apps.refresh':
       return $localize`:@@settings.audit.action.tv-apps-refresh:Lista de apps atualizada`;
     case 'tv.shortcuts.reorder':
@@ -236,6 +238,12 @@ export function describeTarget(item: AuditItem): string | null {
     }
     case 'tv.app.launch':
       return $localize`:@@settings.audit.target.app:App ${target}:app:`;
+    case 'tv.cleanup.setting':
+      return target === 'background-app-closing=on'
+        ? $localize`:@@settings.audit.target.close-background-on:Ligado`
+        : target === 'background-app-closing=off'
+          ? $localize`:@@settings.audit.target.close-background-off:Desligado`
+          : null;
     case 'tv.config.bind':
       return $localize`:@@settings.audit.target.computer:Computador ${target}:computer:`;
     case 'step_up_succeeded':

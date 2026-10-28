@@ -70,6 +70,12 @@
   </p>
 </ng-template>
 
+<ng-template #lastCleanupNote>
+  @if (lastCleanupText(); as text) {
+    <p class="note" role="status">{{ text }}</p>
+  }
+</ng-template>
+
 @if (!access.appList()) {
   <!--
     Quem só controla (não abre apps nem edita atalhos) tem neste painel uma coisa só: limpar a TV. Nada de grade, busca,
@@ -93,6 +99,7 @@
     @if (store.cleaning()) {
       <ng-container [ngTemplateOutlet]="cleaningNote" />
     }
+    <ng-container [ngTemplateOutlet]="lastCleanupNote" />
     @if (!store.canSend()) {
       <p class="note">{{ store.disabledReason() }}</p>
     }
@@ -196,6 +203,7 @@
   @if (store.cleaning()) {
     <ng-container [ngTemplateOutlet]="cleaningNote" />
   }
+  <ng-container [ngTemplateOutlet]="lastCleanupNote" />
 
   @if (visible().length === 0) {
     <p class="note" role="status" i18n="@@tv.apps.no-match">

@@ -6,7 +6,7 @@ import { SessionState } from '../../../core/session/session-state';
 import { StreamEvent, StreamService } from '../../../core/sse/stream.service';
 import { TvAccess } from './tv-access';
 import { TvApi, tvEventsPath } from './tv-api';
-import type { TvPowerSchedule } from './tv-api';
+import type { TvCleanupReport, TvPowerSchedule } from './tv-api';
 import { TV_CONFIG } from './tv-config';
 import { describeCleanup } from './tv-cleanup';
 import { TvFailure, TvFailureContext, describeFailure, forbiddenMessage } from './tv-errors';
@@ -38,6 +38,14 @@ export type TvStreamStatus = 'connecting' | 'live' | 'reconnecting';
 export interface TvNotice {
   readonly kind: 'error' | 'info';
   readonly text: string;
+}
+
+/** Resultado mais recente recebido nesta tela; o relatório completo permanece na API para consultas posteriores. */
+export interface TvLastCleanup {
+  readonly at: Date;
+  readonly freedMb: number | null;
+  readonly result: 'completed' | 'skipped';
+  readonly reason: string | null;
 }
 
 /** Limite do texto digitado, o mesmo da API (caracteres Unicode, não unidades UTF-16). */
@@ -137,6 +145,7 @@ export class TvStore {
   private readonly _notice = signal<TvNotice | null>(null);
   private readonly _inFlightKeys = signal(0);
   private readonly _cleaning = signal(false);
+  private readonly _lastCleanup = signal<TvLastCleanup | null>(null);
   private readonly _powerSchedule = signal<TvPowerSchedule | null>(null);
   private readonly _lastPowerSchedule = signal<TvPowerSchedule | null>(null);
   private readonly _powerScheduleLoaded = signal(false);
@@ -169,6 +178,7 @@ export class TvStore {
   readonly inFlightKeys = computed(() => (this.currentAccount() ? this._inFlightKeys() : 0));
   /** Há uma limpeza da TV em andamento (leva alguns segundos): um pedido por vez, e o resto do controle segue. */
   readonly cleaning = computed(() => this.currentAccount() && this._cleaning());
+  readonly lastCleanup = computed(() => (this.currentAccount() ? this._lastCleanup() : null));
   readonly powerSchedule = computed(() => (this.currentAccount() ? this._powerSchedule() : null));
   readonly lastPowerSchedule = computed(() =>
     this.currentAccount() ? this._lastPowerSchedule() : null,
@@ -422,10 +432,12 @@ export class TvStore {
     ) {
       return;
     }
-    const [tvs, state, shortcuts] = await Promise.allSettled([
+    const [tvs, state, shortcuts, cleanup] = await Promise.allSettled([
       this.fetchTvs(),
       this.api.state(),
       this.api.shortcuts(),
+      // Só quem pode limpar a TV lê o relatório (a API recusa os outros com 403).
+      this.access.cleanup() ? this.api.latestCleanup() : Promise.resolve(null),
     ]);
     if (!this.live(epoch)) return;
     if (tvs.status === 'fulfilled' && tvs.value) {
@@ -436,6 +448,7 @@ export class TvStore {
     }
     if (state.status === 'fulfilled') this.applyState(state.value);
     if (shortcuts.status === 'fulfilled') this.receiveShortcuts(shortcuts.value);
+    if (cleanup.status === 'fulfilled') this.applyCleanupReport(cleanup.value);
   }
 
   /**
@@ -656,7 +669,15 @@ export class TvStore {
     this._cleaning.set(true);
     try {
       const result = await this.api.cleanup();
-      if (this.live(epoch)) this.showNotice('info', describeCleanup(result));
+      if (this.live(epoch)) {
+        this._lastCleanup.set({
+          at: new Date(),
+          freedMb: typeof result.freedMb === 'number' ? result.freedMb : null,
+          result: 'completed',
+          reason: null,
+        });
+        this.showNotice('info', describeCleanup(result));
+      }
       return true;
     } catch (error) {
       if (this.live(epoch)) this.fail(error, 'cleanup');
@@ -858,6 +879,18 @@ export class TvStore {
     this.persist();
   }
 
+  private applyCleanupReport(report: TvCleanupReport | null): void {
+    if (!report || (report.result !== 'completed' && report.result !== 'skipped')) return;
+    const at = new Date(report.startedAt);
+    if (Number.isNaN(at.getTime())) return;
+    this._lastCleanup.set({
+      at,
+      freedMb: report.freedMb,
+      result: report.result,
+      reason: report.reason,
+    });
+  }
+
   private applyShortcuts(list: TvShortcut[]): void {
     this._shortcuts.set(list);
     this.persist();
@@ -928,6 +961,7 @@ export class TvStore {
     this._watchdog.set(null);
     this._notConfigured.set(false);
     this._cleaning.set(false);
+    this._lastCleanup.set(null);
     this._powerSchedule.set(null);
     this._lastPowerSchedule.set(null);
     this._powerScheduleLoaded.set(false);

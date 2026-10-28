@@ -44,6 +44,18 @@ describe('SystemApi', () => {
     expect(await read).toEqual(CONFIG);
   });
 
+  it('restores a system setting to its server default', async () => {
+    const restored = api.resetSystemSetting('tv.light-cleanup-enabled');
+    const request = http.expectOne('/api/v1/identity/system-settings/tv.light-cleanup-enabled');
+    expect(request.request.method).toBe('DELETE');
+    request.flush({ key: 'tv.light-cleanup-enabled', value: true, source: 'server' });
+    expect(await restored).toEqual({
+      key: 'tv.light-cleanup-enabled',
+      value: true,
+      source: 'server',
+    });
+  });
+
   it('lists the TVs, keeping what the administrator needs and dropping the rest', async () => {
     const read = api.tvs();
     const request = http.expectOne('/api/v1/tv/tvs');
@@ -60,6 +72,7 @@ describe('SystemApi', () => {
         kind: 'android',
         online: true,
         capabilities: ['tv.remote'],
+        allowBackgroundAppClosing: false,
       },
       {
         id: 'tv-2',
@@ -69,6 +82,7 @@ describe('SystemApi', () => {
         kind: null,
         online: true,
         capabilities: ['tv.remote'],
+        allowBackgroundAppClosing: false,
       },
     ]);
   });
@@ -101,6 +115,23 @@ describe('SystemApi', () => {
     expect(second.request.body).toEqual({ agentSlug: 'pc-novo' });
     second.flush({ ...TV, id: 'tv-2' });
     await rebind;
+  });
+
+  it('reads the background app closing option as off unless the API says on', async () => {
+    const read = api.tvs();
+    http.expectOne('/api/v1/tv/tvs').flush({
+      items: [TV, { ...TV, id: 'tv-2', allowBackgroundAppClosing: true }],
+    });
+    expect((await read).map((tv) => tv.allowBackgroundAppClosing)).toEqual([false, true]);
+  });
+
+  it('sends the background app closing option on its own', async () => {
+    const change = api.updateTv('tv-2', { allowBackgroundAppClosing: true });
+    const request = http.expectOne('/api/v1/tv/tvs/tv-2');
+    expect(request.request.method).toBe('PATCH');
+    expect(request.request.body).toEqual({ allowBackgroundAppClosing: true });
+    request.flush({ ...TV, id: 'tv-2', allowBackgroundAppClosing: true });
+    expect((await change).allowBackgroundAppClosing).toBe(true);
   });
 
   it('removes a TV', async () => {
