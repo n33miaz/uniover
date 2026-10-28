@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.14.0](https://github.com/n33miaz/uniover/compare/v0.13.1...v0.14.0) (2026-10-28)
+
+
+### Features
+
+* **training:** body signals and map polish
+* **training:** mark cloud photos apart
+* **tv:** app skeleton and compact schedule
+
+
+### Bug Fixes
+
+* **training:** one back on body assessments
+* **tv:** cleanup text follows the per-tv switch
+
 ## [0.13.1](https://github.com/n33miaz/uniover/compare/v0.13.0...v0.13.1) (2026-10-28)
 
 
