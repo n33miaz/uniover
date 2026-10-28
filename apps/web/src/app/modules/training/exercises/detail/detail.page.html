@@ -54,7 +54,7 @@
     <div class="main-action">
       <button type="button" class="primary ui-btn block" (click)="openAdd()">
         <app-training-glyph name="plus" />
-        <span i18n="@@training.detail.add">Adicionar a um treino</span>
+        <span i18n="@@training.detail.add">Adicionar a um Treino</span>
       </button>
       @if (added(); as routine) {
         <p class="added ui-notice ok" role="status">
@@ -62,7 +62,7 @@
           <span class="added-text">
             <span i18n="@@training.detail.added">Adicionado a {{ routine.name }}.</span>
             <a [routerLink]="['/treino/rotinas', routine.id]" i18n="@@training.detail.open-routine"
-              >Abrir rotina</a
+              >Abrir Rotina</a
             >
           </span>
         </p>
@@ -70,7 +70,7 @@
     </div>
 
     <section class="part" aria-labelledby="how-title">
-      <h3 id="how-title" class="ui-section-label" i18n="@@training.detail.how">Como fazer</h3>
+      <h3 id="how-title" class="ui-section-label" i18n="@@training.detail.how">Como Fazer</h3>
       @if (steps().length > 0) {
         <div class="ui-card steps-card">
           <ol class="steps">
@@ -86,7 +86,7 @@
               (click)="toggleSteps()"
             >
               @if (stepsOpen()) {
-                <span i18n="@@training.detail.steps-less">Ver menos</span>
+                <span i18n="@@training.detail.steps-less">Ver Menos</span>
               } @else {
                 <span i18n="@@training.detail.steps-more"
                   >Ver todos os {{ steps().length }} passos</span
@@ -108,7 +108,7 @@
 
     <section class="part" aria-labelledby="history-title">
       <h3 id="history-title" class="ui-section-label" i18n="@@training.detail.history">
-        Seu histórico
+        Seu Histórico
       </h3>
       @if (hasHistory()) {
         <dl class="ui-group facts">
@@ -129,7 +129,7 @@
               <dt>
                 {{ row.day }}
                 @if (row.record) {
-                  <span class="ui-chip ok" i18n="@@training.detail.record">recorde</span>
+                  <span class="ui-chip ok" i18n="@@training.detail.record">Recorde</span>
                 }
               </dt>
               <dd>{{ rowText(row) }}</dd>
@@ -162,7 +162,7 @@
       <div class="ui-group step">
         <div class="ui-row">
           <span class="ui-row-text">
-            <span class="ui-row-title" i18n="@@training.detail.step">Salto de carga</span>
+            <span class="ui-row-title" i18n="@@training.detail.step">Salto de Carga</span>
             <span class="ui-row-sub">{{ stepSource() }}</span>
           </span>
           @if (stepText(); as value) {
@@ -204,7 +204,7 @@
             </div>
             @if (ex.stepKg !== null) {
               <button type="button" class="reset" (click)="useDefaultStep()">
-                <span i18n="@@training.detail.step-reset">Voltar ao padrão do equipamento</span>
+                <span i18n="@@training.detail.step-reset">Voltar ao Padrão do Equipamento</span>
               </button>
             }
           </div>
@@ -291,7 +291,7 @@
         [queryParams]="{ exercicio: ex.id }"
       >
         <app-training-glyph name="plus" />
-        <span i18n="@@training.detail.add-new">Nova rotina com este exercício</span>
+        <span i18n="@@training.detail.add-new">Nova Rotina com Este Exercício</span>
       </a>
     </app-training-sheet>
   }

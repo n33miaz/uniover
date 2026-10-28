@@ -15,9 +15,11 @@ import { TrainingGlyph } from '../shell/training-glyph';
   template: `
     <span class="thumb" aria-hidden="true">
       @if (imageUrl(); as source) {
-        <img [src]="source" [alt]="''" width="44" height="44" />
+        <img [src]="source" [alt]="''" width="64" height="64" />
       } @else {
-        <app-training-glyph name="dumbbell" />
+        <span class="placeholder">
+          <app-training-glyph name="dumbbell" />
+        </span>
       }
     </span>
     <span class="text">
