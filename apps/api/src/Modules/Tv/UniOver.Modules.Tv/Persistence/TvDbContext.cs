@@ -92,6 +92,9 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             // Sem FK de propósito: o agente é do Devices e a conta que salvou é do Identity (só os valores).
             e.Property(x => x.AgentSlug).HasMaxLength(ConfiguredTv.AgentSlugMax).IsRequired();
             e.Property(x => x.AllowBackgroundAppClosing).HasDefaultValue(false);
+            e.Property(x => x.FocusModeEnabled).HasDefaultValue(false);
+            e.Property(x => x.ShortAnimationsEnabled).HasDefaultValue(false);
+            e.Property(x => x.RestrictedBackgroundPackages).HasMaxLength(4000).HasDefaultValue("[]").IsRequired();
 
             // Exatamente uma TV padrão por enquanto: o índice único parcial impede uma segunda linha padrão mesmo
             // com dois salvamentos ao mesmo tempo. O mesmo agente pode controlar várias TVs no futuro, então o

@@ -19,6 +19,8 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    private static readonly string[] RestrictedApps = ["com.exemplo.video"];
+
     private static async Task<VirtualAuthenticator> ConfirmedOwnerAsync(TvApp app)
     {
         var authenticator = new VirtualAuthenticator();
@@ -153,6 +155,145 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
             .OrderBy(a => a.OccurredAt).Select(a => a.Detail).ToListAsync(Ct);
         trail.Should().Equal("background-app-closing=on", "background-app-closing=off");
         (await db.Tvs.AsNoTracking().SingleAsync(t => t.Id == tvId, Ct)).AllowBackgroundAppClosing.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task LightSettings_StartOff_AreAuditedWithoutThePackageList_ReachTheAgent_AndRefuseTooManyApps()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Sala");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Sala");
+
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync("2.0.0", "tv.remote", "tv.cleanup.automatic.v1", "tv.light-settings.v1");
+        var first = (await TvApp.NextCommandAsync(connection)).GetProperty("body");
+        (first.GetProperty("focusEnabled").GetBoolean(), first.GetProperty("shortAnimationsEnabled").GetBoolean(),
+            first.GetProperty("restrictedPackages").GetArrayLength()).Should().Be((false, false, 0));
+
+        using (var on = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new
+        {
+            focusModeEnabled = true,
+            shortAnimationsEnabled = true,
+            restrictedBackgroundPackages = RestrictedApps,
+        }))
+        {
+            on.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await TvApp.JsonAsync(on)).GetProperty("restrictedBackgroundPackages").EnumerateArray()
+                .Select(p => p.GetString()).Should().Equal("com.exemplo.video");
+        }
+
+        var changed = (await TvApp.NextCommandAsync(connection)).GetProperty("body");
+        (changed.GetProperty("focusEnabled").GetBoolean(), changed.GetProperty("shortAnimationsEnabled").GetBoolean())
+            .Should().Be((true, true));
+        changed.GetProperty("restrictedPackages").EnumerateArray().Select(p => p.GetString()).Should().Equal("com.exemplo.video");
+
+        using (var tooMany = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new
+        {
+            restrictedBackgroundPackages = Enumerable.Range(0, 101).Select(i => $"com.exemplo.app{i}").ToArray(),
+        }))
+        {
+            tooMany.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        using (var apps = await app.GetAsync($"/api/v1/tv/tvs/{tvId}/apps"))
+        {
+            apps.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        await using var db = app.Db();
+        var trail = await db.CommandAudit.AsNoTracking()
+            .Where(a => a.Command == TvCommandNames.CleanupSetting && a.TvId == tvId).Select(a => a.Detail).ToListAsync(Ct);
+        trail.Should().Equal("light-settings");
+    }
+
+    [Fact]
+    public async Task CleanupConfig_ForAnAgentWithoutLightSettings_KeepsExactlyTheOldBody()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Raphael");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Raphael");
+
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync("2.0.0", "tv.remote", "tv.cleanup.automatic.v1");
+        var first = (await TvApp.NextCommandAsync(connection)).GetProperty("body");
+        // O schema antigo tem additionalProperties:false: qualquer campo a mais derrubaria a mensagem inteira.
+        first.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal)
+            .Should().Equal("closeBackgroundApps", "deepEnabled", "deepThresholdMb", "lightEnabled");
+
+        using (var on = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { focusModeEnabled = true, allowBackgroundAppClosing = true }))
+        {
+            on.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var changed = (await TvApp.NextCommandAsync(connection)).GetProperty("body");
+        changed.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal)
+            .Should().Equal("closeBackgroundApps", "deepEnabled", "deepThresholdMb", "lightEnabled");
+        changed.GetProperty("closeBackgroundApps").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task LightSettings_RefuseAnInvalidAppList_WithAFieldError()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Sala");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Sala");
+
+        var invalid = new object?[]
+        {
+            new string?[] { "com.exemplo.a", null },
+            new[] { "semponto" },
+            new[] { "com.exemplo; reboot" },
+            new[] { "com.exemplo.a", "com.exemplo.a" },
+            new[] { "com.android.vending" },
+            new[] { "com.google.android.tv.remote.service" },
+            Enumerable.Range(0, 101).Select(i => $"com.exemplo.app{i}").ToArray(),
+        };
+        foreach (var list in invalid)
+        {
+            using var response = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { restrictedBackgroundPackages = list });
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await TvApp.JsonAsync(response)).GetProperty("errors").TryGetProperty("restrictedBackgroundPackages", out _).Should().BeTrue();
+        }
+
+        await using var db = app.Db();
+        (await db.Tvs.AsNoTracking().SingleAsync(t => t.Id == tvId, Ct)).BackgroundPackages().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task LightSettings_AreRefusedForASamsungTv_ButTurningThemOffIsAccepted()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Raphael");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Raphael");
+
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync("2.0.0", "tv.remote", "tv.kind.samsung");
+        await TvApp.WaitUntilAsync(
+            () => app.Presence.Get(agent.Slug)?.Capabilities.Contains("tv.kind.samsung", StringComparer.Ordinal) == true,
+            "capacidade da Samsung anunciada");
+
+        using (var on = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { shortAnimationsEnabled = true }))
+        {
+            on.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            // Código estável: a tela não pode confundir esta recusa com "computador já em uso" (também 409).
+            (await TvApp.JsonAsync(on)).GetProperty("type").GetString().Should().EndWith("/tv-light-settings-unsupported");
+        }
+
+        using (var off = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { shortAnimationsEnabled = false }))
+        {
+            off.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        await using var db = app.Db();
+        (await db.Tvs.AsNoTracking().SingleAsync(t => t.Id == tvId, Ct)).ShortAnimationsEnabled.Should().BeFalse();
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using UniOver.SharedKernel;
 
 namespace UniOver.Modules.Tv.Domain;
@@ -34,6 +35,14 @@ public sealed class ConfiguredTv
 
     /// <summary>Permite encerrar apps de fundo nesta TV; desligado até o dono optar explicitamente.</summary>
     public bool AllowBackgroundAppClosing { get; private set; }
+
+    /// <summary>Preferências leves, sempre desligadas enquanto o administrador não as confirma nesta TV.</summary>
+    public bool FocusModeEnabled { get; private set; }
+
+    public bool ShortAnimationsEnabled { get; private set; }
+
+    /// <summary>Lista fechada de apps escolhidos para a restrição; nunca inclui pacote do sistema por confiança no cliente.</summary>
+    public string RestrictedBackgroundPackages { get; private set; } = "[]";
 
     public DateTimeOffset CreatedAt { get; private set; }
 
@@ -101,6 +110,68 @@ public sealed class ConfiguredTv
         UpdatedBy = updatedBy;
         return true;
     }
+
+    public bool SetLightSettings(bool? focusModeEnabled, bool? shortAnimationsEnabled,
+        IReadOnlyList<string>? restrictedPackages, Guid updatedBy, DateTimeOffset now)
+    {
+        var packages = restrictedPackages is null ? RestrictedBackgroundPackages : JsonSerializer.Serialize(
+            restrictedPackages.Where(CanRestrictInBackground).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
+        var focus = focusModeEnabled ?? FocusModeEnabled;
+        var animations = shortAnimationsEnabled ?? ShortAnimationsEnabled;
+        if (focus == FocusModeEnabled && animations == ShortAnimationsEnabled && packages == RestrictedBackgroundPackages)
+            return false;
+        FocusModeEnabled = focus;
+        ShortAnimationsEnabled = animations;
+        RestrictedBackgroundPackages = packages;
+        UpdatedAt = now;
+        UpdatedBy = updatedBy;
+        return true;
+    }
+
+    public IReadOnlyList<string> BackgroundPackages()
+    {
+        try { return JsonSerializer.Deserialize<string[]>(RestrictedBackgroundPackages) ?? []; }
+        catch (JsonException) { return []; }
+    }
+
+    /// <summary>Quantos apps cabem na restrição; o agente recusa mais que isso e a coluna tem tamanho fixo.</summary>
+    public const int RestrictedPackagesMax = 100;
+
+    private const int RestrictedPackagesJsonMax = 4000;
+
+    // O que nunca se restringe: sistema, Configurações, serviços do Google, Play Store, o serviço do controle remoto
+    // e o lançador. O agente repete a regra e ainda lê da TV a tela inicial, o teclado e a acessibilidade em uso.
+    private static readonly HashSet<string> BackgroundBlocked = new(StringComparer.Ordinal)
+    {
+        "android", "com.android.systemui", "com.android.tv.settings", "com.android.settings",
+        "com.google.android.gms", "com.google.android.gsf", "com.google.android.tv.remote.service",
+        "com.google.android.tvrecommendations", "com.android.vending", "com.android.tvlauncher",
+        "com.google.android.tvlauncher", "com.google.android.apps.tv.launcherx", "com.google.android.leanbacklauncher",
+        "com.google.android.inputmethod.latin", "com.google.android.marvin.talkback", "com.android.packageinstaller",
+        "com.google.android.packageinstaller", "com.google.android.permissioncontroller",
+    };
+
+    private static readonly string[] BackgroundBlockedPrefixes =
+        ["com.tcl.", "com.mediatek.", "com.droidlogic.", "com.android.providers.", "com.android.inputmethod."];
+
+    /// <summary>O pacote tem forma plausível e não é peça do sistema, do lançador, do teclado nem do controle remoto.</summary>
+    public static bool CanRestrictInBackground(string package) =>
+        package.Length is > 2 and <= 255
+        && System.Text.RegularExpressions.Regex.IsMatch(package, "^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+$")
+        && !BackgroundBlocked.Contains(package)
+        && !BackgroundBlockedPrefixes.Any(prefix => package.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        && !package.Contains("remote", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A lista é aceitável? Nula (não veio) é. Recusa item nulo, formato inválido, tamanho acima do que o agente e a
+    /// coluna aguentam, repetição e pacote protegido (sistema, lançador, teclado, controle remoto).
+    /// </summary>
+    public static bool IsValidRestrictedPackages(IReadOnlyList<string?>? packages) =>
+        packages is null
+        || (packages.Count <= RestrictedPackagesMax
+            && packages.All(package => package is not null && CanRestrictInBackground(package))
+            && packages.Distinct(StringComparer.Ordinal).Count() == packages.Count
+            && JsonSerializer.Serialize(packages).Length <= RestrictedPackagesJsonMax);
 
     /// <summary>
     /// O nome como é guardado e comparado: normalizado (<see cref="LabelText"/>), para dois nomes que só diferem em espaços
