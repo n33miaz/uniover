@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.0](https://github.com/n33miaz/uniover/compare/v0.9.0...v0.10.0) (2026-10-28)
+
+
+### Features
+
+* **contracts:** tv cleanup config message
+* **agent:** schedule light and deep tv cleanup
+* **tv:** per-tv app closing and cleanup reports
+* **web:** cleanup reports and app closing switch
+
 ## [0.9.0](https://github.com/n33miaz/uniover/compare/v0.8.1...v0.9.0) (2026-10-28)
 
 
