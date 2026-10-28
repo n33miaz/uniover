@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.13.0](https://github.com/n33miaz/uniover/compare/v0.12.0...v0.13.0) (2026-10-28)
+
+
+### Features
+
+* **api:** report photo bucket readiness
+* **web:** devices readable at a glance
+* **web:** health in four cards and bucket state
+* **web:** tidy profile, security and appearance
+
 ## [0.12.0](https://github.com/n33miaz/uniover/compare/v0.11.1...v0.12.0) (2026-10-28)
 
 
