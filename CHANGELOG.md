@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.17.0](https://github.com/n33miaz/uniover/compare/v0.16.0...v0.17.0) (2026-10-28)
+
+
+### Features
+
+* **training:** live set as option C
+* **training:** record on rest, hints folded
+* **training:** start from the next routine
+* **training:** six more exercise drawings
+
+
+### Bug Fixes
+
+* **training:** same size for art and muscles
+* **training:** glossary terms and title case
+* **training:** keep 56px steppers on press
+
 ## [0.16.0](https://github.com/n33miaz/uniover/compare/v0.15.0...v0.16.0) (2026-10-28)
 
 
