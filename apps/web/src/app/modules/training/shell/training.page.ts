@@ -18,6 +18,7 @@ import { OfflineQueue } from '../../../core/offline-queue/offline-queue';
 import { InstallHintService } from '../../../core/pwa/install-hint.service';
 import { SessionState } from '../../../core/session/session-state';
 import { SessionRepository } from '../data/sessions/session-repository';
+import { ProgressPhotoSync } from '../data/photos/progress-photo-sync';
 import { TrainingSync } from '../data/sync/training-sync';
 import { SyncIssuesSheet } from './sync-issues-sheet';
 import { TrainingSyncLine } from './training-sync-line';
@@ -386,6 +387,7 @@ export class TrainingPage {
   private readonly connectivity = inject(ConnectivityService);
   private readonly queue = inject(OfflineQueue);
   private readonly sync = inject(TrainingSync);
+  private readonly photoSync = inject(ProgressPhotoSync);
   private readonly sessions = inject(SessionRepository);
   private readonly install = inject(InstallHintService);
   private readonly destroyRef = inject(DestroyRef);
@@ -625,6 +627,7 @@ export class TrainingPage {
     });
     // Sem esperar: o `start()` hidrata a fila e puxa em segundo plano; a tela lê do banco local desde já.
     void inject(TrainingSync).start();
+    this.photoSync.start();
 
     // Relê o treino aberto a cada gravação do aparelho (iniciar, série, encerrar, descartar). A resposta mais velha, que
     // chega depois de uma mais nova, é descartada.

@@ -225,6 +225,78 @@ export async function mockTrainingApi(context: BrowserContext): Promise<Training
     }
     if (server.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, server.delayMs));
 
+    const progressMatch = /^progress-photos\/([^/]+)(?:\/(content|deletion))?$/.exec(path);
+    if (path === 'progress-photos' && method === 'GET') {
+      hit('read');
+      const photos = server
+        .rows('progress-photos', account)
+        .map(({ content: _content, ...photo }) => photo);
+      return json(route, 200, photos);
+    }
+    if (progressMatch) {
+      const [, id, action] = progressMatch;
+      const photos = collection(account, 'progress-photos');
+      const existing = photos.get(id);
+      if (method === 'GET' && action === 'content') {
+        if (!existing || typeof existing['content'] !== 'string') {
+          hit('rejected');
+          return route.fulfill({ status: 404, body: '' });
+        }
+        hit('read');
+        return route.fulfill({
+          status: 200,
+          contentType: 'image/jpeg',
+          headers: { 'cache-control': 'no-store' },
+          body: Buffer.from(existing['content'], 'base64'),
+        });
+      }
+      if (method === 'PUT' && action === 'deletion') {
+        photos.delete(id);
+        hit('executed');
+        return route.fulfill({ status: 204, body: '' });
+      }
+      if (method === 'PUT' && action === undefined) {
+        if (!key) {
+          hit('invalid');
+          return problem(route, 400, 'idempotency-key-required');
+        }
+        const replyKey = `${account}|${key}`;
+        const replay = replies.get(replyKey);
+        if (replay) {
+          hit('replayed');
+          return route.fulfill({
+            status: replay.status,
+            headers: { 'content-type': 'application/json', 'idempotent-replayed': 'true' },
+            body: replay.body,
+          });
+        }
+        const bytes = request.postDataBuffer() ?? Buffer.alloc(0);
+        const row: Row = {
+          id,
+          takenOn: url.searchParams.get('takenOn') ?? '2026-10-01',
+          width: 1,
+          height: 1,
+          byteLength: bytes.byteLength,
+          createdAt: dotnetInstant(tick()),
+          content: bytes.toString('base64'),
+        };
+        photos.set(id, row);
+        writes.set(
+          `${account}/progress-photos`,
+          (writes.get(`${account}/progress-photos`) ?? 0) + 1,
+        );
+        const stored = { status: 200, body: JSON.stringify(row) };
+        replies.set(replyKey, stored);
+        executions.set(key, (executions.get(key) ?? 0) + 1);
+        hit('executed');
+        return route.fulfill({
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+          body: stored.body,
+        });
+      }
+    }
+
     const failing = rules.find(
       (item) =>
         item.left > 0 &&
