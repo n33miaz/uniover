@@ -1,50 +1,54 @@
 <section class="home">
+  <p class="brand" i18n="@@home.brand">UniOver</p>
   <header class="hero ui-rise">
     <app-home-glyph class="scene" [name]="dayPart()" />
-    @if (canSeeAgent()) {
-      @let agent = agentIndicator();
-      <span
-        class="agent-status"
-        [class.ok]="agent.tone === 'ok'"
-        [class.warn]="agent.tone === 'warn'"
-        [class.neutral]="agent.tone === 'neutral'"
-        role="status"
-        [attr.aria-label]="agent.label"
-        [attr.title]="agent.label"
-      ></span>
-    }
-    @if (agentAlert(); as alert) {
+    <div class="hero-actions">
       <a
-        class="agent-alert"
-        [class.ok]="alert.recovered"
-        routerLink="/ajustes/dispositivos"
-        [attr.aria-label]="alert.label"
-        >{{ alert.label }}</a
+        class="hero-settings ui-tap"
+        routerLink="/ajustes"
+        aria-label="Configurações"
+        i18n-aria-label="@@home.settings-label"
       >
-    }
-    <div class="hero-text">
-      <p class="date">{{ dateLabel() }}</p>
-      <h1>{{ greeting() }}</h1>
-    </div>
-    <p class="time">{{ time() }}</p>
-  </header>
-
-  @if (shortcuts().length > 0) {
-    <ul
-      class="shortcuts ui-plain ui-stagger"
-      aria-label="Atalhos"
-      i18n-aria-label="@@home.shortcuts-label"
-    >
-      @for (shortcut of shortcuts(); track shortcut.id) {
-        <li class="ui-rise">
-          <a class="shortcut ui-card ui-press" [routerLink]="shortcut.link">
-            <span class="ui-tile"><app-home-glyph [name]="shortcut.glyph" /></span>
-            <span class="shortcut-title">{{ shortcut.title }}</span>
-          </a>
-        </li>
+        <app-home-glyph name="gear" />
+      </a>
+      @if (canSeeAgent()) {
+        @let agent = agentIndicator();
+        <span
+          class="agent-status"
+          [class.ok]="agent.tone === 'ok'"
+          [class.warn]="agent.tone === 'warn'"
+          [class.neutral]="agent.tone === 'neutral'"
+          [class.connecting]="agent.tone === 'connecting'"
+          role="status"
+          [attr.aria-label]="agent.label"
+          [attr.title]="agent.label"
+        ></span>
       }
-    </ul>
-  }
+      @if (agentAlert(); as alert) {
+        <a
+          class="agent-alert"
+          [class.ok]="alert.recovered"
+          routerLink="/ajustes/dispositivos"
+          [attr.aria-label]="alert.label"
+          >{{ alert.label }}</a
+        >
+      }
+    </div>
+    <div class="hero-text">
+      @if (loading()) {
+        <span appSkeleton class="date-skeleton"></span>
+        <span appSkeleton class="greeting-skeleton"></span>
+      } @else {
+        <p class="date">{{ dateLabel() }}</p>
+        <h1>{{ greeting() }}</h1>
+      }
+    </div>
+    @if (loading()) {
+      <span appSkeleton class="time-skeleton"></span>
+    } @else {
+      <p class="time">{{ time() }}</p>
+    }
+  </header>
 
   <div class="section-head">
     <h2 id="modules-label" i18n="@@home.modules">Módulos</h2>
@@ -59,8 +63,8 @@
     [class.guest-grid]="isGuest()"
     aria-labelledby="modules-label"
   >
-    @for (widget of widgets(); track widget.definition.id) {
-      <li class="widget ui-rise">
+    @for (widget of widgets(); track widget.definition.id; let last = $last) {
+      <li class="widget ui-rise" [class.centered-last]="last && widgets().length % 2 === 1">
         <!-- Módulo sem tela ainda (sem caminho): cartão calmo, sem link nem resposta ao toque. -->
         @let path = registry.path(widget.definition);
         <article
@@ -72,11 +76,9 @@
         >
           <app-module-app-icon class="ico" [icon]="widget.definition.icon" />
           <h3>{{ widget.definition.title }}</h3>
-          <div class="badges">
-            @if (widget.definition.status === 'soon') {
-              <span class="chip ui-chip" i18n="@@home.soon">Em breve</span>
-            }
-          </div>
+          @if (widget.definition.status === 'soon') {
+            <app-home-soon-badge />
+          }
           @if (path) {
             <!-- O link se estende por cima do cartão inteiro: o cartão todo é o alvo de toque. -->
             <a

@@ -118,7 +118,11 @@ export class ModulePrefs {
           typeof pref?.id === 'string' &&
           (pref.size === 'small' || pref.size === 'wide') &&
           typeof pref.enabled === 'boolean';
-        return valid ? [{ id: pref.id as string, size: pref.size!, enabled: pref.enabled! }] : [];
+        // A Início não oferece escolha de tamanho e desenha todos os cartões iguais: um `wide` salvo é só o do Treino de
+        // quando ele era largo por padrão, e volta a `small` (vira `small` também no disco, na próxima gravação).
+        return valid
+          ? [{ id: pref.id as string, size: 'small' as const, enabled: pref.enabled! }]
+          : [];
       });
     } catch {
       return []; // JSON corrompido: volta ao padrão em vez de quebrar a Início
