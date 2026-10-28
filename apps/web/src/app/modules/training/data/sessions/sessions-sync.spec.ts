@@ -41,6 +41,7 @@ describe('sessions pull, end to end', () => {
       '/api/v1/training/meals',
       '/api/v1/training/body/entries',
       '/api/v1/training/body/profile',
+      '/api/v1/training/calendar-entries',
     ]);
     expect(await t.trainingDb.sessions.get('s1')).toMatchObject({
       feeling: 4,

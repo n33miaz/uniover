@@ -43,6 +43,7 @@ describe('body pull, end to end', () => {
       '/api/v1/training/meals',
       BODY_ENTRIES_PATH,
       BODY_PROFILE_PATH,
+      '/api/v1/training/calendar-entries',
     ]);
     expect(BODY_ENTRIES_PATH).toBe('/api/v1/training/body/entries');
     expect(BODY_PROFILE_PATH).toBe('/api/v1/training/body/profile');

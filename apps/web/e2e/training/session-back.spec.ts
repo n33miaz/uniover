@@ -51,12 +51,12 @@ test.describe('os botões de voltar do treino', () => {
     await openToday(page);
 
     // Hoje -> dia -> Hoje -> dia.
-    await page.getByRole('button', { name: 'Iniciar treino' }).click();
+    await page.getByRole('button', { name: 'Iniciar Treino' }).click();
     await skipProgramChoice(page);
     await expectDay(page);
     await page.getByRole('link', { name: 'Voltar a Hoje' }).click();
     await expectToday(page);
-    await page.getByRole('button', { name: 'Continuar treino' }).click();
+    await page.getByRole('button', { name: 'Continuar Treino' }).click();
     await expectDay(page);
 
     // Dia -> exercício -> dia: o voltar do registro cai na lista, não em Hoje.
@@ -86,13 +86,13 @@ test.describe('os botões de voltar do treino', () => {
     expect(search(page)).toContain('resumo=');
     await page.getByRole('button', { name: 'Voltar a Hoje' }).click();
     await expectToday(page);
-    await expect(page.getByRole('button', { name: 'Iniciar treino' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Iniciar Treino' })).toBeVisible();
   });
 
   test('recarregar no registro e voltar leva à lista do dia', async ({ page, context }) => {
     await launch(context, page);
     await openToday(page);
-    await page.getByRole('button', { name: 'Iniciar treino' }).click();
+    await page.getByRole('button', { name: 'Iniciar Treino' }).click();
     await skipProgramChoice(page);
     await page.locator('app-workout-day .exercise.suggested').click();
     await expectExercise(page);

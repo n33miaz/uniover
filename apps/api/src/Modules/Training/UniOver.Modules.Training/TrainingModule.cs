@@ -11,6 +11,7 @@ using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Training.Adapters;
 using UniOver.Modules.Training.Catalog;
 using UniOver.Modules.Training.Features.Body;
+using UniOver.Modules.Training.Features.CalendarEntries;
 using UniOver.Modules.Training.Features.Catalog.GetCatalogCredits;
 using UniOver.Modules.Training.Features.Catalog.ImportWger;
 using UniOver.Modules.Training.Features.Catalog.PullExercises;
@@ -92,6 +93,7 @@ public static class TrainingModule
         services.AddRoutines();
         services.AddSessions();
         services.AddGoals();
+        services.AddCalendarEntries();
         services.AddBody();
         services.AddFoods();
         services.AddScoped<ProgressPhotoHandler>();
@@ -116,6 +118,7 @@ public static class TrainingModule
         group.MapRoutines();
         group.MapSessions();
         group.MapGoals();
+        group.MapCalendarEntries();
         group.MapBody();
         group.MapFoods();
         group.MapProgressPhotos();

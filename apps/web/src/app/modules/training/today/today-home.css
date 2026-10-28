@@ -24,6 +24,26 @@
   gap: var(--space-3);
 }
 
+.routine-settings {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--tap);
+  min-height: var(--tap);
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--a-elev);
+  color: var(--a-ink2);
+  font: inherit;
+  cursor: pointer;
+}
+.routine-settings:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
 .routine-id {
   min-width: 0;
 }

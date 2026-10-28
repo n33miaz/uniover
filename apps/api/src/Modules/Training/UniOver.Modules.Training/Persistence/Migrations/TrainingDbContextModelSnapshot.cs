@@ -19,7 +19,7 @@ namespace UniOver.Modules.Training.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("training")
-                .HasAnnotation("ProductVersion", "10.0.14")
+                .HasAnnotation("ProductVersion", "10.0.13")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -366,6 +366,64 @@ namespace UniOver.Modules.Training.Persistence.Migrations
                             t.HasCheckConstraint("ck_body_profile_height", "height_cm BETWEEN 100 AND 250");
 
                             t.HasCheckConstraint("ck_body_profile_sex", "sex IN ('male', 'female')");
+                        });
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Training.Domain.CalendarEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Absent")
+                        .HasColumnType("boolean")
+                        .HasColumnName("absent");
+
+                    b.Property<DateTimeOffset>("ClientUpdatedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("client_updated_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date")
+                        .HasColumnName("day");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(280)
+                        .HasColumnType("character varying(280)")
+                        .HasColumnName("note");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_calendar_entries");
+
+                    b.HasIndex("UserId", "Day")
+                        .IsUnique()
+                        .HasDatabaseName("ix_calendar_entries_user_id_day");
+
+                    b.HasIndex("UserId", "UpdatedAt", "Id")
+                        .HasDatabaseName("ix_calendar_entries_user_id_updated_at_id");
+
+                    b.ToTable("calendar_entries", "training", t =>
+                        {
+                            t.HasCheckConstraint("ck_calendar_entries_live", "deleted_at IS NOT NULL OR absent OR note IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_calendar_entries_note", "note IS NULL OR char_length(note) BETWEEN 1 AND 280");
                         });
                 });
 

@@ -1,6 +1,6 @@
 <section class="week ui-card" aria-labelledby="week-title">
   <div class="week-head">
-    <h3 id="week-title" i18n="@@training.today.calendar.title">Semana</h3>
+    <h3 id="week-title" i18n="@@training.today.calendar.title">Semana com Meta</h3>
     <div class="nav">
       <button
         type="button"
@@ -35,6 +35,9 @@
         class="day"
         [class.done]="hasWorkout(day.key, weekWorkouts())"
         [class.today]="isToday(day.key)"
+        [class.planned]="stateOf(day, weekWorkouts()) === 'planned'"
+        [class.rest]="stateOf(day, weekWorkouts()) === 'rest'"
+        [class.absent]="stateOf(day, weekWorkouts()) === 'absent'"
         [class.future]="isFuture(day.key)"
         [attr.aria-label]="weekDayLabel(day, index, weekWorkouts())"
         [attr.aria-current]="isToday(day.key) ? 'date' : null"
@@ -48,6 +51,9 @@
 
   <div class="week-bottom">
     <p class="week-progress">
+      @if (remainingLine()) {
+        <span>{{ remainingLine() }}</span>
+      }
       @if (paid()) {
         <span class="paid" i18n="@@training.today.calendar.paid">Tá pago!</span>
       }
@@ -59,7 +65,7 @@
       (click)="openDay()"
       i18n="@@training.today.calendar.open"
     >
-      Ver calendário
+      Ver Mês
     </button>
   </div>
   @if (weekWorkouts() !== null) {
@@ -103,6 +109,7 @@
         <span aria-hidden="true">›</span>
       </button>
     </div>
+    <p class="streak">{{ streakLine() }}</p>
     <div
       class="month-grid"
       role="group"
@@ -119,6 +126,9 @@
             class="month-day"
             [class.done]="hasWorkout(day.key, monthWorkouts())"
             [class.today]="isToday(day.key)"
+            [class.planned]="monthStateOf(day) === 'planned'"
+            [class.rest]="monthStateOf(day) === 'rest'"
+            [class.absent]="monthStateOf(day) === 'absent'"
             [class.selected]="selectedKey() === day.key"
             [attr.aria-label]="dayLabel(day, monthWorkouts())"
             [attr.aria-pressed]="selectedKey() === day.key"
@@ -141,6 +151,14 @@
     }
     <section class="day-detail" aria-labelledby="selected-day-title">
       <h3 id="selected-day-title">{{ selectedLabel() }}</h3>
+      @if (selectedEntry()?.note; as note) {
+        <p class="day-note">
+          <span i18n="@@training.today.calendar.note-label">Nota:</span> {{ note }}
+        </p>
+      }
+      @if (selectedEntry()?.absent) {
+        <p class="day-note" i18n="@@training.today.calendar.absent-label">Ausência planejada</p>
+      }
       @if (selectedWorkouts().length === 0) {
         <p i18n="@@training.today.calendar.no-session">Nenhum treino registrado neste dia.</p>
       } @else {

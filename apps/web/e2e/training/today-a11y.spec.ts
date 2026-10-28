@@ -48,8 +48,8 @@ const SCREENS: readonly Screen[] = [
     open: async (page, context) => {
       await launch(context, page);
       await openToday(page);
-      await page.getByRole('button', { name: 'Ver calendário' }).click();
-      await expect(page.getByRole('dialog', { name: 'Calendário de treinos' })).toBeVisible();
+      await page.getByRole('button', { name: 'Ver Mês' }).click();
+      await expect(page.getByRole('dialog', { name: 'Mês com Ritmo' })).toBeVisible();
     },
   },
   {

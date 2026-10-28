@@ -81,17 +81,17 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
       await shot(page, info, 'hoje', scheme);
 
-      await page.getByRole('button', { name: 'Ver calendário' }).click();
-      await expect(page.getByRole('dialog', { name: 'Calendário de treinos' })).toBeVisible();
+      await page.getByRole('button', { name: 'Ver Mês' }).click();
+      await expect(page.getByRole('dialog', { name: 'Mês com Ritmo' })).toBeVisible();
       await shot(page, info, 'calendario', scheme);
       await page
-        .getByRole('dialog', { name: 'Calendário de treinos' })
+        .getByRole('dialog', { name: 'Mês com Ritmo' })
         .getByRole('button', { name: 'Fechar' })
         .click();
-      await expect(page.getByRole('dialog', { name: 'Calendário de treinos' })).toBeHidden();
+      await expect(page.getByRole('dialog', { name: 'Mês com Ritmo' })).toBeHidden();
 
-      await page.getByRole('button', { name: 'Escolher outra rotina' }).click();
-      await expect(page.getByRole('dialog', { name: 'Escolher outra rotina' })).toBeVisible();
+      await page.getByRole('button', { name: 'Configurar Rotina' }).click();
+      await expect(page.getByRole('dialog', { name: 'Configurar Rotina' })).toBeVisible();
       await shot(page, info, 'hoje-escolher-rotina', scheme);
     });
 
@@ -158,7 +158,7 @@ for (const scheme of ['light', 'dark'] as const) {
         await page.getByRole('button', { name: 'Voltar ao treino' }).click();
         await expect(page.locator('app-workout-day .exercise.suggested')).toBeVisible();
         await page.getByRole('link', { name: 'Voltar a Hoje' }).click();
-        await expect(page.getByRole('button', { name: 'Continuar treino' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Continuar Treino' })).toBeVisible();
         await expect(page.getByText('O servidor não aceitou um treino')).toBeVisible();
         await shot(page, info, 'hoje-em-andamento', scheme);
       },
@@ -275,7 +275,7 @@ for (const scheme of ['light', 'dark'] as const) {
       const server = await launch(context, page);
       seedSupersetRoutine(server);
       await openToday(page);
-      await page.getByRole('button', { name: 'Escolher outra rotina' }).click();
+      await page.getByRole('button', { name: 'Configurar Rotina' }).click();
       await page
         .getByRole('dialog')
         .getByRole('button', { name: /Treino C/ })

@@ -215,7 +215,7 @@ test.describe('programa da semana', () => {
     await page.clock.setSystemTime(at(5));
     await openTraining(page, '/treino');
     await expect(heading(page, 'Dia de descanso')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Iniciar treino', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Iniciar Treino', exact: true })).toHaveCount(0);
     await screenshot(page, info.outputPath('sabado.png'));
 
     await page.getByRole('button', { name: 'Iniciar treino manual' }).click();

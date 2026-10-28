@@ -75,6 +75,7 @@ describe('routines pull, end to end', () => {
       '/api/v1/training/meals',
       '/api/v1/training/body/entries',
       '/api/v1/training/body/profile',
+      '/api/v1/training/calendar-entries',
     ]);
     expect(ROUTINES_PATH).toBe('/api/v1/training/routines');
     expect(await t.trainingDb.syncState.get('routines')).toMatchObject({ cursor: 'cursor-r' });

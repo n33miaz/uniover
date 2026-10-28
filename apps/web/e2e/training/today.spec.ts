@@ -101,8 +101,8 @@ test.describe('Hoje', () => {
     await expect(firstDay).toHaveAttribute('aria-label', currentDayLabel ?? '');
     await expect(week.locator('.week-days .day.done')).toHaveCount(1);
 
-    await week.getByRole('button', { name: 'Ver calendário' }).click();
-    const calendar = page.getByRole('dialog', { name: 'Calendário de treinos' });
+    await week.getByRole('button', { name: 'Ver Mês' }).click();
+    const calendar = page.getByRole('dialog', { name: 'Mês com Ritmo' });
     await expect(calendar).toBeVisible();
     await expect(calendar.locator('.month-day.done')).not.toHaveCount(0);
     await expect(calendar.locator('.day-detail')).toContainText('Treino livre');
@@ -123,7 +123,7 @@ test.describe('Hoje', () => {
     await openToday(page);
 
     await page.getByRole('button', { name: 'Agora não' }).click();
-    await page.getByRole('button', { name: 'Iniciar treino' }).click();
+    await page.getByRole('button', { name: 'Iniciar Treino' }).click();
 
     const dialog = page.getByRole('dialog', { name: 'Programa da semana' });
     await expect(dialog).toBeVisible();
@@ -139,7 +139,7 @@ test.describe('Hoje', () => {
     server.templates = START_PROGRAM;
     await openToday(page);
 
-    await page.getByRole('button', { name: 'Iniciar treino' }).click();
+    await page.getByRole('button', { name: 'Iniciar Treino' }).click();
     const dialog = page.getByRole('dialog', { name: 'Programa da semana' });
     await expect(dialog).toBeVisible();
     await dialog.locator('button.ui-row').first().click();
@@ -170,7 +170,7 @@ test.describe('Hoje', () => {
     await expect(page.getByRole('dialog', { name: 'Editar série' })).toBeVisible();
   });
 
-  test('o resumo da semana vem em cima, a rotina do dia embaixo, e o botão de iniciar fica acima da lista', async ({
+  test('a rotina do dia vem primeiro, a semana confirma embaixo, e o botão de iniciar fica acima da lista', async ({
     page,
     context,
   }) => {
@@ -191,13 +191,16 @@ test.describe('Hoje', () => {
 
     const weekBox = (await week.boundingBox())!;
     const routineBox = (await routine.boundingBox())!;
-    expect(weekBox.y).toBeLessThan(routineBox.y);
+    expect(routineBox.y).toBeLessThan(weekBox.y);
+    // Sem busca: nenhum campo de pesquisa antes do botão de iniciar.
+    await expect(page.getByRole('searchbox')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Trocar rotina' })).toHaveCount(0);
 
     await expect(
       routine.getByRole('heading', { name: 'Treino A · Peito e tríceps' }),
     ).toBeVisible();
     await expect(routine).toContainText('3 exercícios · 10 séries · cerca de');
-    const start = page.getByRole('button', { name: 'Iniciar treino' });
+    const start = page.getByRole('button', { name: 'Iniciar Treino' });
     const startBox = (await start.boundingBox())!;
     const listBox = (await page.locator('.lines').boundingBox())!;
     expect(startBox.y).toBeLessThan(listBox.y);
@@ -217,22 +220,22 @@ test.describe('Hoje', () => {
     expect(await smallTargets(page)).toEqual([]);
   });
 
-  test('"Escolher outra rotina" troca o cartão do dia, e a sequência segue a primeira da lista', async ({
+  test('a configuração troca o cartão do dia, e a sequência segue a primeira da lista', async ({
     page,
     context,
   }) => {
     await launch(context, page);
     await openToday(page);
 
-    await page.getByRole('button', { name: 'Escolher outra rotina' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Escolher outra rotina' });
-    await expect(dialog.getByRole('button')).toHaveCount(3); // duas rotinas e o "Cancelar"
+    await page.getByRole('button', { name: 'Configurar Rotina' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Configurar Rotina' });
+    await expect(dialog.locator('.list button')).toHaveCount(2); // as duas rotinas
     await expect(dialog.getByText('próxima', { exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
 
-    await page.getByRole('button', { name: 'Escolher outra rotina' }).click();
-    const opened = page.getByRole('dialog', { name: 'Escolher outra rotina' });
+    await page.getByRole('button', { name: 'Configurar Rotina' }).click();
+    const opened = page.getByRole('dialog', { name: 'Configurar Rotina' });
     await opened.click({ position: { x: 1, y: 1 } }); // padding pertence à folha
     await opened.getByText('próxima', { exact: true }).click();
     await expect(opened).toBeVisible();
@@ -242,8 +245,8 @@ test.describe('Hoje', () => {
       .toBe(true);
     await expect(opened).toBeHidden();
 
-    await page.getByRole('button', { name: 'Escolher outra rotina' }).click();
-    const reopened = page.getByRole('dialog', { name: 'Escolher outra rotina' });
+    await page.getByRole('button', { name: 'Configurar Rotina' }).click();
+    const reopened = page.getByRole('dialog', { name: 'Configurar Rotina' });
     await reopened.getByRole('button', { name: /Treino B/ }).click();
 
     await expect(page.getByRole('heading', { name: 'Treino B · Costas e bíceps' })).toBeVisible();
@@ -255,8 +258,8 @@ test.describe('Hoje', () => {
     await launch(context, page);
     await openToday(page);
 
-    await page.getByRole('button', { name: 'Escolher outra rotina' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Escolher outra rotina' });
+    await page.getByRole('button', { name: 'Configurar Rotina' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Configurar Rotina' });
     await expect(dialog).toBeVisible();
     await page.mouse.click(4, 4);
     await expect(dialog).toBeHidden({ timeout: 250 });
@@ -290,7 +293,7 @@ test.describe('Hoje', () => {
       page.getByRole('heading', { name: 'Treino aberto em outro aparelho' }),
     ).toBeVisible();
     await expect(page.getByText('aberto há 3 h')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Iniciar treino' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Iniciar Treino' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Encerrar o treino esquecido' })).toHaveCount(0);
     await expect(page.getByText('depois de 12 horas você poderá encerrá-lo daqui')).toBeVisible();
   });
@@ -309,7 +312,7 @@ test.describe('Hoje', () => {
     await page.getByRole('button', { name: 'Sim, encerrar' }).click();
 
     await expect(page.getByText('Treino esquecido encerrado')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Iniciar treino' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Iniciar Treino' })).toBeVisible();
     // O encerramento sobe pela fila: o servidor passa a ver o treino do outro aparelho como encerrado.
     await expect
       .poll(
@@ -326,7 +329,7 @@ test.describe('treino ao vivo', () => {
   }) => {
     await launch(context, page);
     await openToday(page);
-    await page.getByRole('button', { name: 'Iniciar treino' }).click();
+    await page.getByRole('button', { name: 'Iniciar Treino' }).click();
     await skipProgramChoice(page);
 
     const day = page.locator('app-workout-day');
@@ -388,7 +391,7 @@ test.describe('treino ao vivo', () => {
     const server = await launch(context, page);
     seedSupersetRoutine(server);
     await openToday(page);
-    await page.getByRole('button', { name: 'Escolher outra rotina' }).click();
+    await page.getByRole('button', { name: 'Configurar Rotina' }).click();
     await page
       .getByRole('dialog')
       .getByRole('button', { name: /Treino C/ })
@@ -1002,7 +1005,7 @@ test.describe('treino ao vivo', () => {
 
     await menu(page, /Cancelar treino/);
     await page.getByRole('button', { name: 'Sim, cancelar' }).click();
-    await expect(page.getByRole('heading', { name: 'Semana', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Iniciar treino' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Semana com Meta', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Iniciar Treino' })).toBeVisible();
   });
 });

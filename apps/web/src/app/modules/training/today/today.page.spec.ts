@@ -64,8 +64,8 @@ describe('TodayPage', () => {
       await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
       const { el, fixture } = await show(kit);
 
-      await eventually(fixture, () => expect(button(el, 'Iniciar treino')).toBeDefined());
-      button(el, 'Iniciar treino').click();
+      await eventually(fixture, () => expect(button(el, 'Iniciar Treino')).toBeDefined());
+      button(el, 'Iniciar Treino').click();
 
       await eventually(fixture, () =>
         expect(el.querySelector('app-training-sheet')).not.toBeNull(),
@@ -74,7 +74,7 @@ describe('TodayPage', () => {
       expect(el.querySelector('app-live-session')).toBeNull();
     });
 
-    it('puts the week on top and the routine of the day below it, with one main button above the list', async () => {
+    it('puts the routine of the day first and the week below it, with one main button above the list', async () => {
       const kit = await open();
       await seedHistory(kit.trainingDb, 'supino-reto', [[1, 40, 10]]);
       await saveRoutine('Treino A', [
@@ -89,10 +89,15 @@ describe('TodayPage', () => {
       );
       const week = el.querySelector('.week')!;
       const routine = el.querySelector('.routine')!;
-      expect(week.compareDocumentPosition(routine) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // A rotina do dia vem primeiro e a semana confirma o contexto depois; nada de busca nem de "Trocar rotina".
+      expect(routine.compareDocumentPosition(week) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(el.querySelector('input[type="search"]')).toBeNull();
+      expect(routine.querySelector('button.routine-settings')?.getAttribute('aria-label')).toBe(
+        'Configurar Rotina',
+      );
       expect(text(routine)).toContain('Treino A');
       expect(text(routine)).toMatch(/3 exercícios · 10 séries · cerca de \d+ min/);
-      const start = button(el, 'Iniciar treino');
+      const start = button(el, 'Iniciar Treino');
       expect(start.compareDocumentPosition(el.querySelector('.lines')!)).toBe(
         Node.DOCUMENT_POSITION_FOLLOWING,
       );
@@ -135,13 +140,13 @@ describe('TodayPage', () => {
         expect(text(el)).toContain('Treino aberto em outro aparelho'),
       );
       expect(text(el)).toContain('há 13 h');
-      expect(buttons(el).some((node) => node.textContent?.includes('Iniciar treino'))).toBe(false);
+      expect(buttons(el).some((node) => node.textContent?.includes('Iniciar Treino'))).toBe(false);
 
       button(el, 'Encerrar o treino esquecido').click();
       await eventually(fixture, () => expect(text(el)).toContain('As séries dele ficam salvas'));
       button(el, 'Sim, encerrar').click();
       await eventually(fixture, () => expect(text(el)).toContain('Treino esquecido encerrado'));
-      await eventually(fixture, () => expect(button(el, 'Iniciar treino')).toBeDefined());
+      await eventually(fixture, () => expect(button(el, 'Iniciar Treino')).toBeDefined());
     });
 
     it('asks for a connection when the catalog has not arrived yet', async () => {
@@ -166,12 +171,12 @@ describe('TodayPage', () => {
       await sessions.addSet({ exerciseId: 'supino-reto', weightKg: 40, reps: 10 });
       const { el, fixture } = await show(kit);
 
-      await eventually(fixture, () => expect(text(el)).toContain('Treino em andamento'));
+      await eventually(fixture, () => expect(text(el)).toContain('Treino em Andamento'));
       expect(text(el)).toContain('Treino A');
       expect(text(el)).toContain('1 de 3 séries');
-      expect(buttons(el).some((node) => node.textContent?.includes('Iniciar treino'))).toBe(false);
+      expect(buttons(el).some((node) => node.textContent?.includes('Iniciar Treino'))).toBe(false);
 
-      button(el, 'Continuar treino').click();
+      button(el, 'Continuar Treino').click();
       await eventually(fixture, () => expect(TestBed.inject(Router).url).toBe('/treino/sessao'));
     });
   });
@@ -186,8 +191,8 @@ describe('TodayPage', () => {
         item('a2', 'agachamento', 1, { targetSets: 1 }),
       ]);
       const view = await show(kit);
-      await eventually(view.fixture, () => expect(button(view.el, 'Iniciar treino')).toBeDefined());
-      button(view.el, 'Iniciar treino').click();
+      await eventually(view.fixture, () => expect(button(view.el, 'Iniciar Treino')).toBeDefined());
+      button(view.el, 'Iniciar Treino').click();
       // Sem programa semanal, iniciar oferece a escolha; estes testes seguem sem programa.
       await eventually(view.fixture, () =>
         expect(button(view.el, 'Seguir sem programa')).toBeDefined(),
