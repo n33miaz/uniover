@@ -3517,7 +3517,46 @@ export interface paths {
       };
     };
     post?: never;
-    delete?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          key: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['SystemSettingValue'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
     options?: never;
     head?: never;
     patch?: never;
@@ -6302,6 +6341,66 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/tv/cleanup/latest': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['CleanupReportView'];
+          };
+        };
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/commands/recent': {
     parameters: {
       query?: never;
@@ -7625,6 +7724,43 @@ export interface paths {
     };
     trace?: never;
   };
+  '/api/v1/tv/tvs/{id}/cleanup-reports': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvCleanupReportsResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/tvs/{id}/members': {
     parameters: {
       query?: never;
@@ -8124,6 +8260,24 @@ export interface components {
     CatalogCreditsResponse: {
       sources: components['schemas']['CreditSource'][];
       wgerAuthors: components['schemas']['WgerCredit'][];
+    };
+    CleanupReportView: {
+      /** Format: int32 */
+      closedApps: number | string;
+      /** Format: int32 */
+      durationMs: number | string;
+      /** Format: int32 */
+      freedMb: null | number | string;
+      kind: string;
+      /** Format: int32 */
+      memoryAfterMb: null | number | string;
+      /** Format: int32 */
+      memoryBeforeMb: null | number | string;
+      reason: null | string;
+      result: string;
+      /** Format: date-time */
+      startedAt: string;
+      trigger: string;
     };
     CompletePasskeyRegistrationRequest: {
       /** Format: uuid */
@@ -8760,6 +8914,30 @@ export interface components {
       memoryBeforeMb: null | number | string;
       ok: boolean;
     };
+    TvCleanupReportItem: {
+      /** Format: int32 */
+      backgroundProcesses: null | number | string;
+      /** Format: int32 */
+      closedApps: number | string;
+      closedPackages: string[];
+      /** Format: int32 */
+      durationMs: number | string;
+      kind: string;
+      /** Format: int32 */
+      memoryAfterMb: null | number | string;
+      /** Format: int32 */
+      memoryBeforeMb: null | number | string;
+      reason: null | string;
+      result: string;
+      /** Format: int32 */
+      sessionOpenMs: null | number | string;
+      /** Format: date-time */
+      startedAt: string;
+      trigger: string;
+    };
+    TvCleanupReportsResponse: {
+      items: components['schemas']['TvCleanupReportItem'][];
+    };
     TvCommandOk: {
       /** Format: int32 */
       latencyMs: number;
@@ -8820,6 +8998,8 @@ export interface components {
     };
     TvSummary: {
       agentSlug: null | string;
+      /** @default false */
+      allowBackgroundAppClosing: boolean;
       capabilities: string[];
       /** Format: uuid */
       id: string;
@@ -8840,6 +9020,7 @@ export interface components {
     };
     UpdateTvRequest: {
       agentSlug: null | string;
+      allowBackgroundAppClosing?: null | boolean;
       name: null | string;
     };
     UpsertBodyEntryRequest: {

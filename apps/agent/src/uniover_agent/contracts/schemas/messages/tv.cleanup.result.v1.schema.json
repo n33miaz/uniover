@@ -20,6 +20,10 @@
       "properties": {
         "requestId": { "$ref": "../envelope.schema.json#/$defs/uuid" },
         "closedApps": { "type": "integer", "minimum": 0, "maximum": 500 },
+        "closedPackages": {
+          "type": "array", "maxItems": 500,
+          "items": { "type": "string", "minLength": 3, "maxLength": 300, "pattern": "^[A-Za-z][A-Za-z0-9_]*([.][A-Za-z][A-Za-z0-9_]*)+$" }
+        },
         "memoryBeforeMb": { "type": ["integer", "null"], "minimum": 0, "maximum": 1048576 },
         "memoryAfterMb": { "type": ["integer", "null"], "minimum": 0, "maximum": 1048576 },
         "freedMb": { "type": ["integer", "null"], "minimum": 0, "maximum": 1048576 },
@@ -27,7 +31,14 @@
           "type": "array", "maxItems": 50,
           "items": { "type": "string", "minLength": 1, "maxLength": 300, "pattern": "^[a-z][a-z-]*(:[A-Za-z][A-Za-z0-9_]*([.][A-Za-z][A-Za-z0-9_]*)+)?$" }
         },
-        "at": { "$ref": "../envelope.schema.json#/$defs/timestamp" }
+        "at": { "$ref": "../envelope.schema.json#/$defs/timestamp" },
+        "kind": { "enum": ["light", "deep", "manual"] },
+        "trigger": { "type": "string", "minLength": 1, "maxLength": 40, "pattern": "^[a-z0-9-]+$" },
+        "result": { "enum": ["completed", "skipped"] },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[a-z][a-z0-9_-]*$" },
+        "durationMs": { "type": "integer", "minimum": 0, "maximum": 300000 },
+        "backgroundProcesses": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "sessionOpenMs": { "type": "integer", "minimum": 0, "maximum": 300000 }
       }
     }
   }

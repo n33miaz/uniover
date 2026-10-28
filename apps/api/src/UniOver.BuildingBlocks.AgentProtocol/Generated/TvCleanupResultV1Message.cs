@@ -53,15 +53,32 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("at")]
         public DateTimeOffset At { get; set; }
 
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("backgroundProcesses")]
+        public long? BackgroundProcesses { get; set; }
+
         [JsonPropertyName("closedApps")]
         public long ClosedApps { get; set; }
 
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("closedPackages")]
+        [JsonConverter(typeof(TvCleanupResultV1MessagePurpleDecodeArrayConverter))]
+        public string[]? ClosedPackages { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("durationMs")]
+        public long? DurationMs { get; set; }
+
         [JsonPropertyName("failedSteps")]
-        [JsonConverter(typeof(TvCleanupResultV1MessageDecodeArrayConverter))]
+        [JsonConverter(typeof(TvCleanupResultV1MessageFluffyDecodeArrayConverter))]
         public string[] FailedSteps { get; set; }
 
         [JsonPropertyName("freedMb")]
         public long? FreedMb { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("kind")]
+        public TvCleanupResultV1BodyKind? Kind { get; set; }
 
         [JsonPropertyName("memoryAfterMb")]
         public long? MemoryAfterMb { get; set; }
@@ -69,9 +86,31 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("memoryBeforeMb")]
         public long? MemoryBeforeMb { get; set; }
 
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("reason")]
+        [JsonConverter(typeof(TvCleanupResultV1MessageTentacledMinMaxLengthCheckConverter))]
+        public string? Reason { get; set; }
+
         [JsonPropertyName("requestId")]
         public Guid RequestId { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("result")]
+        public TvCleanupResultV1BodyResult? Result { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("sessionOpenMs")]
+        public long? SessionOpenMs { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("trigger")]
+        [JsonConverter(typeof(TvCleanupResultV1MessageStickyMinMaxLengthCheckConverter))]
+        public string? Trigger { get; set; }
     }
+
+    public enum TvCleanupResultV1BodyKind { Deep, Light, Manual };
+
+    public enum TvCleanupResultV1BodyResult { Completed, Skipped };
 
     public partial class TvCleanupResultV1Message
     {
@@ -89,12 +128,14 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         {
             Converters =
             {
+                TvCleanupResultV1MessageTvCleanupResultV1BodyKindConverter.Singleton,
+                TvCleanupResultV1MessageTvCleanupResultV1BodyResultConverter.Singleton,
                 TvCleanupResultV1MessageIsoDateTimeOffsetConverter.Singleton
             },
         };
     }
 
-    internal class TvCleanupResultV1MessageDecodeArrayConverter : JsonConverter<string[]>
+    internal class TvCleanupResultV1MessagePurpleDecodeArrayConverter : JsonConverter<string[]>
     {
         public override bool CanConvert(Type t) => t == typeof(string[]);
 
@@ -104,7 +145,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             var value = new List<string>();
             while (reader.TokenType != JsonTokenType.EndArray)
             {
-                var converter = TvCleanupResultV1MessageMinMaxLengthCheckConverter.Singleton;
+                var converter = TvCleanupResultV1MessagePurpleMinMaxLengthCheckConverter.Singleton;
                 var arrayItem = (string)converter.Read(ref reader, typeof(string), options);
                 value.Add(arrayItem);
                 reader.Read();
@@ -117,17 +158,77 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             writer.WriteStartArray();
             foreach (var arrayItem in value)
             {
-                var converter = TvCleanupResultV1MessageMinMaxLengthCheckConverter.Singleton;
+                var converter = TvCleanupResultV1MessagePurpleMinMaxLengthCheckConverter.Singleton;
                 converter.Write(writer, arrayItem, options);
             }
             writer.WriteEndArray();
             return;
         }
 
-        public static readonly TvCleanupResultV1MessageDecodeArrayConverter Singleton = new TvCleanupResultV1MessageDecodeArrayConverter();
+        public static readonly TvCleanupResultV1MessagePurpleDecodeArrayConverter Singleton = new TvCleanupResultV1MessagePurpleDecodeArrayConverter();
     }
 
-    internal class TvCleanupResultV1MessageMinMaxLengthCheckConverter : JsonConverter<string>
+    internal class TvCleanupResultV1MessagePurpleMinMaxLengthCheckConverter : JsonConverter<string>
+    {
+        public override bool CanConvert(Type t) => t == typeof(string);
+
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            if (value.Length >= 3 && value.Length <= 300)
+            {
+                return value;
+            }
+            throw new Exception("Cannot unmarshal type string");
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        {
+            if (value.Length >= 3 && value.Length <= 300)
+            {
+                JsonSerializer.Serialize(writer, value, options);
+                return;
+            }
+            throw new Exception("Cannot marshal type string");
+        }
+
+        public static readonly TvCleanupResultV1MessagePurpleMinMaxLengthCheckConverter Singleton = new TvCleanupResultV1MessagePurpleMinMaxLengthCheckConverter();
+    }
+
+    internal class TvCleanupResultV1MessageFluffyDecodeArrayConverter : JsonConverter<string[]>
+    {
+        public override bool CanConvert(Type t) => t == typeof(string[]);
+
+        public override string[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            reader.Read();
+            var value = new List<string>();
+            while (reader.TokenType != JsonTokenType.EndArray)
+            {
+                var converter = TvCleanupResultV1MessageFluffyMinMaxLengthCheckConverter.Singleton;
+                var arrayItem = (string)converter.Read(ref reader, typeof(string), options);
+                value.Add(arrayItem);
+                reader.Read();
+            }
+            return value.ToArray();
+        }
+
+        public override void Write(Utf8JsonWriter writer, string[] value, JsonSerializerOptions options)
+        {
+            writer.WriteStartArray();
+            foreach (var arrayItem in value)
+            {
+                var converter = TvCleanupResultV1MessageFluffyMinMaxLengthCheckConverter.Singleton;
+                converter.Write(writer, arrayItem, options);
+            }
+            writer.WriteEndArray();
+            return;
+        }
+
+        public static readonly TvCleanupResultV1MessageFluffyDecodeArrayConverter Singleton = new TvCleanupResultV1MessageFluffyDecodeArrayConverter();
+    }
+
+    internal class TvCleanupResultV1MessageFluffyMinMaxLengthCheckConverter : JsonConverter<string>
     {
         public override bool CanConvert(Type t) => t == typeof(string);
 
@@ -151,7 +252,134 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             throw new Exception("Cannot marshal type string");
         }
 
-        public static readonly TvCleanupResultV1MessageMinMaxLengthCheckConverter Singleton = new TvCleanupResultV1MessageMinMaxLengthCheckConverter();
+        public static readonly TvCleanupResultV1MessageFluffyMinMaxLengthCheckConverter Singleton = new TvCleanupResultV1MessageFluffyMinMaxLengthCheckConverter();
+    }
+
+    internal class TvCleanupResultV1MessageTvCleanupResultV1BodyKindConverter : JsonConverter<TvCleanupResultV1BodyKind>
+    {
+        public override bool CanConvert(Type t) => t == typeof(TvCleanupResultV1BodyKind);
+
+        public override TvCleanupResultV1BodyKind Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            switch (value)
+            {
+                case "deep":
+                    return TvCleanupResultV1BodyKind.Deep;
+                case "light":
+                    return TvCleanupResultV1BodyKind.Light;
+                case "manual":
+                    return TvCleanupResultV1BodyKind.Manual;
+            }
+            throw new Exception("Cannot unmarshal type TvCleanupResultV1BodyKind");
+        }
+
+        public override void Write(Utf8JsonWriter writer, TvCleanupResultV1BodyKind value, JsonSerializerOptions options)
+        {
+            switch (value)
+            {
+                case TvCleanupResultV1BodyKind.Deep:
+                    JsonSerializer.Serialize(writer, "deep", options);
+                    return;
+                case TvCleanupResultV1BodyKind.Light:
+                    JsonSerializer.Serialize(writer, "light", options);
+                    return;
+                case TvCleanupResultV1BodyKind.Manual:
+                    JsonSerializer.Serialize(writer, "manual", options);
+                    return;
+            }
+            throw new Exception("Cannot marshal type TvCleanupResultV1BodyKind");
+        }
+
+        public static readonly TvCleanupResultV1MessageTvCleanupResultV1BodyKindConverter Singleton = new TvCleanupResultV1MessageTvCleanupResultV1BodyKindConverter();
+    }
+
+    internal class TvCleanupResultV1MessageTentacledMinMaxLengthCheckConverter : JsonConverter<string>
+    {
+        public override bool CanConvert(Type t) => t == typeof(string);
+
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            if (value.Length >= 1 && value.Length <= 120)
+            {
+                return value;
+            }
+            throw new Exception("Cannot unmarshal type string");
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        {
+            if (value.Length >= 1 && value.Length <= 120)
+            {
+                JsonSerializer.Serialize(writer, value, options);
+                return;
+            }
+            throw new Exception("Cannot marshal type string");
+        }
+
+        public static readonly TvCleanupResultV1MessageTentacledMinMaxLengthCheckConverter Singleton = new TvCleanupResultV1MessageTentacledMinMaxLengthCheckConverter();
+    }
+
+    internal class TvCleanupResultV1MessageTvCleanupResultV1BodyResultConverter : JsonConverter<TvCleanupResultV1BodyResult>
+    {
+        public override bool CanConvert(Type t) => t == typeof(TvCleanupResultV1BodyResult);
+
+        public override TvCleanupResultV1BodyResult Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            switch (value)
+            {
+                case "completed":
+                    return TvCleanupResultV1BodyResult.Completed;
+                case "skipped":
+                    return TvCleanupResultV1BodyResult.Skipped;
+            }
+            throw new Exception("Cannot unmarshal type TvCleanupResultV1BodyResult");
+        }
+
+        public override void Write(Utf8JsonWriter writer, TvCleanupResultV1BodyResult value, JsonSerializerOptions options)
+        {
+            switch (value)
+            {
+                case TvCleanupResultV1BodyResult.Completed:
+                    JsonSerializer.Serialize(writer, "completed", options);
+                    return;
+                case TvCleanupResultV1BodyResult.Skipped:
+                    JsonSerializer.Serialize(writer, "skipped", options);
+                    return;
+            }
+            throw new Exception("Cannot marshal type TvCleanupResultV1BodyResult");
+        }
+
+        public static readonly TvCleanupResultV1MessageTvCleanupResultV1BodyResultConverter Singleton = new TvCleanupResultV1MessageTvCleanupResultV1BodyResultConverter();
+    }
+
+    internal class TvCleanupResultV1MessageStickyMinMaxLengthCheckConverter : JsonConverter<string>
+    {
+        public override bool CanConvert(Type t) => t == typeof(string);
+
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            if (value.Length >= 1 && value.Length <= 40)
+            {
+                return value;
+            }
+            throw new Exception("Cannot unmarshal type string");
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        {
+            if (value.Length >= 1 && value.Length <= 40)
+            {
+                JsonSerializer.Serialize(writer, value, options);
+                return;
+            }
+            throw new Exception("Cannot marshal type string");
+        }
+
+        public static readonly TvCleanupResultV1MessageStickyMinMaxLengthCheckConverter Singleton = new TvCleanupResultV1MessageStickyMinMaxLengthCheckConverter();
     }
 
     internal class TvCleanupResultV1MessageIsoDateTimeOffsetConverter : JsonConverter<DateTimeOffset>
