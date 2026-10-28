@@ -27,6 +27,21 @@ public sealed class HealthVersionTests(PostgresFixture postgres)
         response.Headers.CacheControl?.NoStore.Should().BeTrue();
         var payload = await IdentityApp.JsonAsync(response);
         payload.GetProperty("commit").GetString().Should().Be("abcdef123456");
-        payload.GetProperty("version").GetString().Should().Be("0.5.0");
+        payload.GetProperty("version").GetString().Should().Be(PublishedVersion());
+    }
+
+    /// <summary>A versão do produto é a do arquivo VERSION da raiz do repositório (a mesma que a esteira publica).</summary>
+    private static string PublishedVersion()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var file = Path.Combine(dir.FullName, "VERSION");
+            if (File.Exists(file))
+            {
+                return File.ReadAllText(file).Trim();
+            }
+        }
+
+        throw new FileNotFoundException("Arquivo VERSION não encontrado acima do diretório dos testes.");
     }
 }
