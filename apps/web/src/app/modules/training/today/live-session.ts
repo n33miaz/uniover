@@ -20,7 +20,6 @@ import { WakeLockService } from '../data/session-live/wake-lock.service';
 import type { LocalSet } from '../data/sessions/session';
 import { summarizeLastSets } from '../exercises/last-set';
 import { illustrationFor, illustrationUrl } from '../illustrations/illustration-map';
-import { equipmentLabel, muscleLabel } from '../domain/taxonomy';
 import { formatKg } from '../shell/format';
 import { TrainingGlyph } from '../shell/training-glyph';
 import { ExerciseIllustration } from '../illustrations/exercise-illustration';
@@ -32,7 +31,7 @@ import { PlanSheet } from './plan-sheet';
 import { RestCard } from './rest-card';
 import { EMPTY_FIELDS, type SetFields } from './set-draft';
 import { SetEditSheet } from './set-edit-sheet';
-import { LiveSetFields } from './set-fields';
+import { LiveSetExtras, LiveSetFields } from './set-fields';
 import { type MenuAction, SessionMenuSheet } from './session-menu-sheet';
 import { TodayGlyph } from './today-glyph';
 import { TodayStore } from './today-store';
@@ -59,9 +58,10 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
 
 /**
  * O treino ao vivo, na tela do celular de quem está em pé na academia: o exercício em foco, o descanso, a série atual
- * com − e + grandes e UMA ação principal ("Concluir série") sempre ao alcance do polegar. O resto (pular, substituir,
- * a lista de exercícios, tela acesa, terminar e cancelar) fica atrás do menu. O estado todo vem do `LiveStore`: recarregar
- * a página volta à mesma série e ao mesmo descanso.
+ * com − e + grandes e UMA ação principal ("Concluir série") sempre ao alcance do polegar. O interruptor da tela acesa fica
+ * no topo da tela; o resto (pular, substituir, a lista de exercícios, terminar e cancelar) fica atrás do menu, e o que é
+ * secundário na série (última vez, esforço, anotação, aquecimento) vem abaixo do cartão. O estado todo vem do `LiveStore`:
+ * recarregar a página volta à mesma série e ao mesmo descanso.
  */
 @Component({
   selector: 'app-live-session',
@@ -71,6 +71,7 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
     RestCard,
     FocusHint,
     LiveSetFields,
+    LiveSetExtras,
     SessionMenuSheet,
     PlanSheet,
     ExerciseChooserSheet,
@@ -105,7 +106,6 @@ export class LiveSession {
   protected readonly sheet = signal<Sheet>(null);
   protected readonly editing = signal<LocalSet | null>(null);
   protected readonly draft = signal<SetFields>(EMPTY_FIELDS);
-  protected readonly screenRefused = signal(false);
   /** A pessoa está saindo do treino (terminar ou cancelar): a tela não mostra o vazio que sobra no meio do caminho. */
   protected readonly leaving = signal(false);
 
@@ -143,27 +143,33 @@ export class LiveSession {
     return art ? illustrationUrl(art.frames[0]) : null;
   });
 
-  protected readonly chips = computed(() => {
-    const exercise = this.exercise();
+  /**
+   * Só o que foge do normal aparece junto ao nome (trocado, supersérie, extra): músculo e equipamento estão no detalhe do
+   * exercício, e a tela acesa tem o próprio interruptor no topo.
+   */
+  protected readonly tags = computed(() => {
     const focus = this.focus();
-    if (exercise === undefined || focus === null) return [];
-    const list: { text: string; accent: boolean }[] = [];
-    const muscle = exercise.primaryMuscles[0];
-    if (muscle) list.push({ text: muscleLabel(muscle), accent: false });
-    list.push({ text: equipmentLabel(exercise.equipment), accent: false });
-    if (this.screenOn()) {
-      list.push({ text: $localize`:@@training.live.screen-on-chip:tela acesa`, accent: true });
-    }
-    if (focus.swapped) {
-      list.push({ text: $localize`:@@training.live.swapped:trocado só hoje`, accent: true });
-    }
-    if (focus.supersetGroup !== null) {
-      list.push({ text: $localize`:@@training.live.superset:supersérie`, accent: false });
-    }
+    if (focus === null) return [];
+    const list: string[] = [];
+    if (focus.swapped) list.push($localize`:@@training.live.swapped:trocado só hoje`);
+    if (focus.supersetGroup !== null) list.push($localize`:@@training.live.superset:supersérie`);
     if (focus.position === null && this.live.routine() !== undefined) {
-      list.push({ text: $localize`:@@training.live.extra:extra`, accent: false });
+      list.push($localize`:@@training.live.extra:extra`);
     }
     return list;
+  });
+
+  /** "2 de 3 exercícios": a posição do exercício em foco na lista do treino; vazio quando ele não está nela. */
+  protected readonly positionText = computed(() => {
+    const focus = this.focus();
+    const entries = this.live.plan().entries;
+    if (focus === null) return '';
+    const index = entries.findIndex((entry) => entry.key === focus.key);
+    if (index < 0) return '';
+    const total = entries.length;
+    if (total === 1) return $localize`:@@training.live.position-one:1 exercício`;
+    const place = index + 1;
+    return $localize`:@@training.live.position:${place}:place: de ${total}:total: exercícios`;
   });
 
   /** A sugestão do dia e a última vez, em texto; vazio quando o exercício nunca foi feito. */
@@ -221,6 +227,9 @@ export class LiveSession {
     });
   });
 
+  /** Muda quando o cartão recomeça (outro exercício ou outra série): é a chave que recria o esforço e a anotação. */
+  protected readonly extrasKey = computed(() => this.live.defaults()?.key ?? '');
+
   protected readonly names = computed(
     () => new Map([...this.live.exercises()].map(([id, exercise]) => [id, exercise.name])),
   );
@@ -258,6 +267,12 @@ export class LiveSession {
     return lines;
   });
 
+  /** O recorde em texto corrido, uma marca por linha: no descanso ele aparece no cartão, e o aviso próprio sai (uma vez só na tela). */
+  protected readonly recordText = computed(() => {
+    const lines = this.bannerLines();
+    return lines.length === 0 ? null : lines.join('\n');
+  });
+
   /** Quando o descanso acaba, a região "educada" lê isto em voz alta (o cartão do descanso também muda de cor). */
   protected readonly restOverText = computed(() =>
     this.timer.over() ? $localize`:@@training.live.rest-over-say:Descanso terminou` : '',
@@ -275,6 +290,11 @@ export class LiveSession {
   protected readonly swapHeading = $localize`:@@training.live.swap-title:Substituir Exercício`;
   protected readonly addHeading = $localize`:@@training.live.add-title:Adicionar Exercício`;
   protected readonly backLabel = $localize`:@@training.live.back:Voltar ao treino`;
+  protected readonly screenLabel = computed(() =>
+    this.screenSupported()
+      ? $localize`:@@training.live.screen-label:Manter a Tela Acesa`
+      : $localize`:@@training.live.screen-unsupported:Manter a Tela Acesa (indisponível neste navegador)`,
+  );
   protected readonly menuLabel = $localize`:@@training.live.menu:Opções do treino`;
   protected readonly dismissLabel = $localize`:@@training.live.record-dismiss:Dispensar o aviso de recorde`;
 
@@ -374,17 +394,21 @@ export class LiveSession {
     }
   }
 
-  protected async onScreen(on: boolean): Promise<void> {
-    this.screenRefused.set(false);
-    if (on) {
-      const granted = await this.wake.request();
-      if (!granted) {
-        // Sem suporte ou recusado: o interruptor volta a desligado e a folha diz por quê.
-        await this.wake.release();
-        this.screenRefused.set(this.wake.supported());
-      }
-    } else {
+  protected async onScreen(toggle: HTMLInputElement): Promise<void> {
+    if (!toggle.checked) {
       await this.wake.release();
+      return;
+    }
+    const granted = await this.wake.request();
+    if (granted) return;
+    // Sem suporte ou recusado: o interruptor volta a desligado e o aviso diz por quê.
+    await this.wake.release();
+    toggle.checked = false;
+    if (this.wake.supported()) {
+      this.live.say(
+        $localize`:@@training.live.screen-refused:O aparelho recusou agora (bateria baixa ou economia de energia).`,
+        'warn',
+      );
     }
   }
 
