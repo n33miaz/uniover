@@ -11,16 +11,19 @@ Nada aqui envia tecla nem pede pareamento. Os endereços e os identificadores nu
 """
 
 import asyncio
+import contextlib
 import ipaddress
 import logging
 import re
 import socket
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Literal
 
 import httpx
+from zeroconf import IPVersion, ServiceStateChange, Zeroconf
+from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 
 from uniover_agent.adapters.arp import arp_mac
 from uniover_agent.core.tv.locator import TvIdentity, normalize_mac
@@ -34,6 +37,10 @@ CONNECT_TIMEOUT_SECONDS = 1.0
 HTTP_TIMEOUT_SECONDS = 2.0
 SCAN_DEADLINE_SECONDS = 8.0
 CONCURRENCY = 128
+MDNS_SERVICE_TYPE = "_androidtvremote2._tcp.local."
+MDNS_TIMEOUT_SECONDS = 1.5
+# Prazo para as leituras de anúncio em andamento acabarem de ser canceladas ao encerrar o mDNS.
+MDNS_CANCEL_GRACE_SECONDS = 1.0
 
 _MAC = re.compile(r"(?<![0-9A-Fa-f])(?:[0-9A-Fa-f]{2}[-:]){5}[0-9A-Fa-f]{2}(?![0-9A-Fa-f])")
 
@@ -63,6 +70,73 @@ class DiscoveredTv:
 Connect = Callable[[str, int], Awaitable[bool]]
 FetchJson = Callable[[str], Awaitable[dict[str, Any] | None]]
 ArpLookup = Callable[[str], Awaitable[str | None]]
+MdnsDiscovery = Callable[[float], Coroutine[Any, Any, list[DiscoveredTv]]]
+
+
+async def discover_android_tvs(listen_seconds: float = MDNS_TIMEOUT_SECONDS) -> list[DiscoveredTv]:
+    """Escuta por pouco tempo o anúncio mDNS do controle Android TV Remote v2.
+
+    O anúncio traz o nome e o endereço da TV, o que dispensa varrer a /24 (e alcança TV em outra
+    sub-rede). Só espera `listen_seconds` e cede o laço enquanto isso. Multicast bloqueado ou sem
+    placa utilizável é normal em algumas redes: qualquer falha aqui vira lista vazia, porque a
+    varredura TCP continua sendo a reserva e nunca pode ser derrubada pelo mDNS.
+    """
+    found: dict[str, DiscoveredTv] = {}
+    requests: set[asyncio.Task[None]] = set()
+    async_zeroconf: AsyncZeroconf | None = None
+    browser: AsyncServiceBrowser | None = None
+    closing = False
+    try:
+        async_zeroconf = AsyncZeroconf(ip_version=IPVersion.V4Only)
+
+        async def inspect(name: str) -> None:
+            info = AsyncServiceInfo(MDNS_SERVICE_TYPE, name)
+            try:
+                if not await info.async_request(
+                    async_zeroconf.zeroconf, int(listen_seconds * 1000)
+                ):
+                    return
+                label = name.removesuffix(MDNS_SERVICE_TYPE).rstrip(".") or None
+                for address in info.parsed_addresses(IPVersion.V4Only):
+                    found[address] = DiscoveredTv(address, "android", name=label)
+            except Exception:
+                _log.debug("não consegui ler um anúncio mDNS da Android TV", exc_info=True)
+
+        # A biblioteca chama o tratador com argumentos nomeados: os nomes não podem mudar.
+        def changed(
+            zeroconf: Zeroconf, service_type: str, name: str, state_change: ServiceStateChange
+        ) -> None:
+            del zeroconf, service_type
+            # Depois de a janela fechar, anúncio novo não abre leitura nova: a coleção já foi
+            # congelada para o cancelamento.
+            if closing or state_change is not ServiceStateChange.Added:
+                return
+            task = asyncio.create_task(inspect(name))
+            requests.add(task)
+            task.add_done_callback(requests.discard)
+
+        browser = AsyncServiceBrowser(
+            async_zeroconf.zeroconf, MDNS_SERVICE_TYPE, handlers=[changed]
+        )
+        await asyncio.sleep(listen_seconds)
+    except Exception:
+        _log.debug("o mDNS não está disponível nesta rede", exc_info=True)
+    finally:
+        # Nesta ordem: o navegador para de entregar anúncios; a coleção de leituras congela; o que
+        # ainda estava lendo é cancelado (com prazo); só então o zeroconf fecha os soquetes.
+        if browser is not None:
+            with contextlib.suppress(Exception):
+                await browser.async_cancel()
+        closing = True
+        in_flight = list(requests)
+        for task in in_flight:
+            task.cancel()
+        if in_flight:
+            await asyncio.wait(in_flight, timeout=MDNS_CANCEL_GRACE_SECONDS)
+        if async_zeroconf is not None:
+            with contextlib.suppress(Exception):
+                await async_zeroconf.async_close()
+    return sorted(found.values(), key=lambda tv: ipaddress.ip_address(tv.host))
 
 
 def local_ipv4() -> str | None:
@@ -256,13 +330,30 @@ async def scan_hosts(  # noqa: PLR0913 - injeções dos testes, todas só por no
     return sorted(found, key=lambda tv: ipaddress.ip_address(tv.host))
 
 
-async def find_tvs(
+async def _cancel_and_wait(task: asyncio.Task[Any]) -> None:
+    """Cancela e espera a tarefa acabar de fechar o que abriu, com prazo."""
+    task.cancel()
+    await asyncio.wait({task}, timeout=MDNS_CANCEL_GRACE_SECONDS * 2)
+
+
+async def _mdns_or_nothing(task: asyncio.Task[list[DiscoveredTv]] | None) -> list[DiscoveredTv]:
+    if task is None:
+        return []
+    try:
+        return await task
+    except Exception:
+        _log.debug("a descoberta por mDNS falhou", exc_info=True)
+        return []
+
+
+async def find_tvs(  # noqa: PLR0913 - cada injeção é um ponto de teste independente
     kind: TvKindName | None = None,
     *,
     local: str | None = None,
     connect: Connect = tcp_open,
     fetch_json: FetchJson = http_json,
     lookup_mac: ArpLookup = arp_mac,
+    discover_mdns: MdnsDiscovery | None = None,
 ) -> list[DiscoveredTv]:
     """Varre a rede local atrás de TVs (todas, ou só do `kind`). Sem rede, lista vazia.
 
@@ -278,14 +369,39 @@ async def find_tvs(
         for host in subnet_hosts(address):
             if host not in hosts and host not in addresses:
                 hosts.append(host)
-    tvs = await scan_hosts(
-        hosts,
-        connect=connect,
-        fetch_json=fetch_json,
-        lookup_mac=lookup_mac,
-        deadline=SCAN_DEADLINE_SECONDS * len(addresses),
+    mdns_task: asyncio.Task[list[DiscoveredTv]] | None = (
+        asyncio.create_task((discover_mdns or discover_android_tvs)(MDNS_TIMEOUT_SECONDS))
+        if kind in (None, "android")
+        else None
     )
-    return [tv for tv in tvs if kind is None or tv.kind == kind]
+    try:
+        tvs = await scan_hosts(
+            hosts,
+            connect=connect,
+            fetch_json=fetch_json,
+            lookup_mac=lookup_mac,
+            deadline=SCAN_DEADLINE_SECONDS * len(addresses),
+        )
+        mdns_tvs = await _mdns_or_nothing(mdns_task)
+    except BaseException:
+        # Erro ou cancelamento de fora: a escuta não fica solta, com os soquetes abertos.
+        if mdns_task is not None:
+            await _cancel_and_wait(mdns_task)
+        raise
+    merged: dict[tuple[str, TvKindName], DiscoveredTv] = {(tv.host, tv.kind): tv for tv in mdns_tvs}
+    for tv in tvs:
+        key = (tv.host, tv.kind)
+        previous = merged.get(key)
+        merged[key] = (
+            tv
+            if previous is None
+            else DiscoveredTv(tv.host, tv.kind, tv.ids, previous.name or tv.name)
+        )
+    return [
+        tv
+        for tv in sorted(merged.values(), key=lambda item: ipaddress.ip_address(item.host))
+        if kind is None or tv.kind == kind
+    ]
 
 
 def same_tv(tv: DiscoveredTv, hint: str) -> bool:
