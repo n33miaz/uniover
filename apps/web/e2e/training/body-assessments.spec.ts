@@ -13,6 +13,8 @@ test('guarda uma avaliação e as fotos do relatório só neste aparelho, sem re
   await openTraining(page, '/treino/corpo/avaliacoes/assessment-cache');
   await expect(page.getByRole('heading', { name: 'Avaliação Não Encontrada' })).toBeVisible();
   await openTraining(page, '/treino/corpo/avaliacoes/nova');
+  await expect(page.locator('.training-header .back')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: '‹ Avaliações' })).toHaveCount(1);
   await page.evaluate(() => window.dispatchEvent(new Event('offline')));
   await page.getByLabel('Data da avaliação').fill('2026-04-05');
   await page.getByLabel('Origem / clínica / sistema').fill('Clínica sintética');

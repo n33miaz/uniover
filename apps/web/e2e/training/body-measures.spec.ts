@@ -14,7 +14,7 @@ async function registerMeasures(
   day: string,
   values: Readonly<Record<string, string>>,
 ): Promise<void> {
-  await page.getByRole('button', { name: /Registrar ou editar medidas/ }).click();
+  await page.getByRole('button', { name: /^Medidas\b/ }).click();
   const sheet = page.getByRole('dialog', { name: 'Registrar Medidas e Gordura' });
   await sheet.getByLabel('Dia').fill(day);
   for (const [label, value] of Object.entries(values)) {
@@ -74,7 +74,7 @@ test('a folha de medidas agrupa direito e esquerdo lado a lado, sem rolagem late
   await startTraining(context, page);
   await openTraining(page, '/treino/corpo');
   await page.getByRole('button', { name: 'Entendi' }).click();
-  await page.getByRole('button', { name: /Registrar ou editar medidas/ }).click();
+  await page.getByRole('button', { name: /^Medidas\b/ }).click();
 
   const sheet = page.getByRole('dialog', { name: 'Registrar Medidas e Gordura' });
   for (const group of ['Tronco (cm)', 'Braços (cm)', 'Pernas (cm)', 'Dobras (mm)']) {
@@ -185,9 +185,7 @@ test('registra as medidas novas com D e E, vê o mapa evoluir e abre o históric
   await page.getByRole('dialog').getByRole('button', { name: 'Cancelar' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expectNoHorizontalScroll(page);
-  // Os dois cartões de sinal (Medidas e Gordura Corporal) têm um nome acessível que não repete o texto visível quando já há
-  // valor: problema anterior a esta tela, fora do que este teste cobre; o mapa e as folhas novas passam inteiros.
-  const { violations } = await new AxeBuilder({ page }).exclude('.signal-card').analyze();
+  const { violations } = await new AxeBuilder({ page }).analyze();
   expect(violations).toEqual([]);
 });
 

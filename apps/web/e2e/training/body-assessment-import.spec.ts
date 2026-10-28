@@ -71,7 +71,7 @@ test('leva à tela Corpo as medidas novas com lado, sem inventar e sem promover 
   // A panturrilha rejeitada não criou medida nenhuma.
   await expect(map.locator('.side-card', { hasText: /^\s*Panturrilhas/ })).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Registros' }).click();
+  await page.getByRole('button', { name: 'Registros', exact: true }).click();
   await page.locator('app-body-section').nth(2).getByRole('button').first().click();
   const list = page.locator('.measure-list');
   await expect(list.getByText('Tórax', { exact: true })).toBeVisible();
@@ -79,4 +79,41 @@ test('leva à tela Corpo as medidas novas com lado, sem inventar e sem promover 
   await expect(list.getByText('Dobra Abdominal', { exact: true })).toBeVisible();
   await expect(list.getByText('Panturrilha E', { exact: true })).toHaveCount(0);
   await expect(list.getByText('Dobra Peitoral', { exact: true })).toHaveCount(0);
+});
+
+test('mostra a prévia e a contagem antes de importar uma avaliação', async ({ page, context }) => {
+  await startTraining(context, page);
+  await openTraining(page, '/treino/corpo/avaliacoes/importar');
+  const exported = {
+    exportType: 'physical-assessment',
+    assessment: {
+      assessedOn: '2026-04-05',
+      origin: 'Clínica sintética',
+      measurements: [
+        {
+          type: 'chest',
+          reportedValue: 98,
+          unit: 'cm',
+          kind: 'measured',
+        },
+        {
+          type: 'calf',
+          reportedValue: 39,
+          unit: 'cm',
+          kind: 'measured',
+          side: 'right',
+        },
+      ],
+    },
+  };
+  await page.locator('#assessment-file').setInputFiles({
+    name: 'avaliacao-exportada.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(exported)),
+  });
+
+  await expect(page.getByText('Prévia carregada', { exact: false })).toBeVisible();
+  await expect(page.locator('.preview-count')).toContainText('4 dados reconhecidos');
+  await expect(page.locator('.preview-count')).toContainText('3 para revisar');
+  await expect(page.locator('.candidate')).toHaveCount(4);
 });
