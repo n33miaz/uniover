@@ -26,9 +26,11 @@ describe('BodyPage painel de sinais', () => {
       expect.stringContaining('Medidas'),
       expect.stringContaining('Gordura Corporal'),
       expect.stringContaining('Avaliações Físicas'),
-      expect.stringContaining('Mapa do Corpo'),
       expect.stringContaining('Fotos de Progresso'),
     ]);
+    // O mapa fica dentro do Corpo; não há atalho para uma tela só do mapa.
+    expect(panel.querySelector('app-body-map-panel h2')?.textContent).toContain('Mapa do Corpo');
+    expect(panel.querySelector('a[href="/treino/exercicios/mapa"]')).toBeNull();
     expect(panel.querySelector('.primary-action')?.textContent).toContain('Registrar Peso');
   });
 

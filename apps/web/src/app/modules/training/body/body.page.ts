@@ -5,11 +5,21 @@ import { BodyMeasurementsSheet } from './measurements-sheet';
 import { BodyProfileSheet } from './profile-sheet';
 import { BodySection } from './body-section';
 import { BodyStore } from './body-store';
-import { formatCm, formatFullDate, formatPercent, formatWeight, signedWeight } from './body-text';
+import {
+  formatCm,
+  formatFullDate,
+  formatMm,
+  formatPercent,
+  formatWeight,
+  signedWeight,
+} from './body-text';
 import { BodyEnergyPanel } from './energy-panel';
 import { HealthNotice } from './notice/health-notice';
 import { BodyNoticeStore } from './notice/notice-store';
 import { BodyPhotoPanel } from './photo-panel';
+import { BodyMapPanel } from './body-map-panel';
+import { BodyRegionHistorySheet } from './region-history-sheet';
+import type { BodyMapRegion } from '../domain/body/body-map-signals';
 import { WEIGHT_CHART_PROVIDER } from './weight/weight-chart-engine';
 import {
   type WeightPeriod,
@@ -33,6 +43,8 @@ type BodyView = 'summary' | 'records' | 'photos';
     HealthNotice,
     BodyEnergyPanel,
     BodyPhotoPanel,
+    BodyMapPanel,
+    BodyRegionHistorySheet,
   ],
   template: `
     <div class="page" aria-labelledby="body-title">
@@ -147,10 +159,10 @@ type BodyView = 'summary' | 'records' | 'photos';
               [attr.aria-label]="measuresActionLabel"
             >
               <span class="eyebrow" i18n="@@training.body.summary.measurements">Medidas</span>
-              @if (store.latest().waistCm; as waist) {
-                <strong>{{ formatCm(waist.value) }}</strong
-                ><small i18n="@@training.body.summary.waist-date"
-                  >Cintura · {{ formatDate(waist.measuredOn) }}</small
+              @if (primaryMeasure(); as measure) {
+                <strong>{{ measure.value }}</strong
+                ><small i18n="@@training.body.summary.measure-date"
+                  >{{ measure.label }} · {{ formatDate(measure.date) }}</small
                 >
               } @else {
                 <strong class="none" i18n="@@training.body.summary.none">Sem Registros</strong
@@ -174,14 +186,12 @@ type BodyView = 'summary' | 'records' | 'photos';
             </button>
           </div>
 
+          <app-body-map-panel [entries]="store.entries()" (history)="historyRegion.set($event)" />
+
           <section class="signal-links" [attr.aria-label]="shortcutsLabel">
             <a class="signal-row" routerLink="/treino/corpo/avaliacoes"
               ><span i18n="@@training.body.summary.assessments">Avaliações Físicas</span
               ><small i18n="@@training.body.summary.assessments-action">Ver Histórico</small></a
-            >
-            <a class="signal-row" routerLink="/treino/exercicios/mapa"
-              ><span i18n="@@training.body.summary.map">Mapa do Corpo</span
-              ><small i18n="@@training.body.summary.map-action">Ver Músculos</small></a
             >
             <button type="button" class="signal-row" (click)="selectView('photos')">
               <span i18n="@@training.body.summary.photos">Fotos de Progresso</span
@@ -331,6 +341,14 @@ type BodyView = 'summary' | 'records' | 'photos';
           [profile]="store.profile()"
           [today]="store.today()"
           (closed)="profileSheetOpen.set(false)"
+        />
+      }
+      @if (historyRegion(); as region) {
+        <app-body-region-history-sheet
+          [region]="region"
+          [entries]="store.entries()"
+          (register)="registerFromHistory()"
+          (closed)="historyRegion.set(null)"
         />
       }
       @if (measureSheetOpen()) {
@@ -647,6 +665,8 @@ export class BodyPage {
   protected readonly editing = signal<string | null>(null);
   protected readonly profileSheetOpen = signal(false);
   protected readonly measureSheetOpen = signal(false);
+  /** A região do mapa cujo histórico está aberto (a folha de leitura). */
+  protected readonly historyRegion = signal<BodyMapRegion | null>(null);
   protected readonly viewLabel = $localize`:@@training.body.tabs:Seções do corpo`;
   protected readonly signalsLabel = $localize`:@@training.body.summary.signals:Sinais do corpo`;
   protected readonly shortcutsLabel = $localize`:@@training.body.summary.shortcuts:Mais informações do corpo`;
@@ -660,6 +680,44 @@ export class BodyPage {
   protected readonly historyLabel = $localize`:@@training.body.weight.history:Pesagens recentes`;
   protected readonly editProfileLabel = $localize`:@@training.body.profile.edit:Editar Perfil`;
   protected readonly addProfileLabel = $localize`:@@training.body.profile.complete:Preencher Perfil`;
+  private readonly measureRows = [
+    { key: 'waistCm', label: $localize`:@@training.body.measure.waist-short:Cintura` },
+    { key: 'chestCm', label: $localize`:@@training.body.measure.chest-short:Tórax` },
+    { key: 'abdomenCm', label: $localize`:@@training.body.measure.abdomen-short:Abdômen` },
+    { key: 'neckCm', label: $localize`:@@training.body.measure.neck-short:Pescoço` },
+    { key: 'hipCm', label: $localize`:@@training.body.measure.hip-short:Quadril` },
+    { key: 'armCm', label: $localize`:@@training.body.measure.arm-short:Braço` },
+    { key: 'armRightCm', label: $localize`:@@training.body.measure.arm-right-short:Braço D` },
+    { key: 'armLeftCm', label: $localize`:@@training.body.measure.arm-left-short:Braço E` },
+    {
+      key: 'forearmRightCm',
+      label: $localize`:@@training.body.measure.forearm-right-short:Antebraço D`,
+    },
+    {
+      key: 'forearmLeftCm',
+      label: $localize`:@@training.body.measure.forearm-left-short:Antebraço E`,
+    },
+    { key: 'thighCm', label: $localize`:@@training.body.measure.thigh-short:Coxa` },
+    { key: 'thighRightCm', label: $localize`:@@training.body.measure.thigh-right-short:Coxa D` },
+    { key: 'thighLeftCm', label: $localize`:@@training.body.measure.thigh-left-short:Coxa E` },
+    {
+      key: 'calfRightCm',
+      label: $localize`:@@training.body.measure.calf-right-short:Panturrilha D`,
+    },
+    { key: 'calfLeftCm', label: $localize`:@@training.body.measure.calf-left-short:Panturrilha E` },
+    {
+      key: 'chestSkinfoldMm',
+      label: $localize`:@@training.body.measure.chest-skinfold-short:Dobra Peitoral`,
+    },
+    {
+      key: 'abdomenSkinfoldMm',
+      label: $localize`:@@training.body.measure.abdomen-skinfold-short:Dobra Abdominal`,
+    },
+    {
+      key: 'thighSkinfoldMm',
+      label: $localize`:@@training.body.measure.thigh-skinfold-short:Dobra da Coxa`,
+    },
+  ] as const;
   protected readonly periods = [
     { value: '30d' as const, label: $localize`:@@training.body.period.30d:30 dias` },
     { value: '6m' as const, label: $localize`:@@training.body.period.6m:6 meses` },
@@ -697,41 +755,30 @@ export class BodyPage {
       ? `${profile.heightCm} cm · ${this.store.age() ?? ''} anos`
       : $localize`:@@training.body.profile.missing-summary:Preencha seu perfil`;
   });
+  /** Última medida de cada campo, na ordem da folha de registro; o que nunca foi medido não aparece. */
   protected readonly measures = computed(() => {
     const latest = this.store.latest();
-    return [
-      {
-        key: 'waist',
-        label: $localize`:@@training.body.measure.waist-short:Cintura / abdômen`,
-        value: latest.waistCm ? formatCm(latest.waistCm.value) : null,
-        date: latest.waistCm?.measuredOn ?? '',
-      },
-      {
-        key: 'neck',
-        label: $localize`:@@training.body.measure.neck-short:Pescoço`,
-        value: latest.neckCm ? formatCm(latest.neckCm.value) : null,
-        date: latest.neckCm?.measuredOn ?? '',
-      },
-      {
-        key: 'hip',
-        label: $localize`:@@training.body.measure.hip-short:Quadril`,
-        value: latest.hipCm ? formatCm(latest.hipCm.value) : null,
-        date: latest.hipCm?.measuredOn ?? '',
-      },
-      {
-        key: 'arm',
-        label: $localize`:@@training.body.measure.arm-short:Braço`,
-        value: latest.armCm ? formatCm(latest.armCm.value) : null,
-        date: latest.armCm?.measuredOn ?? '',
-      },
-      {
-        key: 'thigh',
-        label: $localize`:@@training.body.measure.thigh-short:Coxa`,
-        value: latest.thighCm ? formatCm(latest.thighCm.value) : null,
-        date: latest.thighCm?.measuredOn ?? '',
-      },
-    ];
+    return this.measureRows.map(({ key, label }) => {
+      const found = latest[key];
+      return {
+        key,
+        label,
+        value: found
+          ? key.endsWith('SkinfoldMm')
+            ? formatMm(found.value)
+            : formatCm(found.value)
+          : null,
+        date: found?.measuredOn ?? '',
+      };
+    });
   });
+  /**
+   * A medida que o cartão de Medidas mostra: a cintura quando há, senão a primeira que o dono já registrou (tórax, braços...).
+   * Quem só mede o tórax não vê "Sem Registros" com medidas guardadas.
+   */
+  protected readonly primaryMeasure = computed(
+    () => this.measures().find((measure) => measure.value !== null) ?? null,
+  );
   protected readonly measuresSummary = computed(() => {
     const fat = this.store.latest().bodyFatPct;
     return fat ? formatPercent(fat.value) : '';
@@ -755,6 +802,11 @@ export class BodyPage {
           : 'backward',
     );
     this.view.set(next);
+  }
+  /** Do histórico direto para o registro: uma folha sai e a outra entra, sem duas modais abertas juntas. */
+  protected registerFromHistory(): void {
+    this.historyRegion.set(null);
+    this.measureSheetOpen.set(true);
   }
   protected clearViewDirection(event: AnimationEvent): void {
     if (event.target === event.currentTarget) this.viewDirection.set(null);

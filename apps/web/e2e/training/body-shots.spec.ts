@@ -22,7 +22,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await startTraining(context, page);
       await openTraining(page, '/treino/corpo');
       await page.getByRole('button', { name: 'Entendi' }).click();
-      await expect(page.getByRole('heading', { name: 'Corpo' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Corpo', exact: true })).toBeVisible();
       await expectSynced(page);
       await shot(page, info, 'corpo-resumo', scheme);
 
