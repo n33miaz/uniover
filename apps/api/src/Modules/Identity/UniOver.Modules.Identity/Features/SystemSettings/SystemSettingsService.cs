@@ -15,7 +15,14 @@ public static class SystemSettingKeys
     public const string MaxComputersPerGuest = "devices.max-per-guest";
     public const string AgentOfflineMinutes = "devices.agent-offline-minutes";
     public const string PhotoStorageEnabled = "training.photo-storage-enabled";
-    public static IReadOnlyList<string> All { get; } = [OffContact, MaxComputersPerGuest, AgentOfflineMinutes, PhotoStorageEnabled];
+    public const string TvLightCleanupEnabled = "tv.light-cleanup-enabled";
+    public const string TvDeepCleanupEnabled = "tv.deep-cleanup-enabled";
+    public const string TvDeepCleanupMemoryThresholdMb = "tv.deep-cleanup-memory-threshold-mb";
+    public static IReadOnlyList<string> All { get; } =
+    [
+        OffContact, MaxComputersPerGuest, AgentOfflineMinutes, PhotoStorageEnabled,
+        TvLightCleanupEnabled, TvDeepCleanupEnabled, TvDeepCleanupMemoryThresholdMb,
+    ];
 }
 
 public sealed record SystemSettingValue(string Key, JsonElement Value, string Source);
@@ -54,6 +61,15 @@ public sealed class SystemSettingsService(IServiceScopeFactory scopes, IConfigur
     public async Task<bool> PhotoStorageEnabledAsync(CancellationToken cancellationToken = default) =>
         (await ReadAsync(SystemSettingKeys.PhotoStorageEnabled, cancellationToken)).Value.GetBoolean();
 
+    public async Task<bool> TvLightCleanupEnabledAsync(CancellationToken cancellationToken = default) =>
+        (await ReadAsync(SystemSettingKeys.TvLightCleanupEnabled, cancellationToken)).Value.GetBoolean();
+
+    public async Task<bool> TvDeepCleanupEnabledAsync(CancellationToken cancellationToken = default) =>
+        (await ReadAsync(SystemSettingKeys.TvDeepCleanupEnabled, cancellationToken)).Value.GetBoolean();
+
+    public async Task<int> TvDeepCleanupMemoryThresholdMbAsync(CancellationToken cancellationToken = default) =>
+        (await ReadAsync(SystemSettingKeys.TvDeepCleanupMemoryThresholdMb, cancellationToken)).Value.GetInt32();
+
     private JsonElement EnvironmentValue(string key)
     {
         object value = key switch
@@ -63,6 +79,13 @@ public sealed class SystemSettingsService(IServiceScopeFactory scopes, IConfigur
                 CultureInfo.InvariantCulture, out var limit) && limit > 0 ? limit : 2,
             SystemSettingKeys.AgentOfflineMinutes => int.TryParse(configuration["Modules:Devices:Alerts:OfflineMinutes"], NumberStyles.None,
                 CultureInfo.InvariantCulture, out var offlineMinutes) && offlineMinutes > 0 ? offlineMinutes : 10,
+            SystemSettingKeys.TvDeepCleanupMemoryThresholdMb => int.TryParse(
+                configuration["Modules:Tv:DeepCleanupMemoryThresholdMb"], NumberStyles.None,
+                CultureInfo.InvariantCulture, out var threshold) && threshold is >= 64 and <= 512 ? threshold : 160,
+            SystemSettingKeys.TvLightCleanupEnabled => !bool.TryParse(
+                configuration["Modules:Tv:LightCleanupEnabled"], out var lightEnabled) || lightEnabled,
+            SystemSettingKeys.TvDeepCleanupEnabled => !bool.TryParse(
+                configuration["Modules:Tv:DeepCleanupEnabled"], out var deepEnabled) || deepEnabled,
             _ => bool.TryParse(configuration["Modules:Training:Photos:Storage:Enabled"], out var enabled) && enabled,
         };
         return JsonSerializer.SerializeToElement(value);

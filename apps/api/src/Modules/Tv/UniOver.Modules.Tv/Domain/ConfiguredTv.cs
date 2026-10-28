@@ -32,6 +32,9 @@ public sealed class ConfiguredTv
 
     public bool IsDefault { get; private set; }
 
+    /// <summary>Permite encerrar apps de fundo nesta TV; desligado até o dono optar explicitamente.</summary>
+    public bool AllowBackgroundAppClosing { get; private set; }
+
     public DateTimeOffset CreatedAt { get; private set; }
 
     public DateTimeOffset UpdatedAt { get; private set; }
@@ -77,6 +80,23 @@ public sealed class ConfiguredTv
 
         AgentSlug = agentSlug;
         Name = newName;
+        UpdatedAt = now;
+        UpdatedBy = updatedBy;
+        return true;
+    }
+
+    /// <summary>
+    /// Liga ou desliga o fechamento de apps em segundo plano desta TV. Devolve <c>false</c> (sem mexer em nada) quando
+    /// já estava assim. Nasce desligado: só quem administra as TVs liga, e cada mudança fica na trilha.
+    /// </summary>
+    public bool SetBackgroundAppClosing(bool allow, Guid updatedBy, DateTimeOffset now)
+    {
+        if (AllowBackgroundAppClosing == allow)
+        {
+            return false;
+        }
+
+        AllowBackgroundAppClosing = allow;
         UpdatedAt = now;
         UpdatedBy = updatedBy;
         return true;

@@ -87,4 +87,21 @@ public class ConfiguredTvTests
 
         tv.Name.Should().Be("Sala");
     }
+
+    [Fact]
+    public void BackgroundAppClosing_StartsOff_AndOnlyAChangeStampsWhoAndWhen()
+    {
+        var tv = ConfiguredTv.CreateDefault("TV", "pc-casa", Admin, Now);
+        tv.AllowBackgroundAppClosing.Should().BeFalse("a regra do dono é não mexer nos apps sem opção explícita");
+
+        tv.SetBackgroundAppClosing(false, Guid.NewGuid(), Now.AddMinutes(1)).Should().BeFalse();
+        tv.UpdatedAt.Should().Be(Now);
+
+        var other = Guid.NewGuid();
+        tv.SetBackgroundAppClosing(true, other, Now.AddMinutes(2)).Should().BeTrue();
+        (tv.AllowBackgroundAppClosing, tv.UpdatedBy, tv.UpdatedAt).Should().Be((true, other, Now.AddMinutes(2)));
+
+        tv.SetBackgroundAppClosing(false, Admin, Now.AddMinutes(3)).Should().BeTrue();
+        tv.AllowBackgroundAppClosing.Should().BeFalse();
+    }
 }

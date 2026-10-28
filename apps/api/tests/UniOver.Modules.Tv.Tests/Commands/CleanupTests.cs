@@ -261,6 +261,18 @@ public class CleanupTests
     }
 
     [Fact]
+    public void CleanupReportEntry_KeepsTheCompletedMeasurementForPersistence()
+    {
+        var startedAt = new DateTimeOffset(2026, 10, 27, 16, 5, 0, TimeSpan.Zero);
+
+        var entry = CleanupReportEntry.Completed(
+            Guid.NewGuid(), "manual", "manual", startedAt, 1_500, 214, 596, 6, "[]");
+
+        (entry.Kind, entry.Trigger, entry.StartedAt, entry.DurationMs, entry.MemoryBeforeMb, entry.MemoryAfterMb,
+            entry.ClosedApps, entry.Result).Should().Be(("manual", "manual", startedAt, 1_500, 214, 596, 6, "completed"));
+    }
+
+    [Fact]
     public async Task Handler_WhenTheAgentSaysAnotherCleanupIsRunning_IsBusy()
     {
         var (handler, _, _, _) = Build(TvSendOutcome.Failed(TvSendStatus.CommandFailed, CleanupHandler.AgentBusyCode), agentReports: false);

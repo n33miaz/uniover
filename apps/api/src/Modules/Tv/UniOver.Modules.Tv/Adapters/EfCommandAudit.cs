@@ -44,7 +44,7 @@ internal sealed class EfCommandAudit(TvDbContext db) : ITvCommandAudit
 
     private async Task<bool> ShouldRecordAsync(CommandAuditEntry entry, CancellationToken cancellationToken)
     {
-        if (string.Equals(entry.Command, TvCommandNames.ConfigBind, StringComparison.Ordinal))
+        if (entry.Command is TvCommandNames.ConfigBind or TvCommandNames.CleanupSetting)
         {
             return true;
         }

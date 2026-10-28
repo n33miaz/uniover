@@ -104,6 +104,123 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task BackgroundAppClosing_IsOffByDefault_AuditsTheChange_AndReachesTheAgent()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Sala");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Sala");
+
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync("2.0.0", "tv.remote", "tv.cleanup.automatic.v1");
+        // Ao conectar, o agente recebe a configuração com o fechamento de apps desligado.
+        var first = await TvApp.NextCommandAsync(connection);
+        first.GetProperty("type").GetString().Should().Be("tv.cleanup.config.v1");
+        first.GetProperty("body").GetProperty("closeBackgroundApps").GetBoolean().Should().BeFalse();
+
+        using (var list = await app.GetAsync("/api/v1/tv/tvs"))
+        {
+            var item = (await TvApp.JsonAsync(list)).GetProperty("items").EnumerateArray()
+                .Single(i => i.GetProperty("id").GetGuid() == tvId);
+            item.GetProperty("allowBackgroundAppClosing").GetBoolean().Should().BeFalse();
+        }
+
+        using (var on = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { allowBackgroundAppClosing = true }))
+        {
+            on.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await TvApp.JsonAsync(on)).GetProperty("allowBackgroundAppClosing").GetBoolean().Should().BeTrue();
+        }
+
+        var changed = await TvApp.NextCommandAsync(connection);
+        changed.GetProperty("type").GetString().Should().Be("tv.cleanup.config.v1");
+        changed.GetProperty("body").GetProperty("closeBackgroundApps").GetBoolean().Should().BeTrue();
+
+        // Repetir o mesmo valor não grava de novo nem republica.
+        using (var same = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { allowBackgroundAppClosing = true }))
+        {
+            same.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        using (var off = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { allowBackgroundAppClosing = false }))
+        {
+            off.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        await using var db = app.Db();
+        var trail = await db.CommandAudit.AsNoTracking()
+            .Where(a => a.Command == TvCommandNames.CleanupSetting && a.TvId == tvId)
+            .OrderBy(a => a.OccurredAt).Select(a => a.Detail).ToListAsync(Ct);
+        trail.Should().Equal("background-app-closing=on", "background-app-closing=off");
+        (await db.Tvs.AsNoTracking().SingleAsync(t => t.Id == tvId, Ct)).AllowBackgroundAppClosing.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task AutomaticCleanupReports_AreStored_AndListedForTheAdministratorWithTheReasonItSkipped()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        var tvId = await BindDefaultAsync(app);
+        await using var agent = await app.ConnectAndWaitAsync();
+
+        var requestId = Guid.NewGuid();
+        await agent.SendTextAsync(agent.Envelope("tv.cleanup.result.v1", new System.Text.Json.Nodes.JsonObject
+        {
+            ["requestId"] = requestId.ToString(),
+            ["closedApps"] = 0,
+            ["closedPackages"] = new System.Text.Json.Nodes.JsonArray(),
+            ["memoryBeforeMb"] = null,
+            ["memoryAfterMb"] = null,
+            ["freedMb"] = null,
+            ["failedSteps"] = new System.Text.Json.Nodes.JsonArray(),
+            ["at"] = "2026-10-27T12:00:00Z",
+            ["kind"] = "deep",
+            ["trigger"] = "automatic",
+            ["result"] = "skipped",
+            ["reason"] = "media-in-use",
+            ["durationMs"] = 0,
+        }, requestId));
+
+        await TvApp.WaitUntilAsync(() =>
+        {
+            using var db = app.Db();
+            return db.CleanupReports.Any(r => r.TvId == tvId);
+        }, "relatório automático gravado");
+
+        using var response = await app.GetAsync($"/api/v1/tv/tvs/{tvId}/cleanup-reports");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var item = (await TvApp.JsonAsync(response)).GetProperty("items").EnumerateArray().Should().ContainSingle().Subject;
+        (item.GetProperty("kind").GetString(), item.GetProperty("trigger").GetString(), item.GetProperty("result").GetString(),
+            item.GetProperty("reason").GetString(), item.GetProperty("closedApps").GetInt32())
+            .Should().Be(("deep", "automatic", "skipped", "media-in-use", 0));
+
+        using var missing = await app.GetAsync($"/api/v1/tv/tvs/{Guid.NewGuid()}/cleanup-reports");
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task BackgroundAppClosing_RequiresAnAdministratorWithARecentStrongConfirmation()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var guest = await app.NewGuestAsync("Convidado", ["module:tv"], 85);
+
+        using (var withoutConfirmation = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{Guid.NewGuid()}", new { allowBackgroundAppClosing = true }))
+        {
+            withoutConfirmation.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        var defaultTvId = await BindDefaultAsync(app);
+        using (var asGuest = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{defaultTvId}", new { allowBackgroundAppClosing = true }, guest.Login.AccessToken))
+        {
+            asGuest.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+
+        await using var db = app.Db();
+        (await db.Tvs.AsNoTracking().SingleAsync(t => t.Id == defaultTvId, Ct)).AllowBackgroundAppClosing.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task SelectedTv_RestrictsStateCommandsEventsAndShortcutsToTheVisibleTv()
     {
         await using var app = await TvApp.StartAsync(postgres);
