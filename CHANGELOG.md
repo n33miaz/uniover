@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.0](https://github.com/n33miaz/uniover/compare/v0.6.0...v0.7.0) (2026-10-28)
+
+
+### Features
+
+* **training:** auto-alternate exercise poses
+* **training:** clearer sync status button
+* **training:** rework the live session screens
+
+
+### Bug Fixes
+
+* **training:** back returns to the right screen
+* **training:** restore back on exercise detail
+* **training:** only flag a real next routine
+
 ## [0.6.0](https://github.com/n33miaz/uniover/compare/v0.5.2...v0.6.0) (2026-10-27)
 
 
