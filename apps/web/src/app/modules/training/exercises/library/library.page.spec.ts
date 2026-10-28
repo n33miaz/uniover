@@ -69,6 +69,16 @@ describe('ExerciseLibraryPage', () => {
     expect(row.querySelector('.thumb img')?.getAttribute('src')).toContain(
       '/exercise-art/0042-relaxation.svg',
     );
+    expect(getComputedStyle(row.querySelector('.thumb')!).width).toBe('64px');
+  });
+
+  it('uses a neutral placeholder when an exercise has no illustration', async () => {
+    const { fixture, el } = await open();
+    await eventually(fixture, () => expect(rows(el)).toHaveLength(5));
+
+    const plank = rows(el).find((row) => row.textContent?.includes('Prancha'))!;
+    expect(plank.querySelector('.thumb img')).toBeNull();
+    expect(plank.querySelector('.thumb .placeholder app-training-glyph')).not.toBeNull();
   });
 
   it('finds an exercise without accent and without case, and writes the search in the address', async () => {
@@ -184,11 +194,11 @@ describe('ExerciseLibraryPage', () => {
   it('explains an empty catalog and offers to download it again', async () => {
     const { fixture, el } = await open('/treino/exercicios', []);
     await eventually(fixture, () =>
-      expect(el.textContent).toContain('O catálogo ainda não chegou'),
+      expect(el.textContent).toContain('O Catálogo Ainda Não Chegou'),
     );
     const pull = vi.spyOn(TestBed.inject(TrainingSync), 'pullNow').mockResolvedValue();
     const retry = Array.from(el.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
-      button.textContent?.includes('Tentar baixar'),
+      button.textContent?.includes('Tentar Baixar'),
     )!;
     retry.click();
     expect(pull).toHaveBeenCalledOnce();
@@ -198,12 +208,12 @@ describe('ExerciseLibraryPage', () => {
     const { fixture, el } = await open();
     await eventually(fixture, () => expect(rows(el)).toHaveLength(5));
     type(el, 'zzzz');
-    await eventually(fixture, () => expect(el.textContent).toContain('Nenhum exercício achado'));
+    await eventually(fixture, () => expect(el.textContent).toContain('Nenhum Exercício Achado'));
     const create = el.querySelector<HTMLAnchorElement>('.empty a')!;
     expect(create.textContent).toContain('Criar “zzzz”');
     expect(create.getAttribute('href')).toBe('/treino/exercicios/novo?nome=zzzz');
     const clear = Array.from(el.querySelectorAll<HTMLButtonElement>('.empty button')).find(
-      (button) => button.textContent?.includes('Limpar filtros'),
+      (button) => button.textContent?.includes('Limpar Filtros'),
     )!;
     clear.click();
     await eventually(fixture, () => expect(rows(el)).toHaveLength(5));
@@ -217,6 +227,6 @@ describe('ExerciseLibraryPage', () => {
     expect(search(el).labels?.[0]?.textContent).toContain('Buscar exercício');
     expect(el.querySelector('button.filters')?.getAttribute('aria-label')).toBe('Equipamento');
     expect(el.querySelector('a[href$="/novo"]')?.getAttribute('aria-label')).toBe('Novo exercício');
-    expect(el.querySelector('a[href$="/mapa"]')?.getAttribute('aria-label')).toBe('Mapa do corpo');
+    expect(el.querySelector('a[href$="/mapa"]')?.getAttribute('aria-label')).toBe('Mapa do Treino');
   });
 });

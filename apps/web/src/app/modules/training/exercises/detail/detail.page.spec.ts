@@ -85,7 +85,7 @@ describe('ExerciseDetailPage', () => {
       more.click();
       fixture.detectChanges();
       expect(el.querySelectorAll('.steps li')).toHaveLength(5);
-      expect(button(el, 'Ver menos').getAttribute('aria-expanded')).toBe('true');
+      expect(button(el, 'Ver Menos').getAttribute('aria-expanded')).toBe('true');
     });
   });
 
@@ -224,10 +224,10 @@ describe('ExerciseDetailPage', () => {
         ]);
       await eventually(fixture, () => expect(facts()[0]).toEqual(['Carga máxima', '45 kg']));
       expect(facts()[1]).toEqual(['1RM estimado', '54 kg']);
-      // Os três últimos dias, do mais novo ao mais velho; só os dias que bateram a carga máxima levam "recorde".
+      // Os três últimos dias, do mais novo ao mais velho; só os dias que bateram a carga máxima levam "Recorde".
       const days = facts().slice(2);
       expect(days.map(([, value]) => value)).toEqual(['45 kg × 6', '40 kg × 12', '42,5 kg × 8']);
-      expect(days.map(([day]) => /recorde/.test(day ?? ''))).toEqual([true, false, true]);
+      expect(days.map(([day]) => /Recorde/.test(day ?? ''))).toEqual([true, false, true]);
       expect(days.every(([day]) => /^\d{2}\/\d{2}/.test(day ?? ''))).toBe(true);
       const link = el.querySelector<HTMLAnchorElement>('a[href^="/treino/progresso"]')!;
       expect(link.getAttribute('href')).toBe('/treino/progresso?exercise=supino-reto');
@@ -264,8 +264,8 @@ describe('ExerciseDetailPage', () => {
     it('lists the routines and adds the exercise with 3 sets of 8 to 12 repetitions', async () => {
       const { fixture, el } = await open('prancha');
       const routine = await saveRoutine('Treino A', [item('i1', 'agachamento', 0)]);
-      await eventually(fixture, () => expect(button(el, /Adicionar a um treino/)).toBeDefined());
-      button(el, /Adicionar a um treino/).click();
+      await eventually(fixture, () => expect(button(el, /Adicionar a um Treino/)).toBeDefined());
+      button(el, /Adicionar a um Treino/).click();
       await eventually(fixture, () => expect(el.querySelector('dialog')).not.toBeNull());
       expect(el.querySelector('dialog')?.getAttribute('aria-labelledby')).toBeTruthy();
       const row = Array.from(el.querySelectorAll<HTMLButtonElement>('dialog .ui-row')).find(
@@ -291,8 +291,8 @@ describe('ExerciseDetailPage', () => {
 
     it('offers to create a routine with the exercise when there is none', async () => {
       const { fixture, el } = await open('prancha');
-      await eventually(fixture, () => expect(button(el, /Adicionar a um treino/)).toBeDefined());
-      button(el, /Adicionar a um treino/).click();
+      await eventually(fixture, () => expect(button(el, /Adicionar a um Treino/)).toBeDefined());
+      button(el, /Adicionar a um Treino/).click();
       await eventually(fixture, () => expect(el.querySelector('dialog')).not.toBeNull());
       expect(text(el)).toContain('Você ainda não tem rotinas');
       const create = el.querySelector<HTMLAnchorElement>('dialog a')!;
@@ -303,8 +303,8 @@ describe('ExerciseDetailPage', () => {
       const { fixture, el } = await open('prancha');
       const full = Array.from({ length: 40 }, (_, n) => item(`i${n}`, 'agachamento', n));
       await saveRoutine('Cheia', full);
-      await eventually(fixture, () => expect(button(el, /Adicionar a um treino/)).toBeDefined());
-      button(el, /Adicionar a um treino/).click();
+      await eventually(fixture, () => expect(button(el, /Adicionar a um Treino/)).toBeDefined());
+      button(el, /Adicionar a um Treino/).click();
       await eventually(fixture, () => expect(el.querySelector('dialog .ui-row')).not.toBeNull());
       el.querySelector<HTMLButtonElement>('dialog .ui-row')!.click();
       await eventually(fixture, () => expect(text(el)).toContain('máximo de exercícios'));
@@ -354,7 +354,7 @@ describe('ExerciseDetailPage', () => {
       await eventually(fixture, () => expect(text(el)).toContain('ajustado por você'));
       button(el, 'Editar').click();
       fixture.detectChanges();
-      button(el, 'Voltar ao padrão do equipamento').click();
+      button(el, 'Voltar ao Padrão do Equipamento').click();
       await vi.waitFor(async () =>
         expect((await trainingDb.exercises.get('supino-reto'))?.stepKg).toBeNull(),
       );

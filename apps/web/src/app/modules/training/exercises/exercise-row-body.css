@@ -17,10 +17,10 @@
 /* A miniatura orienta a varredura da lista; quando não há arte segura, o glifo neutro não sugere outro movimento. */
 .thumb {
   display: grid;
-  flex: 0 0 44px;
+  flex: 0 0 64px;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 64px;
+  height: 64px;
   overflow: hidden;
   border: 1px solid var(--a-line);
   border-radius: var(--radius);
@@ -40,9 +40,25 @@
   height: 22px;
 }
 
+/* Sem arte confirmada, a moldura continua orientando a lista sem fingir que há uma ilustração do movimento. */
+.placeholder {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--a-accent-soft);
+}
+
+/* Nome longo quebra em até duas linhas: com a miniatura de 64 px sobra pouca largura no celular, e cortar numa linha só esconderia o fim do nome. */
 .name {
+  display: -webkit-box;
+  overflow: hidden;
   font-weight: 650;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 /* Uma linha só: a lista é para escanear, o detalhe fica na ficha. */

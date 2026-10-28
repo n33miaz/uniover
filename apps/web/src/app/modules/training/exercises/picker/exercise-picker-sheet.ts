@@ -96,7 +96,7 @@ export class ExercisePickerSheet {
   readonly picked = output<LocalExercise>();
   readonly closed = output<void>();
 
-  protected readonly heading = $localize`:@@training.picker.title:Adicionar exercício`;
+  protected readonly heading = $localize`:@@training.picker.title:Adicionar Exercício`;
   protected readonly cancelLabel = $localize`:@@training.picker.cancel:Cancelar`;
   protected readonly groupFilterLabel = $localize`:@@training.filter.group:Filtrar por grupo muscular`;
   protected readonly groupOptions: readonly ChipOption[] = [

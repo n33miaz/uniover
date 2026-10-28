@@ -106,11 +106,11 @@ export class ExerciseFormPage {
   protected readonly recordTypes = RECORD_TYPES.map((id) => ({ id, label: recordTypeLabel(id) }));
 
   protected readonly title = this.editing
-    ? $localize`:@@training.form.title-edit:Editar exercício`
-    : $localize`:@@training.form.title-new:Novo exercício`;
+    ? $localize`:@@training.form.title-edit:Editar Exercício`
+    : $localize`:@@training.form.title-new:Novo Exercício`;
   protected readonly backLabel = $localize`:@@training.form.back:Sair do formulário`;
   protected readonly muscleOpen = signal(false);
-  protected readonly muscleHeading = $localize`:@@training.form.muscle-heading:Músculo principal`;
+  protected readonly muscleHeading = $localize`:@@training.form.muscle-heading:Músculo Principal`;
   protected readonly cancelLabel = $localize`:@@training.form.muscle-cancel:Cancelar`;
   protected readonly equipmentGroupLabel = $localize`:@@training.form.equipment-group:Equipamento`;
   protected readonly muscleShown = computed(() => {

@@ -40,10 +40,13 @@
 .name {
   margin: 0;
   min-width: 0;
-  font-size: 1.375rem;
+  /* Título numa linha: a fonte encolhe com a largura da tela; a reticência só entra se ainda assim não couber. */
+  overflow: hidden;
+  font-size: clamp(1.0625rem, 5.2vw, 1.375rem);
   font-weight: 750;
   letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* As imagens compartilham a mesma faixa; os badges ficam centralizados abaixo do conjunto inteiro. */

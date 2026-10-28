@@ -3,7 +3,7 @@
     <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="goBack()">
       <app-training-glyph name="back" />
     </button>
-    <h2 class="title" i18n="@@training.map.title">Mapa do corpo</h2>
+    <h2 class="title" i18n="@@training.map.title">Mapa do Treino</h2>
     @if (!catalogEmpty()) {
       <div class="faces" role="group" [attr.aria-label]="facesLabel" [attr.data-face]="face()">
         <button
@@ -39,7 +39,7 @@
           Os exercícios chegam em instantes e ficam guardados no aparelho.
         </p>
       } @else {
-        <h3 id="map-empty-title" i18n="@@training.map.empty-title">O catálogo ainda não chegou</h3>
+        <h3 id="map-empty-title" i18n="@@training.map.empty-title">O Catálogo Ainda Não Chegou</h3>
         @if (online()) {
           <p i18n="@@training.map.empty-online">
             Na primeira abertura o aparelho baixa os exercícios. Depois disso eles funcionam sem
@@ -53,7 +53,7 @@
         }
         <button type="button" class="primary ui-btn block" (click)="retryDownload()">
           <app-training-glyph name="refresh" />
-          <span i18n="@@training.map.retry">Tentar baixar</span>
+          <span i18n="@@training.map.retry">Tentar Baixar</span>
         </button>
       }
     </section>

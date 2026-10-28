@@ -63,6 +63,7 @@ describe('BodyMapPage', () => {
   it('shows the front of the body, with one zone per muscle and the exercise count in its label', async () => {
     const { fixture, el } = await open();
     await eventually(fixture, () => expect(zone(el, 'chest')).not.toBeNull());
+    expect(el.querySelector('.title')?.textContent?.trim()).toBe('Mapa do Treino');
     expect(zoneMuscles(el)).toEqual([
       'neck',
       'shoulders',
