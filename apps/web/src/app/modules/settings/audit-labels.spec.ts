@@ -62,6 +62,7 @@ const TV_ACTIONS = [
   'tv.wake',
   'tv.power-off',
   'tv.cleanup',
+  'tv.cleanup.setting',
   'tv.apps.refresh',
   'tv.shortcuts.reorder',
   'tv.shortcut.update',
@@ -201,6 +202,9 @@ describe('describeTarget', () => {
     expect(describeTarget(item({ action: 'tv.config.bind', target: 'pc-casa' }))).toBe(
       'Computador pc-casa',
     );
+    expect(
+      describeTarget(item({ action: 'tv.cleanup.setting', target: 'background-app-closing=on' })),
+    ).toBe('Ligado');
   });
 
   it('says what was confirmed with the passkey, in words', () => {

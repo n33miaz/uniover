@@ -30,6 +30,9 @@ export class SystemPage {
   protected readonly limit = signal(2);
   protected readonly offlineMinutes = signal(10);
   protected readonly photos = signal(false);
+  protected readonly lightCleanup = signal(true);
+  protected readonly deepCleanup = signal(true);
+  protected readonly deepCleanupThreshold = signal(160);
   protected readonly busy = signal<SystemSettingKey | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly saved = signal(false);
@@ -62,6 +65,17 @@ export class SystemPage {
       );
       this.photos.set(
         values.find((item) => item.key === 'training.photo-storage-enabled')?.value === true,
+      );
+      this.lightCleanup.set(
+        values.find((item) => item.key === 'tv.light-cleanup-enabled')?.value !== false,
+      );
+      this.deepCleanup.set(
+        values.find((item) => item.key === 'tv.deep-cleanup-enabled')?.value !== false,
+      );
+      this.deepCleanupThreshold.set(
+        Number(
+          values.find((item) => item.key === 'tv.deep-cleanup-memory-threshold-mb')?.value ?? 160,
+        ),
       );
     } catch {
       this.error.set(
@@ -101,6 +115,34 @@ export class SystemPage {
             : problem?.status === 400
               ? $localize`:@@settings.system.config.invalid:Confira o valor e tente de novo.`
               : $localize`:@@settings.system.config.save-error:Não foi possível salvar agora.`,
+      );
+    } finally {
+      this.busy.set(null);
+    }
+  }
+
+  protected async resetCleanupDefaults(): Promise<void> {
+    if (this.busy()) return;
+    this.busy.set('tv.light-cleanup-enabled');
+    this.error.set(null);
+    this.saved.set(false);
+    try {
+      const values = await Promise.all([
+        this.api.resetSystemSetting('tv.light-cleanup-enabled'),
+        this.api.resetSystemSetting('tv.deep-cleanup-enabled'),
+        this.api.resetSystemSetting('tv.deep-cleanup-memory-threshold-mb'),
+      ]);
+      this.settings.update(
+        (items) =>
+          items?.map((item) => values.find((value) => value.key === item.key) ?? item) ?? values,
+      );
+      this.lightCleanup.set(values[0].value === true);
+      this.deepCleanup.set(values[1].value === true);
+      this.deepCleanupThreshold.set(Number(values[2].value));
+      this.saved.set(true);
+    } catch {
+      this.error.set(
+        $localize`:@@settings.system.config.reset-error:Não foi possível voltar à configuração padrão agora.`,
       );
     } finally {
       this.busy.set(null);

@@ -33,6 +33,7 @@ const CASA: TvItem = {
   kind: 'android',
   online: true,
   capabilities: ['tv.remote', 'tv.adb'],
+  allowBackgroundAppClosing: false,
 };
 const AMIGO: TvItem = {
   id: 'tv-amigo',
@@ -42,6 +43,7 @@ const AMIGO: TvItem = {
   kind: 'samsung',
   online: false,
   capabilities: ['tv.remote', 'tv.kind.samsung'],
+  allowBackgroundAppClosing: false,
 };
 
 function config(agents: TvComputer[]): TvConfig {

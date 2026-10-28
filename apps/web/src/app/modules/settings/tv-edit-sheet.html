@@ -89,6 +89,55 @@
       }
     </fieldset>
 
+    @if (!creating()) {
+      <fieldset class="group">
+        <legend class="ui-section-label" i18n="@@settings.system.tv.sheet.cleanup">Limpeza</legend>
+        <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.close-background-hint">
+          Ligado, a limpeza pode fechar apps abertos em segundo plano. Desligado, nenhum app é
+          tocado.
+        </p>
+        <ul class="ui-group">
+          <li>
+            <label class="toggle">
+              <span class="toggle-title" i18n="@@settings.system.tv.sheet.close-background"
+                >Fechar Apps em Segundo Plano</span
+              >
+              <input
+                type="checkbox"
+                role="switch"
+                class="ui-switch"
+                [checked]="closeBackground()"
+                (change)="toggleCloseBackground($event)"
+              />
+            </label>
+          </li>
+        </ul>
+        <p class="reports-title ui-section-label" i18n="@@settings.system.tv.sheet.reports">
+          Últimas limpezas
+        </p>
+        @if (reportsFailed()) {
+          <p class="empty bad" role="alert" i18n="@@settings.system.tv.sheet.reports-failed">
+            Não foi possível carregar as limpezas agora.
+          </p>
+        } @else if (reports(); as list) {
+          @if (list.length === 0) {
+            <p class="empty" i18n="@@settings.system.tv.sheet.reports-empty">
+              Nenhuma limpeza ainda.
+            </p>
+          } @else {
+            <ul class="ui-group reports">
+              @for (report of list; track report.startedAt) {
+                <li class="report">
+                  <span class="report-title">{{ reportTitle(report) }}</span>
+                  <span class="report-outcome">{{ reportOutcome(report) }}</span>
+                </li>
+              }
+            </ul>
+          }
+        }
+      </fieldset>
+    }
+
     @if (canRemove()) {
       @if (confirmingRemove()) {
         <div class="confirm ui-notice warn" role="group" aria-labelledby="tv-remove-title">

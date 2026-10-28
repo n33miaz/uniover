@@ -62,6 +62,39 @@ describe('AppsPanel', () => {
     expect(launcher(1).querySelector('app-tv-app-icon')).not.toBeNull();
   });
 
+  it('shows the most recent cleanup in a short sentence', async () => {
+    store.lastCleanup.set({
+      at: new Date('2026-10-27T16:05:00'),
+      freedMb: 120,
+      result: 'completed',
+      reason: null,
+    });
+    await render();
+    expect(root.textContent).toContain('Limpeza feita às 16:05, liberou 120 MB.');
+  });
+
+  it('says a skipped cleanup was skipped because the TV was in use, or why otherwise', async () => {
+    store.lastCleanup.set({
+      at: new Date('2026-10-27T16:05:00'),
+      freedMb: null,
+      result: 'skipped',
+      reason: 'media-in-use',
+    });
+    await render();
+    expect(root.textContent).toContain('Limpeza pulada: TV em uso.');
+  });
+
+  it('names the model reason when the cleanup was skipped on a Samsung', async () => {
+    store.lastCleanup.set({
+      at: new Date('2026-10-27T16:05:00'),
+      freedMb: null,
+      result: 'skipped',
+      reason: 'model-unconfirmed',
+    });
+    await render();
+    expect(root.textContent).toContain('Limpeza pulada: modelo não confirmado.');
+  });
+
   it('names an app by the owner name, then by the name the agent publishes, then "Atalho n"', async () => {
     store.shortcuts.set([
       makeShortcut(1, { customLabel: 'Sala', tvLabel: 'YouTube' }),

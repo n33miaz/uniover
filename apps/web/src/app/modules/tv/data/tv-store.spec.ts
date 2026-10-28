@@ -64,6 +64,7 @@ describe('TvStore', () => {
     cancelPowerSchedule: vi.fn(),
     launch: vi.fn(),
     cleanup: vi.fn(),
+    latestCleanup: vi.fn(),
     refreshShortcuts: vi.fn(),
     updateShortcut: vi.fn(),
     reorderShortcuts: vi.fn(),
@@ -141,6 +142,7 @@ describe('TvStore', () => {
       memoryAfterMb: 597,
       failedSteps: [],
     });
+    api.latestCleanup.mockResolvedValue(null);
     api.refreshShortcuts.mockResolvedValue(undefined);
     configure();
     // Cada conta tem o próprio último estado guardado: sem conta identificada nada se guarda nem se lê.
@@ -793,6 +795,13 @@ describe('TvStore', () => {
         text: 'Fechou 6 apps e liberou cerca de 380 MB.',
       });
       expect(store.cleaning()).toBe(false);
+    });
+
+    it('keeps the last cleanup result for the control to show', async () => {
+      await started();
+      await store.cleanup();
+      expect(store.lastCleanup()?.freedMb).toBe(383);
+      expect(store.lastCleanup()?.at).toBeInstanceOf(Date);
     });
 
     it('is "cleaning" while it waits and the rest of the control keeps working', async () => {

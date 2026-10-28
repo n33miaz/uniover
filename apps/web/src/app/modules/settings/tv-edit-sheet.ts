@@ -20,8 +20,9 @@ import {
   onDialogBackdropClick,
   restoreDialogFocus,
 } from '../../shared/ui/dialog-motion';
+import { cleanupKindText, cleanupOutcomeText } from '../../shared/tv-cleanup-text';
 import { SettingsGlyph } from './settings-glyph';
-import { SystemApi, TvComputer, TvItem } from './system-api';
+import { SystemApi, TvCleanupReportItem, TvComputer, TvItem } from './system-api';
 
 /** Tamanho máximo do nome da TV, o mesmo da API. */
 const NAME_MAX = 60;
@@ -74,6 +75,15 @@ export class TvEditSheet implements OnInit {
     return free.length === 1 ? free[0].slug : null;
   });
 
+  /** Fechar apps em segundo plano na limpeza desta TV. Desligado por padrão. */
+  protected readonly closeBackground = linkedSignal(
+    () => this.tv()?.allowBackgroundAppClosing ?? false,
+  );
+
+  /** As últimas limpezas desta TV (`null` até chegarem); só quem edita uma TV que já existe as vê. */
+  protected readonly reports = signal<readonly TvCleanupReportItem[] | null>(null);
+  protected readonly reportsFailed = signal(false);
+
   protected readonly people = signal<readonly GuestSummary[] | null>(null);
   /** As contas marcadas e as que já estavam (`null` até a lista da TV chegar: sem ela não há o que comparar). */
   protected readonly members = signal<readonly string[]>([]);
@@ -109,6 +119,11 @@ export class TvEditSheet implements OnInit {
   private readonly agentChanged = computed(
     () => this.agent() !== null && this.agent() !== this.current()?.agentSlug,
   );
+  private readonly closeBackgroundChanged = computed(
+    () =>
+      !this.creating() &&
+      this.closeBackground() !== (this.current()?.allowBackgroundAppClosing ?? false),
+  );
   private readonly membersChanged = computed(() => {
     const base = this.savedMembers();
     return base !== null && !sameSet(this.members(), base);
@@ -118,7 +133,12 @@ export class TvEditSheet implements OnInit {
     const name = this.name().trim();
     if (name === '' || name.length > NAME_MAX) return false;
     if (this.creating()) return this.agent() !== null;
-    return this.nameChanged() || this.agentChanged() || this.membersChanged();
+    return (
+      this.nameChanged() ||
+      this.agentChanged() ||
+      this.closeBackgroundChanged() ||
+      this.membersChanged()
+    );
   });
 
   constructor() {
@@ -135,6 +155,24 @@ export class TvEditSheet implements OnInit {
   /** Só aqui os inputs já chegaram: a TV a editar decide de quem é a lista de pessoas a ler. */
   ngOnInit(): void {
     void this.loadPeople();
+    void this.loadReports();
+  }
+
+  /** A linha de uma limpeza: o tipo e quando foi, e embaixo o que fez ou por que foi pulada. */
+  protected reportTitle(report: TvCleanupReportItem): string {
+    const when = new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(report.startedAt));
+    return report.trigger === 'automatic'
+      ? $localize`:@@settings.system.tv.sheet.report-auto:${cleanupKindText(report.kind)}:kind: automática · ${when}:when:`
+      : $localize`:@@settings.system.tv.sheet.report-manual:${cleanupKindText(report.kind)}:kind: manual · ${when}:when:`;
+  }
+
+  protected reportOutcome(report: TvCleanupReportItem): string {
+    return cleanupOutcomeText(report);
   }
 
   protected platform(computer: TvComputer): string {
@@ -165,6 +203,10 @@ export class TvEditSheet implements OnInit {
     this.members.update((list) =>
       on ? (list.includes(id) ? list : [...list, id]) : list.filter((item) => item !== id),
     );
+  }
+
+  protected toggleCloseBackground(event: Event): void {
+    this.closeBackground.set((event.target as HTMLInputElement).checked);
   }
 
   protected setName(event: Event): void {
@@ -215,10 +257,13 @@ export class TvEditSheet implements OnInit {
         this.current.set(tv);
         // Uma TV nova não tem ninguém: o que estiver marcado agora ainda é só rascunho.
         this.savedMembers.set([]);
-      } else if (this.nameChanged() || this.agentChanged()) {
+      } else if (this.nameChanged() || this.agentChanged() || this.closeBackgroundChanged()) {
         tv = await this.api.updateTv(tv.id, {
           ...(this.nameChanged() ? { name: this.name().trim() } : {}),
           ...(this.agentChanged() ? { agentSlug: this.agent()! } : {}),
+          ...(this.closeBackgroundChanged()
+            ? { allowBackgroundAppClosing: this.closeBackground() }
+            : {}),
         });
         this.dirty = true;
         this.current.set(tv);
@@ -234,6 +279,16 @@ export class TvEditSheet implements OnInit {
       this.error.set(this.errorText(problemOf(error), step));
     } finally {
       this.busy.set(false);
+    }
+  }
+
+  private async loadReports(): Promise<void> {
+    const tv = this.current();
+    if (!tv) return;
+    try {
+      this.reports.set(await this.api.tvCleanupReports(tv.id));
+    } catch {
+      this.reportsFailed.set(true);
     }
   }
 

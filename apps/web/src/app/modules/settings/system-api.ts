@@ -30,6 +30,24 @@ export interface TvItem {
   readonly kind: 'android' | 'samsung' | null;
   readonly online: boolean;
   readonly capabilities: readonly string[];
+  /** A limpeza pode fechar apps em segundo plano nesta TV. Desligado até o administrador ligar. */
+  readonly allowBackgroundAppClosing: boolean;
+}
+
+/** Uma limpeza da TV como o Sistema a mostra: o que fez ou por que foi pulada (`reason` é um código estável). */
+export interface TvCleanupReportItem {
+  readonly kind: string;
+  readonly trigger: string;
+  readonly startedAt: string;
+  readonly durationMs: number;
+  readonly memoryBeforeMb: number | null;
+  readonly memoryAfterMb: number | null;
+  readonly closedApps: number;
+  readonly closedPackages: readonly string[];
+  readonly backgroundProcesses: number | null;
+  readonly sessionOpenMs: number | null;
+  readonly result: string;
+  readonly reason: string | null;
 }
 
 const BASE = `${APP_CONFIG.apiBase}/v1/tv`;
@@ -39,7 +57,10 @@ export type SystemSettingKey =
   | 'training.off-contact'
   | 'devices.max-per-guest'
   | 'devices.agent-offline-minutes'
-  | 'training.photo-storage-enabled';
+  | 'training.photo-storage-enabled'
+  | 'tv.light-cleanup-enabled'
+  | 'tv.deep-cleanup-enabled'
+  | 'tv.deep-cleanup-memory-threshold-mb';
 
 export interface SystemSettingValue {
   readonly key: SystemSettingKey;
@@ -72,6 +93,7 @@ function readTv(value: unknown): TvItem | null {
     agentSlug: typeof dto['agentSlug'] === 'string' ? dto['agentSlug'] : null,
     kind: dto['kind'] === 'android' || dto['kind'] === 'samsung' ? dto['kind'] : null,
     online: dto['online'] === true,
+    allowBackgroundAppClosing: dto['allowBackgroundAppClosing'] === true,
     capabilities: Array.isArray(dto['capabilities'])
       ? dto['capabilities'].filter((item): item is string => typeof item === 'string')
       : [],
@@ -125,6 +147,12 @@ export class SystemApi {
     );
   }
 
+  resetSystemSetting(key: SystemSettingKey): Promise<SystemSettingValue> {
+    return firstValueFrom(
+      this.http.delete<SystemSettingValue>(`${SETTINGS_BASE}/${encodeURIComponent(key)}`),
+    );
+  }
+
   tvConfig(): Promise<TvConfig> {
     return firstValueFrom(this.http.get<TvConfig>(`${BASE}/config`));
   }
@@ -147,14 +175,30 @@ export class SystemApi {
     return readTvOrThrow(await firstValueFrom(this.http.post(`${BASE}/tvs`, { agentSlug, name })));
   }
 
-  /** Muda só o que vier (nome e/ou computador). Exige a passkey. */
-  async updateTv(id: string, change: { name?: string; agentSlug?: string }): Promise<TvItem> {
-    const body: Record<string, string> = {};
+  /** Muda só o que vier (nome, computador e/ou fechar apps em segundo plano). Exige a passkey. */
+  async updateTv(
+    id: string,
+    change: { name?: string; agentSlug?: string; allowBackgroundAppClosing?: boolean },
+  ): Promise<TvItem> {
+    const body: Record<string, string | boolean> = {};
     if (change.name !== undefined) body['name'] = change.name;
     if (change.agentSlug !== undefined) body['agentSlug'] = change.agentSlug;
+    if (change.allowBackgroundAppClosing !== undefined)
+      body['allowBackgroundAppClosing'] = change.allowBackgroundAppClosing;
     return readTvOrThrow(
       await firstValueFrom(this.http.patch(`${BASE}/tvs/${encodeURIComponent(id)}`, body)),
     );
+  }
+
+  /** As últimas limpezas da TV, da mais nova para a mais antiga. */
+  async tvCleanupReports(id: string): Promise<TvCleanupReportItem[]> {
+    const dto = await firstValueFrom(
+      this.http.get<{ items?: TvCleanupReportItem[] }>(
+        `${BASE}/tvs/${encodeURIComponent(id)}/cleanup-reports`,
+      ),
+    );
+    if (!Array.isArray(dto?.items)) throw new Error('Relatórios de limpeza em formato inesperado.');
+    return dto.items;
   }
 
   /** Remove a TV (a padrão não: 409). Exige a passkey. */

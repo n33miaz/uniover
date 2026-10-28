@@ -50,6 +50,7 @@ const TV: TvItem = {
   kind: 'samsung',
   online: true,
   capabilities: ['tv.remote', 'tv.kind.samsung'],
+  allowBackgroundAppClosing: false,
 };
 const DEFAULT_TV: TvItem = { ...TV, id: 'tv-1', name: 'Sala', isDefault: true, kind: 'android' };
 
@@ -72,6 +73,7 @@ describe('TvEditSheet', () => {
     updateTv: vi.fn(),
     deleteTv: vi.fn(),
     tvMembers: vi.fn(),
+    tvCleanupReports: vi.fn(),
     setTvMembers: vi.fn(),
   };
   const authApi = { guests: vi.fn() };
@@ -90,6 +92,7 @@ describe('TvEditSheet', () => {
     }));
     api.deleteTv.mockReset().mockResolvedValue(undefined);
     api.tvMembers.mockReset().mockResolvedValue(['g1']);
+    api.tvCleanupReports.mockReset().mockResolvedValue([]);
     api.setTvMembers
       .mockReset()
       .mockImplementation(async (_id: string, ids: readonly string[]) => [...ids]);
@@ -319,6 +322,85 @@ describe('TvEditSheet', () => {
       expect(api.updateTv).not.toHaveBeenCalled();
       expect(api.setTvMembers).toHaveBeenCalledWith('tv-2', ['g2']);
       expect(closed).toEqual([true]);
+    });
+
+    it('offers the background app closing switch off by default, only when editing', async () => {
+      const edit = await render(TV, [OWN]);
+      const toggle = edit.el.querySelector<HTMLInputElement>('label.toggle input')!;
+      expect(toggle.checked).toBe(false);
+      expect(edit.el.querySelector('label.toggle .toggle-title')?.textContent?.trim()).toBe(
+        'Fechar Apps em Segundo Plano',
+      );
+      expect(edit.button('Salvar').disabled).toBe(true);
+
+      const creating = await render(null, [OWN]);
+      expect(creating.el.querySelector('label.toggle')).toBeNull();
+    });
+
+    it('sends only the background app closing option when only the switch changed', async () => {
+      const { el, save, settle, closed } = await render(TV, [OWN]);
+      el.querySelector<HTMLInputElement>('label.toggle input')!.click();
+      await settle();
+      await save();
+      expect(api.updateTv).toHaveBeenCalledWith('tv-2', { allowBackgroundAppClosing: true });
+      expect(api.setTvMembers).not.toHaveBeenCalled();
+      expect(closed).toEqual([true]);
+    });
+
+    it('starts the switch on for a TV that already allows it, and sends off when it is flipped back', async () => {
+      const { el, save, settle } = await render({ ...TV, allowBackgroundAppClosing: true }, [OWN]);
+      const toggle = el.querySelector<HTMLInputElement>('label.toggle input')!;
+      expect(toggle.checked).toBe(true);
+      toggle.click();
+      await settle();
+      await save();
+      expect(api.updateTv).toHaveBeenCalledWith('tv-2', { allowBackgroundAppClosing: false });
+    });
+
+    it('lists the latest cleanups with what each one did or why it was skipped', async () => {
+      api.tvCleanupReports.mockResolvedValue([
+        {
+          kind: 'light',
+          trigger: 'automatic',
+          startedAt: '2026-10-27T11:05:00Z',
+          durationMs: 800,
+          memoryBeforeMb: 200,
+          memoryAfterMb: 260,
+          closedApps: 0,
+          closedPackages: [],
+          backgroundProcesses: 12,
+          sessionOpenMs: null,
+          result: 'completed',
+          reason: null,
+        },
+        {
+          kind: 'deep',
+          trigger: 'automatic',
+          startedAt: '2026-10-27T10:05:00Z',
+          durationMs: 0,
+          memoryBeforeMb: null,
+          memoryAfterMb: null,
+          closedApps: 0,
+          closedPackages: [],
+          backgroundProcesses: null,
+          sessionOpenMs: null,
+          result: 'skipped',
+          reason: 'media-in-use',
+        },
+      ]);
+      const { el } = await render(TV, [OWN]);
+      expect(api.tvCleanupReports).toHaveBeenCalledWith('tv-2');
+      const lines = Array.from(el.querySelectorAll('.report .report-outcome')).map((n) =>
+        n.textContent?.trim(),
+      );
+      expect(lines).toEqual(['Liberou 60 MB', 'Pulada: TV em uso']);
+      expect(el.querySelector('.report .report-title')?.textContent).toContain('Leve automática');
+    });
+
+    it('does not ask for cleanups when creating a TV', async () => {
+      const { el } = await render(null, [OWN]);
+      expect(api.tvCleanupReports).not.toHaveBeenCalled();
+      expect(el.querySelector('.report')).toBeNull();
     });
 
     it('treats the same people in another order as no change', async () => {
