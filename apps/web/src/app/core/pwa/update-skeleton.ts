@@ -1,4 +1,5 @@
-import { Component, inject } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { Component, computed, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   NavigationCancel,
@@ -22,45 +23,77 @@ import { PwaUpdateService } from './pwa-update.service';
     @if (pwa.showSkeleton()) {
       <div class="overlay" role="status" [animate.leave]="'leaving'">
         <span class="ui-visually-hidden" i18n="@@pwa.updating">Atualizando…</span>
-        <div class="page" aria-hidden="true">
-          <div class="top">
-            <span class="bone back"></span>
-            <span class="bone title"></span>
-            <span class="bone avatar"></span>
-          </div>
-          <div class="hero">
-            <span class="bone line w40"></span>
-            <span class="bone line big w80"></span>
-            <span class="bone line w60"></span>
-            <span class="bone pill"></span>
-          </div>
-          <div class="grid">
-            @for (card of cards; track card) {
-              <div class="card">
-                <span class="bone icon"></span>
-                <span class="bone line w70"></span>
+        @if (home()) {
+          <div class="page home" aria-hidden="true">
+            <div class="home-hero">
+              <span class="home-hero-text">
                 <span class="bone line w40"></span>
-              </div>
-            }
-          </div>
-          <div class="list">
-            @for (row of rows; track row) {
-              <div class="row">
-                <span class="bone icon round"></span>
-                <span class="lines">
+                <span class="bone line big w80"></span>
+              </span>
+              <span class="bone time"></span>
+            </div>
+            <div class="shortcuts">
+              @for (shortcut of shortcuts; track shortcut) {
+                <div class="shortcut">
+                  <span class="bone tile"></span>
+                  <span class="bone line w40"></span>
+                </div>
+              }
+            </div>
+            <div class="section-head">
+              <span class="bone line big w30"></span>
+              <span class="bone line w20"></span>
+            </div>
+            <div class="modules">
+              @for (module of modules; track module) {
+                <div class="module">
+                  <span class="bone app"></span>
                   <span class="bone line w60"></span>
-                  <span class="bone line w30"></span>
-                </span>
-                <span class="bone chip"></span>
-              </div>
+                </div>
+              }
+            </div>
+          </div>
+        } @else {
+          <div class="page" aria-hidden="true">
+            <div class="top">
+              <span class="bone back"></span>
+              <span class="bone title"></span>
+              <span class="bone avatar"></span>
+            </div>
+            <div class="hero">
+              <span class="bone line w40"></span>
+              <span class="bone line big w80"></span>
+              <span class="bone line w60"></span>
+              <span class="bone pill"></span>
+            </div>
+            <div class="grid">
+              @for (card of cards; track card) {
+                <div class="card">
+                  <span class="bone icon"></span>
+                  <span class="bone line w70"></span>
+                  <span class="bone line w40"></span>
+                </div>
+              }
+            </div>
+            <div class="list">
+              @for (row of rows; track row) {
+                <div class="row">
+                  <span class="bone icon round"></span>
+                  <span class="lines">
+                    <span class="bone line w60"></span>
+                    <span class="bone line w30"></span>
+                  </span>
+                  <span class="bone chip"></span>
+                </div>
+              }
+            </div>
+          </div>
+          <div class="tabs" aria-hidden="true">
+            @for (tab of tabs; track tab) {
+              <span class="bone tab"></span>
             }
           </div>
-        </div>
-        <div class="tabs" aria-hidden="true">
-          @for (tab of tabs; track tab) {
-            <span class="bone tab"></span>
-          }
-        </div>
+        }
       </div>
     }
   `,
@@ -174,6 +207,102 @@ import { PwaUpdateService } from './pwa-update.service';
       height: 28px;
       border-radius: var(--radius-pill);
     }
+    /* Variante da Início: mesma coluna, mesmas medidas e mesmos raios da tela real, para a troca não dar salto. */
+    .page.home {
+      max-width: calc(46rem + 2 * var(--gutter));
+      padding-top: calc(var(--gutter) + env(safe-area-inset-top, 0px));
+      padding-bottom: calc(var(--gutter) + env(safe-area-inset-bottom, 0px));
+      gap: var(--space-4);
+    }
+    .home-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: var(--space-3);
+      min-height: clamp(136px, 21vw, 172px);
+      padding: clamp(var(--space-5), 3vw, var(--space-6));
+      border: 1px solid color-mix(in srgb, var(--a-accent) 22%, var(--a-line));
+      border-radius: var(--radius-xl);
+      background: var(--a-hero);
+      box-shadow: var(--shadow-2);
+    }
+    .home-hero-text {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+    .time {
+      width: clamp(76px, 18vw, 104px);
+      height: clamp(28px, 7vw, 36px);
+      border-radius: var(--radius-sm);
+    }
+    .shortcuts,
+    .modules {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-3);
+    }
+    .shortcut,
+    .module {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--a-line);
+      border-radius: var(--radius);
+      background: var(--a-surface);
+      box-shadow: var(--shadow-1);
+    }
+    .shortcut {
+      gap: var(--space-2);
+      min-height: 64px;
+      padding: var(--space-2) var(--space-3);
+    }
+    .shortcut .line {
+      flex: none;
+      width: 5.5rem;
+    }
+    .tile {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-xs);
+    }
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      min-height: var(--tap);
+      margin-top: var(--space-1);
+    }
+    .section-head .big {
+      width: 7rem;
+      height: 22px;
+    }
+    .section-head .w20 {
+      width: 3.5rem;
+    }
+    .module {
+      flex-direction: column;
+      gap: var(--space-3);
+      min-height: 188px;
+      padding: var(--space-4) var(--space-3);
+    }
+    .module .line {
+      width: 60%;
+    }
+    .app {
+      width: 56px;
+      height: 56px;
+      border-radius: var(--radius-sm);
+    }
+    .w20 {
+      width: 20%;
+    }
+    @media (min-width: 600px) {
+      .modules {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
     .bone {
       display: block;
       position: relative;
@@ -268,6 +397,20 @@ import { PwaUpdateService } from './pwa-update.service';
 })
 export class UpdateSkeleton {
   protected readonly pwa = inject(PwaUpdateService);
+  private readonly win = inject(DOCUMENT).defaultView;
+
+  /**
+   * Na Início (a raiz) o esqueleto reproduz a tela; nas demais rotas, um desenho genérico de página. Lê o endereço do
+   * navegador, e não o do roteador: o roteador ainda diz "/" antes de a primeira navegação terminar, e
+   * quem recarrega em "/tv" não pode ver a Início por baixo do esqueleto.
+   */
+  protected readonly home = computed(() => {
+    // Relê o endereço só quando o esqueleto aparece: um redirecionamento no meio da espera não troca o desenho.
+    this.pwa.showSkeleton();
+    return this.win?.location.pathname === '/';
+  });
+  protected readonly shortcuts = [1, 2];
+  protected readonly modules = [1, 2, 3, 4, 5, 6];
   protected readonly cards = [1, 2, 3, 4];
   protected readonly rows = [1, 2, 3, 4];
   protected readonly tabs = [1, 2, 3, 4];
