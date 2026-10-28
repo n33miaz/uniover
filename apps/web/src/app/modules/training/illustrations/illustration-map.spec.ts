@@ -30,6 +30,18 @@ interface SourceExercise {
 }
 
 const entries = Object.entries(EXERCISE_ILLUSTRATIONS);
+
+// Exercícios que só têm o par em PNG na origem (sem o par de SVG).
+const PNG_ONLY = [
+  'desenvolvimento-com-halteres',
+  'puxada-aberta-na-polia',
+  'desenvolvimento-arnold',
+  'desenvolvimento-na-maquina',
+  'desenvolvimento-sentado-com-barra',
+  'elevacao-frontal-com-barra',
+  'crucifixo-na-maquina-voador',
+  'supino-inclinado-articulado-na-maquina',
+];
 const seedSlugs = new Set(
   (JSON.parse(readFileSync(SEED, 'utf8')) as SeedFile).exercises.map((row) => row.slug),
 );
@@ -137,7 +149,11 @@ describe('illustration map', () => {
       'wide-grip-lat-pull-down-2.png',
       'wide-grip-lat-pull-down-1.png',
     ]);
-    for (const slug of ['desenvolvimento-com-halteres', 'puxada-aberta-na-polia']) {
+    expect(illustrationFor('elevacao-frontal-com-barra')?.frames).toEqual([
+      'front-barbell-raises-2.png',
+      'front-barbell-raises-1.png',
+    ]);
+    for (const slug of PNG_ONLY) {
       const entry = illustrationFor(slug)!;
       expect(entry.sourceUrl).toContain(`/src/images-web/${entry.frames[0]}`);
     }
@@ -146,7 +162,6 @@ describe('illustration map', () => {
   it('leaves movements without an exact pair unillustrated', () => {
     for (const slug of [
       'crucifixo-inverso-na-maquina',
-      'crucifixo-na-maquina-voador',
       'remada-apoiada-no-banco-inclinado-com-halteres',
       'stiff-com-halteres',
       'supino-articulado-na-maquina',
