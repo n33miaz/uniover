@@ -116,6 +116,7 @@ export class PhotoStore {
       height: encoded.height,
       bytes: data.byteLength,
       addedAt: now,
+      hidden: false,
     };
     try {
       await this.db.photos.add(row);
@@ -134,6 +135,7 @@ export class PhotoStore {
   async list(): Promise<PhotoInfo[]> {
     const rows = await this.db.photos.toArray();
     return rows
+      .filter((row) => row.hidden !== true)
       .map((row) => this.info(row))
       .sort((a, b) => b.takenOn.localeCompare(a.takenOn) || b.addedAt - a.addedAt);
   }
@@ -143,6 +145,26 @@ export class PhotoStore {
     const row = await this.db.photos.get(id);
     if (row === undefined) return null;
     return `data:${row.type};base64,${toBase64(new Uint8Array(row.data))}`;
+  }
+
+  /** A linha local, com bytes, para o envio binário autenticado. */
+  async read(id: string): Promise<LocalPhoto | undefined> {
+    return this.db.photos.get(id);
+  }
+
+  /** Guarda no cache local uma foto obtida da API privada. */
+  async cache(row: LocalPhoto): Promise<void> {
+    if ((await this.db.photos.get(row.id)) !== undefined) return;
+    await this.db.photos.add(row);
+    this.touch();
+  }
+
+  /** Oculta uma foto enquanto sua exclusão remota espera a próxima conexão. */
+  async hide(id: string): Promise<void> {
+    const row = await this.db.photos.get(id);
+    if (row === undefined || row.hidden === true) return;
+    await this.db.photos.put({ ...row, hidden: true });
+    this.touch();
   }
 
   /** Apaga a foto do aparelho. Devolve `false` se não havia foto com esse id. */

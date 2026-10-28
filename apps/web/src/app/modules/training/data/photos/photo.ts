@@ -21,10 +21,21 @@ export interface LocalPhoto {
   readonly bytes: number;
   /** Instante (ms) em que entrou neste aparelho; desempata fotos do mesmo dia. */
   readonly addedAt: number;
+  /** Lápide local enquanto uma exclusão da nuvem espera conexão. */
+  readonly hidden?: boolean;
 }
 
 /** A foto sem os bytes: é o que a tela recebe na lista (os bytes só saem pelo `dataUrl` e pelo `shareFile`). */
 export type PhotoInfo = Omit<LocalPhoto, 'data'>;
+
+/** Estado persistido da fila binária; diferente da fila JSON usada pelos demais dados do Treino. */
+export type PhotoCloudState = 'pending' | 'uploading' | 'error' | 'cloud' | 'deleting';
+
+export interface LocalPhotoSync {
+  readonly id: string;
+  readonly state: PhotoCloudState;
+  readonly error: boolean;
+}
 
 /** Quanto as fotos ocupam e quanto o navegador diz que ainda cabe. Os campos da cota vêm `null` quando o navegador não sabe. */
 export interface PhotoUsage {

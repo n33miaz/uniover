@@ -58,7 +58,7 @@ test('prioriza sinais e mantém calorias e fotos acessíveis', async ({ page, co
   await page.getByRole('button', { name: 'Fotos' }).click();
   const photos = page.locator('app-body-photo-panel');
   await expect(photos.getByRole('heading', { name: 'Fotos de Progresso' })).toBeVisible();
-  await expect(photos.getByText('Tirar Foto', { exact: true })).toBeVisible();
+  await expect(photos.getByText('Tirar ou Escolher Foto', { exact: true })).toBeVisible();
   const png = Buffer.from(
     await page.evaluate(() => {
       const canvas = document.createElement('canvas');
@@ -113,4 +113,41 @@ test('prioriza sinais e mantém calorias e fotos acessíveis', async ({ page, co
   await expectNoHorizontalScroll(page);
   const { violations } = await new AxeBuilder({ page }).analyze();
   expect(violations).toEqual([]);
+});
+
+test('envia uma foto nova para a nuvem privada depois da aceitação explícita', async ({
+  page,
+  context,
+}) => {
+  const server = await startTraining(context, page);
+  await openTraining(page, '/treino/corpo');
+  await page.getByRole('button', { name: 'Entendi' }).click();
+  await page.getByRole('button', { name: 'Fotos', exact: true }).click();
+  const photos = page.locator('app-body-photo-panel');
+  await photos.getByRole('button', { name: 'Ativar Fotos na Nuvem' }).click();
+  await expect(photos.getByText('Nuvem privada ativa neste aparelho.')).toBeVisible();
+
+  const png = Buffer.from(
+    await page.evaluate(() => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 2;
+      canvas.height = 2;
+      const context = canvas.getContext('2d');
+      if (context === null) throw new Error('Canvas indisponível para a imagem de teste.');
+      context.fillStyle = '#457b62';
+      context.fillRect(0, 0, 2, 2);
+      return canvas.toDataURL('image/png').split(',')[1];
+    }),
+    'base64',
+  );
+  await photos.locator('input[type="file"]').setInputFiles({
+    name: 'progresso.png',
+    mimeType: 'image/png',
+    buffer: png,
+  });
+
+  await expect.poll(() => server.writes('progress-photos'), { timeout: 15_000 }).toBe(1);
+  await expect(photos.getByText('Na nuvem privada', { exact: true })).toBeVisible();
+  await expect(photos.getByRole('button', { name: 'Enviar Fotos Deste Aparelho' })).toHaveCount(0);
+  await expect(photos.getByText(/ficam guardadas na nuvem privada/)).toBeVisible();
 });

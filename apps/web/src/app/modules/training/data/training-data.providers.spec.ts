@@ -18,6 +18,7 @@ import { MealRepository } from './meals/meal-repository';
 import { MealsResourceSync } from './meals/meals-resource-sync';
 import { ExportService } from './export/export-service';
 import { PhotoStore } from './photos/photo-store';
+import { ProgressPhotoSync } from './photos/progress-photo-sync';
 import { ProgressRepository } from './progress/progress-repository';
 import { RoutineRepository } from './routines/routine-repository';
 import { ProgramResourceSync, RoutinesResourceSync } from './routines/routines-resource-sync';
@@ -54,6 +55,7 @@ describe('provideTrainingData', () => {
     expect(TestBed.inject(BodyRepository)).toBeInstanceOf(BodyRepository);
     expect(TestBed.inject(ProfileRepository)).toBeInstanceOf(ProfileRepository);
     expect(TestBed.inject(PhotoStore)).toBeInstanceOf(PhotoStore);
+    expect(TestBed.inject(ProgressPhotoSync)).toBeInstanceOf(ProgressPhotoSync);
 
     const resources = TestBed.inject(TRAINING_RESOURCE_SYNCS);
     expect(resources).toHaveLength(11);

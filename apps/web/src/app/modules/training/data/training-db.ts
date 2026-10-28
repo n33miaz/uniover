@@ -8,7 +8,7 @@ import type { LocalExercise } from './catalog/exercise';
 import type { LocalFood } from './foods/food';
 import type { LocalMealEntry } from './meals/meal';
 import type { LocalGoal } from './goals/goal';
-import type { LocalPhoto } from './photos/photo';
+import type { LocalPhoto, LocalPhotoSync } from './photos/photo';
 import type {
   LocalAssessmentDocument,
   LocalPhysicalAssessment,
@@ -55,6 +55,7 @@ export const TRAINING_TABLES = [
   'bodyEntries',
   'bodyProfile',
   'photos',
+  'photoSync',
   'physicalAssessments',
   'assessmentDocuments',
   'foods',
@@ -140,6 +141,11 @@ export const TRAINING_SCHEMA_V9 = {
   calendarEntries: 'id, dayKey, updatedAt, deletedAt',
 } as const;
 
+/** Esquema da versão 10: intenções de envio binário das fotos de progresso, isoladas por conta. */
+export const TRAINING_SCHEMA_V10 = {
+  photoSync: 'id, state',
+} as const;
+
 export interface TrainingMetaRow {
   readonly key: string;
   readonly value: unknown;
@@ -168,6 +174,7 @@ export class TrainingDb extends Dexie {
   declare bodyEntries: EntityTable<LocalBodyEntry, 'id'>;
   declare bodyProfile: EntityTable<LocalBodyProfile, 'id'>;
   declare photos: EntityTable<LocalPhoto, 'id'>;
+  declare photoSync: EntityTable<LocalPhotoSync, 'id'>;
   declare physicalAssessments: EntityTable<LocalPhysicalAssessment, 'id'>;
   declare assessmentDocuments: EntityTable<LocalAssessmentDocument, 'id'>;
   declare calendarEntries: EntityTable<LocalCalendarEntry, 'id'>;
@@ -183,6 +190,7 @@ export class TrainingDb extends Dexie {
     this.version(7).stores(TRAINING_SCHEMA_V7);
     this.version(8).stores(TRAINING_SCHEMA_V8);
     this.version(9).stores(TRAINING_SCHEMA_V9);
+    this.version(10).stores(TRAINING_SCHEMA_V10);
   }
 }
 

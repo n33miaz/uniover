@@ -6,8 +6,9 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import type { PhotoInfo, PhotoUsage } from '../data/photos/photo';
+import type { PhotoCloudState, PhotoInfo, PhotoUsage } from '../data/photos/photo';
 import { PhotoStore } from '../data/photos/photo-store';
+import { ProgressPhotoSync } from '../data/photos/progress-photo-sync';
 import { TrainingSheet } from '../shell/training-sheet';
 import { formatBytes, formatFullDate } from './body-text';
 
@@ -21,7 +22,47 @@ interface DisplayPhoto extends PhotoInfo {
   template: `
     <section class="photos" aria-labelledby="photos-title">
       <h2 id="photos-title" i18n="@@training.body.photos.title">Fotos de Progresso</h2>
-      <p class="local-only" i18n="@@training.body.photos.local">Só Neste Aparelho</p>
+      @if (!sync.accepted()) {
+        <section class="cloud-choice" aria-labelledby="cloud-title">
+          <h3 id="cloud-title" i18n="@@training.body.photos.cloud-title">Fotos na Nuvem</h3>
+          <p i18n="@@training.body.photos.cloud-description">
+            Suas novas fotos vão para a nuvem privada, só sua. Para apagar, use Apagar na foto: a
+            cópia na nuvem sai também.
+          </p>
+          <button
+            class="secondary ui-btn"
+            type="button"
+            (click)="acceptCloud()"
+            i18n="@@training.body.photos.cloud-accept"
+          >
+            Ativar Fotos na Nuvem
+          </button>
+        </section>
+      } @else {
+        <p class="cloud-status" aria-live="polite" i18n-aria-live="@@common.aria.polite">
+          {{ cloudStatusLabel() }}
+        </p>
+        @if (hasUnsent()) {
+          <button
+            class="secondary ui-btn"
+            type="button"
+            (click)="sendDevicePhotos()"
+            i18n="@@training.body.photos.cloud-send-device"
+          >
+            Enviar Fotos Deste Aparelho
+          </button>
+        }
+        @if (hasErrors()) {
+          <button
+            class="secondary ui-btn"
+            type="button"
+            (click)="retryCloud()"
+            i18n="@@training.body.photos.cloud-retry"
+          >
+            Tentar De Novo
+          </button>
+        }
+      }
       <p class="usage" aria-live="polite" i18n-aria-live="@@common.aria.polite">
         <span i18n="@@training.body.photos.usage">Fotos: {{ photoBytesText() }}</span>
         @if (usage()?.quotaBytes; as quota) {
@@ -31,11 +72,19 @@ interface DisplayPhoto extends PhotoInfo {
           >
         }
       </p>
-      <p class="retention" i18n="@@training.body.photos.retention">
-        Se o navegador apagar os dados do site, suas fotos somem. Salve uma cópia de vez em quando.
-      </p>
+      @if (cloudOn()) {
+        <p class="retention" i18n="@@training.body.photos.retention-cloud">
+          As fotos já enviadas ficam guardadas na nuvem privada. As que ainda não foram enviadas só
+          existem neste aparelho.
+        </p>
+      } @else {
+        <p class="retention" i18n="@@training.body.photos.retention">
+          Se o navegador apagar os dados do site, suas fotos somem. Salve uma cópia de vez em
+          quando.
+        </p>
+      }
       <label class="primary ui-btn add-photo">
-        <span i18n="@@training.body.photos.add">Tirar Foto</span>
+        <span i18n="@@training.body.photos.add">Tirar ou Escolher Foto</span>
         <input
           type="file"
           [attr.accept]="'image/*'"
@@ -59,6 +108,9 @@ interface DisplayPhoto extends PhotoInfo {
                 <img [src]="photo.src" [alt]="photoAlt(photo.takenOn)" />
               </button>
               <time>{{ formatDate(photo.takenOn) }}</time>
+              @if (sync.stateOf(photo.id); as cloud) {
+                <small class="cloud-photo-state">{{ photoCloudLabel(cloud.state) }}</small>
+              }
               <button
                 class="compare-choice secondary ui-btn"
                 type="button"
@@ -144,6 +196,7 @@ interface DisplayPhoto extends PhotoInfo {
 })
 export class BodyPhotoPanel {
   private readonly store = inject(PhotoStore);
+  protected readonly sync = inject(ProgressPhotoSync);
   protected readonly photos = signal<readonly DisplayPhoto[]>([]);
   protected readonly usage = signal<PhotoUsage | null>(null);
   protected readonly selected = signal<readonly string[]>([]);
@@ -156,6 +209,7 @@ export class BodyPhotoPanel {
   constructor() {
     effect(() => {
       this.store.revision();
+      this.sync.revision();
       untracked(() => void this.load());
     });
   }
@@ -193,7 +247,12 @@ export class BodyPhotoPanel {
         $localize`:@@training.body.photos.invalid:Não foi possível abrir esta imagem. Escolha outra foto.`,
       );
     } else {
-      this.message.set($localize`:@@training.body.photos.saved:Foto salva só neste aparelho.`);
+      await this.sync.queueNew(result.photo.id);
+      this.message.set(
+        this.sync.accepted()
+          ? $localize`:@@training.body.photos.saved-cloud:Foto salva e preparada para enviar.`
+          : $localize`:@@training.body.photos.saved:Foto salva só neste aparelho.`,
+      );
     }
     await this.load();
   }
@@ -215,7 +274,7 @@ export class BodyPhotoPanel {
     this.viewing.set(photo);
   }
   protected async remove(id: string): Promise<void> {
-    await this.store.remove(id);
+    await this.sync.remove(id);
     this.confirmingId.set(null);
     this.selected.set(this.selected().filter((value) => value !== id));
     this.comparison.set([]);
@@ -248,6 +307,72 @@ export class BodyPhotoPanel {
   }
   protected photoAlt(date: string): string {
     return $localize`:@@training.body.photos.alt:Foto de progresso de ${formatFullDate(date)}:date:`;
+  }
+
+  protected async acceptCloud(): Promise<void> {
+    this.error.set('');
+    try {
+      await this.sync.accept();
+    } catch {
+      this.error.set(
+        $localize`:@@training.body.photos.cloud-accept-error:Não foi possível guardar sua escolha agora.`,
+      );
+    }
+  }
+
+  protected async sendDevicePhotos(): Promise<void> {
+    await this.sync.sendDevicePhotos();
+    this.message.set(
+      $localize`:@@training.body.photos.cloud-send-status:As fotos deste aparelho foram preparadas para enviar.`,
+    );
+  }
+
+  protected async retryCloud(): Promise<void> {
+    await this.sync.retry();
+  }
+
+  /** Só oferece o envio manual quando há foto local que ainda não entrou na fila nem chegou à nuvem. */
+  protected hasUnsent(): boolean {
+    return this.sync.hasUnsent(this.photos().map((photo) => photo.id));
+  }
+
+  /** A nuvem está aceita neste aparelho e o servidor respondeu: o aviso de retenção muda. */
+  protected cloudOn(): boolean {
+    return this.sync.accepted() && this.sync.availability() === 'available';
+  }
+
+  protected hasErrors(): boolean {
+    return this.photos().some((photo) => this.sync.stateOf(photo.id)?.state === 'error');
+  }
+
+  protected cloudStatusLabel(): string {
+    switch (this.sync.availability()) {
+      case 'checking':
+        return $localize`:@@training.body.photos.cloud-checking:Conferindo a nuvem privada…`;
+      case 'available':
+        return $localize`:@@training.body.photos.cloud-ready:Nuvem privada ativa neste aparelho.`;
+      case 'disabled':
+        return $localize`:@@training.body.photos.cloud-disabled:Fotos na Nuvem está desligado no sistema.`;
+      case 'unavailable':
+        return $localize`:@@training.body.photos.cloud-unavailable:Nuvem privada indisponível. Suas fotos continuam neste aparelho.`;
+      default:
+        return $localize`:@@training.body.photos.cloud-waiting:Suas fotos continuam neste aparelho.`;
+    }
+  }
+
+  protected photoCloudLabel(state: PhotoCloudState): string {
+    switch (state) {
+      case 'pending':
+        return $localize`:@@training.body.photos.cloud-pending:Aguardando envio`;
+      case 'uploading':
+        return $localize`:@@training.body.photos.cloud-uploading:Enviando`;
+      case 'error':
+        return $localize`:@@training.body.photos.cloud-error:Erro ao enviar`;
+      case 'cloud':
+        return $localize`:@@training.body.photos.cloud-saved:Na nuvem privada`;
+      case 'deleting':
+        return $localize`:@@training.body.photos.cloud-deleting:Apagando`;
+    }
   }
 
   private async load(): Promise<void> {
