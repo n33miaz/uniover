@@ -8,7 +8,10 @@ import { UpdateSkeleton } from './update-skeleton';
 class Blank {}
 
 describe('UpdateSkeleton', () => {
-  afterEach(() => sessionStorage.clear());
+  afterEach(() => {
+    sessionStorage.clear();
+    history.pushState({}, '', '/');
+  });
 
   function setup() {
     TestBed.configureTestingModule({
@@ -46,6 +49,28 @@ describe('UpdateSkeleton', () => {
     // O desenho todo é decoração para leitores de tela: só o texto escondido fala.
     expect(overlay!.querySelector('.page')!.getAttribute('aria-hidden')).toBe('true');
     expect(overlay!.querySelectorAll('.bone').length).toBeGreaterThan(10);
+  });
+
+  it('draws the home page (greeting, shortcuts, module grid, no tab bar) when it is the page being updated', async () => {
+    history.pushState({}, '', '/');
+    const { service, fixture, el } = setup();
+    service.applyingUpdate.set(true);
+    await fixture.whenStable();
+    expect(el.querySelector('.page.home')).not.toBeNull();
+    expect(el.querySelectorAll('.home-hero .bone').length).toBe(3);
+    expect(el.querySelectorAll('.shortcut').length).toBe(2);
+    expect(el.querySelectorAll('.module').length).toBe(6);
+    expect(el.querySelector('.tabs')).toBeNull();
+  });
+
+  it('keeps the generic page drawing (header, cards, list, tab bar) for any other route', async () => {
+    history.pushState({}, '', '/tv');
+    const { service, fixture, el } = setup();
+    service.applyingUpdate.set(true);
+    await fixture.whenStable();
+    expect(el.querySelector('.page.home')).toBeNull();
+    expect(el.querySelector('.tabs')).not.toBeNull();
+    expect(el.querySelector('.top')).not.toBeNull();
   });
 
   it('keeps the skeleton after the reload until the first navigation ends', async () => {
