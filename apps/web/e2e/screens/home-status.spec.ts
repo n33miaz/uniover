@@ -137,7 +137,7 @@ test.describe('Início: estado real da casa', () => {
       .getByRole('link', { name: /Configurações/ })
       .first()
       .click();
-    await expect(page.getByRole('heading', { level: 2, name: 'Conta' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Você' })).toBeVisible();
     await expect.poll(() => openStreams(page)).toBe(0);
 
     tv.state = { ...AGENT_OFF };
