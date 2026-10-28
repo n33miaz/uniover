@@ -10,9 +10,12 @@ Sequência (cada passo é um comando curto e fixo, com a trava do ADB tomada só
 
 1. lê `MemAvailable` (o "antes");
 2. descobre o que proteger (tela inicial, teclado, acessibilidade) e o que está rodando;
-3. tecla HOME, para o app da frente virar "de fundo";
-4. `am kill-all` (só processos de fundo e em cache);
-5. `am force-stop` de cada app **em execução** que não esteja protegido;
+3. só com o fechamento de apps liberado para a TV: tecla HOME, para o app da frente virar
+   "de fundo";
+4. só com o fechamento liberado: `am kill-all` (só processos de fundo e em cache);
+5. `am force-stop` de cada app **em execução** que não esteja protegido, também só com o
+   fechamento liberado;
+   sem ele (o padrão, e a regra do dono para a TV dele) e na limpeza leve, só `am send-trim-memory`;
 6. lê `MemAvailable` de novo (o "depois").
 
 Só se fecha o que está rodando, e só isso conta em `closed_apps`: um `force-stop` num app parado não
@@ -107,6 +110,7 @@ class CleanupReport:
     """O que a limpeza fez. Memória em MB (`None` quando não deu para ler)."""
 
     closed_apps: int
+    closed_packages: tuple[str, ...]
     memory_before_mb: int | None
     memory_after_mb: int | None
     failed_steps: tuple[str, ...]
@@ -139,7 +143,7 @@ class _Outcome[T]:
 class TvCleanup:
     """A sequência da limpeza. Uma por vez: o pedido que chega com outra rodando é recusado."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - dependências e limites, todos por nome
         self,
         adb: TvAdbCleanup,
         clock: Clock,
@@ -147,17 +151,26 @@ class TvCleanup:
         keep: Collection[str] = (),
         budget_seconds: float = DEFAULT_BUDGET_SECONDS,
         settle_seconds: float = DEFAULT_SETTLE_SECONDS,
+        allow_app_closing: bool = False,
     ) -> None:
         self._adb = adb
         self._clock = clock
         self._keep = frozenset(keep)
         self._budget = budget_seconds
         self._settle = settle_seconds
+        # Regra do dono: apps da TV não são tocados sem opção explícita por TV. O padrão é desligado
+        # e só a preferência recebida da API (`configure_app_closing`) libera HOME, `am kill-all`
+        # e `am force-stop`.
+        self._allow_app_closing = allow_app_closing
         self._running = False
 
     @property
     def running(self) -> bool:
         return self._running
+
+    def configure_app_closing(self, enabled: bool) -> None:
+        """Só a preferência recebida para esta TV pode liberar fechamento de apps."""
+        self._allow_app_closing = enabled
 
     async def run(self) -> CleanupReport:
         """Limpa a TV. Levanta `TvSessionError` se o ADB não respondeu ao primeiro comando (nada foi
@@ -170,7 +183,19 @@ class TvCleanup:
         finally:
             self._running = False
 
-    async def _clean(self) -> CleanupReport:
+    async def run_light(self, foreground_package: str | None) -> CleanupReport:
+        """Limpeza silenciosa: não envia HOME nem fecha o app que está na frente."""
+        if self._running:
+            raise TvSessionError(CLEANUP_IN_PROGRESS, "Já há uma limpeza em andamento.")
+        self._running = True
+        try:
+            return await self._clean(light=True, foreground_package=foreground_package)
+        finally:
+            self._running = False
+
+    async def _clean(
+        self, *, light: bool = False, foreground_package: str | None = None
+    ) -> CleanupReport:
         deadline = self._clock.monotonic() + self._budget
         run = _Run()
         # O primeiro comando é também o teste do canal: sem ADB não há limpeza, e o dono recebe o
@@ -181,27 +206,27 @@ class TvCleanup:
             raise TvSessionError(exc.code, exc.message) from None
 
         candidates = await self._closable(run)
-        await self._attempt(run, "go-home", self._adb.go_home)
-        if not run.halted:
-            await self._clock.sleep(self._settle)
-        if not self._out_of_time(run, deadline):
-            await self._attempt(run, "kill-background", self._adb.kill_background)
-
-        closed = 0
-        for package in candidates:
-            if self._out_of_time(run, deadline):
-                break
-            stopped = await self._attempt(
-                run, f"force-stop:{package}", self._adb.force_stop, package
+        if light:
+            # Sem o app em primeiro plano não existe como separar com segurança o que pode fechar.
+            # `am kill-all` continua seguro porque o Android poupa o app da frente.
+            candidates = (
+                [package for package in candidates if package != foreground_package]
+                if foreground_package
+                else []
             )
-            if stopped.ok:
-                closed += 1
+        # A preferência é lida uma vez: uma configuração que chegue no meio não muda o que esta
+        # limpeza faz.
+        closing = self._allow_app_closing
+        await self._ease_or_close(run, deadline, candidates, light=light, closing=closing)
+        closed_packages = await self._force_stop(run, deadline, candidates) if closing else []
+        closed = len(closed_packages)
 
         after: int | None = None
         if not run.halted:
-            await self._clock.sleep(self._settle)
+            if closing and not light:
+                await self._clock.sleep(self._settle)
             after = (await self._attempt(run, "memory-after", self._adb.memory_available_mb)).value
-        report = CleanupReport(closed, before, after, tuple(run.failed))
+        report = CleanupReport(closed, tuple(closed_packages), before, after, tuple(run.failed))
         _log.info(
             "limpeza da TV: %d apps fechados, memória %s -> %s MB, %d etapas falharam",
             report.closed_apps,
@@ -212,6 +237,38 @@ class TvCleanup:
         if report.failed_steps:
             _log.warning("etapas da limpeza que falharam: %s", ", ".join(report.failed_steps))
         return report
+
+    async def _ease_or_close(
+        self, run: _Run, deadline: float, candidates: list[str], *, light: bool, closing: bool
+    ) -> None:
+        """HOME e `am kill-all` só com o fechamento liberado; senão, só reduz a memória dos apps."""
+        if closing and not light:
+            await self._attempt(run, "go-home", self._adb.go_home)
+            if not run.halted:
+                await self._clock.sleep(self._settle)
+            if not self._out_of_time(run, deadline):
+                await self._attempt(run, "kill-background", self._adb.kill_background)
+
+        # Sem permissão para fechar (ou na limpeza leve) só se pede ao Android que reduza a memória
+        # dos apps: `am send-trim-memory` não encerra processo nem apaga dado.
+        if light or not closing:
+            for package in candidates:
+                if self._out_of_time(run, deadline):
+                    break
+                await self._attempt(run, f"trim-memory:{package}", self._adb.trim_memory, package)
+
+    async def _force_stop(self, run: _Run, deadline: float, candidates: list[str]) -> list[str]:
+        """`am force-stop` de cada candidato. Só é chamado com o fechamento liberado para a TV."""
+        closed_packages: list[str] = []
+        for package in candidates:
+            if self._out_of_time(run, deadline):
+                break
+            stopped = await self._attempt(
+                run, f"force-stop:{package}", self._adb.force_stop, package
+            )
+            if stopped.ok:
+                closed_packages.append(package)
+        return closed_packages
 
     async def _closable(self, run: _Run) -> list[str]:
         """Apps em execução que podem ser fechados; vazio se algo que protege não pôde ser lido."""
@@ -278,7 +335,13 @@ def tv_cleanup_handler(
         if not isinstance(request_id, str) or not request_id:
             return CommandResult(command.id, ResultStatus.REJECTED, "campo 'requestId' ausente")
         try:
-            report = await cleanup.run()
+            mode = command.body.get("mode")
+            foreground = command.body.get("foregroundPackage")
+            report = (
+                await cleanup.run_light(foreground if isinstance(foreground, str) else None)
+                if mode == "light"
+                else await cleanup.run()
+            )
         except TvSessionError as exc:
             return failed_result(command, exc)
         except Exception:
@@ -295,6 +358,7 @@ def tv_cleanup_handler(
                     request_id,
                     command.id,
                     closed_apps=report.closed_apps,
+                    closed_packages=report.closed_packages,
                     memory_before_mb=report.memory_before_mb,
                     memory_after_mb=report.memory_after_mb,
                     freed_mb=report.freed_mb,
@@ -309,5 +373,44 @@ def tv_cleanup_handler(
                 SEND_FAILED,
             )
         return CommandResult(command.id, ResultStatus.OK)
+
+    return handle
+
+
+def tv_cleanup_skipped_handler(
+    transport: Transport, envelopes: EnvelopeFactory, reason: str, message: str
+) -> Handler:
+    """Registra uma limpeza não suportada sem fingir que a TV foi alterada."""
+
+    async def handle(command: Command) -> CommandResult:
+        request_id = command.body.get("requestId")
+        if not isinstance(request_id, str) or not request_id:
+            return CommandResult(command.id, ResultStatus.REJECTED, "campo 'requestId' ausente")
+        try:
+            await transport.send(
+                envelopes.tv_cleanup_result(
+                    request_id,
+                    command.id,
+                    closed_apps=0,
+                    closed_packages=(),
+                    memory_before_mb=None,
+                    memory_after_mb=None,
+                    freed_mb=None,
+                    failed_steps=(),
+                    kind="manual",
+                    trigger="manual",
+                    result="skipped",
+                    reason=reason,
+                    duration_ms=0,
+                )
+            )
+        except TransportError:
+            return CommandResult(
+                command.id,
+                ResultStatus.FAILED,
+                "não consegui enviar o relatório à API",
+                SEND_FAILED,
+            )
+        return CommandResult(command.id, ResultStatus.REJECTED, message, "unsupported")
 
     return handle

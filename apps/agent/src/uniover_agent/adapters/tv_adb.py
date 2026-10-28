@@ -16,6 +16,7 @@ Regras que moldam este adaptador:
 import asyncio
 import logging
 import os
+import re
 import shutil
 import sys
 import time
@@ -73,6 +74,10 @@ _LEANBACK: Final = "android.intent.category.LEANBACK_LAUNCHER"
 _LAUNCHER: Final = "android.intent.category.LAUNCHER"
 _HOME: Final = "android.intent.category.HOME"
 _MAX_TEXT_LENGTH: Final = 200
+# Estados de `PlaybackState` que a leitura de mídia entende (none, stopped, paused, playing, error);
+# qualquer outro número é leitura ambígua. 3 é "tocando".
+_PLAYBACK_STATES: Final = frozenset({0, 1, 2, 3, 7})
+_PLAYBACK_PLAYING: Final = 3
 # Serviço do controle remoto da Android TV (portas 6466 e 6467). Os comandos de religar são os do
 # `reparar` do projeto da TV do dono (`ESP32/01-controle-tv/tv.ps1`): proteger o serviço do
 # matador de processos por falta de memória e iniciá-lo de novo. Fixos, sem dado externo.
@@ -319,6 +324,17 @@ class AdbTv:
             raise AdbCommandFailed("a TV não informou os processos")
         return packages
 
+    async def media_playing(self) -> bool:
+        """Lê a mídia sem aceitar uma saída incompleta como se fosse silêncio."""
+        output = await self._locked_shell("dumpsys media_session")
+        self._require_success(output, "a TV não informou a sessão de mídia")
+        states = [
+            int(value) for value in re.findall(r"PlaybackState[^\n]*state=(\d+)", output.text)
+        ]
+        if not states or any(state not in _PLAYBACK_STATES for state in states):
+            raise AdbCommandFailed("a TV informou uma sessão de mídia ambígua")
+        return _PLAYBACK_PLAYING in states
+
     async def go_home(self) -> None:
         output = await self._locked_shell("input keyevent KEYCODE_HOME")
         self._require_success(output, "a TV não foi para a tela inicial")
@@ -332,6 +348,14 @@ class AdbTv:
             raise ValueError("nome de pacote inválido")
         output = await self._locked_shell(f"am force-stop {quote_for_device_shell(package)}")
         self._require_success(output, "a TV não fechou o app")
+
+    async def trim_memory(self, package: str) -> None:
+        if not is_valid_package(package):
+            raise ValueError("nome de pacote inválido")
+        output = await self._locked_shell(
+            f"am send-trim-memory {quote_for_device_shell(package)} RUNNING_CRITICAL"
+        )
+        self._require_success(output, "a TV não reduziu a memória do app")
 
     async def restart_remote_service(self) -> None:
         """Religa o serviço do controle remoto da TV (o vigia chama quando as portas fecham).

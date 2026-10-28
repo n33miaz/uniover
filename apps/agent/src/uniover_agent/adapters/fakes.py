@@ -188,6 +188,7 @@ class FakeTvAdb:
         self.running: frozenset[str] = frozenset()
         self.cleanup_log: list[str] = []
         self.cleanup_errors: dict[str, AdbError] = {}
+        self.media_playing_value = False
 
     @property
     def connected(self) -> bool:
@@ -254,6 +255,10 @@ class FakeTvAdb:
         self._cleanup_step("running")
         return self.running
 
+    async def media_playing(self) -> bool:
+        self._cleanup_step("media")
+        return self.media_playing_value
+
     async def go_home(self) -> None:
         self._cleanup_step("go-home")
 
@@ -262,6 +267,9 @@ class FakeTvAdb:
 
     async def force_stop(self, package: str) -> None:
         self._cleanup_step(f"force-stop:{package}")
+
+    async def trim_memory(self, package: str) -> None:
+        self._cleanup_step(f"trim-memory:{package}")
 
 
 class FakeSecretStore:

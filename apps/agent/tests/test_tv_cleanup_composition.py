@@ -18,6 +18,13 @@ from .test_tv_composition import TV_HOST, make_tv, pair_fake_tv
 
 REQUEST_ID = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea0"
 COMMAND_ID = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e9f"
+CONFIG_ID = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e90"
+CONFIG_ALLOWING = {
+    "lightEnabled": True,
+    "deepEnabled": False,
+    "deepThresholdMb": 160,
+    "closeBackgroundApps": True,
+}
 
 
 def running_tv() -> FakeTvAdb:
@@ -107,6 +114,11 @@ async def test_the_owner_keep_list_reaches_the_cleanup(
     enable_adb(monkeypatch, tmp_path, adb)
     setup = make_tv(Settings(tv_host=TV_HOST, tv_cleanup_keep=["com.spotify.tv.android"]))
     assert setup is not None
+    # O fechamento de apps só existe depois que a API liberou, para esta TV, pelo canal de
+    # configuração.
+    await setup.handlers["tv.cleanup.config.v1"](
+        Command(CONFIG_ID, "tv.cleanup.config.v1", CONFIG_ALLOWING)
+    )
     result = await setup.handlers["tv.cleanup.v1"](
         Command(COMMAND_ID, "tv.cleanup.v1", {"requestId": REQUEST_ID})
     )
@@ -115,6 +127,36 @@ async def test_the_owner_keep_list_reaches_the_cleanup(
         "force-stop:com.cnvs.apptv",
         "force-stop:com.android.vending",
     ]
+
+
+async def test_by_default_the_composed_cleanup_never_stops_or_kills_an_app(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regra do dono: sem a opção por TV, a limpeza (manual ou configurada) não fecha app nenhum."""
+    adb = running_tv()
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+    enable_adb(monkeypatch, tmp_path, adb)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None
+
+    async def clean() -> None:
+        result = await setup.handlers["tv.cleanup.v1"](
+            Command(COMMAND_ID, "tv.cleanup.v1", {"requestId": REQUEST_ID})
+        )
+        assert result.status.value == "ok"
+
+    await clean()
+    await setup.handlers["tv.cleanup.config.v1"](
+        Command(
+            CONFIG_ID, "tv.cleanup.config.v1", {**CONFIG_ALLOWING, "closeBackgroundApps": False}
+        )
+    )
+    await clean()
+
+    assert not any(
+        step in {"go-home", "kill-background"} or step.startswith("force-stop:")
+        for step in adb.cleanup_log
+    )
 
 
 # --- ponta a ponta ----------------------------------------------------------------------------
@@ -128,6 +170,8 @@ async def test_run_answers_the_cleanup_with_the_report_first_and_the_result_afte
     enable_adb(monkeypatch, tmp_path, adb)
 
     async def script(connection: ServerConnection) -> None:
+        await connection.send(dump(envelope("tv.cleanup.config.v1", CONFIG_ALLOWING, id=CONFIG_ID)))
+        await asyncio.sleep(0.3)
         await connection.send(
             dump(envelope("tv.cleanup.v1", {"requestId": REQUEST_ID}, id=COMMAND_ID))
         )

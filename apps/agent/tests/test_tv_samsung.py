@@ -722,6 +722,8 @@ def test_samsung_configuration_selects_its_capabilities_without_adb(
     assert envelopes.hello("0.1.0", tuple(setup.capabilities))["body"]["capabilities"] == expected
     assert "tv.key.v3" in setup.handlers
     assert "tv.cleanup.v1" in setup.handlers
+    assert "tv.cleanup.config.v1" not in setup.handlers  # sem limpeza automática na Samsung
+    assert "tv.cleanup.automatic.v1" not in setup.capabilities
     assert setup.text is None
     assert "token-secreto" not in caplog.text
 
