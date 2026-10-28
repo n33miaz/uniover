@@ -26,7 +26,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expectSynced(page);
       await shot(page, info, 'corpo-resumo', scheme);
 
-      await page.getByRole('button', { name: 'Registros' }).click();
+      await page.getByRole('button', { name: 'Registros', exact: true }).click();
       const profile = page.locator('app-body-section').nth(1);
       await profile.getByRole('button', { name: 'Preencher Perfil' }).click();
       const profileSheet = page.getByRole('dialog', { name: 'Seu Perfil' });
@@ -42,7 +42,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.locator('.weight-card .weight-value')).toHaveText('82,4 kg');
       await shot(page, info, 'corpo-resumo-com-peso', scheme);
 
-      await page.getByRole('button', { name: 'Registros' }).click();
+      await page.getByRole('button', { name: 'Registros', exact: true }).click();
       await expect(page.locator('app-body-energy-panel')).toBeVisible();
       await shot(page, info, 'corpo-registros', scheme);
 

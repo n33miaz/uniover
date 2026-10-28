@@ -28,7 +28,7 @@ test('registra peso e mantém medidas e gordura acessíveis nos registros', asyn
   await next.getByRole('button', { name: 'Salvar' }).click();
   await expect(page.locator('.weight-card .weight-meta strong')).toContainText('−0,1');
 
-  await page.getByRole('button', { name: 'Registros' }).click();
+  await page.getByRole('button', { name: 'Registros', exact: true }).click();
   await page.getByRole('button', { name: 'Editar pesagem de 21/10/2026, 81,4 kg' }).click();
   const edit = page.getByRole('dialog', { name: 'Pesagem de 21/10' });
   await edit.getByLabel('Peso (kg)').fill('81,8');

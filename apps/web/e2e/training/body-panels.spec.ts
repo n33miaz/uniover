@@ -23,11 +23,15 @@ test('prioriza sinais e mantém calorias e fotos acessíveis', async ({ page, co
   ).toBeVisible();
   await expect(page.getByRole('link', { name: /Mapa do Corpo/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Registrar Peso' })).toBeVisible();
+  // O nome acessível dos cartões de sinal é o texto visível (o axe exige que o aria-label o contenha).
+  await expect(page.locator('.signal-card').first()).toHaveAccessibleName(
+    /Medidas\s+Sem Registros\s+Registrar Medidas/,
+  );
   await expect(
     page.getByRole('link', { name: 'Avaliações Físicas Ver Histórico' }),
   ).toHaveAttribute('href', '/treino/corpo/avaliacoes');
 
-  await page.getByRole('button', { name: 'Registros' }).click();
+  await page.getByRole('button', { name: 'Registros', exact: true }).click();
   const profileSection = page.locator('app-body-section').nth(1);
   await profileSection.getByRole('button', { name: 'Preencher Perfil' }).click();
   const profile = page.getByRole('dialog', { name: 'Seu Perfil' });
@@ -41,7 +45,7 @@ test('prioriza sinais e mantém calorias e fotos acessíveis', async ({ page, co
   await weight.getByLabel('Peso (kg)').fill('82,4');
   await weight.getByRole('button', { name: 'Salvar' }).click();
 
-  await page.getByRole('button', { name: 'Registros' }).click();
+  await page.getByRole('button', { name: 'Registros', exact: true }).click();
   const energy = page.locator('app-body-energy-panel');
   await energy.getByText('Como a Meta Foi Calculada').click();
   await expect(energy.getByText('1.799 kcal')).toBeVisible();
@@ -147,7 +151,9 @@ test('envia uma foto nova para a nuvem privada depois da aceitação explícita'
   });
 
   await expect.poll(() => server.writes('progress-photos'), { timeout: 15_000 }).toBe(1);
-  await expect(photos.getByText('Na nuvem privada', { exact: true })).toBeVisible();
+  await expect(photos.locator('.photo-card.cloud-photo .storage-badge')).toHaveText(
+    'Nuvem Privada',
+  );
   await expect(photos.getByRole('button', { name: 'Enviar Fotos Deste Aparelho' })).toHaveCount(0);
   await expect(photos.getByText(/ficam guardadas na nuvem privada/)).toBeVisible();
 });
