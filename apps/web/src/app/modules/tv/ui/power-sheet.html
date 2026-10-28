@@ -6,6 +6,9 @@
   (cancel)="cancel($event)"
 >
   <h2 id="power-title" i18n="@@tv.power.title">Desligar a TV?</h2>
+  @if (store.multiple() && store.selectedTv(); as tv) {
+    <p class="target" i18n="@@tv.power.target">Para: {{ tv.name }}</p>
+  }
   <p id="power-text" class="text" i18n="@@tv.power.text">
     Sem o emissor infravermelho, a TV só volta com o controle original.
   </p>
@@ -19,7 +22,7 @@
   <section class="ui-group schedule" aria-labelledby="power-schedule-title">
     <h3 id="power-schedule-title" i18n="@@tv.power.schedule">Agendar desligamento</h3>
     @if (store.powerSchedule(); as active) {
-      <p class="text" i18n="@@tv.power.schedule.active">
+      <p class="schedule-active" i18n="@@tv.power.schedule.active">
         Agendado para {{ localTime(active.dueAtUtc, active.timeZone) }} ({{ active.timeZone }})
       </p>
       @if (active.status === 'dispatching') {

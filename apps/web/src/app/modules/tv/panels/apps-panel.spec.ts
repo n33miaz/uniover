@@ -963,10 +963,13 @@ describe('AppsPanel', () => {
     });
   });
 
-  it('says it is loading before the first list arrives', async () => {
+  it('shows a quiet skeleton before the first list arrives', async () => {
     store.shortcuts.set(null);
     await render();
-    expect(root.textContent).toContain('Carregando os apps');
+    expect(root.querySelector('.loading')).not.toBeNull();
+    expect(root.querySelector('.loading .sr')?.textContent?.trim()).toBe('Carregando os apps…');
+    expect(root.querySelector('.loading-bar')).not.toBeNull();
+    expect(root.querySelectorAll('.loading-tiles span')).toHaveLength(4);
     expect(root.querySelector('.empty')).toBeNull();
   });
 
