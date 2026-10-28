@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { TvStore } from '../data/tv-store';
-import { FakeTvStore, createFakeTvStore } from '../tv-test-kit';
+import { FakeTvStore, createFakeTvStore, makeTv } from '../tv-test-kit';
 import { PowerSheet } from './power-sheet';
 
 function clickBackdrop(dialog: HTMLDialogElement): void {
@@ -44,6 +44,16 @@ describe('PowerSheet', () => {
       'Sem o emissor infravermelho, a TV só volta com o controle original.',
     );
     expect(dialog.getAttribute('aria-labelledby')).toBe('power-title');
+  });
+
+  it('names the TV that will receive the shutdown only when there is more than one', () => {
+    store.tvs.set([makeTv('sala', { name: 'Sala' })]);
+    fixture.detectChanges();
+    expect(root.querySelector('.target')).toBeNull();
+
+    store.tvs.set([makeTv('sala', { name: 'Sala' }), makeTv('quarto', { name: 'Quarto' })]);
+    fixture.detectChanges();
+    expect(root.querySelector('.target')?.textContent?.trim()).toBe('Para: Sala');
   });
 
   it('explains the reading only for an agent that does it, and describes the dialog with it', async () => {
@@ -105,6 +115,7 @@ describe('PowerSheet', () => {
         version: 2,
       });
       fixture.detectChanges();
+      expect(row().querySelector('.schedule-active')?.textContent).toContain('Agendado para');
       named('Cancelar agendamento').click();
       await fixture.whenStable();
       expect(store.cancelPowerSchedule).toHaveBeenCalledOnce();

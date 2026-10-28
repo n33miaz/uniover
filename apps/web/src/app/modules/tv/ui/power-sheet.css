@@ -64,6 +64,16 @@ h2 {
   font-size: 1.15rem;
 }
 
+.target {
+  margin: -4px 0 0;
+  color: var(--a-ink);
+  font-size: 0.95rem;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .text {
   margin: 0;
   color: var(--a-ink2);
@@ -84,7 +94,7 @@ h2 {
 }
 .schedule button,
 .schedule input {
-  min-height: 44px;
+  min-height: 48px;
   font: inherit;
   border-radius: var(--radius);
 }
@@ -115,6 +125,16 @@ h2 {
   margin: 0;
   font-size: 0.85rem;
   color: var(--a-ink2);
+}
+.schedule-active {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.3;
 }
 .day-time {
   font-size: 0.9rem;
