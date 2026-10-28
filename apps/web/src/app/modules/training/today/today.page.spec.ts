@@ -54,9 +54,9 @@ describe('TodayPage', () => {
       const kit = await open();
       const { el, fixture } = await show(kit);
 
-      await eventually(fixture, () => expect(text(el)).toContain('Sem rotinas ainda'));
+      await eventually(fixture, () => expect(text(el)).toContain('Sem Rotinas Ainda'));
       expect(el.querySelector<HTMLAnchorElement>('a[href="/treino/rotinas"]')).not.toBeNull();
-      expect(button(el, 'Treino livre')).toBeDefined();
+      expect(button(el, 'Treino Livre')).toBeDefined();
     });
 
     it('offers the program choice when starting without a weekly program, and does not start until it is answered', async () => {
@@ -70,7 +70,7 @@ describe('TodayPage', () => {
       await eventually(fixture, () =>
         expect(el.querySelector('app-training-sheet')).not.toBeNull(),
       );
-      expect(text(el)).toContain('Programa da semana');
+      expect(text(el)).toContain('Programa Semanal');
       expect(el.querySelector('app-live-session')).toBeNull();
     });
 
@@ -104,6 +104,12 @@ describe('TodayPage', () => {
       const rows = Array.from(el.querySelectorAll('.lines .ui-row')).map((row) => text(row));
       expect(rows[0]).toContain('4 × 6–10 · última vez 40 kg × 10');
       expect(rows[1]).toContain('supersérie');
+      // O "?" do glossário fica ao lado da ação, sem ocupar uma linha própria.
+      const glossary = el.querySelector<HTMLAnchorElement>('.actions a.glossary-link');
+      expect(glossary?.getAttribute('href')).toBe('/treino/glossario');
+      expect(glossary?.getAttribute('aria-label')).toBe(
+        'Entender Programa Semanal, Rotina e Exercício',
+      );
     });
 
     it('has a single heading for Início', async () => {
@@ -137,14 +143,14 @@ describe('TodayPage', () => {
       const { el, fixture } = await show(kit);
 
       await eventually(fixture, () =>
-        expect(text(el)).toContain('Treino aberto em outro aparelho'),
+        expect(text(el)).toContain('Treino Aberto em Outro Aparelho'),
       );
       expect(text(el)).toContain('há 13 h');
       expect(buttons(el).some((node) => node.textContent?.includes('Iniciar Treino'))).toBe(false);
 
-      button(el, 'Encerrar o treino esquecido').click();
+      button(el, 'Encerrar o Treino Esquecido').click();
       await eventually(fixture, () => expect(text(el)).toContain('As séries dele ficam salvas'));
-      button(el, 'Sim, encerrar').click();
+      button(el, 'Sim, Encerrar').click();
       await eventually(fixture, () => expect(text(el)).toContain('Treino esquecido encerrado'));
       await eventually(fixture, () => expect(button(el, 'Iniciar Treino')).toBeDefined());
     });
@@ -155,7 +161,7 @@ describe('TodayPage', () => {
       TestBed.inject(ConnectivityService).online.set(false);
       const { el, fixture } = await show(kit);
 
-      await eventually(fixture, () => expect(text(el)).toContain('O catálogo ainda não chegou'));
+      await eventually(fixture, () => expect(text(el)).toContain('O Catálogo Ainda Não Chegou'));
     });
   });
 
@@ -195,9 +201,9 @@ describe('TodayPage', () => {
       button(view.el, 'Iniciar Treino').click();
       // Sem programa semanal, iniciar oferece a escolha; estes testes seguem sem programa.
       await eventually(view.fixture, () =>
-        expect(button(view.el, 'Seguir sem programa')).toBeDefined(),
+        expect(button(view.el, 'Seguir sem Programa')).toBeDefined(),
       );
-      button(view.el, 'Seguir sem programa').click();
+      button(view.el, 'Seguir sem Programa').click();
       await eventually(view.fixture, () =>
         expect(kit.harness.routeNativeElement?.matches('app-workout-day')).toBe(true),
       );
@@ -227,12 +233,12 @@ describe('TodayPage', () => {
 
       el.querySelector<HTMLButtonElement>('button[aria-label="Opções do treino"]')!.click();
       await eventually(fixture, () =>
-        expect(button(document.body, 'Adicionar exercício')).toBeDefined(),
+        expect(button(document.body, 'Adicionar Exercício')).toBeDefined(),
       );
-      expect(button(document.body, 'Cancelar treino')).toBeDefined();
+      expect(button(document.body, 'Cancelar Treino')).toBeDefined();
       // A lista dos exercícios é a própria tela: a linha que a abriria não aparece aqui.
       expect(
-        buttons(document.body).some((node) => node.textContent?.includes('Exercícios do treino')),
+        buttons(document.body).some((node) => node.textContent?.includes('Exercícios do Treino')),
       ).toBe(false);
     });
 
@@ -240,16 +246,16 @@ describe('TodayPage', () => {
       const kit = await started();
       const { el, fixture } = kit;
       await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
-      await eventually(fixture, () => expect(button(el, 'Concluir série').disabled).toBe(false));
+      await eventually(fixture, () => expect(button(el, 'Concluir Série').disabled).toBe(false));
 
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
-      button(el, 'Concluir série').click();
+      button(el, 'Concluir Série').click();
       await eventually(fixture, () => expect(text(el)).toContain('Série 2 de 2'));
-      await eventually(fixture, () => expect(button(el, 'Concluir série').disabled).toBe(false));
+      await eventually(fixture, () => expect(button(el, 'Concluir Série').disabled).toBe(false));
       // O voltar desfaz a entrada do registro no histórico (a lista do dia era a anterior).
       const back = vi.spyOn(TestBed.inject(Location), 'back');
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
-      button(el, 'Concluir série').click();
+      button(el, 'Concluir Série').click();
 
       await eventually(fixture, () => expect(back).toHaveBeenCalledOnce());
       // A última série do exercício não deixa descanso guardado para o próximo exercício.
@@ -260,9 +266,9 @@ describe('TodayPage', () => {
       const kit = await started();
       const { el, fixture } = kit;
       await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
-      await eventually(fixture, () => expect(button(el, 'Concluir série').disabled).toBe(false));
+      await eventually(fixture, () => expect(button(el, 'Concluir Série').disabled).toBe(false));
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
-      button(el, 'Concluir série').click();
+      button(el, 'Concluir Série').click();
       await eventually(fixture, () => expect(el.querySelector('.rest')).not.toBeNull());
       expect(TestBed.inject(RestTimerService).active()).toBe(true);
 
@@ -282,7 +288,7 @@ describe('TodayPage', () => {
       await eventually(fixture, () => expect(text(el)).toContain('Última vez 40 kg × 10'));
       const inputs = Array.from(el.querySelectorAll<HTMLInputElement>('app-live-stepper input'));
       expect(inputs.map((input) => input.value)).toEqual(['40', '10']);
-      expect(button(el, 'Concluir série')).toBeDefined();
+      expect(button(el, 'Concluir Série')).toBeDefined();
     });
 
     it('concludes a set: it is saved, the rest card appears, and skip closes it', async () => {
@@ -291,7 +297,7 @@ describe('TodayPage', () => {
       await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
 
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
-      button(el, 'Concluir série').click();
+      button(el, 'Concluir Série').click();
 
       await eventually(fixture, () => expect(text(el)).toContain('Descanso'));
       expect(text(el)).toContain('2:00');
@@ -323,15 +329,15 @@ describe('TodayPage', () => {
       rpe8().click();
       await eventually(fixture, () => expect(rpe8().getAttribute('aria-pressed')).toBe('false'));
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
-      button(el, 'Concluir série').click();
+      button(el, 'Concluir Série').click();
       await eventually(fixture, () => expect(text(el)).toContain('Série 2 de 2'));
 
       rpe8().click();
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
       await eventually(fixture, () => expect(rpe8().getAttribute('aria-pressed')).toBe('true'));
       // O botão fica desligado enquanto a série anterior ainda termina de ser gravada e relida: espera-se por ele.
-      await eventually(fixture, () => expect(button(el, 'Concluir série').disabled).toBe(false));
-      button(el, 'Concluir série').click();
+      await eventually(fixture, () => expect(button(el, 'Concluir Série').disabled).toBe(false));
+      button(el, 'Concluir Série').click();
       const id = (await repository.activeSession())!.id;
       await vi.waitFor(async () => expect(await repository.setsOfSession(id)).toHaveLength(2));
       const sets = await repository.setsOfSession(id);
@@ -342,7 +348,7 @@ describe('TodayPage', () => {
       const without = await started();
       await eventually(without.fixture, () => expect(text(without.el)).toContain('Última vez'));
       without.runtime.advance(DOUBLE_TAP_MS + 100);
-      button(without.el, 'Concluir série').click();
+      button(without.el, 'Concluir Série').click();
       await eventually(without.fixture, () =>
         expect(text(without.el)).toContain(
           'Este aparelho não vibra: olhe a tela quando o tempo acabar.',
@@ -357,7 +363,7 @@ describe('TodayPage', () => {
           expect(text(withVibration.el)).toContain('Última vez'),
         );
         withVibration.runtime.advance(DOUBLE_TAP_MS + 100);
-        button(withVibration.el, 'Concluir série').click();
+        button(withVibration.el, 'Concluir Série').click();
         await eventually(withVibration.fixture, () =>
           expect(text(withVibration.el)).toContain('Vai vibrar quando terminar.'),
         );
@@ -387,7 +393,7 @@ describe('TodayPage', () => {
       expect(el.querySelector('.sending')).toBeNull();
 
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
-      button(el, 'Concluir série').click();
+      button(el, 'Concluir Série').click();
       await eventually(fixture, () => expect(text(el)).toContain('1 série aguardando envio'));
 
       const region = el.querySelector('p.ui-visually-hidden[role="status"]')!;
@@ -402,16 +408,16 @@ describe('TodayPage', () => {
       const { el, fixture } = kit;
       await eventually(fixture, () => expect(text(el)).toContain('Última vez'));
       kit.runtime.advance(DOUBLE_TAP_MS + 100);
-      button(el, 'Concluir série').click();
+      button(el, 'Concluir Série').click();
       await eventually(fixture, () => expect(text(el)).toContain('Série 2 de 2'));
 
       el.querySelector<HTMLButtonElement>('button[aria-label="Opções do treino"]')!.click();
-      await eventually(fixture, () => expect(button(el, 'Terminar treino')).toBeDefined());
-      button(el, 'Terminar treino').click();
+      await eventually(fixture, () => expect(button(el, 'Terminar Treino')).toBeDefined());
+      button(el, 'Terminar Treino').click();
 
       // O resumo é outra rota: a tela do registro já saiu de cena.
       const summary = () => kit.harness.routeNativeElement as HTMLElement;
-      await eventually(fixture, () => expect(text(summary())).toContain('Treino concluído'));
+      await eventually(fixture, () => expect(text(summary())).toContain('Treino Concluído'));
       const stats = Array.from(summary().querySelectorAll('.stat')).map((node) => text(node));
       // 40 kg × 10 repetições = 400 kg; uma série de trabalho; nenhum recorde (igualou a última vez).
       expect(stats[0]).toContain('400 kg');

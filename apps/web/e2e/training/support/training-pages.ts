@@ -73,7 +73,7 @@ export async function countRows(
 export async function chooseMuscle(page: Page, label: string): Promise<void> {
   await page.getByRole('button', { name: /^Músculo principal/ }).click();
   await page
-    .getByRole('dialog', { name: 'Músculo principal' })
+    .getByRole('dialog', { name: 'Músculo Principal' })
     .getByRole('button', { name: label, exact: true })
     .click();
 }

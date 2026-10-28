@@ -47,7 +47,7 @@ describe('GoalSheet', () => {
     expect(el.querySelector<HTMLInputElement>('input')!.value).toBe('');
     expect(el.querySelector('input')!.getAttribute('inputmode')).toBe('decimal');
     expect(text(el)).toContain('linha tracejada no gráfico de 1RM');
-    expect(text(el)).not.toContain('Remover meta');
+    expect(text(el)).not.toContain('Remover Meta');
   });
 
   it('refuses what the server would refuse, and says why, without writing anything', async () => {

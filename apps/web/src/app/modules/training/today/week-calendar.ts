@@ -519,7 +519,7 @@ export class WeekCalendar {
         return {
           sessionId: session.id,
           dayKey: dateKey(session.startedAt, this.zone),
-          name: routine?.name ?? $localize`:@@training.today.calendar.free:Treino livre`,
+          name: routine?.name ?? $localize`:@@training.today.calendar.free:Treino Livre`,
           sets: working.length,
           volumeKg: working.reduce((sum, set) => sum + (set.weightKg ?? 0) * (set.reps ?? 0), 0),
         };

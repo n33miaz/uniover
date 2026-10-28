@@ -59,7 +59,7 @@ const SCREENS: readonly Screen[] = [
     name: 'novo exercício com erros',
     open: async (page) => {
       await openTraining(page, '/treino/exercicios/novo');
-      await page.getByRole('button', { name: 'Salvar exercício' }).click();
+      await page.getByRole('button', { name: 'Salvar Exercício' }).click();
       await expect(page.getByText('Dê um nome ao exercício.')).toBeVisible();
     },
   },
@@ -85,8 +85,8 @@ const SCREENS: readonly Screen[] = [
     name: 'folha de adicionar a um treino',
     open: async (page) => {
       await openTraining(page, `/treino/exercicios/${SEED_EXERCISE_IDS.pushUp}`);
-      await page.getByRole('button', { name: 'Adicionar a um treino' }).click();
-      await expect(page.getByRole('dialog', { name: 'Adicionar a um treino' })).toBeVisible();
+      await page.getByRole('button', { name: 'Adicionar a um Treino' }).click();
+      await expect(page.getByRole('dialog', { name: 'Adicionar a um Treino' })).toBeVisible();
     },
   },
   {
@@ -134,11 +134,11 @@ test.describe('pendências e movimento', () => {
     await openTraining(page, '/treino/exercicios/novo');
     await page.getByLabel('Nome').fill('Remada');
     await chooseMuscle(page, 'Meio das costas');
-    await page.getByRole('button', { name: 'Salvar exercício' }).click();
+    await page.getByRole('button', { name: 'Salvar Exercício' }).click();
     // Só com a falha já registrada o ícone abre a lista (antes disso o toque atualiza).
     await expect(page.getByText('1 com erro')).toBeVisible();
     await page.locator('.training-header .status').click();
-    await expect(page.getByRole('dialog', { name: 'Alterações com erro' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Alterações com Erro' })).toBeVisible();
     await settle(page);
     await expectNoA11yViolations(page);
     expect(await smallTargets(page)).toEqual([]);

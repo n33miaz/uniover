@@ -17,7 +17,7 @@ export interface Tip {
   template: `
     <section class="hint" aria-labelledby="hint-title">
       <h3 id="hint-title" class="ui-visually-hidden" i18n="@@training.live.hint-title">
-        Última vez e sugestão
+        Última Vez e Sugestão
       </h3>
       @if (last(); as value) {
         <p class="line">

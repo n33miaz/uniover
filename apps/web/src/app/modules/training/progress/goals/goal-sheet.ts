@@ -44,7 +44,7 @@ let nextGoalSheetId = 0;
       }
       @if (current() !== null) {
         <button type="button" class="remove" (click)="remove()">
-          <span i18n="@@training.progress.goal.remove">Remover meta</span>
+          <span i18n="@@training.progress.goal.remove">Remover Meta</span>
         </button>
       }
       <button sheetAction type="button" class="primary ui-btn" (click)="save()">

@@ -11,17 +11,17 @@ test('guarda uma avaliação e as fotos do relatório só neste aparelho, sem re
   const server = await startTraining(context, page);
   server.offline = true;
   await openTraining(page, '/treino/corpo/avaliacoes/assessment-cache');
-  await expect(page.getByRole('heading', { name: 'Avaliação não encontrada' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Avaliação Não Encontrada' })).toBeVisible();
   await openTraining(page, '/treino/corpo/avaliacoes/nova');
   await page.evaluate(() => window.dispatchEvent(new Event('offline')));
   await page.getByLabel('Data da avaliação').fill('2026-04-05');
   await page.getByLabel('Origem / clínica / sistema').fill('Clínica sintética');
-  await page.getByRole('button', { name: 'Adicionar medida' }).click();
+  await page.getByRole('button', { name: 'Adicionar Medida' }).click();
   await page.getByRole('combobox', { name: 'Medida' }).fill('calf');
   await page.getByLabel('Valor').fill('00');
   await page.getByLabel('Unidade').fill('cm');
   await page.getByLabel('Método').fill('fita');
-  await page.getByRole('button', { name: 'Adicionar medida' }).click();
+  await page.getByRole('button', { name: 'Adicionar Medida' }).click();
   await page.locator('#type-1').fill('weight');
   await page.locator('#value-1').fill('82.4');
   await page.getByRole('textbox', { name: 'Unidade' }).nth(1).fill('kg');
@@ -48,7 +48,7 @@ test('guarda uma avaliação e as fotos do relatório só neste aparelho, sem re
   await expect(page.locator('app-physical-assessment-editor-page .status')).toContainText(
     'Toque em Salvar avaliação',
   );
-  await page.getByRole('button', { name: 'Salvar avaliação' }).click();
+  await page.getByRole('button', { name: 'Salvar Avaliação' }).click();
 
   await expect(page).toHaveURL(/\/treino\/corpo\/avaliacoes\/[0-9a-f-]{36}$/);
   await expect(page.getByRole('heading', { name: '05 de abril de 2026' })).toBeVisible();
@@ -75,7 +75,7 @@ test('guarda uma avaliação e as fotos do relatório só neste aparelho, sem re
   await expect(transferChoices.first()).not.toBeChecked();
   await transferChoices.first().check();
   await expect(page.getByText('Anotação que será registrada no Corpo')).toBeVisible();
-  await page.getByRole('button', { name: 'Registrar campos selecionados' }).click();
+  await page.getByRole('button', { name: 'Registrar Campos Selecionados' }).click();
   await expect(
     page.getByText('Os campos selecionados foram registrados no Corpo', { exact: false }),
   ).toBeVisible();

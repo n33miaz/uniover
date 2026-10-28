@@ -109,7 +109,7 @@ export class ProgressPage {
     if (options.length > CHIP_LIMIT) {
       shown.push({
         id: OTHER_EXERCISE,
-        label: $localize`:@@training.progress.exercise.other:Outro exercício`,
+        label: $localize`:@@training.progress.exercise.other:Outro Exercício`,
       });
     }
     return shown;

@@ -31,7 +31,7 @@ export type MenuAction =
         <label class="ui-row">
           <span class="ui-tile"><app-today-glyph name="screen" /></span>
           <span class="ui-row-text">
-            <span class="ui-row-title" i18n="@@training.menu.screen">Manter a tela acesa</span>
+            <span class="ui-row-title" i18n="@@training.menu.screen">Manter a Tela Acesa</span>
             <span class="ui-row-sub">{{ screenHint() }}</span>
           </span>
           <input
@@ -50,14 +50,14 @@ export type MenuAction =
       </p>
 
       @if (hasFocus()) {
-        <h3 class="ui-section-label" i18n="@@training.menu.exercise">Este exercício</h3>
+        <h3 class="ui-section-label" i18n="@@training.menu.exercise">Este Exercício</h3>
         <ul class="ui-group ui-plain">
           @if (hasSteps()) {
             <li>
               <button type="button" class="ui-row" (click)="action.emit('steps')">
                 <span class="ui-tile"><app-training-glyph name="info" /></span>
                 <span class="ui-row-text">
-                  <span class="ui-row-title" i18n="@@training.menu.steps">Como fazer</span>
+                  <span class="ui-row-title" i18n="@@training.menu.steps">Como Fazer</span>
                 </span>
               </button>
             </li>
@@ -67,9 +67,9 @@ export type MenuAction =
               <button type="button" class="ui-row" (click)="action.emit('skip')">
                 <span class="ui-tile"><app-today-glyph name="skip" /></span>
                 <span class="ui-row-text">
-                  <span class="ui-row-title" i18n="@@training.menu.skip">Pular exercício</span>
+                  <span class="ui-row-title" i18n="@@training.menu.skip">Pular Exercício</span>
                   <span class="ui-row-sub" i18n="@@training.menu.skip-sub"
-                    >Sai do plano de hoje; as séries feitas ficam.</span
+                    >Sai da rotina de hoje; as séries feitas ficam.</span
                   >
                 </span>
               </button>
@@ -78,7 +78,7 @@ export type MenuAction =
               <button type="button" class="ui-row" (click)="action.emit('swap')">
                 <span class="ui-tile"><app-today-glyph name="swap" /></span>
                 <span class="ui-row-text">
-                  <span class="ui-row-title" i18n="@@training.menu.swap">Substituir exercício</span>
+                  <span class="ui-row-title" i18n="@@training.menu.swap">Substituir Exercício</span>
                   <span class="ui-row-sub" i18n="@@training.menu.swap-sub"
                     >Só hoje: a rotina não muda.</span
                   >
@@ -96,7 +96,7 @@ export type MenuAction =
             <button type="button" class="ui-row" (click)="action.emit('plan')">
               <span class="ui-tile"><app-training-glyph name="list" /></span>
               <span class="ui-row-text">
-                <span class="ui-row-title" i18n="@@training.menu.plan">Exercícios do treino</span>
+                <span class="ui-row-title" i18n="@@training.menu.plan">Exercícios do Treino</span>
                 <span class="ui-row-sub" i18n="@@training.menu.plan-sub"
                   >Voltar a um exercício ou fazer mais uma série.</span
                 >
@@ -108,7 +108,7 @@ export type MenuAction =
           <button type="button" class="ui-row" (click)="action.emit('add')">
             <span class="ui-tile"><app-training-glyph name="plus" /></span>
             <span class="ui-row-text">
-              <span class="ui-row-title" i18n="@@training.menu.add">Adicionar exercício</span>
+              <span class="ui-row-title" i18n="@@training.menu.add">Adicionar Exercício</span>
             </span>
           </button>
         </li>
@@ -117,7 +117,7 @@ export type MenuAction =
             <button type="button" class="ui-row" (click)="action.emit('follow')">
               <span class="ui-tile"><app-training-glyph name="back" /></span>
               <span class="ui-row-text">
-                <span class="ui-row-title" i18n="@@training.menu.follow">Seguir o plano</span>
+                <span class="ui-row-title" i18n="@@training.menu.follow">Seguir a Rotina</span>
               </span>
             </button>
           </li>
@@ -130,7 +130,7 @@ export type MenuAction =
             <button type="button" class="ui-row" (click)="action.emit('finish')">
               <span class="ui-tile ok"><app-training-glyph name="check" /></span>
               <span class="ui-row-text">
-                <span class="ui-row-title" i18n="@@training.menu.finish">Terminar treino</span>
+                <span class="ui-row-title" i18n="@@training.menu.finish">Terminar Treino</span>
               </span>
             </button>
           </li>
@@ -144,7 +144,7 @@ export type MenuAction =
           >
             <span class="ui-tile bad"><app-training-glyph name="trash" /></span>
             <span class="ui-row-text">
-              <span class="ui-row-title" i18n="@@training.menu.discard">Cancelar treino</span>
+              <span class="ui-row-title" i18n="@@training.menu.discard">Cancelar Treino</span>
               <span class="ui-row-sub" i18n="@@training.menu.discard-sub"
                 >Apaga o treino de hoje e as séries dele.</span
               >
@@ -161,10 +161,10 @@ export type MenuAction =
             </p>
             <div class="confirm-actions">
               <button type="button" class="danger ui-btn" (click)="action.emit('discard')">
-                <span i18n="@@training.menu.discard-yes">Sim, cancelar</span>
+                <span i18n="@@training.menu.discard-yes">Sim, Cancelar</span>
               </button>
               <button type="button" class="secondary ui-btn" (click)="confirming.set(false)">
-                <span i18n="@@training.menu.discard-no">Continuar treinando</span>
+                <span i18n="@@training.menu.discard-no">Continuar Treinando</span>
               </button>
             </div>
           </div>
@@ -181,7 +181,7 @@ export class SessionMenuSheet {
   readonly hasSteps = input(false);
   /** Pular e substituir só valem para exercício da rotina. */
   readonly canSwitch = input(false);
-  /** A pessoa escolheu um exercício fora do plano: aparece "Seguir o plano". */
+  /** A pessoa escolheu um exercício fora do plano: aparece "Seguir a Rotina". */
   readonly chosen = input(false);
   /** A lista dos exercícios do treino (a tela do dia já é essa lista, então lá a linha não aparece). */
   readonly showPlan = input(true);
@@ -196,7 +196,7 @@ export class SessionMenuSheet {
   readonly screen = output<boolean>();
   readonly closed = output<void>();
 
-  protected readonly heading = $localize`:@@training.menu.title:Opções do treino`;
+  protected readonly heading = $localize`:@@training.menu.title:Opções do Treino`;
   protected readonly confirmLabel = $localize`:@@training.menu.discard-label:Confirmar o cancelamento do treino`;
   protected readonly confirming = signal(false);
   private readonly toggle = viewChild<ElementRef<HTMLInputElement>>('toggle');

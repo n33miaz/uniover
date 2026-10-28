@@ -26,7 +26,7 @@ describe('ProgressEvolution', () => {
     fixture.componentRef.setInput('chips', [
       { id: exerciseId, label: name },
       { id: 'agachamento', label: 'Agachamento livre' },
-      { id: OTHER_EXERCISE, label: 'Outro exercício' },
+      { id: OTHER_EXERCISE, label: 'Outro Exercício' },
     ]);
     const el = fixture.nativeElement as HTMLElement;
     return { ...kit, fixture, el };
@@ -101,7 +101,7 @@ describe('ProgressEvolution', () => {
       const { fixture, el, engine } = await openBench();
       await eventually(fixture, () => expect(text(el.querySelector('.value'))).toBe('53,8 kg'));
       expect(text(el)).toContain('Epley, só séries de 1 a 10 repetições');
-      expect(button(el, /Definir meta/)).toBeDefined();
+      expect(button(el, /Definir Meta/)).toBeDefined();
 
       button(el, 'Carga máxima').click();
       await eventually(fixture, () => expect(text(el.querySelector('.value'))).toBe('42,5 kg'));
@@ -113,17 +113,17 @@ describe('ProgressEvolution', () => {
       expect(button(el, /meta/i)).toBeUndefined();
     });
 
-    it('shows a table with the same points as the chart, newest first, behind a "Ver dados" button', async () => {
+    it('shows a table with the same points as the chart, newest first, behind a "Ver Dados" button', async () => {
       const { fixture, el, engine } = await openBench();
       await eventually(fixture, () => expect(text(el.querySelector('.value'))).toBe('53,8 kg'));
       expect(el.querySelector('table')).toBeNull();
 
-      const toggle = button(el, 'Ver dados');
+      const toggle = button(el, 'Ver Dados');
       expect(toggle.getAttribute('aria-expanded')).toBe('false');
       toggle.click();
       fixture.detectChanges();
 
-      expect(button(el, 'Ocultar dados').getAttribute('aria-expanded')).toBe('true');
+      expect(button(el, 'Ocultar Dados').getAttribute('aria-expanded')).toBe('true');
       const rows = Array.from(el.querySelectorAll('tbody tr')).map((row) =>
         Array.from(row.children).map((cell) => text(cell)),
       );
@@ -163,14 +163,14 @@ describe('ProgressEvolution', () => {
 
       await goals.clear('exercise_e1rm', 'supino-reto');
       await eventually(fixture, () => expect(engine.last.goal).toBeNull());
-      expect(text(button(el, /meta/i))).toBe('Definir meta');
+      expect(text(button(el, /meta/i))).toBe('Definir Meta');
     });
 
     it('saves a goal typed in the sheet once, in the local database and in the send queue', async () => {
       const { fixture, el, engine, trainingDb, db } = await openBench();
       await eventually(fixture, () => expect(text(el.querySelector('.value'))).toBe('53,8 kg'));
 
-      button(el, 'Definir meta').click();
+      button(el, 'Definir Meta').click();
       fixture.detectChanges();
       const input = el.querySelector<HTMLInputElement>('app-goal-sheet input')!;
       expect(input).not.toBeNull();
@@ -215,7 +215,7 @@ describe('ProgressEvolution', () => {
     expect(engine.created).toBe(0);
   });
 
-  it('offers "Ver tudo" when the exercise was trained, but not in the chosen period', async () => {
+  it('offers "Ver Tudo" when the exercise was trained, but not in the chosen period', async () => {
     // Dias 5 e 20: bem antes das 8 semanas (dias 59 a 115).
     const { fixture, el, engine } = await open('supino-inclinado', 'Supino inclinado', (db) =>
       seedHistory(db, 'supino-inclinado', [
@@ -228,7 +228,7 @@ describe('ProgressEvolution', () => {
     );
     expect(el.querySelector('figure')).toBeNull();
 
-    button(el, 'Ver tudo').click();
+    button(el, 'Ver Tudo').click();
     await eventually(fixture, () => expect(el.querySelector('figure')).not.toBeNull());
     expect(pressed(el, 'Tudo')).toBe('true');
     await vi.waitFor(() => expect(engine.last.xs).toHaveLength(2));
@@ -261,7 +261,7 @@ describe('ProgressEvolution', () => {
     await eventually(fixture, () => expect(text(el)).toContain('o 1RM não pode ser estimado'));
     expect(el.querySelector('figure')).toBeNull();
 
-    button(el, 'Ver a carga máxima').click();
+    button(el, 'Ver a Carga Máxima').click();
     await eventually(fixture, () => expect(text(el.querySelector('.value'))).toBe('22,5 kg'));
     expect(pressed(el, 'Carga máxima')).toBe('true');
   });
@@ -283,7 +283,7 @@ describe('ProgressEvolution', () => {
     expect(text(el.querySelector('.value'))).toBe('53,8 kg');
   });
 
-  it('draws the chart after "Tentar de novo" once the library can be loaded again', async () => {
+  it('draws the chart after "Tentar de Novo" once the library can be loaded again', async () => {
     const { fixture, el, engine } = await open(
       'supino-reto',
       'Supino reto com barra',
@@ -296,21 +296,21 @@ describe('ProgressEvolution', () => {
     expect(engine.created).toBe(0);
 
     // Ainda sem a biblioteca: tentar de novo avisa de novo, sem travar a tela.
-    button(el, 'Tentar de novo').click();
+    button(el, 'Tentar de Novo').click();
     await eventually(fixture, () =>
       expect(text(el)).toContain('Não foi possível carregar o gráfico agora'),
     );
 
     // A rede voltou: o desenho nasce no mesmo lugar e o aviso some.
     engine.failWith = null;
-    button(el, 'Tentar de novo').click();
+    button(el, 'Tentar de Novo').click();
     await eventually(fixture, () => expect(el.querySelector('figure')).not.toBeNull());
     await vi.waitFor(() => expect(engine.created).toBe(1));
     expect(engine.last.xs).toHaveLength(6);
     expect(text(el)).not.toContain('Não foi possível carregar o gráfico agora');
   });
 
-  it('tells the page which exercise was tapped, and when "Outro exercício" was', async () => {
+  it('tells the page which exercise was tapped, and when "Outro Exercício" was', async () => {
     const { fixture, el } = await open();
     const chosen: string[] = [];
     let others = 0;
@@ -321,7 +321,7 @@ describe('ProgressEvolution', () => {
     button(el, 'Agachamento livre').click();
     // O chip do exercício que já está aberto não avisa nada.
     button(el, 'Supino reto com barra').click();
-    button(el, 'Outro exercício').click();
+    button(el, 'Outro Exercício').click();
 
     expect(chosen).toEqual(['agachamento']);
     expect(others).toBe(1);

@@ -30,7 +30,7 @@ export const STATES: readonly State[] = [
     name: 'tabela de dados aberta',
     open: async (page) => {
       await openProgress(page);
-      await page.getByRole('button', { name: 'Ver dados' }).click();
+      await page.getByRole('button', { name: 'Ver Dados' }).click();
       await expect(page.locator('app-progress-evolution table')).toBeVisible();
     },
   },
@@ -46,7 +46,7 @@ export const STATES: readonly State[] = [
     name: 'meta de 1RM no gráfico',
     open: async (page) => {
       await openProgress(page);
-      await page.getByRole('button', { name: 'Definir meta' }).click();
+      await page.getByRole('button', { name: 'Definir Meta' }).click();
       const sheet = page.getByRole('dialog', { name: /^Meta de 1RM/ });
       await sheet.getByLabel('Meta de 1RM, em kg').fill('55');
       await sheet.getByRole('button', { name: 'Salvar' }).click();
@@ -58,7 +58,7 @@ export const STATES: readonly State[] = [
     name: 'folha da meta, com erro',
     open: async (page) => {
       await openProgress(page);
-      await page.getByRole('button', { name: 'Definir meta' }).click();
+      await page.getByRole('button', { name: 'Definir Meta' }).click();
       const sheet = page.getByRole('dialog', { name: /^Meta de 1RM/ });
       await sheet.getByLabel('Meta de 1RM, em kg').fill('0');
       await sheet.getByRole('button', { name: 'Salvar' }).click();
@@ -100,8 +100,8 @@ export const STATES: readonly State[] = [
         });
       });
       await openProgress(page);
-      await section(page, /^Exportar e compartilhar/).click();
-      await page.getByRole('button', { name: /^Compartilhar resumo da semana/ }).click();
+      await section(page, /^Exportar e Compartilhar/).click();
+      await page.getByRole('button', { name: /^Compartilhar Resumo da Semana/ }).click();
       await expect(
         page.locator('app-progress-export .status', { hasText: 'copiado' }),
       ).toBeVisible();
@@ -128,7 +128,7 @@ export const STATES: readonly State[] = [
     open: async (page) => {
       await page.goto('/treino/progresso');
       await expect(
-        page.getByRole('heading', { name: 'Registre um treino para ver o progresso' }),
+        page.getByRole('heading', { name: 'Registre um Treino para Ver o Progresso' }),
       ).toBeVisible();
     },
   },
@@ -137,8 +137,8 @@ export const STATES: readonly State[] = [
     options: { more: true },
     open: async (page) => {
       await openProgress(page, '/treino/progresso');
-      await page.getByRole('button', { name: 'Outro exercício', exact: true }).click();
-      await expect(page.getByRole('dialog', { name: 'Outro exercício' })).toBeVisible();
+      await page.getByRole('button', { name: 'Outro Exercício', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: 'Outro Exercício' })).toBeVisible();
     },
   },
 ];

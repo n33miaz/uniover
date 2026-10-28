@@ -75,7 +75,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
       >
       <header>
         <p class="eyebrow" i18n="@@training.assessments.import-eyebrow">Prévia antes de gravar</p>
-        <h1 id="title" i18n="@@training.assessments.import-title">Importar avaliação</h1>
+        <h1 id="title" i18n="@@training.assessments.import-title">Importar Avaliação</h1>
       </header>
       <p class="explanation" i18n="@@training.assessments.import-help">
         Escolha um JSON exportado por uma avaliação do UniOver. Confira a procedência e marque cada
@@ -247,7 +247,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
           (click)="confirmImport()"
           i18n="@@training.assessments.confirm-import"
         >
-          Confirmar campos selecionados
+          Confirmar Campos Selecionados
         </button>
       }
     </div>

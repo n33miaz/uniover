@@ -13,7 +13,7 @@ interface MeasureRow {
 
 /** Preenche uma medida do editor pelos identificadores de cada linha (a primeira linha já existe ao abrir). */
 async function addMeasure(page: Page, index: number, row: MeasureRow): Promise<void> {
-  await page.getByRole('button', { name: 'Adicionar medida' }).click();
+  await page.getByRole('button', { name: 'Adicionar Medida' }).click();
   await page.locator(`#type-${index}`).fill(row.type);
   await page.locator(`#value-${index}`).fill(row.value);
   await page.getByRole('textbox', { name: 'Unidade' }).nth(index).fill(row.unit);
@@ -41,7 +41,7 @@ test('leva à tela Corpo as medidas novas com lado, sem inventar e sem promover 
     { type: 'skinfold-abdominal', value: '15', unit: 'mm' },
   ];
   for (const [index, row] of rows.entries()) await addMeasure(page, index, row);
-  await page.getByRole('button', { name: 'Salvar avaliação' }).click();
+  await page.getByRole('button', { name: 'Salvar Avaliação' }).click();
   await expect(page).toHaveURL(/\/treino\/corpo\/avaliacoes\/[0-9a-f-]{36}$/);
 
   await page.getByRole('button', { name: /Levar medidas ao Corpo/ }).click();
@@ -52,7 +52,7 @@ test('leva à tela Corpo as medidas novas com lado, sem inventar e sem promover 
     await expect(choice).not.toBeChecked();
     await choice.check();
   }
-  await page.getByRole('button', { name: 'Registrar campos selecionados' }).click();
+  await page.getByRole('button', { name: 'Registrar Campos Selecionados' }).click();
   await expect(
     page.getByText('Os campos selecionados foram registrados no Corpo', { exact: false }),
   ).toBeVisible();

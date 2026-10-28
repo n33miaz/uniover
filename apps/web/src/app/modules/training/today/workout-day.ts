@@ -62,7 +62,7 @@ import { awaitingSetsText } from './today-text';
       @if (live.ready() && live.session() === undefined) {
         <section class="empty ui-card" aria-labelledby="empty-title">
           <span class="ui-tile lg"><app-training-glyph name="info" /></span>
-          <h2 id="empty-title" i18n="@@training.day.empty-title">Treino não encontrado</h2>
+          <h2 id="empty-title" i18n="@@training.day.empty-title">Treino Não Encontrado</h2>
           <a routerLink="/treino" class="primary ui-btn" i18n="@@training.day.empty-back"
             >Voltar a Hoje</a
           >
@@ -108,7 +108,7 @@ import { awaitingSetsText } from './today-text';
         @if (live.ready() && live.plan().entries.length === 0) {
           <button type="button" class="secondary ui-btn block" (click)="chooserOpen.set(true)">
             <app-training-glyph name="plus" />
-            <span i18n="@@training.day.choose">Escolher exercício</span>
+            <span i18n="@@training.day.choose">Escolher Exercício</span>
           </button>
         }
 
@@ -171,7 +171,7 @@ export class WorkoutDay {
 
   protected readonly menuLabel = $localize`:@@training.live.menu:Opções do treino`;
   protected readonly unknownName = $localize`:@@training.day.unknown:Exercício removido`;
-  protected readonly chooseHeading = $localize`:@@training.day.choose-title:Adicionar exercício`;
+  protected readonly chooseHeading = $localize`:@@training.day.choose-title:Adicionar Exercício`;
   protected readonly chooserOpen = signal(false);
   protected readonly menuOpen = signal(false);
   protected readonly screenRefused = signal(false);

@@ -96,20 +96,20 @@ describe('LiveStore', () => {
       expect(await TestBed.inject(TodayStore).start(routine.id)).toBe('started');
       const live = TestBed.inject(LiveStore);
 
-      // Antes da leitura não há treino: a tela não mostra "Treino livre" por engano.
+      // Antes da leitura não há treino: a tela não mostra "Treino Livre" por engano.
       expect(live.workoutName()).toBe('');
       await live.load();
       expect(live.workoutName()).toBe('Treino A - peito tríceps');
     });
 
-    it('calls a workout without a routine "Treino livre" only after it loads', async () => {
+    it('calls a workout without a routine "Treino Livre" only after it loads', async () => {
       await setup();
       expect(await TestBed.inject(TodayStore).start(null)).toBe('started');
       const live = TestBed.inject(LiveStore);
 
       expect(live.workoutName()).toBe('');
       await live.load();
-      expect(live.workoutName()).toBe('Treino livre');
+      expect(live.workoutName()).toBe('Treino Livre');
     });
   });
 

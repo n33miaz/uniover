@@ -27,7 +27,7 @@
     @if (live.ready() && !leaving()) {
       <section class="calm ui-card" aria-labelledby="gone-title">
         <span class="ui-tile lg"><app-training-glyph name="info" /></span>
-        <h2 id="gone-title" i18n="@@training.live.gone-title">Este treino foi encerrado</h2>
+        <h2 id="gone-title" i18n="@@training.live.gone-title">Este Treino Foi Encerrado</h2>
         <p i18n="@@training.live.gone-text">
           Ele já não está aberto neste aparelho (foi encerrado em outro lugar). O que você fez está
           salvo.
@@ -123,7 +123,7 @@
         @if (doneRows().length > 0) {
           <section class="done" aria-labelledby="done-title">
             <h3 id="done-title" class="ui-section-label" i18n="@@training.live.done">
-              Feitas neste exercício
+              Feitas Neste Exercício
             </h3>
             <ul class="ui-group ui-plain">
               @for (row of doneRows(); track row.set.id) {
@@ -150,7 +150,7 @@
                     @if (row.record) {
                       <span class="ui-chip warn medal">
                         <app-today-glyph name="star" />
-                        <span i18n="@@training.live.record-tag">recorde</span>
+                        <span i18n="@@training.live.record-tag">Recorde</span>
                       </span>
                     }
                     <app-training-glyph class="pencil" name="pencil" />
@@ -163,7 +163,7 @@
       } @else if (live.plan().planDone) {
         <section class="calm ui-card" aria-labelledby="calm-title">
           <span class="ui-tile ok lg"><app-training-glyph name="check" /></span>
-          <h2 id="calm-title" i18n="@@training.live.plan-done-title">O plano de hoje acabou</h2>
+          <h2 id="calm-title" i18n="@@training.live.plan-done-title">A Rotina de Hoje Acabou</h2>
           <p i18n="@@training.live.plan-done-text">
             Você pode fazer mais uma série de algum exercício, acrescentar outro ou terminar o
             treino.
@@ -171,11 +171,11 @@
           <div class="calm-actions">
             <button type="button" class="secondary ui-btn" (click)="sheet.set('plan')">
               <app-training-glyph name="list" />
-              <span i18n="@@training.live.more-set">Mais uma série</span>
+              <span i18n="@@training.live.more-set">Mais uma Série</span>
             </button>
             <button type="button" class="secondary ui-btn" (click)="sheet.set('add')">
               <app-training-glyph name="plus" />
-              <span i18n="@@training.live.add">Adicionar exercício</span>
+              <span i18n="@@training.live.add">Adicionar Exercício</span>
             </button>
           </div>
         </section>
@@ -208,13 +208,13 @@
       >
         @if (focus()) {
           <app-training-glyph name="check" />
-          <span i18n="@@training.live.complete">Concluir série</span>
+          <span i18n="@@training.live.complete">Concluir Série</span>
         } @else if (live.plan().planDone) {
           <app-training-glyph name="check" />
-          <span i18n="@@training.live.finish">Terminar treino</span>
+          <span i18n="@@training.live.finish">Terminar Treino</span>
         } @else {
           <app-training-glyph name="plus" />
-          <span i18n="@@training.live.choose">Escolher exercício</span>
+          <span i18n="@@training.live.choose">Escolher Exercício</span>
         }
       </button>
     </div>

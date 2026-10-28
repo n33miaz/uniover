@@ -25,7 +25,7 @@
         </p>
         <button type="button" class="secondary ui-btn" (click)="resend()">
           <app-training-glyph name="refresh" />
-          <span i18n="@@training.today.resend">Reenviar treino</span>
+          <span i18n="@@training.today.resend">Reenviar Treino</span>
         </button>
       </div>
     </section>
@@ -73,7 +73,7 @@
         <span class="ui-tile warn"><app-today-glyph name="lock" /></span>
         <div class="routine-id">
           <h3 id="blocked-title" class="routine-name" i18n="@@training.today.blocked-title">
-            Treino aberto em outro aparelho
+            Treino Aberto em Outro Aparelho
           </h3>
           <p class="meta" i18n="@@training.today.blocked-age">aberto {{ otherAge() }}</p>
         </div>
@@ -94,17 +94,17 @@
               </p>
               <div class="confirm-actions">
                 <button type="button" class="primary ui-btn" (click)="closeForgotten()">
-                  <span i18n="@@training.today.forgotten-yes">Sim, encerrar</span>
+                  <span i18n="@@training.today.forgotten-yes">Sim, Encerrar</span>
                 </button>
                 <button type="button" class="secondary ui-btn" (click)="confirmingClose.set(false)">
-                  <span i18n="@@training.today.forgotten-no">Manter aberto</span>
+                  <span i18n="@@training.today.forgotten-no">Manter Aberto</span>
                 </button>
               </div>
             </div>
           </div>
         } @else {
           <button type="button" class="secondary ui-btn block" (click)="confirmingClose.set(true)">
-            <span i18n="@@training.today.forgotten-button">Encerrar o treino esquecido</span>
+            <span i18n="@@training.today.forgotten-button">Encerrar o Treino Esquecido</span>
           </button>
         }
       } @else {
@@ -126,7 +126,7 @@
         </p>
       } @else {
         <h3 id="catalog-title" i18n="@@training.today.catalog-title">
-          O catálogo ainda não chegou
+          O Catálogo Ainda Não Chegou
         </h3>
         <p i18n="@@training.today.catalog-text">
           Para treinar, o aparelho precisa dos exercícios. Conecte-se uma vez para baixar; depois
@@ -139,7 +139,7 @@
           (click)="retryDownload()"
         >
           <app-training-glyph name="refresh" />
-          <span i18n="@@training.today.catalog-retry">Tentar baixar</span>
+          <span i18n="@@training.today.catalog-retry">Tentar Baixar</span>
         </button>
       }
     </section>
@@ -192,13 +192,21 @@
     <div class="actions">
       <button type="button" class="secondary ui-btn" [disabled]="starting()" (click)="start(null)">
         <app-training-glyph name="plus" />
-        <span i18n="@@training.today.free">Treino livre</span>
+        <span i18n="@@training.today.free">Treino Livre</span>
       </button>
+      <a
+        class="glossary-link ui-btn secondary"
+        routerLink="/treino/glossario"
+        aria-label="Entender Programa Semanal, Rotina e Exercício"
+        i18n-aria-label="@@training.glossary.link-label"
+      >
+        <app-training-glyph name="info" />
+      </a>
     </div>
   } @else if (store.resting()) {
     <section class="routine ui-card calm" aria-labelledby="rest-title">
       <span class="ui-tile lg"><app-training-glyph name="check" /></span>
-      <h3 id="rest-title" i18n="@@training.today.rest-title">Dia de descanso</h3>
+      <h3 id="rest-title" i18n="@@training.today.rest-title">Dia de Descanso</h3>
       <button
         type="button"
         class="secondary ui-btn block"
@@ -206,26 +214,26 @@
         (click)="start(null)"
       >
         <app-training-glyph name="plus" />
-        <span i18n="@@training.today.rest-manual">Iniciar treino manual</span>
+        <span i18n="@@training.today.rest-manual">Iniciar Treino Manual</span>
       </button>
       @if (store.entries().length > 0) {
         <button type="button" class="secondary ui-btn block" (click)="pickerOpen.set(true)">
           <app-training-glyph name="list" />
-          <span i18n="@@training.today.choose-other-rest">Escolher uma ficha</span>
+          <span i18n="@@training.today.choose-other-rest">Escolher Outra Rotina</span>
         </button>
       }
     </section>
   } @else {
     <section class="routine ui-card calm" aria-labelledby="empty-title">
       <span class="ui-tile lg"><app-training-glyph name="list" /></span>
-      <h3 id="empty-title" i18n="@@training.today.empty-title">Sem rotinas ainda</h3>
+      <h3 id="empty-title" i18n="@@training.today.empty-title">Sem Rotinas Ainda</h3>
       <p i18n="@@training.today.empty-text">
         Uma rotina é a lista de exercícios de um treino. Monte a sua do zero ou comece por um modelo
         pronto. Também dá para treinar sem rotina.
       </p>
       <div class="actions">
         <a class="primary ui-btn" routerLink="/treino/rotinas">
-          <span i18n="@@training.today.routines">Montar rotinas</span>
+          <span i18n="@@training.today.routines">Montar Rotinas</span>
         </a>
         <button
           type="button"
@@ -233,7 +241,7 @@
           [disabled]="starting()"
           (click)="start(null)"
         >
-          <span i18n="@@training.today.free-empty">Treino livre</span>
+          <span i18n="@@training.today.free-empty">Treino Livre</span>
         </button>
       </div>
     </section>

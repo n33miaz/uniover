@@ -45,7 +45,7 @@ export class ProgressExport {
   private readonly sessions = inject(SessionRepository);
   private readonly doc = inject(DOCUMENT);
 
-  protected readonly heading = $localize`:@@training.progress.export.title:Exportar e compartilhar`;
+  protected readonly heading = $localize`:@@training.progress.export.title:Exportar e Compartilhar`;
   protected readonly summary = $localize`:@@training.progress.export.summary:JSON, CSV e resumo da semana`;
   protected readonly open = signal(false);
 
@@ -75,21 +75,21 @@ export class ProgressExport {
       {
         action: 'json',
         glyph: 'download',
-        title: $localize`:@@training.progress.export.json:Exportar tudo (JSON)`,
+        title: $localize`:@@training.progress.export.json:Exportar Tudo (JSON)`,
         sub: $localize`:@@training.progress.export.json-sub:Treinos, séries, rotinas e metas`,
         state: states.json,
       },
       {
         action: 'csv',
         glyph: 'bars',
-        title: $localize`:@@training.progress.export.csv:Exportar séries (CSV)`,
+        title: $localize`:@@training.progress.export.csv:Exportar Séries (CSV)`,
         sub: $localize`:@@training.progress.export.csv-sub:Abre em planilha`,
         state: states.csv,
       },
       {
         action: 'share',
         glyph: 'share',
-        title: $localize`:@@training.progress.export.share:Compartilhar resumo da semana`,
+        title: $localize`:@@training.progress.export.share:Compartilhar Resumo da Semana`,
         sub: $localize`:@@training.progress.export.share-sub:Texto com volume e recordes`,
         state: states.share,
       },

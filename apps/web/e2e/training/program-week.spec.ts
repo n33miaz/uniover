@@ -89,7 +89,7 @@ test.describe('programa da semana', () => {
     await openTraining(page, '/treino');
     await expect.poll(() => countRows(page, 'exercises')).toBeGreaterThan(0);
     const suggestion = page.locator('app-program-suggestion');
-    await expect(suggestion.getByRole('heading', { name: 'Escolha seu programa' })).toBeVisible();
+    await expect(suggestion.getByRole('heading', { name: 'Escolha Seu Programa' })).toBeVisible();
     await expect(suggestion).toContainText('Seg Peito · Ter Costas · Qua Pernas');
     await expect(suggestion).toContainText('Seg–sex alterna Empurrar / Puxar');
     await screenshot(page, info.outputPath('sugestao.png'));
@@ -136,7 +136,7 @@ test.describe('programa da semana', () => {
     await concludeSet(page);
     await concludeSet(page);
     await finishFromDay(page);
-    await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino Concluído' })).toBeVisible();
     await expect
       .poll(
         () =>
@@ -214,12 +214,12 @@ test.describe('programa da semana', () => {
 
     await page.clock.setSystemTime(at(5));
     await openTraining(page, '/treino');
-    await expect(heading(page, 'Dia de descanso')).toBeVisible();
+    await expect(heading(page, 'Dia de Descanso')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Iniciar Treino', exact: true })).toHaveCount(0);
     await screenshot(page, info.outputPath('sabado.png'));
 
-    await page.getByRole('button', { name: 'Iniciar treino manual' }).click();
-    await expect(page.locator('app-workout-day .routine-name')).toHaveText('Treino livre');
+    await page.getByRole('button', { name: 'Iniciar Treino Manual' }).click();
+    await expect(page.locator('app-workout-day .routine-name')).toHaveText('Treino Livre');
   });
 
   test('A/B alterna nos dias de treino: segunda A, terça B', async ({ page, context }) => {
@@ -235,7 +235,7 @@ test.describe('programa da semana', () => {
     await concludeSet(page);
     await concludeSet(page);
     await finishFromDay(page);
-    await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino Concluído' })).toBeVisible();
 
     await page.clock.setSystemTime(at(1));
     await openTraining(page, '/treino');

@@ -156,7 +156,7 @@ async function ownerSavesOffline(page: Page) {
   await goInApp(page, '/treino/exercicios/novo');
   await page.getByLabel('Nome').fill(MINE);
   await chooseMuscle(page, 'Meio das costas');
-  await page.getByRole('button', { name: 'Salvar exercício' }).click();
+  await page.getByRole('button', { name: 'Salvar Exercício' }).click();
   await expect(page.getByRole('heading', { name: MINE })).toBeVisible();
   await expect(page.getByText('1 ainda não sincronizado')).toBeVisible();
   expect(await queued(page, OWNER_ID)).toBe(1);
@@ -264,7 +264,7 @@ test.describe('o treino ao vivo de duas contas no mesmo navegador', () => {
     await goOnline(page);
     await signIn(page, GUEST.email, GUEST.password);
     await goInApp(page, '/treino');
-    await expect(page.getByText('Sem rotinas ainda')).toBeVisible();
+    await expect(page.getByText('Sem Rotinas Ainda')).toBeVisible();
     await expect(page.locator('app-week-calendar .week-days .day.done')).toHaveCount(0);
     await expect(page.getByText('Treino em Andamento')).toHaveCount(0);
     await expect(page.getByText('Continuar Treino')).toHaveCount(0);

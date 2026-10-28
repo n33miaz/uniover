@@ -36,7 +36,7 @@ export async function openToday(
  * sem programa. Com programa ativo (ou treino já aberto) a folha não aparece e nada acontece.
  */
 export async function skipProgramChoice(page: Page): Promise<void> {
-  const skip = page.getByRole('button', { name: 'Seguir sem programa' });
+  const skip = page.getByRole('button', { name: 'Seguir sem Programa' });
   const day = page.locator('app-workout-day');
   await expect(skip.or(day)).toBeVisible();
   if (await skip.isVisible()) await skip.click();
@@ -49,7 +49,7 @@ export async function beginWorkout(page: Page, title = /Treino A/): Promise<void
   await expect(page.locator('app-workout-day .routine-name')).toContainText(title);
   await page.locator('app-workout-day .exercise.suggested').click();
   await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Concluir série' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Concluir Série' })).toBeEnabled();
 }
 
 /** Toca `times` vezes no botão de − ou + de um campo (pelo nome acessível). */
@@ -80,14 +80,14 @@ export async function concludeSet(page: Page): Promise<void> {
     await expect(rest).toHaveCount(0);
   }
   await page.clock.fastForward(1000);
-  await page.getByRole('button', { name: 'Concluir série' }).click();
+  await page.getByRole('button', { name: 'Concluir Série' }).click();
   await expect.poll(() => countRows(page, 'sets')).toBe(before + 1);
 }
 
-/** Abre o menu do treino ("Opções do treino") e toca numa linha dele. */
+/** Abre o menu do treino ("Opções do Treino") e toca numa linha dele. */
 export async function menu(page: Page, item: string | RegExp): Promise<void> {
-  await page.getByRole('button', { name: 'Opções do treino' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Opções do treino' });
+  await page.getByRole('button', { name: 'Opções do Treino' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Opções do Treino' });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: item }).click();
 }
@@ -98,7 +98,7 @@ export async function menu(page: Page, item: string | RegExp): Promise<void> {
  */
 export async function finishFromDay(page: Page): Promise<void> {
   await expect(page.locator('app-workout-day')).toBeVisible();
-  await menu(page, /Terminar treino/);
+  await menu(page, /Terminar Treino/);
 }
 
 /** Aparelhos falsos: vibração, áudio e tela acesa, contados pela própria página (sem depender do navegador do teste). */

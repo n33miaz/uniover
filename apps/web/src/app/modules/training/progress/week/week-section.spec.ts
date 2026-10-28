@@ -116,7 +116,7 @@ describe('ProgressWeek', () => {
     expect(text(el)).toContain('Aquecimento não conta');
     expect(text(el)).toContain('não recomenda quanto fazer');
     // Sem meta definida pelo dono, nenhuma meta é imposta.
-    expect(text(el.querySelector('.goal-text b'))).toBe('Meta de treinos por semana');
+    expect(text(el.querySelector('.goal-text b'))).toBe('Meta de Treinos por Semana');
     expect(text(el.querySelector('.goal-text span'))).toBe('Sem meta: você define');
     expect(text(el.querySelector('.goal button'))).toBe('Definir');
   });

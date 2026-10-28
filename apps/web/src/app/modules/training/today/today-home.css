@@ -183,3 +183,17 @@
   height: 56px;
   width: 100%;
 }
+
+/* O "?" do glossário: um quadrado de toque ao lado da ação, sem ocupar uma linha própria. */
+.actions > .glossary-link {
+  display: inline-grid;
+  flex: 0 0 var(--tap);
+  place-items: center;
+  width: var(--tap);
+  padding: 0;
+}
+
+.glossary-link app-training-glyph {
+  width: 20px;
+  height: 20px;
+}

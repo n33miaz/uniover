@@ -58,7 +58,7 @@ const SCREENS: readonly Screen[] = [
       const server = await launch(context, page);
       seedOpenElsewhere(server, HOURS.thirteen);
       await openToday(page, { history: false });
-      await expect(page.getByRole('button', { name: 'Encerrar o treino esquecido' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Encerrar o Treino Esquecido' })).toBeVisible();
     },
   },
   {
@@ -92,8 +92,8 @@ const SCREENS: readonly Screen[] = [
       await launch(context, page);
       await openToday(page);
       await beginWorkout(page);
-      await page.getByRole('button', { name: 'Opções do treino' }).click();
-      await expect(page.getByRole('dialog', { name: 'Opções do treino' })).toBeVisible();
+      await page.getByRole('button', { name: 'Opções do Treino' }).click();
+      await expect(page.getByRole('dialog', { name: 'Opções do Treino' })).toBeVisible();
     },
   },
   {
@@ -104,7 +104,7 @@ const SCREENS: readonly Screen[] = [
       await beginWorkout(page);
       await concludeSet(page);
       await page.locator('.done .ui-row').first().click();
-      await expect(page.getByRole('dialog', { name: 'Editar série' })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Editar Série' })).toBeVisible();
     },
   },
   {
@@ -113,8 +113,8 @@ const SCREENS: readonly Screen[] = [
       await launch(context, page);
       await openToday(page);
       await beginWorkout(page);
-      await menu(page, /Substituir exercício/);
-      await expect(page.getByRole('dialog', { name: 'Substituir exercício' })).toBeVisible();
+      await menu(page, /Substituir Exercício/);
+      await expect(page.getByRole('dialog', { name: 'Substituir Exercício' })).toBeVisible();
     },
   },
   {
@@ -125,8 +125,8 @@ const SCREENS: readonly Screen[] = [
       await beginWorkout(page);
       await tap(page, 'Aumentar a carga');
       await concludeSet(page);
-      await menu(page, /Terminar treino/);
-      await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
+      await menu(page, /Terminar Treino/);
+      await expect(page.getByRole('heading', { level: 1, name: 'Treino Concluído' })).toBeVisible();
     },
   },
 ];

@@ -36,8 +36,8 @@ export const chart = (page: Page) => page.getByRole('img', { name: /^Gráfico de
 /** Abre a tabela dos mesmos dados e devolve as linhas (dia, valor, apoio), da mais nova para a mais antiga. */
 export async function tableRows(page: Page): Promise<string[][]> {
   // O botão só existe depois de o gráfico carregar: o clique espera por ele; com a tabela já aberta, não toca de novo.
-  if (!(await page.getByRole('button', { name: 'Ocultar dados' }).isVisible())) {
-    await page.getByRole('button', { name: 'Ver dados' }).click();
+  if (!(await page.getByRole('button', { name: 'Ocultar Dados' }).isVisible())) {
+    await page.getByRole('button', { name: 'Ver Dados' }).click();
   }
   await expect(page.locator('app-progress-evolution table')).toBeVisible();
   return page

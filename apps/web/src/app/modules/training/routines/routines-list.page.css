@@ -89,12 +89,25 @@
 
 .actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: var(--space-2);
 }
 
 .actions .ui-btn {
   white-space: nowrap;
+}
+
+/* O "?" do glossário: um quadrado de toque ao lado das ações, sem ocupar uma linha própria. */
+.actions .glossary-link {
+  display: inline-grid;
+  place-items: center;
+  width: var(--tap);
+  padding: 0;
+}
+
+.glossary-link app-training-glyph {
+  width: 20px;
+  height: 20px;
 }
 
 .empty {

@@ -126,7 +126,7 @@ const uuid = (block: number, n: number) =>
 /** Linhas de treino e de série como a API as entrega, para `server.seed`. */
 /**
  * Quatro exercícios a mais, um treino de uma série cada, para a lista passar de seis exercícios com histórico (a folha
- * "Outro exercício" só existe assim). Ficam antes de 02/09, longe das contas das semanas e dos recordes.
+ * "Outro Exercício" só existe assim). Ficam antes de 02/09, longe das contas das semanas e dos recordes.
  */
 const MORE_SESSIONS: readonly SessionSeed[] = [
   { day: '2026-08-31', items: [['incline', [[22.5, 10]]]] },

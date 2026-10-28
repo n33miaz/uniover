@@ -12,10 +12,10 @@ import { assessmentTitle } from './assessment-format';
       <a class="back" routerLink="/treino/corpo" i18n="@@training.assessments.back">‹ Corpo</a>
       <header>
         <p class="eyebrow" i18n="@@training.assessments.eyebrow">Histórico pessoal</p>
-        <h1 id="title" i18n="@@training.assessments.title">Avaliações físicas</h1>
+        <h1 id="title" i18n="@@training.assessments.title">Avaliações Físicas</h1>
       </header>
       <aside class="privacy" role="note">
-        <strong i18n="@@training.assessments.private-title">Somente neste aparelho</strong>
+        <strong i18n="@@training.assessments.private-title">Somente Neste Aparelho</strong>
         <p i18n="@@training.assessments.private-copy">
           Este histórico e os arquivos anexados não são enviados nem sincronizados. Se os dados do
           navegador forem apagados, você poderá perder os registros. Exporte uma cópia para
@@ -23,9 +23,9 @@ import { assessmentTitle } from './assessment-format';
         </p>
       </aside>
       <div class="actions">
-        <a class="primary" routerLink="nova" i18n="@@training.assessments.new">Nova avaliação</a>
+        <a class="primary" routerLink="nova" i18n="@@training.assessments.new">Nova Avaliação</a>
         <a class="secondary" routerLink="importar" i18n="@@training.assessments.import"
-          >Importar arquivo</a
+          >Importar Arquivo</a
         >
       </div>
       @if (loading()) {

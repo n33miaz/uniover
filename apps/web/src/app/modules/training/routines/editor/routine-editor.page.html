@@ -13,7 +13,7 @@
     </p>
     <button type="button" class="secondary ui-btn block" (click)="leave()">
       <app-training-glyph name="back" />
-      <span i18n="@@training.editor.missing-back">Voltar às rotinas</span>
+      <span i18n="@@training.editor.missing-back">Voltar Às Rotinas</span>
     </button>
   </section>
 } @else if (state() === 'ready') {
@@ -186,7 +186,7 @@
                     (click)="askRemove(item.id)"
                   >
                     <app-training-glyph name="trash" />
-                    <span i18n="@@training.editor.remove">Remover da rotina</span>
+                    <span i18n="@@training.editor.remove">Remover da Rotina</span>
                   </button>
                 }
               </div>
@@ -220,7 +220,7 @@
 
     <button type="button" class="secondary ui-btn block" (click)="openPicker()">
       <app-training-glyph name="plus" />
-      <span i18n="@@training.editor.add">Adicionar exercício</span>
+      <span i18n="@@training.editor.add">Adicionar Exercício</span>
     </button>
 
     @if (editing) {
@@ -228,7 +228,7 @@
         <label class="ui-row option">
           <span class="ui-row-text">
             <span class="ui-row-title" i18n="@@training.editor.active"
-              >Na sequência de treinos</span
+              >Na Sequência de Treinos</span
             >
             <span class="ui-row-sub" i18n="@@training.editor.active-hint"
               >Desligada, não é sugerida.</span
@@ -260,10 +260,10 @@
           >
           <span class="pair">
             <button type="button" class="secondary ui-btn" (click)="leave()">
-              <span i18n="@@training.editor.leave-yes">Sair sem salvar</span>
+              <span i18n="@@training.editor.leave-yes">Sair sem Salvar</span>
             </button>
             <button type="button" class="primary ui-btn" (click)="keepEditing()">
-              <span i18n="@@training.editor.leave-no">Continuar editando</span>
+              <span i18n="@@training.editor.leave-no">Continuar Editando</span>
             </button>
           </span>
         </span>
@@ -275,7 +275,7 @@
         <span i18n="@@training.editor.cancel">Cancelar</span>
       </button>
       <button type="submit" class="primary ui-btn" [disabled]="saving()">
-        <span i18n="@@training.editor.save">Salvar rotina</span>
+        <span i18n="@@training.editor.save">Salvar Rotina</span>
       </button>
     </div>
 
@@ -300,7 +300,7 @@
       } @else {
         <button type="button" class="destructive secondary ui-btn block" (click)="askDelete()">
           <app-training-glyph name="trash" />
-          <span i18n="@@training.editor.delete">Apagar rotina</span>
+          <span i18n="@@training.editor.delete">Apagar Rotina</span>
         </button>
       }
     }
