@@ -30,8 +30,9 @@ from androidtvremote2 import (
     InvalidAuth,
     VolumeInfo,
 )
+from androidtvremote2.remotemessage_pb2 import RemoteMessage
 
-from uniover_agent.ports import TvNotPaired, TvPortClosed, TvUnreachable
+from uniover_agent.ports import TextFieldStatus, TvNotPaired, TvPortClosed, TvUnreachable
 
 _log = logging.getLogger(__name__)
 
@@ -121,6 +122,66 @@ def _lost_future(client: object) -> asyncio.Future[Any] | None:
     return future if isinstance(future, asyncio.Future) else None
 
 
+def _text_field_of(message: RemoteMessage) -> TextFieldStatus | None:
+    """O estado do campo de texto que a mensagem carrega, ou `None` se ela não traz nenhum.
+
+    `remote_ime_key_inject` também chega só com o app em foco (sem campo): sem o `HasField`, cada
+    troca de app pareceria um campo vazio e apagaria o que o agente sabe do texto.
+    """
+    if message.HasField("remote_ime_key_inject"):
+        inject = message.remote_ime_key_inject
+        if not inject.HasField("text_field_status"):
+            return None
+        field = inject.text_field_status
+    elif message.HasField("remote_ime_show_request"):
+        request = message.remote_ime_show_request
+        if not request.HasField("remote_text_field_status"):
+            return None
+        field = request.remote_text_field_status
+    else:
+        return None
+    return TextFieldStatus(field.value, field.start, field.end, field.label, field.counter_field)
+
+
+def _install_text_field_hook(client: object, callback: Callable[[TextFieldStatus], None]) -> bool:
+    """Lê o estado do campo de texto que a biblioteca recebe da TV, mas não entrega ao chamador.
+
+    Como `_lost_future`, isto depende de um detalhe interno da biblioteca (o tratador de mensagens
+    do protocolo da sessão); isolar o acesso aqui faz uma mudança incompatível falhar alto, no
+    teste contra a biblioteca real. O tratador original roda primeiro, e o estado do campo é
+    entregue em seguida.
+    Devolve `False` se o ponto de ligação não existe mais (o agente segue sem o estado do campo).
+    """
+    protocol: Any = getattr(client, "_remote_message_protocol", None)
+    handle = getattr(protocol, "_handle_message", None)
+    if not callable(handle):
+        return False
+
+    def on_message(raw_message: bytes) -> None:
+        field: TextFieldStatus | None = None
+        try:
+            message = RemoteMessage()
+            message.ParseFromString(raw_message)
+            field = _text_field_of(message)
+        except Exception:
+            # Mensagem malformada é problema do tratador original; aqui só não pode derrubá-lo.
+            _log.debug("não consegui ler o estado do campo de texto da TV", exc_info=True)
+        try:
+            handle(raw_message)
+        finally:
+            # Depois do tratador: a mudança de app que a mesma mensagem traz já foi dada por
+            # avisada, e o estado do campo que chega junto é o do app novo.
+            if field is not None:
+                callback(field)
+
+    try:
+        protocol._handle_message = on_message
+    except AttributeError, TypeError:
+        # Protocolo que não aceita a troca (somente leitura, `__slots__`): segue sem o estado.
+        return False
+    return True
+
+
 def volume_percent(info: VolumeInfo) -> int | None:
     """Converte o nível da TV (`level` de `max`) em porcentagem; `None` se `max` não faz sentido."""
     maximum = info["max"]
@@ -156,6 +217,7 @@ class AndroidTvRemoteV2:
         self._app: list[Callable[[str], None]] = []
         self._volume: list[Callable[[int], None]] = []
         self._available: list[Callable[[bool], None]] = []
+        self._text_field: list[Callable[[TextFieldStatus], None]] = []
 
     @staticmethod
     def _default_factory(client_name: str, certfile: str, keyfile: str, host: str) -> RemoteClient:
@@ -186,6 +248,8 @@ class AndroidTvRemoteV2:
         except (ConnectionClosed, TimeoutError, OSError) as exc:
             client.disconnect()
             raise TvUnreachable(f"sem resposta da TV ({type(exc).__name__})") from None
+        if not _install_text_field_hook(client, self._on_text_field):
+            _log.warning("não consegui ligar a leitura do campo de texto da TV; sigo sem ela")
         self._connected = True
         self._watcher = asyncio.get_running_loop().create_task(self._watch_loss(client))
         if self._on_connected is not None:
@@ -283,10 +347,16 @@ class AndroidTvRemoteV2:
     def on_available(self, callback: Callable[[bool], None]) -> None:
         self._available.append(callback)
 
+    def on_text_field(self, callback: Callable[[TextFieldStatus], None]) -> None:
+        self._text_field.append(callback)
+
     def _on_volume_info(self, info: VolumeInfo) -> None:
         percent = volume_percent(info)
         if percent is not None:
             self._fan_out(self._volume, percent)
+
+    def _on_text_field(self, field: TextFieldStatus) -> None:
+        self._fan_out(self._text_field, field)
 
     @staticmethod
     def _fan_out[T](callbacks: list[Callable[[T], None]], value: T) -> None:
