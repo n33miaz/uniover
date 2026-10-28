@@ -50,6 +50,10 @@ const ALERTS_PATH = `${APP_CONFIG.apiBase}/v1/devices/agent-alerts`;
 const EVENTS_PATH = `${APP_CONFIG.apiBase}/v1/tv/events`;
 const STATE_EVENT = 'tv.state';
 const WATCHDOG_EVENT = 'tv.watchdog';
+const AGENT_CACHE_KEY = 'uniover.home.agent.v1';
+const SLOW_RESPONSE_MS = 400;
+/** A espera mostrada nunca passa disto: sem resposta até aqui, o brilho para e a tela segue com o que há (sem laço). */
+const MAX_LOADING_MS = 8_000;
 
 type TvStateDto = components['schemas']['TvState'];
 
@@ -102,6 +106,16 @@ function parseJson(data: string): unknown {
   }
 }
 
+/** Só estados afirmativos entram no cache; valor inválido não pode pintar uma casa que não conhecemos. */
+function readCachedAgent(storage: Storage | null): AgentState | null {
+  try {
+    const value = storage?.getItem(AGENT_CACHE_KEY);
+    return value === 'online' || value === 'offline' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Estado real da casa para a Início: o agente (ligado ou desligado) vem de `GET /api/v1/tv/state`, que já cruza a
  * última leitura com a presença do agente no servidor, e o vigia vem do fluxo `tv.watchdog`, a única porta pela qual
@@ -121,10 +135,13 @@ export class LiveHomeStatus extends HomeStatusPort {
   private readonly clock = inject(ClockService);
   private readonly config = inject(HOME_STATUS_CONFIG);
   private readonly doc = inject(DOCUMENT);
+  private readonly storage = this.openStorage();
+  private readonly cachedAgent = readCachedAgent(this.storage);
 
   private readonly watchers = signal(0);
   private readonly visible = signal(this.doc.visibilityState !== 'hidden');
-  private readonly agent = signal<AgentState>('unknown');
+  private readonly agent = signal<AgentState>(this.cachedAgent ?? 'unknown');
+  readonly loading = signal(false);
   private readonly serviceDown = signal(false);
   private readonly verdict = signal<Verdict | null>(null);
   private readonly agentAlert = signal<AgentAlertNote | null>(null);
@@ -195,6 +212,22 @@ export class LiveHomeStatus extends HomeStatusPort {
   private run(): () => void {
     const work = new Subscription();
     let pending = false;
+    let answered = false;
+    let giveUp: number | undefined;
+    const slowResponse = window.setTimeout(() => {
+      if (answered || this.cachedAgent !== null || this.agent() !== 'unknown') return;
+      this.loading.set(true);
+      giveUp = window.setTimeout(() => this.loading.set(false), MAX_LOADING_MS - SLOW_RESPONSE_MS);
+    }, SLOW_RESPONSE_MS);
+    const stopWaiting = () => {
+      window.clearTimeout(slowResponse);
+      window.clearTimeout(giveUp);
+      this.loading.set(false);
+    };
+    const settleInitial = () => {
+      answered = true;
+      stopWaiting();
+    };
 
     const refresh = () => {
       // A leitura anterior ainda não voltou (servidor acordando): não empilha outra por cima.
@@ -209,8 +242,14 @@ export class LiveHomeStatus extends HomeStatusPort {
             }),
           )
           .subscribe({
-            next: (body) => this.onState(body),
-            error: (error: unknown) => this.onFailure(error),
+            next: (body) => {
+              this.onState(body);
+              settleInitial();
+            },
+            error: (error: unknown) => {
+              this.onFailure(error);
+              settleInitial();
+            },
           }),
       );
     };
@@ -236,13 +275,18 @@ export class LiveHomeStatus extends HomeStatusPort {
         this.onEvent(event);
       }),
     );
-    return () => work.unsubscribe();
+    return () => {
+      stopWaiting();
+      work.unsubscribe();
+    };
   }
 
   private onState(body: unknown): void {
     // A API respondeu, seja qual for o conteúdo.
     this.serviceDown.set(false);
-    this.agent.set(agentOf(body));
+    const agent = agentOf(body);
+    this.agent.set(agent);
+    this.cache(agent);
   }
 
   /**
@@ -272,7 +316,10 @@ export class LiveHomeStatus extends HomeStatusPort {
     switch (event.type) {
       case STATE_EVENT: {
         const agent = agentOf(body);
-        if (agent !== 'unknown') this.agent.set(agent);
+        if (agent !== 'unknown') {
+          this.agent.set(agent);
+          this.cache(agent);
+        }
         return;
       }
       case WATCHDOG_EVENT: {
@@ -288,5 +335,23 @@ export class LiveHomeStatus extends HomeStatusPort {
     this.serviceDown.set(false);
     this.verdict.set(null);
     this.agentAlert.set(null);
+    this.loading.set(false);
+  }
+
+  private openStorage(): Storage | null {
+    try {
+      return this.doc.defaultView?.localStorage ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private cache(agent: AgentState): void {
+    if (agent === 'unknown') return;
+    try {
+      this.storage?.setItem(AGENT_CACHE_KEY, agent);
+    } catch {
+      // Armazenamento pode estar bloqueado: o estado atual ainda continua útil nesta visita.
+    }
   }
 }

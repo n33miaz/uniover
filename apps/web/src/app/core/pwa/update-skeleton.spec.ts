@@ -2,13 +2,14 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { Component, inject } from '@angular/core';
 import { PwaUpdateService } from './pwa-update.service';
-import { UpdateSkeleton } from './update-skeleton';
+import { SLOW_BOOT_MS, UpdateSkeleton } from './update-skeleton';
 
 @Component({ template: '' })
 class Blank {}
 
 describe('UpdateSkeleton', () => {
   afterEach(() => {
+    vi.useRealTimers();
     sessionStorage.clear();
     history.pushState({}, '', '/');
   });
@@ -51,15 +52,64 @@ describe('UpdateSkeleton', () => {
     expect(overlay!.querySelectorAll('.bone').length).toBeGreaterThan(10);
   });
 
-  it('draws the home page (greeting, shortcuts, module grid, no tab bar) when it is the page being updated', async () => {
+  it('uses the one shared waiting shimmer on every bone, so the update looks like every other wait', async () => {
+    const { service, fixture, el } = setup();
+    service.applyingUpdate.set(true);
+    await fixture.whenStable();
+    const bones = Array.from(el.querySelectorAll('.bone'));
+    expect(bones.length).toBeGreaterThan(10);
+    expect(bones.every((bone) => bone.classList.contains('ui-skeleton'))).toBe(true);
+  });
+
+  it('covers a slow opening (first screen still pending) and lets go when the screen arrives', async () => {
+    vi.useFakeTimers();
+    const { fixture, el } = setup();
+    fixture.detectChanges();
+    vi.advanceTimersByTime(SLOW_BOOT_MS - 1);
+    fixture.detectChanges();
+    expect(el.querySelector('.overlay')).toBeNull();
+
+    vi.advanceTimersByTime(1);
+    fixture.detectChanges();
+    const overlay = el.querySelector('.overlay');
+    expect(overlay).not.toBeNull();
+    expect(overlay!.textContent).toContain('Carregando…');
+    expect(overlay!.textContent).not.toContain('Atualizando…');
+    expect(overlay!.querySelectorAll('.bone.ui-skeleton').length).toBeGreaterThan(10);
+
+    vi.useRealTimers();
+    await TestBed.inject(Router).navigateByUrl('/ok');
+    await fixture.whenStable();
+    // Sai pela animação de saída (ou já saiu): nunca fica coberto depois da primeira tela.
+    await vi.waitFor(() => {
+      const current = el.querySelector('.overlay');
+      expect(current === null || current.classList.contains('leaving')).toBe(true);
+    });
+  });
+
+  it('does not flash the skeleton when the first screen is quick', async () => {
+    vi.useFakeTimers();
+    const { fixture, el } = setup();
+    fixture.detectChanges();
+    vi.advanceTimersByTime(SLOW_BOOT_MS - 100);
+    await TestBed.inject(Router).navigateByUrl('/ok');
+    vi.advanceTimersByTime(SLOW_BOOT_MS * 3);
+    fixture.detectChanges();
+    expect(el.querySelector('.overlay')).toBeNull();
+  });
+
+  it('draws the home page (brand, hero with settings and status, module grid, no shortcuts, no tab bar) when it is the page being updated', async () => {
     history.pushState({}, '', '/');
     const { service, fixture, el } = setup();
     service.applyingUpdate.set(true);
     await fixture.whenStable();
     expect(el.querySelector('.page.home')).not.toBeNull();
-    expect(el.querySelectorAll('.home-hero .bone').length).toBe(3);
-    expect(el.querySelectorAll('.shortcut').length).toBe(2);
-    expect(el.querySelectorAll('.module').length).toBe(6);
+    expect(el.querySelector('.page.home > .brand')).not.toBeNull();
+    // Engrenagem e ponto de estado no cartão de cima, mais as duas linhas de texto e a hora.
+    expect(el.querySelectorAll('.home-hero .hero-actions .bone').length).toBe(2);
+    expect(el.querySelectorAll('.home-hero .bone').length).toBe(5);
+    expect(el.querySelector('.shortcuts, .shortcut')).toBeNull();
+    expect(el.querySelectorAll('.module').length).toBe(8);
     expect(el.querySelector('.tabs')).toBeNull();
   });
 

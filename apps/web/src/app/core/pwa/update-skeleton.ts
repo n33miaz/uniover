@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { Component, computed, inject } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   NavigationCancel,
@@ -10,45 +10,51 @@ import {
 } from '@angular/router';
 import { PwaUpdateService } from './pwa-update.service';
 
+/** Quanto a primeira tela pode demorar na abertura antes de o esqueleto cobri-la (abaixo disso, a troca é imperceptível). */
+export const SLOW_BOOT_MS = 300;
+
 /**
- * Cobre a tela inteira com um esqueleto que brilha desde o toque em "Atualizar" até o primeiro conteúdo real da
- * página nova: sem ele a pessoa via um "Atualizando…" quase invisível e depois só o fundo, enquanto a casca nova subia.
- * Autocontido: só usa os tokens de cor (`--a-*`), então segue os dois temas, e o brilho para com
- * `prefers-reduced-motion`. A rota que termina de ativar (ou falha) entrega o primeiro conteúdo; o esqueleto sai pela
- * mesma animação de saída dos avisos.
+ * Cobre a tela inteira com um esqueleto que brilha em dois momentos em que, sem ele, só haveria o fundo vazio: do toque em
+ * "Atualizar" até o primeiro conteúdo da página nova (a casca nova sobe) e na abertura do app quando a primeira tela demora
+ * (conexão lenta, servidor acordando: o guarda de entrada espera a sessão antes de mostrar qualquer coisa). Nessa abertura
+ * o esqueleto só aparece se a espera passar de `SLOW_BOOT_MS`, para uma abertura rápida não piscar.
+ * Autocontido: só usa os tokens de cor (`--a-*`) e o brilho único do app (ui-skeleton, em styles.css), que segue os dois
+ * temas e, com `prefers-reduced-motion`, vira uma pulsação sem deslocamento (parado, ele pareceria travado). A rota que
+ * termina de ativar (ou falha) entrega o primeiro conteúdo; o esqueleto sai pela mesma animação de saída dos avisos.
  */
 @Component({
   selector: 'app-update-skeleton',
   template: `
-    @if (pwa.showSkeleton()) {
+    @if (visible()) {
       <div class="overlay" role="status" [animate.leave]="'leaving'">
-        <span class="ui-visually-hidden" i18n="@@pwa.updating">Atualizando…</span>
+        @if (pwa.showSkeleton()) {
+          <span class="ui-visually-hidden" i18n="@@pwa.updating">Atualizando…</span>
+        } @else {
+          <span class="ui-visually-hidden" i18n="@@pwa.loading">Carregando…</span>
+        }
         @if (home()) {
           <div class="page home" aria-hidden="true">
+            <span class="bone ui-skeleton brand"></span>
             <div class="home-hero">
-              <span class="home-hero-text">
-                <span class="bone line w40"></span>
-                <span class="bone line big w80"></span>
+              <span class="hero-actions">
+                <span class="bone ui-skeleton gear"></span>
+                <span class="bone ui-skeleton dot"></span>
               </span>
-              <span class="bone time"></span>
-            </div>
-            <div class="shortcuts">
-              @for (shortcut of shortcuts; track shortcut) {
-                <div class="shortcut">
-                  <span class="bone tile"></span>
-                  <span class="bone line w40"></span>
-                </div>
-              }
+              <span class="home-hero-text">
+                <span class="bone ui-skeleton line w40"></span>
+                <span class="bone ui-skeleton line big w80"></span>
+              </span>
+              <span class="bone ui-skeleton time"></span>
             </div>
             <div class="section-head">
-              <span class="bone line big w30"></span>
-              <span class="bone line w20"></span>
+              <span class="bone ui-skeleton line big w30"></span>
+              <span class="bone ui-skeleton line w20"></span>
             </div>
             <div class="modules">
               @for (module of modules; track module) {
                 <div class="module">
-                  <span class="bone app"></span>
-                  <span class="bone line w60"></span>
+                  <span class="bone ui-skeleton app"></span>
+                  <span class="bone ui-skeleton line w60"></span>
                 </div>
               }
             </div>
@@ -56,41 +62,41 @@ import { PwaUpdateService } from './pwa-update.service';
         } @else {
           <div class="page" aria-hidden="true">
             <div class="top">
-              <span class="bone back"></span>
-              <span class="bone title"></span>
-              <span class="bone avatar"></span>
+              <span class="bone ui-skeleton back"></span>
+              <span class="bone ui-skeleton title"></span>
+              <span class="bone ui-skeleton avatar"></span>
             </div>
             <div class="hero">
-              <span class="bone line w40"></span>
-              <span class="bone line big w80"></span>
-              <span class="bone line w60"></span>
-              <span class="bone pill"></span>
+              <span class="bone ui-skeleton line w40"></span>
+              <span class="bone ui-skeleton line big w80"></span>
+              <span class="bone ui-skeleton line w60"></span>
+              <span class="bone ui-skeleton pill"></span>
             </div>
             <div class="grid">
               @for (card of cards; track card) {
                 <div class="card">
-                  <span class="bone icon"></span>
-                  <span class="bone line w70"></span>
-                  <span class="bone line w40"></span>
+                  <span class="bone ui-skeleton icon"></span>
+                  <span class="bone ui-skeleton line w70"></span>
+                  <span class="bone ui-skeleton line w40"></span>
                 </div>
               }
             </div>
             <div class="list">
               @for (row of rows; track row) {
                 <div class="row">
-                  <span class="bone icon round"></span>
+                  <span class="bone ui-skeleton icon round"></span>
                   <span class="lines">
-                    <span class="bone line w60"></span>
-                    <span class="bone line w30"></span>
+                    <span class="bone ui-skeleton line w60"></span>
+                    <span class="bone ui-skeleton line w30"></span>
                   </span>
-                  <span class="bone chip"></span>
+                  <span class="bone ui-skeleton chip"></span>
                 </div>
               }
             </div>
           </div>
           <div class="tabs" aria-hidden="true">
             @for (tab of tabs; track tab) {
-              <span class="bone tab"></span>
+              <span class="bone ui-skeleton tab"></span>
             }
           </div>
         }
@@ -236,13 +242,11 @@ import { PwaUpdateService } from './pwa-update.service';
       height: clamp(28px, 7vw, 36px);
       border-radius: var(--radius-sm);
     }
-    .shortcuts,
     .modules {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: var(--space-3);
     }
-    .shortcut,
     .module {
       display: flex;
       align-items: center;
@@ -252,19 +256,32 @@ import { PwaUpdateService } from './pwa-update.service';
       background: var(--a-surface);
       box-shadow: var(--shadow-1);
     }
-    .shortcut {
+    /* A marca "UniOver" e as ações do cartão (engrenagem e ponto de estado) ficam onde estão na tela real. */
+    .brand {
+      width: 4.75rem;
+      height: 17px;
+      margin-inline: var(--space-1);
+    }
+    .home-hero {
+      position: relative;
+    }
+    .hero-actions {
+      position: absolute;
+      top: var(--space-3);
+      left: var(--space-3);
+      display: flex;
+      align-items: center;
       gap: var(--space-2);
-      min-height: 64px;
-      padding: var(--space-2) var(--space-3);
     }
-    .shortcut .line {
-      flex: none;
-      width: 5.5rem;
+    .gear {
+      width: 22px;
+      height: 22px;
+      border-radius: var(--radius-pill);
     }
-    .tile {
-      width: 32px;
-      height: 32px;
-      border-radius: var(--radius-xs);
+    .dot {
+      width: 16px;
+      height: 16px;
+      border-radius: var(--radius-pill);
     }
     .section-head {
       display: flex;
@@ -273,6 +290,7 @@ import { PwaUpdateService } from './pwa-update.service';
       gap: var(--space-3);
       min-height: var(--tap);
       margin-top: var(--space-1);
+      padding-inline: var(--space-1);
     }
     .section-head .big {
       width: 7rem;
@@ -284,15 +302,15 @@ import { PwaUpdateService } from './pwa-update.service';
     .module {
       flex-direction: column;
       gap: var(--space-3);
-      min-height: 188px;
+      min-height: clamp(160px, 42vw, 176px);
       padding: var(--space-4) var(--space-3);
     }
     .module .line {
       width: 60%;
     }
     .app {
-      width: 56px;
-      height: 56px;
+      width: clamp(72px, 19vw, 80px);
+      height: clamp(72px, 19vw, 80px);
       border-radius: var(--radius-sm);
     }
     .w20 {
@@ -303,27 +321,11 @@ import { PwaUpdateService } from './pwa-update.service';
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
     }
+    /* O brilho vem da classe única de espera (ui-skeleton, em styles.css): aqui só a forma de cada osso. O mínimo
+       dela não vale: cada osso tem a medida do que ele substitui. */
     .bone {
       display: block;
-      position: relative;
-      overflow: hidden;
-      background: var(--a-elev);
-      border-radius: var(--radius-xs);
-    }
-    /* O brilho é uma faixa clara que cruza o osso; só ela se move. */
-    .bone::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(
-        100deg,
-        transparent 25%,
-        var(--a-highlight) 50%,
-        var(--a-highlight) 52%,
-        transparent 75%
-      );
-      transform: translateX(-100%);
-      animation: sweep 1.5s var(--ease-out) infinite;
+      min-height: 0;
     }
     .line {
       height: 14px;
@@ -373,11 +375,6 @@ import { PwaUpdateService } from './pwa-update.service';
         display: none;
       }
     }
-    @keyframes sweep {
-      to {
-        transform: translateX(100%);
-      }
-    }
     @keyframes fade-out {
       to {
         opacity: 0;
@@ -388,16 +385,17 @@ import { PwaUpdateService } from './pwa-update.service';
       .overlay.leaving {
         animation: none;
       }
-      .bone::after {
-        animation: none;
-        display: none;
-      }
     }
   `,
 })
 export class UpdateSkeleton {
   protected readonly pwa = inject(PwaUpdateService);
   private readonly win = inject(DOCUMENT).defaultView;
+  /** A primeira navegação do app passou de `SLOW_BOOT_MS` sem terminar: a abertura está lenta. */
+  private readonly slowBoot = signal(false);
+  /** A primeira navegação terminou (ou falhou): um temporizador atrasado não pode ligar o esqueleto depois disso. */
+  private bootDone = false;
+  protected readonly visible = computed(() => this.pwa.showSkeleton() || this.slowBoot());
 
   /**
    * Na Início (a raiz) o esqueleto reproduz a tela; nas demais rotas, um desenho genérico de página. Lê o endereço do
@@ -406,11 +404,10 @@ export class UpdateSkeleton {
    */
   protected readonly home = computed(() => {
     // Relê o endereço só quando o esqueleto aparece: um redirecionamento no meio da espera não troca o desenho.
-    this.pwa.showSkeleton();
+    this.visible();
     return this.win?.location.pathname === '/';
   });
-  protected readonly shortcuts = [1, 2];
-  protected readonly modules = [1, 2, 3, 4, 5, 6];
+  protected readonly modules = [1, 2, 3, 4, 5, 6, 7, 8];
   protected readonly cards = [1, 2, 3, 4];
   protected readonly rows = [1, 2, 3, 4];
   protected readonly tabs = [1, 2, 3, 4];
@@ -419,7 +416,10 @@ export class UpdateSkeleton {
     const router = inject(Router);
     // A rota que terminou (ou falhou) é o primeiro conteúdo; se a primeira navegação já acabou antes de o esqueleto
     // nascer, vale o estado do roteador.
-    if (router.navigated) this.pwa.markContentReady();
+    if (router.navigated) {
+      this.bootDone = true;
+      this.pwa.markContentReady();
+    } else this.watchSlowBoot();
     router.events.pipe(takeUntilDestroyed()).subscribe((event) => {
       // Um guarda que redireciona (sessão vencida, boas-vindas) cancela esta navegação e começa outra: ainda não há conteúdo,
       // o esqueleto segue até a navegação seguinte terminar.
@@ -432,8 +432,21 @@ export class UpdateSkeleton {
         (event instanceof NavigationEnd ||
           event instanceof NavigationCancel ||
           event instanceof NavigationError)
-      )
+      ) {
         this.pwa.markContentReady();
+        this.bootDone = true;
+        this.slowBoot.set(false);
+      }
     });
+  }
+
+  /** Na abertura, se a primeira navegação ainda não terminou depois de `SLOW_BOOT_MS`, liga o esqueleto. */
+  private watchSlowBoot(): void {
+    const win = this.win;
+    if (!win) return;
+    const timer = win.setTimeout(() => {
+      if (!this.bootDone) this.slowBoot.set(true);
+    }, SLOW_BOOT_MS);
+    inject(DestroyRef).onDestroy(() => win.clearTimeout(timer));
   }
 }

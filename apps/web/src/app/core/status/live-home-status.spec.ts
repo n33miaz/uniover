@@ -84,6 +84,7 @@ describe('LiveHomeStatus', () => {
   afterEach(() => {
     for (const stop of stops) stop();
     TestBed.tick();
+    localStorage.clear();
     vi.useRealTimers();
   });
 
@@ -151,6 +152,35 @@ describe('LiveHomeStatus', () => {
         serviceDown: false,
         agentAlert: null,
       });
+    });
+
+    it('reutiliza o último estado salvo antes da primeira leitura em segundo plano', () => {
+      localStorage.setItem('uniover.home.agent.v1', 'online');
+      const cached = TestBed.runInInjectionContext(() => new LiveHomeStatus());
+      expect(cached.status().agent).toBe('online');
+      expect(cached.loading()).toBe(false);
+    });
+
+    it('só mostra espera depois do atraso, e a resposta troca pelo estado sem apagar a tela', () => {
+      watch();
+      expect(live.loading()).toBe(false);
+      advance(399);
+      expect(live.loading()).toBe(false);
+      advance(1);
+      expect(live.loading()).toBe(true);
+      answer({ agentOnline: true });
+      expect(live.loading()).toBe(false);
+      expect(live.status().agent).toBe('online');
+    });
+
+    it('para a espera sozinha se a leitura nunca volta (o brilho não fica em laço)', () => {
+      watch();
+      advance(400);
+      expect(live.loading()).toBe(true);
+      advance(7_599);
+      expect(live.loading()).toBe(true);
+      advance(1);
+      expect(live.loading()).toBe(false);
     });
 
     it('says the agent is off', () => {
