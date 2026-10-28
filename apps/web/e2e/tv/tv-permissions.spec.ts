@@ -425,19 +425,23 @@ test.describe('(d) tudo, como o dono', () => {
 });
 
 test.describe('sem acesso à TV (só o Treino)', () => {
-  test('uma frase e nenhuma chamada: sem fluxo, sem estado, sem atalhos', async ({ page }) => {
+  test('o endereço da TV leva à Início: sem fluxo, sem estado, sem atalhos, nenhuma chamada', async ({
+    page,
+  }) => {
     signInWith(TRAINING_ONLY);
     await page.goto('/tv');
-    await expect(page.getByText('Esta conta não tem acesso à TV.', { exact: true })).toBeVisible();
+    // A guarda do módulo manda quem não tem a TV para a Início, e a Início mostra só o Treino.
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('article[data-module="training"] a.card-link')).toBeVisible();
+    await expect(page.locator('article[data-module="tv"] a.card-link')).toHaveCount(0);
     await expect(okButton(page)).toHaveCount(0);
     await expect(power(page)).toHaveCount(0);
     await expect(menuButton(page)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /^Estado do controle/ })).toHaveCount(0);
     await settle(page);
     await expectNoHorizontalScroll(page);
     await expectNoA11yViolations(page);
 
-    // O sinal de que a tela já nasceu é a frase acima; daí em diante nada deve ter saído.
+    // Daí em diante nada deve ter saído para a API da TV.
     expect(await sseUrls(page)).toEqual([]);
     expect(tv.requests).toEqual([]);
     expect(tv.denied).toEqual([]);

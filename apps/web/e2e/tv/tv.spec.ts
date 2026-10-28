@@ -228,22 +228,20 @@ test.describe('controle: tela única, sem abas', () => {
     await expectNoSeriousViolations(page);
   });
 
-  test('o menu é o botão de três pontos à direita, e o Tab segue a ordem da tela', async ({
+  test('o menu é o botão de três pontos à esquerda, e o Tab segue a ordem da tela', async ({
     page,
   }) => {
     await openTv(page);
     const head = page.locator('header.head');
-    // À esquerda ficam a seta e o desligar; à direita, só os três pontos do menu.
+    // À esquerda ficam a seta e os três pontos do menu; à direita, só o desligar.
     await expect(head.locator('.lead').getByRole('button')).toHaveCount(1);
-    await expect(
-      head.locator('.lead').getByRole('button', { name: 'Desligar a TV' }),
-    ).toBeVisible();
+    await expect(head.locator('.lead').getByRole('button', { name: 'Mais opções' })).toBeVisible();
     await expect(head.locator('.actions').getByRole('button')).toHaveCount(1);
     await expect(
-      head.locator('.actions').getByRole('button', { name: 'Mais opções' }),
+      head.locator('.actions').getByRole('button', { name: 'Desligar a TV' }),
     ).toBeVisible();
 
-    // Do começo para o fim da linha: seta, desligar, nome, ponto de estado e três pontos.
+    // Do começo para o fim da linha: seta, três pontos, nome, ponto de estado e desligar.
     await head.getByRole('link', { name: 'Voltar ao Início' }).focus();
     const seen: string[] = [];
     for (let step = 0; step < 4; step++) {
@@ -252,10 +250,10 @@ test.describe('controle: tela única, sem abas', () => {
         await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? ''),
       );
     }
-    expect(seen[0]).toBe('Desligar a TV');
+    expect(seen[0]).toBe('Mais opções');
     expect(seen[1]).toBe('TV, personalizar');
     expect(seen[2]).toMatch(/^Estado do controle:/);
-    expect(seen[3]).toBe('Mais opções');
+    expect(seen[3]).toBe('Desligar a TV');
 
     // O botão abre o menu e devolve o foco a ele ao fechar.
     await button(page, 'Mais opções').click();

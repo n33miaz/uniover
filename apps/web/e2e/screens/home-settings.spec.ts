@@ -87,7 +87,7 @@ async function openHome(page: Page, scheme: Scheme) {
 async function openSettings(page: Page, scheme: Scheme) {
   await page.emulateMedia({ colorScheme: scheme });
   await page.goto('/ajustes');
-  await expect(page.getByRole('heading', { level: 2, name: 'Conta' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Você' })).toBeVisible();
   await expect(page.getByRole('link', { name: /^Pessoas/ })).toBeVisible();
   await settle(page);
 }
@@ -296,6 +296,7 @@ test.describe('Configurações', () => {
 
       // Link de convite gerado (com a confirmação já válida).
       mock.stepUpValid = true;
+      await page.getByRole('tab', { name: 'Convites' }).click();
       await page.getByRole('button', { name: 'Convidar alguém' }).click();
       await page.getByLabel('Nome do convidado').fill('Diego');
       await page.getByRole('button', { name: 'Gerar convite' }).click();

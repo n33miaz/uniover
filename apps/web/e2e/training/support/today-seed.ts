@@ -34,7 +34,12 @@ export function seedPastWorkout(
   ageMs: number,
   sets: readonly PastSet[],
 ): void {
-  const startedAt = Date.now() - ageMs;
+  // Treino de poucos minutos atrás nunca começa antes de hoje: um teste rodado logo depois da meia-noite semeava o treino no
+  // dia anterior (e, na virada do sábado, na semana anterior) e a tela de Hoje não o contava. Treino de dias atrás fica como está.
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const raw = Date.now() - ageMs;
+  const startedAt = ageMs < DAY ? Math.max(raw, startOfToday.getTime() + 60_000) : raw;
   const at = dotnetInstant(startedAt);
   server.seed('sessions', [
     {

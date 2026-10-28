@@ -51,7 +51,7 @@ const toSettings = (page: Page) =>
     .first()
     .click();
 const settingsReady = (page: Page) =>
-  expect(page.getByRole('heading', { level: 2, name: 'Conta' })).toBeVisible();
+  expect(page.getByRole('heading', { level: 2, name: 'Você' })).toBeVisible();
 const sectionDelays = (page: Page) =>
   page.locator('.settings > *').evaluateAll((sections) =>
     sections.map((section) => {
