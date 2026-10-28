@@ -84,7 +84,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await startTraining(context, page, { extra: 70 });
       await openTraining(page, '/treino/exercicios');
       await waitForCatalog(page);
-      await page.getByRole('button', { name: /^Mostrar mais/ }).scrollIntoViewIfNeeded();
+      await page.getByRole('button', { name: /^Mostrar Mais/ }).scrollIntoViewIfNeeded();
       await shot(page, info, 'biblioteca-mostrar-mais', scheme);
     });
 
@@ -105,7 +105,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.getByRole('heading', { name: 'Supino reto com barra' })).toBeVisible();
       await expect(page.locator('app-exercise-illustration img').first()).toBeVisible();
       await shot(page, info, 'ficha-com-arte', scheme);
-      await page.getByRole('button', { name: 'Ver todos os 5 passos' }).scrollIntoViewIfNeeded();
+      await page.getByRole('button', { name: 'Ver Todos os 5 Passos' }).scrollIntoViewIfNeeded();
       await shot(page, info, 'ficha-com-arte-meio', scheme);
     });
 
