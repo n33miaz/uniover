@@ -47,7 +47,7 @@ test.describe('casca do Treino', () => {
       .getByRole('link', { name: 'Corpo' })
       .click();
     await expect(page).toHaveURL(/\/treino\/corpo$/);
-    await expect(page.getByRole('heading', { name: 'Corpo' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Corpo', exact: true })).toBeVisible();
     await expect(tabs.getByRole('link', { name: 'Progresso' })).toHaveAttribute(
       'aria-current',
       'page',

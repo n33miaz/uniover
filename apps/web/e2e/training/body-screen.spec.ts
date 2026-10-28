@@ -60,8 +60,8 @@ test('registra peso e mantém medidas e gordura acessíveis nos registros', asyn
   }
   await measuresSection.getByRole('button', { name: 'Registrar Medidas' }).click();
   const measures = page.getByRole('dialog', { name: 'Registrar Medidas e Gordura' });
-  await measures.getByLabel('Cintura / abdômen (cm)').fill('86');
-  await measures.getByLabel('Pescoço (cm)').fill('38');
+  await measures.getByLabel('Cintura', { exact: true }).fill('86');
+  await measures.getByLabel('Pescoço', { exact: true }).fill('38');
   await measures.getByRole('radio', { name: 'Bioimpedância' }).check();
   await measures.getByRole('radio', { name: 'Informado por você' }).check();
   await measures.getByRole('button', { name: 'Calcular pela Marinha' }).click();

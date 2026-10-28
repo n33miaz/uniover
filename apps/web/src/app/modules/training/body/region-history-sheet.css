@@ -1,0 +1,65 @@
+.empty {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+
+.rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--a-line);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--a-line);
+}
+
+.date {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Direito e esquerdo lado a lado; o valor antigo sem lado ocupa a linha sozinho. */
+.cells {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-1) var(--space-3);
+}
+
+.cell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tag {
+  color: var(--a-ink2);
+  font-size: var(--fs-label);
+  font-weight: 700;
+}
+
+.cell small {
+  color: var(--a-ink2);
+  font-size: var(--fs-label);
+}
+
+.cell small.up {
+  color: var(--a-accent-ink);
+}
+
+.cell small.down {
+  color: var(--a-warn-ink);
+}

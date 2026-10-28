@@ -15,17 +15,17 @@ test('prioriza sinais e mantém calorias e fotos acessíveis', async ({ page, co
     /Medidas/,
     /Gordura Corporal/,
     /Avaliações Físicas/,
-    /Mapa do Corpo/,
     /Fotos de Progresso/,
   ]);
+  // O mapa mora dentro do Corpo, entre os sinais e os atalhos; não há mais atalho para uma tela só do mapa.
+  await expect(
+    page.locator('app-body-map-panel').getByRole('heading', { name: 'Mapa do Corpo' }),
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: /Mapa do Corpo/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Registrar Peso' })).toBeVisible();
   await expect(
     page.getByRole('link', { name: 'Avaliações Físicas Ver Histórico' }),
   ).toHaveAttribute('href', '/treino/corpo/avaliacoes');
-  await expect(page.getByRole('link', { name: 'Mapa do Corpo Ver Músculos' })).toHaveAttribute(
-    'href',
-    '/treino/exercicios/mapa',
-  );
 
   await page.getByRole('button', { name: 'Registros' }).click();
   const profileSection = page.locator('app-body-section').nth(1);
