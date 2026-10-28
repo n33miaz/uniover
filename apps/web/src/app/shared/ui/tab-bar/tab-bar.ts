@@ -91,7 +91,7 @@ function isWithin(path: string, base: string): boolean {
     nav {
       background: var(--a-surface);
       border-top: 1px solid var(--a-line);
-      padding-bottom: env(safe-area-inset-bottom);
+      padding-bottom: var(--safe-bottom);
     }
     ul {
       display: flex;

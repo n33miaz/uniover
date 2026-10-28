@@ -23,7 +23,7 @@
   justify-content: center;
   padding: var(--gutter);
   padding-top: calc(var(--gutter) + env(safe-area-inset-top));
-  padding-bottom: calc(var(--gutter) + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--gutter) + var(--safe-bottom));
 }
 .panel[open][data-placement='top'] {
   align-items: flex-start;

@@ -20,7 +20,7 @@
   gap: var(--space-6);
   min-height: 100dvh;
   padding-block: calc(var(--stage-top) + env(safe-area-inset-top))
-    calc(var(--space-6) + env(safe-area-inset-bottom) + var(--kb-inset, 0px));
+    calc(var(--space-6) + var(--safe-bottom) + var(--kb-inset, 0px));
   padding-inline: max(var(--gutter), env(safe-area-inset-left))
     max(var(--gutter), env(safe-area-inset-right));
   background: radial-gradient(

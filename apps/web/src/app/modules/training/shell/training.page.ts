@@ -341,8 +341,7 @@ function isWithin(path: string, section: string): boolean {
       flex-direction: column;
       gap: var(--space-3);
       padding: var(--space-3) max(var(--gutter), env(safe-area-inset-right))
-        calc(var(--gutter) + env(safe-area-inset-bottom))
-        max(var(--gutter), env(safe-area-inset-left));
+        calc(var(--gutter) + var(--safe-bottom)) max(var(--gutter), env(safe-area-inset-left));
     }
     .progress-nav {
       display: flex;
