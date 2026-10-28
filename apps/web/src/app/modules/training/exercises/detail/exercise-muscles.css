@@ -71,3 +71,32 @@ figcaption {
     gap: var(--space-2);
   }
 }
+
+/*
+ * Ao lado da ilustração, o cartão tem a mesma proporção do cartão dela (268 × 275) e a mesma largura da coluna: os dois
+ * ficam do mesmo tamanho. As silhuetas dividem a altura que sobra depois da legenda, em vez de mandar nela.
+ */
+:host(.fill) .muscle-figures {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+  box-sizing: border-box;
+  min-height: 0;
+  aspect-ratio: 268 / 275;
+  overflow: hidden;
+}
+
+:host(.fill) .muscle-figures.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+:host(.fill) .muscle-figure {
+  min-height: 0;
+}
+
+:host(.fill) .figure {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 0;
+  max-height: none;
+}

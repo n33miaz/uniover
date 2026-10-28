@@ -15,11 +15,14 @@ import {
   selector: 'app-exercise-muscles',
   templateUrl: './exercise-muscles.html',
   styleUrl: './exercise-muscles.css',
+  host: { '[class.fill]': 'fill()' },
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ExerciseMuscles {
   readonly primary = input.required<readonly MuscleId[]>();
   readonly secondary = input.required<readonly MuscleId[]>();
+  /** Ao lado da ilustração: o cartão copia o tamanho do cartão dela, e as silhuetas encolhem para caber nele. */
+  readonly fill = input(false);
 
   protected readonly faces = computed(() => {
     const muscles = new Set([...this.primary(), ...this.secondary()]);
