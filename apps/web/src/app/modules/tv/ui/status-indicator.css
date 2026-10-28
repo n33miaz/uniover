@@ -52,6 +52,24 @@
 .meaning {
   color: var(--a-ink);
 }
+.hints {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hints li {
+  display: grid;
+  gap: 2px;
+}
+.hints strong {
+  font-size: 0.9rem;
+}
+.hints span {
+  color: var(--a-ink2);
+  font-size: 0.9rem;
+}
 .note {
   color: var(--a-ink2);
   font-size: 0.9rem;
