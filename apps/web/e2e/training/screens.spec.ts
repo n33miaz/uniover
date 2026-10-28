@@ -303,10 +303,13 @@ for (const scheme of ['light', 'dark'] as const) {
       if (info.project.name === 's23-fe') {
         expect(tapHighlights).toEqual(['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)']);
       }
+      // A pílula da aba ativa fica só atrás do ícone (cada aba tem a sua), nunca atravessando a barra.
       const tabWidths = await tabs.locator('ul').evaluate((list) => ({
         bar: list.getBoundingClientRect().width,
-        activePill: Number.parseFloat(getComputedStyle(list, '::before').width),
+        activePill:
+          list.querySelector('a.active .pill')?.getBoundingClientRect().width ?? Number.NaN,
       }));
+      expect(tabWidths.activePill).toBeGreaterThan(0);
       expect(tabWidths.activePill).toBeLessThan(tabWidths.bar / 3);
       await expectNoHorizontalScroll(page);
       await shot(page, info, 'cabecalho-navegacao', scheme);

@@ -457,6 +457,9 @@ test.describe('atalhos maiores e centralizados', () => {
     await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
     await page.getByLabel('Repita a senha').fill(GUEST.password);
     await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+    // Toda conta entra pela Início; a convidada abre a TV pelo cartão dela.
+    await expect(page).toHaveURL(/\/$/);
+    await page.locator('article[data-module="tv"] a.card-link').click();
     await expect(page).toHaveURL(/\/tv$/);
     await showTv(page);
     await expect(page.getByRole('link', { name: /Início/ })).toHaveCount(0);
