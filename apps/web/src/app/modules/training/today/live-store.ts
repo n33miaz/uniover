@@ -145,7 +145,7 @@ export class LiveStore {
     if (this.session() === undefined) return '';
     const routine = this.routine();
     return routine === undefined
-      ? $localize`:@@training.live.free:Treino livre`
+      ? $localize`:@@training.live.free:Treino Livre`
       : liveRoutineName(routine.name);
   });
   readonly focusExercise = computed(() => {

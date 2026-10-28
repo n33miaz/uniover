@@ -89,7 +89,7 @@ export interface TemplateCreated {
                     (click)="use(template)"
                   >
                     @if (isHistorical(template)) {
-                      <span i18n="@@training.templates.use">Criar este rascunho parcial</span>
+                      <span i18n="@@training.templates.use">Criar Este Rascunho Parcial</span>
                     } @else {
                       <span i18n="@@training.templates.choose">Usar Este Modelo</span>
                     }
@@ -100,7 +100,7 @@ export interface TemplateCreated {
           }
         </ul>
         <p class="note" i18n="@@training.templates.note">
-          O plano começa pelo modelo; o programa organiza as rotinas da semana.
+          O modelo é o ponto de partida; o Programa Semanal organiza as rotinas da semana.
         </p>
       }
       @if (error(); as message) {

@@ -140,7 +140,7 @@ export class SessionSummary {
   }
 
   protected readonly backLabel = $localize`:@@training.summary.back:Voltar a Hoje`;
-  protected readonly freeName = $localize`:@@training.summary.free:Treino livre`;
+  protected readonly freeName = $localize`:@@training.summary.free:Treino Livre`;
   protected readonly fallbackName = $localize`:@@training.summary.unknown:Exercício removido`;
 
   private async load(id: string): Promise<void> {

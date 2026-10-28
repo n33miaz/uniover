@@ -27,7 +27,7 @@ test.describe('rotinas: lista e modelos', () => {
     await expect(page.locator('.routine-line .edit')).toHaveCount(2);
     await rows.nth(1).click();
     await expect(page).toHaveURL(new RegExp(`/treino/rotinas/${SEED_ROUTINE_IDS.b}$`));
-    await expect(page.getByRole('heading', { name: 'Editar rotina' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Editar Rotina' })).toBeVisible();
   });
 
   test('compara modelos antes de criar o programa: o aparelho cria as rotinas e o servidor as recebe', async ({
@@ -36,14 +36,14 @@ test.describe('rotinas: lista e modelos', () => {
   }) => {
     const server = await startTraining(context, page, { routines: false });
     await openTraining(page, '/treino/rotinas');
-    await expect(page.getByText('Sem rotinas ainda')).toBeVisible();
+    await expect(page.getByText('Sem Rotinas Ainda')).toBeVisible();
     await page.getByRole('button', { name: 'Comparar Modelos' }).click();
     const sheet = page.getByRole('dialog', { name: 'Comparar Modelos' });
     await expect(sheet.getByRole('button', { name: /Full body/ })).toBeVisible();
     await sheet.getByRole('button', { name: /ABC/ }).click();
     await expect(sheet).toContainText('A · Peito e tríceps');
     await expect(sheet).toContainText(
-      'O plano começa pelo modelo; o programa organiza as rotinas da semana.',
+      'O modelo é o ponto de partida; o Programa Semanal organiza as rotinas da semana.',
     );
     await sheet.getByRole('button', { name: 'Usar Este Modelo' }).click();
     await expect(page.locator('.next-card')).toBeVisible();
@@ -85,7 +85,7 @@ test.describe('rotinas: editor', () => {
       'Supino reto com barra',
       'Supino inclinado com halteres',
     ]);
-    await page.getByRole('button', { name: 'Salvar rotina' }).click();
+    await page.getByRole('button', { name: 'Salvar Rotina' }).click();
     await expect(page).toHaveURL(/\/treino\/rotinas$/);
     await expect.poll(() => server.writes('routines')).toBe(1);
     const routine = server.rows('routines').find((row) => row.id === SEED_ROUTINE_IDS.a)!;
@@ -105,7 +105,7 @@ test.describe('rotinas: editor', () => {
     await page.getByRole('button', { name: 'Aumentar descanso' }).click();
     await page.getByRole('switch', { name: 'Juntar com o próximo (supersérie)' }).first().check();
     await expect(page.getByText('supersérie: sem descanso entre o par')).toBeVisible();
-    await page.getByRole('button', { name: 'Salvar rotina' }).click();
+    await page.getByRole('button', { name: 'Salvar Rotina' }).click();
     await expect(page).toHaveURL(/\/treino\/rotinas$/);
     await expect.poll(() => server.writes('routines')).toBe(1);
     const routine = server.rows('routines').find((row) => row.id === SEED_ROUTINE_IDS.a)!;
@@ -123,15 +123,15 @@ test.describe('rotinas: editor', () => {
   test('adiciona um exercício pela folha com a lista do catálogo', async ({ page, context }) => {
     const server = await startTraining(context, page);
     await openTraining(page, `/treino/rotinas/${SEED_ROUTINE_IDS.b}`);
-    await page.getByRole('button', { name: 'Adicionar exercício' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Adicionar exercício' });
+    await page.getByRole('button', { name: 'Adicionar Exercício' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Adicionar Exercício' });
     await sheet.getByRole('searchbox', { name: 'Buscar exercício' }).fill('elevacao');
     await expect(sheet.locator('.ui-row')).toHaveCount(1);
     await sheet.locator('.ui-row').click();
     await expect(names(page)).toHaveCount(4);
     await expect(names(page).nth(3)).toHaveText('Elevação lateral com halteres');
     await expect(page.locator('.items .meta').nth(3)).toHaveText('3 séries · 8–12 reps · 90 s');
-    await page.getByRole('button', { name: 'Salvar rotina' }).click();
+    await page.getByRole('button', { name: 'Salvar Rotina' }).click();
     await expect(page).toHaveURL(/\/treino\/rotinas$/);
     await expect.poll(() => server.writes('routines')).toBe(1);
   });
@@ -144,12 +144,12 @@ test.describe('rotinas: editor', () => {
     await page.getByRole('link', { name: 'Nova Rotina' }).click();
     await expect(page.getByLabel('Nome da rotina')).toHaveValue('Treino C');
     await page.getByLabel('Nome da rotina').fill('Pernas');
-    await page.getByRole('button', { name: 'Adicionar exercício' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Adicionar exercício' });
+    await page.getByRole('button', { name: 'Adicionar Exercício' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Adicionar Exercício' });
     await sheet.getByRole('searchbox', { name: 'Buscar exercício' }).fill('agachamento');
     await expect(sheet.locator('.ui-row')).toHaveCount(1);
     await sheet.locator('.ui-row').click();
-    await page.getByRole('button', { name: 'Salvar rotina' }).click();
+    await page.getByRole('button', { name: 'Salvar Rotina' }).click();
     await expect(page).toHaveURL(/\/treino\/rotinas$/);
     await expect(page.locator('.next-card')).toBeVisible();
     await expect.poll(() => server.rows('routines').length).toBe(3);
@@ -166,7 +166,7 @@ test.describe('rotinas: editor', () => {
     for (let n = 0; n < 6; n++) {
       await page.getByRole('button', { name: 'Aumentar repetições mínimas' }).click();
     }
-    await page.getByRole('button', { name: 'Salvar rotina' }).click();
+    await page.getByRole('button', { name: 'Salvar Rotina' }).click();
     await expect(page.getByText('Dê um nome à rotina.')).toBeVisible();
     await expect(page.getByText('A repetição mínima não pode passar da máxima.')).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/treino/rotinas/${SEED_ROUTINE_IDS.a}$`));
@@ -187,10 +187,10 @@ test.describe('rotinas: editor', () => {
     await page.getByRole('button', { name: 'Descer Supino reto com barra' }).click();
     await page.getByRole('button', { name: 'Cancelar' }).click();
     await expect(page.getByText('Sair sem salvar?')).toBeVisible();
-    await page.getByRole('button', { name: 'Continuar editando' }).click();
+    await page.getByRole('button', { name: 'Continuar Editando' }).click();
     await expect(page.getByLabel('Nome da rotina')).toBeVisible();
     await page.getByRole('button', { name: 'Cancelar' }).click();
-    await page.getByRole('button', { name: 'Sair sem salvar' }).click();
+    await page.getByRole('button', { name: 'Sair sem Salvar' }).click();
     await expect(page).toHaveURL(/\/treino\/rotinas$/);
     expect(server.writes('routines')).toBe(0);
   });
@@ -198,11 +198,11 @@ test.describe('rotinas: editor', () => {
   test('apaga a rotina por lápide, só depois de confirmar', async ({ page, context }) => {
     const server = await startTraining(context, page);
     await openTraining(page, `/treino/rotinas/${SEED_ROUTINE_IDS.b}`);
-    await page.getByRole('button', { name: 'Apagar rotina' }).click();
+    await page.getByRole('button', { name: 'Apagar Rotina' }).click();
     await expect(page.getByText('Apagar esta rotina?')).toBeVisible();
     await page.getByRole('button', { name: 'Manter' }).click();
-    await expect(page.getByRole('button', { name: 'Apagar rotina' })).toBeVisible();
-    await page.getByRole('button', { name: 'Apagar rotina' }).click();
+    await expect(page.getByRole('button', { name: 'Apagar Rotina' })).toBeVisible();
+    await page.getByRole('button', { name: 'Apagar Rotina' }).click();
     await page.locator('.ui-notice').getByRole('button', { name: 'Apagar', exact: true }).click();
     await expect(page).toHaveURL(/\/treino\/rotinas$/);
     await expect(page.locator('.next-card')).toBeVisible();

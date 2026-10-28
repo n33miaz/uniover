@@ -38,7 +38,7 @@ async function expectExercise(page: Page) {
   await expect.poll(() => path(page)).toBe('/treino/sessao/exercicio');
   // Com o descanso no ar o botão fixo de baixo sai: o cartão do descanso é o sinal de que o registro abriu.
   await expect(
-    page.getByRole('button', { name: 'Concluir série' }).or(page.locator('.rest')),
+    page.getByRole('button', { name: 'Concluir Série' }).or(page.locator('.rest')),
   ).toBeVisible();
 }
 
@@ -81,8 +81,8 @@ test.describe('os botões de voltar do treino', () => {
     await expectDay(page);
 
     // Resumo -> Hoje (e não a tela do dia de um treino que acabou).
-    await page.getByRole('button', { name: 'Concluir treino' }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
+    await page.getByRole('button', { name: 'Concluir Treino' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino Concluído' })).toBeVisible();
     expect(search(page)).toContain('resumo=');
     await page.getByRole('button', { name: 'Voltar a Hoje' }).click();
     await expectToday(page);

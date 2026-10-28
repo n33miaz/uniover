@@ -82,9 +82,9 @@ describe('ProgressExport', () => {
       text(title),
     );
     expect(titles).toEqual([
-      'Exportar tudo (JSON)',
-      'Exportar séries (CSV)',
-      'Compartilhar resumo da semana',
+      'Exportar Tudo (JSON)',
+      'Exportar Séries (CSV)',
+      'Compartilhar Resumo da Semana',
     ]);
     expect(text(el)).toContain('seguro extra contra o navegador apagar dados de site');
     // Antes de tocar, nenhuma mensagem.

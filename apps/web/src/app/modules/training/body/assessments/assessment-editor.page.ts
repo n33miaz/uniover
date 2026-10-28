@@ -44,7 +44,7 @@ function todayKey(): string {
       </header>
       <form (ngSubmit)="save()">
         <fieldset>
-          <legend i18n="@@training.assessments.identification">Identificação do registro</legend>
+          <legend i18n="@@training.assessments.identification">Identificação do Registro</legend>
           <label for="assessedOn" i18n="@@training.assessments.date">Data da avaliação</label>
           <input
             id="assessedOn"
@@ -64,7 +64,7 @@ function todayKey(): string {
         </fieldset>
         <fieldset>
           <legend i18n="@@training.assessments.report-context">
-            Contexto informado no relatório
+            Contexto Informado no Relatório
           </legend>
           <label for="age" i18n="@@training.assessments.reported-age"
             >Idade na data (se constar)</label
@@ -94,7 +94,7 @@ function todayKey(): string {
           />
         </fieldset>
         <fieldset>
-          <legend i18n="@@training.assessments.measurements-title">Medidas e resultados</legend>
+          <legend i18n="@@training.assessments.measurements-title">Medidas e Resultados</legend>
           <p class="hint" i18n="@@training.assessments.measure-help">
             Mantenha o valor como aparece no documento. Campos vazios não serão registrados.
           </p>
@@ -178,7 +178,7 @@ function todayKey(): string {
                 [attr.aria-label]="removeMeasureLabel($index)"
                 i18n="@@training.assessments.remove-measure"
               >
-                Remover medida
+                Remover Medida
               </button>
             </article>
           }
@@ -193,11 +193,11 @@ function todayKey(): string {
             (click)="addMeasure()"
             i18n="@@training.assessments.add-measure"
           >
-            Adicionar medida
+            Adicionar Medida
           </button>
         </fieldset>
         <fieldset>
-          <legend i18n="@@training.assessments.attach-title">Fotos do relatório</legend>
+          <legend i18n="@@training.assessments.attach-title">Fotos do Relatório</legend>
           <p class="hint" i18n="@@training.assessments.attach-local">
             Os arquivos selecionados ficam somente neste aparelho e não são enviados.
           </p>
@@ -240,7 +240,7 @@ function todayKey(): string {
           (click)="save()"
           i18n="@@training.assessments.save"
         >
-          Salvar avaliação
+          Salvar Avaliação
         </button>
       </form>
     </div>
@@ -385,8 +385,8 @@ export class PhysicalAssessmentEditorPage {
     plannedFrequencyPerWeek: '',
     notes: '',
   };
-  protected readonly editTitle = $localize`:@@training.assessments.edit-title:Editar avaliação`;
-  protected readonly newTitle = $localize`:@@training.assessments.new-title:Nova avaliação`;
+  protected readonly editTitle = $localize`:@@training.assessments.edit-title:Editar Avaliação`;
+  protected readonly newTitle = $localize`:@@training.assessments.new-title:Nova Avaliação`;
   protected readonly unitLabel = $localize`:@@training.assessments.unit:Unidade`;
   protected readonly documentCountLabel = $localize`:@@training.assessments.files-selected:arquivo(s) selecionado(s)`;
   protected readonly knownTypes = [
@@ -559,7 +559,7 @@ export class PhysicalAssessmentEditorPage {
   private async load(id: string): Promise<void> {
     const row = await this.repository.get(id);
     if (!row) {
-      this.status.set($localize`:@@training.assessments.not-found:Avaliação não encontrada.`);
+      this.status.set($localize`:@@training.assessments.not-found:Avaliação Não Encontrada.`);
       return;
     }
     Object.assign(this.draft, {

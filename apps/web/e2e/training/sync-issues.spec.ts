@@ -18,12 +18,12 @@ async function createRefused(page: Page, server: TrainingServer) {
   await openTraining(page, '/treino/exercicios/novo');
   await page.getByLabel('Nome').fill('Remada na máquina articulada');
   await chooseMuscle(page, 'Meio das costas');
-  await page.getByRole('button', { name: 'Salvar exercício' }).click();
+  await page.getByRole('button', { name: 'Salvar Exercício' }).click();
   await expect(page.getByText('1 com erro')).toBeVisible();
 }
 
 test.describe('alterações que o servidor recusou', () => {
-  test('o item aparece nas pendências com o motivo, e "Tentar de novo" o reenvia', async ({
+  test('o item aparece nas pendências com o motivo, e "Tentar de Novo" o reenvia', async ({
     page,
     context,
   }) => {
@@ -32,7 +32,7 @@ test.describe('alterações que o servidor recusou', () => {
     expect(server.writes('exercises')).toBe(0);
 
     await page.locator('.training-header .status').click();
-    const sheet = page.getByRole('dialog', { name: 'Alterações com erro' });
+    const sheet = page.getByRole('dialog', { name: 'Alterações com Erro' });
     await expect(sheet).toContainText('Exercício');
     await expect(sheet).toContainText('“Remada na máquina articulada”');
     await expect(sheet).toContainText('relógio');
@@ -60,7 +60,7 @@ test.describe('alterações que o servidor recusou', () => {
     const server = await startTraining(context, page);
     await createRefused(page, server);
     await page.locator('.training-header .status').click();
-    const sheet = page.getByRole('dialog', { name: 'Alterações com erro' });
+    const sheet = page.getByRole('dialog', { name: 'Alterações com Erro' });
 
     await sheet.getByRole('button', { name: /^Descartar/ }).click();
     await expect(sheet.getByText('Descartar esta alteração?')).toBeVisible();

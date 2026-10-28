@@ -76,11 +76,11 @@ for (const scheme of ['light', 'dark'] as const) {
       const offSearchQueries = await useOffFixture(page);
       await openTraining(page, '/treino/alimentacao');
       expect(cspViolations).toEqual([]);
-      await expect(page.getByRole('heading', { name: 'Diário alimentar' })).toBeVisible();
-      await expect(page.getByText('Nada registrado neste dia')).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Diário Alimentar' })).toBeVisible();
+      await expect(page.getByText('Nada Registrado Neste Dia')).toBeVisible();
 
       // Lançamento livre aceita zeros reais; valores não são inferidos.
-      await page.getByRole('button', { name: 'Lançamento livre' }).click();
+      await page.getByRole('button', { name: 'Lançamento Livre' }).click();
       await page.getByLabel('Descrição do lançamento').fill('Registro de demonstração');
       await page.locator('#free-kcal').fill('0');
       await page.locator('#free-protein').fill('0');
@@ -89,7 +89,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.getByRole('button', { name: 'Registrar refeição' }).click();
       await expect(page.locator('.entry-main strong')).toHaveText(['Registro de demonstração']);
       expect(cspViolations).toEqual([]);
-      // A faixa "Sincronizar agora" aparece enquanto o envio está pendente e empurra a tela: quem toca nesse meio tempo
+      // A faixa "Sincronizar Agora" aparece enquanto o envio está pendente e empurra a tela: quem toca nesse meio tempo
       // erra o alvo. Cada passo espera o aparelho voltar a "em dia" antes do toque seguinte.
       await expectSynced(page, SYNC_WAIT);
 
@@ -101,7 +101,7 @@ for (const scheme of ['light', 'dark'] as const) {
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       }, today);
       await setDay(page, yesterday);
-      await expect(page.getByText('Nada registrado neste dia')).toBeVisible();
+      await expect(page.getByText('Nada Registrado Neste Dia')).toBeVisible();
       await setDay(page, today);
       await expect(page.locator('.entry-main strong')).toHaveText(['Registro de demonstração']);
       await expect(page.getByRole('status', { name: 'Carregando lançamentos…' })).toBeHidden();
@@ -113,7 +113,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expectSynced(page, SYNC_WAIT);
       await page.getByRole('button', { name: 'Apagar Registro revisado' }).click();
       await page.getByRole('button', { name: 'Confirmar' }).click();
-      await expect(page.getByText('Nada registrado neste dia')).toBeVisible();
+      await expect(page.getByText('Nada Registrado Neste Dia')).toBeVisible();
       expect(cspViolations).toEqual([]);
       await expectSynced(page, SYNC_WAIT);
 
@@ -124,7 +124,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.locator('#own-protein').fill('16.9');
       await page.locator('#own-carbs').fill('66.3');
       await page.locator('#own-fat').fill('6.9');
-      await page.getByRole('button', { name: 'Salvar alimento' }).click();
+      await page.getByRole('button', { name: 'Salvar Alimento' }).click();
       await expect(page.locator('.selected-food strong')).toHaveText('Aveia de demonstração');
       await page.getByRole('button', { name: 'Registrar refeição' }).click();
       await expect(page.locator('.entry-main strong')).toHaveText(['Aveia de demonstração']);

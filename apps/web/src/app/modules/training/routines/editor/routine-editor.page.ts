@@ -97,8 +97,8 @@ export class RoutineEditorPage {
   protected readonly dirty = computed(() => isDraftDirty(this.initial(), this.draft()));
 
   protected readonly title = this.editing
-    ? $localize`:@@training.editor.title-edit:Editar rotina`
-    : $localize`:@@training.editor.title-new:Nova rotina`;
+    ? $localize`:@@training.editor.title-edit:Editar Rotina`
+    : $localize`:@@training.editor.title-new:Nova Rotina`;
   protected readonly backLabel = $localize`:@@training.editor.back:Sair do editor`;
   protected readonly itemsLabel = $localize`:@@training.editor.items-label:Exercícios da rotina`;
   protected readonly dragHint = $localize`:@@training.editor.hint:Mude a ordem com as setas, ou arraste pela alça.`;

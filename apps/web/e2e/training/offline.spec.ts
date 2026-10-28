@@ -28,7 +28,7 @@ test.describe('exercício próprio criado sem rede', () => {
 
     await page.getByLabel('Nome').fill('Remada na máquina articulada');
     await chooseMuscle(page, 'Meio das costas');
-    await page.getByRole('button', { name: 'Salvar exercício' }).click();
+    await page.getByRole('button', { name: 'Salvar Exercício' }).click();
     await expect(page.getByRole('heading', { name: 'Remada na máquina articulada' })).toBeVisible();
 
     // Recarrega ainda sem rede: o exercício vem do aparelho, com a marca de próprio.
@@ -167,10 +167,10 @@ test.describe('sem rede de verdade, com o service worker', () => {
     await expectOfflineIcon(page);
 
     // Criar sem rede, de ponta a ponta.
-    await page.getByRole('link', { name: 'Novo exercício' }).click();
+    await page.getByRole('link', { name: 'Novo Exercício' }).click();
     await page.getByLabel('Nome').fill('Remada articulada');
     await chooseMuscle(page, 'Meio das costas');
-    await page.getByRole('button', { name: 'Salvar exercício' }).click();
+    await page.getByRole('button', { name: 'Salvar Exercício' }).click();
     await expect(page.getByRole('heading', { name: 'Remada articulada' })).toBeVisible();
 
     await page.reload();

@@ -76,7 +76,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.getByText('3 exercícios achados')).toBeVisible();
       await shot(page, info, 'biblioteca-busca', scheme);
       await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('zzzz');
-      await expect(page.getByText('Nenhum exercício achado')).toBeVisible();
+      await expect(page.getByText('Nenhum Exercício Achado')).toBeVisible();
       await shot(page, info, 'biblioteca-sem-resultado', scheme);
     });
 
@@ -94,7 +94,7 @@ for (const scheme of ['light', 'dark'] as const) {
         const server = await startTraining(context, page, { catalog: false });
         server.offline = true;
         await openTraining(page, '/treino/exercicios');
-        await expect(page.getByText('O catálogo ainda não chegou')).toBeVisible();
+        await expect(page.getByText('O Catálogo Ainda Não Chegou')).toBeVisible();
         await shot(page, info, 'biblioteca-vazia', scheme);
       },
     );
@@ -127,17 +127,17 @@ for (const scheme of ['light', 'dark'] as const) {
     shotTest('Ficha: adicionar a um treino', async ({ page, context }, info) => {
       await startTraining(context, page);
       await openTraining(page, `/treino/exercicios/${SEED_EXERCISE_IDS.pushUp}`);
-      await page.getByRole('button', { name: 'Adicionar a um treino' }).click();
-      await expect(page.getByRole('dialog', { name: 'Adicionar a um treino' })).toBeVisible();
+      await page.getByRole('button', { name: 'Adicionar a um Treino' }).click();
+      await expect(page.getByRole('dialog', { name: 'Adicionar a um Treino' })).toBeVisible();
       await shot(page, info, 'ficha-adicionar', scheme);
     });
 
     shotTest('Novo exercício: formulário vazio e com erros', async ({ page, context }, info) => {
       await startTraining(context, page);
       await openTraining(page, '/treino/exercicios/novo');
-      await expect(page.getByRole('heading', { name: 'Novo exercício' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Novo Exercício' })).toBeVisible();
       await shot(page, info, 'novo-exercicio', scheme);
-      await page.getByRole('button', { name: 'Salvar exercício' }).click();
+      await page.getByRole('button', { name: 'Salvar Exercício' }).click();
       await expect(page.getByText('Dê um nome ao exercício.')).toBeVisible();
       await shot(page, info, 'novo-exercicio-erros', scheme);
     });
@@ -162,7 +162,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.getByLabel('Nome').fill('Remada na máquina articulada');
       await chooseMuscle(page, 'Meio das costas');
       await chooseEquipment(page, 'Máquina');
-      await page.getByRole('button', { name: 'Salvar exercício' }).click();
+      await page.getByRole('button', { name: 'Salvar Exercício' }).click();
       await expect(
         page.getByRole('heading', { name: 'Remada na máquina articulada' }),
       ).toBeVisible();
@@ -179,7 +179,7 @@ for (const scheme of ['light', 'dark'] as const) {
     shotTest('Rotinas: sem nenhuma', async ({ page, context }, info) => {
       await startTraining(context, page, { routines: false });
       await openTraining(page, '/treino/rotinas');
-      await expect(page.getByText('Sem rotinas ainda')).toBeVisible();
+      await expect(page.getByText('Sem Rotinas Ainda')).toBeVisible();
       await shot(page, info, 'rotinas-vazio', scheme);
     });
 
@@ -205,7 +205,7 @@ for (const scheme of ['light', 'dark'] as const) {
     shotTest('Editor: a rotina', async ({ page, context }, info) => {
       await startTraining(context, page);
       await openTraining(page, `/treino/rotinas/${SEED_ROUTINE_IDS.a}`);
-      await expect(page.getByRole('heading', { name: 'Editar rotina' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Editar Rotina' })).toBeVisible();
       await expect(page.getByText('Supino reto com barra')).toBeVisible();
       await shot(page, info, 'editor', scheme);
     });
@@ -224,8 +224,8 @@ for (const scheme of ['light', 'dark'] as const) {
     shotTest('Editor: folha de adicionar exercício', async ({ page, context }, info) => {
       await startTraining(context, page);
       await openTraining(page, `/treino/rotinas/${SEED_ROUTINE_IDS.a}`);
-      await page.getByRole('button', { name: 'Adicionar exercício' }).click();
-      await expect(page.getByRole('dialog', { name: 'Adicionar exercício' })).toBeVisible();
+      await page.getByRole('button', { name: 'Adicionar Exercício' }).click();
+      await expect(page.getByRole('dialog', { name: 'Adicionar Exercício' })).toBeVisible();
       await shot(page, info, 'editor-adicionar', scheme);
     });
 
@@ -233,7 +233,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await startTraining(context, page);
       await openTraining(page, '/treino/rotinas/nova');
       await page.getByLabel('Nome da rotina').fill('');
-      await page.getByRole('button', { name: 'Salvar rotina' }).click();
+      await page.getByRole('button', { name: 'Salvar Rotina' }).click();
       await expect(page.getByText('Dê um nome à rotina.')).toBeVisible();
       await shot(page, info, 'editor-erros', scheme);
     });
@@ -250,11 +250,11 @@ for (const scheme of ['light', 'dark'] as const) {
       await openTraining(page, '/treino/exercicios/novo');
       await page.getByLabel('Nome').fill('Remada na máquina articulada');
       await chooseMuscle(page, 'Meio das costas');
-      await page.getByRole('button', { name: 'Salvar exercício' }).click();
+      await page.getByRole('button', { name: 'Salvar Exercício' }).click();
       await expect(page.getByText('1 com erro')).toBeVisible();
       await shot(page, info, 'pendencias-linha', scheme);
       await page.locator('.training-header .status').click();
-      await expect(page.getByRole('dialog', { name: 'Alterações com erro' })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Alterações com Erro' })).toBeVisible();
       await shot(page, info, 'pendencias-folha', scheme);
     });
 

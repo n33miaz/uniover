@@ -17,12 +17,12 @@ import { TrainingGlyph } from '../shell/training-glyph';
       <section
         class="suggest ui-card"
         [attr.aria-labelledby]="sheetMode() ? null : 'program-title'"
-        aria-label="Escolha seu programa"
+        aria-label="Escolha Seu Programa"
         i18n-aria-label="@@training.program.label"
       >
         @if (!sheetMode()) {
           <h3 id="program-title" class="title" i18n="@@training.program.title">
-            Escolha seu programa
+            Escolha Seu Programa
           </h3>
         }
         @if (loading()) {
@@ -116,7 +116,7 @@ export class ProgramSuggestion {
   readonly dismissible = input(false);
   /** Dentro da folha, o título vem dela e a sugestão também informa quando não há programa local. */
   readonly sheetMode = input(false);
-  readonly dismissLabel = input($localize`:@@training.program.dismiss:Agora não`);
+  readonly dismissLabel = input($localize`:@@training.program.dismiss:Agora Não`);
   readonly dismissed = output<void>();
   /** A escolha foi gravada no aparelho; quem abriu a folha decide qual treino começar em seguida. */
   readonly selected = output<RoutineTemplate>();

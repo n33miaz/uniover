@@ -105,7 +105,7 @@ test.describe('Hoje', () => {
     const calendar = page.getByRole('dialog', { name: 'Mês com Ritmo' });
     await expect(calendar).toBeVisible();
     await expect(calendar.locator('.month-day.done')).not.toHaveCount(0);
-    await expect(calendar.locator('.day-detail')).toContainText('Treino livre');
+    await expect(calendar.locator('.day-detail')).toContainText('Treino Livre');
     await expect(calendar.locator('.day-detail')).toContainText('300 kg');
     const currentMonth = await calendar.locator('.month-nav h3').textContent();
     await calendar.getByRole('button', { name: 'Mês anterior' }).click();
@@ -122,12 +122,12 @@ test.describe('Hoje', () => {
     server.templates = START_PROGRAM;
     await openToday(page);
 
-    await page.getByRole('button', { name: 'Agora não' }).click();
+    await page.getByRole('button', { name: 'Agora Não' }).click();
     await page.getByRole('button', { name: 'Iniciar Treino' }).click();
 
-    const dialog = page.getByRole('dialog', { name: 'Programa da semana' });
+    const dialog = page.getByRole('dialog', { name: 'Programa Semanal' });
     await expect(dialog).toBeVisible();
-    await dialog.getByRole('button', { name: 'Seguir sem programa' }).click();
+    await dialog.getByRole('button', { name: 'Seguir sem Programa' }).click();
 
     await expect(page.locator('app-workout-day .routine-name')).toHaveText(
       'Treino A - peito tríceps',
@@ -140,7 +140,7 @@ test.describe('Hoje', () => {
     await openToday(page);
 
     await page.getByRole('button', { name: 'Iniciar Treino' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Programa da semana' });
+    const dialog = page.getByRole('dialog', { name: 'Programa Semanal' });
     await expect(dialog).toBeVisible();
     await dialog.locator('button.ui-row').first().click();
 
@@ -158,7 +158,7 @@ test.describe('Hoje', () => {
     await openToday(page);
 
     await page.locator('app-week-calendar .day.done').click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino Concluído' })).toBeVisible();
     const stats = page.locator('.stat');
     await expect(stats.nth(0)).toContainText('400 kg');
     await expect(stats.nth(1)).toContainText('50 min');
@@ -167,7 +167,7 @@ test.describe('Hoje', () => {
     await expect(set).toContainText('Supino reto com barra');
     await expect(set).toContainText('40 kg × 10 · Trabalho');
     await set.click();
-    await expect(page.getByRole('dialog', { name: 'Editar série' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Editar Série' })).toBeVisible();
   });
 
   test('a rotina do dia vem primeiro, a semana confirma embaixo, e o botão de iniciar fica acima da lista', async ({
@@ -273,12 +273,12 @@ test.describe('Hoje', () => {
     await startTraining(context, page, { routines: false });
     await openToday(page, { history: false });
 
-    await expect(page.getByRole('heading', { name: 'Sem rotinas ainda' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Montar rotinas' })).toHaveAttribute(
+    await expect(page.getByRole('heading', { name: 'Sem Rotinas Ainda' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Montar Rotinas' })).toHaveAttribute(
       'href',
       '/treino/rotinas',
     );
-    await expect(page.getByRole('button', { name: 'Treino livre' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Treino Livre' })).toBeVisible();
   });
 
   test('treino aberto em outro aparelho bloqueia o início; passadas 12 horas, oferece encerrar o esquecido', async ({
@@ -290,11 +290,11 @@ test.describe('Hoje', () => {
     await openToday(page, { history: false });
 
     await expect(
-      page.getByRole('heading', { name: 'Treino aberto em outro aparelho' }),
+      page.getByRole('heading', { name: 'Treino Aberto em Outro Aparelho' }),
     ).toBeVisible();
     await expect(page.getByText('aberto há 3 h')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Iniciar Treino' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Encerrar o treino esquecido' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Encerrar o Treino Esquecido' })).toHaveCount(0);
     await expect(page.getByText('depois de 12 horas você poderá encerrá-lo daqui')).toBeVisible();
   });
 
@@ -307,9 +307,9 @@ test.describe('Hoje', () => {
     await openToday(page, { history: false });
 
     await expect(page.getByText('aberto há 13 h')).toBeVisible();
-    await page.getByRole('button', { name: 'Encerrar o treino esquecido' }).click();
+    await page.getByRole('button', { name: 'Encerrar o Treino Esquecido' }).click();
     await expect(page.getByText('Encerrar o treino do outro aparelho?')).toBeVisible();
-    await page.getByRole('button', { name: 'Sim, encerrar' }).click();
+    await page.getByRole('button', { name: 'Sim, Encerrar' }).click();
 
     await expect(page.getByText('Treino esquecido encerrado')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Iniciar Treino' })).toBeVisible();
@@ -381,7 +381,7 @@ test.describe('treino ao vivo', () => {
     await tap(page, 'Aumentar a carga');
     await concludeSet(page);
     await page.getByRole('button', { name: 'Encerrar treino' }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino Concluído' })).toBeVisible();
   });
 
   test('na supersérie a tela só volta à lista quando a rodada do par fecha, e a última série não deixa descanso', async ({
@@ -411,7 +411,7 @@ test.describe('treino ao vivo', () => {
       if (done < 6) {
         await expect(page.locator('app-workout-day')).toHaveCount(0);
         await expect(
-          page.getByRole('button', { name: 'Concluir série' }).or(page.locator('.rest')),
+          page.getByRole('button', { name: 'Concluir Série' }).or(page.locator('.rest')),
         ).toBeVisible();
       }
     }
@@ -451,13 +451,13 @@ test.describe('treino ao vivo', () => {
     await concludeSet(page);
     const rest = page.locator('.rest');
     await expect(rest).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Concluir série' })).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Concluir Série' })).toBeHidden();
     // Nada cobre os atalhos: o clique chega neles.
     await expect(rest.getByRole('button', { name: 'Encerrar treino' })).toBeInViewport({
       ratio: 1,
     });
     await rest.getByRole('button', { name: 'Pular Descanso' }).click();
-    await expect(page.getByRole('button', { name: 'Concluir série' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Concluir Série' })).toBeVisible();
   });
 
   test('a ilustração do exercício alterna sozinha, para depois de um tempo e o toque a retoma', async ({
@@ -579,13 +579,13 @@ test.describe('treino ao vivo', () => {
       'Aumentar a carga',
       'Diminuir a carga',
       'Aumentar as repetições',
-      'Concluir série',
+      'Concluir Série',
     ]) {
       const box = (await page.getByRole('button', { name, exact: true }).boundingBox())!;
       expect(Math.min(box.width, box.height), name).toBeGreaterThanOrEqual(56);
     }
-    // "Concluir série" fica ao alcance do polegar: colado na base da tela.
-    const dock = (await page.getByRole('button', { name: 'Concluir série' }).boundingBox())!;
+    // "Concluir Série" fica ao alcance do polegar: colado na base da tela.
+    const dock = (await page.getByRole('button', { name: 'Concluir Série' }).boundingBox())!;
     expect(dock.y + dock.height).toBeGreaterThan(page.viewportSize()!.height - 40);
   });
 
@@ -604,7 +604,7 @@ test.describe('treino ao vivo', () => {
     const record = page.getByRole('status').filter({ hasText: 'Recorde!' });
     await expect(record).toContainText('carga máxima 42,5 kg (antes 40 kg)');
     await expect(record).toContainText('1RM estimado 53,8 kg (antes 53,3 kg)');
-    await expect(page.locator('.done .ui-chip', { hasText: 'recorde' })).toBeVisible();
+    await expect(page.locator('.done .ui-chip', { hasText: 'Recorde' })).toBeVisible();
     await expect(page.locator('.set-title')).toContainText('Série 2 de 4');
 
     // A série seguinte já vem com a mesma carga e as mesmas repetições.
@@ -678,9 +678,9 @@ test.describe('treino ao vivo', () => {
 
     // Iniciar o treino NÃO pede a tela acesa.
     expect((await deviceLog(page)).wakeRequests).toBe(0);
-    await page.getByRole('button', { name: 'Opções do treino' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Opções do treino' });
-    const toggle = dialog.getByRole('switch', { name: /Manter a tela acesa/ });
+    await page.getByRole('button', { name: 'Opções do Treino' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Opções do Treino' });
+    const toggle = dialog.getByRole('switch', { name: /Manter a Tela Acesa/ });
     await expect(toggle).not.toBeChecked();
     await expect(dialog.getByText('Desligada: a tela apaga no tempo do aparelho.')).toBeVisible();
     await expect(
@@ -717,10 +717,10 @@ test.describe('treino ao vivo', () => {
     await openToday(page);
     await beginWorkout(page);
 
-    await page.getByRole('button', { name: 'Opções do treino' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Opções do treino' });
+    await page.getByRole('button', { name: 'Opções do Treino' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Opções do Treino' });
     await expect(dialog.getByText('Este navegador não permite manter a tela acesa.')).toBeVisible();
-    await expect(dialog.getByRole('switch', { name: /Manter a tela acesa/ })).toBeDisabled();
+    await expect(dialog.getByRole('switch', { name: /Manter a Tela Acesa/ })).toBeDisabled();
   });
 
   test('pular e substituir exercício: a troca vale só hoje, mantém o número da série e o exercício pulado volta pela lista', async ({
@@ -731,8 +731,8 @@ test.describe('treino ao vivo', () => {
     await openToday(page);
     await beginWorkout(page);
 
-    await menu(page, /Substituir exercício/);
-    const chooser = page.getByRole('dialog', { name: 'Substituir exercício' });
+    await menu(page, /Substituir Exercício/);
+    const chooser = page.getByRole('dialog', { name: 'Substituir Exercício' });
     // Só o mesmo músculo, e fora o que já está na rotina de hoje.
     await expect(chooser.getByText('Supino inclinado com halteres')).toHaveCount(0);
     await chooser.getByRole('button', { name: /Supino reto com halteres/ }).click();
@@ -748,14 +748,14 @@ test.describe('treino ao vivo', () => {
     await concludeSet(page);
     await expect(page.locator('.set-title')).toContainText('Série 2 de 4');
 
-    await menu(page, /Pular exercício/);
+    await menu(page, /Pular Exercício/);
     await expect(
       page.getByRole('heading', { level: 2, name: 'Supino inclinado com halteres' }),
     ).toBeVisible();
     await expect(page.locator('.set-title')).toContainText('Série 1 de 3');
 
-    await menu(page, /Exercícios do treino/);
-    const plan = page.getByRole('dialog', { name: 'Exercícios do treino' });
+    await menu(page, /Exercícios do Treino/);
+    const plan = page.getByRole('dialog', { name: 'Exercícios do Treino' });
     await expect(plan.getByText('pulado · toque para voltar a incluir')).toBeVisible();
     await plan.getByRole('button', { name: /Supino reto com halteres/ }).click();
     await expect(
@@ -774,9 +774,9 @@ test.describe('treino ao vivo', () => {
 
     // Duas séries com rede, a troca de exercício e então a rede cai.
     await concludeSet(page);
-    await menu(page, /Substituir exercício/);
+    await menu(page, /Substituir Exercício/);
     await page
-      .getByRole('dialog', { name: 'Substituir exercício' })
+      .getByRole('dialog', { name: 'Substituir Exercício' })
       .getByRole('button', { name: /Supino reto com halteres/ })
       .click();
     await tap(page, 'Aumentar a carga');
@@ -861,7 +861,7 @@ test.describe('treino ao vivo', () => {
     await concludeSet(page); // série 2: 42,5 kg × 10
     // Edita a série 1 (uma repetição a menos): vira um segundo pedido, mais novo, para a mesma série.
     await page.locator('.done .ui-row').first().click();
-    const sheet = page.getByRole('dialog', { name: 'Editar série' });
+    const sheet = page.getByRole('dialog', { name: 'Editar Série' });
     await sheet.getByRole('button', { name: 'Diminuir as repetições' }).click();
     await sheet.getByRole('button', { name: 'Salvar' }).click();
     await expect(sheet).toBeHidden();
@@ -874,7 +874,7 @@ test.describe('treino ao vivo', () => {
     await concludeSet(page); // série 4
     await finishFromDay(page);
 
-    await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino Concluído' })).toBeVisible();
     await expect(page.getByText('Salvo no aparelho · 4 séries aguardam envio')).toBeVisible();
     expect(server.rows('sessions').filter((row) => row['deviceId'] !== OTHER_DEVICE)).toHaveLength(
       0,
@@ -929,9 +929,9 @@ test.describe('treino ao vivo', () => {
     await concludeSet(page);
     await concludeSet(page);
     await page.clock.fastForward(25 * 60_000);
-    await menu(page, /Terminar treino/);
+    await menu(page, /Terminar Treino/);
 
-    await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino Concluído' })).toBeVisible();
     const stats = page.locator('.stat');
     // 42,5 kg × 8 duas vezes = 680 kg; duas séries de trabalho; dois recordes (carga máxima e 1RM).
     await expect(stats.nth(0)).toContainText('680 kg');
@@ -945,21 +945,21 @@ test.describe('treino ao vivo', () => {
     await expect(page.getByText(/Salvo no aparelho/)).toBeVisible();
 
     await page.reload();
-    await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino Concluído' })).toBeVisible();
     await expect(stats.nth(0)).toContainText('680 kg');
 
-    // "Editar treino" abre as séries; uma se corrige e o resumo acompanha.
-    await page.getByRole('button', { name: 'Editar treino' }).click();
+    // "Editar Treino" abre as séries; uma se corrige e o resumo acompanha.
+    await page.getByRole('button', { name: 'Editar Treino' }).click();
     await page.locator('.sets .ui-row').first().click();
-    const sheet = page.getByRole('dialog', { name: 'Editar série' });
+    const sheet = page.getByRole('dialog', { name: 'Editar Série' });
     await expect(sheet).toBeVisible();
     await sheet.getByRole('button', { name: 'Diminuir as repetições' }).click();
     await sheet.getByRole('button', { name: 'Salvar' }).click();
     // 42,5 × 7 + 42,5 × 8 = 637,5 kg.
     await expect(stats.nth(0)).toContainText('637,5 kg');
 
-    // "Concluir treino" volta a Hoje, e a sequência passou para a rotina B.
-    await page.getByRole('button', { name: 'Concluir treino' }).click();
+    // "Concluir Treino" volta a Hoje, e a sequência passou para a rotina B.
+    await page.getByRole('button', { name: 'Concluir Treino' }).click();
     await expect(page.getByRole('heading', { name: 'Treino B · Costas e bíceps' })).toBeVisible();
     await expect(page.locator('.week .stats div').nth(0)).toHaveText(/^Treinoss*1$/);
   });
@@ -971,12 +971,12 @@ test.describe('treino ao vivo', () => {
     await concludeSet(page);
 
     await page.locator('.done .ui-row').first().click();
-    const sheet = page.getByRole('dialog', { name: 'Editar série' });
+    const sheet = page.getByRole('dialog', { name: 'Editar Série' });
     await sheet.getByRole('button', { name: 'Apagar' }).click();
     await expect(
       sheet.getByText('Apagar esta série? Ela some do treino e dos recordes.'),
     ).toBeVisible();
-    await sheet.getByRole('button', { name: 'Sim, apagar' }).click();
+    await sheet.getByRole('button', { name: 'Sim, Apagar' }).click();
     await expect(page.locator('.done')).toHaveCount(0);
     await expect(page.locator('.set-title')).toContainText('Série 1 de 4');
   });
@@ -987,11 +987,11 @@ test.describe('treino ao vivo', () => {
   }) => {
     await launch(context, page);
     await openToday(page);
-    await page.getByRole('button', { name: 'Treino livre' }).click();
+    await page.getByRole('button', { name: 'Treino Livre' }).click();
     await skipProgramChoice(page);
-    await expect(page.locator('app-workout-day .routine-name')).toHaveText('Treino livre');
-    await page.getByRole('button', { name: 'Escolher exercício' }).click();
-    const chooser = page.getByRole('dialog', { name: 'Adicionar exercício' });
+    await expect(page.locator('app-workout-day .routine-name')).toHaveText('Treino Livre');
+    await page.getByRole('button', { name: 'Escolher Exercício' }).click();
+    const chooser = page.getByRole('dialog', { name: 'Adicionar Exercício' });
     await chooser.getByRole('button', { name: /Agachamento livre com barra/ }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
     await expect(
@@ -1003,8 +1003,8 @@ test.describe('treino ao vivo', () => {
     await expect(restTime(page)).toHaveText(/^(1:30|1:29|1:3\d|1:2\d)$/);
     await expect(page.locator('.rest .goal')).toHaveText('meta 1:30');
 
-    await menu(page, /Cancelar treino/);
-    await page.getByRole('button', { name: 'Sim, cancelar' }).click();
+    await menu(page, /Cancelar Treino/);
+    await page.getByRole('button', { name: 'Sim, Cancelar' }).click();
     await expect(page.getByRole('heading', { name: 'Semana com Meta', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Iniciar Treino' })).toBeVisible();
   });

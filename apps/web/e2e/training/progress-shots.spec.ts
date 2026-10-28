@@ -52,7 +52,7 @@ const EXTRAS: readonly ExtraShot[] = [
     name: 'gráfico com meta, sem rede',
     run: async (page, context, server) => {
       await openProgress(page);
-      await page.getByRole('button', { name: 'Definir meta' }).click();
+      await page.getByRole('button', { name: 'Definir Meta' }).click();
       const sheet = page.getByRole('dialog', { name: /^Meta de 1RM/ });
       await sheet.getByLabel('Meta de 1RM, em kg').fill('55');
       await sheet.getByRole('button', { name: 'Salvar' }).click();
@@ -114,7 +114,7 @@ const EXTRAS: readonly ExtraShot[] = [
     name: 'todas as seções abertas',
     run: async (page) => {
       await openProgress(page);
-      for (const title of [/^Recordes/, /^Semana/, /^Frequência/, /^Exportar e compartilhar/]) {
+      for (const title of [/^Recordes/, /^Semana/, /^Frequência/, /^Exportar e Compartilhar/]) {
         await section(page, title).click();
       }
       await expect(page.locator('app-progress-frequency .day.on')).toHaveCount(5);

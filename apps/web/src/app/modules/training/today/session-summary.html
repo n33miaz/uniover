@@ -5,7 +5,7 @@
         <app-training-glyph name="back" />
       </button>
       <h1 id="summary-title" #title class="title" tabindex="-1" i18n="@@training.summary.title">
-        Treino concluído
+        Treino Concluído
       </h1>
       <span class="head-space" aria-hidden="true"></span>
     </header>
@@ -59,7 +59,7 @@
     @if (summary.records.length > 0) {
       <section class="records" aria-labelledby="records-title">
         <h2 id="records-title" class="ui-section-label" i18n="@@training.summary.records-title">
-          Recordes de hoje
+          Recordes de Hoje
         </h2>
         <ul class="ui-group ui-plain">
           @for (record of summary.records; track record.exerciseName + record.kind) {
@@ -83,14 +83,14 @@
         (click)="editing.set(!editing())"
       >
         <app-training-glyph name="pencil" />
-        <span i18n="@@training.summary.edit">Editar treino</span>
+        <span i18n="@@training.summary.edit">Editar Treino</span>
       </button>
     }
 
     @if (showSets() || editing()) {
       <section class="sets" aria-labelledby="sets-title">
         <h2 id="sets-title" class="ui-section-label" i18n="@@training.summary.sets-title">
-          Séries do treino
+          Séries do Treino
         </h2>
         @if (summary.sets.length === 0) {
           <p class="none" i18n="@@training.summary.sets-none">Nenhuma série neste treino.</p>
@@ -122,7 +122,7 @@
 
   <div class="dock">
     <button type="button" class="primary ui-btn block go" (click)="done.emit()">
-      <span i18n="@@training.summary.done">Concluir treino</span>
+      <span i18n="@@training.summary.done">Concluir Treino</span>
     </button>
   </div>
 
@@ -142,7 +142,7 @@
       tabindex="-1"
       i18n="@@training.summary.missing-title"
     >
-      Treino não encontrado
+      Treino Não Encontrado
     </h1>
     <p class="sub" i18n="@@training.summary.missing-text">
       Ele pode ter sido apagado ou ainda estar aberto.

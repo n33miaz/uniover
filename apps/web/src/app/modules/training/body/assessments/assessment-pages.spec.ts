@@ -49,7 +49,7 @@ describe('physical assessment screens', () => {
     await harness.navigateByUrl('/treino/corpo/avaliacoes');
     const el = harness.routeNativeElement as HTMLElement;
     await eventually({ detectChanges: () => harness.detectChanges() }, () => {
-      expect(el.textContent).toContain('Somente neste aparelho');
+      expect(el.textContent).toContain('Somente Neste Aparelho');
       expect(el.textContent).toContain('Clínica sintética');
     });
     await harness.navigateByUrl(`/treino/corpo/avaliacoes/${row.id}`);
@@ -210,7 +210,7 @@ describe('physical assessment screens', () => {
     )!;
     transferButton.click();
     await eventually({ detectChanges: () => harness.detectChanges() }, () => {
-      expect(page.textContent).toContain('Escolher medidas para o Corpo');
+      expect(page.textContent).toContain('Escolher Medidas para o Corpo');
       // Peso, cintura e a panturrilha direita (a medida com lado agora tem campo próprio no Corpo).
       expect(page.querySelectorAll('.transfer-option')).toHaveLength(3);
     });

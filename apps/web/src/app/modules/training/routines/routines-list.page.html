@@ -22,7 +22,7 @@
   } @else if (entries().length === 0) {
     <section class="empty ui-card" aria-labelledby="routines-empty-title">
       <span class="ui-tile lg"><app-training-glyph name="list" /></span>
-      <h2 id="routines-empty-title" i18n="@@training.routines.empty-title">Sem rotinas ainda</h2>
+      <h2 id="routines-empty-title" i18n="@@training.routines.empty-title">Sem Rotinas Ainda</h2>
       <p i18n="@@training.routines.empty-text">
         Uma rotina é a lista de exercícios de um treino (Treino A, Treino B...). Monte a sua do zero
         ou comece por um modelo pronto.
@@ -105,6 +105,14 @@
       <app-training-glyph name="list" />
       <span i18n="@@training.routines.template">Comparar Modelos</span>
     </button>
+    <a
+      class="glossary-link ui-btn secondary"
+      routerLink="/treino/glossario"
+      aria-label="Entender Programa Semanal, Rotina e Exercício"
+      i18n-aria-label="@@training.glossary.link-label"
+    >
+      <app-training-glyph name="info" />
+    </a>
   </div>
   @if (!online()) {
     <p class="ui-notice warn" role="status">

@@ -272,8 +272,8 @@ export class LiveSession {
     return exercise !== undefined && (exercise.instructions.length > 0 || this.thumb() !== null);
   });
 
-  protected readonly swapHeading = $localize`:@@training.live.swap-title:Substituir exercício`;
-  protected readonly addHeading = $localize`:@@training.live.add-title:Adicionar exercício`;
+  protected readonly swapHeading = $localize`:@@training.live.swap-title:Substituir Exercício`;
+  protected readonly addHeading = $localize`:@@training.live.add-title:Adicionar Exercício`;
   protected readonly backLabel = $localize`:@@training.live.back:Voltar ao treino`;
   protected readonly menuLabel = $localize`:@@training.live.menu:Opções do treino`;
   protected readonly dismissLabel = $localize`:@@training.live.record-dismiss:Dispensar o aviso de recorde`;

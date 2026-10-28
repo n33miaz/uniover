@@ -113,7 +113,7 @@ export function recordRows(
                 <span class="detail">{{ row.detail }}</span>
               </span>
               @if (row.recent) {
-                <span class="ui-chip ok" i18n="@@training.progress.records.badge">recorde</span>
+                <span class="ui-chip ok" i18n="@@training.progress.records.badge">Recorde</span>
               }
               <b class="value">{{ row.value }}</b>
             </li>

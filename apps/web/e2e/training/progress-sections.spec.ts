@@ -105,7 +105,7 @@ test.describe('semana e volume por músculo', () => {
     await expect(week.locator('.totals b')).toHaveText('2 treinos · 7 séries');
 
     await week.getByRole('button', { name: 'Definir' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Meta de treinos por semana' });
+    const sheet = page.getByRole('dialog', { name: 'Meta de Treinos por Semana' });
     await sheet.getByLabel('Treinos por semana').fill('3');
     await sheet.getByRole('button', { name: 'Salvar' }).click();
     await expect(sheet).toHaveCount(0);
@@ -203,7 +203,7 @@ test.describe('calendário de frequência', () => {
     await openProgress(page);
     await section(page, /^Semana/).click();
     await page.locator('app-progress-week').getByRole('button', { name: 'Definir' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Meta de treinos por semana' });
+    const sheet = page.getByRole('dialog', { name: 'Meta de Treinos por Semana' });
     await sheet.getByLabel('Treinos por semana').fill('2');
     await sheet.getByRole('button', { name: 'Salvar' }).click();
     await expect(sheet).toHaveCount(0);
@@ -223,7 +223,7 @@ test.describe('calendário de frequência', () => {
  */
 async function openExport(page: Page) {
   await expect(section(page, /^Semana/)).toContainText('2 treinos · 7 séries');
-  await section(page, /^Exportar e compartilhar/).click();
+  await section(page, /^Exportar e Compartilhar/).click();
 }
 
 /** Fixa o que o aparelho faz ao compartilhar e ao copiar: o teste lê o que o app mandou, sem abrir folha do sistema. */
@@ -270,7 +270,7 @@ test.describe('exportar e compartilhar', () => {
 
     // No Chromium o baixar arquivo dispara o evento `download`. No WebKit o que acontece fica registrado no relatório.
     const download = page.waitForEvent('download', { timeout: 10_000 }).catch(() => null);
-    await page.getByRole('button', { name: /^Exportar tudo \(JSON\)/ }).click();
+    await page.getByRole('button', { name: /^Exportar Tudo \(JSON\)/ }).click();
     const file = await download;
 
     await expect(page.locator('app-progress-export')).toContainText(
@@ -309,7 +309,7 @@ test.describe('exportar e compartilhar', () => {
     await openExport(page);
 
     const download = page.waitForEvent('download', { timeout: 10_000 }).catch(() => null);
-    await page.getByRole('button', { name: /^Exportar séries \(CSV\)/ }).click();
+    await page.getByRole('button', { name: /^Exportar Séries \(CSV\)/ }).click();
     const file = await download;
 
     await expect(page.locator('app-progress-export')).toContainText(
@@ -348,7 +348,7 @@ test.describe('exportar e compartilhar', () => {
     await openProgress(page);
     await openExport(page);
 
-    await page.getByRole('button', { name: /^Compartilhar resumo da semana/ }).click();
+    await page.getByRole('button', { name: /^Compartilhar Resumo da Semana/ }).click();
 
     await expect(page.locator('app-progress-export')).toContainText(
       'Resumo enviado ao compartilhar do aparelho.',
@@ -370,7 +370,7 @@ test.describe('exportar e compartilhar', () => {
     await openProgress(page);
     await openExport(page);
 
-    await page.getByRole('button', { name: /^Compartilhar resumo da semana/ }).click();
+    await page.getByRole('button', { name: /^Compartilhar Resumo da Semana/ }).click();
 
     await expect(page.locator('app-progress-export')).toContainText(
       'Este aparelho não abre o compartilhar: o resumo foi copiado, é só colar onde quiser.',
@@ -394,7 +394,7 @@ test.describe('exportar e compartilhar', () => {
     await openProgress(page);
     await openExport(page);
 
-    await page.getByRole('button', { name: /^Compartilhar resumo da semana/ }).click();
+    await page.getByRole('button', { name: /^Compartilhar Resumo da Semana/ }).click();
 
     await expect(page.locator('app-progress-export')).toContainText(
       'Este aparelho não consegue compartilhar nem copiar o texto. Use o JSON ou o CSV.',

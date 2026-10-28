@@ -104,7 +104,7 @@ export class ProgressWeek {
   protected readonly previousLabel = $localize`:@@training.progress.week.previous:Semana anterior`;
   protected readonly nextLabel = $localize`:@@training.progress.week.next:Próxima semana`;
   protected readonly barsLabel = $localize`:@@training.progress.week.bars-label:Séries de trabalho por grupo muscular`;
-  protected readonly goalHeading = $localize`:@@training.progress.week.goal-title:Meta de treinos por semana`;
+  protected readonly goalHeading = $localize`:@@training.progress.week.goal-title:Meta de Treinos por Semana`;
   protected readonly goalField = $localize`:@@training.progress.week.goal-field:Treinos por semana`;
 
   private readonly read = signal<Read | null>(null);

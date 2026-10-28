@@ -43,7 +43,7 @@ describe('ProgramSuggestion', () => {
     const { fixture, el } = await open();
 
     await eventually(fixture, () => expect(el.querySelectorAll('.ui-row')).toHaveLength(1));
-    expect(text(el)).toContain('Escolha seu programa');
+    expect(text(el)).toContain('Escolha Seu Programa');
     expect(el.querySelector('.ui-row-title')?.textContent?.trim()).toBe('Duplo');
     expect(el.querySelector('.ui-row-sub')?.textContent?.trim()).toBe('Seg Peito · Qua Braços');
   });

@@ -44,10 +44,13 @@ describe('RoutinesListPage', () => {
 
   it('says there is no routine yet, and offers to create the first', async () => {
     const { fixture, el } = await open();
-    await eventually(fixture, () => expect(text(el)).toContain('Sem rotinas ainda'));
+    await eventually(fixture, () => expect(text(el)).toContain('Sem Rotinas Ainda'));
     expect(el.querySelector<HTMLAnchorElement>('.actions a')?.getAttribute('href')).toBe(
       '/treino/rotinas/nova',
     );
+    expect(
+      el.querySelector<HTMLAnchorElement>('.actions a.glossary-link')?.getAttribute('href'),
+    ).toBe('/treino/glossario');
   });
 
   it('lists the routines in the order of the sequence, each with its letter and a short summary', async () => {
@@ -150,9 +153,9 @@ describe('RoutinesListPage', () => {
       row.click();
       await eventually(fixture, () => expect(text(el)).toContain('não foram confirmados'));
       await eventually(fixture, () =>
-        expect(button(el, 'Criar este rascunho parcial')).toBeDefined(),
+        expect(button(el, 'Criar Este Rascunho Parcial')).toBeDefined(),
       );
-      button(el, 'Criar este rascunho parcial').click();
+      button(el, 'Criar Este Rascunho Parcial').click();
 
       // Inativas não são "a próxima": sem destaque, a lista inteira já aparece.
       await eventually(fixture, () =>
@@ -209,7 +212,7 @@ describe('RoutinesListPage', () => {
       expect(el.querySelector('.template-chevron.expanded')).not.toBeNull();
       expect(text(el)).toContain('Sem dia definido');
       expect(text(el)).toContain(
-        'O plano começa pelo modelo; o programa organiza as rotinas da semana.',
+        'O modelo é o ponto de partida; o Programa Semanal organiza as rotinas da semana.',
       );
       button(el, 'Usar Este Modelo').click();
       await eventually(fixture, () => expect(el.querySelector('.next-card')).not.toBeNull());
@@ -235,9 +238,9 @@ describe('RoutinesListPage', () => {
       await eventually(fixture, () => expect(el.querySelector('dialog .ui-row')).not.toBeNull());
       el.querySelector<HTMLButtonElement>('dialog .ui-row')!.click();
       await eventually(fixture, () =>
-        expect(button(el, 'Criar este rascunho parcial')).toBeDefined(),
+        expect(button(el, 'Criar Este Rascunho Parcial')).toBeDefined(),
       );
-      button(el, 'Criar este rascunho parcial').click();
+      button(el, 'Criar Este Rascunho Parcial').click();
       await eventually(fixture, () =>
         expect(text(el)).toContain('1 exercício do modelo não está no seu catálogo'),
       );

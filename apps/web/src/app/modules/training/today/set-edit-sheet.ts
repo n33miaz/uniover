@@ -74,7 +74,7 @@ import { setText } from './today-text';
             </p>
             <div class="confirm-actions">
               <button type="button" class="danger ui-btn" (click)="remove()">
-                <span i18n="@@training.edit.confirm-yes">Sim, apagar</span>
+                <span i18n="@@training.edit.confirm-yes">Sim, Apagar</span>
               </button>
               <button type="button" class="secondary ui-btn" (click)="confirming.set(false)">
                 <span i18n="@@training.edit.confirm-no">Manter</span>
@@ -99,7 +99,7 @@ export class SetEditSheet {
   readonly changed = output<void>();
   readonly closed = output<void>();
 
-  protected readonly heading = $localize`:@@training.edit.title:Editar série`;
+  protected readonly heading = $localize`:@@training.edit.title:Editar Série`;
   protected readonly cancelLabel = $localize`:@@training.edit.cancel:Cancelar`;
   protected readonly confirmLabel = $localize`:@@training.edit.confirm-label:Confirmar apagar a série`;
 

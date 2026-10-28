@@ -79,9 +79,9 @@ export class TodayHome {
     readonly tone: 'ok' | 'warn';
   } | null>(null);
 
-  protected readonly freeName = $localize`:@@training.today.free-name:Treino livre`;
-  protected readonly programHeading = $localize`:@@training.today.program-heading:Programa da semana`;
-  protected readonly programSkipLabel = $localize`:@@training.today.program-skip:Seguir sem programa`;
+  protected readonly freeName = $localize`:@@training.today.free-name:Treino Livre`;
+  protected readonly programHeading = $localize`:@@training.today.program-heading:Programa Semanal`;
+  protected readonly programSkipLabel = $localize`:@@training.today.program-skip:Seguir sem Programa`;
   protected readonly confirmLabel = $localize`:@@training.today.forgotten-label:Confirmar o encerramento do treino do outro aparelho`;
   protected readonly linesLabel = $localize`:@@training.today.lines-label:Exercícios da rotina`;
   protected readonly missingName = $localize`:@@training.today.missing-name:Exercício removido`;

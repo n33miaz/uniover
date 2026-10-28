@@ -57,7 +57,7 @@ import {
         }
         @if (row.statedGoal || row.activityStatus || row.plannedFrequencyPerWeek !== null) {
           <section class="context-card" aria-label="{{ contextLabel }}">
-            <h2 i18n="@@training.assessments.report-context">Contexto informado no relatório</h2>
+            <h2 i18n="@@training.assessments.report-context">Contexto Informado no Relatório</h2>
             @if (row.statedGoal) {
               <p>{{ goalLabel }} · {{ row.statedGoal }}</p>
             }
@@ -72,7 +72,7 @@ import {
           </section>
         }
         <section class="measurements" aria-label="{{ measurementLabel }}">
-          <h2 i18n="@@training.assessments.measurements-title">Medidas e resultados</h2>
+          <h2 i18n="@@training.assessments.measurements-title">Medidas e Resultados</h2>
           @if ((row.measurements?.length ?? 0) === 0) {
             <p class="muted" i18n="@@training.assessments.no-measures">
               Nenhuma medida registrada.
@@ -113,7 +113,7 @@ import {
         <section class="documents" aria-labelledby="documents-title">
           <div class="section-head">
             <h2 id="documents-title" i18n="@@training.assessments.documents-title">
-              Fotos do relatório
+              Fotos do Relatório
             </h2>
             <span>{{ docs().length }}</span>
           </div>
@@ -143,7 +143,7 @@ import {
         @if (transferOpen()) {
           <section class="transfer" aria-labelledby="transfer-title">
             <h2 id="transfer-title" i18n="@@training.assessments.transfer.title">
-              Escolher medidas para o Corpo
+              Escolher Medidas para o Corpo
             </h2>
             <p class="muted" i18n="@@training.assessments.transfer.copy">
               Só os campos selecionados serão registrados com a data desta avaliação. Eles poderão
@@ -226,7 +226,7 @@ import {
                   (click)="openBodyTransfer()"
                   i18n="@@training.assessments.transfer.retry"
                 >
-                  Conferir novamente
+                  Conferir Novamente
                 </button>
               }
               <div class="transfer-actions">
@@ -242,7 +242,7 @@ import {
                   (click)="saveBodyTransfer()"
                   i18n="@@training.assessments.transfer.confirm"
                 >
-                  Registrar campos selecionados
+                  Registrar Campos Selecionados
                 </button>
                 <button
                   type="button"
@@ -259,7 +259,7 @@ import {
         }
         <div class="actions">
           <a class="primary" [routerLink]="['editar']" i18n="@@training.assessments.edit"
-            >Editar avaliação</a
+            >Editar Avaliação</a
           >
           <button
             class="secondary"
@@ -275,7 +275,7 @@ import {
             (click)="export()"
             i18n="@@training.assessments.export"
           >
-            Exportar avaliação
+            Exportar Avaliação
           </button>
           <button
             class="danger"
@@ -283,7 +283,7 @@ import {
             (click)="delete()"
             i18n="@@training.assessments.delete"
           >
-            Excluir avaliação
+            Excluir Avaliação
           </button>
         </div>
         @if (message()) {
@@ -305,7 +305,7 @@ import {
           </dialog>
         }
       } @else {
-        <h1 id="title" i18n="@@training.assessments.not-found">Avaliação não encontrada</h1>
+        <h1 id="title" i18n="@@training.assessments.not-found">Avaliação Não Encontrada</h1>
       }
     </div>
   `,

@@ -120,7 +120,7 @@ describe('FoodDiaryPage', () => {
       input.dispatchEvent(new Event('input'));
     }
     fixture.detectChanges();
-    button(fixture, 'Salvar alimento').click();
+    button(fixture, 'Salvar Alimento').click();
     await vi.waitFor(() => {
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.selected-food strong')?.textContent).toBe(
@@ -229,7 +229,7 @@ describe('FoodDiaryPage', () => {
     );
 
     meals.entriesOf.mockResolvedValueOnce([entry]);
-    button(fixture, 'Tentar novamente').click();
+    button(fixture, 'Tentar Novamente').click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Iogurte natural');
@@ -238,7 +238,7 @@ describe('FoodDiaryPage', () => {
   it('rejects a free-form entry with a blank nutrient instead of treating it as zero', async () => {
     const fixture = await open();
     meals.addEntry.mockResolvedValue({ status: 'invalid' });
-    button(fixture, 'Lançamento livre').click();
+    button(fixture, 'Lançamento Livre').click();
     fixture.detectChanges();
     const set = (selector: string, value: string) => {
       const input = fixture.nativeElement.querySelector(selector) as HTMLInputElement;
@@ -280,7 +280,7 @@ describe('FoodDiaryPage', () => {
     const fixture = await open();
     meals.addEntry.mockRejectedValue(new Error('storage unavailable'));
     foods.saveOwn.mockRejectedValue(new Error('storage unavailable'));
-    const free = button(fixture, 'Lançamento livre');
+    const free = button(fixture, 'Lançamento Livre');
     free.click();
     fixture.detectChanges();
     const name = fixture.nativeElement.querySelector('#free-name') as HTMLInputElement;
@@ -312,7 +312,7 @@ describe('FoodDiaryPage', () => {
     const summary = fixture.nativeElement.querySelector('.own-food summary') as HTMLElement;
     summary.click();
     fixture.detectChanges();
-    button(fixture, 'Salvar alimento').click();
+    button(fixture, 'Salvar Alimento').click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain(

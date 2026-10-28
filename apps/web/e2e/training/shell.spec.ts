@@ -111,7 +111,7 @@ test.describe('casca do Treino', () => {
   }) => {
     await startTraining(context, page);
     await openTraining(page, `/treino/rotinas/${SEED_ROUTINE_IDS.a}`);
-    await expect(page.getByRole('heading', { name: 'Editar rotina' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Editar Rotina' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Abas do módulo' })).toHaveCount(0);
   });
 

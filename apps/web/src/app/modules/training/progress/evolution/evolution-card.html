@@ -65,7 +65,7 @@
                 >Não foi possível carregar o gráfico agora. Os mesmos dados estão na tabela.</span
               >
               <button type="button" class="retry" (click)="retryChart()">
-                <span i18n="@@training.progress.chart.retry">Tentar de novo</span>
+                <span i18n="@@training.progress.chart.retry">Tentar de Novo</span>
               </button>
             </span>
           </div>
@@ -102,7 +102,7 @@
             Nenhum treino deste exercício neste período.
           </p>
           <button type="button" class="secondary ui-btn" (click)="setPeriod('all')">
-            <span i18n="@@training.progress.chart.show-all">Ver tudo</span>
+            <span i18n="@@training.progress.chart.show-all">Ver Tudo</span>
           </button>
         </div>
       }
@@ -112,7 +112,7 @@
             Nenhuma série de 1 a 10 repetições neste período: o 1RM não pode ser estimado.
           </p>
           <button type="button" class="secondary ui-btn" (click)="setMetric('topWeight')">
-            <span i18n="@@training.progress.chart.show-load">Ver a carga máxima</span>
+            <span i18n="@@training.progress.chart.show-load">Ver a Carga Máxima</span>
           </button>
         </div>
       }
@@ -138,9 +138,9 @@
         >
           <app-training-glyph name="list" />
           @if (tableOpen()) {
-            <span i18n="@@training.progress.table.hide">Ocultar dados</span>
+            <span i18n="@@training.progress.table.hide">Ocultar Dados</span>
           } @else {
-            <span i18n="@@training.progress.table.show">Ver dados</span>
+            <span i18n="@@training.progress.table.show">Ver Dados</span>
           }
         </button>
         @if (metric() === 'oneRepMax') {
@@ -154,7 +154,7 @@
             @if (goalButton(); as goal) {
               <span i18n="@@training.progress.goal.button-set">Meta: {{ goal }}</span>
             } @else {
-              <span i18n="@@training.progress.goal.button-define">Definir meta</span>
+              <span i18n="@@training.progress.goal.button-define">Definir Meta</span>
             }
           </button>
         }

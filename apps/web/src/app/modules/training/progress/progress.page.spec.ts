@@ -48,7 +48,7 @@ describe('ProgressPage', () => {
   it('only explains what to do, with a way to Hoje, when no training was ever recorded', async () => {
     const { fixture, el } = await open('/treino/progresso');
     await eventually(fixture, () =>
-      expect(text(el.querySelector('h2'))).toBe('Registre um treino para ver o progresso'),
+      expect(text(el.querySelector('h2'))).toBe('Registre um Treino para Ver o Progresso'),
     );
 
     expect(el.querySelector('a[href="/treino"]')).not.toBeNull();
@@ -112,7 +112,7 @@ describe('ProgressPage', () => {
       'Recordes',
       'Semana',
       'Frequência',
-      'Exportar e compartilhar',
+      'Exportar e Compartilhar',
     ]);
     const toggles = Array.from(el.querySelectorAll('.sections button.toggle'));
     expect(toggles.map((toggle) => toggle.getAttribute('aria-expanded'))).toEqual([
@@ -169,7 +169,7 @@ describe('ProgressPage', () => {
         'Exercício 5',
         'Exercício 4',
         'Exercício 3',
-        'Outro exercício',
+        'Outro Exercício',
       ]);
       expect(pressedChip(el)).toBe('Exercício 8');
     });
@@ -178,11 +178,11 @@ describe('ProgressPage', () => {
       const { fixture, el } = await open('/treino/progresso', seedMany, many);
       await eventually(fixture, () => expect(chips(el)).toHaveLength(CHIP_LIMIT + 1));
 
-      chip(el, 'Outro exercício').click();
+      chip(el, 'Outro Exercício').click();
       fixture.detectChanges();
       const sheet = el.querySelector('app-exercise-history-sheet')!;
       expect(sheet).not.toBeNull();
-      expect(text(sheet.querySelector('h2'))).toBe('Outro exercício');
+      expect(text(sheet.querySelector('h2'))).toBe('Outro Exercício');
       expect(sheet.querySelectorAll('.list button')).toHaveLength(8);
 
       const search = sheet.querySelector<HTMLInputElement>('input[type="search"]')!;
@@ -208,7 +208,7 @@ describe('ProgressPage', () => {
         'Exercício 4',
         'Exercício 3',
         'Exercício 1',
-        'Outro exercício',
+        'Outro Exercício',
       ]);
     });
 
@@ -216,7 +216,7 @@ describe('ProgressPage', () => {
       const { fixture, el } = await open('/treino/progresso', seedMany, many);
       await eventually(fixture, () => expect(chips(el)).toHaveLength(CHIP_LIMIT + 1));
 
-      chip(el, 'Outro exercício').click();
+      chip(el, 'Outro Exercício').click();
       fixture.detectChanges();
       const search = el.querySelector<HTMLInputElement>(
         'app-exercise-history-sheet input[type="search"]',
