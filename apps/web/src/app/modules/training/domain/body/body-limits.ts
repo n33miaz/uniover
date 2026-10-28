@@ -34,6 +34,7 @@ export const BODY_LIMITS = {
   weightKg: { min: 20, max: 400, decimals: 2 },
   bodyFatPct: { min: 2, max: 70, decimals: 1 },
   circumferenceCm: { min: 10, max: 250, decimals: 1 },
+  skinfoldMm: { min: 1, max: 100, decimals: 1 },
   heightCm: { min: 100, max: 250, decimals: 1 },
   activityFactor: { min: 1, max: 2.5, decimals: 2 },
   noteMax: 300,
@@ -69,6 +70,21 @@ export interface BodyEntryValues {
   readonly hipCm: number | null;
   readonly armCm: number | null;
   readonly thighCm: number | null;
+  readonly chestCm?: number | null;
+  readonly abdomenCm?: number | null;
+  readonly forearmCm?: number | null;
+  readonly calfCm?: number | null;
+  readonly armRightCm?: number | null;
+  readonly armLeftCm?: number | null;
+  readonly forearmRightCm?: number | null;
+  readonly forearmLeftCm?: number | null;
+  readonly thighRightCm?: number | null;
+  readonly thighLeftCm?: number | null;
+  readonly calfRightCm?: number | null;
+  readonly calfLeftCm?: number | null;
+  readonly chestSkinfoldMm?: number | null;
+  readonly abdomenSkinfoldMm?: number | null;
+  readonly thighSkinfoldMm?: number | null;
   readonly note: string;
 }
 
@@ -90,7 +106,28 @@ export interface BodyEntryIssue {
 export type BodyEntryIssuePath = NumericEntryField | 'fatMethod' | 'note' | 'measuredOn' | 'values';
 
 type NumericEntryField =
-  'weightKg' | 'bodyFatPct' | 'waistCm' | 'neckCm' | 'hipCm' | 'armCm' | 'thighCm';
+  | 'weightKg'
+  | 'bodyFatPct'
+  | 'waistCm'
+  | 'neckCm'
+  | 'hipCm'
+  | 'armCm'
+  | 'thighCm'
+  | 'chestCm'
+  | 'abdomenCm'
+  | 'forearmCm'
+  | 'calfCm'
+  | 'armRightCm'
+  | 'armLeftCm'
+  | 'forearmRightCm'
+  | 'forearmLeftCm'
+  | 'thighRightCm'
+  | 'thighLeftCm'
+  | 'calfRightCm'
+  | 'calfLeftCm'
+  | 'chestSkinfoldMm'
+  | 'abdomenSkinfoldMm'
+  | 'thighSkinfoldMm';
 
 /** Campos numéricos da medição e a faixa de cada um. */
 const ENTRY_RANGES: readonly (readonly [NumericEntryField, Range])[] = [
@@ -101,11 +138,26 @@ const ENTRY_RANGES: readonly (readonly [NumericEntryField, Range])[] = [
   ['hipCm', BODY_LIMITS.circumferenceCm],
   ['armCm', BODY_LIMITS.circumferenceCm],
   ['thighCm', BODY_LIMITS.circumferenceCm],
+  ['chestCm', BODY_LIMITS.circumferenceCm],
+  ['abdomenCm', BODY_LIMITS.circumferenceCm],
+  ['forearmCm', BODY_LIMITS.circumferenceCm],
+  ['calfCm', BODY_LIMITS.circumferenceCm],
+  ['armRightCm', BODY_LIMITS.circumferenceCm],
+  ['armLeftCm', BODY_LIMITS.circumferenceCm],
+  ['forearmRightCm', BODY_LIMITS.circumferenceCm],
+  ['forearmLeftCm', BODY_LIMITS.circumferenceCm],
+  ['thighRightCm', BODY_LIMITS.circumferenceCm],
+  ['thighLeftCm', BODY_LIMITS.circumferenceCm],
+  ['calfRightCm', BODY_LIMITS.circumferenceCm],
+  ['calfLeftCm', BODY_LIMITS.circumferenceCm],
+  ['chestSkinfoldMm', BODY_LIMITS.skinfoldMm],
+  ['abdomenSkinfoldMm', BODY_LIMITS.skinfoldMm],
+  ['thighSkinfoldMm', BODY_LIMITS.skinfoldMm],
 ];
 
 /** A medição tem ao menos um valor medido (a anotação sozinha não conta)? */
 export function hasAnyBodyValue(values: BodyEntryValues): boolean {
-  return ENTRY_RANGES.some(([key]) => values[key] !== null);
+  return ENTRY_RANGES.some(([key]) => values[key] != null);
 }
 
 /** A data existe e está dentro do intervalo aceito (de 1900 até `latest`, inclusive). */
@@ -130,14 +182,14 @@ export function validateBodyEntry(
 
   for (const [key, range] of ENTRY_RANGES) {
     const value = values[key];
-    if (value !== null && !inRange(value, range)) {
+    if (value != null && !inRange(value, range)) {
       issues.push({ path: key, code: 'value-range' });
     }
   }
 
-  if (values.bodyFatPct !== null && values.fatMethod === null) {
+  if (values.bodyFatPct != null && values.fatMethod == null) {
     issues.push({ path: 'fatMethod', code: 'fat-method-required' });
-  } else if (values.bodyFatPct === null && values.fatMethod !== null) {
+  } else if (values.bodyFatPct == null && values.fatMethod != null) {
     issues.push({ path: 'fatMethod', code: 'fat-method-without-fat' });
   }
 

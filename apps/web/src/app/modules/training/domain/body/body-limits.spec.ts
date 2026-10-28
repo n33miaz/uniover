@@ -33,6 +33,7 @@ describe('body limits', () => {
     expect(BODY_LIMITS.weightKg).toEqual({ min: 20, max: 400, decimals: 2 });
     expect(BODY_LIMITS.bodyFatPct).toEqual({ min: 2, max: 70, decimals: 1 });
     expect(BODY_LIMITS.circumferenceCm).toEqual({ min: 10, max: 250, decimals: 1 });
+    expect(BODY_LIMITS.skinfoldMm).toEqual({ min: 1, max: 100, decimals: 1 });
     expect(BODY_LIMITS.heightCm).toEqual({ min: 100, max: 250, decimals: 1 });
     expect(BODY_LIMITS.activityFactor).toEqual({ min: 1, max: 2.5, decimals: 2 });
     expect(BODY_LIMITS.noteMax).toBe(300);
@@ -63,6 +64,9 @@ describe('validateBodyEntry', () => {
       { ...empty, hipCm: 99 },
       { ...empty, armCm: 35 },
       { ...empty, thighCm: 58 },
+      { ...empty, chestCm: 90 },
+      { ...empty, armRightCm: 35 },
+      { ...empty, chestSkinfoldMm: 8 },
     ];
 
     for (const values of one) {
@@ -88,6 +92,9 @@ describe('validateBodyEntry', () => {
     ['hipCm', 10, 250, 9.9, 250.1, 99.05],
     ['armCm', 10, 250, 9.9, 250.1, 35.25],
     ['thighCm', 10, 250, 9.9, 250.1, 58.15],
+    ['chestCm', 10, 250, 9.9, 250.1, 90.15],
+    ['armRightCm', 10, 250, 9.9, 250.1, 35.15],
+    ['chestSkinfoldMm', 1, 100, 0.9, 100.1, 8.15],
   ] as const)(
     'limits %s to %d–%d with the decimals the database keeps',
     (field, min, max, below, above, tooPrecise) => {

@@ -7,7 +7,25 @@ import type { LocalBodyEntry } from '../../data/body/body-entry';
 import { BODY_LIMITS } from '../../domain/body/body-limits';
 
 export type AssessmentBodyField =
-  'weightKg' | 'bodyFatPct' | 'waistCm' | 'neckCm' | 'hipCm' | 'thighCm';
+  | 'weightKg'
+  | 'bodyFatPct'
+  | 'waistCm'
+  | 'neckCm'
+  | 'hipCm'
+  | 'thighCm'
+  | 'chestCm'
+  | 'abdomenCm'
+  | 'forearmRightCm'
+  | 'forearmLeftCm'
+  | 'calfRightCm'
+  | 'calfLeftCm'
+  | 'armRightCm'
+  | 'armLeftCm'
+  | 'thighRightCm'
+  | 'thighLeftCm'
+  | 'chestSkinfoldMm'
+  | 'abdomenSkinfoldMm'
+  | 'thighSkinfoldMm';
 
 export function assessmentBodyTransferKey(fingerprint: string, field: AssessmentBodyField): string {
   return `assessment-body-transfer:${fingerprint}:${field}`;
@@ -30,6 +48,19 @@ const fieldLimits: Readonly<
   neckCm: BODY_LIMITS.circumferenceCm,
   hipCm: BODY_LIMITS.circumferenceCm,
   thighCm: BODY_LIMITS.circumferenceCm,
+  chestCm: BODY_LIMITS.circumferenceCm,
+  abdomenCm: BODY_LIMITS.circumferenceCm,
+  forearmRightCm: BODY_LIMITS.circumferenceCm,
+  forearmLeftCm: BODY_LIMITS.circumferenceCm,
+  calfRightCm: BODY_LIMITS.circumferenceCm,
+  calfLeftCm: BODY_LIMITS.circumferenceCm,
+  armRightCm: BODY_LIMITS.circumferenceCm,
+  armLeftCm: BODY_LIMITS.circumferenceCm,
+  thighRightCm: BODY_LIMITS.circumferenceCm,
+  thighLeftCm: BODY_LIMITS.circumferenceCm,
+  chestSkinfoldMm: BODY_LIMITS.skinfoldMm,
+  abdomenSkinfoldMm: BODY_LIMITS.skinfoldMm,
+  thighSkinfoldMm: BODY_LIMITS.skinfoldMm,
 };
 
 function parseReportedNumber(value: number | string): number | null {
@@ -41,7 +72,6 @@ function parseReportedNumber(value: number | string): number | null {
 }
 
 function bodyField(measure: PhysicalAssessmentMeasure): AssessmentBodyField | null {
-  if (measure.side) return null;
   const unit = measure.unit.trim().toLocaleLowerCase('pt-BR');
   switch (measure.type) {
     case 'weight':
@@ -55,10 +85,41 @@ function bodyField(measure: PhysicalAssessmentMeasure): AssessmentBodyField | nu
     case 'hip':
       return unit === 'cm' ? 'hipCm' : null;
     case 'thigh':
-      return unit === 'cm' ? 'thighCm' : null;
+      return unit === 'cm'
+        ? measure.side === 'right'
+          ? 'thighRightCm'
+          : measure.side === 'left'
+            ? 'thighLeftCm'
+            : 'thighCm'
+        : null;
+    case 'chest':
+      return !measure.side && unit === 'cm' ? 'chestCm' : null;
+    case 'abdomen':
+      return !measure.side && unit === 'cm' ? 'abdomenCm' : null;
+    case 'arm-contracted':
+      return unit === 'cm' ? sideField('arm', measure.side) : null;
+    case 'forearm':
+      return unit === 'cm' ? sideField('forearm', measure.side) : null;
+    case 'calf':
+      return unit === 'cm' ? sideField('calf', measure.side) : null;
+    case 'skinfold-chest':
+      return !measure.side && unit === 'mm' ? 'chestSkinfoldMm' : null;
+    case 'skinfold-abdominal':
+      return !measure.side && unit === 'mm' ? 'abdomenSkinfoldMm' : null;
+    case 'skinfold-thigh':
+      return !measure.side && unit === 'mm' ? 'thighSkinfoldMm' : null;
     default:
       return null;
   }
+}
+
+function sideField(
+  prefix: 'arm' | 'forearm' | 'calf',
+  side: PhysicalAssessmentMeasure['side'],
+): AssessmentBodyField | null {
+  if (side === 'right') return `${prefix}RightCm` as AssessmentBodyField;
+  if (side === 'left') return `${prefix}LeftCm` as AssessmentBodyField;
+  return null;
 }
 
 function validMethod(measure: PhysicalAssessmentMeasure): boolean {
@@ -118,6 +179,9 @@ export function assessmentBodyDraft(
         break;
       case 'thighCm':
         Object.assign(draft, { thighCm: candidate.value });
+        break;
+      default:
+        Object.assign(draft, { [candidate.field]: candidate.value });
         break;
     }
   }
@@ -186,6 +250,19 @@ export function assessmentBodyProvenance(
     neckCm: 'pescoço',
     hipCm: 'quadril',
     thighCm: 'coxa',
+    chestCm: 'tórax',
+    abdomenCm: 'abdômen',
+    forearmRightCm: 'antebraço direito',
+    forearmLeftCm: 'antebraço esquerdo',
+    calfRightCm: 'panturrilha direita',
+    calfLeftCm: 'panturrilha esquerda',
+    armRightCm: 'braço direito',
+    armLeftCm: 'braço esquerdo',
+    thighRightCm: 'coxa direita',
+    thighLeftCm: 'coxa esquerda',
+    chestSkinfoldMm: 'dobra peitoral',
+    abdomenSkinfoldMm: 'dobra abdominal',
+    thighSkinfoldMm: 'dobra da coxa',
   };
   const fields = [...new Set(selected.map(({ field }) => field))].map((field) => fieldNames[field]);
   return `Avaliação local ${assessment.assessedOn} [assessment:${assessment.id}] · Campos: ${fields.join(', ')}${methods.length ? ` · Método: ${methods.join(', ')}` : ''}`;

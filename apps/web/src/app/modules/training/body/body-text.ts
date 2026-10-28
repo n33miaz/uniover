@@ -33,6 +33,9 @@ export const formatPercent = (value: number): string => `${oneDecimal.format(val
 /** "86,0 cm". */
 export const formatCm = (value: number): string => `${oneDecimal.format(value)}${NBSP}cm`;
 
+/** "8,0 mm" (dobra cutânea). */
+export const formatMm = (value: number): string => `${oneDecimal.format(value)}${NBSP}mm`;
+
 /** "2.400 kcal". */
 export const formatKcal = (value: number): string => `${integer.format(value)}${NBSP}kcal`;
 

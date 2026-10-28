@@ -148,6 +148,14 @@ const NEW_ROW_DEFAULTS: Record<string, (id: string, body: Record<string, unknown
   foods: () => ({ source: 'own', attribution: null }),
 };
 
+/**
+ * A coleção de uma rota: a primeira parte do caminho, exceto no corpo, que tem dois recursos sob o mesmo prefixo
+ * (`body/entries` e `body/profile`) e não podem dividir a mesma coleção.
+ */
+function collectionOf(segments: readonly string[]): string {
+  return segments[0] === 'body' ? `body-${segments[1]}` : (segments[0] ?? '');
+}
+
 interface Stored {
   readonly status: number;
   readonly body: string;
@@ -235,7 +243,7 @@ export async function mockTrainingApi(context: BrowserContext): Promise<Training
     }
 
     if (method === 'GET') {
-      const name = path.split('/')[0];
+      const name = collectionOf(path.split('/'));
       const limit = Math.min(Number(url.searchParams.get('limit') ?? 200) || 200, 500);
       const after = decodeCursor(url.searchParams.get('after') ?? '');
       const ordered = [...collection(account, name).values()].sort((a, b) => {
@@ -291,8 +299,15 @@ export async function mockTrainingApi(context: BrowserContext): Promise<Training
     const isStep = segments[0] === 'exercises' && segments[2] === 'step';
     // O programa da semana é um registro único por conta: não tem id na rota.
     const isProgram = segments[0] === 'program';
-    const name = isSet ? 'sets' : segments[0];
-    const id = isSet ? segments[3] : isProgram ? 'active' : segments[1];
+    const name = isSet ? 'sets' : collectionOf(segments);
+    // O perfil do corpo também é um registro único por conta (`body/profile`, sem id na rota).
+    const id = isSet
+      ? segments[3]
+      : isProgram
+        ? 'active'
+        : segments[0] === 'body'
+          ? (segments[2] ?? segments[1])
+          : segments[1];
     if (!name || !id) {
       hit('invalid');
       return route.fulfill({ status: 404, body: '' });
