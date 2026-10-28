@@ -130,7 +130,7 @@ class AppsAnnouncer:
     lista guardada, ela é reenviada na hora; senão espera a sessão ficar quente (`on_state`).
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         apps: AppsProvider,
         is_hot: Callable[[], bool],
@@ -138,6 +138,7 @@ class AppsAnnouncer:
         monotonic: Callable[[], float] | None = None,
         max_age_seconds: float = LIST_MAX_AGE_SECONDS,
         retry_seconds: float = LIST_RETRY_SECONDS,
+        is_paused: Callable[[], bool] = lambda: False,
     ) -> None:
         self._apps = apps
         self._is_hot = is_hot
@@ -145,11 +146,13 @@ class AppsAnnouncer:
         self._monotonic = monotonic
         self._max_age = max_age_seconds
         self._retry = retry_seconds
+        self._is_paused = is_paused
         self._seen_cache: list[AppEntry] | None = None
         self._seen_at = 0.0
         self._retry_at = 0.0
         self._failures = 0
         self._announced = False
+        self._deferred = False
         self._trigger = asyncio.Event()
 
     async def after_hello(self) -> None:
@@ -159,6 +162,12 @@ class AppsAnnouncer:
 
     def on_state(self, state: TvState) -> None:
         if state.connection == "hot":
+            self._trigger.set()
+
+    def resume(self) -> None:
+        """O foco terminou: uma publicação adiada durante a trégua é refeita agora."""
+        if self._deferred:
+            self._deferred = False
             self._trigger.set()
 
     async def run(self) -> None:
@@ -196,6 +205,9 @@ class AppsAnnouncer:
         return self._monotonic is not None and self._now() - self._seen_at >= self._max_age
 
     async def _announce_once(self) -> None:
+        if self._is_paused():
+            self._deferred = True
+            return
         if self._announced:
             return
         try:

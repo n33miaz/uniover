@@ -115,6 +115,7 @@ from uniover_agent.core import (
     TvCleanupScheduler,
     TvIdentity,
     TvKnown,
+    TvLightSettings,
     TvRelocator,
     TvSessionManager,
     TvStatePublisher,
@@ -258,6 +259,7 @@ class TvSetup:
     # O vigia do serviço do controle (só Android TV com `adb`): quem vê uma porta recusada o avisa.
     watchdog: TvWatchdog | None = None
     cleanup_scheduler: TvCleanupScheduler | None = None
+    light_settings: TvLightSettings | None = None
 
 
 def build_tv(
@@ -492,10 +494,23 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
     )
     manager = setup.manager
     manager.add_channel(adb)
-    icons = compose_icons(setup, settings, adb, clock)
+    light_settings = TvLightSettings(
+        adb,
+        clock,
+        manager.set_keep_hot,
+        lambda: manager.snapshot().app,
+        installation_base() / "tv-light-settings.json",
+        manager.wake,
+    )
+    icons = compose_icons(setup, settings, adb, clock, lambda: light_settings.focus_active)
+    if icons is not None:
+        light_settings.on_release(icons.resume)
     apps = TvApps(manager, adb, setup.transport, setup.envelopes, icons)
     announcer = AppsAnnouncer(
-        apps, lambda: manager.snapshot().connection == "hot", monotonic=clock.monotonic
+        apps,
+        lambda: manager.snapshot().connection == "hot",
+        monotonic=clock.monotonic,
+        is_paused=lambda: light_settings.focus_active,
     )
     # O handler de `tv.text.v1` continua sendo um só: ele recebe o ADB, não é substituído.
     if setup.text is not None:
@@ -512,6 +527,7 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
         setup.transport,
         setup.envelopes,
         lambda: setup.manager.snapshot().app,
+        lambda: light_settings.focus_active,
     )
 
     async def configure_cleanup(command: Command) -> CommandResult:
@@ -522,13 +538,22 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
             int(body["deepThresholdMb"]),
             bool(body.get("closeBackgroundApps", False)),
         )
+        await light_settings.configure(
+            bool(body.get("focusEnabled", False)),
+            bool(body.get("shortAnimationsEnabled", False)),
+            [item for item in body.get("restrictedPackages", []) if isinstance(item, str)],
+        )
         return CommandResult(command.id, ResultStatus.OK)
 
     setup.handlers["tv.cleanup.v1"] = tv_cleanup_handler(cleanup, setup.transport, setup.envelopes)
     setup.handlers["tv.cleanup.config.v1"] = configure_cleanup
     setup.background_commands.add("tv.cleanup.v1")
     setup.background.append(scheduler.run)
+    setup.background.append(light_settings.run)
     setup.cleanup_scheduler = scheduler
+    setup.light_settings = light_settings
+    light_settings.on_release(announcer.resume)
+    light_settings.on_release(scheduler.resume)
     manager.on_session_opened(scheduler.note_session_opened)
     manager.subscribe(announcer.on_state)
     setup.after_hello.append(announcer.after_hello)
@@ -551,6 +576,9 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
         setup.capabilities.append("tv.adb")
         # A limpeza automática depende do mesmo ADB (que responde agora ou quando a TV ligar).
         setup.capabilities.append("tv.cleanup.automatic.v1")
+        # Os campos novos de `tv.cleanup.config.v1` só vão a quem declara esta capacidade: o schema
+        # antigo recusa campo desconhecido e perderia a mensagem inteira.
+        setup.capabilities.append("tv.light-settings.v1")
 
     setup.prepare.append(declare_when_usable)
     return adb
@@ -584,7 +612,11 @@ def compose_watchdog(
 
 
 def compose_icons(
-    setup: TvSetup, settings: Settings, adb: AdbTv, clock: Clock
+    setup: TvSetup,
+    settings: Settings,
+    adb: AdbTv,
+    clock: Clock,
+    is_paused: Callable[[], bool] = lambda: False,
 ) -> AppIconPublisher | None:
     """Liga os ícones dos apps (extraídos do APK na TV). Sem `aapt2` neste PC, segue sem ícones.
 
@@ -608,6 +640,7 @@ def compose_icons(
         lambda: manager.snapshot().connection == "hot",
         clock.sleep,
         monotonic=clock.monotonic,
+        is_paused=is_paused,
     )
     manager.subscribe(publisher.on_state)
     setup.background.append(publisher.run)
@@ -767,12 +800,13 @@ async def pair(  # noqa: PLR0913 - o instalador soma uma opção a cada passo
     return EXIT_OK
 
 
-def build_relocator(
+def build_relocator(  # noqa: PLR0913, PLR0917
     settings: Settings,
     clock: Clock,
     is_hot: Callable[[], bool],
     known: TvKnown | None = None,
     on_refused: Callable[[], None] | None = None,
+    is_paused: Callable[[], bool] = lambda: False,
 ) -> TvRelocator | None:
     """Vigia do endereço da TV: só existe com `tv_host`.
 
@@ -849,7 +883,12 @@ def build_relocator(
             _log.info("MAC da TV guardado a partir da tabela ARP")
 
     return TvRelocator(
-        clock, is_hot=is_hot, reachable=reachable, rescan=rescan, on_alive=learn_arp_mac
+        clock,
+        is_hot=is_hot,
+        reachable=reachable,
+        rescan=rescan,
+        on_alive=learn_arp_mac,
+        is_paused=is_paused,
     )
 
 
@@ -969,6 +1008,7 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
             lambda: tv.manager.snapshot().connection == "hot",
             tv.known,
             tv.watchdog.request if tv.watchdog is not None else None,
+            lambda: tv.light_settings.focus_active if tv.light_settings is not None else False,
         )
         if tv is not None
         else None

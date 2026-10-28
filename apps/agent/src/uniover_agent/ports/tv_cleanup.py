@@ -50,6 +50,26 @@ class TvAdbCleanup(Protocol):
         """Há mídia tocando? Leitura ambígua ou indisponível levanta ``AdbError``."""
         ...
 
+    async def global_setting(self, name: str) -> str | None:
+        """Valor atual de uma configuração global conhecida do Android."""
+        ...
+
+    async def put_global_setting(self, name: str, value: str) -> None:
+        """Aplica a escala curta de animação a uma configuração global conhecida."""
+        ...
+
+    async def restore_global_setting(self, name: str, original: str | None) -> None:
+        """Devolve o valor lido antes (decimal válido) ou apaga a configuração que não existia."""
+        ...
+
+    async def app_background_mode(self, package: str) -> str | None:
+        """Modo explícito de RUN_ANY_IN_BACKGROUND, ou ``None`` se a TV usa o padrão."""
+        ...
+
+    async def set_app_background_mode(self, package: str, mode: str) -> None:
+        """Define RUN_ANY_IN_BACKGROUND para um pacote validado (allow, ignore ou default)."""
+        ...
+
     async def go_home(self) -> None:
         """Tecla HOME pelo ADB: o app em primeiro plano passa a ser "de fundo"."""
         ...

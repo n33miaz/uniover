@@ -477,6 +477,7 @@ class Pub:
     def __init__(self, rig: Rig, *, hot: bool = True) -> None:
         self.rig = rig
         self.hot = hot
+        self.paused = False
         self.transport = FakeTransport()
         self.clock = FakeClock()
         envelopes = EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), self.clock)
@@ -488,6 +489,7 @@ class Pub:
             lambda: self.hot,
             self.clock.sleep,
             pause=0.25,
+            is_paused=lambda: self.paused,
         )
 
     async def settle(self) -> None:
@@ -607,6 +609,59 @@ async def test_nothing_is_pulled_while_the_session_is_not_hot_and_it_resumes_whe
     pub.publisher.on_state(TvState("on", None, None, "hot"))
     await pub.settle()
     assert len(pub.v2()) == 2
+
+
+async def test_nothing_is_pulled_during_focus_and_it_resumes_when_focus_ends(rig: Rig) -> None:
+    pub = Pub(rig)
+    pub.paused = True
+    asked: list[str] = []
+    original = rig.source.package_versions
+
+    async def counting() -> dict[str, int]:
+        asked.append("versions")
+        return await original()
+
+    rig.source.package_versions = counting  # type: ignore[method-assign]
+    pub.publisher.request(entries())
+    await pub.settle()
+    assert rig.source.pulled == []
+    assert asked == []
+    assert pub.v2() == []
+
+    pub.paused = False
+    pub.publisher.resume()
+    await pub.settle()
+    assert len(pub.v2()) == 2
+
+
+async def test_focus_that_starts_between_two_apks_stops_before_the_next_one(rig: Rig) -> None:
+    pub = Pub(rig)
+    real_sleep = pub.publisher._sleep
+
+    async def sleep_then_focus(seconds: float) -> None:
+        await real_sleep(seconds)
+        pub.paused = True
+
+    pub.publisher._sleep = sleep_then_focus
+    pub.publisher.request(entries())
+    await pub.settle()
+    assert len(rig.source.pulled) == 0
+
+    pub.paused = False
+    pub.publisher._sleep = real_sleep
+    pub.publisher.resume()
+    await pub.settle()
+    assert len(pub.v2()) == 2
+
+
+async def test_resume_does_nothing_when_nothing_was_left_unfinished(rig: Rig) -> None:
+    pub = Pub(rig)
+    pub.publisher.request(entries())
+    await pub.settle()
+    pub.transport.sent.clear()
+    pub.publisher.resume()
+    await pub.settle()
+    assert pub.v2() == []
 
 
 async def test_a_state_change_does_not_trigger_work_when_nothing_is_unfinished(rig: Rig) -> None:

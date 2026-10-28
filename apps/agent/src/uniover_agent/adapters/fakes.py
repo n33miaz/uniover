@@ -189,6 +189,12 @@ class FakeTvAdb:
         self.cleanup_log: list[str] = []
         self.cleanup_errors: dict[str, AdbError] = {}
         self.media_playing_value = False
+        self.global_values: dict[str, str | None] = {
+            "window_animation_scale": "1.0",
+            "transition_animation_scale": "1.0",
+            "animator_duration_scale": "1.0",
+        }
+        self.background_modes: dict[str, str | None] = {}
 
     @property
     def connected(self) -> bool:
@@ -258,6 +264,26 @@ class FakeTvAdb:
     async def media_playing(self) -> bool:
         self._cleanup_step("media")
         return self.media_playing_value
+
+    async def global_setting(self, name: str) -> str | None:
+        self._cleanup_step(f"global-get:{name}")
+        return self.global_values[name]
+
+    async def put_global_setting(self, name: str, value: str) -> None:
+        self._cleanup_step(f"global-put:{name}:{value}")
+        self.global_values[name] = value
+
+    async def restore_global_setting(self, name: str, original: str | None) -> None:
+        self._cleanup_step(f"global-restore:{name}:{original}")
+        self.global_values[name] = original
+
+    async def app_background_mode(self, package: str) -> str | None:
+        self._cleanup_step(f"appops-get:{package}")
+        return self.background_modes.get(package)
+
+    async def set_app_background_mode(self, package: str, mode: str) -> None:
+        self._cleanup_step(f"appops-set:{package}:{mode}")
+        self.background_modes[package] = None if mode == "default" else mode
 
     async def go_home(self) -> None:
         self._cleanup_step("go-home")

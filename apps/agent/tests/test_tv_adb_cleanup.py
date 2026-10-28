@@ -384,3 +384,146 @@ async def test_a_timeout_in_a_cleanup_command_is_typed() -> None:
     runner.script[shell(MEMORY)] = TimeoutError()
     with pytest.raises(AdbTimeout):
         await make(runner).memory_available_mb()
+
+
+# --- ajustes leves: configurações globais e permissão de segundo plano ----------------------
+
+
+async def test_a_global_animation_setting_is_read_written_and_restored_with_fixed_commands() -> (
+    None
+):
+    runner = authorized()
+    name = "window_animation_scale"
+    runner.script[shell(f"settings get global {name}")] = ok(NOISE + "1.25\r\n")
+    runner.script[shell(f"settings put global {name} 0.5")] = ok("")
+    runner.script[shell(f"settings put global {name} 1.25")] = ok("")
+    runner.script[shell(f"settings delete global {name}")] = ok("Deleted 1 rows\r\n")
+    tv = make(runner)
+
+    assert await tv.global_setting(name) == "1.25"
+    await tv.put_global_setting(name, "0.5")
+    await tv.restore_global_setting(name, "1.25")
+    await tv.restore_global_setting(name, None)
+
+    assert runner.calls[-3:] == [
+        ("-s", SERIAL, "shell", f"settings put global {name} 0.5"),
+        ("-s", SERIAL, "shell", f"settings put global {name} 1.25"),
+        ("-s", SERIAL, "shell", f"settings delete global {name}"),
+    ]
+
+
+@pytest.mark.parametrize("original", ["1.25", "0", "0.0", "2", "10.5"])
+async def test_any_decimal_original_can_be_restored(original: str) -> None:
+    runner = authorized()
+    runner.script[shell(f"settings put global animator_duration_scale {original}")] = ok("")
+    await make(runner).restore_global_setting("animator_duration_scale", original)
+    assert runner.calls[-1][-1] == f"settings put global animator_duration_scale {original}"
+
+
+async def test_an_absent_original_is_restored_by_deleting_the_setting() -> None:
+    runner = authorized()
+    runner.script[shell("settings delete global animator_duration_scale")] = ok("")
+    await make(runner).restore_global_setting("animator_duration_scale", None)
+    assert runner.calls[-1][-1] == "settings delete global animator_duration_scale"
+
+
+async def test_a_global_setting_that_is_not_set_reads_as_none() -> None:
+    runner = authorized()
+    runner.script[shell("settings get global animator_duration_scale")] = ok("null\r\n")
+    assert await make(runner).global_setting("animator_duration_scale") is None
+
+
+async def test_an_original_that_is_not_a_decimal_is_refused_before_anything_is_changed() -> None:
+    runner = authorized()
+    runner.script[shell("settings get global window_animation_scale")] = ok("1; reboot\r\n")
+    with pytest.raises(AdbCommandFailed):
+        await make(runner).global_setting("window_animation_scale")
+
+
+async def test_only_the_three_animation_settings_and_safe_values_reach_the_shell() -> None:
+    runner = authorized()
+    tv = make(runner)
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.global_setting("secure_something; reboot")
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.put_global_setting("window_animation_scale", "0.5; reboot")
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.put_global_setting("window_animation_scale", "2")
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.put_global_setting("adb_enabled", "0.5")
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.restore_global_setting("adb_enabled", "1")
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.restore_global_setting("window_animation_scale", "1; reboot")
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.restore_global_setting("window_animation_scale", "-1")
+    assert not any("settings" in call[-1] for call in runner.calls)
+
+
+async def test_a_failing_global_setting_command_is_a_failure() -> None:
+    runner = authorized()
+    runner.script[shell("settings put global window_animation_scale 0.5")] = ok("erro", 255)
+    with pytest.raises(AdbCommandFailed):
+        await make(runner).put_global_setting("window_animation_scale", "0.5")
+    runner.script[shell("settings delete global window_animation_scale")] = ok("erro", 255)
+    with pytest.raises(AdbCommandFailed):
+        await make(runner).restore_global_setting("window_animation_scale", None)
+
+
+BACKGROUND_GET = "cmd appops get 'com.exemplo.video' RUN_ANY_IN_BACKGROUND"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("RUN_ANY_IN_BACKGROUND: allow\r\n", "allow"),
+        ("Uid mode: RUN_ANY_IN_BACKGROUND: ignore\r\n", "ignore"),
+        ("RUN_ANY_IN_BACKGROUND: default; rejectTime=+1m\r\n", "default"),
+        ("No operations.\r\n", None),
+    ],
+)
+async def test_the_background_mode_is_read_from_the_appops_line(
+    text: str, expected: str | None
+) -> None:
+    runner = authorized()
+    runner.script[shell(BACKGROUND_GET)] = ok(text)
+    assert await make(runner).app_background_mode("com.exemplo.video") == expected
+
+
+async def test_an_ambiguous_background_answer_is_refused_so_nothing_is_changed() -> None:
+    runner = authorized()
+    runner.script[shell(BACKGROUND_GET)] = ok("RUN_ANY_IN_BACKGROUND: foreground\r\n")
+    with pytest.raises(AdbCommandFailed):
+        await make(runner).app_background_mode("com.exemplo.video")
+
+
+async def test_the_background_mode_is_set_only_for_a_valid_package_and_mode() -> None:
+    runner = authorized()
+    runner.script[shell("cmd appops set 'com.exemplo.video' RUN_ANY_IN_BACKGROUND ignore")] = ok("")
+    tv = make(runner)
+
+    await tv.set_app_background_mode("com.exemplo.video", "ignore")
+
+    assert runner.calls[-1] == (
+        "-s",
+        SERIAL,
+        "shell",
+        "cmd appops set 'com.exemplo.video' RUN_ANY_IN_BACKGROUND ignore",
+    )
+    calls_before = len(runner.calls)
+    with pytest.raises(ValueError, match="configuração de app inválida"):
+        await tv.set_app_background_mode("x; reboot", "ignore")
+    with pytest.raises(ValueError, match="configuração de app inválida"):
+        await tv.set_app_background_mode("com.exemplo.video", "deny")
+    with pytest.raises(ValueError, match="nome de pacote inválido"):
+        await tv.app_background_mode("a b")
+    assert len(runner.calls) == calls_before
+
+
+async def test_a_failing_appops_set_is_a_failure() -> None:
+    runner = authorized()
+    runner.script[shell("cmd appops set 'com.exemplo.video' RUN_ANY_IN_BACKGROUND ignore")] = ok(
+        "Unknown option", 255
+    )
+    with pytest.raises(AdbCommandFailed):
+        await make(runner).set_app_background_mode("com.exemplo.video", "ignore")

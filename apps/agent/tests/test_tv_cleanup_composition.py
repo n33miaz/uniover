@@ -195,3 +195,45 @@ async def test_run_answers_the_cleanup_with_the_report_first_and_the_result_afte
     assert (report["body"]["memoryBeforeMb"], report["body"]["memoryAfterMb"]) == (300, 700)
     assert result["body"] == {"ok": True}
     assert "go-home" in adb.cleanup_log
+
+
+async def test_the_light_settings_from_the_config_are_applied_only_to_the_chosen_apps_and_undone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regra do dono: só o que a pessoa ligou muda na TV, e desligar devolve o valor lido antes."""
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    adb = running_tv()
+    adb.global_values["window_animation_scale"] = "1.25"
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+    enable_adb(monkeypatch, tmp_path, adb)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None
+    assert setup.light_settings is not None
+
+    # Sem os campos novos (API antiga) nada é tocado.
+    await setup.handlers["tv.cleanup.config.v1"](
+        Command(CONFIG_ID, "tv.cleanup.config.v1", CONFIG_ALLOWING)
+    )
+    assert not any(step.startswith(("global-", "appops-")) for step in adb.cleanup_log)
+
+    await setup.handlers["tv.cleanup.config.v1"](
+        Command(
+            CONFIG_ID,
+            "tv.cleanup.config.v1",
+            {
+                **CONFIG_ALLOWING,
+                "shortAnimationsEnabled": True,
+                "restrictedPackages": ["com.spotify.tv.android", "com.android.vending", 7],
+            },
+        )
+    )
+    assert adb.global_values["window_animation_scale"] == "0.5"
+    assert [s for s in adb.cleanup_log if s.startswith("appops-set")] == [
+        "appops-set:com.spotify.tv.android:ignore"
+    ]
+
+    await setup.handlers["tv.cleanup.config.v1"](
+        Command(CONFIG_ID, "tv.cleanup.config.v1", CONFIG_ALLOWING)
+    )
+    assert adb.global_values["window_animation_scale"] == "1.25"
+    assert adb.background_modes["com.spotify.tv.android"] is None
