@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.15.0](https://github.com/n33miaz/uniover/compare/v0.14.0...v0.15.0) (2026-10-28)
+
+
+### Features
+
+* **contracts:** tv light settings capability
+* **agent:** reversible tv light settings
+* **tv:** store and publish light settings
+* **web:** light settings on the tv sheet
+
 ## [0.14.0](https://github.com/n33miaz/uniover/compare/v0.13.1...v0.14.0) (2026-10-28)
 
 
