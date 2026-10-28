@@ -468,7 +468,7 @@ test.describe('treino ao vivo', () => {
     await openToday(page);
     await beginWorkout(page);
 
-    const art = page.locator('.thumb app-exercise-illustration');
+    const art = page.locator('.art app-exercise-illustration');
     const frames = art.locator('.frame');
     const shown = () =>
       frames.evaluateAll((list) => list.map((node) => node.classList.contains('on')));
@@ -512,18 +512,28 @@ test.describe('treino ao vivo', () => {
     await expect(page.locator('.set-title')).toContainText('Série 1 de 4');
     await expect(fieldValue(page, 'Carga')).toHaveValue('40');
     await expect(fieldValue(page, 'Repetições')).toHaveValue('10');
+    // A referência nasce recolhida: só o botão está na tela até a pessoa tocar.
     const hint = page.locator('app-focus-hint');
+    await expect(hint.getByRole('button', { name: 'Última Vez e Sugestão' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    await expect(hint.locator('.panel')).toBeHidden();
+    await hint.getByRole('button', { name: 'Última Vez e Sugestão' }).click();
     await expect(hint).toContainText('Última vez');
     await expect(hint).toContainText('40 kg × 10');
     await expect(hint).toContainText('42,5 kg × 6–8');
-    await expect(page.getByText('Você fechou o topo da faixa')).toHaveCount(0);
+    await expect(page.getByText('Você fechou o topo da faixa')).toBeHidden();
     await page.getByRole('button', { name: 'Por que esta sugestão?' }).click();
     await expect(page.getByText('Você fechou o topo da faixa na última vez')).toBeVisible();
-    // O esforço (RPE) é opcional e a tela acesa nasce desligada.
+    // O esforço (RPE) é opcional e nasce recolhido; a tela acesa nasce desligada.
+    await expect(page.getByRole('button', { name: '8', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: /Esforço \(RPE\)/ }).click();
     await expect(page.getByRole('button', { name: '8', exact: true })).toHaveAttribute(
       'aria-pressed',
       'false',
     );
+    await expect(page.getByRole('switch', { name: 'Manter a Tela Acesa' })).not.toBeChecked();
   });
 
   test('o histórico que chega do servidor depois de iniciar entra no cartão que ainda ninguém mexeu', async ({
@@ -533,6 +543,7 @@ test.describe('treino ao vivo', () => {
     const server = await launch(context, page, { history: false });
     await openToday(page, { history: false });
     await beginWorkout(page);
+    await page.getByRole('button', { name: 'Última Vez e Sugestão' }).click();
     await expect(page.getByText('Primeira vez neste exercício')).toBeVisible();
     await expect(fieldValue(page, 'Carga')).toHaveValue('');
 
@@ -601,9 +612,11 @@ test.describe('treino ao vivo', () => {
     await tap(page, 'Diminuir as repetições', 2);
     await concludeSet(page);
 
-    const record = page.getByRole('status').filter({ hasText: 'Recorde!' });
+    // No descanso o recorde aparece uma vez só, no cartão do descanso; o aviso próprio sai da tela.
+    const record = page.locator('.rest');
     await expect(record).toContainText('carga máxima 42,5 kg (antes 40 kg)');
     await expect(record).toContainText('1RM estimado 53,8 kg (antes 53,3 kg)');
+    await expect(page.getByRole('status').filter({ hasText: 'Recorde!' })).toHaveCount(0);
     await expect(page.locator('.done .ui-chip', { hasText: 'Recorde' })).toBeVisible();
     await expect(page.locator('.set-title')).toContainText('Série 2 de 4');
 
@@ -642,7 +655,6 @@ test.describe('treino ao vivo', () => {
     await page.clock.fastForward(125_000);
 
     await expect(page.getByRole('heading', { name: 'Descanso terminou' })).toBeVisible();
-    await expect(page.getByText('Hora da próxima série.')).toBeVisible();
     await expect.poll(async () => (await deviceLog(page)).vibrations.length).toBeGreaterThan(0);
     // O áudio nunca é liberado nem criado: o aviso é só a vibração.
     expect((await deviceLog(page)).audioContexts).toBe(0);
@@ -659,9 +671,7 @@ test.describe('treino ao vivo', () => {
     await beginWorkout(page);
     await concludeSet(page);
 
-    await expect(
-      page.getByText('Este aparelho não vibra: olhe a tela quando o tempo acabar.'),
-    ).toBeVisible();
+    await expect(page.getByText('Sem vibração: olhe a tela.')).toBeVisible();
     await page.clock.fastForward(125_000);
     await expect(page.getByRole('heading', { name: 'Descanso terminou' })).toBeVisible();
     await expect(page.locator('.rest.over')).toBeVisible();
@@ -678,14 +688,13 @@ test.describe('treino ao vivo', () => {
 
     // Iniciar o treino NÃO pede a tela acesa.
     expect((await deviceLog(page)).wakeRequests).toBe(0);
+    // O interruptor está no topo da tela do treino, e o menu não o repete.
+    const toggle = page.getByRole('switch', { name: 'Manter a Tela Acesa' });
+    await expect(toggle).not.toBeChecked();
     await page.getByRole('button', { name: 'Opções do Treino' }).click();
     const dialog = page.getByRole('dialog', { name: 'Opções do Treino' });
-    const toggle = dialog.getByRole('switch', { name: /Manter a Tela Acesa/ });
-    await expect(toggle).not.toBeChecked();
-    await expect(dialog.getByText('Desligada: a tela apaga no tempo do aparelho.')).toBeVisible();
-    await expect(
-      dialog.getByText(/Com a tela bloqueada o descanso continua contando, mas não avisa/),
-    ).toBeVisible();
+    await expect(dialog.getByRole('switch')).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();
 
     await toggle.check();
     await expect(toggle).toBeChecked();
@@ -709,7 +718,7 @@ test.describe('treino ao vivo', () => {
     await expect.poll(async () => (await deviceLog(page)).wakeActive).toBe(0);
   });
 
-  test('sem suporte à tela acesa, a folha diz isso e o interruptor fica desabilitado', async ({
+  test('sem suporte à tela acesa, o interruptor do topo fica desabilitado e o nome diz por quê', async ({
     page,
     context,
   }) => {
@@ -717,10 +726,9 @@ test.describe('treino ao vivo', () => {
     await openToday(page);
     await beginWorkout(page);
 
-    await page.getByRole('button', { name: 'Opções do Treino' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Opções do Treino' });
-    await expect(dialog.getByText('Este navegador não permite manter a tela acesa.')).toBeVisible();
-    await expect(dialog.getByRole('switch', { name: /Manter a Tela Acesa/ })).toBeDisabled();
+    await expect(
+      page.getByRole('switch', { name: 'Manter a Tela Acesa (indisponível neste navegador)' }),
+    ).toBeDisabled();
   });
 
   test('pular e substituir exercício: a troca vale só hoje, mantém o número da série e o exercício pulado volta pela lista', async ({

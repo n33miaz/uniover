@@ -168,10 +168,13 @@ for (const scheme of ['light', 'dark'] as const) {
       await launch(context, page);
       await openToday(page);
       await beginWorkout(page);
-      await expect(page.locator('app-focus-hint')).toContainText('42,5 kg × 6–8');
+      await expect(page.locator('app-focus-hint')).toContainText('Última Vez e Sugestão');
       await shot(page, info, 'sessao-inicio', scheme);
 
+      await page.getByRole('button', { name: 'Última Vez e Sugestão' }).click();
+      await expect(page.locator('app-focus-hint')).toContainText('42,5 kg × 6–8');
       await page.getByRole('button', { name: 'Por que esta sugestão?' }).click();
+      await page.getByRole('button', { name: /Esforço \(RPE\)/ }).click();
       await page.getByRole('button', { name: '8', exact: true }).click();
       await page.getByRole('button', { name: 'Anotação' }).click();
       await page.getByLabel('Anotação da série').fill('banco na altura 3');
@@ -185,7 +188,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await tap(page, 'Aumentar a carga');
       await tap(page, 'Diminuir as repetições', 2);
       await concludeSet(page);
-      await expect(page.getByRole('status').filter({ hasText: 'Recorde!' })).toBeVisible();
+      await expect(page.locator('.rest')).toContainText('carga máxima');
       await expect(page.locator('.rest .time')).toBeVisible();
       await shot(page, info, 'sessao-descanso-recorde', scheme);
 
@@ -199,7 +202,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await openToday(page);
       await beginWorkout(page);
       await concludeSet(page);
-      await expect(page.getByText('Este aparelho não vibra')).toBeVisible();
+      await expect(page.getByText('Sem vibração: olhe a tela.')).toBeVisible();
       await shot(page, info, 'sessao-sem-vibracao', scheme);
     });
 
@@ -207,6 +210,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await launch(context, page, { history: false });
       await openToday(page, { history: false });
       await beginWorkout(page);
+      await page.getByRole('button', { name: 'Última Vez e Sugestão' }).click();
       await expect(page.getByText('Primeira vez neste exercício')).toBeVisible();
       await shot(page, info, 'sessao-primeira-vez', scheme);
     });
@@ -252,7 +256,7 @@ for (const scheme of ['light', 'dark'] as const) {
         await launch(context, page);
         await openToday(page);
         await beginWorkout(page);
-        await expect(page.locator('.thumb app-exercise-illustration img').first()).toBeVisible();
+        await expect(page.locator('.art app-exercise-illustration img').first()).toBeVisible();
         await menu(page, /Como Fazer/);
         const dialog = page.getByRole('dialog', { name: 'Supino reto com barra' });
         await expect(dialog.locator('app-exercise-illustration img').first()).toBeVisible();

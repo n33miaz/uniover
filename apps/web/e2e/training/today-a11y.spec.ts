@@ -67,7 +67,9 @@ const SCREENS: readonly Screen[] = [
       await launch(context, page);
       await openToday(page);
       await beginWorkout(page);
+      await page.getByRole('button', { name: 'Última Vez e Sugestão' }).click();
       await page.getByRole('button', { name: 'Por que esta sugestão?' }).click();
+      await page.getByRole('button', { name: /Esforço \(RPE\)/ }).click();
       await page.getByRole('button', { name: 'Anotação' }).click();
     },
   },
