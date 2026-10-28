@@ -417,8 +417,10 @@ export class TrainingPage {
     isWithin(this.url().split(/[?#]/)[0].replace(/\/$/, ''), '/treino/corpo'),
   );
   /** Detalhe, formulário e editor de exercícios e rotinas: telas internas, que trazem o próprio voltar (um só). */
-  private readonly innerScreen = computed(() =>
-    /^\/treino\/(exercicios|rotinas)\/[^/]+/.test(this.url().split(/[?#]/)[0]),
+  private readonly innerScreen = computed(
+    () =>
+      /^\/treino\/(exercicios|rotinas)\/[^/]+/.test(this.url().split(/[?#]/)[0]) ||
+      this.url().split(/[?#]/)[0] === '/treino/glossario',
   );
   protected readonly progressArea = computed(
     () =>

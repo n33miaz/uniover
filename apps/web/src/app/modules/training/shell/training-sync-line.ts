@@ -43,7 +43,7 @@ import { TrainingGlyph, TrainingGlyphName } from './training-glyph';
             @if (busy()) {
               <span class="ui-spinner" aria-hidden="true"></span>
             }
-            <span i18n="@@training.sync.now">Sincronizar agora</span>
+            <span i18n="@@training.sync.now">Sincronizar Agora</span>
           </button>
         }
       </div>
@@ -54,7 +54,7 @@ import { TrainingGlyph, TrainingGlyphName } from './training-glyph';
           <span i18n="@@training.sync.install-advice"
             >Estes treinos estão salvos só neste navegador. Envie-os quando tiver internet; instale
             na tela de início para os próximos.</span
-          >&ngsp;<span class="how" i18n="@@training.sync.install-how">Ver como</span>
+          >&ngsp;<span class="how" i18n="@@training.sync.install-how">Ver Como</span>
         </span>
       </button>
     }
