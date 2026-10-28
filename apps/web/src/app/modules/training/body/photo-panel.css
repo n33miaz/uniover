@@ -39,7 +39,8 @@ h2 {
   margin: 0;
 }
 .cloud-choice p,
-.cloud-photo-state {
+.cloud-photo-state,
+.storage-badge {
   color: var(--a-ink2);
   font-size: var(--fs-small);
 }
@@ -78,6 +79,21 @@ h2 {
   padding: var(--space-2);
   border: 1px solid var(--a-line);
   border-radius: var(--radius-sm);
+}
+.photo-card.cloud-photo {
+  border-color: var(--a-accent);
+  background: var(--a-accent-soft);
+}
+.storage-badge {
+  justify-self: start;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--a-surface-2);
+  font-weight: 650;
+}
+.storage-badge.cloud {
+  color: var(--a-accent-ink);
+  background: var(--a-accent-soft);
 }
 .image-button {
   display: block;
