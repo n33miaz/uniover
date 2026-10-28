@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.0](https://github.com/n33miaz/uniover/compare/v0.11.1...v0.12.0) (2026-10-28)
+
+
+### Features
+
+* **training:** glossary of plan words
+* **training:** bigger exercise media and map name
+
+
+### Bug Fixes
+
+* **training:** title case and unified names
+
 ## [0.11.1](https://github.com/n33miaz/uniover/compare/v0.11.0...v0.11.1) (2026-10-28)
 
 
