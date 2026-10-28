@@ -4005,6 +4005,35 @@
         ],
         "type": "object"
       },
+      "TvAppOption": {
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "package": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "package",
+          "label"
+        ],
+        "type": "object"
+      },
+      "TvAppsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TvAppOption"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "TvCleanupOk": {
         "properties": {
           "closedApps": {
@@ -4442,6 +4471,10 @@
             },
             "type": "array"
           },
+          "focusModeEnabled": {
+            "default": false,
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -4459,6 +4492,19 @@
             "type": "string"
           },
           "online": {
+            "type": "boolean"
+          },
+          "restrictedBackgroundPackages": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "shortAnimationsEnabled": {
+            "default": false,
             "type": "boolean"
           }
         },
@@ -4540,10 +4586,31 @@
               "boolean"
             ]
           },
+          "focusModeEnabled": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
           "name": {
             "type": [
               "null",
               "string"
+            ]
+          },
+          "restrictedBackgroundPackages": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "shortAnimationsEnabled": {
+            "type": [
+              "null",
+              "boolean"
             ]
           }
         },
@@ -13318,6 +13385,36 @@
               }
             },
             "description": "Conflict"
+          }
+        },
+        "tags": [
+          "ManageTvsEndpoint"
+        ]
+      }
+    },
+    "/api/v1/tv/tvs/{id}/apps": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvAppsResponse"
+                }
+              }
+            },
+            "description": "OK"
           }
         },
         "tags": [

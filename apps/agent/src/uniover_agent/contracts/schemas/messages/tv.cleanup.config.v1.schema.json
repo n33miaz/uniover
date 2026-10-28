@@ -12,7 +12,11 @@
     "correlationId": { "type": "null" },
     "body": { "type": "object", "additionalProperties": false,
       "required": ["lightEnabled", "deepEnabled", "deepThresholdMb"],
-      "properties": { "lightEnabled": { "type": "boolean" }, "deepEnabled": { "type": "boolean" }, "deepThresholdMb": { "type": "integer", "minimum": 64, "maximum": 512 }, "closeBackgroundApps": { "type": "boolean" } }
+      "properties": {
+        "lightEnabled": { "type": "boolean" }, "deepEnabled": { "type": "boolean" }, "deepThresholdMb": { "type": "integer", "minimum": 64, "maximum": 512 }, "closeBackgroundApps": { "type": "boolean" },
+        "focusEnabled": { "type": "boolean" }, "shortAnimationsEnabled": { "type": "boolean" },
+        "restrictedPackages": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+$", "maxLength": 255 } }
+      }
     }
   }
 }
