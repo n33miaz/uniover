@@ -152,12 +152,7 @@ type BodyView = 'summary' | 'records' | 'photos';
           </section>
 
           <div class="signal-grid" aria-label="{{ signalsLabel }}">
-            <button
-              type="button"
-              class="signal-card"
-              (click)="measureSheetOpen.set(true)"
-              [attr.aria-label]="measuresActionLabel"
-            >
+            <button type="button" class="signal-card" (click)="measureSheetOpen.set(true)">
               <span class="eyebrow" i18n="@@training.body.summary.measurements">Medidas</span>
               @if (primaryMeasure(); as measure) {
                 <strong>{{ measure.value }}</strong
@@ -169,12 +164,7 @@ type BodyView = 'summary' | 'records' | 'photos';
                 ><small i18n="@@training.body.summary.measurements-help">Registrar Medidas</small>
               }
             </button>
-            <button
-              type="button"
-              class="signal-card"
-              (click)="measureSheetOpen.set(true)"
-              [attr.aria-label]="fatActionLabel"
-            >
+            <button type="button" class="signal-card" (click)="measureSheetOpen.set(true)">
               <span class="eyebrow" i18n="@@training.body.summary.fat">Gordura Corporal</span>
               @if (store.latest().bodyFatPct; as fat) {
                 <strong>{{ formatPercent(fat.value) }}</strong
@@ -670,8 +660,6 @@ export class BodyPage {
   protected readonly viewLabel = $localize`:@@training.body.tabs:Seções do corpo`;
   protected readonly signalsLabel = $localize`:@@training.body.summary.signals:Sinais do corpo`;
   protected readonly shortcutsLabel = $localize`:@@training.body.summary.shortcuts:Mais informações do corpo`;
-  protected readonly measuresActionLabel = $localize`:@@training.body.summary.measurements-action-label:Registrar ou editar medidas`;
-  protected readonly fatActionLabel = $localize`:@@training.body.summary.fat-action-label:Registrar ou editar percentual de gordura`;
   protected readonly weightHeading = $localize`:@@training.body.weight.title:Peso`;
   protected readonly profileHeading = $localize`:@@training.body.profile.title:Perfil`;
   protected readonly measuresHeading = $localize`:@@training.body.measure.title:Medidas e Gordura Corporal`;

@@ -42,7 +42,8 @@ describe('BodyMapPanel', () => {
     await show([]);
 
     expect(el.querySelector('h2')?.textContent).toContain('Mapa do Corpo');
-    expect(el.querySelector('.hint')?.textContent).toContain('Registre outra medição');
+    expect(el.querySelector('.hint')?.textContent).toContain('Sem comparação ainda');
+    expect(el.querySelector('.scope')?.textContent).toContain('não mudam a silhueta');
     expect(el.querySelector('.legend')).toBeNull();
     expect(el.querySelector('.symmetry')).toBeNull();
     expect(
@@ -50,6 +51,13 @@ describe('BodyMapPanel', () => {
         (node) => node.getAttribute('data-level') === '0',
       ),
     ).toBe(true);
+  });
+
+  it('explains that the first measurement has no comparison yet', async () => {
+    await show([entry('2026-10-01', { waistCm: 82 })]);
+
+    expect(el.querySelector('.hint')?.textContent).toContain('Sem comparação ainda');
+    expect(el.querySelector('.legend')).toBeNull();
   });
 
   it('paints the regions by evolution and names each one for screen readers', async () => {

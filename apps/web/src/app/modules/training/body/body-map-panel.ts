@@ -99,9 +99,12 @@ const LEVEL: Readonly<Record<BodyMapChange, 0 | 1 | 2 | 3>> = {
         </ul>
       } @else {
         <p class="hint" i18n="@@training.body.map.neutral">
-          Registre outra medição para ver a evolução.
+          Sem comparação ainda. Registre outra medição para ver a evolução.
         </p>
       }
+      <p class="scope" i18n="@@training.body.map.scope">
+        Cintura, Pescoço, Quadril e Dobras aparecem em Registros; não mudam a silhueta.
+      </p>
       @if (sidedSignals().length > 0) {
         <h3 class="sub" i18n="@@training.body.map.symmetry">Direito × Esquerdo</h3>
         <div class="symmetry">

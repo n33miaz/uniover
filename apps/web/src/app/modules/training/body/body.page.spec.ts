@@ -34,6 +34,15 @@ describe('BodyPage painel de sinais', () => {
     expect(panel.querySelector('.primary-action')?.textContent).toContain('Registrar Peso');
   });
 
+  it('deixa o texto visível como nome acessível dos cartões de sinal', async () => {
+    const { el } = await open();
+    const cards = Array.from(el.querySelectorAll<HTMLButtonElement>('.signal-card'));
+
+    // Um aria-label que não contém o texto visível quebra o acesso por voz (regra label-content-name-mismatch do axe).
+    expect(cards).toHaveLength(2);
+    for (const card of cards) expect(card.hasAttribute('aria-label')).toBe(false);
+  });
+
   it('abre registros e fotos pelo painel e anima apenas quando o movimento é permitido', async () => {
     const { fixture, el } = await open();
     const tabs = Array.from(el.querySelectorAll<HTMLButtonElement>('.tabs button'));
