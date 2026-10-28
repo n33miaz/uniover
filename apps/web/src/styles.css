@@ -173,6 +173,46 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
+/* Uma só barra, discreta em qualquer superfície rolável; os tokens acompanham os dois temas. Vale onde há mouse: no
+   toque (celular) a barra do próprio sistema é sobreposta, não ocupa largura e some sozinha; estilizá-la a tornaria
+   fixa, tiraria largura dos cartões e faria aparecer a barra das linhas de deslizar. A página reserva a calha para o
+   conteúdo não pular quando a barra aparece (as folhas fazem o mesmo em `.ui-dialog`). */
+@media (hover: hover) and (pointer: fine) {
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  /* Firefox não conhece `::-webkit-scrollbar` e usa as propriedades padrão. No Chromium e no Safari elas anulariam o
+     desenho abaixo (cantos arredondados e o realce ao passar o mouse), por isso ficam só onde o pseudo-elemento não existe. */
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--a-ink3) transparent;
+    }
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: var(--radius-pill);
+    background: var(--a-ink3);
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--a-accent);
+    background-clip: padding-box;
+  }
+}
+
 h1,
 h2 {
   margin: 0;
@@ -523,18 +563,20 @@ button.ui-row:active {
   --tone: var(--a-bad);
 }
 
-/* Carregamento: trilha que brilha (só o fundo se move) e anel que gira. */
+/* Carregamento: trilha que brilha (só o fundo se move) e anel que gira. É o único desenho de espera do app: o esqueleto da
+   atualização e o da entrada lenta usam esta mesma classe, para o brilho ser sempre o mesmo, lento e sem repuxo. */
 .ui-skeleton {
   min-height: 18px;
   border-radius: var(--radius-xs);
+  /* Superfícies que já são tingidas (a faixa verde da Início) trocam só estas duas cores para a forma continuar visível. */
   background: linear-gradient(
     100deg,
-    var(--a-elev) 30%,
-    color-mix(in srgb, var(--a-elev) 55%, var(--a-surface)) 50%,
-    var(--a-elev) 70%
+    var(--skeleton-base, var(--a-elev)) 35%,
+    var(--skeleton-glint, color-mix(in srgb, var(--a-elev) 55%, var(--a-surface))) 50%,
+    var(--skeleton-base, var(--a-elev)) 65%
   );
-  background-size: 220% 100%;
-  animation: ui-shimmer 1.4s linear infinite;
+  background-size: 260% 100%;
+  animation: ui-shimmer 2s ease-in-out infinite;
 }
 
 .ui-spinner {
@@ -596,6 +638,14 @@ button.ui-row:active {
   }
 }
 
+/* Movimento reduzido: o brilho que corre dá lugar a uma pulsação de opacidade, sem nenhum deslocamento. A espera continua
+   viva (parada, ela parece travada), mas não anda pela tela. */
+@keyframes ui-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
 @keyframes ui-spin {
   to {
     transform: rotate(360deg);
@@ -604,9 +654,13 @@ button.ui-row:active {
 
 @media (prefers-reduced-motion: reduce) {
   .ui-rise,
-  .ui-skeleton,
   .ui-spinner {
     animation: none;
+  }
+
+  .ui-skeleton {
+    background: var(--skeleton-base, var(--a-elev));
+    animation: ui-pulse 2.2s ease-in-out infinite;
   }
 
   .ui-btn,
@@ -787,6 +841,8 @@ button.ui-row:active {
     translate var(--dur-slow) var(--ease-out),
     overlay var(--dur-slow) allow-discrete,
     display var(--dur-slow) allow-discrete;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .ui-dialog::backdrop {

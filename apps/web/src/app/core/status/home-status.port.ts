@@ -27,6 +27,8 @@ export interface HomeStatus {
  */
 export abstract class HomeStatusPort {
   abstract readonly status: Signal<HomeStatus>;
+  /** Só fica verdadeiro após uma espera curta sem nenhum estado salvo para desenhar. */
+  abstract readonly loading: Signal<boolean>;
 
   /**
    * A tela chama ao aparecer: enquanto houver quem acompanhe, o adaptador mantém o estado fresco (e só então
