@@ -181,6 +181,41 @@ public sealed class SystemSettingsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task PhotoBucketStatus_ReportsWhetherTheServerBucketIsComplete_AndHidesItsDetails()
+    {
+        await using var without = await PasskeyApp.StartAsync(postgres);
+        var ownerWithout = await without.LoginAsync();
+        using var missing = await without.SendAsync(HttpMethod.Get, Route + "/photo-bucket", bearer: ownerWithout.AccessToken);
+        missing.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PasskeyApp.JsonAsync(missing)).GetProperty("configured").GetBoolean().Should().BeFalse();
+
+        await using var with = await PasskeyApp.StartAsync(postgres, new PasskeyAppOptions
+        {
+            Extra = new Dictionary<string, string?>
+            {
+                ["Modules:Training:Photos:Storage:ServiceUrl"] = "https://objects.example.test",
+                ["Modules:Training:Photos:Storage:Bucket"] = "private-test",
+                ["Modules:Training:Photos:Storage:AccessKey"] = "synthetic-access",
+                ["Modules:Training:Photos:Storage:SecretKey"] = "synthetic-secret",
+            },
+        });
+        var ownerWith = await with.LoginAsync();
+        using var present = await with.SendAsync(HttpMethod.Get, Route + "/photo-bucket", bearer: ownerWith.AccessToken);
+        var body = await present.Content.ReadAsStringAsync(Ct);
+        present.StatusCode.Should().Be(HttpStatusCode.OK);
+        body.Should().Contain("true").And.NotContain("private-test").And.NotContain("synthetic");
+    }
+
+    [Fact]
+    public async Task GuestCannotReadThePhotoBucketStatus()
+    {
+        await using var app = await PasskeyApp.StartAsync(postgres);
+        var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow());
+        using var read = await app.SendAsync(HttpMethod.Get, Route + "/photo-bucket", bearer: guest.Login.AccessToken);
+        read.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
     public async Task TvCleanupSettings_DefaultToEnabledWithASafeMemoryThreshold()
     {
         await using var app = await PasskeyApp.StartAsync(postgres);

@@ -2474,6 +2474,17 @@
         ],
         "type": "object"
       },
+      "PhotoBucketStatus": {
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured"
+        ],
+        "type": "object"
+      },
       "PollPairingRequest": {
         "properties": {
           "deviceCode": {
@@ -8825,6 +8836,45 @@
                     "$ref": "#/components/schemas/SystemSettingValue"
                   },
                   "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "SystemSettingsEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/system-settings/photo-bucket": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoBucketStatus"
                 }
               }
             },

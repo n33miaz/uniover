@@ -3,6 +3,7 @@ using System.Net.Mail;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -17,6 +18,9 @@ namespace UniOver.Modules.Identity.Features.SystemSettings;
 
 internal sealed record SaveSystemSettingRequest(JsonElement Value);
 
+/// <summary>Se o servidor tem o bucket de fotos completo; nunca devolve endereço, nome nem credenciais.</summary>
+internal sealed record PhotoBucketStatus(bool Configured);
+
 internal static class SystemSettingsEndpoint
 {
     public static void MapSystemSettings(this IEndpointRouteBuilder group)
@@ -24,6 +28,8 @@ internal static class SystemSettingsEndpoint
         // Só o dono lê: o contato e o estado do bucket não são assunto de convidado.
         group.MapGet("/system-settings", ReadAsync).RequireAuthorization(UniOverAuth.OwnerPolicy)
             .Produces<IReadOnlyList<SystemSettingValue>>().ProducesProblem(401).ProducesProblem(403);
+        group.MapGet("/system-settings/photo-bucket", ReadPhotoBucket).RequireAuthorization(UniOverAuth.OwnerPolicy)
+            .Produces<PhotoBucketStatus>().ProducesProblem(401).ProducesProblem(403);
         group.MapPut("/system-settings/{key}", SaveAsync)
             .RequireAuthorization(StepUp.Policy(StepUpActions.SystemSettingsChange))
             .RequireRateLimiting(RateLimitPolicies.Login)
@@ -41,6 +47,10 @@ internal static class SystemSettingsEndpoint
             values.Add(await settings.ReadAsync(key, cancellationToken));
         return TypedResults.Ok(values);
     }
+
+    // Deixa a tela dizer se ligar as fotos vai funcionar antes de a pessoa tentar (e confirmar a passkey à toa).
+    private static Ok<PhotoBucketStatus> ReadPhotoBucket(IConfiguration configuration) =>
+        TypedResults.Ok(new PhotoBucketStatus(HasPhotoBucket(configuration)));
 
     private static async Task<IResult> SaveAsync(
         string key, SaveSystemSettingRequest? request, HttpContext http, ICurrentUser current,
