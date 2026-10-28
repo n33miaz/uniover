@@ -80,7 +80,7 @@ export const PICKER_PAGE_SIZE = 50;
             class="secondary ui-btn block"
             (click)="limit.update((n) => n + pageSize)"
           >
-            <span i18n="@@training.picker.more">Mostrar mais ({{ hidden() }})</span>
+            <span i18n="@@training.picker.more">Mostrar Mais ({{ hidden() }})</span>
           </button>
         }
       }

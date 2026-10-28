@@ -4,7 +4,7 @@ import { setupScreen } from '../shell/screen-test-kit';
 import { TrainingGlossaryPage } from './glossary.page';
 
 describe('TrainingGlossaryPage', () => {
-  it('explains the weekly program, routine and exercise in their hierarchy', async () => {
+  it('explains the weekly program, the day plan, the routine and the exercise in their hierarchy', async () => {
     const kit = await setupScreen([
       { path: 'treino/glossario', component: TrainingGlossaryPage },
       { path: 'treino', children: [] },
@@ -16,8 +16,17 @@ describe('TrainingGlossaryPage', () => {
     expect(el.querySelector('h2')?.textContent?.trim()).toBe('Entenda o Treino');
     expect(
       Array.from(el.querySelectorAll('.terms h3')).map((node) => node.textContent?.trim()),
-    ).toEqual(['Programa Semanal', 'Rotina', 'Exercício']);
-    expect(el.textContent).not.toContain('Plano');
+    ).toEqual(['Programa Semanal', 'Plano do Dia', 'Rotina', 'Exercício']);
+    // "Plano" é só o treino marcado para o dia; o texto nunca o chama de ficha.
+    expect(el.querySelectorAll('.term')[1].textContent).toContain('Rotina que o Programa escolhe');
+    expect(el.textContent).not.toMatch(/ficha/i);
+    expect(el.querySelector('.lead')?.textContent?.trim()).toBe(
+      'O Programa tem Rotinas, e cada Rotina tem Exercícios.',
+    );
+    // Cada cartão leva à tela do termo.
+    expect(
+      Array.from(el.querySelectorAll('.term')).map((node) => node.getAttribute('href')),
+    ).toEqual(['/treino', '/treino', '/treino/rotinas', '/treino/exercicios']);
   });
 
   it('returns to the training home when opened directly', async () => {

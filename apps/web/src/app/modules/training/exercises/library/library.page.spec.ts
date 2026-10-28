@@ -178,14 +178,14 @@ describe('ExerciseLibraryPage', () => {
     expect(rows(el)[0].querySelector('.sub')?.textContent).toContain('sem registro');
   });
 
-  it('shows 50 rows at a time and the rest after "Mostrar mais"', async () => {
+  it('shows 50 rows at a time and the rest after "Mostrar Mais"', async () => {
     const extra = Array.from({ length: 70 }, (_, n) =>
       localExercise(`extra-${n}`, { name: `Extra ${String(n).padStart(2, '0')}` }),
     );
     const { fixture, el } = await open('/treino/exercicios', [...catalog(), ...extra]);
     await eventually(fixture, () => expect(rows(el)).toHaveLength(PAGE_SIZE));
     const more = el.querySelector<HTMLButtonElement>('.more')!;
-    expect(more.textContent).toContain('Mostrar mais (25)');
+    expect(more.textContent).toContain('Mostrar Mais (25)');
     more.click();
     await eventually(fixture, () => expect(rows(el)).toHaveLength(75));
     expect(el.querySelector('.more')).toBeNull();
