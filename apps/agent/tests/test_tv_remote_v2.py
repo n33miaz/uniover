@@ -6,6 +6,7 @@ que só uma TV real responde (TGuard, Netflix, tempo de religação) está nas m
 
 import asyncio
 import socket
+import types
 import typing
 from collections.abc import Callable
 from pathlib import Path
@@ -19,7 +20,7 @@ from androidtvremote2 import (
     InvalidAuth,
     VolumeInfo,
 )
-from androidtvremote2.remotemessage_pb2 import RemoteDirection, RemoteKeyCode
+from androidtvremote2.remotemessage_pb2 import RemoteDirection, RemoteKeyCode, RemoteMessage
 
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.tv_remote_v2 import (
@@ -27,13 +28,14 @@ from uniover_agent.adapters.tv_remote_v2 import (
     KEY_CODES,
     AndroidTvRemoteV2,
     RemoteClient,
+    _install_text_field_hook,
     _lost_future,
     volume_percent,
 )
 from uniover_agent.contracts.tv_key_v1 import TvKeyV1BodyKey
 from uniover_agent.contracts.tv_key_v2 import TvKeyV2BodyKey
 from uniover_agent.core import SessionState, TvSessionManager
-from uniover_agent.ports import TvNotPaired, TvPortClosed, TvUnreachable
+from uniover_agent.ports import TextFieldStatus, TvNotPaired, TvPortClosed, TvUnreachable
 
 from .support_tv import FakeTvServer, write_certificate
 
@@ -573,3 +575,134 @@ async def test_successful_connection_notifies_identity_learning_without_sending_
     assert learned == 2
     assert library.sent == []
     assert library.texts == []
+
+
+# --- estado do campo de texto (gancho no tratador de mensagens da biblioteca) -------------------
+
+
+async def test_the_text_field_state_the_tv_pushes_reaches_the_caller(tmp_path: Path) -> None:
+    fields: list[TextFieldStatus] = []
+    apps: list[str] = []
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        adapter.on_text_field(fields.append)
+        adapter.on_app(apps.append)
+        await adapter.connect()
+        try:
+            await eventually(lambda: bool(apps))
+            # Só o app em foco chegou até aqui: não é campo de texto, e o tratador da biblioteca
+            # continua recebendo as mensagens (o app foi lido).
+            assert fields == []
+            server.push_text_field("Matrix", counter=7, label="Buscar", start=6, end=6)
+            await eventually(lambda: bool(fields))
+        finally:
+            await adapter.disconnect()
+    assert fields == [TextFieldStatus("Matrix", 6, 6, "Buscar", 7)]
+
+
+async def test_the_keyboard_request_also_carries_the_text_field_state(tmp_path: Path) -> None:
+    fields: list[TextFieldStatus] = []
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        adapter.on_text_field(fields.append)
+        await adapter.connect()
+        try:
+            server.push_text_field("", counter=3, label="Pesquisar", show_request=True)
+            await eventually(lambda: bool(fields))
+        finally:
+            await adapter.disconnect()
+    assert fields == [TextFieldStatus("", 0, 0, "Pesquisar", 3)]
+
+
+async def test_a_failing_listener_does_not_break_the_librarys_own_handling(tmp_path: Path) -> None:
+    apps: list[str] = []
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+
+        def explode(field: TextFieldStatus) -> None:
+            raise RuntimeError("ouvinte quebrado")
+
+        adapter.on_text_field(explode)
+        adapter.on_app(apps.append)
+        await adapter.connect()
+        try:
+            server.push_text_field("a")
+            server.push_volume(40)
+            await eventually(lambda: apps == ["com.exemplo.video"])
+            assert adapter.connected
+        finally:
+            await adapter.disconnect()
+
+
+def test_the_hook_reports_when_the_librarys_internals_moved() -> None:
+    """Se a biblioteca mudar o nome do tratador, o agente segue sem o estado (e avisa no log)."""
+    assert _install_text_field_hook(object(), lambda field: None) is False
+    assert _install_text_field_hook(
+        types.SimpleNamespace(_remote_message_protocol=None), print
+    ) is (False)
+
+
+def test_the_hook_ignores_garbage_and_still_calls_the_original_handler() -> None:
+    handled: list[bytes] = []
+    seen: list[TextFieldStatus] = []
+    protocol = types.SimpleNamespace(_handle_message=handled.append)
+    client = types.SimpleNamespace(_remote_message_protocol=protocol)
+    assert _install_text_field_hook(client, seen.append) is True
+    protocol._handle_message(b"\xff\xff\xff not protobuf")
+    message = RemoteMessage()
+    message.remote_ime_key_inject.text_field_status.value = "ok"
+    protocol._handle_message(message.SerializeToString())
+    assert [field.value for field in seen] == ["ok"]
+    assert len(handled) == 2
+
+
+async def test_the_field_state_arrives_after_the_app_change_the_same_message_carries(
+    tmp_path: Path,
+) -> None:
+    seen: list[str] = []
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        adapter.on_app(lambda app: seen.append(f"app:{app}"))
+        adapter.on_text_field(lambda field: seen.append(f"campo:{field.value}"))
+        await adapter.connect()
+        try:
+            await eventually(lambda: "app:com.exemplo.video" in seen)
+            server.push_text_field("oi", app="com.exemplo.musica")
+            await eventually(lambda: "campo:oi" in seen)
+        finally:
+            await adapter.disconnect()
+    # Quem esquece o campo ao trocar de app não apaga o estado que chega junto com a troca.
+    assert seen[-2:] == ["app:com.exemplo.musica", "campo:oi"]
+
+
+def test_a_protocol_that_refuses_the_hook_leaves_the_adapter_connected_without_it() -> None:
+    class ReadOnly:
+        @property
+        def _handle_message(self) -> Callable[[bytes], None]:
+            return lambda raw: None
+
+    class Slotted:
+        __slots__ = ()
+
+        def _handle_message(self, raw: bytes) -> None: ...
+
+    for protocol in (ReadOnly(), Slotted()):
+        client = types.SimpleNamespace(_remote_message_protocol=protocol)
+        assert _install_text_field_hook(client, lambda field: None) is False
+
+
+async def test_a_hook_that_cannot_be_installed_does_not_stop_the_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from uniover_agent.adapters import tv_remote_v2  # noqa: PLC0415
+
+    monkeypatch.setattr(tv_remote_v2, "_install_text_field_hook", lambda client, callback: False)
+    async with FakeTvServer(tmp_path) as server:
+        adapter = make_adapter(tmp_path, server.port)
+        with caplog.at_level("WARNING"):
+            await adapter.connect()
+        try:
+            assert adapter.connected
+        finally:
+            await adapter.disconnect()
+    assert "sigo sem ela" in caplog.text
