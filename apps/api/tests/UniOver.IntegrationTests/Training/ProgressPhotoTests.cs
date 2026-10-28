@@ -302,7 +302,7 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
         await using (var training = TrainingApp.CreateContext(app.Database.OwnerConnection))
         {
             await training.Database.MigrateAsync("20261024120000_AddTrainingPrograms", TestContext.Current.CancellationToken);
-            (await training.Database.GetPendingMigrationsAsync(TestContext.Current.CancellationToken)).Should().Equal("20261024130000_AddProgressPhotos");
+            (await training.Database.GetPendingMigrationsAsync(TestContext.Current.CancellationToken)).Should().Equal("20261024130000_AddProgressPhotos", "20261028010130_AddBodyMeasurements");
             await training.Database.MigrateAsync(TestContext.Current.CancellationToken);
             (await training.Database.GetPendingMigrationsAsync(TestContext.Current.CancellationToken)).Should().BeEmpty();
         }

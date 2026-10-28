@@ -904,6 +904,24 @@
       },
       "BodyEntryResponse": {
         "properties": {
+          "abdomenCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "abdomenSkinfoldMm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
           "armCm": {
             "format": "double",
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
@@ -913,7 +931,70 @@
               "string"
             ]
           },
+          "armLeftCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "armRightCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
           "bodyFatPct": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "calfCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "calfLeftCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "calfRightCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "chestCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "chestSkinfoldMm": {
             "format": "double",
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
             "type": [
@@ -932,6 +1013,33 @@
           "fatMethod": {
             "type": [
               "null",
+              "string"
+            ]
+          },
+          "forearmCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "forearmLeftCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "forearmRightCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
               "string"
             ]
           },
@@ -976,6 +1084,33 @@
               "string"
             ]
           },
+          "thighLeftCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "thighRightCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "thighSkinfoldMm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
@@ -1010,6 +1145,21 @@
           "hipCm",
           "armCm",
           "thighCm",
+          "chestCm",
+          "abdomenCm",
+          "forearmCm",
+          "calfCm",
+          "armRightCm",
+          "armLeftCm",
+          "forearmRightCm",
+          "forearmLeftCm",
+          "thighRightCm",
+          "thighLeftCm",
+          "calfRightCm",
+          "calfLeftCm",
+          "chestSkinfoldMm",
+          "abdomenSkinfoldMm",
+          "thighSkinfoldMm",
           "note",
           "updatedAt",
           "clientUpdatedAt",
@@ -4103,6 +4253,24 @@
       },
       "UpsertBodyEntryRequest": {
         "properties": {
+          "abdomenCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "abdomenSkinfoldMm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
           "armCm": {
             "format": "double",
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
@@ -4112,7 +4280,70 @@
               "string"
             ]
           },
+          "armLeftCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "armRightCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
           "bodyFatPct": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "calfCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "calfLeftCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "calfRightCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "chestCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "chestSkinfoldMm": {
             "format": "double",
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
             "type": [
@@ -4134,6 +4365,33 @@
           "fatMethod": {
             "type": [
               "null",
+              "string"
+            ]
+          },
+          "forearmCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "forearmLeftCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "forearmRightCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
               "string"
             ]
           },
@@ -4169,6 +4427,33 @@
             ]
           },
           "thighCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "thighLeftCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "thighRightCm": {
+            "format": "double",
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ]
+          },
+          "thighSkinfoldMm": {
             "format": "double",
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?$",
             "type": [
