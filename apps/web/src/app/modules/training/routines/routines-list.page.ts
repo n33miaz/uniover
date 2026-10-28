@@ -41,12 +41,14 @@ export class RoutinesListPage {
   } | null>(null);
   protected readonly online = this.connectivity.online;
   /** A próxima fica visível sem esforço; a lista completa só aparece quando a pessoa pede. */
-  protected readonly showingAll = signal(false);
+  private readonly expanded = signal(false);
 
-  protected readonly featured = computed(
-    () => this.entries().find((entry) => entry.next) ?? this.entries()[0] ?? null,
+  /** Só a rotina que é de fato a próxima da sequência ganha destaque; sem ela, a lista inteira aparece. */
+  protected readonly featured = computed(() => this.entries().find((entry) => entry.next) ?? null);
+  protected readonly showingAll = computed(() => this.expanded() || this.featured() === null);
+  protected readonly hasMore = computed(
+    () => this.featured() !== null && this.entries().length > 1,
   );
-  protected readonly hasMore = computed(() => this.entries().length > 1);
   protected readonly moreLabel = computed(() => {
     const count = this.entries().length;
     if (this.showingAll()) return $localize`:@@training.routines.show-less:Ver Menos`;
@@ -94,7 +96,7 @@ export class RoutinesListPage {
   }
 
   protected toggleAll(): void {
-    this.showingAll.update((showing) => !showing);
+    this.expanded.update((showing) => !showing);
   }
 
   protected onCreated(event: TemplateCreated): void {
