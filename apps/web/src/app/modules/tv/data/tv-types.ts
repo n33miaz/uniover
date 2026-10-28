@@ -42,6 +42,8 @@ export interface TvSummary {
   readonly kind: TvKind | null;
   readonly online: boolean;
   readonly capabilities: readonly string[];
+  /** A limpeza desta TV pode fechar apps em segundo plano; desligado, ela só alivia a memória. */
+  readonly allowBackgroundAppClosing?: boolean;
 }
 
 /** O que uma TV pode ou não oferecer no controle. */
@@ -107,6 +109,7 @@ function parseTv(value: unknown): TvSummary | null {
     kind: dto['kind'] === 'android' || dto['kind'] === 'samsung' ? dto['kind'] : null,
     online: dto['online'] === true,
     capabilities,
+    allowBackgroundAppClosing: dto['allowBackgroundAppClosing'] === true,
   };
 }
 

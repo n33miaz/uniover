@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { TvStore } from '../data/tv-store';
-import { FakeTvStore, createFakeTvStore } from '../tv-test-kit';
+import { FakeTvStore, createFakeTvStore, makeTv } from '../tv-test-kit';
 import { CleanupSheet } from './cleanup-sheet';
 
 function clickBackdrop(dialog: HTMLDialogElement): void {
@@ -36,15 +36,27 @@ describe('CleanupSheet', () => {
     root = fixture.nativeElement;
   });
 
-  it('opens as a modal sheet with the question and the warning about the app that is playing', () => {
+  it('opens as a modal sheet with the question and says only memory is freed while the TV switch is off', () => {
     const dialog = root.querySelector('dialog')!;
     expect(dialog.hasAttribute('open')).toBe(true);
     expect(root.querySelector('h2')?.textContent).toBe('Limpar a TV?');
     expect(root.textContent).toContain(
-      'Isso fecha todos os apps abertos, inclusive o que está passando agora, e libera memória. A conexão com o controle continua.',
+      'Libera memória sem fechar nenhum app. A conexão com o controle continua.',
     );
+    expect(root.textContent).not.toContain('fecha todos');
     expect(dialog.getAttribute('aria-labelledby')).toBe('cleanup-title');
     expect(dialog.getAttribute('aria-describedby')).toBe('cleanup-text');
+  });
+
+  it('says background apps are closed, never the one in front, when the TV switch is on', async () => {
+    store.tvs.set([makeTv('sala', { allowBackgroundAppClosing: true })]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(root.querySelector('#cleanup-text')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Fecha os apps em segundo plano e libera memória. O app que está passando agora continua aberto, e a conexão com o controle também.',
+    );
+    expect(root.textContent).not.toContain('fecha todos');
   });
 
   it('has only Cancelar and Limpar (no close button)', () => {

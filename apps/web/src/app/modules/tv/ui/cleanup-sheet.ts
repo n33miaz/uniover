@@ -1,4 +1,12 @@
-import { Component, ElementRef, afterNextRender, inject, output, viewChild } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  afterNextRender,
+  computed,
+  inject,
+  output,
+  viewChild,
+} from '@angular/core';
 import { TvStore } from '../data/tv-store';
 import {
   closeDialog,
@@ -9,8 +17,9 @@ import { leaveSheet } from './sheet-motion';
 
 /**
  * Folha "Limpar a TV?": sobe de baixo, sem botão de fechar (a saída é "Cancelar" ou Esc), no mesmo padrão da folha de
- * desligar. Limpar fecha todos os apps abertos na TV, inclusive o que está passando agora, e libera memória sem
- * derrubar a conexão do controle. A limpeza leva alguns segundos, então ao confirmar a folha sai na hora e o pedido
+ * desligar. Limpar sempre alivia a memória; só fecha apps em segundo plano (nunca o que está passando agora) se o
+ * interruptor desta TV estiver ligado, e o texto da folha diz qual dos dois vale. Nada disso
+ * derruba a conexão do controle. A limpeza leva alguns segundos, então ao confirmar a folha sai na hora e o pedido
  * segue pelo `TvStore` (o botão do painel mostra "Limpando…" e o resultado volta como aviso): uma folha modal aberta
  * por até 25 s deixaria o resto do controle parado. O `closed` só sai depois da saída suave, para a página não
  * desmontar a folha no meio dela.
@@ -24,6 +33,11 @@ export class CleanupSheet {
   protected readonly store = inject(TvStore);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private opener: Element | null = null;
+
+  /** O interruptor desta TV: ligado, a limpeza fecha apps em segundo plano; desligado (ou sem saber), só libera memória. */
+  protected readonly closesBackground = computed(
+    () => this.store.selectedTv()?.allowBackgroundAppClosing === true,
+  );
 
   readonly closed = output<void>();
 

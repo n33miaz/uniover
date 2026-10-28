@@ -26,6 +26,7 @@ export function makeTv(id: string, overrides: Partial<TvSummary> = {}): TvSummar
     kind: 'android',
     online: true,
     capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb'],
+    allowBackgroundAppClosing: false,
     ...overrides,
   };
 }
