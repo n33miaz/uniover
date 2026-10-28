@@ -32,6 +32,43 @@
   gap: 2px;
 }
 
+/* O estado importante cabe numa olhada; versão e histórico ficam no detalhe logo abaixo. */
+.status-summary {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.status-summary div {
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-sm);
+  background: var(--a-surface-2);
+}
+
+.status-summary dt {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.status-summary dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.status-summary .ok {
+  color: var(--a-ok-ink);
+}
+
+.status-summary .bad {
+  color: var(--a-bad-ink);
+}
+
 .name {
   font-size: var(--fs-body);
   overflow-wrap: anywhere;
@@ -196,6 +233,26 @@
   padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--a-bad) 35%, var(--a-line));
   border-radius: var(--radius-sm);
+}
+
+/* Manutenção é secundária ao estado do computador e só ocupa espaço quando a pessoa pede. */
+.maintenance {
+  border-top: 1px solid var(--a-line);
+}
+
+.maintenance summary {
+  min-height: var(--tap);
+  padding-top: var(--space-2);
+  color: var(--a-ink2);
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.maintenance-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
 }
 
 .zone-label {

@@ -49,7 +49,7 @@ async function signIn(page: Page) {
 }
 
 /** Entra, (no Chromium) cadastra uma passkey no autenticador virtual e abre Configurações > Dispositivos. */
-async function openDevices(page: Page, browserName: string) {
+async function openDevices(page: Page, browserName: string, expandMaintenance = true) {
   if (browserName === 'chromium') await addVirtualAuthenticator(page);
   await signIn(page);
   if (browserName === 'chromium') {
@@ -64,6 +64,15 @@ async function openDevices(page: Page, browserName: string) {
   await page.getByRole('link', { name: /^Dispositivos/ }).click();
   await expect(page).toHaveURL(/\/ajustes\/dispositivos$/);
   await expect(page.getByRole('heading', { level: 2, name: 'Computadores' })).toBeVisible();
+  if (!expandMaintenance) return;
+  // A manutenção de cada computador vem dobrada; abre as dobras para alcançar as ações.
+  await page.locator('.item, .empty').first().waitFor();
+  await expect(async () => {
+    await page.locator('details.maintenance').evaluateAll((all) => {
+      for (const details of all as HTMLDetailsElement[]) details.open = true;
+    });
+    await expect(page.locator('details.maintenance:not([open])')).toHaveCount(0, { timeout: 500 });
+  }).toPass();
 }
 
 async function typeCode(page: Page, code: string) {
@@ -290,21 +299,21 @@ test.describe('aparelhos', () => {
         canMaintain: false,
       }),
     );
-    await openDevices(page, browserName);
+    await openDevices(page, browserName, false);
     const first = page.locator('.item').first();
+    // A manutenção começa dobrada: o estado do computador cabe numa olhada.
+    await expect(first.locator('details.maintenance')).not.toHaveAttribute('open', '');
     await expect(first.locator('.version')).toHaveText('Versão 0.1.0 · 3f2a9c1');
     await expect(first).toContainText('Sistema: Windows 11 (10.0.26200)');
-    await expect(first.locator('.tv')).toHaveText('TV: Android TV · 192.168.0.20');
-    await expect(first.locator('.chip.connection')).toHaveText('Conectado agora');
+    await expect(first.locator('.tv')).toHaveText('Android TV · 192.168.0.20');
+    await expect(first.locator('.connection')).toHaveText('Conectado agora');
     await expect(first.locator('.last-seen')).toContainText(/Visto (agora|há)/);
     const second = page.locator('.item').nth(1);
-    await expect(second.locator('.chip.connection')).toHaveText('Desconectado');
+    await expect(second.locator('.connection')).toHaveText('Desconectado');
     await expect(second.locator('.version')).toHaveCount(0);
     // Desconectado: não há a quem pedir registro, atualização ou reinício.
-    await expect(
-      page.getByRole('button', { name: 'Ver registro de Notebook antigo' }),
-    ).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Revogar Notebook antigo' })).toBeEnabled();
+    await expect(second.locator('button.view-log')).toBeDisabled();
+    await expect(second.locator('button.revoke')).toBeEnabled();
     await expectNoHorizontalScroll(page);
     await settle(page);
     await screenshot(page, info.outputPath('devices-info.png'));

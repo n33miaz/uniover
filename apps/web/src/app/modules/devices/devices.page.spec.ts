@@ -131,8 +131,32 @@ describe('DevicesPage', () => {
     const item = el.querySelector('.item')!;
     expect(item.querySelector('.version')?.textContent).toBe('Versão 0.1.0 · 3f2a9c1');
     expect(item.textContent).toContain('Sistema: Windows 11 (10.0.26200)');
-    expect(item.querySelector('.tv')?.textContent).toBe('TV: Android TV · 192.168.0.20');
-    expect(item.querySelector('.chip.connection')?.textContent).toContain('Conectado agora');
+    expect(item.querySelector('.tv')?.textContent).toBe('Android TV · 192.168.0.20');
+    expect(item.querySelector('.connection')?.textContent).toContain('Conectado agora');
+    expect(item.querySelector('.status-summary')?.textContent).toContain('Agente');
+    expect(item.querySelector('.status-summary')?.textContent).toContain('TV');
+  });
+
+  it('keeps maintenance actions folded while the computer status stays in view', async () => {
+    const { el } = await render();
+    const maintenance = el.querySelector<HTMLDetailsElement>('.maintenance')!;
+    expect(maintenance.open).toBe(false);
+    expect(maintenance.querySelector('summary')?.textContent).toContain('Mais ações');
+    expect(el.querySelector('.status-summary')?.textContent).toContain('Conectado agora');
+  });
+
+  it('keeps the maintenance fold open after a confirmation is cancelled', async () => {
+    const { fixture, el } = await render();
+    const maintenance = el.querySelector<HTMLDetailsElement>('.maintenance')!;
+    maintenance.open = true;
+    maintenance.dispatchEvent(new Event('toggle'));
+    fixture.detectChanges();
+    el.querySelector<HTMLButtonElement>('.update-now')!.click();
+    fixture.detectChanges();
+    expect(el.querySelector('.maintenance')).toBeNull();
+    el.querySelector<HTMLButtonElement>('.confirm .secondary')!.click();
+    fixture.detectChanges();
+    expect(el.querySelector<HTMLDetailsElement>('.maintenance')!.open).toBe(true);
   });
 
   it('falls back to the pairing platform and leaves out what an old agent never told', async () => {
@@ -153,15 +177,15 @@ describe('DevicesPage', () => {
     const item = el.querySelector('.item')!;
     expect(item.textContent).toContain('Sistema: windows');
     expect(item.querySelector('.version')).toBeNull();
-    expect(item.querySelector('.tv')).toBeNull();
-    expect(item.querySelector('.chip.connection')?.textContent).toContain('Desconectado');
+    expect(item.querySelector('.tv')?.textContent).toBe('Sem TV vinculada');
+    expect(item.querySelector('.connection')?.textContent).toContain('Desconectado');
   });
 
   it('writes a Samsung TV and a version without a commit in plain words', async () => {
     api.list.mockResolvedValue([{ ...PC, agentBuild: null, tvKind: 'samsung' }]);
     const { el } = await render();
     expect(el.querySelector('.version')?.textContent).toBe('Versão 0.1.0');
-    expect(el.querySelector('.tv')?.textContent).toBe('TV: Samsung · 192.168.0.20');
+    expect(el.querySelector('.tv')?.textContent).toBe('Samsung · 192.168.0.20');
   });
 
   describe('update state', () => {

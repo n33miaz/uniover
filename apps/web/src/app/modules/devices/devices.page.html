@@ -102,17 +102,33 @@
                         <span class="chip active ui-chip accent" i18n="@@devices.state.active"
                           >Ativo</span
                         >
-                        <span class="chip connection ui-chip" [class.accent]="agent.connected">{{
-                          connection(agent)
-                        }}</span>
                       }
                     </div>
                   </div>
+                  @if (!agent.revoked) {
+                    <dl
+                      class="status-summary"
+                      aria-label="Resumo do computador"
+                      i18n-aria-label="@@devices.summary-label"
+                    >
+                      <div>
+                        <dt i18n="@@devices.summary.agent">Agente</dt>
+                        <dd
+                          class="connection"
+                          [class.ok]="agent.connected"
+                          [class.bad]="!agent.connected"
+                        >
+                          {{ connection(agent) }}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt i18n="@@devices.summary.tv">TV</dt>
+                        <dd class="tv">{{ tvSummary(agent) }}</dd>
+                      </div>
+                    </dl>
+                  }
                   @if (version(agent); as text) {
                     <span class="meta version">{{ text }}</span>
-                  }
-                  @if (tv(agent); as text) {
-                    <span class="meta tv">{{ text }}</span>
                   }
                   <span class="meta">{{ pairedAt(agent) }}</span>
                   <span class="meta last-seen">{{ lastSeen(agent) }}</span>
@@ -203,72 +219,81 @@
                       </div>
                     </div>
                   } @else {
-                    <div class="actions main">
-                      <button
-                        type="button"
-                        class="view-log secondary ui-btn"
-                        [disabled]="!online() || !agent.connected"
-                        [attr.aria-label]="viewLogLabel(agent)"
-                        (click)="openLog(agent)"
-                        i18n="@@devices.view-log"
-                      >
-                        Ver Registro
-                      </button>
-                      <button
-                        type="button"
-                        class="update-now secondary ui-btn"
-                        [disabled]="!online() || !agent.connected"
-                        [attr.aria-label]="updateLabel(agent)"
-                        (click)="askMaintenance(agent, 'update')"
-                        i18n="@@devices.update-now"
-                      >
-                        Atualizar Agora
-                      </button>
-                    </div>
-                    <div
-                      class="danger-zone"
-                      role="group"
-                      aria-label="Cuidado"
-                      i18n-aria-label="@@devices.danger"
+                    <details
+                      class="maintenance"
+                      [open]="maintenanceOpen().has(agent.id)"
+                      (toggle)="toggleMaintenance(agent, $event)"
                     >
-                      <span class="zone-label ui-section-label" i18n="@@devices.danger-label"
-                        >Cuidado</span
-                      >
-                      <div class="actions">
-                        @if (agent.canRollback) {
+                      <summary i18n="@@devices.maintenance.summary">Mais ações</summary>
+                      <div class="maintenance-body">
+                        <div class="actions main">
                           <button
                             type="button"
-                            class="rollback secondary ui-btn"
+                            class="view-log secondary ui-btn"
                             [disabled]="!online() || !agent.connected"
-                            [attr.aria-label]="rollbackLabel(agent)"
-                            (click)="askMaintenance(agent, 'rollback')"
-                            i18n="@@devices.rollback"
+                            [attr.aria-label]="viewLogLabel(agent)"
+                            (click)="openLog(agent)"
+                            i18n="@@devices.view-log"
                           >
-                            Voltar para a Versão Anterior
+                            Ver Registro
                           </button>
-                        }
-                        <button
-                          type="button"
-                          class="restart secondary ui-btn"
-                          [disabled]="!online() || !agent.connected"
-                          [attr.aria-label]="restartLabel(agent)"
-                          (click)="askMaintenance(agent, 'restart')"
-                          i18n="@@devices.restart"
+                          <button
+                            type="button"
+                            class="update-now secondary ui-btn"
+                            [disabled]="!online() || !agent.connected"
+                            [attr.aria-label]="updateLabel(agent)"
+                            (click)="askMaintenance(agent, 'update')"
+                            i18n="@@devices.update-now"
+                          >
+                            Atualizar Agora
+                          </button>
+                        </div>
+                        <div
+                          class="danger-zone"
+                          role="group"
+                          aria-label="Cuidado"
+                          i18n-aria-label="@@devices.danger"
                         >
-                          Reiniciar o Agente
-                        </button>
-                        <button
-                          type="button"
-                          class="revoke secondary ui-btn"
-                          [disabled]="!online()"
-                          [attr.aria-label]="revokeLabel(agent)"
-                          (click)="askRevoke(agent)"
-                          i18n="@@devices.revoke"
-                        >
-                          Revogar
-                        </button>
+                          <span class="zone-label ui-section-label" i18n="@@devices.danger-label"
+                            >Cuidado</span
+                          >
+                          <div class="actions">
+                            @if (agent.canRollback) {
+                              <button
+                                type="button"
+                                class="rollback secondary ui-btn"
+                                [disabled]="!online() || !agent.connected"
+                                [attr.aria-label]="rollbackLabel(agent)"
+                                (click)="askMaintenance(agent, 'rollback')"
+                                i18n="@@devices.rollback"
+                              >
+                                Voltar para a Versão Anterior
+                              </button>
+                            }
+                            <button
+                              type="button"
+                              class="restart secondary ui-btn"
+                              [disabled]="!online() || !agent.connected"
+                              [attr.aria-label]="restartLabel(agent)"
+                              (click)="askMaintenance(agent, 'restart')"
+                              i18n="@@devices.restart"
+                            >
+                              Reiniciar o Agente
+                            </button>
+                            <button
+                              type="button"
+                              class="revoke secondary ui-btn"
+                              [disabled]="!online()"
+                              [attr.aria-label]="revokeLabel(agent)"
+                              (click)="askRevoke(agent)"
+                              i18n="@@devices.revoke"
+                            >
+                              Revogar
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    </details>
                   }
                 }
               </li>
