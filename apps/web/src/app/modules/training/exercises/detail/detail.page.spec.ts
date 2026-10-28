@@ -53,8 +53,9 @@ describe('ExerciseDetailPage', () => {
         'Barra',
       ]);
       expect(el.querySelectorAll('app-exercise-illustration img')).toHaveLength(2);
-      expect(el.querySelector('.detail')?.firstElementChild?.classList.contains('hero')).toBe(true);
-      expect(el.querySelector('.detail .back')).toBeNull();
+      // Só o voltar vem antes da imagem; o nome segue logo depois dela.
+      expect(el.querySelector('.detail')?.firstElementChild?.classList.contains('head')).toBe(true);
+      expect(el.querySelector('.head')?.nextElementSibling?.classList.contains('hero')).toBe(true);
       const hero = el.querySelector('.hero')!;
       expect(hero.querySelector('.visuals')?.nextElementSibling?.classList.contains('chips')).toBe(
         true,
@@ -366,7 +367,7 @@ describe('ExerciseDetailPage', () => {
     });
   });
 
-  it('has a single way back, before the name in the reading order, that leads to the exercise list', async () => {
+  it('has a single way back, first in the reading order, that leads to the exercise list', async () => {
     const { fixture, el, router } = await open('supino-reto');
     await eventually(fixture, () =>
       expect(el.querySelector('h2')?.textContent).toContain('Supino'),
@@ -374,14 +375,11 @@ describe('ExerciseDetailPage', () => {
     expect(el.querySelectorAll('.back')).toHaveLength(1);
     const back = el.querySelector<HTMLButtonElement>('.back')!;
     expect(back.getAttribute('aria-label')).toBe('Voltar para Exercícios');
-    // Voltar e título vêm antes da ilustração e dos chips na ordem do DOM.
+    // O voltar vem antes da imagem (que é a primeira coisa da ficha, por decisão) e do nome.
     const order = (a: Element, b: Element) =>
       a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(order(back, el.querySelector('app-exercise-illustration')!)).toBeTruthy();
     expect(order(back, el.querySelector('h2')!)).toBeTruthy();
-    expect(
-      order(el.querySelector('h2')!, el.querySelector('app-exercise-illustration')!),
-    ).toBeTruthy();
-    expect(order(el.querySelector('h2')!, el.querySelector('.chips')!)).toBeTruthy();
 
     const navigate = vi.spyOn(router, 'navigateByUrl');
     back.click();
