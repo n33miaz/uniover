@@ -218,15 +218,17 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     await expect(page.locator('article.card h3')).toHaveText([
       'TV',
       'Controle do PC',
-      'Rede da casa',
-      'Backup de fotos',
+      'Rede da Casa',
+      'Backup de Fotos',
     ]);
-    await expect(page.locator('.shortcuts a.shortcut')).toHaveText(['Configurações']);
-    await expect(page.locator('.agent-status')).toBeVisible();
+    await expect(page.locator('.shortcuts')).toHaveCount(0);
+    await expect(page.locator('.hero-settings')).toHaveAttribute('aria-label', 'Configurações');
+    // Estado técnico é do dono: o convidado vê só a engrenagem no cartão, sem bolinha de estado.
+    await expect(page.locator('.agent-status')).toHaveCount(0);
     await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
-    // O controle tem cabeçalho próprio: a engrenagem fica no lugar da seta, e a volta à Início é pelas Configurações.
-    await expect(page.getByRole('link', { name: /Início/ })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Voltar ao Início' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Configurações' })).toBeVisible();
     await expect(page.getByRole('navigation')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Desligar a TV' })).toBeVisible();
 
@@ -311,10 +313,10 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
       await expect(page.locator('article.card h3')).toHaveText([
         'TV',
         'Controle do PC',
-        'Rede da casa',
-        'Backup de fotos',
+        'Rede da Casa',
+        'Backup de Fotos',
       ]);
-      await expect(page.locator('.shortcuts a.shortcut')).toHaveText(['Configurações']);
+      await expect(page.locator('.shortcuts')).toHaveCount(0);
     }
 
     // Recarregar mantém a sessão (cookie) e o papel: continua na Início filtrada.
@@ -341,10 +343,10 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
 
-    const settings = page.locator('header.head').getByRole('link', { name: 'Ajustes' });
+    const settings = page.locator('header.head').getByRole('link', { name: 'Configurações' });
     await expect(settings).toBeVisible();
 
-    // Os três pontos do menu ficam ao lado da engrenagem, na esquerda e antes do nome; à direita só o desligar.
+    // A volta, a engrenagem e o menu ficam à esquerda e antes do nome; à direita só o desligar.
     const header = page.locator('header.head');
     const gearBox = (await settings.boundingBox())!;
     const menuBox = (await header
@@ -510,11 +512,12 @@ test.describe('convidado sem módulo liberado', () => {
     const cards = page.locator('article.card');
     await expect(cards.locator('h3')).toHaveText([
       'Controle do PC',
-      'Rede da casa',
-      'Backup de fotos',
+      'Rede da Casa',
+      'Backup de Fotos',
     ]);
     await expect(page.locator('.agent-status')).toHaveCount(0);
-    await expect(page.locator('.shortcuts a.shortcut')).toHaveText(['Configurações']);
+    await expect(page.locator('.shortcuts')).toHaveCount(0);
+    await expect(cards.last().locator('xpath=..')).toHaveClass(/\bcentered-last\b/);
     await expectNoHorizontalScroll(page);
 
     // A última linha tem só um cartão: ele conserva a mesma largura e fica no eixo da própria grade.

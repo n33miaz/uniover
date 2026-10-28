@@ -68,7 +68,7 @@ function signInAsGuest(permissions: string[]) {
   identity.loggedIn = true;
 }
 
-const gear = (page: Page) => page.getByRole('link', { name: 'Ajustes', exact: true });
+const gear = (page: Page) => page.getByRole('link', { name: 'Configurações', exact: true });
 const sheetOf = (page: Page) => page.getByRole('dialog', { name: 'Atalho na tela de início' });
 const advice = (page: Page) =>
   page.getByRole('button', { name: /^Estes treinos estão salvos só neste navegador/ });
@@ -138,19 +138,22 @@ test.describe('convidado que só tem o Treino', () => {
     await expect(page.locator('article.card h3')).toHaveText([
       'Treino',
       'Controle do PC',
-      'Rede da casa',
-      'Backup de fotos',
+      'Rede da Casa',
+      'Backup de Fotos',
     ]);
     await page.locator('article[data-module="training"] a.card-link').click();
     await expect(page).toHaveURL(/\/treino$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
     await expect(page.locator('app-training-page')).toBeVisible();
 
-    // O Treino tem cabeçalho próprio: no lugar da seta de voltar ao Início (que ele não tem), o botão redondo de configurações, como na TV.
+    // O Treino tem cabeçalho próprio: a seta de voltar à Início e o botão redondo de configurações, como o dono.
     const header = page.locator('header');
-    await expect(header.getByRole('link')).toHaveCount(1);
+    await expect(header.getByRole('link')).toHaveCount(2);
+    await expect(header.getByRole('link', { name: 'Voltar ao Início' })).toHaveAttribute(
+      'href',
+      '/',
+    );
     await expect(gear(page)).toHaveAttribute('href', '/ajustes');
-    await expect(header.locator('a[href="/"]')).toHaveCount(0);
 
     // Nunca passou pela TV: nem uma tela, nem uma requisição.
     expect(visited.filter((path) => path === '/tv' || path.startsWith('/tv/'))).toEqual([]);
@@ -168,16 +171,19 @@ test.describe('convidado que só tem o Treino', () => {
     await expect(page).toHaveTitle('UniOver Treino');
   });
 
-  test('na raiz não tem Voltar ao Início, mas conserva o Voltar da tela interna', async ({
+  test('na raiz volta à Início, e a tela interna conserva o próprio Voltar', async ({
     page,
   }, info) => {
     signInAsGuest(TRAINING_ONLY);
     await openTraining(page, '/treino');
 
     const header = page.locator('.training-header');
-    await expect(header.getByRole('link', { name: /^Voltar/ })).toHaveCount(0);
+    await expect(header.getByRole('link', { name: 'Voltar ao Início' })).toHaveAttribute(
+      'href',
+      '/',
+    );
     await expect(gear(page)).toHaveAttribute('href', '/ajustes');
-    await screenshot(page, info.outputPath('raiz-sem-voltar.png'));
+    await screenshot(page, info.outputPath('raiz-com-voltar.png'));
 
     await openTraining(page, '/treino/exercicios/novo');
     const back = page.getByRole('button', { name: 'Sair do formulário' });
@@ -255,7 +261,7 @@ test.describe('convidado que só tem o Treino', () => {
 });
 
 test.describe('convidado que tem a TV e o Treino', () => {
-  test('o Treino não tem seta de voltar; os módulos se alternam pelos Ajustes', async ({
+  test('troca de módulo nos dois sentidos pela Início: Treino, seta, TV, seta, Treino', async ({
     context,
     page,
   }) => {
@@ -264,21 +270,39 @@ test.describe('convidado que tem a TV e o Treino', () => {
     signInAsGuest(['module:tv', 'tv:control', 'module:training']);
     await openTraining(page, '/treino');
 
-    // Só o botão redondo de configurações: nada de "Voltar à TV" nem de "Voltar ao Início".
     const header = page.locator('.training-header');
-    await expect(header.getByRole('link')).toHaveCount(1);
-    await expect(header.getByRole('link', { name: /^Voltar/ })).toHaveCount(0);
-    await expect(header.locator('a[href="/tv"], a[href="/"]')).toHaveCount(0);
+    await expect(header.getByRole('link')).toHaveCount(2);
     await expect(gear(page)).toHaveAttribute('href', '/ajustes');
 
-    // O controle continua sem seta de volta; a lista discreta dos módulos em Ajustes dá a troca.
-    await gear(page).click();
-    await expect(page).toHaveURL(/\/ajustes$/);
-    // A seta do cabeçalho também leva a /tv; aqui se procura a linha da lista de módulos.
-    const toTv = page.getByRole('link', { name: 'TV Controle da TV' });
-    await expect(toTv).toHaveAttribute('href', '/tv');
-    await toTv.click();
+    // Treino -> Início -> TV.
+    await header.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await page.locator('article[data-module="tv"] a.card-link').click();
     await expect(page).toHaveURL(/\/tv$/);
+
+    // TV -> Início -> Treino.
+    await page.locator('header.head').getByRole('link', { name: 'Voltar ao Início' }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await page.locator('article[data-module="training"] a.card-link').click();
+    await expect(page).toHaveURL(/\/treino$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
+  });
+
+  test('instalado na tela de início, quem só tem Treino não vê a seta e não sai do escopo do app', async ({
+    page,
+  }) => {
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, 'standalone', { value: true, configurable: true }),
+    );
+    await installFakeEventSource(page);
+    signInAsGuest(TRAINING_ONLY);
+    await openTraining(page, '/treino');
+
+    const header = page.locator('.training-header');
+    await expect(header.getByRole('link', { name: /^Voltar/ })).toHaveCount(0);
+    await expect(header.locator('a[href="/"]')).toHaveCount(0);
+    await expect(gear(page)).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
   });
 
   test('quem só tem Treino não vê a troca de módulos', async ({ page }) => {
@@ -303,8 +327,8 @@ test.describe('convidado sem nenhum módulo liberado', () => {
       await expect(page).toHaveURL(/\/$/);
       await expect(page.locator('article.card h3')).toHaveText([
         'Controle do PC',
-        'Rede da casa',
-        'Backup de fotos',
+        'Rede da Casa',
+        'Backup de Fotos',
       ]);
     }
     await expect(page.locator('article.card a')).toHaveCount(0);

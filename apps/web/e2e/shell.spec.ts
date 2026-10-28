@@ -13,10 +13,10 @@ const agentIndicator = (page: Page) => page.locator('.agent-status');
 const blocks = (page: Page) => page.locator('article.card');
 // TV e Treino, que já têm tela, e os seis planejados, que aparecem como "Em breve".
 const PLANNED = [
-  'Saúde e eventos',
-  'Monitor dos serviços',
-  'Rede da casa',
-  'Backup de fotos',
+  'Saúde e Eventos',
+  'Monitor dos Serviços',
+  'Rede da Casa',
+  'Backup de Fotos',
   'Avisos',
   'Controle do PC',
 ];
@@ -65,15 +65,16 @@ test.describe('início e navegação', () => {
     const planned = page.locator('article.card.planned');
     await expect(planned.locator('h3')).toHaveText(PLANNED);
     await expect(planned.locator('a, button, [tabindex]')).toHaveCount(0);
-    await expect(planned.locator('.badges')).toHaveText(PLANNED.map(() => 'Em breve'));
+    // O rótulo fica embaixo do nome, dentro do cartão, e o cartão é vazado com borda tracejada.
+    await expect(planned.locator('app-home-soon-badge')).toHaveText(PLANNED.map(() => 'Em Breve'));
+    await expect(planned.locator('h3 + app-home-soon-badge')).toHaveCount(PLANNED.length);
+    await expect(page.locator('article .badges')).toHaveCount(0);
     await expect(page.locator('article .desc')).toHaveCount(0);
-    expect(
-      await planned
-        .locator('.badges')
-        .evaluateAll((badges) =>
-          badges.every((badge) => badge.parentElement?.matches('article.card')),
-        ),
-    ).toBe(true);
+    for (const card of await planned.all()) {
+      await expect(card).toHaveCSS('border-top-style', 'dashed');
+      await expect(card).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    }
+    await expect(page.locator('article[data-module="tv"]')).toHaveCSS('border-top-style', 'solid');
     // Só TV e Treino levam a algum lugar.
     await expect(page.locator('article.card a')).toHaveCount(2);
 
@@ -88,6 +89,60 @@ test.describe('início e navegação', () => {
       );
     }
     expect(stops.filter((id) => id && !['tv', 'training'].includes(id))).toEqual([]);
+  });
+
+  test('TV e Treino ficam lado a lado, no mesmo tamanho, mesmo com um tamanho largo salvo', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('uniover.account-id', 'u1');
+      localStorage.setItem(
+        'uniover.home.widgets.v1.u1',
+        JSON.stringify([
+          { id: 'training', size: 'wide', enabled: true },
+          { id: 'tv', size: 'small', enabled: true },
+        ]),
+      );
+    });
+    await page.goto('/');
+    await expect(blocks(page)).toHaveCount(MODULE_COUNT);
+    await settle(page); // fim da entrada em cascata dos cartões
+    const training = (await page.locator('article[data-module="training"]').boundingBox())!;
+    const tv = (await page.locator('article[data-module="tv"]').boundingBox())!;
+    expect(Math.abs(training.y - tv.y)).toBeLessThan(1);
+    expect(training.width).toBeCloseTo(tv.width, 1);
+    expect(training.height).toBeCloseTo(tv.height, 1);
+    expect(training.x).not.toBeCloseTo(tv.x, 0);
+  });
+
+  test('centraliza o último cartão ímpar do dono sem mudar sua largura', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('uniover.account-id', 'u1'));
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Editar', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Personalizar' });
+    await sheet.locator('li', { hasText: 'Controle do PC' }).getByRole('switch').uncheck();
+    await sheet.getByRole('button', { name: 'Aplicar', exact: true }).click();
+
+    const cards = blocks(page);
+    await expect(cards).toHaveCount(MODULE_COUNT - 1);
+    const grid = (await page.locator('.grid').boundingBox())!;
+    const first = (await cards.first().boundingBox())!;
+    const last = (await cards.last().boundingBox())!;
+    expect(last.width).toBeCloseTo(first.width, 1);
+    expect(Math.abs(last.x + last.width / 2 - (grid.x + grid.width / 2))).toBeLessThan(1);
+  });
+
+  test('Personalizar abre a folha, não deixa atalhos antigos na Início e fecha com Esc', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await expect(page.locator('.shortcuts')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Editar', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Personalizar' });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Voltar ao Padrão' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
   });
 
   test('segue o tema escuro do sistema', async ({ page }) => {
@@ -147,14 +202,14 @@ test.describe('início e navegação', () => {
     await expect(titles).toHaveText(['TV', 'Treino', ...PLANNED]);
 
     await page.getByRole('button', { name: 'Editar' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Editar a Início' });
+    const sheet = page.getByRole('dialog', { name: 'Personalizar' });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByRole('button', { name: /fechar|close/i })).toHaveCount(0);
     await settle(page); // fim da animação de subida
     await screenshot(page, `test-results/sheet-${info.project.name}.png`);
     await expectNoSeriousA11yViolations(page);
 
-    await sheet.getByRole('heading', { name: 'Editar a Início' }).click();
+    await sheet.getByRole('heading', { name: 'Personalizar' }).click();
     await sheet.click({ position: { x: 1, y: 1 } }); // espaço interno da folha
     await expect(sheet).toBeVisible();
     await page.mouse.click(4, 4); // fora do retângulo da folha
@@ -191,9 +246,9 @@ test.describe('início e navegação', () => {
 
     // Um módulo em breve também pode ser ocultado.
     await page.getByRole('button', { name: 'Editar' }).click();
-    await sheet.locator('li', { hasText: 'Rede da casa' }).getByRole('switch').uncheck();
+    await sheet.locator('li', { hasText: 'Rede da Casa' }).getByRole('switch').uncheck();
     await sheet.getByRole('button', { name: 'Aplicar' }).click();
-    await expect(titles).toHaveText(['TV', ...PLANNED.filter((name) => name !== 'Rede da casa')]);
+    await expect(titles).toHaveText(['TV', ...PLANNED.filter((name) => name !== 'Rede da Casa')]);
   });
 
   for (const scheme of ['light', 'dark'] as const) {

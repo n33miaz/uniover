@@ -1401,10 +1401,10 @@ async function openTvAsGuest(page: Page) {
   await settle(page);
 }
 
-const settingsButton = (page: Page) => header(page).getByRole('link', { name: 'Ajustes' });
+const settingsButton = (page: Page) => header(page).getByRole('link', { name: 'Configurações' });
 
-test.describe('cabeçalho da convidada: botão redondo de configurações no lugar da seta', () => {
-  test('é um círculo de 44 px do mesmo visual da seta, no canto esquerdo, e o nome segue no meio', async ({
+test.describe('cabeçalho da convidada: seta de volta à Início e botão redondo de configurações', () => {
+  test('a seta e a engrenagem são círculos de 44 px do mesmo visual, à esquerda, e o nome segue no meio', async ({
     page,
   }, info) => {
     await openTvAsGuest(page);
@@ -1412,9 +1412,9 @@ test.describe('cabeçalho da convidada: botão redondo de configurações no lug
     await expect(gear).toBeVisible();
     await expect(gear).toHaveText('');
     await expect(gear).toHaveAttribute('href', '/ajustes');
-    // Sem Início para a convidada: nada de seta de voltar.
-    await expect(header(page).getByRole('link', { name: 'Voltar ao Início' })).toHaveCount(0);
-    await expect(page.locator('a[href="/"]')).toHaveCount(0);
+    // A convidada volta à Início pela mesma seta do dono, antes da engrenagem.
+    const back = header(page).getByRole('link', { name: 'Voltar ao Início' });
+    await expect(back).toHaveAttribute('href', '/');
 
     // O desenho é o traço da seta (2,2, pontas redondas, 22 px) e é decorativo.
     const svg = await gear.locator('svg').evaluate((el) => ({
@@ -1434,7 +1434,7 @@ test.describe('cabeçalho da convidada: botão redondo de configurações no lug
     });
     expect(svg.paths).toBeGreaterThan(0);
 
-    for (const target of [gear, menuButton(page), powerButton(page)]) {
+    for (const target of [back, gear, menuButton(page), powerButton(page)]) {
       const size = await box(target);
       expect(size.width).toBeCloseTo(44, 0);
       expect(size.height).toBeCloseTo(44, 0);
@@ -1450,11 +1450,18 @@ test.describe('cabeçalho da convidada: botão redondo de configurações no lug
         };
       });
     expect(await style(gear)).toEqual(await style(menuButton(page)));
+    expect(await style(back)).toEqual(await style(gear));
 
-    // Na ponta esquerda do cabeçalho (onde a seta ficaria), antes do nome, e o nome no meio da TELA.
+    // A seta na ponta esquerda do cabeçalho, a engrenagem logo depois e antes do nome; o nome no meio da TELA.
     const head = await box(header(page));
+    const arrow = await box(back);
+    expect(Math.abs(arrow.x - head.x)).toBeLessThanOrEqual(1);
     const place = await box(gear);
-    expect(Math.abs(place.x - head.x)).toBeLessThanOrEqual(1);
+    expect(
+      place.x - (arrow.x + arrow.width),
+      'a engrenagem logo depois da seta',
+    ).toBeGreaterThanOrEqual(4);
+    expect(place.x - (arrow.x + arrow.width), 'e perto dela').toBeLessThanOrEqual(10);
     const viewport = await page.evaluate(() => window.innerWidth);
     const title = await box(header(page).locator('h1'));
     expect(
@@ -1532,7 +1539,7 @@ test.describe('cabeçalho da convidada: botão redondo de configurações no lug
       await openTvAsGuest(page);
       await expectNoA11yViolations(page);
       expect(
-        (await smallTargets(page)).filter((found) => found.includes('Ajustes')),
+        (await smallTargets(page)).filter((found) => found.includes('Configurações')),
         'o botão de configurações tem 44 px',
       ).toEqual([]);
       await screenshot(page, `test-results/tv-header-guest-${scheme}-${info.project.name}.png`);

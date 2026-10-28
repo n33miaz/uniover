@@ -271,7 +271,7 @@ for (const scheme of ['light', 'dark'] as const) {
       const header = page.locator('.training-header');
       await expect(header.getByRole('heading', { name: 'Treino' })).toBeVisible();
       await expect(header.locator('.back svg path')).toHaveCount(1);
-      await expect(header.getByRole('link', { name: 'Ajustes' })).toBeVisible();
+      await expect(header.getByRole('link', { name: 'Configurações' })).toBeVisible();
       await expect(header.locator('.status')).toBeVisible();
       const titleBox = await header.getByRole('heading').boundingBox();
       const statusBox = await header.locator('.status').boundingBox();

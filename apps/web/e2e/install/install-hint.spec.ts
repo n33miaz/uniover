@@ -604,9 +604,9 @@ test.describe('modo native: o botão Instalar', () => {
         () => (window as unknown as { __installPrompted?: boolean }).__installPrompted,
       ),
     ).toBe(true);
-    // Aceito: o pedido do navegador valeu uma vez e a linha de Ajustes some. A navegação é por dentro do app: recarregar
+    // Aceito: o pedido do navegador valeu uma vez e a linha de Configurações some. A navegação é por dentro do app: recarregar
     // a página faria o script de teste disparar o pedido de novo, o que um navegador real não faz depois de instalar.
-    await page.getByRole('link', { name: /Ajustes/ }).click();
+    await page.getByRole('link', { name: 'Configurações', exact: true }).click();
     await page.getByRole('link', { name: /^Aparência/ }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Aparência' })).toBeVisible();
     await expect(rowOf(page)).toHaveCount(0);

@@ -49,6 +49,20 @@ async function openHome(page: Page, scheme: Scheme) {
 }
 
 const indicator = (page: Page) => page.locator('.agent-status');
+
+/** A bolinha é sempre um círculo (largura igual à altura e raio de pelo menos metade), em qualquer estado. */
+async function expectCircle(page: Page) {
+  const shape = await indicator(page).evaluate((dot) => {
+    const style = getComputedStyle(dot);
+    const radius = style.borderTopLeftRadius;
+    const { width, height } = dot.getBoundingClientRect();
+    const half = radius.endsWith('%') ? parseFloat(radius) >= 50 : parseFloat(radius) >= width / 2;
+    return { width, height, half };
+  });
+  expect(shape.width).toBeGreaterThan(0);
+  expect(shape.width).toBe(shape.height);
+  expect(shape.half).toBe(true);
+}
 const stateReads = () =>
   tv.requests.filter((request) => request.method === 'GET' && request.path === '/state').length;
 
@@ -65,9 +79,10 @@ test.describe('Início: estado real da casa', () => {
       await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
       await expect(indicator(page)).toHaveAttribute('title', 'Agente ligado');
       await expect(indicator(page)).toHaveClass(/\bok\b/);
+      await expectCircle(page);
 
       const tvCard = page.locator('article[data-module="tv"]');
-      await expect(tvCard.locator('.badges')).toHaveText('');
+      await expect(tvCard.locator('app-home-soon-badge')).toHaveCount(0);
       await expect(tvCard.locator('.desc, .card-action')).toHaveCount(0);
       await expect(tvCard.locator('a.card-link')).toHaveAttribute(
         'aria-label',
@@ -94,6 +109,7 @@ test.describe('Início: estado real da casa', () => {
       await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente desligado');
       await expect(indicator(page)).toHaveAttribute('title', 'Agente desligado');
       await expect(indicator(page)).toHaveClass(/\bwarn\b/);
+      await expectCircle(page);
       await settle(page);
       await expectNoHorizontalScroll(page);
       await screenshot(page, printPath(info, 'agent-off', scheme));
@@ -102,15 +118,13 @@ test.describe('Início: estado real da casa', () => {
     });
   }
 
-  test('sem dados, a bolinha usa um estado neutro com texto acessível', async ({
-    context,
-    page,
-  }) => {
+  test('sem resposta, a bolinha avisa sem texto visível', async ({ context, page }) => {
     await context.route('**/api/v1/tv/state', (route) => route.abort('connectionrefused'));
     await openHome(page, 'light');
-    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente sem dados');
-    await expect(indicator(page)).toHaveAttribute('title', 'Agente sem dados');
-    await expect(indicator(page)).toHaveClass(/\bneutral\b/);
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente sem resposta');
+    await expect(indicator(page)).toHaveAttribute('title', 'Agente sem resposta');
+    await expect(indicator(page)).toHaveClass(/\bwarn\b/);
+    await expectCircle(page);
     await expect(page.locator('.chips')).toHaveCount(0);
   });
 

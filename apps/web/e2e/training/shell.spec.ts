@@ -161,7 +161,7 @@ test.describe('casca do Treino', () => {
     await page.goto('/');
     const card = page.locator('article[data-module="training"]');
     await expect(card).toBeVisible();
-    await expect(card.locator('.badges')).not.toContainText('Em breve');
+    await expect(card).not.toContainText('Em Breve');
     await card.getByRole('link', { name: 'Ver treino' }).click();
     await expect(page).toHaveURL(/\/treino$/);
     await expect(page.locator('app-training-page')).toBeVisible();

@@ -1,7 +1,7 @@
 import { ChildProcess, spawn } from 'node:child_process';
 import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { Page } from '@playwright/test';
+import { BrowserContext, Page } from '@playwright/test';
 import { expect, screenshot, test, waitForServiceWorkerControl } from '../fixtures';
 
 /**
@@ -366,5 +366,78 @@ test.describe('atualização quando o worker novo demora ou é substituído', ()
     // O toque deixa a página sob o worker mais novo: nada esperando e nenhum aviso de versão.
     await expect(banner(page)).toHaveCount(0);
     await expect.poll(async () => (await registrationState(page)).waiting).toBeNull();
+  });
+});
+
+/**
+ * Abertura com a conexão ruim (sem atualização): o guarda de entrada espera a sessão e a conta antes de a Início existir,
+ * e nesse intervalo só havia o fundo vazio. Agora o esqueleto da Início cobre a espera, brilha com a mesma animação do resto
+ * do app e sai quando a tela chega, sem nenhum quadro vazio entre os dois.
+ */
+test.describe('abertura lenta', () => {
+  /** Anima o esqueleto? Nome de cada animação em andamento nos ossos (o brilho comum ou, em movimento reduzido, a pulsação). */
+  const boneAnimations = (page: Page) =>
+    page.evaluate(() =>
+      Array.from(document.querySelectorAll('app-update-skeleton .overlay .bone')).flatMap((bone) =>
+        bone
+          .getAnimations()
+          .filter((animation) => animation.playState === 'running')
+          .map((animation) => (animation as CSSAnimation).animationName),
+      ),
+    );
+
+  async function slowOpen(page: Page, context: BrowserContext) {
+    await context.addInitScript(() => {
+      const state = window as unknown as { __blankFrames: number };
+      state.__blankFrames = 0;
+      const startedAt = performance.now();
+      // Passado o instante em que o esqueleto já deveria estar de pé, nenhum quadro pode ficar sem ele e sem a Início.
+      const tick = () => {
+        const covered = !!document.querySelector('app-update-skeleton .overlay');
+        const home = !!document.querySelector('article.card');
+        if (performance.now() - startedAt > 700 && !covered && !home) state.__blankFrames++;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await setControl('/owner?on=1');
+    // Cada pedido à API leva 2 s (a sessão e a conta): a primeira tela só sai depois do teto do guarda.
+    await setControl('/api-delay?ms=2000');
+    await page.goto(`${origin}/`);
+  }
+
+  test('a espera da primeira tela mostra o esqueleto animado e termina na Início, sem quadro vazio', async ({
+    page,
+    context,
+  }, info) => {
+    await slowOpen(page, context);
+    await expect(skeleton(page)).toBeVisible({ timeout: 3_000 });
+    await expect.poll(() => boneAnimations(page)).toContain('ui-shimmer');
+    // Uma animação só: nenhum osso usa outro brilho (o da atualização já foi o "diferente" que o dono estranhou).
+    expect(new Set(await boneAnimations(page))).toEqual(new Set(['ui-shimmer']));
+    if (info.project.name === 'iphone-12')
+      await screenshot(page, 'test-results/slow-open-skeleton-iphone-12.png');
+
+    await expect(homeCards(page).first()).toBeVisible({ timeout: 20_000 });
+    await expect(skeleton(page)).toHaveCount(0, { timeout: 5_000 });
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Bom dia|Boa tarde|Boa noite/);
+    expect(
+      await page.evaluate(() => (window as never as { __blankFrames: number }).__blankFrames),
+    ).toBe(0);
+  });
+
+  test('com movimento reduzido a espera pulsa em vez de ficar parada', async ({
+    page,
+    context,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await slowOpen(page, context);
+    await expect(skeleton(page)).toBeVisible({ timeout: 3_000 });
+    await expect.poll(() => boneAnimations(page)).toContain('ui-pulse');
+    // Nada corre pela tela: só a opacidade muda.
+    expect(await boneAnimations(page)).not.toContain('ui-shimmer');
+
+    await expect(homeCards(page).first()).toBeVisible({ timeout: 20_000 });
+    await expect(skeleton(page)).toHaveCount(0, { timeout: 5_000 });
   });
 });
