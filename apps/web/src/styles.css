@@ -49,6 +49,18 @@
   /* Tamanho mínimo de toque. */
   --tap: 44px;
 
+  /*
+   * Área segura de baixo, num lugar só. `--safe-inset` é o que o aparelho informa (home indicator do iPhone, barra de
+   * gestos do Android quando o app ocupa a tela toda); `--safe-floor` é um piso para Android com barra de gestos que
+   * não informa nada (inset 0) e deixaria o botão colado na borda. Todo rodapé, folha, aviso e botão fixo embaixo usa
+   * `--safe-bottom`, nunca `env(safe-area-inset-bottom)` solto. `--kb-inset` é quanto o teclado virtual cobre da
+   * janela (posto por `watchKeyboardInset`; 0 quando o navegador já encolhe a página sozinho).
+   */
+  --safe-inset: env(safe-area-inset-bottom, 0px);
+  --safe-floor: 0px;
+  --safe-bottom: max(var(--safe-inset), var(--safe-floor));
+  --kb-inset: 0px;
+
   /* Movimento: curtos, sem rebote; quem tem `prefers-reduced-motion` cai no estado final. */
   --ease-out: cubic-bezier(0.22, 0.8, 0.24, 1);
   --dur-fast: 120ms;
@@ -228,9 +240,16 @@ a {
   outline-offset: 2px;
 }
 
+/* No app instalado (sem barra do navegador) o Android com gestos não informa inset: garante respiro mínimo. */
+@media (display-mode: standalone) and (pointer: coarse) {
+  :root {
+    --safe-floor: 8px;
+  }
+}
+
 main {
   padding: var(--gutter);
-  padding-bottom: calc(var(--gutter) + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--gutter) + var(--safe-bottom));
 }
 
 /*

@@ -1,3 +1,4 @@
+import { DOCUMENT } from '@angular/common';
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import {
   ApplicationConfig,
@@ -13,6 +14,7 @@ import { idempotencyInterceptor } from './core/api/idempotency.interceptor';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { AuthService } from './core/auth/auth.service';
 import { connectivityInterceptor } from './core/connectivity/connectivity.interceptor';
+import { watchKeyboardInset } from './core/layout/keyboard-inset';
 import { ChunkAwareErrorHandler, recoverFromChunkNavigationError } from './core/pwa/chunk-error';
 import { InstallHintService } from './core/pwa/install-hint.service';
 import { ModuleHeadService } from './core/pwa/module-head.service';
@@ -40,6 +42,11 @@ export const appConfig: ApplicationConfig = {
     provideAppInitializer(() => inject(PwaUpdateService).start()),
     // Guarda o pedido de instalação do navegador (Chromium o entrega uma vez, cedo, antes de a sessão confirmar).
     provideAppInitializer(() => inject(InstallHintService).start()),
+    // Mantém --kb-inset (teclado virtual) para os rodapés fixos subirem junto.
+    provideAppInitializer(() => {
+      const doc = inject(DOCUMENT);
+      if (doc.defaultView) watchKeyboardInset(doc.defaultView, doc.documentElement);
+    }),
     // Acerta manifest, ícone e nome do <head> pelo módulo aberto (o servidor só os escolhe ao entregar a página).
     provideAppInitializer(() => inject(ModuleHeadService).start()),
     // Confirma a sessão pelo cookie de refresh sem segurar a primeira tela (o guarda espera, com limite de tempo).
