@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.0](https://github.com/n33miaz/uniover/compare/v0.7.0...v0.8.0) (2026-10-28)
+
+
+### Features
+
+* **training:** store full body measurements
+* **training:** measure both sides of the body
+* **training:** body map inside the body tab
+
 ## [0.7.0](https://github.com/n33miaz/uniover/compare/v0.6.0...v0.7.0) (2026-10-28)
 
 
