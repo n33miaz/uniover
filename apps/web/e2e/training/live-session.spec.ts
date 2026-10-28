@@ -104,6 +104,45 @@ test.describe('primeira parte do exercício', () => {
     await expectNoHorizontalScroll(page);
   });
 
+  test('os botões − e + e o Concluir Série têm 56 px ou mais, até no instante depois do toque, e a ilustração segue o maior elemento da primeira tela', async ({
+    page,
+    context,
+  }) => {
+    await launch(context, page);
+    await openToday(page);
+    await beginWorkout(page);
+
+    // O tamanho de layout (sem transformação) e o da caixa visível logo depois de tocar, sem esperar a transição.
+    for (const name of [
+      'Aumentar a carga',
+      'Diminuir a carga',
+      'Aumentar as repetições',
+      'Diminuir as repetições',
+    ]) {
+      const button = page.getByRole('button', { name, exact: true });
+      await button.click();
+      const visible = (await button.boundingBox())!;
+      expect(Math.min(visible.width, visible.height), name).toBeGreaterThanOrEqual(56);
+      const layout = await button.evaluate((node) => [
+        (node as HTMLElement).offsetWidth,
+        (node as HTMLElement).offsetHeight,
+      ]);
+      expect(Math.min(...layout), name).toBeGreaterThanOrEqual(56);
+    }
+    const go = (await page.getByRole('button', { name: 'Concluir Série' }).boundingBox())!;
+    expect(Math.min(go.width, go.height)).toBeGreaterThanOrEqual(56);
+
+    // Na primeira dobra do iPhone 12 a ilustração é o maior elemento (por área).
+    const area = async (selector: string) => {
+      const found = (await box(page, selector))!;
+      return found.width * found.height;
+    };
+    const art = await area('.art');
+    for (const other of ['.setcard', '.top', '.focus', '.dock']) {
+      expect(art, other).toBeGreaterThan(await area(other));
+    }
+  });
+
   test('esforço, última vez, anotação e aquecimento ficam recolhidos ou abaixo da primeira tela', async ({
     page,
     context,
