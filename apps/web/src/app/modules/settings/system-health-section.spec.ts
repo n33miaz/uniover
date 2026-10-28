@@ -39,18 +39,40 @@ describe('SystemHealthSection', () => {
 
   afterEach(() => localStorage.clear());
 
-  it('shows the existing agent, television and deployment readings together', async () => {
+  it('shows agent, television, API and version as four readings', async () => {
     const session = TestBed.inject(SessionState);
     session.setToken('t', 600);
     session.setUser({ id: '1', email: 'a@b.c', displayName: 'Dono', role: 'owner' });
     const fixture = TestBed.createComponent(SystemHealthSection);
     await fixture.whenStable();
     fixture.detectChanges();
-    const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('PC da sala');
-    expect(text).toContain('Agente on-line');
-    expect(text).toContain('TV da sala: on-line');
-    expect(text).toContain('API abc1234');
+    const metrics = Array.from<HTMLElement>(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.metric'),
+    );
+    expect(metrics).toHaveLength(4);
+    expect(metrics[0].textContent).toContain('Agente');
+    expect(metrics[0].textContent).toContain('Ligado');
+    expect(metrics[0].textContent).toContain('PC da sala');
+    expect(metrics[1].textContent).toContain('TV');
+    expect(metrics[1].textContent).toContain('On-line');
+    expect(metrics[1].textContent).toContain('TV da sala');
+    expect(metrics[2].textContent).toContain('API');
+    expect(metrics[2].textContent).toContain('OK');
+    expect(metrics[3].textContent).toContain('abc1234');
+  });
+
+  it('shortens a full commit identifier to seven characters in the version reading', async () => {
+    system.deploymentVersion.mockResolvedValue({
+      commit: 'abcdef0123456789abcdef0123456789abcdef01',
+    });
+    const session = TestBed.inject(SessionState);
+    session.setToken('t', 600);
+    session.setUser({ id: '1', email: 'a@b.c', displayName: 'Dono', role: 'owner' });
+    const fixture = TestBed.createComponent(SystemHealthSection);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const version = (fixture.nativeElement as HTMLElement).querySelectorAll('.metric')[3];
+    expect(version.querySelector('strong')?.textContent?.trim()).toBe('abcdef0');
   });
 
   it('does not request health data for a guest', async () => {

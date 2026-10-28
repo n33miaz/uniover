@@ -120,21 +120,38 @@ test.describe('Configurações > Sistema > TVs', () => {
     seedPaired();
     await preparePasskey(page, browserName);
     await open(page);
-    await expect(page.getByLabel('Computadores por convidado')).toHaveValue('2');
+    await expect(page.getByLabel('Computadores por Convidado')).toHaveValue('2');
     await expect(page.getByText('do servidor').first()).toBeVisible();
-    await page.getByLabel('Computadores por convidado').fill('4');
-    await page.getByRole('button', { name: 'Salvar limite' }).click();
+    await page.getByLabel('Computadores por Convidado').fill('4');
+    await page.getByRole('button', { name: 'Salvar Limite' }).click();
     if (browserName === 'chromium') {
       const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
       await expect(dialog).toBeVisible();
       await dialog.getByRole('button', { name: 'Confirmar' }).click();
     }
     await expect(page.getByText('Configuração salva.')).toBeVisible();
-    await expect(page.getByLabel('Computadores por convidado')).toHaveValue('4');
+    await expect(page.getByLabel('Computadores por Convidado')).toHaveValue('4');
     expect(system.settings.find((item) => item.key === 'devices.max-per-guest')).toMatchObject({
       value: 4,
       source: 'app',
     });
+  });
+
+  test('mostra o estado do bucket de fotos e só deixa ligar quando ele está pronto', async ({
+    page,
+  }) => {
+    seedPaired();
+    await open(page);
+    await expect(page.getByText('Bucket pronto no servidor.')).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Fotos na Nuvem' })).toBeEnabled();
+  });
+
+  test('sem bucket no servidor, avisa e trava o interruptor de fotos', async ({ page }) => {
+    seedPaired();
+    system.bucketConfigured = false;
+    await open(page);
+    await expect(page.getByText(/ainda não configurado no servidor/)).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Fotos na Nuvem' })).toBeDisabled();
   });
 
   test('a linha Sistema da lista leva à tela', async ({ page }) => {

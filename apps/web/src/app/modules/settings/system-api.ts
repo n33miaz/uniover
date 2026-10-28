@@ -68,6 +68,11 @@ export interface SystemSettingValue {
   readonly source: 'app' | 'server';
 }
 
+/** Se o servidor já tem o bucket de fotos completo (nunca traz endereço nem credenciais). */
+export interface PhotoBucketStatus {
+  readonly configured: boolean;
+}
+
 /** Um computador pareado, só o que a leitura de saúde mostra (o módulo de dispositivos tem o tipo completo). */
 export interface HealthAgent {
   readonly id: string;
@@ -117,6 +122,10 @@ export class SystemApi {
 
   systemSettings(): Promise<SystemSettingValue[]> {
     return firstValueFrom(this.http.get<SystemSettingValue[]>(SETTINGS_BASE));
+  }
+
+  photoBucket(): Promise<PhotoBucketStatus> {
+    return firstValueFrom(this.http.get<PhotoBucketStatus>(`${SETTINGS_BASE}/photo-bucket`));
   }
 
   /** Os computadores pareados e o estado de cada um (só o administrador). */

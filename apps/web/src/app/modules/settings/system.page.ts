@@ -30,6 +30,8 @@ export class SystemPage {
   protected readonly limit = signal(2);
   protected readonly offlineMinutes = signal(10);
   protected readonly photos = signal(false);
+  /** Se o bucket do servidor está completo; `null` enquanto não se sabe (ou se a leitura falhou). */
+  protected readonly bucketConfigured = signal<boolean | null>(null);
   protected readonly lightCleanup = signal(true);
   protected readonly deepCleanup = signal(true);
   protected readonly deepCleanupThreshold = signal(160);
@@ -81,7 +83,22 @@ export class SystemPage {
       this.error.set(
         $localize`:@@settings.system.config.load-error:Não foi possível carregar as configurações.`,
       );
+      return;
     }
+    // Só informativo: se a leitura falhar, a tela segue sem a linha de estado (o servidor ainda recusa ligar sem bucket).
+    try {
+      this.bucketConfigured.set((await this.api.photoBucket()).configured === true);
+    } catch {
+      this.bucketConfigured.set(null);
+    }
+  }
+
+  protected bucketStatus(): string | null {
+    const configured = this.bucketConfigured();
+    if (configured === null) return null;
+    return configured
+      ? $localize`:@@settings.system.config.bucket-ready:Bucket pronto no servidor.`
+      : $localize`:@@settings.system.config.bucket-not-ready:Bucket ainda não configurado no servidor. Configure-o antes de ligar as fotos.`;
   }
 
   protected setting(key: SystemSettingKey): SystemSettingValue | undefined {

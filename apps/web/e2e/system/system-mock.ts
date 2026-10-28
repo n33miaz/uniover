@@ -24,6 +24,8 @@ export interface SystemMock {
   /** Quantas leituras seguintes respondem 500 (para o estado de erro e o "Tentar de novo"). */
   failReads: number;
   settings: { key: string; value: string | number | boolean; source: 'app' | 'server' }[];
+  /** Se o servidor tem o bucket de fotos completo (a tela mostra o estado e trava o interruptor sem ele). */
+  bucketConfigured: boolean;
 }
 
 const PROBLEM_BASE = 'https://uniover.app/problems/';
@@ -81,6 +83,7 @@ export async function mockSystemApi(
     current: null,
     source: 'none',
     failReads: 0,
+    bucketConfigured: true,
     settings: [
       { key: 'training.off-contact', value: 'foods@example.test', source: 'server' },
       { key: 'devices.max-per-guest', value: 2, source: 'server' },
@@ -96,6 +99,12 @@ export async function mockSystemApi(
       return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
     if (identity.role !== 'owner') return route.fulfill({ status: 403 });
     const path = new URL(request.url()).pathname;
+    if (request.method() === 'GET' && path.endsWith('/photo-bucket'))
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ configured: mock.bucketConfigured }),
+      });
     if (request.method() === 'GET')
       return route.fulfill({
         status: 200,
@@ -126,6 +135,26 @@ export async function mockSystemApi(
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(setting),
+    });
+  });
+
+  // A leitura de saúde lista os computadores pareados: o mesmo conjunto da configuração da TV.
+  await context.route('**/api/v1/devices/agents', async (route) => {
+    if (identity.offline) return route.abort('internetdisconnected');
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        mock.computers
+          .filter((computer) => !computer.revoked)
+          .map((computer, index) => ({
+            id: `00000000-0000-4000-8000-00000000010${index}`,
+            slug: computer.slug,
+            name: computer.name,
+            connected: computer.online,
+            lastSeenAt: '2026-10-28T09:00:00Z',
+          })),
+      ),
     });
   });
 

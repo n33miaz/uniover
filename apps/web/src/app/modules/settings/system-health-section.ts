@@ -18,10 +18,6 @@ export class SystemHealthSection {
   protected readonly tvs = signal<readonly TvItem[] | null>(null);
   protected readonly commit = signal<string | null>(null);
   protected readonly failed = signal(false);
-  private readonly contactFormat = new Intl.DateTimeFormat('pt-BR', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  });
 
   constructor() {
     effect(() => {
@@ -51,30 +47,62 @@ export class SystemHealthSection {
     }
   }
 
-  protected agentState(agent: HealthAgent): string {
-    return agent.connected
-      ? $localize`:@@settings.system.health.agent-online:Agente on-line`
-      : $localize`:@@settings.system.health.agent-offline:Agente off-line`;
+  protected agentMetric(): string {
+    const list = this.agents() ?? [];
+    if (list.length === 0) return $localize`:@@settings.system.health.agent-none:Nenhum agente`;
+    const connected = list.filter((agent) => agent.connected).length;
+    return connected === list.length
+      ? $localize`:@@settings.system.health.agent-ready:Ligado`
+      : connected === 0
+        ? $localize`:@@settings.system.health.agent-down:Off-line`
+        : $localize`:@@settings.system.health.agent-partial:${connected}:count: de ${list.length}:total: ligados`;
   }
 
-  protected lastSeen(agent: HealthAgent): string {
-    return agent.lastSeenAt
-      ? $localize`:@@settings.system.health.last-seen:Visto em ${this.contactFormat.format(new Date(agent.lastSeenAt))}:date:`
-      : $localize`:@@settings.system.health.never-seen:Sem contato registrado`;
+  protected agentDetail(): string {
+    const list = this.agents() ?? [];
+    return list.length === 1
+      ? list[0].name
+      : $localize`:@@settings.system.health.agent-count:${list.length}:count: computadores`;
   }
 
-  protected tvState(agent: HealthAgent): string {
-    const tv = this.tvs()?.find((item) => item.agentSlug === agent.slug);
-    if (!tv) return $localize`:@@settings.system.health.no-tv:Nenhuma TV vinculada`;
-    return tv.online
-      ? $localize`:@@settings.system.health.tv-online:${tv.name}:name:: on-line`
-      : $localize`:@@settings.system.health.tv-offline:${tv.name}:name:: sem conexão`;
+  protected tvMetric(): string {
+    const list = this.tvs() ?? [];
+    if (list.length === 0) return $localize`:@@settings.system.health.tv-none:Nenhuma TV`;
+    const online = list.filter((tv) => tv.online).length;
+    return online === list.length
+      ? $localize`:@@settings.system.health.tv-ready:On-line`
+      : online === 0
+        ? $localize`:@@settings.system.health.tv-down:Sem conexão`
+        : $localize`:@@settings.system.health.tv-partial:${online}:count: de ${list.length}:total: on-line`;
   }
 
-  protected apiVersion(): string {
-    const commit = this.commit();
-    return commit
-      ? $localize`:@@settings.system.health.version:API ${commit}:commit:`
-      : $localize`:@@settings.system.health.version-unknown:Versão da API indisponível`;
+  protected tvDetail(): string {
+    const list = this.tvs() ?? [];
+    return list.length === 1
+      ? list[0].name
+      : $localize`:@@settings.system.health.tv-count:${list.length}:count: TVs`;
+  }
+
+  protected apiMetric(): string {
+    return $localize`:@@settings.system.health.api-ready:OK`;
+  }
+
+  protected agentTone(): 'ok' | 'bad' | '' {
+    const list = this.agents() ?? [];
+    if (list.length === 0) return '';
+    const connected = list.filter((agent) => agent.connected).length;
+    return connected === list.length ? 'ok' : connected === 0 ? 'bad' : '';
+  }
+
+  protected tvTone(): 'ok' | 'bad' | '' {
+    const list = this.tvs() ?? [];
+    if (list.length === 0) return '';
+    const online = list.filter((tv) => tv.online).length;
+    return online === list.length ? 'ok' : online === 0 ? 'bad' : '';
+  }
+
+  protected versionMetric(): string {
+    // O identificador completo do commit não cabe no cartão: os sete primeiros caracteres bastam para reconhecê-lo.
+    return this.commit()?.slice(0, 7) ?? $localize`:@@settings.system.health.version-none:—`;
   }
 }
