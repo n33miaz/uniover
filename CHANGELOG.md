@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.18.0](https://github.com/n33miaz/uniover/compare/v0.17.0...v0.18.0) (2026-10-28)
+
+
+### Features
+
+* **web:** home top, cards and customize
+* **web:** guest home and one back
+
+
+### Bug Fixes
+
+* **web:** animated skeleton on slow open
+
 ## [0.17.0](https://github.com/n33miaz/uniover/compare/v0.16.0...v0.17.0) (2026-10-28)
 
 
