@@ -149,6 +149,17 @@ def next_variant(files: dict[str, bytes]) -> dict[str, bytes]:
     return {**files, f"{AGENT_REL}/DRILL-NEXT.txt": b"candidata seguinte do ensaio\n"}
 
 
+def offline_variant(files: dict[str, bytes]) -> dict[str, bytes]:
+    """A mesma candidata com outro conteúdo (outro commit), para a fase sem acesso ao índice."""
+    return {**files, f"{AGENT_REL}/DRILL-OFFLINE.txt": b"candidata sem acesso ao indice\n"}
+
+
+def lock_packages(lock: bytes) -> set[str]:
+    """Nomes dos pacotes de um `uv.lock` (o que um sync precisa ter em mãos)."""
+    text = lock.decode("utf-8", errors="replace")
+    return set(re.findall(r'^name = "([^"]+)"', text, re.MULTILINE))
+
+
 def broken_variant(files: dict[str, bytes]) -> dict[str, bytes]:
     """Candidata que não importa: `main.py` levanta erro ao ser carregado."""
     return {**files, MAIN_REL: files[MAIN_REL] + b"\nraise RuntimeError('quebrada de proposito')\n"}
@@ -559,6 +570,15 @@ def read_text(path: Path) -> str:
         return ""
 
 
+def offline_index_env(root: Path) -> dict[str, str]:
+    """Ambiente de um PC sem acesso ao índice e sem os pacotes novos no cache.
+
+    `UV_OFFLINE` proíbe qualquer download e o cache vazio garante que nada da candidata esteja à
+    mão. A instalação em uso já tem o ambiente pronto e não precisa de pacote nenhum; só o sync
+    da candidata, que acrescenta dependências, tem de falhar."""
+    return {"UV_OFFLINE": "1", "UV_CACHE_DIR": str(root / "empty-cache")}
+
+
 def sync_failure_wrapper() -> str:
     """`uv.cmd` do ensaio: falha so os tres primeiros syncs do supervisor e depois chama o uv real.
 
@@ -765,7 +785,7 @@ class Drill:
                 "-Ref",
                 base_sha,
                 "-Uv",
-                self.env["PATH"].split(os.pathsep)[0] + "\\uv.exe",
+                self.uv,
                 "-ApiUrl",
                 self.env["UNIOVER_UPDATE_SOURCE_URL"],
             ]
@@ -782,7 +802,7 @@ class Drill:
         saved = self.env
         self.env = {**saved, **runtime_env}
         try:
-            uv = saved["PATH"].split(os.pathsep)[0] + "\\uv.exe"
+            uv = self.uv
             keyring = self.run_child(
                 [
                     uv,
@@ -890,8 +910,36 @@ class Drill:
         )
         return ok and starts >= 1
 
-    def offer(
-        self, label: str, files: dict[str, bytes], sha: str, *, expect_swap: bool, source: str
+    def refused_without_the_index(self, files: dict[str, bytes], sha: str) -> bool:
+        """Reinicia o supervisor sem acesso ao índice, oferece a candidata e confere a recusa."""
+        normal = self.env
+        stopped = self.stop_everything()
+        self.env = {**normal, **offline_index_env(self.root)}
+        try:
+            ready = stopped and self.wait_ready()
+            ok = ready and self.offer(
+                "A0. candidata sem acesso ao indice (recusa, a base segue)",
+                files,
+                sha,
+                expect_swap=False,
+                source="codigo da candidata",
+                refusal="a sincronização das dependências",
+            )
+        finally:
+            self.env = normal
+        # Volta ao ambiente normal para as fases seguintes (as mesmas que a base tinha).
+        back = self.stop_everything() and self.wait_ready()
+        return self.verdict.check("o supervisor voltou ao ambiente normal", back) and bool(ok)
+
+    def offer(  # noqa: PLR0913 - cada argumento descreve uma fase do roteiro
+        self,
+        label: str,
+        files: dict[str, bytes],
+        sha: str,
+        *,
+        expect_swap: bool,
+        source: str,
+        refusal: str = "verificação rápida",
     ) -> bool:
         say(f"\n== {label} ({source}) ==")
         phase_start = time.monotonic()
@@ -923,7 +971,7 @@ class Drill:
             )
         else:
             asked = wait_until(lambda: self.feed.downloads(sha) > 0, timeout)
-            ok &= self.verdict.check("a candidata quebrada foi baixada e testada", asked)
+            ok &= self.verdict.check("a candidata recusada foi baixada e testada", asked)
             refused = wait_until(
                 lambda: self.log_text().count("auto-atualização adiada") > deferred_before, timeout
             )
@@ -931,8 +979,8 @@ class Drill:
                 line for line in self.log_text().splitlines() if "auto-atualização adiada" in line
             ]
             ok &= self.verdict.check(
-                "a candidata quebrada e recusada na verificacao",
-                refused and "verificação rápida" in (reason[-1] if reason else ""),
+                f"a candidata e recusada ({refusal})",
+                refused and refusal in (reason[-1] if reason else ""),
                 reason[-1][-200:] if reason else "sem aviso no log",
             )
             time.sleep(20)
@@ -1304,6 +1352,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915 - roteiro linea
     say("Ensaio de atualizacao do agente")
     say(f"  base       : {base_sha[:12]} (origem {args.base_sha or 'origin/main'})")
     say(f"  candidata  : {candidate_sha[:12]} ({args.candidate_ref or 'arvore local'})")
+    offline_files = offline_variant(files)
+    offline_sha = fake_sha(offline_files, "offline")
     phases = [
         ("A. candidata quebrada (recusa, a base segue)", broken_files, broken_sha, False, "base"),
         ("B. base -> candidata", files, candidate_sha, True, "base"),
@@ -1322,6 +1372,13 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915 - roteiro linea
     try:
         drill.prepare(base_sha)
         proceed = drill.install_base(base_sha) and drill.preflight(base_sha) and drill.wait_ready()
+        if proceed:
+            lock = f"{AGENT_REL}/uv.lock"
+            base_lock = ref_files(base_sha).get(lock, b"")
+            new_packages = sorted(lock_packages(files.get(lock, b"")) - lock_packages(base_lock))
+            say("")
+            say(f"  pacotes que a candidata acrescenta ao lock da base: {new_packages or 'nenhum'}")
+            proceed = drill.refused_without_the_index(offline_files, offline_sha)
         for label, tree, sha, expect_swap, code in phases:
             if not proceed:
                 break

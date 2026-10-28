@@ -117,6 +117,31 @@ def test_the_sync_failure_wrapper_fails_only_the_first_three_syncs() -> None:
     assert '"%UNIOVER_DRILL_REAL_UV%" %*' in wrapper
 
 
+def test_the_offline_index_environment_forbids_downloads_and_hides_the_cache(
+    tmp_path: Path,
+) -> None:
+    environment = drill.offline_index_env(tmp_path)
+    assert environment["UV_OFFLINE"] == "1"
+    # Cache vazio e dentro da pasta do ensaio: nada da instalação real nem do cache de quem roda.
+    assert Path(environment["UV_CACHE_DIR"]).is_relative_to(tmp_path)
+    assert not Path(environment["UV_CACHE_DIR"]).exists()
+
+
+def test_the_offline_variant_is_another_commit_with_the_same_dependencies() -> None:
+    offline = drill.offline_variant(FILES)
+    assert drill.fake_sha(offline, "offline") != drill.fake_sha(FILES, "candidate")
+    assert {k: v for k, v in offline.items() if k != "apps/agent/DRILL-OFFLINE.txt"} == FILES
+
+
+def test_the_lock_packages_are_read_from_the_top_level_entries_only() -> None:
+    lock = (
+        b'version = 1\n\n[[package]]\nname = "zeroconf"\nversion = "1"\n'
+        b'dependencies = [\n    { name = "ifaddr" },\n]\n\n'
+        b'[[package]]\nname = "ifaddr"\nversion = "2"\n'
+    )
+    assert drill.lock_packages(lock) == {"zeroconf", "ifaddr"}
+
+
 def proc(  # noqa: PLR0913 - horario e sessao por nome, so nos casos que importam
     pid: int, ppid: int, name: str, cmd: str, *, created: int = 100, session: int = 1
 ) -> object:
