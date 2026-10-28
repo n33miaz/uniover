@@ -13,6 +13,7 @@ export * from './tv_app_launch_v1';
 export * from './tv_apps_refresh_v1';
 export * from './tv_apps_v1';
 export * from './tv_apps_v2';
+export * from './tv_cleanup_config_v1';
 export * from './tv_cleanup_result_v1';
 export * from './tv_cleanup_v1';
 export * from './tv_key_v1';

@@ -49,9 +49,19 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
     public partial class TvCleanupV1Body
     {
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("foregroundPackage")]
+        public string? ForegroundPackage { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("mode")]
+        public TvCleanupV1BodyMode? Mode { get; set; }
+
         [JsonPropertyName("requestId")]
         public Guid RequestId { get; set; }
     }
+
+    public enum TvCleanupV1BodyMode { Deep, Light, Manual };
 
     public partial class TvCleanupV1Message
     {
@@ -69,9 +79,49 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         {
             Converters =
             {
+                TvCleanupV1MessageTvCleanupV1BodyModeConverter.Singleton,
                 TvCleanupV1MessageIsoDateTimeOffsetConverter.Singleton
             },
         };
+    }
+
+    internal class TvCleanupV1MessageTvCleanupV1BodyModeConverter : JsonConverter<TvCleanupV1BodyMode>
+    {
+        public override bool CanConvert(Type t) => t == typeof(TvCleanupV1BodyMode);
+
+        public override TvCleanupV1BodyMode Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            switch (value)
+            {
+                case "deep":
+                    return TvCleanupV1BodyMode.Deep;
+                case "light":
+                    return TvCleanupV1BodyMode.Light;
+                case "manual":
+                    return TvCleanupV1BodyMode.Manual;
+            }
+            throw new Exception("Cannot unmarshal type TvCleanupV1BodyMode");
+        }
+
+        public override void Write(Utf8JsonWriter writer, TvCleanupV1BodyMode value, JsonSerializerOptions options)
+        {
+            switch (value)
+            {
+                case TvCleanupV1BodyMode.Deep:
+                    JsonSerializer.Serialize(writer, "deep", options);
+                    return;
+                case TvCleanupV1BodyMode.Light:
+                    JsonSerializer.Serialize(writer, "light", options);
+                    return;
+                case TvCleanupV1BodyMode.Manual:
+                    JsonSerializer.Serialize(writer, "manual", options);
+                    return;
+            }
+            throw new Exception("Cannot marshal type TvCleanupV1BodyMode");
+        }
+
+        public static readonly TvCleanupV1MessageTvCleanupV1BodyModeConverter Singleton = new TvCleanupV1MessageTvCleanupV1BodyModeConverter();
     }
 
     internal class TvCleanupV1MessageIsoDateTimeOffsetConverter : JsonConverter<DateTimeOffset>

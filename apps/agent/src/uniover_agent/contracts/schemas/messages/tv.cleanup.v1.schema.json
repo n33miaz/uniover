@@ -18,7 +18,9 @@
       "type": "object", "additionalProperties": false,
       "required": ["requestId"],
       "properties": {
-        "requestId": { "$ref": "../envelope.schema.json#/$defs/uuid" }
+        "requestId": { "$ref": "../envelope.schema.json#/$defs/uuid" },
+        "mode": { "enum": ["light", "deep", "manual"] },
+        "foregroundPackage": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*([.][A-Za-z][A-Za-z0-9_]*)+$" }
       }
     }
   }
