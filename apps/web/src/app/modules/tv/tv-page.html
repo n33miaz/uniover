@@ -1,47 +1,42 @@
 <div class="tv" [attr.data-pills]="prefs.pillLayout()">
-  <header class="head">
+  <header class="head" [class.guest]="isGuest()">
     <!--
-      Grupo da esquerda: o botão de saída (a seta de voltar do administrador ou a engrenagem do convidado) e, logo depois,
+      Grupo da esquerda: a seta de voltar para a Início e, logo depois,
       o dos três pontos, que abre o menu. À direita ficam o desligar e o ponto de estado. As duas colunas dos lados têm a mesma largura
-      (a do grupo da esquerda, dois botões), então o nome continua no meio da tela. Cada botão só existe para quem pode
+      (a do grupo da esquerda, até três botões), então o nome continua no meio da tela. Cada botão só existe para quem pode
       usá-lo (desligar: `tv:power`; menu: ter alguma linha nele): as colunas seguem do mesmo tamanho com um botão a menos,
       e o nome não se mexe.
     -->
     <div class="lead">
+      <a
+        routerLink="/"
+        class="circle back"
+        aria-label="Voltar ao Início"
+        i18n-aria-label="@@tv.header.back"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          width="22"
+          height="22"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path [attr.d]="'M19 12H5'" />
+          <path [attr.d]="'M11 18l-6-6 6-6'" />
+        </svg>
+      </a>
       @if (isGuest()) {
-        <!--
-          Convidado: visão única do controle, sem Início nem voltar. No lugar da seta fica o botão redondo das configurações
-          do sistema (Perfil, Aparência e Sobre), do mesmo tamanho.
-        -->
         <a
           routerLink="/ajustes"
           class="circle settings"
-          aria-label="Ajustes"
+          aria-label="Configurações"
           i18n-aria-label="@@tv.header.settings"
         >
           <app-gear-icon />
-        </a>
-      } @else {
-        <a
-          routerLink="/"
-          class="circle back"
-          aria-label="Voltar ao Início"
-          i18n-aria-label="@@tv.header.back"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="22"
-            height="22"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path [attr.d]="'M19 12H5'" />
-            <path [attr.d]="'M11 18l-6-6 6-6'" />
-          </svg>
         </a>
       }
       @if (hasMenu()) {

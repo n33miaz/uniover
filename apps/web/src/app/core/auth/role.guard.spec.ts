@@ -6,7 +6,7 @@ import { SessionState } from '../session/session-state';
 import { ApiProblem, networkProblem } from './api-problem';
 import { AuthApi } from './auth-api';
 import { authGuard } from './auth.guard';
-import { moduleGuard, noAccessGuard, ownerOnlyGuard } from './role.guard';
+import { moduleGuard, ownerOnlyGuard } from './role.guard';
 
 @Component({ template: '' })
 class Screen {}
@@ -117,7 +117,6 @@ describe('the guest goes to Início, where the account sees its permitted module
             children: [
               { path: 'tv', component: Screen },
               { path: 'treino', component: Screen, canMatch: [moduleGuard('training')] },
-              { path: 'sem-acesso', component: Screen, canMatch: [noAccessGuard] },
               { path: 'ajustes', component: Screen, canMatch: [ownerOnlyGuard] },
               { path: '', pathMatch: 'full', component: Screen },
             ],
@@ -174,16 +173,6 @@ describe('the guest goes to Início, where the account sees its permitted module
       expect(await go(url)).toBe('/');
     },
   );
-
-  it('does not leave a guest with a module parked on the old "no access" screen', async () => {
-    api.me.mockResolvedValue(guest(TRAINING));
-    expect(await go('/sem-acesso')).toBe('/');
-  });
-
-  it('sends the owner away from the "no access" screen, to the Início', async () => {
-    api.me.mockResolvedValue({ ...guest(), role: 'owner' });
-    expect(await go('/sem-acesso')).toBe('/');
-  });
 
   it.each([
     ['without any module', []],

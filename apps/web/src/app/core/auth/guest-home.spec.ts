@@ -1,12 +1,5 @@
 import { UNKNOWN_GUEST_HOME, canUseModule, homeFor, modulePermission } from './guest-home';
 
-// A ordem é a do registro de módulos: a TV antes do Treino; um módulo só planejado não tem caminho (sem `slug`).
-const MODULES = [
-  { id: 'tv', slug: 'tv' },
-  { id: 'training', slug: 'treino' },
-  { id: 'health' },
-] as const;
-
 describe('modulePermission', () => {
   it('is the permission of the catalogue of the API', () => {
     expect(modulePermission('tv')).toBe('module:tv');
@@ -38,21 +31,7 @@ describe('canUseModule', () => {
 });
 
 describe('homeFor', () => {
-  it('is the Início for the owner (and for a role not known yet)', () => {
-    expect(homeFor('owner', ['module:tv'], MODULES)).toBe('/');
-    expect(homeFor(null, null, MODULES)).toBe('/');
-  });
-
-  it.each([
-    ['only the TV', ['module:tv', 'tv:control']],
-    ['only the Treino', ['module:training']],
-    ['both modules', ['module:training', 'module:tv']],
-    ['no modules', []],
-  ])('takes a guest with %s to Início', (_name, permissions) => {
-    expect(homeFor('guest', permissions, MODULES)).toBe('/');
-  });
-
-  it('keeps Início when the list is not known', () => {
-    expect(homeFor('guest', null, MODULES)).toBe(UNKNOWN_GUEST_HOME);
+  it('always returns Início without depending on a session or catalogue', () => {
+    expect(homeFor()).toBe(UNKNOWN_GUEST_HOME);
   });
 });

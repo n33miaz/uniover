@@ -31,10 +31,10 @@
 }
 
 /*
- * Cabeçalho numa linha só: à esquerda a saída (voltar ou ajustes) e os três pontos do painel Apps, o nome no meio e, à
+ * Cabeçalho numa linha só: à esquerda a volta, as configurações (só do convidado) e os três pontos do painel Apps, o nome no meio e, à
  * direita, o desligar. O nome fica no meio da TELA: as duas colunas dos lados são iguais (o mesmo mínimo, e o que sobra
  * dividido por igual), então nada que mude dentro de um lado nem um nome mais comprido desloca o centro. O mínimo é o do
- * lado maior, o grupo da esquerda (dois botões); o lado direito reserva, além do desligar, a folga do ponto de estado,
+ * lado maior, o grupo da esquerda (dois botões, três para o convidado); o lado direito reserva, além do desligar, a folga do ponto de estado,
  * que mora à direita do texto do nome, e cabe nessa mesma largura. Sem essa folga um nome comprido empurraria o ponto
  * para cima do desligar. O que não cabe no nome vira reticências.
  * A largura do texto depende da fonte do sistema (a do Linux é bem mais larga que a do Windows): o pior caso é um nome
@@ -42,7 +42,7 @@
  * coluna nem dos 44 px, e o nome completo continua no nome acessível do botão e na folha Personalizar.
  */
 .head {
-  /* Os dois botões da esquerda e o espaço entre eles. */
+  /* Os dois botões da esquerda (a volta e o menu) e o espaço entre eles. */
   --gap: 6px;
   /* O alvo de 44 px do ponto começa 8 px antes do fim do nome: sobram 36 px à direita do texto. */
   --dot-room: 36px;
@@ -55,7 +55,12 @@
   align-items: center;
 }
 
-/* Os botões do cabeçalho (voltar ou ajustes, Apps e energia) têm o mesmo visual: um círculo de 44 px. */
+/* A pessoa convidada tem um botão a mais à esquerda (as configurações): as duas colunas crescem juntas e o nome segue no meio. */
+.head.guest {
+  --side: max(calc(3 * var(--tap) + 2 * var(--gap)), calc(var(--tap) + var(--dot-room)));
+}
+
+/* Os botões do cabeçalho (voltar, configurações do convidado, Apps e energia) têm o mesmo visual: um círculo de 44 px. */
 .circle {
   display: grid;
   place-items: center;

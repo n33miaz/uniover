@@ -1,15 +1,14 @@
 import { inject } from '@angular/core';
 import { CanMatchFn, Router } from '@angular/router';
-import { ModuleRegistry } from '../modules/module-registry';
 import { SessionState } from '../session/session-state';
 import { AuthService } from './auth.service';
-import { NO_ACCESS_PATH, canUseModule, homeFor } from './guest-home';
+import { canUseModule, homeFor } from './guest-home';
 
 /**
  * Toda conta volta à Início; nela cada convidado vê apenas os módulos liberados para a conta.
  */
-export function guestHome(session: SessionState, registry: ModuleRegistry): string {
-  return homeFor(session.role(), session.knownPermissions(), registry.modules);
+export function guestHome(): string {
+  return homeFor();
 }
 
 /**
@@ -23,9 +22,8 @@ export const ownerOnlyGuard: CanMatchFn = async () => {
   const auth = inject(AuthService);
   const session = inject(SessionState);
   const router = inject(Router);
-  const registry = inject(ModuleRegistry);
   await auth.init();
-  return session.isGuest() ? router.createUrlTree([guestHome(session, registry)]) : true;
+  return session.isGuest() ? router.createUrlTree([guestHome()]) : true;
 };
 
 /**
@@ -39,22 +37,8 @@ export function moduleGuard(id: string): CanMatchFn {
     const auth = inject(AuthService);
     const session = inject(SessionState);
     const router = inject(Router);
-    const registry = inject(ModuleRegistry);
     await auth.init();
     if (canUseModule(session.role(), session.knownPermissions(), id)) return true;
-    return router.createUrlTree([guestHome(session, registry)]);
+    return router.createUrlTree([guestHome()]);
   };
 }
-
-/**
- * A tela de "sem acesso" só serve a quem de fato não tem módulo nenhum: quem tem um é levado a ele (e o dono, ao Início),
- * para ninguém ficar parado nela por um endereço antigo.
- */
-export const noAccessGuard: CanMatchFn = async () => {
-  const auth = inject(AuthService);
-  const session = inject(SessionState);
-  const router = inject(Router);
-  const registry = inject(ModuleRegistry);
-  await auth.init();
-  return guestHome(session, registry) === NO_ACCESS_PATH ? true : router.createUrlTree(['/']);
-};

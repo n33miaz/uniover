@@ -881,11 +881,10 @@ describe('TvPage for a guest', () => {
     localStorage.clear();
   });
 
-  it('has no way back to Início (the guest has none), but keeps name, state, the menu and power', async () => {
+  it('gives the guest the same way back to Início, while keeping name, state, menu and power', async () => {
     await open();
-    expect(root.querySelector('a.back')).toBeNull();
-    expect(root.querySelector('a[href="/"]')).toBeNull();
-    expect(root.textContent).not.toContain('Início');
+    expect(root.querySelector('a.back')?.getAttribute('href')).toBe('/');
+    expect(root.querySelector('a.back')?.getAttribute('aria-label')).toBe('Voltar ao Início');
     expect(root.querySelector('h1')?.textContent?.trim()).toBe('TV');
     expect(root.querySelector('button[aria-label="Desligar a TV"]')).not.toBeNull();
     expect(root.querySelector('.head button[aria-label="Mais opções"]')).not.toBeNull();
@@ -896,7 +895,7 @@ describe('TvPage for a guest', () => {
     await open();
     expect(
       [...root.querySelectorAll('.head .lead > *')].map((el) => el.getAttribute('aria-label')),
-    ).toEqual(['Ajustes', 'Mais opções']);
+    ).toEqual(['Voltar ao Início', 'Configurações', 'Mais opções']);
     expect(
       [...root.querySelectorAll('.head .actions > *')].map((el) => el.getAttribute('aria-label')),
     ).toEqual(['Desligar a TV']);
@@ -915,16 +914,18 @@ describe('TvPage for a guest', () => {
     expect(root.querySelector('app-tv-menu .ui-chip')).toBeNull();
   });
 
-  it('puts the round settings button where back was, so the name stays in the middle', async () => {
+  it('keeps the back button and puts Configurações beside it, so the name stays in the middle', async () => {
     await open();
     const head = root.querySelector('.head')!;
     expect(head.children).toHaveLength(3);
     expect(head.children[0].classList.contains('lead')).toBe(true);
-    const settings = head.children[0].children[0];
+    const back = head.children[0].children[0];
+    expect(back.getAttribute('href')).toBe('/');
+    const settings = head.children[0].children[1];
     expect(settings.tagName).toBe('A');
     expect(settings.classList.contains('circle')).toBe(true);
     expect(settings.getAttribute('href')).toBe('/ajustes');
-    expect(settings.getAttribute('aria-label')).toBe('Ajustes');
+    expect(settings.getAttribute('aria-label')).toBe('Configurações');
     expect(head.children[1].classList.contains('name')).toBe(true);
     expect(head.children[2].classList.contains('actions')).toBe(true);
   });
@@ -1005,7 +1006,7 @@ describe('TvPage by permission', () => {
 
   it('control only: the whole control and the name opens Personalizar; the menu holds only the options and Personalizar, and there is no power', async () => {
     await open('guest', 'module:tv', 'tv:control');
-    expect(labels()).toEqual(['Ajustes', 'Mais opções']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Configurações', 'Mais opções']);
     expect(root.querySelector('app-tv-control')).not.toBeNull();
     expect(root.querySelector('app-tv-view-only')).toBeNull();
     expect(titleButton()?.getAttribute('aria-label')).toBe('TV, personalizar');
@@ -1048,7 +1049,7 @@ describe('TvPage by permission', () => {
 
   it('launch and edit, no control: the message and the shortcuts, the menu, no power, the name is only text', async () => {
     await open('guest', 'module:tv', 'tv:launch', 'tv:edit-shortcuts');
-    expect(labels()).toEqual(['Ajustes', 'Mais opções']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Configurações', 'Mais opções']);
     expect(root.querySelector('app-tv-control')).toBeNull();
     expect(message()).toBe('Você pode ver a TV, mas não controlá-la.');
     expect(root.querySelectorAll('button.shortcut')).toHaveLength(3);
@@ -1062,7 +1063,7 @@ describe('TvPage by permission', () => {
 
   it('view only: the state, the name and a single sentence; nothing to tap but the state dot', async () => {
     await open('guest', 'module:tv');
-    expect(labels()).toEqual(['Ajustes']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Configurações']);
     expect(message()).toBe('Você pode ver a TV, mas não controlá-la.');
     expect(root.querySelector('app-tv-control')).toBeNull();
     expect(root.querySelectorAll('.shortcut.still')).toHaveLength(3);
@@ -1098,7 +1099,7 @@ describe('TvPage by permission', () => {
 
   it('power alone shows the power button, and the header keeps its three groups', async () => {
     await open('guest', 'module:tv', 'tv:power');
-    expect(labels()).toEqual(['Ajustes', 'Desligar a TV']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Configurações', 'Desligar a TV']);
     expect(root.querySelector('.head')!.children).toHaveLength(3);
   });
 
@@ -1109,7 +1110,7 @@ describe('TvPage by permission', () => {
     );
     expect(root.querySelector('app-tv-control, app-tv-view-only')).toBeNull();
     expect(root.querySelector('app-status-indicator')).toBeNull();
-    expect(labels()).toEqual(['Ajustes']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Configurações']);
   });
 
   it('keeps the header in three groups whatever the buttons, so the name never leaves the middle', async () => {
@@ -1133,13 +1134,13 @@ describe('TvPage by permission', () => {
     await render();
     expect(root.querySelector('app-tv-control')).not.toBeNull();
     expect(root.querySelector('app-tv-view-only')).toBeNull();
-    expect(labels()).toEqual(['Ajustes', 'Mais opções', 'Desligar a TV']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Configurações', 'Mais opções', 'Desligar a TV']);
 
     grant('guest', 'module:tv');
     await render();
     expect(root.querySelector('app-tv-control')).toBeNull();
     expect(message()).toBe('Você pode ver a TV, mas não controlá-la.');
-    expect(labels()).toEqual(['Ajustes']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Configurações']);
   });
 
   it('closes a sheet or panel that was open when the permission to use it goes away', async () => {
