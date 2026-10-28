@@ -651,9 +651,9 @@ export class TvStore {
   }
 
   /**
-   * Fecha os apps abertos na TV e libera memória, sem derrubar a conexão do controle. Um pedido por vez (um segundo
-   * toque enquanto roda não faz nada). Devolve `true` se a TV fez; o aviso com o que foi feito, ou o erro, já foi
-   * mostrado. Não trava o resto do controle: só `cleaning` muda enquanto espera.
+   * Limpa a TV (alivia a memória e, com o interruptor da TV ligado, fecha apps em segundo plano), sem derrubar a conexão
+   * do controle. Um pedido por vez (um segundo toque enquanto roda não faz nada). Devolve `true` se a TV fez; o aviso com
+   * o que foi feito, ou o erro, já foi mostrado. Não trava o resto do controle: só `cleaning` muda enquanto espera.
    */
   async cleanup(): Promise<boolean> {
     const epoch = this.begin();

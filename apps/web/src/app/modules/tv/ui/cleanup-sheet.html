@@ -6,10 +6,16 @@
   (cancel)="cancel($event)"
 >
   <h2 id="cleanup-title" i18n="@@tv.cleanup.title">Limpar a TV?</h2>
-  <p id="cleanup-text" class="text" i18n="@@tv.cleanup.text">
-    Isso fecha todos os apps abertos, inclusive o que está passando agora, e libera memória. A
-    conexão com o controle continua.
-  </p>
+  @if (closesBackground()) {
+    <p id="cleanup-text" class="text" i18n="@@tv.cleanup.text-closing">
+      Fecha os apps em segundo plano e libera memória. O app que está passando agora continua
+      aberto, e a conexão com o controle também.
+    </p>
+  } @else {
+    <p id="cleanup-text" class="text" i18n="@@tv.cleanup.text">
+      Libera memória sem fechar nenhum app. A conexão com o controle continua.
+    </p>
+  }
 
   <div class="footer">
     <button type="button" class="secondary" (click)="cancel()" i18n="@@tv.cleanup.cancel">

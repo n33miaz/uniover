@@ -200,6 +200,7 @@ const tv = (overrides: Partial<TvSummary> = {}): TvSummary => ({
   kind: 'android',
   online: true,
   capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb'],
+  allowBackgroundAppClosing: false,
   ...overrides,
 });
 
@@ -215,6 +216,7 @@ describe('parseTvs', () => {
           kind: 'android',
           online: true,
           capabilities: ['tv.adb'],
+          allowBackgroundAppClosing: true,
         },
         {
           id: 'b',
@@ -235,6 +237,7 @@ describe('parseTvs', () => {
         kind: 'android',
         online: true,
         capabilities: ['tv.adb'],
+        allowBackgroundAppClosing: true,
       },
       {
         id: 'b',
@@ -244,6 +247,7 @@ describe('parseTvs', () => {
         kind: 'samsung',
         online: false,
         capabilities: [],
+        allowBackgroundAppClosing: false,
       },
     ]);
   });
@@ -258,6 +262,7 @@ describe('parseTvs', () => {
         kind: null,
         online: false,
         capabilities: [],
+        allowBackgroundAppClosing: false,
       },
     ]);
     expect(parseTvs({})).toBeNull();
@@ -279,6 +284,7 @@ describe('desligar com leitura', () => {
     kind: 'android',
     online: true,
     capabilities,
+    allowBackgroundAppClosing: false,
   });
 
   it('only an agent that declares it can be asked for the safe power off', () => {
