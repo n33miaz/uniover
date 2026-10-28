@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/n33miaz/uniover/compare/v0.13.0...v0.13.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **devices:** allow cleanup config to the agent
+
 ## [0.13.0](https://github.com/n33miaz/uniover/compare/v0.12.0...v0.13.0) (2026-10-28)
 
 
