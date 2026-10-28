@@ -53,12 +53,14 @@ async function sendPage(root, pathname, res, head) {
 
 /**
  * Cria o servidor (sem ligar a porta). `resolveRoot(req)` diz de qual pasta de build a resposta sai (o e2e de
- * atualização troca de versão no meio do teste); `transformSw(body, req)` pode alterar os bytes do `/sw.js`; `beforeApi(req)` pode atrasar as respostas da API.
+ * atualização troca de versão no meio do teste); `transformSw(body, req)` pode alterar os bytes do `/sw.js`; `beforeApi(req)` pode atrasar as respostas da API;
+ * `api(req, res, pathname)` pode responder no lugar do 404 padrão (devolve `true` quando respondeu).
  */
 export function createAppServer({
   resolveRoot,
   transformSw = (body) => body,
   beforeApi = async () => undefined,
+  api = async () => false,
   assetCache = 'public, max-age=31536000, immutable',
 }) {
   return createServer(async (req, res) => {
@@ -67,7 +69,8 @@ export function createAppServer({
       const url = new URL(req.url, 'http://x');
       const pathname = normalize(decodeURIComponent(url.pathname)).split(sep).join('/');
       const head = req.method === 'HEAD';
-      if (req.method !== 'GET' && !head) {
+      // A API simulada aceita qualquer método (a sessão nasce de um POST); o resto do servidor só entrega arquivos.
+      if (req.method !== 'GET' && !head && !url.pathname.startsWith('/api/')) {
         res.writeHead(405).end();
         return;
       }
@@ -91,7 +94,8 @@ export function createAppServer({
       }
       if (pathname.startsWith('/api/') || pathname.startsWith('/health')) {
         await beforeApi(req);
-        res.writeHead(404).end();
+        if (await api(req, res, pathname)) return;
+        res.writeHead(req.method === 'GET' || head ? 404 : 405).end();
         return;
       }
       await sendPage(root, pathname, res, head);
