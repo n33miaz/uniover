@@ -93,14 +93,44 @@ export function indicatorPhase(indicator: TvIndicator): TvPhase {
 /** Ação do painelzinho: `wake` acorda o controle; `retry` lê o estado de novo e tenta acordar. */
 export type TvIndicatorAction = 'wake' | 'retry';
 
+/** Um problema conhecido, em um título curto e uma frase do que fazer. */
+export interface TvIndicatorHint {
+  readonly title: string;
+  readonly body: string;
+}
+
 export interface TvIndicatorText {
   readonly title: string;
   readonly meaning: string;
   readonly action: TvIndicatorAction | null;
   readonly actionLabel: string;
+  /** Causas conhecidas e o que fazer; vazio quando o estado não tem o que listar. */
+  readonly hints: readonly TvIndicatorHint[];
 }
 
 const NO_ACTION = '';
+const NO_HINTS: readonly TvIndicatorHint[] = [];
+
+/**
+ * Os três jeitos de o serviço do controle remoto da própria TV (o Android TV Remote Service, que o agente usa) falhar
+ * sem culpa do UniOver. Quando o reparo automático desiste, é por um deles que se começa a procurar.
+ */
+function remoteServiceHints(): readonly TvIndicatorHint[] {
+  return [
+    {
+      title: $localize`:@@tv.indicator.hint.outdated.title:Serviço Desatualizado`,
+      body: $localize`:@@tv.indicator.hint.outdated.body:Atualize o Android TV Remote Service na TV e reinicie a TV depois.`,
+    },
+    {
+      title: $localize`:@@tv.indicator.hint.stopped.title:Serviços Parados`,
+      body: $localize`:@@tv.indicator.hint.stopped.body:Se os serviços da TV não iniciaram direito, reinicie a TV.`,
+    },
+    {
+      title: $localize`:@@tv.indicator.hint.box.title:Caixa de TV`,
+      body: $localize`:@@tv.indicator.hint.box.body:Algumas caixas desligam todos os serviços ao desligar. Ligue a caixa e espere o sistema abrir.`,
+    },
+  ];
+}
 
 /**
  * Nome do estado em linguagem simples, uma frase do que ele significa e a ação possível (se houver). Para quem não pode
@@ -122,6 +152,7 @@ export function indicatorText(
           : $localize`:@@tv.indicator.connected.meaning-view:O controle está falando com a TV. Depois de ${hibernateMinutes}:minutes: min sem uso ele dorme sozinho.`,
         action: null,
         actionLabel: NO_ACTION,
+        hints: NO_HINTS,
       };
     case 'sleeping':
       return {
@@ -131,6 +162,7 @@ export function indicatorText(
           : $localize`:@@tv.indicator.sleeping.meaning-view:Só o controle está dormindo para poupar a TV; ela continua como estava.`,
         action: 'wake',
         actionLabel: $localize`:@@tv.indicator.wake:Acordar o controle`,
+        hints: NO_HINTS,
       };
     case 'connecting':
       return {
@@ -138,6 +170,7 @@ export function indicatorText(
         meaning: $localize`:@@tv.indicator.connecting.meaning:Buscando o estado da TV. Se demorar, tente de novo.`,
         action: 'retry',
         actionLabel: retry,
+        hints: NO_HINTS,
       };
     case 'server-waking':
       return {
@@ -147,6 +180,7 @@ export function indicatorText(
           : $localize`:@@tv.indicator.server-waking.meaning-view:O servidor estava descansando e está voltando.`,
         action: null,
         actionLabel: NO_ACTION,
+        hints: NO_HINTS,
       };
     case 'agent-off':
       return {
@@ -154,6 +188,7 @@ export function indicatorText(
         meaning: $localize`:@@tv.indicator.agent-off.meaning:O computador que fala com a TV não está conectado. Ligue-o e o controle volta.`,
         action: 'retry',
         actionLabel: retry,
+        hints: NO_HINTS,
       };
     case 'not-configured':
       return {
@@ -161,6 +196,7 @@ export function indicatorText(
         meaning: $localize`:@@tv.indicator.not-configured.meaning:Nenhum agente foi configurado para controlar a TV. Pareie o agente para usar o controle.`,
         action: 'retry',
         actionLabel: retry,
+        hints: NO_HINTS,
       };
     case 'offline':
       return {
@@ -168,6 +204,7 @@ export function indicatorText(
         meaning: $localize`:@@tv.indicator.offline.meaning:Este aparelho está sem internet. O controle volta sozinho quando a conexão voltar.`,
         action: null,
         actionLabel: NO_ACTION,
+        hints: NO_HINTS,
       };
     default:
       return {
@@ -177,6 +214,7 @@ export function indicatorText(
           : $localize`:@@tv.indicator.repair-failed.meaning-view:O reparo automático do controle não deu certo.`,
         action: 'retry',
         actionLabel: retry,
+        hints: remoteServiceHints(),
       };
   }
 }

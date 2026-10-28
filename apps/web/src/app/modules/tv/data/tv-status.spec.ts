@@ -170,6 +170,26 @@ describe('indicatorText', () => {
     });
   });
 
+  it('lists the three known problems of the TV remote service when the repair gives up', () => {
+    const { hints } = indicatorText('repair-failed', 5);
+    expect(hints.map((hint) => hint.title)).toEqual([
+      'Serviço Desatualizado',
+      'Serviços Parados',
+      'Caixa de TV',
+    ]);
+    expect(hints[0].body).toContain('Android TV Remote Service');
+    expect(hints[0].body).toContain('reinicie a TV');
+    expect(hints[1].body).toContain('reinicie a TV');
+    expect(hints[2].body).toContain('caixas');
+    for (const hint of hints) expect(hint.body.length).toBeLessThan(110);
+  });
+
+  it('lists nothing for the other states', () => {
+    for (const indicator of INDICATORS.filter((item) => item !== 'repair-failed')) {
+      expect(indicatorText(indicator, 5).hints, indicator).toEqual([]);
+    }
+  });
+
   it('never says the TV is switched off', () => {
     for (const indicator of INDICATORS) {
       const text = indicatorText(indicator, 5);

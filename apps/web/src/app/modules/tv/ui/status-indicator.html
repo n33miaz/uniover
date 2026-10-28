@@ -19,6 +19,16 @@
       <strong [id]="titleId">{{ text().title }}</strong>
     </p>
     <p class="meaning">{{ text().meaning }}</p>
+    @if (text().hints.length > 0) {
+      <ul class="hints">
+        @for (hint of text().hints; track hint.title) {
+          <li>
+            <strong>{{ hint.title }}</strong>
+            <span>{{ hint.body }}</span>
+          </li>
+        }
+      </ul>
+    }
     @for (note of notes(); track note) {
       <p class="note">{{ note }}</p>
     }

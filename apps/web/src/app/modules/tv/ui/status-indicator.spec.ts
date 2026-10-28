@@ -90,6 +90,25 @@ describe('StatusIndicator', () => {
       expect(panel()?.querySelector('button')).toBeNull();
     });
 
+    it('lists the known remote service problems only when the repair failed', async () => {
+      await toggle();
+      expect(panel()?.querySelector('.hints')).toBeNull();
+      trigger().click();
+      store.watchdog.set({
+        kind: 'repair_failed',
+        severity: 'error',
+        detail: '',
+        attempts: 3,
+        at: '2026-10-19T14:02:00Z',
+      });
+      await render();
+      await toggle();
+      const titles = [...(panel()?.querySelectorAll('.hints li strong') ?? [])].map(
+        (item) => item.textContent,
+      );
+      expect(titles).toEqual(['Serviço Desatualizado', 'Serviços Parados', 'Caixa de TV']);
+    });
+
     it('does not show a time when none was seen', async () => {
       store.seenAtText.set('');
       await toggle();

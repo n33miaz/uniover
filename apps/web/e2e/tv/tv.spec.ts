@@ -982,6 +982,16 @@ test.describe('ponto de estado clicável', () => {
     await expect(statusDot(page, 'Atenção')).toBeVisible();
     await statusDot(page).click();
     await expect(statusPanel(page)).toContainText(/reparo do controle falhou às \d{2}:\d{2}/);
+    // As três causas conhecidas do serviço da TV cabem na tela, sem sair pelas bordas.
+    await expect(statusPanel(page)).toContainText('Serviço Desatualizado');
+    await expect(statusPanel(page)).toContainText('Serviços Parados');
+    await expect(statusPanel(page)).toContainText('Caixa de TV');
+    const box = await statusPanel(page).boundingBox();
+    const size = page.viewportSize();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(size!.width);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(size!.height);
     await page.keyboard.press('Escape');
 
     await failSse(page);
