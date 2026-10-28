@@ -46,8 +46,31 @@
   --glyph-size: 26px;
 }
 
-.step:active {
+/*
+ * A resposta ao toque dos botões − e + é a cor e o ícone, não o botão inteiro encolhendo: o alvo tem 56 px e não pode
+ * medir menos enquanto o dedo (suado, na academia) o aperta ou o solta. O encolher de .ui-tap fica de fora aqui.
+ */
+.step:active:not(:disabled) {
   background: var(--a-elev);
+  transform: none;
+}
+
+.step app-training-glyph {
+  transition: scale var(--dur-fast) var(--ease-out);
+}
+
+.step:active:not(:disabled) app-training-glyph {
+  scale: 0.86;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step app-training-glyph {
+    transition: none;
+  }
+
+  .step:active:not(:disabled) app-training-glyph {
+    scale: 1;
+  }
 }
 
 .value {
