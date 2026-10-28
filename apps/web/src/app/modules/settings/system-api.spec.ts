@@ -134,6 +134,30 @@ describe('SystemApi', () => {
     expect((await change).allowBackgroundAppClosing).toBe(true);
   });
 
+  it('sends the reversible light settings together with the selected apps', async () => {
+    const change = api.updateTv('tv-2', {
+      focusModeEnabled: true,
+      shortAnimationsEnabled: true,
+      restrictedBackgroundPackages: ['com.example.video'],
+    });
+    const request = http.expectOne('/api/v1/tv/tvs/tv-2');
+    expect(request.request.body).toEqual({
+      focusModeEnabled: true,
+      shortAnimationsEnabled: true,
+      restrictedBackgroundPackages: ['com.example.video'],
+    });
+    request.flush({ ...TV, id: 'tv-2', focusModeEnabled: true });
+    expect((await change).focusModeEnabled).toBe(true);
+  });
+
+  it('lists the apps from the inventory of the TV being edited', async () => {
+    const read = api.tvApps('tv-2');
+    const request = http.expectOne('/api/v1/tv/tvs/tv-2/apps');
+    expect(request.request.method).toBe('GET');
+    request.flush({ items: [{ package: 'com.example.video', label: 'Vídeo' }] });
+    expect(await read).toEqual([{ package: 'com.example.video', label: 'Vídeo' }]);
+  });
+
   it('removes a TV', async () => {
     const removed = api.deleteTv('tv-2');
     const request = http.expectOne('/api/v1/tv/tvs/tv-2');

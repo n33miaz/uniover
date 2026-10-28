@@ -91,6 +91,115 @@
 
     @if (!creating()) {
       <fieldset class="group">
+        <legend class="ui-section-label" i18n="@@settings.system.tv.sheet.light-settings">
+          TV Mais Leve
+        </legend>
+        @if (tv()?.kind === 'samsung') {
+          <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.light-settings-unsupported">
+            Não suportado nesta TV.
+          </p>
+        } @else {
+          <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.light-settings-hint">
+            Todos os ajustes ficam desligados até você ligar e voltam ao valor original ao desligar.
+          </p>
+          <ul class="ui-group">
+            <li>
+              <label class="toggle">
+                <span class="toggle-title" i18n="@@settings.system.tv.sheet.focus">Modo Foco</span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="ui-switch"
+                  [checked]="focusMode()"
+                  (change)="focusMode.set($any($event.target).checked)"
+                />
+              </label>
+            </li>
+            <li>
+              <label class="toggle">
+                <span class="toggle-title" i18n="@@settings.system.tv.sheet.short-animations"
+                  >Animações Mais Curtas</span
+                >
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="ui-switch"
+                  [checked]="shortAnimations()"
+                  (change)="shortAnimations.set($any($event.target).checked)"
+                />
+              </label>
+            </li>
+          </ul>
+          <p
+            class="reports-title ui-section-label"
+            i18n="@@settings.system.tv.sheet.restrict-background"
+          >
+            Restringir Apps em Segundo Plano
+          </p>
+          @switch (appsState()) {
+            @case ('loading') {
+              <p class="empty" role="status" i18n="@@settings.system.tv.sheet.apps-loading">
+                Carregando apps…
+              </p>
+            }
+            @case ('error') {
+              <p class="empty bad" role="alert" i18n="@@settings.system.tv.sheet.apps-failed">
+                Não foi possível carregar os apps agora.
+              </p>
+              <button
+                type="button"
+                class="secondary ui-btn"
+                (click)="retryApps()"
+                i18n="@@settings.system.tv.sheet.apps-retry"
+              >
+                Tentar de Novo
+              </button>
+            }
+            @default {
+              @if (apps().length === 0) {
+                <p class="empty" i18n="@@settings.system.tv.sheet.no-apps">
+                  Nenhum app disponível para escolher ainda.
+                </p>
+              } @else {
+                <ul class="ui-group">
+                  @for (app of apps(); track app.package) {
+                    <li>
+                      <label class="toggle">
+                        <span class="toggle-title">{{ app.label }}</span>
+                        <input
+                          type="checkbox"
+                          role="switch"
+                          class="ui-switch"
+                          [checked]="isRestricted(app.package)"
+                          (change)="toggleRestricted(app.package, $event)"
+                        />
+                      </label>
+                    </li>
+                  }
+                </ul>
+              }
+            }
+          }
+          <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.play-store-manual">
+            Atualização automática da Play Store: desative na TV em Play Store &gt; Configurações
+            &gt; Atualizar apps automaticamente.
+          </p>
+          @if (tv()?.capabilities?.includes('tv.adb')) {
+            <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.launcher-soon">
+              Lançador mais leve: Disponível em breve nesta TV. Nenhum app será instalado agora.
+            </p>
+          }
+          <button
+            type="button"
+            class="secondary ui-btn"
+            (click)="restoreLightSettings()"
+            i18n="@@settings.system.tv.sheet.restore-light-settings"
+          >
+            Voltar ao Original
+          </button>
+        }
+      </fieldset>
+      <fieldset class="group">
         <legend class="ui-section-label" i18n="@@settings.system.tv.sheet.cleanup">Limpeza</legend>
         <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.close-background-hint">
           Ligado, a limpeza pode fechar apps abertos em segundo plano. Desligado, nenhum app é

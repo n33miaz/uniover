@@ -32,6 +32,14 @@ export interface TvItem {
   readonly capabilities: readonly string[];
   /** A limpeza pode fechar apps em segundo plano nesta TV. Desligado até o administrador ligar. */
   readonly allowBackgroundAppClosing: boolean;
+  readonly focusModeEnabled?: boolean;
+  readonly shortAnimationsEnabled?: boolean;
+  readonly restrictedBackgroundPackages?: readonly string[];
+}
+
+export interface TvAppOption {
+  readonly package: string;
+  readonly label: string;
 }
 
 /** Uma limpeza da TV como o Sistema a mostra: o que fez ou por que foi pulada (`reason` é um código estável). */
@@ -99,6 +107,15 @@ function readTv(value: unknown): TvItem | null {
     kind: dto['kind'] === 'android' || dto['kind'] === 'samsung' ? dto['kind'] : null,
     online: dto['online'] === true,
     allowBackgroundAppClosing: dto['allowBackgroundAppClosing'] === true,
+    ...(dto['focusModeEnabled'] === true ? { focusModeEnabled: true } : {}),
+    ...(dto['shortAnimationsEnabled'] === true ? { shortAnimationsEnabled: true } : {}),
+    ...(Array.isArray(dto['restrictedBackgroundPackages'])
+      ? {
+          restrictedBackgroundPackages: dto['restrictedBackgroundPackages'].filter(
+            (item): item is string => typeof item === 'string',
+          ),
+        }
+      : {}),
     capabilities: Array.isArray(dto['capabilities'])
       ? dto['capabilities'].filter((item): item is string => typeof item === 'string')
       : [],
@@ -187,15 +204,38 @@ export class SystemApi {
   /** Muda só o que vier (nome, computador e/ou fechar apps em segundo plano). Exige a passkey. */
   async updateTv(
     id: string,
-    change: { name?: string; agentSlug?: string; allowBackgroundAppClosing?: boolean },
+    change: {
+      name?: string;
+      agentSlug?: string;
+      allowBackgroundAppClosing?: boolean;
+      focusModeEnabled?: boolean;
+      shortAnimationsEnabled?: boolean;
+      restrictedBackgroundPackages?: readonly string[];
+    },
   ): Promise<TvItem> {
-    const body: Record<string, string | boolean> = {};
+    const body: Record<string, string | boolean | string[]> = {};
     if (change.name !== undefined) body['name'] = change.name;
     if (change.agentSlug !== undefined) body['agentSlug'] = change.agentSlug;
     if (change.allowBackgroundAppClosing !== undefined)
       body['allowBackgroundAppClosing'] = change.allowBackgroundAppClosing;
+    if (change.focusModeEnabled !== undefined) body['focusModeEnabled'] = change.focusModeEnabled;
+    if (change.shortAnimationsEnabled !== undefined)
+      body['shortAnimationsEnabled'] = change.shortAnimationsEnabled;
+    if (change.restrictedBackgroundPackages !== undefined)
+      body['restrictedBackgroundPackages'] = [...change.restrictedBackgroundPackages];
     return readTvOrThrow(
       await firstValueFrom(this.http.patch(`${BASE}/tvs/${encodeURIComponent(id)}`, body)),
+    );
+  }
+
+  async tvApps(id: string): Promise<TvAppOption[]> {
+    const dto = await firstValueFrom(
+      this.http.get<{ items?: TvAppOption[] }>(`${BASE}/tvs/${encodeURIComponent(id)}/apps`),
+    );
+    if (!Array.isArray(dto?.items)) throw new Error('Lista de apps em formato inesperado.');
+    return dto.items.filter(
+      (item): item is TvAppOption =>
+        typeof item?.package === 'string' && typeof item?.label === 'string',
     );
   }
 
