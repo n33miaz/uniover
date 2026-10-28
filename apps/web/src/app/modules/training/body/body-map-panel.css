@@ -102,10 +102,17 @@ h2 {
   background: var(--level-3);
 }
 
-.hint {
+.hint,
+.scope {
   color: var(--a-ink2);
   font-size: var(--fs-small);
   text-align: center;
+}
+
+.scope {
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--a-surface-2);
 }
 
 .symmetry {
