@@ -7,12 +7,14 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { RoutineRepository } from '../data/routines/routine-repository';
+import type { LocalSession } from '../data/sessions/session';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { ExercisesSwitch } from '../shell/exercises-switch';
 import { TrainingGlyph } from '../shell/training-glyph';
+import { SwapStore } from '../today/swap-store';
 import { RoutineEntry, buildRoutineEntries } from './routine-stats';
 import { TemplateCreated, TemplatesSheet } from './templates-sheet';
 
@@ -31,10 +33,15 @@ export class RoutinesListPage {
   private readonly routines = inject(RoutineRepository);
   private readonly sessions = inject(SessionRepository);
   private readonly connectivity = inject(ConnectivityService);
+  private readonly router = inject(Router);
+  private readonly swaps = inject(SwapStore);
 
   protected readonly entries = signal<readonly RoutineEntry[]>([]);
   protected readonly ready = signal(false);
   protected readonly templatesOpen = signal(false);
+  protected readonly starting = signal(false);
+  /** O treino aberto neste aparelho: o botão da próxima rotina vira "Continuar" quando ele é dela. */
+  private readonly activeSession = signal<LocalSession | undefined>(undefined);
   protected readonly notice = signal<{
     readonly tone: 'ok' | 'warn';
     readonly text: string;
@@ -45,6 +52,11 @@ export class RoutinesListPage {
 
   /** Só a rotina que é de fato a próxima da sequência ganha destaque; sem ela, a lista inteira aparece. */
   protected readonly featured = computed(() => this.entries().find((entry) => entry.next) ?? null);
+  protected readonly continuing = computed(() => {
+    const next = this.featured();
+    const open = this.activeSession();
+    return next !== null && open !== undefined && open.routineId === next.routine.id;
+  });
   protected readonly showingAll = computed(() => this.expanded() || this.featured() === null);
   protected readonly hasMore = computed(
     () => this.featured() !== null && this.entries().length > 1,
@@ -84,6 +96,54 @@ export class RoutinesListPage {
       parts.push($localize`:@@training.routines.minutes:cerca de ${minutes}:minutes:\u00a0min`);
     }
     return parts.join(' · ');
+  }
+
+  /**
+   * Abre o treino da rotina e segue para o dia de treino. O treino aberto neste aparelho só é retomado quando é desta
+   * mesma rotina; se for de outra, a tela avisa e fica, para ninguém cair num treino que não escolheu. Outro aparelho
+   * com treino aberto bloqueia o início, como em Hoje. A escolha do programa semanal que Hoje oferece antes não entra
+   * aqui: quem toca no botão da própria rotina já escolheu o que treinar.
+   */
+  protected async start(routineId: string): Promise<void> {
+    if (this.starting()) return;
+    this.starting.set(true);
+    this.notice.set(null);
+    try {
+      const result = await this.sessions.start(routineId);
+      if (result.status === 'started' || result.status === 'already-active') {
+        this.activeSession.set(result.session);
+        if (result.session.routineId !== routineId) {
+          this.notice.set({ tone: 'warn', text: this.otherOpenText(result.session.routineId) });
+          return;
+        }
+        // Um treino novo nunca herda as trocas do anterior.
+        if (result.status === 'started') this.swaps.clear();
+        await this.router.navigateByUrl('/treino/sessao');
+        return;
+      }
+      this.notice.set({
+        tone: 'warn',
+        text:
+          result.status === 'open-elsewhere'
+            ? $localize`:@@training.routines.start-elsewhere:Há um treino aberto em outro aparelho. Encerre-o em Hoje para começar este.`
+            : $localize`:@@training.routines.start-full:O aparelho está sem espaço: o treino não foi aberto.`,
+      });
+    } catch {
+      // Banco local que não abre ou não grava: a pessoa fica na lista, com o botão livre para tentar de novo.
+      this.notice.set({
+        tone: 'warn',
+        text: $localize`:@@training.routines.start-failed:Não foi possível abrir o treino agora. Tente de novo.`,
+      });
+    } finally {
+      this.starting.set(false);
+    }
+  }
+
+  /** "Há um treino aberto (Treino A)": nomeia a rotina que está em andamento, ou o treino livre. */
+  private otherOpenText(openRoutineId: string | null): string {
+    const open = this.entries().find((entry) => entry.routine.id === openRoutineId);
+    const name = open?.routine.name ?? $localize`:@@training.routines.free-workout:Treino Livre`;
+    return $localize`:@@training.routines.start-other:Há um treino aberto: ${name}:name:. Continue ou encerre em Hoje antes de iniciar outro.`;
   }
 
   protected openTemplates(): void {
@@ -126,11 +186,14 @@ export class RoutinesListPage {
   }
 
   private async load(): Promise<void> {
-    const [all, alive, sessions] = await Promise.all([
+    const [all, alive, sessions, open] = await Promise.all([
       this.routines.all(),
       this.routines.listAll(),
       this.sessions.sessionsBetween(0, Number.MAX_SAFE_INTEGER),
+      // Só enfeita o botão: sem leitura do treino aberto, a tela segue e o botão diz "Iniciar".
+      this.sessions.activeSession().catch(() => undefined),
     ]);
+    this.activeSession.set(open);
     this.entries.set(buildRoutineEntries(all, alive, sessions));
     this.ready.set(true);
   }
