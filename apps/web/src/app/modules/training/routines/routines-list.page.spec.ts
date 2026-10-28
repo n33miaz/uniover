@@ -100,8 +100,8 @@ describe('RoutinesListPage', () => {
     expect(el.querySelector('.next')).toBeNull();
     expect(text(el)).not.toContain('próxima');
     expect(rows(el).map((row) => row.querySelector('.eyebrow')?.textContent?.trim())).toEqual([
-      'fora da sequência',
-      'fora da sequência',
+      'Fora da Sequência',
+      'Fora da Sequência',
     ]);
     // Cada linha abre a rotina dela, não a primeira da lista.
     expect(rows(el).map((row) => row.getAttribute('href'))).toEqual([
@@ -154,12 +154,12 @@ describe('RoutinesListPage', () => {
       );
       button(el, 'Criar este rascunho parcial').click();
 
-      await eventually(fixture, () => expect(el.querySelector('.next-card')).not.toBeNull());
-      await eventually(fixture, () => expect(button(el, 'Ver Mais 2 Rotinas')).toBeDefined());
-      button(el, 'Ver Mais 2 Rotinas').click();
+      // Inativas não são "a próxima": sem destaque, a lista inteira já aparece.
       await eventually(fixture, () =>
         expect(routineTitles(el)).toEqual(['A · Histórico rejeitado', 'B · Histórico rejeitado']),
       );
+      expect(el.querySelector('.next-card')).toBeNull();
+      expect(button(el, 'Ver Mais 2 Rotinas')).toBeUndefined();
       await eventually(fixture, () =>
         expect(text(el)).toContain(
           'Estas rotinas históricas ficaram inativas e não são uma recomendação.',
