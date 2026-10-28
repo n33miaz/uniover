@@ -98,7 +98,7 @@ interface DisplayPhoto extends PhotoInfo {
       @if (photos().length) {
         <div class="grid">
           @for (photo of photos(); track photo.id) {
-            <article class="photo-card">
+            <article class="photo-card" [class.cloud-photo]="isCloudPhoto(photo.id)">
               <button
                 class="image-button"
                 type="button"
@@ -108,8 +108,13 @@ interface DisplayPhoto extends PhotoInfo {
                 <img [src]="photo.src" [alt]="photoAlt(photo.takenOn)" />
               </button>
               <time>{{ formatDate(photo.takenOn) }}</time>
+              <small class="storage-badge" [class.cloud]="isCloudPhoto(photo.id)">{{
+                photoStorageLabel(photo.id)
+              }}</small>
               @if (sync.stateOf(photo.id); as cloud) {
-                <small class="cloud-photo-state">{{ photoCloudLabel(cloud.state) }}</small>
+                @if (cloud.state !== 'cloud') {
+                  <small class="cloud-photo-state">{{ photoCloudLabel(cloud.state) }}</small>
+                }
               }
               <button
                 class="compare-choice secondary ui-btn"
@@ -373,6 +378,17 @@ export class BodyPhotoPanel {
       case 'deleting':
         return $localize`:@@training.body.photos.cloud-deleting:Apagando`;
     }
+  }
+
+  /** O destino visível impede confundir o acompanhamento na nuvem com anexos de uma avaliação, que ficam locais. */
+  protected isCloudPhoto(id: string): boolean {
+    return this.sync.stateOf(id)?.state === 'cloud';
+  }
+
+  protected photoStorageLabel(id: string): string {
+    return this.isCloudPhoto(id)
+      ? $localize`:@@training.body.photos.storage-cloud:Nuvem Privada`
+      : $localize`:@@training.body.photos.storage-device:Neste Aparelho`;
   }
 
   private async load(): Promise<void> {
