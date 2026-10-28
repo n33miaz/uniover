@@ -19,35 +19,37 @@ export type MenuAction =
 
 /**
  * Folha "Opções do treino": o que não precisa estar sempre na tela. Separa o que é do exercício em foco (como fazer,
- * pular, substituir) do que é do treino (lista dos exercícios, acrescentar, terminar, cancelar) e traz o interruptor da
- * tela acesa, que nasce desligado. Cancelar o treino pede confirmação aqui mesmo.
+ * pular, substituir) do que é do treino (lista dos exercícios, acrescentar, terminar, cancelar). O interruptor da tela acesa
+ * (que nasce desligado) só aparece aqui quando `showScreen` está ligado, como na tela do dia; o registro ao vivo o tem no
+ * topo da própria tela. Cancelar o treino pede confirmação aqui mesmo.
  */
 @Component({
   selector: 'app-session-menu-sheet',
   imports: [TrainingSheet, TrainingGlyph, TodayGlyph],
   template: `
     <app-training-sheet [heading]="heading" (closed)="closed.emit()">
-      <div class="ui-group screen">
-        <label class="ui-row">
-          <span class="ui-tile"><app-today-glyph name="screen" /></span>
-          <span class="ui-row-text">
-            <span class="ui-row-title" i18n="@@training.menu.screen">Manter a Tela Acesa</span>
-            <span class="ui-row-sub">{{ screenHint() }}</span>
-          </span>
-          <input
-            type="checkbox"
-            role="switch"
-            class="ui-switch"
-            #toggle
-            [disabled]="!screenSupported()"
-            (change)="onScreen($event)"
-          />
-        </label>
-      </div>
-      <p class="platform" i18n="@@training.menu.platform">
-        Com a tela bloqueada o descanso continua contando, mas não avisa: ao voltar, o app mostra o
-        tempo certo. No iPhone, só a tela acesa evita isso (app instalado, iOS 18.4 ou mais novo).
-      </p>
+      @if (showScreen()) {
+        <div class="ui-group screen">
+          <label class="ui-row">
+            <span class="ui-tile"><app-today-glyph name="screen" /></span>
+            <span class="ui-row-text">
+              <span class="ui-row-title" i18n="@@training.menu.screen">Manter a Tela Acesa</span>
+              <span class="ui-row-sub">{{ screenHint() }}</span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              class="ui-switch"
+              #toggle
+              [disabled]="!screenSupported()"
+              (change)="onScreen($event)"
+            />
+          </label>
+        </div>
+        <p class="platform" i18n="@@training.menu.platform">
+          Com a tela bloqueada o descanso conta, mas não avisa.
+        </p>
+      }
 
       @if (hasFocus()) {
         <h3 class="ui-section-label" i18n="@@training.menu.exercise">Este Exercício</h3>
@@ -69,7 +71,7 @@ export type MenuAction =
                 <span class="ui-row-text">
                   <span class="ui-row-title" i18n="@@training.menu.skip">Pular Exercício</span>
                   <span class="ui-row-sub" i18n="@@training.menu.skip-sub"
-                    >Sai da rotina de hoje; as séries feitas ficam.</span
+                    >As séries feitas ficam.</span
                   >
                 </span>
               </button>
@@ -79,9 +81,7 @@ export type MenuAction =
                 <span class="ui-tile"><app-today-glyph name="swap" /></span>
                 <span class="ui-row-text">
                   <span class="ui-row-title" i18n="@@training.menu.swap">Substituir Exercício</span>
-                  <span class="ui-row-sub" i18n="@@training.menu.swap-sub"
-                    >Só hoje: a rotina não muda.</span
-                  >
+                  <span class="ui-row-sub" i18n="@@training.menu.swap-sub">Só hoje.</span>
                 </span>
               </button>
             </li>
@@ -97,9 +97,6 @@ export type MenuAction =
               <span class="ui-tile"><app-training-glyph name="list" /></span>
               <span class="ui-row-text">
                 <span class="ui-row-title" i18n="@@training.menu.plan">Exercícios do Treino</span>
-                <span class="ui-row-sub" i18n="@@training.menu.plan-sub"
-                  >Voltar a um exercício ou fazer mais uma série.</span
-                >
               </span>
             </button>
           </li>
@@ -146,7 +143,7 @@ export type MenuAction =
             <span class="ui-row-text">
               <span class="ui-row-title" i18n="@@training.menu.discard">Cancelar Treino</span>
               <span class="ui-row-sub" i18n="@@training.menu.discard-sub"
-                >Apaga o treino de hoje e as séries dele.</span
+                >Apaga o treino e as séries.</span
               >
             </span>
           </button>
@@ -187,6 +184,8 @@ export class SessionMenuSheet {
   readonly showPlan = input(true);
   /** Só se termina um treino que tem série gravada; sem série, o caminho é cancelar. */
   readonly canFinish = input(false);
+  /** O interruptor da tela acesa na folha; o registro ao vivo o traz no topo da tela e esconde esta linha. */
+  readonly showScreen = input(true);
   readonly screenSupported = input(false);
   readonly screenOn = input(false);
   /** O aparelho recusou a tela acesa (bateria baixa, economia de energia). */
@@ -217,13 +216,13 @@ export class SessionMenuSheet {
 
   protected readonly screenHint = computed(() => {
     if (!this.screenSupported()) {
-      return $localize`:@@training.menu.screen-unsupported:Este navegador não permite manter a tela acesa. Deixe o bloqueio automático em "Nunca" durante o treino.`;
+      return $localize`:@@training.menu.screen-unsupported:Este navegador não permite.`;
     }
     if (this.screenRefused()) {
-      return $localize`:@@training.menu.screen-refused:O aparelho recusou agora (bateria baixa ou economia de energia). Deixe o bloqueio automático em "Nunca" durante o treino.`;
+      return $localize`:@@training.menu.screen-refused:O aparelho recusou agora.`;
     }
     return this.screenOn()
-      ? $localize`:@@training.menu.screen-on:Ligada: a tela não apaga enquanto o treino está aberto.`
+      ? $localize`:@@training.menu.screen-on:Ligada: a tela não apaga.`
       : $localize`:@@training.menu.screen-off:Desligada: a tela apaga no tempo do aparelho.`;
   });
 }

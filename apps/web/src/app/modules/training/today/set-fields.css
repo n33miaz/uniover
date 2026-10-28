@@ -15,6 +15,11 @@
   gap: var(--space-2);
 }
 
+/* O painel recolhido continua na página (o botão aponta para ele), mas não ocupa lugar nem é lido. */
+.rpe[hidden] {
+  display: none;
+}
+
 .rpe-label {
   display: flex;
   align-items: baseline;
@@ -55,6 +60,50 @@
   border-color: var(--a-accent);
   background: var(--a-accent);
   color: var(--a-on-accent);
+}
+
+/* Esforço e anotação recolhidos (treino ao vivo): dois botões discretos lado a lado, que quebram de linha se faltar largura. */
+.openers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.opener {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--a-accent-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.opener .optional {
+  color: var(--a-ink2);
+}
+
+.opener:active {
+  background: var(--a-elev);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .openers ~ .rpe,
+  .openers ~ .note {
+    animation: reveal var(--dur-base) var(--ease-out);
+  }
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    translate: 0 -6px;
+  }
 }
 
 /* Anotação: um botão tracejado que se abre num campo; fica fora do caminho de quem não anota. */
