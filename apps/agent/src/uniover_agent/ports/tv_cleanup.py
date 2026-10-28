@@ -19,6 +19,10 @@ class TvAdbCleanup(Protocol):
         """Os apps que a TV mostra para abrir (a mesma fonte da lista de apps da tela)."""
         ...
 
+    async def trim_memory(self, package: str) -> None:
+        """Pede ao Android 11+ que reduza a memória do app sem apagar dados."""
+        ...
+
     async def memory_available_mb(self) -> int | None:
         """`MemAvailable` de `/proc/meminfo`, em MB; `None` se a TV respondeu algo ilegível."""
         ...
@@ -40,6 +44,10 @@ class TvAdbCleanup(Protocol):
 
     async def running_packages(self) -> frozenset[str]:
         """Pacotes com processo vivo agora. Levanta `AdbError` se a TV não devolveu a lista."""
+        ...
+
+    async def media_playing(self) -> bool:
+        """Há mídia tocando? Leitura ambígua ou indisponível levanta ``AdbError``."""
         ...
 
     async def go_home(self) -> None:

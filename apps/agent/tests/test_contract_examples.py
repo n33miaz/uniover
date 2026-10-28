@@ -90,5 +90,6 @@ def test_new_tv_messages_have_at_least_one_invalid_example() -> None:
         "tv.watchdog.v1",
         "tv.cleanup.v1",
         "tv.cleanup.result.v1",
+        "tv.cleanup.config.v1",
     ):
         assert message_type in invalid_types

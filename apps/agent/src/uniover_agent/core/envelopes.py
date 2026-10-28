@@ -75,7 +75,7 @@ class EnvelopeFactory:
     def agent_logs(
         self,
         request_id: str,
-        correlation_id: str,
+        correlation_id: str | None,
         text: str,
         lines: int,
         *,
@@ -128,21 +128,44 @@ class EnvelopeFactory:
         correlation_id: str,
         *,
         closed_apps: int,
+        closed_packages: Sequence[str],
         memory_before_mb: int | None,
         memory_after_mb: int | None,
         freed_mb: int | None,
         failed_steps: Sequence[str],
+        kind: str | None = None,
+        trigger: str | None = None,
+        result: str | None = None,
+        reason: str | None = None,
+        duration_ms: int | None = None,
+        background_processes: int | None = None,
+        session_open_ms: int | None = None,
     ) -> dict[str, Any]:
         """`tv.cleanup.result.v1`: o que a limpeza fez, com o comando e o `requestId` do pedido."""
         body: dict[str, Any] = {
             "requestId": request_id,
             "closedApps": closed_apps,
+            "closedPackages": list(closed_packages),
             "memoryBeforeMb": memory_before_mb,
             "memoryAfterMb": memory_after_mb,
             "freedMb": freed_mb,
             "failedSteps": list(failed_steps),
             "at": self._utc_now(),
         }
+        if kind is not None:
+            body["kind"] = kind
+        if trigger is not None:
+            body["trigger"] = trigger
+        if result is not None:
+            body["result"] = result
+        if reason is not None:
+            body["reason"] = reason
+        if duration_ms is not None:
+            body["durationMs"] = max(0, duration_ms)
+        if background_processes is not None:
+            body["backgroundProcesses"] = max(0, background_processes)
+        if session_open_ms is not None:
+            body["sessionOpenMs"] = max(0, session_open_ms)
         return self._build("tv.cleanup.result.v1", body, correlation_id)
 
     def tv_watchdog(

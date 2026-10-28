@@ -9,7 +9,9 @@ from uniover_agent.core.tv.cleanup import (
     TvCleanup,
     is_protected,
     tv_cleanup_handler,
+    tv_cleanup_skipped_handler,
 )
+from uniover_agent.core.tv.cleanup_schedule import TvCleanupScheduler
 from uniover_agent.core.tv.handlers import (
     DEFAULT_LINK_SCHEMES,
     POWER_OFF_CAPABILITY,
@@ -60,6 +62,7 @@ __all__ = [
     "TextReconciler",
     "TvApps",
     "TvCleanup",
+    "TvCleanupScheduler",
     "TvControl",
     "TvIdentity",
     "TvKnown",
@@ -75,6 +78,7 @@ __all__ = [
     "tv_app_launch_handler",
     "tv_apps_refresh_handler",
     "tv_cleanup_handler",
+    "tv_cleanup_skipped_handler",
     "tv_key_handler",
     "tv_power_off_handler",
     "tv_text_handler",

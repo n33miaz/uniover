@@ -35,6 +35,7 @@ class ProcessMessage:
         *,
         background_types: Collection[str] = (),
         monotonic: Callable[[], float] = time.monotonic,
+        on_command: Callable[[Command], None] | None = None,
     ) -> None:
         self._agent_id = agent_id
         self._gate = gate
@@ -43,6 +44,7 @@ class ProcessMessage:
         self._transport = transport
         self._background_types = frozenset(background_types)
         self._monotonic = monotonic
+        self._on_command = on_command
         self._tasks: set[asyncio.Task[None]] = set()
         self._key_tasks: set[asyncio.Task[None]] = set()
         self._last_key_task: asyncio.Task[None] | None = None
@@ -55,6 +57,8 @@ class ProcessMessage:
             return
 
         command = outcome.command
+        if self._on_command is not None:
+            self._on_command(command)
         if command.type == _KEEPALIVE_TYPE:
             # Batimento da API: já chegou pelo canal; não executa comando nem produz resultado.
             return

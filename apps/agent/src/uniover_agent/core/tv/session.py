@@ -197,6 +197,7 @@ class TvSessionManager:
         # A recuperação em segundo plano já reabriu a sessão e ninguém usou o controle desde então.
         self._reopened_unattended = False
         self._listeners: list[Callable[[TvState], None]] = []
+        self._session_opened: list[Callable[[float], None]] = []
         self._repair_callbacks: list[Callable[[], None]] = []
         self._last_emitted: TvState | None = None
         self._tasks: set[asyncio.Task[None]] = set()
@@ -232,6 +233,10 @@ class TvSessionManager:
     def subscribe(self, listener: Callable[[TvState], None]) -> None:
         """Avisa a cada mudança de estado publicável (chamada síncrona, no laço de eventos)."""
         self._listeners.append(listener)
+
+    def on_session_opened(self, callback: Callable[[float], None]) -> None:
+        """Avisa quando a TV acabou de responder e a sessão Remote v2 ficou pronta."""
+        self._session_opened.append(callback)
 
     def on_needs_repair(self, callback: Callable[[], None]) -> None:
         """Sinal para o vigia: a TV recusou a conexão (o serviço do controle pode ter morrido).
@@ -676,6 +681,11 @@ class TvSessionManager:
         self._state = SessionState.HOT
         self.touch()
         self._set_connection("hot")
+        for callback in self._session_opened:
+            try:
+                callback(elapsed)
+            except Exception:
+                _log.exception("falha no aviso de sessão da TV")
         # Uma leitura ao abrir a sessão: o contador já aparece antes de qualquer tecla de volume.
         self._schedule_volume_read()
 

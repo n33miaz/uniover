@@ -280,7 +280,7 @@ FORBIDDEN = (
 
 async def test_the_whole_cleanup_runs_exactly_these_adb_commands() -> None:
     runner = full_cleanup_runner()
-    report = await TvCleanup(make(runner), FakeClock()).run()
+    report = await TvCleanup(make(runner), FakeClock(), allow_app_closing=True).run()
     assert runner.calls == [
         CONNECT,
         GET_STATE,
@@ -307,7 +307,7 @@ async def test_the_whole_cleanup_runs_exactly_these_adb_commands() -> None:
 
 async def test_no_forbidden_command_ever_reaches_the_adb() -> None:
     runner = full_cleanup_runner()
-    await TvCleanup(make(runner), FakeClock()).run()
+    await TvCleanup(make(runner), FakeClock(), allow_app_closing=True).run()
     commands = [" ".join(call) for call in runner.calls]
     for call in commands:
         assert not any(word in call for word in FORBIDDEN), call
@@ -316,10 +316,63 @@ async def test_no_forbidden_command_ever_reaches_the_adb() -> None:
     assert all(len(call) == 4 for call in runner.calls if call[2:3] == ("shell",))
 
 
+def trim_memory(package: str) -> str:
+    return f"am send-trim-memory '{package}' RUNNING_CRITICAL"
+
+
+def mutating_app_commands(runner: FakeAdbRunner) -> list[str]:
+    """Comandos que fecham, matam ou alteram app. `pm list packages` só lê a lista: fica de fora."""
+    return [
+        command
+        for command in runner.shell_commands()
+        if command.startswith(("am force-stop", "am kill", "am start", "input keyevent"))
+        or (command.startswith("pm ") and not command.startswith("pm list packages"))
+    ]
+
+
+async def test_with_the_option_off_no_command_stops_kills_or_changes_an_app() -> None:
+    """Regra do dono: apps da TV dele não são tocados. O padrão do `TvCleanup` é desligado."""
+    for trim_only_run in ("manual", "light", "light-without-foreground"):
+        runner = full_cleanup_runner()
+        runner.script[shell(trim_memory("com.cnvs.apptv"))] = ok("")
+        runner.script[shell(trim_memory("com.spotify.tv.android"))] = ok("")
+        cleanup = TvCleanup(make(runner), FakeClock())
+        if trim_only_run == "manual":
+            report = await cleanup.run()
+        elif trim_only_run == "light":
+            report = await cleanup.run_light("com.spotify.tv.android")
+        else:
+            report = await cleanup.run_light(None)
+        assert mutating_app_commands(runner) == [], trim_only_run
+        assert report.closed_apps == 0, trim_only_run
+        assert report.closed_packages == (), trim_only_run
+    # A limpeza manual com a opção desligada ainda alivia a memória, só que sem encerrar nada.
+    runner = full_cleanup_runner()
+    runner.script[shell(trim_memory("com.cnvs.apptv"))] = ok("")
+    runner.script[shell(trim_memory("com.spotify.tv.android"))] = ok("")
+    await TvCleanup(make(runner), FakeClock()).run()
+    assert [c for c in runner.shell_commands() if "send-trim-memory" in c] == [
+        trim_memory("com.cnvs.apptv"),
+        trim_memory("com.spotify.tv.android"),
+    ]
+
+
+async def test_with_the_option_on_the_light_cleanup_still_never_stops_the_foreground_app() -> None:
+    runner = full_cleanup_runner()
+    runner.script[shell(trim_memory("com.cnvs.apptv"))] = ok("")
+    await TvCleanup(make(runner), FakeClock(), allow_app_closing=True).run_light(
+        "com.spotify.tv.android"
+    )
+    commands = runner.shell_commands()
+    assert force_stop("com.cnvs.apptv") in commands
+    assert force_stop("com.spotify.tv.android") not in commands
+    assert HOME_KEY not in commands
+
+
 async def test_a_tv_that_goes_silent_mid_cleanup_stops_the_sequence_there() -> None:
     runner = full_cleanup_runner()
     runner.script[shell(KILL_ALL)] = TimeoutError()
-    report = await TvCleanup(make(runner), FakeClock()).run()
+    report = await TvCleanup(make(runner), FakeClock(), allow_app_closing=True).run()
     assert runner.shell_commands()[-1] == KILL_ALL
     assert report.failed_steps == ("kill-background", "adb-lost")
     assert report.closed_apps == 0

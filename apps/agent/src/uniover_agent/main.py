@@ -97,6 +97,8 @@ from uniover_agent.core import (
     POWER_OFF_CAPABILITY,
     AppIconPublisher,
     AppsAnnouncer,
+    Command,
+    CommandResult,
     ConnectionSupervisor,
     EnvelopeFactory,
     EnvelopeGate,
@@ -105,10 +107,12 @@ from uniover_agent.core import (
     IconResolver,
     PairAgent,
     ProcessMessage,
+    ResultStatus,
     SamsungTvApps,
     TextReconciler,
     TvApps,
     TvCleanup,
+    TvCleanupScheduler,
     TvIdentity,
     TvKnown,
     TvRelocator,
@@ -122,6 +126,7 @@ from uniover_agent.core import (
     tv_app_launch_handler,
     tv_apps_refresh_handler,
     tv_cleanup_handler,
+    tv_cleanup_skipped_handler,
     tv_key_handler,
     tv_power_off_handler,
     tv_text_handler,
@@ -252,6 +257,7 @@ class TvSetup:
     known: TvKnown = field(default_factory=TvKnown)
     # O vigia do serviço do controle (só Android TV com `adb`): quem vê uma porta recusada o avisa.
     watchdog: TvWatchdog | None = None
+    cleanup_scheduler: TvCleanupScheduler | None = None
 
 
 def build_tv(
@@ -421,7 +427,12 @@ def build_samsung_tv(
             ),
             "tv.apps.refresh.v1": tv_apps_refresh_handler(apps),
             "tv.text.v1": unsupported_handler("a TV Samsung não suporta digitação por este canal"),
-            "tv.cleanup.v1": unsupported_handler("a TV Samsung não suporta limpeza por ADB"),
+            "tv.cleanup.v1": tv_cleanup_skipped_handler(
+                transport,
+                envelopes,
+                "model-unconfirmed",
+                "a limpeza automática da TV Samsung fica desligada até confirmar o modelo",
+            ),
         },
         capabilities=[
             "tv.remote",
@@ -493,9 +504,32 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
     setup.handlers["tv.app.launch.v1"] = tv_app_launch_handler(manager, packages=apps)
     # A limpeza só mexe no ADB (nunca na sessão do controle remoto) e leva vários segundos: roda
     # fora do laço de mensagens, e as teclas seguem enquanto ela trabalha.
-    cleanup = TvCleanup(adb, clock, keep=keep)
+    cleanup = TvCleanup(adb, clock, keep=keep, allow_app_closing=False)
+    scheduler = TvCleanupScheduler(
+        cleanup,
+        adb,
+        clock,
+        setup.transport,
+        setup.envelopes,
+        lambda: setup.manager.snapshot().app,
+    )
+
+    async def configure_cleanup(command: Command) -> CommandResult:
+        body = command.body
+        scheduler.configure(
+            bool(body["lightEnabled"]),
+            bool(body["deepEnabled"]),
+            int(body["deepThresholdMb"]),
+            bool(body.get("closeBackgroundApps", False)),
+        )
+        return CommandResult(command.id, ResultStatus.OK)
+
     setup.handlers["tv.cleanup.v1"] = tv_cleanup_handler(cleanup, setup.transport, setup.envelopes)
+    setup.handlers["tv.cleanup.config.v1"] = configure_cleanup
     setup.background_commands.add("tv.cleanup.v1")
+    setup.background.append(scheduler.run)
+    setup.cleanup_scheduler = scheduler
+    manager.on_session_opened(scheduler.note_session_opened)
     manager.subscribe(announcer.on_state)
     setup.after_hello.append(announcer.after_hello)
     setup.background.append(announcer.run)
@@ -515,6 +549,8 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
         except Exception as exc:
             _log.info("ADB sem resposta agora (%s); será usado quando a TV responder", exc)
         setup.capabilities.append("tv.adb")
+        # A limpeza automática depende do mesmo ADB (que responde agora ou quando a TV ligar).
+        setup.capabilities.append("tv.cleanup.automatic.v1")
 
     setup.prepare.append(declare_when_usable)
     return adb
@@ -872,6 +908,13 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
         envelopes,
         transport,
         background_types=tv.background_commands if tv is not None else (),
+        on_command=(
+            lambda command: (
+                tv.cleanup_scheduler.note_message(command.type)
+                if tv is not None and tv.cleanup_scheduler is not None
+                else None
+            )
+        ),
     )
     publisher: TvStatePublisher | None = None
     after_hello: list[Callable[[], Awaitable[None]]] = []

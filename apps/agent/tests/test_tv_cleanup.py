@@ -23,6 +23,7 @@ from uniover_agent.core import (
     TvSessionError,
     is_protected,
     tv_cleanup_handler,
+    tv_cleanup_skipped_handler,
 )
 from uniover_agent.core.tv.cleanup import PROTECTED_PACKAGES
 from uniover_agent.ports import (
@@ -81,7 +82,7 @@ def stops(adb: FakeTvAdb) -> list[str]:
 async def test_a_cleanup_runs_the_steps_in_order_and_reports_the_memory() -> None:
     adb = tv()
     clock = FakeClock()
-    report = await TvCleanup(adb, clock).run()
+    report = await TvCleanup(adb, clock, allow_app_closing=True).run()
     assert adb.cleanup_log == [
         "memory",
         "list-apps",
@@ -103,7 +104,7 @@ async def test_a_cleanup_runs_the_steps_in_order_and_reports_the_memory() -> Non
 
 async def test_the_second_cleanup_finds_nothing_open_and_closes_nothing() -> None:
     adb = tv()
-    cleanup = TvCleanup(adb, FakeClock())
+    cleanup = TvCleanup(adb, FakeClock(), allow_app_closing=True)
     await cleanup.run()
     adb.running = frozenset({LAUNCHER, REMOTE_SERVICE, SETTINGS})  # só o que é protegido segue vivo
     adb.cleanup_log.clear()
@@ -119,14 +120,35 @@ async def test_the_second_cleanup_finds_nothing_open_and_closes_nothing() -> Non
 
 async def test_only_apps_that_are_running_are_stopped_and_counted() -> None:
     adb = tv(running=frozenset({CINEVS, YOUTUBE}))
-    report = await TvCleanup(adb, FakeClock()).run()
+    report = await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     assert stops(adb) == [YOUTUBE, CINEVS]
     assert report.closed_apps == 2
 
 
+async def test_a_light_cleanup_never_goes_home_or_stops_the_foreground_app() -> None:
+    adb = tv(running=frozenset({CINEVS, YOUTUBE, SPOTIFY}))
+    report = await TvCleanup(adb, FakeClock(), allow_app_closing=True).run_light(YOUTUBE)
+    assert "go-home" not in adb.cleanup_log
+    assert f"force-stop:{YOUTUBE}" not in adb.cleanup_log
+    assert stops(adb) == [CINEVS, SPOTIFY]
+    assert report.closed_apps == 2
+
+
+async def test_owner_tv_with_background_closing_disabled_never_kills_or_stops_an_app() -> None:
+    adb = tv(running=frozenset({CINEVS, YOUTUBE, SPOTIFY}))
+    report = await TvCleanup(adb, FakeClock(), allow_app_closing=False).run_light(YOUTUBE)
+
+    assert report.closed_apps == 0
+    assert not any(
+        step == "kill-background" or step.startswith("force-stop:") or step.startswith("pm")
+        for step in adb.cleanup_log
+    )
+    assert "go-home" not in adb.cleanup_log
+
+
 async def test_nothing_is_stopped_when_the_tv_lists_no_app() -> None:
     adb = tv(apps=[])
-    report = await TvCleanup(adb, FakeClock()).run()
+    report = await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     assert report.closed_apps == 0
     assert stops(adb) == []
 
@@ -180,7 +202,7 @@ async def test_no_protected_package_ever_gets_a_force_stop() -> None:
     adb = tv(apps=apps, running=frozenset(app.package for app in apps))
     adb.keyboard = "com.exemplo.keyboard"
     adb.accessibility = frozenset({"com.exemplo.reader"})
-    await TvCleanup(adb, FakeClock(), keep=["com.exemplo.dono"]).run()
+    await TvCleanup(adb, FakeClock(), keep=["com.exemplo.dono"], allow_app_closing=True).run()
     assert stops(adb) == CLOSABLE
     for package in PROTECTED_PACKAGES | {LAUNCHER, "com.exemplo.keyboard", "com.exemplo.reader"}:
         assert f"force-stop:{package}" not in adb.cleanup_log
@@ -193,13 +215,13 @@ async def test_the_home_screen_the_tv_reports_is_protected() -> None:
         running=EVERYTHING_RUNNING | {"com.exemplo.tela"},
     )
     adb.home = frozenset({"com.exemplo.tela"})
-    await TvCleanup(adb, FakeClock()).run()
+    await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     assert "com.exemplo.tela" not in stops(adb)
 
 
 async def test_the_keep_list_of_the_owner_is_respected() -> None:
     adb = tv()
-    await TvCleanup(adb, FakeClock(), keep={SPOTIFY, CINEVS}).run()
+    await TvCleanup(adb, FakeClock(), keep={SPOTIFY, CINEVS}, allow_app_closing=True).run()
     assert stops(adb) == [PLAY_STORE, YOUTUBE]
 
 
@@ -222,7 +244,7 @@ async def test_without_the_adb_nothing_is_done_and_the_reason_is_a_stable_code(
     adb = tv()
     adb.cleanup_errors["memory"] = error
     with pytest.raises(TvSessionError) as caught:
-        await TvCleanup(adb, FakeClock()).run()
+        await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     assert caught.value.code == code
     assert caught.value.message == error.message
     # Nem HOME nem `force-stop`: o primeiro comando é o teste do canal.
@@ -232,7 +254,7 @@ async def test_without_the_adb_nothing_is_done_and_the_reason_is_a_stable_code(
 async def test_one_app_that_will_not_close_does_not_stop_the_others() -> None:
     adb = tv()
     adb.cleanup_errors[f"force-stop:{YOUTUBE}"] = AdbCommandFailed("a TV não fechou o app")
-    report = await TvCleanup(adb, FakeClock()).run()
+    report = await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     assert stops(adb) == CLOSABLE
     assert report.closed_apps == len(CLOSABLE) - 1
     assert report.failed_steps == (f"force-stop:{YOUTUBE}",)
@@ -243,7 +265,7 @@ async def test_one_app_that_will_not_close_does_not_stop_the_others() -> None:
 async def test_losing_the_adb_in_the_middle_stops_and_says_so(error_type: type[AdbError]) -> None:
     adb = tv()
     adb.cleanup_errors[f"force-stop:{YOUTUBE}"] = error_type("falha")
-    report = await TvCleanup(adb, FakeClock()).run()
+    report = await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     # O Play Store fechou; o YouTube falhou e a limpeza parou ali (nada de insistir numa TV muda).
     assert stops(adb) == [PLAY_STORE, YOUTUBE]
     assert report.closed_apps == 1
@@ -268,7 +290,7 @@ async def test_if_what_protects_or_what_runs_cannot_be_read_no_app_is_closed(
 ) -> None:
     adb = tv()
     adb.cleanup_errors[step] = AdbCommandFailed("a TV não informou")
-    report = await TvCleanup(adb, FakeClock()).run()
+    report = await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     assert stops(adb) == []
     assert report.closed_apps == 0
     assert report.failed_steps == (failed,)
@@ -281,7 +303,7 @@ async def test_if_what_protects_or_what_runs_cannot_be_read_no_app_is_closed(
 async def test_a_failing_home_key_does_not_cancel_the_rest() -> None:
     adb = tv()
     adb.cleanup_errors["go-home"] = AdbCommandFailed("a TV não foi para a tela inicial")
-    report = await TvCleanup(adb, FakeClock()).run()
+    report = await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     assert report.failed_steps == ("go-home",)
     assert report.closed_apps == len(CLOSABLE)
     assert "kill-background" in adb.cleanup_log
@@ -290,7 +312,7 @@ async def test_a_failing_home_key_does_not_cancel_the_rest() -> None:
 async def test_a_failing_kill_all_does_not_cancel_the_force_stops() -> None:
     adb = tv()
     adb.cleanup_errors["kill-background"] = AdbCommandFailed("a TV não encerrou os processos")
-    report = await TvCleanup(adb, FakeClock()).run()
+    report = await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     assert report.failed_steps == ("kill-background",)
     assert report.closed_apps == len(CLOSABLE)
 
@@ -298,7 +320,7 @@ async def test_a_failing_kill_all_does_not_cancel_the_force_stops() -> None:
 async def test_losing_the_adb_while_reading_skips_every_later_step() -> None:
     adb = tv()
     adb.cleanup_errors["list-apps"] = AdbUnreachable("a TV não respondeu pelo ADB")
-    report = await TvCleanup(adb, FakeClock()).run()
+    report = await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     assert adb.cleanup_log == ["memory", "list-apps"]
     assert report.failed_steps == ("list-apps", "adb-lost")
     assert (report.closed_apps, report.memory_after_mb) == (0, None)
@@ -310,7 +332,7 @@ async def test_losing_the_adb_while_reading_skips_every_later_step() -> None:
 async def test_memory_that_cannot_be_measured_is_reported_as_unknown() -> None:
     adb = tv()
     adb.memory_mb = [None]
-    report = await TvCleanup(adb, FakeClock()).run()
+    report = await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     assert (report.memory_before_mb, report.memory_after_mb, report.freed_mb) == (None, None, None)
     assert report.closed_apps == len(CLOSABLE)
     assert report.failed_steps == ()
@@ -319,14 +341,14 @@ async def test_memory_that_cannot_be_measured_is_reported_as_unknown() -> None:
 async def test_only_the_final_reading_missing_leaves_the_freed_amount_unknown() -> None:
     adb = tv()
     adb.memory_mb = [300, None]
-    report = await TvCleanup(adb, FakeClock()).run()
+    report = await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     assert (report.memory_before_mb, report.memory_after_mb, report.freed_mb) == (300, None, None)
 
 
 async def test_the_freed_amount_is_never_negative() -> None:
     adb = tv()
     adb.memory_mb = [700, 300]
-    report = await TvCleanup(adb, FakeClock()).run()
+    report = await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     assert (report.memory_before_mb, report.memory_after_mb, report.freed_mb) == (700, 300, 0)
 
 
@@ -336,7 +358,7 @@ async def test_the_freed_amount_is_never_negative() -> None:
 async def test_when_the_time_budget_ends_the_rest_is_skipped_and_reported() -> None:
     adb = tv()
     # O orçamento acaba durante a pausa depois de HOME: nada de `kill-all` nem de `force-stop`.
-    report = await TvCleanup(adb, FakeClock(), budget_seconds=0.5).run()
+    report = await TvCleanup(adb, FakeClock(), budget_seconds=0.5, allow_app_closing=True).run()
     assert stops(adb) == []
     assert "kill-background" not in adb.cleanup_log
     assert report.failed_steps == ("deadline",)
@@ -356,7 +378,9 @@ async def test_the_budget_can_end_between_two_apps() -> None:
 
     clock = FakeClock()
     adb = Slow(clock)
-    report = await TvCleanup(adb, clock, budget_seconds=6.0, settle_seconds=0.0).run()
+    report = await TvCleanup(
+        adb, clock, budget_seconds=6.0, settle_seconds=0.0, allow_app_closing=True
+    ).run()
     assert stops(adb) == CLOSABLE[:2]
     assert report.closed_apps == 2
     assert report.failed_steps == ("deadline",)
@@ -372,7 +396,7 @@ async def test_a_second_cleanup_while_one_runs_is_refused() -> None:
 
     adb = Waiting(LAUNCHABLE)
     adb.running = EVERYTHING_RUNNING
-    cleanup = TvCleanup(adb, FakeClock())
+    cleanup = TvCleanup(adb, FakeClock(), allow_app_closing=True)
     first = asyncio.create_task(cleanup.run())
     await asyncio.sleep(0)
     assert cleanup.running
@@ -389,7 +413,7 @@ async def test_a_second_cleanup_while_one_runs_is_refused() -> None:
 async def test_a_failed_cleanup_frees_the_turn_for_the_next() -> None:
     adb = tv()
     adb.cleanup_errors["memory"] = AdbUnreachable("a TV não respondeu pelo ADB")
-    cleanup = TvCleanup(adb, FakeClock())
+    cleanup = TvCleanup(adb, FakeClock(), allow_app_closing=True)
     with pytest.raises(TvSessionError):
         await cleanup.run()
     assert not cleanup.running
@@ -403,7 +427,9 @@ def handler_for(adb: FakeTvAdb) -> tuple[Handler, FakeTransport]:
     gate = EnvelopeGate(AGENT_ID)
     transport = FakeTransport()
     handler = tv_cleanup_handler(
-        TvCleanup(adb, clock), transport, EnvelopeFactory(AGENT_ID, gate, clock)
+        TvCleanup(adb, clock, allow_app_closing=True),
+        transport,
+        EnvelopeFactory(AGENT_ID, gate, clock),
     )
     return handler, transport
 
@@ -423,8 +449,48 @@ async def test_the_report_goes_to_the_api_before_the_command_is_answered() -> No
     body = report["body"]
     assert body["requestId"] == REQUEST_ID
     assert body["closedApps"] == len(CLOSABLE)
+    assert body["closedPackages"] == CLOSABLE
     assert (body["memoryBeforeMb"], body["memoryAfterMb"], body["freedMb"]) == (300, 700, 400)
     assert body["failedSteps"] == []
+
+
+async def test_a_light_request_keeps_the_foreground_app_running() -> None:
+    adb = tv(running=frozenset({CINEVS, YOUTUBE, SPOTIFY}))
+    handler, transport = handler_for(adb)
+
+    result = await handler(
+        command({"requestId": REQUEST_ID, "mode": "light", "foregroundPackage": YOUTUBE})
+    )
+
+    assert result.status is ResultStatus.OK
+    assert "go-home" not in adb.cleanup_log
+    assert f"force-stop:{YOUTUBE}" not in adb.cleanup_log
+    assert transport.sent[0]["body"]["closedApps"] == 2
+    assert transport.sent[0]["body"]["closedPackages"] == [CINEVS, SPOTIFY]
+
+
+async def test_a_samsung_cleanup_is_skipped_with_the_model_reason_and_touches_no_app() -> None:
+    clock = FakeClock()
+    transport = FakeTransport()
+    handler = tv_cleanup_skipped_handler(
+        transport,
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        "model-unconfirmed",
+        "a limpeza da TV Samsung fica desligada até confirmar o modelo",
+    )
+
+    result = await handler(command())
+
+    assert (result.status, result.code) == (ResultStatus.REJECTED, "unsupported")
+    (report,) = transport.sent
+    body = report["body"]
+    assert (body["result"], body["reason"], body["kind"], body["closedApps"]) == (
+        "skipped",
+        "model-unconfirmed",
+        "manual",
+        0,
+    )
+    assert body["requestId"] == REQUEST_ID
 
 
 async def test_without_the_adb_the_answer_is_a_failure_with_a_stable_code_and_no_report() -> None:
@@ -491,7 +557,9 @@ async def test_a_report_that_cannot_be_sent_is_a_failure_not_a_crash() -> None:
 
     clock = FakeClock()
     handler = tv_cleanup_handler(
-        TvCleanup(tv(), clock), Down(), EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock)
+        TvCleanup(tv(), clock, allow_app_closing=True),
+        Down(),
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
     )
     result = await handler(command())
     assert (result.status, result.code) == (ResultStatus.FAILED, "send_failed")
@@ -505,7 +573,7 @@ async def test_the_info_log_has_only_counts_and_megabytes(
 ) -> None:
     adb = tv()
     with caplog.at_level(logging.INFO):
-        await TvCleanup(adb, FakeClock()).run()
+        await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     info = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
     assert info == ["limpeza da TV: 4 apps fechados, memória 300 -> 700 MB, 0 etapas falharam"]
     assert not any(package in caplog.text for package in (CINEVS, SPOTIFY, YOUTUBE, PLAY_STORE))
@@ -515,7 +583,7 @@ async def test_steps_that_failed_are_logged_as_a_warning(caplog: pytest.LogCaptu
     adb = tv()
     adb.cleanup_errors[f"force-stop:{SPOTIFY}"] = AdbCommandFailed("a TV não fechou o app")
     with caplog.at_level(logging.INFO):
-        await TvCleanup(adb, FakeClock()).run()
+        await TvCleanup(adb, FakeClock(), allow_app_closing=True).run()
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert warnings == [f"etapas da limpeza que falharam: force-stop:{SPOTIFY}"]
 
