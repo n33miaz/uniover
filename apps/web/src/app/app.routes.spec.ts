@@ -2,12 +2,27 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
+import { IDBFactory as FakeIDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
 import { routes } from './app.routes';
 import { ApiProblem } from './core/auth/api-problem';
 import { AuthApi } from './core/auth/auth-api';
+import { OFFLINE_DB_FACTORY, OfflineDb } from './core/offline-queue/offline-db';
 import { FakeAccountScope } from './core/offline-queue/queue-test-kit';
 import { AccountScope } from './core/session/account-scope';
 import { HomeStatus, HomeStatusPort } from './core/status/home-status.port';
+import { TRAINING_DB_FACTORY, TrainingDb } from './modules/training/data/training-db';
+
+/**
+ * Os bancos locais da conta (fila offline e Treino) em memória. Sem isto o jsdom, que não tem IndexedDB, deixava a Dexie
+ * rejeitar a abertura fora de qualquer teste ("IndexedDB API missing") assim que o shell sobe com uma conta conhecida.
+ */
+function inMemoryDatabases() {
+  const options = { indexedDB: new FakeIDBFactory(), IDBKeyRange: FakeIDBKeyRange };
+  return [
+    { provide: OFFLINE_DB_FACTORY, useValue: (name: string) => new OfflineDb(name, options) },
+    { provide: TRAINING_DB_FACTORY, useValue: (name: string) => new TrainingDb(name, options) },
+  ];
+}
 
 describe('app routes', () => {
   // Aqui não há sessão nem mock da API: o papel vem só da dica guardada no `localStorage`, que os arquivos de teste
@@ -21,6 +36,7 @@ describe('app routes', () => {
         provideRouter(routes),
         // O Treino só abre com uma conta conhecida (o banco local é por conta): estas rotas só olham o roteamento.
         { provide: AccountScope, useValue: new FakeAccountScope() },
+        ...inMemoryDatabases(),
         // A Início lê o estado da casa pela porta; aqui só interessa que a rota a desenha.
         {
           provide: HomeStatusPort,
@@ -143,6 +159,7 @@ describe('app routes for a guest', () => {
         { provide: AuthApi, useValue: api },
         // O Treino só abre com uma conta conhecida (o banco local é por conta): estas rotas só olham o roteamento.
         { provide: AccountScope, useValue: new FakeAccountScope() },
+        ...inMemoryDatabases(),
         {
           provide: HomeStatusPort,
           useValue: {
