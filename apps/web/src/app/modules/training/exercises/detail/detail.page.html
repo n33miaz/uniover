@@ -18,6 +18,12 @@
 } @else {
   @let ex = exercise()!;
   <article class="detail">
+    <header class="head">
+      <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="goBack()">
+        <app-training-glyph name="back" />
+      </button>
+    </header>
+
     <section class="hero">
       <div class="visuals" [class.with-art]="hasArt()">
         @if (hasArt()) {

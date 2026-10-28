@@ -10,7 +10,13 @@
   margin-inline: auto;
 }
 
-/* A ação de voltar do estado ausente leva à lista; a ficha usa apenas o cabeçalho do módulo. */
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Voltar da tela de segundo nível leva à lista (o cabeçalho do módulo some nas telas internas). */
 .back {
   display: inline-flex;
   flex: none;
