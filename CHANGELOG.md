@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.1](https://github.com/n33miaz/uniover/compare/v0.8.0...v0.8.1) (2026-10-28)
+
+
+### Features
+
+* **web:** update skeleton mirrors the home
+
+
+### Bug Fixes
+
+* **web:** never hold the first screen on /me
+
 ## [0.8.0](https://github.com/n33miaz/uniover/compare/v0.7.0...v0.8.0) (2026-10-28)
 
 
