@@ -123,7 +123,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentLogsV1, AgentMaintenanceV1, TransportKeepaliveV1, TvAdb, TvCleanupAutomaticV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvPowerOffV1, TvRemote };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentLogsV1, AgentMaintenanceV1, TransportKeepaliveV1, TvAdb, TvCleanupAutomaticV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvPowerOffV1, TvRemote };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -245,6 +245,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.TvKindAndroid;
                 case "tv.kind.samsung":
                     return AgentHelloV1BodyCapabilitiesItem.TvKindSamsung;
+                case "tv.light-settings.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.TvLightSettingsV1;
                 case "tv.power.off.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvPowerOffV1;
                 case "tv.remote":
@@ -340,6 +342,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvKindSamsung:
                     JsonSerializer.Serialize(writer, "tv.kind.samsung", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvLightSettingsV1:
+                    JsonSerializer.Serialize(writer, "tv.light-settings.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvPowerOffV1:
                     JsonSerializer.Serialize(writer, "tv.power.off.v1", options);

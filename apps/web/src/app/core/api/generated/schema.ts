@@ -7777,6 +7777,43 @@ export interface paths {
     };
     trace?: never;
   };
+  '/api/v1/tv/tvs/{id}/apps': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvAppsResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/tvs/{id}/cleanup-reports': {
     parameters: {
       query?: never;
@@ -8956,6 +8993,13 @@ export interface components {
       platform: string;
       slug: string;
     };
+    TvAppOption: {
+      label: string;
+      package: string;
+    };
+    TvAppsResponse: {
+      items: components['schemas']['TvAppOption'][];
+    };
     TvCleanupOk: {
       /** Format: int32 */
       closedApps: number;
@@ -9057,12 +9101,17 @@ export interface components {
       /** @default false */
       allowBackgroundAppClosing: boolean;
       capabilities: string[];
+      /** @default false */
+      focusModeEnabled: boolean;
       /** Format: uuid */
       id: string;
       isDefault: boolean;
       kind: null | string;
       name: string;
       online: boolean;
+      restrictedBackgroundPackages?: null | string[];
+      /** @default false */
+      shortAnimationsEnabled: boolean;
     };
     UpdateProfileRequest: {
       displayName: null | string;
@@ -9077,7 +9126,10 @@ export interface components {
     UpdateTvRequest: {
       agentSlug: null | string;
       allowBackgroundAppClosing?: null | boolean;
+      focusModeEnabled?: null | boolean;
       name: null | string;
+      restrictedBackgroundPackages?: null | string[];
+      shortAnimationsEnabled?: null | boolean;
     };
     UpsertBodyEntryRequest: {
       /** Format: double */

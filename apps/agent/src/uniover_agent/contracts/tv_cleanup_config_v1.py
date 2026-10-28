@@ -7,7 +7,17 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
+
+
+class RestrictedPackage(RootModel[str]):
+    root: Annotated[
+        str,
+        Field(
+            max_length=255,
+            pattern='^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+$',
+        ),
+    ]
 
 
 class TvCleanupConfigV1Body(BaseModel):
@@ -18,6 +28,11 @@ class TvCleanupConfigV1Body(BaseModel):
     deepEnabled: bool
     deepThresholdMb: Annotated[int, Field(ge=64, le=512)]
     closeBackgroundApps: bool | None = None
+    focusEnabled: bool | None = None
+    shortAnimationsEnabled: bool | None = None
+    restrictedPackages: Annotated[
+        list[RestrictedPackage] | None, Field(max_length=100)
+    ] = None
 
 
 class TvCleanupConfigV1Message(BaseModel):

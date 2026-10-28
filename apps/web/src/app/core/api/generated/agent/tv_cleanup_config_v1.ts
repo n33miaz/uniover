@@ -18,4 +18,10 @@ export interface TvCleanupConfigV1Body {
   deepEnabled: boolean;
   deepThresholdMb: number;
   closeBackgroundApps?: boolean;
+  focusEnabled?: boolean;
+  shortAnimationsEnabled?: boolean;
+  /**
+   * @maxItems 100
+   */
+  restrictedPackages?: string[];
 }
