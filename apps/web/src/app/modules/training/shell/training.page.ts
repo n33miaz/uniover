@@ -416,12 +416,15 @@ export class TrainingPage {
   protected readonly bodyArea = computed(() =>
     isWithin(this.url().split(/[?#]/)[0].replace(/\/$/, ''), '/treino/corpo'),
   );
-  /** Detalhe, formulário e editor de exercícios e rotinas: telas internas, que trazem o próprio voltar (um só). */
-  private readonly innerScreen = computed(
-    () =>
-      /^\/treino\/(exercicios|rotinas)\/[^/]+/.test(this.url().split(/[?#]/)[0]) ||
-      this.url().split(/[?#]/)[0] === '/treino/glossario',
-  );
+  /** Telas internas trazem o próprio voltar (um só) para o pai lógico; a seta da casca não pode duplicá-lo. */
+  private readonly innerScreen = computed(() => {
+    const path = this.url().split(/[?#]/)[0];
+    return (
+      /^\/treino\/(sessao(?:\/|$)|corpo\/avaliacoes(?:\/|$)|exercicios\/[^/]+|rotinas\/[^/]+)/.test(
+        path,
+      ) || path === '/treino/glossario'
+    );
+  });
   protected readonly progressArea = computed(
     () =>
       this.bodyArea() ||

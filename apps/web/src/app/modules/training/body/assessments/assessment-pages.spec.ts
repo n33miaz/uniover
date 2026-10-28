@@ -116,6 +116,12 @@ describe('physical assessment screens', () => {
     await harness.fixture.whenStable();
     harness.detectChanges();
     expect((harness.routeNativeElement as HTMLElement).textContent).toContain('Prévia carregada');
+    const previewCount = (harness.routeNativeElement as HTMLElement)
+      .querySelector('.preview-count')
+      ?.textContent?.replace(/\s+/g, ' ')
+      .trim();
+    expect(previewCount).toContain('6 dados reconhecidos');
+    expect(previewCount).toContain('5 para revisar');
 
     const measureCandidate = Array.from(
       harness.routeNativeElement!.querySelectorAll<HTMLElement>('.candidate'),
