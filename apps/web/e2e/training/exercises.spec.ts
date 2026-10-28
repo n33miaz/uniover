@@ -28,13 +28,23 @@ async function expectCenteredComposition(page: import('@playwright/test').Page) 
         Math.max(...images.map((image) => image.right))) /
       2;
     const chips = hero.querySelector('.chips')!.getBoundingClientRect();
+    // Com ilustração, o cartão dela e o dos músculos têm a mesma largura e a mesma altura.
+    const sizeGap =
+      images.length === 2
+        ? Math.max(
+            Math.abs(images[0].width - images[1].width),
+            Math.abs(images[0].height - images[1].height),
+          )
+        : 0;
     return {
+      sizeGap,
       visualsBottom: visuals.bottom,
       chipsTop: chips.top,
       centerOffset: Math.abs(chips.left + chips.width / 2 - visuals.left - visuals.width / 2),
       imageOffset: Math.abs(imageCenter - visuals.left - visuals.width / 2),
     };
   });
+  expect(layout.sizeGap).toBeLessThan(1);
   expect(layout.chipsTop).toBeGreaterThanOrEqual(layout.visualsBottom);
   expect(layout.centerOffset).toBeLessThan(1);
   expect(layout.imageOffset).toBeLessThan(1);
@@ -131,11 +141,12 @@ test.describe('exercícios: lista, busca e ficha', () => {
     await page.getByRole('link', { name: 'Mapa do Treino' }).click();
     await expect(page.getByRole('heading', { name: 'Mapa do Treino' })).toBeVisible();
 
-    // O glossário abre pelo "?" ao lado das ações de Rotinas e o voltar traz a lista de volta.
+    // O glossário abre pelo link "Entenda o Treino" sob as ações de Rotinas e o voltar traz a lista de volta.
     await openTraining(page, '/treino/rotinas');
-    await page.getByRole('link', { name: 'Entender Programa Semanal, Rotina e Exercício' }).click();
+    await page.getByRole('link', { name: 'Entenda o Treino' }).click();
     await expect(page.getByRole('heading', { name: 'Entenda o Treino' })).toBeVisible();
     await expect(page.getByText('Programa Semanal')).toBeVisible();
+    await expect(page.getByText('Plano do Dia')).toBeVisible();
     await expect(page.getByText('Rotina', { exact: true })).toBeVisible();
     await expect(page.getByText('Exercício', { exact: true })).toBeVisible();
     await expectNoA11yViolations(page);
@@ -143,14 +154,14 @@ test.describe('exercícios: lista, busca e ficha', () => {
     await expect(page).toHaveURL(/\/treino\/rotinas$/);
   });
 
-  test('mostra de 50 em 50, com "Mostrar mais"', async ({ page, context }) => {
+  test('mostra de 50 em 50, com "Mostrar Mais"', async ({ page, context }) => {
     await startTraining(context, page, { extra: 70 });
     await openTraining(page, '/treino/exercicios');
     await waitForCatalog(page);
     await expect(rows(page)).toHaveCount(50);
-    await page.getByRole('button', { name: /^Mostrar mais \(36\)/ }).click();
+    await page.getByRole('button', { name: /^Mostrar Mais \(36\)/ }).click();
     await expect(rows(page)).toHaveCount(86);
-    await expect(page.getByRole('button', { name: /^Mostrar mais/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Mostrar Mais/ })).toHaveCount(0);
   });
 
   test('a ficha mostra ilustração, músculos e passo a passo sem créditos inline', async ({
@@ -187,7 +198,7 @@ test.describe('exercícios: lista, busca e ficha', () => {
       );
     }
     await expect(page.locator('.steps li')).toHaveCount(3);
-    await page.getByRole('button', { name: 'Ver todos os 5 passos' }).click();
+    await page.getByRole('button', { name: 'Ver Todos os 5 Passos' }).click();
     await expect(page.locator('.steps li')).toHaveCount(5);
     await expect(page.locator('.origin')).toHaveCount(0);
   });

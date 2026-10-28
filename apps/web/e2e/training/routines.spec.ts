@@ -1,5 +1,6 @@
 import { Page } from '@playwright/test';
-import { expect, test } from '../fixtures';
+import { join } from 'node:path';
+import { expect, screenshot, test } from '../fixtures';
 import { SEED_ROUTINE_IDS } from './support/training-seed';
 import { openTraining, startTraining } from './support/training-pages';
 
@@ -28,6 +29,51 @@ test.describe('rotinas: lista e modelos', () => {
     await rows.nth(1).click();
     await expect(page).toHaveURL(new RegExp(`/treino/rotinas/${SEED_ROUTINE_IDS.b}$`));
     await expect(page.getByRole('heading', { name: 'Editar Rotina' })).toBeVisible();
+  });
+
+  test('cartão em destaque: título longo numa linha só e Iniciar Treino abre o treino da rotina', async ({
+    page,
+    context,
+  }, info) => {
+    await startTraining(context, page);
+    const longName = 'Treino A · Peito, tríceps, ombros e um nome bem comprido para a lista';
+    await openTraining(page, `/treino/rotinas/${SEED_ROUTINE_IDS.a}`);
+    await page.getByLabel('Nome da rotina').fill(longName);
+    await page.getByRole('button', { name: 'Salvar Rotina' }).click();
+    await expect(page).toHaveURL(/\/treino\/rotinas$/);
+
+    const card = page.locator('.next-card');
+    await expect(card).toBeVisible();
+    // O texto completo continua no nome acessível do atalho; o título visível não quebra de linha.
+    await expect(card.getByRole('link', { name: longName })).toBeVisible();
+    const title = card.locator('.ui-row-title');
+    await expect(title).toHaveCSS('white-space', 'nowrap');
+    await expect(title).toHaveCSS('text-overflow', 'ellipsis');
+    const layout = await page.evaluate(() => {
+      const box = document.querySelector('.next-card')!.getBoundingClientRect();
+      const start = document.querySelector('.next-card .start')!.getBoundingClientRect();
+      return {
+        cardRight: box.right,
+        startHeight: start.height,
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        viewport: window.innerWidth,
+      };
+    });
+    expect(layout.cardRight).toBeLessThanOrEqual(layout.viewport);
+    expect(layout.overflow).toBeLessThanOrEqual(0);
+    expect(layout.startHeight).toBeGreaterThanOrEqual(44);
+
+    if (process.env['TRAINING_SHOTS_DIR']) {
+      await screenshot(
+        page,
+        join(process.env['TRAINING_SHOTS_DIR'], `rotinas-proxima-${info.project.name}.png`),
+      );
+    }
+
+    await card.getByRole('button', { name: 'Iniciar Treino' }).click();
+    await expect(page).toHaveURL(/\/treino\/sessao$/);
+    // O dia de treino reescreve o nome para a tela dele; basta ser o da rotina que foi iniciada.
+    await expect(page.locator('app-workout-day .routine-name')).toContainText('Treino A');
   });
 
   test('compara modelos antes de criar o programa: o aparelho cria as rotinas e o servidor as recebe', async ({
