@@ -100,11 +100,21 @@ respondem, consulta pelo REST um catálogo de apps conhecidos e os IDs extras em
 ao canal Samsung. A lista usa aliases internos válidos no contrato, mas abre o `appId` original Tizen. Não há ADB,
 limpeza de apps, abertura de links ou digitação pelo canal desta TV: esses pedidos retornam `unsupported`.
 
-O canal Samsung só envia teclas e não informa o volume. O agente tenta lê-lo pelo serviço UPnP RenderingControl: acha a
-descrição por SSDP (primeiro direto à TV, depois no grupo multicast; o endereço do serviço vem da própria descrição, sem
-porta nem caminho fixos) e consulta `GetVolume` uma vez ao abrir a sessão e uma vez depois de cada tecla de volume ou
-mudo, nunca por sondagem. Modelo sem esse serviço fica com o volume desconhecido, e a descoberta não se repete a cada
-tecla. Além das teclas básicas, o agente declara no `hello` as teclas extras que a TV tem (`tv.key.INPUT`,
+O canal Samsung só envia teclas e não informa o volume. O agente tenta lê-lo pelo serviço UPnP RenderingControl, por
+uma cascata que guarda o caminho que funcionou nesta TV: (1) a descrição do renderizador na porta 9197 (`/dmr`), (2) o
+endereço de controle padrão das TVs Tizen, direto, e (3) SSDP (primeiro direto à TV, depois no grupo multicast), que
+vai por último porque o multicast falha com várias placas de rede, VPN ou firewall. A consulta `GetVolume` roda uma
+vez ao abrir a sessão e uma vez depois de cada tecla de volume ou mudo, nunca por sondagem. Uma primeira falha não é
+veredito (o serviço pode subir depois do canal remoto): a cascata se repete com espera crescente (5, 15, 45 e 120 s) e
+só depois a TV é dada como sem o serviço, o que vale por 30 min. Na Android TV o nível chega sozinho pelo canal
+remoto; só se ele nunca chegar o agente pergunta ao shell (`cmd media_session volume`, depois `dumpsys audio`), que
+cobre a saída por soundbar HDMI-ARC. Para ver na TV de verdade o que responde, sem apertar tecla nenhuma:
+
+```
+uv run uniover-agent tv-volume
+```
+
+Sem nenhum caminho possível o volume fica desconhecido e o app mostra só o retorno do toque. Além das teclas básicas, o agente declara no `hello` as teclas extras que a TV tem (`tv.key.INPUT`,
 `tv.key.GUIDE`, `tv.key.RED`...), e a web as oferece como botões extras.
 
 ### Instalação em um clique

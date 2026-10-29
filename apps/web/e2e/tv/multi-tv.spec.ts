@@ -555,7 +555,7 @@ test.describe('capacidades da TV', () => {
     }
   });
 
-  test('o volume lido aparece no contador, e sem leitura o contador mostra um traço', async ({
+  test('o volume lido aparece no contador, e sem leitura o contador mostra o alto-falante', async ({
     page,
   }) => {
     serve(withHome(ALONE));
@@ -563,7 +563,8 @@ test.describe('capacidades da TV', () => {
     await expect(page.getByRole('img', { name: 'Volume 7' })).toBeVisible();
     serve(withHome({ ...ALONE, state: { ...ALONE.state!, volume: null } }));
     await openTv(page, 'Raphael');
-    await expect(page.locator('.pill.volume .level strong')).toHaveText('–');
+    await expect(page.getByRole('img', { name: 'Volume sem leitura' })).toBeVisible();
+    await expect(page.locator('.pill.volume .level strong')).toHaveCount(0);
   });
 
   test('com o agente desligado a TV não perde botões (a API não sabe o que ele faz)', async ({

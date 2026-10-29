@@ -46,9 +46,12 @@ def volume_transport(level: int | None, *, status: int = 200) -> httpx.MockTrans
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "GET":
-            assert request.url == LOCATION
+            # Só a descrição anunciada por SSDP existe nesta TV; o resto é 404.
+            if request.url != LOCATION:
+                return httpx.Response(404)
             return httpx.Response(200, text=DMR_DESCRIPTION)
-        assert request.url.path == "/dmr/upnp/control/RenderingControl1"
+        if request.url.path != "/dmr/upnp/control/RenderingControl1":
+            return httpx.Response(404)
         assert "GetVolume" in request.headers["soapaction"]
         body = f"<Envelope><CurrentVolume>{level}</CurrentVolume></Envelope>"
         return httpx.Response(status, text=body if level is not None else "<x/>")
@@ -326,6 +329,14 @@ async def test_the_installed_config_without_a_mac_still_gets_keys_and_survives_a
         raise RuntimeError(host)
 
     monkeypatch.setattr(volume_module, "ssdp_locations", boom)
+    # Nada de rede de verdade: os caminhos fixos da cascata também são perguntados à "TV".
+    monkeypatch.setattr(
+        volume_module.SamsungVolume,
+        "_client",
+        lambda _self: httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda _r: httpx.Response(404))
+        ),
+    )
     client = FakeSamsungClient()
     setup, _ = compose_samsung(monkeypatch, client, tv_id_hint=DUID)
     assert setup.known.mac is None

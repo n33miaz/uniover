@@ -116,7 +116,11 @@
         @case ('level') {
           <span class="level" role="img" [attr.aria-label]="volumeLabel()">
             <span class="cap" aria-hidden="true" i18n="@@tv.volume.cap">VOL</span>
-            <strong aria-hidden="true">{{ volumeText() }}</strong>
+            @if (volumeText() !== '') {
+              <strong aria-hidden="true" [class.nudge]="!volumeKnown()">{{ volumeText() }}</strong>
+            } @else {
+              <app-tv-icon class="unread" name="speaker" />
+            }
           </span>
         }
         @case ('less') {

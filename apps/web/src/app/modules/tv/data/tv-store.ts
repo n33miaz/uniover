@@ -55,6 +55,8 @@ export const TV_TEXT_MAX = 200;
  * O último estado visto da TV. Cada conta guarda o seu (`tvStateCacheKey`): a chave sem conta, de antes, não dizia de quem
  * era o estado, e a TV padrão é a mesma para todas as contas, então a conta seguinte a receberia. Hoje ela só se descarta.
  */
+/** Quanto tempo o "+1 / -1" do volume sem leitura fica na pílula depois do último toque. */
+const VOLUME_NUDGE_MS = 2500;
 const CACHE_KEY = 'uniover.tv.last-state';
 /**
  * Os ícones dos apps ficam numa chave só deles (também por conta, `tvIconsCacheKey`; a de antes só se descarta): cada um
@@ -144,6 +146,7 @@ export class TvStore {
   private readonly _streamStatus = signal<TvStreamStatus>('connecting');
   private readonly _notice = signal<TvNotice | null>(null);
   private readonly _inFlightKeys = signal(0);
+  private readonly _volumeNudge = signal(0);
   private readonly _cleaning = signal(false);
   private readonly _lastCleanup = signal<TvLastCleanup | null>(null);
   private readonly _powerSchedule = signal<TvPowerSchedule | null>(null);
@@ -176,6 +179,11 @@ export class TvStore {
   );
   readonly notice = computed(() => (this.currentAccount() ? this._notice() : null));
   readonly inFlightKeys = computed(() => (this.currentAccount() ? this._inFlightKeys() : 0));
+  /**
+   * Quantos passos de volume a TV confirmou desde o último toque (mais menos menos), por poucos segundos. Só serve à
+   * pílula de volume quando o agente não consegue ler o nível: é o retorno do toque, nunca um número do volume.
+   */
+  readonly volumeNudge = computed(() => (this.currentAccount() ? this._volumeNudge() : 0));
   /** Há uma limpeza da TV em andamento (leva alguns segundos): um pedido por vez, e o resto do controle segue. */
   readonly cleaning = computed(() => this.currentAccount() && this._cleaning());
   readonly lastCleanup = computed(() => (this.currentAccount() ? this._lastCleanup() : null));
@@ -352,6 +360,7 @@ export class TvStore {
     this.doc.removeEventListener('visibilitychange', this.onVisibility);
     this.doc.defaultView?.removeEventListener('online', this.onOnline);
     clearTimeout(this.noticeTimer);
+    clearTimeout(this.nudgeTimer);
   }
 
   /**
@@ -498,6 +507,7 @@ export class TvStore {
     try {
       await this.api.sendKey(key);
       if (this.live(epoch) && this._notice()?.kind === 'error') this.clearNotice();
+      if (this.live(epoch)) this.nudgeVolume(key);
       return true;
     } catch (error) {
       if (this.live(epoch)) this.fail(error);
@@ -966,6 +976,9 @@ export class TvStore {
     this._lastPowerSchedule.set(null);
     this._powerScheduleLoaded.set(false);
     this._inFlightKeys.set(0);
+    this._volumeNudge.set(0);
+    clearTimeout(this.nudgeTimer);
+    this.nudgeTimer = undefined;
     this.reorderBase = null;
     this.reorderWanted = null;
     this.reorderRun = null;
@@ -1001,6 +1014,16 @@ export class TvStore {
       this.connect();
     }
     return true;
+  }
+
+  private nudgeTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Conta o passo de volume confirmado e o apaga depois de `VOLUME_NUDGE_MS` sem novos toques. */
+  private nudgeVolume(key: TvKey): void {
+    if (key !== 'VOLUME_UP' && key !== 'VOLUME_DOWN') return;
+    this._volumeNudge.update((steps) => steps + (key === 'VOLUME_UP' ? 1 : -1));
+    clearTimeout(this.nudgeTimer);
+    this.nudgeTimer = setTimeout(() => this._volumeNudge.set(0), VOLUME_NUDGE_MS);
   }
 
   /** Começa uma chamada: confere a conta e devolve a `epoch` com que ela vai ser conferida na volta. */

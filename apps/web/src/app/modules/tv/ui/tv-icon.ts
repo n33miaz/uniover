@@ -34,6 +34,7 @@ export type TvIconName =
   | 'check'
   | 'clock'
   | 'tune'
+  | 'speaker'
   | 'tv';
 
 // Traços simples (24x24, contorno) só do controle. Decorativos: o texto do botão é que informa.
@@ -76,6 +77,7 @@ const PATHS: Record<TvIconName, string> = {
   // Dois controles deslizantes: Personalizar.
   tune: 'M4 7h9 M17 7h3 M4 17h3 M11 17h9 M15 4v6 M9 14v6',
   // Uma tela com o pé: serve aos estados em que a TV só é vista (sem controle) ou nem isso (sem acesso).
+  speaker: 'M4 9v6h4l5 4V5L8 9H4z M16.5 9a4 4 0 0 1 0 6 M19 6.5a8 8 0 0 1 0 11',
   tv: 'M3 5h18v12H3z M8 21h8 M12 17v4',
 };
 

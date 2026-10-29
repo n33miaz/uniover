@@ -230,19 +230,41 @@ describe('ControlPage', () => {
       expect(store.sendKey).toHaveBeenCalledWith(key);
     });
 
-    it('shows the volume from the state, or a dash and a spoken "desconhecido"', () => {
+    it('shows the volume from the state, and never a bare dash when there is no reading', () => {
       const level = () => root.querySelector('.level[role="img"]')!;
       expect(level().getAttribute('aria-label')).toBe('Volume 22');
       expect(level().textContent).toContain('22');
+      expect(level().querySelector('.unread')).toBeNull();
 
       store.state.set({ ...HOT, volume: null });
       render();
-      expect(level().getAttribute('aria-label')).toBe('Volume desconhecido');
-      expect(level().textContent).toContain('–');
+      expect(level().getAttribute('aria-label')).toBe('Volume sem leitura');
+      expect(level().textContent).not.toContain('–');
+      expect(level().querySelector('.unread')).not.toBeNull();
 
       store.state.set(null);
       render();
-      expect(level().getAttribute('aria-label')).toBe('Volume desconhecido');
+      expect(level().getAttribute('aria-label')).toBe('Volume sem leitura');
+    });
+
+    it('answers the touch with the confirmed steps when the volume cannot be read', () => {
+      const level = () => root.querySelector('.level[role="img"]')!;
+      store.state.set({ ...HOT, volume: null });
+      store.volumeNudge.set(3);
+      render();
+      expect(level().textContent).toContain('+3');
+      expect(level().getAttribute('aria-label')).toBe('Volume +3');
+      expect(level().querySelector('.unread')).toBeNull();
+
+      store.volumeNudge.set(-2);
+      render();
+      expect(level().textContent).toContain('−2');
+
+      // Com leitura real o número da TV vale, e o retorno do toque não aparece por cima.
+      store.state.set({ ...HOT, volume: 30 });
+      render();
+      expect(level().textContent).toContain('30');
+      expect(level().textContent).not.toContain('−2');
     });
 
     it('has no voice button and no timer', () => {

@@ -931,7 +931,7 @@ test.describe('ponto de estado clicável', () => {
     ).toBeVisible();
     await expect(button(page, 'OK')).toBeDisabled();
     await expect(button(page, 'Desligar a TV')).toBeDisabled();
-    await expect(page.getByRole('img', { name: 'Volume desconhecido' })).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Volume sem leitura' })).toBeVisible();
     await expect(page.getByText(/TV desligada/i)).toHaveCount(0);
     await screenshot(page, `test-results/tv-agent-off-${info.project.name}.png`);
     await expectNoVerticalScroll(page);
