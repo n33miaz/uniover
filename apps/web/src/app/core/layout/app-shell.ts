@@ -215,7 +215,7 @@ const HOME_BACK: ShellBack = {
     }
     .tabs {
       position: sticky;
-      bottom: 0;
+      bottom: var(--kb-inset);
     }
   `,
 })
