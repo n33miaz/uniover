@@ -10,11 +10,11 @@
   max-width: 40rem;
   margin-inline: auto;
   padding-top: env(safe-area-inset-top);
-  padding-bottom: calc(96px + var(--safe-bottom));
+  padding-bottom: 96px;
 }
 
 .live:has(.resting) {
-  padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+  padding-bottom: var(--space-4);
 }
 
 /*

@@ -10,7 +10,7 @@
   max-width: 40rem;
   margin-inline: auto;
   padding-top: env(safe-area-inset-top);
-  padding-bottom: calc(96px + var(--safe-bottom));
+  padding-bottom: 96px;
 }
 
 /* O topo é o mesmo das telas da sessão: um voltar redondo, o título no meio e o espaço do outro lado. */
