@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.18.1](https://github.com/n33miaz/uniover/compare/v0.18.0...v0.18.1) (2026-10-29)
+
+
+### Features
+
+* **web:** add safe-area and keyboard tokens
+
+
+### Bug Fixes
+
+* **web:** use safe-bottom token on footers
+* **web:** lift sheets and tabs above keyboard
+* **web:** stop keyboard watcher on destroy
+* **web:** drop doubled safe inset in training
+
 ## [0.18.0](https://github.com/n33miaz/uniover/compare/v0.17.0...v0.18.0) (2026-10-28)
 
 
