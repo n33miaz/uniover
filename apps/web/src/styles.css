@@ -1059,3 +1059,14 @@ label.ui-row:active {
     transform: none;
   }
 }
+
+/*
+ * Folha inferior (<dialog class="sheet">): sobe junto com o teclado virtual e nunca passa da parte visível. `--kb-inset`
+ * (keyboard-inset.ts) vale 0 sem teclado, então a regra não muda nada fora dele. O rodapé de ação de cada folha é
+ * sticky dentro dela: com a altura limitada aqui, o conteúdo rola e o rodapé fica sempre acima do teclado. `[open]`
+ * dá especificidade para vencer o `max-height` e a margem que cada folha declara no próprio arquivo.
+ */
+dialog.sheet[open] {
+  margin-bottom: var(--kb-inset);
+  max-height: min(88dvh, calc(100dvh - var(--kb-inset) - var(--space-6)));
+}
