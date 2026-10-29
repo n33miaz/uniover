@@ -12,7 +12,7 @@ app-workout-day .day {
   min-height: calc(100dvh - 40px - var(--safe-bottom));
   margin-inline: auto;
   padding-top: env(safe-area-inset-top);
-  padding-bottom: calc(96px + var(--safe-bottom));
+  padding-bottom: 96px;
 }
 
 app-workout-day .head {

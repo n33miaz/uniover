@@ -363,7 +363,7 @@ type BodyView = 'summary' | 'records' | 'photos';
       min-width: 0;
     }
     .page {
-      padding: 0 var(--space-4) calc(var(--space-5) + var(--safe-bottom));
+      padding: 0 var(--space-4) var(--space-5);
     }
     .intro h1,
     h2,

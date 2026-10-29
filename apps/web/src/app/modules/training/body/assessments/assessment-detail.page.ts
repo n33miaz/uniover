@@ -316,7 +316,7 @@ import {
     .page {
       display: grid;
       gap: var(--space-3);
-      padding: 0 var(--space-4) calc(var(--space-5) + var(--safe-bottom));
+      padding: 0 var(--space-4) var(--space-5);
     }
     h1,
     h2,
