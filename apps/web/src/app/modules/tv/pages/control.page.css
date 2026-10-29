@@ -236,6 +236,27 @@ button:disabled,
   color: var(--a-ink);
   font-size: calc(1.15rem * var(--key-scale));
 }
+/* Sem nível a mostrar o ícone ocupa o lugar do número, no mesmo tamanho, para a pílula não mudar de altura. */
+.level .unread {
+  color: var(--a-ink2);
+  font-size: calc(1.15rem * var(--key-scale));
+}
+/* O "+1" / "−1" é o retorno do toque quando a TV não informa o volume: entra rápido e some sozinho. */
+.level strong.nudge {
+  color: var(--a-accent);
+  animation: nudge-in var(--dur-fast, 120ms) var(--ease-out, ease-out);
+}
+@keyframes nudge-in {
+  from {
+    opacity: 0.4;
+    translate: 0 4px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .level strong.nudge {
+    animation: none;
+  }
+}
 
 /* Botões redondos: o diâmetro é a largura da célula, limitada por `--tv-round`. */
 .round {

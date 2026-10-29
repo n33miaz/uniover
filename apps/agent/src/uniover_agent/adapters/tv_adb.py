@@ -40,7 +40,9 @@ from uniover_agent.adapters.tv_adb_parsing import (
     parse_component_packages,
     parse_connect,
     parse_device_state,
+    parse_dumpsys_music_volume,
     parse_launchable,
+    parse_media_session_volume,
     parse_mem_available_mb,
     parse_package_list,
     parse_package_paths,
@@ -341,6 +343,49 @@ class AdbTv:
         if not states or any(state not in _PLAYBACK_STATES for state in states):
             raise AdbCommandFailed("a TV informou uma sessão de mídia ambígua")
         return _PLAYBACK_PLAYING in states
+
+    async def read_volume(self) -> int | None:
+        """O volume de música (0 a 100) pelo shell da TV; `None` se nenhum comando o informa.
+
+        Reserva para a Android TV cujo canal remoto não empurra o nível (soundbar por HDMI-ARC/CEC,
+        firmware que não manda). Só lê. Nunca levanta por saída que não entende: "não sei".
+        """
+        for command, parse in (
+            ("cmd media_session volume --stream 3 --get", parse_media_session_volume),
+            ("dumpsys audio", parse_dumpsys_music_volume),
+        ):
+            output = await self._locked_shell(command)
+            if not command_succeeded(output):
+                continue
+            level = parse(output.text)
+            if level is not None:
+                return level
+        return None
+
+    async def diagnose_volume(self) -> list[tuple[str, bool, str]]:
+        """Cada comando de leitura de volume e o que ele devolveu: (nome, deu nível, detalhe)."""
+        found: list[tuple[str, bool, str]] = []
+        for name, command, parse in (
+            (
+                "media_session",
+                "cmd media_session volume --stream 3 --get",
+                parse_media_session_volume,
+            ),
+            ("dumpsys-audio", "dumpsys audio", parse_dumpsys_music_volume),
+        ):
+            output = await self._locked_shell(command)
+            if not command_succeeded(output):
+                found.append((name, False, "o comando falhou ou não existe nesta TV"))
+                continue
+            level = parse(output.text)
+            found.append(
+                (
+                    name,
+                    level is not None,
+                    "nível não encontrado na saída" if level is None else f"nível {level}",
+                )
+            )
+        return found
 
     async def global_setting(self, name: str) -> str | None:
         if name not in _GLOBAL_SETTINGS:

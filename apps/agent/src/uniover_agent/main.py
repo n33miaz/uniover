@@ -70,6 +70,8 @@ from uniover_agent.adapters.tv_pairing import (
 from uniover_agent.adapters.tv_remote_v2 import ANDROID_OPTIONAL_KEYS, AndroidTvRemoteV2
 from uniover_agent.adapters.tv_samsung import SAMSUNG_OPTIONAL_KEYS, SamsungTvDriver
 from uniover_agent.adapters.tv_samsung_pairing import SamsungPairingError, pair_samsung_tv
+from uniover_agent.adapters.tv_samsung_volume import SamsungVolume
+from uniover_agent.adapters.tv_volume_check import check_volume
 from uniover_agent.adapters.update_status import (
     FileUpdateStatus,
     default_status_path,
@@ -352,8 +354,30 @@ def build_tv(
     )
     # Cada tarefa seguinte insere aqui só a linha dela; o gerenciador é o único dono da conexão.
     adb = compose_adb(setup, settings, host, clock)  # [composição: adb]
+    if adb is not None:
+        manager.set_volume_reader(volume_reader_when_push_is_silent(manager, adb))
     compose_watchdog(setup, settings, host, clock, adb)  # [composição: vigia]
     return setup
+
+
+def volume_reader_when_push_is_silent(
+    manager: TvSessionManager, adb: AdbTv
+) -> Callable[[], Awaitable[int | None]]:
+    """Reserva do volume da Android TV: lê pelo shell se não houve push após a última tecla.
+
+    O canal remoto da Android TV avisa o volume sozinho (de graça); ler pelo `adb` a cada tecla
+    seria carga a mais numa TV que já engasgou com ela. Por isso o `adb` só entra enquanto o estado
+    não atualizou o nível após a tecla, como em algumas soundbars por HDMI-ARC/CEC.
+    """
+
+    async def read() -> int | None:
+        if manager.remote_volume_seen:
+            return None
+        level = await adb.read_volume()
+        # Um push durante a consulta é mais recente que a resposta do shell.
+        return None if manager.remote_volume_seen else level
+
+    return read
 
 
 def key_capabilities(keys: Sequence[str]) -> list[str]:
@@ -1150,6 +1174,20 @@ def _describe(tv: DiscoveredTv) -> str:
     return f"{label} {tv.name} em {tv.host}" if tv.name else f"{label} em {tv.host}"
 
 
+async def tv_volume(settings: Settings) -> int:
+    """`tv-volume`: roda os caminhos de leitura do volume da TV configurada e conta o resultado."""
+    host = require_tv_host(settings.tv_host)
+    if settings.tv_kind == "samsung":
+        return await check_volume("samsung", samsung=SamsungVolume(host))
+    path = locate_adb(settings.adb_path)
+    adb = (
+        None
+        if path is None
+        else AdbTv(path, host, settings.tv_adb_port, timeout=settings.adb_timeout_seconds)
+    )
+    return await check_volume("android", adb=adb)
+
+
 async def tv_find(
     kind: TvKindName | None = None,
     *,
@@ -1278,6 +1316,9 @@ def _parser() -> argparse.ArgumentParser:
     update_parser.add_argument(
         "--no-sync", action="store_true", help="não roda `uv sync` depois (o instalador faz)"
     )
+    sub.add_parser(
+        "tv-volume", help="mostra por quais caminhos o agente consegue ler o volume da TV (só lê)"
+    )
     sub.add_parser("tray", help=argparse.SUPPRESS)
     return parser
 
@@ -1325,6 +1366,8 @@ def main(  # noqa: PLR0911 - um retorno por comando
             )
         if command == "tv-find":
             return asyncio.run(tv_find(args.kind))
+        if command == "tv-volume":
+            return asyncio.run(tv_volume(settings))
         if command == "self-update":
             return update_agent(sync=not args.no_sync)
         if command == "tray":

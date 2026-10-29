@@ -264,6 +264,26 @@ describe('TvStore', () => {
       expect(store.inFlightKeys()).toBe(0);
     });
 
+    it('counts the volume steps the TV confirmed and forgets them after a while', async () => {
+      vi.useFakeTimers();
+      try {
+        await started();
+        expect(store.volumeNudge()).toBe(0);
+        await store.sendKey('VOLUME_UP');
+        await store.sendKey('VOLUME_UP');
+        await store.sendKey('VOLUME_DOWN');
+        await store.sendKey('OK');
+        expect(store.volumeNudge()).toBe(1);
+        api.sendKey.mockRejectedValueOnce(problem(500));
+        await store.sendKey('VOLUME_UP');
+        expect(store.volumeNudge()).toBe(1);
+        await vi.advanceTimersByTimeAsync(2600);
+        expect(store.volumeNudge()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('counts keys waiting for an answer', async () => {
       await started();
       let release!: () => void;
@@ -1440,6 +1460,8 @@ describe('TvStore', () => {
       api.tvs.mockResolvedValue([CASA, AMIGO]);
       await started();
       expect(store.shortcuts()).not.toBeNull();
+      await store.sendKey('VOLUME_UP');
+      expect(store.volumeNudge()).toBe(1);
       const gate = deferred<TvShortcut[]>();
       api.shortcuts.mockReturnValueOnce(gate.promise);
 
@@ -1447,6 +1469,7 @@ describe('TvStore', () => {
       // Nada da TV anterior aparece na nova enquanto ela não responde.
       expect(store.state()).toBeNull();
       expect(store.shortcuts()).toBeNull();
+      expect(store.volumeNudge()).toBe(0);
       expect(store.status()).toBe('loading');
       expect(store.selectedTv()?.id).toBe('amigo');
       expect(open).toHaveBeenCalledTimes(2);
@@ -1456,6 +1479,8 @@ describe('TvStore', () => {
       await flush();
       expect(store.shortcuts()?.map((item) => item.id)).toEqual(['s7']);
       expect(store.status()).toBe('hot');
+      await store.sendKey('VOLUME_UP');
+      expect(store.volumeNudge()).toBe(1);
     });
 
     it('does nothing when the chosen TV is the one already in use', async () => {
@@ -1669,6 +1694,9 @@ describe('TvStore', () => {
         expect(open).toHaveBeenCalledTimes(1);
         expect(events.observed).toBe(true);
         expect(store.state()?.volume).toBe(31);
+        await store.sendKey('VOLUME_UP');
+        expect(store.volumeNudge()).toBe(1);
+        api.sendKey.mockClear();
 
         // Outra aba entrou noutra conta e esta página renovou a sessão com ela, com a tela da TV aberta.
         const list = deferred<TvSummary[]>();
@@ -1679,6 +1707,7 @@ describe('TvStore', () => {
         expect(api.sendKey).not.toHaveBeenCalled();
         expect(store.state()).toBeNull();
         expect(store.shortcuts()).toBeNull();
+        expect(store.volumeNudge()).toBe(0);
         TestBed.tick();
         await flush();
         expect(events.observed).toBe(false);
@@ -1699,6 +1728,8 @@ describe('TvStore', () => {
         expect(events.observed).toBe(true);
         expect(store.tvs()?.map((tv) => tv.id)).toEqual(['sala']);
         expect(store.state()?.volume).toBe(22);
+        await store.sendKey('VOLUME_UP');
+        expect(store.volumeNudge()).toBe(1);
       });
 
       it('stops the stream and shows nothing when the session ends with the screen still open', async () => {
