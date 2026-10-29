@@ -2,6 +2,7 @@ import { DOCUMENT } from '@angular/common';
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import {
   ApplicationConfig,
+  DestroyRef,
   ErrorHandler,
   Injector,
   inject,
@@ -45,7 +46,9 @@ export const appConfig: ApplicationConfig = {
     // Mantém --kb-inset (teclado virtual) para os rodapés fixos subirem junto.
     provideAppInitializer(() => {
       const doc = inject(DOCUMENT);
-      if (doc.defaultView) watchKeyboardInset(doc.defaultView, doc.documentElement);
+      if (!doc.defaultView) return;
+      const stop = watchKeyboardInset(doc.defaultView, doc.documentElement);
+      inject(DestroyRef).onDestroy(stop);
     }),
     // Acerta manifest, ícone e nome do <head> pelo módulo aberto (o servidor só os escolhe ao entregar a página).
     provideAppInitializer(() => inject(ModuleHeadService).start()),
