@@ -167,7 +167,7 @@ internal sealed class BindAgentHandler(
         stream.AdoptUnidentifiedStream(tvId);
         var online = presence.IsOnline(agentSlug);
         state.NoteOnline(agentSlug, online);
-        stream.PublishState(tvId, TvState.From(state.Last(agentSlug), online));
+        stream.PublishState(tvId, TvState.From(state.Last(agentSlug), online, offlineSince: online ? null : presence.OfflineSince(agentSlug)));
     }
 }
 

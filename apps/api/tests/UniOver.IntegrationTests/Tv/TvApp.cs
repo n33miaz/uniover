@@ -185,6 +185,8 @@ internal sealed class TvApp : IAsyncDisposable
             ["Modules:Identity:Passkeys:RpId"] = "localhost",
             ["Modules:Identity:Passkeys:Origins:0"] = "https://localhost",
             ["Modules:Devices:Pairing:RequireStepUp"] = "false",
+            // Sem graça de presença: estes testes conferem a queda na hora.
+            ["Modules:Devices:Transport:PresenceGraceSeconds"] = "0",
             ["Modules:Tv:AgentId"] = options.AgentId,
             ["RateLimiting:login:Permitted"] = "100000",
             ["RateLimiting:refresh:Permitted"] = "100000",

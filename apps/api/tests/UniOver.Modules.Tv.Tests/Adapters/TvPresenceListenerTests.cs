@@ -111,6 +111,27 @@ public class TvPresenceListenerTests
     }
 
     [Fact]
+    public async Task AnExpiredGraceAndAReconnect_ArePublishedInTheOrderTheyArrived()
+    {
+        var read = new TaskCompletionSource<TvAgentBinding>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resolver = new Resolver(last: null, read);
+        var stream = new Stream();
+        var state = new InMemoryTvStateStore();
+        state.NoteOnline("pc-novo", true);
+        var listener = new TvPresenceListener(
+            resolver, state, stream, NullLogger<TvPresenceListener>.Instance);
+
+        listener.OnPresenceChanged(Presence("pc-novo", connected: false));
+        listener.OnPresenceChanged(Presence("pc-novo", connected: true));
+        resolver.Reads.Should().Be(1, "a reconexão aguarda a publicação da queda anterior");
+
+        read.SetResult(Saved("pc-novo"));
+        await WaitAsync(() => stream.States.Count == 2);
+
+        stream.States.Select(s => s.AgentOnline).Should().Equal(false, true);
+    }
+
+    [Fact]
     public async Task WhenTheBackgroundReadFails_NothingBreaks()
     {
         var read = new TaskCompletionSource<TvAgentBinding>();

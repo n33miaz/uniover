@@ -66,7 +66,7 @@ public sealed class GatewayTests(PostgresFixture postgres)
         var request = app.Gateway.RequestAsync(app.Agent.Slug, Key(), TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         await Task.Delay(25, TestContext.Current.CancellationToken);
         request.IsCompleted.Should().BeFalse("a janela absorve uma reconexão curta");
-        app.App.Time.Advance(TimeSpan.FromSeconds(3));
+        app.App.Time.Advance(TimeSpan.FromSeconds(26));
         var result = await Within(request);
 
         result.IsFailure.Should().BeTrue();
@@ -74,7 +74,7 @@ public sealed class GatewayTests(PostgresFixture postgres)
 
         var send = app.Gateway.SendAsync(app.Agent.Slug, Key(), TestContext.Current.CancellationToken);
         await Task.Delay(25, TestContext.Current.CancellationToken);
-        app.App.Time.Advance(TimeSpan.FromSeconds(3));
+        app.App.Time.Advance(TimeSpan.FromSeconds(26));
         (await Within(send)).Error.Code.Should().Be("agent_offline");
     }
 

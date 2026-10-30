@@ -22,8 +22,19 @@ public sealed class DevicesTransportOptions
     /// <summary>Intervalo do batimento JSON que atravessa proxies que ignoram ping/pong WebSocket.</summary>
     public int ApplicationKeepAliveSeconds { get; set; } = 25;
 
-    /// <summary>Quanto um comando tolera a sessão reaparecer depois de uma reconexão curta do agente.</summary>
-    public int ReconnectGraceSeconds { get; set; } = 3;
+    /// <summary>
+    /// Quanto um comando espera a sessão reaparecer depois de uma queda do agente. As quedas medidas em 28/10 (deploy e
+    /// manutenção do Render) voltam em 2 a 118 s; 25 s cobre a troca normal sem deixar quem toca o botão esperando demais.
+    /// Passado o prazo o comando falha com "reconectando", e não com "desligado", enquanto a presença segue na graça.
+    /// </summary>
+    public int ReconnectGraceSeconds { get; set; } = 25;
+
+    /// <summary>
+    /// Quanto o agente sem socket ainda aparece conectado (verde): a queda só é mostrada quando se confirma. Cobre os 118 s
+    /// medidos; um comando enviado nesse intervalo espera a reconexão (<see cref="ReconnectGraceSeconds"/>) e, se ela não
+    /// vem, falha dizendo que o PC está reconectando. Zero mostra a queda na hora.
+    /// </summary>
+    public int PresenceGraceSeconds { get; set; } = 150;
 
     /// <summary>Recusas toleradas na janela; passou disso (a sexta, no padrão), a conexão é fechada.</summary>
     public int RefusalLimit { get; set; } = 5;
@@ -44,6 +55,8 @@ public sealed class DevicesTransportOptions
 
     public TimeSpan ReconnectGrace => TimeSpan.FromSeconds(ReconnectGraceSeconds);
 
+    public TimeSpan PresenceGrace => TimeSpan.FromSeconds(PresenceGraceSeconds);
+
     public TimeSpan RefusalWindow => TimeSpan.FromSeconds(RefusalWindowSeconds);
 
     public TimeSpan CloseGrace => TimeSpan.FromSeconds(CloseGraceSeconds);
@@ -58,6 +71,7 @@ public sealed class DevicesTransportOptions
             && o.KeepAliveSeconds >= 1
             && o.ApplicationKeepAliveSeconds is >= 1 and < 60
             && o.ReconnectGraceSeconds >= 0
+            && o.PresenceGraceSeconds is >= 0 and <= 3600
             && o.RefusalLimit >= 1
             && o.RefusalWindowSeconds >= 1
             && o.CloseGraceSeconds >= 0
