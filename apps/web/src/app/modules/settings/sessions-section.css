@@ -92,6 +92,11 @@
   padding: var(--space-4);
 }
 
+.sessions-skeleton {
+  display: grid;
+  gap: var(--space-2);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .session summary::after {
     transition: none;

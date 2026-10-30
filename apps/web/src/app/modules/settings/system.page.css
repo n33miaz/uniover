@@ -62,3 +62,32 @@
 .error {
   color: var(--a-bad);
 }
+
+.config-groups,
+.config-group,
+.config-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.config-group {
+  padding: var(--space-3);
+}
+
+.config-group h3 {
+  margin: 0;
+  font-size: var(--fs-body);
+}
+
+/* Vários campos, um só salvar: o botão do grupo fica logo abaixo do último campo. */
+.config-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.config-form > button {
+  min-height: 44px;
+  margin: 0 0.75rem 0.75rem;
+}
