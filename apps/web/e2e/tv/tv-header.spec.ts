@@ -1098,6 +1098,38 @@ test.describe('folha de desligar', () => {
     await expectNoA11yViolations(page);
   });
 
+  test('o botão Desligar fica visível sem rolar, mesmo com o agendamento aberto', async ({
+    page,
+  }, info) => {
+    tv.tvs = [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'TV',
+        isDefault: true,
+        agentSlug: 'pc-casa',
+        kind: 'android',
+        online: true,
+        capabilities: ['tv.remote', 'tv.kind.android', 'tv.power.off.v1'],
+      },
+    ];
+    await openTv(page);
+    await powerButton(page).click();
+    const sheet = powerDialog(page);
+    await expect(sheet).toBeVisible();
+    // O estado mais alto da folha: atalho escolhido, com a confirmação do horário na tela.
+    await sheet.getByRole('button', { name: '30 min' }).click();
+    await expect(sheet.getByRole('button', { name: 'Confirmar agendamento' })).toBeAttached();
+    const off = sheet.getByRole('button', { name: 'Desligar', exact: true });
+    await expect
+      .poll(async () => {
+        const box = await off.boundingBox();
+        const height = page.viewportSize()!.height;
+        return box !== null && box.y >= 0 && box.y + box.height <= height + 0.5;
+      })
+      .toBe(true);
+    await screenshot(page, `test-results/config-2/power-schedule-${info.project.name}.png`);
+  });
+
   test('entra por transição (parte do @starting-style) e sai marcada como saindo antes de sumir', async ({
     page,
   }) => {
@@ -1515,6 +1547,7 @@ test.describe('cabeçalho da convidada: seta de volta à Início e botão redond
     await expect(page.locator('a.ui-row .ui-row-title')).toHaveText([
       'Perfil',
       'Aparência',
+      'Segurança',
       'Dispositivos',
       'Sobre',
     ]);
