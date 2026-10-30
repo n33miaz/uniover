@@ -24,9 +24,9 @@ export class AppearancePage {
   protected readonly themePreference = this.appearance.preference;
 
   protected readonly themeChoices: readonly ThemeChoice[] = [
-    { value: 'auto', label: $localize`:@@settings.theme.auto:Automático` },
     { value: 'light', label: $localize`:@@settings.theme.light:Claro` },
     { value: 'dark', label: $localize`:@@settings.theme.dark:Escuro` },
+    { value: 'auto', label: $localize`:@@settings.theme.auto:Automático` },
   ];
 
   protected chooseTheme(value: ThemePreference): void {

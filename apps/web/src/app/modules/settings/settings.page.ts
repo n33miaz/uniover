@@ -2,33 +2,21 @@ import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { canUseModule } from '../../core/auth/guest-home';
-import { AppearanceService, ThemePreference } from '../../core/session/appearance.service';
 import { SessionState } from '../../core/session/session-state';
 import { SettingsGlyph, SettingsGlyphName } from './settings-glyph';
-import { SETTINGS_TITLES, roleLabel } from './settings-titles';
+import { SETTINGS_TITLES } from './settings-titles';
+import { ThemeSegment } from './theme-segment';
 
-/** Uma linha da lista de Configurações: leva a uma tela. O resumo é fixo (ou vem do que já está na memória): a lista nunca chama a API. */
+/** Uma linha da lista de Configurações: leva a uma tela. Só o nome: a lista nunca chama a API nem repete o que a tela diz. */
 interface SettingsEntry {
   readonly id: string;
   readonly link: string;
   readonly glyph: SettingsGlyphName;
   readonly title: string;
-  readonly summary: string;
-}
-
-function themeSummary(preference: ThemePreference): string {
-  switch (preference) {
-    case 'light':
-      return $localize`:@@settings.list.appearance-light:Tema claro`;
-    case 'dark':
-      return $localize`:@@settings.list.appearance-dark:Tema escuro`;
-    default:
-      return $localize`:@@settings.list.appearance-auto:Tema automático`;
-  }
 }
 
 /**
- * Configurações: a lista das telas, cada uma com ícone, nome, um resumo curto e a seta. Todos veem a área pessoal e
+ * Configurações: o seletor de tema e a lista das telas, cada uma com ícone, nome e a seta. Todos veem a área pessoal e
  * Sobre; o administrador vê também a administração da casa.
  *
  * Só esconde o que o servidor também recusa, e nunca chama a API: nenhuma linha daqui faz pedido, então quem não é
@@ -37,45 +25,35 @@ function themeSummary(preference: ThemePreference): string {
  */
 @Component({
   selector: 'app-settings-page',
-  imports: [NgTemplateOutlet, RouterLink, RouterLinkActive, SettingsGlyph],
+  imports: [NgTemplateOutlet, RouterLink, RouterLinkActive, SettingsGlyph, ThemeSegment],
   templateUrl: './settings.page.html',
   styleUrl: './settings.page.css',
 })
 export class SettingsPage {
   private readonly session = inject(SessionState);
-  private readonly appearance = inject(AppearanceService);
 
   protected readonly isAdmin = computed(() => this.session.role() === 'owner');
 
-  private readonly profileEntry = computed<SettingsEntry>(() => {
-    const user = this.session.user();
-    const role = roleLabel(this.session.role());
-    return {
-      id: 'profile',
-      link: '/ajustes/perfil',
-      glyph: 'user',
-      title: SETTINGS_TITLES.profile,
-      summary:
-        user && role
-          ? `${user.displayName} · ${role}`
-          : $localize`:@@settings.list.profile-summary:Nome, e-mail e conta`,
-    };
-  });
+  private readonly profileEntry: SettingsEntry = {
+    id: 'profile',
+    link: '/ajustes/perfil',
+    glyph: 'user',
+    title: SETTINGS_TITLES.profile,
+  };
 
-  private readonly appearanceEntry = computed<SettingsEntry>(() => ({
+  private readonly appearanceEntry: SettingsEntry = {
     id: 'appearance',
     link: '/ajustes/aparencia',
     glyph: 'contrast',
     title: SETTINGS_TITLES.appearance,
-    summary: themeSummary(this.appearance.preference()),
-  }));
+  };
 
   /**
    * A área pessoal: Perfil, Aparência e Segurança para todos (o convidado vê lá só as próprias sessões) e o conector do
    * PC para o convidado que tem a TV. Com o papel desconhecido a Segurança espera: não se sabe o que mostrar nela.
    */
   protected readonly personal = computed<readonly SettingsEntry[]>(() => {
-    const entries = [this.profileEntry(), this.appearanceEntry()];
+    const entries = [this.profileEntry, this.appearanceEntry];
     const role = this.session.role();
     if (role !== null) {
       entries.push({
@@ -83,9 +61,6 @@ export class SettingsPage {
         link: '/ajustes/seguranca',
         glyph: 'shield',
         title: SETTINGS_TITLES.security,
-        summary: this.isAdmin()
-          ? $localize`:@@settings.list.security-summary:Sessões de Acesso e passkeys`
-          : $localize`:@@settings.list.security-guest-summary:Suas sessões de acesso`,
       });
     }
     // O convidado com a TV chega ao download do conector por aqui; aprovar o PC segue sendo do administrador.
@@ -96,7 +71,6 @@ export class SettingsPage {
         link: '/ajustes/dispositivos',
         glyph: 'laptop',
         title: $localize`:@@settings.devices.link:Dispositivos`,
-        summary: $localize`:@@settings.devices.guest-hint:Baixar o conector do PC`,
       });
     }
     return entries;
@@ -110,28 +84,24 @@ export class SettingsPage {
             link: '/ajustes/pessoas',
             glyph: 'users',
             title: SETTINGS_TITLES.people,
-            summary: $localize`:@@settings.list.people-summary:Convites e convidados`,
           },
           {
             id: 'devices',
             link: '/ajustes/dispositivos',
             glyph: 'laptop',
             title: $localize`:@@settings.devices.link:Dispositivos`,
-            summary: $localize`:@@settings.devices.hint:Agentes e computadores conectados`,
           },
           {
             id: 'system',
             link: '/ajustes/sistema',
             glyph: 'gear',
             title: SETTINGS_TITLES.system,
-            summary: $localize`:@@settings.list.system-summary:Qual computador controla a TV`,
           },
           {
             id: 'audit',
             link: '/ajustes/auditoria',
             glyph: 'audit',
             title: SETTINGS_TITLES.audit,
-            summary: $localize`:@@settings.list.audit-summary:Quem fez o quê, e quando`,
           },
         ]
       : [],
@@ -142,6 +112,5 @@ export class SettingsPage {
     link: '/ajustes/sobre',
     glyph: 'info',
     title: SETTINGS_TITLES.about,
-    summary: $localize`:@@settings.list.about-summary:Versão do app e da API`,
   };
 }
