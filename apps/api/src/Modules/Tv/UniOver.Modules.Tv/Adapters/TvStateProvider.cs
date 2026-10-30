@@ -23,7 +23,7 @@ internal sealed class TvStateProvider(
         ArgumentNullException.ThrowIfNull(target);
         var agentId = target.AgentSlug;
         var online = presence.IsOnline(agentId);
-        var view = TvState.From(state.Last(agentId), online, !string.IsNullOrWhiteSpace(agentId));
+        var view = TvState.From(state.Last(agentId), online, !string.IsNullOrWhiteSpace(agentId), presence.OfflineSince(agentId));
 
         // Quem lê descobre a mudança antes de qualquer comando: avisa a tela agora, para o aviso não se perder
         // (um comando que falhar depois já a encontraria anotada e não avisaria de novo).

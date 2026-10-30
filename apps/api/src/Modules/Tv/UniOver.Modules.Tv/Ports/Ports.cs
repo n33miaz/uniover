@@ -140,6 +140,9 @@ public interface ITvAgentPresence
 {
     bool IsOnline(string agentId);
 
+    /// <summary>Desde quando o agente está fora (instante da queda ou do último sinal); nulo se conectado ou desconhecido.</summary>
+    DateTimeOffset? OfflineSince(string agentId);
+
     /// <summary>
     /// O agente está sem sessão há mais que a janela de reconexão do gateway. Dentro da janela é só uma queda curta
     /// (o agente volta em um ou dois segundos) e o comando deve esperar a sessão voltar, não falhar.

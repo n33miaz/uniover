@@ -29,6 +29,9 @@ internal sealed partial class TvCommandRunner(
 {
     public const string NotConfiguredCode = "agent_not_configured";
 
+    /// <summary>Falha de comando com o agente ainda verde (graça de presença): o PC está reconectando.</summary>
+    public const string AgentReconnectingCode = "agent_reconnecting";
+
     /// <param name="command">Um valor de <see cref="TvCommandNames"/>.</param>
     /// <param name="detail">A tecla ou o pacote; do texto digitado, nunca o conteúdo.</param>
     /// <param name="waitForReply"><c>false</c> envia e segue (o <c>wake</c> não espera resposta).</param>
@@ -76,6 +79,11 @@ internal sealed partial class TvCommandRunner(
 
         if (outcome.Status == TvSendStatus.AgentOffline)
         {
+            // Ainda verde (dentro da graça de presença): o PC está reconectando, não desligado. Mesmo status, outro código,
+            // para a tela dizer "reconectando" em vez de afirmar uma queda que ainda não se confirmou.
+            outcome = presence.IsOnline(agentId)
+                ? TvSendOutcome.Failed(TvSendStatus.AgentOffline, AgentReconnectingCode, latency: outcome.Latency)
+                : outcome;
             AnnounceOffline(target);
         }
 
@@ -98,9 +106,17 @@ internal sealed partial class TvCommandRunner(
     private void AnnounceOffline(TvTarget target)
     {
         var agentId = target.AgentSlug;
+
+        // Dentro da graça de presença o agente ainda conta como conectado: o comando falhou, mas a tela só vê a queda se ela
+        // se confirmar (o aviso sai quando a graça acaba). Sem a graça a presença já diz "fora" e o aviso sai na hora.
+        if (presence.IsOnline(agentId))
+        {
+            return;
+        }
+
         if (state.NoteOnline(agentId, false))
         {
-            stream.PublishState(target.Id, TvState.From(state.Last(agentId), agentOnline: false));
+            stream.PublishState(target.Id, TvState.From(state.Last(agentId), agentOnline: false, offlineSince: presence.OfflineSince(agentId)));
         }
     }
 

@@ -23,6 +23,9 @@ internal sealed partial class TvPresenceListener(
     IServiceScopeFactory? scopes = null)
     : IAgentPresenceListener
 {
+    private readonly object _gate = new();
+    private readonly Dictionary<string, Task> _pending = new(StringComparer.Ordinal);
+
     public void OnPresenceChanged(AgentPresenceInfo info)
     {
         ArgumentNullException.ThrowIfNull(info);
@@ -41,7 +44,18 @@ internal sealed partial class TvPresenceListener(
 
         // A presença chega no escopo da conexão do agente, mas a tabela de TVs decide para qual fluxo SSE o aviso vai.
         // A leitura breve em um escopo próprio mantém o listener singleton sem capturar o DbContext da conexão.
-        _ = ApplyAfterReadAsync(info);
+        lock (_gate)
+        {
+            _pending.TryGetValue(info.AgentId, out var previous);
+            // A consulta à TV é assíncrona: uma queda não pode terminar depois da reconexão e sobrescrever o estado novo.
+            _pending[info.AgentId] = ApplyInOrderAsync(previous ?? Task.CompletedTask, info);
+        }
+    }
+
+    private async Task ApplyInOrderAsync(Task previous, AgentPresenceInfo info)
+    {
+        await previous;
+        await ApplyAfterReadAsync(info);
     }
 
     private async Task PublishCleanupSettingsAsync(string agentSlug)
@@ -97,9 +111,13 @@ internal sealed partial class TvPresenceListener(
             return;
         }
 
-        if (state.NoteOnline(info.AgentId, info.Connected))
+        // Uma conexão recém-aberta (o hello ainda não chegou) avisa a tela mesmo sem mudança: durante a graça de presença a
+        // tela nunca viu a queda, mas um comando que falhou na janela pode tê-la marcado fora do ar por conta própria, e é
+        // este aviso que a corrige.
+        var justConnected = info.Connected && info.AgentVersion is null;
+        if (state.NoteOnline(info.AgentId, info.Connected) || justConnected)
         {
-            stream.PublishState(tvId, TvState.From(state.Last(info.AgentId), info.Connected));
+            stream.PublishState(tvId, TvState.From(state.Last(info.AgentId), info.Connected, offlineSince: info.DisconnectedAt ?? info.LastMessageAt));
         }
     }
 

@@ -66,17 +66,25 @@ internal sealed class WebSocketAgentSession : IAgentSession
 
     public async ValueTask<byte[]?> ReceiveAsync(CancellationToken cancellationToken)
     {
+        // O cancelamento da leitura é o desligamento da API. Passá-lo ao WebSocket derrubaria a conexão sem quadro de
+        // fechamento (o .NET aborta o soquete quando cancelam uma leitura pendente), e o agente nunca veria o 1012 que
+        // o manda voltar na hora. Em vez disso o pedido vira um fechamento com educação: a leitura continua até o
+        // agente responder, ou até a graça de fechamento derrubar a conexão (ver AbortAfterGraceAsync).
+        using var shutdown = cancellationToken.Register(
+            static state => _ = ((WebSocketAgentSession)state!).CloseOnShutdownAsync(), this);
+
         using var message = new MemoryStream();
         while (true)
         {
             ValueWebSocketReceiveResult result;
             try
             {
-                result = await _socket.ReceiveAsync(_buffer.AsMemory(), cancellationToken);
+                result = await _socket.ReceiveAsync(_buffer.AsMemory(), CancellationToken.None);
             }
             catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException)
             {
                 // Conexão derrubada sem o aperto de mão de fechamento.
+                cancellationToken.ThrowIfCancellationRequested();
                 return null;
             }
 
@@ -84,6 +92,8 @@ internal sealed class WebSocketAgentSession : IAgentSession
             {
                 case WebSocketMessageType.Close:
                     await AnswerCloseAsync();
+                    // Quem pediu o desligamento continua sabendo que foi ele (o fechamento 1012 já saiu).
+                    cancellationToken.ThrowIfCancellationRequested();
                     return null;
 
                 case WebSocketMessageType.Binary:
@@ -102,6 +112,18 @@ internal sealed class WebSocketAgentSession : IAgentSession
             {
                 return message.ToArray();
             }
+        }
+    }
+
+    private async Task CloseOnShutdownAsync()
+    {
+        try
+        {
+            await CloseAsync(AgentCloseReason.Shutdown, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException)
+        {
+            // Já caiu: a leitura percebe e termina.
         }
     }
 

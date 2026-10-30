@@ -45,6 +45,12 @@ internal static class TvProblems
         Dictionary<string, object?>? extensions = outcome.Status == TvSendStatus.CommandFailed && outcome.ErrorCode is { Length: > 0 } code
             ? new Dictionary<string, object?> { ["agentError"] = code }
             : null;
+        if (outcome.Status == TvSendStatus.AgentOffline && outcome.ErrorCode == TvCommandRunner.AgentReconnectingCode)
+        {
+            // O PC caiu há pouco e ainda conta como conectado: a tela diz "reconectando", não "desligado".
+            extensions = new Dictionary<string, object?> { ["reconnecting"] = true };
+        }
+
         return Results.Problem(
             statusCode: status, title: title, type: ProblemDetailsExtensions.TypeBase + type, extensions: extensions);
     }

@@ -4378,6 +4378,13 @@
           "connection": {
             "type": "string"
           },
+          "offlineSince": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "power": {
             "type": "string"
           },

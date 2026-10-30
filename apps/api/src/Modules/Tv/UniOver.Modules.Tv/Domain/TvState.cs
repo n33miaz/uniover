@@ -43,21 +43,24 @@ public sealed record TvState(
     string Connection,
     bool AgentOnline,
     DateTimeOffset? UpdatedAt,
-    bool AgentLinked = true)
+    bool AgentLinked = true,
+    DateTimeOffset? OfflineSince = null)
 {
     /// <summary>
     /// Sem agente conectado não há sessão com a TV: a conexão é sempre <c>disconnected</c> e o volume (que só o
     /// agente sabe) some. Isto é calculado na leitura e nunca gravado.
     /// </summary>
-    public static TvState From(TvStateSnapshot? snapshot, bool agentOnline, bool agentLinked = true)
+    public static TvState From(TvStateSnapshot? snapshot, bool agentOnline, bool agentLinked = true, DateTimeOffset? offlineSince = null)
     {
+        // `OfflineSince` só existe com o agente fora: é desde quando a tela diz "PC desligado desde...".
+        var since = agentOnline ? null : offlineSince;
         if (snapshot is null)
         {
-            return new TvState(TvStateText.PowerUnknown, null, null, TvStateText.ConnectionDisconnected, agentOnline, null, agentLinked);
+            return new TvState(TvStateText.PowerUnknown, null, null, TvStateText.ConnectionDisconnected, agentOnline, null, agentLinked, since);
         }
 
         return agentOnline
             ? new TvState(snapshot.Power, snapshot.Volume, snapshot.App, snapshot.Connection, true, snapshot.UpdatedAt, agentLinked)
-            : new TvState(snapshot.Power, null, snapshot.App, TvStateText.ConnectionDisconnected, false, snapshot.UpdatedAt, agentLinked);
+            : new TvState(snapshot.Power, null, snapshot.App, TvStateText.ConnectionDisconnected, false, snapshot.UpdatedAt, agentLinked, since);
     }
 }
