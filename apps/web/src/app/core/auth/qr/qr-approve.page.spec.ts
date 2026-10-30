@@ -63,6 +63,8 @@ describe('QrApprovePage', () => {
     expect(el.querySelector('h1')?.textContent).toBe('Entrar no computador?');
     expect(text(el)).toContain('Chrome no Windows');
     expect(text(el)).toContain('Na mesma rede deste celular');
+    expect(el.querySelector('.device-label')?.textContent).toBe('Computador');
+    expect(el.querySelector('.network-label')?.textContent).toBe('Rede');
     expect(text(el)).toContain('Confirme só se foi você quem abriu o QR.');
     expect(button(el, 'Confirmar')).toBeTruthy();
     expect(button(el, 'Cancelar')).toBeTruthy();
