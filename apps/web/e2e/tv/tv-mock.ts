@@ -66,6 +66,8 @@ export interface MockTvState {
   /** A TV da conta tem agente vinculado (ausente vale sim, como na API antiga). */
   agentLinked?: boolean;
   updatedAt: string | null;
+  /** Desde quando o agente está fora (a API só manda com ele fora): é o que confirma o "PC Desligado". */
+  offlineSince?: string | null;
 }
 
 /** Falha que a próxima chamada de comando devolve (e que se repete até o teste limpar). */

@@ -233,10 +233,11 @@ test.describe('controle: tela única, sem abas', () => {
   }) => {
     await openTv(page);
     const head = page.locator('header.head');
-    // À esquerda ficam a seta e os três pontos do menu; à direita, só o desligar.
+    // À esquerda ficam a seta e os três pontos do menu; à direita, o ponto de estado e o desligar. Nada de engrenagem.
     await expect(head.locator('.lead').getByRole('button')).toHaveCount(1);
     await expect(head.locator('.lead').getByRole('button', { name: 'Mais opções' })).toBeVisible();
-    await expect(head.locator('.actions').getByRole('button')).toHaveCount(1);
+    await expect(head.getByRole('link', { name: 'Configurações' })).toHaveCount(0);
+    await expect(head.locator('.actions').getByRole('button')).toHaveCount(2);
     await expect(
       head.locator('.actions').getByRole('button', { name: 'Desligar a TV' }),
     ).toBeVisible();
@@ -849,7 +850,7 @@ test.describe('ponto de estado clicável', () => {
     await signIn(page);
     await page.goto('/tv');
     await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
-    const trigger = statusDot(page, 'Conectando');
+    const trigger = statusDot(page, 'Reconectando…');
     await expect(trigger).toHaveAttribute('data-phase', 'connecting');
     const pulse = trigger.locator('.pulse');
     const animation = () => pulse.evaluate((el) => getComputedStyle(el).animationName);
@@ -919,13 +920,15 @@ test.describe('ponto de estado clicável', () => {
     await expect(statusDot(page)).toBeFocused();
   });
 
-  test('sem o agente: "Tentar de novo" lê o estado de novo e libera os botões quando ele volta', async ({
+  test('sem o agente: "Tentar de Novo" lê o estado de novo e libera os botões quando ele volta', async ({
     page,
   }, info) => {
     await openTv(page);
     tv.state = { ...HOT_STATE, agentOnline: false, connection: 'disconnected', volume: null };
     await emitSse(page, 'tv.state', tv.state);
     await expect(statusDot(page, 'Agente desligado')).toBeVisible();
+    // Só o PC confirmado desligado (com a data) ganha o selo; aqui vale o aviso de sempre.
+    await expect(page.locator('.seal')).toHaveCount(0);
     await expect(
       page.getByText('O agente da TV está desligado, então os botões não funcionam agora.'),
     ).toBeVisible();
@@ -944,7 +947,7 @@ test.describe('ponto de estado clicável', () => {
     // Ainda sem agente: lê de novo, segue desligado e não pede aquecimento (não há para quem pedir).
     await statusDot(page).click();
     const before = states();
-    await statusPanel(page).getByRole('button', { name: 'Tentar de novo' }).click();
+    await statusPanel(page).getByRole('button', { name: 'Tentar de Novo' }).click();
     await expect.poll(states).toBeGreaterThan(before);
     await expect(statusDot(page, 'Agente desligado')).toBeVisible();
     expect(tv.count('/wake')).toBe(wakes);
@@ -952,7 +955,7 @@ test.describe('ponto de estado clicável', () => {
     // O agente volta: a próxima leitura traz o estado e tudo se reabilita.
     tv.state = { ...HOT_STATE };
     await statusDot(page).click();
-    await statusPanel(page).getByRole('button', { name: 'Tentar de novo' }).click();
+    await statusPanel(page).getByRole('button', { name: 'Tentar de Novo' }).click();
     await expect(statusDot(page, 'Conectada')).toBeVisible();
     await expect(button(page, 'OK')).toBeEnabled();
   });
@@ -1128,7 +1131,7 @@ test.describe('desligar', () => {
       sheet.getByText('Sem o emissor infravermelho, a TV só volta com o controle original.'),
     ).toBeVisible();
     await expect(sheet.getByRole('button', { name: /fechar|close/i })).toHaveCount(0);
-    await expect(sheet.getByRole('button')).toHaveText(['Cancelar', 'Desligar']);
+    await expect(sheet.getByRole('button')).toHaveText(['Desligar', 'Cancelar']);
     await page.waitForTimeout(300); // fim da animação de subida
     await screenshot(page, `test-results/tv-power-sheet-${info.project.name}.png`);
     await expectNoSeriousViolations(page);
@@ -3046,14 +3049,17 @@ test.describe('ícones dos apps', () => {
     await screenshot(page, `test-results/tv-icons-focus-${info.project.name}.png`);
   });
 
-  test('um WebP também aparece', async ({ page }) => {
+  test('um WebP de um pixel transparente (sem tinta nenhuma) vira a inicial, nunca um azulejo vazio', async ({
+    page,
+  }) => {
     tv.shortcuts = iconShortcuts().map((s, index) =>
       index === 3 ? { ...s, iconDataUri: TINY_WEBP } : s,
     );
     await openTv(page);
-    const image = button(page, 'Play Store').locator('img');
-    await expect(image).toHaveCount(1);
-    await expect.poll(() => imageLoaded(image)).toBe(true);
+    // O navegador lê a imagem, mede que não há tinta e o azulejo mostra a inicial do app no lugar dela.
+    const tile = button(page, 'Play Store');
+    await expect(tile.locator('.fallback')).toHaveText('P');
+    await expect(tile.locator('img')).toHaveCount(0);
   });
 
   test('um atalho sem o campo do ícone (guardado antes dele existir) vira azulejo, sem erro', async ({
@@ -3456,4 +3462,202 @@ test.describe('ícones dos apps', () => {
       await expectNoSeriousViolations(page);
     });
   }
+});
+
+/** O estado do mock com o PC desligado, como a API o manda depois da graça de presença: com o "desde quando". */
+const PC_OFF_STATE: MockTvState = {
+  ...HOT_STATE,
+  agentOnline: false,
+  connection: 'disconnected',
+  volume: null,
+  offlineSince: '2026-10-28T22:24:00Z',
+};
+
+test.describe('verde primeiro e por último', () => {
+  /** Segura as leituras do estado e dos atalhos; o teste solta quando quiser. */
+  function holdReads() {
+    let releaseState!: () => void;
+    let releaseShortcuts!: () => void;
+    tv.stateGate = new Promise<void>((resolve) => (releaseState = resolve));
+    tv.shortcutsGate = new Promise<void>((resolve) => (releaseShortcuts = resolve));
+    return {
+      release: () => {
+        releaseState();
+        releaseShortcuts();
+      },
+    };
+  }
+  const openWithoutReads = async (page: Page) => {
+    await signIn(page);
+    await page.goto('/tv');
+    await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
+  };
+
+  test('sem leitura ainda: o ponto é verde, os botões funcionam e o toque sai', async ({
+    page,
+  }) => {
+    const reads = holdReads();
+    await openWithoutReads(page);
+    const trigger = statusDot(page, 'Reconectando…');
+    await expect(trigger).toHaveAttribute('data-phase', 'connecting');
+    await expect(button(page, 'OK')).toBeEnabled();
+    const before = tv.keysSent().length;
+    await button(page, 'Voltar').click();
+    await expect.poll(() => tv.keysSent().slice(before)).toEqual(['BACK']);
+    // O mesmo verde do "conectada": quem olha não vê falha nenhuma.
+    const waiting = await trigger.locator('svg .fill').evaluate((el) => getComputedStyle(el).fill);
+    reads.release();
+    await emitSse(page, 'tv.state', tv.state);
+    await expect(statusDot(page, 'Conectada')).toBeVisible();
+    const ready = await statusDot(page, 'Conectada')
+      .locator('svg .fill')
+      .evaluate((el) => getComputedStyle(el).fill);
+    expect(waiting).toBe(ready);
+    await expect(page.locator('.seal')).toHaveCount(0);
+  });
+
+  test('o esqueleto da TV: só atalhos e nível do volume, depois da espera curta; o anel já funciona', async ({
+    page,
+  }, info) => {
+    const reads = holdReads();
+    await openWithoutReads(page);
+    await expect(page.locator('.top .waiting .ui-skeleton')).toHaveCount(4);
+    await expect(page.locator('.level-skeleton')).toBeVisible();
+    // Só o que depende de dados: o anel direcional e os botões já são os de verdade, e o toque no OK sai.
+    await expect(page.locator('app-directional-ring')).toBeVisible();
+    await expect(page.locator('app-directional-ring .ui-skeleton')).toHaveCount(0);
+    await expect(button(page, 'OK')).toBeEnabled();
+    await expect(button(page, 'Desligar a TV').locator('.ui-skeleton')).toHaveCount(0);
+    const before = tv.keysSent().length;
+    await button(page, 'OK').click();
+    await expect.poll(() => tv.keysSent().slice(before)).toEqual(['OK']);
+    await expectNoHorizontalScroll(page);
+    await expectNoVerticalScroll(page);
+    await screenshot(page, `test-results/tv-shimmer-${info.project.name}.png`);
+
+    reads.release();
+    await emitSse(page, 'tv.state', tv.state);
+    await emitSse(page, 'tv.shortcuts', tv.shortcuts);
+    await expect(page.locator('.ui-skeleton')).toHaveCount(0);
+    await expect(page.locator('.shortcuts .shortcut').first()).toBeVisible();
+  });
+
+  test('nunca em laço: sem resposta no prazo o esqueleto sai e aparece "Sem Resposta" com "Tentar de Novo"', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    const reads = holdReads();
+    await openWithoutReads(page);
+    await expect(page.locator('.level-skeleton')).toBeVisible();
+    await expect(statusDot(page, 'Sem Resposta')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('.ui-skeleton')).toHaveCount(0);
+    // Sem leitura a linha de aviso oferece tentar de novo, e os botões do controle seguem ativos.
+    const retry = page.locator('.reason-row').getByRole('button', { name: 'Tentar de Novo' });
+    await expect(retry).toBeVisible();
+    await expect(button(page, 'OK')).toBeEnabled();
+    await expectNoSeriousViolations(page);
+
+    // As leituras novas passam; as velhas seguem presas até o fim (soltá-las antes faria a tela se curar sozinha).
+    tv.stateGate = null;
+    tv.shortcutsGate = null;
+    await retry.click();
+    await expect(statusDot(page, 'Conectada')).toBeVisible();
+    await expect(page.locator('.reason-row')).toHaveCount(0);
+    reads.release();
+  });
+
+  test('um 503 "reconectando" não é falha: o ponto segue verde e o aviso diz que está reconectando', async ({
+    page,
+  }) => {
+    await openTv(page);
+    tv.commandFailure = { status: 503, kind: 'agent-offline', extra: { reconnecting: true } };
+    await button(page, 'Aumentar o volume').click();
+    await expect(page.getByText('Reconectando ao PC…')).toBeVisible();
+    await expect(statusDot(page, 'Conectada')).toBeVisible();
+    await expect(page.locator('.seal')).toHaveCount(0);
+    await expect(button(page, 'OK')).toBeEnabled();
+  });
+
+  test('ao voltar do segundo plano lê o estado na hora, e o ponto não pisca vermelho enquanto isso', async ({
+    page,
+  }) => {
+    await openTv(page);
+    const states = () =>
+      tv.requests.filter((r) => r.method === 'GET' && r.path === '/state').length;
+    const before = states();
+    tv.stateGate = new Promise<void>(() => undefined);
+    await page.evaluate(() => {
+      const hide = (value: string) => {
+        Object.defineProperty(document, 'visibilityState', { value, configurable: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+      };
+      hide('hidden');
+      hide('visible');
+    });
+    await expect.poll(states).toBeGreaterThan(before);
+    await expect(statusDot(page, 'Conectada')).toBeVisible();
+    await expect(button(page, 'OK')).toBeEnabled();
+    tv.stateGate = null;
+  });
+});
+
+test.describe('PC Desligado', () => {
+  test('selo no centro, controles esmaecidos e só "Tentar de Novo"; some quando o PC volta', async ({
+    page,
+  }, info) => {
+    await openTv(page);
+    tv.state = PC_OFF_STATE;
+    await emitSse(page, 'tv.state', tv.state);
+
+    const seal = page.getByRole('region', { name: 'PC Desligado' });
+    await expect(seal).toBeVisible();
+    await expect(seal).toContainText(/desde \d{2}\/\d{2} \d{2}:\d{2}/);
+    await expect(seal.getByRole('button')).toHaveCount(1);
+    await expect(seal.getByRole('button', { name: 'Tentar de Novo' })).toBeVisible();
+    // O mesmo ícone do monitor dormindo no ponto do cabeçalho, que continua tocável.
+    const dot = statusDot(page, 'PC Desligado');
+    await expect(dot).toBeVisible();
+    await expect(dot.locator('app-pc-off-icon')).toHaveCount(1);
+    // Os controles ficam esmaecidos e inertes, e a linha de aviso não repete o recado.
+    await expect(page.locator('app-tv-control')).toHaveCSS('opacity', '0.32');
+    await expect(page.locator('app-tv-control')).toHaveAttribute('inert', '');
+    await expect(button(page, 'Desligar a TV')).toBeDisabled();
+    await expect(page.locator('.reason-row')).toHaveCount(0);
+    // O selo fica no centro da tela.
+    const box = (await seal.boundingBox())!;
+    const viewport = page.viewportSize()!;
+    expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(2);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+    await expectNoHorizontalScroll(page);
+    await expectNoVerticalScroll(page);
+    await expectNoSeriousViolations(page);
+    await screenshot(page, `test-results/tv-pc-off-${info.project.name}.png`);
+
+    // Tentar de Novo lê o estado de novo; com o PC de volta o selo some e o controle volta.
+    const states = () =>
+      tv.requests.filter((r) => r.method === 'GET' && r.path === '/state').length;
+    const before = states();
+    await seal.getByRole('button', { name: 'Tentar de Novo' }).click();
+    await expect.poll(states).toBeGreaterThan(before);
+    await expect(seal).toBeVisible();
+    tv.state = { ...HOT_STATE };
+    await seal.getByRole('button', { name: 'Tentar de Novo' }).click();
+    await expect(seal).toHaveCount(0);
+    await expect(statusDot(page, 'Conectada')).toBeVisible();
+    await expect(button(page, 'OK')).toBeEnabled();
+    await expect(page.locator('app-tv-control')).toHaveCSS('opacity', '1');
+  });
+
+  test('o toque no ponto abre o detalhe curto com o "desde quando" e a mesma ação', async ({
+    page,
+  }) => {
+    await openTv(page);
+    tv.state = PC_OFF_STATE;
+    await emitSse(page, 'tv.state', tv.state);
+    await statusDot(page, 'PC Desligado').click();
+    await expect(statusPanel(page)).toBeVisible();
+    await expect(statusPanel(page).locator('strong')).toContainText(/PC Desligado desde/);
+    await expect(statusPanel(page).getByRole('button', { name: 'Tentar de Novo' })).toBeVisible();
+  });
 });
