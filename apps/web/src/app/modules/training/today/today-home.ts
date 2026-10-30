@@ -15,6 +15,7 @@ import { CatalogRepository } from '../data/catalog/catalog-repository';
 import { RoutineRepository } from '../data/routines/routine-repository';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { TrainingSync } from '../data/sync/training-sync';
+import { ExerciseThumb } from '../exercises/exercise-thumb';
 import { IllustrationPrefetcher } from '../illustrations/illustration-prefetcher';
 import { programSummary } from '../routines/program-summary';
 import type { RoutineEntry } from '../routines/routine-stats';
@@ -42,6 +43,7 @@ import { WeekCalendar } from './week-calendar';
   selector: 'app-today-home',
   imports: [
     RouterLink,
+    ExerciseThumb,
     TrainingGlyph,
     TodayGlyph,
     RoutinePickerSheet,

@@ -243,7 +243,8 @@
       [attr.aria-label]="linesLabel"
     >
       @for (line of store.lines(); track line.key) {
-        <li class="ui-row">
+        <li class="ui-row line">
+          <app-exercise-thumb [slug]="line.slug" />
           <span class="ui-row-text">
             <span class="ui-row-title">{{ line.name ?? missingName }}</span>
             <span class="ui-row-sub">{{ lineSub(line) }}</span>
