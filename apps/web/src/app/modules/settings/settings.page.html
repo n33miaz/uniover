@@ -1,4 +1,4 @@
-<!-- Uma linha que leva a uma tela: ladrilho, nome, resumo e a seta. A linha da tela aberta recebe aria-current. -->
+<!-- Uma linha que leva a uma tela: ladrilho, nome e a seta (sem subtítulo). A linha da tela aberta recebe aria-current. -->
 <ng-template #row let-entry>
   <a
     class="ui-row"
@@ -9,13 +9,14 @@
     <span class="ui-tile"><app-settings-glyph [name]="entry.glyph" /></span>
     <span class="ui-row-text">
       <span class="ui-row-title">{{ entry.title }}</span>
-      <span class="ui-row-sub">{{ entry.summary }}</span>
     </span>
     <app-settings-glyph class="chev" name="chevron" />
   </a>
 </ng-template>
 
 <div class="settings ui-stagger">
+  <app-theme-segment class="ui-rise" />
+
   <section class="section ui-rise" aria-labelledby="personal-title">
     <h2 id="personal-title" class="ui-section-label" i18n="@@settings.list.personal">Você</h2>
     <ul class="ui-group">

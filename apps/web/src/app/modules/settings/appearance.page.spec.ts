@@ -32,27 +32,27 @@ describe('AppearancePage', () => {
   }
 
   describe('theme', () => {
-    it('offers automatic (default), light and dark', async () => {
+    it('offers light, dark and automatic (default), in the same order as the quick selector', async () => {
       const { el } = await render();
       const options = Array.from(el.querySelectorAll<HTMLInputElement>('input[name="theme"]'));
-      expect(options.map((o) => o.value)).toEqual(['auto', 'light', 'dark']);
-      expect(options.map((o) => o.checked)).toEqual([true, false, false]);
+      expect(options.map((o) => o.value)).toEqual(['light', 'dark', 'auto']);
+      expect(options.map((o) => o.checked)).toEqual([false, false, true]);
       expect(el.querySelector('#theme-title')?.textContent?.trim()).toBe('Tema');
-      expect(el.querySelector('fieldset legend')?.textContent).toBe('Como o app aparece');
+      expect(el.querySelector('fieldset legend')?.textContent?.trim()).toBe('Como o app aparece');
     });
 
     it('shows a sample of each theme, hidden from readers, next to a short label', async () => {
       const { el } = await render();
       const cards = Array.from(el.querySelectorAll('label.theme'));
       expect(cards.map((c) => c.querySelector('.theme-label')?.textContent?.trim())).toEqual([
-        'Automático',
         'Claro',
         'Escuro',
+        'Automático',
       ]);
       for (const card of cards) {
         expect(card.querySelector('.preview')?.getAttribute('aria-hidden')).toBe('true');
       }
-      expect(el.querySelector('fieldset .hint')?.textContent).toContain('Automático acompanha');
+      expect(el.querySelector('fieldset .hint')).toBeNull();
     });
 
     it('choosing dark saves the preference and applies the theme attribute', async () => {

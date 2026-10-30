@@ -67,7 +67,6 @@ describe('SettingsPage (a list of screens)', () => {
   const rows = (el: HTMLElement) =>
     Array.from(el.querySelectorAll<HTMLAnchorElement>('a.ui-row')).map((a) => ({
       title: a.querySelector('.ui-row-title')?.textContent?.trim(),
-      summary: a.querySelector('.ui-row-sub')?.textContent?.trim(),
       href: a.getAttribute('href'),
     }));
 
@@ -77,33 +76,29 @@ describe('SettingsPage (a list of screens)', () => {
       expect(headings(el)).toEqual(['Você', 'Administração', 'Aplicativo']);
     });
 
-    it('has a row for each screen, with a short summary and where it goes', async () => {
+    it('has a row for each screen, with only its title and where it goes', async () => {
       const { el } = await render();
       expect(rows(el)).toEqual([
-        { title: 'Perfil', summary: 'Dono da Casa · Administrador', href: '/ajustes/perfil' },
-        { title: 'Aparência', summary: 'Tema automático', href: '/ajustes/aparencia' },
+        { title: 'Perfil', href: '/ajustes/perfil' },
+        { title: 'Aparência', href: '/ajustes/aparencia' },
         {
           title: 'Segurança',
-          summary: 'Sessões de Acesso e passkeys',
           href: '/ajustes/seguranca',
         },
         {
           title: 'Pessoas e Permissões',
-          summary: 'Convites e convidados',
           href: '/ajustes/pessoas',
         },
         {
           title: 'Dispositivos',
-          summary: 'Agentes e computadores conectados',
           href: '/ajustes/dispositivos',
         },
         {
           title: 'Sistema',
-          summary: 'Qual computador controla a TV',
           href: '/ajustes/sistema',
         },
-        { title: 'Auditoria', summary: 'Quem fez o quê, e quando', href: '/ajustes/auditoria' },
-        { title: 'Sobre', summary: 'Versão do app e da API', href: '/ajustes/sobre' },
+        { title: 'Auditoria', href: '/ajustes/auditoria' },
+        { title: 'Sobre', href: '/ajustes/sobre' },
       ]);
     });
 
@@ -133,10 +128,19 @@ describe('SettingsPage (a list of screens)', () => {
       }
     });
 
-    it('the summary of Aparência follows the chosen theme', async () => {
+    it('shows only the title in each row: no subtitle', async () => {
+      const { el } = await render();
+      expect(el.querySelectorAll('.ui-row-sub')).toHaveLength(0);
+    });
+
+    it('offers the theme selector on top and shows the saved choice', async () => {
       localStorage.setItem(THEME_PREFERENCE_KEY, 'dark');
       const { el } = await render();
-      expect(rows(el)[1].summary).toBe('Tema escuro');
+      const options = Array.from(
+        el.querySelectorAll<HTMLInputElement>('app-theme-segment input[type="radio"]'),
+      );
+      expect(options.map((o) => o.value)).toEqual(['light', 'dark', 'auto']);
+      expect(options.map((o) => o.checked)).toEqual([false, true, false]);
     });
 
     it('marks the row of the open screen with aria-current', async () => {
@@ -170,19 +174,17 @@ describe('SettingsPage (a list of screens)', () => {
       const { el } = await render();
       expect(headings(el)).toEqual(['Você', 'Aplicativo']);
       expect(rows(el)).toEqual([
-        { title: 'Perfil', summary: 'Alice · Convidado', href: '/ajustes/perfil' },
-        { title: 'Aparência', summary: 'Tema automático', href: '/ajustes/aparencia' },
+        { title: 'Perfil', href: '/ajustes/perfil' },
+        { title: 'Aparência', href: '/ajustes/aparencia' },
         {
           title: 'Segurança',
-          summary: 'Suas sessões de acesso',
           href: '/ajustes/seguranca',
         },
         {
           title: 'Dispositivos',
-          summary: 'Baixar o conector do PC',
           href: '/ajustes/dispositivos',
         },
-        { title: 'Sobre', summary: 'Versão do app e da API', href: '/ajustes/sobre' },
+        { title: 'Sobre', href: '/ajustes/sobre' },
       ]);
     });
 
