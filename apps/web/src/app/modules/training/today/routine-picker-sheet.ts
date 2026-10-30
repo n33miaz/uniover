@@ -62,7 +62,7 @@ import { routineSummary } from './today-text';
         <section class="settings" aria-labelledby="goal-title">
           <h3 id="goal-title" i18n="@@training.today.flexible-goal">Meta Flexível</h3>
           <label class="field">
-            <span i18n="@@training.today.goal-weekly-label">Treinos por semana</span>
+            <span i18n="@@training.today.goal-weekly-label">Treinos por Semana</span>
             <input
               #goal
               type="number"
@@ -130,7 +130,7 @@ import { routineSummary } from './today-text';
           <h3 id="note-title" i18n="@@training.today.day-note-title">Nota do Dia</h3>
           <label class="field">
             <span class="ui-visually-hidden" i18n="@@training.today.day-note-label"
-              >Nota do dia</span
+              >Nota do Dia</span
             >
             <textarea
               #note
@@ -245,6 +245,7 @@ export class RoutinePickerSheet {
   protected readonly programGoal = signal<number | null>(null);
   protected readonly noteValue = signal('');
   protected readonly status = signal('');
+  private readonly storageFull = $localize`:@@training.today.storage-full:O aparelho está sem espaço: nada foi salvo. Seus valores continuam na tela, tente de novo`;
   protected readonly ready = signal(false);
 
   constructor() {
@@ -265,13 +266,19 @@ export class RoutinePickerSheet {
     if (result.status === 'saved') {
       this.goalValue.set(result.goal.value);
       this.status.set($localize`:@@training.today.goal-saved:Meta salva`);
+    } else if (result.status === 'storage-full') {
+      this.status.set(this.storageFull);
     } else {
       this.status.set($localize`:@@training.today.goal-invalid:Use de 1 a 14 treinos por semana`);
     }
   }
 
   protected async resetGoal(): Promise<void> {
-    await this.goals.clear('weekly_sessions');
+    const result = await this.goals.clear('weekly_sessions');
+    if (result.status === 'storage-full') {
+      this.status.set(this.storageFull);
+      return;
+    }
     this.goalValue.set(null);
     this.status.set($localize`:@@training.today.goal-restored:Meta do programa restaurada`);
   }
@@ -283,20 +290,32 @@ export class RoutinePickerSheet {
       this.status.set($localize`:@@training.today.absence-invalid:Escolha um intervalo válido`);
       return;
     }
+    let saved = 0;
     for (const day of days) {
-      const current = await this.calendarEntries.get(day);
-      await this.calendarEntries.save(day, { absent, note: current?.note ?? '' });
+      const result = await this.calendarEntries.update(day, { absent });
+      if (result.status === 'saved') saved += 1;
     }
-    this.status.set(
-      absent
-        ? $localize`:@@training.today.absence-saved:Ausência marcada`
-        : $localize`:@@training.today.absence-undone:Ausência desfeita`,
-    );
+    if (saved === days.length) {
+      this.status.set(
+        absent
+          ? $localize`:@@training.today.absence-saved:Ausência marcada`
+          : $localize`:@@training.today.absence-undone:Ausência desfeita`,
+      );
+    } else if (saved === 0) {
+      this.status.set(this.storageFull);
+    } else {
+      this.status.set(
+        $localize`:@@training.today.absence-partial:Só ${saved}:saved: de ${days.length}:total: dias foram salvos: o aparelho está sem espaço. Tente de novo`,
+      );
+    }
   }
 
   protected async saveNote(note: string): Promise<void> {
-    const current = await this.calendarEntries.get(this.todayKey);
-    await this.calendarEntries.save(this.todayKey, { absent: current?.absent ?? false, note });
+    const result = await this.calendarEntries.update(this.todayKey, { note });
+    if (result.status === 'storage-full') {
+      this.status.set(this.storageFull);
+      return;
+    }
     this.noteValue.set(note.trim());
     this.status.set($localize`:@@training.today.day-note-saved:Nota salva`);
   }

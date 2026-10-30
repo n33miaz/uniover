@@ -249,7 +249,7 @@ test.describe('o treino ao vivo de duas contas no mesmo navegador', () => {
     await page.goto('/entrar');
     await signIn(page, OWNER.email, OWNER.password);
     await goInApp(page, '/treino');
-    await expect(page.getByRole('heading', { name: 'Semana com Meta', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Esta Semana', exact: true })).toBeVisible();
     await expect(page.locator('.lines .ui-row').first()).toContainText('última vez 40 kg × 10');
     await beginWorkout(page);
     server.offline = true;

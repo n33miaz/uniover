@@ -58,7 +58,7 @@ export class BodyMapData {
     return this.exercises(muscle).length;
   }
 
-  /** Séries de trabalho do músculo na semana de hoje (segunda a domingo). */
+  /** Séries de trabalho do músculo na semana de hoje (domingo a sábado). */
   weekSets(muscle: string): number {
     return this._weekSets()[muscle] ?? 0;
   }

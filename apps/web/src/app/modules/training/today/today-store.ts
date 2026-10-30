@@ -13,6 +13,14 @@ import type { LocalSession } from '../data/sessions/session';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { TrainingSync } from '../data/sync/training-sync';
 import { summarizeLastSets } from '../exercises/last-set';
+import {
+  addDays,
+  civilDateOf,
+  dateKey,
+  dateKeyOf,
+  deviceTimeZone,
+  startOfDay,
+} from '../domain/progress/calendar';
 import { type DayPlan, planForDay } from '../domain/routines/week-plan';
 import { type RoutineEntry, buildRoutineEntries } from '../routines/routine-stats';
 import { awaitingFirstPull } from '../shell/first-pull';
@@ -55,6 +63,15 @@ export interface OtherDevice {
   readonly forgotten: boolean;
 }
 
+/** O treino encerrado mais recente antes de hoje, para o atalho "Treino de Ontem" de Hoje. */
+export interface PreviousWorkout {
+  readonly sessionId: string;
+  /** O dia em que começou (`AAAA-MM-DD`, no fuso do aparelho). */
+  readonly dayKey: string;
+  /** Foi ontem: o atalho diz "Treino de Ontem"; sendo mais antigo, diz "Último Treino" com a data. */
+  readonly yesterday: boolean;
+}
+
 /** O que acontece ao pedir para iniciar um treino. */
 export type StartOutcome = 'started' | 'resumed' | 'blocked' | 'storage-full' | 'program-choice';
 
@@ -90,6 +107,8 @@ export class TodayStore {
   readonly entries = signal<readonly RoutineEntry[]>([]);
   readonly homeReady = signal(false);
   readonly week = signal<WeekSummary | null>(null);
+  /** O treino de ontem (ou o último antes de hoje); `null` quando ainda não há nenhum para resumir. */
+  readonly previousWorkout = signal<PreviousWorkout | null>(null);
   readonly lines = signal<readonly RoutineLine[]>([]);
   readonly chosenRoutineId = signal<string | null>(null);
   /** A ficha do programa da semana para hoje, calculada no aparelho (vale sem rede). */
@@ -254,6 +273,7 @@ export class TodayStore {
     ]);
     const entries = buildRoutineEntries(all, active, sessions);
     const now = this.runtime.now();
+    const previous = await this.findPreviousWorkout(sessions, now);
     const day = new Date(now).toDateString();
     if (day !== this.lastDay) {
       // Virou o dia (o app instalado volta do segundo plano na terça): a ficha do dia vale de novo.
@@ -266,7 +286,45 @@ export class TodayStore {
     this.plan.set(planForDay(all, sessions, now, programId));
     this.entries.set(entries);
     this.week.set(week);
+    this.previousWorkout.set(previous);
     this.homeReady.set(true);
+  }
+
+  /**
+   * O treino encerrado mais recente que começou antes de hoje e tem ao menos uma série de trabalho (o mesmo critério do
+   * calendário: sem série não há resumo para abrir). O dia é o do fuso do aparelho, nunca o de UTC. Percorre do mais novo
+   * ao mais antigo até achar um válido, por mais sessões vazias que haja no caminho. É um atalho: se o banco falhar ao
+   * ler as séries, ele some (`null`), sem derrubar a leitura das rotinas, da ficha do dia e do resumo da semana.
+   */
+  private async findPreviousWorkout(
+    sessions: readonly LocalSession[],
+    now: number,
+  ): Promise<PreviousWorkout | null> {
+    const zone = deviceTimeZone();
+    const today = civilDateOf(now, zone);
+    const todayStart = startOfDay(today, zone);
+    const yesterdayKey = dateKeyOf(addDays(today, -1));
+    const earlier = sessions
+      .filter(
+        (session) =>
+          session.finishedAt !== null &&
+          session.deletedAt === null &&
+          session.startedAt < todayStart,
+      )
+      .sort((a, b) => b.startedAt - a.startedAt);
+    for (const session of earlier) {
+      try {
+        const sets = await this.sessions.setsOfSession(session.id);
+        if (sets.some((set) => set.setType !== 'warmup')) {
+          const dayKey = dateKey(session.startedAt, zone);
+          return { sessionId: session.id, dayKey, yesterday: dayKey === yesterdayKey };
+        }
+      } catch {
+        // Banco local sem resposta: sem atalho, e a tela de Hoje segue de pé com o resto.
+        return null;
+      }
+    }
+    return null;
   }
 
   /** Dispensa a sugestão de programa neste aparelho (quem já tem fichas livres pode seguir com elas). */

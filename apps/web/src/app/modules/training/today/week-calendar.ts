@@ -27,12 +27,13 @@ import {
 import { routinesOnWeekday } from '../domain/routines/week-plan';
 import { formatKg } from '../shell/format';
 import { TrainingSheet } from '../shell/training-sheet';
+import { weekRangeLabel } from './today-text';
 import {
   type CalendarDay,
   type CalendarMonth,
-  moveMonth,
   sundayMonth,
   sundayWeek,
+  moveMonth,
 } from './week-calendar-model';
 
 interface Workout {
@@ -48,6 +49,7 @@ interface PeriodRead {
   readonly workouts: readonly Workout[];
 }
 
+/** A semana começa no domingo. */
 const weekdays = [
   $localize`:@@training.today.calendar.sun:dom`,
   $localize`:@@training.today.calendar.mon:seg`,
@@ -74,12 +76,16 @@ const setsText = (count: number) =>
     ? $localize`:@@training.today.calendar.one-set:1 série`
     : $localize`:@@training.today.calendar.many-sets:${count}:count: séries`;
 
-/** Visão compacta de domingo a sábado e calendário completo, ambos lidos do banco da conta em uso. */
+/** Visão compacta da semana (domingo a sábado) e calendário do mês, ambos lidos do banco da conta em uso. */
 @Component({
   selector: 'app-week-calendar',
   imports: [TrainingSheet],
   templateUrl: './week-calendar.html',
   styleUrl: './week-calendar.css',
+  host: {
+    '(document:visibilitychange)': 'refreshDay()',
+    '(window:focus)': 'refreshDay()',
+  },
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WeekCalendar {
@@ -95,7 +101,9 @@ export class WeekCalendar {
   protected readonly sheetOpen = signal(false);
   protected readonly weekOffset = signal(0);
   protected readonly month = signal<CalendarMonth>(this.currentMonth());
-  protected readonly selectedKey = signal(dateKey(this.runtime.now(), this.zone));
+  /** O dia de hoje no fuso do aparelho; muda quando a pessoa volta ao app depois da meia-noite. */
+  private readonly todayKey = signal(dateKey(this.runtime.now(), this.zone));
+  protected readonly selectedKey = signal(this.todayKey());
   protected readonly weeklyGoal = signal<number | null>(null);
   /** Tocar num dia planejado escolhe a ficha dele para o treino de hoje. */
   readonly routineChosen = output<string>();
@@ -109,11 +117,13 @@ export class WeekCalendar {
   private readonly planProgramId = signal<string | null>(null);
   protected readonly streak = signal(0);
   private weekTicket = 0;
+  private weekEntriesTicket = 0;
   private monthTicket = 0;
 
-  protected readonly week = computed(() =>
-    sundayWeek(this.runtime.now(), this.weekOffset(), this.zone),
-  );
+  protected readonly week = computed(() => {
+    this.todayKey();
+    return sundayWeek(this.runtime.now(), this.weekOffset(), this.zone);
+  });
   protected readonly monthDays = computed(() => sundayMonth(this.month()));
   protected readonly weekWorkouts = computed(() => {
     const read = this.weekRead();
@@ -165,19 +175,24 @@ export class WeekCalendar {
     sentenceCase(fullDate.format(new Date(`${this.selectedKey()}T00:00:00Z`))),
   );
   protected readonly paid = computed(
-    () =>
-      this.weekOffset() === 0 &&
-      this.hasWorkout(dateKey(this.runtime.now(), this.zone), this.weekWorkouts()),
+    () => this.weekOffset() === 0 && this.hasWorkout(this.todayKey(), this.weekWorkouts()),
   );
-  protected readonly goalLine = computed(() => {
+  /** O título do cartão: "Esta Semana" na atual e o intervalo de datas nas outras, para o nome nunca mentir. */
+  protected readonly weekTitle = computed(() => {
+    if (this.weekOffset() === 0) return $localize`:@@training.today.calendar.this-week:Esta Semana`;
+    const days = this.week().days;
+    return weekRangeLabel(days[0].key, days[6].key);
+  });
+  /** "1 de 3": treinos feitos e a meta da semana; vazio sem meta (o rodapé avisa que ela não foi definida). */
+  protected readonly goalCount = computed(() => {
     const goal = this.effectiveGoal();
     const count = this.weekCount();
     return goal === null
-      ? $localize`:@@training.today.calendar.goal-none:Sem meta semanal definida`
-      : goal === 1
-        ? $localize`:@@training.today.calendar.goal-count-one:${count}:count: de 1 treino`
-        : $localize`:@@training.today.calendar.goal-count:${count}:count: de ${goal}:goal: treinos`;
+      ? ''
+      : $localize`:@@training.today.calendar.goal-progress:${count}:count: de ${goal}:goal:`;
   });
+  protected readonly statsReady = computed(() => this.weekWorkouts() !== null);
+  protected readonly noGoalLine = $localize`:@@training.today.calendar.goal-none:Sem meta semanal definida`;
   protected readonly streakLine = computed(() => {
     const weeks = this.streak();
     return weeks === 0
@@ -203,7 +218,6 @@ export class WeekCalendar {
         ? $localize`:@@training.today.calendar.goal-note-one:Meta semanal: 1 treino`
         : $localize`:@@training.today.calendar.goal-note:Meta semanal: ${goal}:goal: treinos`;
   });
-  protected readonly calendarHeading = $localize`:@@training.today.calendar.heading:Mês com Ritmo`;
 
   constructor() {
     effect(() => {
@@ -355,12 +369,12 @@ export class WeekCalendar {
   }
 
   protected isToday(key: string): boolean {
-    return key === dateKey(this.runtime.now(), this.zone);
+    return key === this.todayKey();
   }
 
   /** Dias depois de hoje ficam mais apagados; a chave é AAAA-MM-DD, então a ordem do texto é a do calendário. */
   protected isFuture(key: string): boolean {
-    return key > dateKey(this.runtime.now(), this.zone);
+    return key > this.todayKey();
   }
 
   protected dayLabel(day: CalendarDay, workouts: readonly Workout[] | null): string {
@@ -407,6 +421,19 @@ export class WeekCalendar {
     });
   }
 
+  /** Ao voltar ao app, confere se o dia virou: a semana, o "hoje" e a seleção seguem o dia novo. */
+  protected refreshDay(): void {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    const current = dateKey(this.runtime.now(), this.zone);
+    const previous = this.todayKey();
+    if (current === previous) return;
+    this.todayKey.set(current);
+    if (!this.sheetOpen()) {
+      if (this.selectedKey() === previous) this.selectedKey.set(current);
+      this.month.set(this.currentMonth());
+    }
+  }
+
   private currentMonth(): CalendarMonth {
     const now = civilDateOf(this.runtime.now(), this.zone);
     return { year: now.year, month: now.month };
@@ -430,11 +457,14 @@ export class WeekCalendar {
     }
   }
 
+  /** Ausências e notas da semana; uma leitura que volta depois de a pessoa já ter trocado de semana é descartada. */
   private async loadWeekEntries(week: ReturnType<typeof sundayWeek>): Promise<void> {
+    const ticket = ++this.weekEntriesTicket;
     try {
-      this.weekEntries.set(await this.calendarEntries.between(week.days[0].key, week.days[6].key));
+      const entries = await this.calendarEntries.between(week.days[0].key, week.days[6].key);
+      if (ticket === this.weekEntriesTicket) this.weekEntries.set(entries);
     } catch {
-      this.weekEntries.set([]);
+      if (ticket === this.weekEntriesTicket) this.weekEntries.set([]);
     }
   }
 

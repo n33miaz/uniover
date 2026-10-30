@@ -49,7 +49,7 @@ const SCREENS: readonly Screen[] = [
       await launch(context, page);
       await openToday(page);
       await page.getByRole('button', { name: 'Ver Mês' }).click();
-      await expect(page.getByRole('dialog', { name: 'Mês com Ritmo' })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: /\d{4}$/ })).toBeVisible();
     },
   },
   {

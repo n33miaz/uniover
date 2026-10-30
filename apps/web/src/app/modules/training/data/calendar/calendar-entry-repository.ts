@@ -19,6 +19,8 @@ export class CalendarEntryRepository {
   private readonly runtime = inject(QUEUE_RUNTIME);
   private readonly _revision = signal(0);
   readonly revision = this._revision.asReadonly();
+  /** Fila por dia: duas mudanças do mesmo dia nunca leem o mesmo registro antigo e se sobrescrevem. */
+  private readonly tails = new Map<string, Promise<unknown>>();
 
   async get(dayKey: string): Promise<LocalCalendarEntry | undefined> {
     const row = await this.db.calendarEntries.get(dayKey);
@@ -32,6 +34,40 @@ export class CalendarEntryRepository {
   }
 
   async save(
+    dayKey: string,
+    change: { absent: boolean; note: string },
+  ): Promise<CalendarEntryWrite> {
+    return this.serialized(dayKey, () => this.write(dayKey, change));
+  }
+
+  /**
+   * Muda só os campos informados e preserva os outros, lendo o registro dentro da fila do dia: ausência e nota
+   * alteradas quase juntas não se apagam.
+   */
+  async update(
+    dayKey: string,
+    patch: { absent?: boolean; note?: string },
+  ): Promise<CalendarEntryWrite> {
+    return this.serialized(dayKey, async () => {
+      const current = await this.get(dayKey);
+      return this.write(dayKey, {
+        absent: patch.absent ?? current?.absent ?? false,
+        note: patch.note ?? current?.note ?? '',
+      });
+    });
+  }
+
+  private serialized<T>(dayKey: string, task: () => Promise<T>): Promise<T> {
+    const run = (this.tails.get(dayKey) ?? Promise.resolve()).then(task, task);
+    const tail = run.catch(() => undefined);
+    this.tails.set(dayKey, tail);
+    void tail.then(() => {
+      if (this.tails.get(dayKey) === tail) this.tails.delete(dayKey);
+    });
+    return run;
+  }
+
+  private async write(
     dayKey: string,
     change: { absent: boolean; note: string },
   ): Promise<CalendarEntryWrite> {

@@ -55,8 +55,8 @@ describe('weekLine', () => {
 
 describe('ProgressWeek', () => {
   /**
-   * O "agora" dos testes é quinta-feira, 9/10/2025 (dia 114 a partir de `HISTORY_START`). A semana de hoje vai de segunda
-   * 6/10 (dia 113) a domingo 12/10; a anterior, de 29/09 a 5/10 (dias 106 a 112).
+   * O "agora" dos testes é quinta-feira, 9/10/2025 (dia 114 a partir de `HISTORY_START`). A semana de hoje vai de domingo
+   * 5/10 a sábado 11/10; a anterior, de 28/09 a 4/10.
    *
    *   esta semana:   dia 113 supino × 3 séries (peito) · dia 115 agachamento × 2 séries (pernas) → 2 treinos, 5 séries
    *   semana passada: dia 108 supino × 2 séries → 1 treino, 2 séries
@@ -97,7 +97,7 @@ describe('ProgressWeek', () => {
     toggle(el).click();
     await eventually(fixture, () => expect(el.querySelectorAll('.bar')).toHaveLength(6));
 
-    expect(text(el.querySelector('.range b'))).toBe('6 a 12 de outubro');
+    expect(text(el.querySelector('.range b'))).toBe('5 a 11 de outubro');
     expect(text(el.querySelector('.range span'))).toBe('Esta semana');
     expect(text(el.querySelector('.totals b'))).toBe('2 treinos · 5 séries');
     expect(text(el.querySelector('.totals span'))).toBe('Semana anterior: 2 séries');
@@ -133,7 +133,7 @@ describe('ProgressWeek', () => {
 
     previous.click();
     await eventually(fixture, () =>
-      expect(text(el.querySelector('.range b'))).toBe('29 de setembro a 5 de outubro'),
+      expect(text(el.querySelector('.range b'))).toBe('28 de setembro a 4 de outubro'),
     );
     expect(text(el.querySelector('.range span'))).toBe('Semana passada');
     expect(text(el.querySelector('.totals b'))).toBe('1 treino · 2 séries');
@@ -143,7 +143,7 @@ describe('ProgressWeek', () => {
 
     previous.click();
     await eventually(fixture, () =>
-      expect(text(el.querySelector('.range b'))).toBe('22 a 28 de setembro'),
+      expect(text(el.querySelector('.range b'))).toBe('21 a 27 de setembro'),
     );
     // Duas semanas atrás não tem nome próprio.
     expect(el.querySelector('.range span')).toBeNull();

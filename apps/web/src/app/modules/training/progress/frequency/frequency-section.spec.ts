@@ -48,18 +48,18 @@ describe('monthWorkouts', () => {
 });
 
 describe('WEEKDAYS', () => {
-  it('starts on Monday and ends on Sunday', () => {
+  it('starts on Sunday and ends on Saturday', () => {
     expect(WEEKDAYS.map((day) => day.short)).toEqual([
+      'dom',
       'seg',
       'ter',
       'qua',
       'qui',
       'sex',
       'sáb',
-      'dom',
     ]);
-    expect(WEEKDAYS[0].long).toBe('segunda-feira');
-    expect(WEEKDAYS[6].long).toBe('domingo');
+    expect(WEEKDAYS[0].long).toBe('domingo');
+    expect(WEEKDAYS[6].long).toBe('sábado');
   });
 });
 
@@ -122,16 +122,16 @@ describe('ProgressFrequency', () => {
     expect(text(el.querySelector('caption'))).toBe('Outubro de 2025: dias com treino marcados');
   });
 
-  it('lays the month out from Monday: October 2025 starts on a Wednesday', async () => {
+  it('lays the month out from Sunday: October 2025 starts on a Wednesday', async () => {
     const { fixture, el } = await openSection();
     await eventually(fixture, () => expect(el.querySelectorAll('tbody tr')).toHaveLength(5));
 
     const headers = Array.from(el.querySelectorAll('thead abbr')).map((abbr) => text(abbr));
-    expect(headers).toEqual(['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom']);
+    expect(headers).toEqual(['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']);
     const first = Array.from(el.querySelectorAll('tbody tr')[0].children).map((cell) => text(cell));
-    expect(first).toEqual(['', '', '1', '2', '3', '4', '5']);
+    expect(first).toEqual(['', '', '', '1', '2', '3', '4']);
     const last = Array.from(el.querySelectorAll('tbody tr')[4].children).map((cell) => text(cell));
-    expect(last).toEqual(['27', '28', '29', '30', '31', '', '']);
+    expect(last).toEqual(['26', '27', '28', '29', '30', '31', '']);
   });
 
   it('goes to the previous month and back, and does not go past the current month', async () => {

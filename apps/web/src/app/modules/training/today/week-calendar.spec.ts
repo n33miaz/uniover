@@ -144,16 +144,103 @@ describe('WeekCalendar agenda', () => {
     await seedProgram(kit);
     const { fixture, element } = await render(kit);
 
-    // O relógio falso cai numa quinta: a sexta é de treino, o sábado é de descanso e o que já passou fica vazio.
+    // O relógio falso cai numa quinta: a sexta é de treino e o sábado (a semana vai até ele) é de descanso;
+    // o que já passou, domingo inclusive, fica vazio.
     await eventually(fixture, () => {
       expect(element.querySelectorAll('.day.planned')).toHaveLength(1);
       expect(element.querySelectorAll('.day.rest')).toHaveLength(1);
     });
     expect(element.querySelectorAll('.day.today')).toHaveLength(1);
-    expect(element.querySelector('.week-progress')?.textContent).toContain('0 de 3 treinos');
+    expect(element.querySelector('.week-count')?.textContent).toContain('0 de 3');
+    expect(element.querySelector('#week-title')?.textContent?.trim()).toBe('Esta Semana');
     expect(element.querySelector('.week-progress span')?.textContent?.trim()).toBe(
       'Faltam 3 nesta semana',
     );
+  });
+
+  it('starts on Sunday and always shows the week totals, with the volume', async () => {
+    const kit = await open();
+    await TestBed.inject(GoalRepository).set('weekly_sessions', 2);
+    await workout(kit, 'w0', kit.runtime.now() - 60 * 60_000);
+    const { fixture, element } = await render(kit);
+
+    await eventually(fixture, () => expect(element.querySelector('.day.done')).not.toBeNull());
+    const labels = Array.from(element.querySelectorAll('.week-days .weekday')).map((day) =>
+      day.textContent?.trim(),
+    );
+    expect(labels).toEqual(['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']);
+    const totals = Array.from(element.querySelectorAll('.stats div')).map((cell) => [
+      cell.querySelector('dt')?.textContent?.trim(),
+      cell.querySelector('dd')?.textContent?.trim(),
+    ]);
+    // Uma série de 40 kg × 10: 1 treino, 1 série e 400 kg de volume.
+    expect(totals).toEqual([
+      ['Treinos', '1'],
+      ['Séries', '1'],
+      ['Volume', expect.stringContaining('400')],
+    ]);
+    expect(element.querySelector('.week-count')?.textContent).toContain('1 de 2');
+  });
+
+  it('drops a slow absence read that comes back after the week was already changed', async () => {
+    const kit = await open();
+    const entries = TestBed.inject(CalendarEntryRepository);
+    const entryOf = (dayKey: string) => ({
+      id: dayKey,
+      dayKey,
+      absent: true,
+      note: '',
+      updatedAt: 1,
+      clientUpdatedAt: 1,
+      deletedAt: null,
+    });
+    // A leitura da semana atual fica pendurada; a da semana seguinte volta na hora.
+    const gate: { release?: () => void } = {};
+    let first = true;
+    vi.spyOn(entries, 'between').mockImplementation((from: string) => {
+      if (first) {
+        first = false;
+        return new Promise((resolve) => {
+          gate.release = () => resolve([entryOf(from)]);
+        });
+      }
+      return Promise.resolve([entryOf(from)]);
+    });
+    const { fixture, element } = await render(kit);
+    await eventually(fixture, () => expect(gate.release).toBeDefined());
+
+    element.querySelector<HTMLButtonElement>('button[aria-label="Próxima semana"]')!.click();
+    // Na semana seguinte, o domingo está ausente (o que a leitura rápida trouxe).
+    await eventually(fixture, () =>
+      expect(element.querySelector('.week-days .day:first-child')?.classList).toContain('absent'),
+    );
+
+    // A leitura lenta da semana anterior chega por último e não pode apagar o que a tela já mostra.
+    gate.release!();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(element.querySelectorAll('.week-days .day.absent')).toHaveLength(1);
+    expect(element.querySelector('.week-days .day:first-child')?.classList).toContain('absent');
+  });
+
+  it('moves to the new week when the person returns to the app after midnight on Sunday', async () => {
+    const kit = await open();
+    const { fixture, element } = await render(kit);
+    const firstDay = () =>
+      element.querySelector('.week-days .day:first-child .number')?.textContent;
+    const todayLabel = () =>
+      element.querySelector('.week-days .day.today')?.getAttribute('aria-label');
+    const before = { first: firstDay(), today: todayLabel() };
+
+    // O relógio falso cai numa quinta; cinco dias depois já é a terça da semana seguinte.
+    kit.runtime.advance(5 * DAY);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(firstDay()).not.toBe(before.first);
+    expect(todayLabel()).not.toBe(before.today);
+    expect(element.querySelectorAll('.week-days .day.today')).toHaveLength(1);
   });
 
   it('selects the routine of a planned day when it is touched', async () => {
@@ -187,11 +274,15 @@ describe('WeekCalendar agenda', () => {
     await entries.save(dayKeyOf(-3), { absent: true, note: '' });
 
     await eventually(fixture, () => {
-      expect(element.querySelectorAll('.day.absent').length).toBeGreaterThan(0);
+      expect(element.querySelectorAll('.day.absent')).toHaveLength(3);
       expect(element.querySelectorAll('.day.planned')).toHaveLength(0);
     });
     // Sexta e segunda eram de treino (sábado é descanso): duas das três sessões saem da meta, e sobra uma por fazer.
-    expect(element.querySelector('.week-progress')?.textContent).toContain('Falta 1 nesta semana');
+    await eventually(fixture, () =>
+      expect(element.querySelector('.week-progress')?.textContent).toContain(
+        'Falta 1 nesta semana',
+      ),
+    );
   });
 
   it('counts consecutive met weeks in the month view, with a goal set by the person', async () => {
