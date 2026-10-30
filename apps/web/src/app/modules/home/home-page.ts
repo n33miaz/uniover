@@ -165,8 +165,11 @@ export class HomePage {
     };
   });
 
-  /** Estado técnico (bolinha do agente e aviso de queda) é do dono: o convidado vê só a engrenagem no cartão. */
-  protected readonly canSeeAgent = computed(() => !this.isGuest() && this.canSeeModule('tv'));
+  /**
+   * A bolinha do agente aparece para quem usa a TV, dono ou convidado: o estado lido é o do agente da TV da própria conta
+   * (o aviso de queda do computador, esse sim, segue só do dono).
+   */
+  protected readonly canSeeAgent = computed(() => this.canSeeModule('tv'));
 
   /** Nome do link do cartão: o nome visível primeiro e a ação depois, para o leitor de tela dizer o que acontece. */
   protected linkLabel(module: ModuleDefinition): string {
