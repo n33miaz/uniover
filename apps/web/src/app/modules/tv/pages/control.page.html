@@ -118,6 +118,9 @@
             <span class="cap" aria-hidden="true" i18n="@@tv.volume.cap">VOL</span>
             @if (volumeText() !== '') {
               <strong aria-hidden="true" [class.nudge]="!volumeKnown()">{{ volumeText() }}</strong>
+            } @else if (store.stateLoading()) {
+              <!-- O nível ainda não chegou: só este miolo tem forma de espera; as teclas de mais e menos já funcionam. -->
+              <span class="level-skeleton ui-skeleton" aria-hidden="true"></span>
             } @else {
               <app-tv-icon class="unread" name="speaker" />
             }
