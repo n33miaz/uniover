@@ -82,13 +82,13 @@ for (const scheme of ['light', 'dark'] as const) {
       await shot(page, info, 'hoje', scheme);
 
       await page.getByRole('button', { name: 'Ver Mês' }).click();
-      await expect(page.getByRole('dialog', { name: 'Mês com Ritmo' })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: /\d{4}$/ })).toBeVisible();
       await shot(page, info, 'calendario', scheme);
       await page
-        .getByRole('dialog', { name: 'Mês com Ritmo' })
+        .getByRole('dialog', { name: /\d{4}$/ })
         .getByRole('button', { name: 'Fechar' })
         .click();
-      await expect(page.getByRole('dialog', { name: 'Mês com Ritmo' })).toBeHidden();
+      await expect(page.getByRole('dialog', { name: /\d{4}$/ })).toBeHidden();
 
       await page.getByRole('button', { name: 'Configurar Rotina' }).click();
       await expect(page.getByRole('dialog', { name: 'Configurar Rotina' })).toBeVisible();

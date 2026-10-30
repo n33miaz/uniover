@@ -4,6 +4,7 @@ import {
   civilDateOf,
   dateKeyOf,
   startOfDay,
+  weekRange,
   weekdayIndex,
 } from '../domain/progress/calendar';
 
@@ -26,11 +27,14 @@ export function calendarDay(date: CivilDate): CalendarDay {
   return { ...date, key: dateKeyOf(date) };
 }
 
-/** A semana da tela começa no domingo, inclusive quando atravessa mês ou horário de verão. */
+/**
+ * A semana de todo o Treino vai de domingo a sábado, por decisão do dono, e vem de uma função só (`weekRange`): o mesmo
+ * treino cai na mesma semana em Hoje e no Progresso, e os totais batem. Vale também quando a semana atravessa o mês ou
+ * uma mudança de horário.
+ */
 export function sundayWeek(now: number, offset: number, timeZone: string): CalendarWeek {
-  const today = civilDateOf(now, timeZone);
-  const daysSinceSunday = (weekdayIndex(today) + 1) % 7;
-  const sunday = addDays(today, -daysSinceSunday + offset * 7);
+  const current = weekRange(now, timeZone);
+  const sunday = addDays(civilDateOf(current.start, timeZone), offset * 7);
   const days = Array.from({ length: 7 }, (_, index) => calendarDay(addDays(sunday, index)));
   return {
     days,
@@ -47,7 +51,7 @@ export function moveMonth(month: CalendarMonth, offset: number): CalendarMonth {
 /** Grade de domingo a sábado; os vazios preservam a coluna do primeiro dia. */
 export function sundayMonth(month: CalendarMonth): readonly (CalendarDay | null)[] {
   const first = { ...month, day: 1 };
-  const lead = (weekdayIndex(first) + 1) % 7;
+  const lead = weekdayIndex(first);
   const count = new Date(Date.UTC(month.year, month.month, 0)).getUTCDate();
   const days: (CalendarDay | null)[] = [
     ...Array.from({ length: lead }, () => null),

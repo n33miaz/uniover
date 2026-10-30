@@ -40,8 +40,20 @@
   }
 
   @if (!store.ready() || !store.homeReady()) {
-    <div class="routine ui-card skeleton" aria-hidden="true">
-      <span class="ui-skeleton big"></span>
+    <!-- A forma do cartão da rotina (data, nome, resumo e botão): a tela não pula quando a leitura local termina. A semana embaixo já aparece com as datas. -->
+    <div class="skeleton-home" aria-hidden="true">
+      <span class="ui-skeleton sk-date"></span>
+      <div class="routine ui-card skeleton">
+        <div class="routine-head">
+          <span class="ui-skeleton sk-tile"></span>
+          <div class="routine-id sk-lines">
+            <span class="ui-skeleton sk-eyebrow"></span>
+            <span class="ui-skeleton sk-title"></span>
+          </div>
+        </div>
+        <span class="ui-skeleton sk-meta"></span>
+        <span class="ui-skeleton big"></span>
+      </div>
     </div>
   } @else if (store.active(); as running) {
     <!-- Treino aberto neste aparelho: a ação é continuar. -->
@@ -50,7 +62,11 @@
         <span class="ui-tile"><app-training-glyph name="dumbbell" /></span>
         <div class="routine-id">
           <p class="eyebrow" i18n="@@training.today.running">Treino em Andamento</p>
-          <h3 id="routine-title" class="routine-name">
+          <h3
+            id="routine-title"
+            class="routine-name one-line"
+            [attr.aria-label]="store.activeRoutine()?.name ?? freeName"
+          >
             {{ store.activeRoutine()?.name ?? freeName }}
           </h3>
         </div>
@@ -113,8 +129,8 @@
         </p>
       }
     </section>
-  } @else if (catalogMissing()) {
-    <!-- Sem catálogo no aparelho não há o que registrar: a primeira abertura precisa de rede uma vez. -->
+  } @else if (catalogMissing() && entry() === undefined) {
+    <!-- Sem catálogo no aparelho não há o que registrar: a primeira abertura precisa de rede uma vez. Com rotina no aparelho, o cartão do dia aparece e só o início espera o catálogo. -->
     <section class="routine ui-card calm" aria-labelledby="catalog-title">
       <span class="ui-tile lg"><app-training-glyph name="dumbbell" /></span>
       @if (store.downloading()) {
@@ -144,14 +160,12 @@
       }
     </section>
   } @else if (entry(); as current) {
+    <p class="date ui-section-label">{{ today() }}</p>
     <section class="routine ui-card" aria-labelledby="routine-title">
-      <div class="routine-head">
-        <span class="ui-tile letter">{{ current.letter }}</span>
-        <div class="routine-id">
-          <p class="eyebrow">{{ today() }}</p>
-          <h3 id="routine-title" class="routine-name">{{ current.routine.name }}</h3>
-        </div>
-        <!-- A folha traz a troca de rotina e também a meta, a ausência e a nota do dia: o ícone vale com uma rotina só. -->
+      <!-- Como no mockup: "Treino de Hoje" e os três pontos na primeira linha, o nome por inteiro (numa linha) logo abaixo. -->
+      <div class="routine-top">
+        <p class="eyebrow" i18n="@@training.today.eyebrow">Treino de Hoje</p>
+        <!-- Os três pontos no canto do cartão abrem a folha com a troca de rotina e também a meta, a ausência e a nota do dia: vale com uma rotina só. -->
         <button
           type="button"
           class="routine-settings"
@@ -160,22 +174,74 @@
           [attr.aria-haspopup]="'dialog'"
           (click)="pickerOpen.set(true)"
         >
-          <app-training-glyph name="sliders" />
+          <app-training-glyph name="dots" />
         </button>
       </div>
+      <h3 id="routine-title" class="routine-name one-line" [attr.aria-label]="current.routine.name">
+        {{ current.routine.name }}
+      </h3>
       <p class="meta">{{ summary() }}</p>
+      @if (catalogMissing()) {
+        <div class="ui-notice warn" role="status">
+          <app-training-glyph name="offline" />
+          <div class="catalog-note">
+            <p>
+              @if (store.downloading()) {
+                <span i18n="@@training.today.catalog-hint-loading"
+                  >Baixando o catálogo. O treino abre assim que ele chegar.</span
+                >
+              } @else {
+                <span i18n="@@training.today.catalog-hint-missing"
+                  >O catálogo ainda não chegou. Conecte-se uma vez para poder iniciar.</span
+                >
+              }
+            </p>
+            @if (!store.downloading()) {
+              <button
+                type="button"
+                class="secondary ui-btn"
+                [disabled]="!online()"
+                (click)="retryDownload()"
+              >
+                <app-training-glyph name="refresh" />
+                <span i18n="@@training.today.catalog-retry-inline">Tentar Baixar</span>
+              </button>
+            }
+          </div>
+        </div>
+      }
       <button
         type="button"
         class="primary ui-btn block go"
-        [disabled]="starting()"
+        [disabled]="starting() || catalogMissing()"
         (click)="start(current.routine.id)"
       >
         <app-today-glyph name="play" />
         <span i18n="@@training.today.start">Iniciar Treino</span>
       </button>
+      <!-- A lista de exercícios não disputa o primeiro olhar: fica recolhida atrás deste toque. -->
+      <button
+        type="button"
+        class="routine-toggle"
+        [attr.aria-controls]="'routine-lines'"
+        [attr.aria-expanded]="routineOpen()"
+        (click)="routineOpen.set(!routineOpen())"
+      >
+        @if (routineOpen()) {
+          <span i18n="@@training.today.hide-routine">Ocultar Rotina</span>
+        } @else {
+          <span i18n="@@training.today.show-routine">Ver Rotina</span>
+        }
+        <app-training-glyph [name]="routineOpen() ? 'up' : 'down'" />
+      </button>
     </section>
 
-    <ul class="lines ui-group ui-plain" [attr.aria-label]="linesLabel">
+    <ul
+      id="routine-lines"
+      class="lines ui-group ui-plain"
+      [hidden]="!routineOpen()"
+      [attr.aria-label]="linesLabel"
+    >
       @for (line of store.lines(); track line.key) {
         <li class="ui-row">
           <span class="ui-row-text">
@@ -188,22 +254,8 @@
         </li>
       }
     </ul>
-
-    <div class="actions">
-      <button type="button" class="secondary ui-btn" [disabled]="starting()" (click)="start(null)">
-        <app-training-glyph name="plus" />
-        <span i18n="@@training.today.free">Treino Livre</span>
-      </button>
-      <a
-        class="glossary-link ui-btn secondary"
-        routerLink="/treino/glossario"
-        aria-label="Entender Programa Semanal, Rotina e Exercício"
-        i18n-aria-label="@@training.glossary.link-label"
-      >
-        <app-training-glyph name="info" />
-      </a>
-    </div>
   } @else if (store.resting()) {
+    <p class="date ui-section-label">{{ today() }}</p>
     <section class="routine ui-card calm" aria-labelledby="rest-title">
       <span class="ui-tile lg"><app-training-glyph name="check" /></span>
       <h3 id="rest-title" i18n="@@training.today.rest-title">Dia de Descanso</h3>
@@ -248,6 +300,65 @@
   }
 
   <app-week-calendar (routineChosen)="store.chooseRoutine($event)" />
+
+  @if (showLinks()) {
+    <!-- Atalhos de uma linha: o programa ativo (e a troca por outro modelo) e o resumo do treino anterior. -->
+    <ul class="links ui-group ui-plain">
+      @if (programRow(); as program) {
+        <li>
+          <button
+            type="button"
+            class="ui-row"
+            [attr.aria-haspopup]="'dialog'"
+            (click)="templatesOpen.set(true)"
+          >
+            <span class="ui-row-text">
+              <span class="ui-row-title" i18n="@@training.today.program-link"
+                >Programa da Semana</span
+              >
+              @if (program) {
+                <span class="ui-row-sub">{{ program }}</span>
+              }
+            </span>
+            <app-training-glyph name="next" />
+          </button>
+        </li>
+      }
+      @if (previousRow(); as previous) {
+        <li>
+          <button type="button" class="ui-row" (click)="openPrevious()">
+            <span class="ui-row-text">
+              <span class="ui-row-title">{{ previous.title }}</span>
+              <span class="ui-row-sub">{{ previous.sub }}</span>
+            </span>
+            <app-training-glyph name="next" />
+          </button>
+        </li>
+      }
+    </ul>
+  }
+
+  @if (showFree()) {
+    <div class="actions">
+      <button
+        type="button"
+        class="secondary ui-btn"
+        [disabled]="starting() || catalogMissing()"
+        (click)="start(null)"
+      >
+        <app-training-glyph name="plus" />
+        <span i18n="@@training.today.free">Treino Livre</span>
+      </button>
+      <a
+        class="glossary-link ui-btn secondary"
+        routerLink="/treino/glossario"
+        aria-label="Entender Programa Semanal, Rotina e Exercício"
+        i18n-aria-label="@@training.glossary.link-label"
+      >
+        <app-training-glyph name="info" />
+      </a>
+    </div>
+  }
 </div>
 
 @if (pickerOpen()) {
@@ -257,6 +368,11 @@
     (picked)="store.chooseRoutine($event)"
     (closed)="pickerOpen.set(false)"
   />
+}
+
+@if (templatesOpen()) {
+  <!-- O programa ativo se compara com os outros modelos e se troca aqui, sem sair de Hoje. -->
+  <app-templates-sheet (created)="onTemplateChosen($event)" (closed)="templatesOpen.set(false)" />
 }
 
 @if (programChoiceOpen()) {

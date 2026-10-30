@@ -1,7 +1,15 @@
 <section class="week ui-card" aria-labelledby="week-title">
   <div class="week-head">
-    <h3 id="week-title" i18n="@@training.today.calendar.title">Semana com Meta</h3>
+    <h3 id="week-title">{{ weekTitle() }}</h3>
     <div class="nav">
+      @if (goalCount()) {
+        <small class="week-count"
+          >{{ goalCount() }}
+          <span class="ui-visually-hidden" i18n="@@training.today.calendar.goal-unit"
+            >treinos</span
+          ></small
+        >
+      }
       <button
         type="button"
         class="nav-button"
@@ -57,7 +65,9 @@
       @if (paid()) {
         <span class="paid" i18n="@@training.today.calendar.paid">Tá pago!</span>
       }
-      <span>{{ goalLine() }}</span>
+      @if (!goalCount()) {
+        <span>{{ noGoalLine }}</span>
+      }
     </p>
     <button
       type="button"
@@ -68,26 +78,26 @@
       Ver Mês
     </button>
   </div>
-  @if (weekWorkouts() !== null) {
-    <dl class="stats">
-      <div>
-        <dt i18n="@@training.today.calendar.sessions">Treinos</dt>
-        <dd>{{ weekCount() }}</dd>
-      </div>
-      <div>
-        <dt i18n="@@training.today.calendar.sets">Séries</dt>
-        <dd>{{ weekSets() }}</dd>
-      </div>
-      <div>
-        <dt i18n="@@training.today.calendar.volume">Volume</dt>
-        <dd>{{ weekVolume() }}</dd>
-      </div>
-    </dl>
-  }
+  <!-- Os três números ficam sempre na tela: enquanto a semana é lida, um traço guarda o lugar (sem salto de altura). -->
+  <dl class="stats">
+    <div>
+      <dt i18n="@@training.today.calendar.sessions">Treinos</dt>
+      <dd>{{ statsReady() ? weekCount() : '—' }}</dd>
+    </div>
+    <div>
+      <dt i18n="@@training.today.calendar.sets">Séries</dt>
+      <dd>{{ statsReady() ? weekSets() : '—' }}</dd>
+    </div>
+    <div>
+      <dt i18n="@@training.today.calendar.volume">Volume</dt>
+      <dd>{{ statsReady() ? weekVolume() : '—' }}</dd>
+    </div>
+  </dl>
 </section>
 
 @if (sheetOpen()) {
-  <app-training-sheet [heading]="calendarHeading" (closed)="sheetOpen.set(false)">
+  <!-- O título é o mês e o ano da grade: ele acompanha as setas, e o acessível do diálogo também. -->
+  <app-training-sheet [heading]="monthLabel()" (closed)="sheetOpen.set(false)">
     <div class="month-nav">
       <button
         type="button"
@@ -98,7 +108,7 @@
       >
         <span aria-hidden="true">‹</span>
       </button>
-      <h3>{{ monthLabel() }}</h3>
+      <p class="streak">{{ streakLine() }}</p>
       <button
         type="button"
         class="nav-button"
@@ -109,7 +119,6 @@
         <span aria-hidden="true">›</span>
       </button>
     </div>
-    <p class="streak">{{ streakLine() }}</p>
     <div
       class="month-grid"
       role="group"

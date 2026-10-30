@@ -86,12 +86,14 @@ test.describe('Hoje: semana com meta e agenda', () => {
 
     const days = week(page).locator('.week-days .day');
     await expect(days).toHaveCount(7);
+    // A semana vai de domingo a sábado: hoje é a segunda, a segunda da fila (o domingo já passou).
+    await expect(days.nth(0)).toHaveText(/dom/);
     await expect(days.nth(1)).toHaveClass(/today/);
     await expect(week(page).locator('.day.planned')).toHaveCount(2); // terça e quarta
     await expect(week(page).locator('.day.rest')).toHaveCount(3); // quinta a sábado
-    await expect(days.nth(2)).toHaveAccessibleName(/treino planejado/);
-    await expect(days.nth(4)).toHaveAccessibleName(/descanso/);
-    await expect(week(page).locator('.week-progress')).toContainText('0 de 3 treinos');
+    await expect(days.nth(3)).toHaveAccessibleName(/treino planejado/);
+    await expect(days.nth(5)).toHaveAccessibleName(/descanso/);
+    await expect(week(page).locator('.week-count')).toContainText('0 de 3');
     await expect(week(page).locator('.week-progress span').first()).toHaveText(
       'Faltam 3 nesta semana',
     );
@@ -117,13 +119,13 @@ test.describe('Hoje: semana com meta e agenda', () => {
     await dialog.getByRole('button', { name: 'Salvar Meta' }).click();
     await expect(dialog.getByRole('status')).toHaveText('Meta salva');
     await dialog.getByRole('button', { name: 'Fechar' }).click();
-    await expect(week(page).locator('.week-progress')).toContainText('0 de 2 treinos');
+    await expect(week(page).locator('.week-count')).toContainText('0 de 2');
     await expect(week(page).locator('.week-progress')).toContainText('Faltam 2 nesta semana');
 
     const reopened = await openConfig(page);
     await reopened.getByRole('button', { name: 'Voltar ao Padrão' }).click();
     await reopened.getByRole('button', { name: 'Fechar' }).click();
-    await expect(week(page).locator('.week-progress')).toContainText('0 de 3 treinos');
+    await expect(week(page).locator('.week-count')).toContainText('0 de 3');
   });
 
   test('a ausência planejada tira o dia da meta e pode ser desfeita', async ({ page, context }) => {
@@ -168,7 +170,7 @@ test.describe('Hoje: semana com meta e agenda', () => {
       .toEqual(['Academia cheia']);
 
     await week(page).getByRole('button', { name: 'Ver Mês' }).click();
-    const month = page.getByRole('dialog', { name: 'Mês com Ritmo' });
+    const month = page.getByRole('dialog', { name: /\d{4}$/ });
     await expect(month).toBeVisible();
     await expect(month.locator('.streak')).toBeVisible();
     await expect(month.locator('.day-detail')).toContainText('Academia cheia');

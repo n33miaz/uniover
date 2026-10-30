@@ -102,14 +102,16 @@ test.describe('Hoje', () => {
     await expect(week.locator('.week-days .day.done')).toHaveCount(1);
 
     await week.getByRole('button', { name: 'Ver Mês' }).click();
-    const calendar = page.getByRole('dialog', { name: 'Mês com Ritmo' });
+    const calendar = page.getByRole('dialog', { name: /\d{4}$/ });
     await expect(calendar).toBeVisible();
     await expect(calendar.locator('.month-day.done')).not.toHaveCount(0);
     await expect(calendar.locator('.day-detail')).toContainText('Treino Livre');
     await expect(calendar.locator('.day-detail')).toContainText('300 kg');
-    const currentMonth = await calendar.locator('.month-nav h3').textContent();
+    // O título do diálogo é o mês e o ano da grade e acompanha as setas.
+    const title = calendar.getByRole('heading', { level: 2 });
+    const currentMonth = await title.textContent();
     await calendar.getByRole('button', { name: 'Mês anterior' }).click();
-    await expect(calendar.locator('.month-nav h3')).not.toHaveText(currentMonth ?? '');
+    await expect(title).not.toHaveText(currentMonth ?? '');
     await calendar.getByRole('button', { name: 'Fechar' }).click();
     await expect(calendar).toBeHidden();
   });
@@ -202,10 +204,19 @@ test.describe('Hoje', () => {
     await expect(routine).toContainText('3 exercícios · 10 séries · cerca de');
     const start = page.getByRole('button', { name: 'Iniciar Treino' });
     const startBox = (await start.boundingBox())!;
-    const listBox = (await page.locator('.lines').boundingBox())!;
-    expect(startBox.y).toBeLessThan(listBox.y);
     // O botão principal está na primeira tela do celular (390×664), sem rolar.
     expect(startBox.y + startBox.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+
+    // A lista de exercícios vem recolhida atrás de "Ver Rotina" e abre abaixo do botão de iniciar.
+    const toggle = routine.locator('.routine-toggle');
+    await expect(toggle).toHaveText('Ver Rotina');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('.lines')).toBeHidden();
+    await toggle.click();
+    await expect(toggle).toHaveText('Ocultar Rotina');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const listBox = (await page.locator('.lines').boundingBox())!;
+    expect(startBox.y).toBeLessThan(listBox.y);
 
     const rows = page.locator('.lines .ui-row');
     await expect(rows).toHaveCount(3);
@@ -1013,7 +1024,7 @@ test.describe('treino ao vivo', () => {
 
     await menu(page, /Cancelar Treino/);
     await page.getByRole('button', { name: 'Sim, Cancelar' }).click();
-    await expect(page.getByRole('heading', { name: 'Semana com Meta', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Esta Semana', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Iniciar Treino' })).toBeVisible();
   });
 });

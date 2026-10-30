@@ -56,6 +56,26 @@ describe('CalendarEntryRepository', () => {
     });
   });
 
+  it('keeps both a note and an absence when they are saved at almost the same time', async () => {
+    const kit = setupTraining();
+    kit.pause();
+    const repository = TestBed.inject(CalendarEntryRepository);
+    await Promise.all([
+      repository.update('2026-10-27', { note: 'Viagem curta' }),
+      repository.update('2026-10-27', { absent: true }),
+    ]);
+    expect(await repository.get('2026-10-27')).toMatchObject({
+      absent: true,
+      note: 'Viagem curta',
+    });
+
+    await Promise.all([
+      repository.update('2026-10-27', { absent: false }),
+      repository.update('2026-10-27', { note: 'Voltei' }),
+    ]);
+    expect(await repository.get('2026-10-27')).toMatchObject({ absent: false, note: 'Voltei' });
+  });
+
   it('keeps the note when the absence is undone', async () => {
     const kit = setupTraining();
     kit.pause();

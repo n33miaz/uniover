@@ -80,7 +80,7 @@ interface Read {
 
 /**
  * O volume da semana: treinos e séries (contra a meta de treinos por semana, quando há), uma barra por grupo muscular e a
- * semana anterior para comparar. A semana vai de segunda a domingo e se navega de uma em uma. O app mostra, não
+ * semana anterior para comparar. A semana vai de domingo a sábado e se navega de uma em uma. O app mostra, não
  * recomenda quantas séries fazer. A meta de treinos por semana também é definida aqui.
  */
 @Component({

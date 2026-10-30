@@ -1,7 +1,7 @@
 /**
  * Datas do progresso no fuso do aparelho. Funções puras: o fuso entra como parâmetro (nada lê o fuso da máquina), então
  * o teste vale em qualquer computador. Todo dia local sai de `Intl.DateTimeFormat` com o fuso pedido, nunca dos
- * `getDate`/`getDay` do `Date`, que seguem o fuso de quem roda. A semana vai de **segunda a domingo**.
+ * `getDate`/`getDay` do `Date`, que seguem o fuso de quem roda. A semana vai de **domingo a sábado**, em todo o Treino.
  */
 
 /** Dia do calendário, sem hora nem fuso. */
@@ -12,11 +12,11 @@ export interface CivilDate {
   readonly day: number;
 }
 
-/** Uma semana: do início da segunda (inclusive) ao início da segunda seguinte (exclusive), em milissegundos. */
+/** Uma semana: do início do domingo (inclusive) ao início do domingo seguinte (exclusive), em milissegundos. */
 export interface WeekRange {
   readonly start: number;
   readonly end: number;
-  /** Segunda e domingo da semana, como `AAAA-MM-DD`. */
+  /** Domingo e sábado da semana, como `AAAA-MM-DD`. */
   readonly startKey: string;
   readonly endKey: string;
 }
@@ -90,10 +90,9 @@ export function addDays(date: CivilDate, days: number): CivilDate {
   };
 }
 
-/** 0 = segunda ... 6 = domingo. */
+/** 0 = domingo ... 6 = sábado: a ordem das colunas de toda semana do Treino. */
 export function weekdayIndex(date: CivilDate): number {
-  const sunday0 = new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
-  return (sunday0 + 6) % 7;
+  return new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
 }
 
 /**
@@ -109,16 +108,16 @@ export function startOfDay(date: CivilDate, timeZone: string): number {
   return dateKeyOf(civilDateOf(second, timeZone)) === dateKeyOf(date) ? second : first;
 }
 
-/** A semana (segunda a domingo) que contém o instante, no fuso pedido. */
+/** A semana (domingo a sábado, a única do Treino) que contém o instante, no fuso pedido. */
 export function weekRange(ms: number, timeZone: string): WeekRange {
   const today = civilDateOf(ms, timeZone);
-  const monday = addDays(today, -weekdayIndex(today));
-  const nextMonday = addDays(monday, 7);
+  const sunday = addDays(today, -weekdayIndex(today));
+  const nextSunday = addDays(sunday, 7);
   return {
-    start: startOfDay(monday, timeZone),
-    end: startOfDay(nextMonday, timeZone),
-    startKey: dateKeyOf(monday),
-    endKey: dateKeyOf(addDays(monday, 6)),
+    start: startOfDay(sunday, timeZone),
+    end: startOfDay(nextSunday, timeZone),
+    startKey: dateKeyOf(sunday),
+    endKey: dateKeyOf(addDays(sunday, 6)),
   };
 }
 

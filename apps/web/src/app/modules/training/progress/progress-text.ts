@@ -61,8 +61,8 @@ const monthOf = (year: number, month: number) => monthName.format(Date.UTC(year,
 
 /**
  * O intervalo de uma semana por extenso: "12 a 18 de outubro", e quando a semana cruza o mês ou o ano, o mês de cada ponta
- * ("28 de setembro a 4 de outubro"; "29 de dezembro de 2026 a 4 de janeiro de 2027"). Recebe as datas `AAAA-MM-DD` da
- * segunda e do domingo.
+ * ("28 de setembro a 4 de outubro"; "29 de dezembro de 2026 a 4 de janeiro de 2027"). Recebe as datas `AAAA-MM-DD` do
+ * domingo e do sábado.
  */
 export function weekLabel(startKey: string, endKey: string): string {
   const start = parts(startKey);

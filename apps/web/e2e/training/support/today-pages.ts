@@ -22,7 +22,7 @@ export async function openToday(
   options: { path?: string; history?: boolean } = {},
 ): Promise<void> {
   await openTraining(page, options.path ?? '/treino');
-  await expect(page.getByRole('heading', { name: 'Semana com Meta', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Esta Semana', exact: true })).toBeVisible();
   if (options.history !== false) {
     // O histórico vem do servidor simulado: com a máquina ocupada o puxar passa dos 5 s padrão, então a espera é maior.
     await expect(page.locator('.lines .ui-row').first()).toContainText('última vez 40 kg × 10', {

@@ -85,7 +85,7 @@ const EXTRAS: readonly ExtraShot[] = [
       await openProgress(page);
       await section(page, /^Semana/).click();
       await page.getByRole('button', { name: 'Semana anterior' }).click();
-      await expect(page.locator('app-progress-week .range b')).toHaveText('12 a 18 de outubro');
+      await expect(page.locator('app-progress-week .range b')).toHaveText('11 a 17 de outubro');
     },
   },
   {
@@ -97,7 +97,7 @@ const EXTRAS: readonly ExtraShot[] = [
         await page.getByRole('button', { name: 'Semana anterior' }).click();
       }
       await expect(page.locator('app-progress-week .range b')).toHaveText(
-        '28 de setembro a 4 de outubro',
+        '27 de setembro a 3 de outubro',
       );
     },
   },

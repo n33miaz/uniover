@@ -3,7 +3,14 @@ import { ConnectivityService } from '../../../core/connectivity/connectivity.ser
 import { RestTimerService } from '../data/session-live/rest-timer.service';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { setupSessions } from '../data/sessions/session-data-test-kit';
-import { catalog, eventually, item, saveRoutine, seedHistory } from '../shell/screen-test-kit';
+import {
+  HISTORY_START,
+  catalog,
+  eventually,
+  item,
+  saveRoutine,
+  seedHistory,
+} from '../shell/screen-test-kit';
 import { TrainingSync } from '../data/sync/training-sync';
 import { Location } from '@angular/common';
 import { provideRouter, Router } from '@angular/router';
@@ -95,12 +102,24 @@ describe('TodayPage', () => {
       expect(routine.querySelector('button.routine-settings')?.getAttribute('aria-label')).toBe(
         'Configurar Rotina',
       );
+      // O botão é discreto: três pontos (três subtrechos num só desenho cheio), não a engrenagem.
+      const dots = routine.querySelector('button.routine-settings svg path.solid');
+      expect(dots?.getAttribute('d')?.match(/z/g)).toHaveLength(3);
       expect(text(routine)).toContain('Treino A');
       expect(text(routine)).toMatch(/3 exercícios · 10 séries · cerca de \d+ min/);
       const start = button(el, 'Iniciar Treino');
       expect(start.compareDocumentPosition(el.querySelector('.lines')!)).toBe(
         Node.DOCUMENT_POSITION_FOLLOWING,
       );
+      // A lista vem recolhida atrás de "Ver Rotina" e abre num toque.
+      const toggle = button(el, 'Ver Rotina');
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(el.querySelector<HTMLElement>('.lines')?.hidden).toBe(true);
+      toggle.click();
+      await eventually(fixture, () => {
+        expect(el.querySelector<HTMLElement>('.lines')?.hidden).toBe(false);
+        expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      });
       const rows = Array.from(el.querySelectorAll('.lines .ui-row')).map((row) => text(row));
       expect(rows[0]).toContain('4 × 6–10 · última vez 40 kg × 10');
       expect(rows[1]).toContain('supersérie');
@@ -110,6 +129,153 @@ describe('TodayPage', () => {
       expect(glossary?.getAttribute('aria-label')).toBe(
         'Entender Programa Semanal, Rotina e Exercício',
       );
+    });
+
+    it('offers yesterday workout as a shortcut and opens its summary', async () => {
+      const kit = await open();
+      await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
+      const dayMs = 86_400_000;
+      // Começou exatamente 24 h antes do relógio do teste: cai sempre no dia anterior.
+      const day = (kit.runtime.now() - dayMs - HISTORY_START) / dayMs;
+      await seedHistory(kit.trainingDb, 'supino-reto', [[day, 40, 10]]);
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const { el, fixture } = await show(kit);
+
+      await eventually(fixture, () => expect(text(el)).toContain('Treino de Ontem'));
+      const link = Array.from(el.querySelectorAll<HTMLButtonElement>('.links button')).find(
+        (node) => text(node).includes('Treino de Ontem'),
+      )!;
+      expect(text(link)).toContain('Ver Resumo');
+      link.click();
+
+      expect(navigate).toHaveBeenCalledWith(['/treino'], {
+        queryParams: { resumo: `supino-reto-treino-${day}`, historico: '1' },
+      });
+    });
+
+    it('names an older workout "Último Treino" with its date', async () => {
+      const kit = await open();
+      await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
+      await seedHistory(kit.trainingDb, 'supino-reto', [[1, 40, 10]]);
+      const { el, fixture } = await show(kit);
+
+      await eventually(fixture, () => expect(text(el)).toContain('Último Treino'));
+      expect(text(el)).not.toContain('Treino de Ontem');
+      expect(text(el.querySelector('.links')!)).toContain('junho');
+    });
+
+    it('finds the last valid workout even behind many empty sessions', async () => {
+      const kit = await open();
+      await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
+      await seedHistory(kit.trainingDb, 'supino-reto', [[1, 40, 10]]);
+      // Sete sessões encerradas sem nenhuma série, todas mais novas que o treino válido.
+      const empty = Array.from({ length: 7 }, (_, index) => {
+        const startedAt = HISTORY_START + (index + 2) * 86_400_000;
+        return {
+          id: `vazio-${index}`,
+          routineId: null,
+          startedAt,
+          finishedAt: startedAt + 60_000,
+          note: '',
+          feeling: null,
+          deviceId: 'd',
+          updatedAt: startedAt,
+          clientUpdatedAt: startedAt,
+          deletedAt: null,
+        };
+      });
+      await kit.trainingDb.sessions.bulkPut(empty);
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const { el, fixture } = await show(kit);
+
+      await eventually(fixture, () => expect(text(el)).toContain('Último Treino'));
+      Array.from(el.querySelectorAll<HTMLButtonElement>('.links button'))
+        .find((node) => text(node).includes('Último Treino'))!
+        .click();
+      expect(navigate).toHaveBeenCalledWith(['/treino'], {
+        queryParams: { resumo: 'supino-reto-treino-1', historico: '1' },
+      });
+    });
+
+    it('keeps the rest of the screen when the local database fails reading the sets', async () => {
+      const kit = await open();
+      await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
+      await seedHistory(kit.trainingDb, 'supino-reto', [[1, 40, 10]]);
+      vi.spyOn(TestBed.inject(SessionRepository), 'setsOfSession').mockRejectedValue(
+        new Error('indexeddb indisponível'),
+      );
+      const { el, fixture } = await show(kit);
+
+      // A rotina, o botão e a semana continuam; só o atalho do treino anterior some.
+      await eventually(fixture, () => expect(button(el, 'Iniciar Treino')).toBeDefined());
+      expect(el.querySelector('.week')).not.toBeNull();
+      expect(text(el)).toContain('Treino A');
+      expect(text(el)).not.toContain('Último Treino');
+      expect(text(el)).not.toContain('Treino de Ontem');
+    });
+
+    it('still shows the day card and the shortcuts without the catalog, and only the start waits', async () => {
+      const kit = await open();
+      await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
+      await seedHistory(kit.trainingDb, 'supino-reto', [[1, 40, 10]]);
+      await kit.trainingDb.exercises.clear();
+      TestBed.inject(ConnectivityService).online.set(false);
+      const { el, fixture } = await show(kit);
+
+      await eventually(fixture, () => expect(button(el, 'Iniciar Treino')).toBeDefined());
+      expect(button(el, 'Iniciar Treino').disabled).toBe(true);
+      expect(button(el, 'Treino Livre').disabled).toBe(true);
+      expect(text(el)).toContain('O catálogo ainda não chegou');
+      expect(el.querySelector('.week')).not.toBeNull();
+      await eventually(fixture, () => expect(text(el)).toContain('Último Treino'));
+    });
+
+    it('opens the model comparison from the program shortcut, to switch the program in place', async () => {
+      const kit = await open();
+      await kit.trainingDb.program.put({
+        id: 'active',
+        programId: 'p',
+        updatedAt: 1,
+        clientUpdatedAt: 1,
+      });
+      await saveRoutine('Segunda · Peito', [item('a1', 'supino-reto', 0)]);
+      const routine = (await kit.trainingDb.routines.toArray())[0];
+      await kit.trainingDb.routines.put({ ...routine, programId: 'p', weekdays: [1] });
+      const { el, fixture } = await show(kit);
+
+      await eventually(fixture, () => expect(el.querySelector('.links button')).not.toBeNull());
+      el.querySelector<HTMLButtonElement>('.links button')!.click();
+      await eventually(fixture, () =>
+        expect(el.querySelector('app-templates-sheet')).not.toBeNull(),
+      );
+    });
+
+    it('hides the shortcuts when there is no program and no earlier workout', async () => {
+      const kit = await open();
+      await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
+      const { el, fixture } = await show(kit);
+
+      await eventually(fixture, () => expect(button(el, 'Iniciar Treino')).toBeDefined());
+      expect(el.querySelector('.links')).toBeNull();
+    });
+
+    it('shows the active weekly program with its summary as a shortcut', async () => {
+      const kit = await open();
+      await kit.trainingDb.program.put({
+        id: 'active',
+        programId: 'p',
+        updatedAt: 1,
+        clientUpdatedAt: 1,
+      });
+      await saveRoutine('Segunda · Peito', [item('a1', 'supino-reto', 0)]);
+      const routine = (await kit.trainingDb.routines.toArray())[0];
+      await kit.trainingDb.routines.put({ ...routine, programId: 'p', weekdays: [1] });
+      const { el, fixture } = await show(kit);
+
+      await eventually(fixture, () => expect(el.querySelector('.links button')).not.toBeNull());
+      const link = el.querySelector('.links button')!;
+      expect(text(link)).toContain('Programa da Semana');
+      expect(text(link)).toContain('Peito');
     });
 
     it('has a single heading for Início', async () => {

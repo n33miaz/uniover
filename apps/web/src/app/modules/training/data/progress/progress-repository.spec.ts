@@ -207,7 +207,7 @@ describe('ProgressRepository', () => {
         timeZone: SAO_PAULO,
       });
 
-      expect(week.startKey).toBe('2026-10-12');
+      expect(week.startKey).toBe('2026-10-11');
       expect(volume.total).toBe(54);
       expect(volume.byGroup).toEqual({
         chest: 10,
@@ -263,9 +263,10 @@ describe('ProgressRepository', () => {
     it('sums the week and lists the records broken in it', async () => {
       const t = setupProgress();
       await seedBenchHistory(t);
-      await t.trainingDb.sessions.put(session('s-1014', '2026-10-14'));
+      // O "agora" é domingo 18: a semana (domingo a sábado) vai de 18 a 24, e a remada de segunda 19 cai nela.
+      await t.trainingDb.sessions.put(session('s-1019', '2026-10-19'));
       await t.trainingDb.sets.bulkPut([
-        ...sets('e', 's-1014', 'remada', 3, '2026-10-14', { weightKg: 50, reps: 10 }),
+        ...sets('e', 's-1019', 'remada', 3, '2026-10-19', { weightKg: 50, reps: 10 }),
         localSet('w', 's-1018', {
           setType: 'warmup',
           completedAt: at('2026-10-18', 8),
@@ -275,7 +276,7 @@ describe('ProgressRepository', () => {
 
       const summary = await t.repository.weekSummary(OPTIONS);
 
-      expect(summary.week.startKey).toBe('2026-10-12');
+      expect(summary.week.startKey).toBe('2026-10-18');
       expect(summary.sessions).toBe(2);
       expect(summary.workingSets).toBe(6);
       expect(summary.volumeKg).toBe(3 * 42.5 * 8 + 3 * 50 * 10);

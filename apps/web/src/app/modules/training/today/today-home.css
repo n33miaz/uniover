@@ -2,11 +2,19 @@
   display: block;
 }
 
+/*
+ * Densidade da primeira tela (390×664): a data, o cartão do dia, a semana com os totais e os dois atalhos cabem acima da
+ * barra de baixo, sem rolar. Por isso o respiro entre os blocos é de 8 px e cada bloco é compacto.
+ * A margem negativa no topo cancela o espaço que a casca deixa entre a faixa de sincronização e a tela: a data fica colada
+ * no começo do conteúdo.
+ * TODO: remover a margem negativa quando a casca do Treino (navegação) tirar esse espaço.
+ */
 .home {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
   max-width: 40rem;
+  margin-block-start: calc(var(--space-3) * -1);
   margin-inline: auto;
 }
 
@@ -14,14 +22,24 @@
 .routine {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
 }
 
 .routine-head {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+}
+
+/* Primeira linha do cartão do dia: o rótulo à esquerda e a engrenagem no canto. O alvo da engrenagem tem 44 px, mas ele
+   sobe para dentro do respiro do cartão e desce sobre o espaço do nome, para a linha ocupar só o tamanho do rótulo. */
+.routine-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-block: calc(var(--space-3) * -1) calc(var(--space-5) * -1);
 }
 
 .routine-settings {
@@ -31,13 +49,18 @@
   width: var(--tap);
   min-height: var(--tap);
   margin-left: auto;
+  /* O ícone (22 px) alinha com a borda de dentro do cartão: o alvo invisível passa dela. */
+  margin-right: calc(var(--space-3) * -1);
   padding: 0;
   border: 0;
   border-radius: var(--radius-pill);
-  background: var(--a-elev);
+  background: transparent;
   color: var(--a-ink2);
   font: inherit;
   cursor: pointer;
+}
+.routine-settings:active {
+  background: var(--a-elev);
 }
 .routine-settings:focus-visible {
   outline: 3px solid var(--a-accent);
@@ -48,15 +71,14 @@
   min-width: 0;
 }
 
-.letter {
-  font-size: 1.125rem;
-  font-weight: 800;
-}
-
+/* Rótulo pequeno em caixa alta, como o do mockup. */
 .eyebrow {
   margin: 0;
   color: var(--a-ink2);
-  font-size: var(--fs-small);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .routine-name {
@@ -68,6 +90,25 @@
   overflow-wrap: anywhere;
 }
 
+/* O nome da rotina cabe numa linha: a fonte acompanha a largura (22 px no iPhone 12) e o que ainda passar vira
+   reticências (o nome inteiro vai no rótulo acessível). */
+.routine-name.one-line {
+  font-size: clamp(1.125rem, 5.6vw, 1.375rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.catalog-note p {
+  margin: 0;
+}
+
 .meta {
   margin: 0;
   color: var(--a-ink2);
@@ -75,12 +116,87 @@
 }
 
 .go {
-  min-height: 56px;
+  min-height: 52px;
   font-size: 1.0625rem;
+}
+
+/* "Ver Rotina": um toque de texto no pé do cartão; o alvo tem 44 px e o resto é só o texto e a seta. */
+.routine-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  /* O alvo de 44 px invade o respiro de cima e o de baixo do cartão: o botão ocupa só a altura do texto. */
+  margin-block: calc(var(--space-2) * -1) calc(var(--space-3) * -1);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--a-accent-ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 750;
+  cursor: pointer;
+}
+.routine-toggle:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+/* A data é um rótulo pequeno (o estilo `ui-section-label`) colado no começo da tela. */
+.date {
+  line-height: 1.2;
 }
 
 .lines {
   margin: 0;
+}
+.lines[hidden] {
+  display: none;
+}
+.lines:not([hidden]) {
+  animation: unfold var(--dur-fast, 160ms) var(--ease-out, ease-out);
+}
+
+/* Atalhos como linhas simples: o título à esquerda e o valor à direita, numa linha só. */
+.links .ui-row {
+  min-height: var(--tap);
+  padding-block: var(--space-2);
+}
+.links .ui-row-text {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.links .ui-row-title {
+  flex: none;
+  font-size: var(--fs-small);
+}
+.links .ui-row-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lines:not([hidden]) {
+    animation: none;
+  }
 }
 
 .actions {
@@ -182,6 +298,47 @@
 .skeleton .ui-skeleton.big {
   height: 56px;
   width: 100%;
+}
+
+/* O esqueleto repete a forma do cartão do dia: data, ladrilho com duas linhas, resumo e botão de 56 px. */
+.skeleton-home {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.skeleton-home .skeleton {
+  align-items: stretch;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+.skeleton-home .ui-skeleton.sk-date {
+  width: 9rem;
+  height: 16px;
+}
+.skeleton-home .ui-skeleton.sk-tile {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+}
+.sk-lines {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+}
+.skeleton-home .ui-skeleton.sk-eyebrow {
+  width: 30%;
+  height: 12px;
+}
+.skeleton-home .ui-skeleton.sk-title {
+  width: 70%;
+  height: 20px;
+}
+.skeleton-home .ui-skeleton.sk-meta {
+  width: 55%;
+  height: 14px;
 }
 
 /* O "?" do glossário: um quadrado de toque ao lado da ação, sem ocupar uma linha própria. */
