@@ -1,4 +1,4 @@
-<div #top class="top">
+<div #top class="top" [attr.aria-busy]="showSkeleton() ? 'true' : null">
   @if (shortcuts().length > 0) {
     <!--
       Sem permissão para abrir apps os azulejos são figuras (sem botão), e a faixa recebe o foco do teclado no lugar deles:
@@ -33,6 +33,16 @@
         </li>
       }
     </ul>
+  } @else if (showSkeleton()) {
+    <!-- A primeira leitura demorou: azulejos de espera, do tamanho dos reais, para nada saltar quando os atalhos chegarem. -->
+    <div class="waiting" aria-hidden="true">
+      @for (slot of placeholders; track slot) {
+        <span class="ui-skeleton tile"></span>
+      }
+    </div>
+  } @else if (failed()) {
+    <!-- A lista não veio no prazo: uma frase curta no lugar da fileira, e o painel Apps oferece tentar de novo. -->
+    <p class="hint" i18n="@@tv.shortcuts.failed">Os atalhos não carregaram.</p>
   } @else if (suggestions().length > 0) {
     <!-- Sugestões, não atalhos: cada uma abre um painel onde a pessoa confirma ou remove. -->
     <ul

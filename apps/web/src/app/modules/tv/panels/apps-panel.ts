@@ -113,6 +113,8 @@ export class AppsPanel {
   protected readonly busy = signal(false);
   /** Pedindo a lista à TV (mostra "Buscando…"); o erro, se houver, aparece no aviso do próprio painel. */
   protected readonly refreshing = signal(false);
+  /** Lendo a lista de novo depois de ela não ter vindo no prazo ("Tentar de Novo"). */
+  protected readonly reloading = signal(false);
   /** Já pediu a lista à TV pelo menos uma vez, com sucesso (para dizer que ela segue vazia). */
   protected readonly asked = signal(false);
 
@@ -177,6 +179,17 @@ export class AppsPanel {
       if (await this.store.refreshShortcuts()) this.asked.set(true);
     } finally {
       this.refreshing.set(false);
+    }
+  }
+
+  /** Lê tudo de novo (o estado e a lista de apps): a lista que não veio no prazo ganha uma nova espera, com esqueleto. */
+  protected async reload(): Promise<void> {
+    if (this.reloading()) return;
+    this.reloading.set(true);
+    try {
+      await this.store.refresh();
+    } finally {
+      this.reloading.set(false);
     }
   }
 
