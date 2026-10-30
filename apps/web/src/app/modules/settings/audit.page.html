@@ -2,9 +2,7 @@
   <div class="intro ui-rise">
     <p class="privacy">
       <app-settings-glyph name="shield" />
-      <span i18n="@@settings.audit.privacy"
-        >Estes registros ficam guardados por segurança: data, IP e aparelho de cada ação.</span
-      >
+      <span i18n="@@settings.audit.privacy">Cada ação guarda data, IP e aparelho.</span>
     </p>
     @if (retention(); as text) {
       <p class="retention">{{ text }}</p>
@@ -113,10 +111,7 @@
     @case ('offline') {
       <div class="state ui-rise">
         <app-settings-glyph name="network" />
-        <p i18n="@@settings.audit.offline">
-          A auditoria só funciona com internet, porque os registros ficam no servidor. Quando a
-          conexão voltar, a lista aparece sozinha.
-        </p>
+        <p i18n="@@settings.audit.offline">Sem internet. A lista volta quando a conexão voltar.</p>
       </div>
       <button
         type="button"

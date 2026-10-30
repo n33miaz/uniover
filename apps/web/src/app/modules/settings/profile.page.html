@@ -56,7 +56,7 @@
         />
         <div class="meta">
           <p id="profile-name-hint" class="hint" i18n="@@settings.profile.name-hint">
-            Aparece na saudação do app. Dá para mudar quando quiser.
+            Aparece na saudação do app.
           </p>
           <p class="counter" [class.over]="overLimit()">{{ counter() }}</p>
         </div>
@@ -117,17 +117,10 @@
             }
           </ul>
         } @else {
-          <p class="hint" i18n="@@settings.profile.abilities-none">
-            Nenhuma permissão liberada por enquanto. Quem administra o app pode liberar.
-          </p>
+          <p class="hint" i18n="@@settings.profile.abilities-none">Nenhuma permissão liberada.</p>
         }
-        <p class="hint" i18n="@@settings.profile.abilities-hint">
-          Quem administra o app decide o que fica liberado para você.
-        </p>
       } @else {
-        <p class="all" i18n="@@settings.profile.abilities-admin">
-          Você administra o UniOver: tem acesso a tudo.
-        </p>
+        <p class="all" i18n="@@settings.profile.abilities-admin">Acesso a tudo.</p>
       }
     </div>
   </section>
@@ -159,8 +152,7 @@
         <p class="note ui-notice warn" role="status">
           <app-settings-glyph name="alert" />
           <span i18n="@@settings.account.logout-unconfirmed"
-            >Sem conexão: a sessão foi encerrada neste aparelho, mas o servidor ainda não
-            soube.</span
+            >Sem conexão: sessão encerrada só neste aparelho.</span
           >
         </p>
       }

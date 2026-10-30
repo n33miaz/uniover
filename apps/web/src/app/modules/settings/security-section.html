@@ -4,8 +4,7 @@
   <div class="intro ui-card">
     <span class="ui-tile"><app-settings-glyph name="shield" /></span>
     <p class="hint" i18n="@@settings.security.hint">
-      A passkey só confirma ações perigosas, como remover outra passkey. Ela não entra no app: o
-      acesso continua sendo por e-mail e senha.
+      A passkey só confirma ações sensíveis. O acesso continua por e-mail e senha.
     </p>
   </div>
 
@@ -122,7 +121,7 @@
       <p class="recommend ui-notice warn ui-rise">
         <app-settings-glyph name="alert" />
         <span i18n="@@settings.passkeys.recommend"
-          >Recomendamos ter pelo menos duas passkeys, por exemplo uma em cada aparelho.</span
+          >Tenha ao menos duas passkeys, uma em cada aparelho.</span
         >
       </p>
     }
@@ -166,10 +165,7 @@
 
   @if (adding()) {
     <form class="add panel ui-card" (submit)="add($event)">
-      <p class="hint" i18n="@@settings.passkeys.add-hint">
-        Por segurança, digite a senha de novo. Depois o aparelho vai pedir a sua digital, o rosto ou
-        o PIN.
-      </p>
+      <p class="hint" i18n="@@settings.passkeys.add-hint">Digite a senha de novo para continuar.</p>
       <div class="ui-field">
         <label for="passkey-password" i18n="@@settings.passkeys.password">Senha</label>
         <input

@@ -2,7 +2,7 @@
   @if (!canManage) {
     @if (canPairSelf) {
       <p class="empty ui-rise" role="status" i18n="@@devices.guest-pair.intro">
-        Baixe o conector no PC e aprove o computador aqui, com a sua conta.
+        Baixe o conector no PC e aprove aqui.
       </p>
       @if (message(); as text) {
         <p class="message ui-notice ok ui-rise" role="status">{{ text }}</p>
@@ -81,9 +81,7 @@
 
       @if (agents(); as list) {
         @if (list.length === 0) {
-          <p class="empty ui-rise" i18n="@@devices.empty">
-            Nenhum dispositivo pareado. Rode o agente no PC e digite o código que ele mostrar.
-          </p>
+          <p class="empty ui-rise" i18n="@@devices.empty">Nenhum dispositivo pareado.</p>
         } @else {
           <ul class="list ui-plain ui-stagger">
             @for (agent of list; track agent.id) {
@@ -362,7 +360,7 @@
 
       @if (!online()) {
         <p class="note ui-notice warn ui-rise" role="status" i18n="@@devices.offline">
-          Sem conexão: parear, recusar e revogar precisam de rede.
+          Sem conexão: isto precisa de rede.
         </p>
       }
 

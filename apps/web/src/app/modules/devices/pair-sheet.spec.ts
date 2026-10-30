@@ -394,6 +394,6 @@ describe('PairSheet', () => {
     fixture.detectChanges();
     expect(button('Aprovar').disabled).toBe(true);
     expect(button('Recusar código').disabled).toBe(true);
-    expect(el.textContent).toContain('Sem conexão: parear, recusar e revogar precisam de rede.');
+    expect(el.textContent).toContain('Sem conexão: isto precisa de rede.');
   });
 });
