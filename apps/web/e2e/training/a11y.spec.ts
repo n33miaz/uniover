@@ -98,6 +98,27 @@ const SCREENS: readonly Screen[] = [
     },
   },
   {
+    name: 'glossário',
+    open: async (page) => {
+      await openTraining(page, '/treino/glossario');
+      await expect(page.locator('app-page-top-bar .back')).toBeVisible();
+    },
+  },
+  {
+    name: 'diário alimentar',
+    open: async (page) => {
+      await openTraining(page, '/treino/alimentacao');
+      await expect(page.locator('app-page-top-bar .back')).toBeVisible();
+    },
+  },
+  {
+    name: 'avaliações do corpo',
+    open: async (page) => {
+      await openTraining(page, '/treino/corpo/avaliacoes');
+      await expect(page.locator('app-page-top-bar .back')).toBeVisible();
+    },
+  },
+  {
     name: 'tela provisória de Hoje',
     open: async (page) => {
       await openTraining(page, '/treino');
@@ -121,6 +142,20 @@ for (const scheme of ['light', 'dark'] as const) {
         await expectNoHorizontalScroll(page);
         await expectNoA11yViolations(page);
         expect(await smallTargets(page)).toEqual([]);
+        // A seta compartilhada do topo tem alvo de 44 px e foco visível.
+        const back = page.locator('app-page-top-bar .back');
+        const box = (await back.boundingBox())!;
+        expect(box.width).toBeGreaterThanOrEqual(44);
+        expect(box.height).toBeGreaterThanOrEqual(44);
+        // Foco pelo teclado (é ele que mostra o anel de foco). Com uma folha modal aberta o topo fica inerte: só vale sem ela.
+        if ((await page.locator('dialog[open]').count()) === 0) {
+          await back.focus();
+          await page.keyboard.press('Shift+Tab');
+          await page.keyboard.press('Tab');
+          await expect(back).toBeFocused();
+          const outline = await back.evaluate((node) => getComputedStyle(node).outlineStyle);
+          expect(outline).not.toBe('none');
+        }
       });
     }
   });
@@ -135,9 +170,12 @@ test.describe('pendências e movimento', () => {
     await page.getByLabel('Nome').fill('Remada');
     await chooseMuscle(page, 'Meio das costas');
     await page.getByRole('button', { name: 'Salvar Exercício' }).click();
-    // Só com a falha já registrada o ícone abre a lista (antes disso o toque atualiza).
-    await expect(page.getByText('1 com erro')).toBeVisible();
-    await page.locator('.training-header .status').click();
+    // Só com a falha já registrada o anel oferece a lista dos recusados.
+    await page.locator('app-page-top-bar .ring').click();
+    await expect(page.getByRole('dialog', { name: 'Sincronização' })).toBeVisible();
+    await settle(page);
+    await expectNoA11yViolations(page);
+    await page.getByRole('button', { name: 'Ver os Recusados' }).click();
     await expect(page.getByRole('dialog', { name: 'Alterações com Erro' })).toBeVisible();
     await settle(page);
     await expectNoA11yViolations(page);

@@ -13,6 +13,19 @@ import {
 const goOffline = (page: Page) => page.evaluate(() => window.dispatchEvent(new Event('offline')));
 const goOnline = (page: Page) => page.evaluate(() => window.dispatchEvent(new Event('online')));
 
+/**
+ * Com envio pendente e sem alcançar o servidor (sem rede, ou o servidor sem resposta depois de recarregar) o anel do topo
+ * aparece, e a folha dele conta o que falta enviar.
+ */
+async function expectPendingUnreachable(page: Page) {
+  await expect(page.locator('app-page-top-bar .ring')).toBeVisible();
+  await page.locator('app-page-top-bar .ring').click();
+  const sheet = page.getByRole('dialog', { name: 'Sincronização' });
+  await expect(sheet.getByText('1 ainda não sincronizado')).toBeVisible();
+  await sheet.getByRole('button', { name: 'Fechar' }).click();
+  await expect(sheet).toHaveCount(0);
+}
+
 test.describe('exercício próprio criado sem rede', () => {
   // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
   test.use({ serviceWorkers: 'block' });
@@ -37,14 +50,14 @@ test.describe('exercício próprio criado sem rede', () => {
     await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('articulada');
     await expect(page.locator('.list .name')).toHaveText(['Remada na máquina articulada']);
     await expect(page.locator('.list .ui-chip', { hasText: 'própria' })).toBeVisible();
-    await expect(page.getByText('1 ainda não sincronizado')).toBeVisible();
+    await expectPendingUnreachable(page);
     expect(server.writes('exercises')).toBe(0);
 
     server.offline = false;
     await goOnline(page);
     await expect.poll(() => server.writes('exercises')).toBe(1);
     await expectSynced(page);
-    await expect(page.getByText('ainda não sincronizado')).toHaveCount(0);
+    await expect(page.locator('app-page-top-bar .ring[data-state="pending"]')).toHaveCount(0);
 
     const puts = server.hits.filter(
       (hit) => hit.method === 'PUT' && hit.path.startsWith('exercises/'),
@@ -189,7 +202,7 @@ test.describe('sem rede de verdade, com o service worker', () => {
       .getByRole('link', { name: 'Rotinas' })
       .click();
     await expect(page.getByText('Treino A')).toBeVisible();
-    await expect(page.getByText('1 ainda não sincronizado')).toBeVisible();
+    await expectPendingUnreachable(page);
     await context.setOffline(false);
   });
 });

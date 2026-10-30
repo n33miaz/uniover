@@ -2,6 +2,7 @@ import { BrowserContext, Page } from '@playwright/test';
 import { expect, expectNoHorizontalScroll, test } from '../fixtures';
 import { seedBenchHistory } from './support/today-seed';
 import {
+  openSessionMenu,
   beginWorkout,
   concludeSet,
   fieldValue,
@@ -41,16 +42,19 @@ test.describe('primeira parte do exercício', () => {
     await openToday(page);
     await beginWorkout(page);
 
-    await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
-    // Um único botão de voltar: a barra de cima da casca e a de baixo ficam escondidas nesta tela.
-    await expect(page.locator('app-training-page .training-header')).toBeHidden();
+    // Um topo só, o da casca: uma seta, "Treino" no centro e os três pontos; a tela não tem cabeçalho nem voltar próprios.
+    await expect(page.locator('app-page-top-bar h1')).toHaveText('Treino');
+    await expect(page.locator('app-page-top-bar .back')).toHaveCount(1);
     await expect(page.getByRole('button', { name: /^Voltar/ })).toHaveCount(1);
     await expect(page.getByRole('link', { name: /^Voltar/ })).toHaveCount(0);
-    await expect(page.locator('.head').getByText(/^\d+\/\d+$/)).toHaveCount(0);
+    await expect(page.locator('app-live-session header')).toHaveCount(0);
+    await expect(
+      page.locator('app-page-top-bar').getByRole('button', { name: 'Mais opções' }),
+    ).toHaveCount(1);
     await expect(page.getByRole('switch', { name: 'Manter a Tela Acesa' })).toBeVisible();
 
     // O título fica no centro da tela, com ou sem o botão a mais de um dos lados.
-    const title = (await box(page, '.head .title'))!;
+    const title = (await box(page, 'app-page-top-bar h1'))!;
     const viewport = page.viewportSize()!;
     expect(Math.abs(title.x + title.width / 2 - viewport.width / 2)).toBeLessThan(2);
   });
@@ -92,8 +96,8 @@ test.describe('primeira parte do exercício', () => {
     const fields = (await box(page, '.setcard'))!;
     const dock = (await box(page, '.dock'))!;
 
-    // Bem maior que a miniatura de 136 px de antes.
-    expect(art.height).toBeGreaterThan(200);
+    // Bem maior que a miniatura de 136 px de antes, mesmo com o topo da casca e a fileira do interruptor acima dela.
+    expect(art.height).toBeGreaterThan(180);
     // Tudo o que importa está na primeira tela, acima do botão fixo de baixo.
     expect(name.y).toBeGreaterThanOrEqual(0);
     expect(fields.y + fields.height).toBeLessThanOrEqual(dock.y + 1);
@@ -238,7 +242,7 @@ test.describe('primeira parte do exercício', () => {
 
     const toggle = page.getByRole('switch', { name: 'Manter a Tela Acesa' });
     await expect(toggle).not.toBeChecked();
-    await page.getByRole('button', { name: 'Opções do Treino' }).click();
+    await openSessionMenu(page);
     const menu = page.getByRole('dialog', { name: 'Opções do Treino' });
     await expect(menu.getByRole('switch')).toHaveCount(0);
     await expect(menu.getByText(/iOS 18/)).toHaveCount(0);
@@ -269,6 +273,6 @@ test.describe('primeira parte do exercício', () => {
     // Ao pular o descanso, a ilustração volta a ocupar o espaço.
     await page.getByRole('button', { name: 'Pular Descanso', exact: true }).click();
     await expect(page.locator('.rest')).toHaveCount(0);
-    await expect.poll(async () => (await box(page, '.art'))?.height ?? 0).toBeGreaterThan(200);
+    await expect.poll(async () => (await box(page, '.art'))?.height ?? 0).toBeGreaterThan(180);
   });
 });

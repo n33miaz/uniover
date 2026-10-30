@@ -54,7 +54,7 @@ test.describe('os botões de voltar do treino', () => {
     await page.getByRole('button', { name: 'Iniciar Treino' }).click();
     await skipProgramChoice(page);
     await expectDay(page);
-    await page.getByRole('link', { name: 'Voltar a Hoje' }).click();
+    await page.locator('app-page-top-bar .back').click();
     await expectToday(page);
     await page.getByRole('button', { name: 'Continuar Treino' }).click();
     await expectDay(page);
@@ -62,7 +62,7 @@ test.describe('os botões de voltar do treino', () => {
     // Dia -> exercício -> dia: o voltar do registro cai na lista, não em Hoje.
     await page.locator('app-workout-day .exercise.suggested').click();
     await expectExercise(page);
-    await page.getByRole('button', { name: 'Voltar ao treino' }).click();
+    await page.locator('app-page-top-bar .back').click();
     await expectDay(page);
 
     // Exercício com descanso na tela: o voltar também cai na lista, e o descanso continua ao reabrir.
@@ -70,7 +70,7 @@ test.describe('os botões de voltar do treino', () => {
     await expectExercise(page);
     await concludeSet(page);
     await expect(page.locator('.rest')).toBeVisible();
-    await page.getByRole('button', { name: 'Voltar ao treino' }).click();
+    await page.locator('app-page-top-bar .back').click();
     await expectDay(page);
     await page.locator('app-workout-day .exercise.suggested').click();
     await expectExercise(page);
@@ -84,7 +84,7 @@ test.describe('os botões de voltar do treino', () => {
     await page.getByRole('button', { name: 'Concluir Treino' }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Treino Concluído' })).toBeVisible();
     expect(search(page)).toContain('resumo=');
-    await page.getByRole('button', { name: 'Voltar a Hoje' }).click();
+    await page.locator('app-page-top-bar .back').click();
     await expectToday(page);
     await expect(page.getByRole('button', { name: 'Iniciar Treino' })).toBeVisible();
   });
@@ -99,7 +99,7 @@ test.describe('os botões de voltar do treino', () => {
 
     await page.reload();
     await expectExercise(page);
-    await page.getByRole('button', { name: 'Voltar ao treino' }).click();
+    await page.locator('app-page-top-bar .back').click();
     await expectDay(page);
   });
 
@@ -107,14 +107,29 @@ test.describe('os botões de voltar do treino', () => {
     await startTraining(context, page);
     await openTraining(page, '/treino/exercicios');
     await waitForCatalog(page);
-    // Na raiz da lista o dono tem a seta para o Início; dentro do detalhe fica um voltar só, o da própria tela.
-    await expect(page.locator('.training-header .back')).toHaveCount(1);
+    // Há uma só seta em qualquer nível: a do topo (na raiz leva ao Início, no detalhe ao pai).
+    await expect(page.locator('app-page-top-bar .back')).toHaveCount(1);
     await page.locator('.list .ui-row').first().click();
     await expect.poll(() => path(page)).toMatch(/^\/treino\/exercicios\/.+/);
-    await expect(page.locator('.training-header .back')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Voltar para Exercícios' })).toHaveCount(1);
-    await page.getByRole('button', { name: 'Voltar para Exercícios' }).first().click();
+    await expect(page.locator('app-page-top-bar .back')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Voltar para Exercícios' })).toHaveCount(0);
+    await page.locator('app-page-top-bar .back').click();
     await expect.poll(() => path(page)).toBe('/treino/exercicios');
-    await expect(page.locator('.training-header .back')).toHaveCount(1);
+    await expect(page.locator('app-page-top-bar .back')).toHaveCount(1);
+  });
+
+  test('o registro da série tem uma seta e um menu, os dois no topo', async ({ page, context }) => {
+    await launch(context, page);
+    await openToday(page);
+    await page.getByRole('button', { name: 'Iniciar Treino' }).click();
+    await skipProgramChoice(page);
+    await page.locator('app-workout-day .exercise.suggested').click();
+    await expectExercise(page);
+    await expect(page.locator('app-page-top-bar .back')).toHaveCount(1);
+    await expect(page.locator('[aria-label="Mais opções"]')).toHaveCount(1);
+    await expect(page.locator('app-page-top-bar [aria-label="Mais opções"]')).toHaveCount(1);
+    await expect(page.locator('app-live-session header')).toHaveCount(0);
+    await page.locator('app-page-top-bar [aria-label="Mais opções"]').click();
+    await expect(page.getByRole('button', { name: 'Opções do treino' })).toBeVisible();
   });
 });

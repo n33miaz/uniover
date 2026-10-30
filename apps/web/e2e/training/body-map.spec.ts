@@ -278,7 +278,7 @@ test.describe('mapa do corpo: sem rede', () => {
     // Com rede, o aparelho traz o catálogo e o treino da semana; só então a rede cai.
     await page.getByRole('link', { name: 'Mapa do Treino' }).click();
     await expect(zone(page, 'chest')).toHaveAttribute('data-level', '3');
-    await page.getByRole('button', { name: 'Voltar para Exercícios' }).click();
+    await page.locator('app-page-top-bar .back').click();
     await expect(page).toHaveURL(/\/treino\/exercicios$/);
     await expect(page.getByText('Sem rede')).toHaveCount(0);
 

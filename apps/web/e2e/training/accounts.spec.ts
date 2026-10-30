@@ -158,7 +158,7 @@ async function ownerSavesOffline(page: Page) {
   await chooseMuscle(page, 'Meio das costas');
   await page.getByRole('button', { name: 'Salvar Exercício' }).click();
   await expect(page.getByRole('heading', { name: MINE })).toBeVisible();
-  await expect(page.getByText('1 ainda não sincronizado')).toBeVisible();
+  await expect(page.locator('app-page-top-bar .ring')).toHaveAttribute('data-state', 'offline');
   expect(await queued(page, OWNER_ID)).toBe(1);
   expect(server.writes('exercises', OWNER_ID)).toBe(0);
 }

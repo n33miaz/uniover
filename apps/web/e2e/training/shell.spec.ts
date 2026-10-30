@@ -1,13 +1,6 @@
 import { expect, expectNoHorizontalScroll, test, waitForServiceWorkerControl } from '../fixtures';
 import { SEED_EXERCISE_IDS, SEED_ROUTINE_IDS } from './support/training-seed';
-import {
-  openTraining,
-  startTraining,
-  waitForCatalog,
-  expectSynced,
-  expectOfflineIcon,
-  syncIcon,
-} from './support/training-pages';
+import { openTraining, startTraining, waitForCatalog } from './support/training-pages';
 
 test.describe('casca do Treino', () => {
   // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -48,6 +41,7 @@ test.describe('casca do Treino', () => {
       .click();
     await expect(page).toHaveURL(/\/treino\/corpo$/);
     await expect(page.getByRole('heading', { name: 'Corpo', exact: true })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Seções de progresso' })).toHaveCount(0);
     await expect(tabs.getByRole('link', { name: 'Progresso' })).toHaveAttribute(
       'aria-current',
       'page',
@@ -165,24 +159,6 @@ test.describe('casca do Treino', () => {
     await card.getByRole('link', { name: 'Ver treino' }).click();
     await expect(page).toHaveURL(/\/treino$/);
     await expect(page.locator('app-training-page')).toBeVisible();
-  });
-
-  test('o ícone de sincronização diz que está em dia e, sem rede, que usa o que está no aparelho', async ({
-    page,
-    context,
-  }) => {
-    const server = await startTraining(context, page);
-    await openTraining(page, '/treino/exercicios');
-    await waitForCatalog(page);
-    await expectSynced(page);
-    server.offline = true;
-    await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-    await expectOfflineIcon(page);
-    // Sem rede a lista continua lendo o aparelho.
-    await expect(page.locator('.list .ui-row').first()).toBeVisible();
-    server.offline = false;
-    await page.evaluate(() => window.dispatchEvent(new Event('online')));
-    await expect(syncIcon(page)).not.toHaveAttribute('data-state', 'offline');
   });
 });
 
