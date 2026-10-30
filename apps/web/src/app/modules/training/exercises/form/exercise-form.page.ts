@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
@@ -23,6 +24,7 @@ import {
 import { BackNavigation } from '../../shell/back-navigation';
 import { ChipOption, TrainingChips } from '../../shell/training-chips';
 import { TrainingGlyph } from '../../shell/training-glyph';
+import { TrainingHeaderActions } from '../../shell/training-header-actions';
 import { TrainingSheet } from '../../shell/training-sheet';
 import {
   EMPTY_EXERCISE_FORM,
@@ -52,6 +54,7 @@ export class ExerciseFormPage {
   private readonly back = inject(BackNavigation);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly headerActions = inject(TrainingHeaderActions);
 
   /** Id do exercício que está sendo editado; vazio em "Novo exercício". */
   protected readonly editingId = this.route.snapshot.paramMap.get('id') ?? '';
@@ -108,7 +111,6 @@ export class ExerciseFormPage {
   protected readonly title = this.editing
     ? $localize`:@@training.form.title-edit:Editar Exercício`
     : $localize`:@@training.form.title-new:Novo Exercício`;
-  protected readonly backLabel = $localize`:@@training.form.back:Sair do formulário`;
   protected readonly muscleOpen = signal(false);
   protected readonly muscleHeading = $localize`:@@training.form.muscle-heading:Músculo Principal`;
   protected readonly cancelLabel = $localize`:@@training.form.muscle-cancel:Cancelar`;
@@ -129,6 +131,7 @@ export class ExerciseFormPage {
   private duplicateTicket = 0;
 
   constructor() {
+    inject(DestroyRef).onDestroy(this.headerActions.registerBack(() => this.cancel()));
     if (this.editing) void this.loadExisting();
     else {
       // "Criar “x”", da busca sem resultado, chega com o nome sugerido.

@@ -9,7 +9,7 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { CatalogRepository } from '../data/catalog/catalog-repository';
-import { BackNavigation } from '../shell/back-navigation';
+import { BackNavigation, TRAINING_LOGICAL_PARENTS } from '../shell/back-navigation';
 import { ExerciseHistory } from './exercise-history';
 import { LiveSession } from './live-session';
 import { LiveStore } from './live-store';
@@ -22,7 +22,6 @@ import { TodayStore } from './today-store';
   providers: [TodayStore, LiveStore, ExerciseHistory],
   template: `
     <app-live-session
-      (back)="back()"
       (exerciseCompleted)="backToDay()"
       (finished)="openSummary($event)"
       (discarded)="leave()"
@@ -34,7 +33,6 @@ import { TodayStore } from './today-store';
       display: block;
     }
 
-    app-training-page:has(app-workout-exercise) .training-header,
     app-training-page:has(app-workout-exercise) app-tab-bar {
       display: none !important;
     }
@@ -69,19 +67,8 @@ export class WorkoutExercise {
     await this.live.choose(key);
   }
 
-  /**
-   * O voltar leva ao pai imediato: a lista do dia. Dentro do app ele desfaz a entrada do histórico (a lista volta como
-   * estava); aberta direto pelo endereço, vai para ela. Se o treino já foi encerrado em outro lugar, a lista não tem o que
-   * mostrar e o destino é Hoje.
-   */
-  protected back(): void {
-    if (this.live.ready() && this.live.session() === undefined)
-      void this.router.navigateByUrl('/treino');
-    else this.history.back('/treino/sessao');
-  }
-
   protected backToDay(): void {
-    this.history.back('/treino/sessao');
+    this.history.back(TRAINING_LOGICAL_PARENTS.workoutExercise);
   }
 
   /** O resumo toma o lugar do registro no histórico, e o voltar dele (marcado por `state`) leva direto a Hoje. */

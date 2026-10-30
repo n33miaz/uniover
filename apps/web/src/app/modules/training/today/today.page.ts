@@ -12,6 +12,7 @@ import {
 import { Location } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { BackNavigation } from '../shell/back-navigation';
+import { TrainingHeaderActions } from '../shell/training-header-actions';
 import { ExerciseHistory } from './exercise-history';
 import { LiveStore } from './live-store';
 import { SessionSummary } from './session-summary';
@@ -62,7 +63,6 @@ export const HISTORY_PARAM = 'historico';
 
     body:has(app-training-today-page[data-focus]) app-tab-bar,
     body:has(app-training-today-page[data-focus]) app-shell > header,
-    app-training-page:has(app-training-today-page[data-focus]) .training-header,
     app-training-page:has(app-training-today-page[data-focus]) app-training-sync-line {
       display: none !important;
     }
@@ -75,6 +75,7 @@ export class TodayPage {
   private readonly router = inject(Router);
   private readonly back = inject(BackNavigation);
   private readonly location = inject(Location);
+  private readonly headerActions = inject(TrainingHeaderActions);
 
   private readonly params = toSignal(this.route.queryParamMap, { requireSync: true });
 
@@ -85,6 +86,11 @@ export class TodayPage {
   /** O calendário abre o histórico já com as séries visíveis; ao concluir agora, elas continuam atrás do botão de edição. */
   protected readonly historyOpen = computed(() => this.params().get(HISTORY_PARAM) === '1');
   constructor() {
+    // O resumo é uma tela aberta sobre Hoje: a única seta do topo fecha o resumo (e não sai de Hoje para o Início).
+    effect((onCleanup) => {
+      if (this.summaryId() === null) return;
+      onCleanup(this.headerActions.registerBack(() => this.leave()));
+    });
     // Um endereço antigo da sessão ao vivo cai em Hoje; a sessão atual tem uma rota própria.
     effect(() => {
       if (!this.store.ready() || this.checked()) return;

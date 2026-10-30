@@ -36,9 +36,6 @@ import {
   imports: [RouterLink],
   template: `
     <div class="page" aria-labelledby="title">
-      <a class="back" routerLink="/treino/corpo/avaliacoes" i18n="@@training.assessments.back-list"
-        >‹ Avaliações</a
-      >
       @if (loading()) {
         <p role="status" i18n="@@training.assessments.loading">Carregando avaliação…</p>
       } @else if (assessment(); as row) {

@@ -1,4 +1,5 @@
 import { DOCUMENT } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -21,6 +22,7 @@ import type { LocalSet } from '../data/sessions/session';
 import { summarizeLastSets } from '../exercises/last-set';
 import { illustrationFor, illustrationUrl } from '../illustrations/illustration-map';
 import { formatKg } from '../shell/format';
+import { TrainingHeaderActions } from '../shell/training-header-actions';
 import { TrainingGlyph } from '../shell/training-glyph';
 import { ExerciseIllustration } from '../illustrations/exercise-illustration';
 import { ExerciseChooserSheet } from './exercise-chooser-sheet';
@@ -66,6 +68,7 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
 @Component({
   selector: 'app-live-session',
   imports: [
+    RouterLink,
     TrainingGlyph,
     TodayGlyph,
     RestCard,
@@ -85,14 +88,13 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
 })
 export class LiveSession {
   protected readonly live = inject(LiveStore);
+  private readonly headerActions = inject(TrainingHeaderActions);
   private readonly today = inject(TodayStore);
   protected readonly timer = inject(RestTimerService);
   private readonly wake = inject(WakeLockService);
   private readonly injector = inject(Injector);
   private readonly win = inject(DOCUMENT).defaultView;
 
-  /** Voltar ao treino em andamento. */
-  readonly back = output<void>();
   /** Terminou o treino: o id dele, para abrir o resumo. */
   readonly finished = output<string>();
   /** Uma ficha do plano acabou; a escolha do próximo aparelho volta para a tela do dia. */
@@ -289,7 +291,6 @@ export class LiveSession {
 
   protected readonly swapHeading = $localize`:@@training.live.swap-title:Substituir Exercício`;
   protected readonly addHeading = $localize`:@@training.live.add-title:Adicionar Exercício`;
-  protected readonly backLabel = $localize`:@@training.live.back:Voltar ao treino`;
   protected readonly screenLabel = computed(() =>
     this.screenSupported()
       ? $localize`:@@training.live.screen-label:Manter a Tela Acesa`
@@ -329,7 +330,16 @@ export class LiveSession {
       injector: this.injector,
     });
     // A tela acesa é só enquanto esta tela existe: sair do treino solta o bloqueio.
-    inject(DestroyRef).onDestroy(() => void this.wake.release());
+    // O menu da sessão é o único menu da tela: mora no topo compartilhado da casca, não num segundo cabeçalho.
+    const removeMenu = this.headerActions.register({
+      id: 'live-menu',
+      label: this.menuLabel,
+      run: () => this.sheet.set('menu'),
+    });
+    inject(DestroyRef).onDestroy(() => {
+      removeMenu();
+      void this.wake.release();
+    });
   }
 
   protected setWarmup(checked: boolean): void {

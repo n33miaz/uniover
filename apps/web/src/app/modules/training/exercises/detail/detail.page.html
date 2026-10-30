@@ -5,9 +5,6 @@
   </div>
 } @else if (exercise() === null) {
   <section class="detail missing">
-    <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="goBack()">
-      <app-training-glyph name="back" />
-    </button>
     <p class="ui-notice" role="status">
       <app-training-glyph name="info" />
       <span i18n="@@training.detail.not-found"
@@ -18,11 +15,7 @@
 } @else {
   @let ex = exercise()!;
   <article class="detail">
-    <header class="head">
-      <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="goBack()">
-        <app-training-glyph name="back" />
-      </button>
-    </header>
+    <header class="head"></header>
 
     <section class="hero">
       <div class="visuals" [class.with-art]="hasArt()">

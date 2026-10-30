@@ -13,6 +13,7 @@ import {
 import { OfflineQueue } from '../../../core/offline-queue/offline-queue';
 import { QUEUE_BOUND_ACCOUNT } from '../../../core/offline-queue/queue-account';
 import { AccountScope } from '../../../core/session/account-scope';
+import { PageTopBar } from '../../../shared/ui/page-top-bar';
 import { TrainingAccountDbs } from '../data/training-account-dbs';
 import { provideTrainingData } from '../data/training-data.providers';
 import { TRAINING_DB } from '../data/training-db';
@@ -66,36 +67,23 @@ export class TrainingAccountData {}
  */
 @Component({
   selector: 'app-training-account-scope',
-  imports: [TrainingAccountData, TrainingPage],
+  imports: [PageTopBar, TrainingAccountData, TrainingPage],
   template: `
     @for (account of scopes(); track account) {
       <ng-container appTrainingAccountData>
         <app-training-page />
       </ng-container>
     } @empty {
-      <header class="training-wait-header">
-        <h1 i18n="@@training.shell.title">UniOver Treino</h1>
-      </header>
+      <app-page-top-bar [title]="title" />
       <p class="ui-notice" role="status" i18n="@@training.account.entering">
         Confirmando a sua conta…
       </p>
     }
   `,
-  styles: `
-    .training-wait-header {
-      padding: calc(var(--space-3) + env(safe-area-inset-top)) var(--gutter) var(--space-3);
-      border-bottom: 1px solid var(--a-line);
-      background: var(--a-surface);
-    }
-    .training-wait-header h1 {
-      margin: 0;
-      font-size: 1.15rem;
-      text-align: right;
-    }
-  `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TrainingAccountScope {
+  protected readonly title = $localize`:@@training.shell.title:Treino`;
   private readonly account = inject(AccountScope);
   private readonly dbs = inject(TrainingAccountDbs);
 

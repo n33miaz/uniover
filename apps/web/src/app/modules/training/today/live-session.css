@@ -9,7 +9,6 @@
   gap: var(--space-2);
   max-width: 40rem;
   margin-inline: auto;
-  padding-top: env(safe-area-inset-top);
   padding-bottom: 96px;
 }
 
@@ -17,24 +16,9 @@
   padding-bottom: var(--space-4);
 }
 
-/*
- * O topo é o do controle da TV: voltar à esquerda, o nome no meio e, à direita, o interruptor da tela acesa e o menu. As duas
- * colunas dos lados têm a mesma largura, então "Treino" fica no centro mesmo com um botão a mais de um lado.
- */
-.head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.side {
+/* O interruptor da tela acesa fica numa fileira logo abaixo do topo da casca, no canto de quem treina com a mão direita. */
+.tools {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.side.end {
   justify-content: flex-end;
 }
 
@@ -105,10 +89,13 @@
 /*
  * A primeira parte ocupa a altura da tela (menos o botão fixo de baixo): o que não cabe nela é secundário e fica logo abaixo.
  * O que sobra de altura vai para a ilustração, que cresce até o limite da largura em que o desenho é nítido.
- * `--live-top` é a distância do topo da tela até o início desta seção (entalhe, respiro da página e cabeçalho do Treino).
+ * `--live-top` é a distância do topo da tela até o início desta seção (entalhe, topo da casca do Treino, o respiro que a casca dá ao conteúdo e a fileira do interruptor).
  */
 .first {
-  --live-top: calc(var(--space-3) + env(safe-area-inset-top) + var(--tap) + var(--space-3));
+  --live-top: calc(
+    env(safe-area-inset-top) + var(--space-3) + var(--tap) + var(--space-3) + var(--tap) +
+      var(--space-2)
+  );
   display: flex;
   flex-direction: column;
   gap: var(--space-2);

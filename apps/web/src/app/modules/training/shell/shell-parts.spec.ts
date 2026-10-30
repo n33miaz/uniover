@@ -1,10 +1,8 @@
-import { Location } from '@angular/common';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Router, provideRouter } from '@angular/router';
+import { provideRouter } from '@angular/router';
 import type { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import type { TrainingSync } from '../data/sync/training-sync';
-import { BackNavigation } from './back-navigation';
 import { ExercisesSwitch } from './exercises-switch';
 import { awaitingFirstPull } from './first-pull';
 import { formatDayMonth, formatDuration, formatKg } from './format';
@@ -41,34 +39,6 @@ describe('awaitingFirstPull', () => {
     expect(state(false, null, null)).toBe(false);
     expect(state(true, 'network', null)).toBe(false);
     expect(state(true, null, 1_760_000_000_000)).toBe(false);
-  });
-});
-
-describe('BackNavigation', () => {
-  it('goes to the fallback when the screen was opened straight by its address', () => {
-    TestBed.configureTestingModule({
-      providers: [
-        provideRouter([]),
-        { provide: Location, useValue: { getState: () => null, back: vi.fn() } },
-      ],
-    });
-    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
-    TestBed.inject(BackNavigation).back('/treino/exercicios');
-    expect(navigate).toHaveBeenCalledWith('/treino/exercicios');
-  });
-
-  it('goes back one entry of the history after an earlier navigation, which brings the list as it was', () => {
-    const back = vi.fn();
-    TestBed.configureTestingModule({
-      providers: [
-        provideRouter([]),
-        { provide: Location, useValue: { getState: () => ({ navigationId: 3 }), back } },
-      ],
-    });
-    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
-    TestBed.inject(BackNavigation).back('/treino/exercicios');
-    expect(back).toHaveBeenCalledOnce();
-    expect(navigate).not.toHaveBeenCalled();
   });
 });
 

@@ -231,17 +231,15 @@ describe('app routes for a guest', () => {
       expect(root.querySelector(selector)).not.toBeNull();
     });
 
-    it('gives the guest the Início arrow and Configurações in the Treino header', async () => {
+    it('gives the guest one top arrow in the Treino header, and no second header or link of its own', async () => {
       signInAs(TRAINING);
       const { root } = await go('/treino');
-      const header = root.querySelector('header')!;
-      expect(header.querySelector('a[href="/"]')?.getAttribute('aria-label')).toBe(
-        'Voltar ao Início',
+      expect(root.querySelectorAll('app-page-top-bar')).toHaveLength(1);
+      expect(root.querySelectorAll('app-page-top-bar .back')).toHaveLength(1);
+      expect(root.querySelector('app-page-top-bar .back')?.getAttribute('aria-label')).toBe(
+        'Voltar',
       );
-      expect(header.querySelectorAll('a')).toHaveLength(2);
-      expect(header.querySelector('a[href="/ajustes"]')?.getAttribute('aria-label')).toBe(
-        'Configurações',
-      );
+      expect(root.querySelector('app-page-top-bar h1')?.textContent).toBe('Treino');
     });
   });
 

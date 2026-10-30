@@ -249,7 +249,7 @@ describe('FoodDiaryPage', () => {
     set('#free-kcal', '0');
     set('#free-protein', '0');
     set('#free-carbs', '0');
-    button(fixture, 'Registrar refeição').click();
+    button(fixture, 'Registrar Refeição').click();
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -266,7 +266,7 @@ describe('FoodDiaryPage', () => {
     fat.value = '0';
     fat.dispatchEvent(new Event('input'));
     meals.addEntry.mockResolvedValue({ status: 'saved', entry });
-    button(fixture, 'Registrar refeição').click();
+    button(fixture, 'Registrar Refeição').click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(meals.addEntry).toHaveBeenLastCalledWith(
@@ -291,13 +291,13 @@ describe('FoodDiaryPage', () => {
       input.value = '0';
       input.dispatchEvent(new Event('input'));
     }
-    button(fixture, 'Registrar refeição').click();
+    button(fixture, 'Registrar Refeição').click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain(
       'Confira os campos',
     );
-    expect(button(fixture, 'Registrar refeição').disabled).toBe(false);
+    expect(button(fixture, 'Registrar Refeição').disabled).toBe(false);
 
     button(fixture, 'Alimento').click();
     fixture.detectChanges();
@@ -330,7 +330,7 @@ describe('FoodDiaryPage', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     meals.editEntry.mockRejectedValue(new Error('storage unavailable'));
-    button(fixture, 'Salvar alterações').click();
+    button(fixture, 'Salvar Alterações').click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain(

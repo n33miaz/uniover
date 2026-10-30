@@ -375,14 +375,6 @@ describe('BodyMapPage', () => {
     });
   });
 
-  it('goes back to the exercises when there is no history to go back to', async () => {
-    const { fixture, el, router } = await open();
-    await eventually(fixture, () => expect(zone(el, 'chest')).not.toBeNull());
-    const navigate = vi.spyOn(router, 'navigateByUrl');
-    el.querySelector<HTMLButtonElement>('.back')!.click();
-    expect(navigate).toHaveBeenCalledWith('/treino/exercicios');
-  });
-
   it('announces the muscle that was chosen, in text, for a screen reader', async () => {
     const { fixture, el } = await open();
     await eventually(fixture, () => expect(zone(el, 'chest')).not.toBeNull());

@@ -184,7 +184,6 @@ export class ExerciseDetailPage {
   });
 
   protected readonly stepsPreview = STEPS_PREVIEW;
-  protected readonly backLabel = $localize`:@@training.detail.back:Voltar para Exercícios`;
   protected readonly chipsLabel = $localize`:@@training.detail.chips:Músculos e equipamento`;
   protected readonly addHeading = $localize`:@@training.detail.add-heading:Adicionar a um Treino`;
   protected readonly cancelLabel = $localize`:@@training.detail.add-cancel:Cancelar`;

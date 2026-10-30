@@ -1,37 +1,29 @@
 <section class="live" aria-labelledby="live-title">
-  <header class="head">
-    <div class="side">
-      <button type="button" class="icon ui-tap" [attr.aria-label]="backLabel" (click)="back.emit()">
-        <app-training-glyph name="back" />
-      </button>
+  <h2
+    id="live-title"
+    #title
+    class="title ui-visually-hidden"
+    tabindex="-1"
+    i18n="@@training.live.title"
+  >
+    Treino
+  </h2>
+  @if (live.session() !== undefined) {
+    <div class="tools">
+      <label class="screen">
+        <app-today-glyph name="screen" />
+        <input
+          type="checkbox"
+          role="switch"
+          class="ui-switch"
+          [attr.aria-label]="screenLabel()"
+          [checked]="screenOn()"
+          [disabled]="!screenSupported()"
+          (change)="onScreen($any($event.target))"
+        />
+      </label>
     </div>
-    <h1 id="live-title" #title class="title" tabindex="-1" i18n="@@training.live.title">Treino</h1>
-    <div class="side end">
-      @if (live.session() !== undefined) {
-        <label class="screen">
-          <app-today-glyph name="screen" />
-          <input
-            type="checkbox"
-            role="switch"
-            class="ui-switch"
-            [attr.aria-label]="screenLabel()"
-            [checked]="screenOn()"
-            [disabled]="!screenSupported()"
-            (change)="onScreen($any($event.target))"
-          />
-        </label>
-      }
-      <button
-        type="button"
-        class="icon ui-tap"
-        [attr.aria-haspopup]="'dialog'"
-        [attr.aria-label]="menuLabel"
-        (click)="sheet.set('menu')"
-      >
-        <app-today-glyph name="dots" />
-      </button>
-    </div>
-  </header>
+  }
   @if (awaitingText(); as waiting) {
     <p class="sending">
       <app-training-glyph name="hourglass" />
@@ -49,9 +41,9 @@
         <p i18n="@@training.live.gone-text">
           Foi encerrado em outro lugar. O que você fez está salvo.
         </p>
-        <button type="button" class="primary ui-btn" (click)="back.emit()">
-          <span i18n="@@training.live.gone-back">Voltar a Hoje</span>
-        </button>
+        <a routerLink="/treino" class="primary ui-btn" i18n="@@training.live.gone-back"
+          >Escolher Treino</a
+        >
       </section>
     }
   } @else {

@@ -126,8 +126,8 @@ describe('training routes', () => {
       // A rota abre o escopo da conta, e a casca do módulo fica dentro dele.
       expect(el.matches('app-training-account-scope')).toBe(true);
       expect(el.querySelector('app-training-page')).not.toBeNull();
-      expect(el.querySelector('.training-header h1')?.textContent).toBe('UniOver Treino');
-      expect(el.querySelector('.training-header .status')).not.toBeNull();
+      expect(el.querySelector('app-page-top-bar h1')?.textContent).toBe('Treino');
+      expect(el.querySelector('.status')).toBeNull();
       expect(el.querySelector('app-training-today-page')).not.toBeNull();
       expect(start).toHaveBeenCalledTimes(1);
       start.mockRestore();

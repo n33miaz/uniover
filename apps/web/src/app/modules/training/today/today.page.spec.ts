@@ -15,6 +15,7 @@ import { TrainingSync } from '../data/sync/training-sync';
 import { Location } from '@angular/common';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
+import { TrainingHeaderActions } from '../shell/training-header-actions';
 import { DOUBLE_TAP_MS } from './live-store';
 import { TodayPage } from './today.page';
 import { WorkoutDay } from './workout-day';
@@ -48,6 +49,14 @@ async function show(kit: Kit) {
   return { el, fixture: kit.harness.fixture };
 }
 
+/** O menu mora no topo compartilhado da casca: a tela só registra a ação, e aqui se faz o que o botão do topo faz. */
+const openHeaderMenu = (id: string) => {
+  const action = TestBed.inject(TrainingHeaderActions)
+    .actions()
+    .find((item) => item.id === id);
+  expect(action?.label).toBe('Opções do treino');
+  action!.run();
+};
 const text = (el: Element) => el.textContent?.replace(/\s+/g, ' ') ?? '';
 const buttons = (el: ParentNode) => Array.from(el.querySelectorAll<HTMLButtonElement>('button'));
 const button = (el: ParentNode, label: string) =>
@@ -64,6 +73,36 @@ describe('TodayPage', () => {
       await eventually(fixture, () => expect(text(el)).toContain('Sem Rotinas Ainda'));
       expect(el.querySelector<HTMLAnchorElement>('a[href="/treino/rotinas"]')).not.toBeNull();
       expect(button(el, 'Treino Livre')).toBeDefined();
+    });
+
+    it('shows the exercise illustration in each line of the open routine, like the other lists, with the neutral frame as fallback', async () => {
+      const kit = await open();
+      await saveRoutine('Treino A', [
+        item('a1', 'supino-reto', 0),
+        item('a2', 'prancha', 1),
+        item('a3', 'removido-do-catalogo', 2),
+      ]);
+      const { el, fixture } = await show(kit);
+
+      await eventually(fixture, () =>
+        expect(el.querySelectorAll('.lines .ui-row')).toHaveLength(3),
+      );
+      button(el, 'Ver Rotina').click();
+      await eventually(fixture, () =>
+        expect(el.querySelector<HTMLElement>('.lines')?.hidden).toBe(false),
+      );
+      const rows = Array.from(el.querySelectorAll<HTMLElement>('.lines .ui-row'));
+      // A mesma miniatura de 64 px da biblioteca de exercícios, no começo da linha.
+      expect(rows[0].firstElementChild?.matches('app-exercise-thumb.thumb')).toBe(true);
+      expect(rows[0].querySelector('.thumb img')?.getAttribute('src')).toContain(
+        '/exercise-art/0042-relaxation.svg',
+      );
+      expect(getComputedStyle(rows[0].querySelector('.thumb')!).width).toBe('64px');
+      // Sem arte segura, ou com o exercício já fora do catálogo, o glifo neutro mantém a moldura.
+      for (const row of rows.slice(1)) {
+        expect(row.querySelector('.thumb img')).toBeNull();
+        expect(row.querySelector('.thumb .placeholder app-training-glyph')).not.toBeNull();
+      }
     });
 
     it('offers the program choice when starting without a weekly program, and does not start until it is answered', async () => {
@@ -397,7 +436,7 @@ describe('TodayPage', () => {
         'Supino reto com barra',
       );
 
-      el.querySelector<HTMLButtonElement>('button[aria-label="Opções do treino"]')!.click();
+      openHeaderMenu('workout-menu');
       await eventually(fixture, () =>
         expect(button(document.body, 'Adicionar Exercício')).toBeDefined(),
       );
@@ -449,7 +488,7 @@ describe('TodayPage', () => {
       const { el, fixture } = await started();
 
       await eventually(fixture, () => expect(text(el)).toContain('Supino reto com barra'));
-      expect(el.querySelector('h1')?.textContent).toContain('Treino');
+      expect(el.querySelector('app-live-session h2')?.textContent).toContain('Treino');
       expect(text(el)).toContain('Série 1 de 2');
       await eventually(fixture, () => expect(text(el)).toContain('Última Vez e Sugestão'));
       // A referência fica recolhida até a pessoa tocar: o registro da série é o que importa na tela.
@@ -561,7 +600,7 @@ describe('TodayPage', () => {
       const { el, fixture } = await started();
       await eventually(fixture, () => expect(text(el)).toContain('Última Vez e Sugestão'));
 
-      const toggle = el.querySelector<HTMLInputElement>('header input[role="switch"]')!;
+      const toggle = el.querySelector<HTMLInputElement>('.tools input[role="switch"]')!;
       expect(toggle.checked).toBe(false);
       expect(toggle.disabled).toBe(true);
       expect(toggle.getAttribute('aria-label')).toBe(
@@ -569,7 +608,7 @@ describe('TodayPage', () => {
       );
 
       // O menu do treino não repete o interruptor.
-      el.querySelector<HTMLButtonElement>('button[aria-label="Opções do treino"]')!.click();
+      openHeaderMenu('live-menu');
       await eventually(fixture, () => expect(button(el, 'Cancelar Treino')).toBeDefined());
       expect(el.querySelector('dialog input[role="switch"]')).toBeNull();
     });
@@ -598,7 +637,7 @@ describe('TodayPage', () => {
       button(el, 'Concluir Série').click();
       await eventually(fixture, () => expect(text(el)).toContain('Série 2 de 2'));
 
-      el.querySelector<HTMLButtonElement>('button[aria-label="Opções do treino"]')!.click();
+      openHeaderMenu('live-menu');
       await eventually(fixture, () => expect(button(el, 'Terminar Treino')).toBeDefined());
       button(el, 'Terminar Treino').click();
 
@@ -611,6 +650,8 @@ describe('TodayPage', () => {
       expect(stats[2]).toContain('1');
       expect(stats[3]).toContain('0');
       expect(text(summary())).toContain('Salvo no aparelho');
+      // A seta do topo da casca fecha o resumo, em vez de sair de Hoje.
+      expect(TestBed.inject(TrainingHeaderActions).backHandler()).not.toBeNull();
       expect(summary().querySelector('.ui-switch')).toBeNull();
     });
   });
