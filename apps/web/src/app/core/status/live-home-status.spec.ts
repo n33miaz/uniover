@@ -413,12 +413,20 @@ describe('LiveHomeStatus', () => {
       expect(live.status().serviceDown).toBe(true);
     });
 
-    it.each([401, 403, 404, 429, 500])(
-      'is not reported for a %i, which the API itself answered',
+    it.each([429, 500])('is not reported for a %i, and the last state stays', (status) => {
+      advance(30_000);
+      http.expectOne(STATE).flush('', { status, statusText: 'Resposta' });
+      expect(live.status()).toMatchObject({ agent: 'online', serviceDown: false });
+    });
+
+    it.each([401, 403, 404])(
+      'is not reported for a %i, but the agent state is dropped and its remembered value erased',
       (status) => {
+        expect(localStorage.getItem('uniover.home.agent.v2.1')).toBe('online');
         advance(30_000);
         http.expectOne(STATE).flush('', { status, statusText: 'Resposta' });
-        expect(live.status()).toMatchObject({ agent: 'online', serviceDown: false });
+        expect(live.status()).toMatchObject({ agent: 'unknown', serviceDown: false });
+        expect(localStorage.getItem('uniover.home.agent.v2.1')).toBeNull();
       },
     );
 
