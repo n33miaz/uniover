@@ -169,9 +169,14 @@ h2 {
 }
 
 .footer {
+  position: sticky;
+  bottom: calc(-20px - env(safe-area-inset-bottom));
+  z-index: 1;
   display: flex;
   gap: 10px;
   margin-top: 6px;
+  padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
+  background: var(--a-surface);
 }
 
 .footer button {
