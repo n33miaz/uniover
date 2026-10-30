@@ -2,6 +2,20 @@ import { InjectionToken } from '@angular/core';
 
 /** Ajustes do controle. A API não expõe estes valores, então ficam aqui, num ponto só e fáceis de trocar. */
 export interface TvConfig {
+  /** Espera curta antes de desenhar o esqueleto: uma leitura rápida não pisca. */
+  readonly skeletonDelayMs: number;
+  /**
+   * Quanto a primeira leitura (estado ou atalhos) pode demorar antes de virar "sem resposta". Até lá o controle fica
+   * verde e o esqueleto é o único sinal de espera. A leitura vem da memória do servidor (não espera o agente), então
+   * 8 s já é muito; a API espera até 25 s só pelo comando do agente, e isso não conta aqui. O relógio fica parado
+   * enquanto o servidor acorda (partida a frio), que sozinho levaria a leitura além disso.
+   */
+  readonly readTimeoutMs: number;
+  /**
+   * Quanto tempo, depois de pedir que o controle acorde, a sessão dormindo conta como "acordando" (verde). Passado o
+   * prazo sem o estado mudar, ela aparece como dormindo de verdade.
+   */
+  readonly wakeGraceMs: number;
   /** Tempo que a sessão com a TV espera sem comandos antes de dormir (só para o aviso na tela). */
   readonly hibernateMinutes: number;
   /** Intervalo do pedido de "aquecer" enquanto a tela está visível. */
@@ -34,6 +48,9 @@ export interface TvConfig {
 export const TV_CONFIG = new InjectionToken<TvConfig>('TV_CONFIG', {
   providedIn: 'root',
   factory: () => ({
+    skeletonDelayMs: 200,
+    readTimeoutMs: 8_000,
+    wakeGraceMs: 8_000,
     hibernateMinutes: 5,
     wakeIntervalMs: 120_000,
     repeatDelayMs: 400,
