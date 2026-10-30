@@ -206,6 +206,23 @@ describe('analyzeIconEdges', () => {
     }
   });
 
+  it('says an image with no ink at all is blank, and an image with any drawing is not', () => {
+    const clear = analyzeIconEdges(
+      pixels(32, () => CLEAR),
+      32,
+      32,
+    );
+    expect(clear.blank).toBe(true);
+    expect(iconFit(clear).blank).toBe(true);
+    const drawn = analyzeIconEdges(
+      pixels(32, () => WHITE),
+      32,
+      32,
+    );
+    expect(drawn.blank).not.toBe(true);
+    expect(iconFit(drawn).blank).toBe(false);
+  });
+
   it('refuses what it cannot read safely: tiny images, a short buffer and sizes that are not whole numbers', () => {
     const nothing = { trim: { left: 0, top: 0, right: 0, bottom: 0 }, background: null };
     expect(analyzeIconEdges(new Uint8ClampedArray([1, 2, 3, 255]), 1, 1)).toEqual(nothing);

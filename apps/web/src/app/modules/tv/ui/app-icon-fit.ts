@@ -27,6 +27,8 @@ export interface EdgeAnalysis {
   readonly trim: EdgeTrim;
   /** A cor das bordas quando o ícone é uma placa (opaca em volta); `null` quando é um desenho solto. */
   readonly background: IconColor | null;
+  /** Não há tinta nenhuma (a imagem é toda transparente): o azulejo mostraria um quadrado vazio. */
+  readonly blank?: boolean;
 }
 
 /** Quanto de cada lado pode ser aparado: o suficiente para uma margem comum, nunca o desenho. */
@@ -175,7 +177,7 @@ export function analyzeIconEdges(rgba: Rgba, width: number, height: number): Edg
 
   // A caixa do que é tinta: tudo o que está fora dela é transparente.
   const content = shrink(whole, (x, y) => rgba[(y * width + x) * 4 + 3] < SOLID_ALPHA);
-  if (!content) return NOTHING;
+  if (!content) return { ...NOTHING, blank: true };
   const margins: EdgeTrim = {
     left: content.x0 / width,
     top: content.y0 / height,
@@ -249,6 +251,8 @@ export function cropSquare(trim: EdgeTrim): IconCrop {
 
 /** O que o azulejo aplica, só em CSS: um `transform` sobre a imagem (já em `cover`) e a cor de fundo. */
 export interface IconFit {
+  /** A imagem não tem tinta nenhuma: quem a mostra usa a inicial no lugar (nunca um azulejo vazio). */
+  readonly blank: boolean;
   readonly crop: IconCrop;
   readonly transform: string | null;
   readonly background: string | null;
@@ -265,6 +269,7 @@ export function iconFit(analysis: EdgeAnalysis): IconFit {
       : `scale(${round3(1 / crop.size)}) translate(${round3(-crop.x * 100)}%, ${round3(-crop.y * 100)}%)`;
   const color = analysis.background;
   return {
+    blank: analysis.blank === true,
     crop,
     transform,
     background: color ? `rgb(${color.r} ${color.g} ${color.b})` : null,
