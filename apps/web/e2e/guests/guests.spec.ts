@@ -378,13 +378,12 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
       'href',
       '/ajustes/dispositivos',
     );
-    await expect(page.getByText('Baixar o conector do PC', { exact: true })).toBeVisible();
     for (const name of ['Pessoas e Permissões', 'Auditoria', 'Sistema']) {
       await expect(page.getByText(name, { exact: true })).toHaveCount(0);
     }
-    await expect(page.getByText(`${GUEST.displayName} · Convidado`)).toBeVisible();
+    await expect(page.locator('a.ui-row .ui-row-sub')).toHaveCount(0);
 
-    await page.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await page.getByRole('button', { name: 'Voltar ao Início' }).click();
     await expect(page).toHaveURL(/\/$/);
   });
 

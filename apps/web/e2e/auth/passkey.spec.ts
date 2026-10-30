@@ -64,10 +64,10 @@ test.describe('passkeys e confirmação', () => {
 
     await registerPasskey(page, 'Notebook');
     await expect(page.locator('.item .name')).toHaveText(['Notebook']);
-    await expect(page.getByText('Recomendamos ter pelo menos duas passkeys')).toBeVisible();
+    await expect(page.getByText('Tenha ao menos duas passkeys')).toBeVisible();
     await registerPasskey(page, 'Celular');
     await expect(page.locator('.item .name')).toHaveText(['Notebook', 'Celular']);
-    await expect(page.getByText('Recomendamos ter pelo menos duas passkeys')).toHaveCount(0);
+    await expect(page.getByText('Tenha ao menos duas passkeys')).toHaveCount(0);
     expect(mock.passkeys.every((p) => p.rawId.length > 0)).toBe(true);
   });
 

@@ -181,7 +181,7 @@ test.describe('Configurações > Sistema > TVs', () => {
     await page.getByRole('link', { name: /^Sistema/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/sistema$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Sistema' })).toBeVisible();
-    await page.getByRole('link', { name: 'Voltar às Configurações' }).click();
+    await page.getByRole('button', { name: 'Voltar às Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
   });
 

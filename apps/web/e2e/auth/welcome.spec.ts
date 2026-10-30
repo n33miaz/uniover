@@ -287,8 +287,8 @@ test.describe('o Perfil muda o nome a qualquer hora', () => {
     expect(mock.owner.displayName).toBe('Neemias Jr');
 
     // Volta pela seta (Perfil -> lista -> Início): a saudação já traz o nome novo, sem recarregar a página.
-    await page.getByRole('link', { name: 'Voltar às Configurações' }).click();
-    await page.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await page.getByRole('button', { name: 'Voltar às Configurações' }).click();
+    await page.getByRole('button', { name: 'Voltar ao Início' }).click();
     await expect(page).toHaveURL(/\/$/);
     // A saudação traz só o primeiro nome: "Neemias Jr" vira "Neemias".
     await expect(page.locator('app-home-page h1')).toHaveText(/, Neemias$/);

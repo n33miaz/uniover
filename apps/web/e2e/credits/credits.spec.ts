@@ -67,7 +67,7 @@ test.describe('créditos', () => {
 
     // Um só voltar: a seta do cabeçalho leva à lista de Configurações.
     await expect(page.getByRole('link', { name: '← Ajustes' })).toHaveCount(0);
-    await page.getByRole('link', { name: 'Voltar às Configurações' }).click();
+    await page.getByRole('button', { name: 'Voltar às Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
   });
 
@@ -91,7 +91,7 @@ test.describe('créditos', () => {
     await signIn(page);
     await page.goto('/ajustes/creditos');
     await expect(page.getByRole('heading', { level: 1, name: 'Créditos' })).toBeVisible();
-    const links = page.locator('.list a, a.back');
+    const links = page.locator('.list a, button.back');
     const count = await links.count();
     expect(count).toBeGreaterThanOrEqual(5);
     for (let index = 0; index < count; index += 1) {
