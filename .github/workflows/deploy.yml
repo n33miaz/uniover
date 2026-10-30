@@ -193,6 +193,10 @@ jobs:
               sys.exit(1)
           settings.setdefault("PGPORT", "5432")
           settings["PGSSLMODE"] = SSL_MODES.get(settings.get("PGSSLMODE", "require").lower(), "require")
+          if settings["PGSSLMODE"] in ("verify-ca", "verify-full"):
+              # O psql não herda as raízes do sistema com o modo de verificação sozinho.
+              settings["PGSSLMODE"] = "verify-full"
+              settings["PGSSLROOTCERT"] = "system"
 
           # Cada parte sai dos logs ANTES de qualquer uso (o erro do psql pode citar o servidor).
           for name in ("PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD"):
