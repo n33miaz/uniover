@@ -21,6 +21,7 @@ import {
   TvSummary,
   TvWatchdog,
   clockText,
+  dayClockText,
   parseShortcuts,
   parseState,
   parseWatchdog,
@@ -213,6 +214,12 @@ export class TvStore {
   /** Hora (HH:MM) em que esta tela recebeu o último estado; é o "visto às" mostrado sem rede. */
   readonly seenAtText = computed(() => (this.currentAccount() ? clockText(this._seenAt()) : null));
 
+  /** "PC Desligado desde 28/10 19:24" (horário local); `null` se o servidor não sabe desde quando. */
+  readonly agentOffText = computed<string | null>(() => {
+    const since = dayClockText(this._state()?.offlineSince ?? null);
+    return since ? $localize`:@@tv.status.pc-off-since:PC Desligado desde ${since}:since:` : null;
+  });
+
   readonly link = computed<TvLink>(() => {
     if (!this.connectivity.online() || this.connectivity.serverState() === 'offline')
       return 'offline';
@@ -261,7 +268,8 @@ export class TvStore {
       default:
         return this.currentAccount() && this._notConfigured()
           ? $localize`:@@tv.reason.not-configured:Nenhum agente foi configurado para controlar a TV.`
-          : $localize`:@@tv.reason.agent-off:O agente da TV está desligado, então os botões não funcionam agora.`;
+          : (this.agentOffText() ??
+              $localize`:@@tv.reason.agent-off:O agente da TV está desligado, então os botões não funcionam agora.`);
     }
   });
 

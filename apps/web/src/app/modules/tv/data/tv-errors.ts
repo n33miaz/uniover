@@ -6,6 +6,7 @@ export type TvFailureKind =
   | 'session'
   | 'forbidden'
   | 'agent-offline'
+  | 'agent-reconnecting'
   | 'not-configured'
   | 'timeout'
   | 'command-failed'
@@ -30,6 +31,16 @@ function agentErrorOf(error: unknown): string | null {
     return typeof code === 'string' && code.length > 0 ? code : null;
   }
   return null;
+}
+
+/** O PC caiu há pouco e ainda conta como conectado: a API marca o problema com `reconnecting`. */
+function isReconnecting(error: unknown): boolean {
+  return (
+    error instanceof HttpErrorResponse &&
+    !!error.error &&
+    typeof error.error === 'object' &&
+    (error.error as { reconnecting?: unknown }).reconnecting === true
+  );
 }
 
 /** Códigos do canal ADB do agente: a TV não atendeu pelo ADB (desligada, fora da rede ou sem responder a tempo). */
@@ -156,10 +167,15 @@ export function describeFailure(error: unknown, context?: TvFailureContext): TvF
             'not-configured',
             $localize`:@@tv.error.not-configured:Nenhum agente foi configurado para controlar a TV.`,
           )
-        : make(
-            'agent-offline',
-            $localize`:@@tv.error.agent-offline:O agente da TV está desligado. Ligue o computador que controla a TV.`,
-          );
+        : isReconnecting(error)
+          ? make(
+              'agent-reconnecting',
+              $localize`:@@tv.error.agent-reconnecting:Reconectando ao PC… Tente de novo em instantes.`,
+            )
+          : make(
+              'agent-offline',
+              $localize`:@@tv.error.agent-offline:O agente da TV está desligado. Ligue o computador que controla a TV.`,
+            );
     case 504:
       return make(
         'timeout',
