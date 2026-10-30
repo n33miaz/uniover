@@ -105,7 +105,8 @@ public class TvCommandRunnerTests
     [Fact]
     public async Task AgentOffline_IsStillAudited_AndAnnouncedToTheScreenOnlyOnce()
     {
-        var (runner, _, audit, stream, _) = Build(TvSendOutcome.Failed(TvSendStatus.AgentOffline, "agent_offline"));
+        var (runner, _, audit, stream, _) = Build(
+            TvSendOutcome.Failed(TvSendStatus.AgentOffline, "agent_offline"), presence: new FakePresence(offlineBeyondGrace: true));
 
         await runner.RunAsync(Origin, TvCommandNames.Key, "OK", Message, waitForReply: true, CancellationToken.None);
         await runner.RunAsync(Origin, TvCommandNames.Key, "OK", Message, waitForReply: true, CancellationToken.None);
@@ -113,6 +114,21 @@ public class TvCommandRunnerTests
         audit.Entries.Should().HaveCount(2);
         audit.Entries.Should().OnlyContain(e => !e.Ok && e.ErrorCode == "agent_offline" && e.LatencyMs == null);
         stream.States.Should().ContainSingle().Which.Connection.Should().Be("disconnected");
+    }
+
+    [Fact]
+    public async Task AgentOfflineInsideThePresenceGrace_IsAudited_ButTheScreenIsNotToldItIsDown()
+    {
+        // Dentro da graça de presença o agente ainda conta como conectado: o comando falha, mas a queda só é anunciada
+        // se ela se confirmar quando a graça acabar.
+        var (runner, _, audit, stream, _) = Build(TvSendOutcome.Failed(TvSendStatus.AgentOffline, "agent_offline"));
+
+        await runner.RunAsync(Origin, TvCommandNames.Key, "OK", Message, waitForReply: true, CancellationToken.None);
+
+        var row = audit.Entries.Should().ContainSingle().Subject;
+        row.Ok.Should().BeFalse();
+        row.ErrorCode.Should().Be("agent_reconnecting", "a tela diz que o PC está reconectando, não que está desligado");
+        stream.States.Should().BeEmpty();
     }
 
     [Fact]

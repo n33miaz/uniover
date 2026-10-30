@@ -27,6 +27,32 @@ internal sealed class InMemoryPresenceStore(TimeProvider time, IOptions<DevicesT
         return info;
     }
 
+    public AgentPresenceInfo? MarkExpectedBack(string agentId, DateTimeOffset lastSeenAt, string? agentVersion)
+    {
+        lock (_gate)
+        {
+            _agents.TryGetValue(agentId, out var current);
+            if (current is { Connected: true })
+            {
+                return null;
+            }
+
+            var info = new AgentPresenceInfo(
+                agentId, true, null, agentVersion ?? current?.AgentVersion, current?.Capabilities ?? [], lastSeenAt, null,
+                current?.Host, current?.Update);
+            _agents[agentId] = info;
+            return info;
+        }
+    }
+
+    public void NoteLastSeen(string agentId, DateTimeOffset lastSeenAt, string? agentVersion)
+    {
+        lock (_gate)
+        {
+            _agents.TryAdd(agentId, new AgentPresenceInfo(agentId, false, null, agentVersion, [], lastSeenAt, lastSeenAt));
+        }
+    }
+
     public TimeSpan ReconnectGrace => options.Value.ReconnectGrace;
 
     public DateTimeOffset? OfflineSince(string agentId)

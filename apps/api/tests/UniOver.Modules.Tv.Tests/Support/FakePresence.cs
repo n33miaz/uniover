@@ -9,5 +9,9 @@ internal sealed class FakePresence(bool offlineBeyondGrace = false) : ITvAgentPr
 
     public bool IsOnline(string agentId) => !OfflineBeyondGrace;
 
+    public DateTimeOffset? OfflineSince(string agentId) => OfflineBeyondGrace ? OfflineAt : null;
+
+    public DateTimeOffset? OfflineAt { get; set; }
+
     public bool IsOfflineBeyondReconnectGrace(string agentId) => OfflineBeyondGrace;
 }

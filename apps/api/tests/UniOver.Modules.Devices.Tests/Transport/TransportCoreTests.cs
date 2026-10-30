@@ -112,7 +112,7 @@ public sealed class PresenceStoreTests
         var store = TransportTestStores.Create();
 
         store.OfflineSince("pc-casa").Should().BeOnOrAfter(before).And.BeOnOrBefore(DateTimeOffset.UtcNow);
-        store.ReconnectGrace.Should().Be(TimeSpan.FromSeconds(3));
+        store.ReconnectGrace.Should().Be(TimeSpan.FromSeconds(25));
     }
 
     [Fact]
