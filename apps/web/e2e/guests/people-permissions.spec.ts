@@ -104,7 +104,7 @@ test.describe('Pessoas: a lista', () => {
     await expect(page.locator('.revoked')).toHaveText('Acesso revogado');
     await expect(page.getByRole('button', { name: /^Permissões de Carla/ })).toHaveCount(0);
     await page.getByRole('tab', { name: 'Convites' }).click();
-    await expect(page.getByRole('heading', { level: 3, name: 'Convites pendentes' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Convites pendentes' })).toBeVisible();
 
     await expect(page.getByRole('button', { name: 'Convidar alguém' })).toBeVisible();
     await expect(page.locator('form.invite')).toHaveCount(0);

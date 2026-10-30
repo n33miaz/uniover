@@ -16,33 +16,15 @@
   </div>
 </ng-template>
 
-<!-- Uso de uma conta em cartões compactos: só contagens (os dois números são últimos 7 e 30 dias). -->
+<!-- Uso de uma conta: só quando entrou pela última vez. Contadores (sessões, comandos, treinos) não aparecem em Configurações. -->
 <ng-template #usageTemplate let-row>
-  <dl class="usage" [attr.aria-label]="'Uso de ' + row.displayName">
-    <div class="stat">
-      <dt i18n="@@settings.usage.last-access">Último Acesso</dt>
-      <dd>{{ lastAccess(row) }}</dd>
-    </div>
-    <div class="stat">
-      <dt i18n="@@settings.usage.sessions">Sessões Ativas</dt>
-      <dd>{{ row.activeSessions }}</dd>
-    </div>
-    <div class="stat">
-      <dt i18n="@@settings.usage.tv">TV (7 / 30 Dias)</dt>
-      <dd>{{ pair(row.tvCommands) }}</dd>
-    </div>
-    <div class="stat">
-      <dt i18n="@@settings.usage.workouts">Treinos (7 / 30 Dias)</dt>
-      <dd>{{ pair(row.workouts) }}</dd>
-    </div>
-  </dl>
+  <p class="usage">
+    <span i18n="@@settings.usage.last-access">Último Acesso</span>
+    <strong>{{ lastAccess(row) }}</strong>
+  </p>
 </ng-template>
 
-<section class="section" aria-labelledby="guests-title">
-  <h2 id="guests-title" class="ui-section-label" i18n="@@settings.guests.title">
-    Pessoas e Permissões
-  </h2>
-
+<section class="section">
   <div
     class="tabs"
     role="tablist"
@@ -221,7 +203,7 @@
 
     <div [hidden]="activeTab() !== 'invites'" role="tabpanel" aria-labelledby="invites-tab">
       @if (pending().length > 0) {
-        <h3 class="subhead" i18n="@@settings.guests.pending-title">Convites pendentes</h3>
+        <h2 class="subhead" i18n="@@settings.guests.pending-title">Convites pendentes</h2>
         <ul class="people ui-group ui-stagger">
           @for (invite of pending(); track invite.id) {
             <li class="person ui-rise">
@@ -321,9 +303,9 @@
       </div>
     } @else if (inviteOpen()) {
       <form class="invite ui-card" aria-labelledby="invite-title" (submit)="create($event)">
-        <h3 id="invite-title" class="form-title" i18n="@@settings.guests.invite-title">
+        <h2 id="invite-title" class="form-title" i18n="@@settings.guests.invite-title">
           Convidar alguém
-        </h3>
+        </h2>
         <div class="ui-field">
           <label for="guest-name" i18n="@@settings.guests.name">Nome do convidado</label>
           <input

@@ -265,32 +265,20 @@
   overflow-wrap: anywhere;
 }
 
-/* Uso: quatro cartões pequenos (dois por linha no celular, os quatro lado a lado em tela larga). */
+/* Uso: só o último acesso, numa linha (rótulo e valor). */
 .usage {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
   gap: var(--space-2);
   margin: 0;
-}
-
-.stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius-sm);
-  background: var(--a-surface-2);
-}
-
-.stat dt {
   color: var(--a-ink2);
   font-size: var(--fs-small);
 }
 
-.stat dd {
-  margin: 0;
-  font-weight: 700;
+.usage strong {
+  color: var(--a-ink);
   font-variant-numeric: tabular-nums;
 }
 

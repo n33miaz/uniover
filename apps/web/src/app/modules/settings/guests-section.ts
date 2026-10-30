@@ -15,7 +15,7 @@ import { problemOf } from '../../core/auth/api-problem';
 import { AuthApi, GuestInviteSummary, GuestSummary } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { SessionState } from '../../core/session/session-state';
-import { GuestPermissions, PeopleApi, PersonUsage, UsageCounts } from './people-api';
+import { GuestPermissions, PeopleApi, PersonUsage } from './people-api';
 import { PeoplePermissionPicker } from './people-permission-picker';
 import { PeoplePermissionsSheet } from './people-permissions-sheet';
 import { TV_CONTROL_ONLY, hasModule, permissionSummary } from './people-permissions';
@@ -367,11 +367,6 @@ export class GuestsSection {
     if (hours < 24) return $localize`:@@settings.usage.hours:há ${hours}:count: h`;
     const days = Math.floor(hours / 24);
     return $localize`:@@settings.usage.days:há ${days}:count: d`;
-  }
-
-  /** "12 / 40": últimos 7 dias, depois 30 (a legenda do cartão explica). */
-  protected pair(counts: UsageCounts): string {
-    return `${counts.last7Days} / ${counts.last30Days}`;
   }
 
   private say(text: string | null, isError = false): void {
