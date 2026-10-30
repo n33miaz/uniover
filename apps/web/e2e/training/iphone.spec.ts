@@ -215,7 +215,7 @@ test.describe('convidado que só tem o Treino', () => {
     page,
   }) => {
     signInAsGuest(TRAINING_ONLY);
-    for (const path of ['/', '/ajustes/seguranca', '/nada-aqui']) {
+    for (const path of ['/', '/ajustes/pessoas', '/nada-aqui']) {
       await page.goto(path);
       await expect(page).toHaveURL(/\/$/);
       await expect(page.locator('article[data-module="training"]')).toBeVisible();

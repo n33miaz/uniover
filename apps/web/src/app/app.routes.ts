@@ -15,7 +15,8 @@ const SETTINGS_BACK: ShellBack = {
 // Cada módulo de tela é uma rota preguiçosa. O `data.title` de uma rota liga o cabeçalho do shell (com o
 // retorno ao Início) e as abas vêm do `data.tabs` da rota filha do próprio módulo. O convidado alcança os módulos que a
 // conta dele libera (a TV e o Treino, cada um pela permissão `module:*`) e a parte de Ajustes que é dele (lista, Perfil,
-// Aparência e Sobre): o que sobra leva `ownerOnlyGuard` (e a API recusa com 403 de qualquer jeito). Quem não pode usar
+// Aparência, Segurança com as próprias sessões e Sobre): o que sobra leva `ownerOnlyGuard` (e a API recusa com 403 de
+// qualquer jeito). Quem não pode usar
 // um módulo volta à Início, que mostra somente o que a conta pode abrir.
 export const routes: Routes = [
   {
@@ -97,8 +98,8 @@ export const routes: Routes = [
               import('./modules/settings/appearance.page').then((m) => m.AppearancePage),
           },
           {
+            // Sem `ownerOnlyGuard`: o convidado vê só as próprias sessões (a tela esconde as passkeys, que são do dono).
             path: 'seguranca',
-            canMatch: [ownerOnlyGuard],
             data: { title: SETTINGS_TITLES.security, back: SETTINGS_BACK },
             loadComponent: () =>
               import('./modules/settings/security.page').then((m) => m.SecurityPage),

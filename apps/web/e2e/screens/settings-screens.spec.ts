@@ -139,6 +139,7 @@ const GUEST_SCREENS = [
   { name: 'guest-list', path: '/ajustes', title: 'Configurações' },
   { name: 'guest-profile', path: '/ajustes/perfil', title: 'Perfil' },
   { name: 'guest-appearance', path: '/ajustes/aparencia', title: 'Aparência' },
+  { name: 'guest-security', path: '/ajustes/seguranca', title: 'Segurança' },
   { name: 'guest-about', path: '/ajustes/sobre', title: 'Sobre' },
 ] as const;
 

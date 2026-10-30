@@ -173,6 +173,11 @@ describe('SettingsPage (a list of screens)', () => {
         { title: 'Perfil', summary: 'Alice · Convidado', href: '/ajustes/perfil' },
         { title: 'Aparência', summary: 'Tema automático', href: '/ajustes/aparencia' },
         {
+          title: 'Segurança',
+          summary: 'Suas sessões de acesso',
+          href: '/ajustes/seguranca',
+        },
+        {
           title: 'Dispositivos',
           summary: 'Baixar o conector do PC',
           href: '/ajustes/dispositivos',
@@ -184,14 +189,19 @@ describe('SettingsPage (a list of screens)', () => {
     it('keeps the same groups for a guest without the TV, and without the connector row', async () => {
       api.me.mockResolvedValue({ ...GUEST, permissions: ['module:training'] });
       const { el } = await render();
-      expect(rows(el).map((row) => row.title)).toEqual(['Perfil', 'Aparência', 'Sobre']);
+      expect(rows(el).map((row) => row.title)).toEqual([
+        'Perfil',
+        'Aparência',
+        'Segurança',
+        'Sobre',
+      ]);
       expect(headings(el)).toEqual(['Você', 'Aplicativo']);
       expect(el.querySelector('a[href="/tv"]')).toBeNull();
     });
 
     it('does not even mention the administrator screens', async () => {
       const { el } = await render();
-      for (const name of ['Segurança', 'Pessoas e Permissões', 'Auditoria', 'Sistema']) {
+      for (const name of ['Pessoas e Permissões', 'Auditoria', 'Sistema', 'passkeys']) {
         expect(el.textContent).not.toContain(name);
       }
       expect(el.querySelector('a[href="/ajustes/auditoria"]')).toBeNull();
