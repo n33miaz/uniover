@@ -45,6 +45,8 @@ export interface RoutineLine {
   readonly key: string;
   /** `null` quando o exercício já não está no catálogo. */
   readonly name: string | null;
+  /** Para a miniatura da linha; `null` quando o exercício já não está no catálogo. */
+  readonly slug: string | null;
   readonly sets: number;
   readonly repMin: number;
   readonly repMax: number;
@@ -464,6 +466,7 @@ export class TodayStore {
       lines.push({
         key: item.id,
         name: exercise?.name ?? null,
+        slug: exercise?.slug ?? null,
         sets: item.targetSets,
         repMin: item.repMin,
         repMax: item.repMax,
