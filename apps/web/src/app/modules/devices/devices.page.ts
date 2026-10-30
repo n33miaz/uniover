@@ -439,18 +439,6 @@ export class DevicesPage {
       : $localize`:@@devices.alert.down-at:Sem sinal desde ${since}:time:`;
   }
 
-  protected async seeAlerts(): Promise<void> {
-    try {
-      await this.api.markAlertsSeen();
-      this.alerts.set([]);
-    } catch {
-      this.say(
-        $localize`:@@devices.alert.seen-failed:Não foi possível dispensar o aviso agora.`,
-        true,
-      );
-    }
-  }
-
   protected async dismissAlert(alert: AgentAlert): Promise<void> {
     if (this.dismissingAlertId()) return;
     this.dismissingAlertId.set(alert.id);

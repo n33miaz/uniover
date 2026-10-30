@@ -61,7 +61,6 @@ describe('DevicesPage', () => {
     logs: vi.fn(),
     maintain: vi.fn(),
     alerts: vi.fn(),
-    markAlertsSeen: vi.fn(),
     markAlertSeen: vi.fn(),
     tvs: vi.fn(),
   };
@@ -72,7 +71,6 @@ describe('DevicesPage', () => {
       .mockResolvedValue({ text: 'linha 1\nlinha 2', lines: 2, truncated: false, at: 'x' });
     api.maintain.mockReset().mockResolvedValue(undefined);
     api.alerts.mockReset().mockResolvedValue([]);
-    api.markAlertsSeen.mockReset().mockResolvedValue(undefined);
     api.markAlertSeen.mockReset().mockResolvedValue(undefined);
     api.tvs.mockReset().mockResolvedValue([]);
     api.list.mockReset().mockResolvedValue([PC]);
@@ -617,7 +615,7 @@ describe('DevicesPage', () => {
 
     it('has no back link of its own: the header arrow is the only one', async () => {
       const { el } = await render();
-      expect(el.querySelector('a.back')).toBeNull();
+      expect(el.querySelector('.back')).toBeNull();
     });
   });
 });

@@ -81,7 +81,9 @@
 
       @if (agents(); as list) {
         @if (list.length === 0) {
-          <p class="empty ui-rise" i18n="@@devices.empty">Nenhum dispositivo pareado.</p>
+          <p class="empty ui-rise" i18n="@@devices.empty">
+            Nenhum dispositivo pareado. Instale o conector no PC.
+          </p>
         } @else {
           <ul class="list ui-plain ui-stagger">
             @for (agent of list; track agent.id) {
