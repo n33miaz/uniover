@@ -2,7 +2,9 @@
   <section class="section ui-rise" aria-labelledby="theme-title">
     <h2 id="theme-title" class="ui-section-label" i18n="@@settings.appearance.title">Tema</h2>
     <fieldset class="themes ui-card">
-      <legend i18n="@@settings.appearance.legend">Como o app aparece</legend>
+      <legend class="ui-visually-hidden" i18n="@@settings.appearance.legend">
+        Como o app aparece
+      </legend>
       <div class="choices">
         @for (choice of themeChoices; track choice.value) {
           <label class="theme">
@@ -18,9 +20,6 @@
           </label>
         }
       </div>
-      <p class="hint" i18n="@@settings.appearance.auto-hint">
-        Automático acompanha o tema claro ou escuro do aparelho.
-      </p>
     </fieldset>
   </section>
 

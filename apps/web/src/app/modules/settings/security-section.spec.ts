@@ -98,8 +98,8 @@ describe('SecuritySection', () => {
 
   it('explains that the passkey only confirms dangerous actions and does not log in', async () => {
     const { el } = await render();
-    expect(el.querySelector('.hint')?.textContent).toContain('só confirma ações perigosas');
-    expect(el.querySelector('.hint')?.textContent).toContain('não entra no app');
+    expect(el.querySelector('.hint')?.textContent).toContain('só confirma ações sensíveis');
+    expect(el.querySelector('.hint')?.textContent).toContain('por e-mail e senha');
   });
 
   it('lists the passkeys with dates and recommends having at least two', async () => {
@@ -107,7 +107,7 @@ describe('SecuritySection', () => {
     expect(el.querySelector('.name')?.textContent).toBe('iPhone');
     expect(el.textContent).toContain('Criada em');
     expect(el.textContent).toContain('Último uso em');
-    expect(el.querySelector('.recommend')?.textContent).toContain('pelo menos duas passkeys');
+    expect(el.querySelector('.recommend')?.textContent).toContain('ao menos duas passkeys');
   });
 
   it('stops recommending once there are two', async () => {

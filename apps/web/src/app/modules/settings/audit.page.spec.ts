@@ -280,9 +280,7 @@ describe('AuditPage', () => {
     it('says the retention and the privacy sentence, calmly', async () => {
       signIn();
       const { text } = await render();
-      expect(text()).toContain(
-        'Estes registros ficam guardados por segurança: data, IP e aparelho de cada ação.',
-      );
+      expect(text()).toContain('Cada ação guarda data, IP e aparelho.');
       expect(text()).toContain('Guardamos por 180 dias (TV: 30 dias)');
     });
 
@@ -525,7 +523,7 @@ describe('AuditPage', () => {
       signIn();
       api.list.mockRejectedValueOnce(networkProblem());
       const { fixture, text, rows } = await render();
-      expect(text()).toContain('A auditoria só funciona com internet');
+      expect(text()).toContain('Sem internet. A lista volta quando a conexão voltar.');
       expect(text()).not.toContain('Não foi possível');
 
       TestBed.inject(ConnectivityService).online.set(false);
@@ -539,7 +537,7 @@ describe('AuditPage', () => {
       TestBed.inject(ConnectivityService).online.set(false);
       const { text, button } = await render();
       expect(api.list).not.toHaveBeenCalled();
-      expect(text()).toContain('A auditoria só funciona com internet');
+      expect(text()).toContain('Sem internet. A lista volta quando a conexão voltar.');
       expect(button('Exportar CSV').disabled).toBe(true);
     });
 

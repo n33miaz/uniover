@@ -445,9 +445,7 @@ describe('DevicesPage', () => {
   it('explains the empty state', async () => {
     api.list.mockResolvedValue([]);
     const { el } = await render();
-    expect(el.textContent).toContain(
-      'Nenhum dispositivo pareado. Rode o agente no PC e digite o código que ele mostrar.',
-    );
+    expect(el.textContent).toContain('Nenhum dispositivo pareado.');
   });
 
   it('offers a retry when the list cannot be loaded', async () => {
@@ -514,7 +512,7 @@ describe('DevicesPage', () => {
     fixture.detectChanges();
     expect(button('Parear Dispositivo').disabled).toBe(true);
     expect(button('Revogar').disabled).toBe(true);
-    expect(el.textContent).toContain('Sem conexão: parear, recusar e revogar precisam de rede.');
+    expect(el.textContent).toContain('Sem conexão: isto precisa de rede.');
   });
 
   describe('alerts and organization', () => {
