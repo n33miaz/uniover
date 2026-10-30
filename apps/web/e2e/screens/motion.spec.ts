@@ -82,7 +82,7 @@ test.describe('troca de tela', () => {
     await screenshot(page, `test-results/motion/settings-after-route-${info.project.name}.png`);
 
     // Voltar pela seta: a Início volta inteira e clicável, e a folha de edição abre.
-    await page.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await page.getByRole('button', { name: 'Voltar ao Início' }).click();
     await expect(page.locator('app-home-page h1')).toContainText(OWNER.displayName.split(' ')[0]);
     await expect(page.locator('article.card')).toHaveCount(8);
     await settle(page);

@@ -222,7 +222,7 @@ test.describe('navegação dentro de Configurações', () => {
       await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
       // O foco está no título da tela nova (o link clicado já não existe).
       await expect(page.getByRole('heading', { level: 1, name: title })).toBeFocused();
-      await page.getByRole('link', { name: 'Voltar às Configurações' }).click();
+      await page.getByRole('button', { name: 'Voltar às Configurações' }).click();
       await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeFocused();
     }
   });
@@ -246,7 +246,7 @@ test.describe('navegação dentro de Configurações', () => {
     page,
   }) => {
     await page.goto('/ajustes');
-    await expect(page.getByRole('link', { name: 'Voltar ao Início' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Voltar ao Início' })).toBeVisible();
     await expect(page.locator('header a[href="/ajustes"]')).toHaveCount(0);
   });
 

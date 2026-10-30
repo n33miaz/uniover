@@ -411,7 +411,7 @@ test.describe('Configurações', () => {
 
     // O cartão de tema mostra o foco quando o teclado chega nele. Entra pelo teclado (Tab e Shift+Tab): o WebKit
     // não conta como foco de teclado o que um script focou antes da primeira tecla.
-    await page.getByRole('radio', { name: 'Claro' }).focus();
+    await page.getByRole('radio', { name: /Automático/ }).focus();
     await page.keyboard.press('Tab');
     await page.keyboard.press('Shift+Tab');
     const focusedCard = page.locator('label.theme:has(input:focus)');
@@ -427,6 +427,23 @@ test.describe('Configurações', () => {
         'none',
       );
     }
+  });
+
+  test('o seletor de tema da lista troca na hora, vale também na Aparência e não deixa subtítulos nas linhas', async ({
+    page,
+  }) => {
+    await openSettings(page, 'light');
+    await expect(page.locator('a.ui-row .ui-row-sub')).toHaveCount(0);
+    const group = page.getByRole('group', { name: 'Tema' });
+    await expect(group.getByRole('radio')).toHaveCount(3);
+    await group.getByRole('radio', { name: 'Escuro' }).check();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await group.getByRole('radio', { name: 'Claro' }).check();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await group.getByRole('radio', { name: 'Escuro' }).check();
+    // A mesma escolha aparece marcada na tela de Aparência.
+    await page.getByRole('link', { name: 'Aparência' }).click();
+    await expect(page.getByRole('radio', { name: 'Escuro' })).toBeChecked();
   });
 
   test('o botão Sair do Perfil mostra o foco por teclado', async ({ page }) => {

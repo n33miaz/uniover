@@ -192,7 +192,7 @@ test.describe('Configurações > Auditoria', () => {
     await page.getByRole('link', { name: /^Auditoria/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/auditoria$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Auditoria' })).toBeVisible();
-    await page.getByRole('link', { name: 'Voltar às Configurações' }).click();
+    await page.getByRole('button', { name: 'Voltar às Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
   });
 
@@ -221,7 +221,7 @@ test.describe('Configurações > Auditoria', () => {
       await expect(page.locator('main')).not.toContainText('login_failed');
       // IP e aparelho ficam atrás de um toque.
       await expect(page.locator('main')).not.toContainText('203.0.113.7');
-      await expect(page.getByText('Estes registros ficam guardados por segurança')).toBeVisible();
+      await expect(page.getByText('Cada ação guarda data, IP e aparelho')).toBeVisible();
       await expect(page.getByText('Guardamos por 180 dias')).toBeVisible();
       await check(page, info, 'audit-list', scheme);
     });
@@ -406,7 +406,7 @@ test.describe('Configurações > Auditoria', () => {
     await expect(page.getByRole('button', { name: 'Exportar CSV' })).toBeDisabled();
     await applyFilters(page, 'Erro');
     await expect(
-      page.getByText('A auditoria só funciona com internet', { exact: false }),
+      page.getByText('Sem internet. A lista volta quando a conexão voltar', { exact: false }),
     ).toBeVisible();
     await expect(page.getByText('Não foi possível')).toHaveCount(0);
     await check(page, info, 'audit-offline', 'light');

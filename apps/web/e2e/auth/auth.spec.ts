@@ -314,7 +314,7 @@ test.describe('ajustes', () => {
         href,
       );
     }
-    await expect(page.getByText(`${OWNER.displayName} · Administrador`)).toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Escuro' })).toBeVisible();
     await expectNoHorizontalScroll(page);
     await screenshot(page, `test-results/settings-${info.project.name}.png`);
   });
@@ -326,7 +326,7 @@ test.describe('ajustes', () => {
     await expect(page.getByText(OWNER.displayName, { exact: true }).first()).toBeVisible();
     await expect(page.getByText(OWNER.email)).toBeVisible();
     await expect(page.getByText('Administrador', { exact: true })).toBeVisible();
-    await page.getByRole('link', { name: 'Voltar às Configurações' }).click();
+    await page.getByRole('button', { name: 'Voltar às Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
   });
@@ -354,7 +354,7 @@ test.describe('ajustes', () => {
   test('a Segurança mostra as passkeys', async ({ page }) => {
     await page.getByRole('link', { name: /^Segurança/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/seguranca$/);
-    await expect(page.getByText('A passkey só confirma ações perigosas')).toBeVisible();
+    await expect(page.getByText('A passkey só confirma ações sensíveis')).toBeVisible();
   });
 
   test('tema escuro fica salvo no aparelho e volta ao recarregar', async ({ page }) => {

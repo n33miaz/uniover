@@ -51,12 +51,8 @@ async function expectStandardHeader(page: import('@playwright/test').Page, title
   const lineHeight = await heading.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight));
   expect(box.height, `o título "${title}" cabe numa linha`).toBeLessThanOrEqual(lineHeight + 2);
   // Um único voltar: o do cabeçalho; nenhuma tela traz outro dentro do conteúdo.
-  await expect(page.getByRole('link', { name: BACK_TO_SETTINGS })).toHaveCount(1);
-  await expect(page.locator('main a.back')).toHaveCount(0);
-  await expect(page.getByRole('link', { name: BACK_TO_SETTINGS })).toHaveAttribute(
-    'href',
-    '/ajustes',
-  );
+  await expect(page.getByRole('button', { name: BACK_TO_SETTINGS })).toHaveCount(1);
+  await expect(page.locator('main .back')).toHaveCount(0);
 }
 
 test.describe('navegação padrão de Configurações', () => {
@@ -73,14 +69,14 @@ test.describe('navegação padrão de Configurações', () => {
       await expect(page).toHaveURL(new RegExp(`${section.path}$`));
       await expectStandardHeader(page, section.title);
 
-      await page.getByRole('link', { name: BACK_TO_SETTINGS }).click();
+      await page.getByRole('button', { name: BACK_TO_SETTINGS }).click();
       await expect(page, `o voltar de ${section.title} leva à lista`).toHaveURL(/\/ajustes$/);
       await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
     }
 
     // Da lista, o voltar leva à Início (e é o único).
-    await expect(page.getByRole('link', { name: 'Voltar ao Início' })).toHaveCount(1);
-    await page.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await expect(page.getByRole('button', { name: 'Voltar ao Início' })).toHaveCount(1);
+    await page.getByRole('button', { name: 'Voltar ao Início' }).click();
     await expect(page).toHaveURL(/\/$/);
   });
 
@@ -94,7 +90,7 @@ test.describe('navegação padrão de Configurações', () => {
       await page.reload();
       await expectStandardHeader(page, section.title);
 
-      await page.getByRole('link', { name: BACK_TO_SETTINGS }).click();
+      await page.getByRole('button', { name: BACK_TO_SETTINGS }).click();
       await expect(page, `${section.title}: voltar depois de recarregar`).toHaveURL(/\/ajustes$/);
     }
   });
@@ -102,7 +98,7 @@ test.describe('navegação padrão de Configurações', () => {
   test('a lista recarregada ainda volta à Início', async ({ page }) => {
     await page.goto('/ajustes');
     await page.reload();
-    await page.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await page.getByRole('button', { name: 'Voltar ao Início' }).click();
     await expect(page).toHaveURL(/\/$/);
   });
 

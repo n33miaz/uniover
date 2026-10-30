@@ -88,11 +88,7 @@ function seriousViolations(violations: { id: string; impact?: string | null }[])
 test.describe('dispositivos', () => {
   test('mostra o vazio explicativo e cabe na tela', async ({ page, browserName }, info) => {
     await openDevices(page, browserName);
-    await expect(
-      page.getByText(
-        'Nenhum dispositivo pareado. Rode o agente no PC e digite o código que ele mostrar.',
-      ),
-    ).toBeVisible();
+    await expect(page.getByText('Nenhum dispositivo pareado.')).toBeVisible();
     await expectNoHorizontalScroll(page);
     // A tela chega com a entrada escalonada: o print só vale depois dela.
     await settle(page);
@@ -271,9 +267,7 @@ test.describe('dispositivos', () => {
     await context.setOffline(true);
     await expect(page.getByRole('button', { name: 'Parear dispositivo' })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Revogar PC de casa' })).toBeDisabled();
-    await expect(
-      page.getByText('Sem conexão: parear, recusar e revogar precisam de rede.'),
-    ).toBeVisible();
+    await expect(page.getByText('Sem conexão: isto precisa de rede.')).toBeVisible();
 
     await context.setOffline(false);
     await expect(page.getByRole('button', { name: 'Parear dispositivo' })).toBeEnabled();
