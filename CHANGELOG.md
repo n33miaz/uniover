@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.4](https://github.com/n33miaz/uniover/compare/v0.18.3...v0.18.4) (2026-10-30)
+
+
+### Bug Fixes
+
+* **ci:** trust roots for audit cleanup
+
 ## [0.18.3](https://github.com/n33miaz/uniover/compare/v0.18.2...v0.18.3) (2026-10-30)
 
 
