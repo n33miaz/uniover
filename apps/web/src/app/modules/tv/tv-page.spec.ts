@@ -72,22 +72,21 @@ describe('TvPage', () => {
   });
 
   describe('header', () => {
-    it('has back and menu on the left, the name TV as the h1 with the state dot beside it, and power on the right', () => {
+    it('has back and menu on the left, the name TV as the h1 in the middle, and state dot and power on the right', () => {
       const back = root.querySelector('a.back')!;
       expect(back.getAttribute('href')).toBe('/');
       expect(back.getAttribute('aria-label')).toBe('Voltar ao Início');
       const h1 = root.querySelector('h1')!;
       expect(h1.textContent?.trim()).toBe('TV');
-      // O ponto fica ao lado do título (não dentro): o nome do botão não vira parte do nome do título.
+      // O ponto fica fora do título: o nome do botão não vira parte do nome do título.
       expect(h1.querySelector('app-status-indicator')).toBeNull();
-      expect(h1.nextElementSibling?.matches('app-status-indicator')).toBe(true);
       expect(byLabel('Desligar a TV')).not.toBeNull();
-      // O menu fica ao lado da saída, e o desligar fecha a navegação do cabeçalho à direita.
+      // O ponto fica colado à esquerda do desligar, e os dois fecham o lado direito.
       expect(
-        [...root.querySelectorAll('.head .actions button')].map((b) =>
-          b.getAttribute('aria-label'),
+        [...root.querySelectorAll('.head .actions > *')].map(
+          (el) => el.getAttribute('aria-label') ?? el.tagName.toLowerCase(),
         ),
-      ).toEqual(['Desligar a TV']);
+      ).toEqual(['app-status-indicator', 'Desligar a TV']);
       expect(
         [...root.querySelectorAll('.head .lead > *')].map((b) => b.getAttribute('aria-label')),
       ).toEqual(['Voltar ao Início', 'Mais opções']);
@@ -115,9 +114,10 @@ describe('TvPage', () => {
       expect(path.match(/M10\.8 \d+/g)).toHaveLength(3);
     });
 
-    it('shows the owner the arrow back, never the settings button of the guest', () => {
+    it('has no settings gear in the header: Configurações is reached only from Início', () => {
       expect(root.querySelector('.head a.settings')).toBeNull();
       expect(root.querySelector('.head a[href="/ajustes"]')).toBeNull();
+      expect(root.querySelector('.head app-gear-icon')).toBeNull();
     });
 
     it('draws back as a plain arrow in a 44 px circle, with no text beside it', () => {
@@ -260,7 +260,7 @@ describe('TvPage', () => {
       const row = root.querySelector('.reason-row')!;
       expect(row.querySelector('.reason')?.textContent).toContain('agente da TV está desligado');
       const retry = row.querySelector<HTMLButtonElement>('button.retry')!;
-      expect(retry.textContent?.trim()).toBe('Tentar de novo');
+      expect(retry.textContent?.trim()).toBe('Tentar de Novo');
 
       retry.click();
       await render();
@@ -269,7 +269,7 @@ describe('TvPage', () => {
     });
 
     it('offers no retry when the network or the server is the problem, which fix themselves', async () => {
-      for (const status of ['offline', 'waking'] as const) {
+      for (const status of ['offline'] as const) {
         store.status.set(status);
         store.canSend.set(false);
         store.disabledReason.set('Sem rede: o controle precisa de internet.');
@@ -290,6 +290,173 @@ describe('TvPage', () => {
       expect(byLabel('Mudo').disabled).toBe(true);
       expect(byLabel('Teclado').classList.contains('off')).toBe(true);
       expect(menuButton().disabled).toBe(false);
+    });
+  });
+
+  describe('PC Desligado', () => {
+    const pcOff = async () => {
+      store.status.set('pc-off');
+      store.pcOff.set(true);
+      store.pcOffSince.set('28/10 19:24');
+      store.canSend.set(false);
+      store.disabledReason.set('PC Desligado desde 28/10 19:24');
+      await render();
+    };
+
+    it('shows the seal with the icon, the title, since when (local time) and only "Tentar de Novo"', async () => {
+      await pcOff();
+      const seal = root.querySelector('.seal')!;
+      expect(seal).not.toBeNull();
+      expect(seal.querySelector('app-pc-off-icon')).not.toBeNull();
+      expect(seal.querySelector('h2')?.textContent?.trim()).toBe('PC Desligado');
+      expect(seal.querySelector('.seal-since')?.textContent?.trim()).toBe('desde 28/10 19:24');
+      const buttons = seal.querySelectorAll('button');
+      expect(buttons).toHaveLength(1);
+      expect(buttons[0].textContent?.trim()).toBe('Tentar de Novo');
+    });
+
+    it('dims the controls and makes them inert, and does not repeat the message in the reason row', async () => {
+      await pcOff();
+      expect(root.querySelector('.tv')!.classList.contains('pc-off')).toBe(true);
+      expect(root.querySelector('app-tv-control')!.hasAttribute('inert')).toBe(true);
+      expect(root.querySelector('.reason-row')).toBeNull();
+    });
+
+    it('"Tentar de Novo" reads the state again and tries to wake the remote', async () => {
+      await pcOff();
+      root.querySelector<HTMLButtonElement>('.seal button')!.click();
+      await render();
+      expect(store.refresh).toHaveBeenCalledTimes(1);
+      expect(store.wake).toHaveBeenCalled();
+    });
+
+    it('is the same for who only watches: the seal and the one action, over the shortcuts', async () => {
+      TestBed.resetTestingModule();
+      store = createFakeTvStore();
+      TestBed.configureTestingModule({
+        providers: [provideRouter([]), { provide: TvStore, useValue: store }],
+      });
+      TestBed.inject(SessionState).setUser({
+        id: '1',
+        email: 'a@b.c',
+        displayName: 'Alice',
+        role: 'guest',
+        permissions: ['module:tv'],
+      });
+      fixture = TestBed.createComponent(TvPage);
+      root = fixture.nativeElement as HTMLElement;
+      await pcOff();
+      expect(root.querySelector('app-tv-view-only')!.hasAttribute('inert')).toBe(true);
+      expect(root.querySelectorAll('.seal button')).toHaveLength(1);
+    });
+
+    it('shows nothing of this in any other case: not for the agent off without a date, not when all is fine', async () => {
+      await render();
+      expect(root.querySelector('.seal')).toBeNull();
+      expect(root.querySelector('.tv')!.classList.contains('pc-off')).toBe(false);
+      expect(root.querySelector('app-tv-control')!.hasAttribute('inert')).toBe(false);
+
+      store.status.set('agent-off');
+      store.canSend.set(false);
+      store.disabledReason.set(
+        'O agente da TV está desligado, então os botões não funcionam agora.',
+      );
+      await render();
+      expect(root.querySelector('.seal')).toBeNull();
+      expect(root.querySelector('.reason-row')).not.toBeNull();
+    });
+
+    it('the state dot of the header is the PC-off icon, and stays on top of the dimmed controls', async () => {
+      await pcOff();
+      expect(root.querySelector('.head app-status-dot app-pc-off-icon')).not.toBeNull();
+      expect(
+        root.querySelector('.head app-status-indicator button')!.hasAttribute('disabled'),
+      ).toBe(false);
+    });
+  });
+
+  describe('state not sure yet', () => {
+    it('keeps the remote enabled and the dot green while the state is unknown', async () => {
+      store.status.set('loading');
+      store.canSend.set(true);
+      store.disabledReason.set(null);
+      await render();
+      expect(root.querySelector('.reason-row')).toBeNull();
+      expect(root.querySelector('.seal')).toBeNull();
+      expect(root.querySelector('.head app-status-dot svg')!.getAttribute('data-phase')).toBe(
+        'connecting',
+      );
+      expect(byLabel('Mudo').disabled).toBe(false);
+    });
+
+    it('a read with no answer offers "Tentar de Novo" in the reason row while the buttons stay on', async () => {
+      store.status.set('unresponsive');
+      store.canSend.set(true);
+      store.disabledReason.set('O controle não recebeu resposta. Tente de novo.');
+      await render();
+      const row = root.querySelector('.reason-row')!;
+      expect(row.querySelector('button.retry')?.textContent?.trim()).toBe('Tentar de Novo');
+      expect(byLabel('Mudo').disabled).toBe(false);
+    });
+
+    it('says only for the screen reader that it is loading, and only while the store says so', async () => {
+      expect(root.querySelector('.ui-visually-hidden[role="status"]')?.textContent?.trim()).toBe(
+        '',
+      );
+      store.loading.set(true);
+      await render();
+      expect(root.querySelector('.ui-visually-hidden[role="status"]')?.textContent?.trim()).toBe(
+        'Carregando o controle…',
+      );
+    });
+  });
+
+  describe('scheduled power off', () => {
+    const schedule = {
+      id: 'a',
+      dueAtUtc: '2026-10-30T23:40:00Z',
+      timeZone: 'UTC',
+      status: 'pending' as const,
+      result: null,
+      reason: null,
+      version: 1,
+    };
+
+    it('puts a discreet clock on the power button only while there is a schedule, and says so in its name', async () => {
+      expect(root.querySelector('.power .scheduled')).toBeNull();
+      expect(byLabel('Desligar a TV')).not.toBeNull();
+      store.powerSchedule.set(schedule);
+      await render();
+      expect(root.querySelector('.power .scheduled')).not.toBeNull();
+      expect(byLabel('Desligar a TV, há desligamento agendado')).not.toBeNull();
+      // O tempo que falta fica só dentro da folha: o cabeçalho não escreve hora nenhuma.
+      expect(root.querySelector('.power')!.textContent?.trim()).toBe('');
+      store.powerSchedule.set({ ...schedule, status: 'completed' });
+      await render();
+      expect(root.querySelector('.power .scheduled')).toBeNull();
+    });
+  });
+
+  describe('title centered whatever sits beside it', () => {
+    it('counts the buttons of the fuller side, so the two side columns stay equal and the name stays in the middle', async () => {
+      const head = root.querySelector<HTMLElement>('.head')!;
+      expect(head.style.getPropertyValue('--items')).toBe('2');
+    });
+
+    it('keeps the arrow of the TV picker out of the text: the arrow is inside the label but beside the text, never in its flow', async () => {
+      store.tvs.set([
+        makeTv('a', { isDefault: true, name: 'Sala' }),
+        makeTv('b', { name: 'Quarto' }),
+      ]);
+      await render();
+      const label = root.querySelector('h1 .label')!;
+      expect(label.querySelector('.title-text')).not.toBeNull();
+      expect(label.querySelector('.chevron')).not.toBeNull();
+      // A seta é a única coisa fora do texto, e quem a solta do fluxo é o CSS da página (posição absoluta).
+      expect([...label.children].map((el) => el.className.split(' ')[0])).toEqual([
+        'title-text',
+        'chevron',
+      ]);
     });
   });
 
@@ -891,14 +1058,16 @@ describe('TvPage for a guest', () => {
     expect(root.querySelector('app-tv-control')).not.toBeNull();
   });
 
-  it('keeps the menu beside the settings button, on the left, and only power on the right', async () => {
+  it('puts the state dot and power on the right, back and the menu on the left, for the guest too', async () => {
     await open();
     expect(
       [...root.querySelectorAll('.head .lead > *')].map((el) => el.getAttribute('aria-label')),
-    ).toEqual(['Voltar ao Início', 'Configurações', 'Mais opções']);
+    ).toEqual(['Voltar ao Início', 'Mais opções']);
     expect(
-      [...root.querySelectorAll('.head .actions > *')].map((el) => el.getAttribute('aria-label')),
-    ).toEqual(['Desligar a TV']);
+      [...root.querySelectorAll('.head .actions > *')].map(
+        (el) => el.getAttribute('aria-label') ?? el.tagName.toLowerCase(),
+      ),
+    ).toEqual(['app-status-indicator', 'Desligar a TV']);
   });
 
   it('shows the guest the menu without the one thing that changes the TV for everybody', async () => {
@@ -914,33 +1083,16 @@ describe('TvPage for a guest', () => {
     expect(root.querySelector('app-tv-menu .ui-chip')).toBeNull();
   });
 
-  it('keeps the back button and puts Configurações beside it, so the name stays in the middle', async () => {
+  it('never draws the settings button, not even for the guest: the header is back, the name and the right group', async () => {
     await open();
     const head = root.querySelector('.head')!;
     expect(head.children).toHaveLength(3);
     expect(head.children[0].classList.contains('lead')).toBe(true);
-    const back = head.children[0].children[0];
-    expect(back.getAttribute('href')).toBe('/');
-    const settings = head.children[0].children[1];
-    expect(settings.tagName).toBe('A');
-    expect(settings.classList.contains('circle')).toBe(true);
-    expect(settings.getAttribute('href')).toBe('/ajustes');
-    expect(settings.getAttribute('aria-label')).toBe('Configurações');
+    expect(head.children[0].children).toHaveLength(2);
+    expect(head.children[0].children[0].getAttribute('href')).toBe('/');
     expect(head.children[1].classList.contains('name')).toBe(true);
     expect(head.children[2].classList.contains('actions')).toBe(true);
-  });
-
-  it('draws the settings button like the other round buttons of the header: a decorative gear, no visible text', async () => {
-    await open();
-    const settings = root.querySelector('.head a.settings')!;
-    const menu = root.querySelector('.head button[aria-label="Mais opções"]')!;
-    expect(settings.classList.contains('circle')).toBe(true);
-    expect(menu.classList.contains('circle')).toBe(true);
-    expect(settings.textContent?.trim()).toBe('');
-    const svg = settings.querySelector('svg')!;
-    expect(svg.getAttribute('aria-hidden')).toBe('true');
-    expect(svg.getAttribute('stroke-width')).toBe('2.2');
-    expect(svg.getAttribute('width')).toBe('22');
+    expect(head.querySelector('a[href="/ajustes"], a.settings')).toBeNull();
   });
 
   it('can name the TV for itself: the nickname is kept on this device, with no server involved', async () => {
@@ -992,7 +1144,13 @@ describe('TvPage by permission', () => {
     await render();
   };
   const head = () => [...root.querySelectorAll('.head .lead > *, .head .actions > *')];
-  const labels = () => head().map((el) => el.getAttribute('aria-label'));
+  /** O ponto de estado é um componente: o rótulo dele é o do botão que ele traz. */
+  const labels = () =>
+    head().map(
+      (el) =>
+        el.getAttribute('aria-label') ?? el.querySelector('button')?.getAttribute('aria-label'),
+    );
+  const STATE = 'Estado do controle: Conectada';
   const titleButton = () => root.querySelector('h1 button');
   const message = () => root.querySelector('app-tv-view-only .message')?.textContent?.trim();
   const buttonLabels = () =>
@@ -1006,7 +1164,7 @@ describe('TvPage by permission', () => {
 
   it('control only: the whole control and the name opens Personalizar; the menu holds only the options and Personalizar, and there is no power', async () => {
     await open('guest', 'module:tv', 'tv:control');
-    expect(labels()).toEqual(['Voltar ao Início', 'Configurações', 'Mais opções']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Mais opções', STATE]);
     expect(root.querySelector('app-tv-control')).not.toBeNull();
     expect(root.querySelector('app-tv-view-only')).toBeNull();
     expect(titleButton()?.getAttribute('aria-label')).toBe('TV, personalizar');
@@ -1049,7 +1207,7 @@ describe('TvPage by permission', () => {
 
   it('launch and edit, no control: the message and the shortcuts, the menu, no power, the name is only text', async () => {
     await open('guest', 'module:tv', 'tv:launch', 'tv:edit-shortcuts');
-    expect(labels()).toEqual(['Voltar ao Início', 'Configurações', 'Mais opções']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Mais opções', STATE]);
     expect(root.querySelector('app-tv-control')).toBeNull();
     expect(message()).toBe('Você pode ver a TV, mas não controlá-la.');
     expect(root.querySelectorAll('button.shortcut')).toHaveLength(3);
@@ -1063,7 +1221,7 @@ describe('TvPage by permission', () => {
 
   it('view only: the state, the name and a single sentence; nothing to tap but the state dot', async () => {
     await open('guest', 'module:tv');
-    expect(labels()).toEqual(['Voltar ao Início', 'Configurações']);
+    expect(labels()).toEqual(['Voltar ao Início', STATE]);
     expect(message()).toBe('Você pode ver a TV, mas não controlá-la.');
     expect(root.querySelector('app-tv-control')).toBeNull();
     expect(root.querySelectorAll('.shortcut.still')).toHaveLength(3);
@@ -1073,7 +1231,7 @@ describe('TvPage by permission', () => {
 
   it('everything, as the owner: the same page as always', async () => {
     await open('owner', ...ALL);
-    expect(labels()).toEqual(['Voltar ao Início', 'Mais opções', 'Desligar a TV']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Mais opções', STATE, 'Desligar a TV']);
     expect(root.querySelector('app-tv-control')).not.toBeNull();
     expect(root.querySelector('app-tv-view-only')).toBeNull();
     expect(titleButton()?.getAttribute('aria-label')).toBe('TV, personalizar');
@@ -1094,12 +1252,12 @@ describe('TvPage by permission', () => {
     fixture = TestBed.createComponent(TvPage);
     root = fixture.nativeElement as HTMLElement;
     await render();
-    expect(labels()).toEqual(['Voltar ao Início', 'Mais opções', 'Desligar a TV']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Mais opções', STATE, 'Desligar a TV']);
   });
 
   it('power alone shows the power button, and the header keeps its three groups', async () => {
     await open('guest', 'module:tv', 'tv:power');
-    expect(labels()).toEqual(['Voltar ao Início', 'Configurações', 'Desligar a TV']);
+    expect(labels()).toEqual(['Voltar ao Início', STATE, 'Desligar a TV']);
     expect(root.querySelector('.head')!.children).toHaveLength(3);
   });
 
@@ -1110,7 +1268,7 @@ describe('TvPage by permission', () => {
     );
     expect(root.querySelector('app-tv-control, app-tv-view-only')).toBeNull();
     expect(root.querySelector('app-status-indicator')).toBeNull();
-    expect(labels()).toEqual(['Voltar ao Início', 'Configurações']);
+    expect(labels()).toEqual(['Voltar ao Início']);
   });
 
   it('keeps the header in three groups whatever the buttons, so the name never leaves the middle', async () => {
@@ -1134,13 +1292,13 @@ describe('TvPage by permission', () => {
     await render();
     expect(root.querySelector('app-tv-control')).not.toBeNull();
     expect(root.querySelector('app-tv-view-only')).toBeNull();
-    expect(labels()).toEqual(['Voltar ao Início', 'Configurações', 'Mais opções', 'Desligar a TV']);
+    expect(labels()).toEqual(['Voltar ao Início', 'Mais opções', STATE, 'Desligar a TV']);
 
     grant('guest', 'module:tv');
     await render();
     expect(root.querySelector('app-tv-control')).toBeNull();
     expect(message()).toBe('Você pode ver a TV, mas não controlá-la.');
-    expect(labels()).toEqual(['Voltar ao Início', 'Configurações']);
+    expect(labels()).toEqual(['Voltar ao Início', STATE]);
   });
 
   it('closes a sheet or panel that was open when the permission to use it goes away', async () => {
