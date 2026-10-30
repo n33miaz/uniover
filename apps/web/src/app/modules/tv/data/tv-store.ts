@@ -10,6 +10,7 @@ import type { TvCleanupReport, TvPowerSchedule } from './tv-api';
 import { TV_CONFIG } from './tv-config';
 import { describeCleanup } from './tv-cleanup';
 import { TvFailure, TvFailureContext, describeFailure, forbiddenMessage } from './tv-errors';
+import { ReadWatch } from './tv-read-watch';
 import { withOrder } from './tv-order';
 import { powerOffNotice } from './tv-power';
 import { TvSelection } from './tv-selection';
@@ -29,9 +30,21 @@ import {
   tvCanPowerOffSafely,
 } from './tv-types';
 
-/** Chip de estado do cabeçalho. `hibernating` é "controle dormindo": a TV não está desligada, só a sessão dorme. */
+/**
+ * Chip de estado do cabeçalho. `hibernating` é "controle dormindo": a TV não está desligada, só a sessão dorme. `loading`
+ * é "ainda não sei" (sem leitura, reconectando, servidor acordando): a tela o mostra verde, como o controle pronto.
+ * `unresponsive` é a leitura que passou do prazo sem resposta; `pc-off` é o computador do agente CONFIRMADO desligado
+ * (fora da graça de presença da API, com o "desde quando" conhecido); `agent-off`, o agente fora sem esse detalhe.
+ */
 export type TvStatus =
-  'unconfigured' | 'offline' | 'waking' | 'loading' | 'agent-off' | 'hot' | 'hibernating';
+  | 'unconfigured'
+  | 'offline'
+  | 'loading'
+  | 'unresponsive'
+  | 'pc-off'
+  | 'agent-off'
+  | 'hot'
+  | 'hibernating';
 
 export type TvLink = 'ok' | 'waking' | 'offline';
 export type TvStreamStatus = 'connecting' | 'live' | 'reconnecting';
@@ -144,6 +157,21 @@ export class TvStore {
   private readonly _shortcuts = signal<TvShortcut[] | null>(null);
   private readonly _watchdog = signal<TvWatchdog | null>(null);
   private readonly _notConfigured = signal(false);
+  /** Um comando ou leitura CONFIRMOU o agente fora do ar antes de qualquer estado chegar (sem estado para marcar). */
+  private readonly _agentUnavailable = signal(false);
+  /** Um pedido de acordar está valendo: com a sessão ainda dormindo no estado lido, o controle segue verde até o prazo. */
+  private readonly _waking = signal(false);
+  /** A primeira leitura do estado e a da lista de atalhos têm cada uma o seu esqueleto e o seu teto de espera. */
+  private readonly stateWatch = new ReadWatch(
+    () => this.config.skeletonDelayMs,
+    () => this.config.readTimeoutMs,
+    () => this.link() === 'waking',
+  );
+  private readonly shortcutsWatch = new ReadWatch(
+    () => this.config.skeletonDelayMs,
+    () => this.config.readTimeoutMs,
+    () => this.link() === 'waking',
+  );
   private readonly _streamStatus = signal<TvStreamStatus>('connecting');
   private readonly _notice = signal<TvNotice | null>(null);
   private readonly _inFlightKeys = signal(0);
@@ -175,6 +203,20 @@ export class TvStore {
   readonly shortcuts = computed(() => (this.currentAccount() ? this._shortcuts() : null));
   readonly watchdog = computed(() => (this.currentAccount() ? this._watchdog() : null));
   readonly notConfigured = computed(() => this.currentAccount() && this._notConfigured());
+  /** A primeira leitura do estado passou da espera curta: só o que depende dele mostra a forma de espera. */
+  readonly stateLoading = computed(
+    () => this.currentAccount() && this._state() === null && this.stateWatch.skeleton(),
+  );
+  /** A lista de apps passou da espera curta: só os atalhos e o painel de Apps mostram a forma de espera. */
+  readonly shortcutsLoading = computed(
+    () => this.currentAccount() && this._shortcuts() === null && this.shortcutsWatch.skeleton(),
+  );
+  /** A lista de apps não veio no prazo: o painel diz isso e oferece tentar de novo (nunca o brilho em laço). */
+  readonly shortcutsFailed = computed(
+    () => this.currentAccount() && this._shortcuts() === null && this.shortcutsWatch.timedOut(),
+  );
+  /** Algo ainda é esperado por mais que a espera curta (para o texto único do leitor de tela). */
+  readonly loading = computed(() => this.stateLoading() || this.shortcutsLoading());
   readonly streamStatus = computed<TvStreamStatus>(() =>
     this.currentAccount() ? this._streamStatus() : 'connecting',
   );
@@ -214,6 +256,12 @@ export class TvStore {
   /** Hora (HH:MM) em que esta tela recebeu o último estado; é o "visto às" mostrado sem rede. */
   readonly seenAtText = computed(() => (this.currentAccount() ? clockText(this._seenAt()) : null));
 
+  /** "28/10 19:24" (horário local), desde quando o PC está desligado; `null` se o servidor não sabe. */
+  readonly pcOffSince = computed<string | null>(() => {
+    const since = dayClockText(this._state()?.offlineSince ?? null);
+    return since === '' ? null : since;
+  });
+
   /** "PC Desligado desde 28/10 19:24" (horário local); `null` se o servidor não sabe desde quando. */
   readonly agentOffText = computed<string | null>(() => {
     const since = dayClockText(this._state()?.offlineSince ?? null);
@@ -235,42 +283,68 @@ export class TvStore {
     return state.connection === 'hibernating' ? 'hibernating' : 'hot';
   });
 
+  /**
+   * O que a tela mostra. É otimista de propósito: o que ainda não é falha CONFIRMADA conta como pronto (`loading` e a
+   * sessão acordando saem verdes). Só viram outra coisa a falta de rede, a falta de agente configurado, o agente que a
+   * API deu como fora (`pc-off`, com o "desde quando"; `agent-off`, sem ele) e a primeira leitura que passou do prazo
+   * (`unresponsive`). O servidor acordando não prova falha nenhuma: fica verde até a resposta.
+   */
   readonly status = computed<TvStatus>(() => {
     if (this.link() === 'offline') return 'offline';
-    if (this.link() === 'waking') return 'waking';
     if (this.currentAccount() && this._notConfigured()) return 'unconfigured';
-    return this.lastKnownStatus() ?? 'loading';
+    if (this.link() === 'waking') return 'loading';
+    if (this.pcOffConfirmed()) return 'pc-off';
+    const known = this.lastKnownStatus();
+    if (known === 'agent-off' || this._agentUnavailable()) return 'agent-off';
+    if (known === null) {
+      return this.currentAccount() && this.stateWatch.timedOut() ? 'unresponsive' : 'loading';
+    }
+    return known === 'hibernating' && this._waking() ? 'hot' : known;
   });
 
-  /** Dá para mandar comando: há rede, há agente configurado e ele não foi dado como desligado. */
+  /** O PC do agente está confirmado desligado: a API deu o agente como fora da graça e disse desde quando. */
+  private readonly pcOffConfirmed = computed(() => {
+    const state = this._state();
+    return this.currentAccount() && state !== null && !state.agentOnline && !!state.offlineSince;
+  });
+  /** A tela é a do PC desligado: controles esmaecidos e o selo no centro. */
+  readonly pcOff = computed(() => this.status() === 'pc-off');
+
+  /**
+   * Dá para mandar comando: há rede, há agente configurado e ele não foi dado como desligado. O servidor acordando e a
+   * primeira leitura em curso NÃO bloqueiam: o toque sai e espera (a API espera o agente até 25 s).
+   */
   readonly canSend = computed(
     () =>
       this.currentAccount() &&
       this.account !== null &&
       !this.listFirst() &&
-      this.link() === 'ok' &&
+      this.link() !== 'offline' &&
       !this._notConfigured() &&
+      !this._agentUnavailable() &&
       this._state()?.agentOnline !== false,
   );
 
-  /** Por que os botões estão desabilitados (sem falsa promessa); `null` quando estão ativos. */
+  /**
+   * Por que os botões estão desabilitados (sem falsa promessa); `null` quando estão ativos. A leitura sem resposta é a
+   * exceção: os botões seguem ativos, mas a linha de aviso oferece tentar de novo.
+   */
   readonly disabledReason = computed<string | null>(() => {
-    if (this.canSend()) return null;
-    switch (this.link()) {
-      case 'offline': {
-        const seen = this.seenAtText();
-        return seen
-          ? $localize`:@@tv.reason.offline-seen:Sem rede: o controle precisa de internet. Estado visto às ${seen}:time:.`
-          : $localize`:@@tv.reason.offline:Sem rede: o controle precisa de internet.`;
-      }
-      case 'waking':
-        return $localize`:@@tv.reason.waking:O servidor está acordando. Os botões voltam em instantes.`;
-      default:
-        return this.currentAccount() && this._notConfigured()
-          ? $localize`:@@tv.reason.not-configured:Nenhum agente foi configurado para controlar a TV.`
-          : (this.agentOffText() ??
-              $localize`:@@tv.reason.agent-off:O agente da TV está desligado, então os botões não funcionam agora.`);
+    if (this.canSend()) {
+      return this.status() === 'unresponsive'
+        ? $localize`:@@tv.reason.unresponsive:O controle não recebeu resposta. Tente de novo.`
+        : null;
     }
+    if (this.link() === 'offline') {
+      const seen = this.seenAtText();
+      return seen
+        ? $localize`:@@tv.reason.offline-seen:Sem rede: o controle precisa de internet. Estado visto às ${seen}:time:.`
+        : $localize`:@@tv.reason.offline:Sem rede: o controle precisa de internet.`;
+    }
+    return this.currentAccount() && this._notConfigured()
+      ? $localize`:@@tv.reason.not-configured:Nenhum agente foi configurado para controlar a TV.`
+      : (this.agentOffText() ??
+          $localize`:@@tv.reason.agent-off:O agente da TV está desligado, então os botões não funcionam agora.`);
   });
 
   /** "controle religado às HH:MM" quando o vigia consertou o serviço; `null` sem evento recente. */
@@ -310,6 +384,7 @@ export class TvStore {
   private hadControl = false;
   private streamSub: Subscription | null = null;
   private wakeTimer: ReturnType<typeof setInterval> | undefined;
+  private wakingTimer: ReturnType<typeof setTimeout> | undefined;
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
   private readonly onVisibility = () => {
@@ -326,6 +401,13 @@ export class TvStore {
     this.connect();
     void this.refresh();
     void this.wake();
+  };
+  /**
+   * Voltar de um congelamento (o Safari do iPhone guarda a página inteira ao sair): nem sempre dispara
+   * `visibilitychange`, e o fluxo e o estado podem estar velhos. Reconecta e relê na hora, como ao voltar do segundo plano.
+   */
+  private readonly onPageShow = (event: Event) => {
+    if ((event as PageTransitionEvent).persisted && this.visible()) this.onVisibility();
   };
 
   constructor() {
@@ -358,6 +440,7 @@ export class TvStore {
     this.hydrate();
     this.doc.addEventListener('visibilitychange', this.onVisibility);
     this.doc.defaultView?.addEventListener('online', this.onOnline);
+    this.doc.defaultView?.addEventListener('pageshow', this.onPageShow);
     this.connect();
   }
 
@@ -367,8 +450,13 @@ export class TvStore {
     this.disconnect();
     this.doc.removeEventListener('visibilitychange', this.onVisibility);
     this.doc.defaultView?.removeEventListener('online', this.onOnline);
+    this.doc.defaultView?.removeEventListener('pageshow', this.onPageShow);
     clearTimeout(this.noticeTimer);
     clearTimeout(this.nudgeTimer);
+    // Ao sair, o erro de uma leitura sem resposta não fica para a próxima vez que a tela abrir.
+    this.stateWatch.done();
+    this.shortcutsWatch.done();
+    this.clearWaking();
   }
 
   /**
@@ -449,23 +537,50 @@ export class TvStore {
     ) {
       return;
     }
-    const [tvs, state, shortcuts, cleanup] = await Promise.allSettled([
-      this.fetchTvs(),
-      this.api.state(),
-      this.api.shortcuts(),
-      // Só quem pode limpar a TV lê o relatório (a API recusa os outros com 403).
-      this.access.cleanup() ? this.api.latestCleanup() : Promise.resolve(null),
-    ]);
-    if (!this.live(epoch)) return;
-    if (tvs.status === 'fulfilled' && tvs.value) {
-      this.selection.setTvs(tvs.value);
+    // Só a PRIMEIRA leitura de cada coisa tem esqueleto e teto de espera: com dado já conhecido não há o que esconder, e a
+    // leitura seguinte só o renova.
+    if (this._state() === null) this.stateWatch.begin();
+    if (this._shortcuts() === null) this.shortcutsWatch.begin();
+    // Cada resposta é aplicada assim que chega, protegida pela `epoch` (se a TV ou a conta mudou no meio, ela é
+    // descartada): uma lista de TVs ou um relatório de limpeza lentos não seguram o estado nem os atalhos que já voltaram.
+    // Se a lista de TVs mostrar que a TV pedida não é a certa, a troca esquece o que já tinha chegado e busca o da certa.
+    const stateDone = this.api.state().then(
+      (value) => {
+        if (this.live(epoch)) this.applyState(value);
+      },
+      (error: unknown) => {
+        if (!this.live(epoch)) return;
+        // Só a falha CONFIRMADA pelo servidor vira estado (agente fora, nenhum agente configurado); "reconectando", rede
+        // e tempo esgotado seguem como "ainda não sei" e o teto da leitura decide.
+        const failure = describeFailure(error);
+        if (failure.kind === 'agent-offline' || failure.kind === 'not-configured') {
+          this.absorb(failure);
+        }
+      },
+    );
+    const shortcutsDone = this.api.shortcuts().then(
+      (value) => {
+        if (this.live(epoch)) this.receiveShortcuts(value);
+      },
+      () => undefined,
+    );
+    const tvsDone = this.fetchTvs().then((tvs) => {
+      if (!this.live(epoch) || !tvs) return;
+      this.selection.setTvs(tvs);
       this.reconcile();
-      // A lista mostrou que a TV pedida não é a certa: o que veio é de outra, e a troca já buscou o da certa.
-      if (!this.live(epoch)) return;
-    }
-    if (state.status === 'fulfilled') this.applyState(state.value);
-    if (shortcuts.status === 'fulfilled') this.receiveShortcuts(shortcuts.value);
-    if (cleanup.status === 'fulfilled') this.applyCleanupReport(cleanup.value);
+    });
+    // Só quem pode limpar a TV lê o relatório (a API recusa os outros com 403).
+    const cleanupDone = (
+      this.access.cleanup() ? this.api.latestCleanup() : Promise.resolve(null)
+    ).then(
+      (report) => {
+        if (this.live(epoch)) this.applyCleanupReport(report);
+      },
+      () => undefined,
+    );
+    // O agendamento de desligar mora no botão de energia do cabeçalho (o indicador de agendado): lê-se com o resto.
+    const scheduleDone = this.refreshPowerSchedule();
+    await Promise.all([stateDone, shortcutsDone, tvsDone, cleanupDone, scheduleDone]);
   }
 
   /**
@@ -497,11 +612,15 @@ export class TvStore {
     // Com o agente fora do ar não há o que aquecer (e cada pedido recusado ocuparia a trilha de comandos): a volta
     // dele chega pelo fluxo, e a leitura periódica do estado cobre o fluxo caído.
     if (this._state()?.agentOnline === false) return;
+    this.startWaking();
     try {
       await this.api.wake();
       if (this.live(epoch)) this._notConfigured.set(false);
     } catch (error) {
-      if (this.live(epoch)) this.absorb(describeFailure(error));
+      if (this.live(epoch)) {
+        this.clearWaking();
+        this.absorb(describeFailure(error));
+      }
     }
   }
 
@@ -745,7 +864,7 @@ export class TvStore {
     this.begin();
     if (!this.access.editShortcuts()) return false;
     if (this.link() !== 'ok' || this.account === null || this.listFirst()) {
-      this.showNotice('error', this.disabledReason() ?? '');
+      this.showNotice('error', this.blockedText());
       return false;
     }
     const current = this._shortcuts();
@@ -771,7 +890,7 @@ export class TvStore {
     const epoch = this.begin();
     if (!this.access.editShortcuts()) return false;
     if (this.link() !== 'ok' || this.account === null || this.listFirst()) {
-      this.showNotice('error', this.disabledReason() ?? '');
+      this.showNotice('error', this.blockedText());
       return false;
     }
     try {
@@ -851,6 +970,7 @@ export class TvStore {
 
   /** Lista de atalhos vinda do servidor (fluxo ou busca): durante o envio de uma ordem ela espera a vez. */
   private receiveShortcuts(list: TvShortcut[]): void {
+    this.shortcutsWatch.done();
     if (this.reorderRun) {
       this.heldShortcuts = list;
       return;
@@ -888,6 +1008,10 @@ export class TvStore {
   }
 
   private applyState(state: TvState): void {
+    this.stateWatch.done();
+    // A sessão deixou de dormir (ou o agente caiu): o pedido de acordar cumpriu o que podia.
+    if (state.connection !== 'hibernating') this.clearWaking();
+    if (state.agentOnline) this._agentUnavailable.set(false);
     // O agente voltou: o que a TV oferece (as capacidades) só chega depois do `hello` dele, então a lista se renova.
     const previous = this._state();
     if (previous && !previous.agentOnline && state.agentOnline) void this.refreshTvs();
@@ -978,6 +1102,12 @@ export class TvStore {
     this._shortcuts.set(null);
     this._watchdog.set(null);
     this._notConfigured.set(false);
+    this._agentUnavailable.set(false);
+    this.stateWatch.stop();
+    this.stateWatch.timedOut.set(false);
+    this.shortcutsWatch.stop();
+    this.shortcutsWatch.timedOut.set(false);
+    this.clearWaking();
     this._cleaning.set(false);
     this._lastCleanup.set(null);
     this._powerSchedule.set(null);
@@ -1062,6 +1192,10 @@ export class TvStore {
   private absorb(failure: TvFailure): void {
     if (failure.kind === 'not-configured') this._notConfigured.set(true);
     if (failure.kind === 'agent-offline') {
+      // O servidor disse "fora do ar" fora da graça de presença (dentro dela a falha é `agent-reconnecting`, que não entra
+      // aqui): é certeza, mesmo sem estado lido ainda.
+      this._agentUnavailable.set(true);
+      this.clearWaking();
       this._state.update((state) =>
         state ? { ...state, agentOnline: false, connection: 'disconnected', volume: null } : state,
       );
@@ -1079,6 +1213,30 @@ export class TvStore {
     clearTimeout(this.noticeTimer);
     this._notice.set({ kind, text });
     this.noticeTimer = setTimeout(() => this._notice.set(null), this.config.noticeMs);
+  }
+
+  /** O motivo de uma ação que não sai: o dos botões apagados ou, com o servidor acordando (botões ativos), o dele. */
+  private blockedText(): string {
+    return (
+      this.disabledReason() ??
+      $localize`:@@tv.reason.waking:O servidor está acordando. Tente de novo em instantes.`
+    );
+  }
+
+  /** Um pedido de acordar saiu: a sessão dormindo conta como "acordando" (verde) até o prazo ou até o estado novo. */
+  private startWaking(): void {
+    clearTimeout(this.wakingTimer);
+    this._waking.set(true);
+    this.wakingTimer = setTimeout(() => {
+      this.wakingTimer = undefined;
+      this._waking.set(false);
+    }, this.config.wakeGraceMs);
+  }
+
+  private clearWaking(): void {
+    clearTimeout(this.wakingTimer);
+    this.wakingTimer = undefined;
+    this._waking.set(false);
   }
 
   private visible(): boolean {
