@@ -63,11 +63,6 @@ export class DevicesApi {
     return firstValueFrom(this.http.get<AgentAlert[]>(`${BASE}/agent-alerts`));
   }
 
-  /** O administrador viu os avisos: saem da Início e desta tela. */
-  async markAlertsSeen(): Promise<void> {
-    await firstValueFrom(this.http.post(`${BASE}/agent-alerts/seen`, null));
-  }
-
   /** O administrador dispensou um aviso específico, sem esconder os demais. */
   async markAlertSeen(id: string): Promise<void> {
     await firstValueFrom(
