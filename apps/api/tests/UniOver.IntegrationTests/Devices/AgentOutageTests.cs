@@ -249,6 +249,22 @@ public sealed class AgentOutageTests(PostgresFixture postgres)
         items[0].GetProperty("agentName").GetString().Should().Be("PC da sala");
         items[0].GetProperty("recoveredAt").ValueKind.Should().Be(JsonValueKind.Null);
 
+        var alertId = items[0].GetProperty("id").GetString();
+        using var oneAnonymous = await app.SendAsync(HttpMethod.Post, $"{Alerts}/{alertId}/seen");
+        using var oneAsGuest = await app.SendAsync(HttpMethod.Post, $"{Alerts}/{alertId}/seen", bearer: guest.Login.AccessToken);
+        using var badId = await app.SendAsync(HttpMethod.Post, $"{Alerts}/nao-e-um-id/seen", bearer: owner.AccessToken);
+        oneAnonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        oneAsGuest.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        badId.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var stillThere = await app.SendAsync(HttpMethod.Get, Alerts, bearer: owner.AccessToken);
+        (await stillThere.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetArrayLength().Should().Be(1, "as recusas não limpam o alerta");
+
+        using var oneSeen = await app.SendAsync(HttpMethod.Post, $"{Alerts}/{alertId}/seen", bearer: owner.AccessToken);
+        oneSeen.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using var afterOne = await app.SendAsync(HttpMethod.Get, Alerts, bearer: owner.AccessToken);
+        (await afterOne.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetArrayLength().Should().Be(0);
+
         using var seen = await app.SendAsync(HttpMethod.Post, Alerts + "/seen", bearer: owner.AccessToken);
         seen.StatusCode.Should().Be(HttpStatusCode.NoContent);
         using var after = await app.SendAsync(HttpMethod.Get, Alerts, bearer: owner.AccessToken);
