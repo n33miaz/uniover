@@ -134,6 +134,10 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
       min-width: 0;
       justify-self: center;
     }
+    /* O título recebe foco só por código (anúncio ao trocar de tela): não é controle, então sem anel. */
+    h1:focus {
+      outline: none;
+    }
     h1 {
       margin: 0;
       min-width: 0;
