@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.19.0](https://github.com/n33miaz/uniover/compare/v0.18.4...v0.19.0) (2026-10-30)
+
+
+### Features
+
+* **api:** mark one agent alert as seen
+* **api:** guest invites last 7 days
+* **web:** refresh devices screen
+* **web:** collapse the qr login panel
+* **web:** skeletons in settings screens
+* **web:** guest sees own agent state
+* **web:** guest security shows own sessions
+* **web:** drop usage counters from people
+
+
+### Bug Fixes
+
+* **web:** keep power button in view
+
 ## [0.18.4](https://github.com/n33miaz/uniover/compare/v0.18.3...v0.18.4) (2026-10-30)
 
 
