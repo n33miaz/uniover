@@ -81,7 +81,7 @@ async function useScheme(page: Page, scheme: 'light' | 'dark') {
 }
 
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
-const header = (page: Page) => page.locator('header.head');
+const header = (page: Page) => page.locator('.tv > header.head');
 const menuButton = (page: Page) => header(page).getByRole('button', { name: 'Mais opções' });
 const menuDialog = (page: Page) => page.getByRole('dialog', { name: 'Mais opções' });
 const appsDialog = (page: Page) => page.getByRole('dialog', { name: 'Apps da TV' });
@@ -194,7 +194,7 @@ for (const screen of SCREENS) {
       const row = page.locator('.reason-row');
       await expect(row).toBeVisible();
       await expect(row.getByText('O agente da TV está desligado')).toBeVisible();
-      const retry = row.getByRole('button', { name: 'Tentar de novo' });
+      const retry = row.getByRole('button', { name: 'Tentar de Novo' });
       await expect(retry).toBeVisible();
       expect((await box(retry)).height).toBeGreaterThanOrEqual(44);
 

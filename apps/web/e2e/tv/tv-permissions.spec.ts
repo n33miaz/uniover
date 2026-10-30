@@ -67,7 +67,7 @@ async function openTvAs(page: Page, permissions: readonly string[] | 'owner') {
   await showTv(page);
 }
 
-const header = (page: Page) => page.locator('header.head');
+const header = (page: Page) => page.locator('.tv > header.head');
 const power = (page: Page) => header(page).getByRole('button', { name: 'Desligar a TV' });
 /** Os três pontos do cabeçalho: o menu com as linhas que a conta pode usar (ele nem existe para quem só vê). */
 const menuButton = (page: Page) =>
