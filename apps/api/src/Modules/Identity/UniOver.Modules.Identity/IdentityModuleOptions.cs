@@ -38,8 +38,8 @@ public sealed class IdentityModuleOptions
 
     public int StreamTicketSeconds { get; set; } = 120;
 
-    /// <summary>Validade do convite de convidado (padrão 48 h, escolha do dono).</summary>
-    public int GuestInviteHours { get; set; } = 48;
+    /// <summary>Validade do convite de convidado (padrão 7 dias = 168 h, escolha do dono).</summary>
+    public int GuestInviteHours { get; set; } = 7 * 24;
 
     /// <summary>Convites pendentes ao mesmo tempo: segura o dono de acumular links soltos por aí.</summary>
     public int MaxPendingGuestInvites { get; set; } = 10;
