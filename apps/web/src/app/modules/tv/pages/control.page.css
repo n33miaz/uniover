@@ -241,6 +241,13 @@ button:disabled,
   color: var(--a-ink2);
   font-size: calc(1.15rem * var(--key-scale));
 }
+/* Esqueleto do nível: a altura do número, para a pílula não mudar de tamanho quando a leitura chegar. */
+.level-skeleton {
+  width: calc(1.6rem * var(--key-scale));
+  height: calc(1.15rem * var(--key-scale));
+  margin-top: 2px;
+  border-radius: 6px;
+}
 /* O "+1" / "−1" é o retorno do toque quando a TV não informa o volume: entra rápido e some sozinho. */
 .level strong.nudge {
   color: var(--a-accent);

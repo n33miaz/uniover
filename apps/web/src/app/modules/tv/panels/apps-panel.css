@@ -48,8 +48,6 @@ app-tv-cleanup-sheet {
 .loading-bar,
 .loading-tiles span {
   border-radius: var(--radius);
-  background: linear-gradient(100deg, var(--a-elev) 20%, var(--a-surface) 40%, var(--a-elev) 60%);
-  background-size: 200% 100%;
 }
 .loading-bar {
   height: 48px;
@@ -61,17 +59,6 @@ app-tv-cleanup-sheet {
 }
 .loading-tiles span {
   aspect-ratio: 1;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .loading-bar,
-  .loading-tiles span {
-    animation: loading-shimmer 1.4s linear infinite;
-  }
-}
-@keyframes loading-shimmer {
-  to {
-    background-position-x: -200%;
-  }
 }
 
 /* Estado vazio: sem a lista da TV ainda. */

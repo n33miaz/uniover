@@ -73,6 +73,15 @@ export class ShortcutRow {
   /** A lista ainda não chegou, nem a guardada: fileira vazia nesse instante não quer dizer "sem atalhos". */
   private readonly loading = computed(() => this.store.shortcuts() === null);
   protected readonly showHint = computed(() => this.shortcuts().length === 0 && !this.loading());
+  /** Esqueleto só depois da espera curta do store e só enquanto a lista não chegou; nunca em laço (o store tem teto). */
+  protected readonly showSkeleton = computed(
+    () => this.shortcuts().length === 0 && this.loading() && !!this.store.shortcutsLoading(),
+  );
+  protected readonly placeholders = [0, 1, 2, 3];
+  /** A lista não veio dentro do prazo do store (nunca é esqueleto em laço): fica uma frase no lugar da fileira. */
+  protected readonly failed = computed(
+    () => this.shortcuts().length === 0 && this.loading() && !!this.store.shortcutsFailed(),
+  );
 
   /** A largura útil da faixa, medida depois de desenhada e a cada mudança; 0 até a primeira medida (e sem como medir). */
   private readonly width = signal(0);
