@@ -70,31 +70,33 @@ export class SettingsPage {
     summary: themeSummary(this.appearance.preference()),
   }));
 
-  /** A área pessoal: Perfil e Aparência para todos; Segurança só para o administrador, e o conector do PC para quem tem a TV. */
+  /**
+   * A área pessoal: Perfil, Aparência e Segurança para todos (o convidado vê lá só as próprias sessões) e o conector do
+   * PC para o convidado que tem a TV. Com o papel desconhecido a Segurança espera: não se sabe o que mostrar nela.
+   */
   protected readonly personal = computed<readonly SettingsEntry[]>(() => {
     const entries = [this.profileEntry(), this.appearanceEntry()];
+    const role = this.session.role();
+    if (role !== null) {
+      entries.push({
+        id: 'security',
+        link: '/ajustes/seguranca',
+        glyph: 'shield',
+        title: SETTINGS_TITLES.security,
+        summary: this.isAdmin()
+          ? $localize`:@@settings.list.security-summary:Sessões de Acesso e passkeys`
+          : $localize`:@@settings.list.security-guest-summary:Suas sessões de acesso`,
+      });
+    }
     // O convidado com a TV chega ao download do conector por aqui; aprovar o PC segue sendo do administrador.
     const permissions = this.session.knownPermissions();
-    if (
-      this.session.role() === 'guest' &&
-      permissions !== null &&
-      canUseModule('guest', permissions, 'tv')
-    ) {
+    if (role === 'guest' && permissions !== null && canUseModule('guest', permissions, 'tv')) {
       entries.push({
         id: 'devices',
         link: '/ajustes/dispositivos',
         glyph: 'laptop',
         title: $localize`:@@settings.devices.link:Dispositivos`,
         summary: $localize`:@@settings.devices.guest-hint:Baixar o conector do PC`,
-      });
-    }
-    if (this.isAdmin()) {
-      entries.push({
-        id: 'security',
-        link: '/ajustes/seguranca',
-        glyph: 'shield',
-        title: SETTINGS_TITLES.security,
-        summary: $localize`:@@settings.list.security-summary:Sessões de Acesso e passkeys`,
       });
     }
     return entries;

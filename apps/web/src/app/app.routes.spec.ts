@@ -120,17 +120,11 @@ describe('app routes', () => {
 });
 
 describe('app routes for a guest', () => {
-  const api = { refresh: vi.fn(), me: vi.fn() };
+  const api = { refresh: vi.fn(), me: vi.fn(), sessions: vi.fn() };
   const TV = ['module:tv', 'tv:control'];
   const TRAINING = ['module:training'];
   // Telas só do dono: o convidado nunca as abre, qualquer que seja o módulo que a conta dele libera.
-  const OWNER_ONLY = [
-    '/ajustes/seguranca',
-    '/ajustes/pessoas',
-    '/ajustes/auditoria',
-    '/ajustes/sistema',
-    '/nada',
-  ];
+  const OWNER_ONLY = ['/ajustes/pessoas', '/ajustes/auditoria', '/ajustes/sistema', '/nada'];
 
   /** A conta do convidado, com a lista de permissões que a API devolve (sem a lista: resposta antiga, não se sabe). */
   function signInAs(permissions?: string[]) {
@@ -160,6 +154,7 @@ describe('app routes for a guest', () => {
     localStorage.clear();
     api.refresh.mockReset().mockResolvedValue({ accessToken: 't', expiresIn: 600 });
     api.me.mockReset();
+    api.sessions.mockReset().mockResolvedValue([]);
     signInAs(TV);
     TestBed.configureTestingModule({
       providers: [
@@ -194,6 +189,24 @@ describe('app routes for a guest', () => {
         const { url: landed, root } = await go(url);
         expect(landed).toBe('/');
         expect(root.querySelector('app-home-page')).not.toBeNull();
+      },
+    );
+  });
+
+  describe('Segurança', () => {
+    it.each([
+      ['the TV', TV],
+      ['the Treino', TRAINING],
+    ])(
+      'opens for a guest with %s, with the own sessions and no passkeys',
+      async (_name, permissions) => {
+        signInAs(permissions);
+        const { url, root } = await go('/ajustes/seguranca');
+        expect(url).toBe('/ajustes/seguranca');
+        expect(root.querySelector('app-security-page')).not.toBeNull();
+        expect(root.querySelector('app-sessions-section')).not.toBeNull();
+        expect(root.querySelector('app-security-section')).toBeNull();
+        expect(root.textContent).not.toContain('Passkeys');
       },
     );
   });
