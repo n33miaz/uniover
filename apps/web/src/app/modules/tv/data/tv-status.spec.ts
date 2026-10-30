@@ -197,3 +197,11 @@ describe('indicatorText', () => {
     }
   });
 });
+
+describe('indicatorText with a known offline instant', () => {
+  it('names the PC and since when, in the title', () => {
+    const text = indicatorText('agent-off', 5, true, 'PC Desligado desde 28/10 19:24');
+    expect(text.title).toBe('PC Desligado desde 28/10 19:24');
+    expect(indicatorText('agent-off', 5).title).toBe('Agente desligado');
+  });
+});

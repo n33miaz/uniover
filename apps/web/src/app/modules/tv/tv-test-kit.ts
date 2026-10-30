@@ -131,6 +131,7 @@ export function createFakeTvStore() {
     canSend: signal(true),
     disabledReason: signal<string | null>(null),
     seenAtText: signal('14:02'),
+    agentOffText: signal<string | null>(null),
     streamStatus: signal<TvStreamStatus>('live'),
     notice: signal<TvNotice | null>(null),
     watchdogNote: signal<string | null>(null),

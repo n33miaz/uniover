@@ -141,6 +141,7 @@ export function indicatorText(
   indicator: TvIndicator,
   hibernateMinutes: number,
   canControl = true,
+  agentOffText: string | null = null,
 ): TvIndicatorText {
   const retry = $localize`:@@tv.indicator.retry:Tentar de novo`;
   switch (indicator) {
@@ -184,7 +185,7 @@ export function indicatorText(
       };
     case 'agent-off':
       return {
-        title: $localize`:@@tv.indicator.agent-off.title:Agente desligado`,
+        title: agentOffText ?? $localize`:@@tv.indicator.agent-off.title:Agente desligado`,
         meaning: $localize`:@@tv.indicator.agent-off.meaning:O computador que fala com a TV não está conectado. Ligue-o e o controle volta.`,
         action: 'retry',
         actionLabel: retry,
