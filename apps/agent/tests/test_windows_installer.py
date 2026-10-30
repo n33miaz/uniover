@@ -49,6 +49,9 @@ def test_the_wrapper_checks_for_updates_while_the_agent_is_alive_and_rolls_back_
 def test_the_task_has_no_battery_or_time_limit_and_keeps_the_repairable_launcher() -> None:
     installer = INSTALLER.read_text(encoding="utf-8")
     assert "New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME" in installer
+    assert "-RepetitionInterval (New-TimeSpan -Minutes 10)" in installer
+    assert "-RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)" in installer
+    assert "-StartWhenAvailable" in installer
     assert "-ExecutionTimeLimit ([TimeSpan]::Zero)" in installer
     assert "-AllowStartIfOnBatteries -DontStopIfGoingOnBatteries" in installer
     assert installer.count("Write-AgentLauncher") == 3
@@ -216,6 +219,41 @@ def test_launcher_vbs_is_ascii_and_opens_the_powershell_launcher_with_a_hidden_w
 def test_the_vbs_written_by_the_migration_is_the_same_as_the_one_in_tools() -> None:
     shipped = LAUNCHER_VBS.read_text(encoding="ascii").replace("\r\n", "\n")
     assert installation.LAUNCHER_VBS.replace("\r\n", "\n") == shipped
+
+
+def test_the_task_survives_crashes_and_stays_interactive_for_the_credential_vault() -> None:
+    """Sobe no logon, sobe de novo a cada 10 min e reinicia por falha; sem S4U nem inicialização."""
+    installer = INSTALLER.read_text(encoding="utf-8")
+    action = installer[installer.index("function Register-AgentTask") :]
+    action = action[: action.index("function Move-LegacyLayout")]
+    assert "-LogonType Interactive" in action
+    assert "S4U" not in action
+    assert "AtStartup" not in action
+    assert "WakeToRun" not in action
+    assert "-MultipleInstances IgnoreNew" in action
+    # O atualizador aplica exatamente os mesmos gatilhos e limites que o instalador.
+    updater = installation.launcher_task_script(Path("C:/x"))
+    for fragment in (
+        "-AtLogOn",
+        "-RepetitionInterval (New-TimeSpan -Minutes 10)",
+        "-RestartCount 999",
+        "-RestartInterval (New-TimeSpan -Minutes 1)",
+        "-MultipleInstances IgnoreNew",
+        "-StartWhenAvailable",
+    ):
+        assert fragment in updater
+        assert fragment in action
+
+
+def test_the_updater_replaces_action_triggers_and_settings_and_reverts_all_three_on_failure() -> (
+    None
+):
+    script = installation.launcher_task_script(Path("C:/x"))
+    assert "Set-ScheduledTask -TaskName $name -Action $a -Trigger $t -Settings $s" in script
+    assert "-Action $old -Trigger $oldT -Settings $oldS" in script
+    assert "$read.Settings.RestartCount -ne 999" in script
+    # Um agente já instalado refaz a tarefa quando a versão do ajuste muda.
+    assert installation.LAUNCHER_TASK_VERSION != "wscript-1"
 
 
 def test_the_registered_task_opens_wscript_not_powershell(tmp_path: Path) -> None:
