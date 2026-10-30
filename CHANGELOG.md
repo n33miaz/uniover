@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.3](https://github.com/n33miaz/uniover/compare/v0.18.2...v0.18.3) (2026-10-30)
+
+
+### Features
+
+* **training:** refresh today and week
+
 ## [0.18.2](https://github.com/n33miaz/uniover/compare/v0.18.1...v0.18.2) (2026-10-29)
 
 
