@@ -218,7 +218,7 @@ export class PairSheet {
         : $localize`:@@devices.pair.error.rate-limited:Muitas tentativas seguidas. Espere um pouco e tente de novo.`;
     }
     if (problem?.status === 400) {
-      return $localize`:@@devices.pair.error.invalid:Confira o código e o nome do aparelho (letras, números, espaço e . _ ( ) -).`;
+      return $localize`:@@devices.pair.error.invalid:Confira o código e o nome do dispositivo (letras, números, espaço e . _ ( ) -).`;
     }
     if (problem?.isNetwork) {
       return $localize`:@@devices.pair.error.network:Sem conexão com o servidor. Tente de novo.`;

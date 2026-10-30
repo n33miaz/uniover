@@ -68,6 +68,13 @@ export class DevicesApi {
     await firstValueFrom(this.http.post(`${BASE}/agent-alerts/seen`, null));
   }
 
+  /** O administrador dispensou um aviso específico, sem esconder os demais. */
+  async markAlertSeen(id: string): Promise<void> {
+    await firstValueFrom(
+      this.http.post(`${BASE}/agent-alerts/${encodeURIComponent(id)}/seen`, null),
+    );
+  }
+
   /** As TVs com o computador de cada uma; leitura do módulo da TV, só o administrador. */
   async tvs(): Promise<readonly DeviceTv[]> {
     const dto = await firstValueFrom(this.http.get<{ items?: unknown }>(`${TV_BASE}/tvs`));
