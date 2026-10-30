@@ -123,7 +123,7 @@ test.describe('Configurações > Sistema > TVs', () => {
     await expect(page.getByLabel('Computadores por Convidado')).toHaveValue('2');
     await expect(page.getByText('do servidor').first()).toBeVisible();
     await page.getByLabel('Computadores por Convidado').fill('4');
-    await page.getByRole('button', { name: 'Salvar Limite' }).click();
+    await page.getByRole('button', { name: 'Salvar Dispositivos' }).click();
     if (browserName === 'chromium') {
       const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
       await expect(dialog).toBeVisible();
@@ -133,6 +133,27 @@ test.describe('Configurações > Sistema > TVs', () => {
     await expect(page.getByLabel('Computadores por Convidado')).toHaveValue('4');
     expect(system.settings.find((item) => item.key === 'devices.max-per-guest')).toMatchObject({
       value: 4,
+      source: 'app',
+    });
+  });
+
+  test('o interruptor salva ao alternar, sem botão de salvar ao lado', async ({
+    page,
+    browserName,
+  }) => {
+    seedPaired();
+    await preparePasskey(page, browserName);
+    await open(page);
+    await expect(page.getByRole('button', { name: /^Salvar Limpeza/ })).toHaveCount(0);
+    await page.getByText('Limpeza Leve Automática').click();
+    if (browserName === 'chromium') {
+      const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole('button', { name: 'Confirmar' }).click();
+    }
+    await expect(page.getByText('Configuração salva.')).toBeVisible();
+    expect(system.settings.find((item) => item.key === 'tv.light-cleanup-enabled')).toMatchObject({
+      value: false,
       source: 'app',
     });
   });

@@ -83,6 +83,8 @@ describe('SystemPage configuration', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(api.saveSystemSetting).toHaveBeenCalledWith('devices.max-per-guest', 4);
+    // Um salvar para o grupo, mas só o que mudou vai ao servidor.
+    expect(api.saveSystemSetting).toHaveBeenCalledTimes(1);
     expect(el.textContent).toContain('do app');
     expect(el.textContent).toContain('Configuração salva.');
   });
@@ -98,11 +100,38 @@ describe('SystemPage configuration', () => {
     expect(delay.value).toBe('10');
     delay.value = '15';
     delay.dispatchEvent(new Event('input'));
-    el.querySelectorAll<HTMLFormElement>('form')[2].dispatchEvent(
+    el.querySelectorAll<HTMLFormElement>('form')[1].dispatchEvent(
       new Event('submit', { cancelable: true }),
     );
     await fixture.whenStable();
     expect(api.saveSystemSetting).toHaveBeenCalledWith('devices.agent-offline-minutes', 15);
+    expect(api.saveSystemSetting).toHaveBeenCalledTimes(1);
+  });
+
+  it('says so when only part of the devices group was saved', async () => {
+    const { fixture, el } = await render('owner');
+    const limit = el.querySelector<HTMLInputElement>('#guest-limit')!;
+    const delay = el.querySelector<HTMLInputElement>('#agent-offline-minutes')!;
+    limit.value = '4';
+    limit.dispatchEvent(new Event('input'));
+    delay.value = '15';
+    delay.dispatchEvent(new Event('input'));
+    api.saveSystemSetting
+      .mockImplementationOnce(async (key: string, value: unknown) => ({
+        key,
+        value,
+        source: 'app',
+      }))
+      .mockRejectedValueOnce(new Error('boom'));
+    el.querySelectorAll<HTMLFormElement>('form')[1].dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(api.saveSystemSetting).toHaveBeenCalledTimes(2);
+    expect(el.textContent).toContain('Uma parte foi salva e outra não');
+    expect(el.textContent).not.toContain('Não foi possível salvar agora.');
+    expect(delay.value).toBe('15');
   });
 
   it('says the server bucket is ready and keeps the photo switch usable', async () => {
@@ -142,10 +171,47 @@ describe('SystemPage configuration', () => {
     const light = el.querySelector<HTMLInputElement>('#light-cleanup')!;
     light.checked = false;
     light.dispatchEvent(new Event('change'));
-    buttonByText(el, 'Salvar Limpeza Leve').click();
     await fixture.whenStable();
     expect(api.saveSystemSetting).toHaveBeenCalledWith('tv.light-cleanup-enabled', false);
     expect(el.querySelector<HTMLInputElement>('#deep-cleanup-threshold')!.value).toBe('160');
+  });
+
+  it('puts the switch back when the server refuses the change', async () => {
+    api.saveSystemSetting.mockRejectedValueOnce(new Error('offline'));
+    const { fixture, el } = await render('owner');
+    const light = el.querySelector<HTMLInputElement>('#light-cleanup')!;
+    light.checked = false;
+    light.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(light.checked).toBe(true);
+    expect(el.textContent).toContain('Não foi possível salvar agora.');
+  });
+
+  it('has one save button per group of fields, none beside the switches', async () => {
+    const { el } = await render('owner');
+    const saves = Array.from(el.querySelectorAll('button'))
+      .map((b) => b.textContent?.trim())
+      .filter((text) => text?.startsWith('Salvar'));
+    expect(saves).toEqual(['Salvar Contato', 'Salvar Dispositivos', 'Salvar Memória Mínima']);
+  });
+
+  it('shows a skeleton before the configuration arrives and an explicit retry after a failure', async () => {
+    let reject!: (reason?: unknown) => void;
+    api.systemSettings.mockReturnValueOnce(
+      new Promise<readonly SystemSettingValue[]>((_resolve, fail) => (reject = fail)),
+    );
+    const session = TestBed.inject(SessionState);
+    session.setToken('t', 600);
+    session.setUser({ id: '1', email: 'a@b.c', displayName: 'Dono', role: 'owner' });
+    const fixture = TestBed.createComponent(SystemPage);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.config-skeleton')).not.toBeNull();
+
+    reject(new Error('offline'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Tentar de Novo');
   });
 
   it('restores all cleanup settings to their server defaults together', async () => {

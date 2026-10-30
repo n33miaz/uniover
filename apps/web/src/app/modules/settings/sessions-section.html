@@ -116,6 +116,16 @@
       </button>
     </div>
   } @else {
-    <p role="status" i18n="@@settings.sessions.loading">Carregando sessões…</p>
+    <div class="sessions-skeleton" role="status">
+      <span class="ui-visually-hidden" i18n="@@settings.sessions.loading">Carregando sessões…</span>
+      <div class="skeleton-card ui-card" aria-hidden="true">
+        <span class="ui-skeleton bar wide"></span>
+        <span class="ui-skeleton bar"></span>
+      </div>
+      <div class="skeleton-card ui-card" aria-hidden="true">
+        <span class="ui-skeleton bar wide"></span>
+        <span class="ui-skeleton bar"></span>
+      </div>
+    </div>
   }
 </section>

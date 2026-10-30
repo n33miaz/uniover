@@ -5,219 +5,211 @@
     Configuração
   </h2>
   @if (settings()) {
-    <div class="ui-group">
-      <form
-        class="config-row"
-        (submit)="$event.preventDefault(); save('training.off-contact', contact())"
-      >
-        <label for="off-contact" i18n="@@settings.system.config.contact"
-          >Contato de Alimentos</label
+    <div class="config-groups">
+      <section class="config-group ui-group" aria-labelledby="system-contact-title">
+        <h3 id="system-contact-title" i18n="@@settings.system.config.contact-group">Alimentos</h3>
+        <form
+          class="config-row"
+          (submit)="$event.preventDefault(); save('training.off-contact', contact())"
         >
-        <span class="source">{{ source('training.off-contact') }}</span>
-        <input
-          id="off-contact"
-          class="ui-input"
-          type="email"
-          [value]="contact()"
-          (input)="contact.set($any($event.target).value)"
-          required
-          maxlength="200"
-        />
-        <button
-          type="submit"
-          class="ui-btn secondary"
-          [disabled]="busy() !== null"
-          i18n="@@settings.system.config.save-contact"
-        >
-          Salvar Contato
-        </button>
-      </form>
-      <form
-        class="config-row"
-        (submit)="$event.preventDefault(); save('devices.max-per-guest', limit())"
-      >
-        <label for="guest-limit" i18n="@@settings.system.config.limit"
-          >Computadores por Convidado</label
-        >
-        <span class="source">{{ source('devices.max-per-guest') }}</span>
-        <input
-          id="guest-limit"
-          class="ui-input"
-          type="number"
-          min="1"
-          max="20"
-          [value]="limit()"
-          (input)="limit.set(+$any($event.target).value)"
-          required
-        />
-        <button
-          type="submit"
-          class="ui-btn secondary"
-          [disabled]="busy() !== null"
-          i18n="@@settings.system.config.save-limit"
-        >
-          Salvar Limite
-        </button>
-      </form>
-      <form
-        class="config-row"
-        (submit)="$event.preventDefault(); save('devices.agent-offline-minutes', offlineMinutes())"
-      >
-        <label for="agent-offline-minutes" i18n="@@settings.system.config.agent-offline-minutes"
-          >Avisar Agente Off-line Após (minutos)</label
-        >
-        <span class="source">{{ source('devices.agent-offline-minutes') }}</span>
-        <input
-          id="agent-offline-minutes"
-          class="ui-input"
-          type="number"
-          min="1"
-          max="1440"
-          [value]="offlineMinutes()"
-          (input)="offlineMinutes.set(+$any($event.target).value)"
-          required
-        />
-        <button
-          type="submit"
-          class="ui-btn secondary"
-          [disabled]="busy() !== null"
-          i18n="@@settings.system.config.save-agent-offline-minutes"
-        >
-          Salvar Alerta
-        </button>
-      </form>
-      <div class="config-row">
-        <label class="switch-line" for="photo-storage">
-          <span i18n="@@settings.system.config.photos">Fotos na Nuvem</span>
-          <input
-            id="photo-storage"
-            type="checkbox"
-            role="switch"
-            class="ui-switch"
-            [checked]="photos()"
-            [disabled]="bucketConfigured() === false && !photos()"
-            (change)="photos.set($any($event.target).checked)"
-          />
-        </label>
-        <span class="source">{{ source('training.photo-storage-enabled') }}</span>
-        <p class="hint" i18n="@@settings.system.config.photos-hint">
-          Ligado, as fotos de progresso ficam guardadas na nuvem privada, em cada aparelho que
-          aceitar. Desligado, continuam só no aparelho.
-        </p>
-        @if (bucketStatus(); as status) {
-          <p
-            class="hint bucket"
-            [class.ok]="bucketConfigured()"
-            [class.bad]="!bucketConfigured()"
-            role="status"
+          <label for="off-contact" i18n="@@settings.system.config.contact"
+            >Contato de Alimentos</label
           >
-            {{ status }}
+          <span class="source">{{ source('training.off-contact') }}</span>
+          <input
+            id="off-contact"
+            class="ui-input"
+            type="email"
+            [value]="contact()"
+            (input)="contact.set($any($event.target).value)"
+            required
+            maxlength="200"
+          />
+          <button
+            type="submit"
+            class="ui-btn secondary"
+            [disabled]="busy() !== null"
+            i18n="@@settings.system.config.save-contact"
+          >
+            Salvar Contato
+          </button>
+        </form>
+      </section>
+      <section class="config-group ui-group" aria-labelledby="system-devices-title">
+        <h3 id="system-devices-title" i18n="@@settings.system.config.devices-group">
+          Dispositivos
+        </h3>
+        <form class="config-form" (submit)="$event.preventDefault(); saveDeviceSettings()">
+          <div class="config-row">
+            <label for="guest-limit" i18n="@@settings.system.config.limit"
+              >Computadores por Convidado</label
+            >
+            <span class="source">{{ source('devices.max-per-guest') }}</span>
+            <input
+              id="guest-limit"
+              class="ui-input"
+              type="number"
+              min="1"
+              max="20"
+              [value]="limit()"
+              (input)="limit.set(+$any($event.target).value)"
+              required
+            />
+          </div>
+          <div class="config-row">
+            <label for="agent-offline-minutes" i18n="@@settings.system.config.agent-offline-minutes"
+              >Avisar Agente Off-line Após (minutos)</label
+            >
+            <span class="source">{{ source('devices.agent-offline-minutes') }}</span>
+            <input
+              id="agent-offline-minutes"
+              class="ui-input"
+              type="number"
+              min="1"
+              max="1440"
+              [value]="offlineMinutes()"
+              (input)="offlineMinutes.set(+$any($event.target).value)"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            class="ui-btn secondary"
+            [disabled]="busy() !== null"
+            i18n="@@settings.system.config.save-devices"
+          >
+            Salvar Dispositivos
+          </button>
+        </form>
+      </section>
+      <section class="config-group ui-group" aria-labelledby="system-photos-title">
+        <h3 id="system-photos-title" i18n="@@settings.system.config.photos-group">Fotos</h3>
+        <div class="config-row">
+          <label class="switch-line" for="photo-storage">
+            <span i18n="@@settings.system.config.photos">Fotos na Nuvem</span>
+            <input
+              id="photo-storage"
+              type="checkbox"
+              role="switch"
+              class="ui-switch"
+              [checked]="photos()"
+              [disabled]="busy() !== null || (bucketConfigured() === false && !photos())"
+              (change)="toggle('training.photo-storage-enabled', photos, $any($event.target))"
+            />
+          </label>
+          <span class="source">{{ source('training.photo-storage-enabled') }}</span>
+          <p class="hint" i18n="@@settings.system.config.photos-hint">
+            Ligado, as fotos de progresso ficam guardadas na nuvem privada, em cada dispositivo que
+            aceitar. Desligado, continuam só no dispositivo.
           </p>
-        }
-        <button
-          type="button"
-          class="ui-btn secondary"
-          [disabled]="busy() !== null"
-          (click)="save('training.photo-storage-enabled', photos())"
-          i18n="@@settings.system.config.save-photos"
+          @if (bucketStatus(); as status) {
+            <p
+              class="hint bucket"
+              [class.ok]="bucketConfigured()"
+              [class.bad]="!bucketConfigured()"
+              role="status"
+            >
+              {{ status }}
+            </p>
+          }
+        </div>
+      </section>
+      <section class="config-group ui-group" aria-labelledby="system-cleanup-title">
+        <h3 id="system-cleanup-title" i18n="@@settings.system.config.cleanup-group">Limpeza</h3>
+        <div class="config-row">
+          <label class="switch-line" for="light-cleanup">
+            <span i18n="@@settings.system.config.light-cleanup">Limpeza Leve Automática</span>
+            <input
+              id="light-cleanup"
+              type="checkbox"
+              role="switch"
+              class="ui-switch"
+              [checked]="lightCleanup()"
+              [disabled]="busy() !== null"
+              (change)="toggle('tv.light-cleanup-enabled', lightCleanup, $any($event.target))"
+            />
+          </label>
+          <span class="source">{{ source('tv.light-cleanup-enabled') }}</span>
+        </div>
+        <div class="config-row">
+          <label class="switch-line" for="deep-cleanup">
+            <span i18n="@@settings.system.config.deep-cleanup">Limpeza Profunda Automática</span>
+            <input
+              id="deep-cleanup"
+              type="checkbox"
+              role="switch"
+              class="ui-switch"
+              [checked]="deepCleanup()"
+              [disabled]="busy() !== null"
+              (change)="toggle('tv.deep-cleanup-enabled', deepCleanup, $any($event.target))"
+            />
+          </label>
+          <span class="source">{{ source('tv.deep-cleanup-enabled') }}</span>
+        </div>
+        <form
+          class="config-row"
+          (submit)="
+            $event.preventDefault();
+            save('tv.deep-cleanup-memory-threshold-mb', deepCleanupThreshold())
+          "
         >
-          Salvar Fotos
-        </button>
-      </div>
-      <div class="config-row">
-        <label class="switch-line" for="light-cleanup">
-          <span i18n="@@settings.system.config.light-cleanup">Limpeza Leve Automática</span>
+          <label for="deep-cleanup-threshold" i18n="@@settings.system.config.deep-cleanup-threshold"
+            >Memória Mínima para Limpeza Profunda (MB)</label
+          >
+          <span class="source">{{ source('tv.deep-cleanup-memory-threshold-mb') }}</span>
           <input
-            id="light-cleanup"
-            type="checkbox"
-            role="switch"
-            class="ui-switch"
-            [checked]="lightCleanup()"
-            (change)="lightCleanup.set($any($event.target).checked)"
+            id="deep-cleanup-threshold"
+            class="ui-input"
+            type="number"
+            min="64"
+            max="512"
+            [value]="deepCleanupThreshold()"
+            (input)="deepCleanupThreshold.set(+$any($event.target).value)"
+            required
           />
-        </label>
-        <span class="source">{{ source('tv.light-cleanup-enabled') }}</span>
+          <button
+            type="submit"
+            class="ui-btn secondary"
+            [disabled]="busy() !== null"
+            i18n="@@settings.system.config.save-deep-cleanup-threshold"
+          >
+            Salvar Memória Mínima
+          </button>
+        </form>
         <button
           type="button"
           class="ui-btn secondary"
           [disabled]="busy() !== null"
-          (click)="save('tv.light-cleanup-enabled', lightCleanup())"
-          i18n="@@settings.system.config.save-light-cleanup"
+          (click)="resetCleanupDefaults()"
+          i18n="@@settings.system.config.reset-cleanup"
         >
-          Salvar Limpeza Leve
+          Voltar ao Padrão da Limpeza
         </button>
-      </div>
-      <div class="config-row">
-        <label class="switch-line" for="deep-cleanup">
-          <span i18n="@@settings.system.config.deep-cleanup">Limpeza Profunda Automática</span>
-          <input
-            id="deep-cleanup"
-            type="checkbox"
-            role="switch"
-            class="ui-switch"
-            [checked]="deepCleanup()"
-            (change)="deepCleanup.set($any($event.target).checked)"
-          />
-        </label>
-        <span class="source">{{ source('tv.deep-cleanup-enabled') }}</span>
-        <button
-          type="button"
-          class="ui-btn secondary"
-          [disabled]="busy() !== null"
-          (click)="save('tv.deep-cleanup-enabled', deepCleanup())"
-          i18n="@@settings.system.config.save-deep-cleanup"
-        >
-          Salvar Limpeza Profunda
-        </button>
-      </div>
-      <form
-        class="config-row"
-        (submit)="
-          $event.preventDefault();
-          save('tv.deep-cleanup-memory-threshold-mb', deepCleanupThreshold())
-        "
-      >
-        <label for="deep-cleanup-threshold" i18n="@@settings.system.config.deep-cleanup-threshold"
-          >Memória Mínima para Limpeza Profunda (MB)</label
-        >
-        <span class="source">{{ source('tv.deep-cleanup-memory-threshold-mb') }}</span>
-        <input
-          id="deep-cleanup-threshold"
-          class="ui-input"
-          type="number"
-          min="64"
-          max="512"
-          [value]="deepCleanupThreshold()"
-          (input)="deepCleanupThreshold.set(+$any($event.target).value)"
-          required
-        />
-        <button
-          type="submit"
-          class="ui-btn secondary"
-          [disabled]="busy() !== null"
-          i18n="@@settings.system.config.save-deep-cleanup-threshold"
-        >
-          Salvar Memória Mínima
-        </button>
-      </form>
-      <button
-        type="button"
-        class="ui-btn secondary"
-        [disabled]="busy() !== null"
-        (click)="resetCleanupDefaults()"
-        i18n="@@settings.system.config.reset-cleanup"
-      >
-        Voltar ao Padrão da Limpeza
-      </button>
+      </section>
     </div>
-  } @else {
+  } @else if (configLoading()) {
+    <div class="config-skeleton" role="status">
+      <span class="ui-visually-hidden" i18n="@@settings.system.config.loading"
+        >Carregando configuração…</span
+      >
+      <div class="skeleton-card ui-card" aria-hidden="true">
+        <span class="ui-skeleton bar wide"></span>
+        <span class="ui-skeleton bar"></span>
+        <span class="ui-skeleton bar"></span>
+      </div>
+      <div class="skeleton-card ui-card" aria-hidden="true">
+        <span class="ui-skeleton bar wide"></span>
+        <span class="ui-skeleton bar"></span>
+      </div>
+    </div>
+  } @else if (configFailed()) {
     <button
       type="button"
       class="ui-btn secondary"
       (click)="load()"
       i18n="@@settings.system.config.retry"
     >
-      Carregar Configuração
+      Tentar de Novo
     </button>
   }
   @if (saved()) {

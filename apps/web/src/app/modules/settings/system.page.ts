@@ -1,4 +1,4 @@
-import { Component, effect, inject, signal, untracked } from '@angular/core';
+import { Component, effect, inject, signal, untracked, type WritableSignal } from '@angular/core';
 import { isStepUpRequired, problemOf } from '../../core/auth/api-problem';
 import { SessionState } from '../../core/session/session-state';
 import { SystemApi, SystemSettingKey, SystemSettingValue } from './system-api';
@@ -36,6 +36,8 @@ export class SystemPage {
   protected readonly deepCleanup = signal(true);
   protected readonly deepCleanupThreshold = signal(160);
   protected readonly busy = signal<SystemSettingKey | null>(null);
+  protected readonly configLoading = signal(false);
+  protected readonly configFailed = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly saved = signal(false);
 
@@ -53,6 +55,8 @@ export class SystemPage {
 
   protected async load(): Promise<void> {
     this.error.set(null);
+    this.configFailed.set(false);
+    this.configLoading.set(true);
     try {
       const values = await this.api.systemSettings();
       this.settings.set(values);
@@ -80,10 +84,13 @@ export class SystemPage {
         ),
       );
     } catch {
+      this.configFailed.set(true);
       this.error.set(
         $localize`:@@settings.system.config.load-error:Não foi possível carregar as configurações.`,
       );
       return;
+    } finally {
+      this.configLoading.set(false);
     }
     // Só informativo: se a leitura falhar, a tela segue sem a linha de estado (o servidor ainda recusa ligar sem bucket).
     try {
@@ -112,30 +119,77 @@ export class SystemPage {
   }
 
   protected async save(key: SystemSettingKey, value: string | number | boolean): Promise<void> {
-    if (this.busy()) return;
-    this.busy.set(key);
+    await this.saveGroup([[key, value]]);
+  }
+
+  /** Um salvar para o grupo, mas só os valores que mudaram: não pede confirmação nem grava o que ficou igual. */
+  protected saveDeviceSettings(): Promise<void> {
+    const current = new Map(this.settings()?.map((item) => [item.key, item.value]));
+    return this.saveGroup(
+      (
+        [
+          ['devices.max-per-guest', this.limit()],
+          ['devices.agent-offline-minutes', this.offlineMinutes()],
+        ] as const
+      ).filter(([key, value]) => current.get(key) !== value),
+    ).then(() => undefined);
+  }
+
+  /**
+   * Interruptor: salva ao alternar, sem botão. Se o servidor recusar (ou houver outro salvamento em curso), o
+   * interruptor volta ao valor anterior, para a tela nunca mostrar ligado o que o servidor não aceitou.
+   */
+  protected async toggle(
+    key: SystemSettingKey,
+    flag: WritableSignal<boolean>,
+    input: HTMLInputElement,
+  ): Promise<void> {
+    const previous = flag();
+    flag.set(input.checked);
+    if (!(await this.saveGroup([[key, input.checked]]))) {
+      flag.set(previous);
+      input.checked = previous;
+    }
+  }
+
+  /** Devolve se o servidor aceitou todos os valores do grupo. */
+  private async saveGroup(
+    values: readonly (readonly [SystemSettingKey, string | number | boolean])[],
+  ): Promise<boolean> {
+    if (this.busy()) return false;
+    if (values.length === 0) return true;
+    this.busy.set(values[0][0]);
     this.error.set(null);
     this.saved.set(false);
+    let applied = 0;
     try {
-      const updated = await this.api.saveSystemSetting(key, value);
-      this.settings.update(
-        (items) => items?.map((item) => (item.key === key ? updated : item)) ?? [updated],
-      );
+      // Um de cada vez: cada gravação pode pedir a confirmação com a passkey, e dois pedidos juntos abririam dois diálogos.
+      for (const [key, value] of values) {
+        const updated = await this.api.saveSystemSetting(key, value);
+        this.settings.update(
+          (items) => items?.map((item) => (item.key === key ? updated : item)) ?? [updated],
+        );
+        applied += 1;
+      }
       this.saved.set(true);
+      return true;
     } catch (error) {
       const problem = problemOf(error);
       this.error.set(
-        problem && isStepUpRequired(problem)
-          ? $localize`:@@settings.system.config.unconfirmed:A mudança não foi confirmada com a passkey.`
-          : problem?.kind === 'photo-bucket-not-configured'
-            ? $localize`:@@settings.system.config.bucket-missing:Configure o bucket no servidor antes de ligar as fotos.`
-            : problem?.status === 400
-              ? $localize`:@@settings.system.config.invalid:Confira o valor e tente de novo.`
-              : $localize`:@@settings.system.config.save-error:Não foi possível salvar agora.`,
+        applied > 0
+          ? $localize`:@@settings.system.config.partial:Uma parte foi salva e outra não. Os valores da tela seguem como você os deixou: confira e salve de novo.`
+          : problem && isStepUpRequired(problem)
+            ? $localize`:@@settings.system.config.unconfirmed:A mudança não foi confirmada com a passkey.`
+            : problem?.kind === 'photo-bucket-not-configured'
+              ? $localize`:@@settings.system.config.bucket-missing:Configure o bucket no servidor antes de ligar as fotos.`
+              : problem?.status === 400
+                ? $localize`:@@settings.system.config.invalid:Confira o valor e tente de novo.`
+                : $localize`:@@settings.system.config.save-error:Não foi possível salvar agora.`,
       );
     } finally {
       this.busy.set(null);
     }
+    return false;
   }
 
   protected async resetCleanupDefaults(): Promise<void> {

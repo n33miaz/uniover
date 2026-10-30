@@ -38,6 +38,12 @@
   overflow-wrap: anywhere;
 }
 
+.version-skeleton {
+  display: inline-block;
+  width: 5rem;
+  vertical-align: middle;
+}
+
 /* Linha que leva a outra tela. */
 .link-row {
   color: inherit;

@@ -44,6 +44,14 @@ describe('AboutPage', () => {
     expect(el.querySelector('#versions-title + dl')!.textContent).toContain('indisponível agora');
   });
 
+  it('uses a version skeleton while the public version is still loading', async () => {
+    api.deploymentVersion.mockReturnValue(new Promise(() => undefined));
+    await TestBed.inject(AuthService).init();
+    const fixture = TestBed.createComponent(AboutPage);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.version-skeleton')).not.toBeNull();
+  });
+
   it('asks only for the public deployment version route, without a token', async () => {
     api.refresh.mockRejectedValue(networkProblem());
     await render();

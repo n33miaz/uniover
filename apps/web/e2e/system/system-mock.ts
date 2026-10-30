@@ -87,7 +87,11 @@ export async function mockSystemApi(
     settings: [
       { key: 'training.off-contact', value: 'foods@example.test', source: 'server' },
       { key: 'devices.max-per-guest', value: 2, source: 'server' },
+      { key: 'devices.agent-offline-minutes', value: 10, source: 'server' },
       { key: 'training.photo-storage-enabled', value: false, source: 'server' },
+      { key: 'tv.light-cleanup-enabled', value: true, source: 'server' },
+      { key: 'tv.deep-cleanup-enabled', value: true, source: 'server' },
+      { key: 'tv.deep-cleanup-memory-threshold-mb', value: 160, source: 'server' },
     ],
   };
 

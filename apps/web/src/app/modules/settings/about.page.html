@@ -16,7 +16,10 @@
         <dt i18n="@@settings.about.api-version">Versão da API</dt>
         <dd>
           @if (apiVersion() === 'loading') {
-            <span i18n="@@settings.about.loading">consultando…</span>
+            <span class="version-skeleton ui-skeleton bar" aria-hidden="true"></span>
+            <span class="ui-visually-hidden" i18n="@@settings.about.loading"
+              >Consultando versão…</span
+            >
           } @else if (apiVersion(); as version) {
             {{ version }}
           } @else {

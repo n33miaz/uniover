@@ -138,4 +138,13 @@ describe('SessionsSection', () => {
     await render();
     expect(api.sessions).toHaveBeenCalledWith('jwt', null);
   });
+
+  it('uses cards as the loading state instead of a loose sentence', () => {
+    api.sessions.mockReturnValue(new Promise(() => undefined));
+    const fixture = TestBed.createComponent(SessionsSection);
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.sessions-skeleton')).not.toBeNull();
+    expect(root.querySelectorAll('.sessions-skeleton .skeleton-card')).toHaveLength(2);
+  });
 });
