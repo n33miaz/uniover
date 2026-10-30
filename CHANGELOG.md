@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.20.0](https://github.com/n33miaz/uniover/compare/v0.19.0...v0.20.0) (2026-10-30)
+
+
+### Features
+
+* **web:** standard top bar for module screens
+* **web:** title-only settings with theme selector
+* **web:** shorter settings copy and wide action
+
+
+### Bug Fixes
+
+* **web:** drop agent state when TV is hidden
+* **web:** no focus ring on top bar title
+* **web:** devices dead code and owner hint
+
 ## [0.19.0](https://github.com/n33miaz/uniover/compare/v0.18.4...v0.19.0) (2026-10-30)
 
 
