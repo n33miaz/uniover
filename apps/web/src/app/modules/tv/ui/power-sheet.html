@@ -12,6 +12,7 @@
   <p id="power-text" class="text" i18n="@@tv.power.text">
     Sem o emissor infravermelho, a TV só volta com o controle original.
   </p>
+
   @if (store.safePowerOff()) {
     <p id="power-checked" class="text" i18n="@@tv.power.checked">
       O agente só desliga se a TV estiver ligada e confirma o resultado. Se não conseguir confirmar,
@@ -19,11 +20,29 @@
     </p>
   }
 
-  <section class="ui-group schedule" aria-labelledby="power-schedule-title">
-    <h3 id="power-schedule-title" i18n="@@tv.power.schedule">Agendar desligamento</h3>
+  @if (error(); as text) {
+    <p class="error" role="alert">{{ text }}</p>
+  }
+
+  <!-- A ação principal: grande e destrutiva. Cancelar fica por último, e o agendamento é a segunda opção, no meio. -->
+  <button
+    type="button"
+    class="danger now"
+    [disabled]="busy() || !store.canSend()"
+    (click)="confirm()"
+    i18n="@@tv.power.confirm"
+  >
+    Desligar
+  </button>
+
+  <section class="schedule" aria-labelledby="power-schedule-title">
+    <h3 id="power-schedule-title" i18n="@@tv.power.schedule">Agendar</h3>
     @if (store.powerSchedule(); as active) {
-      <p class="schedule-active" i18n="@@tv.power.schedule.active">
-        Agendado para {{ localTime(active.dueAtUtc, active.timeZone) }} ({{ active.timeZone }})
+      <p class="schedule-active">
+        <span i18n="@@tv.power.schedule.active">Desliga às {{ activeTime(active) }}</span>
+        @if (remaining(); as left) {
+          <span class="left">{{ left }}</span>
+        }
       </p>
       @if (active.status === 'dispatching') {
         <p class="text" i18n="@@tv.power.schedule.dispatching">Desligamento em andamento.</p>
@@ -35,53 +54,46 @@
         (click)="cancelSchedule()"
         i18n="@@tv.power.schedule.cancel"
       >
-        Cancelar agendamento
+        Cancelar Agendamento
       </button>
     }
     @if (store.canSchedulePowerOff()) {
-      @if (store.powerSchedule()) {
-        <p class="text" i18n="@@tv.power.schedule.change">Escolha outro horário para alterar.</p>
-      }
-      <div class="schedule-presets" role="group" aria-labelledby="power-schedule-title">
+      <div class="chips" role="group" aria-labelledby="power-schedule-title">
+        @for (chip of chips; track chip.minutes) {
+          <button
+            type="button"
+            class="chip"
+            [attr.aria-pressed]="selected() === chip.minutes"
+            [disabled]="busy()"
+            (click)="chooseMinutes(chip.minutes)"
+          >
+            {{ chip.label }}
+          </button>
+        }
         <button
           type="button"
+          class="chip"
+          [attr.aria-pressed]="selected() === 'custom'"
           [disabled]="busy()"
-          (click)="chooseMinutes(30)"
-          i18n="@@tv.power.schedule.half-hour"
+          (click)="chooseCustom()"
+          i18n="@@tv.power.schedule.custom"
         >
-          30 min
-        </button>
-        <button
-          type="button"
-          [disabled]="busy()"
-          (click)="chooseMinutes(60)"
-          i18n="@@tv.power.schedule.one-hour"
-        >
-          1 h
-        </button>
-        <button
-          type="button"
-          [disabled]="busy()"
-          (click)="chooseMinutes(120)"
-          i18n="@@tv.power.schedule.two-hours"
-        >
-          2 h
+          Personalizar
         </button>
       </div>
-      <label class="day-time" for="power-day-time" i18n="@@tv.power.schedule.day-time"
-        >Horário do dia</label
-      >
-      <input
-        id="power-day-time"
-        type="time"
-        [value]="dayTime()"
-        [disabled]="busy()"
-        (change)="updateDayTime($event)"
-      />
+      @if (selected() === 'custom') {
+        <label class="day-time" for="power-day-time" i18n="@@tv.power.schedule.day-time"
+          >Horário do dia</label
+        >
+        <input
+          id="power-day-time"
+          type="time"
+          [value]="dayTime()"
+          [disabled]="busy()"
+          (change)="updateDayTime($event)"
+        />
+      }
       @if (chosen(); as date) {
-        <p class="text" i18n="@@tv.power.schedule.confirm-time">
-          Desligar em {{ localTime(date) }} ({{ zone }})?
-        </p>
         <button
           type="button"
           class="schedule-confirm"
@@ -89,7 +101,7 @@
           (click)="saveSchedule()"
           i18n="@@tv.power.schedule.confirm"
         >
-          Confirmar agendamento
+          Agendar para {{ clock(date) }}
         </button>
       }
     } @else if (!store.powerSchedule()) {
@@ -108,28 +120,14 @@
     }
   </section>
 
-  @if (error(); as text) {
-    <p class="error" role="alert">{{ text }}</p>
-  }
-
-  <div class="footer">
-    <button
-      type="button"
-      class="secondary"
-      [disabled]="busy()"
-      (click)="cancel()"
-      i18n="@@tv.power.cancel"
-    >
-      Cancelar
-    </button>
-    <button
-      type="button"
-      class="danger"
-      [disabled]="busy() || !store.canSend()"
-      (click)="confirm()"
-      i18n="@@tv.power.confirm"
-    >
-      Desligar
-    </button>
-  </div>
+  <button
+    type="button"
+    #closeButton
+    class="secondary close"
+    [disabled]="busy()"
+    (click)="cancel()"
+    i18n="@@tv.power.cancel"
+  >
+    Cancelar
+  </button>
 </dialog>

@@ -3,11 +3,13 @@ import {
   DestroyRef,
   ElementRef,
   afterNextRender,
+  computed,
   inject,
   output,
   signal,
   viewChild,
 } from '@angular/core';
+import type { TvPowerSchedule } from '../data/tv-api';
 import { TvStore } from '../data/tv-store';
 import {
   closeDialog,
@@ -19,7 +21,10 @@ import { leaveSheet } from './sheet-motion';
 /**
  * Folha "Desligar a TV?": sobe de baixo, sem botão de fechar (a saída é "Cancelar" ou Esc). Desligar é a única
  * ação perigosa do controle, porque sem o emissor infravermelho a TV só volta com o controle original. Por decisão
- * do dono a confirmação é só esta folha (sem passkey). Se o pedido falhar, o motivo aparece aqui dentro e a folha
+ * do dono a confirmação é só esta folha (sem passkey). "Desligar" é a ação principal (grande, destrutiva); agendar é a
+ * segunda opção, com tempos prontos (15 min, 30 min, 1 h, 2 h) e "Personalizar" para escolher a hora; com um
+ * agendamento valendo a folha mostra "Desliga às HH:MM" e o tempo que falta, e permite cancelá-lo. O foco começa em
+ * "Cancelar", nunca na ação destrutiva. Se o pedido falhar, o motivo aparece aqui dentro e a folha
  * continua aberta; se der certo, ela fecha e o aviso fica na tela. A entrada e a saída são suaves (CSS); o `closed`
  * só sai depois da saída, para a página não desmontar a folha no meio dela.
  */
@@ -32,6 +37,7 @@ export class PowerSheet {
   protected readonly store = inject(TvStore);
   private readonly destroy = inject(DestroyRef);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
+  private readonly closeButton = viewChild.required<ElementRef<HTMLButtonElement>>('closeButton');
   private opener: Element | null = null;
 
   readonly closed = output<void>();
@@ -39,6 +45,17 @@ export class PowerSheet {
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly chosen = signal<Date | null>(null);
+  /** O tempo pronto escolhido (em minutos), ou "personalizar" (o horário do dia), ou nada. */
+  protected readonly selected = signal<number | 'custom' | null>(null);
+  /** Os tempos prontos do agendamento. */
+  protected readonly chips: readonly { readonly minutes: number; readonly label: string }[] = [
+    { minutes: 15, label: $localize`:@@tv.power.schedule.quarter-hour:15 min` },
+    { minutes: 30, label: $localize`:@@tv.power.schedule.half-hour:30 min` },
+    { minutes: 60, label: $localize`:@@tv.power.schedule.one-hour:1 h` },
+    { minutes: 120, label: $localize`:@@tv.power.schedule.two-hours:2 h` },
+  ];
+  /** O relógio da folha: o "em 25 min" se renova com a leitura periódica do agendamento. */
+  private readonly now = signal(Date.now());
   protected readonly dayTime = signal('22:00');
   protected readonly zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   /** A saída já começou: nem um segundo toque nem um segundo pedido valem mais. */
@@ -50,11 +67,14 @@ export class PowerSheet {
       const dialog = this.dialog().nativeElement;
       this.opener = document.activeElement;
       dialog.showModal();
+      // A ação principal é destrutiva: o foco entra em "Cancelar" (o primeiro do documento seria o "Desligar").
+      this.closeButton().nativeElement.focus({ preventScroll: true });
       // O fundo escurecido é o próprio <dialog>; só fecha se o toque começou e terminou fora da folha.
       onDialogBackdropClick(dialog, () => this.cancel());
       void this.store.refreshPowerSchedule();
       // A folha pode ficar aberta no disparo; a leitura periódica traz o desfecho sem reenviar comando.
       const poll = window.setInterval(() => {
+        this.now.set(Date.now());
         if (this.store.powerSchedule()) void this.store.refreshPowerSchedule();
       }, 15_000);
       this.destroy.onDestroy(() => window.clearInterval(poll));
@@ -85,7 +105,45 @@ export class PowerSheet {
 
   protected chooseMinutes(minutes: number): void {
     this.error.set(null);
+    this.selected.set(minutes);
     this.chosen.set(new Date(Date.now() + minutes * 60_000));
+  }
+
+  /** "Personalizar": mostra o campo do horário do dia e já propõe o horário que ele traz. */
+  protected chooseCustom(): void {
+    this.error.set(null);
+    this.selected.set('custom');
+    this.chooseDayTime();
+  }
+
+  /** "Desliga às 21:40" do agendamento que vale: só a hora no dia de hoje; com a data quando é outro dia. */
+  protected activeTime(active: TvPowerSchedule): string {
+    const due = new Date(active.dueAtUtc);
+    const sameDay = due.toDateString() === new Date().toDateString();
+    return new Intl.DateTimeFormat('pt-BR', {
+      ...(sameDay ? {} : { dateStyle: 'short' as const }),
+      timeStyle: 'short',
+      timeZone: active.timeZone,
+    }).format(due);
+  }
+
+  /** O tempo que falta para o desligamento agendado ("em 25 min", "em 1 h 5 min"); vazio se já passou. */
+  protected readonly remaining = computed<string | null>(() => {
+    const active = this.store.powerSchedule();
+    if (!active) return null;
+    const minutes = Math.round((new Date(active.dueAtUtc).getTime() - this.now()) / 60_000);
+    if (minutes <= 0) return null;
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    if (hours === 0) return $localize`:@@tv.power.schedule.in-minutes:em ${minutes}:minutes: min`;
+    return rest === 0
+      ? $localize`:@@tv.power.schedule.in-hours:em ${hours}:hours: h`
+      : $localize`:@@tv.power.schedule.in-hours-minutes:em ${hours}:hours: h ${rest}:minutes: min`;
+  });
+
+  /** Só a hora (HH:MM) de um instante, no fuso do aparelho. */
+  protected clock(date: Date): string {
+    return new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short' }).format(date);
   }
 
   protected chooseDayTime(): void {
@@ -143,7 +201,10 @@ export class PowerSheet {
     try {
       const failure = await this.store.savePowerSchedule(chosen.toISOString(), this.zone);
       if (failure) this.error.set(failure.message);
-      else this.chosen.set(null);
+      else {
+        this.chosen.set(null);
+        this.selected.set(null);
+      }
     } finally {
       this.busy.set(false);
     }
