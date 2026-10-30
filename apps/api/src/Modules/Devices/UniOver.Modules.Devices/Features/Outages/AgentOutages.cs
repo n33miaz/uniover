@@ -164,6 +164,14 @@ internal sealed class AgentAlertsHandler(DevicesDbContext db, TimeProvider time)
         await db.AgentOutages.Where(o => o.SeenAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(o => o.SeenAt, now), cancellationToken);
     }
+
+    /// <summary>Marca só o aviso escolhido como visto, sem esconder os outros computadores.</summary>
+    public async Task MarkSeenAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var now = time.GetUtcNow();
+        await db.AgentOutages.Where(o => o.Id == id && o.SeenAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(o => o.SeenAt, now), cancellationToken);
+    }
 }
 
 internal static class AgentAlertsEndpoint
@@ -180,6 +188,15 @@ internal static class AgentAlertsEndpoint
         group.MapPost("/agent-alerts/seen", async (AgentAlertsHandler handler, CancellationToken cancellationToken) =>
             {
                 await handler.MarkSeenAsync(cancellationToken);
+                return TypedResults.NoContent();
+            })
+            .RequireAuthorization(UniOverAuth.OwnerPolicy)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapPost("/agent-alerts/{id:guid}/seen", async (Guid id, AgentAlertsHandler handler, CancellationToken cancellationToken) =>
+            {
+                await handler.MarkSeenAsync(id, cancellationToken);
                 return TypedResults.NoContent();
             })
             .RequireAuthorization(UniOverAuth.OwnerPolicy)
