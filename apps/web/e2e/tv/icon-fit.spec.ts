@@ -10,7 +10,7 @@ import {
   emitSse,
   installFakeEventSource,
   mockTvApi,
-  sseUrls,
+  openStreams,
 } from './tv-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -39,7 +39,8 @@ async function signIn(page: Page) {
 }
 
 async function showTv(page: Page) {
-  await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
+  // Só o fluxo da TV segue aberto: a Início também lê o estado (o convidado chega a ela pelo cartão) e o solta ao sair.
+  await expect.poll(() => openStreams(page)).toBe(1);
   await emitSse(page, 'tv.state', tv.state);
   await emitSse(page, 'tv.shortcuts', tv.shortcuts);
   await expect(page.getByRole('button', { name: 'OK', exact: true })).toBeVisible();

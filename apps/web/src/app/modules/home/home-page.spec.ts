@@ -305,7 +305,7 @@ describe('HomePage', () => {
     expect(el.querySelector('.shortcuts')).toBeNull();
   });
 
-  it('não mostra estado técnico ao convidado: nem a bolinha do agente nem o aviso de queda', async () => {
+  it('mostra ao convidado com a TV a bolinha do agente dele, sem o aviso de queda do dono', async () => {
     TestBed.inject(SessionState).setUser({
       id: ACCOUNT,
       email: 'convidado@exemplo.com',
@@ -321,9 +321,24 @@ describe('HomePage', () => {
       agentAlert: { name: 'PC da sala', recovered: false },
     });
     const { el } = await render();
-    expect(el.querySelector('.agent-status')).toBeNull();
+    const dot = el.querySelector('.agent-status');
+    expect(dot?.getAttribute('aria-label')).toBe('Agente desligado');
     expect(el.querySelector('.agent-alert')).toBeNull();
     expect(el.querySelector('.hero-settings')).not.toBeNull();
+  });
+
+  it('não mostra a bolinha do agente ao convidado sem a TV', async () => {
+    TestBed.inject(SessionState).setUser({
+      id: ACCOUNT,
+      email: 'convidado@exemplo.com',
+      displayName: 'Convidado',
+      role: 'guest',
+      permissions: ['module:training'],
+    });
+    status.set({ userName: null, agent: 'online', watcher: 'unknown', serviceDown: false });
+    const { el } = await render();
+    expect(el.querySelector('.agent-status')).toBeNull();
+    expect(el.querySelector('.agent-alert')).toBeNull();
   });
 
   it('shows a guest the released modules and the three planned cards at the end, without the owner shortcuts', async () => {
