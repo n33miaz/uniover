@@ -90,9 +90,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
   }, info) => {
     await page.goto('/entrar?next=%2Fconectar');
 
-    await expect(
-      page.getByRole('heading', { level: 2, name: 'Entrar com o celular' }),
-    ).toBeVisible();
+    await expect(page.locator('summary', { hasText: 'Entrar com o celular' })).toBeVisible();
     const code = page.getByRole('img', { name: 'QR para entrar pelo celular' });
     await expect(code).toBeVisible();
     await expect(code.locator('path')).toHaveAttribute('d', /^M\d+ \d+h\d+v1h-\d+z/);
@@ -229,9 +227,7 @@ test.describe('computador: o bloco "Entrar com o celular"', () => {
   }, info) => {
     const phone = await openPhone(browser, qr, true);
     await page.goto('/conectar');
-    await expect(
-      page.getByRole('heading', { level: 2, name: 'Entrar com o celular' }),
-    ).toBeVisible();
+    await expect(page.locator('summary', { hasText: 'Entrar com o celular' })).toBeVisible();
     await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toBeVisible();
     await screenshot(page, info.outputPath('pc-conectar-qr.png'), { fullPage: true });
 
@@ -284,7 +280,7 @@ test.describe('celular: a tela de confirmar', () => {
       phone.page.getByRole('heading', { level: 1, name: 'Entrar', exact: true }),
     ).toBeVisible();
     // No celular o bloco do QR não aparece: não há como escanear a própria tela.
-    await expect(phone.page.getByRole('heading', { name: 'Entrar com o celular' })).toHaveCount(0);
+    await expect(phone.page.locator('summary', { hasText: 'Entrar com o celular' })).toHaveCount(0);
     expect(phone.identity.requests.some((r) => r.path === '/auth/qr/start')).toBe(false);
 
     await phone.page.getByLabel('E-mail').fill(GUEST.email);

@@ -9,11 +9,16 @@
   border-top: 1px solid var(--a-line);
 }
 
-h2 {
-  margin: 0 0 var(--space-4);
+summary {
+  min-height: var(--tap);
   font-size: var(--fs-body);
   font-weight: 700;
   text-align: center;
+  cursor: pointer;
+}
+
+.qr[open] summary {
+  margin-bottom: var(--space-4);
 }
 
 /* Altura mínima do palco: a troca entre "gerando", o QR e os avisos não faz o cartão pular. */

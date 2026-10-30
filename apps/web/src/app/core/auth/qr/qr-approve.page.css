@@ -26,6 +26,22 @@ h1 {
   font-size: var(--fs-body);
 }
 
+.facts li:first-child {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+}
+
+.facts li:nth-child(2) {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+}
+
+.device-label,
+.network-label {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
 .facts li.warn {
   border-color: color-mix(in srgb, var(--a-warn) 45%, var(--a-line));
   background: color-mix(in srgb, var(--a-warn) 10%, var(--a-surface));
@@ -33,6 +49,13 @@ h1 {
 
 .device {
   font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.network-value {
+  font-weight: 600;
 }
 
 .caution {

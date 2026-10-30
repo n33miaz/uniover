@@ -1,6 +1,10 @@
 @if (visible()) {
-  <section class="qr" aria-labelledby="qr-login-title">
-    <h2 id="qr-login-title" i18n="@@auth.qr.title">Entrar com o celular</h2>
+  <details
+    class="qr"
+    [open]="startOpen()"
+    (toggle)="startOpen.set($any($event.currentTarget).open)"
+  >
+    <summary i18n="@@auth.qr.title">Entrar com o celular</summary>
 
     <div class="stage">
       @switch (phase()) {
@@ -54,5 +58,5 @@
         }
       }
     </div>
-  </section>
+  </details>
 }

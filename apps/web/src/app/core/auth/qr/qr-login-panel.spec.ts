@@ -18,9 +18,16 @@ describe('QrLoginPanel', () => {
     expiresIn,
   });
 
+  /** Computador com mouse; `short` liga só a consulta de altura baixa. */
+  function stubMedia(short: boolean) {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('max-height') ? short : true,
+    }));
+  }
+
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    stubMedia(false);
     api.qrStart.mockReset();
     api.qrPoll.mockReset().mockResolvedValue({ status: 'pending' });
     auth.init.mockReset().mockResolvedValue(undefined);
@@ -59,13 +66,43 @@ describe('QrLoginPanel', () => {
     api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo-de-consulta'));
     const { el } = await render();
 
-    expect(el.querySelector('h2')?.textContent).toBe('Entrar com o celular');
+    expect(el.querySelector('summary')?.textContent).toBe('Entrar com o celular');
     expect(el.querySelector('app-qr-code svg path')).not.toBeNull();
     expect(el.querySelector('app-qr-code svg')?.getAttribute('aria-label')).toBe(
       'QR para entrar pelo celular',
     );
     // O texto do QR é só o link com o código público.
     expect(el.innerHTML).not.toContain('segredo-de-consulta');
+  });
+
+  it('starts open on a tall window', async () => {
+    api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo-de-consulta'));
+    const { el } = await render();
+    expect(el.querySelector<HTMLDetailsElement>('.qr')?.open).toBe(true);
+  });
+
+  it('starts collapsed on a short window, with the QR already prepared', async () => {
+    stubMedia(true);
+    api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo-de-consulta'));
+    const { el } = await render();
+    expect(el.querySelector<HTMLDetailsElement>('.qr')?.open).toBe(false);
+    expect(el.querySelector('app-qr-code svg path')).not.toBeNull();
+  });
+
+  it('keeps the panel open once the person opened it on a short window', async () => {
+    stubMedia(true);
+    api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo-de-consulta'));
+    const { fixture, el } = await render();
+    const details = el.querySelector<HTMLDetailsElement>('.qr')!;
+    expect(details.open).toBe(false);
+    details.open = true;
+    details.dispatchEvent(new Event('toggle'));
+    await settle(fixture, 3_000);
+    expect(el.querySelector<HTMLDetailsElement>('.qr')?.open).toBe(true);
+    details.open = false;
+    details.dispatchEvent(new Event('toggle'));
+    await settle(fixture, 1_000);
+    expect(el.querySelector<HTMLDetailsElement>('.qr')?.open).toBe(false);
   });
 
   it('stays out of the way on a phone (no fine pointer) and for someone who already has a session', async () => {
@@ -229,6 +266,8 @@ describe('QrLoginPanel', () => {
 
   describe('the wait between two polls', () => {
     it('leaves no timer pending when the screen goes away while it waits', async () => {
+      // Recolhido: abrir o <details> faz o jsdom agendar o evento de alternância, um temporizador que não é do painel.
+      stubMedia(true);
       api.qrStart.mockResolvedValue(started('CODE1234CODE1234', 'segredo', 60));
       const idle = vi.getTimerCount();
       const { fixture } = await render();
