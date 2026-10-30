@@ -612,15 +612,19 @@ describe('GuestsSection', () => {
       ...extra,
     });
 
-    it('shows compact cards of usage for each person and for the owner', async () => {
+    it('shows only the last access for each person and for the owner, never the counters', async () => {
       people.usage.mockResolvedValue([usage('1', 'owner'), usage('g1', 'guest')]);
       const { el } = await render();
       const cards = Array.from(el.querySelectorAll('.usage'));
       expect(cards).toHaveLength(2);
       const text = cards.map((card) => card.textContent ?? '');
+      expect(text[1]).toContain('Último Acesso');
       expect(text[1]).toContain('há 3 h');
-      expect(text[1]).toContain('12 / 40');
-      expect(text[1]).toContain('3 / 9');
+      expect(text[1]).not.toContain('12 / 40');
+      expect(text[1]).not.toContain('3 / 9');
+      expect(el.textContent).not.toContain('Sessões Ativas');
+      expect(el.textContent).not.toContain('TV (7 / 30 Dias)');
+      expect(el.textContent).not.toContain('Treinos (7 / 30 Dias)');
       expect(el.querySelector('.owner-usage')?.textContent).toContain('Você');
     });
 

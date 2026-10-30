@@ -103,9 +103,10 @@ test.describe('convite do dono (passkey)', () => {
     // O convite mora em Pessoas.
     await page.goto('/ajustes/pessoas');
     await expect(page.getByRole('heading', { level: 1, name: 'Pessoas' })).toBeVisible();
-    await expect(
-      page.getByRole('heading', { level: 2, name: 'Pessoas e Permissões' }),
-    ).toBeVisible();
+    // O título é um só: o do cabeçalho da tela (h1), sem repetir no conteúdo (nenhum h2 com o mesmo nome).
+    await expect(page.getByRole('heading', { level: 2, name: 'Pessoas e Permissões' })).toHaveCount(
+      0,
+    );
     await expect(page.getByText('Ninguém foi convidado ainda.')).toBeVisible();
     await page.getByRole('tab', { name: 'Convites' }).click();
     await page.getByRole('button', { name: 'Convidar alguém' }).click();
@@ -223,8 +224,9 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     ]);
     await expect(page.locator('.shortcuts')).toHaveCount(0);
     await expect(page.locator('.hero-settings')).toHaveAttribute('aria-label', 'Configurações');
-    // Estado técnico é do dono: o convidado vê só a engrenagem no cartão, sem bolinha de estado.
-    await expect(page.locator('.agent-status')).toHaveCount(0);
+    // O convidado com a TV vê o estado do agente DELE (a bolinha), nunca o aviso de queda do computador do dono.
+    await expect(page.locator('.agent-status')).toHaveCount(1);
+    await expect(page.locator('.agent-alert')).toHaveCount(0);
     await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
     await expect(page.getByRole('link', { name: 'Voltar ao Início' })).toBeVisible();
@@ -302,7 +304,6 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     for (const path of [
       '/',
       '/treino',
-      '/ajustes/seguranca',
       '/ajustes/pessoas',
       '/ajustes/sistema',
       '/ajustes/creditos',
@@ -368,6 +369,7 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     await expect(page.locator('a.ui-row .ui-row-title')).toHaveText([
       'Perfil',
       'Aparência',
+      'Segurança',
       'Dispositivos',
       'Sobre',
     ]);
@@ -377,7 +379,7 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
       '/ajustes/dispositivos',
     );
     await expect(page.getByText('Baixar o conector do PC', { exact: true })).toBeVisible();
-    for (const name of ['Segurança', 'Pessoas e Permissões', 'Auditoria', 'Sistema']) {
+    for (const name of ['Pessoas e Permissões', 'Auditoria', 'Sistema']) {
       await expect(page.getByText(name, { exact: true })).toHaveCount(0);
     }
     await expect(page.getByText(`${GUEST.displayName} · Convidado`)).toBeVisible();
@@ -398,10 +400,21 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     const urls: string[] = [];
     page.on('request', (request) => urls.push(new URL(request.url()).pathname));
     const before = identity.requests.length;
-    for (const path of ['/ajustes', '/ajustes/perfil', '/ajustes/aparencia', '/ajustes/sobre']) {
+    for (const path of [
+      '/ajustes',
+      '/ajustes/perfil',
+      '/ajustes/aparencia',
+      '/ajustes/seguranca',
+      '/ajustes/sobre',
+    ]) {
       await page.goto(path);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     }
+    // Segurança da convidada: só as próprias sessões, sem passkeys.
+    await page.goto('/ajustes/seguranca');
+    await expect(page.getByRole('heading', { level: 1, name: 'Segurança' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Sessões de Acesso' })).toBeVisible();
+    await expect(page.getByText(/passkey/i)).toHaveCount(0);
     // Salvar o nome também é só da própria conta.
     await page.goto('/ajustes/perfil');
     await page.getByLabel('Como devemos te chamar').fill('Alice Souza');
