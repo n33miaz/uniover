@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from uniover_agent.adapters.absence_diary import AbsenceDiary
 from uniover_agent.adapters.agent_log_file import FileLogSource
 from uniover_agent.adapters.apk_tools import (
     Aapt2Inspector,
@@ -1061,8 +1062,16 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
 
         after_hello = [announce_tv, *tv.after_hello]
 
+    diary = AbsenceDiary(installation_base() / "runtime" / "last-alive", clock)
+    diary.start()
+
+    def on_disconnected() -> None:
+        tray.disconnected()
+        diary.disconnected()
+
     async def on_connected() -> None:
         tray.connected()
+        diary.connected()
         for step in after_hello:
             await step()
 
@@ -1081,14 +1090,15 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
             *(tuple(tv.capabilities) if tv is not None else ()),
         ),
         on_connected=on_connected,
-        on_disconnected=tray.disconnected,
+        on_disconnected=on_disconnected,
         os_description=describe_os(),
         tv=(settings.tv_kind, settings.tv_host) if tv is not None and settings.tv_host else None,
         update_status=lambda: update_body(update_source.read()),
     )
     _log.info("agente %s iniciando (api %s)", agent_id, api_url)
     jobs: list[Callable[[], Coroutine[Any, Any, None]]] = [
-        UpdateStatusWatcher(update_source, transport, envelopes, clock).run
+        UpdateStatusWatcher(update_source, transport, envelopes, clock).run,
+        diary.run,
     ]
     if tv is not None:
         jobs = [*jobs, tv.manager.watch, *tv.background]
