@@ -7,7 +7,6 @@ import {
   effect,
   inject,
   untracked,
-  viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
@@ -15,6 +14,7 @@ import { filter, map, startWith } from 'rxjs';
 import { AuthService } from '../auth/auth.service';
 import { InstallHint } from '../pwa/install-hint';
 import { SessionState } from '../session/session-state';
+import { PageTopBar } from '../../shared/ui/page-top-bar';
 import { TabBar } from '../../shared/ui/tab-bar/tab-bar';
 import { GearIcon } from './gear-icon';
 import { ShellBack, collectShellData } from './route-data';
@@ -35,43 +35,26 @@ const HOME_BACK: ShellBack = {
  */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, TabBar, InstallHint, GearIcon],
+  imports: [RouterOutlet, RouterLink, TabBar, InstallHint, GearIcon, PageTopBar],
   template: `
     @if (data().shellStyle !== 'training' && data().title; as title) {
-      <header class="bar" [class.training]="data().shellStyle === 'training'">
-        @let current = lead();
-        <a [routerLink]="current.link" class="back ui-tap" [attr.aria-label]="current.label">
-          <svg
-            viewBox="0 0 24 24"
-            width="22"
-            height="22"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            @for (d of backArrow; track d) {
-              <path [attr.d]="d" />
-            }
-          </svg>
-        </a>
-        <h1 #pageTitle tabindex="-1">{{ title }}</h1>
+      <app-page-top-bar [title]="title" [backLabel]="lead().label" (back)="goBack()">
         @if (showSettings()) {
           <a
+            pageTopBarActions
             routerLink="/ajustes"
-            class="back settings ui-tap"
+            class="settings ui-tap"
             aria-label="Configurações"
             i18n-aria-label="@@shell.settings-label"
           >
             <app-gear-icon />
           </a>
         }
-      </header>
+      </app-page-top-bar>
     }
     <main
       [class.no-header]="!data().title"
+      [class.settings-main]="data().settings"
       [class.training-main]="data().shellStyle === 'training'"
     >
       <router-outlet />
@@ -88,120 +71,26 @@ const HOME_BACK: ShellBack = {
       flex-direction: column;
       min-height: 100dvh;
     }
-    /* Seta e título na mesma linha, centrados um no outro; o título pode quebrar sem empurrar a seta. */
-    .bar {
-      display: flex;
-      align-items: center;
-      gap: var(--space-3);
-      padding: var(--space-2) var(--gutter);
-      padding-top: calc(var(--space-2) + env(safe-area-inset-top));
-      background: var(--a-surface);
-      border-bottom: 1px solid var(--a-line);
-    }
-    .bar.training {
-      gap: var(--space-2);
-      padding-block: var(--space-1);
-      background: linear-gradient(
-        112deg,
-        color-mix(in srgb, var(--a-accent) 14%, var(--a-surface)),
-        var(--a-surface) 72%
-      );
-      border-bottom-color: color-mix(in srgb, var(--a-accent) 20%, var(--a-line));
-    }
-    .bar.training h1 {
-      font-size: 1.25rem;
-      font-weight: 760;
-      letter-spacing: -0.025em;
-    }
-    .bar.training .module-mark {
-      display: grid;
-      flex: none;
-      place-items: center;
-      width: 34px;
-      height: 34px;
-      border: 1px solid color-mix(in srgb, var(--a-accent) 18%, transparent);
-      border-radius: 11px;
-      background: var(--a-accent-soft);
-      color: var(--a-accent-ink);
-    }
-    .bar.training .module-mark svg {
-      width: 21px;
-      height: 21px;
-    }
-    .bar.training .back {
-      border-color: transparent;
-      border-radius: var(--radius-sm);
-      background: transparent;
-      box-shadow: none;
-      color: var(--a-accent-ink);
-    }
-    .bar.training .back:hover,
-    .bar.training .back:active {
-      background: var(--a-accent-soft);
-    }
-    .back {
-      display: inline-flex;
-      flex: none;
-      align-items: center;
-      justify-content: center;
-      width: var(--tap);
-      height: var(--tap);
-      border: 1px solid var(--a-line);
-      border-radius: 50%;
-      background: var(--a-surface);
-      color: var(--a-ink);
-      box-shadow: var(--shadow-1);
-      text-decoration: none;
-      transition:
-        background-color var(--dur-fast) linear,
-        transform var(--dur-fast) var(--ease-out);
-    }
-    .back svg {
-      transition: translate var(--dur-base) var(--ease-out);
-    }
-    .back:active {
-      background: var(--a-elev);
+    /* Respiro em cima, como o da Início e o do controle da TV (o main dá o mesmo à margem de baixo). */
+    app-page-top-bar {
+      padding-top: var(--gutter);
     }
     /* A engrenagem gira um pouco, no lugar do deslize da seta. */
     .settings app-gear-icon {
       transition: rotate var(--dur-slow) var(--ease-out);
     }
     @media (hover: hover) {
-      .back:hover {
-        background: var(--a-surface-2);
-      }
-      .back:hover svg {
-        translate: -2px 0;
-      }
       .settings:hover app-gear-icon {
         rotate: 45deg;
       }
-      .settings:hover svg {
-        translate: none;
-      }
     }
     @media (prefers-reduced-motion: reduce) {
-      .back,
-      .back svg,
       .settings app-gear-icon {
         transition: none;
-      }
-      .back:hover svg {
-        translate: none;
       }
       .settings:hover app-gear-icon {
         rotate: none;
       }
-    }
-    h1 {
-      flex: 1 1 auto;
-      min-width: 0;
-      font-size: 1.5rem;
-      overflow-wrap: anywhere;
-    }
-    /* O título recebe o foco ao navegar dentro de Ajustes (para leitor de tela e teclado): sem contorno, não é controle. */
-    h1:focus {
-      outline: none;
     }
     main {
       flex: 1 1 auto;
@@ -209,6 +98,10 @@ const HOME_BACK: ShellBack = {
     /* Sem cabeçalho (Início) o conteúdo começa abaixo da área segura do aparelho. */
     main.no-header {
       padding-top: calc(var(--gutter) + env(safe-area-inset-top));
+    }
+    /* Em Ajustes (e nas telas dentro dele) os cartões têm o canto do controle da TV, não o do cartão grande. */
+    main.settings-main {
+      --radius-lg: var(--radius);
     }
     main.training-main {
       padding: 0;
@@ -224,9 +117,6 @@ export class AppShell {
   private readonly auth = inject(AuthService);
   private readonly session = inject(SessionState);
   private readonly injector = inject(Injector);
-
-  /** Traços da seta de voltar (a mesma seta da tela da TV): a haste e a ponta. */
-  protected readonly backArrow = ['M19 12H5', 'M11 18l-6-6 6-6'] as const;
 
   protected readonly isGuest = this.session.isGuest;
 
@@ -250,7 +140,11 @@ export class AppShell {
     return this.isGuest() && !data.settings && !data.back;
   });
 
-  private readonly pageTitle = viewChild<ElementRef<HTMLElement>>('pageTitle');
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  protected goBack(): void {
+    void this.router.navigateByUrl(this.lead().link);
+  }
 
   constructor() {
     // Dentro de Ajustes cada tela nova leva o foco ao título: sem isso o foco ficaria num link que já não existe (e quem
@@ -268,9 +162,7 @@ export class AppShell {
           return;
         }
         if (!collectShellData(this.router.routerState.snapshot.root).settings) return;
-        afterNextRender(() => this.pageTitle()?.nativeElement.focus({ preventScroll: true }), {
-          injector: this.injector,
-        });
+        afterNextRender(() => this.focusTitle(), { injector: this.injector });
       });
 
     // Rede de segurança do guarda de boas-vindas: se o usuário só chega depois de a casca abrir (servidor acordando) e o
@@ -284,5 +176,13 @@ export class AppShell {
           }),
       );
     });
+  }
+
+  /** O título da barra recebe o foco só por código: não é controle, então ganha `tabindex=-1` aqui e não no componente da barra. */
+  private focusTitle(): void {
+    const heading = this.host.nativeElement.querySelector<HTMLElement>('app-page-top-bar h1');
+    if (!heading) return;
+    heading.setAttribute('tabindex', '-1');
+    heading.focus({ preventScroll: true });
   }
 }
