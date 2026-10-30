@@ -325,7 +325,8 @@ export class LiveHomeStatus extends HomeStatusPort {
   /**
    * Só vira "serviço fora do ar" quando a API não respondeu: sem resposta com a rede do aparelho de pé, ou o 502/503/504
    * do proxy do servidor dormindo ou caído. Sem internet no aparelho, o erro não diz nada sobre a API e fica de fora. Qualquer
-   * outra resposta (401, 404, 429...) prova que a API está de pé: não há dado novo, mas também não há queda.
+   * outra resposta (401, 404, 429...) prova que a API está de pé: não há queda. Com 401, 403 ou 404 a conta não enxerga a TV, e o estado
+   * lembrado do agente é descartado; nos demais, o último estado continua valendo.
    */
   private onFailure(error: unknown): void {
     const problem = problemOf(error);
@@ -339,6 +340,13 @@ export class LiveHomeStatus extends HomeStatusPort {
       this.agent.set('unknown');
     } else if (!problem.isNetwork) {
       this.serviceDown.set(false);
+      // A API respondeu que esta conta não tem (ou deixou de ter) a TV: o que se lembrava do agente já não vale, e
+      // continuar a mostrá-lo afirmaria algo sobre uma TV que a conta não enxerga.
+      if (problem.status === 401 || problem.status === 403 || problem.status === 404) {
+        this.agent.set('unknown');
+        this.cachedAgent = null;
+        this.forgetCachedAgent();
+      }
     }
   }
 
@@ -383,6 +391,14 @@ export class LiveHomeStatus extends HomeStatusPort {
     this.verdict.set(null);
     this.agentAlert.set(null);
     this.loading.set(false);
+  }
+
+  private forgetCachedAgent(): void {
+    try {
+      if (this.account) this.storage?.removeItem(AGENT_CACHE_PREFIX + this.account);
+    } catch {
+      // Armazenamento bloqueado: nada a apagar.
+    }
   }
 
   private openStorage(): Storage | null {
