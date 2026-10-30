@@ -44,6 +44,7 @@ describe('BodyMapPanel', () => {
     expect(el.querySelector('h2')?.textContent).toContain('Mapa do Corpo');
     expect(el.querySelector('.hint')?.textContent).toContain('Sem comparação ainda');
     expect(el.querySelector('.scope')?.textContent).toContain('não mudam a silhueta');
+    expect(el.querySelector('.map-values')?.textContent).toContain('Sem medida');
     expect(el.querySelector('.legend')).toBeNull();
     expect(el.querySelector('.symmetry')).toBeNull();
     expect(
@@ -73,6 +74,8 @@ describe('BodyMapPanel', () => {
     expect(zone('quadriceps')?.getAttribute('data-level')).toBe('1');
     expect(zone('quadriceps')?.getAttribute('aria-label')).toBe('Coxas: diminuiu');
     expect(zone('abdominals')?.getAttribute('aria-label')).toBe('Abdômen: sem comparação');
+    expect(el.querySelector('.map-values')?.textContent).toContain('Tórax');
+    expect(el.querySelector('.map-values')?.textContent).toContain('+2,0');
   });
 
   it('draws only the regions that have a measurement, never an unlabelled zone', async () => {

@@ -13,6 +13,23 @@ import {
 } from '../domain/body/body-map-signals';
 import { formatCm, toFieldText } from './body-text';
 
+type MeasureKey = keyof LocalBodyEntry;
+
+interface MapValue {
+  readonly region: BodyMapRegion;
+  readonly value: number | null;
+  readonly delta: number | null;
+}
+
+const REGION_FIELDS: Readonly<Record<BodyMapRegion, readonly MeasureKey[]>> = {
+  chest: ['chestCm'],
+  abdomen: ['abdomenCm'],
+  arm: ['armRightCm', 'armLeftCm', 'armCm'],
+  forearm: ['forearmRightCm', 'forearmLeftCm', 'forearmCm'],
+  thigh: ['thighRightCm', 'thighLeftCm', 'thighCm'],
+  calf: ['calfRightCm', 'calfLeftCm', 'calfCm'],
+};
+
 /**
  * Músculo da silhueta → região medida. A circunferência do braço cobre bíceps e tríceps; a da coxa, frente e costas: por
  * isso a mesma região também pinta a zona das costas. Músculo fora daqui não é desenhado (não tem medida para pintar).
@@ -78,6 +95,18 @@ const LEVEL: Readonly<Record<BodyMapChange, 0 | 1 | 2 | 3>> = {
         [label]="figureLabel()"
         (picked)="pick($event)"
       />
+      <div class="map-values" [attr.aria-label]="valuesLabel">
+        @for (item of values(); track item.region) {
+          <button type="button" (click)="history.emit(item.region)">
+            <span>{{ regionLabel(item.region) }}</span>
+            @if (item.value === null) {
+              <small i18n="@@training.body.map.no-measurement">Sem medida</small>
+            } @else {
+              <strong>{{ valueText(item) }}</strong>
+            }
+          </button>
+        }
+      </div>
       @if (hasEvolution()) {
         <ul
           class="legend"
@@ -148,6 +177,9 @@ export class BodyMapPanel {
   readonly history = output<BodyMapRegion>();
   protected readonly face = signal<BodyFace>('front');
   protected readonly signals = computed(() => bodyMapSignals(this.entries()));
+  protected readonly values = computed(() =>
+    this.signals().map((item) => this.valueFor(item.region)),
+  );
   protected readonly hasEvolution = computed(() =>
     this.signals().some((item) => item.change !== 'neutral'),
   );
@@ -157,6 +189,7 @@ export class BodyMapPanel {
       ? $localize`:@@training.body.map.figure-front:Mapa do corpo, de frente`
       : $localize`:@@training.body.map.figure-back:Mapa do corpo, de costas`,
   );
+  protected readonly valuesLabel = $localize`:@@training.body.map.values:Valores por região`;
   protected readonly zones = computed<FigureZone[]>(() =>
     BODY_ZONES[this.face()].flatMap((zone) => {
       const region = MUSCLE_REGION.get(zone.muscle);
@@ -182,6 +215,12 @@ export class BodyMapPanel {
 
   protected number(value: number): string {
     return toFieldText(value);
+  }
+
+  protected valueText(item: MapValue): string {
+    if (item.value === null) return '';
+    if (item.delta === null) return formatCm(item.value);
+    return `${item.delta > 0 ? '+' : ''}${formatCm(item.delta)}`;
   }
 
   protected isRelevant(item: BodyMapSignal): boolean {
@@ -225,6 +264,35 @@ export class BodyMapPanel {
       thigh: $localize`:@@training.body.map.region.thigh:Coxas`,
       calf: $localize`:@@training.body.map.region.calf:Panturrilhas`,
     }[region];
+  }
+
+  /** A variação usa somente campos medidos nas duas datas, para não comparar um lado com a média dos dois. */
+  private valueFor(region: BodyMapRegion): MapValue {
+    const rows = this.entries()
+      .filter((entry) => entry.deletedAt === null)
+      .reverse();
+    const fields = REGION_FIELDS[region];
+    const latest = rows.find((row) => this.measuredFields(row, fields).length > 0);
+    if (latest === undefined) return { region, value: null, delta: null };
+    const latestFields = this.measuredFields(latest, fields);
+    const value = this.average(latest, latestFields);
+    for (const older of rows.slice(rows.indexOf(latest) + 1)) {
+      const shared = latestFields.filter((field) => typeof older[field] === 'number');
+      if (shared.length > 0)
+        return { region, value, delta: this.average(latest, shared) - this.average(older, shared) };
+    }
+    return { region, value, delta: null };
+  }
+
+  private measuredFields(
+    row: LocalBodyEntry,
+    fields: readonly MeasureKey[],
+  ): readonly MeasureKey[] {
+    return fields.filter((field) => typeof row[field] === 'number');
+  }
+
+  private average(row: LocalBodyEntry, fields: readonly MeasureKey[]): number {
+    return fields.reduce((total, field) => total + Number(row[field]), 0) / fields.length;
   }
 
   private changeLabel(change: BodyMapChange): string {
