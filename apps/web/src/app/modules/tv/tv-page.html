@@ -1,11 +1,16 @@
-<div class="tv" [attr.data-pills]="prefs.pillLayout()">
-  <header class="head" [class.guest]="isGuest()">
+<div class="tv" [attr.data-pills]="prefs.pillLayout()" [class.pc-off]="store.pcOff()">
+  <!-- Quem usa leitor de tela ouve uma frase só enquanto o esqueleto está na tela. -->
+  <p class="ui-visually-hidden" role="status">
+    @if (store.loading()) {
+      <span i18n="@@tv.loading">Carregando o controle…</span>
+    }
+  </p>
+  <header class="head" [style.--items]="sideCount()">
     <!--
-      Grupo da esquerda: a seta de voltar para a Início e, logo depois,
-      o dos três pontos, que abre o menu. À direita ficam o desligar e o ponto de estado. As duas colunas dos lados têm a mesma largura
-      (a do grupo da esquerda, até três botões), então o nome continua no meio da tela. Cada botão só existe para quem pode
-      usá-lo (desligar: `tv:power`; menu: ter alguma linha nele): as colunas seguem do mesmo tamanho com um botão a menos,
-      e o nome não se mexe.
+      À esquerda a volta e, só se a TV tem opções para esta conta, os três pontos do menu; o nome no CENTRO da tela; à
+      direita o ponto de estado (colado ao desligar) e o desligar. As duas colunas dos lados têm sempre a mesma largura (a do
+      lado que tem mais botões), então o nome fica no meio da tela, venha o que vier dos lados. Cada botão só existe para
+      quem pode usá-lo, e a largura das colunas acompanha quantos há. Configurações não mora aqui: é só pela Início.
     -->
     <div class="lead">
       <a
@@ -29,16 +34,6 @@
           <path [attr.d]="'M11 18l-6-6 6-6'" />
         </svg>
       </a>
-      @if (isGuest()) {
-        <a
-          routerLink="/ajustes"
-          class="circle settings"
-          aria-label="Configurações"
-          i18n-aria-label="@@tv.header.settings"
-        >
-          <app-gear-icon />
-        </a>
-      }
       @if (hasMenu()) {
         <button
           #menuButton
@@ -53,17 +48,14 @@
         </button>
       }
     </div>
-    <!--
-      O nome é o único item em fluxo desta caixa: o ponto de estado fica solto ao lado do fim do texto (posição
-      absoluta), então um nome mais comprido o empurra para fora e o nome continua no meio da tela.
-    -->
     <div class="name" [attr.data-size]="titleSize()">
       <h1>
         <!--
           Com várias TVs o nome é o seletor (nome e uma seta discreta): tocar nele abre a folha que troca de TV, para qualquer
           conta que veja a TV. Com uma só, é um botão só para quem controla: tocar nele abre Personalizar (tamanho e
           disposição dos botões, que só existem com o controle). Sem nada disso ele é só o nome, com a mesma caixa (altura
-          do alvo e centralizado), para o cabeçalho não mudar de altura nem o nome sair do meio.
+          do alvo e centralizado), para o cabeçalho não mudar de altura nem o nome sair do meio. A seta fica solta ao lado do
+          texto (posição absoluta): ela não faz parte da largura do nome, então não o desloca do centro.
         -->
         @if (titleAction(); as action) {
           <button
@@ -75,33 +67,40 @@
             [attr.aria-label]="titleLabel()"
             (click)="action === 'switch' ? openSwitch(titleButton) : openCustomize(titleButton)"
           >
-            <span class="title-text">{{ prefs.title() }}</span>
-            @if (action === 'switch') {
-              <app-tv-icon class="chevron" name="down" />
-            }
+            <span class="label">
+              <span class="title-text">{{ prefs.title() }}</span>
+              @if (action === 'switch') {
+                <app-tv-icon class="chevron" name="down" />
+              }
+            </span>
           </button>
         } @else {
           <span class="title plain"
-            ><span class="title-text">{{ prefs.title() }}</span></span
+            ><span class="label"
+              ><span class="title-text">{{ prefs.title() }}</span></span
+            ></span
           >
         }
       </h1>
+    </div>
+    <div class="actions">
       <!-- Sem ver a TV não há estado nenhum para mostrar. -->
       @if (access.view()) {
         <app-status-indicator />
       }
-    </div>
-    <div class="actions">
       @if (access.power()) {
         <button
           type="button"
           class="circle power"
-          aria-label="Desligar a TV"
-          i18n-aria-label="@@tv.power.label"
+          [attr.aria-label]="powerLabel()"
           [disabled]="!store.canSend()"
           (click)="powerOpen.set(true)"
         >
           <app-tv-icon name="power" />
+          @if (scheduled()) {
+            <!-- O desligamento agendado aparece como um relógio miúdo no canto; a hora só dentro da folha. -->
+            <span class="scheduled" aria-hidden="true"><app-tv-icon name="clock" /></span>
+          }
         </button>
       }
     </div>
@@ -132,28 +131,48 @@
   } @else {
     <!--
       O motivo dos botões apagados é de quem tem algum botão: o controle, o desligar ou os atalhos que abrem apps. Com o
-      agente fora do ar a ação é tentar de novo; sem rede ou com o servidor acordando o controle volta sozinho.
+      agente fora do ar a ação é tentar de novo; sem rede ou com o servidor acordando o controle volta sozinho. Com o PC
+      confirmado desligado o aviso é o selo no centro (abaixo), e esta linha não repete o mesmo recado.
     -->
     @if (
-      (access.control() || access.power() || access.launch()) && store.disabledReason();
+      !store.pcOff() &&
+        (access.control() || access.power() || access.launch()) &&
+        store.disabledReason();
       as reason
     ) {
       <div class="reason-row" [attr.data-link]="store.link()">
         <p class="reason">{{ reason }}</p>
         @if (canRetry()) {
           <button type="button" class="retry ui-btn" [disabled]="retrying()" (click)="retry()">
-            <span i18n="@@tv.reason.retry">Tentar de novo</span>
+            <span i18n="@@tv.reason.retry">Tentar de Novo</span>
           </button>
         }
       </div>
     }
+    <!-- Com o PC desligado os controles ficam esmaecidos e inertes (nada neles funcionaria); o selo fala por eles. -->
     @if (access.control()) {
       <app-tv-control
+        [attr.inert]="store.pcOff() ? '' : null"
         (openKeyboard)="open('keyboard', $event)"
         (suggest)="openSuggestion($event)"
       />
     } @else {
-      <app-tv-view-only (suggest)="openSuggestion($event)" />
+      <app-tv-view-only
+        [attr.inert]="store.pcOff() ? '' : null"
+        (suggest)="openSuggestion($event)"
+      />
+    }
+    @if (store.pcOff()) {
+      <section class="seal" aria-labelledby="tv-seal-title">
+        <app-pc-off-icon class="seal-icon" />
+        <h2 id="tv-seal-title" i18n="@@tv.seal.title">PC Desligado</h2>
+        @if (store.pcOffSince(); as since) {
+          <p class="seal-since" i18n="@@tv.seal.since">desde {{ since }}</p>
+        }
+        <button type="button" class="seal-retry ui-btn" [disabled]="retrying()" (click)="retry()">
+          <span i18n="@@tv.seal.retry">Tentar de Novo</span>
+        </button>
+      </section>
     }
   }
 </div>
