@@ -9,7 +9,6 @@ import { assessmentTitle } from './assessment-format';
   imports: [RouterLink],
   template: `
     <div class="page" aria-labelledby="title">
-      <a class="back" routerLink="/treino/corpo" i18n="@@training.assessments.back">‹ Corpo</a>
       <header>
         <p class="eyebrow" i18n="@@training.assessments.eyebrow">Histórico pessoal</p>
         <h1 id="title" i18n="@@training.assessments.title">Avaliações Físicas</h1>

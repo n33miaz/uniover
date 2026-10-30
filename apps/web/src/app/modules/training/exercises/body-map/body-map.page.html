@@ -1,8 +1,5 @@
 <div class="map">
   <header class="head">
-    <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="goBack()">
-      <app-training-glyph name="back" />
-    </button>
     <h2 class="title" i18n="@@training.map.title">Mapa do Treino</h2>
     @if (!catalogEmpty()) {
       <div class="faces" role="group" [attr.aria-label]="facesLabel" [attr.data-face]="face()">

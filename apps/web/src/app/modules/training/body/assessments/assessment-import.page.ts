@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import type {
   LocalPhysicalAssessment,
   PhysicalAssessmentMeasure,
@@ -67,12 +67,9 @@ const ALLOWED_IMAGE_TYPES = new Set([
 
 @Component({
   selector: 'app-physical-assessment-import-page',
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule],
   template: `
     <div class="page" aria-labelledby="title">
-      <a class="back" routerLink="/treino/corpo/avaliacoes" i18n="@@training.assessments.back-list"
-        >‹ Avaliações</a
-      >
       <header>
         <p class="eyebrow" i18n="@@training.assessments.import-eyebrow">Prévia antes de gravar</p>
         <h1 id="title" i18n="@@training.assessments.import-title">Importar Avaliação</h1>

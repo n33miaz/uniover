@@ -11,36 +11,7 @@ app-workout-day .day {
   /* 40px: o respiro de cima e de baixo que a casca do Treino dá ao conteúdo. */
   min-height: calc(100dvh - 40px - var(--safe-bottom));
   margin-inline: auto;
-  padding-top: env(safe-area-inset-top);
   padding-bottom: 96px;
-}
-
-app-workout-day .head {
-  display: grid;
-  grid-template-columns: var(--tap) 1fr var(--tap);
-  align-items: center;
-}
-
-app-workout-day .head h1 {
-  margin: 0;
-  font-size: clamp(1.125rem, 5vw, 1.35rem);
-  font-weight: 800;
-  text-align: center;
-}
-
-app-workout-day .circle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--tap);
-  height: var(--tap);
-  padding: 0;
-  border: 1px solid var(--a-line);
-  border-radius: 50%;
-  background: var(--a-surface);
-  color: var(--a-ink);
-  box-shadow: var(--shadow-1);
-  cursor: pointer;
 }
 
 /* Séries gravadas no aparelho que ainda não chegaram ao servidor. */
@@ -177,12 +148,6 @@ app-workout-day .empty {
 app-workout-day .empty h2 {
   margin: 0;
   font-size: var(--fs-title);
-}
-
-@media (hover: hover) {
-  app-workout-day .circle:hover {
-    background: var(--a-surface-2);
-  }
 }
 
 @media (prefers-reduced-motion: no-preference) {

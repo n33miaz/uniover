@@ -191,7 +191,7 @@ describe('ExerciseFormPage', () => {
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
       field<HTMLButtonElement>(el, '.actions button').click();
       expect(el.querySelector('.leave')).toBeNull();
-      expect(navigate).toHaveBeenCalledWith('/treino/exercicios');
+      expect(navigate).toHaveBeenCalledWith('/treino/exercicios', { replaceUrl: true });
     });
 
     it('does not keep the exercise when the device has no room for the queue', async () => {
@@ -214,7 +214,7 @@ describe('ExerciseFormPage', () => {
       const navigate = vi.spyOn(router, 'navigateByUrl');
       button(el, 'Cancelar').click();
       expect(el.querySelector('.leave')).toBeNull();
-      expect(navigate).toHaveBeenCalledWith('/treino/exercicios');
+      expect(navigate).toHaveBeenCalledWith('/treino/exercicios', { replaceUrl: true });
     });
 
     it('asks first when something was typed, and "Continuar Editando" keeps the form', async () => {
@@ -231,15 +231,15 @@ describe('ExerciseFormPage', () => {
       expect(field<HTMLInputElement>(el, '#exercise-name').value).toBe('Algo');
     });
 
-    it('leaves without saving after the confirmation, and the back arrow asks the same way', async () => {
+    it('leaves without saving after the confirmation', async () => {
       const { fixture, el, router, trainingDb } = await open('/treino/exercicios/novo');
       fill(fixture, el, 'Algo', 'chest');
       const navigate = vi.spyOn(router, 'navigateByUrl');
-      field<HTMLButtonElement>(el, 'button.back').click();
+      button(el, 'Cancelar').click();
       fixture.detectChanges();
       expect(text(el)).toContain('Sair sem salvar?');
       button(el, 'Sair sem Salvar').click();
-      expect(navigate).toHaveBeenCalledWith('/treino/exercicios');
+      expect(navigate).toHaveBeenCalledWith('/treino/exercicios', { replaceUrl: true });
       expect((await trainingDb.exercises.toArray()).some((row) => row.name === 'Algo')).toBe(false);
     });
   });

@@ -174,6 +174,18 @@ describe('TrainingAccountScope', () => {
       expect((await kit.dbOptions.indexedDB.databases()).map((db) => db.name)).toEqual([]);
     });
 
+    it('uses the shared top bar with only "Treino" while waiting, with no header of its own', async () => {
+      const kit = await open();
+      kit.account.signInAs(null);
+      const { fixture, el } = await show(kit);
+
+      fixture.detectChanges();
+      expect(el.querySelector('app-page-top-bar h1')?.textContent).toBe('Treino');
+      expect(el.querySelectorAll('h1')).toHaveLength(1);
+      expect(el.querySelector('.training-wait-header')).toBeNull();
+      expect(el.textContent).not.toContain('UniOver');
+    });
+
     it('shows the screens as soon as the account is known, and the database of nobody was never created', async () => {
       const kit = await open();
       kit.account.signInAs(null);

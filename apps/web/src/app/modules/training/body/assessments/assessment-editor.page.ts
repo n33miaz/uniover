@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import type { PhysicalAssessmentMeasure } from '../../data/physical-assessments/physical-assessment';
 import {
   ASSESSMENT_DOCUMENT_MAX_BYTES,
@@ -27,15 +27,9 @@ function todayKey(): string {
 
 @Component({
   selector: 'app-physical-assessment-editor-page',
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule],
   template: `
     <div class="page" aria-labelledby="title">
-      <a
-        class="back"
-        routerLink="/treino/corpo/avaliacoes"
-        i18n="@@training.assessments.cancel-back"
-        >‹ Avaliações</a
-      >
       <header>
         <p class="eyebrow" i18n="@@training.assessments.editor-eyebrow">
           Dados guardados neste aparelho

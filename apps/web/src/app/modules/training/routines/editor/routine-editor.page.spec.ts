@@ -262,7 +262,7 @@ describe('RoutineEditorPage', () => {
       const navigate = vi.spyOn(router, 'navigateByUrl');
       button(el, 'Cancelar').click();
       expect(el.querySelector('.ui-notice.warn')).toBeNull();
-      expect(navigate).toHaveBeenCalledWith('/treino/rotinas');
+      expect(navigate).toHaveBeenCalledWith('/treino/rotinas', { replaceUrl: true });
     });
 
     it('creates the routine with the exercises chosen', async () => {
@@ -294,7 +294,7 @@ describe('RoutineEditorPage', () => {
       button(el, 'Cancelar').click();
       fixture.detectChanges();
       button(el, 'Sair sem Salvar').click();
-      expect(navigate).toHaveBeenCalledWith('/treino/rotinas');
+      expect(navigate).toHaveBeenCalledWith('/treino/rotinas', { replaceUrl: true });
     });
 
     it('leaves at once when nothing changed, and discards nothing in the queue', async () => {
@@ -303,7 +303,7 @@ describe('RoutineEditorPage', () => {
       const before = await TestBed.inject(OfflineQueue).items();
       const navigate = vi.spyOn(router, 'navigateByUrl');
       button(el, 'Cancelar').click();
-      expect(navigate).toHaveBeenCalledWith('/treino/rotinas');
+      expect(navigate).toHaveBeenCalledWith('/treino/rotinas', { replaceUrl: true });
       expect(await TestBed.inject(OfflineQueue).items()).toEqual(before);
     });
   });

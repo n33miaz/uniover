@@ -1,5 +1,3 @@
-import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
 import { setupScreen } from '../shell/screen-test-kit';
 import { TrainingGlossaryPage } from './glossary.page';
 
@@ -27,20 +25,5 @@ describe('TrainingGlossaryPage', () => {
     expect(
       Array.from(el.querySelectorAll('.term')).map((node) => node.getAttribute('href')),
     ).toEqual(['/treino', '/treino', '/treino/rotinas', '/treino/exercicios']);
-  });
-
-  it('returns to the training home when opened directly', async () => {
-    const kit = await setupScreen([
-      { path: 'treino/glossario', component: TrainingGlossaryPage },
-      { path: 'treino', children: [] },
-    ]);
-    const harness = await kit.harness();
-    await harness.navigateByUrl('/treino/glossario', TrainingGlossaryPage);
-    const el = harness.routeNativeElement as HTMLElement;
-
-    history.replaceState({ navigationId: 1 }, '');
-    el.querySelector<HTMLButtonElement>('.back')!.click();
-    await harness.fixture.whenStable();
-    expect(TestBed.inject(Router).url).toBe('/treino');
   });
 });

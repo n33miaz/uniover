@@ -14,8 +14,6 @@ import { TrainingGlyph } from '../shell/training-glyph';
 export class TrainingGlossaryPage {
   private readonly back = inject(BackNavigation);
 
-  protected readonly backLabel = $localize`:@@training.glossary.back:Voltar ao Treino`;
-
   protected goBack(): void {
     this.back.back('/treino');
   }

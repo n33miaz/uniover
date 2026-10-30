@@ -79,7 +79,6 @@ export class BodyMapPage {
   /** O catálogo ainda não chegou ao aparelho (primeira abertura sem rede, ou o primeiro puxar em andamento). */
   protected readonly catalogEmpty = computed(() => this.data.ready() && this.data.total() === 0);
 
-  protected readonly backLabel = $localize`:@@training.map.back:Voltar para Exercícios`;
   protected readonly facesLabel = $localize`:@@training.map.faces-label:Lado do corpo`;
   protected readonly legend = legendSteps();
   protected readonly legendLabel = $localize`:@@training.map.legend:Séries na semana`;

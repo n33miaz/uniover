@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, effect, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { FoodRepository, type OwnFoodDraft } from '../data/foods/food-repository';
 import type { LocalFood } from '../data/foods/food';
 import { MealRepository, type MealDraft } from '../data/meals/meal-repository';
@@ -11,11 +10,9 @@ type SearchState =
 
 @Component({
   selector: 'app-food-diary-page',
-  imports: [RouterLink],
   template: `
-    <main class="page" aria-labelledby="diary-title">
+    <section class="page" aria-labelledby="diary-title">
       <header class="page-header">
-        <a routerLink="/treino/corpo" class="back" i18n="@@training.food.back">Corpo</a>
         <h1 id="diary-title" i18n="@@training.food.title">Diário Alimentar</h1>
       </header>
 
@@ -433,7 +430,7 @@ type SearchState =
       @if (savedMessage()) {
         <p class="saved" role="status">{{ savedMessage() }}</p>
       }
-    </main>
+    </section>
   `,
   styleUrl: './food-diary.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -485,8 +482,8 @@ export class FoodDiaryPage {
   protected readonly entryModeLabel = $localize`:@@training.food.entry-mode:Tipo de lançamento`;
   protected readonly addHeading = $localize`:@@training.food.add-heading:Adicionar Refeição`;
   protected readonly editHeading = $localize`:@@training.food.edit-heading:Editar Refeição`;
-  protected readonly saveLabel = $localize`:@@training.food.save-entry:Registrar refeição`;
-  protected readonly saveEditLabel = $localize`:@@training.food.save-edit:Salvar alterações`;
+  protected readonly saveLabel = $localize`:@@training.food.save-entry:Registrar Refeição`;
+  protected readonly saveEditLabel = $localize`:@@training.food.save-edit:Salvar Alterações`;
   protected readonly editLabel = (name: string) =>
     $localize`:@@training.food.edit-label:Editar ${name}:name:`;
   protected readonly deleteLabel = (name: string) =>

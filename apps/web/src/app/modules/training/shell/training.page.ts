@@ -1,7 +1,6 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  DestroyRef,
   ElementRef,
   computed,
   effect,
@@ -13,26 +12,29 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
 import { canUseModule } from '../../../core/auth/guest-home';
-import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
-import { GearIcon } from '../../../core/layout/gear-icon';
-import { OfflineQueue } from '../../../core/offline-queue/offline-queue';
 import { isStandalone } from '../../../core/pwa/install-env';
 import { INSTALL_ENV, InstallHintService } from '../../../core/pwa/install-hint.service';
 import { SessionState } from '../../../core/session/session-state';
+import { PageTopBar } from '../../../shared/ui/page-top-bar';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { ProgressPhotoSync } from '../data/photos/progress-photo-sync';
 import { TrainingSync } from '../data/sync/training-sync';
+import { BackNavigation, trainingParent } from './back-navigation';
 import { SyncIssuesSheet } from './sync-issues-sheet';
+import { TrainingSyncIndicator } from './training-sync-indicator';
 import { TrainingSyncLine } from './training-sync-line';
-
-const timeFormat = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' });
+import { TrainingSyncRing } from './training-sync-ring';
+import { TrainingSyncSheet } from './training-sync-sheet';
+import { TrainingGlyph } from './training-glyph';
+import { type TrainingHeaderAction, TrainingHeaderActions } from './training-header-actions';
+import { TrainingSheet } from './training-sheet';
 
 function isWithin(path: string, section: string): boolean {
   return path === section || path.startsWith(`${section}/`);
 }
 
 /**
- * Casca do módulo Treino: cabeçalho colado no topo com o estado de sincronização (ícone que atualiza ao toque) e a tela da aba. Os dados do
+ * Casca do módulo Treino: barra comum no topo, uma volta e as opções da tela aberta. Os dados do
  * módulo (`provideTrainingData`) vêm do escopo da conta (`TrainingAccountScope`), que recria tudo quando a conta muda; ao
  * entrar, o puxador é ligado (uma vez) e o que o
  * servidor tem de novo chega ao banco local sem a tela esperar por ele. A folha das alterações recusadas só existe
@@ -40,109 +42,51 @@ function isWithin(path: string, section: string): boolean {
  *
  * Também sabe quando há um treino aberto neste aparelho (relê a cada gravação) e, enquanto houver, pede que a folha
  * "Atalho na tela de início" não abra sozinha: um aviso no meio de uma série atrapalha mais que ajuda, e um treino
- * restaurado ao abrir o app seria interrompido 3 s depois. Os detalhes de sincronização também deixam de sugerir a instalação.
+ * restaurado ao abrir o app seria interrompido 3 s depois.
  */
 @Component({
   selector: 'app-training-page',
-  imports: [RouterLink, RouterOutlet, SyncIssuesSheet, TrainingSyncLine, GearIcon],
+  imports: [
+    PageTopBar,
+    RouterLink,
+    RouterOutlet,
+    SyncIssuesSheet,
+    TrainingGlyph,
+    TrainingSheet,
+    TrainingSyncLine,
+    TrainingSyncRing,
+    TrainingSyncSheet,
+  ],
+  providers: [TrainingSyncIndicator],
   template: `
-    <header class="training-header">
-      <div class="header-leading">
-        @if (backLink(); as link) {
-          <a class="back ui-tap" [routerLink]="link" [attr.aria-label]="backLabel">
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path [attr.d]="'M19 12H5m7 7-7-7 7-7'" />
-            </svg>
-          </a>
-        }
-      </div>
-      <h1 i18n="@@training.shell.title">UniOver Treino</h1>
-      <div class="header-actions">
-        <button
-          type="button"
-          class="status"
-          [attr.data-state]="syncState()"
-          [attr.aria-label]="statusLabel()"
-          (click)="onStatusTap($event)"
-          (animationend)="onRippleEnd($event)"
+    <app-page-top-bar [title]="title" [backLabel]="backLabel()" (back)="goBack()">
+      @if (syncRing.visible() || menuActions().length > 0) {
+        <div
+          pageTopBarActions
+          class="pill"
+          [class.pair]="syncRing.visible() && menuActions().length > 0"
         >
-          <span class="chip" [class.pulse]="pulsing()">
-            @if (showSpinner()) {
-              <svg
-                class="spin"
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                (animationiteration)="onSpinIteration()"
-              >
-                <path [attr.d]="'M20 7v5h-5M4 17v-5h5'" />
-                <path [attr.d]="'M5.64 5.64A9 9 0 0 1 20 12M4 12a9 9 0 0 0 14.36 6.36'" />
-              </svg>
-            } @else {
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                @switch (syncState()) {
-                  @case ('pending') {
-                    <path [attr.d]="'M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z'" />
-                    <path [attr.d]="'M12 17v-5m0 0-2.2 2.2M12 12l2.2 2.2'" />
-                  }
-                  @case ('offline') {
-                    <path
-                      [attr.d]="'M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3'"
-                    />
-                    <path [attr.d]="'M2 2l20 20'" />
-                  }
-                  @case ('failed') {
-                    <path
-                      [attr.d]="'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4m0 4h.01'"
-                    />
-                  }
-                  @default {
-                    <path [attr.d]="'M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z'" />
-                    <path [attr.d]="'m9 14.5 2 2 4-4'" />
-                  }
-                }
-              </svg>
-            }
-            @if (badge(); as count) {
-              <span class="count" aria-hidden="true">{{ count }}</span>
-            }
-          </span>
-        </button>
-        <a
-          routerLink="/ajustes"
-          class="settings ui-tap"
-          aria-label="Configurações"
-          i18n-aria-label="@@shell.settings-label"
-          ><app-gear-icon
-        /></a>
-      </div>
-    </header>
-    <span class="ui-visually-hidden" role="status" [attr.aria-live]="'polite'">{{
-      announcement()
-    }}</span>
+          @if (syncRing.visible()) {
+            <app-training-sync-ring />
+          }
+          @if (menuActions().length > 0) {
+            <button
+              type="button"
+              class="more"
+              [attr.aria-haspopup]="'dialog'"
+              aria-label="Mais opções"
+              i18n-aria-label="@@training.shell.more-options"
+              (click)="menuOpen.set(true)"
+            >
+              •••
+            </button>
+          }
+        </div>
+      }
+    </app-page-top-bar>
     <div class="content">
-      <app-training-sync-line [live]="live()" (issues)="issuesOpen.set(true)" />
-      @if (progressArea()) {
+      <app-training-sync-line [live]="live()" />
+      @if (progressArea() && !bodyArea()) {
         <nav
           class="progress-nav"
           aria-label="Seções de progresso"
@@ -164,8 +108,30 @@ function isWithin(path: string, section: string): boolean {
       }
       <router-outlet (activate)="animateRoute()" />
     </div>
+    @if (syncRing.sheetOpen()) {
+      <app-training-sync-sheet
+        (closed)="syncRing.sheetOpen.set(false)"
+        (issues)="syncRing.sheetOpen.set(false); issuesOpen.set(true)"
+      />
+    }
     @if (issuesOpen()) {
       <app-sync-issues-sheet (closed)="issuesOpen.set(false)" />
+    }
+    @if (menuOpen()) {
+      <app-training-sheet [heading]="menuHeading" (closed)="menuOpen.set(false)">
+        <ul class="menu-actions ui-group ui-plain">
+          @for (action of menuActions(); track action.id) {
+            <li>
+              <button type="button" class="ui-row" (click)="runMenuAction(action)">
+                <span class="ui-row-text"
+                  ><span class="ui-row-title">{{ action.label }}</span></span
+                >
+                <app-training-glyph name="next" />
+              </button>
+            </li>
+          }
+        </ul>
+      </app-training-sheet>
     }
   `,
   styles: `
@@ -174,176 +140,47 @@ function isWithin(path: string, section: string): boolean {
       flex-direction: column;
       -webkit-tap-highlight-color: transparent;
     }
-    /*
-     * O cabeçalho vai de borda a borda e cola no topo (o <main> do Treino não tem padding): quem cuida do entalhe e das
-     * laterais é ele. Translúcido sobre o conteúdo que rola por baixo, com fundo opaco de reserva.
-     */
-    .training-header {
+    app-page-top-bar {
       position: sticky;
       top: 0;
       z-index: 5;
+      /* O mesmo fundo da tela (sem faixa nem borda): opaco só para o conteúdo que rola não passar por baixo do título. */
+      background: var(--a-bg);
+    }
+    /* A pílula do topo: o anel de sincronização (quando à vista) e os três pontos, cada um com o próprio alvo de toque. */
+    .more {
       display: grid;
-      grid-template-columns: minmax(88px, 1fr) auto minmax(88px, 1fr);
-      align-items: center;
-      min-height: calc(52px + env(safe-area-inset-top));
-      padding: env(safe-area-inset-top) max(var(--gutter), env(safe-area-inset-right)) 0
-        max(var(--gutter), env(safe-area-inset-left));
-      border-bottom: 1px solid var(--a-line);
-      background: var(--a-surface);
-    }
-    @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-      .training-header {
-        background: color-mix(in srgb, var(--a-surface) 86%, transparent);
-        -webkit-backdrop-filter: blur(12px) saturate(1.4);
-        backdrop-filter: blur(12px) saturate(1.4);
-      }
-    }
-    h1 {
-      margin: 0;
-      font-size: clamp(1.05rem, 4.4vw, 1.2rem);
-      font-weight: 700;
-      letter-spacing: -0.01em;
-      text-align: center;
-      white-space: nowrap;
-    }
-    .header-leading,
-    .header-actions {
-      display: flex;
-      align-items: center;
-      min-width: 0;
-    }
-    .header-actions {
-      justify-self: end;
-    }
-    /* Voltar, sincronizar e Ajustes: a mesma grade de 44 px, o mesmo ícone de 22 px e o mesmo traço. */
-    .back,
-    .status,
-    .settings {
-      display: inline-grid;
-      flex: none;
       place-items: center;
-      min-width: var(--tap);
+      width: var(--tap);
       height: var(--tap);
-      padding: 0;
+      padding: 0 0 4px;
       border: 0;
+      border-radius: 50%;
       background: transparent;
       color: var(--a-ink);
-      text-decoration: none;
-    }
-    .back,
-    .settings {
-      width: var(--tap);
-    }
-    .back svg {
-      width: 22px;
-      height: 22px;
-    }
-    .status {
-      position: relative;
-      font: inherit;
+      font: 700 1rem/1 sans-serif;
+      letter-spacing: 1px;
       cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
-    .status:focus-visible {
-      border-radius: 50%;
+    .more:focus-visible {
       outline: 3px solid var(--a-accent);
-      outline-offset: -2px;
+      outline-offset: -3px;
     }
-    /* O estado vive numa pastilha pequena dentro do alvo de 44 px: em dia é só um ícone verde; o resto ganha fundo. */
-    .status .chip {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      min-width: 32px;
-      height: 32px;
-      padding: 0 6px;
-      border-radius: var(--radius-pill);
-      color: var(--a-ok-ink);
-      font-size: var(--fs-label);
-      font-weight: 800;
-      font-variant-numeric: tabular-nums;
-      line-height: 1;
-      transition:
-        background-color var(--dur-fast) var(--ease-out),
-        color var(--dur-fast) var(--ease-out),
-        scale var(--dur-fast) var(--ease-out);
-    }
-    .status svg {
-      width: 20px;
-      height: 20px;
-    }
-    .count {
-      padding-right: 2px;
-    }
-    .status:active .chip {
-      scale: 0.92;
-    }
-    .status[data-state='busy'] .chip {
-      background: var(--a-accent-soft);
-      color: var(--a-accent-ink);
-    }
-    .status[data-state='pending'] .chip {
-      background: var(--a-warn-soft);
-      color: var(--a-warn-ink);
-    }
-    .status[data-state='offline'] .chip {
-      color: var(--a-ink2);
-    }
-    .status[data-state='failed'] .chip {
-      background: var(--a-bad-soft);
-      color: var(--a-bad-ink);
-    }
-    /* Uma volta por 0,9 s; o movimento só é solto no fim de uma volta, para parar em 0 sem salto. */
-    .status svg.spin {
-      animation: sync-spin 900ms linear infinite;
-    }
-    @keyframes sync-spin {
-      to {
-        rotate: 360deg;
-      }
-    }
-    /* O anel do toque: sai do centro e some. A classe é posta (e solta) pelo componente a cada toque. */
-    .status::before {
-      content: '';
-      position: absolute;
-      inset: 4px;
-      border-radius: 50%;
-      background: color-mix(in srgb, var(--a-accent) 22%, transparent);
-      opacity: 0;
-      pointer-events: none;
-    }
-    .status.ripple::before {
-      animation: sync-ripple 420ms var(--ease-out);
-    }
-    @keyframes sync-ripple {
-      from {
-        opacity: 1;
-        scale: 0.3;
-      }
-      to {
-        opacity: 0;
-        scale: 1.15;
-      }
-    }
-    .chip.pulse {
-      animation: sync-pulse 500ms var(--ease-out);
-    }
-    @keyframes sync-pulse {
-      40% {
-        scale: 1.18;
-      }
-    }
-    /* O que fica abaixo do cabeçalho mantém o respiro lateral e inferior que o <main> dava às outras telas. */
+    /*
+     * O que fica abaixo do cabeçalho mantém o respiro lateral e inferior que o <main> dava às outras telas. Em cima a casca
+     * não soma espaço: cada tela já abre com o seu (12 a 16 px), e somar os dois deixava uns 40 px de vão sob o cabeçalho.
+     */
     .content {
       display: flex;
       flex: 1 1 auto;
       flex-direction: column;
       gap: var(--space-3);
-      padding: var(--space-3) max(var(--gutter), env(safe-area-inset-right))
+      padding: 0 max(var(--gutter), env(safe-area-inset-right))
         calc(var(--gutter) + var(--safe-bottom)) max(var(--gutter), env(safe-area-inset-left));
     }
     .progress-nav {
+      margin-top: var(--space-3);
       display: flex;
       gap: var(--space-1);
       padding: 3px;
@@ -365,47 +202,42 @@ function isWithin(path: string, section: string): boolean {
       color: var(--a-accent-ink);
       box-shadow: var(--shadow-1);
     }
-    @media (prefers-reduced-motion: reduce) {
-      .status .chip {
-        transition: none;
-      }
-      .status svg.spin,
-      .status.ripple::before,
-      .chip.pulse {
-        animation: none;
-      }
-      .status:active .chip {
-        scale: 1;
-      }
-    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TrainingPage {
   private readonly router = inject(Router);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
-  private readonly session = inject(SessionState);
-  private readonly connectivity = inject(ConnectivityService);
-  private readonly queue = inject(OfflineQueue);
   private readonly sync = inject(TrainingSync);
   private readonly photoSync = inject(ProgressPhotoSync);
   private readonly sessions = inject(SessionRepository);
   private readonly install = inject(InstallHintService);
-  private readonly destroyRef = inject(DestroyRef);
+  private readonly navigation = inject(BackNavigation);
+  private readonly headerActions = inject(TrainingHeaderActions);
 
+  protected readonly syncRing = inject(TrainingSyncIndicator);
   protected readonly issuesOpen = signal(false);
-  /** Toque manual em andamento: dura até o puxar acabar E a volta mínima do ícone terminar. */
-  protected readonly manualPull = signal(false);
-  protected readonly manualError = signal(false);
-  protected readonly spinning = signal(false);
-  protected readonly pulsing = signal(false);
-  protected readonly announcement = signal('');
-  protected readonly online = this.connectivity.online;
-  protected readonly failed = this.queue.failedCount;
-  protected readonly pending = this.queue.pendingCount;
-  protected readonly busy = computed(
-    () => this.queue.syncing() || this.sync.pulling() || this.manualPull(),
-  );
+  protected readonly menuOpen = signal(false);
+  protected readonly title = $localize`:@@training.shell.title:Treino`;
+  protected readonly menuHeading = $localize`:@@training.shell.more-heading:Opções`;
+  private readonly session = inject(SessionState);
+  /** O app instalado do Treino (escopo `/treino/`): é de onde a pessoa abre o Treino na tela de início do iPhone. */
+  private readonly installed = isStandalone(inject(INSTALL_ENV));
+  private readonly backText = $localize`:@@training.shell.back:Voltar`;
+  /**
+   * A seta existe em toda tela, com uma exceção: quem só tem o Treino e o abriu pelo app instalado não tem para onde ir
+   * a partir de uma aba (a Início fica fora do escopo `/treino/`, e o iOS o tiraria do app); para ele o Treino é o app
+   * inteiro e a raiz das abas fica sem seta. As telas internas voltam ao pai de sempre.
+   */
+  protected readonly backLabel = computed<string | null>(() => {
+    if (this.headerActions.backHandler() === null && trainingParent(this.url()) === null) {
+      const onlyTraining =
+        this.session.isGuest() &&
+        !canUseModule(this.session.role(), this.session.knownPermissions(), 'tv');
+      if (this.installed && onlyTraining) return null;
+    }
+    return this.backText;
+  });
   private readonly url = toSignal(
     this.router.events.pipe(
       filter((event) => event instanceof NavigationEnd),
@@ -417,165 +249,34 @@ export class TrainingPage {
   protected readonly bodyArea = computed(() =>
     isWithin(this.url().split(/[?#]/)[0].replace(/\/$/, ''), '/treino/corpo'),
   );
-  /** Telas internas trazem o próprio voltar (um só) para o pai lógico; a seta da casca não pode duplicá-lo. */
-  private readonly innerScreen = computed(() => {
-    const path = this.url().split(/[?#]/)[0];
-    return (
-      /^\/treino\/(sessao(?:\/|$)|corpo\/avaliacoes(?:\/|$)|exercicios\/[^/]+|rotinas\/[^/]+)/.test(
-        path,
-      ) || path === '/treino/glossario'
-    );
-  });
   protected readonly progressArea = computed(
     () =>
       this.bodyArea() ||
       isWithin(this.url().split(/[?#]/)[0].replace(/\/$/, ''), '/treino/progresso'),
   );
-  /** O app instalado do Treino (escopo `/treino/`): é de onde a pessoa abre o Treino na tela de início do iPhone. */
-  private readonly installed = isStandalone(inject(INSTALL_ENV));
-  /**
-   * Toda conta volta à Início daqui, e é por ela que quem tem a TV e o Treino troca de módulo. Uma exceção: quem só tem
-   * o Treino e o abriu pelo app instalado não tem para onde ir (a Início fica fora do escopo `/treino/`, e o iOS o
-   * tiraria do app); para ele a seta não existe e o Treino é o app inteiro.
-   */
-  protected readonly backLink = computed(() => {
-    // Numa tela interna quem volta é a seta da própria tela; aqui só a raiz do Treino leva à Início.
-    if (!this.session.user() || this.innerScreen()) return null;
-    const onlyTraining =
-      this.session.isGuest() &&
-      !canUseModule(this.session.role(), this.session.knownPermissions(), 'tv');
-    return this.installed && onlyTraining ? null : '/';
-  });
-  protected readonly backLabel = $localize`:@@training.shell.back-home:Voltar ao Início`;
-  /** O instante mais novo entre o último envio aceito e o último puxar completo (só para o rótulo do ícone). */
-  private readonly lastSyncAt = computed(() => {
-    const latest = Math.max(this.queue.lastSyncAt() ?? 0, this.sync.lastPullAt() ?? 0);
-    return latest > 0 ? latest : null;
-  });
-  /** Uma só palavra de estado para o ícone: cor, ponto e movimento saem dela. */
-  protected readonly syncState = computed<'ok' | 'busy' | 'pending' | 'offline' | 'failed'>(() => {
-    if (this.failed() > 0) return 'failed';
-    if (this.busy()) return 'busy';
-    if (!this.online()) return 'offline';
-    if (this.manualError() || this.sync.error() !== null) return 'failed';
-    if (this.pending() > 0) return 'pending';
-    return 'ok';
-  });
-  /** O ícone que gira fica à vista enquanto sincroniza e até o fim da volta em curso, para parar em 0 sem salto. */
-  protected readonly showSpinner = computed(() => this.syncState() === 'busy' || this.spinning());
-  /** A contagem ao lado do ícone: o que espera envio, ou o que o servidor recusou. Nada em dia. */
-  protected readonly badge = computed(() => {
-    const count =
-      this.syncState() === 'pending'
-        ? this.pending()
-        : this.syncState() === 'failed'
-          ? this.failed()
-          : 0;
-    return count === 0 ? null : count > 9 ? '9+' : String(count);
-  });
-  /** Sem texto à vista: o rótulo do botão diz o estado e o que o toque faz. */
-  protected readonly statusLabel = computed(() => {
-    switch (this.syncState()) {
-      case 'failed': {
-        const count = this.failed();
-        if (count === 0) {
-          return $localize`:@@training.shell.sync-error:Falha ao atualizar. Toque para tentar de novo.`;
-        }
-        return count === 1
-          ? $localize`:@@training.shell.sync-failed-one:1 alteração com erro. Toque para ver e tentar de novo.`
-          : $localize`:@@training.shell.sync-failed-many:${count}:count: alterações com erro. Toque para ver e tentar de novo.`;
-      }
-      case 'busy':
-        return $localize`:@@training.shell.sync-pending:Sincronizando.`;
-      case 'offline':
-        return $localize`:@@training.shell.sync-offline:Sem rede. Toque para tentar de novo.`;
-      case 'pending': {
-        const count = this.pending();
-        return count === 1
-          ? $localize`:@@training.shell.sync-waiting-one:1 alteração aguardando envio. Toque para sincronizar.`
-          : $localize`:@@training.shell.sync-waiting:${count}:count: alterações aguardando envio. Toque para sincronizar.`;
-      }
-      default: {
-        const at = this.lastSyncAt();
-        return at === null
-          ? $localize`:@@training.shell.sync-ok:Sincronização em dia. Toque para atualizar.`
-          : $localize`:@@training.shell.sync-ok-at:Sincronizado às ${timeFormat.format(at)}:time:. Toque para atualizar.`;
-      }
-    }
-  });
   private lastArea: number | null = null;
   private lastPath: string | null = null;
-  private pulseTimer: number | undefined;
-  private holdTimer: number | undefined;
-  private releaseHold: (() => void) | undefined;
-  private destroyed = false;
   /** Há um treino aberto neste aparelho. */
   protected readonly live = signal(false);
 
-  /** O toque sempre responde com o anel; depois, com falhas abre a lista delas e, nos demais estados, atualiza. */
-  protected onStatusTap(event: Event): void {
-    const button = event.currentTarget as HTMLElement;
-    // Reinicia a animação do anel mesmo com toques seguidos.
-    button.classList.remove('ripple');
-    void button.offsetWidth;
-    button.classList.add('ripple');
-    if (this.failed() > 0) {
-      this.issuesOpen.set(true);
+  protected readonly menuActions = computed<readonly TrainingHeaderAction[]>(() => {
+    return [...this.headerActions.actions()];
+  });
+
+  protected goBack(): void {
+    const handler = this.headerActions.backHandler();
+    if (handler !== null) {
+      handler();
       return;
     }
-    void this.syncNow();
+    const parent = trainingParent(this.url());
+    if (parent === null) void this.router.navigateByUrl('/');
+    else this.navigation.back(parent);
   }
 
-  /** O anel acabou: solta a classe para o próximo toque. */
-  protected onRippleEnd(event: AnimationEvent): void {
-    if (event.animationName === 'sync-ripple')
-      (event.currentTarget as HTMLElement).classList.remove('ripple');
-  }
-
-  /** Fim de uma volta do ícone (ele está em 0 graus): se nada mais pede movimento, solta sem salto. */
-  protected onSpinIteration(): void {
-    if (!this.busy()) this.spinning.set(false);
-  }
-
-  /**
-   * Puxa o que o servidor tem de novo, sem texto à vista. O toque dura ao menos uma volta do ícone, mesmo que o puxar
-   * acabe antes, para a resposta ser sempre visível; o resultado vai para a região de leitura de tela.
-   */
-  protected async syncNow(): Promise<void> {
-    if (this.manualPull()) return;
-    this.announcement.set('');
-    if (!this.online()) {
-      // Sem rede o toque ainda tenta esvaziar a fila (o envio forçado não espera o recuo): se a rede voltou sem aviso, sobe.
-      void this.queue.syncNow().catch(() => undefined);
-      this.announcement.set(
-        $localize`:@@training.shell.announce-offline:Sem rede. Os dados salvos no aparelho continuam disponíveis.`,
-      );
-      return;
-    }
-    this.manualError.set(false);
-    this.manualPull.set(true);
-    const minimum = new Promise<void>((resolve) => {
-      this.releaseHold = resolve;
-      this.holdTimer = window.setTimeout(resolve, 700);
-    });
-    try {
-      await Promise.all([this.sync.pullNow(), minimum]);
-    } catch {
-      this.manualError.set(true);
-    }
-    if (this.destroyed) return;
-    this.manualPull.set(false);
-    // Um envio recusado pelo servidor não rejeita o pull: a fila marca o item como falho.
-    if (this.manualError() || this.sync.error() !== null || this.failed() > 0) {
-      this.announcement.set(
-        $localize`:@@training.shell.announce-failed:Falha ao atualizar. Os dados salvos no aparelho continuam disponíveis.`,
-      );
-      return;
-    }
-    this.announcement.set($localize`:@@training.shell.announce-ok:Atualizado.`);
-    this.pulsing.set(true);
-    window.clearTimeout(this.pulseTimer);
-    this.pulseTimer = window.setTimeout(() => this.pulsing.set(false), 500);
+  protected runMenuAction(action: TrainingHeaderAction): void {
+    this.menuOpen.set(false);
+    action.run();
   }
 
   protected animateRoute(): void {
@@ -627,20 +328,8 @@ export class TrainingPage {
   }
 
   constructor() {
-    this.destroyRef.onDestroy(() => {
-      this.destroyed = true;
-      window.clearTimeout(this.holdTimer);
-      this.releaseHold?.();
-      window.clearTimeout(this.pulseTimer);
-    });
-    // O ícone gira enquanto algo sincroniza; quem o solta é o fim de uma volta (ou, sem movimento, aqui mesmo).
-    effect(() => {
-      if (this.busy()) this.spinning.set(true);
-      else if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
-        this.spinning.set(false);
-    });
     // Sem esperar: o `start()` hidrata a fila e puxa em segundo plano; a tela lê do banco local desde já.
-    void inject(TrainingSync).start();
+    void this.sync.start();
     this.photoSync.start();
 
     // Relê o treino aberto a cada gravação do aparelho (iniciar, série, encerrar, descartar). A resposta mais velha, que

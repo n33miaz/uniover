@@ -12,11 +12,11 @@ import type { LocalExercise } from '../data/catalog/exercise';
 import { WakeLockService } from '../data/session-live/wake-lock.service';
 import { illustrationFor, illustrationUrl } from '../illustrations/illustration-map';
 import { TrainingGlyph } from '../shell/training-glyph';
+import { TrainingHeaderActions } from '../shell/training-header-actions';
 import { ExerciseHistory } from './exercise-history';
 import { ExerciseChooserSheet } from './exercise-chooser-sheet';
 import { LiveStore } from './live-store';
 import { type MenuAction, SessionMenuSheet } from './session-menu-sheet';
-import { TodayGlyph } from './today-glyph';
 import { TodayStore } from './today-store';
 import { awaitingSetsText } from './today-text';
 
@@ -27,30 +27,11 @@ import { awaitingSetsText } from './today-text';
  */
 @Component({
   selector: 'app-workout-day',
-  imports: [RouterLink, TrainingGlyph, TodayGlyph, ExerciseChooserSheet, SessionMenuSheet],
+  imports: [RouterLink, TrainingGlyph, ExerciseChooserSheet, SessionMenuSheet],
   providers: [TodayStore, LiveStore, ExerciseHistory],
   template: `
     <section class="day" aria-labelledby="workout-title">
-      <header class="head">
-        <a
-          routerLink="/treino"
-          class="circle ui-tap"
-          aria-label="Voltar a Hoje"
-          i18n-aria-label="@@training.day.back"
-        >
-          <app-training-glyph name="back" />
-        </a>
-        <h1 id="workout-title" i18n="@@training.day.title">Treino</h1>
-        <button
-          type="button"
-          class="circle ui-tap"
-          [attr.aria-haspopup]="'dialog'"
-          [attr.aria-label]="menuLabel"
-          (click)="menuOpen.set(true)"
-        >
-          <app-today-glyph name="dots" />
-        </button>
-      </header>
+      <h2 id="workout-title" class="ui-visually-hidden" i18n="@@training.day.title">Treino</h2>
 
       @if (awaitingText(); as waiting) {
         <p class="sending">
@@ -64,7 +45,7 @@ import { awaitingSetsText } from './today-text';
           <span class="ui-tile lg"><app-training-glyph name="info" /></span>
           <h2 id="empty-title" i18n="@@training.day.empty-title">Treino Não Encontrado</h2>
           <a routerLink="/treino" class="primary ui-btn" i18n="@@training.day.empty-back"
-            >Voltar a Hoje</a
+            >Escolher Treino</a
           >
         </section>
       } @else {
@@ -151,16 +132,6 @@ import { awaitingSetsText } from './today-text';
   `,
   styleUrl: './workout-day.css',
   encapsulation: ViewEncapsulation.None,
-  styles: `
-    app-training-page:has(app-workout-day) .training-header,
-    app-training-page:has(app-workout-day) app-tab-bar,
-    app-training-page:has(app-workout-day) app-training-sync-line,
-    app-training-page:has(app-workout-exercise) .training-header,
-    app-training-page:has(app-workout-exercise) app-tab-bar,
-    app-training-page:has(app-workout-exercise) app-training-sync-line {
-      display: none !important;
-    }
-  `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WorkoutDay {
@@ -168,6 +139,7 @@ export class WorkoutDay {
   private readonly today = inject(TodayStore);
   private readonly router = inject(Router);
   private readonly wake = inject(WakeLockService);
+  private readonly headerActions = inject(TrainingHeaderActions);
 
   protected readonly menuLabel = $localize`:@@training.live.menu:Opções do treino`;
   protected readonly unknownName = $localize`:@@training.day.unknown:Exercício removido`;
@@ -192,7 +164,15 @@ export class WorkoutDay {
 
   constructor() {
     // A tela acesa vale só enquanto o treino está aberto na tela: sair do treino solta o bloqueio.
-    inject(DestroyRef).onDestroy(() => void this.wake.release());
+    const removeMenu = this.headerActions.register({
+      id: 'workout-menu',
+      label: this.menuLabel,
+      run: () => this.menuOpen.set(true),
+    });
+    inject(DestroyRef).onDestroy(() => {
+      removeMenu();
+      void this.wake.release();
+    });
   }
 
   protected art(exerciseId: string): string | null {

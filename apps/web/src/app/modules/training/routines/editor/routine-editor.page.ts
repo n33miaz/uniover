@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   Injector,
   afterNextRender,
@@ -22,6 +23,7 @@ import { ExercisePickerSheet } from '../../exercises/picker/exercise-picker-shee
 import { BackNavigation } from '../../shell/back-navigation';
 import { awaitingFirstPull } from '../../shell/first-pull';
 import { TrainingGlyph } from '../../shell/training-glyph';
+import { TrainingHeaderActions } from '../../shell/training-header-actions';
 import {
   ItemField,
   RoutineDraftState,
@@ -71,6 +73,7 @@ export class RoutineEditorPage {
   private readonly connectivity = inject(ConnectivityService);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly headerActions = inject(TrainingHeaderActions);
 
   protected readonly routineId = this.route.snapshot.paramMap.get('id') ?? '';
   protected readonly editing = this.routineId !== '';
@@ -99,7 +102,6 @@ export class RoutineEditorPage {
   protected readonly title = this.editing
     ? $localize`:@@training.editor.title-edit:Editar Rotina`
     : $localize`:@@training.editor.title-new:Nova Rotina`;
-  protected readonly backLabel = $localize`:@@training.editor.back:Sair do editor`;
   protected readonly itemsLabel = $localize`:@@training.editor.items-label:Exercícios da rotina`;
   protected readonly dragHint = $localize`:@@training.editor.hint:Mude a ordem com as setas, ou arraste pela alça.`;
 
@@ -138,6 +140,7 @@ export class RoutineEditorPage {
   private opened = false;
 
   constructor() {
+    inject(DestroyRef).onDestroy(this.headerActions.registerBack(() => this.cancel()));
     if (this.editing) {
       // Aberto direto pelo endereço na primeira vez, o editor espera a primeira passada do servidor trazer a rotina.
       effect(() => {

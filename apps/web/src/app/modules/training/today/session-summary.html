@@ -1,13 +1,9 @@
 @if (data(); as summary) {
   <section class="summary" aria-labelledby="summary-title">
     <header class="head">
-      <button type="button" class="icon ui-tap" [attr.aria-label]="backLabel" (click)="done.emit()">
-        <app-training-glyph name="back" />
-      </button>
       <h1 id="summary-title" #title class="title" tabindex="-1" i18n="@@training.summary.title">
         Treino Concluído
       </h1>
-      <span class="head-space" aria-hidden="true"></span>
     </header>
 
     <div class="hero">
@@ -147,7 +143,7 @@
       Ele pode ter sido apagado ou ainda estar aberto.
     </p>
     <button type="button" class="primary ui-btn" (click)="done.emit()">
-      <span i18n="@@training.summary.missing-back">Voltar a Hoje</span>
+      <span i18n="@@training.summary.missing-back">Escolher Treino</span>
     </button>
   </section>
 }

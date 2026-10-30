@@ -12,16 +12,12 @@
       >
     </p>
     <button type="button" class="secondary ui-btn block" (click)="leave()">
-      <app-training-glyph name="back" />
-      <span i18n="@@training.form.missing-back">Voltar</span>
+      <span i18n="@@training.form.missing-back">Abrir Exercícios</span>
     </button>
   </section>
 } @else if (state() === 'ready') {
   <form class="form" novalidate (submit)="$event.preventDefault(); save()">
     <header class="head">
-      <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="cancel()">
-        <app-training-glyph name="back" />
-      </button>
       <h2 class="title">{{ title }}</h2>
     </header>
 
