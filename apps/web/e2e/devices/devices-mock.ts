@@ -120,7 +120,7 @@ export interface StoredAlert {
 
 export interface DevicesMock {
   readonly requests: DevicesRequest[];
-  /** Avisos de queda ainda não vistos; "Entendi" os esvazia. */
+  /** Avisos de queda ainda não vistos; "Dispensar" tira um por vez. */
   readonly alerts: StoredAlert[];
   readonly agents: StoredAgent[];
   readonly tvs: StoredTv[];
@@ -212,6 +212,13 @@ export async function mockDevicesApi(
 
     if (method === 'POST' && path === '/agent-alerts/seen') {
       mock.alerts.length = 0;
+      return route.fulfill({ status: 204 });
+    }
+
+    const oneSeen = method === 'POST' ? /^\/agent-alerts\/([^/]+)\/seen$/.exec(path) : null;
+    if (oneSeen) {
+      const index = mock.alerts.findIndex((alert) => alert.id === oneSeen[1]);
+      if (index >= 0) mock.alerts.splice(index, 1);
       return route.fulfill({ status: 204 });
     }
 

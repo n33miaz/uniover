@@ -62,6 +62,7 @@ describe('DevicesPage', () => {
     maintain: vi.fn(),
     alerts: vi.fn(),
     markAlertsSeen: vi.fn(),
+    markAlertSeen: vi.fn(),
     tvs: vi.fn(),
   };
 
@@ -72,6 +73,7 @@ describe('DevicesPage', () => {
     api.maintain.mockReset().mockResolvedValue(undefined);
     api.alerts.mockReset().mockResolvedValue([]);
     api.markAlertsSeen.mockReset().mockResolvedValue(undefined);
+    api.markAlertSeen.mockReset().mockResolvedValue(undefined);
     api.tvs.mockReset().mockResolvedValue([]);
     api.list.mockReset().mockResolvedValue([PC]);
     api.approve.mockReset().mockResolvedValue(undefined);
@@ -444,14 +446,14 @@ describe('DevicesPage', () => {
     api.list.mockResolvedValue([]);
     const { el } = await render();
     expect(el.textContent).toContain(
-      'Nenhum aparelho pareado. Rode o agente no PC e digite o código que ele mostrar.',
+      'Nenhum dispositivo pareado. Rode o agente no PC e digite o código que ele mostrar.',
     );
   });
 
   it('offers a retry when the list cannot be loaded', async () => {
     api.list.mockRejectedValueOnce(new HttpErrorResponse({ status: 0 }));
     const { fixture, el, button } = await render();
-    expect(el.textContent).toContain('Não foi possível carregar os aparelhos');
+    expect(el.textContent).toContain('Não foi possível carregar os dispositivos');
     button('Tentar de novo').click();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -460,7 +462,7 @@ describe('DevicesPage', () => {
 
   it('opens the pairing sheet and, after approving, shows the message and reloads the list', async () => {
     const { fixture, el, button } = await render();
-    button('Parear Aparelho').click();
+    button('Parear Dispositivo').click();
     await fixture.whenStable();
     fixture.detectChanges();
     const code = el.querySelector<HTMLInputElement>('#pair-code')!;
@@ -474,7 +476,7 @@ describe('DevicesPage', () => {
       expect(el.querySelectorAll('.item')).toHaveLength(2);
     });
     expect(el.querySelector('app-pair-sheet')).toBeNull();
-    expect(el.querySelector('.message')?.textContent).toContain('Aparelho PC de casa pareado.');
+    expect(el.querySelector('.message')?.textContent).toContain('Dispositivo PC de casa pareado.');
   });
 
   it('confirms inline before revoking and marks the item as revoked', async () => {
@@ -489,7 +491,7 @@ describe('DevicesPage', () => {
       expect(el.querySelector('.chip.revoked')).not.toBeNull();
     });
     expect(api.revoke).toHaveBeenCalledExactlyOnceWith('a1');
-    expect(el.textContent).toContain('Aparelho revogado.');
+    expect(el.textContent).toContain('Dispositivo revogado.');
     expect(el.querySelector('.item .actions')).toBeNull();
   });
 
@@ -510,13 +512,13 @@ describe('DevicesPage', () => {
     const { fixture, el, button } = await render();
     TestBed.inject(ConnectivityService).online.set(false);
     fixture.detectChanges();
-    expect(button('Parear Aparelho').disabled).toBe(true);
+    expect(button('Parear Dispositivo').disabled).toBe(true);
     expect(button('Revogar').disabled).toBe(true);
     expect(el.textContent).toContain('Sem conexão: parear, recusar e revogar precisam de rede.');
   });
 
   describe('alerts and organization', () => {
-    it('shows an unseen outage and dismisses it with "Entendi"', async () => {
+    it('shows an unseen outage and dismisses only that alert', async () => {
       api.alerts.mockResolvedValue([
         {
           id: 'o1',
@@ -530,11 +532,38 @@ describe('DevicesPage', () => {
       const { fixture, el, button } = await render();
       expect(el.querySelector('.alert')?.textContent).toContain('PC de casa está sem sinal');
       expect(el.querySelector('.alert')?.classList.contains('warn')).toBe(true);
-      button('Entendi').click();
+      button('Dispensar').click();
       await fixture.whenStable();
       fixture.detectChanges();
-      expect(api.markAlertsSeen).toHaveBeenCalledOnce();
+      expect(api.markAlertSeen).toHaveBeenCalledWith('o1');
       expect(el.querySelector('.alert')).toBeNull();
+    });
+
+    it('keeps the other alert visible when one is dismissed', async () => {
+      api.alerts.mockResolvedValue([
+        {
+          id: 'o1',
+          agentId: 'a1',
+          agentName: 'PC da sala',
+          detectedAt: '2026-10-27T12:00:00Z',
+          lastSeenAt: null,
+          recoveredAt: null,
+        },
+        {
+          id: 'o2',
+          agentId: 'a2',
+          agentName: 'Notebook',
+          detectedAt: '2026-10-27T12:05:00Z',
+          lastSeenAt: null,
+          recoveredAt: null,
+        },
+      ]);
+      const { fixture, el } = await render();
+      el.querySelector<HTMLButtonElement>('.alert button')!.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(el.querySelectorAll('.alert')).toHaveLength(1);
+      expect(el.querySelector('.alert')?.textContent).toContain('Notebook');
     });
 
     it('says when the computer is back', async () => {

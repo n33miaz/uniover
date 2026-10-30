@@ -192,6 +192,10 @@
   align-self: stretch;
 }
 
+.alert .ui-btn {
+  flex: 0 0 auto;
+}
+
 .alert-text {
   display: flex;
   flex-direction: column;

@@ -76,7 +76,7 @@ async function openDevices(page: Page, browserName: string, expandMaintenance = 
 }
 
 async function typeCode(page: Page, code: string) {
-  await page.getByLabel('Código do aparelho').fill(code);
+  await page.getByLabel('Código do dispositivo').fill(code);
 }
 
 function seriousViolations(violations: { id: string; impact?: string | null }[]) {
@@ -85,12 +85,12 @@ function seriousViolations(violations: { id: string; impact?: string | null }[])
     .map((v) => v.id);
 }
 
-test.describe('aparelhos', () => {
+test.describe('dispositivos', () => {
   test('mostra o vazio explicativo e cabe na tela', async ({ page, browserName }, info) => {
     await openDevices(page, browserName);
     await expect(
       page.getByText(
-        'Nenhum aparelho pareado. Rode o agente no PC e digite o código que ele mostrar.',
+        'Nenhum dispositivo pareado. Rode o agente no PC e digite o código que ele mostrar.',
       ),
     ).toBeVisible();
     await expectNoHorizontalScroll(page);
@@ -110,13 +110,13 @@ test.describe('aparelhos', () => {
     // No WebKit não há autenticador virtual: só o passo da passkey é pulado (a confirmação já vale).
     if (browserName !== 'chromium') identity.stepUpValid = true;
 
-    await page.getByRole('button', { name: 'Parear aparelho' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Parear aparelho' });
+    await page.getByRole('button', { name: 'Parear dispositivo' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByRole('button', { name: /fechar|close/i })).toHaveCount(0);
-    const code = sheet.getByLabel('Código do aparelho');
+    const code = sheet.getByLabel('Código do dispositivo');
     await expect(code).toHaveAttribute('autocomplete', 'one-time-code');
-    await expect(sheet.getByLabel('Nome do aparelho')).toHaveValue('PC de casa');
+    await expect(sheet.getByLabel('Nome do dispositivo')).toHaveValue('PC de casa');
     await expect(sheet.getByRole('button', { name: 'Aprovar' })).toBeDisabled();
 
     await code.fill('bcdf2345');
@@ -136,7 +136,7 @@ test.describe('aparelhos', () => {
       await dialog.getByRole('button', { name: 'Confirmar' }).click();
     }
 
-    await expect(page.getByText('Aparelho PC de casa pareado.')).toBeVisible();
+    await expect(page.getByText('Dispositivo PC de casa pareado.')).toBeVisible();
     await expect(sheet).toHaveCount(0);
     await expect(page.locator('.item .name')).toHaveText(['PC de casa']);
     await expect(page.locator('.item')).toContainText('Ativo');
@@ -162,8 +162,8 @@ test.describe('aparelhos', () => {
     devices.openCodes.add('BCDF2345');
     await openDevices(page, browserName);
 
-    await page.getByRole('button', { name: 'Parear aparelho' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Parear aparelho' });
+    await page.getByRole('button', { name: 'Parear dispositivo' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
     await typeCode(page, 'BCDF-2345');
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
     const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
@@ -185,8 +185,8 @@ test.describe('aparelhos', () => {
   }) => {
     await openDevices(page, browserName);
     identity.stepUpValid = true;
-    await page.getByRole('button', { name: 'Parear aparelho' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Parear aparelho' });
+    await page.getByRole('button', { name: 'Parear dispositivo' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
 
     await typeCode(page, 'BCDF-2345');
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
@@ -205,13 +205,13 @@ test.describe('aparelhos', () => {
     browserName,
   }) => {
     await openDevices(page, browserName);
-    const opener = page.getByRole('button', { name: 'Parear aparelho' });
+    const opener = page.getByRole('button', { name: 'Parear dispositivo' });
     await opener.focus(); // o WebKit não dá foco ao botão no toque; pelo teclado há para onde voltar
     await page.keyboard.press('Enter');
-    const sheet = page.getByRole('dialog', { name: 'Parear aparelho' });
+    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
     await expect(sheet).toBeVisible();
 
-    await sheet.getByRole('heading', { name: 'Parear aparelho' }).click();
+    await sheet.getByRole('heading', { name: 'Parear dispositivo' }).click();
     await expect(sheet).toBeVisible(); // toque dentro da folha não fecha
     await page.mouse.click(4, 4); // fora do retângulo da folha
     await expect(sheet).toHaveCount(0);
@@ -222,12 +222,12 @@ test.describe('aparelhos', () => {
   test('recusa um código sem pedir a passkey', async ({ page, browserName }) => {
     devices.openCodes.add('BCDF2345');
     await openDevices(page, browserName);
-    await page.getByRole('button', { name: 'Parear aparelho' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Parear aparelho' });
+    await page.getByRole('button', { name: 'Parear dispositivo' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
     await typeCode(page, 'bcdf2345');
     await sheet.getByRole('button', { name: 'Recusar código' }).click();
 
-    await expect(page.getByText('Código recusado. Nenhum aparelho foi pareado.')).toBeVisible();
+    await expect(page.getByText('Código recusado. Nenhum dispositivo foi pareado.')).toBeVisible();
     await expect(sheet).toHaveCount(0);
     expect(devices.requests.filter((r) => r.path === '/pairing/deny')).toHaveLength(1);
     expect(devices.requests.some((r) => r.path === '/pairing/approve')).toBe(false);
@@ -248,7 +248,7 @@ test.describe('aparelhos', () => {
     expect(devices.requests.some((r) => r.path.endsWith('/revoke'))).toBe(false);
     await page.getByRole('button', { name: 'Revogar', exact: true }).click();
 
-    await expect(page.getByText('Aparelho revogado.')).toBeVisible();
+    await expect(page.getByText('Dispositivo revogado.')).toBeVisible();
     await expect(page.locator('.item .chip')).toHaveText('Revogado');
     await expect(page.getByRole('button', { name: /^Revogar/ })).toHaveCount(0);
     expect(devices.agents[0].revoked).toBe(true);
@@ -266,20 +266,20 @@ test.describe('aparelhos', () => {
   }) => {
     devices.agents.push(storedAgent());
     await openDevices(page, browserName);
-    await expect(page.getByRole('button', { name: 'Parear aparelho' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Parear dispositivo' })).toBeEnabled();
 
     await context.setOffline(true);
-    await expect(page.getByRole('button', { name: 'Parear aparelho' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Parear dispositivo' })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Revogar PC de casa' })).toBeDisabled();
     await expect(
       page.getByText('Sem conexão: parear, recusar e revogar precisam de rede.'),
     ).toBeVisible();
 
     await context.setOffline(false);
-    await expect(page.getByRole('button', { name: 'Parear aparelho' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Parear dispositivo' })).toBeEnabled();
   });
 
-  test('mostra versão, sistema, TV e conexão de cada aparelho', async ({
+  test('mostra versão, sistema, TV e conexão de cada dispositivo', async ({
     page,
     browserName,
   }, info) => {

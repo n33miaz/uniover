@@ -62,16 +62,17 @@
               <strong>{{ alertTitle(alert) }}</strong>
               <span>{{ alertDetail(alert) }}</span>
             </p>
+            <button
+              type="button"
+              class="secondary ui-btn"
+              [disabled]="dismissingAlertId() !== null"
+              (click)="dismissAlert(alert)"
+              i18n="@@devices.alert.dismiss"
+            >
+              Dispensar
+            </button>
           </div>
         }
-        <button
-          type="button"
-          class="seen secondary ui-btn"
-          (click)="seeAlerts()"
-          i18n="@@devices.alert.seen"
-        >
-          Entendi
-        </button>
       </section>
     }
 
@@ -81,7 +82,7 @@
       @if (agents(); as list) {
         @if (list.length === 0) {
           <p class="empty ui-rise" i18n="@@devices.empty">
-            Nenhum aparelho pareado. Rode o agente no PC e digite o código que ele mostrar.
+            Nenhum dispositivo pareado. Rode o agente no PC e digite o código que ele mostrar.
           </p>
         } @else {
           <ul class="list ui-plain ui-stagger">
@@ -302,7 +303,7 @@
         }
       } @else if (loadFailed()) {
         <p class="empty bad ui-rise" role="alert" i18n="@@devices.load-failed">
-          Não foi possível carregar os aparelhos agora.
+          Não foi possível carregar os dispositivos agora.
         </p>
         <button
           type="button"
@@ -315,7 +316,7 @@
       } @else {
         <p class="empty" role="status">
           <span class="ui-spinner" aria-hidden="true"></span>
-          <span i18n="@@devices.loading">Carregando os aparelhos…</span>
+          <span i18n="@@devices.loading">Carregando os dispositivos…</span>
         </p>
         <div class="skeleton-card ui-card" aria-hidden="true">
           <span class="ui-skeleton bar wide"></span>
@@ -385,7 +386,7 @@
           (click)="openPair()"
           i18n="@@devices.pair"
         >
-          Parear Aparelho
+          Parear Dispositivo
         </button>
       </div>
       @if (!windowsPc) {

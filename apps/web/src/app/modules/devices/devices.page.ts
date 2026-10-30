@@ -54,6 +54,7 @@ export class DevicesPage {
   protected readonly loadFailed = signal(false);
   /** Avisos de queda ainda não vistos; falhar em lê-los nunca atrapalha a lista. */
   protected readonly alerts = signal<readonly AgentAlert[]>([]);
+  protected readonly dismissingAlertId = signal<string | null>(null);
   /** As TVs e o computador de cada uma; sem elas a seção some. */
   protected readonly tvs = signal<readonly DeviceTv[]>([]);
   protected readonly pairing = signal(false);
@@ -450,6 +451,22 @@ export class DevicesPage {
     }
   }
 
+  protected async dismissAlert(alert: AgentAlert): Promise<void> {
+    if (this.dismissingAlertId()) return;
+    this.dismissingAlertId.set(alert.id);
+    try {
+      await this.api.markAlertSeen(alert.id);
+      this.alerts.update((items) => items.filter((item) => item.id !== alert.id));
+    } catch {
+      this.say(
+        $localize`:@@devices.alert.dismiss-failed:Não foi possível dispensar o aviso agora.`,
+        true,
+      );
+    } finally {
+      this.dismissingAlertId.set(null);
+    }
+  }
+
   /** O computador que controla a TV, pelo nome (a TV só guarda o identificador dele). */
   protected tvComputer(tv: DeviceTv): string {
     const agent = this.agents()?.find((item) => item.slug === tv.agentSlug);
@@ -509,14 +526,17 @@ export class DevicesPage {
   protected async onPaired(outcome: PairOutcome): Promise<void> {
     this.pairing.set(false);
     if (outcome.kind === 'denied') {
-      this.say($localize`:@@devices.denied:Código recusado. Nenhum aparelho foi pareado.`, false);
+      this.say(
+        $localize`:@@devices.denied:Código recusado. Nenhum dispositivo foi pareado.`,
+        false,
+      );
       return;
     }
     const name = outcome.name;
     this.say(
       name
-        ? $localize`:@@devices.approved-named:Aparelho ${name}:name: pareado.`
-        : $localize`:@@devices.approved:Aparelho pareado.`,
+        ? $localize`:@@devices.approved-named:Dispositivo ${name}:name: pareado.`
+        : $localize`:@@devices.approved:Dispositivo pareado.`,
       false,
     );
     await this.load();
@@ -538,7 +558,7 @@ export class DevicesPage {
           list?.map((item) => (item.id === agent.id ? { ...item, revoked: true } : item)) ?? null,
       );
       this.revokingId.set(null);
-      this.say($localize`:@@devices.revoked:Aparelho revogado.`, false);
+      this.say($localize`:@@devices.revoked:Dispositivo revogado.`, false);
     } catch (error) {
       this.revokingId.set(null);
       const problem = problemOf(error);

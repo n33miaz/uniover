@@ -71,7 +71,7 @@ test.describe('página pública /conectar', () => {
         ).toBeVisible();
       }
 
-      // Nenhuma chamada à API de aparelhos: a página é pública.
+      // Nenhuma chamada à API de dispositivos: a página é pública.
       expect(devices.requests).toHaveLength(0);
       await expectNoHorizontalScroll(page);
       await settle(page);
@@ -152,7 +152,7 @@ test.describe('convidado com a TV', () => {
     await expect(page.getByText('Peça ao administrador para aprovar.')).toHaveCount(0);
     const link = page.getByRole('link', { name: 'Baixar conector' });
     await expect(link).toHaveAttribute('href', '/conectar/conectar-uniover.cmd');
-    await expect(page.getByRole('button', { name: 'Parear aparelho' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Parear dispositivo' })).toHaveCount(0);
     expect(devices.requests).toHaveLength(0);
     await expectNoHorizontalScroll(page);
     await settle(page);
@@ -288,7 +288,7 @@ test.describe('aprovar com "Para quem é a TV"', () => {
     devices.openCodes.add('BCDF2345');
 
     await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
-    const sheet = page.getByRole('dialog', { name: 'Parear aparelho' });
+    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
     await expect(sheet).toBeVisible();
     const person = sheet.getByRole('switch', { name: 'Raphael' });
     await expect(person).not.toBeChecked();
@@ -298,7 +298,7 @@ test.describe('aprovar com "Para quem é a TV"', () => {
     await screenshot(page, info.outputPath('pair-for-whom.png'));
 
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
-    await expect(page.getByText('Aparelho PC de casa pareado.')).toBeVisible();
+    await expect(page.getByText('Dispositivo PC de casa pareado.')).toBeVisible();
 
     expect(devices.tvs).toEqual([
       { name: 'TV de Raphael', agentSlug: devices.agents[0].slug, memberIds: [GUEST_ID] },
@@ -311,9 +311,9 @@ test.describe('aprovar com "Para quem é a TV"', () => {
     devices.openCodes.add('BCDF2345');
 
     await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
-    const sheet = page.getByRole('dialog', { name: 'Parear aparelho' });
+    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
-    await expect(page.getByText('Aparelho PC de casa pareado.')).toBeVisible();
+    await expect(page.getByText('Dispositivo PC de casa pareado.')).toBeVisible();
 
     expect(devices.tvs).toEqual([
       { name: 'PC de casa', agentSlug: devices.agents[0].slug, memberIds: [] },
