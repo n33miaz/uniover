@@ -140,3 +140,11 @@ describe('describeFailure', () => {
     expect(describeFailure(undefined).kind).toBe('unknown');
   });
 });
+
+describe('describeFailure while the PC is reconnecting', () => {
+  it('says the PC is reconnecting instead of claiming it is off', () => {
+    const failure = describeFailure(http(503, 'agent-offline', { reconnecting: true }));
+    expect(failure.kind).toBe('agent-reconnecting');
+    expect(failure.message).toBe('Reconectando ao PC… Tente de novo em instantes.');
+  });
+});

@@ -9145,6 +9145,8 @@ export interface components {
       agentOnline: boolean;
       app: null | string;
       connection: string;
+      /** Format: date-time */
+      offlineSince?: null | string;
       power: string;
       /** Format: date-time */
       updatedAt: null | string;
