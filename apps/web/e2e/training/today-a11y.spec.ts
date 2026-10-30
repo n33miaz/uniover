@@ -3,6 +3,7 @@ import { expectNoA11yViolations, settle, smallTargets } from '../screens/screen-
 import { expect, expectNoHorizontalScroll, test } from '../fixtures';
 import { seedBenchHistory, seedOpenElsewhere, HOURS } from './support/today-seed';
 import {
+  openSessionMenu,
   beginWorkout,
   concludeSet,
   installClock,
@@ -94,7 +95,7 @@ const SCREENS: readonly Screen[] = [
       await launch(context, page);
       await openToday(page);
       await beginWorkout(page);
-      await page.getByRole('button', { name: 'Opções do Treino' }).click();
+      await openSessionMenu(page);
       await expect(page.getByRole('dialog', { name: 'Opções do Treino' })).toBeVisible();
     },
   },

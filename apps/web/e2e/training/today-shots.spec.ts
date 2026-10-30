@@ -10,6 +10,7 @@ import {
   seedSupersetRoutine,
 } from './support/today-seed';
 import {
+  openSessionMenu,
   beginWorkout,
   concludeSet,
   installClock,
@@ -155,9 +156,9 @@ for (const scheme of ['light', 'dark'] as const) {
         await openToday(page);
         await beginWorkout(page);
         await concludeSet(page);
-        await page.getByRole('button', { name: 'Voltar ao treino' }).click();
+        await page.locator('app-page-top-bar .back').click();
         await expect(page.locator('app-workout-day .exercise.suggested')).toBeVisible();
-        await page.getByRole('link', { name: 'Voltar a Hoje' }).click();
+        await page.locator('app-page-top-bar .back').click();
         await expect(page.getByRole('button', { name: 'Continuar Treino' })).toBeVisible();
         await expect(page.getByText('O servidor não aceitou um treino')).toBeVisible();
         await shot(page, info, 'hoje-em-andamento', scheme);
@@ -220,7 +221,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await openToday(page);
       await beginWorkout(page);
 
-      await page.getByRole('button', { name: 'Opções do Treino' }).click();
+      await openSessionMenu(page);
       await expect(page.getByRole('dialog', { name: 'Opções do Treino' })).toBeVisible();
       await shot(page, info, 'sessao-menu', scheme);
       await page

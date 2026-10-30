@@ -119,7 +119,7 @@ test.describe('Hoje: a primeira tela', () => {
     expect(await page.evaluate(() => window.scrollY), 'a tela não rolou').toBe(0);
 
     // A data fica colada no começo do conteúdo, sem o vão que sobrava embaixo do cabeçalho.
-    const header = await box(page, '.training-header');
+    const header = await box(page, 'app-page-top-bar');
     const date = await box(page, '.date');
     expect(
       date.y - (header.y + header.height),

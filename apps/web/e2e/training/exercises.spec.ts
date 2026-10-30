@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { expect, screenshot, test } from '../fixtures';
-import { expectNoA11yViolations } from '../screens/screen-helpers';
+import { expectNoA11yViolations, settle } from '../screens/screen-helpers';
 import { SEED_EXERCISE_IDS } from './support/training-seed';
 import {
   openTraining,
@@ -149,8 +149,10 @@ test.describe('exercícios: lista, busca e ficha', () => {
     await expect(page.getByText('Plano do Dia')).toBeVisible();
     await expect(page.getByText('Rotina', { exact: true })).toBeVisible();
     await expect(page.getByText('Exercício', { exact: true })).toBeVisible();
+    // A tela entra com uma transição curta de opacidade: o contraste só vale depois dela.
+    await settle(page);
     await expectNoA11yViolations(page);
-    await page.getByRole('button', { name: 'Voltar ao Treino' }).click();
+    await page.locator('app-page-top-bar .back').click();
     await expect(page).toHaveURL(/\/treino\/rotinas$/);
   });
 

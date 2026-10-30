@@ -7,12 +7,7 @@ import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures'
 import { settle, smallTargets } from '../screens/screen-helpers';
 import { TrainingServer, mockTrainingApi } from './support/training-server';
 import { seedTraining } from './support/training-seed';
-import {
-  chooseMuscle,
-  openTraining,
-  trainingDbName,
-  expectOfflineIcon,
-} from './support/training-pages';
+import { openTraining } from './support/training-pages';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -34,9 +29,6 @@ const RAPHAEL = {
   email: 'raphael@exemplo.com',
   password: 'senha-do-raphael-123',
 };
-
-// A folha abre sozinha ~3 s depois da tela pronta; quem prova que ela NÃO abriu espera um pouco mais que isso.
-const AFTER_DELAY_MS = 3600;
 
 let identity: IdentityMock;
 let server: TrainingServer;
@@ -69,9 +61,6 @@ function signInAsGuest(permissions: string[]) {
 }
 
 const gear = (page: Page) => page.getByRole('link', { name: 'Configurações', exact: true });
-const sheetOf = (page: Page) => page.getByRole('dialog', { name: 'Atalho na tela de início' });
-const advice = (page: Page) =>
-  page.getByRole('button', { name: /^Estes treinos estão salvos só neste navegador/ });
 
 async function shot(page: Page, info: TestInfo, name: string, scheme: 'light' | 'dark') {
   if (!SHOTS) return;
@@ -146,14 +135,10 @@ test.describe('convidado que só tem o Treino', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
     await expect(page.locator('app-training-page')).toBeVisible();
 
-    // O Treino tem cabeçalho próprio: a seta de voltar à Início e o botão redondo de configurações, como o dono.
-    const header = page.locator('header');
-    await expect(header.getByRole('link')).toHaveCount(2);
-    await expect(header.getByRole('link', { name: 'Voltar ao Início' })).toHaveAttribute(
-      'href',
-      '/',
-    );
-    await expect(gear(page)).toHaveAttribute('href', '/ajustes');
+    // O topo é o compartilhado: uma seta de voltar à Início e o título; a engrenagem saiu do cabeçalho do Treino.
+    const header = page.locator('app-page-top-bar');
+    await expect(header.getByRole('button', { name: 'Voltar' })).toHaveCount(1);
+    await expect(gear(page)).toHaveCount(0);
 
     // Nunca passou pela TV: nem uma tela, nem uma requisição.
     expect(visited.filter((path) => path === '/tv' || path.startsWith('/tv/'))).toEqual([]);
@@ -171,23 +156,20 @@ test.describe('convidado que só tem o Treino', () => {
     await expect(page).toHaveTitle('UniOver Treino');
   });
 
-  test('na raiz volta à Início, e a tela interna conserva o próprio Voltar', async ({
+  test('na raiz volta à Início, e a tela interna tem um só Voltar, o do topo', async ({
     page,
   }, info) => {
     signInAsGuest(TRAINING_ONLY);
     await openTraining(page, '/treino');
 
-    const header = page.locator('.training-header');
-    await expect(header.getByRole('link', { name: 'Voltar ao Início' })).toHaveAttribute(
-      'href',
-      '/',
-    );
-    await expect(gear(page)).toHaveAttribute('href', '/ajustes');
+    const header = page.locator('app-page-top-bar');
+    await expect(header.getByRole('button', { name: 'Voltar' })).toHaveCount(1);
+    await expect(gear(page)).toHaveCount(0);
     await screenshot(page, info.outputPath('raiz-com-voltar.png'));
 
     await openTraining(page, '/treino/exercicios/novo');
-    const back = page.getByRole('button', { name: 'Sair do formulário' });
-    await expect(back).toBeVisible();
+    const back = page.locator('app-page-top-bar .back');
+    await expect(back).toHaveCount(1);
     await screenshot(page, info.outputPath('tela-interna-com-voltar.png'));
     await back.click();
     await expect(page).toHaveURL(/\/treino\/exercicios$/);
@@ -201,7 +183,7 @@ test.describe('convidado que só tem o Treino', () => {
       await useScheme(page, scheme);
       await shot(page, info, 'treino-so-treino', scheme);
     }
-    await gear(page).click();
+    await page.goto('/ajustes');
     await expect(page).toHaveURL(/\/ajustes$/);
     const back = page.getByRole('link', { name: 'Voltar ao Início' });
     await expect(back).toHaveAttribute('href', '/');
@@ -256,7 +238,7 @@ test.describe('convidado que só tem o Treino', () => {
     await expect(page).toHaveURL(/\/$/);
     await page.goto('/treino');
     await expect(page.locator('app-training-page')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Voltar ao Início' })).toBeVisible();
+    await expect(page.locator('app-page-top-bar .back')).toHaveCount(1);
   });
 });
 
@@ -270,12 +252,11 @@ test.describe('convidado que tem a TV e o Treino', () => {
     signInAsGuest(['module:tv', 'tv:control', 'module:training']);
     await openTraining(page, '/treino');
 
-    const header = page.locator('.training-header');
-    await expect(header.getByRole('link')).toHaveCount(2);
-    await expect(gear(page)).toHaveAttribute('href', '/ajustes');
+    const header = page.locator('app-page-top-bar');
+    await expect(header.getByRole('button', { name: 'Voltar' })).toHaveCount(1);
 
     // Treino -> Início -> TV.
-    await header.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await header.getByRole('button', { name: 'Voltar' }).click();
     await expect(page).toHaveURL(/\/$/);
     await page.locator('article[data-module="tv"] a.card-link').click();
     await expect(page).toHaveURL(/\/tv$/);
@@ -298,10 +279,9 @@ test.describe('convidado que tem a TV e o Treino', () => {
     signInAsGuest(TRAINING_ONLY);
     await openTraining(page, '/treino');
 
-    const header = page.locator('.training-header');
-    await expect(header.getByRole('link', { name: /^Voltar/ })).toHaveCount(0);
+    const header = page.locator('app-page-top-bar');
+    await expect(header.getByRole('button', { name: /^Voltar/ })).toHaveCount(0);
     await expect(header.locator('a[href="/"]')).toHaveCount(0);
-    await expect(gear(page)).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
   });
 
@@ -310,7 +290,7 @@ test.describe('convidado que tem a TV e o Treino', () => {
     signInAsGuest(TRAINING_ONLY);
     await openTraining(page, '/treino');
 
-    await gear(page).click();
+    await page.goto('/ajustes');
     await expect(page).toHaveURL(/\/ajustes$/);
     await expect(page.getByRole('heading', { level: 2, name: 'Módulos' })).toHaveCount(0);
     await expect(page.locator('a[href="/tv"]')).toHaveCount(0);

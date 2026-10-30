@@ -86,21 +86,48 @@ export async function chooseEquipment(page: Page, label: string): Promise<void> 
     .click();
 }
 
-/** O ícone de sincronização do cabeçalho: o estado fica em `data-state` e o rótulo, sem texto à vista, diz o resto. */
-export function syncIcon(page: Page) {
-  return page.locator('.training-header .status');
+/**
+ * Quantas alterações do aparelho ainda não chegaram ao servidor: lê a fila de escrita (`outbox`) de cada banco local.
+ * O anel do cabeçalho some depois de alguns segundos em dia e não é botão de sincronizar; o que prova que tudo chegou ao
+ * servidor é a fila vazia.
+ */
+export function pendingWrites(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const names = ((await indexedDB.databases?.()) ?? []).map((db) => db.name!).filter(Boolean);
+    let pending = 0;
+    for (const name of names) {
+      pending += await new Promise<number>((resolve) => {
+        const open = indexedDB.open(name);
+        open.onerror = () => resolve(0);
+        open.onsuccess = () => {
+          const db = open.result;
+          if (!db.objectStoreNames.contains('outbox')) {
+            db.close();
+            resolve(0);
+            return;
+          }
+          const count = db.transaction('outbox', 'readonly').objectStore('outbox').count();
+          count.onsuccess = () => {
+            db.close();
+            resolve(count.result);
+          };
+          count.onerror = () => {
+            db.close();
+            resolve(0);
+          };
+        };
+      });
+    }
+    return pending;
+  });
 }
 
-/** O aparelho está em dia: o rótulo do ícone traz a hora da última sincronização. */
+/** O aparelho está em dia: nada na fila de escrita. */
 export async function expectSynced(page: Page, options?: { timeout: number }): Promise<void> {
-  await expect(syncIcon(page)).toHaveAttribute(
-    'aria-label',
-    /Sincronizado às \d{2}:\d{2}/,
-    options,
-  );
+  await expect.poll(() => pendingWrites(page), { timeout: options?.timeout ?? 15_000 }).toBe(0);
 }
 
-/** Sem rede (estado normal): só o ícone muda; a faixa de texto só existe com algo pendente. */
+/** Sem rede (estado normal): o anel do cabeçalho fica cinza, e o app segue usável. */
 export async function expectOfflineIcon(page: Page): Promise<void> {
-  await expect(syncIcon(page)).toHaveAttribute('data-state', 'offline');
+  await expect(page.locator('app-page-top-bar .ring')).toHaveAttribute('data-state', 'offline');
 }

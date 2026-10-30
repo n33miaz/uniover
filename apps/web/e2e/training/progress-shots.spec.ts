@@ -27,10 +27,7 @@ const slug = (name: string) =>
 
 /** A captura espera a primeira sincronização acabar e as leituras do aparelho se assentarem: sem isso o print pega a tela no meio do carregamento. */
 async function steady(page: Page): Promise<void> {
-  await expect(page.locator('.training-header .status')).toHaveAttribute(
-    'aria-label',
-    /Sincronizado às|Sem rede/,
-  );
+  await expect(page.locator('app-page-top-bar .ring[data-state="busy"]')).toHaveCount(0);
   await expect(page.locator('.ui-skeleton')).toHaveCount(0);
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 400)));
 }
@@ -62,11 +59,8 @@ const EXTRAS: readonly ExtraShot[] = [
       server.offline = true;
       await context.setOffline(true);
       await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-      // O estado sem rede mora no ícone do cabeçalho (a faixa de texto só existe com envio pendente, e isso depende da fila).
-      await expect(page.locator('.training-header .status')).toHaveAttribute(
-        'data-state',
-        'offline',
-      );
+      // O estado sem rede mora no anel do cabeçalho.
+      await expect(page.locator('app-page-top-bar .ring')).toHaveAttribute('data-state', 'offline');
       await expectChartDrawn(page);
     },
   },

@@ -84,9 +84,18 @@ export async function concludeSet(page: Page): Promise<void> {
   await expect.poll(() => countRows(page, 'sets')).toBe(before + 1);
 }
 
+/** O menu do treino mora no topo da casca: os três pontos abrem a lista de ações e "Opções do treino" abre a folha dele. */
+export async function openSessionMenu(page: Page): Promise<void> {
+  await page.locator('app-page-top-bar').getByRole('button', { name: 'Mais opções' }).click();
+  await page
+    .getByRole('dialog', { name: 'Opções' })
+    .getByRole('button', { name: 'Opções do treino' })
+    .click();
+}
+
 /** Abre o menu do treino ("Opções do Treino") e toca numa linha dele. */
 export async function menu(page: Page, item: string | RegExp): Promise<void> {
-  await page.getByRole('button', { name: 'Opções do Treino' }).click();
+  await openSessionMenu(page);
   const dialog = page.getByRole('dialog', { name: 'Opções do Treino' });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: item }).click();

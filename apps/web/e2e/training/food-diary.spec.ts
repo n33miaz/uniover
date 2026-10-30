@@ -5,6 +5,17 @@ import { expectSynced, openTraining, startTraining } from './support/training-pa
 
 test.use({ serviceWorkers: 'block', timezoneId: 'America/Sao_Paulo', locale: 'pt-BR' });
 
+test('o diário usa a volta única do cabeçalho', async ({ page, context }) => {
+  await startTraining(context, page);
+  await openTraining(page, '/treino/alimentacao');
+
+  const back = page.locator('app-page-top-bar .back');
+  await expect(back).toHaveCount(1);
+  await expect(page.locator('app-food-diary-page .back')).toHaveCount(0);
+  await back.click();
+  await expect(page).toHaveURL(/\/treino\/corpo$/);
+});
+
 // O envio pendente e a passada de atualização passam dos 5 s de uma verificação comum quando a máquina está ocupada.
 const SYNC_WAIT = { timeout: 25_000 };
 
@@ -86,7 +97,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.locator('#free-protein').fill('0');
       await page.locator('#free-carbs').fill('0');
       await page.locator('#free-fat').fill('0');
-      await page.getByRole('button', { name: 'Registrar refeição' }).click();
+      await page.getByRole('button', { name: 'Registrar Refeição' }).click();
       await expect(page.locator('.entry-main strong')).toHaveText(['Registro de demonstração']);
       expect(cspViolations).toEqual([]);
       // A faixa "Sincronizar Agora" aparece enquanto o envio está pendente e empurra a tela: quem toca nesse meio tempo
@@ -108,7 +119,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
       await page.getByRole('button', { name: 'Editar Registro de demonstração' }).click();
       await page.getByLabel('Descrição do lançamento').fill('Registro revisado');
-      await page.getByRole('button', { name: 'Salvar alterações' }).click();
+      await page.getByRole('button', { name: 'Salvar Alterações' }).click();
       await expect(page.locator('.entry-main strong')).toHaveText(['Registro revisado']);
       await expectSynced(page, SYNC_WAIT);
       await page.getByRole('button', { name: 'Apagar Registro revisado' }).click();
@@ -126,7 +137,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.locator('#own-fat').fill('6.9');
       await page.getByRole('button', { name: 'Salvar Alimento' }).click();
       await expect(page.locator('.selected-food strong')).toHaveText('Aveia de demonstração');
-      await page.getByRole('button', { name: 'Registrar refeição' }).click();
+      await page.getByRole('button', { name: 'Registrar Refeição' }).click();
       await expect(page.locator('.entry-main strong')).toHaveText(['Aveia de demonstração']);
       await expectSynced(page, SYNC_WAIT);
 
@@ -141,7 +152,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.getByText('Open Food Facts, ODbL')).toBeVisible();
       await banana.click();
       await page.getByLabel('Quantidade em gramas').fill('120');
-      await page.getByRole('button', { name: 'Registrar refeição' }).click();
+      await page.getByRole('button', { name: 'Registrar Refeição' }).click();
       await expect(page.locator('.entry-main strong')).toHaveText([
         'Aveia de demonstração',
         'Banana de demonstração',
@@ -163,7 +174,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(localOats).toBeVisible();
       await localOats.click();
       await page.getByLabel('Quantidade em gramas').fill('50');
-      await page.getByRole('button', { name: 'Registrar refeição' }).click();
+      await page.getByRole('button', { name: 'Registrar Refeição' }).click();
       await expect(page.locator('.entry-main strong')).toHaveText([
         'Aveia de demonstração',
         'Banana de demonstração',

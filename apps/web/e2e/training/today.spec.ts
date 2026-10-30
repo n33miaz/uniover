@@ -11,6 +11,7 @@ import {
   seedSupersetRoutine,
 } from './support/today-seed';
 import {
+  openSessionMenu,
   beginWorkout,
   concludeSet,
   deviceLog,
@@ -351,7 +352,7 @@ test.describe('treino ao vivo', () => {
     await expect(
       page.getByRole('heading', { level: 2, name: 'Supino inclinado com halteres' }),
     ).toBeVisible();
-    await page.getByRole('button', { name: 'Voltar ao treino' }).click();
+    await page.locator('app-page-top-bar .back').click();
     await expect(day).toBeVisible();
     await expect(day.locator('.exercise.suggested')).toContainText('Supino reto com barra');
   });
@@ -702,7 +703,7 @@ test.describe('treino ao vivo', () => {
     // O interruptor está no topo da tela do treino, e o menu não o repete.
     const toggle = page.getByRole('switch', { name: 'Manter a Tela Acesa' });
     await expect(toggle).not.toBeChecked();
-    await page.getByRole('button', { name: 'Opções do Treino' }).click();
+    await openSessionMenu(page);
     const dialog = page.getByRole('dialog', { name: 'Opções do Treino' });
     await expect(dialog.getByRole('switch')).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Fechar', exact: true }).click();

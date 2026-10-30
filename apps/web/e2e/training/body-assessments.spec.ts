@@ -4,6 +4,16 @@ import { openTraining, startTraining } from './support/training-pages';
 
 test.use({ serviceWorkers: 'block', timezoneId: 'America/Sao_Paulo', locale: 'pt-BR' });
 
+test('as avaliações usam somente a volta do cabeçalho do Treino', async ({ page, context }) => {
+  await startTraining(context, page);
+  await openTraining(page, '/treino/corpo/avaliacoes/sem-registro');
+
+  await expect(page.locator('app-page-top-bar .back')).toHaveCount(1);
+  await expect(page.locator('app-physical-assessment-detail-page .back')).toHaveCount(0);
+  await page.locator('app-page-top-bar .back').click();
+  await expect(page).toHaveURL(/\/treino\/corpo\/avaliacoes$/);
+});
+
 test('guarda uma avaliação e as fotos do relatório só neste aparelho, sem rede', async ({
   page,
   context,
@@ -13,8 +23,8 @@ test('guarda uma avaliação e as fotos do relatório só neste aparelho, sem re
   await openTraining(page, '/treino/corpo/avaliacoes/assessment-cache');
   await expect(page.getByRole('heading', { name: 'Avaliação Não Encontrada' })).toBeVisible();
   await openTraining(page, '/treino/corpo/avaliacoes/nova');
-  await expect(page.locator('.training-header .back')).toHaveCount(0);
-  await expect(page.getByRole('link', { name: '‹ Avaliações' })).toHaveCount(1);
+  await expect(page.locator('app-page-top-bar .back')).toHaveCount(1);
+  await expect(page.getByRole('link', { name: '‹ Avaliações' })).toHaveCount(0);
   await page.evaluate(() => window.dispatchEvent(new Event('offline')));
   await page.getByLabel('Data da avaliação').fill('2026-04-05');
   await page.getByLabel('Origem / clínica / sistema').fill('Clínica sintética');
