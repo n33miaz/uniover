@@ -10,7 +10,7 @@ from pathlib import Path
 from uniover_agent.adapters.process import popen_hidden, run_hidden
 
 # Versão do lançador sem console que a tarefa usa; subir o número reaponta as tarefas já instaladas.
-LAUNCHER_TASK_VERSION = "wscript-1"
+LAUNCHER_TASK_VERSION = "wscript-2-resilient"
 # Versão do ajuste de energia sem administrador; subir o número aplica de novo.
 POWER_SETTINGS_VERSION = "ac-never-sleep-1"
 # Depois de uma tentativa que falhou, espera isto antes de tentar de novo (custa segundos).
@@ -163,12 +163,33 @@ def _write_launcher_vbs(root: Path) -> bool:
     return True
 
 
-def launcher_task_script(root: Path, name: str = TASK_NAME) -> str:
-    """Script (PowerShell 5.1, sem administrador) que passa a tarefa ao lançador sem console.
+# Gatilhos e limites que o instalador e a atualização aplicam igual. Logon: sobe na hora. Repetição:
+# a cada 10 min por dez anos, sobe de novo se o agente ou o lançador morreram (instância única do
+# mutex do lançador). Sem `-WakeToRun`: acordar o PC a cada 10 min gastaria energia sem ganho, pois
+# o agente já pede ao Windows que não suspenda por ociosidade.
+TASK_TRIGGERS_AND_SETTINGS = (
+    "$t=@((New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME),"
+    "(New-ScheduledTaskTrigger -Once -At (Get-Date).Date"
+    " -RepetitionInterval (New-TimeSpan -Minutes 10)"
+    " -RepetitionDuration (New-TimeSpan -Days 3650)));"
+    "$s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero)"
+    " -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries"
+    " -MultipleInstances IgnoreNew -StartWhenAvailable"
+    " -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)"
+)
 
-    Tarefa existente: troca só a AÇÃO (gatilho, conta e limites ficam como estão), confere pela
-    leitura e, se algo falhar, devolve as ações antigas: a tarefa antiga nunca fica sem ação. Sem
-    tarefa: registra uma completa. A saída diz o que houve (0 feito, 3 revertido, 4 erro).
+
+def launcher_task_script(root: Path, name: str = TASK_NAME) -> str:
+    """Script (PowerShell 5.1, sem administrador) que deixa a tarefa do agente robusta.
+
+    Tarefa existente: troca a AÇÃO (lançador sem console), os GATILHOS (logon e uma repetição a
+    cada 10 min: se o agente caiu, sobe de novo; o mutex do lançador garante uma instância só) e as
+    CONFIGURAÇÕES (reinício automático por falha, 999 vezes a cada 1 min). A conta fica como está:
+    a tarefa roda interativa, com o token no Cofre de Credenciais do usuário, que uma tarefa sem
+    logon (S4U) não consegue abrir; por isso também não há gatilho de inicialização do sistema, que
+    exigiria administrador. Confere pela leitura e, se algo falhar, devolve ação, gatilhos e
+    configurações antigos: a tarefa antiga nunca fica pela metade. Sem tarefa: registra uma
+    completa. A saída diz o que houve (0 feito, 3 revertido, 4 erro).
     """
     vbs = str(root / "launcher.vbs").replace("'", "''")
     wscript = _wscript().replace("'", "''")
@@ -179,26 +200,29 @@ def launcher_task_script(root: Path, name: str = TASK_NAME) -> str:
         f"$name='{name}'",
         "try {",
         "$a=New-ScheduledTaskAction -Execute $exe -Argument $arg",
+        TASK_TRIGGERS_AND_SETTINGS,
         "$task=Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue",
         "if ($task) {",
         "$old=@($task.Actions)",
+        "$oldT=@($task.Triggers)",
+        "$oldS=$task.Settings",
         "try {",
-        "Set-ScheduledTask -TaskName $name -Action $a|Out-Null",
-        "$now=@((Get-ScheduledTask -TaskName $name).Actions)",
+        "Set-ScheduledTask -TaskName $name -Action $a -Trigger $t -Settings $s|Out-Null",
+        "$read=Get-ScheduledTask -TaskName $name",
+        "$now=@($read.Actions)",
         "if ($now.Count -ne 1 -or $now[0].Execute -ne $exe -or $now[0].Arguments -ne $arg)"
         " { throw 'conferencia' }",
+        "if (@($read.Triggers).Count -ne 2 -or $read.Settings.RestartCount -ne 999)"
+        " { throw 'conferencia' }",
         "} catch {",
-        "try { Set-ScheduledTask -TaskName $name -Action $old|Out-Null } catch { }",
+        "try { Set-ScheduledTask -TaskName $name -Action $old -Trigger $oldT"
+        " -Settings $oldS|Out-Null } catch { }",
         "exit 3",
         "}",
         "exit 0",
         "}",
-        "$t=New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME",
         "$p=New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive"
         " -RunLevel Limited",
-        "$s=New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero)"
-        " -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries"
-        " -MultipleInstances IgnoreNew -StartWhenAvailable",
         "Register-ScheduledTask -TaskName $name -Action $a -Trigger $t -Principal $p"
         " -Settings $s -Force|Out-Null",
         "exit 0",

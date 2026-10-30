@@ -347,10 +347,17 @@ function Register-AgentTask {
     else {
         $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '"')
     }
-    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    # Logon sobe na hora; a repeticao a cada 10 min sobe de novo se o agente ou o lancador morreram (o mutex do lancador
+    # garante uma instancia so); o reinicio por falha cobre queda do processo. Interativa de proposito: o token fica no
+    # Cofre de Credenciais do usuario, que uma tarefa sem logon nao abre, e o gatilho de inicializacao do sistema
+    # exigiria administrador. Sem acordar o PC por agenda: o agente ja pede ao Windows que nao suspenda por ociosidade.
+    $triggers = @(
+        (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME),
+        (New-ScheduledTaskTrigger -Once -At (Get-Date).Date -RepetitionInterval (New-TimeSpan -Minutes 10) -RepetitionDuration (New-TimeSpan -Days 3650))
+    )
     $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
-    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -StartWhenAvailable
-    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Principal $principal -Settings $settings -Force | Out-Null
 }
 
 function Move-LegacyLayout {
