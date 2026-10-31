@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.31.0](https://github.com/n33miaz/uniover/compare/v0.30.0...v0.31.0) (2026-10-31)
+
+
+### Features
+
+* **agent:** draw the tray icons as vector assets
+* **agent:** promote the tray icon once
+* **agent:** new tray icon, status and menu
+* **agent:** keep the tray closed after Sair
+* **api:** alert the owner on update failures
+* **web:** show update failure alerts
+
+
+### Bug Fixes
+
+* **agent:** report every update failure as error
+* **agent:** redraw the tray seal as a cutout
+* **agent:** hold the balloon until the icon shows
+* **agent:** promote only our own tray entry
+* **agent:** remove the tray shortcut on uninstall
+
 ## [0.29.0](https://github.com/n33miaz/uniover/compare/v0.28.0...v0.29.0) (2026-10-31)
 
 
