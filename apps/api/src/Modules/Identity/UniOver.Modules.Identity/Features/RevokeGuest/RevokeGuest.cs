@@ -30,6 +30,15 @@ internal sealed class RevokeGuestHandler(
         var now = time.GetUtcNow();
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
+        // Trava as famílias do convidado (ordem estável) antes de revogar: um refresh em voo termina antes e a
+        // revogação alcança o sucessor dele, ou só começa depois e encontra a conta já desativada.
+        var families = await db.RefreshTokens.AsNoTracking()
+            .Where(t => t.UserId == guestId)
+            .Select(t => t.FamilyId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        await FamilyLock.AcquireAllAsync(db, families, cancellationToken);
+
         guest.Disable(now);
         await db.SaveChangesAsync(cancellationToken);
 
