@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Web;
@@ -83,6 +84,7 @@ internal static class ImportTacoEndpoint
 {
     private const int MaxBytes = 1_000_000;
     public static void MapImportTaco(this IEndpointRouteBuilder group) => group.MapPost("/foods/imports/taco", HandleAsync)
+        .WithMetadata(new RequestSizeLimitAttribute(MaxBytes + 16 * 1024)) // acima do teto geral da API (256 KiB); a rota confere o próprio 1 MiB
         .RequireAuthorization(UniOverAuth.OwnerPolicy).RequireRateLimiting(RateLimitPolicies.Commands)
         .RequireIdempotency<TrainingDbContext>().Produces<TacoImportResponse>().ProducesProblem(400).ProducesProblem(401)
         .ProducesProblem(403).ProducesProblem(413).ProducesProblem(415).ProducesProblem(429);

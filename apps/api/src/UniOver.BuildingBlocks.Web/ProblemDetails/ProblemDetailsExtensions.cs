@@ -14,6 +14,7 @@ public static class ProblemDetailsExtensions
 
     public const string RateLimited = "rate-limited";
     public const string ValidationFailed = "validation-failed";
+    public const string PayloadTooLarge = "payload-too-large";
 
     private static string? CodeFor(int status) => status switch
     {
@@ -23,6 +24,7 @@ public static class ProblemDetailsExtensions
         StatusCodes.Status404NotFound => "not-found",
         StatusCodes.Status405MethodNotAllowed => "method-not-allowed",
         StatusCodes.Status415UnsupportedMediaType => "unsupported-media-type",
+        StatusCodes.Status413PayloadTooLarge => PayloadTooLarge,
         StatusCodes.Status429TooManyRequests => RateLimited,
         StatusCodes.Status500InternalServerError => "internal-error",
         _ => null,

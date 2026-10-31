@@ -34,9 +34,12 @@ internal sealed partial class GlobalExceptionHandler(
                 ProblemDetails = new Microsoft.AspNetCore.Mvc.ProblemDetails
                 {
                     Status = badRequest.StatusCode,
-                    Title = badRequest.StatusCode == StatusCodes.Status415UnsupportedMediaType
-                        ? "Tipo de conteúdo não suportado."
-                        : "Requisição inválida.",
+                    Title = badRequest.StatusCode switch
+                    {
+                        StatusCodes.Status415UnsupportedMediaType => "Tipo de conteúdo não suportado.",
+                        StatusCodes.Status413PayloadTooLarge => "O corpo da requisição é grande demais.",
+                        _ => "Requisição inválida.",
+                    },
                 },
             });
         }
