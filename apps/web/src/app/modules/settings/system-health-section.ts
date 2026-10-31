@@ -1,5 +1,6 @@
 import { Component, effect, inject, signal, untracked } from '@angular/core';
 import { SessionState } from '../../core/session/session-state';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { HealthAgent, SystemApi, TvItem } from './system-api';
 
 /**
@@ -8,6 +9,7 @@ import { HealthAgent, SystemApi, TvItem } from './system-api';
  */
 @Component({
   selector: 'app-system-health-section',
+  imports: [LoadingSkeleton],
   templateUrl: './system-health-section.html',
   styleUrl: './system-health-section.css',
 })

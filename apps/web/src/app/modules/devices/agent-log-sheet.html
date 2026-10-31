@@ -4,10 +4,13 @@
 
   <div class="body" [attr.aria-live]="'polite'">
     @if (loading()) {
-      <p class="hint" role="status">
-        <span class="ui-spinner" aria-hidden="true"></span>
-        <span i18n="@@devices.log.loading">Pedindo o registro ao agente…</span>
-      </p>
+      <app-loading-skeleton
+        [kind]="'log'"
+        i18n-label="@@devices.log.loading"
+        label="Pedindo o registro ao agente…"
+        [reload]="false"
+        (retried)="load()"
+      />
     } @else if (error(); as text) {
       <p class="error ui-notice bad ui-rise" role="alert">{{ text }}</p>
     } @else if (log(); as current) {

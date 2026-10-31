@@ -64,8 +64,7 @@
 }
 
 .config-groups,
-.config-group,
-.config-skeleton {
+.config-group {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);

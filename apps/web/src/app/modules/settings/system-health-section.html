@@ -50,6 +50,12 @@
       Não foi possível carregar a saúde do sistema.
     </p>
   } @else {
-    <p role="status" i18n="@@settings.system.health.loading">Carregando a saúde do sistema…</p>
+    <app-loading-skeleton
+      [kind]="'metrics'"
+      i18n-label="@@settings.system.health.loading"
+      label="Carregando a saúde do sistema…"
+      [reload]="false"
+      (retried)="load()"
+    />
   }
 </section>

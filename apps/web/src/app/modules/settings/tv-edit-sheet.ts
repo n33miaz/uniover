@@ -22,6 +22,7 @@ import {
 } from '../../shared/ui/dialog-motion';
 import { cleanupKindText, cleanupOutcomeText } from '../../shared/tv-cleanup-text';
 import { SettingsGlyph } from './settings-glyph';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { SystemApi, TvAppOption, TvCleanupReportItem, TvComputer, TvItem } from './system-api';
 
 /** Tamanho máximo do nome da TV, o mesmo da API. */
@@ -49,7 +50,7 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
  */
 @Component({
   selector: 'app-tv-edit-sheet',
-  imports: [SettingsGlyph],
+  imports: [SettingsGlyph, LoadingSkeleton],
   templateUrl: './tv-edit-sheet.html',
   styleUrl: './tv-edit-sheet.css',
 })
@@ -386,7 +387,7 @@ export class TvEditSheet implements OnInit {
   }
 
   /** As pessoas que podem ser marcadas (contas ativas) e, ao editar, quem já usa a TV. */
-  private async loadPeople(): Promise<void> {
+  protected async loadPeople(): Promise<void> {
     try {
       const tv = this.current();
       const [guests, members] = await Promise.all([

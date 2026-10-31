@@ -85,4 +85,29 @@ describe('SystemHealthSection', () => {
     expect(system.agents).not.toHaveBeenCalled();
     expect(system.tvs).not.toHaveBeenCalled();
   });
+
+  it('holds four tiles as a busy skeleton until the readings arrive', async () => {
+    let finish: (agents: unknown[]) => void = () => undefined;
+    system.agents.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const session = TestBed.inject(SessionState);
+    session.setToken('t', 600);
+    session.setUser({ id: '1', email: 'a@b.c', displayName: 'Dono', role: 'owner' });
+    const fixture = TestBed.createComponent(SystemHealthSection);
+    const el = fixture.nativeElement as HTMLElement;
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(
+      el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+    ).not.toBeNull();
+    expect(el.querySelectorAll('app-loading-skeleton .tile')).toHaveLength(4);
+    expect(el.querySelector('.metric')).toBeNull();
+
+    finish([]);
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(el.querySelector('app-loading-skeleton')).toBeNull();
+    });
+    expect(el.querySelectorAll('.metric')).toHaveLength(4);
+  });
 });

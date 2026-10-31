@@ -116,16 +116,13 @@
       </button>
     </div>
   } @else {
-    <div class="sessions-skeleton" role="status">
-      <span class="ui-visually-hidden" i18n="@@settings.sessions.loading">Carregando sessões…</span>
-      <div class="skeleton-card ui-card" aria-hidden="true">
-        <span class="ui-skeleton bar wide"></span>
-        <span class="ui-skeleton bar"></span>
-      </div>
-      <div class="skeleton-card ui-card" aria-hidden="true">
-        <span class="ui-skeleton bar wide"></span>
-        <span class="ui-skeleton bar"></span>
-      </div>
-    </div>
+    <app-loading-skeleton
+      [kind]="'cards'"
+      [count]="2"
+      i18n-label="@@settings.sessions.loading"
+      label="Carregando sessões…"
+      [reload]="false"
+      (retried)="retry()"
+    />
   }
 </section>

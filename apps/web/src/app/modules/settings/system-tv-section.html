@@ -72,14 +72,14 @@
       Tentar de novo
     </button>
   } @else {
-    <p class="loading" role="status">
-      <span class="ui-spinner" aria-hidden="true"></span>
-      <span i18n="@@settings.system.tv.loading">Carregando…</span>
-    </p>
-    <div class="skeleton-card ui-card" aria-hidden="true">
-      <span class="ui-skeleton bar wide"></span>
-      <span class="ui-skeleton bar"></span>
-    </div>
+    <app-loading-skeleton
+      [kind]="'cards'"
+      [count]="2"
+      i18n-label="@@settings.system.tv.loading"
+      label="Carregando as TVs…"
+      [reload]="false"
+      (retried)="load()"
+    />
   }
 
   <div class="messages" [attr.aria-live]="'polite'">

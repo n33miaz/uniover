@@ -322,4 +322,21 @@ describe('QrLoginPanel', () => {
       expect(vi.getTimerCount()).toBe(idle);
     });
   });
+
+  it('holds the square of the QR as a busy skeleton while the code is requested, then swaps it for the QR', async () => {
+    let finish: (value: ReturnType<typeof started>) => void = () => undefined;
+    api.qrStart.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const { fixture, el } = await render();
+
+    const status = el.querySelector('app-loading-frame[aria-busy="true"]');
+    expect(status).not.toBeNull();
+    expect(el.querySelector('.ui-skeleton.square')).not.toBeNull();
+    expect(el.querySelector('app-qr-code')).toBeNull();
+
+    finish(started('CODE1234CODE1234', 'segredo-de-consulta'));
+    await settle(fixture);
+    expect(el.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(el.querySelector('.ui-skeleton')).toBeNull();
+    expect(el.querySelector('app-qr-code svg path')).not.toBeNull();
+  });
 });

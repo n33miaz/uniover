@@ -4,6 +4,7 @@ import { ApiProblem, networkProblem } from '../../core/auth/api-problem';
 import { AuthApi } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { version } from '../../../../package.json';
+import { LOADING_TIMING } from '../../shared/ui/skeleton/loading-frame';
 import { AboutPage } from './about.page';
 
 const ME = { id: '1', email: 'dono@exemplo.com', displayName: 'Dono da Casa' };
@@ -50,6 +51,21 @@ describe('AboutPage', () => {
     const fixture = TestBed.createComponent(AboutPage);
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.version-skeleton')).not.toBeNull();
+  });
+
+  it('gives up on a server that never answers instead of shimmering forever', async () => {
+    api.deploymentVersion.mockReturnValue(new Promise(() => undefined));
+    TestBed.overrideProvider(LOADING_TIMING, { useValue: { giveUpAfterMs: 20 } });
+    await TestBed.inject(AuthService).init();
+    const fixture = TestBed.createComponent(AboutPage);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.version-skeleton')).not.toBeNull();
+
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.version-skeleton')).toBeNull();
+    });
+    expect(fixture.nativeElement.textContent).toContain('indisponível agora');
   });
 
   it('asks only for the public deployment version route, without a token', async () => {

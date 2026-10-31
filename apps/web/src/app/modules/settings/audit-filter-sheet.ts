@@ -31,6 +31,7 @@ import {
   sameFilter,
 } from './audit-model';
 import { SettingsGlyph } from './settings-glyph';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 
 /** As ações de uma fonte, já com nome: o que a lista de ações da folha mostra num grupo. */
 interface ActionGroup {
@@ -51,7 +52,7 @@ interface ActionGroup {
  */
 @Component({
   selector: 'app-audit-filter-sheet',
-  imports: [SettingsGlyph],
+  imports: [SettingsGlyph, LoadingSkeleton],
   templateUrl: './audit-filter-sheet.html',
   styleUrl: './audit-filter-sheet.css',
 })

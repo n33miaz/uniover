@@ -314,15 +314,13 @@
           Tentar de novo
         </button>
       } @else {
-        <p class="empty" role="status">
-          <span class="ui-spinner" aria-hidden="true"></span>
-          <span i18n="@@devices.loading">Carregando os dispositivos…</span>
-        </p>
-        <div class="skeleton-card ui-card" aria-hidden="true">
-          <span class="ui-skeleton bar wide"></span>
-          <span class="ui-skeleton bar"></span>
-          <span class="ui-skeleton bar"></span>
-        </div>
+        <app-loading-skeleton
+          [kind]="'cards'"
+          [count]="2"
+          [label]="loadingLabel"
+          [reload]="false"
+          (retried)="load()"
+        />
       }
 
       @if (tvs().length > 0) {

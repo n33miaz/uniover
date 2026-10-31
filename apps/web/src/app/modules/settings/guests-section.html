@@ -73,14 +73,14 @@
         >
       </p>
     } @else {
-      <p class="empty" role="status">
-        <span class="ui-spinner" aria-hidden="true"></span>
-        <span i18n="@@settings.guests.loading">Carregando os convidados…</span>
-      </p>
-      <div class="skeleton-card ui-card" aria-hidden="true">
-        <span class="ui-skeleton bar wide"></span>
-        <span class="ui-skeleton bar"></span>
-      </div>
+      <app-loading-skeleton
+        [kind]="'cards'"
+        [count]="2"
+        i18n-label="@@settings.guests.loading"
+        label="Carregando os convidados…"
+        [reload]="false"
+        (retried)="load()"
+      />
     }
   } @else {
     <div [hidden]="activeTab() !== 'people'" role="tabpanel" aria-labelledby="people-tab">

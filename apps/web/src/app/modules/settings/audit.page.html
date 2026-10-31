@@ -93,20 +93,13 @@
 
   @switch (view()) {
     @case ('loading') {
-      <p class="loading" role="status">
-        <span class="ui-spinner" aria-hidden="true"></span>
-        <span i18n="@@settings.audit.loading">Carregando os registros…</span>
-      </p>
-      <div class="skeleton ui-group" aria-hidden="true">
-        @for (n of [1, 2, 3]; track n) {
-          <div class="skeleton-row">
-            <span class="lines">
-              <span class="ui-skeleton bar wide"></span>
-              <span class="ui-skeleton bar"></span>
-            </span>
-          </div>
-        }
-      </div>
+      <app-loading-skeleton
+        [kind]="'group'"
+        i18n-label="@@settings.audit.loading"
+        label="Carregando os registros…"
+        [reload]="false"
+        (retried)="load()"
+      />
     }
     @case ('offline') {
       <div class="state ui-rise">

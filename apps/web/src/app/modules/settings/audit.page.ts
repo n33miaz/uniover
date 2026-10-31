@@ -44,6 +44,7 @@ import {
   resolveQuery,
 } from './audit-model';
 import { SettingsGlyph } from './settings-glyph';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 
 /** Em que pé está a lista: carregando a primeira página, pronta, com erro, ou sem rede. */
 type Phase = 'loading' | 'ready' | 'error' | 'offline';
@@ -99,7 +100,7 @@ function fallbackFilename(now: Date): string {
  */
 @Component({
   selector: 'app-audit-page',
-  imports: [AuditFilterSheet, SettingsGlyph],
+  imports: [AuditFilterSheet, SettingsGlyph, LoadingSkeleton],
   templateUrl: './audit.page.html',
   styleUrl: './audit.page.css',
 })
