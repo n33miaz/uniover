@@ -54,40 +54,42 @@ import { WorkoutDaySkeleton } from './workout-skeletons';
       } @else {
         <p class="routine-name">{{ live.workoutName() }}</p>
 
-        <div class="cards">
-          @for (entry of live.plan().entries; track entry.key) {
-            <button
-              type="button"
-              class="exercise ui-card"
-              [class.suggested]="entry.key === suggestedKey()"
-              [class.done]="complete(entry)"
-              [class.skipped]="entry.skipped"
-              [attr.aria-current]="entry.key === suggestedKey() ? 'step' : null"
-              (click)="open(entry.key)"
-            >
-              <span class="art">
-                @if (art(entry.exerciseId); as src) {
-                  <img [src]="src" alt="" width="120" height="120" [attr.decoding]="'async'" />
-                } @else {
-                  <app-training-glyph name="dumbbell" />
+        @if (live.plan().entries.length > 0) {
+          <div class="cards">
+            @for (entry of live.plan().entries; track entry.key) {
+              <button
+                type="button"
+                class="exercise ui-card"
+                [class.suggested]="entry.key === suggestedKey()"
+                [class.done]="complete(entry)"
+                [class.skipped]="entry.skipped"
+                [attr.aria-current]="entry.key === suggestedKey() ? 'step' : null"
+                (click)="open(entry.key)"
+              >
+                <span class="art">
+                  @if (art(entry.exerciseId); as src) {
+                    <img [src]="src" alt="" width="120" height="120" [attr.decoding]="'async'" />
+                  } @else {
+                    <app-training-glyph name="dumbbell" />
+                  }
+                </span>
+                <span class="details">
+                  <span class="name">{{
+                    live.exercises().get(entry.exerciseId)?.name ?? unknownName
+                  }}</span>
+                  <span class="meta">{{
+                    progressText(entry.doneSets, entry.targetSets, entry.skipped)
+                  }}</span>
+                </span>
+                @if (entry.key === suggestedKey()) {
+                  <span class="ui-chip accent" i18n="@@training.day.suggested">Próximo</span>
+                } @else if (complete(entry)) {
+                  <app-training-glyph class="check" name="check" />
                 }
-              </span>
-              <span class="details">
-                <span class="name">{{
-                  live.exercises().get(entry.exerciseId)?.name ?? unknownName
-                }}</span>
-                <span class="meta">{{
-                  progressText(entry.doneSets, entry.targetSets, entry.skipped)
-                }}</span>
-              </span>
-              @if (entry.key === suggestedKey()) {
-                <span class="ui-chip accent" i18n="@@training.day.suggested">Próximo</span>
-              } @else if (complete(entry)) {
-                <app-training-glyph class="check" name="check" />
-              }
-            </button>
-          }
-        </div>
+              </button>
+            }
+          </div>
+        }
 
         @if (live.ready() && live.plan().entries.length === 0) {
           <button type="button" class="secondary ui-btn block" (click)="chooserOpen.set(true)">
