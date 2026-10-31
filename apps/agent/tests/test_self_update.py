@@ -415,11 +415,11 @@ def test_uv_sync_runs_in_a_throwaway_environment_and_never_in_the_running_one(
     candidate = tmp_path / "app.new"
     run_uv_sync(candidate)
     [(command, kwargs)] = fake.calls
-    # `--locked`: o uv.lock manda, uma dependência diferente da ensaiada nunca entra sozinha.
+    # `--frozen`: o uv.lock manda, uma dependência diferente da ensaiada nunca entra sozinha.
     assert command == [
         "C:/uv/uv.exe",
         "sync",
-        "--locked",
+        "--frozen",
         "--project",
         str(candidate),
         "--quiet",

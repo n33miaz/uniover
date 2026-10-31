@@ -20,8 +20,9 @@ nada além de ser um zip, e a versão nova só deixava de estar "em prova" quand
   commit pedido (o GitHub o grava); cada arquivo de `apps/agent` é comparado com a árvore do commit pela API
   do GitHub (hash do git, com ou sem conversão de fim de linha). Divergência recusa o pacote; árvore
   indisponível (rede, limite de consultas) não trava a atualização e fica dito no registro.
-- **Dependências fixas:** `uv sync --locked` na candidata, no supervisor e no instalador. Um commit com
-  `uv.lock` fora de dia não atualiza ninguém, em vez de trazer dependência diferente da testada.
+- **Dependências fixas:** `uv sync --frozen` na candidata, no supervisor e no instalador: instala exatamente o
+  `uv.lock`, sem reescrevê-lo. A CI continua com `--locked` (barra lock fora de dia); no PC o `--locked` só
+  acrescentaria uma forma de falhar, por exemplo uma versão nova do `uv` que reescreveria o lock.
 - **Ensaio da candidata:** além do `uv sync` num ambiente descartável, ela roda o próprio auto-diagnóstico
   (`python -m uniover_agent.selfcheck`: código, contratos e o `agent.toml` real deste PC com as regras novas).
 - **Prova com confirmação:** a versão nova fica "em prova" até rodar 10 minutos seguidos com o pulso em dia

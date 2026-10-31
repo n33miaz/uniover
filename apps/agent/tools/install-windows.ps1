@@ -643,8 +643,9 @@ function Get-BaseConfig {
 }
 
 function Invoke-Prepare([string]$Uv) {
-    # --locked: o uv.lock manda, nenhuma dependencia muda por conta propria. A saida vai para o registro.
-    $output = & $Uv sync --locked --project $source 2>&1 | Out-String
+    # --frozen: instala exatamente o que o uv.lock diz, sem reescreve-lo nem reclamar se uma versao nova do uv o veria
+    # diferente (o --locked faria o PC falhar por isso). A saida vai para o registro.
+    $output = & $Uv sync --frozen --project $source 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) {
         Write-InstallLog ('uv sync falhou (codigo ' + $LASTEXITCODE + '): ' + $output)
         throw 'Nao consegui preparar o UniOver neste computador. Confira a internet e tente de novo.'

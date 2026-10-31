@@ -445,7 +445,7 @@ def run_uv_sync(source: Path, *, pause: float = 3.0) -> None:
     environment = candidate_env(source)
     shutil.rmtree(environment, ignore_errors=True)
     _run_uv(
-        ["sync", "--locked", "--project", str(source), "--quiet"],
+        ["sync", "--frozen", "--project", str(source), "--quiet"],
         what="a sincronização das dependências",
         timeout=600,
         cwd=source.parent,
@@ -510,7 +510,7 @@ def self_update(  # noqa: PLR0911, PLR0913 - dependências injetadas deixam a at
     rede nem de disco: devolve o motivo em `message`.
 
     Antes de trocar a pasta, a candidata passa por: conferência do zip (inteiro e do commit pedido),
-    conferência dos arquivos contra a árvore do commit no GitHub, `uv sync --locked` num ambiente só
+    conferência dos arquivos contra a árvore do commit no GitHub, `uv sync --frozen` num ambiente só
     dela e o auto-diagnóstico dela. Qualquer falha deixa a instalação como estava.
     """
     if not source.is_dir():
