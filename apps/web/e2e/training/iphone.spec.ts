@@ -217,8 +217,8 @@ test.describe('convidado que só tem o Treino', () => {
   test('os créditos das ilustrações abrem para quem usa o Treino', async ({ page }) => {
     signInAsGuest(TRAINING_ONLY);
     await page.goto('/ajustes/creditos');
-    await expect(page).toHaveURL(/\/ajustes\/creditos$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Créditos' })).toBeVisible();
+    await expect(page).toHaveURL(/\/ajustes\/sobre\/creditos$/);
+    await expect(page.getByRole('dialog', { name: 'Créditos' })).toBeVisible();
   });
 
   test('quem só tem a TV não entra no Treino: vai para a Início', async ({ context, page }) => {
