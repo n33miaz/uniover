@@ -82,6 +82,8 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check 
     .RequireRateLimiting(RateLimitPolicies.HealthReady);
 var productVersion = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 app.MapDeploymentVersion(builder.Configuration, productVersion);
+// Eventos que esgotaram as tentativas e saíram da fila (só o dono): a Saúde do Sistema os mostra.
+app.MapDeadLetters().RequireAuthorization(UniOverAuth.OwnerPolicy).RequireRateLimiting(RateLimitPolicies.Commands);
 app.MapTvEndpoints();
 app.MapTrainingEndpoints();
 app.MapIdentityEndpoints();

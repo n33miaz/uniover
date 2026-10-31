@@ -1631,6 +1631,82 @@
         ],
         "type": "object"
       },
+      "DeadLetterItem": {
+        "properties": {
+          "attempts": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "failedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lastError": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "module": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "module",
+          "id",
+          "type",
+          "occurredAt",
+          "failedAt",
+          "attempts",
+          "lastError"
+        ],
+        "type": "object"
+      },
+      "DeadLetterReport": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DeadLetterItem"
+            },
+            "type": "array"
+          },
+          "total": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "unavailableModules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "total",
+          "items",
+          "unavailableModules"
+        ],
+        "type": "object"
+      },
       "DenyPairingRequest": {
         "properties": {
           "userCode": {
@@ -9292,6 +9368,45 @@
         ]
       }
     },
+    "/api/v1/system/dead-letters": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadLetterReport"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "DeadLetterEndpoints"
+        ]
+      }
+    },
     "/api/v1/training/body/entries": {
       "get": {
         "parameters": [
@@ -13536,6 +13651,9 @@
   "tags": [
     {
       "name": "UniOver.Host"
+    },
+    {
+      "name": "DeadLetterEndpoints"
     },
     {
       "name": "PwaExtensions"
