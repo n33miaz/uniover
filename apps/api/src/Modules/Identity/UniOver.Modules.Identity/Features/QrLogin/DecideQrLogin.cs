@@ -225,7 +225,7 @@ internal sealed class QrLoginDecisionHandler(
         // O JWT de acesso sobrevive ao logout por alguns minutos; a confirmação não.
         var sessionAlive = await SessionIsAliveAsync(userId, sessionId, cancellationToken);
         var user = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, cancellationToken);
-        if (!sessionAlive || user is null || user.IsDisabled)
+        if (!sessionAlive || user is null || user.IsBlocked)
         {
             return new ApproveQrLoginResult(ApproveQrLoginStatus.Unauthenticated);
         }

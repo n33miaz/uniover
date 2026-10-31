@@ -45,6 +45,8 @@ internal static class LoginEndpoint
                 return TypedResults.Ok(new LoginResponse(result.AccessToken!, result.ExpiresInSeconds));
             case LoginStatus.Locked:
                 return IdentityProblems.Locked(http.Response, result.RetryAfter);
+            case LoginStatus.Paused:
+                return IdentityProblems.GuestPausedUnauthenticated();
             default:
                 return IdentityProblems.InvalidCredentials();
         }

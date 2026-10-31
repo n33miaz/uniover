@@ -13,6 +13,9 @@ internal enum LoginStatus
     Succeeded,
     InvalidCredentials,
     Locked,
+
+    /// <summary>Senha certa, mas o dono pausou a conta: o app mostra só "Acesso pausado".</summary>
+    Paused,
 }
 
 internal sealed record LoginResult(
@@ -69,6 +72,14 @@ internal sealed class LoginHandler(
             audit.Add(null, AuditEvents.LoginFailed, command.Client, AuditAboutAccount.Detail(user.Id, "account-disabled"));
             await db.SaveChangesAsync(cancellationToken);
             return new LoginResult(LoginStatus.InvalidCredentials);
+        }
+
+        // Pausado: a senha também já foi conferida, então dizer que a conta está pausada só chega a quem a conhece.
+        if (user.IsPaused)
+        {
+            audit.Add(null, AuditEvents.LoginFailed, command.Client, AuditAboutAccount.Detail(user.Id, "account-paused"));
+            await db.SaveChangesAsync(cancellationToken);
+            return new LoginResult(LoginStatus.Paused);
         }
 
         user.RegisterSuccess();

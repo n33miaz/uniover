@@ -39,6 +39,9 @@ internal static class RefreshEndpoint
                 return TypedResults.Ok(new RefreshResponse(result.AccessToken!, result.ExpiresInSeconds));
             case RefreshStatus.Conflict:
                 return IdentityProblems.Conflict();
+            case RefreshStatus.Paused:
+                cookies.DeleteRefresh(http.Response);
+                return IdentityProblems.GuestPausedUnauthenticated();
             default:
                 // O cookie não serve mais a ninguém: limpa para o navegador não reenviá-lo.
                 cookies.DeleteRefresh(http.Response);

@@ -9,7 +9,7 @@ using UniOver.Modules.Identity.Persistence;
 namespace UniOver.Modules.Identity.Features.ListGuests;
 
 /// <summary>
-/// Um convidado como o dono o vê. <c>DisabledAt</c> preenchido = acesso revogado. <c>Permissions</c> são as permissões em
+/// Um convidado como o dono o vê. <c>DisabledAt</c> preenchido = acesso revogado; <c>PausedAt</c> = pausado pelo dono (reversível). <c>Permissions</c> são as permissões em
 /// vigor, na ordem do catálogo (nunca o texto: ele vive na tela).
 /// </summary>
 internal sealed record GuestSummary(
@@ -18,6 +18,7 @@ internal sealed record GuestSummary(
     string Email,
     DateTimeOffset CreatedAt,
     DateTimeOffset? DisabledAt,
+    DateTimeOffset? PausedAt,
     IReadOnlyList<string> Permissions);
 
 internal sealed class ListGuestsHandler(IdentityDbContext db)
@@ -27,7 +28,7 @@ internal sealed class ListGuestsHandler(IdentityDbContext db)
         var guests = await db.Users.AsNoTracking()
             .Where(u => u.Role == AccountRoles.Guest)
             .OrderBy(u => u.CreatedAt)
-            .Select(u => new { u.Id, u.DisplayName, u.Email, u.CreatedAt, u.DisabledAt })
+            .Select(u => new { u.Id, u.DisplayName, u.Email, u.CreatedAt, u.DisabledAt, u.PausedAt })
             .ToListAsync(cancellationToken);
 
         var ids = guests.Select(g => g.Id).ToList();
@@ -38,7 +39,7 @@ internal sealed class ListGuestsHandler(IdentityDbContext db)
             .ToLookup(g => g.UserId, g => g.Permission);
 
         return [.. guests.Select(g => new GuestSummary(
-            g.Id, g.DisplayName, g.Email, g.CreatedAt, g.DisabledAt, PermissionRules.Effective(grants[g.Id])))];
+            g.Id, g.DisplayName, g.Email, g.CreatedAt, g.DisabledAt, g.PausedAt, PermissionRules.Effective(grants[g.Id])))];
     }
 }
 

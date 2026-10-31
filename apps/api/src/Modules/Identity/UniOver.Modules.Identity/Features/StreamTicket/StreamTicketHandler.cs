@@ -41,9 +41,9 @@ internal sealed class StreamTicketHandler(
         // O bilhete leva o papel (a política do stream decide por ele) e não sai para conta revogada.
         var account = await db.Users
             .Where(u => u.Id == userId)
-            .Select(u => new { u.Role, u.DisabledAt })
+            .Select(u => new { u.Role, u.DisabledAt, u.PausedAt })
             .SingleOrDefaultAsync(cancellationToken);
-        if (account is null || account.DisabledAt is not null)
+        if (account is null || account.DisabledAt is not null || account.PausedAt is not null)
         {
             return new StreamTicketResult(null, lifetime);
         }
