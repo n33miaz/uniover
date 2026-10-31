@@ -30,6 +30,8 @@ from uniover_agent.adapters.apk_tools import (
     locate_aapt2,
 )
 from uniover_agent.adapters.arp import arp_mac
+from uniover_agent.adapters.crash_trace import install_crash_trace, loop_exception_handler
+from uniover_agent.adapters.housekeeping import tidy
 from uniover_agent.adapters.installation import installation_base, migrate_layout
 from uniover_agent.adapters.local_config import ConfigValue, save_agent_config, update_config
 from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
@@ -43,8 +45,15 @@ from uniover_agent.adapters.pairing_page import (
     write_progress_page,
 )
 from uniover_agent.adapters.qr_terminal import render_ascii, render_for
+from uniover_agent.adapters.run_state import RunState
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
-from uniover_agent.adapters.self_update import read_version, self_update
+from uniover_agent.adapters.self_care_checks import ConnectionWatch
+from uniover_agent.adapters.self_update import (
+    DEFAULT_CHANNEL,
+    UpdateResult,
+    read_version,
+    self_update,
+)
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.transport_ws import WebSocketTransport, build_ws_url
 from uniover_agent.adapters.tray_status import TrayStatus
@@ -87,6 +96,15 @@ from uniover_agent.adapters.update_status import (
     record_updating,
 )
 from uniover_agent.adapters.wol import send_wake_on_lan
+from uniover_agent.care_setup import (
+    DiagnosticsKit,
+    announce_start,
+    attach_log_handler,
+    build_checks,
+    build_diagnostics,
+    describe_problems,
+    roll_back_if_in_trial,
+)
 from uniover_agent.config import (
     ConfigError,
     Settings,
@@ -149,6 +167,9 @@ from uniover_agent.core import (
     unsupported_handler,
     update_body,
 )
+from uniover_agent.core.diagnostics import DIAGNOSTICS_CAPABILITY, DiagnosticsShipper
+from uniover_agent.core.self_care import SelfCare
+from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
 from uniover_agent.ports import (
     AdbUnauthorized,
     Clock,
@@ -847,7 +868,11 @@ def build_remote_care(
     agent_id: str,
 ) -> dict[str, Handler]:
     """Manutenção remota: registro sem segredos e pedidos de atualizar ou reiniciar."""
-    source = FileLogSource(log_file_path(settings), fallback=installation_base() / "agent.log")
+    source = FileLogSource(
+        log_file_path(settings),
+        fallback=installation_base() / "agent.log",
+        supervisor=installation_base() / "logs" / "supervisor.log",
+    )
 
     def known_secrets() -> list[str]:
         token = secrets.get(agent_id)
@@ -1068,7 +1093,13 @@ def build_relocator(  # noqa: PLR0913, PLR0917
     )
 
 
-async def supervise(supervisor: ConnectionSupervisor, relocator: TvRelocator | None) -> bool:
+async def supervise(
+    supervisor: ConnectionSupervisor,
+    relocator: TvRelocator | None,
+    *,
+    clock: Clock | None = None,
+    kit: DiagnosticsKit | None = None,
+) -> bool:
     """Mantém a conexão com a API até ela acabar; devolve `True` se a TV mudou de endereço.
 
     Mudou de endereço: o novo já está gravado no arquivo, e a conexão com a API cai para `main`
@@ -1076,7 +1107,19 @@ async def supervise(supervisor: ConnectionSupervisor, relocator: TvRelocator | N
     "substituído" e custaria um minuto de espera.
     """
     connection = asyncio.create_task(supervisor.run())
-    watch = asyncio.create_task(relocator.run()) if relocator is not None else None
+    # Um erro do vigia do endereço não pode passar por "a TV mudou": ele é registrado e recomeça.
+    watch = (
+        asyncio.create_task(
+            run_supervised(
+                "tv.endereco",
+                relocator.run,
+                clock=clock or SystemClock(),
+                recorder=kit.recorder if kit is not None else None,
+            )
+        )
+        if relocator is not None
+        else None
+    )
     tasks = [task for task in (connection, watch) if task is not None]
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -1090,7 +1133,9 @@ async def supervise(supervisor: ConnectionSupervisor, relocator: TvRelocator | N
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR0915 - composição
+async def run(  # noqa: PLR0912, PLR0915 - composição
+    settings: Settings, open_store: StoreFactory, kit: DiagnosticsKit | None = None
+) -> int:
     agent_id = settings.agent_id
     if not agent_id:
         print(_NOT_PAIRED, file=sys.stderr)
@@ -1103,6 +1148,13 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
     tray = TrayStatus(settings.tv_name)
 
     clock = SystemClock()
+    kit = kit or build_diagnostics(clock)
+    run_state = RunState(installation_base() / "runtime")
+    install_crash_trace(installation_base() / "logs", kit.recorder)
+    asyncio.get_running_loop().set_exception_handler(loop_exception_handler(kit.recorder))
+    announce_start(run_state, kit, settings, build_version())
+    # Arruma a pasta (restos de atualização, estrutura): só mexe no que tem nome conhecido.
+    await asyncio.to_thread(tidy, installation_base())
     gate = EnvelopeGate(agent_id)
     envelopes = EnvelopeFactory(agent_id, gate, clock)
     transport = WebSocketTransport(
@@ -1147,16 +1199,23 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
 
     diary = AbsenceDiary(installation_base() / "runtime" / "last-alive", clock)
     diary.start()
+    watch = ConnectionWatch()
+    health = TaskHealth(clock)
+    shipper = DiagnosticsShipper(kit.store, kit.recorder, transport, envelopes, clock)
 
     def on_disconnected() -> None:
         tray.disconnected()
         diary.disconnected()
+        watch.disconnected_now()
 
     async def on_connected() -> None:
         tray.connected()
         diary.connected()
+        watch.connected_now()
         for step in after_hello:
             await step()
+        if settings.self_care:
+            await shipper.flush()
 
     update_source = FileUpdateStatus(default_status_path(), agent_source_dir())
     supervisor = ConnectionSupervisor(
@@ -1170,6 +1229,7 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
             "transport.keepalive.v1",
             LOGS_CAPABILITY,
             MAINTENANCE_CAPABILITY,
+            *((DIAGNOSTICS_CAPABILITY,) if settings.self_care else ()),
             *(tuple(tv.capabilities) if tv is not None else ()),
         ),
         on_connected=on_connected,
@@ -1185,7 +1245,27 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
     ]
     if tv is not None:
         jobs = [*jobs, tv.manager.watch, *tv.background]
-    background = [asyncio.create_task(job()) for job in jobs]
+    if settings.self_care:
+        care = SelfCare(
+            build_checks(
+                settings,
+                api_url=api_url,
+                watch=watch,
+                health=health,
+                signals=RuntimeFlagSignals(),
+            ),
+            kit.recorder,
+            clock,
+            on_critical=lambda outcome: roll_back_if_in_trial(outcome, kit),
+        )
+        jobs = [*jobs, care.run, shipper.run]
+    # Cada tarefa de fundo é supervisionada: erro vira registro e ocorrência, e ela recomeça.
+    background = [
+        asyncio.create_task(
+            keep_running(job.__qualname__, job, clock=clock, recorder=kit.recorder, health=health)
+        )
+        for job in jobs
+    ]
     relocator = (
         build_relocator(
             settings,
@@ -1199,8 +1279,13 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
         else None
     )
     moved = False
+    stopped_because = "erro"
     try:
-        moved = await supervise(supervisor, relocator)
+        moved = await supervise(supervisor, relocator, clock=clock, kit=kit)
+        stopped_because = "tv_mudou_de_endereco" if moved else "credencial_recusada"
+    except asyncio.CancelledError:
+        stopped_because = "cancelado"
+        raise
     finally:
         # Ao encerrar, fecha a sessão com a TV de forma limpa (não deixa o canal pendurado).
         for task in background:
@@ -1211,6 +1296,8 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
             await tv.manager.aclose()
         if publisher is not None:
             await publisher.aclose()
+        kit.recorder.flush_pending()
+        run_state.end(stopped_because)
     if moved:
         return EXIT_TV_MOVED
     # `run` só devolve quando a credencial foi recusada; o token continua no cofre.
@@ -1403,13 +1490,38 @@ async def tv_find(
     return EXIT_OK
 
 
-def update_agent(*, sync: bool) -> int:
-    """Atualiza o agente instalado pela `main`. Nunca falha: o agente atual continua valendo."""
+async def diagnose(settings: Settings, *, repair: bool) -> int:
+    """`diagnose`: roda o auto-diagnóstico uma vez, em palavras simples, e diz o que viu.
+
+    Não abre conexão com a API nem mexe na TV. Sai com 1 se alguma verificação achou um problema de
+    verdade (um aviso, como a TV desligada, não conta).
+    """
+    clock = SystemClock()
+    kit = build_diagnostics(clock)
+    checks = build_checks(settings, api_url=settings.api_url, watch=None, health=None)
+    care = SelfCare(checks, kit.recorder, clock)
+    outcomes = await care.run_once(repair=repair)
+    lines = [(o.name, o.result.ok or o.repaired, o.result.detail) for o in outcomes]
+    for line in describe_problems(lines):
+        print(line)
+    for outcome in outcomes:
+        if outcome.repaired:
+            print(f"Reparado: {outcome.name}.")
+    print(f"Detalhes no registro: {log_file_path(settings)}")
+    failed = [o for o in outcomes if not o.result.ok and o.result.severity == "error"]
+    return EXIT_FAILURE if failed else EXIT_OK
+
+
+def update_agent(
+    *, sync: bool, settings: Settings | None = None, kit: DiagnosticsKit | None = None
+) -> int:
+    """Atualiza o agente instalado pelo ramo do canal; se falhar, o atual continua valendo."""
     migrate_layout()
     status_file = default_status_path()
+    channel = settings.update_channel if settings is not None else DEFAULT_CHANNEL
     _safely(record_updating, status_file, datetime.now(UTC))
     try:
-        result = self_update(agent_source_dir(), sync=sync)
+        result = self_update(agent_source_dir(), sync=sync, channel=channel)
     except Exception as exc:
         # Não devia acontecer (a atualização devolve o motivo); se ocorrer, o estado diz que falhou.
         _log.exception("a auto-atualização falhou de forma inesperada")
@@ -1422,8 +1534,20 @@ def update_agent(*, sync: bool) -> int:
         print("A atualização falhou; o agente atual continua valendo.")
         return EXIT_OK
     _safely(record_result, status_file, result, datetime.now(UTC))
+    if kit is not None:
+        _note_update_outcome(kit, result)
     print(result.message)
     return EXIT_OK
+
+
+def _note_update_outcome(kit: DiagnosticsKit, result: UpdateResult) -> None:
+    """O que a atualização concluiu vira ocorrência (a recusa de um pacote é a que mais importa)."""
+    if result.rejected:
+        kit.recorder.record("update.rejected", "error", result.message, component="update")
+    elif result.outcome == "failed":
+        kit.recorder.record("update.failed", "warn", result.message, component="update")
+    elif result.outcome == "updated":
+        kit.recorder.record("update.installed", "info", "versão nova instalada", component="update")
 
 
 def _safely(action: Callable[..., None], *arguments: Any) -> None:
@@ -1474,6 +1598,12 @@ def _parser() -> argparse.ArgumentParser:
     update_parser.add_argument(
         "--no-sync", action="store_true", help="não roda `uv sync` depois (o instalador faz)"
     )
+    diagnose_parser = sub.add_parser(
+        "diagnose", help="confere a saúde deste agente (pasta, início automático, API, TV)"
+    )
+    diagnose_parser.add_argument(
+        "--repair", action="store_true", help="também aplica os reparos seguros que existirem"
+    )
     sub.add_parser(
         "tv-volume", help="mostra por quais caminhos o agente consegue ler o volume da TV (só lê)"
     )
@@ -1481,7 +1611,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(  # noqa: PLR0911 - um retorno por comando
+def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
     argv: Sequence[str] | None = None, *, secrets: SecretStore | None = None
 ) -> int:
     args = _parser().parse_args(argv)
@@ -1491,6 +1621,11 @@ def main(  # noqa: PLR0911 - um retorno por comando
         migrate_layout()
         settings = Settings()
         configure_logging(settings.log_level, settings.log_file)
+        kit: DiagnosticsKit | None = None
+        if command in {"run", "self-update"} and settings.self_care:
+            # Daqui em diante, todo erro registrado vira também uma ocorrência de diagnóstico.
+            kit = build_diagnostics(SystemClock())
+            attach_log_handler(kit)
 
         def open_store() -> SecretStore:
             # O cofre só é aberto quando o comando precisa dele.
@@ -1527,7 +1662,9 @@ def main(  # noqa: PLR0911 - um retorno por comando
         if command == "tv-volume":
             return asyncio.run(tv_volume(settings))
         if command == "self-update":
-            return update_agent(sync=not args.no_sync)
+            return update_agent(sync=not args.no_sync, settings=settings, kit=kit)
+        if command == "diagnose":
+            return asyncio.run(diagnose(settings, repair=args.repair))
         if command == "tray":
             # pystray e Pillow sao opcionais para o processo principal: sem bandeja, a TV segue
             # funcionando e o supervisor tentara o icone de novo depois.
@@ -1539,7 +1676,7 @@ def main(  # noqa: PLR0911 - um retorno por comando
             # deve abrir uma segunda conexão com a API.
             return EXIT_OK
         while True:
-            code = asyncio.run(run(settings, open_store))
+            code = asyncio.run(run(settings, open_store, kit))
             if code != EXIT_TV_MOVED:
                 return code
             # O endereço novo da TV já está no arquivo: recomeça lendo a configuração de novo.
