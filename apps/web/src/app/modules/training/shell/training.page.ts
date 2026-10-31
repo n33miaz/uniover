@@ -11,14 +11,11 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
-import { canUseModule } from '../../../core/auth/guest-home';
-import { isStandalone } from '../../../core/pwa/install-env';
-import { INSTALL_ENV, InstallHintService } from '../../../core/pwa/install-hint.service';
-import { SessionState } from '../../../core/session/session-state';
+import { InstallHintService } from '../../../core/pwa/install-hint.service';
 import { PageTopBar } from '../../../shared/ui/page-top-bar';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { TrainingSync } from '../data/sync/training-sync';
-import { BackNavigation, trainingParent } from './back-navigation';
+import { BackNavigation, injectTrainingBackLabel, trainingParent } from './back-navigation';
 import { SyncIssuesSheet } from './sync-issues-sheet';
 import { TrainingSyncIndicator } from './training-sync-indicator';
 import { TrainingSyncLine } from './training-sync-line';
@@ -219,24 +216,15 @@ export class TrainingPage {
   protected readonly menuOpen = signal(false);
   protected readonly title = $localize`:@@training.shell.title:Treino`;
   protected readonly menuHeading = $localize`:@@training.shell.more-heading:Opções`;
-  private readonly session = inject(SessionState);
-  /** O app instalado do Treino (escopo `/treino/`): é de onde a pessoa abre o Treino na tela de início do iPhone. */
-  private readonly installed = isStandalone(inject(INSTALL_ENV));
-  private readonly backText = $localize`:@@training.shell.back:Voltar`;
   /**
    * A seta existe em toda tela, com uma exceção: quem só tem o Treino e o abriu pelo app instalado não tem para onde ir
    * a partir de uma aba (a Início fica fora do escopo `/treino/`, e o iOS o tiraria do app); para ele o Treino é o app
    * inteiro e a raiz das abas fica sem seta. As telas internas voltam ao pai de sempre.
    */
-  protected readonly backLabel = computed<string | null>(() => {
-    if (this.headerActions.backHandler() === null && trainingParent(this.url()) === null) {
-      const onlyTraining =
-        this.session.isGuest() &&
-        !canUseModule(this.session.role(), this.session.knownPermissions(), 'tv');
-      if (this.installed && onlyTraining) return null;
-    }
-    return this.backText;
-  });
+  protected readonly backLabel = injectTrainingBackLabel(
+    () => this.url(),
+    () => this.headerActions.backHandler() !== null,
+  );
   private readonly url = toSignal(
     this.router.events.pipe(
       filter((event) => event instanceof NavigationEnd),

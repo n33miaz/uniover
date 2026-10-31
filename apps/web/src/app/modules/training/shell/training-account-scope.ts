@@ -13,8 +13,11 @@ import {
 import { OfflineQueue } from '../../../core/offline-queue/offline-queue';
 import { QUEUE_BOUND_ACCOUNT } from '../../../core/offline-queue/queue-account';
 import { AccountScope } from '../../../core/session/account-scope';
-import { Router } from '@angular/router';
+import { NavigationEnd, Router } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { filter, map, startWith } from 'rxjs';
 import { PageTopBar } from '../../../shared/ui/page-top-bar';
+import { BackNavigation, injectTrainingBackLabel, trainingParent } from './back-navigation';
 import { TrainingAccountDbs } from '../data/training-account-dbs';
 import { provideTrainingData } from '../data/training-data.providers';
 import { TRAINING_DB } from '../data/training-db';
@@ -160,7 +163,7 @@ export class TrainingAccountData {}
         <app-training-page />
       </ng-container>
     } @empty {
-      <app-page-top-bar [title]="title" />
+      <app-page-top-bar [title]="title" [backLabel]="backLabel()" (back)="goBack()" />
       <!-- A casca já tem o topo; o que muda é o corpo: Hoje (o endereço do módulo) ou uma lista, na forma que a tela pronta terá. -->
       <div class="content">
         @switch (shape) {
@@ -168,16 +171,21 @@ export class TrainingAccountData {}
             <app-today-skeleton [withWeek]="true" [label]="enteringLabel" />
           }
           @case ('library') {
-            <app-training-rows-skeleton [label]="enteringLabel" [rows]="6" [thumb]="true" />
+            <app-training-rows-skeleton
+              [label]="enteringLabel"
+              [rows]="6"
+              [thumb]="true"
+              [head]="'library'"
+            />
           }
           @case ('detail') {
             <app-exercise-detail-skeleton />
           }
           @case ('map') {
-            <app-body-map-skeleton />
+            <app-body-map-skeleton [withHead]="true" />
           }
           @case ('routines') {
-            <app-routines-list-skeleton />
+            <app-routines-list-skeleton [withSwitch]="true" />
           }
           @case ('form') {
             <app-training-form-skeleton [label]="enteringLabel" [fields]="3" />
@@ -189,7 +197,7 @@ export class TrainingAccountData {}
             <app-food-diary-skeleton [page]="true" />
           }
           @case ('body') {
-            <app-body-skeleton />
+            <app-body-skeleton [withHead]="true" />
           }
           @case ('assessments') {
             <app-assessments-list-skeleton />
@@ -230,6 +238,25 @@ export class TrainingAccountScope {
   protected readonly enteringLabel = $localize`:@@training.account.entering:Confirmando a sua conta…`;
   /** A tela que o endereço de entrada abre: a espera pelo banco já desenha a forma dela. */
   protected readonly shape = entryShapeFor(inject(Router));
+  private readonly router = inject(Router);
+  private readonly navigation = inject(BackNavigation);
+  private readonly url = toSignal(
+    this.router.events.pipe(
+      filter((event) => event instanceof NavigationEnd),
+      map(() => this.router.url),
+      startWith(
+        this.router.serializeUrl(
+          this.router.getCurrentNavigation()?.finalUrl ?? this.router.parseUrl(this.router.url),
+        ),
+      ),
+    ),
+    { requireSync: true },
+  );
+  /** A mesma seta da casca: o voltar já está no topo enquanto o banco abre. */
+  protected readonly backLabel = injectTrainingBackLabel(
+    () => this.url(),
+    () => false,
+  );
   private readonly account = inject(AccountScope);
   private readonly dbs = inject(TrainingAccountDbs);
 
@@ -269,6 +296,12 @@ export class TrainingAccountScope {
       this.account.legacyDecided();
       untracked(() => this.prepare(id));
     });
+  }
+
+  protected goBack(): void {
+    const parent = trainingParent(this.url());
+    if (parent === null) void this.router.navigateByUrl('/');
+    else this.navigation.back(parent);
   }
 
   /** Abre o banco da conta (o da conta anterior sai de cena) e espera a adoção do antigo, se houver. */
