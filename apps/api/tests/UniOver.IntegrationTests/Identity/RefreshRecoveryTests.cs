@@ -101,6 +101,27 @@ public sealed class RefreshRecoveryTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task AGuestWhoAcceptedAnInviteWithAKey_RecoversALostResponse_LikeTheOwner()
+    {
+        await using var app = await IdentityApp.StartAsync(postgres);
+        using var device = new TestDevice();
+        var (_, invite) = await Guests.GuestSeed.InsertInviteAsync(app.Database, app.Time.GetUtcNow());
+        using var accepted = await Guests.GuestSeed.AcceptAsync(
+            app.Client, invite, Guests.GuestSeed.NewEmail(), Guests.GuestSeed.NewPassword(), device: device);
+        var login = await Guests.GuestSeed.ReadLoginAsync(accepted);
+        await using (var db = app.Db())
+        {
+            (await db.RefreshDeviceKeys.AsNoTracking().SingleAsync(Ct)).PublicKey.Should().Be(device.PublicKey);
+        }
+
+        (await app.RefreshRawAsync(login.RefreshSecret)).Dispose();
+        app.Time.Advance(TimeSpan.FromMinutes(2));
+        using var recovered = await app.RecoverAsync(login.RefreshSecret, device);
+
+        recovered.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task Recovery_AfterALostResponse_IssuesANewSuccessorInTheSameFamily_AndAuditsIt()
     {
         await using var scene = await LostResponse.StartAsync(postgres);
