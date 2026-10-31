@@ -36,6 +36,10 @@ existe, a API não envia o batimento novo para preservar a compatibilidade duran
 | `tv.watchdog.v1` | agente para API | `kind`, `severity` (`info`, `warn`, `error`), `detail` (até 200), `attempts`, `at`. |
 | `tv.cleanup.v1` | API para agente | `requestId` (UUID gerado pela API): fecha os apps abertos na TV e libera memória pelo ADB, sem derrubar o controle remoto. |
 | `tv.cleanup.result.v1` | agente para API | O que a limpeza fez: `requestId` (o do pedido), `closedApps`, `memoryBeforeMb`, `memoryAfterMb` e `freedMb` (inteiros, ou `null` quando a memória não pôde ser lida; `freedMb` nunca é negativo), `failedSteps` (etapas que não deram certo, como `force-stop:com.exemplo.app`) e `at`. |
+| `tv.permission.request.v1` | API para agente | `{}`: pede à TV Samsung a permissão do UniOver (o aviso "Permitir" na tela da TV). É o único jeito de o agente fazer esse pedido: ele nunca o repete sozinho. Responde logo com `command.result.v1` (`ok: true` é "o aviso foi pedido"; erros `unsupported`, `tv_unreachable`, `permission_in_progress`) e depois manda `tv.permission.v1`. A API só a usa quando o agente declara a capacidade `tv.permission.v1`. |
+| `tv.permission.v1` | agente para API | `state` (`needed`: a TV não reconhece mais o UniOver e o agente parou de tentar sem pedir de novo em silêncio; `granted`: a TV aceitou) e `at`. Sai quando o estado muda e outra vez depois de cada `hello`. |
+| `tv.discover.v1` | API para agente | `requestId` (UUID gerado pela API): procura as TVs compatíveis na rede local do computador (só leitura de identificação). Responde com `tv.discovery.v1` e depois `command.result.v1`. A API só a usa quando o agente declara a capacidade `tv.discovery.v1`. |
+| `tv.discovery.v1` | agente para API | `requestId` (o do pedido), `tvs` (até 50 de `{ id, kind, name | null, controlled }`; `id` é opaco e estável, nunca o IP nem o MAC, e `controlled` diz se é a TV que o agente já controla) e `at`. Sai antes do `command.result.v1` do mesmo comando (`correlationId` = id do comando). |
 
 ## Manutenção remota
 

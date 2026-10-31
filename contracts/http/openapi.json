@@ -2367,6 +2367,50 @@
         ],
         "type": "object"
       },
+      "NearbyTv": {
+        "properties": {
+          "controlled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "controlled"
+        ],
+        "type": "object"
+      },
+      "NearbyTvsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NearbyTv"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "items"
+        ],
+        "type": "object"
+      },
       "PasskeySummary": {
         "properties": {
           "createdAt": {
@@ -2393,6 +2437,36 @@
           "name",
           "createdAt",
           "lastUsedAt"
+        ],
+        "type": "object"
+      },
+      "PermissionPending": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "tvId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tvId",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PermissionPendingResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PermissionPending"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
         ],
         "type": "object"
       },
@@ -4500,6 +4574,10 @@
             "type": "string"
           },
           "online": {
+            "type": "boolean"
+          },
+          "permissionNeeded": {
+            "default": false,
             "type": "boolean"
           },
           "restrictedBackgroundPackages": {
@@ -12645,6 +12723,124 @@
         ]
       }
     },
+    "/api/v1/tv/permission": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionPendingResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "tags": [
+          "PermissionEndpoint"
+        ]
+      }
+    },
+    "/api/v1/tv/permission/request": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvCommandOk"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "tags": [
+          "PermissionEndpoint"
+        ]
+      }
+    },
     "/api/v1/tv/power/off": {
       "post": {
         "requestBody": {
@@ -13362,6 +13558,64 @@
         ]
       }
     },
+    "/api/v1/tv/tvs/nearby": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agent",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NearbyTvsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "NearbyTvsEndpoint"
+        ]
+      }
+    },
     "/api/v1/tv/tvs/{id}": {
       "delete": {
         "parameters": [
@@ -13730,6 +13984,12 @@
     },
     {
       "name": "ManageTvsEndpoint"
+    },
+    {
+      "name": "PermissionEndpoint"
+    },
+    {
+      "name": "NearbyTvsEndpoint"
     },
     {
       "name": "PullExercisesEndpoint"
