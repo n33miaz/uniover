@@ -7,6 +7,7 @@ o mesmo que o lançador usa, numa instalação falsa em pasta temporária. Nada 
 
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -37,6 +38,11 @@ FUNCTIONS = (
     "Invoke-Rollback",
     "Invoke-Update",
     "Schedule-NextUpdate",
+    "Write-SupLog",
+    "Add-Diagnostic",
+    "Get-Tail",
+    "Get-UpdateOutcome",
+    "Confirm-Trial",
 )
 
 PRELUDE = r"""
@@ -48,6 +54,7 @@ $previous = Join-Path $base 'app.previous'
 $runtime = Join-Path $base 'runtime'
 $blocked = Join-Path $runtime '.blocked-versions'
 $trial = Join-Path $runtime 'update-trial.txt'
+$script:lastDiagnostic = @{}
 $tokens = $null; $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($env:UNIOVER_TEST_RUNNER, [ref]$tokens, [ref]$errors)
 foreach ($name in $env:UNIOVER_TEST_FUNCTIONS.Split(',')) {
@@ -291,3 +298,100 @@ def test_the_real_supervisor_loop_goes_back_when_the_owner_asks_and_restarts_its
     assert (pc.runtime / ".blocked-versions").read_text(encoding="ascii").split() == [BAD]
     assert not (pc.runtime / "rollback-now").exists()
     assert pc.state()["outcome"] == "rolled_back"
+
+
+@pytest.mark.parametrize(
+    ("failures", "minutes"), [(1, 30), (2, 60), (3, 120), (4, 240), (5, 360), (9, 360)]
+)
+def test_a_failed_update_is_tried_again_sooner_with_a_growing_wait_capped_at_six_hours(
+    pc: Pc, failures: int, minutes: int
+) -> None:
+    done = pc.run(
+        f"$when = Schedule-NextUpdate {failures}; [int](($when - (Get-Date)).TotalMinutes)"
+    )
+    assert done.returncode == 0, done.stderr
+    # Até 2 minutos de jitter para uma frota de PCs não bater junta na porta do GitHub.
+    assert minutes - 1 <= int(done.stdout.split()[0]) <= minutes + 2
+
+
+def test_without_failures_the_next_check_keeps_the_normal_six_hour_window(pc: Pc) -> None:
+    done = pc.run("$when = Schedule-NextUpdate 0; [int](($when - (Get-Date)).TotalMinutes)")
+    assert done.returncode == 0, done.stderr
+    assert 6 * 60 - 1 <= int(done.stdout.split()[0]) <= 6 * 60 + 46
+
+
+def test_the_same_warning_is_not_written_twice_within_ten_minutes(pc: Pc) -> None:
+    body = """
+Add-Diagnostic 'process.exited' 'warn' 'o agente terminou sozinho (codigo 7)'
+Add-Diagnostic 'process.exited' 'warn' 'o agente terminou sozinho (codigo 7)'
+Add-Diagnostic 'process.exited' 'warn' 'o agente terminou sozinho (codigo 8)'
+Add-Diagnostic 'update.confirmed' 'info' 'o agente terminou sozinho (codigo 7)'
+"""
+    done = pc.run(body)
+    assert done.returncode == 0, done.stderr
+    lines = (pc.runtime / "diagnostics.jsonl").read_text(encoding="utf-8").splitlines()
+    entries = [json.loads(line) for line in lines]
+    assert [(e["kind"], e["detail"][-9:]) for e in entries] == [
+        ("process.exited", "codigo 7)"),
+        ("process.exited", "codigo 8)"),
+        ("update.confirmed", "codigo 7)"),
+    ]
+    first = entries[0]
+    assert set(first) == {"id", "at", "kind", "severity", "component", "detail"}
+    assert first["component"] == "supervisor"
+    assert str(first["at"]).endswith("Z") and len(str(first["at"])) == len(
+        "2026-10-24T19:00:00.000Z"
+    )
+    assert len({e["id"] for e in entries}) == 3
+
+
+def test_a_long_diagnostic_detail_is_cut_to_fit_the_contract(pc: Pc) -> None:
+    done = pc.run("Add-Diagnostic 'process.exited' 'warn' ('x' * 900)")
+    assert done.returncode == 0, done.stderr
+    (line,) = (pc.runtime / "diagnostics.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(json.loads(line)["detail"]) <= 300
+
+
+def test_the_supervisor_log_lines_have_the_agent_log_format_and_rotate_when_big(pc: Pc) -> None:
+    done = pc.run("Write-SupLog 'WARNING' 'primeira'")
+    assert done.returncode == 0, done.stderr
+    log = pc.base / "logs" / "supervisor.log"
+    assert re.fullmatch(
+        r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d WARNING supervisor: primeira\r?\n", log.read_text("utf-8")
+    )
+    log.write_bytes(b"x" * 600_000)
+    done = pc.run("Write-SupLog 'INFO' 'depois do rodizio'")
+    assert done.returncode == 0, done.stderr
+    assert "depois do rodizio" in log.read_text("utf-8")
+    assert (pc.base / "logs" / "supervisor.log.1").stat().st_size == 600_000
+
+
+def test_confirming_the_trial_removes_it_and_reports_it_only_for_the_running_version(
+    pc: Pc,
+) -> None:
+    pc.version(pc.source, BAD)
+    trial = pc.runtime / "update-trial.txt"
+    trial.write_text(OLD + "|1", encoding="ascii")  # prova de OUTRA versão: não vale
+    assert pc.run("Confirm-Trial").returncode == 0
+    assert trial.exists()
+    trial.write_text(BAD + "|1", encoding="ascii")
+    done = pc.run("Confirm-Trial")
+    assert done.returncode == 0, done.stderr
+    assert not trial.exists()
+    kinds = [
+        json.loads(line)["kind"]
+        for line in (pc.runtime / "diagnostics.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert kinds == ["update.confirmed"]
+
+
+def test_the_last_update_outcome_is_read_back_from_the_state_file(pc: Pc) -> None:
+    assert pc.run("Get-UpdateOutcome").stdout.strip() == ""
+    pc.run("Set-UpdateState @{ outcome = 'failed' } | Out-Null")
+    assert pc.run("Get-UpdateOutcome").stdout.strip() == "failed"
+
+
+def test_the_tail_of_a_failure_output_is_short_and_on_one_line(pc: Pc) -> None:
+    done = pc.run('Get-Tail ((1..10 | ForEach-Object { "linha $_" }) -join "`r`n")')
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "linha 8 | linha 9 | linha 10"
