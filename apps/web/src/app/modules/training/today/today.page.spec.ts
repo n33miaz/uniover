@@ -12,6 +12,7 @@ import {
   seedHistory,
 } from '../shell/screen-test-kit';
 import { TrainingSync } from '../data/sync/training-sync';
+import { IllustrationPrefetcher } from '../illustrations/illustration-prefetcher';
 import { Location } from '@angular/common';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
@@ -64,6 +65,44 @@ const button = (el: ParentNode, label: string) =>
 
 describe('TodayPage', () => {
   afterEach(() => localStorage.clear());
+
+  describe('warming the figures for offline use', () => {
+    // O exercício do teste tem um par de figuras (duas poses); o aquecimento só vale quando as duas estão guardadas.
+    async function openWarming(warm: ReturnType<typeof vi.fn>) {
+      TestBed.overrideProvider(IllustrationPrefetcher, { useValue: { warm } });
+      const kit = await open();
+      await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
+      const shown = await show(kit);
+      return shown;
+    }
+
+    it('asks again when the network drops halfway, as soon as it is back', async () => {
+      const warm = vi.fn().mockResolvedValueOnce(1).mockResolvedValue(2);
+      const { fixture } = await openWarming(warm);
+      await eventually(fixture, () => expect(warm).toHaveBeenCalledTimes(1));
+      expect(warm.mock.calls[0][0]).toEqual(['supino-reto-com-barra']);
+
+      const connectivity = TestBed.inject(ConnectivityService);
+      connectivity.online.set(false);
+      fixture.detectChanges();
+      connectivity.online.set(true);
+      await eventually(fixture, () => expect(warm).toHaveBeenCalledTimes(2));
+    });
+
+    it('does not ask again once every file is stored', async () => {
+      const warm = vi.fn().mockResolvedValue(2);
+      const { fixture } = await openWarming(warm);
+      await eventually(fixture, () => expect(warm).toHaveBeenCalledTimes(1));
+
+      const connectivity = TestBed.inject(ConnectivityService);
+      connectivity.online.set(false);
+      fixture.detectChanges();
+      connectivity.online.set(true);
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(warm).toHaveBeenCalledTimes(1);
+    });
+  });
 
   describe('the day', () => {
     it('says there are no routines yet, and still lets the person train without one', async () => {
