@@ -198,6 +198,9 @@ class FakeTvAdb:
         self.cleanup_log: list[str] = []
         self.cleanup_errors: dict[str, AdbError] = {}
         self.media_playing_value = False
+        # Apps donos de sessão tocando (`dumpsys media_session`); `media_playing_value` segue
+        # valendo para quem só pergunta "toca algo?".
+        self.media_owners: frozenset[str] = frozenset()
         self.global_values: dict[str, str | None] = {
             "window_animation_scale": "1.0",
             "transition_animation_scale": "1.0",
@@ -272,7 +275,11 @@ class FakeTvAdb:
 
     async def media_playing(self) -> bool:
         self._cleanup_step("media")
-        return self.media_playing_value
+        return self.media_playing_value or bool(self.media_owners)
+
+    async def playing_media_packages(self) -> frozenset[str]:
+        self._cleanup_step("media")
+        return self.media_owners
 
     async def global_setting(self, name: str) -> str | None:
         self._cleanup_step(f"global-get:{name}")

@@ -205,13 +205,13 @@ async def test_focus_enters_for_playback_and_leaves_after_the_grace_period() -> 
     holds: list[bool] = []
     settings = TvLightSettings(adb, clock, holds.append, lambda: "com.netflix.ninja")
     settings._focus_enabled = True
-    adb.media_playing_value = True
+    adb.media_owners = frozenset({"com.netflix.ninja"})
 
     await settings._check_focus()
     assert settings.focus_active is True
     assert holds == [True]
 
-    adb.media_playing_value = False
+    adb.media_owners = frozenset()
     clock.advance(181)
     await settings._check_focus()
     assert settings.focus_active is False
@@ -229,7 +229,7 @@ async def test_entering_focus_wakes_the_session_once_without_a_key() -> None:
         adb, FakeClock(), lambda _: None, lambda: "com.netflix.ninja", wake=wake
     )
     settings._focus_enabled = True
-    adb.media_playing_value = True
+    adb.media_owners = frozenset({"com.netflix.ninja"})
 
     await settings._check_focus()
     await settings._check_focus()
@@ -247,7 +247,7 @@ async def test_a_session_that_does_not_wake_does_not_break_the_focus() -> None:
         adb, FakeClock(), lambda _: None, lambda: "com.netflix.ninja", wake=wake
     )
     settings._focus_enabled = True
-    adb.media_playing_value = True
+    adb.media_owners = frozenset({"com.netflix.ninja"})
 
     await settings._check_focus()
 
@@ -286,7 +286,7 @@ async def test_the_release_callbacks_run_when_focus_ends() -> None:
     settings = TvLightSettings(adb, clock, lambda _: None, lambda: "com.netflix.ninja")
     settings.on_release(lambda: released.append("ok"))
     settings._focus_enabled = True
-    adb.media_playing_value = True
+    adb.media_owners = frozenset({"com.netflix.ninja"})
     await settings._check_focus()
     assert released == []
 
@@ -299,7 +299,7 @@ async def test_focus_does_not_start_without_video_in_front() -> None:
     adb = FakeTvAdb()
     settings = TvLightSettings(adb, FakeClock(), lambda _: None, lambda: "com.exemplo.musica")
     settings._focus_enabled = True
-    adb.media_playing_value = True
+    adb.media_owners = frozenset({"com.exemplo.musica"})
 
     await settings._check_focus()
 
@@ -377,7 +377,7 @@ async def test_a_tv_that_cannot_say_if_media_plays_ends_the_focus() -> None:
     holds: list[bool] = []
     settings = TvLightSettings(adb, FakeClock(), holds.append, lambda: "com.netflix.ninja")
     settings._focus_enabled = True
-    adb.media_playing_value = True
+    adb.media_owners = frozenset({"com.netflix.ninja"})
     await settings._check_focus()
 
     adb.cleanup_errors["media"] = AdbError("ambígua")
@@ -390,7 +390,7 @@ async def test_the_focus_loop_polls_while_enabled_and_releases_on_close() -> Non
     adb = FakeTvAdb()
     holds: list[bool] = []
     settings = TvLightSettings(adb, FakeClock(), holds.append, lambda: "com.netflix.ninja")
-    adb.media_playing_value = True
+    adb.media_owners = frozenset({"com.netflix.ninja"})
     task = asyncio.create_task(settings.run())
 
     await settings.configure(True, False, [])

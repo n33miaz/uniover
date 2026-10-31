@@ -527,3 +527,48 @@ async def test_a_failing_appops_set_is_a_failure() -> None:
     )
     with pytest.raises(AdbCommandFailed):
         await make(runner).set_app_background_mode("com.exemplo.video", "ignore")
+
+
+MEDIA_SESSION = "dumpsys media_session"
+SPOTIFY_PLAYING = (
+    "  Sessions Stack - have 2 sessions:\r\n"
+    "    Spotify com.spotify.tv.android/Spotify (userId=0)\r\n"
+    "      package=com.spotify.tv.android\r\n"
+    "      state=PlaybackState {state=3, position=1200}\r\n"
+    "    Netflix com.netflix.ninja/Netflix (userId=0)\r\n"
+    "      package=com.netflix.ninja\r\n"
+    "      state=PlaybackState {state=2, position=900}\r\n"
+)
+
+
+async def test_playing_media_packages_name_the_owner_of_each_playing_session() -> None:
+    runner = authorized()
+    runner.script[shell(MEDIA_SESSION)] = ok(NOISE + SPOTIFY_PLAYING)
+    adb = make(runner)
+    assert await adb.playing_media_packages() == {"com.spotify.tv.android"}
+    assert await adb.media_playing() is True
+
+
+async def test_paused_sessions_have_no_playing_owner() -> None:
+    runner = authorized()
+    runner.script[shell(MEDIA_SESSION)] = ok(SPOTIFY_PLAYING.replace("state=3", "state=2"))
+    adb = make(runner)
+    assert await adb.playing_media_packages() == frozenset()
+    assert await adb.media_playing() is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "  Sessions Stack - have 0 sessions:\r\n",
+        "    X a.b/X (userId=0)\r\n      package=a.b\r\n      state=PlaybackState {state=9}\r\n",
+        # tocando, mas sem dono declarado: dúvida, nunca "qualquer app"
+        "    X a.b/X (userId=0)\r\n      state=PlaybackState {state=3}\r\n",
+    ],
+)
+async def test_an_ambiguous_media_session_reading_is_a_failure(text: str) -> None:
+    runner = authorized()
+    runner.script[shell(MEDIA_SESSION)] = ok(text)
+    with pytest.raises(AdbCommandFailed):
+        await make(runner).playing_media_packages()

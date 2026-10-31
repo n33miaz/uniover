@@ -257,7 +257,7 @@ async def test_focus_mode_closes_background_apps_only_when_the_tv_asked_for_both
     expected: list[str],
 ) -> None:
     adb = running_tv()
-    adb.media_playing_value = True
+    adb.media_owners = frozenset({"com.netflix.ninja"})
     pair_fake_tv(monkeypatch, FakeTvRemote())
     enable_adb(monkeypatch, tmp_path, adb)
     setup = make_tv(Settings(tv_host=TV_HOST))
