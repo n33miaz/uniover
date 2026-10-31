@@ -4,7 +4,12 @@ import { SystemApi } from './system-api';
 import { SystemHealthSection } from './system-health-section';
 
 describe('SystemHealthSection', () => {
-  const system = { agents: vi.fn(), tvs: vi.fn(), deploymentVersion: vi.fn() };
+  const system = {
+    agents: vi.fn(),
+    tvs: vi.fn(),
+    deploymentVersion: vi.fn(),
+    deadLetters: vi.fn(),
+  };
 
   beforeEach(() => {
     localStorage.clear();
@@ -32,6 +37,9 @@ describe('SystemHealthSection', () => {
       },
     ]);
     system.deploymentVersion.mockReset().mockResolvedValue({ commit: 'abc1234' });
+    system.deadLetters
+      .mockReset()
+      .mockResolvedValue({ total: 0, items: [], unavailableModules: [] });
     TestBed.configureTestingModule({
       providers: [{ provide: SystemApi, useValue: system }],
     });
@@ -39,7 +47,7 @@ describe('SystemHealthSection', () => {
 
   afterEach(() => localStorage.clear());
 
-  it('shows agent, television, API and version as four readings', async () => {
+  it('shows agent, television, API, version and failed events as five readings', async () => {
     const session = TestBed.inject(SessionState);
     session.setToken('t', 600);
     session.setUser({ id: '1', email: 'a@b.c', displayName: 'Dono', role: 'owner' });
@@ -49,7 +57,7 @@ describe('SystemHealthSection', () => {
     const metrics = Array.from<HTMLElement>(
       (fixture.nativeElement as HTMLElement).querySelectorAll('.metric'),
     );
-    expect(metrics).toHaveLength(4);
+    expect(metrics).toHaveLength(5);
     expect(metrics[0].textContent).toContain('Agente');
     expect(metrics[0].textContent).toContain('Ligado');
     expect(metrics[0].textContent).toContain('PC da sala');
@@ -59,6 +67,8 @@ describe('SystemHealthSection', () => {
     expect(metrics[2].textContent).toContain('API');
     expect(metrics[2].textContent).toContain('OK');
     expect(metrics[3].textContent).toContain('abc1234');
+    expect(metrics[4].textContent).toContain('Eventos');
+    expect(metrics[4].textContent).toContain('Nenhum');
   });
 
   it('shortens a full commit identifier to seven characters in the version reading', async () => {
@@ -73,6 +83,52 @@ describe('SystemHealthSection', () => {
     fixture.detectChanges();
     const version = (fixture.nativeElement as HTMLElement).querySelectorAll('.metric')[3];
     expect(version.querySelector('strong')?.textContent?.trim()).toBe('abcdef0');
+  });
+
+  it('lists the events that exhausted their attempts, without the payload', async () => {
+    system.deadLetters.mockResolvedValue({
+      total: 3,
+      items: [
+        {
+          module: 'tv',
+          id: 'e-1',
+          type: 'tv.state-changed.v1',
+          failedAt: '2026-10-31T12:00:00Z',
+          attempts: 8,
+          lastError: 'InvalidOperationException',
+        },
+      ],
+      unavailableModules: [],
+    });
+    const session = TestBed.inject(SessionState);
+    session.setToken('t', 600);
+    session.setUser({ id: '1', email: 'a@b.c', displayName: 'Dono', role: 'owner' });
+    const fixture = TestBed.createComponent(SystemHealthSection);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+    const reading = root.querySelectorAll('.metric')[4];
+    expect(reading.textContent).toContain('3 falhos');
+    expect(reading.querySelector('strong')?.classList.contains('bad')).toBe(true);
+    const list = root.querySelector('.dead');
+    expect(list?.textContent).toContain('tv.state-changed.v1');
+    expect(list?.textContent).toContain('InvalidOperationException');
+  });
+
+  it('keeps the rest of the health card when the failed events cannot be read', async () => {
+    system.deadLetters.mockRejectedValue(new Error('boom'));
+    const session = TestBed.inject(SessionState);
+    session.setToken('t', 600);
+    session.setUser({ id: '1', email: 'a@b.c', displayName: 'Dono', role: 'owner' });
+    const fixture = TestBed.createComponent(SystemHealthSection);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    const metrics = root.querySelectorAll('.metric');
+    expect(metrics).toHaveLength(5);
+    expect(metrics[0].textContent).toContain('Ligado');
+    expect(metrics[4].textContent).toContain('Leitura indisponível');
   });
 
   it('does not request health data for a guest', async () => {

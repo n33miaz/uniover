@@ -1,6 +1,6 @@
 import { Component, effect, inject, signal, untracked } from '@angular/core';
 import { SessionState } from '../../core/session/session-state';
-import { HealthAgent, SystemApi, TvItem } from './system-api';
+import { DeadLetterEntry, DeadLetterReport, HealthAgent, SystemApi, TvItem } from './system-api';
 
 /**
  * Leitura resumida do que já existe: a presença mais recente do agente, a TV vinculada e o commit da API. Não cria
@@ -18,6 +18,13 @@ export class SystemHealthSection {
   protected readonly tvs = signal<readonly TvItem[] | null>(null);
   protected readonly commit = signal<string | null>(null);
   protected readonly failed = signal(false);
+  /** Os eventos internos que esgotaram as tentativas. `null` até chegar; fica `null` se a leitura falhar (o resto da Saúde segue). */
+  protected readonly deadLetters = signal<DeadLetterReport | null>(null);
+  protected readonly deadLettersFailed = signal(false);
+  protected readonly dateFormat = new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
 
   constructor() {
     effect(() => {
@@ -33,6 +40,8 @@ export class SystemHealthSection {
 
   protected async load(): Promise<void> {
     this.failed.set(false);
+    // Em paralelo e à parte: uma falha aqui não derruba o cartão inteiro da Saúde (a leitura nunca rejeita).
+    void this.loadDeadLetters();
     try {
       const [agents, tvs, version] = await Promise.all([
         this.system.agents(),
@@ -99,6 +108,41 @@ export class SystemHealthSection {
     if (list.length === 0) return '';
     const online = list.filter((tv) => tv.online).length;
     return online === list.length ? 'ok' : online === 0 ? 'bad' : '';
+  }
+
+  private async loadDeadLetters(): Promise<void> {
+    this.deadLettersFailed.set(false);
+    try {
+      this.deadLetters.set(await this.system.deadLetters());
+    } catch {
+      this.deadLetters.set(null);
+      this.deadLettersFailed.set(true);
+    }
+  }
+
+  protected deadMetric(): string {
+    const report = this.deadLetters();
+    if (!report) return $localize`:@@settings.system.health.dead-unknown:—`;
+    if (report.total === 0) return $localize`:@@settings.system.health.dead-none:Nenhum`;
+    return $localize`:@@settings.system.health.dead-count:${report.total}:count: falhos`;
+  }
+
+  protected deadTone(): 'ok' | 'bad' | '' {
+    const report = this.deadLetters();
+    if (!report) return '';
+    return report.total === 0 && report.unavailableModules.length === 0 ? 'ok' : 'bad';
+  }
+
+  /** Módulo, tentativas, quando falhou e o tipo do último erro, numa linha só. Sem o conteúdo do evento. */
+  protected deadItemDetail(item: DeadLetterEntry): string {
+    const when = new Date(item.failedAt);
+    const parts = [
+      item.module,
+      `${item.attempts}x`,
+      Number.isNaN(when.getTime()) ? '' : this.dateFormat.format(when),
+      item.lastError ?? '',
+    ];
+    return parts.filter((part) => part.length > 0).join(' · ');
   }
 
   protected versionMetric(): string {
