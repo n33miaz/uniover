@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.27.0](https://github.com/n33miaz/uniover/compare/v0.26.0...v0.27.0) (2026-10-31)
+
+
+### Features
+
+* **training:** fixed save bar on the editors
+
+
+### Bug Fixes
+
+* **training:** keep illustrations for offline use
+
+
+### Performance Improvements
+
+* **training:** lighter catalog search and rows
+
 ## [0.26.0](https://github.com/n33miaz/uniover/compare/v0.25.0...v0.26.0) (2026-10-31)
 
 
