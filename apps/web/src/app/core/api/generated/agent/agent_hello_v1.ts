@@ -6,6 +6,7 @@ export type AgentHelloV1BodyCapabilitiesItem =
   | 'agent.maintenance.v1'
   | 'tv.cleanup.automatic.v1'
   | 'tv.light-settings.v1'
+  | 'tv.focus-closes-background.v1'
   | 'tv.remote'
   | 'tv.adb'
   | 'tv.kind.android'
