@@ -30,8 +30,8 @@
                 "output": "/exercise-art"
               },
               {
-                "glob": "**/*.png",
-                "input": "assets-third-party/everkinetic/png",
+                "glob": "**/*.webp",
+                "input": "assets-derived/everkinetic",
                 "output": "/exercise-art"
               }
             ],

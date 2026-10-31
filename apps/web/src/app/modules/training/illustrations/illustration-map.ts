@@ -1,6 +1,7 @@
 /**
- * Ilustrações dos exercícios (Everkinetic, CC BY-SA 4.0), guardadas sem modificação em
- * `assets-third-party/everkinetic/` (SVG e PNG). Cada exercício do catálogo que tem um equivalente SEGURO (mesmo movimento
+ * Ilustrações dos exercícios (Everkinetic, CC BY-SA 4.0). Os originais (SVG e PNG) ficam sem modificação em
+ * `assets-third-party/everkinetic/`; os PNG são publicados na versão adaptada (WebP leve, em `assets-derived/everkinetic/`,
+ * com aviso próprio das mudanças). Cada exercício do catálogo que tem um equivalente SEGURO (mesmo movimento
  * e mesmo equipamento) aponta para o par de poses; o que não está aqui não mostra imagem nenhuma. Na dúvida, fica
  * de fora: nunca se usa a figura de outro exercício.
  */
@@ -29,17 +30,20 @@ function art(title: string, id: string): ExerciseIllustrationEntry {
   };
 }
 
-/** Alguns exercícios só têm o par original em PNG no repositório da origem. */
+/**
+ * Alguns exercícios só têm o par original em PNG no repositório da origem. O app publica a adaptação leve em WebP (mesmo
+ * nome, recorte único do par, proporção dos SVG); o crédito aponta para o PNG original.
+ */
 function pngArt(
   title: string,
   name: string,
   order: readonly [number, number] = [1, 2],
 ): ExerciseIllustrationEntry {
-  const frames = order.map((pose) => `${name}-${pose}.png`) as [string, string];
+  const frames = order.map((pose) => `${name}-${pose}.webp`) as [string, string];
   return {
     title,
     frames,
-    sourceUrl: `https://github.com/everkinetic/data/blob/${EVERKINETIC_COMMIT}/src/images-web/${frames[0]}`,
+    sourceUrl: `https://github.com/everkinetic/data/blob/${EVERKINETIC_COMMIT}/src/images-web/${name}-${order[0]}.png`,
   };
 }
 
@@ -206,6 +210,29 @@ export const EXERCISE_ILLUSTRATIONS: Readonly<Record<string, ExerciseIllustratio
   ),
   'triceps-testa-na-polia': art('Lying Tricep Extension with Cable', '0165'),
   'triceps-unilateral-na-polia': art('One Arm Tricep Extension with Cable', '0166'),
+  // Completados depois, com o mesmo critério (movimento e equipamento iguais; na dúvida, fora).
+  'prancha-lateral': art('Side Plank', '0113'),
+  'agachamento-hack-na-maquina': art('Hack Squat Machine', '0123'),
+  'agachamento-no-caixote-com-barra': art('Squat to Bench with Barbell', '0133'),
+  'flexao-de-bracos-declinada': art('Push Up with Feet Elevated', '0075'),
+  'supino-declinado-articulado-na-maquina': art('Decline Chest Press', '0085'),
+  // Na origem a barra é reta; no catálogo, W. O movimento e o banco são os mesmos.
+  'rosca-aranha-com-barra-w': art('Spider Curl with Barbell', '0245'),
+  'ponte-de-gluteos-com-peso-do-corpo': art('Bridging', '0109'),
+  'barra-fixa-supinada': pngArt('Chin Ups', 'chin-ups'),
+  'puxada-de-bracos-estendidos-no-banco-inclinado-na-polia': art(
+    'Incline Pushdown with Cable',
+    '0163',
+  ),
+  'remada-cavalinho-com-barra-e-pegador': art('T-Bar Rows', '0029'),
+  'remada-invertida': art('Body Row', '0086'),
+  // Idem: barra reta na origem, W no catálogo.
+  'triceps-testa-com-barra-w': art('Lying Triceps Press with Barbell', '0183'),
+  'triceps-frances-unilateral-com-halter': pngArt(
+    'Standing One Arm Triceps Extension with Dumbbell',
+    'standing-one-arm-triceps-extension-with-dumbbell',
+  ),
+  'elevacao-de-perna-para-tras-em-pe': art('Body Leg Lifts', '0111'),
 };
 
 /** A ilustração do exercício, ou `undefined` quando não há uma segura. */
