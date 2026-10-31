@@ -152,6 +152,8 @@ if ($Uninstall) {
     Remove-Item -LiteralPath $launcher -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $launcherVbs -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $fallback -Force -ErrorAction SilentlyContinue
+    # O atalho que traz o icone da bandeja de volta (criado pelo supervisor) nao deve sobrar apontando para o nada.
+    Remove-Item -LiteralPath (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\UniOver Agente.lnk') -Force -ErrorAction SilentlyContinue
     Write-Host 'O UniOver foi desligado: ele nao inicia mais com o Windows e parou de funcionar neste computador.'
     Write-Host "Suas configuracoes e o pareamento ficaram em $base; apague essa pasta se quiser tirar tudo."
     exit 0
