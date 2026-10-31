@@ -116,6 +116,9 @@ def test_installer_migrates_the_old_layout_and_creates_the_user_facing_files() -
         assert old in installer and new in installer
     assert "LEIA-ME.txt" in installer
     assert "UniOver.lnk" in installer
+    # Desinstalar tira o atalho que traz o ícone da bandeja de volta (o supervisor o cria).
+    uninstall = installer.split("if ($Uninstall) {", 1)[1].split("exit 0", 1)[0]
+    assert "UniOver Agente.lnk" in uninstall
 
 
 def test_powershell_scripts_are_ascii_and_parse_in_windows_powershell() -> None:
