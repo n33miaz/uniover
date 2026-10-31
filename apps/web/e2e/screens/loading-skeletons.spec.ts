@@ -62,17 +62,26 @@ async function watchScreen(page: Page) {
     let armed = false;
     const tick = () => {
       w.__frames += 1;
-      const main = document.querySelector('main');
-      if (main) {
-        const top = main.getBoundingClientRect().top;
-        let bottom = top;
-        for (const element of Array.from(main.querySelectorAll('*'))) {
-          const box = element.getBoundingClientRect();
-          if (box.width > 0 && box.height > 0) bottom = Math.max(bottom, box.bottom);
+      // O esqueleto da abertura cobre a tela inteira por cima da casca: enquanto ele está lá a tela está ocupada.
+      const boot = document.querySelector('app-update-skeleton .overlay');
+      if (boot) {
+        armed = true;
+      } else {
+        const main = document.querySelector('main');
+        if (main) {
+          const top = main.getBoundingClientRect().top;
+          let bottom = top;
+          for (const element of Array.from(main.querySelectorAll('*'))) {
+            const box = element.getBoundingClientRect();
+            if (box.width > 0 && box.height > 0) bottom = Math.max(bottom, box.bottom);
+          }
+          const used = bottom - top;
+          if (used >= MIN_USED) armed = true;
+          else if (armed) w.__gaps.push(Math.round(used));
+        } else if (armed) {
+          // Nem a casca nem o esqueleto da abertura: a tela ficou só com o fundo.
+          w.__gaps.push(0);
         }
-        const used = bottom - top;
-        if (used >= MIN_USED) armed = true;
-        else if (armed) w.__gaps.push(Math.round(used));
       }
       if (!w.__seen) {
         for (const bone of Array.from(document.querySelectorAll<HTMLElement>('.ui-skeleton'))) {
@@ -306,6 +315,37 @@ test.describe('esqueleto de espera: Configurações, Dispositivos e entrada por 
     await expect(page.getByText('Nenhuma passkey cadastrada.')).toBeVisible();
     await expectNoWaitLeft(page);
     expect(requests).toBeGreaterThanOrEqual(2);
+  });
+});
+
+test.describe('esqueleto de espera: Início', () => {
+  test('a abertura lenta nunca deixa a tela vazia: esqueleto da abertura, a Início e a espera do agente, sem sobra', async ({
+    context,
+    page,
+  }) => {
+    await mockTvApi(context, identity);
+    // O guarda de entrada espera a sessão: a abertura demora mais que o limite em que o esqueleto cobre a tela.
+    identity.refreshDelayMs = 1500;
+    await watchScreen(page);
+    const release = await hold(page, '**/api/v1/tv/state');
+    try {
+      await page.goto('/');
+      await expect(page.locator('app-update-skeleton .overlay')).toBeVisible();
+      // A Início entra no lugar do esqueleto da abertura e, com o agente ainda sem responder, espera com a forma do topo.
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await expect(page.locator('app-update-skeleton .overlay')).toHaveCount(0);
+      await expect.poll(async () => (await watched(page)).seen, { timeout: 10_000 }).toBe(true);
+      await expect(page.locator('.hero .ui-skeleton').first()).toBeVisible();
+    } finally {
+      release();
+    }
+
+    // O agente respondeu: o topo de verdade fica e nenhuma forma de espera sobra.
+    await expect(page.locator('.hero .ui-skeleton')).toHaveCount(0);
+    await expect(page.locator('.ui-skeleton')).toHaveCount(0);
+    const result = await watched(page);
+    expect(result.frames).toBeGreaterThan(20);
+    expect(result.gaps).toEqual([]);
   });
 });
 
