@@ -135,6 +135,27 @@ def test_an_unhandled_exception_is_logged_with_its_stack_recorded_and_chained(
     assert chained == [OSError]
 
 
+def test_installing_again_in_the_same_process_swaps_the_recorder_instead_of_wrapping_twice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`run` roda de novo se a TV muda de endereço: a queda não pode sair registrada duas vezes."""
+    monkeypatch.setattr(sys, "excepthook", lambda kind, error, trace: None)
+    first, second = MemoryStore(), MemoryStore()
+    logs = tmp_path / "logs"
+    crash_trace.install_crash_trace(logs, DiagnosticsRecorder(first, FakeClock(START)))
+    hook = sys.excepthook
+    crash_trace.install_crash_trace(logs, DiagnosticsRecorder(second, FakeClock(START)))
+
+    assert sys.excepthook is hook
+    error = OSError("x")
+    sys.excepthook(OSError, error, None)
+    assert first.events == []
+    assert len(second.events) == 1
+    assert (logs / crash_trace.CRASH_FILE).read_text(encoding="utf-8").count(
+        "execução iniciada"
+    ) == 1
+
+
 def test_ctrl_c_is_not_reported_as_a_crash(
     traced: tuple[DiagnosticsRecorder, MemoryStore, Path],
 ) -> None:
