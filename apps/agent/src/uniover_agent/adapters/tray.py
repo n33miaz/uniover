@@ -21,17 +21,21 @@ import sys
 import threading
 import time
 import webbrowser
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
 import pystray  # type: ignore[import-untyped]
-from PIL import Image
 
 from uniover_agent.adapters.installation import installation_base
+from uniover_agent.adapters.self_update import DRILL_ENV
 from uniover_agent.adapters.system_clock import SystemClock
-from uniover_agent.adapters.tray_controller import TrayController, TrayEnv
+from uniover_agent.adapters.tray_assets import assets_dir, frame
+from uniover_agent.adapters.tray_controller import (
+    TrayController,
+    TrayEnv,
+    promote_in_background,
+)
 from uniover_agent.adapters.tray_registry import FilePromotionMarker, WindowsNotifyIconSettings
 from uniover_agent.adapters.tray_status import read_tray_inputs
 from uniover_agent.adapters.tray_win32 import (
@@ -45,36 +49,13 @@ from uniover_agent.adapters.tray_win32 import (
 from uniover_agent.config import Settings
 from uniover_agent.core.diagnostics import describe_exception
 from uniover_agent.core.tray_model import MENU, MenuEntry, TrayView
-from uniover_agent.core.tray_promotion import PromotionResult, promote_once
 from uniover_agent.ports.diagnostics import Severity
-from uniover_agent.ports.tray import NotifyIconSettings, PromotionMarker
+from uniover_agent.ports.tray import ICON_ID
 
 _log = logging.getLogger(__name__)
 
-ICON_ID: Final = 1
 REFRESH_SECONDS: Final = 2.0
-PROMOTE_EVERY_SECONDS: Final = 3.0
-PROMOTE_FOR_SECONDS: Final = 120.0
 DEFAULT_SITE: Final = "https://uniover.onrender.com"
-
-Record = Callable[[str, Severity, str], None]
-
-
-def assets_dir() -> Path:
-    """`assets/tray` ao lado do código: na instalação é `app/assets/tray`, no repositório
-    `apps/agent/assets/tray`."""
-    return Path(__file__).resolve().parents[3] / "assets" / "tray"
-
-
-def _frame(path: Path, size: int) -> Image.Image:
-    """O quadro do `.ico` mais próximo de `size`, só para o pystray ter uma imagem (o Windows lê o
-    arquivo)."""
-    with Image.open(path) as icon:
-        sizes = sorted(icon.info.get("sizes") or {icon.size})
-        chosen = min(sizes, key=lambda candidate: abs(candidate[0] - size))
-        icon.size = chosen  # type: ignore[misc]
-        icon.load()
-        return icon.convert("RGBA")
 
 
 class SharpIcon(pystray.Icon):  # type: ignore[misc]
@@ -132,28 +113,6 @@ class _Recorder:
         self._kit.recorder.record(kind, "error", detail, component="tray", error=error)
 
 
-def promote_in_background(  # noqa: PLR0913 - cada peça é injetada para o teste
-    settings: NotifyIconSettings,
-    marker: PromotionMarker,
-    own_executable: str,
-    record: Record,
-    *,
-    sleep: Callable[[float], None] = time.sleep,
-    every: float = PROMOTE_EVERY_SECONDS,
-    window: float = PROMOTE_FOR_SECONDS,
-) -> PromotionResult:
-    """Espera o Windows criar a linha do ícone e o promove uma vez. Devolve o resultado final."""
-    waited = 0.0
-    result = promote_once(settings, marker, own_executable)
-    while result == "not_found" and waited < window:
-        sleep(every)
-        waited += every
-        result = promote_once(settings, marker, own_executable)
-    if result == "failed":
-        record("tray.promote_failed", "error", "não consegui deixar o ícone visível na barra")
-    return result
-
-
 def run_tray() -> int:
     """Roda até o ícone fechar; falta de bandeja é uma falha inofensiva para o supervisor."""
     base = installation_base()
@@ -175,9 +134,13 @@ def _run(base: Path, recorder: _Recorder) -> int:
     assets = assets_dir()
     holder: dict[str, SharpIcon] = {}
 
-    def notify(message: str, title: str) -> None:
-        if "icon" in holder:
-            holder["icon"].notify(message, title)
+    def notify(message: str, title: str) -> bool:
+        """Só há balão com o ícone já visível; devolve se foi mostrado."""
+        icon = holder.get("icon")
+        if icon is None or not icon.visible:
+            return False
+        icon.notify(message, title)
+        return True
 
     def stop() -> None:
         holder["icon"].stop()
@@ -194,7 +157,8 @@ def _run(base: Path, recorder: _Recorder) -> int:
         site_url=settings.api_url or DEFAULT_SITE,
     )
     controller = TrayController(env)
-    first = controller.refresh()
+    # Primeira leitura só para escolher o ícone: o balão espera o ícone aparecer (ver `refresh`).
+    first = controller.refresh(announce=False)
 
     def item(entry: MenuEntry | None) -> Any:
         if entry is None:
@@ -206,7 +170,7 @@ def _run(base: Path, recorder: _Recorder) -> int:
     size = small_icon_size()
     icon = SharpIcon(
         "UniOver",
-        _frame(assets / first.icon_file, size),
+        frame(assets / first.icon_file, size),
         first.title,
         pystray.Menu(*[item(entry) for entry in MENU]),
     )
@@ -219,7 +183,7 @@ def _run(base: Path, recorder: _Recorder) -> int:
         path = assets / view.icon_file
         if path != icon.ico_file or current != icon.icon_size:
             icon.ico_file, icon.icon_size = path, current
-            icon.icon = _frame(path, current)
+            icon.icon = frame(path, current)
         icon.title = view.title
 
     def refresh_loop() -> None:
@@ -232,6 +196,10 @@ def _run(base: Path, recorder: _Recorder) -> int:
             time.sleep(REFRESH_SECONDS)
 
     def promote() -> None:
+        # O ensaio de atualização roda um ícone de verdade numa instalação isolada: nunca mexe no
+        # registro real.
+        if os.environ.get(DRILL_ENV) == "1":
+            return
         try:
             promote_in_background(
                 WindowsNotifyIconSettings(), FilePromotionMarker(), own_image_path(), recorder

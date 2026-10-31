@@ -14,6 +14,7 @@ quando avisar.
 
 import json
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,13 +29,19 @@ from uniover_agent.core.tray_model import (
     status_summary,
     view_of,
 )
+from uniover_agent.core.tray_promotion import PromotionResult, promote_once
 from uniover_agent.ports.diagnostics import Severity
+from uniover_agent.ports.tray import NotifyIconSettings, PromotionMarker
 
 _log = logging.getLogger(__name__)
 
 CLOSED_FLAG: Final = "tray-closed"
 NOTIFIED_FILE: Final = "tray-notified.json"
 TITLE: Final = "UniOver"
+PROMOTE_EVERY_SECONDS: Final = 3.0
+PROMOTE_FOR_SECONDS: Final = 120.0
+
+Record = Callable[[str, Severity, str], None]
 
 
 @dataclass(slots=True)
@@ -46,7 +53,8 @@ class TrayEnv:
     read_inputs: Callable[[datetime], TrayInputs]
     open_url: Callable[[str], None]
     open_file: Callable[[Path], None]
-    notify: Callable[[str, str], None]
+    # Devolve se o aviso foi entregue (sem ícone na bandeja ainda, não há como mostrar balão).
+    notify: Callable[[str, str], bool]
     stop: Callable[[], None]
     record: Callable[[str, Severity, str], None]
     site_url: str
@@ -110,14 +118,19 @@ class TrayController:
     # -- estado e balão
     # ------------------------------------------------------------------------------------
 
-    def refresh(self) -> TrayView:
-        """Lê o estado, decide o ícone e, numa falha de atualização nova, abre o balão (uma vez)."""
+    def refresh(self, *, announce: bool = True) -> TrayView:
+        """Lê o estado, decide o ícone e, numa falha de atualização nova, abre o balão (uma vez).
+
+        `announce=False` é a primeira leitura, antes de o ícone existir: o balão fica para a
+        próxima, senão a falha de uma atualização feita no logon (a mais comum) seria dada como
+        avisada sem ninguém ter visto."""
         env = self._env
         now = env.now()
         inputs = env.read_inputs(now)
         view = view_of(inputs)
         self.inputs, self.view = inputs, view
-        self._maybe_notify(inputs, now)
+        if announce:
+            self._maybe_notify(inputs, now)
         return view
 
     def _maybe_notify(self, inputs: TrayInputs, now: datetime) -> None:
@@ -127,10 +140,11 @@ class TrayController:
         ):
             return
         assert checked is not None  # noqa: S101 - `should_notify...` já exigiu
-        self._env.notify(
+        delivered = self._env.notify(
             "A atualização do UniOver falhou. Veja o registro.", "Falha na Atualização"
         )
-        self._remember(checked.isoformat())
+        if delivered:
+            self._remember(checked.isoformat())
 
     def _last_notified(self) -> str | None:
         if self._announced is not None:
@@ -152,3 +166,25 @@ class TrayController:
             path.write_text(json.dumps({"checkedAt": checked_at}), encoding="utf-8")
         except OSError:
             _log.warning("não consegui lembrar do aviso de atualização")
+
+
+def promote_in_background(  # noqa: PLR0913 - cada peça é injetada para o teste
+    settings: NotifyIconSettings,
+    marker: PromotionMarker,
+    own_executable: str,
+    record: Record,
+    *,
+    sleep: Callable[[float], None] = time.sleep,
+    every: float = PROMOTE_EVERY_SECONDS,
+    window: float = PROMOTE_FOR_SECONDS,
+) -> PromotionResult:
+    """Espera o Windows criar a linha do ícone e o promove uma vez. Devolve o resultado final."""
+    waited = 0.0
+    result = promote_once(settings, marker, own_executable)
+    while result == "not_found" and waited < window:
+        sleep(every)
+        waited += every
+        result = promote_once(settings, marker, own_executable)
+    if result == "failed":
+        record("tray.promote_failed", "error", "não consegui deixar o ícone visível na barra")
+    return result

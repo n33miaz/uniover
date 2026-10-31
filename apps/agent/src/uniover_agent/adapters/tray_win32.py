@@ -121,6 +121,9 @@ class SingleInstance:
             kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
             handle = kernel32.CreateMutexW(None, False, name)
             self._handle = int(handle) if handle else None
-            self.first = ctypes.get_last_error() != ERROR_ALREADY_EXISTS
+            self.first = (
+                ctypes.get_last_error()  # type: ignore[attr-defined,unused-ignore]
+                != ERROR_ALREADY_EXISTS
+            )
         except OSError, AttributeError:
             self.first = True
