@@ -134,7 +134,7 @@ describe('TodayPage', () => {
       // A mesma miniatura de 64 px da biblioteca de exercícios, no começo da linha.
       expect(rows[0].firstElementChild?.matches('app-exercise-thumb.thumb')).toBe(true);
       expect(rows[0].querySelector('.thumb img')?.getAttribute('src')).toContain(
-        '/exercise-art/0042-relaxation.svg',
+        '/exercise-art/0042-relaxation.webp',
       );
       expect(getComputedStyle(rows[0].querySelector('.thumb')!).width).toBe('64px');
       // Sem arte segura, ou com o exercício já fora do catálogo, o glifo neutro mantém a moldura.

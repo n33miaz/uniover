@@ -5,38 +5,44 @@ import { expect, test, waitForServiceWorkerControl } from '../fixtures';
 
 // O servidor de teste entrega o mesmo `dist` que a imagem do Docker copia para o wwwroot.
 const ART_DIR = join(__dirname, '..', '..', 'assets-third-party', 'everkinetic', 'svg');
-// Os PNG originais não são publicados: o app serve a adaptação leve em WebP desta pasta.
+// Os originais (SVG e PNG) não são publicados: o app serve a adaptação leve em WebP desta pasta.
 const DERIVED_DIR = join(__dirname, '..', '..', 'assets-derived', 'everkinetic');
-const FIRST_POSE = '0042-relaxation.svg';
-const SECOND_POSE = '0042-tension.svg';
-const NOT_WARMED = '0043-relaxation.svg';
+const FIRST_POSE = '0042-relaxation.webp';
+const SECOND_POSE = '0042-tension.webp';
+const NOT_WARMED = '0043-relaxation.webp';
 
 test.describe('ilustrações dos exercícios', () => {
   test.use({ serviceWorkers: 'block' });
 
-  test('o build publica o arquivo original em /exercise-art/ como SVG', async ({ request }) => {
-    const response = await request.get(`/exercise-art/${FIRST_POSE}`);
-    expect(response.status()).toBe(200);
-    expect(response.headers()['content-type']).toBe('image/svg+xml');
-    expect(Buffer.compare(await response.body(), readFileSync(join(ART_DIR, FIRST_POSE)))).toBe(0);
-  });
-
-  test('todo arquivo de arte é publicado, idêntico ao guardado (SVG original ou WebP adaptado)', async ({
+  test('o build publica a figura em /exercise-art/ como WebP, idêntica à guardada', async ({
     request,
   }) => {
-    const files = [
-      ...readdirSync(ART_DIR).map((file) => ({ file, path: join(ART_DIR, file) })),
-      ...readdirSync(DERIVED_DIR)
-        .filter((file) => file.endsWith('.webp'))
-        .map((file) => ({ file, path: join(DERIVED_DIR, file) })),
-    ];
+    const response = await request.get(`/exercise-art/${FIRST_POSE}`);
+    expect(response.status()).toBe(200);
+    expect(response.headers()['content-type']).toBe('image/webp');
+    expect(Buffer.compare(await response.body(), readFileSync(join(DERIVED_DIR, FIRST_POSE)))).toBe(
+      0,
+    );
+  });
+
+  test('todo arquivo de arte é publicado, idêntico ao guardado, e os originais não vão junto', async ({
+    request,
+  }) => {
+    const files = readdirSync(DERIVED_DIR).filter((file) => file.endsWith('.webp'));
     expect(files.length).toBeGreaterThan(100);
-    for (const { file, path } of files) {
+    for (const file of files) {
       const response = await request.get(`/exercise-art/${file}`);
       expect(response.status(), file).toBe(200);
-      if (file.endsWith('.webp')) expect(response.headers()['content-type']).toBe('image/webp');
-      expect(Buffer.compare(await response.body(), readFileSync(path)), file).toBe(0);
+      expect(response.headers()['content-type']).toBe('image/webp');
+      expect(
+        Buffer.compare(await response.body(), readFileSync(join(DERIVED_DIR, file))),
+        file,
+      ).toBe(0);
     }
+    // Os SVG originais ficam só no repositório: o app publica a adaptação.
+    const original = readdirSync(ART_DIR)[0];
+    const absent = await request.get(`/exercise-art/${original}`);
+    expect(absent.headers()['content-type'] ?? '').not.toContain('image/svg+xml');
   });
 
   test('um <img> da mesma origem com a arte carrega sem violar a CSP', async ({ page }) => {
@@ -60,7 +66,7 @@ test.describe('ilustrações dos exercícios', () => {
     // A violação de CSP (se houvesse) derruba o teste pela fixture.
   });
 
-  test('os pares novos carregam: WebP adaptado em 536x550 e SVG original', async ({ page }) => {
+  test('os pares carregam em 536x550, os de origem SVG e os de origem PNG', async ({ page }) => {
     await page.goto('/entrar');
     const sizes = await page.evaluate(
       (files) =>
@@ -82,15 +88,12 @@ test.describe('ilustrações dos exercícios', () => {
         'chin-ups-1.webp',
         'chin-ups-2.webp',
         'standing-one-arm-triceps-extension-with-dumbbell-1.webp',
-        '0113-relaxation.svg',
-        '0123-tension.svg',
+        '0113-relaxation.webp',
+        '0123-tension.webp',
       ],
     );
-    for (const size of sizes.filter((item) => item.file.endsWith('.webp'))) {
+    for (const size of sizes) {
       expect([size.width, size.height], size.file).toEqual([536, 550]);
-    }
-    for (const size of sizes.filter((item) => item.file.endsWith('.svg'))) {
-      expect(size.width, size.file).toBeGreaterThan(0);
     }
   });
 
@@ -165,8 +168,8 @@ test.describe('ilustrações guardadas pelo service worker', () => {
     await waitForServiceWorkerControl(page);
 
     // Aquecer = buscar os dois quadros na mesma origem com rede (o que o `warm` faz); o worker os guarda.
-    expect(await fetchStatus(page, FIRST_POSE)).toEqual({ status: 200, type: 'image/svg+xml' });
-    expect(await fetchStatus(page, SECOND_POSE)).toEqual({ status: 200, type: 'image/svg+xml' });
+    expect(await fetchStatus(page, FIRST_POSE)).toEqual({ status: 200, type: 'image/webp' });
+    expect(await fetchStatus(page, SECOND_POSE)).toEqual({ status: 200, type: 'image/webp' });
     await expect
       .poll(() =>
         page.evaluate(async () => {
@@ -193,8 +196,8 @@ test.describe('ilustrações guardadas pelo service worker', () => {
     await context.setOffline(true);
     try {
       // Sem rede: o que foi aquecido vem do cache, com o tipo certo.
-      expect(await fetchStatus(page, FIRST_POSE)).toEqual({ status: 200, type: 'image/svg+xml' });
-      expect(await fetchStatus(page, SECOND_POSE)).toEqual({ status: 200, type: 'image/svg+xml' });
+      expect(await fetchStatus(page, FIRST_POSE)).toEqual({ status: 200, type: 'image/webp' });
+      expect(await fetchStatus(page, SECOND_POSE)).toEqual({ status: 200, type: 'image/webp' });
       const drawn = await page.evaluate(
         (file) =>
           new Promise<number>((resolve) => {
