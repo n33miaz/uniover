@@ -1,7 +1,10 @@
 """Portas da bandeja: o registro de ícones do Windows 11 e a lembrança de que já foi promovido."""
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Final, Protocol
+
+# Identificador do ícone junto ao Windows (`hID`): fixo, para ele reconhecer sempre o mesmo ícone.
+ICON_ID: Final = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -12,6 +15,7 @@ class NotifyIconEntry:
     key: str
     executable_path: str
     tooltip: str
+    uid: int | None = None
 
 
 class NotifyIconSettings(Protocol):

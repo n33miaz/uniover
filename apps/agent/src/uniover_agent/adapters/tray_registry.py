@@ -23,6 +23,13 @@ SETTINGS_KEY: Final = r"Control Panel\NotifyIconSettings"
 MARKER_FILE: Final = "tray-promoted.json"
 
 
+def _optional(reg: Any, key: Any, name: str, default: Any) -> Any:
+    try:
+        return reg.QueryValueEx(key, name)[0]
+    except OSError:
+        return default
+
+
 class WindowsNotifyIconSettings:
     def entries(self) -> list[NotifyIconEntry]:
         if sys.platform != "win32":
@@ -51,13 +58,11 @@ class WindowsNotifyIconSettings:
         try:
             with reg.OpenKey(root, name) as key:
                 path, _ = reg.QueryValueEx(key, "ExecutablePath")
-                try:
-                    tip, _ = reg.QueryValueEx(key, "InitialTooltip")
-                except OSError:
-                    tip = ""
+                tip = _optional(reg, key, "InitialTooltip", "")
+                uid = _optional(reg, key, "UID", None)
         except OSError:
             return None
-        return NotifyIconEntry(name, str(path), str(tip))
+        return NotifyIconEntry(name, str(path), str(tip), uid if isinstance(uid, int) else None)
 
     def promote(self, key: str) -> bool:
         if sys.platform != "win32":
