@@ -68,7 +68,7 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
       height: 48px;
       border-radius: var(--radius-sm);
     }
-    .sk.sk-cards {
+    .sk-cards {
       display: flex;
       flex-direction: column;
       gap: var(--space-2);
@@ -83,7 +83,7 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
       height: var(--tap);
       border-radius: var(--radius);
     }
-    .sk.sk-actions {
+    .sk-actions {
       display: grid;
       grid-template-columns: 1fr 1.5fr;
       gap: var(--space-2);
