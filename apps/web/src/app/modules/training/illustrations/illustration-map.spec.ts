@@ -227,6 +227,21 @@ describe('illustration map', () => {
     }
   });
 
+  it('illustrates the incline curls and the one-arm row with the matching source drawings', () => {
+    expect(illustrationFor('rosca-inclinada-com-halteres')?.frames).toEqual([
+      '0228-relaxation.webp',
+      '0228-tension.webp',
+    ]);
+    expect(illustrationFor('rosca-martelo-inclinada-com-halteres')?.frames).toEqual([
+      '0231-relaxation.webp',
+      '0231-tension.webp',
+    ]);
+    expect(illustrationFor('remada-unilateral-com-halter')?.frames).toEqual([
+      '0024-relaxation.webp',
+      '0024-tension.webp',
+    ]);
+  });
+
   it('builds the same-origin address of a frame', () => {
     expect(illustrationUrl('0042-relaxation.webp')).toBe('/exercise-art/0042-relaxation.webp');
   });
