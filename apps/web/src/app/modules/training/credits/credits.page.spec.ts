@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { CREDIT_SOURCES } from './credits.data';
 import { CreditsPage } from './credits.page';
 import { WgerCredit, WgerCreditsReader } from './wger-credits';
@@ -24,6 +24,44 @@ describe('CreditsPage', () => {
     Array.from(item.querySelectorAll('dl div')).find(
       (row) => row.querySelector('dt')?.textContent?.trim() === label,
     );
+
+  it('is a bottom sheet (a modal dialog) with the sources collapsed until tapped', async () => {
+    const el = await render();
+    const dialog = el.querySelector('dialog.sheet') as HTMLDialogElement;
+    expect(dialog.open).toBe(true);
+    expect(el.querySelector('#credits-sheet-title')?.textContent?.trim()).toBe('Créditos');
+    const details = Array.from(el.querySelectorAll<HTMLDetailsElement>('.list details'));
+    expect(details).toHaveLength(CREDIT_SOURCES.length);
+    expect(details.every((item) => !item.open)).toBe(true);
+    expect(details[0].querySelector('summary h2')?.textContent).toContain('Everkinetic');
+  });
+
+  it('shows the title and the license of each source before it is opened', async () => {
+    read.mockResolvedValue([{ author: 'Ana', license: 'CC-BY-SA 4', licenseUrl: null, count: 1 }]);
+    const el = await render();
+    const heads = Array.from(el.querySelectorAll<HTMLElement>('.list summary'));
+    expect(heads).toHaveLength(CREDIT_SOURCES.length + 1);
+    for (const [index, source] of CREDIT_SOURCES.entries()) {
+      expect(heads[index].textContent).toContain(source.title);
+      expect(heads[index].querySelector('.head-license')?.textContent?.trim()).toBe(source.license);
+    }
+    expect(heads[CREDIT_SOURCES.length].textContent).toContain('Licença de cada autor');
+  });
+
+  it('opens a source on tap and keeps the others closed', async () => {
+    const el = await render();
+    const details = Array.from(el.querySelectorAll<HTMLDetailsElement>('.list details'));
+    details[0].querySelector('summary')!.click();
+    expect(details[0].open).toBe(true);
+    expect(details[1].open).toBe(false);
+  });
+
+  it('goes back to Sobre when the sheet is closed', async () => {
+    const el = await render();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    (el.querySelector('button.done') as HTMLButtonElement).click();
+    expect(navigate).toHaveBeenCalledWith('/ajustes/sobre', { replaceUrl: true });
+  });
 
   it('has no back link of its own: the header arrow is the only one', async () => {
     const el = await render();
