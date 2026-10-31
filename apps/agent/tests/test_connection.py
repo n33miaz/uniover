@@ -196,7 +196,14 @@ async def test_on_connected_runs_after_the_hello_on_every_connection() -> None:
 
 
 async def test_server_restart_reconnects_fast_without_growing_the_backoff() -> None:
-    transport = FakeTransport([[ServerRestarting("código 1012")]] * 3 + [[TransportError("cai")]])
+    restarting: list[str | bytes | Exception] = [ServerRestarting("código 1012")]
+    scripts: list[list[str | bytes | Exception]] = [
+        restarting,
+        restarting,
+        restarting,
+        [TransportError("cai")],
+    ]
+    transport = FakeTransport(scripts)
     harness = Harness(transport)
     await harness.run_until(lambda: len(harness.clock.sleeps) >= 4)
     # Três avisos de reinício: espera curta e fixa; a primeira queda comum ainda começa em 1 s.
@@ -222,7 +229,7 @@ async def test_exception_from_message_processing_reconnects() -> None:
             raise ValueError("falha ao processar")
         await original(raw)
 
-    harness.supervisor._process = explode_once  # type: ignore[method-assign]
+    harness.supervisor._process = explode_once
     await harness.run_until(lambda: harness.processed == ["bom"])
     assert harness.processed == ["bom"]
 
