@@ -20,13 +20,7 @@ import { canUseModule } from '../auth/guest-home';
 import { SessionState } from '../session/session-state';
 import { StreamEvent, StreamService } from '../sse/stream.service';
 import { ClockService } from '../time/clock.service';
-import {
-  AgentAlertNote,
-  AgentState,
-  HomeStatus,
-  HomeStatusPort,
-  WatcherState,
-} from './home-status.port';
+import { AgentState, HomeStatus, HomeStatusPort, WatcherState } from './home-status.port';
 
 export interface HomeStatusConfig {
   /** Intervalo entre leituras do estado enquanto a Início está à vista e a aba visível. */
@@ -45,15 +39,14 @@ export const HOME_STATUS_CONFIG = new InjectionToken<HomeStatusConfig>('HOME_STA
 });
 
 const STATE_PATH = `${APP_CONFIG.apiBase}/v1/tv/state`;
-/** Avisos de queda do computador, ainda não vistos pelo dono. */
-const ALERTS_PATH = `${APP_CONFIG.apiBase}/v1/devices/agent-alerts`;
 /** Fluxo de eventos da TV; o cookie de bilhete do `StreamService` é a credencial, nunca um token na URL. */
 const EVENTS_PATH = `${APP_CONFIG.apiBase}/v1/tv/events`;
 const STATE_EVENT = 'tv.state';
 const WATCHDOG_EVENT = 'tv.watchdog';
 /**
  * O último estado do agente é lembrado por conta: o estado é o do agente DA TV daquela conta, então uma conta nunca pode
- * pintar a Início da outra no mesmo navegador. A chave antiga (uma só para todos) é apagada na partida.
+ * pintar a Início da outra no mesmo navegador. "none" lembra que a conta não tem agente (a Início já abre sem ponto).
+ * A chave antiga (uma só para todos) é apagada na partida.
  */
 const AGENT_CACHE_PREFIX = 'uniover.home.agent.v2.';
 const LEGACY_AGENT_CACHE_KEY = 'uniover.home.agent.v1';
@@ -77,6 +70,11 @@ function agentOf(body: unknown): AgentState {
   return online ? 'online' : 'offline';
 }
 
+/** A TV da conta tem um computador vinculado? Só `false` explícito diz que não: uma resposta sem o campo vale como "sim". */
+function linkedOf(body: unknown): boolean {
+  return !(body && typeof body === 'object' && (body as Partial<TvStateDto>).agentLinked === false);
+}
+
 /**
  * Leitura do evento do vigia. Só decide quando há evidência: erro ou reparo que falhou é aviso; reparo ou
  * recuperação concluídos é "em ordem". Os demais (porta fechada, reparo começando, ADB fora) são passos de uma
@@ -90,20 +88,6 @@ function verdictOf(body: unknown): Verdict['state'] | null {
   return null;
 }
 
-/** O aviso mais recente que vale: uma queda em aberto vence uma volta já anotada. Lista vazia ou fora do formato = sem aviso. */
-function alertOf(body: unknown): AgentAlertNote | null {
-  if (!Array.isArray(body)) return null;
-  const items = body.filter(
-    (item): item is { agentName: string; recoveredAt: string | null } =>
-      !!item &&
-      typeof item === 'object' &&
-      typeof (item as { agentName?: unknown }).agentName === 'string',
-  );
-  const down = items.find((item) => !item.recoveredAt);
-  const shown = down ?? items[0];
-  return shown ? { name: shown.agentName, recovered: !down } : null;
-}
-
 function parseJson(data: string): unknown {
   try {
     return JSON.parse(data);
@@ -112,12 +96,14 @@ function parseJson(data: string): unknown {
   }
 }
 
-/** Só estados afirmativos entram no cache; valor inválido não pode pintar uma casa que não conhecemos. */
-function readCachedAgent(storage: Storage | null, account: string | null): AgentState | null {
+type CachedAgent = Exclude<AgentState, 'unknown'> | 'none';
+
+/** Só estados afirmativos entram no cache (ou "none"); valor inválido não pode pintar uma casa que não conhecemos. */
+function readCachedAgent(storage: Storage | null, account: string | null): CachedAgent | null {
   if (account === null) return null;
   try {
     const value = storage?.getItem(AGENT_CACHE_PREFIX + account);
-    return value === 'online' || value === 'offline' ? value : null;
+    return value === 'online' || value === 'offline' || value === 'none' ? value : null;
   } catch {
     return null;
   }
@@ -134,9 +120,10 @@ function readCachedAgent(storage: Storage | null, account: string | null): Agent
  * falte cancela a leitura em voo, o intervalo e o fluxo. O Render dorme sem tráfego, então uma conexão aberta fora da
  * tela seria a única coisa a mantê-lo acordado.
  *
- * O servidor responde com o agente da TV que a conta enxerga, então o convidado vê o agente DELE; só o aviso de queda
- * do computador segue sendo do dono. Ao trocar de conta, tudo o que se sabia (estado, aviso, lembrança) é descartado
- * antes da primeira leitura da nova.
+ * O servidor responde com o agente da TV que a conta enxerga, então cada um vê o agente DELE (o dono o do dono, o convidado
+ * o do convidado), e diz também se a conta tem algum agente vinculado: sem ele a Início não mostra ponto algum. O aviso de
+ * queda de outros computadores não é lido aqui. Ao trocar de conta, tudo o que se sabia (estado, vínculo, lembrança) é
+ * descartado antes da primeira leitura da nova.
  */
 @Injectable({ providedIn: 'root' })
 export class LiveHomeStatus extends HomeStatusPort {
@@ -151,7 +138,7 @@ export class LiveHomeStatus extends HomeStatusPort {
   /** A conta a quem pertence o que está em memória; `undefined` até a primeira adoção. */
   private account: string | null | undefined = undefined;
   /** O que se lembrava do agente desta conta ao adotá-la: com ele a Início não mostra espera. */
-  private cachedAgent: AgentState | null = null;
+  private cachedAgent: CachedAgent | null = null;
 
   private readonly watchers = signal(0);
   private readonly visible = signal(this.doc.visibilityState !== 'hidden');
@@ -159,7 +146,8 @@ export class LiveHomeStatus extends HomeStatusPort {
   readonly loading = signal(false);
   private readonly serviceDown = signal(false);
   private readonly verdict = signal<Verdict | null>(null);
-  private readonly agentAlert = signal<AgentAlertNote | null>(null);
+  /** A TV desta conta tem um agente vinculado? `null` enquanto não se sabe. */
+  private readonly linked = signal<boolean | null>(null);
 
   /**
    * Quem pode consultar: o dono confirmado, ou o convidado cuja lista de permissões (conhecida) traz a TV. Sem sessão,
@@ -172,9 +160,6 @@ export class LiveHomeStatus extends HomeStatusPort {
     const permissions = this.session.knownPermissions();
     return role === 'guest' && permissions !== null && canUseModule('guest', permissions, 'tv');
   });
-
-  /** Os avisos de queda do computador são rota de dono: o convidado nunca gera essa chamada (nem um 403). */
-  private readonly canReadAlerts = computed(() => this.session.role() === 'owner');
 
   private readonly active = computed(
     () => this.watchers() > 0 && this.visible() && this.connectivity.online() && this.allowed(),
@@ -194,7 +179,7 @@ export class LiveHomeStatus extends HomeStatusPort {
     agent: this.agent(),
     watcher: this.watcher(),
     serviceDown: this.serviceDown(),
-    agentAlert: this.agentAlert(),
+    agentLinked: this.linked(),
   }));
 
   constructor() {
@@ -247,7 +232,9 @@ export class LiveHomeStatus extends HomeStatusPort {
     let answered = false;
     let giveUp: number | undefined;
     const slowResponse = window.setTimeout(() => {
+      // Sem estado lembrado, sem estado em mãos e sem saber que a conta não tem agente: só então vale mostrar a espera.
       if (answered || this.cachedAgent !== null || this.agent() !== 'unknown') return;
+      if (this.linked() === false) return;
       this.loading.set(true);
       giveUp = window.setTimeout(() => this.loading.set(false), MAX_LOADING_MS - SLOW_RESPONSE_MS);
     }, SLOW_RESPONSE_MS);
@@ -286,22 +273,8 @@ export class LiveHomeStatus extends HomeStatusPort {
       );
     };
 
-    // O aviso de queda é um acréscimo: falhar em lê-lo não muda nada (nem vira "serviço fora do ar").
-    const refreshAlert = () =>
-      work.add(
-        this.http.get<unknown>(ALERTS_PATH).subscribe({
-          next: (body) => this.agentAlert.set(alertOf(body)),
-          error: () => undefined,
-        }),
-      );
-
-    const withAlerts = this.canReadAlerts();
     refresh();
-    if (withAlerts) refreshAlert();
-    const timer = setInterval(() => {
-      refresh();
-      if (withAlerts) refreshAlert();
-    }, this.config.pollMs);
+    const timer = setInterval(refresh, this.config.pollMs);
     work.add(() => clearInterval(timer));
     work.add(
       this.stream.open(EVENTS_PATH, [STATE_EVENT, WATCHDOG_EVENT]).subscribe((event) => {
@@ -317,7 +290,18 @@ export class LiveHomeStatus extends HomeStatusPort {
   private onState(body: unknown): void {
     // A API respondeu, seja qual for o conteúdo.
     this.serviceDown.set(false);
-    const agent = agentOf(body);
+    this.applyAgent(agentOf(body), linkedOf(body));
+  }
+
+  /** Aplica o que a API disse do agente da TV desta conta; sem agente vinculado não há estado a mostrar. */
+  private applyAgent(agent: AgentState, linked: boolean): void {
+    if (!linked) {
+      this.linked.set(false);
+      this.agent.set('unknown');
+      this.cache('none');
+      return;
+    }
+    if (agent !== 'unknown') this.linked.set(true);
     this.agent.set(agent);
     this.cache(agent);
   }
@@ -325,8 +309,8 @@ export class LiveHomeStatus extends HomeStatusPort {
   /**
    * Só vira "serviço fora do ar" quando a API não respondeu: sem resposta com a rede do aparelho de pé, ou o 502/503/504
    * do proxy do servidor dormindo ou caído. Sem internet no aparelho, o erro não diz nada sobre a API e fica de fora. Qualquer
-   * outra resposta (401, 404, 429...) prova que a API está de pé: não há queda. Com 401, 403 ou 404 a conta não enxerga a TV, e o estado
-   * lembrado do agente é descartado; nos demais, o último estado continua valendo.
+   * outra resposta (401, 404, 429...) prova que a API está de pé: não há queda. Com 403 ou 404 a conta não enxerga TV nenhuma
+   * (sem agente dela, logo sem ponto); com 401 o estado lembrado é descartado; nos demais, o último estado continua valendo.
    */
   private onFailure(error: unknown): void {
     const problem = problemOf(error);
@@ -342,8 +326,11 @@ export class LiveHomeStatus extends HomeStatusPort {
       this.serviceDown.set(false);
       // A API respondeu que esta conta não tem (ou deixou de ter) a TV: o que se lembrava do agente já não vale, e
       // continuar a mostrá-lo afirmaria algo sobre uma TV que a conta não enxerga.
-      if (problem.status === 401 || problem.status === 403 || problem.status === 404) {
+      if (problem.status === 403 || problem.status === 404) {
+        this.applyAgent('unknown', false);
+      } else if (problem.status === 401) {
         this.agent.set('unknown');
+        this.linked.set(null);
         this.cachedAgent = null;
         this.forgetCachedAgent();
       }
@@ -357,10 +344,7 @@ export class LiveHomeStatus extends HomeStatusPort {
     switch (event.type) {
       case STATE_EVENT: {
         const agent = agentOf(body);
-        if (agent !== 'unknown') {
-          this.agent.set(agent);
-          this.cache(agent);
-        }
+        if (agent !== 'unknown') this.applyAgent(agent, linkedOf(body));
         return;
       }
       case WATCHDOG_EVENT: {
@@ -376,10 +360,12 @@ export class LiveHomeStatus extends HomeStatusPort {
     if (this.account === account) return;
     this.account = account;
     this.cachedAgent = readCachedAgent(this.storage, account);
-    this.agent.set(this.cachedAgent ?? 'unknown');
+    this.agent.set(
+      this.cachedAgent === null || this.cachedAgent === 'none' ? 'unknown' : this.cachedAgent,
+    );
+    this.linked.set(this.cachedAgent === 'none' ? false : null);
     this.serviceDown.set(false);
     this.verdict.set(null);
-    this.agentAlert.set(null);
     this.loading.set(false);
   }
 
@@ -387,9 +373,9 @@ export class LiveHomeStatus extends HomeStatusPort {
     this.account = null;
     this.cachedAgent = null;
     this.agent.set('unknown');
+    this.linked.set(null);
     this.serviceDown.set(false);
     this.verdict.set(null);
-    this.agentAlert.set(null);
     this.loading.set(false);
   }
 
@@ -409,7 +395,7 @@ export class LiveHomeStatus extends HomeStatusPort {
     }
   }
 
-  private cache(agent: AgentState): void {
+  private cache(agent: AgentState | 'none'): void {
     if (agent === 'unknown') return;
     try {
       if (this.account) this.storage?.setItem(AGENT_CACHE_PREFIX + this.account, agent);

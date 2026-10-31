@@ -20,7 +20,7 @@ import { ModuleAppIcon } from './module-app-icon';
 import { HomeSoonBadge } from './home-soon-badge';
 import { Skeleton } from '../../shared/ui/skeleton/skeleton';
 
-type ChipTone = 'neutral' | 'ok' | 'warn' | 'connecting';
+type ChipTone = 'ok' | 'warn' | 'connecting';
 type DayPart = 'morning' | 'afternoon' | 'evening';
 
 interface InfoChip {
@@ -122,10 +122,14 @@ export class HomePage {
     ),
   );
 
-  /** Estado curto do agente: enquanto a primeira leitura demora, a bolinha comunica a conexão sem inventar resultado. */
-  protected readonly agentIndicator = computed<InfoChip>(() => {
+  /**
+   * Estado curto do agente DESTA conta: sem agente vinculado ou sem estado confirmado não há ponto (nem reserva de espaço
+   * que sugira um computador pareado). Só a leitura em andamento, ainda sem estado, mostra a bolinha pulsando.
+   */
+  protected readonly agentIndicator = computed<InfoChip | null>(() => {
     const status = this.status();
-    if (this.loading()) {
+    if (status.agentLinked === false) return null;
+    if (this.loading() && status.agent === 'unknown') {
       return {
         id: 'agent',
         label: $localize`:@@home.agent-connecting:Conectando ao agente`,
@@ -146,28 +150,12 @@ export class HomePage {
         label: $localize`:@@home.chip.agent-off:Agente desligado`,
         tone: 'warn',
       };
-    return {
-      id: 'agent',
-      label: $localize`:@@home.chip.agent-unknown:Agente sem dados`,
-      tone: 'neutral',
-    };
-  });
-
-  /** Selo discreto do aviso de queda do computador (só o dono recebe): leva a Dispositivos, onde o aviso é dispensado. */
-  protected readonly agentAlert = computed(() => {
-    const alert = this.status().agentAlert;
-    if (!alert || this.isGuest()) return null;
-    return {
-      recovered: alert.recovered,
-      label: alert.recovered
-        ? $localize`:@@home.alert.back:${alert.name}:name: voltou`
-        : $localize`:@@home.alert.down:${alert.name}:name: sem sinal`,
-    };
+    return null;
   });
 
   /**
-   * A bolinha do agente aparece para quem usa a TV, dono ou convidado: o estado lido é o do agente da TV da própria conta
-   * (o aviso de queda do computador, esse sim, segue só do dono).
+   * A bolinha do agente aparece para quem usa a TV, dono ou convidado: o estado lido é o do agente da TV da própria conta,
+   * nunca o de outra pessoa (a Início não mostra avisos sobre computadores alheios).
    */
   protected readonly canSeeAgent = computed(() => this.canSeeModule('tv'));
 

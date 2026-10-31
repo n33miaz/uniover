@@ -11,13 +11,33 @@
   margin-inline: auto;
 }
 
+/* Barra do alto: a marca no centro de verdade (as duas colunas laterais têm a mesma largura, com ou sem o ponto do agente) e
+   a engrenagem e o ponto no mesmo eixo vertical dela. */
+.home-topbar {
+  display: grid;
+  grid-template-columns: var(--tap) minmax(0, 1fr) var(--tap);
+  align-items: center;
+  min-height: var(--tap);
+}
+
 .brand {
   margin: 0;
-  padding-inline: var(--space-1);
   color: var(--a-accent-ink);
-  font-size: 1.0625rem;
-  font-weight: 760;
-  letter-spacing: 0.08em;
+  /* O nome do sistema é o título da tela: maior e mais pesado que o resto, ainda numa linha só em qualquer largura. */
+  font-size: clamp(1.5rem, 7vw, 2rem);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.06em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* O ponto encosta na borda do conteúdo (mesma margem da engrenagem do outro lado); a coluna segue com 44 px. */
+.agent-slot {
+  display: grid;
+  place-items: center end;
+  width: var(--tap);
+  height: var(--tap);
 }
 
 /* Saudação: faixa suave com a hora do dia desenhada ao fundo. */
@@ -55,23 +75,13 @@
   position: relative;
 }
 
-.hero-actions {
-  position: absolute;
-  top: var(--space-3);
-  left: var(--space-3);
-  z-index: 1;
-  max-width: calc(100% - (2 * var(--space-3)));
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 .hero-settings {
   display: grid;
   place-items: center;
   width: var(--tap);
   height: var(--tap);
-  margin: calc((var(--tap) - 22px) / -2);
+  /* O alvo de toque tem 44 px, mas o desenho encosta na borda do conteúdo, alinhado aos cartões abaixo. */
+  margin-inline-start: calc((21px - var(--tap)) / 2);
   border-radius: 50%;
   color: var(--a-ink2);
 }
@@ -80,25 +90,20 @@
   --glyph-size: 21px;
 }
 
-/* O ponto informa o estado sem competir com data, hora e saudação. O anel na cor da tinta (clara no tema escuro, escura no
-   claro) o separa do fundo verde da faixa nos dois temas, e o brilho na cor do estado o destaca sem texto. */
+/* O ponto informa o estado sem competir com a marca. Só a conexão em andamento ganha um halo leve, para não parecer um
+   alerta nem disputar atenção com a saudação. */
 .agent-status {
   --tone: var(--a-ink3);
   position: relative;
-  /* Sempre um círculo de tamanho fixo, em qualquer estado: só a cor e o preenchimento mudam. */
   flex: none;
-  width: 16px;
-  height: 16px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--tone);
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--a-ink) 58%, transparent),
-    0 0 10px 3px color-mix(in srgb, var(--tone) 50%, transparent);
 }
 
 .agent-status.ok {
   --tone: var(--a-ok);
-  animation: agent-pulse 2.4s ease-in-out infinite;
 }
 
 .agent-status.warn {
@@ -107,47 +112,13 @@
 
 .agent-status.connecting {
   --tone: var(--a-accent);
-  background: transparent;
-  box-shadow: inset 0 0 0 2px var(--tone);
-  animation: agent-connect 1.1s var(--ease-out) infinite;
-}
-
-.agent-status.neutral {
-  background: transparent;
-  box-shadow: inset 0 0 0 2px var(--tone);
-}
-
-/* Aviso de queda: um selo pequeno depois do ponto, na mesma linha das ações do cartão, sem ocupar a faixa. */
-.agent-alert {
-  min-width: 0;
-  padding: 2px 10px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--a-warn) 55%, var(--a-line));
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--a-warn) 18%, var(--a-surface));
-  color: var(--a-ink);
-  font-size: var(--fs-small);
-  font-weight: 650;
-  text-decoration: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agent-alert.ok {
-  border-color: color-mix(in srgb, var(--a-ok) 55%, var(--a-line));
-  background: color-mix(in srgb, var(--a-ok) 18%, var(--a-surface));
-}
-
-@keyframes agent-pulse {
-  50% {
-    opacity: 0.42;
-  }
+  animation: agent-connect 1.8s ease-in-out infinite;
 }
 
 @keyframes agent-connect {
   50% {
-    opacity: 0.45;
-    scale: 0.78;
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--tone) 22%, transparent);
+    opacity: 0.72;
   }
 }
 
@@ -413,7 +384,6 @@ h3 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .agent-status.ok,
   .agent-status.connecting {
     animation: none;
   }
