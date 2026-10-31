@@ -50,6 +50,12 @@ FOCUS_PROTECTED_PREFIXES: Final = (
     "com.google.process.",
 )
 
+# Pacotes exatos que o prefixo `com.google.android.tv.` não alcança: o app "Google TV" em si e o
+# Google App (busca, assistente de voz e recomendações da tela inicial).
+FOCUS_PROTECTED_PACKAGES: Final = frozenset(
+    {"com.google.android.tv", "com.google.android.googlequicksearchbox"}
+)
+
 Report = Callable[[tuple[str, ...], int], Awaitable[None]]
 
 
@@ -57,6 +63,7 @@ def can_close_in_focus(package: str, shielded: Collection[str] = ()) -> bool:
     """Este app pode ser fechado enquanto outro está em foco? Dúvida protege."""
     return not (
         package in shielded
+        or package in FOCUS_PROTECTED_PACKAGES
         or package.startswith(FOCUS_PROTECTED_PREFIXES)
         or not can_restrict_background(package)
     )
@@ -142,13 +149,20 @@ class FocusBackgroundCloser:
         keyboard = await self._adb.input_method_package()
         if keyboard is not None:
             shielded.add(keyboard)
-        candidates = sorted(
+        eligible = sorted(
             {
                 app.package
                 for app in apps
                 if app.package in running and can_close_in_focus(app.package, shielded)
             }
-        )[:MAX_CLOSED_PER_SWEEP]
+        )
+        candidates = eligible[:MAX_CLOSED_PER_SWEEP]
+        if len(eligible) > len(candidates):
+            _log.info(
+                "Modo Foco: %d apps elegíveis, fechando só os %d primeiros desta varredura",
+                len(eligible),
+                len(candidates),
+            )
         closed: list[str] = []
         completed = True
         for package in candidates:
