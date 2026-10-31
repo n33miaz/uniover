@@ -17,7 +17,8 @@ namespace UniOver.Modules.Tv.Features.Tvs;
 internal sealed record TvSummary(
     Guid Id, string Name, bool IsDefault, string? AgentSlug, string? Kind, bool Online, IReadOnlyList<string> Capabilities,
     bool AllowBackgroundAppClosing = false, bool FocusModeEnabled = false, bool ShortAnimationsEnabled = false,
-    IReadOnlyList<string>? RestrictedBackgroundPackages = null, bool FocusClosesBackground = false);
+    IReadOnlyList<string>? RestrictedBackgroundPackages = null, bool FocusClosesBackground = false,
+    bool PermissionNeeded = false);
 internal sealed record TvListResponse(IReadOnlyList<TvSummary> Items);
 internal sealed record CreateTvRequest(string? AgentSlug, string? Name);
 internal sealed record UpdateTvRequest(string? AgentSlug, string? Name, bool? AllowBackgroundAppClosing = null,
@@ -303,7 +304,8 @@ internal sealed class ManageTvsHandler(
             : capabilities.Contains("tv.kind.samsung", StringComparer.Ordinal) ? "samsung"
             : null;
         return new TvSummary(tv.Id, tv.Name, tv.IsDefault, tv.AgentSlug, kind, info?.Connected == true, capabilities,
-            tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled, tv.BackgroundPackages(), tv.FocusClosesBackground);
+            tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled, tv.BackgroundPackages(), tv.FocusClosesBackground,
+            tv.PermissionNeeded);
     }
 
     private static Dictionary<string, string[]> Validate(string? agentSlug, string? name, bool requireAgent, out string? normalizedName)

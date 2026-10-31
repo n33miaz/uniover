@@ -26,6 +26,7 @@ internal sealed partial class TvAgentMessageHandler(
     TvStatePersister persister,
     ITvStreamPublisher stream,
     ITvCleanupReports cleanupReports,
+    ITvDiscoveryReports discoveryReports,
     ITvShortcutReader shortcutReader,
     IAgentPresenceReader presence,
     TvDbContext db,
@@ -38,12 +39,21 @@ internal sealed partial class TvAgentMessageHandler(
     public IReadOnlyCollection<string> HandledTypes { get; } =
         [
             AgentMessageTypes.TvStateV1, AgentMessageTypes.TvAppsV1, AgentMessageTypes.TvAppsV2, AgentMessageTypes.TvWatchdogV1,
-            AgentMessageTypes.TvCleanupResultV1,
+            AgentMessageTypes.TvCleanupResultV1, AgentMessageTypes.TvPermissionV1, AgentMessageTypes.TvDiscoveryV1,
         ];
 
     public async Task HandleAsync(InboundMessage message, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(message);
+
+        // A lista de TVs achadas é de um computador que o administrador está escolhendo para uma TV nova: ele ainda não
+        // controla TV nenhuma. Quem a espera é uma procura aberta para esse computador (o Devices já provou quem
+        // mandou), então ela não passa pela regra "só o agente que controla a TV".
+        if (string.Equals(message.Type, AgentMessageTypes.TvDiscoveryV1, StringComparison.Ordinal))
+        {
+            HandleDiscovery(message);
+            return;
+        }
 
         var tv = await db.Tvs.SingleOrDefaultAsync(t => t.AgentSlug == message.AgentId, cancellationToken);
         var tvId = tv?.Id ?? Guid.Empty;
@@ -74,7 +84,42 @@ internal sealed partial class TvAgentMessageHandler(
             case AgentMessageTypes.TvCleanupResultV1:
                 await HandleCleanupResultAsync(tvId, message, cancellationToken);
                 break;
+            case AgentMessageTypes.TvPermissionV1:
+                await HandlePermissionAsync(tv, message, cancellationToken);
+                break;
         }
+    }
+
+    /// <summary>
+    /// O agente diz se a TV Samsung ainda reconhece o UniOver. Grava só quando muda (ele repete o aviso a cada conexão).
+    /// Sem linha de TV (instalação antiga, só por <c>AgentId</c>) não há onde guardar e o aviso é ignorado.
+    /// </summary>
+    private async Task HandlePermissionAsync(ConfiguredTv? tv, InboundMessage message, CancellationToken cancellationToken)
+    {
+        if (tv is null)
+        {
+            return;
+        }
+
+        var needed = string.Equals(message.Body.GetProperty("state").GetString(), "needed", StringComparison.Ordinal);
+        if (tv.SetPermissionNeeded(needed, message.Body.GetProperty("at").GetDateTimeOffset()))
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>Entrega a lista de TVs achadas ao pedido que a espera (<c>requestId</c>); o resto é ignorado.</summary>
+    private void HandleDiscovery(InboundMessage message)
+    {
+        var body = message.Body;
+        var tvs = body.GetProperty("tvs").EnumerateArray()
+            .Select(item => new TvNearby(
+                item.GetProperty("id").GetString()!,
+                item.GetProperty("kind").GetString()!,
+                item.GetProperty("name").GetString(),
+                item.GetProperty("controlled").GetBoolean()))
+            .ToList();
+        discoveryReports.Complete(message.AgentId, body.GetProperty("requestId").GetGuid(), tvs);
     }
 
     private async Task HandleCleanupResultAsync(Guid tvId, InboundMessage message, CancellationToken cancellationToken)

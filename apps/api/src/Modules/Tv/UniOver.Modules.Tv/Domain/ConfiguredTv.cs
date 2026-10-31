@@ -50,6 +50,16 @@ public sealed class ConfiguredTv
     /// <summary>Lista fechada de apps escolhidos para a restrição; nunca inclui pacote do sistema por confiança no cliente.</summary>
     public string RestrictedBackgroundPackages { get; private set; } = "[]";
 
+    /// <summary>
+    /// A TV não reconhece mais o UniOver (permissão revogada ou vencida) e o agente parou de tentar, sem pedir de novo em
+    /// silêncio. Quem muda é o agente (<c>tv.permission.v1</c>), nunca uma conta; por isso não mexe em
+    /// <see cref="UpdatedAt"/> nem em <see cref="UpdatedBy"/>. Só a TV Samsung usa; nas demais fica sempre falso.
+    /// </summary>
+    public bool PermissionNeeded { get; private set; }
+
+    /// <summary>Quando o agente avisou a última mudança da permissão (nulo: nunca avisou).</summary>
+    public DateTimeOffset? PermissionChangedAt { get; private set; }
+
     public DateTimeOffset CreatedAt { get; private set; }
 
     public DateTimeOffset UpdatedAt { get; private set; }
@@ -97,6 +107,22 @@ public sealed class ConfiguredTv
         Name = newName;
         UpdatedAt = now;
         UpdatedBy = updatedBy;
+        return true;
+    }
+
+    /// <summary>
+    /// Anota o que o agente disse sobre a permissão da TV. Devolve <c>false</c> (sem mexer em nada, nem na data) quando o
+    /// estado já era esse: o agente repete o aviso a cada conexão e isso não pode virar escrita no banco.
+    /// </summary>
+    public bool SetPermissionNeeded(bool needed, DateTimeOffset at)
+    {
+        if (PermissionNeeded == needed)
+        {
+            return false;
+        }
+
+        PermissionNeeded = needed;
+        PermissionChangedAt = at;
         return true;
     }
 
