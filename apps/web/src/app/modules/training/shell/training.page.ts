@@ -169,7 +169,8 @@ function isWithin(path: string, section: string): boolean {
     }
     /*
      * O que fica abaixo do cabeçalho mantém o respiro lateral e inferior que o <main> dava às outras telas. Em cima a casca
-     * não soma espaço: cada tela já abre com o seu (12 a 16 px), e somar os dois deixava uns 40 px de vão sob o cabeçalho.
+     * não soma espaço: cada tela já abre com o seu (12 px) e o cabeçalho acrescenta uma folga fixa embaixo; somar mais um
+     * respiro aqui deixaria uns 40 px de vão sob o cabeçalho. Tela nova do módulo abre com 12 px, sem margem negativa.
      */
     .content {
       display: flex;

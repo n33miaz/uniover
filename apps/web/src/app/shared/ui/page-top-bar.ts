@@ -48,10 +48,11 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
       grid-template-columns: minmax(var(--side), 1fr) minmax(0, auto) minmax(var(--side), 1fr);
       column-gap: 4px;
       align-items: center;
-      min-height: calc(var(--tap) + var(--space-3) + env(safe-area-inset-top));
-      /* O respiro de cima que o controle da TV também tem: os botões não encostam na borda da tela. */
+      min-height: calc(var(--tap) + var(--space-3) + var(--space-1) + env(safe-area-inset-top));
+      /* O respiro de cima que o controle da TV também tem: os botões não encostam na borda da tela. Embaixo uma folga curta
+         garante que o círculo nunca encoste no primeiro texto da tela (que já abre com os seus 12 px). */
       padding: calc(var(--space-3) + env(safe-area-inset-top))
-        max(var(--gutter), env(safe-area-inset-right)) 0
+        max(var(--gutter), env(safe-area-inset-right)) var(--space-1)
         max(var(--gutter), env(safe-area-inset-left));
       background: transparent;
     }
