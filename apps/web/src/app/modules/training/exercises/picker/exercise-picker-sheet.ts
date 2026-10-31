@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
@@ -20,6 +21,8 @@ import { TrainingRowsSkeleton } from '../../shell/training-rows-skeleton';
 
 /** Quantas linhas a folha mostra de cada vez; a busca estreita o resto. */
 export const PICKER_PAGE_SIZE = 50;
+/** Espera depois da última tecla antes de reler o catálogo: digitar não refaz a leitura do banco a cada letra. */
+export const PICKER_SEARCH_DELAY_MS = 150;
 
 /**
  * Folha "Adicionar exercício": a mesma lista do catálogo, com busca e grupo, para escolher um exercício e levá-lo para
@@ -51,7 +54,7 @@ export const PICKER_PAGE_SIZE = 50;
             placeholder="Buscar exercício"
             i18n-placeholder="@@training.picker.search-placeholder"
             [value]="text()"
-            (input)="text.set($any($event.target).value)"
+            (input)="onSearch($any($event.target).value)"
           />
         </div>
         <app-training-chips
@@ -110,6 +113,8 @@ export class ExercisePickerSheet {
   protected readonly pageSize = PICKER_PAGE_SIZE;
 
   protected readonly text = signal('');
+  /** O texto que a lista de fato usa: acompanha `text` com a espera da digitação. */
+  private readonly searched = signal('');
   protected readonly group = signal('');
   protected readonly limit = signal(PICKER_PAGE_SIZE);
   protected readonly results = signal<readonly LocalExercise[]>([]);
@@ -118,16 +123,24 @@ export class ExercisePickerSheet {
   protected readonly hidden = computed(() => this.results().length - this.shown().length);
 
   private ticket = 0;
+  private queryTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor() {
+    inject(DestroyRef).onDestroy(() => clearTimeout(this.queryTimer));
     effect(() => {
-      const query: CatalogQuery = { text: this.text(), group: this.group() || undefined };
+      const query: CatalogQuery = { text: this.searched(), group: this.group() || undefined };
       this.catalog.revision();
       untracked(() => {
         this.limit.set(PICKER_PAGE_SIZE);
         void this.run(query);
       });
     });
+  }
+
+  protected onSearch(value: string): void {
+    this.text.set(value);
+    clearTimeout(this.queryTimer);
+    this.queryTimer = setTimeout(() => this.searched.set(this.text()), PICKER_SEARCH_DELAY_MS);
   }
 
   protected pick(exercise: LocalExercise): void {
@@ -137,7 +150,12 @@ export class ExercisePickerSheet {
 
   private async run(query: CatalogQuery): Promise<void> {
     const ticket = ++this.ticket;
-    const rows = await this.catalog.search(query);
+    let rows: readonly LocalExercise[] = [];
+    try {
+      rows = await this.catalog.search(query);
+    } catch {
+      // Banco local que não abre: a folha mostra "nenhum achado" em vez de ficar sem resposta.
+    }
     if (ticket !== this.ticket) return;
     this.results.set(rows);
     this.ready.set(true);

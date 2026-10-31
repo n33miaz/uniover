@@ -27,12 +27,14 @@ export class CatalogStore {
 
   // Leituras assíncronas podem terminar fora de ordem; só a do pedido mais recente vale.
   private latest = 0;
+  // O total não depende do filtro: só é recontado quando algo grava no catálogo, não a cada letra da busca.
+  private countedRevision = -1;
 
   constructor() {
     effect(() => {
       const query = this._query();
-      this.repository.revision();
-      untracked(() => void this.reload(query));
+      const revision = this.repository.revision();
+      untracked(() => void this.reload(query, revision));
     });
   }
 
@@ -45,15 +47,25 @@ export class CatalogStore {
     this._query.set({});
   }
 
-  private async reload(query: CatalogQuery): Promise<void> {
+  private async reload(query: CatalogQuery, revision: number): Promise<void> {
     const ticket = ++this.latest;
-    const [results, total] = await Promise.all([
-      this.repository.search(query),
-      this.repository.count(),
-    ]);
-    if (ticket !== this.latest) return;
-    this._results.set(results);
-    this._total.set(total);
+    const recount = revision !== this.countedRevision;
+    try {
+      const [results, total] = await Promise.all([
+        this.repository.search(query),
+        recount ? this.repository.count() : Promise.resolve(this._total()),
+      ]);
+      if (ticket !== this.latest) return;
+      this._results.set(results);
+      this._total.set(total);
+      this.countedRevision = revision;
+    } catch {
+      // Banco local que não abre (modo privado, espaço, versão): a tela sai do esqueleto com a lista vazia, em vez de
+      // ficar esperando para sempre, e a próxima gravação ou troca de filtro tenta de novo.
+      if (ticket !== this.latest) return;
+      this._results.set([]);
+      this._total.set(0);
+    }
     this._ready.set(true);
   }
 }
