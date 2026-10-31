@@ -4,7 +4,7 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from '../../../app.routes';
 import { CreditsPage } from './credits.page';
 
-// Estes dois testes carregam módulos sob demanda (e o segundo, o shell inteiro): com a máquina ocupada pelas outras suítes o
+// Estes testes carregam módulos sob demanda (e o último, o shell inteiro): com a máquina ocupada pelas outras suítes o
 // primeiro carregamento passava dos 5 s do padrão e o teste falhava só às vezes.
 const LAZY_LOAD_TIMEOUT_MS = 20_000;
 
@@ -12,44 +12,42 @@ describe('credits route', () => {
   const shell = routes.find((route) => route.path === '')!;
   const settings = (shell.children ?? []).find((child) => child.path === 'ajustes')!;
   const children = settings.children ?? [];
+  const about = children.find((child) => child.path === 'sobre')!;
+  const sheet = (about.children ?? []).find((child) => child.path === 'creditos')!;
 
-  it('is one of the screens of Configurações, next to the others', () => {
-    expect(children.map((route) => route.path)).toContain('creditos');
+  it('is a child of Sobre, so the sheet opens over that screen', () => {
+    expect(sheet).toBeDefined();
+    expect(about.children).toHaveLength(1);
   });
 
-  it('is inside the shell, behind the same guard, with its own title and the way back to Configurações', () => {
-    expect(shell.canMatch).toBeDefined();
-    const route = children.find((child) => child.path === 'creditos')!;
-    const data = route.data as { title: string; back: { link: string } };
-    expect(data.title).toBe('Créditos');
-    expect(data.back.link).toBe('/ajustes');
+  it('keeps the old address working for the screens of the Treino', () => {
+    const old = children.find((child) => child.path === 'creditos')!;
+    expect(old.redirectTo).toBe('sobre/creditos');
   });
 
-  it('is open to who uses the Treino (the screens of the Treino link to it), behind the module guard', () => {
-    const route = children.find((child) => child.path === 'creditos')!;
-    expect(route.canMatch).toBeDefined();
-    expect(route.canMatch).toHaveLength(1);
+  it('is open to who uses the Treino, behind the module guard', () => {
+    expect(sheet.canMatch).toHaveLength(1);
   });
 
   it(
     'lazy-loads the credits page',
     async () => {
-      const route = children.find((child) => child.path === 'creditos')!;
-      expect(await (route.loadComponent as () => Promise<unknown>)()).toBe(CreditsPage);
+      expect(await (sheet.loadComponent as () => Promise<unknown>)()).toBe(CreditsPage);
     },
     LAZY_LOAD_TIMEOUT_MS,
   );
 
   it(
-    'renders the credits page inside the shell',
+    'renders the credits sheet over Sobre, inside the shell',
     async () => {
       TestBed.configureTestingModule({ providers: [provideRouter(routes)] });
       const harness = await RouterTestingHarness.create();
       await harness.navigateByUrl('/ajustes/creditos');
       const root = harness.routeNativeElement as HTMLElement;
       expect(root.matches('app-shell')).toBe(true);
-      expect(root.querySelector('app-credits-page')).not.toBeNull();
-      expect(root.querySelector('h1')?.textContent).toBe('Créditos');
+      expect(root.querySelector('app-about-page')).not.toBeNull();
+      expect(root.querySelector('app-about-page app-credits-page')).not.toBeNull();
+      expect(root.querySelector('h1')?.textContent).toBe('Sobre');
     },
     LAZY_LOAD_TIMEOUT_MS,
   );
