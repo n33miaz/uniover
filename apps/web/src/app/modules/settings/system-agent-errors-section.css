@@ -1,0 +1,74 @@
+:host {
+  display: block;
+}
+
+.errors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: 1.5rem;
+}
+
+.errors-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* Alinha o topo do ladrilho e do chip com o título, já que o texto da linha pode ter várias linhas. */
+.event {
+  align-items: flex-start;
+}
+
+/* O estado não encolhe nem quebra: o texto da linha é que cede a largura. */
+.chip {
+  white-space: nowrap;
+}
+
+.ui-row-sub {
+  overflow-wrap: anywhere;
+}
+
+/* O texto do agente pode trazer nomes longos de módulo e arquivo sem espaço. */
+.detail {
+  overflow-wrap: anywhere;
+  font-size: var(--fs-small);
+}
+
+.when {
+  color: var(--a-ink3);
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4);
+  border: 2px dashed var(--a-line);
+  border-radius: var(--radius-lg);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.empty p {
+  margin: 0;
+}
+
+.empty app-settings-glyph {
+  --glyph-size: 24px;
+}
+
+.empty.bad {
+  border-color: color-mix(in srgb, var(--a-bad) 45%, var(--a-line));
+  color: var(--a-bad-ink);
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  color: var(--a-ink2);
+}
