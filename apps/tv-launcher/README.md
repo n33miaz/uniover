@@ -15,7 +15,7 @@ agente do PC configura tudo por ADB.
 
 | Escolha | Por quê |
 |---|---|
-| Views do framework, sem Compose nem AndroidX | O runtime do Compose for TV acrescenta uns 10 a 20 MB de memória e vários MB ao APK. A home é uma tela estática: um `TextClock`, uma `HorizontalScrollView` e uns poucos círculos. Sem dependência nenhuma de execução, o APK de release fica em dezenas de KB. |
+| Views do framework, sem Compose nem AndroidX | O runtime do Compose for TV acrescentaria, pela estimativa do plano (não medida aqui), uns 10 a 20 MB de memória e vários MB ao APK. A home é uma tela estática: um `TextClock`, uma `HorizontalScrollView` e uns poucos círculos. Sem dependência nenhuma de execução, o APK de release fica em dezenas de KB. |
 | `minSdk` 28 (Android 9) | Piso combinado para o módulo. O código não usa nada acima da API 26, mas só a partir da 28 o caminho de instalação (`cmd package set-home-activity`) está documentado e foi ensaiado. Descer para 26 é trocar uma linha em `app/build.gradle.kts`, depois de ensaiar numa TV Android 8. |
 | `targetSdk` 35 | Atual. Não muda nada visível: a home é tela cheia na horizontal. |
 | Tamanhos em fração da altura da tela | As TVs variam de densidade e de resolução; a proporção do desenho aprovado é a mesma em qualquer uma. |
