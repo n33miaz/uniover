@@ -159,8 +159,6 @@ export class TvStore {
   private readonly _notConfigured = signal(false);
   /** Um comando ou leitura CONFIRMOU o agente fora do ar antes de qualquer estado chegar (sem estado para marcar). */
   private readonly _agentUnavailable = signal(false);
-  /** Um pedido de acordar está valendo: com a sessão ainda dormindo no estado lido, o controle segue verde até o prazo. */
-  private readonly _waking = signal(false);
   /** A primeira leitura do estado e a da lista de atalhos têm cada uma o seu esqueleto e o seu teto de espera. */
   private readonly stateWatch = new ReadWatch(
     () => this.config.skeletonDelayMs,
@@ -299,7 +297,8 @@ export class TvStore {
     if (known === null) {
       return this.currentAccount() && this.stateWatch.timedOut() ? 'unresponsive' : 'loading';
     }
-    return known === 'hibernating' && this._waking() ? 'hot' : known;
+    // Sessão dormindo é só o controle poupando a TV: o primeiro toque acorda. Pedido do dono: verde, como ligado.
+    return known === 'hibernating' ? 'hot' : known;
   });
 
   /** O PC do agente está confirmado desligado: a API deu o agente como fora da graça e disse desde quando. */
@@ -384,7 +383,6 @@ export class TvStore {
   private hadControl = false;
   private streamSub: Subscription | null = null;
   private wakeTimer: ReturnType<typeof setInterval> | undefined;
-  private wakingTimer: ReturnType<typeof setTimeout> | undefined;
   private noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
   private readonly onVisibility = () => {
@@ -456,7 +454,6 @@ export class TvStore {
     // Ao sair, o erro de uma leitura sem resposta não fica para a próxima vez que a tela abrir.
     this.stateWatch.done();
     this.shortcutsWatch.done();
-    this.clearWaking();
   }
 
   /**
@@ -612,15 +609,11 @@ export class TvStore {
     // Com o agente fora do ar não há o que aquecer (e cada pedido recusado ocuparia a trilha de comandos): a volta
     // dele chega pelo fluxo, e a leitura periódica do estado cobre o fluxo caído.
     if (this._state()?.agentOnline === false) return;
-    this.startWaking();
     try {
       await this.api.wake();
       if (this.live(epoch)) this._notConfigured.set(false);
     } catch (error) {
-      if (this.live(epoch)) {
-        this.clearWaking();
-        this.absorb(describeFailure(error));
-      }
+      if (this.live(epoch)) this.absorb(describeFailure(error));
     }
   }
 
@@ -1009,8 +1002,6 @@ export class TvStore {
 
   private applyState(state: TvState): void {
     this.stateWatch.done();
-    // A sessão deixou de dormir (ou o agente caiu): o pedido de acordar cumpriu o que podia.
-    if (state.connection !== 'hibernating') this.clearWaking();
     if (state.agentOnline) this._agentUnavailable.set(false);
     // O agente voltou: o que a TV oferece (as capacidades) só chega depois do `hello` dele, então a lista se renova.
     const previous = this._state();
@@ -1107,7 +1098,6 @@ export class TvStore {
     this.stateWatch.timedOut.set(false);
     this.shortcutsWatch.stop();
     this.shortcutsWatch.timedOut.set(false);
-    this.clearWaking();
     this._cleaning.set(false);
     this._lastCleanup.set(null);
     this._powerSchedule.set(null);
@@ -1195,7 +1185,6 @@ export class TvStore {
       // O servidor disse "fora do ar" fora da graça de presença (dentro dela a falha é `agent-reconnecting`, que não entra
       // aqui): é certeza, mesmo sem estado lido ainda.
       this._agentUnavailable.set(true);
-      this.clearWaking();
       this._state.update((state) =>
         state ? { ...state, agentOnline: false, connection: 'disconnected', volume: null } : state,
       );
@@ -1221,22 +1210,6 @@ export class TvStore {
       this.disabledReason() ??
       $localize`:@@tv.reason.waking:O servidor está acordando. Tente de novo em instantes.`
     );
-  }
-
-  /** Um pedido de acordar saiu: a sessão dormindo conta como "acordando" (verde) até o prazo ou até o estado novo. */
-  private startWaking(): void {
-    clearTimeout(this.wakingTimer);
-    this._waking.set(true);
-    this.wakingTimer = setTimeout(() => {
-      this.wakingTimer = undefined;
-      this._waking.set(false);
-    }, this.config.wakeGraceMs);
-  }
-
-  private clearWaking(): void {
-    clearTimeout(this.wakingTimer);
-    this.wakingTimer = undefined;
-    this._waking.set(false);
   }
 
   private visible(): boolean {

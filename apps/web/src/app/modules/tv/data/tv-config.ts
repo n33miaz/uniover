@@ -11,11 +11,6 @@ export interface TvConfig {
    * enquanto o servidor acorda (partida a frio), que sozinho levaria a leitura além disso.
    */
   readonly readTimeoutMs: number;
-  /**
-   * Quanto tempo, depois de pedir que o controle acorde, a sessão dormindo conta como "acordando" (verde). Passado o
-   * prazo sem o estado mudar, ela aparece como dormindo de verdade.
-   */
-  readonly wakeGraceMs: number;
   /** Tempo que a sessão com a TV espera sem comandos antes de dormir (só para o aviso na tela). */
   readonly hibernateMinutes: number;
   /** Intervalo do pedido de "aquecer" enquanto a tela está visível. */
@@ -50,7 +45,6 @@ export const TV_CONFIG = new InjectionToken<TvConfig>('TV_CONFIG', {
   factory: () => ({
     skeletonDelayMs: 200,
     readTimeoutMs: 8_000,
-    wakeGraceMs: 8_000,
     hibernateMinutes: 5,
     wakeIntervalMs: 120_000,
     repeatDelayMs: 400,
