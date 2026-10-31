@@ -4,13 +4,17 @@ import { catalog, eventually, setupScreen } from '../../shell/screen-test-kit';
 import { ExercisePickerSheet } from './exercise-picker-sheet';
 
 describe('ExercisePickerSheet', () => {
+  let host: HTMLElement | undefined;
+
   async function open() {
     const kit = await setupScreen();
     await kit.trainingDb.exercises.bulkPut(catalog());
     const fixture = TestBed.createComponent(ExercisePickerSheet);
-    document.body.append(fixture.nativeElement);
-    fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
+    // A folha é um <dialog> nativo: precisa estar no documento. Só este elemento sai no fim (o jsdom é compartilhado).
+    document.body.append(el);
+    host = el;
+    fixture.detectChanges();
     return { fixture, el };
   }
 
@@ -18,7 +22,8 @@ describe('ExercisePickerSheet', () => {
     Array.from(el.querySelectorAll('.list .name')).map((node) => node.textContent?.trim());
 
   afterEach(() => {
-    document.body.replaceChildren();
+    host?.remove();
+    host = undefined;
   });
 
   it('lists the catalog and rereads it once after the typing stops, not on every letter', async () => {
