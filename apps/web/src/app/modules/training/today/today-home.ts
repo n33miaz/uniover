@@ -16,7 +16,10 @@ import { RoutineRepository } from '../data/routines/routine-repository';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { TrainingSync } from '../data/sync/training-sync';
 import { ExerciseThumb } from '../exercises/exercise-thumb';
-import { IllustrationPrefetcher } from '../illustrations/illustration-prefetcher';
+import {
+  IllustrationPrefetcher,
+  illustrationFiles,
+} from '../illustrations/illustration-prefetcher';
 import { programSummary } from '../routines/program-summary';
 import type { RoutineEntry } from '../routines/routine-stats';
 import { type TemplateCreated, TemplatesSheet } from '../routines/templates-sheet';
@@ -77,7 +80,10 @@ export class TodayHome {
   /** O treino abriu (ou já estava aberto): a página mostra o treino ao vivo. */
   readonly started = output<void>();
 
+  /** O conjunto de exercícios cujas figuras já estão todas guardadas no aparelho. */
   private warmedKey = '';
+  /** O conjunto que está sendo aquecido agora: evita duas buscas iguais ao mesmo tempo. */
+  private warmingKey = '';
 
   protected readonly pickerOpen = signal(false);
   /** A lista de exercícios da rotina do cartão: recolhida até a pessoa pedir. */
@@ -189,8 +195,10 @@ export class TodayHome {
       untracked(() => void this.store.loadHome());
     });
     // Com rede, as ilustrações das rotinas ativas vão para o cache: na academia, sem sinal, elas aparecem do mesmo jeito.
+    // A rede voltando também dispara: uma busca que caiu no meio é refeita, em vez de ficar esquecida.
     effect(() => {
       const entries = this.store.entries();
+      this.online();
       untracked(() => void this.warmIllustrations(entries));
     });
   }
@@ -333,10 +341,18 @@ export class TodayHome {
         if (exercise) slugs.push(exercise.slug);
       }
     }
-    // A mesma lista não é buscada de novo a cada gravação: o aquecimento é uma vez por conjunto de exercícios.
-    const key = [...new Set(slugs)].sort().join('|');
-    if (key === this.warmedKey) return;
-    this.warmedKey = key;
-    await this.prefetcher.warm(slugs);
+    // A mesma lista não é buscada de novo a cada gravação: o aquecimento é uma vez por conjunto de exercícios, e só
+    // vale como feito quando todos os arquivos estão guardados. Rede que cai no meio, ou um arquivo recusado, deixa o
+    // conjunto por fazer: a próxima gravação, a volta da rede ou a próxima abertura da tela tenta de novo.
+    const files = illustrationFiles(slugs);
+    const key = [...files].sort().join('|');
+    if (key === this.warmedKey || key === this.warmingKey) return;
+    this.warmingKey = key;
+    try {
+      const stored = await this.prefetcher.warm(slugs);
+      if (stored >= files.length) this.warmedKey = key;
+    } finally {
+      this.warmingKey = '';
+    }
   }
 }
