@@ -28,6 +28,9 @@
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: 0.06em;
+  /* O espaçamento entre letras também fica depois da última e puxaria o desenho meio espaço para a esquerda: o respiro à
+     esquerda devolve o texto ao centro da tela (a caixa já está no centro, com as colunas laterais iguais). */
+  padding-inline-start: 0.06em;
   text-align: center;
   white-space: nowrap;
 }
