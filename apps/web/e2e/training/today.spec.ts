@@ -1010,7 +1010,13 @@ test.describe('treino ao vivo', () => {
     await page.getByRole('button', { name: 'Treino Livre' }).click();
     await skipProgramChoice(page);
     await expect(page.locator('app-workout-day .routine-name')).toHaveText('Treino Livre');
-    await page.getByRole('button', { name: 'Escolher Exercício' }).click();
+    // Sem exercício nenhum, o botão de escolher fica logo abaixo do nome: nunca por baixo do botão fixo de concluir.
+    const choose = page.getByRole('button', { name: 'Escolher Exercício' });
+    await expect(choose).toBeInViewport({ ratio: 1 });
+    const chooseBox = await choose.boundingBox();
+    const dockBox = await page.locator('app-workout-day .dock').boundingBox();
+    expect((chooseBox?.y ?? 0) + (chooseBox?.height ?? 0)).toBeLessThanOrEqual(dockBox?.y ?? 0);
+    await choose.click();
     const chooser = page.getByRole('dialog', { name: 'Adicionar Exercício' });
     await chooser.getByRole('button', { name: /Agachamento livre com barra/ }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
