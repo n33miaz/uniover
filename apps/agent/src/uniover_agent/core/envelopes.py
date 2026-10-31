@@ -9,6 +9,7 @@ from typing import Any
 from uniover_agent.core.domain import TvState
 from uniover_agent.core.envelope_gate import EnvelopeGate
 from uniover_agent.ports import AppIcon, Clock
+from uniover_agent.ports.diagnostics import DiagnosticEvent
 
 INVALID_MESSAGE = "invalid_message"
 
@@ -71,6 +72,24 @@ class EnvelopeFactory:
     def agent_update_status(self, body: dict[str, Any]) -> dict[str, Any]:
         """`agent.update.status.v1`: o estado da auto-atualização, quando a checagem roda."""
         return self._build("agent.update.status.v1", body, None)
+
+    def agent_diagnostics(self, events: Sequence[DiagnosticEvent]) -> dict[str, Any]:
+        """`agent.diagnostics.v1`: um lote de ocorrências do agente (já sem dados pessoais)."""
+        items: list[dict[str, Any]] = []
+        for event in events:
+            item: dict[str, Any] = {
+                "id": event.id,
+                "at": event.at,
+                "kind": event.kind,
+                "severity": event.severity,
+                "detail": event.detail,
+            }
+            if event.component:
+                item["component"] = event.component
+            if event.count > 1:
+                item["count"] = event.count
+            items.append(item)
+        return self._build("agent.diagnostics.v1", {"events": items}, None)
 
     def agent_logs(
         self,
