@@ -160,4 +160,48 @@ test.describe('Início: estado real da casa', () => {
     expect(await openStreams(page)).toBe(1);
     expect(stateReads()).toBeGreaterThan(reads);
   });
+
+  test('o convidado com a TV liberada vê a bolinha do agente DELE', async ({ page }) => {
+    identity.guests.push({
+      id: '00000000-0000-4000-8000-000000000061',
+      displayName: 'Raphael',
+      email: 'raphael@exemplo.com',
+      password: 'senha-do-raphael-123',
+      createdAt: '2026-10-21T15:00:00Z',
+      disabledAt: null,
+      permissions: ['module:tv', 'tv:control', 'module:training'],
+    });
+    identity.role = 'guest';
+    tv.state = { ...HOT_STATE, agentLinked: true };
+    await page.goto('/');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
+    tv.state = { ...AGENT_OFF, agentLinked: true };
+    await emitSse(page, 'tv.state', tv.state);
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente desligado');
+  });
+
+  test('sem agente vinculado à conta não há bolinha', async ({ page }) => {
+    tv.state = { ...AGENT_OFF, agentLinked: false };
+    await openHome(page, 'light');
+    await expect(indicator(page)).toHaveCount(0);
+  });
+
+  test('enquanto a leitura demora a bolinha pulsa suave, e com movimento reduzido fica parada', async ({
+    page,
+  }) => {
+    let release!: () => void;
+    tv.stateGate = new Promise<void>((resolve) => (release = resolve));
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.goto('/');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Conectando ao agente', {
+      timeout: 5000,
+    });
+    const animated = await indicator(page).evaluate((dot) => getComputedStyle(dot).animationName);
+    expect(animated).not.toBe('none');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const still = await indicator(page).evaluate((dot) => getComputedStyle(dot).animationName);
+    expect(still).toBe('none');
+    release();
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
+  });
 });
