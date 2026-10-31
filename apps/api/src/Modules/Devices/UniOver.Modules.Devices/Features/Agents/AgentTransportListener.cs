@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using UniOver.Modules.Devices.Ports;
+using UniOver.SharedKernel.Diagnostics;
 
 namespace UniOver.Modules.Devices.Features.Agents;
 
@@ -63,7 +64,7 @@ internal sealed partial class AgentTransportListener(
         }
         catch (Exception ex)
         {
-            LogSessionFailed(session.AgentId, ex.GetType().Name);
+            LogSessionFailed(session.AgentId, ErrorDetail.Stack(ex));
         }
     }
 
@@ -71,6 +72,6 @@ internal sealed partial class AgentTransportListener(
     [LoggerMessage(Level = LogLevel.Error, Message = "O transporte {Transport} falhou e não aceita mais conexões ({ErrorType}).")]
     private partial void LogTransportFailed(string transport, string errorType);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Sessão do agente {AgentId} terminou com erro ({ErrorType}).")]
-    private partial void LogSessionFailed(string agentId, string errorType);
+    [LoggerMessage(Level = LogLevel.Error, Message = "Sessão do agente {AgentId} terminou com erro ({Error}).")]
+    private partial void LogSessionFailed(string agentId, string error);
 }
