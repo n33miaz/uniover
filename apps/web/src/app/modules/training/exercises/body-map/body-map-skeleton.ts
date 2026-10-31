@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { LoadingFrame } from '../../../../shared/ui/skeleton/loading-frame';
 import { Skeleton } from '../../../../shared/ui/skeleton/skeleton';
 
@@ -8,6 +8,13 @@ import { Skeleton } from '../../../../shared/ui/skeleton/skeleton';
   imports: [LoadingFrame, Skeleton],
   template: `
     <app-loading-frame [label]="label">
+      @if (withHead()) {
+        <!-- O título e o seletor Frente | Costas, quando a tela inteira ainda não existe (o banco abre). -->
+        <div class="sk-head">
+          <span appSkeleton class="sk-title"></span>
+          <span appSkeleton class="sk-faces"></span>
+        </div>
+      }
       <div class="sk-stage ui-card">
         <span appSkeleton class="sk-figure"></span>
         <div class="sk-legend">
@@ -21,6 +28,24 @@ import { Skeleton } from '../../../../shared/ui/skeleton/skeleton';
   styles: `
     :host {
       display: block;
+    }
+    .sk-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      margin-bottom: var(--space-3);
+    }
+    .sk-title {
+      display: block;
+      width: 46%;
+      height: 32px;
+    }
+    .sk-faces {
+      display: block;
+      width: 46%;
+      height: 52px;
+      border-radius: var(--radius);
     }
     .sk-stage {
       display: flex;
@@ -50,5 +75,7 @@ import { Skeleton } from '../../../../shared/ui/skeleton/skeleton';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class BodyMapSkeleton {
+  /** Com o título e o seletor de lado: a tela inteira ainda não existe. */
+  readonly withHead = input(false);
   protected readonly label = $localize`:@@training.map.loading:Carregando o mapa corporal…`;
 }
