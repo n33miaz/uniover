@@ -1,0 +1,6 @@
+{ "v": 1, "id": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8eb1", "type": "agent.diagnostics.v1", "source": "agent:pc-casa", "target": "api",
+  "ts": "2026-10-31T14:00:02Z", "correlationId": null,
+  "body": { "events": [
+    { "id": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8eb2", "at": "2026-10-31T13:41:10Z", "kind": "background.failed", "severity": "error", "component": "tv.session", "detail": "TimeoutError em session.py:watch (linha 551); tarefa reiniciada", "count": 3 },
+    { "id": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8eb3", "at": "2026-10-31T13:55:00Z", "kind": "repair.done", "severity": "info", "detail": "tarefa de inicialização refeita" }
+  ] } }
