@@ -7,6 +7,12 @@ import { LocalExercise, resolveExercise } from './exercise';
 
 export type CatalogSort = 'name' | 'recent';
 
+/**
+ * Linhas por leitura em lote. A tabela é lida em fatias por chave, cada uma numa transação só de leitura e curta: o
+ * aparelho nunca segura uma transação aberta por muito tempo nem lê tudo de uma vez.
+ */
+export const READ_BATCH_SIZE = 500;
+
 /** Filtros combinados (todos juntos, "e"). Campo ausente não filtra. */
 export interface CatalogQuery {
   /** Texto livre: acha pelo nome, sem acento e sem caixa; várias palavras = todas precisam aparecer. */
@@ -37,13 +43,13 @@ export class CatalogRepository {
   readonly revision = this._revision.asReadonly();
 
   async search(query: CatalogQuery = {}): Promise<LocalExercise[]> {
-    const rows = await this.collect(query).toArray();
+    const rows = await this.matching(query);
     return query.sort === 'recent' ? rows.sort(byRecent) : rows.sort(byName);
   }
 
-  /** Quantos passam no filtro. Conta no banco, sem trazer as linhas para a memória (o catálogo inteiro tem centenas). */
-  count(query: CatalogQuery = {}): Promise<number> {
-    return this.collect(query).count();
+  /** Quantos passam no filtro. */
+  async count(query: CatalogQuery = {}): Promise<number> {
+    return (await this.matching(query)).length;
   }
 
   /** O exercício vivo, ou `undefined` se não existe ou foi apagado. */
@@ -94,18 +100,25 @@ export class CatalogRepository {
     this._revision.update((value) => value + 1);
   }
 
-  private collect(query: CatalogQuery) {
+  /**
+   * As linhas vivas que passam no filtro. A leitura é sempre em lote (`getAll`), nunca por cursor: o filtro roda em
+   * memória, depois de a transação do banco já ter fechado. `Collection.filter()` do Dexie lê linha a linha com
+   * `openCursor`, e cada `continue()` é uma ida e volta ao processo do banco. No WebKit do Playwright isso custou ~15 ms
+   * por linha (316 linhas em 4,6 s contra 5 ms no `getAll`), e a lista ficava sem responder enquanto o pull gravava.
+   */
+  private async matching(query: CatalogQuery): Promise<LocalExercise[]> {
     const tokens = searchTokens(query.text ?? '');
     const groupMuscles = query.group ? musclesOfGroup(query.group) : null;
     const groupSet = groupMuscles ? new Set<string>(groupMuscles) : null;
     const table = this.db.exercises;
 
-    // O índice é só atalho: escolhe o filtro mais seletivo disponível e o resto confere em memória.
-    let source: ReturnType<typeof table.toCollection>;
-    if (query.equipment) source = table.where('equipment').equals(query.equipment);
-    else if (query.muscle) source = table.where('primaryMuscles').equals(query.muscle);
-    else if (groupMuscles) source = table.where('primaryMuscles').anyOf(groupMuscles).distinct();
-    else source = table.toCollection();
+    // O índice é só atalho: escolhe o filtro mais seletivo disponível (uma leitura em lote do índice) e o resto confere
+    // em memória. Sem filtro de índice, lê a tabela em fatias por chave.
+    let source: LocalExercise[];
+    if (query.equipment) source = await table.where('equipment').equals(query.equipment).toArray();
+    else if (query.muscle)
+      source = await table.where('primaryMuscles').equals(query.muscle).toArray();
+    else source = await this.readAll();
 
     return source.filter(
       (row) =>
@@ -115,6 +128,23 @@ export class CatalogRepository {
         (!groupSet || row.primaryMuscles.some((muscle) => groupSet.has(muscle))) &&
         matchesTokens(row.nameKey, tokens),
     );
+  }
+
+  /** A tabela inteira em fatias de `READ_BATCH_SIZE` por chave primária, uma transação de leitura por fatia. */
+  private async readAll(): Promise<LocalExercise[]> {
+    const table = this.db.exercises;
+    const all: LocalExercise[] = [];
+    let last: string | null = null;
+    for (;;) {
+      const batch: LocalExercise[] = await (
+        last === null ? table.toCollection() : table.where(':id').above(last)
+      )
+        .limit(READ_BATCH_SIZE)
+        .toArray();
+      all.push(...batch);
+      if (batch.length < READ_BATCH_SIZE) return all;
+      last = batch[batch.length - 1].id;
+    }
   }
 }
 
