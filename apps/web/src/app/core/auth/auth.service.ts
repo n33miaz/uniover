@@ -4,6 +4,7 @@ import { Router, UrlTree } from '@angular/router';
 import { SessionState } from '../session/session-state';
 import {
   ApiProblem,
+  isGuestPaused,
   isPermissionDenied,
   isStepUpRequired,
   networkProblem,
@@ -390,6 +391,7 @@ export class AuthService {
         this.stopTimers();
         this.sessionEpoch++;
         this.session.clear('anonymous');
+        if (isGuestPaused(error)) this.session.markPaused();
         if (wasKnown) this.redirectToLogin();
         return 'unauthenticated';
       }
