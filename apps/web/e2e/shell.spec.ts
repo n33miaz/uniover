@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { Page } from '@playwright/test';
+import { Locator, Page } from '@playwright/test';
 import {
   expect,
   expectNoHorizontalScroll,
@@ -208,6 +208,16 @@ test.describe('início e navegação', () => {
     await screenshot(page, `test-results/sheet-${info.project.name}.png`);
     await expectNoSeriousA11yViolations(page);
 
+    // O título fica no centro real da folha, o "Concluir" não o empurra; e as setas só existem para teclado e leitor de tela.
+    const box = async (locator: Locator) => (await locator.boundingBox())!;
+    const sheetBox = await box(sheet);
+    const titleBox = await box(sheet.getByRole('heading', { name: 'Personalizar' }));
+    expect(
+      Math.abs(titleBox.x + titleBox.width / 2 - (sheetBox.x + sheetBox.width / 2)),
+    ).toBeLessThan(1.5);
+    const moves = await box(sheet.locator('.moves').first());
+    expect(moves.width).toBeLessThanOrEqual(1);
+
     await sheet.getByRole('heading', { name: 'Personalizar' }).click();
     await sheet.click({ position: { x: 1, y: 1 } }); // espaço interno da folha
     await expect(sheet).toBeVisible();
@@ -221,14 +231,16 @@ test.describe('início e navegação', () => {
     await expect(sheet).toBeVisible();
 
     // Esc descarta o que foi feito na folha.
-    await sheet.getByRole('button', { name: 'Descer TV' }).click();
+    await sheet.getByRole('button', { name: 'Descer TV' }).focus();
+    await page.keyboard.press('Enter');
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
     await expect(titles).toHaveText(['TV', 'Treino', ...PLANNED]);
 
     // Concluir guarda a nova ordem.
     await page.getByRole('button', { name: 'Editar' }).click();
-    await sheet.getByRole('button', { name: 'Descer TV' }).click();
+    await sheet.getByRole('button', { name: 'Descer TV' }).focus();
+    await page.keyboard.press('Enter');
     await sheet.getByRole('button', { name: 'Concluir' }).click();
     await expect(sheet).toBeHidden();
     await expect(titles).toHaveText(['Treino', 'TV', ...PLANNED]);
