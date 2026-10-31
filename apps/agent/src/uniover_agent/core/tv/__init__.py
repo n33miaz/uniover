@@ -12,6 +12,7 @@ from uniover_agent.core.tv.cleanup import (
     tv_cleanup_skipped_handler,
 )
 from uniover_agent.core.tv.cleanup_schedule import TvCleanupScheduler
+from uniover_agent.core.tv.focus_closer import FocusBackgroundCloser
 from uniover_agent.core.tv.handlers import (
     DEFAULT_LINK_SCHEMES,
     POWER_OFF_CAPABILITY,
@@ -54,6 +55,7 @@ __all__ = [
     "AppIconPublisher",
     "AppsAnnouncer",
     "CleanupReport",
+    "FocusBackgroundCloser",
     "IconResolver",
     "Located",
     "PackageLauncher",

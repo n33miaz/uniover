@@ -86,11 +86,15 @@ class TvLightSettings:
         foreground: Callable[[], str | None] = lambda: None,
         state_path: Path | None = None,
         wake: Callable[[], Awaitable[None]] | None = None,
+        on_focus: Callable[[str | None], Awaitable[None]] | None = None,
+        on_focus_end: Callable[[], None] | None = None,
     ) -> None:
         self._adb, self._clock, self._keep_hot = adb, clock, keep_hot
         self._foreground = foreground
         self._state_path = state_path
         self._wake_session = wake
+        # Ganchos do fechamento de apps de fundo (opcional): chamados só com o foco ativo.
+        self._on_focus, self._on_focus_end = on_focus, on_focus_end
         self._animations_original, self._background_original = self._read_state()
         self._focus_enabled = False
         self._focus_active = False
@@ -298,6 +302,8 @@ class TvLightSettings:
             self._last_playing = now
             if self._set_focus(True):
                 await self._warm_session()
+            if self._on_focus is not None:
+                await self._on_focus(self._foreground())
         elif self._last_playing is None or now - self._last_playing >= FOCUS_STOP_GRACE_SECONDS:
             self._set_focus(False)
 
@@ -318,6 +324,8 @@ class TvLightSettings:
         self._focus_active = active
         self._keep_hot(active)
         if not active:
+            if self._on_focus_end is not None:
+                self._on_focus_end()
             for callback in self._on_release:
                 callback()
         return True

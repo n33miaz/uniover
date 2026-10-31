@@ -72,3 +72,13 @@ def test_the_new_fields_are_bounded() -> None:
     bad_name = {**NEW_BODY, "restrictedPackages": ["com.exemplo; reboot"]}
     assert not isinstance(gate.check_inbound(envelope(too_many)), Accepted)
     assert not isinstance(gate.check_inbound(envelope(bad_name)), Accepted)
+
+
+def test_the_current_agent_accepts_the_focus_closing_flag_and_refuses_a_non_boolean() -> None:
+    gate = EnvelopeGate("pc-tv")
+    assert isinstance(
+        gate.check_inbound(envelope({**NEW_BODY, "focusClosesBackground": True})), Accepted
+    )
+    assert not isinstance(
+        gate.check_inbound(envelope({**NEW_BODY, "focusClosesBackground": "sim"})), Accepted
+    )

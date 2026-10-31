@@ -9,6 +9,7 @@ from websockets.asyncio.server import ServerConnection
 from uniover_agent.adapters.fakes import FakeSecretStore, FakeTvAdb, FakeTvRemote
 from uniover_agent.config import ConfigError, Settings, require_cleanup_keep
 from uniover_agent.core import Command
+from uniover_agent.core.domain import TvState
 from uniover_agent.main import EXIT_CREDENTIAL_REJECTED, run
 from uniover_agent.ports import LaunchableApp
 
@@ -237,3 +238,40 @@ async def test_the_light_settings_from_the_config_are_applied_only_to_the_chosen
     )
     assert adb.global_values["window_animation_scale"] == "1.25"
     assert adb.background_modes["com.spotify.tv.android"] is None
+
+
+@pytest.mark.parametrize(
+    ("focus_enabled", "closes", "expected"),
+    [
+        (True, True, ["force-stop:com.cnvs.apptv", "force-stop:com.spotify.tv.android"]),
+        (True, None, []),
+        (True, False, []),
+        (False, True, []),
+    ],
+)
+async def test_focus_mode_closes_background_apps_only_when_the_tv_asked_for_both(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    focus_enabled: bool,
+    closes: bool | None,
+    expected: list[str],
+) -> None:
+    adb = running_tv()
+    adb.media_playing_value = True
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+    enable_adb(monkeypatch, tmp_path, adb)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None and setup.light_settings is not None
+    body = {**CONFIG_ALLOWING, "closeBackgroundApps": False, "focusEnabled": focus_enabled}
+    if closes is not None:
+        body["focusClosesBackground"] = closes
+    await setup.handlers["tv.cleanup.config.v1"](Command(CONFIG_ID, "tv.cleanup.config.v1", body))
+
+    # O app da frente vem da sessão da TV: tanto o foco quanto a revalidação do fechador leem dela.
+    monkeypatch.setattr(
+        setup.manager, "snapshot", lambda: TvState("on", None, "com.netflix.ninja", "hot")
+    )
+    setup.light_settings._foreground = lambda: "com.netflix.ninja"
+    await setup.light_settings._check_focus()
+
+    assert [s for s in adb.cleanup_log if s.startswith("force-stop")] == expected
