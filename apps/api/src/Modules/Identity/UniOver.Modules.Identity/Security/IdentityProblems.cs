@@ -152,7 +152,7 @@ internal static class IdentityProblems
             PermissionRules.ErrorRequired => "Informe a lista de permissões.",
             PermissionRules.ErrorTooMany => "Há permissões demais na lista.",
             PermissionRules.ErrorUnknown => "A lista tem uma permissão que não existe.",
-            PermissionRules.ErrorNoModule => "Escolha ao menos um módulo (TV ou Treino) para dar acesso.",
+            PermissionRules.ErrorNoModule => "Escolha ao menos um módulo (TV, Treino ou Controle do PC) para dar acesso.",
             PermissionRules.ErrorMissingModule => "Uma permissão da TV precisa do módulo da TV na lista.",
             _ => "A lista de permissões é inválida.",
         }).Distinct().ToArray();

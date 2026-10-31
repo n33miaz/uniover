@@ -10,8 +10,8 @@ public class AccessPermissionsTests
     public void TheCatalogIsClosedAndStable_TheseExactIdentifiersAreStoredInTheDatabase()
     {
         AccessPermissions.All.Should().Equal(
-            "module:tv", "tv:control", "tv:power", "tv:launch", "tv:edit-shortcuts", "tv:history", "module:training");
-        AccessPermissions.Modules.Should().Equal("module:tv", "module:training");
+            "module:tv", "tv:control", "tv:power", "tv:launch", "tv:edit-shortcuts", "tv:history", "module:training", "module:pc");
+        AccessPermissions.Modules.Should().Equal("module:tv", "module:training", "module:pc");
         AccessPermissions.All.Should().OnlyHaveUniqueItems();
     }
 
