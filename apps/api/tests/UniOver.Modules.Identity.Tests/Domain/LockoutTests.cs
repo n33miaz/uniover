@@ -33,46 +33,13 @@ public class LockoutTests
         Policy.MaxDelay.Should().Be(TimeSpan.FromMinutes(15));
     }
 
-    [Fact]
-    public void RegisterFailure_BelowTheThreshold_DoesNotLock()
-    {
-        var user = NewUser();
-
-        for (var i = 0; i < 4; i++)
-        {
-            user.RegisterFailure(Now, Policy);
-        }
-
-        user.IsLockedOut(Now).Should().BeFalse();
-        user.FailedLoginCount.Should().Be(4);
-        user.LastFailedAt.Should().Be(Now);
-    }
+    // A contagem da falha e o bloqueio dela (limiar, dobra, teto) são provados em IntegrationTests (FailedLoginCounterTests),
+    // contra o banco, porque o ponto é justamente a atomicidade dele; aqui fica a política pura (DelayFor, acima).
 
     [Fact]
-    public void RegisterFailure_AtTheThreshold_LocksForOneMinute_AndThenGrows()
+    public void RegisterSuccess_OnACleanAccount_LeavesItUnlocked()
     {
         var user = NewUser();
-        for (var i = 0; i < 5; i++)
-        {
-            user.RegisterFailure(Now, Policy);
-        }
-
-        user.IsLockedOut(Now).Should().BeTrue();
-        user.RemainingLockout(Now).Should().Be(TimeSpan.FromMinutes(1));
-        user.IsLockedOut(Now.AddSeconds(60)).Should().BeFalse("o bloqueio acaba no instante exato");
-
-        user.RegisterFailure(Now.AddMinutes(1), Policy);
-        user.RemainingLockout(Now.AddMinutes(1)).Should().Be(TimeSpan.FromMinutes(2));
-    }
-
-    [Fact]
-    public void RegisterSuccess_ClearsTheCounterAndTheLock()
-    {
-        var user = NewUser();
-        for (var i = 0; i < 6; i++)
-        {
-            user.RegisterFailure(Now, Policy);
-        }
 
         user.RegisterSuccess();
 

@@ -31,6 +31,7 @@ internal sealed class LoginHandler(
     PasswordService passwords,
     AccessTokenIssuer tokens,
     LoginAuditWriter audit,
+    FailedLoginCounter failures,
     TimeProvider time,
     IOptions<IdentityModuleOptions> options)
 {
@@ -60,7 +61,11 @@ internal sealed class LoginHandler(
         var check = passwords.Verify(user, command.Password);
         if (user is null || check == PasswordCheck.Failed)
         {
-            user?.RegisterFailure(now, settings.Lockout);
+            if (user is not null)
+            {
+                await failures.RegisterAsync(user.Id, now, settings.Lockout, cancellationToken);
+            }
+
             audit.Add(null, AuditEvents.LoginFailed, command.Client, user is null ? null : AuditAboutAccount.Detail(user.Id));
             await db.SaveChangesAsync(cancellationToken);
             return new LoginResult(LoginStatus.InvalidCredentials);
