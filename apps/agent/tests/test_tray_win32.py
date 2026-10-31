@@ -81,3 +81,28 @@ def test_without_an_ico_file_the_icon_falls_back_to_pystray() -> None:
 
     assert icon._icon_handle
     icon._release_icon()
+
+
+@windows_only
+def test_the_icon_id_sent_to_the_shell_is_fixed_and_the_structure_is_complete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """O `_message` trocado monta o pedido do pystray só com `hID` fixo (sem tocar no Shell)."""
+    from pystray._util import win32  # type: ignore[import-untyped]  # noqa: PLC0415
+
+    sent: list[tuple[int, object]] = []
+    monkeypatch.setattr(win32, "Shell_NotifyIcon", lambda code, data: sent.append((code, data)))
+    first = SharpIcon("um", Image.new("RGBA", (16, 16)))
+    second = SharpIcon("dois", Image.new("RGBA", (16, 16)))
+    for icon in (first, second):
+        icon._hwnd = 4242
+        icon._message(win32.NIM_MODIFY, win32.NIF_TIP, szTip="UniOver: conectado")
+
+    assert [code for code, _ in sent] == [win32.NIM_MODIFY, win32.NIM_MODIFY]
+    ids = {getattr(data, "hID") for _, data in sent}  # noqa: B009 - campos da estrutura do Windows
+    assert ids == {1}, "o id não pode mudar entre objetos nem entre execuções"
+    data = sent[0][1]
+    assert data.cbSize == ctypes.sizeof(win32.NOTIFYICONDATAW)  # type: ignore[attr-defined]
+    assert data.hWnd == 4242  # type: ignore[attr-defined]
+    assert data.uFlags == win32.NIF_TIP  # type: ignore[attr-defined]
+    assert data.szTip == "UniOver: conectado"  # type: ignore[attr-defined]
