@@ -307,6 +307,16 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                         .HasColumnType("character varying(60)")
                         .HasColumnName("name");
 
+                    b.Property<DateTimeOffset?>("PermissionChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("permission_changed_at");
+
+                    b.Property<bool>("PermissionNeeded")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("permission_needed");
+
                     b.Property<string>("RestrictedBackgroundPackages")
                         .IsRequired()
                         .ValueGeneratedOnAdd()

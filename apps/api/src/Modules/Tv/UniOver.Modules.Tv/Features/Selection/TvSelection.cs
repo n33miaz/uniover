@@ -151,9 +151,12 @@ internal static class TvSelectionEndpointFilter
     public static async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var path = context.HttpContext.Request.Path.Value;
+        // A lista de permissões pendentes é da conta (todas as TVs dela de uma vez) e não de uma TV escolhida; o pedido
+        // (<c>/permission/request</c>) passa pelo filtro e só alcança uma TV que a conta vê.
         if (path is not null && (path.EndsWith("/info", StringComparison.Ordinal)
             || path.StartsWith("/api/v1/tv/config", StringComparison.Ordinal)
-            || path.StartsWith("/api/v1/tv/tvs", StringComparison.Ordinal)))
+            || path.StartsWith("/api/v1/tv/tvs", StringComparison.Ordinal)
+            || string.Equals(path.TrimEnd('/'), "/api/v1/tv/permission", StringComparison.Ordinal)))
         {
             return await next(context);
         }

@@ -24,6 +24,8 @@ using UniOver.Modules.Tv.Features.GetState;
 using UniOver.Modules.Tv.Features.LaunchShortcut;
 using UniOver.Modules.Tv.Features.ListShortcuts;
 using UniOver.Modules.Tv.Features.Layout;
+using UniOver.Modules.Tv.Features.Nearby;
+using UniOver.Modules.Tv.Features.Permission;
 using UniOver.Modules.Tv.Features.PowerOff;
 using UniOver.Modules.Tv.Features.PowerSchedule;
 using UniOver.Modules.Tv.Features.RecentCommands;
@@ -88,6 +90,7 @@ public static class TvModule
         services.AddSingleton<ITvCommandSender, DevicesGatewayCommandSender>();
         services.AddSingleton<ITvCleanupSettingsPublisher, CleanupSettingsPublisher>();
         services.AddSingleton<ITvCleanupReports, InMemoryTvCleanupReports>();
+        services.AddSingleton<ITvDiscoveryReports, InMemoryTvDiscoveryReports>();
         services.AddSingleton<TvStatePersister>();
         services.AddScoped<TvStateProvider>();
         services.AddSingleton<TvStreamPublisher>();
@@ -133,6 +136,8 @@ public static class TvModule
         services.AddScoped<GetConfigHandler>();
         services.AddScoped<BindAgentHandler>();
         services.AddScoped<ManageTvsHandler>();
+        services.AddScoped<PermissionHandler>();
+        services.AddScoped<NearbyTvsHandler>();
         services.AddScoped<IPairedTvRegistrar, PairedTvRegistrar>();
         return services;
     }
@@ -163,6 +168,8 @@ public static class TvModule
         group.MapGetConfig();
         group.MapBindAgent();
         group.MapTvs();
+        group.MapPermission();
+        group.MapNearbyTvs();
         return endpoints;
     }
 }
