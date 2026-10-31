@@ -2,7 +2,15 @@
 # Quem o abre e o launcher.vbs (WScript, sem console), que cria este PowerShell ja oculto. Os filhos abaixo sao chamados
 # direto, sem Start-Process: herdam o console oculto em vez de criar um novo, entao nada pisca na tela.
 $ErrorActionPreference = 'Continue'
-$base = Join-Path $env:LOCALAPPDATA 'UniOver'
+# A pasta fixa (onde este lancador e o launcher.vbs ficam, e onde a tarefa agendada os procura) guarda o ponteiro
+# location.txt da pasta que a pessoa escolheu na instalacao. Sem ponteiro valido, os dados ficam na pasta fixa.
+# O ponteiro e lido como UTF-8 (o caminho pode ter acento); nunca vai para o .vbs, que le em ANSI.
+$anchor = Join-Path $env:LOCALAPPDATA 'UniOver'
+$base = $anchor
+try {
+    $chosen = ([System.IO.File]::ReadAllText((Join-Path $anchor 'location.txt'), [System.Text.Encoding]::UTF8) -split "`n")[0].Trim()
+    if ($chosen -and [System.IO.Path]::IsPathRooted($chosen) -and (Test-Path -LiteralPath $chosen -PathType Container)) { $base = $chosen }
+} catch { }
 $current = Join-Path $base 'app\tools\run-agent.ps1'
 $legacy = Join-Path $base 'agent-src\tools\run-agent.ps1'
 $fallback = Join-Path $base 'run-agent.fallback.ps1'
@@ -20,7 +28,7 @@ if (-not $created) { exit 0 }
 # (teste, outra instalacao) o nome antigo nao vale e nao se disputa.
 $realBase = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'UniOver'
 $legacyMutex = $null
-if ($base -ieq $realBase) {
+if ($anchor -ieq $realBase) {
     $legacyCreated = $false
     $legacyMutex = New-Object System.Threading.Mutex($true, 'Local\UniOverLauncher', [ref]$legacyCreated)
     if (-not $legacyCreated) { exit 0 }
@@ -65,13 +73,29 @@ function Test-AppFolder([string]$Folder, [bool]$NeedsVersion) {
     return $true
 }
 
-function Write-LauncherLog([string]$Message) {
-    # Uma linha no registro do agente, no formato dele (o agente ainda nao subiu quando isto roda).
+function Write-LauncherLog([string]$Message, [string]$Level = 'WARNING') {
+    # Uma linha em logs\supervisor.log (o mesmo do supervisor, no formato do registro do agente). Nao vai para o
+    # agent.log: o rodizio dele e do Python, e dois processos no mesmo arquivo perdem linhas.
     try {
         $logs = Join-Path $base 'logs'
         New-Item -ItemType Directory -Path $logs -Force | Out-Null
+        $file = Join-Path $logs 'supervisor.log'
+        if ((Test-Path -LiteralPath $file) -and ((Get-Item -LiteralPath $file).Length -gt 524288)) {
+            Move-Item -LiteralPath $file -Destination ($file + '.1') -Force
+        }
         $stamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture)
-        [System.IO.File]::AppendAllText((Join-Path $logs 'agent.log'), ($stamp + ' WARNING launcher: ' + $Message + "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+        [System.IO.File]::AppendAllText($file, ($stamp + ' ' + $Level + ' launcher: ' + $Message + "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+    } catch { }
+}
+
+function Add-LauncherDiagnostic([string]$Kind, [string]$Severity, [string]$Detail) {
+    # Uma linha na fila de diagnostico que o agente envia a API quando conecta (so ASCII, sem caminhos).
+    try {
+        Add-Type -AssemblyName System.Web.Extensions
+        $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+        $entry = @{ id = ([guid]::NewGuid().ToString()); at = ((Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", [System.Globalization.CultureInfo]::InvariantCulture)); kind = $Kind; severity = $Severity; component = 'launcher'; detail = $Detail }
+        New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+        [System.IO.File]::AppendAllText((Join-Path $runtimeDir 'diagnostics.jsonl'), ($serializer.Serialize($entry) + "`n"), (New-Object System.Text.UTF8Encoding($false)))
     } catch { }
 }
 
@@ -149,6 +173,7 @@ function Restore-AppFolder {
             }
             Set-RecoveryState @{ outcome = 'updated'; checkedAt = ((Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", [System.Globalization.CultureInfo]::InvariantCulture)); reason = $null; rolledBack = $null; blockedSha = $null }
             Write-LauncherLog ('a pasta app nao existia (queda no meio da troca da atualizacao); promovi app.new, versao ' + $sha.Substring(0, 12))
+            Add-LauncherDiagnostic 'installation.restored' 'warn' 'a pasta do agente nao existia (queda no meio da atualizacao); a versao nova foi promovida'
         }
         else {
             Remove-Item -LiteralPath $trial -Force -ErrorAction SilentlyContinue
@@ -156,6 +181,7 @@ function Restore-AppFolder {
             if ($badSha) { $changes['blockedSha'] = $badSha }
             Set-RecoveryState $changes
             Write-LauncherLog 'a pasta app estava ausente ou incompleta; restaurei app.previous'
+            Add-LauncherDiagnostic 'installation.restored' 'warn' 'a pasta do agente estava ausente ou incompleta; a versao anterior foi restaurada'
         }
         $script:recoveryNoted = $false
     } catch {
@@ -169,7 +195,8 @@ while ($true) {
         $started = Get-Date
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $current
         $code = $LASTEXITCODE
-        if ($code -eq 42) { continue }
+        if ($code -eq 42) { Write-LauncherLog 'o supervisor pediu para reiniciar (versao nova ou volta atras)' 'INFO'; continue }
+        Write-LauncherLog ('o supervisor terminou (codigo ' + $code + ') depois de ' + [int]((Get-Date) - $started).TotalSeconds + ' s')
         if (((Get-Date) - $started).TotalSeconds -ge 30) { Start-Sleep -Seconds 5; continue }
     }
     # Durante a primeira migracao, a tarefa ja aponta para este lancador antes de `agent-src`
