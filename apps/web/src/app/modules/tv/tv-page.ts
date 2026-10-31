@@ -13,7 +13,6 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ControlPage } from './pages/control.page';
 import { ViewOnlyPage } from './pages/view-only.page';
 import { TV_PANEL_PARAM, TvPanelName, panelFromParam } from './data/tv-panels';
-import { GearIcon } from '../../core/layout/gear-icon';
 import { SessionState } from '../../core/session/session-state';
 import { TvAccess } from './data/tv-access';
 import { TvPrefs } from './data/tv-prefs';
@@ -58,7 +57,6 @@ const TITLE_MEDIUM_MAX = 12;
   selector: 'app-tv-page',
   imports: [
     RouterLink,
-    GearIcon,
     ControlPage,
     ViewOnlyPage,
     StatusIndicator,

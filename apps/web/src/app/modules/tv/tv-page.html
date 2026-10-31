@@ -29,16 +29,6 @@
           <path [attr.d]="'M11 18l-6-6 6-6'" />
         </svg>
       </a>
-      @if (isGuest()) {
-        <a
-          routerLink="/ajustes"
-          class="circle settings"
-          aria-label="Configurações"
-          i18n-aria-label="@@tv.header.settings"
-        >
-          <app-gear-icon />
-        </a>
-      }
       @if (hasMenu()) {
         <button
           #menuButton

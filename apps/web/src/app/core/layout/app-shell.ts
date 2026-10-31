@@ -16,7 +16,6 @@ import { InstallHint } from '../pwa/install-hint';
 import { SessionState } from '../session/session-state';
 import { PageTopBar } from '../../shared/ui/page-top-bar';
 import { TabBar } from '../../shared/ui/tab-bar/tab-bar';
-import { GearIcon } from './gear-icon';
 import { ShellBack, collectShellData } from './route-data';
 
 /** Para onde a seta leva por padrão: toda conta volta ao Início. */
@@ -30,27 +29,15 @@ const HOME_BACK: ShellBack = {
  * título, e a barra de abas embaixo. Quem decide é o `data` da rota (`title`, `tabs` e `back`). Hospeda também a
  * folha do atalho na tela de início (`app-install-hint`), que vale para dono e convidado.
  *
- * Toda conta tem a seta de volta ao Início. A pessoa convidada ganha, no fim do cabeçalho, o botão de configurações,
- * menos dentro de Ajustes, onde ele não levaria a lugar nenhum.
+ * Toda conta tem a seta de volta ao Início. O botão de configurações existe só no topo da Início (dono e convidado):
+ * nenhum módulo tem atalho para Ajustes.
  */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, TabBar, InstallHint, GearIcon, PageTopBar],
+  imports: [RouterOutlet, RouterLink, TabBar, InstallHint, PageTopBar],
   template: `
     @if (data().shellStyle !== 'training' && data().title; as title) {
-      <app-page-top-bar [title]="title" [backLabel]="lead().label" (back)="goBack()">
-        @if (showSettings()) {
-          <a
-            pageTopBarActions
-            routerLink="/ajustes"
-            class="settings ui-tap"
-            aria-label="Configurações"
-            i18n-aria-label="@@shell.settings-label"
-          >
-            <app-gear-icon />
-          </a>
-        }
-      </app-page-top-bar>
+      <app-page-top-bar [title]="title" [backLabel]="lead().label" (back)="goBack()" />
     }
     <main
       [class.no-header]="!data().title"
@@ -74,23 +61,6 @@ const HOME_BACK: ShellBack = {
     /* Respiro em cima, como o da Início e o do controle da TV (o main dá o mesmo à margem de baixo). */
     app-page-top-bar {
       padding-top: var(--gutter);
-    }
-    /* A engrenagem gira um pouco, no lugar do deslize da seta. */
-    .settings app-gear-icon {
-      transition: rotate var(--dur-slow) var(--ease-out);
-    }
-    @media (hover: hover) {
-      .settings:hover app-gear-icon {
-        rotate: 45deg;
-      }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .settings app-gear-icon {
-        transition: none;
-      }
-      .settings:hover app-gear-icon {
-        rotate: none;
-      }
     }
     main {
       flex: 1 1 auto;
@@ -118,8 +88,6 @@ export class AppShell {
   private readonly session = inject(SessionState);
   private readonly injector = inject(Injector);
 
-  protected readonly isGuest = this.session.isGuest;
-
   protected readonly data = toSignal(
     this.router.events.pipe(
       filter((event) => event instanceof NavigationEnd),
@@ -133,12 +101,6 @@ export class AppShell {
 
   /** A seta: para o destino da rota (dentro de Ajustes, a lista) ou, no resto, o Início. */
   protected readonly lead = computed<ShellBack>(() => this.data().back ?? HOME_BACK);
-
-  /** Só a pessoa convidada, fora de Ajustes: o dono chega às configurações pela Início. */
-  protected readonly showSettings = computed(() => {
-    const data = this.data();
-    return this.isGuest() && !data.settings && !data.back;
-  });
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
