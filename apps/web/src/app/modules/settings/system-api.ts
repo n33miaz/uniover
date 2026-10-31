@@ -86,6 +86,26 @@ export interface HealthAgent {
   readonly lastSeenAt: string | null;
 }
 
+/**
+ * Um evento interno que esgotou as tentativas de entrega e saiu da fila (dead letter). Sem o conteúdo: `module` é quem o
+ * gerou, `lastError` só o tipo da falha. Local enquanto os tipos HTTP gerados não incluem esta rota.
+ */
+export interface DeadLetterEntry {
+  readonly module: string;
+  readonly id: string;
+  readonly type: string;
+  readonly failedAt: string;
+  readonly attempts: number;
+  readonly lastError: string | null;
+}
+
+/** Os eventos mortos de todos os módulos: o total real, os mais recentes e os módulos que não puderam ser lidos. */
+export interface DeadLetterReport {
+  readonly total: number;
+  readonly items: readonly DeadLetterEntry[];
+  readonly unavailableModules: readonly string[];
+}
+
 /** Identificação pública da versão da API em execução. */
 export interface DeploymentVersion {
   readonly commit: string | null;
@@ -150,6 +170,18 @@ export class SystemApi {
       connected,
       lastSeenAt: lastSeenAt ?? null,
     }));
+  }
+
+  /** Os eventos que viraram dead letter (só o administrador). */
+  async deadLetters(): Promise<DeadLetterReport> {
+    const dto = await firstValueFrom(
+      this.http.get<Partial<DeadLetterReport>>(`${APP_CONFIG.apiBase}/v1/system/dead-letters`),
+    );
+    return {
+      total: typeof dto?.total === 'number' ? dto.total : 0,
+      items: Array.isArray(dto?.items) ? dto.items : [],
+      unavailableModules: Array.isArray(dto?.unavailableModules) ? dto.unavailableModules : [],
+    };
   }
 
   /** O endpoint de saúde é público e não lê dados da conta. */
