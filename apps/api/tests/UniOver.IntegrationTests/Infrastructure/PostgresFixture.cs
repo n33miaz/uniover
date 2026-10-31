@@ -24,6 +24,9 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:18")
         .WithCommand("-c", $"max_connections={MaxConnections}")
+        // O /dev/shm padrão do container (64 MB) acaba quando consultas paralelas simultâneas pedem memória compartilhada
+        // (53100 "could not resize shared memory segment"): os testes de concorrência derrubavam as classes seguintes.
+        .WithCreateParameterModifier(parameters => parameters.HostConfig!.ShmSize = 512L * 1024 * 1024)
         .Build();
 
     // Senhas descartáveis do container de teste, geradas a cada execução.
