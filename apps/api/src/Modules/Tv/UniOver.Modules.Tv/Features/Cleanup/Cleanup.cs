@@ -90,6 +90,10 @@ internal sealed class CleanupHandler(
 internal static class CleanupEndpoint
 {
     public const string BusyType = "cleanup-in-progress";
+
+    /// <summary>Gatilho dos relatórios do fechamento de apps do Modo Foco (o agente envia este texto).</summary>
+    public const string FocusTrigger = "focus";
+
     public const string ReportMissingCode = "cleanup_report_missing";
 
     public static void MapCleanup(this IEndpointRouteBuilder group)
@@ -123,7 +127,7 @@ internal static class CleanupEndpoint
     private static async Task<IResult> LatestAsync(ITvCurrentSelection selection, TvDbContext db, CancellationToken cancellationToken)
     {
         var tvId = selection.Current.Id;
-        var latest = await db.CleanupReports.AsNoTracking().Where(report => report.TvId == tvId)
+        var latest = await LatestOf(db.CleanupReports.AsNoTracking(), tvId)
             .OrderByDescending(report => report.StartedAt).FirstOrDefaultAsync(cancellationToken);
         if (latest is null)
         {
@@ -135,6 +139,13 @@ internal static class CleanupEndpoint
             latest.Kind, latest.Trigger, latest.StartedAt, latest.DurationMs, latest.MemoryBeforeMb,
             latest.MemoryAfterMb, freed, latest.ClosedApps, latest.Result, latest.Reason));
     }
+
+    /// <summary>
+    /// O resumo da "última limpeza" fala de limpezas de verdade. O que o Modo Foco fechou (<c>trigger=focus</c>) é um
+    /// relatório à parte: entra na lista de relatórios, mas não pode tomar o lugar da última limpeza no resumo.
+    /// </summary>
+    internal static IQueryable<CleanupReportEntry> LatestOf(IQueryable<CleanupReportEntry> reports, Guid tvId) =>
+        reports.Where(report => report.TvId == tvId && report.Trigger != CleanupEndpoint.FocusTrigger);
 
     /// <summary>Separado do HTTP para ser testado sem subir o servidor.</summary>
     internal static IResult ToResult(CleanupResult result)
