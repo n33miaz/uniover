@@ -216,7 +216,9 @@ describe('RoutineEditorPage', () => {
       const { fixture, el, routineId } = await open('/treino/rotinas/:id');
       await loaded(fixture, el);
       setName(el, '   ');
-      button(el, 'Salvar Rotina').click();
+      fixture.detectChanges();
+      // Desligado, mas o aviso já diz o que falta.
+      expect(button(el, 'Salvar Rotina').disabled).toBe(true);
       await eventually(fixture, () => expect(text(el)).toContain('Dê um nome à rotina.'));
       expect(el.querySelector('#routine-name')?.getAttribute('aria-invalid')).toBe('true');
       expect((await TestBed.inject(RoutineRepository).get(routineId))?.name).toBe('Treino A');
@@ -229,7 +231,7 @@ describe('RoutineEditorPage', () => {
       fixture.detectChanges();
       for (let n = 0; n < 6; n++) byLabel(el, 'Aumentar repetições mínimas').click();
       fixture.detectChanges();
-      button(el, 'Salvar Rotina').click();
+      expect(button(el, 'Salvar Rotina').disabled).toBe(true);
       await eventually(fixture, () =>
         expect(text(el)).toContain('A repetição mínima não pode passar da máxima.'),
       );
@@ -238,13 +240,40 @@ describe('RoutineEditorPage', () => {
       expect(stored.items[1].repMin).toBe(8);
     });
 
-    it('asks for at least one exercise', async () => {
+    it('keeps Save off while nothing changed, and does not scold an untouched routine', async () => {
+      const { fixture, el } = await open('/treino/rotinas/:id');
+      await loaded(fixture, el);
+      expect(button(el, 'Salvar Rotina').disabled).toBe(true);
+      expect(text(el)).not.toContain('Dê um nome à rotina.');
+      setName(el, 'Treino A · Pernas');
+      fixture.detectChanges();
+      expect(button(el, 'Salvar Rotina').disabled).toBe(false);
+      // Voltar ao nome de partida desfaz a mudança: nada a salvar.
+      setName(el, 'Treino A');
+      fixture.detectChanges();
+      expect(button(el, 'Salvar Rotina').disabled).toBe(true);
+    });
+
+    it('keeps Save off and asks for at least one exercise', async () => {
       const { fixture, el } = await open('/treino/rotinas/nova', false);
       await eventually(fixture, () => expect(el.querySelector('form')).not.toBeNull());
-      button(el, 'Salvar Rotina').click();
-      await eventually(fixture, () =>
-        expect(text(el)).toContain('Adicione pelo menos um exercício.'),
-      );
+      expect(button(el, 'Salvar Rotina').disabled).toBe(true);
+      setName(el, 'Só o core');
+      fixture.detectChanges();
+      expect(text(el)).toContain('Adicione pelo menos um exercício.');
+      expect(button(el, 'Salvar Rotina').disabled).toBe(true);
+    });
+
+    it('keeps Save in the fixed bar at the bottom, where the notices also live', async () => {
+      const { fixture, el } = await open('/treino/rotinas/:id');
+      await loaded(fixture, el);
+      const bar = el.querySelector('.ui-action-bar')!;
+      expect(bar.contains(button(el, 'Salvar Rotina'))).toBe(true);
+      expect(bar.contains(button(el, 'Cancelar'))).toBe(true);
+      byLabel(el, 'Subir Agachamento livre').click();
+      button(el, 'Cancelar').click();
+      fixture.detectChanges();
+      expect(bar.textContent).toContain('Sair sem salvar?');
     });
   });
 
@@ -269,6 +298,7 @@ describe('RoutineEditorPage', () => {
       const { fixture, el, router } = await open('/treino/rotinas/nova?exercicio=prancha');
       await eventually(fixture, () => expect(names(el)).toHaveLength(1));
       setName(el, 'Só o core');
+      fixture.detectChanges();
       button(el, 'Salvar Rotina').click();
       await vi.waitFor(() => expect(router.url).toBe('/treino/rotinas'), { timeout: 3000 });
       const all = await TestBed.inject(RoutineRepository).listAll();

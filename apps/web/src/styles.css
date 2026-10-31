@@ -541,6 +541,41 @@ button.ui-row:active {
   }
 }
 
+/*
+ * Barra de ação fixa dos editores longos (rotina, exercício, avaliação): a ação principal fica sempre à vista, sem rolar
+ * até o fim do formulário. Sobe junto com o teclado virtual (`--kb-inset`) e respeita a área segura de baixo. O recado
+ * de erro ou de "sair sem salvar" mora dentro dela, para aparecer ao lado do botão e não numa parte da tela fora de vista.
+ * Só para telas sem a barra de abas do módulo. O formulário reserva o espaço com `ui-has-action-bar`.
+ */
+.ui-action-bar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: var(--kb-inset, 0px);
+  z-index: 2;
+  padding: var(--space-3) max(var(--gutter), env(safe-area-inset-right))
+    calc(var(--space-3) + var(--safe-bottom)) max(var(--gutter), env(safe-area-inset-left));
+  border-top: 1px solid var(--a-line);
+  background: var(--a-surface);
+}
+
+.ui-action-bar-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+/* Espaço no fim do formulário para o último campo rolar acima da barra e do teclado (a casca já soma a área segura). */
+.ui-has-action-bar {
+  padding-bottom: calc(var(--tap) + 2 * var(--space-3) + var(--kb-inset, 0px));
+}
+
+/* O campo focado perto do fim não fica atrás da barra quando o navegador o rola para a vista. */
+.ui-has-action-bar :is(input, textarea, select) {
+  scroll-margin-bottom: calc(var(--tap) + 3 * var(--space-3));
+}
+
 /* Campo de formulário: rótulo em cima, entrada com contorno de contraste suficiente. */
 .ui-field {
   display: flex;

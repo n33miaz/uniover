@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import type { PhysicalAssessmentMeasure } from '../../data/physical-assessments/physical-assessment';
@@ -40,7 +40,7 @@ function todayKey(): string {
       @if (recordLoading()) {
         <app-assessment-form-skeleton />
       } @else {
-        <form (ngSubmit)="save()">
+        <form class="ui-has-action-bar" (ngSubmit)="save()" (input)="touch()" (change)="touch()">
           <fieldset>
             <legend i18n="@@training.assessments.identification">Identificação do Registro</legend>
             <label for="assessedOn" i18n="@@training.assessments.date">Data da avaliação</label>
@@ -237,18 +237,22 @@ function todayKey(): string {
             >
             <textarea id="notes" name="notes" rows="4" [(ngModel)]="draft.notes"></textarea>
           </fieldset>
-          @if (status()) {
-            <p class="status" role="status">{{ status() }}</p>
-          }
-          <button
-            class="primary"
-            type="button"
-            [disabled]="saving()"
-            (click)="save()"
-            i18n="@@training.assessments.save"
-          >
-            Salvar Avaliação
-          </button>
+          <div class="ui-action-bar">
+            <div class="ui-action-bar-inner">
+              @if (status()) {
+                <p class="status" role="status">{{ status() }}</p>
+              }
+              <button
+                class="primary"
+                type="button"
+                [disabled]="saveDisabled()"
+                (click)="save()"
+                i18n="@@training.assessments.save"
+              >
+                Salvar Avaliação
+              </button>
+            </div>
+          </div>
         </form>
       }
     </div>
@@ -385,6 +389,22 @@ export class PhysicalAssessmentEditorPage {
   protected readonly pendingDocuments = signal<File[]>([]);
   protected readonly saving = signal(false);
   protected readonly status = signal('');
+  /**
+   * O rascunho é um objeto comum ligado por `ngModel`, que o Angular não observa: o formulário avisa por `touch()` a cada
+   * digitação, e é essa versão que faz o estado de "mudou" e de "válido" ser relido.
+   */
+  private readonly edits = signal(0);
+  /** Como o formulário estava quando abriu (ou depois de carregar a avaliação); o que difere disso é mudança. */
+  private readonly baseline = signal('');
+  protected readonly dirty = computed(() => {
+    this.edits();
+    return this.snapshot() !== this.baseline() || this.pendingDocuments().length > 0;
+  });
+  /** Salvar só vale com algo mudado, a data preenchida e nenhuma gravação em andamento. */
+  protected readonly saveDisabled = computed(() => {
+    this.edits();
+    return this.saving() || !this.dirty() || !this.draft.assessedOn;
+  });
   protected readonly draft: AssessmentFormDraft = {
     assessedOn: todayKey(),
     origin: '',
@@ -426,6 +446,7 @@ export class PhysicalAssessmentEditorPage {
   protected readonly label = measureLabel;
 
   constructor() {
+    this.baseline.set(this.snapshot());
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
       this.persistedId = id;
@@ -433,6 +454,10 @@ export class PhysicalAssessmentEditorPage {
       this.recordLoading.set(true);
       void this.load(id);
     }
+  }
+
+  protected touch(): void {
+    this.edits.update((value) => value + 1);
   }
 
   protected addMeasure(): void {
@@ -593,7 +618,13 @@ export class PhysicalAssessmentEditorPage {
       notes: row.notes ?? '',
     });
     this.measures.set([...(row.measurements ?? [])]);
+    this.baseline.set(this.snapshot());
+    this.touch();
     this.documents.set((await this.repository.documents(id)).length);
+  }
+
+  private snapshot(): string {
+    return JSON.stringify([this.draft, this.measures()]);
   }
 
   private documentError(status: string): string {

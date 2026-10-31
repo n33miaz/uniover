@@ -137,8 +137,8 @@ for (const scheme of ['light', 'dark'] as const) {
       await openTraining(page, '/treino/exercicios/novo');
       await expect(page.getByRole('heading', { name: 'Novo Exercício' })).toBeVisible();
       await shot(page, info, 'novo-exercicio', scheme);
-      await page.getByRole('button', { name: 'Salvar Exercício' }).click();
-      await expect(page.getByText('Dê um nome ao exercício.')).toBeVisible();
+      await page.getByLabel('Nome').fill('Remada');
+      await expect(page.getByText('Escolha o músculo principal.')).toBeVisible();
       await shot(page, info, 'novo-exercicio-erros', scheme);
     });
 
@@ -233,7 +233,6 @@ for (const scheme of ['light', 'dark'] as const) {
       await startTraining(context, page);
       await openTraining(page, '/treino/rotinas/nova');
       await page.getByLabel('Nome da rotina').fill('');
-      await page.getByRole('button', { name: 'Salvar Rotina' }).click();
       await expect(page.getByText('Dê um nome à rotina.')).toBeVisible();
       await shot(page, info, 'editor-erros', scheme);
     });

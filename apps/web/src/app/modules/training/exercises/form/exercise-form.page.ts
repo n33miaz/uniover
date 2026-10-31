@@ -77,8 +77,14 @@ export class ExerciseFormPage {
   protected readonly duplicate = signal(false);
 
   protected readonly dirty = computed(() => isFormDirty(this.initial(), this.form()));
+  // Os avisos aparecem assim que a pessoa mexe: o Salvar fica desligado enquanto houver erro, e sem o aviso ela
+  // não teria como saber o que falta.
   protected readonly issues = computed<readonly ExerciseFormIssue[]>(() =>
-    this.submitted() ? validateExerciseForm(this.form()) : [],
+    this.submitted() || this.dirty() ? validateExerciseForm(this.form()) : [],
+  );
+  /** Salvar só vale com algo mudado, tudo válido e nenhuma gravação em andamento. */
+  protected readonly saveDisabled = computed(
+    () => this.saving() || !this.dirty() || validateExerciseForm(this.form()).length > 0,
   );
   protected readonly nameError = computed(() => {
     const issues = this.issues();

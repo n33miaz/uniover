@@ -4,7 +4,8 @@ import { expect, screenshot, test } from '../fixtures';
 import { mockAuditApi } from '../settings/audit-mock';
 import { emitSse, installFakeEventSource, mockTvApi, sseUrls } from '../tv/tv-mock';
 import { beginWorkout, installClock, openToday, stubDevice } from '../training/support/today-pages';
-import { startTraining } from '../training/support/training-pages';
+import { chooseMuscle, openTraining, startTraining } from '../training/support/training-pages';
+import { SEED_ROUTINE_IDS } from '../training/support/training-seed';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block', timezoneId: 'America/Sao_Paulo', locale: 'pt-BR' });
@@ -141,6 +142,79 @@ test.describe('o que fica embaixo respeita a área segura', () => {
 });
 
 /**
+ * A barra de ação fixa dos editores: a ação principal está inteira na tela mesmo sem rolar nada (é o que falha sem a
+ * barra, já que `expectClearOfBottom` rola até o botão antes de medir) e começa desligada porque nada mudou.
+ */
+async function expectDockedAtRest(page: Page, save: Locator, inset = 0) {
+  await expect(save).toBeDisabled();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const viewport = page.viewportSize()!;
+  const box = (await save.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height - inset + 0.5);
+  const bar = page.locator('.ui-action-bar');
+  await expect(bar).toBeVisible();
+  const position = await bar.evaluate((node) => getComputedStyle(node).position);
+  expect(position).toBe('fixed');
+}
+
+/** O último item do formulário rola até ficar acima da barra, sem nada por cima. */
+async function expectLastItemClearOfBar(page: Page, last: Locator) {
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const bar = (await page.locator('.ui-action-bar').boundingBox())!;
+  const box = (await last.boundingBox())!;
+  expect(box.y + box.height).toBeLessThanOrEqual(bar.y + 0.5);
+}
+
+test.describe('os editores longos do Treino mantêm o Salvar fixo', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
+  });
+
+  test('editor de rotina: o Salvar fica acima da área segura, liga com a mudança e o fim do formulário rola acima dele', async ({
+    context,
+    page,
+  }, info) => {
+    await startTraining(context, page);
+    await openTraining(page, `/treino/rotinas/${SEED_ROUTINE_IDS.a}`);
+    const save = page.getByRole('button', { name: 'Salvar Rotina' });
+    await expect(page.getByRole('heading', { name: 'Editar Rotina' })).toBeVisible();
+    await simulateInset(page);
+    await expectDockedAtRest(page, save, HOME_INDICATOR);
+
+    await page.getByLabel('Nome da rotina').fill('Treino A · Peito');
+    await expect(save).toBeEnabled();
+    await screenshot(page, `test-results/bottom-safe-area/routine-editor-${info.project.name}.png`);
+
+    await expectLastItemClearOfBar(page, page.getByRole('button', { name: 'Apagar Rotina' }));
+  });
+
+  test('formulário de exercício: o Salvar liga só com nome e músculo', async ({
+    context,
+    page,
+  }) => {
+    await startTraining(context, page);
+    await openTraining(page, '/treino/exercicios/novo');
+    const save = page.getByRole('button', { name: 'Salvar Exercício' });
+    await expectDockedAtRest(page, save);
+    await page.getByLabel('Nome').fill('Remada articulada');
+    await expect(page.getByText('Escolha o músculo principal.')).toBeVisible();
+    await expect(save).toBeDisabled();
+    await chooseMuscle(page, 'Meio das costas');
+    await expect(save).toBeEnabled();
+  });
+
+  test('avaliação física: o Salvar fica fixo e liga com a mudança', async ({ context, page }) => {
+    await startTraining(context, page);
+    await openTraining(page, '/treino/corpo/avaliacoes/nova');
+    const save = page.getByRole('button', { name: 'Salvar Avaliação' });
+    await expectDockedAtRest(page, save);
+    await page.getByLabel('Origem / clínica / sistema').fill('Clínica de teste');
+    await expect(save).toBeEnabled();
+  });
+});
+
+/**
  * Teclado virtual simulado: o Playwright não abre teclado, então a página ganha um `visualViewport` falso, cuja altura
  * é a da janela menos o que o teclado cobre. `cover(px)` muda a altura e dispara o `resize` que o app escuta.
  */
@@ -222,6 +296,44 @@ test.describe('com o teclado aberto o que fica embaixo sobe com ele', () => {
       page.locator('app-tab-bar nav').getByRole('link').first(),
       KEYBOARD,
     );
+  });
+
+  test('o Salvar do editor de rotina sobe com o teclado e o aviso de saída fica ao lado dele', async ({
+    context,
+    page,
+  }) => {
+    await startTraining(context, page);
+    await openTraining(page, `/treino/rotinas/${SEED_ROUTINE_IDS.a}`);
+    const name = page.getByLabel('Nome da rotina');
+    await name.fill('Treino A · Peito');
+    const save = page.getByRole('button', { name: 'Salvar Rotina' });
+    await expect(save).toBeEnabled();
+    await cover(page);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expectClearOfBottom(page, save, KEYBOARD);
+    const viewport = page.viewportSize()!;
+    const box = (await save.boundingBox())!;
+    // Sem rolar nada: o botão já está na parte que o teclado deixa à vista.
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height - KEYBOARD + 0.5);
+
+    // Sair com mudança abre o aviso dentro da barra, junto do Salvar (e não numa parte do formulário fora de vista).
+    await page.getByRole('button', { name: 'Cancelar' }).click();
+    const warning = page.locator('.ui-action-bar').getByText('Sair sem salvar?');
+    await expect(warning).toBeVisible();
+    const warningBox = (await warning.boundingBox())!;
+    expect(warningBox.y).toBeGreaterThanOrEqual(0);
+    expect(warningBox.y + warningBox.height).toBeLessThanOrEqual(viewport.height - KEYBOARD + 0.5);
+  });
+
+  test('o Salvar do formulário de exercício fica acima do teclado', async ({ context, page }) => {
+    await startTraining(context, page);
+    await openTraining(page, '/treino/exercicios/novo');
+    await page.getByLabel('Nome').fill('Remada articulada');
+    await chooseMuscle(page, 'Meio das costas');
+    const save = page.getByRole('button', { name: 'Salvar Exercício' });
+    await expect(save).toBeEnabled();
+    await cover(page);
+    await expectClearOfBottom(page, save, KEYBOARD);
   });
 
   test('o aviso passageiro da TV fica acima do teclado', async ({ context, page }) => {

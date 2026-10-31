@@ -13,7 +13,7 @@
     </button>
   </section>
 } @else if (state() === 'ready') {
-  <form class="editor" novalidate (submit)="$event.preventDefault(); save()">
+  <form class="editor ui-has-action-bar" novalidate (submit)="$event.preventDefault(); save()">
     <header class="head">
       <h2 class="title">{{ title }}</h2>
     </header>
@@ -238,40 +238,6 @@
       </div>
     }
 
-    @if (saveError(); as message) {
-      <p class="ui-notice bad" role="alert">
-        <app-training-glyph name="alert" />
-        <span>{{ message }}</span>
-      </p>
-    }
-
-    @if (confirmingLeave()) {
-      <div class="ui-notice warn" role="alert">
-        <span class="confirm-text">
-          <span i18n="@@training.editor.leave-ask"
-            >Sair sem salvar? O que você mudou aqui será perdido.</span
-          >
-          <span class="pair">
-            <button type="button" class="secondary ui-btn" (click)="leave()">
-              <span i18n="@@training.editor.leave-yes">Sair sem Salvar</span>
-            </button>
-            <button type="button" class="primary ui-btn" (click)="keepEditing()">
-              <span i18n="@@training.editor.leave-no">Continuar Editando</span>
-            </button>
-          </span>
-        </span>
-      </div>
-    }
-
-    <div class="actions">
-      <button type="button" class="secondary ui-btn" (click)="cancel()">
-        <span i18n="@@training.editor.cancel">Cancelar</span>
-      </button>
-      <button type="submit" class="primary ui-btn" [disabled]="saving()">
-        <span i18n="@@training.editor.save">Salvar Rotina</span>
-      </button>
-    </div>
-
     @if (editing) {
       @if (confirmingDelete()) {
         <div class="ui-notice bad" role="alert">
@@ -297,6 +263,44 @@
         </button>
       }
     }
+
+    <div class="ui-action-bar">
+      <div class="ui-action-bar-inner">
+        @if (saveError(); as message) {
+          <p class="ui-notice bad" role="alert">
+            <app-training-glyph name="alert" />
+            <span>{{ message }}</span>
+          </p>
+        }
+
+        @if (confirmingLeave()) {
+          <div class="ui-notice warn" role="alert">
+            <span class="confirm-text">
+              <span i18n="@@training.editor.leave-ask"
+                >Sair sem salvar? O que você mudou aqui será perdido.</span
+              >
+              <span class="pair">
+                <button type="button" class="secondary ui-btn" (click)="leave()">
+                  <span i18n="@@training.editor.leave-yes">Sair sem Salvar</span>
+                </button>
+                <button type="button" class="primary ui-btn" (click)="keepEditing()">
+                  <span i18n="@@training.editor.leave-no">Continuar Editando</span>
+                </button>
+              </span>
+            </span>
+          </div>
+        }
+
+        <div class="actions">
+          <button type="button" class="secondary ui-btn" (click)="cancel()">
+            <span i18n="@@training.editor.cancel">Cancelar</span>
+          </button>
+          <button type="submit" class="primary ui-btn" [disabled]="saveDisabled()">
+            <span i18n="@@training.editor.save">Salvar Rotina</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </form>
 
   @if (pickerOpen()) {

@@ -59,8 +59,10 @@ const SCREENS: readonly Screen[] = [
     name: 'novo exercício com erros',
     open: async (page) => {
       await openTraining(page, '/treino/exercicios/novo');
-      await page.getByRole('button', { name: 'Salvar Exercício' }).click();
-      await expect(page.getByText('Dê um nome ao exercício.')).toBeVisible();
+      // Só o nome: o Salvar fica desligado e o aviso diz o que falta.
+      await page.getByLabel('Nome').fill('Remada');
+      await expect(page.getByText('Escolha o músculo principal.')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Salvar Exercício' })).toBeDisabled();
     },
   },
   {
