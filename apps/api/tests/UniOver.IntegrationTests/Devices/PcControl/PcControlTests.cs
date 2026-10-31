@@ -393,61 +393,117 @@ public sealed class PcControlTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task AGuestWithTheModulePermission_DrivesTheHousePc()
-    {
-        await using var app = await TransportApp.StartAsync(postgres);
-        await using var agent = await ConnectPcAsync(app);
-        var guest = await GuestSeed.CreateGuestAsync(
-            app.App.Client, app.App.Database, app.App.Time.GetUtcNow(), "Raphael", ["module:pc"]);
-
-        var http = PostAsync(app, "media", new { action = "PLAY_PAUSE" }, guest.Login.AccessToken);
-        var command = await AnswerAsync(agent);
-        using var response = await Within(http);
-
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        command.GetProperty("type").GetString().Should().Be("pc.media.v1");
-    }
-
-    // ---- qual PC ----
-
-    /// <summary>
-    /// A convidada com o próprio PC pareado (e a permissão do PC): o dela vence o da casa, ligado ou não. Com o dela
-    /// desligado a resposta é 503, e o PC da casa, conectado, não recebe nada.
-    /// </summary>
-    [Fact]
-    public async Task APersonDrivesHerOwnPc_NeverTheHouseOneWhenHerOwnIsOff()
+    public async Task AGuestWithTheModulePermissionButNoPcOfHisOwn_ReachesNoPc_NotEvenTheHouseOne()
     {
         await using var app = await TransportApp.StartAsync(postgres);
         await using var house = await ConnectPcAsync(app);
+        var guest = await GuestSeed.CreateGuestAsync(
+            app.App.Client, app.App.Database, app.App.Time.GetUtcNow(), "Raphael", ["module:pc"]);
 
-        var guest = await app.App.NewGuestAsync(["module:tv", "module:pc"]);
+        using var status = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: guest.Login.AccessToken);
+        using var media = await PostAsync(app, "media", new { action = "PLAY_PAUSE" }, guest.Login.AccessToken);
+        using var pointer = await PostAsync(app, "pointer", new { dx = 5, dy = 5 }, guest.Login.AccessToken);
+        using var power = await PostAsync(app, "power", new { action = "LOCK" }, guest.Login.AccessToken);
+
+        status.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await DevicesApp.JsonAsync(status);
+        body.GetProperty("available").GetBoolean().Should().BeFalse("o PC da casa não é dele");
+        body.GetProperty("apps").GetArrayLength().Should().Be(0);
+        media.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        pointer.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        power.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(media)).GetProperty("type").GetString().Should().EndWith("/pc-unavailable");
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event.StartsWith("pc_"), Ct)).Should().Be(0);
+    }
+
+    /// <summary>Pareia um PC para a convidada, pela aprovação dela mesma, e o conecta já com o controle do PC ligado.</summary>
+    private static async Task<(FakeAgent Agent, string Slug, GuestSession Guest)> GuestWithOwnPcAsync(
+        TransportApp app, string label, bool connected = true)
+    {
+        var guest = await app.App.NewGuestAsync(["module:tv", "module:pc"], label);
         await app.App.ConfirmWithPasswordAsync(guest);
-        var started = await app.App.StartAsync("PC da Raphael");
-        using var approved = await app.App.ApproveOwnRawAsync(guest.Login, new { userCode = started.UserCode, tvName = "TV da Raphael" });
+        var started = await app.App.StartAsync($"PC de {label}");
+        using var approved = await app.App.ApproveOwnRawAsync(guest.Login, new { userCode = started.UserCode, tvName = $"TV de {label}" });
         approved.StatusCode.Should().Be(HttpStatusCode.OK);
         using var poll = await app.App.PollRawAsync(started.PairingId, started.DeviceCode);
         var credentials = await DevicesApp.JsonAsync(poll);
         var slug = credentials.GetProperty("agentId").GetString()!;
-        var own = await FakeAgent.ConnectAsync(app.Server, slug, credentials.GetProperty("deviceToken").GetString()!);
-        await own.SendHelloAsync("0.1.0+3f2a9c1d4e5b", "transport.keepalive.v1", Capability);
-        await TransportApp.WaitUntilAsync(() => app.Presence.Get(slug)?.AgentVersion is not null, "hello do PC dela");
+        var agent = await FakeAgent.ConnectAsync(app.Server, slug, credentials.GetProperty("deviceToken").GetString()!);
+        await agent.SendHelloAsync("0.1.0+3f2a9c1d4e5b", "transport.keepalive.v1", Capability);
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(slug)?.AgentVersion is not null, $"hello do PC de {label}");
+        if (!connected)
+        {
+            await agent.DisposeAsync();
+            await TransportApp.WaitUntilAsync(() => app.Presence.Get(slug)?.Connected == false, "queda registrada");
+        }
 
-        // Com o PC dela ligado, é o dela que recebe, e o da casa não.
-        var online = PostAsync(app, "media", new { action = "PLAY_PAUSE" }, guest.Login.AccessToken);
-        var command = await AnswerAsync(own);
-        using var delivered = await Within(online);
-        delivered.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        command.GetProperty("target").GetString().Should().Be($"agent:{slug}");
+        return (agent, slug, guest);
+    }
 
-        // Com o dela desligado, a resposta é "desconectado": nada vai ao PC da casa.
-        await own.DisposeAsync();
-        await TransportApp.WaitUntilAsync(() => app.Presence.Get(slug)?.Connected == false, "queda registrada");
+    // ---- qual PC ----
+
+    /// <summary>Cada pessoa só comanda o PC que ela mesma pareou: a convidada A não alcança o de B nem o do dono, e o dono não alcança os delas.</summary>
+    [Fact]
+    public async Task EachPersonOnlyDrivesHerOwnPc_NobodyReachesAnotherPersonsPc()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var house = await ConnectPcAsync(app);
+        var (alice, aliceSlug, aliceGuest) = await GuestWithOwnPcAsync(app, "Alice");
+        await using var aliceAgent = alice;
+        var (bruno, brunoSlug, brunoGuest) = await GuestWithOwnPcAsync(app, "Bruno");
+        await using var brunoAgent = bruno;
+
+        var aliceCall = PostAsync(app, "media", new { action = "PLAY_PAUSE" }, aliceGuest.Login.AccessToken);
+        var aliceCommand = await AnswerAsync(aliceAgent);
+        using var aliceResponse = await Within(aliceCall);
+        var brunoCall = PostAsync(app, "key", new { key = "ENTER" }, brunoGuest.Login.AccessToken);
+        var brunoCommand = await AnswerAsync(brunoAgent);
+        using var brunoResponse = await Within(brunoCall);
+        var ownerCall = PostAsync(app, "media", new { action = "MUTE" });
+        var ownerCommand = await AnswerAsync(house);
+        using var ownerResponse = await Within(ownerCall);
+
+        new[] { aliceResponse, brunoResponse, ownerResponse }.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.NoContent);
+        aliceCommand.GetProperty("target").GetString().Should().Be($"agent:{aliceSlug}");
+        brunoCommand.GetProperty("target").GetString().Should().Be($"agent:{brunoSlug}");
+        ownerCommand.GetProperty("target").GetString().Should().Be($"agent:{app.Agent.Slug}");
+    }
+
+    [Fact]
+    public async Task TheOwnerWithoutAPcOfHisOwn_NeverReachesAGuestsPc()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        // O PC do dono está conectado mas sem o controle do PC ligado: só o da convidada o tem.
+        await using var house = await ConnectAsync(app, "transport.keepalive.v1", "tv.remote");
+        var (alice, _, _) = await GuestWithOwnPcAsync(app, "Alice");
+        await using var aliceAgent = alice;
+
+        using var key = await PostAsync(app, "key", new { key = "ENTER" });
+        using var status = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: app.Login.AccessToken);
+
+        key.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(status)).GetProperty("available").GetBoolean().Should().BeFalse();
+    }
+
+    /// <summary>Com o PC dela desligado a resposta é "desconectado": nada vai ao PC da casa, conectado.</summary>
+    [Fact]
+    public async Task WhenHerOwnPcIsOff_TheAnswerIs503_AndTheHousePcReceivesNothing()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var house = await ConnectPcAsync(app);
+        var (own, _, guest) = await GuestWithOwnPcAsync(app, "Raphael", connected: false);
+        await using var ownAgent = own;
+
         using var offline = await PostAsync(app, "media", new { action = "PLAY_PAUSE" }, guest.Login.AccessToken);
-        offline.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         using var status = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: guest.Login.AccessToken);
-        (await DevicesApp.JsonAsync(status)).GetProperty("online").GetBoolean().Should().BeFalse();
 
-        // E o dono, que pareou o PC da casa, continua mandando nele.
+        offline.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var body = await DevicesApp.JsonAsync(status);
+        body.GetProperty("available").GetBoolean().Should().BeTrue();
+        body.GetProperty("online").GetBoolean().Should().BeFalse();
+
+        // O dono, que pareou o PC da casa, segue mandando nele.
         var mine = PostAsync(app, "media", new { action = "MUTE" });
         var houseCommand = await AnswerAsync(house);
         using var ok = await Within(mine);

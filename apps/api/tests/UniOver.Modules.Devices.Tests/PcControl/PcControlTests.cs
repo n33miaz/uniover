@@ -211,3 +211,62 @@ public sealed class PcAppsStoreTests
         store.Get("pc-casa").Should().Equal(new PcApp("navegador", "Navegador"), new PcApp("notas", "Notas"));
     }
 }
+
+public sealed class PcAgentResolverTests
+{
+    private static readonly Guid Owner = Guid.Parse("11111111-1111-7111-8111-111111111111");
+    private static readonly Guid Alice = Guid.Parse("22222222-2222-7222-8222-222222222222");
+    private static readonly Guid Bruno = Guid.Parse("33333333-3333-7333-8333-333333333333");
+    private static readonly DateTimeOffset T0 = new(2026, 11, 1, 12, 0, 0, TimeSpan.Zero);
+
+    private static PcCandidate Pc(string slug, Guid pairedBy, bool connected, int ageMinutes = 0) =>
+        new(Guid.CreateVersion7(), slug, pairedBy, T0.AddMinutes(ageMinutes), connected);
+
+    [Fact]
+    public void APersonOnlyDrivesThePcsSheHerselfPaired()
+    {
+        var all = new[] { Pc("pc-casa", Owner, true), Pc("pc-alice", Alice, true), Pc("pc-bruno", Bruno, true) };
+
+        PcAgentResolver.Choose(all, Alice)!.Slug.Should().Be("pc-alice");
+        PcAgentResolver.Choose(all, Bruno)!.Slug.Should().Be("pc-bruno");
+        PcAgentResolver.Choose(all, Owner)!.Slug.Should().Be("pc-casa");
+    }
+
+    [Fact]
+    public void WithoutAPcOfHerOwn_ThereIsNoFallback_NotTheHouseOneNorAnotherGuests()
+    {
+        var all = new[] { Pc("pc-casa", Owner, true), Pc("pc-bruno", Bruno, true) };
+
+        PcAgentResolver.Choose(all, Alice).Should().BeNull();
+        PcAgentResolver.Choose([], Alice).Should().BeNull();
+    }
+
+    [Fact]
+    public void TheOwnerDoesNotReachAGuestsPcEither() =>
+        PcAgentResolver.Choose([Pc("pc-alice", Alice, true)], Owner).Should().BeNull();
+
+    [Fact]
+    public void WhenHerOwnPcIsOff_TheAnswerIsHerPcOffline_NeverAnotherPersonsPcOn()
+    {
+        var all = new[] { Pc("pc-alice", Alice, false), Pc("pc-casa", Owner, true) };
+
+        var target = PcAgentResolver.Choose(all, Alice)!;
+
+        target.Slug.Should().Be("pc-alice");
+        target.Connected.Should().BeFalse();
+    }
+
+    [Fact]
+    public void AmongSeveralOfHerOwn_TheConnectedOneWinsAndThenTheOldest()
+    {
+        var all = new[]
+        {
+            Pc("velho-desligado", Alice, false, 0),
+            Pc("novo-ligado", Alice, true, 20),
+            Pc("velho-ligado", Alice, true, 10),
+        };
+
+        PcAgentResolver.Choose(all, Alice)!.Slug.Should().Be("velho-ligado");
+        PcAgentResolver.Choose(all.Where(c => c.Slug == "velho-desligado"), Alice)!.Slug.Should().Be("velho-desligado");
+    }
+}

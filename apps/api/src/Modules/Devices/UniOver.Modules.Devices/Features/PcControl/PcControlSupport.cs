@@ -40,35 +40,44 @@ internal sealed class PcAppsStore
 /// <summary>O computador que atende o pedido: o agente, e se está conectado agora.</summary>
 internal sealed record PcTarget(Guid AgentId, string Slug, bool Connected);
 
+/// <summary>Um agente ativo com a capacidade do controle do PC, como o resolvedor o vê.</summary>
+internal sealed record PcCandidate(Guid AgentId, string Slug, Guid PairedBy, DateTimeOffset CreatedAt, bool Connected);
+
 /// <summary>
-/// Qual computador o controle do PC usa. Só conta agente ativo que declarou <c>pc.control.v1</c> (o dono ligou o
-/// controle naquele PC). Cada pessoa usa o computador que ela mesma pareou; sem um, usa o da casa (outro agente com a
-/// capacidade). Isso é de propósito: conceder <c>module:pc</c> a um convidado é entregar a ele o PC da casa, e quem
-/// tem o próprio PC pareado nunca mexe no de outra pessoa, nem quando o dela está desligado. Entre vários da mesma
-/// origem, o conectado vence.
+/// Qual computador o controle do PC usa. Só conta agente ativo que declarou <c>pc.control.v1</c> (a pessoa ligou o controle
+/// naquele PC) E que foi pareado pela própria pessoa. Nunca há reserva no PC de outra pessoa, nem do dono para o
+/// convidado, nem de um convidado para o dono, nem de um convidado para outro: conceder <c>module:pc</c> libera a tela, não
+/// o computador de ninguém. Quem não tem PC próprio com o controle ligado recebe "nenhum PC". Com vários próprios, o
+/// conectado vence, e depois o mais antigo.
 /// </summary>
 internal sealed class PcAgentResolver(DevicesDbContext db, IAgentPresenceReader presence)
 {
     public async Task<PcTarget?> ResolveAsync(Guid userId, CancellationToken cancellationToken)
     {
         var agents = await db.Agents.AsNoTracking()
-            .Where(a => a.RevokedAt == null)
+            .Where(a => a.RevokedAt == null && a.PairedBy == userId)
             .Select(a => new { a.Id, a.Slug, a.PairedBy, a.CreatedAt })
             .ToListAsync(cancellationToken);
 
-        var capable = agents
+        var candidates = agents
             .Select(a => (Agent: a, Info: presence.Get(a.Slug)))
             .Where(x => x.Info is not null && x.Info.Capabilities.Contains(PcMessages.Capability, StringComparer.Ordinal))
-            // Os da própria pessoa vêm primeiro, ligados ou não: se o PC dela está desligado a resposta é "desconectado", e
-            // nunca o PC de outra pessoa. O conectado só desempata dentro de cada grupo.
-            .OrderByDescending(x => x.Agent.PairedBy == userId)
-            .ThenByDescending(x => x.Info!.Connected)
-            .ThenBy(x => x.Agent.CreatedAt)
-            .FirstOrDefault();
+            .Select(x => new PcCandidate(x.Agent.Id, x.Agent.Slug, x.Agent.PairedBy, x.Agent.CreatedAt, x.Info!.Connected));
 
-        return capable.Info is null
-            ? null
-            : new PcTarget(capable.Agent.Id, capable.Agent.Slug, capable.Info.Connected);
+        return Choose(candidates, userId);
+    }
+
+    /// <summary>A regra pura: só os agentes da própria pessoa; o conectado primeiro e, entre iguais, o mais antigo.</summary>
+    public static PcTarget? Choose(IEnumerable<PcCandidate> candidates, Guid userId)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+
+        var chosen = candidates
+            .Where(c => c.PairedBy == userId)
+            .OrderByDescending(c => c.Connected)
+            .ThenBy(c => c.CreatedAt)
+            .FirstOrDefault();
+        return chosen is null ? null : new PcTarget(chosen.AgentId, chosen.Slug, chosen.Connected);
     }
 }
 
