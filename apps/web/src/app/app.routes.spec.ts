@@ -297,13 +297,12 @@ describe('app routes for a guest', () => {
     expect(root.querySelector(selector)).not.toBeNull();
   });
 
-  it('has the Início arrow and Configurações in the control header (no tabs)', async () => {
+  it('has the Início arrow and no Configurações button in the control header (no tabs)', async () => {
     const { root } = await go('/tv');
     expect(root.querySelector('a[href="/"]')?.getAttribute('aria-label')).toBe('Voltar ao Início');
     expect(root.querySelector('app-tab-bar')).toBeNull();
-    const settings = root.querySelector('header.head a.settings');
-    expect(settings?.getAttribute('href')).toBe('/ajustes');
-    expect(settings?.getAttribute('aria-label')).toBe('Configurações');
+    expect(root.querySelector('header.head a.settings')).toBeNull();
+    expect(root.querySelector('a[href="/ajustes"]')).toBeNull();
   });
 });
 

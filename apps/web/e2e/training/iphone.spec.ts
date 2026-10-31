@@ -60,7 +60,7 @@ function signInAsGuest(permissions: string[]) {
   identity.loggedIn = true;
 }
 
-const gear = (page: Page) => page.getByRole('link', { name: 'Configurações', exact: true });
+const gear = (page: Page) => page.locator('a[href="/ajustes"]');
 
 async function shot(page: Page, info: TestInfo, name: string, scheme: 'light' | 'dark') {
   if (!SHOTS) return;

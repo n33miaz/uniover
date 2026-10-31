@@ -230,7 +230,7 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
     await expect(page.getByRole('link', { name: 'Voltar ao Início' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Configurações' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Configurações' })).toHaveCount(0);
     await expect(page.getByRole('navigation')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Desligar a TV' })).toBeVisible();
 
@@ -335,7 +335,7 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     expect(identity.requests.map((r) => r.path)).not.toContain('/passkeys');
   });
 
-  test('o botão redondo do cabeçalho leva às Configurações da convidada: Perfil, Aparência, Dispositivos e Sobre', async ({
+  test('a convidada abre as Configurações pela Início, nunca pelo cabeçalho do módulo: Perfil, Aparência, Dispositivos e Sobre', async ({
     page,
   }) => {
     const invite = identity.seedInvite();
@@ -343,26 +343,12 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
     await expect(page).toHaveURL(/\/$/);
     await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
+    await expect(page.locator('header.head a[href="/ajustes"]')).toHaveCount(0);
+    await page.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await expect(page).toHaveURL(/\/$/);
 
-    const settings = page.locator('header.head').getByRole('link', { name: 'Configurações' });
+    const settings = page.locator('.hero-settings');
     await expect(settings).toBeVisible();
-
-    // A volta, a engrenagem e o menu ficam à esquerda e antes do nome; à direita só o desligar.
-    const header = page.locator('header.head');
-    const gearBox = (await settings.boundingBox())!;
-    const menuBox = (await header
-      .getByRole('button', { name: 'Mais opções', exact: true })
-      .boundingBox())!;
-    const nameBox = (await header.locator('h1').boundingBox())!;
-    const powerBox = (await header.getByRole('button', { name: 'Desligar a TV' }).boundingBox())!;
-    expect(Math.abs(menuBox.y - gearBox.y), 'na mesma linha da engrenagem').toBeLessThanOrEqual(1);
-    expect(menuBox.x, 'depois da engrenagem').toBeGreaterThanOrEqual(gearBox.x + gearBox.width);
-    expect(nameBox.x, 'antes do nome').toBeGreaterThanOrEqual(menuBox.x + menuBox.width);
-    expect(powerBox.x, 'o desligar depois do nome').toBeGreaterThanOrEqual(
-      nameBox.x + nameBox.width - 1,
-    );
-    await expect(header.locator('.actions').getByRole('button')).toHaveCount(1);
-
     await settings.click();
     await expect(page).toHaveURL(/\/ajustes$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
