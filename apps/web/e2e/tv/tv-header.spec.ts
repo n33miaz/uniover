@@ -1551,7 +1551,7 @@ test.describe('cabeçalho da convidada: seta de volta à Início e botão redond
       'Dispositivos',
       'Sobre',
     ]);
-    await page.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await page.getByRole('button', { name: 'Voltar ao Início' }).click();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator('article[data-module="tv"]')).toBeVisible();
   });
