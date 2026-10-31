@@ -55,7 +55,8 @@ describe('CreditsPage', () => {
     expect(fact(item, 'Licença')?.querySelector('a')?.getAttribute('href')).toBe(
       'https://creativecommons.org/licenses/by-sa/4.0/',
     );
-    expect(fact(item, 'O que foi feito')?.textContent).toContain('Sem alterações');
+    expect(fact(item, 'O que foi feito')?.textContent).toContain('sem alterações');
+    expect(fact(item, 'O que foi feito')?.textContent).toContain('WebP');
   });
 
   it('says the free-exercise-db text was rewritten and its images are not used', async () => {

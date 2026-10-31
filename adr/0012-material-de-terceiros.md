@@ -43,3 +43,11 @@ terceiros que **só o PWA usa e publica** (as ilustrações do Everkinetic) fica
 - O material usado por outras partes (por exemplo, a semente do catálogo lida pela API) continua em
   `assets-third-party/<fonte>/` na raiz.
 - A imagem do Docker já copia `apps/web/` inteiro na etapa do PWA, então a pasta nova entra no build sem ajuste.
+
+## Atualização (31/10/2026): adaptações ficam em `apps/web/assets-derived/`
+
+As ilustrações do Everkinetic que só existem em PNG pesavam de 140 a 300 KB cada e tinham proporções diferentes dos SVG.
+A adaptação (WebP leve, recorte único por par, proporção dos SVG) vive em `apps/web/assets-derived/<fonte>/`, fora da
+pasta dos originais, com o `LICENSE` da fonte e um `NOTICE` que indica o que foi alterado, como a CC BY-SA 4.0 exige. Os
+originais continuam sem modificação em `assets-third-party/` e deixam de ser publicados; o build publica só a adaptação.
+A tela de créditos diz o que foi feito. O script `apps/web/scripts/optimize-exercise-art.py` reproduz os arquivos.

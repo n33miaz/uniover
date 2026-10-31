@@ -31,7 +31,7 @@ export const CREDIT_SOURCES: readonly CreditSource[] = [
     sourceLabel: 'github.com/everkinetic/data',
     license: 'CC BY-SA 4.0',
     licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
-    changes: $localize`:@@credits.everkinetic.changes:Sem alterações: os arquivos são usados exatamente como foram obtidos, nas duas poses de cada exercício.`,
+    changes: $localize`:@@credits.everkinetic.changes:Os desenhos em SVG são usados sem alterações. Os que só existem em PNG foram convertidos para WebP, recortados e reduzidos (as duas poses com o mesmo recorte), sem retoque no desenho.`,
     usage: $localize`:@@credits.everkinetic.usage:Ilustração dos exercícios do catálogo que têm um equivalente seguro. Os demais mostram só o texto.`,
   },
   {

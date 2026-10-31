@@ -45,7 +45,7 @@ test.describe('créditos', () => {
     const everkinetic = page.locator('.list > li', { hasText: 'Everkinetic' });
     await expect(everkinetic).toContainText('Greg Priday');
     await expect(everkinetic).toContainText('CC BY-SA 4.0');
-    await expect(everkinetic).toContainText('Sem alterações');
+    await expect(everkinetic).toContainText('sem alterações');
     await expect(everkinetic.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute(
       'href',
       'https://creativecommons.org/licenses/by-sa/4.0/',

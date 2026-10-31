@@ -5,7 +5,8 @@ import { expect, test, waitForServiceWorkerControl } from '../fixtures';
 
 // O servidor de teste entrega o mesmo `dist` que a imagem do Docker copia para o wwwroot.
 const ART_DIR = join(__dirname, '..', '..', 'assets-third-party', 'everkinetic', 'svg');
-const PNG_DIR = join(__dirname, '..', '..', 'assets-third-party', 'everkinetic', 'png');
+// Os PNG originais não são publicados: o app serve a adaptação leve em WebP desta pasta.
+const DERIVED_DIR = join(__dirname, '..', '..', 'assets-derived', 'everkinetic');
 const FIRST_POSE = '0042-relaxation.svg';
 const SECOND_POSE = '0042-tension.svg';
 const NOT_WARMED = '0043-relaxation.svg';
@@ -20,16 +21,20 @@ test.describe('ilustrações dos exercícios', () => {
     expect(Buffer.compare(await response.body(), readFileSync(join(ART_DIR, FIRST_POSE)))).toBe(0);
   });
 
-  test('todo arquivo guardado é publicado, idêntico ao original', async ({ request }) => {
+  test('todo arquivo de arte é publicado, idêntico ao guardado (SVG original ou WebP adaptado)', async ({
+    request,
+  }) => {
     const files = [
       ...readdirSync(ART_DIR).map((file) => ({ file, path: join(ART_DIR, file) })),
-      ...readdirSync(PNG_DIR).map((file) => ({ file, path: join(PNG_DIR, file) })),
+      ...readdirSync(DERIVED_DIR)
+        .filter((file) => file.endsWith('.webp'))
+        .map((file) => ({ file, path: join(DERIVED_DIR, file) })),
     ];
     expect(files.length).toBeGreaterThan(100);
     for (const { file, path } of files) {
       const response = await request.get(`/exercise-art/${file}`);
       expect(response.status(), file).toBe(200);
-      if (file.endsWith('.png')) expect(response.headers()['content-type']).toBe('image/png');
+      if (file.endsWith('.webp')) expect(response.headers()['content-type']).toBe('image/webp');
       expect(Buffer.compare(await response.body(), readFileSync(path)), file).toBe(0);
     }
   });
@@ -53,6 +58,40 @@ test.describe('ilustrações dos exercícios', () => {
     expect(loaded.width).toBeGreaterThan(0);
     expect(loaded.height).toBeGreaterThan(0);
     // A violação de CSP (se houvesse) derruba o teste pela fixture.
+  });
+
+  test('os pares novos carregam: WebP adaptado em 536x550 e SVG original', async ({ page }) => {
+    await page.goto('/entrar');
+    const sizes = await page.evaluate(
+      (files) =>
+        Promise.all(
+          files.map(
+            (file) =>
+              new Promise<{ file: string; width: number; height: number }>((resolve, reject) => {
+                const img = document.createElement('img');
+                img.addEventListener('load', () =>
+                  resolve({ file, width: img.naturalWidth, height: img.naturalHeight }),
+                );
+                img.addEventListener('error', () => reject(new Error(`não carregou: ${file}`)));
+                img.src = `/exercise-art/${file}`;
+                document.body.append(img);
+              }),
+          ),
+        ),
+      [
+        'chin-ups-1.webp',
+        'chin-ups-2.webp',
+        'standing-one-arm-triceps-extension-with-dumbbell-1.webp',
+        '0113-relaxation.svg',
+        '0123-tension.svg',
+      ],
+    );
+    for (const size of sizes.filter((item) => item.file.endsWith('.webp'))) {
+      expect([size.width, size.height], size.file).toEqual([536, 550]);
+    }
+    for (const size of sizes.filter((item) => item.file.endsWith('.svg'))) {
+      expect(size.width, size.file).toBeGreaterThan(0);
+    }
   });
 
   test('uma imagem de outra origem continua bloqueada pela CSP (a prova mede de verdade)', async ({
