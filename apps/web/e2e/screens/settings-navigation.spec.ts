@@ -1,6 +1,7 @@
 import { IdentityMock, mockIdentityApi } from '../auth/identity-mock';
 import { mockDevicesApi } from '../devices/devices-mock';
 import { expect, test } from '../fixtures';
+import { mockTrainingApi } from '../training/support/training-server';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -38,6 +39,7 @@ test.beforeEach(async ({ context, page }) => {
   mock.loggedIn = true;
   await mockTvApi(context, mock);
   await mockDevicesApi(context, mock);
+  await mockTrainingApi(context);
   await installFakeEventSource(page);
   await page.emulateMedia({ reducedMotion: 'reduce' });
 });
@@ -106,5 +108,26 @@ test.describe('navegação padrão de Configurações', () => {
     await page.goto('/ajustes/aparelhos');
     await expect(page).toHaveURL(/\/ajustes\/dispositivos$/);
     await expectStandardHeader(page, 'Dispositivos');
+  });
+
+  test('as Configurações só abrem pela Início: nenhum módulo tem link para /ajustes', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await expect(page.locator('.hero-settings')).toHaveAttribute('href', '/ajustes');
+    await expect(page.getByRole('link', { name: 'Configurações' })).toHaveCount(1);
+
+    for (const [path, title] of [
+      ['/tv', 'TV'],
+      ['/treino', 'Treino'],
+    ] as const) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+      await expect(
+        page.locator('a[href="/ajustes"]'),
+        `${title}: sem link para /ajustes`,
+      ).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'Configurações' })).toHaveCount(0);
+    }
   });
 });
