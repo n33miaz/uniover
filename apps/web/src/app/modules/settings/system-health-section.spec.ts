@@ -164,6 +164,6 @@ describe('SystemHealthSection', () => {
       fixture.detectChanges();
       expect(el.querySelector('app-loading-skeleton')).toBeNull();
     });
-    expect(el.querySelectorAll('.metric')).toHaveLength(4);
+    expect(el.querySelectorAll('.metric')).toHaveLength(5);
   });
 });
