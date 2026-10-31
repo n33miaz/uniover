@@ -79,6 +79,57 @@ describe('SystemApi', () => {
     expect(report.unavailableModules).toEqual([]);
   });
 
+  it('reads which TV still needs the permission accept', async () => {
+    const read = api.tvs();
+    http.expectOne('/api/v1/tv/tvs').flush({
+      items: [
+        { ...TV, permissionNeeded: true },
+        { ...TV, id: 'tv-3', permissionNeeded: false },
+      ],
+    });
+    const [needs, fine] = await read;
+    expect(needs.permissionNeeded).toBe(true);
+    expect(fine.permissionNeeded).toBeUndefined();
+  });
+
+  it('asks the computer for the TVs it found on its network, keeping only valid ones', async () => {
+    const read = api.nearbyTvs('pc-casa');
+    const request = http.expectOne('/api/v1/tv/tvs/nearby?agent=pc-casa');
+    expect(request.request.method).toBe('GET');
+    request.flush({
+      status: 'ok',
+      items: [
+        { id: 'a1b2c3d4e5f60718', kind: 'samsung', name: 'Sala', controlled: true },
+        { id: 'f0e1d2c3b4a59687', kind: 'android', name: null, controlled: false },
+        { id: 'x', kind: 'roku', name: 'Outra', controlled: false },
+        { kind: 'samsung' },
+        null,
+      ],
+    });
+    expect(await read).toEqual({
+      status: 'ok',
+      items: [
+        { id: 'a1b2c3d4e5f60718', kind: 'samsung', name: 'Sala', controlled: true },
+        { id: 'f0e1d2c3b4a59687', kind: 'android', name: null, controlled: false },
+      ],
+    });
+  });
+
+  it.each(['offline', 'unsupported', 'busy'])(
+    'passes the %s status of the search on',
+    async (status) => {
+      const read = api.nearbyTvs('pc-casa');
+      http.expectOne('/api/v1/tv/tvs/nearby?agent=pc-casa').flush({ status, items: [] });
+      expect(await read).toEqual({ status, items: [] });
+    },
+  );
+
+  it('treats an unknown status of the search as a failure', async () => {
+    const read = api.nearbyTvs('pc-casa');
+    http.expectOne('/api/v1/tv/tvs/nearby?agent=pc-casa').flush({ status: 'estranho' });
+    expect(await read).toEqual({ status: 'failed', items: [] });
+  });
+
   it('lists the TVs, keeping what the administrator needs and dropping the rest', async () => {
     const read = api.tvs();
     const request = http.expectOne('/api/v1/tv/tvs');
