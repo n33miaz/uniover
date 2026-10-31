@@ -15,8 +15,11 @@
     <rect x="5" y="13" width="2" height="1"/>
     <rect x="6" y="14" width="2" height="1"/>
   </g>
+<!-- O anel do selo tem a cor do disco e é cortado pelo disco (clipPath): sobre a marca abre um vão, como um recorte, em vez de
+     um anel branco que se juntaria à onda e viraria um gancho; fora do disco não há anel. -->
+  <clipPath id="disc"><circle cx="10" cy="10" r="10"/></clipPath>
   <g id="attention">
-    <circle cx="15.5" cy="15.5" r="4.5" fill="#FFFFFF" shape-rendering="geometricPrecision"/>
-    <circle cx="15.5" cy="15.5" r="3.5" fill="#D92D20" shape-rendering="geometricPrecision"/>
+    <circle cx="15.5" cy="15.5" r="4.5" fill="#1F8A4C" clip-path="url(#disc)" shape-rendering="geometricPrecision"/>
+    <circle cx="15.5" cy="15.5" r="3.5" fill="#FF5C45" shape-rendering="geometricPrecision"/>
   </g>
 </svg>
