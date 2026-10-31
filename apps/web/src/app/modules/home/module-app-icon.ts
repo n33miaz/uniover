@@ -86,7 +86,8 @@ const APP_ICONS: Partial<Record<ModuleIconName, AppIconDefinition>> = {
 
     app-home-glyph {
       --glyph-size: 100%;
-      padding: 11px;
+      /* Proporcional ao quadrado: o glifo ocupa a mesma fração em 36 px (Personalizar) e em 80 px (cartões da Início). */
+      padding: 14%;
     }
 
     .line {
