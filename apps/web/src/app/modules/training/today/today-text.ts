@@ -42,13 +42,13 @@ export function suggestionText(suggestion: LoadSuggestion): string {
 export function suggestionReasonText(reason: SuggestionReason): string {
   switch (reason) {
     case 'top-of-range':
-      return $localize`:@@training.live.reason.top:Você fechou o topo da faixa na última vez, então sobe um degrau de carga.`;
+      return $localize`:@@training.live.reason.top:Fechou o topo da faixa: sobe um degrau de carga.`;
     case 'rir-too-high':
-      return $localize`:@@training.live.reason.easy:Você fechou o topo da faixa, mas o esforço informado foi leve (sobravam mais de duas repetições). A carga fica por mais um treino.`;
+      return $localize`:@@training.live.reason.easy:Fechou o topo, mas o esforço foi leve: a carga fica.`;
     case 'within-range':
-      return $localize`:@@training.live.reason.within:Você ficou dentro da faixa, mas sem fechar o topo. A carga fica; busque mais repetições.`;
+      return $localize`:@@training.live.reason.within:Dentro da faixa, sem fechar o topo: a carga fica.`;
     case 'below-floor':
-      return $localize`:@@training.live.reason.below:Alguma série ficou abaixo da faixa. A carga fica até as repetições voltarem; o app nunca baixa a carga sozinho.`;
+      return $localize`:@@training.live.reason.below:Abaixo da faixa: a carga fica até as repetições voltarem.`;
     case 'no-history':
       return '';
   }
