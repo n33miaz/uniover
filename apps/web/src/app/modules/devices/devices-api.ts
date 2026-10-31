@@ -7,7 +7,11 @@ import { APP_CONFIG } from '../../core/config/app-config';
 /** Aparelho pareado, como a API lista (tipo gerado do OpenAPI). */
 export type DeviceAgent = components['schemas']['AgentSummary'];
 
-/** Um aviso de queda de computador: `recoveredAt` preenchido quer dizer que ele já voltou. */
+/**
+ * Um aviso de computador. `offline` (o padrão, e o que uma API antiga manda sem `kind`) é uma queda: `recoveredAt`
+ * preenchido quer dizer que ele já voltou. `update_failed` é uma falha de atualização: `detectedAt` é a hora da falha e
+ * `detail` o resumo curto que o agente mandou.
+ */
 export interface AgentAlert {
   readonly id: string;
   readonly agentId: string;
@@ -15,6 +19,8 @@ export interface AgentAlert {
   readonly detectedAt: string;
   readonly lastSeenAt: string | null;
   readonly recoveredAt: string | null;
+  readonly kind?: 'offline' | 'update_failed';
+  readonly detail?: string | null;
 }
 
 /** Uma TV e o computador que a controla, só o que a tela de Dispositivos mostra. */

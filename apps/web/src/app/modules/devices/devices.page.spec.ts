@@ -578,6 +578,47 @@ describe('DevicesPage', () => {
       expect(el.querySelector('.alert')?.classList.contains('ok')).toBe(true);
     });
 
+    it('shows an update failure as a warning that names the computer and dismisses it', async () => {
+      api.alerts.mockResolvedValue([
+        {
+          id: 'u1',
+          agentId: 'a1',
+          agentName: 'PC da sala',
+          detectedAt: '2026-10-27T12:00:00Z',
+          lastSeenAt: null,
+          recoveredAt: null,
+          kind: 'update_failed',
+          detail: 'não atualizei agora: sem rede',
+        },
+      ]);
+      const { fixture, el, button } = await render();
+      const alert = el.querySelector('.alert');
+      expect(alert?.querySelector('strong')?.textContent).toBe('Falha de Atualização');
+      expect(alert?.textContent).toContain('PC da sala, em ');
+      expect(alert?.textContent).not.toContain('sem sinal');
+      expect(alert?.classList.contains('warn')).toBe(true);
+      button('Dispensar').click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(api.markAlertSeen).toHaveBeenCalledWith('u1');
+      expect(el.querySelector('.alert')).toBeNull();
+    });
+
+    it('treats an alert without a kind as an outage (older API)', async () => {
+      api.alerts.mockResolvedValue([
+        {
+          id: 'o1',
+          agentId: 'a1',
+          agentName: 'PC de casa',
+          detectedAt: '2026-10-27T12:00:00Z',
+          lastSeenAt: null,
+          recoveredAt: null,
+        },
+      ]);
+      const { el } = await render();
+      expect(el.querySelector('.alert')?.textContent).toContain('PC de casa está sem sinal');
+    });
+
     it('keeps the list when the alerts or the TVs cannot be read', async () => {
       api.alerts.mockRejectedValue(new Error('x'));
       api.tvs.mockRejectedValue(new Error('x'));
