@@ -157,7 +157,7 @@ def test_the_tray_never_holds_the_executable_that_the_sync_replaces() -> None:
     sync_body = runner.split("function Sync-Agent", 1)[1].split("function ", 1)[0]
     assert sync_body.lstrip().split("\n", 1)[1].strip().startswith("Stop-VenvUsers")
     loop = runner.split("while ($true) {", 1)[1]
-    assert loop.index("Sync-Agent $uv") < loop.index("Start-Tray $uv")
+    assert loop.index("Sync-Agent $uv") < loop.index("Update-Tray $uv")
     startup_update = loop.split("$updated = Invoke-Update $uv", 1)[1].split("exit 42", 1)[0]
     assert "taskkill.exe /PID $tray.Id /T /F" in startup_update
 
