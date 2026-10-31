@@ -223,12 +223,12 @@ describe('app routes for a guest', () => {
     });
 
     it.each([
-      ['/treino', 'app-training-page'],
-      ['/ajustes/creditos', 'app-credits-page'],
-    ])('lets the guest open %s (%s)', async (url, selector) => {
+      ['/treino', '/treino', 'app-training-page'],
+      ['/ajustes/creditos', '/ajustes/sobre/creditos', 'app-credits-page'],
+    ])('lets the guest open %s, which ends at %s (%s)', async (url, final, selector) => {
       signInAs(TRAINING);
       const { url: landed, root } = await go(url);
-      expect(landed).toBe(url);
+      expect(landed).toBe(final);
       expect(root.matches('app-shell')).toBe(true);
       expect(root.querySelector(selector)).not.toBeNull();
     });
