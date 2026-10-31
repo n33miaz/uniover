@@ -8,6 +8,12 @@ public static class AuditEvents
     public const string LoginLocked = "login_locked";
     public const string RefreshSucceeded = "refresh_succeeded";
     public const string RefreshReuseDetected = "refresh_reuse_detected";
+
+    /// <summary>
+    /// O mesmo aparelho recuperou, provando a chave da sessão, um refresh cuja resposta se perdeu. O detalhe é o tempo
+    /// desde a rotação (<c>after-412s</c>). Uma por token girado: a segunda tentativa revoga a sessão.
+    /// </summary>
+    public const string RefreshRecovered = "refresh_recovered";
     public const string Logout = "logout";
     public const string OwnerCreated = "owner_created";
     public const string PasskeyRegistered = "passkey_registered";
@@ -55,6 +61,7 @@ public static class AuditEvents
         LoginLocked,
         RefreshSucceeded,
         RefreshReuseDetected,
+        RefreshRecovered,
         Logout,
         OwnerCreated,
         PasskeyRegistered,

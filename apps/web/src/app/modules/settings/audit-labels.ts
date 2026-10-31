@@ -22,6 +22,8 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.refresh-succeeded:Sessão renovada`;
     case 'refresh_reuse_detected':
       return $localize`:@@settings.audit.action.refresh-reuse:Sessão antiga reutilizada`;
+    case 'refresh_recovered':
+      return $localize`:@@settings.audit.action.refresh-recovered:Sessão recuperada depois de uma resposta perdida`;
     case 'logout':
       return $localize`:@@settings.audit.action.logout:Saiu da conta`;
     case 'owner_created':
