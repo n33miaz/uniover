@@ -18,7 +18,7 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("identity")
-                .HasAnnotation("ProductVersion", "10.0.13")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -414,6 +414,9 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
 
                     b.HasIndex("UserId")
                         .HasDatabaseName("ix_refresh_tokens_user_id");
+
+                    b.HasIndex("FamilyId", "CreatedAt")
+                        .HasDatabaseName("ix_refresh_tokens_family_id_created_at");
 
                     b.ToTable("refresh_tokens", "identity");
                 });
