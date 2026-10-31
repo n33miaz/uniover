@@ -151,6 +151,16 @@ export async function mockSystemApi(
     });
   });
 
+  // A Saúde também lê os eventos que esgotaram as tentativas: no mock, nenhum.
+  await context.route('**/api/v1/system/dead-letters', async (route) => {
+    if (identity.offline) return route.abort('internetdisconnected');
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ total: 0, items: [], unavailableModules: [] }),
+    });
+  });
+
   await context.route('**/api/v1/tv/config**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace('/api/v1/tv', '');

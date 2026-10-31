@@ -56,6 +56,29 @@ describe('SystemApi', () => {
     });
   });
 
+  it('reads the dead letters and tolerates missing fields', async () => {
+    const read = api.deadLetters();
+    const request = http.expectOne('/api/v1/system/dead-letters');
+    expect(request.request.method).toBe('GET');
+    request.flush({
+      total: 2,
+      items: [
+        {
+          module: 'devices',
+          id: 'e-1',
+          type: 'devices.agent-revoked.v1',
+          failedAt: '2026-10-31T12:00:00Z',
+          attempts: 8,
+          lastError: null,
+        },
+      ],
+    });
+    const report = await read;
+    expect(report.total).toBe(2);
+    expect(report.items).toHaveLength(1);
+    expect(report.unavailableModules).toEqual([]);
+  });
+
   it('lists the TVs, keeping what the administrator needs and dropping the rest', async () => {
     const read = api.tvs();
     const request = http.expectOne('/api/v1/tv/tvs');
