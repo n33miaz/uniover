@@ -20,6 +20,8 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
+from uniover_agent.adapters.installation import installation_base
+from uniover_agent.adapters.self_update import CHANNELS, DEFAULT_CHANNEL
 from uniover_agent.adapters.tv_adb_parsing import is_valid_package
 
 CONFIG_FILE_ENV = "UNIOVER_CONFIG_FILE"
@@ -31,14 +33,9 @@ class ConfigError(Exception):
     """Configuração ausente ou insegura; a mensagem já é para o usuário."""
 
 
-def _local_base() -> Path:
-    local = os.environ.get("LOCALAPPDATA")
-    return Path(local) if local else Path.home() / ".config"
-
-
 def default_config_path() -> Path:
     """Arquivo de configuração na pasta organizada da instalação."""
-    return _local_base() / "UniOver" / "config" / "agent.toml"
+    return installation_base() / "config" / "agent.toml"
 
 
 def connection_page_path() -> Path:
@@ -53,12 +50,12 @@ def connection_page_path() -> Path:
 def tv_cert_dir(tv_name: str) -> Path:
     """Pasta do par certificado/chave da TV: fora do repositório, por usuário e por TV."""
     safe = re.sub(r"[^A-Za-z0-9._-]", "-", tv_name).strip(".-")[:40] or "tv"
-    return _local_base() / "UniOver" / "tv" / safe
+    return installation_base() / "tv" / safe
 
 
 def agent_source_dir() -> Path:
     """Onde o instalador põe o código do agente (e onde a auto-atualização o troca)."""
-    return _local_base() / "UniOver" / "app"
+    return installation_base() / "app"
 
 
 def config_path() -> Path:
@@ -118,10 +115,24 @@ class Settings(BaseSettings):
     # ícones) e a pasta do cache (padrão: `%LOCALAPPDATA%\UniOver\icons`).
     aapt_path: str | None = None
     icons_dir: str | None = None
+    # De que ramo do repositório o agente se atualiza (`develop` hoje; `main` quando a publicação
+    # voltar).
+    update_channel: str = DEFAULT_CHANNEL
+    # Auto-diagnóstico periódico com reparo seguro e envio das ocorrências à API. Desligue só para
+    # depurar.
+    self_care: bool = True
     # Limpeza da TV: pacotes que nunca são fechados, além dos protegidos de fábrica. Na variável de
     # ambiente, separados por vírgula; no arquivo, uma lista TOML ou o mesmo texto. Sem `NoDecode` o
     # pydantic-settings exigiria JSON na variável.
     tv_cleanup_keep: Annotated[list[str], NoDecode] = Field(default_factory=list)
+
+    @field_validator("update_channel")
+    @classmethod
+    def _validate_update_channel(cls, value: str) -> str:
+        channel = value.strip().lower()
+        if channel not in CHANNELS:
+            raise ValueError("update_channel precisa ser main ou develop")
+        return channel
 
     @field_validator("tv_cleanup_keep", mode="before")
     @classmethod
