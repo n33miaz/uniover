@@ -39,6 +39,9 @@ internal static class PublicRoutes
         // O refresh se autentica pelo cookie HttpOnly próprio, não pelo JWT de acesso (que já expirou).
         new("POST", "/api/v1/identity/auth/refresh", "renovação por cookie de refresh rotativo"),
 
+        // O desafio da recuperação também se autentica pelo cookie de refresh: nunca gira nem revela segredo, só emite um nonce de uso único.
+        new("POST", "/api/v1/identity/auth/refresh/challenge", "desafio de uso único para recuperar um refresh cuja resposta se perdeu"),
+
         // Quem recebeu o link do dono ainda não tem conta nem sessão. A credencial é o segredo do convite (32 bytes aleatórios,
         // uso único, validade curta, só o hash no banco), no corpo e nunca na URL; o limite por IP é próprio (balde separado do login).
         new("POST", "/api/v1/identity/guest-invites/accept", "convidado aceita o convite do dono e define a própria senha: ainda não existe sessão"),

@@ -3019,6 +3019,32 @@
         ],
         "type": "object"
       },
+      "RefreshChallengeResponse": {
+        "properties": {
+          "challenge": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expiresIn": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "familyId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "challenge",
+          "familyId",
+          "expiresIn"
+        ],
+        "type": "object"
+      },
       "RefreshResponse": {
         "properties": {
           "accessToken": {
@@ -7350,6 +7376,65 @@
         },
         "tags": [
           "RefreshEndpoint"
+        ]
+      }
+    },
+    "/api/v1/identity/auth/refresh/challenge": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshChallengeResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "409": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "429": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "tags": [
+          "RefreshChallengeEndpoint"
         ]
       }
     },
@@ -13486,6 +13571,9 @@
     },
     {
       "name": "RefreshEndpoint"
+    },
+    {
+      "name": "RefreshChallengeEndpoint"
     },
     {
       "name": "LogoutEndpoint"

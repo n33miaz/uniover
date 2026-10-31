@@ -22,6 +22,7 @@ const IDENTITY_ACTIONS = [
   'login_locked',
   'refresh_succeeded',
   'refresh_reuse_detected',
+  'refresh_recovered',
   'logout',
   'owner_created',
   'passkey_registered',

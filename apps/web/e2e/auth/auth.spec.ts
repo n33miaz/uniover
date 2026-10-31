@@ -123,6 +123,50 @@ test.describe('entrada e sessão', () => {
     await expect(page).toHaveURL(/\/ajustes$/);
   });
 
+  test('a resposta de uma renovação que se perde é recuperada com a chave do aparelho, sem derrubar a sessão', async ({
+    page,
+  }) => {
+    await page.goto('/entrar');
+    await signIn(page);
+    await expect(page).toHaveURL(/\/$/);
+    // A entrada mandou a chave pública do par que o navegador gerou (P-256, SPKI em base64url).
+    expect(mock.deviceKey).toMatch(/^[A-Za-z0-9_-]{100,}$/);
+
+    // O servidor gira o token e a resposta não volta (a página suspensa no meio da renovação), e a página é recarregada.
+    mock.loseNextRefreshResponses = 1;
+    await page.reload();
+
+    // Depois da tolerância de giro, a página pede o desafio, assina e recupera; nunca reenvia o cookie antigo.
+    await expect.poll(() => mock.recovery.recovered, { timeout: 20_000 }).toBe(1);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Bom dia|Boa tarde|Boa noite/);
+    expect(mock.recovery.challenges).toBe(1);
+    expect(mock.recovery.revokedByReuse).toBe(false);
+    expect(mock.loggedIn).toBe(true);
+  });
+
+  test('sem a chave do aparelho (armazenamento apagado) a resposta perdida derruba a sessão, como manda a regra estrita', async ({
+    page,
+  }) => {
+    await page.goto('/entrar');
+    await signIn(page);
+    await expect(page).toHaveURL(/\/$/);
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          const request = indexedDB.deleteDatabase('uniover-device');
+          request.onsuccess = request.onerror = request.onblocked = () => resolve();
+        }),
+    );
+
+    mock.loseNextRefreshResponses = 1;
+    await page.reload();
+
+    await expect.poll(() => mock.recovery.revokedByReuse, { timeout: 20_000 }).toBe(true);
+    await expect(page).toHaveURL(/\/entrar/);
+    expect(mock.recovery.recovered).toBe(0);
+    expect(mock.recovery.challenges).toBe(0);
+  });
+
   test('recarregar mantém a sessão pelo refresh silencioso e Sair encerra', async ({ page }) => {
     await page.goto('/entrar');
     await signIn(page);

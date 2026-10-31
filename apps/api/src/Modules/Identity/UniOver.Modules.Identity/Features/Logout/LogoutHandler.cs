@@ -18,6 +18,11 @@ internal sealed class LogoutHandler(IdentityDbContext db, LoginAuditWriter audit
         var familyId = command.SessionId;
         var userId = command.UserId;
 
+        // Mesma trava da rotação: um refresh em voo termina (e o sucessor dele entra) antes da revogação, ou só
+        // começa depois dela. Sem isso o sucessor ficava ativo depois de "Sair".
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await FamilyLock.AcquireAsync(db, familyId, cancellationToken);
+
         // O filtro por usuário impede que um JWT forjado com a família de outra pessoa a revogue.
         await db.RefreshTokens
             .Where(t => t.FamilyId == familyId && t.UserId == userId && t.RevokedAt == null)
@@ -32,5 +37,6 @@ internal sealed class LogoutHandler(IdentityDbContext db, LoginAuditWriter audit
 
         audit.Add(userId, AuditEvents.Logout, command.Client);
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 }

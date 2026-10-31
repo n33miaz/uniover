@@ -18,7 +18,7 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("identity")
-                .HasAnnotation("ProductVersion", "10.0.13")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -348,6 +348,81 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                     b.ToTable("qr_login_requests", "identity");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.RefreshDeviceKey", b =>
+                {
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("PublicKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("public_key");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("FamilyId")
+                        .HasName("pk_refresh_device_keys");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_refresh_device_keys_user_id");
+
+                    b.ToTable("refresh_device_keys", "identity");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.RefreshRecoveryChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ConsumedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consumed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<byte[]>("NonceHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("nonce_hash");
+
+                    b.Property<Guid>("TokenId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("token_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_refresh_recovery_challenges");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_refresh_recovery_challenges_expires_at");
+
+                    b.HasIndex("FamilyId")
+                        .HasDatabaseName("ix_refresh_recovery_challenges_family_id");
+
+                    b.HasIndex("TokenId")
+                        .HasDatabaseName("ix_refresh_recovery_challenges_token_id");
+
+                    b.ToTable("refresh_recovery_challenges", "identity");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -370,6 +445,10 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("ip");
+
+                    b.Property<DateTimeOffset?>("RecoveredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recovered_at");
 
                     b.Property<Guid?>("ReplacedById")
                         .HasColumnType("uuid")
@@ -634,6 +713,26 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_passkeys_users_user_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.RefreshDeviceKey", b =>
+                {
+                    b.HasOne("UniOver.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_refresh_device_keys_users_user_id");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.RefreshRecoveryChallenge", b =>
+                {
+                    b.HasOne("UniOver.Modules.Identity.Domain.RefreshToken", null)
+                        .WithMany()
+                        .HasForeignKey("TokenId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_refresh_recovery_challenges_refresh_tokens_token_id");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.RefreshToken", b =>

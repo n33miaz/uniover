@@ -4,6 +4,13 @@ import { APP_CONFIG } from '../config/app-config';
 import { ConnectivityService } from '../connectivity/connectivity.service';
 import type { components } from '../api/generated/schema';
 import { networkProblem, problemFrom } from './api-problem';
+import {
+  DEVICE_KEYS,
+  DEVICE_KEY_HEADER,
+  PendingDeviceKey,
+  RECOVERY_CHALLENGE_HEADER,
+  RECOVERY_PROOF_HEADER,
+} from './device-keys';
 
 /** `fetch` injetável: os testes trocam por um falso. */
 export const FETCH_FN = new InjectionToken<typeof fetch>('FETCH_FN', {
@@ -40,10 +47,19 @@ export type LoginSession = Readonly<Schemas['SessionSummary']>;
 export type QrLoginStarted = Readonly<Schemas['StartQrLoginResponse']>;
 export type QrLoginPoll = Readonly<Schemas['PollQrLoginResponse']>;
 export type QrLoginInfo = Readonly<Schemas['QrLoginInfoResponse']>;
+/** Desafio de uso único da recuperação; `challenge` nulo quando o token ainda não girou (basta um refresh comum). */
+export type RefreshChallenge = Readonly<Schemas['RefreshChallengeResponse']>;
+
+/** Prova da recuperação: o desafio que a API emitiu e a assinatura dele com a chave do aparelho. */
+export interface RefreshRecovery {
+  readonly challenge: string;
+  readonly proof: string;
+}
 
 interface RequestOptions {
   readonly token?: string | null;
   readonly body?: unknown;
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -56,15 +72,35 @@ export class AuthApi {
   private readonly doFetch = inject(FETCH_FN);
   private readonly connectivity = inject(ConnectivityService);
   private readonly idempotency = inject(IdempotencyKeys);
+  private readonly deviceKeys = inject(DEVICE_KEYS);
+  /** Par gerado para a entrada em andamento; sobrevive a tentativas que falham e some quando uma delas dá certo. */
+  private opening: Promise<PendingDeviceKey | null> | null = null;
 
   login(email: string, password: string): Promise<TokenResponse> {
     const body: Schemas['LoginRequest'] = { email, password };
-    return this.send('POST', '/auth/login', { body });
+    return this.openSession('/auth/login', body);
   }
 
-  /** O cookie `HttpOnly` de refresh viaja sozinho (o JavaScript não o lê). */
-  refresh(): Promise<TokenResponse> {
-    return this.send('POST', '/auth/refresh');
+  /**
+   * O cookie `HttpOnly` de refresh viaja sozinho (o JavaScript não o lê). Com `recovery`, a API recupera o token que já
+   * girou (resposta perdida) em vez de revogar a sessão.
+   */
+  refresh(recovery?: RefreshRecovery): Promise<TokenResponse> {
+    const headers = recovery
+      ? {
+          [RECOVERY_CHALLENGE_HEADER]: recovery.challenge,
+          [RECOVERY_PROOF_HEADER]: recovery.proof,
+        }
+      : undefined;
+    return this.send('POST', '/auth/refresh', { headers });
+  }
+
+  /**
+   * Primeiro passo da recuperação: pede à API o desafio de uso único para o token que o cookie guarda. Nunca gira nem
+   * assina nada; se o token já girou sem direito à recuperação, a API revoga a sessão (como o refresh faria).
+   */
+  refreshChallenge(): Promise<RefreshChallenge> {
+    return this.send('POST', '/auth/refresh/challenge');
   }
 
   logout(token: string): Promise<void> {
@@ -92,7 +128,7 @@ export class AuthApi {
    */
   acceptInvite(token: string, email: string, password: string): Promise<TokenResponse> {
     const body: Schemas['AcceptGuestInviteRequest'] = { token, email, password };
-    return this.send('POST', '/guest-invites/accept', { body });
+    return this.openSession(ACCEPT_INVITE_PATH, body);
   }
 
   /** Computador sem sessão pede um QR de entrada. O `pollSecret` só este navegador guarda; o `code` vai no QR. */
@@ -103,7 +139,7 @@ export class AuthApi {
   /** Consulta do computador. Aprovado, a resposta traz o token de acesso e o cookie de refresh já vem junto. */
   qrPoll(secret: string): Promise<QrLoginPoll> {
     const body: Schemas['PollQrLoginRequest'] = { secret };
-    return this.send('POST', '/auth/qr/poll', { body });
+    return this.openSession('/auth/qr/poll', body);
   }
 
   /** O celular (logado) vê o que o computador informou antes de confirmar. */
@@ -247,9 +283,28 @@ export class AuthApi {
     return this.send('DELETE', `/passkeys/${encodeURIComponent(id)}`, { token });
   }
 
+  /**
+   * Entrada que abre uma sessão nova (senha, convite, QR): manda a chave pública de um par recém-gerado e, se a entrada
+   * deu certo (veio token de acesso), guarda o par no aparelho no lugar do anterior. A chave é por sessão: a API a amarra
+   * à família do refresh que nasce aqui.
+   */
+  private async openSession<T extends object>(path: string, body: unknown): Promise<T> {
+    this.opening ??= this.deviceKeys.create();
+    const key = await this.opening;
+    const headers = key ? { [DEVICE_KEY_HEADER]: key.publicKey } : undefined;
+    const result = await this.send<T>('POST', path, { body, headers });
+    if (typeof (result as { accessToken?: unknown } | null)?.accessToken === 'string') {
+      this.opening = null;
+      // Sem onde guardar, a sessão vale do mesmo jeito: só não terá recuperação.
+      await key?.commit().catch(() => undefined);
+    }
+    return result;
+  }
+
   private async send<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
     const headers: Record<string, string> = {
       Accept: 'application/json, application/problem+json',
+      ...options.headers,
     };
     if (options.token) headers['Authorization'] = `Bearer ${options.token}`;
     if (method === 'POST' && (path.startsWith('/auth/') || path === ACCEPT_INVITE_PATH))

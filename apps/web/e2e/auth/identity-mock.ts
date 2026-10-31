@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createPublicKey, randomBytes, verify } from 'node:crypto';
 import { BrowserContext, Route } from '@playwright/test';
 import { missingIdempotencyKey } from '../idempotency-guard';
 
@@ -125,6 +125,16 @@ export interface IdentityMock {
   refreshDelayMs: number;
   refreshCalls: number;
   maxRefreshInFlight: number;
+  /**
+   * Quantas respostas de refresh se perdem daqui para a frente: o servidor gira o token e o navegador não recebe a
+   * resposta (a página do iPhone suspensa no meio da renovação). Enquanto a resposta estiver perdida, o refresh COMUM com
+   * o cookie antigo é reuso e derruba a sessão (a regra estrita); só a recuperação comprovada passa.
+   */
+  loseNextRefreshResponses: number;
+  /** A chave pública que o navegador mandou na última entrada (senha, convite ou QR). */
+  deviceKey: string | null;
+  /** O que a recuperação fez: desafios emitidos, recuperações aceitas e a sessão derrubada por reuso. */
+  recovery: { challenges: number; recovered: number; revokedByReuse: boolean };
   readonly passkeys: StoredPasskey[];
   /** Papel da sessão aberta: o que `/me` devolve e o que decide os 403 das rotas só do dono. */
   role: 'owner' | 'guest';
@@ -250,6 +260,10 @@ export async function mockIdentityApi(
 ): Promise<IdentityMock> {
   let tokenCounter = 0;
   let refreshInFlight = 0;
+  /** O servidor girou o token e a resposta se perdeu: o cookie do navegador é o antigo. */
+  let rotationLost = false;
+  let issuedChallenge: { id: string; nonce: string; used: boolean } | null = null;
+  const FAMILY = 'f'.repeat(32);
   const mock: IdentityMock = {
     requests: [],
     qr: options.qr ?? newQrServer(),
@@ -260,6 +274,9 @@ export async function mockIdentityApi(
     refreshDelayMs: 0,
     refreshCalls: 0,
     maxRefreshInFlight: 0,
+    loseNextRefreshResponses: 0,
+    deviceKey: null,
+    recovery: { challenges: 0, recovered: 0, revokedByReuse: false },
     passkeys: [],
     role: 'owner',
     owner: { displayName: OWNER.displayName, confirmed: true },
@@ -322,6 +339,24 @@ export async function mockIdentityApi(
     };
   };
 
+  /** A mesma conferência da API: desafio de uso único e assinatura da chave da família sobre a mensagem combinada. */
+  const recoveryProofIsValid = (challenge?: string, proof?: string): boolean => {
+    if (!challenge || !proof || !issuedChallenge || issuedChallenge.used || !mock.deviceKey) return false;
+    if (challenge !== `${issuedChallenge.id}.${issuedChallenge.nonce}`) return false;
+    issuedChallenge.used = true;
+    const message = `uniover-refresh-recovery|v1|${FAMILY}|${issuedChallenge.id}|${issuedChallenge.nonce}`;
+    try {
+      return verify(
+        'sha256',
+        Buffer.from(message),
+        { key: createPublicKey({ key: Buffer.from(mock.deviceKey, 'base64url'), format: 'der', type: 'spki' }), dsaEncoding: 'ieee-p1363' },
+        Buffer.from(proof, 'base64url'),
+      );
+    } catch {
+      return false;
+    }
+  };
+
   await context.route('**/health/version', async (route) => {
     const request = route.request();
     const method = request.method();
@@ -367,6 +402,11 @@ export async function mockIdentityApi(
       return json(route, 200, { module: 'identity', version: '0.9.0-teste', dependsOn: [] });
     }
 
+    if (method === 'POST' && ['/auth/login', '/auth/qr/poll', '/guest-invites/accept'].includes(path)) {
+      mock.deviceKey = headers['x-uniover-device-key'] ?? null;
+      rotationLost = false;
+    }
+
     if (method === 'POST' && path === '/auth/login') {
       if (!hasClientHeader) return problem(route, 400, 'validation-failed', 'Cabeçalho ausente.');
       if (body?.['email'] === 'bloqueado@exemplo.com') {
@@ -391,10 +431,49 @@ export async function mockIdentityApi(
       try {
         if (mock.refreshDelayMs > 0) await new Promise((r) => setTimeout(r, mock.refreshDelayMs));
         if (!mock.loggedIn) return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
+
+        if (rotationLost) {
+          // O cookie do navegador é o antigo, já girado: só a recuperação comprovada passa.
+          const recovered = recoveryProofIsValid(
+            headers['x-uniover-recovery-challenge'],
+            headers['x-uniover-recovery-proof'],
+          );
+          if (!recovered) {
+            mock.loggedIn = false;
+            mock.recovery.revokedByReuse = true;
+            return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
+          }
+          rotationLost = false;
+          mock.recovery.recovered++;
+          return json(route, 200, tokenBody());
+        }
+
+        if (mock.loseNextRefreshResponses > 0) {
+          mock.loseNextRefreshResponses--;
+          rotationLost = true;
+          return route.abort('failed');
+        }
         return json(route, 200, tokenBody());
       } finally {
         refreshInFlight--;
       }
+    }
+
+    if (method === 'POST' && path === '/auth/refresh/challenge') {
+      if (!hasClientHeader) return problem(route, 400, 'validation-failed', 'Cabeçalho ausente.');
+      if (!mock.loggedIn) return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
+      if (!rotationLost) return json(route, 200, { challenge: null, familyId: null, expiresIn: 0 });
+      issuedChallenge = {
+        id: randomBytes(16).toString('hex'),
+        nonce: randomBytes(32).toString('base64url'),
+        used: false,
+      };
+      mock.recovery.challenges++;
+      return json(route, 200, {
+        challenge: `${issuedChallenge.id}.${issuedChallenge.nonce}`,
+        familyId: FAMILY,
+        expiresIn: 120,
+      });
     }
 
     // Rota pública: quem recebeu o link ainda não tem sessão. O segredo vai no corpo, nunca na URL.

@@ -82,7 +82,9 @@ public static class IdentityModule
             configuration, IdentityDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.SecurityDays);
 
         services.AddScoped<LoginHandler>();
+        services.AddScoped<RefreshRecoveryService>();
         services.AddScoped<RefreshHandler>();
+        services.AddScoped<RefreshChallengeHandler>();
         services.AddScoped<LogoutHandler>();
         services.AddScoped<StartQrLoginHandler>();
         services.AddScoped<PollQrLoginHandler>();
@@ -134,6 +136,7 @@ public static class IdentityModule
         group.MapGetModuleInfo();
         group.MapLogin();
         group.MapRefresh();
+        group.MapRefreshChallenge();
         group.MapLogout();
         group.MapStartQrLogin();
         group.MapPollQrLogin();
