@@ -37,16 +37,19 @@ foreach ($name in $env:UNIOVER_TEST_FUNCTIONS.Split(',')) {
 }
 $taskName = 'UniOver agente teste'
 $source = $env:UNIOVER_TEST_DEST
+# O registro tecnico da instalacao (Write-InstallLog) vai para uma pasta so do teste, fora da instalacao falsa.
+$base = Join-Path $env:TEMP 'base'
 # A rede do teste: o commit e o zip vem do ambiente.
 function Invoke-RestMethod { param([switch]$UseBasicParsing, [string]$Uri, $Headers) [pscustomobject]@{ sha = $env:UNIOVER_TEST_SHA } }
 function Invoke-WebRequest { param([switch]$UseBasicParsing, [string]$Uri, [string]$OutFile) Copy-Item -LiteralPath $env:UNIOVER_TEST_ZIP -Destination $OutFile }
 """
 
 
-def package(entries: dict[str, bytes], sha: str = SHA) -> bytes:
-    """Zip no formato do GitHub: tudo dentro de `uniover-<sha>/`."""
+def package(entries: dict[str, bytes], sha: str = SHA, comment: str | None = None) -> bytes:
+    """Zip no formato do GitHub: tudo dentro de `uniover-<sha>/` e o commit no comentário do zip."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as bundle:
+        bundle.comment = (sha if comment is None else comment).encode("ascii")
         for name, data in entries.items():
             bundle.writestr(f"uniover-{sha}/{name}", data)
     return buffer.getvalue()
@@ -75,7 +78,14 @@ def run(
     environment = os.environ | {
         "UNIOVER_TEST_INSTALLER": str(INSTALLER),
         "UNIOVER_TEST_FUNCTIONS": ",".join(
-            functions or ("Get-AgentSource", "Get-MoveFailureReason", "Move-Folder")
+            functions
+            or (
+                "Get-AgentSource",
+                "Get-MoveFailureReason",
+                "Move-Folder",
+                "Get-ZipComment",
+                "Write-InstallLog",
+            )
         ),
         "UNIOVER_TEST_DEST": str(destination),
         "UNIOVER_TEST_ZIP": str(zipped),
@@ -145,7 +155,25 @@ def test_a_zip_without_the_agent_leaves_the_working_install_untouched(tmp_path: 
     app = installed(tmp_path)
     done = run(tmp_path, "Get-AgentSource $source", package({"README.md": b"so isto\n"}))
     assert done.returncode != 0
-    assert "apps" in done.stderr
+    assert "incompleto" in done.stderr
+    untouched(app)
+
+
+def test_a_package_from_another_commit_is_refused_before_anything_is_extracted(
+    tmp_path: Path,
+) -> None:
+    app = installed(tmp_path)
+    done = run(tmp_path, "Get-AgentSource $source", package(GOOD, comment="d" * 40))
+    assert done.returncode != 0
+    assert "nao e da versao esperada" in done.stderr
+    untouched(app)
+
+
+def test_a_package_without_the_commit_comment_is_refused(tmp_path: Path) -> None:
+    app = installed(tmp_path)
+    done = run(tmp_path, "Get-AgentSource $source", package(GOOD, comment=""))
+    assert done.returncode != 0
+    assert "nao e da versao esperada" in done.stderr
     untouched(app)
 
 
@@ -181,7 +209,11 @@ def test_a_folder_in_use_is_not_renamed_and_the_install_stays_as_it_was(tmp_path
     with (app / "marca.txt").open("rb"):
         done = run(tmp_path, "Get-AgentSource $source", package(GOOD))
     assert done.returncode != 0
-    assert "em uso" in done.stderr
+    assert "aberto por outro programa" in done.stderr
+    # O motivo tecnico (com o caminho) fica so no registro da instalacao, nao na frase da pessoa.
+    assert "HRESULT" in (tmp_path / "T" / "base" / "logs" / "instalacao.log").read_text(
+        encoding="utf-8"
+    )
     untouched(app)
 
 
@@ -221,7 +253,10 @@ Get-AgentSource $source
 """
     done = run(tmp_path, body, package(GOOD))
     assert done.returncode != 0
-    assert "simulado: a segunda renomeacao falhou" in done.stderr
+    assert "Nao consegui colocar a versao nova no lugar" in done.stderr
+    # O motivo tecnico fica so no registro da instalacao.
+    log = (tmp_path / "T" / "base" / "logs" / "instalacao.log").read_text(encoding="utf-8")
+    assert "simulado: a segunda renomeacao falhou" in log
     untouched(app)
 
 

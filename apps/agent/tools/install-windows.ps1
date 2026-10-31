@@ -4,8 +4,13 @@ param(
     [string]$TvKind = 'android',
     [string]$TvHost,
     [string]$ApiUrl = 'https://uniover.onrender.com',
-    # Branch do repositorio de onde vem o codigo do agente; rode de novo com o padrao para atualizar.
-    [string]$Ref = 'main',
+    # Branch do repositorio de onde vem o codigo do agente; rode de novo com o padrao para atualizar. Hoje e a develop
+    # (a develop e a producao); o agente instalado segue o mesmo ramo (update_channel no agent.toml). Para voltar a
+    # publicar pela main, troque aqui, o DEFAULT_CHANNEL do agente e o endereco do conectar-uniover.cmd (um teste confere).
+    [string]$Ref = 'develop',
+    # Pasta onde o UniOver fica guardado (sem isto, uma janela pergunta na primeira instalacao; numa reinstalacao a
+    # pasta que ja existe e mantida).
+    [string]$InstallDir,
     [switch]$Uninstall
 )
 
@@ -35,16 +40,41 @@ catch { }
 $env:PYTHONUTF8 = '1'
 
 $taskName = 'UniOver agente'
-$base = Join-Path $env:LOCALAPPDATA 'UniOver'
-$source = Join-Path $base 'app'
-$config = Join-Path $base 'config\agent.toml'
-$launcher = Join-Path $base 'launcher.ps1'
-$launcherVbs = Join-Path $base 'launcher.vbs'
-$fallback = Join-Path $base 'run-agent.fallback.ps1'
-$pageFile = Join-Path $base 'web\conectar.html'
-$installerUrl = 'https://raw.githubusercontent.com/n33miaz/uniover/main/apps/agent/tools/install-windows.ps1'
+# A pasta fixa guarda so o que o Windows precisa achar sempre no mesmo lugar: o lancador (a tarefa o abre), o launcher.vbs
+# e o ponteiro (location.txt) da pasta que a pessoa escolheu. Tudo o mais (app, runtime, config, logs, web) fica na pasta
+# de instalacao, que por padrao e a propria pasta fixa: quem ja tinha o UniOver instalado nao muda nada.
+$anchor = Join-Path $env:LOCALAPPDATA 'UniOver'
+$pointerFile = Join-Path $anchor 'location.txt'
+$launcher = Join-Path $anchor 'launcher.ps1'
+$launcherVbs = Join-Path $anchor 'launcher.vbs'
+$installerUrl = "https://raw.githubusercontent.com/n33miaz/uniover/$Ref/apps/agent/tools/install-windows.ps1"
 $automatic = -not $PSBoundParameters.ContainsKey('TvHost')
 $tvKindGiven = $PSBoundParameters.ContainsKey('TvKind')
+
+function Set-Layout([string]$Root) {
+    # Tudo o que depende da pasta de instalacao, num lugar so (e refeito quando a pessoa escolhe outra pasta).
+    $script:base = $Root
+    $script:source = Join-Path $Root 'app'
+    $script:config = Join-Path $Root 'config\agent.toml'
+    $script:fallback = Join-Path $Root 'run-agent.fallback.ps1'
+    $script:pageFile = Join-Path $Root 'web\conectar.html'
+}
+
+function Get-ExistingBase {
+    # A pasta de uma instalacao que ja existe: a do ponteiro (lido como UTF-8, o caminho pode ter acento) ou a fixa.
+    # Sem nenhuma das duas e uma primeira instalacao: devolve $null.
+    try {
+        $text = ([System.IO.File]::ReadAllText($pointerFile, [System.Text.Encoding]::UTF8) -split "`n")[0].Trim()
+        if ($text -and [System.IO.Path]::IsPathRooted($text) -and (Test-Path -LiteralPath $text -PathType Container)) { return $text }
+    }
+    catch { }
+    if ((Test-Path -LiteralPath (Join-Path $anchor 'app')) -or (Test-Path -LiteralPath (Join-Path $anchor 'agent-src'))) { return $anchor }
+    return $null
+}
+
+Set-Layout $anchor
+$existingBase = Get-ExistingBase
+if ($existingBase) { Set-Layout $existingBase }
 
 function Write-Page([string]$Html, [bool]$Reload = $true) {
     # Pagina de andamento (modo automatico). $Html ja vem com as entidades HTML (o arquivo e so ASCII). Troca por
@@ -122,8 +152,8 @@ if ($Uninstall) {
     Remove-Item -LiteralPath $launcher -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $launcherVbs -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $fallback -Force -ErrorAction SilentlyContinue
-    Write-Host 'A tarefa agendada do UniOver foi removida e o agente parou.'
-    Write-Host "Configuracao e pareamento ficaram em $base; apague a pasta se quiser tirar tudo."
+    Write-Host 'O UniOver foi desligado: ele nao inicia mais com o Windows e parou de funcionar neste computador.'
+    Write-Host "Suas configuracoes e o pareamento ficaram em $base; apague essa pasta se quiser tirar tudo."
     exit 0
 }
 
@@ -132,7 +162,7 @@ function Find-Uv {
     if ($command) {
         return $command.Source
     }
-    Write-Host 'Instalando o uv pelo winget...'
+    Write-Host 'Preparando uma ferramenta que o UniOver precisa (so na primeira vez)...'
     winget install --id astral-sh.uv -e --source winget --accept-package-agreements --accept-source-agreements
     $command = Get-Command uv -ErrorAction SilentlyContinue
     if (-not $command) {
@@ -145,7 +175,7 @@ function Find-Uv {
         }
     }
     if (-not $command) {
-        throw 'O uv foi instalado, mas o terminal ainda nao o encontrou. Abra outro PowerShell e rode o instalador de novo.'
+        throw 'Uma ferramenta que o UniOver precisa foi instalada, mas o Windows ainda nao a encontrou. Feche tudo e abra o conector de novo.'
     }
     return $command.Source
 }
@@ -220,6 +250,24 @@ function Move-Folder([string]$From, [string]$To) {
     }
 }
 
+function Get-ZipComment([string]$Path) {
+    # O comentario do fim do zip (o GitHub grava ali o codigo do commit). Procura o registro final do zip nos ultimos
+    # 64 KB. Devolve $null se o arquivo nao tem esse registro (nao e um zip inteiro).
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($Path)
+        $floor = [Math]::Max(0, $bytes.Length - 65557)
+        for ($i = $bytes.Length - 22; $i -ge $floor; $i--) {
+            if ($bytes[$i] -eq 0x50 -and $bytes[$i + 1] -eq 0x4B -and $bytes[$i + 2] -eq 0x05 -and $bytes[$i + 3] -eq 0x06) {
+                $length = $bytes[$i + 20] + 256 * $bytes[$i + 21]
+                if ($i + 22 + $length -ne $bytes.Length) { continue }
+                return [System.Text.Encoding]::ASCII.GetString($bytes, $i + 22, $length).Trim()
+            }
+        }
+    }
+    catch { }
+    return $null
+}
+
 function Get-AgentSource([string]$Destination) {
     # Baixa o commit exato (e grava .version para a auto-atualizacao saber de onde partiu).
     # O pacote e extraido e conferido numa pasta candidata ao lado ($Destination.new); so depois disso ela troca de lugar
@@ -235,15 +283,19 @@ function Get-AgentSource([string]$Destination) {
             $reply = Invoke-RestMethod -UseBasicParsing -Uri "https://api.github.com/repos/n33miaz/uniover/commits/$Ref" -Headers @{ 'User-Agent' = 'uniover-installer' }
         }
         catch {
-            throw 'Nao consegui consultar a versao do agente no GitHub. Confira a internet e tente de novo.'
+            throw 'Nao consegui buscar a versao mais nova do UniOver. Confira a internet e tente de novo.'
         }
         if ($reply.sha -notmatch '^[0-9a-f]{40}$') {
-            throw 'O GitHub nao informou um commit valido para o agente.'
+            throw 'O servidor de downloads nao informou uma versao valida do UniOver.'
         }
         $sha = $reply.sha
         $address = "https://github.com/n33miaz/uniover/archive/$sha.zip"
-        Write-Host 'Baixando o agente...'
+        Write-Host 'Baixando o UniOver...'
         Invoke-WebRequest -UseBasicParsing -Uri $address -OutFile $zip
+        # O pacote tem o codigo da versao gravado nele: um pacote de outra versao, ou que nao veio inteiro, nao passa.
+        if ((Get-ZipComment $zip) -ne $sha) {
+            throw 'O pacote baixado nao e da versao esperada. A instalacao atual ficou como estava.'
+        }
         # So apps/agent sai do zip: o repositorio inteiro tem caminhos (da API) que passam do limite de 260
         # caracteres do Windows e derrubam a extracao completa.
         if (Test-Path -LiteralPath $candidate) {
@@ -281,7 +333,7 @@ function Get-AgentSource([string]$Destination) {
             $bundle.Dispose()
         }
         if ($extracted -eq 0 -or -not (Test-Path -LiteralPath (Join-Path $candidate 'pyproject.toml'))) {
-            throw 'O pacote baixado nao contem apps\agent.'
+            throw 'O pacote baixado esta incompleto.'
         }
         $png = Join-Path $candidate 'assets\uniover.png'
         $ico = Join-Path $candidate 'assets\uniover.ico'
@@ -304,14 +356,15 @@ function Get-AgentSource([string]$Destination) {
         if (Test-Path -LiteralPath $Destination) {
             Remove-Item -LiteralPath $oldFolder -Recurse -Force -ErrorAction SilentlyContinue
             if (Test-Path -LiteralPath $oldFolder) {
-                throw 'Nao consegui liberar a pasta da versao anterior do agente. A instalacao atual ficou como estava.'
+                throw 'Nao consegui liberar a pasta da versao anterior do UniOver. A instalacao atual ficou como estava.'
             }
             try {
                 Move-Folder $Destination $oldFolder
             }
             catch {
                 $reason = Get-MoveFailureReason $_.Exception
-                throw "A pasta do agente esta em uso por outro programa. A instalacao atual ficou como estava. Motivo: $reason"
+                Write-InstallLog "Pasta em uso: $reason"
+                throw 'O UniOver esta aberto por outro programa agora. Feche-o e tente de novo; a instalacao atual ficou como estava.'
             }
         }
         try {
@@ -323,7 +376,8 @@ function Get-AgentSource([string]$Destination) {
             if ((Test-Path -LiteralPath $oldFolder) -and -not (Test-Path -LiteralPath $Destination)) {
                 try { Move-Folder $oldFolder $Destination } catch { }
             }
-            throw "Nao consegui colocar a versao nova no lugar. A instalacao atual ficou como estava. Motivo: $reason"
+            Write-InstallLog "Troca da versao falhou: $reason"
+            throw 'Nao consegui colocar a versao nova no lugar. A instalacao atual ficou como estava.'
         }
     }
     catch {
@@ -387,8 +441,17 @@ function Write-Readme {
     $readme = @'
 UniOver
 
-Esta pasta guarda o agente que conecta este computador ao UniOver e a TV.
-Ele inicia sozinho, fica perto do relogio e se atualiza automaticamente.
+Esta pasta guarda o UniOver deste computador: o programa que liga o PC ao app e a TV.
+Ele inicia sozinho quando voce entra no Windows, fica perto do relogio e se atualiza e se arruma sozinho.
+
+O que tem aqui (voce nao precisa mexer em nada):
+  app       o programa em si (troca sozinho a cada atualizacao; a versao anterior fica guardada ao lado)
+  config    suas configuracoes
+  logs      o que o UniOver fez e o que deu errado (agent.log, supervisor.log, instalacao.log)
+  runtime   o que ele precisa para funcionar e o estado das atualizacoes
+  web       a pagina de conexao
+  tv        a chave de acesso a sua TV
+  icons     as figuras dos apps da TV
 
 Se algo nao funcionar, rode de novo o arquivo conectar-uniover.cmd.
 Para remover, execute o instalador com -Uninstall e, se quiser, apague esta pasta.
@@ -414,7 +477,7 @@ function Write-AgentLauncher {
     $updatedLauncher = Join-Path $source 'tools\launcher.ps1'
     $updatedVbs = Join-Path $source 'tools\launcher.vbs'
     if (-not (Test-Path -LiteralPath $updatedWrapper) -or -not (Test-Path -LiteralPath $updatedLauncher)) {
-        throw 'O pacote do agente nao tem os arquivos de inicializacao.'
+        throw 'O pacote baixado nao tem os arquivos de inicializacao.'
     }
     # O lancador nao muda: ele sempre delega para o supervisor que veio dentro de app atualizado.
     Copy-Item -LiteralPath $updatedLauncher -Destination $launcher -Force
@@ -478,7 +541,135 @@ exit $failed
     return 'Alguns ajustes do sistema nao puderam ser aplicados; o agente funciona, mas o PC pode suspender ou perder o Wi-Fi.'
 }
 
+function Write-InstallLog([string]$Message) {
+    # Os detalhes tecnicos (para quem for ajudar) ficam em logs\instalacao.log; a pessoa so ve frases simples.
+    try {
+        $logs = Join-Path $base 'logs'
+        New-Item -ItemType Directory -Path $logs -Force | Out-Null
+        $stamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture)
+        [System.IO.File]::AppendAllText((Join-Path $logs 'instalacao.log'), ($stamp + ' ' + $Message + "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+    }
+    catch { }
+}
+
+function Test-InstallFolder([string]$Full) {
+    # Recusa, com uma frase que a pessoa entende, a pasta em que o UniOver nao funcionaria bem: de rede, de disco removivel,
+    # protegida pelo Windows (exigiria administrador a cada atualizacao), longa demais (o Windows limita o caminho a 260
+    # caracteres e as dependencias do programa sao fundas), sem espaco ou sem permissao de escrita.
+    $root = [System.IO.Path]::GetPathRoot($Full)
+    if (-not $root -or $root.StartsWith('\\')) {
+        throw 'Escolha uma pasta num disco do proprio computador (nao uma pasta de rede).'
+    }
+    $drive = New-Object System.IO.DriveInfo($root)
+    if ($drive.DriveType -ne [System.IO.DriveType]::Fixed) {
+        throw 'Escolha uma pasta num disco do computador: um pen drive ou disco removivel pode ser desconectado e o UniOver pararia.'
+    }
+    foreach ($protected in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:SystemRoot)) {
+        if ($protected -and $Full.StartsWith($protected, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'O Windows protege essa pasta. Escolha outra, por exemplo uma pasta dentro do seu usuario ou em outro disco.'
+        }
+    }
+    if ($Full.Length -gt 80) {
+        throw 'O caminho dessa pasta e longo demais. Escolha uma pasta mais curta.'
+    }
+    if ($drive.AvailableFreeSpace -lt 1GB) {
+        throw 'Nao ha espaco livre suficiente nesse disco (o UniOver precisa de cerca de 1 GB).'
+    }
+    try {
+        New-Item -ItemType Directory -Path $Full -Force | Out-Null
+        $probe = Join-Path $Full '.escrita'
+        [System.IO.File]::WriteAllText($probe, 'ok')
+        Remove-Item -LiteralPath $probe -Force
+    }
+    catch {
+        throw 'Nao consigo gravar nessa pasta. Escolha outra.'
+    }
+}
+
+function Resolve-InstallFolder([string]$Path) {
+    # O UniOver sempre fica numa pasta propria chamada UniOver: se a pessoa escolheu "D:\Programas", fica em
+    # "D:\Programas\UniOver" (nunca espalha arquivos soltos numa pasta que ela usa para outras coisas).
+    $full = [System.IO.Path]::GetFullPath($Path.Trim().Trim('"'))
+    if ((Split-Path $full -Leaf) -ne 'UniOver') { $full = Join-Path $full 'UniOver' }
+    if ($full -ieq $anchor) { return $anchor }
+    Test-InstallFolder $full
+    return $full
+}
+
+function Select-InstallFolder {
+    # A pergunta da primeira instalacao, numa janela do Windows (a unica alem do aviso de permissao). Cancelar ou fechar
+    # usa a pasta padrao: ninguem fica preso aqui. O texto leva acentos por escape (este arquivo e so ASCII).
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        $owner = New-Object System.Windows.Forms.Form
+        $owner.TopMost = $true
+        $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dialog.Description = [regex]::Unescape('Escolha onde o UniOver vai ficar guardado neste computador.\nSe tiver d\u00favida, s\u00f3 clique em OK: ele fica numa pasta pr\u00f3pria, dentro do seu usu\u00e1rio.')
+        $dialog.SelectedPath = $anchor
+        $dialog.ShowNewFolderButton = $true
+        if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK -and $dialog.SelectedPath) {
+            return $dialog.SelectedPath
+        }
+    }
+    catch { }
+    return $null
+}
+
+function Initialize-InstallFolder {
+    # Primeira instalacao: usa -InstallDir ou pergunta onde guardar. Reinstalacao: mantem a pasta que ja existe (mudar de
+    # pasta exige remover antes; mover um programa em uso e pareamento no meio de uma atualizacao nao vale o risco).
+    New-Item -ItemType Directory -Path $anchor -Force | Out-Null
+    if ($existingBase) {
+        if ($InstallDir) { Write-InstallLog 'Ja existe uma instalacao: a pasta pedida foi ignorada e a atual foi mantida.' }
+        return
+    }
+    $wanted = $InstallDir
+    if (-not $wanted -and $automatic) { $wanted = Select-InstallFolder }
+    if (-not $wanted) { return }
+    $final = Resolve-InstallFolder $wanted
+    if ($final -ne $anchor) {
+        New-Item -ItemType Directory -Path $final -Force | Out-Null
+        [System.IO.File]::WriteAllText($pointerFile, $final, [System.Text.UTF8Encoding]::new($false))
+        Set-Layout $final
+    }
+}
+
+function Get-BaseConfig {
+    # O que o instalador grava no agent.toml: o endereco da API e o ramo de que o UniOver se atualiza (so main ou develop;
+    # outro valor deixa o padrao do programa).
+    $values = @{ api_url = $ApiUrl }
+    if ($Ref -eq 'main' -or $Ref -eq 'develop') { $values['update_channel'] = $Ref }
+    return $values
+}
+
+function Invoke-Prepare([string]$Uv) {
+    # --locked: o uv.lock manda, nenhuma dependencia muda por conta propria. A saida vai para o registro.
+    $output = & $Uv sync --locked --project $source 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        Write-InstallLog ('uv sync falhou (codigo ' + $LASTEXITCODE + '): ' + $output)
+        throw 'Nao consegui preparar o UniOver neste computador. Confira a internet e tente de novo.'
+    }
+}
+
+function Invoke-SelfCheck([string]$Uv) {
+    $output = & $Uv run --no-sync --project $source python -m uniover_agent.selfcheck 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        Write-InstallLog ('auto-diagnostico da versao falhou: ' + $output)
+        throw 'A versao baixada nao funciona neste computador. A instalacao anterior, se havia, volta a funcionar; tente de novo mais tarde.'
+    }
+}
+
+function Write-InstallDiagnosis([string]$Uv) {
+    try {
+        $output = & $Uv run --no-sync --project $source uniover-agent diagnose 2>&1 | Out-String
+        Write-InstallLog ('Exame final da instalacao:' + [Environment]::NewLine + $output)
+    }
+    catch { }
+}
+
 function Invoke-AutomaticInstall {
+    # Primeiro a pergunta da pasta: a pagina de andamento mora nela, e a janela aberta no navegador nao pode trocar de lugar.
+    Initialize-InstallFolder
     Write-Page 'Instalando o UniOver&hellip;'
     Open-Page
 
@@ -491,6 +682,7 @@ function Invoke-AutomaticInstall {
     Write-Readme
     Write-StartMenuShortcut
     $env:UNIOVER_CONFIG_FILE = $config
+    $env:UNIOVER_HOME = $base
     # O ambiente Python fica FORA da pasta do agente e o uv roda com --project: assim a
     # auto-atualizacao consegue trocar a pasta do agente por renomeacao (pasta em uso nao troca).
     $env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'runtime\venv'
@@ -504,13 +696,14 @@ function Invoke-AutomaticInstall {
     # pacote novo estar inteiro): se este processo cair, ainda ha para onde voltar.
     Get-AgentSource $source
     Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
-    Set-ConfigValues $config @{ api_url = $ApiUrl }
+    Remove-Item -LiteralPath (Join-Path $base 'runtime\update-trial.txt') -Force -ErrorAction SilentlyContinue
+    Set-ConfigValues $config (Get-BaseConfig)
 
-    Write-Host 'Preparando o ambiente Python (na primeira vez demora um pouco)...'
-    & $uv sync --project $source
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Nao foi possivel preparar o agente.'
-    }
+    Write-Host 'Preparando o UniOver (na primeira vez demora um pouco)...'
+    Invoke-Prepare $uv
+
+    # A versao instalada se examina antes de seguir: se ela nao carrega neste computador, para aqui com uma frase simples.
+    Invoke-SelfCheck $uv
 
     # 1. Acha a TV na rede. O agente grava tipo, endereco e identificador no agent.toml.
     Write-Page 'Procurando a TV&hellip;'
@@ -525,7 +718,8 @@ function Invoke-AutomaticInstall {
     # A pagina ja esta aberta: o agente so a reescreve (--no-browser evita uma segunda aba).
     & $uv run --project $source uniover-agent pair --if-needed --no-browser --installing
     if ($LASTEXITCODE -ne 0) {
-        throw 'O pareamento do agente nao foi concluido.'
+        Write-InstallLog "pair terminou com codigo $LASTEXITCODE"
+        throw 'Este computador nao foi ligado a sua conta. Abra o conector de novo e aprove no app.'
     }
 
     # 3. Pareia a TV (na Samsung, aceite o aviso Permitir na tela da TV; na Android TV o codigo e pedido numa janela).
@@ -541,20 +735,20 @@ function Invoke-AutomaticInstall {
     Register-AgentTask
     Start-ScheduledTask -TaskName $taskName
 
-    Write-Host ''
-    Write-Host 'Pronto. O que foi feito:'
-    Write-Host "  - O agente foi instalado em $source e se atualiza sozinho."
-    Write-Host "  - $system"
-    if ($tvPaired) {
-        Write-Host '  - A TV foi encontrada e pareada.'
-    }
-    else {
-        Write-Host '  - A TV ainda nao esta pareada (rode este arquivo de novo com a TV ligada).'
-    }
-    Write-Host "  - Foi criada a tarefa agendada '$taskName': o agente inicia sozinho quando voce entra no Windows, sem janela."
-    Write-Host "  - O que o agente faz fica registrado em $(Join-Path $base 'logs\agent.log')."
-    Write-Host 'Para remover, rode o comando abaixo (a configuracao e o pareamento ficam):'
-    Write-Host ('  powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ' + $installerUrl + '))) -Uninstall"')
+    # Um exame final da instalacao fica no registro, para quem for ajudar saber como ela ficou.
+    Write-InstallDiagnosis $uv
+
+    $summary = @(
+        'Pronto. O que foi feito:',
+        "  - O UniOver foi instalado em $base e se atualiza sozinho.",
+        "  - $system",
+        $(if ($tvPaired) { '  - A TV foi encontrada e ligada ao UniOver.' } else { '  - A TV ainda nao esta ligada (abra o conector de novo com a TV ligada).' }),
+        '  - Ele inicia sozinho quando voce entra no Windows, sem nenhuma janela.',
+        ('  - O que ele faz e o que da errado fica anotado em ' + (Join-Path $base 'logs')),
+        'Para desligar o UniOver, rode o comando abaixo (suas configuracoes ficam guardadas):',
+        ('  powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ' + $installerUrl + '))) -Uninstall"')
+    )
+    foreach ($line in $summary) { Write-Host $line; Write-InstallLog $line }
 
     if ($tvPaired) {
         Write-Page 'Pronto. Pode fechar esta janela.' $false
@@ -570,10 +764,12 @@ if ($automatic) {
         exit 0
     }
     catch {
+        # A frase para a pessoa e a da propria falha (todas as daqui sao simples); o detalhe tecnico vai para o registro.
         $reason = [System.Net.WebUtility]::HtmlEncode($_.Exception.Message)
-        Write-Host ("Falha: " + $_.Exception.Message)
+        Write-Host ('Falha: ' + $_.Exception.Message)
+        Write-InstallLog ('Falha: ' + $_.Exception.ToString())
         Restore-RunningAgent
-        Write-Page ('A instala&ccedil;&atilde;o n&atilde;o terminou: ' + $reason + ' Feche esta janela e abra o conector de novo.') $false
+        Write-Page ('A instala&ccedil;&atilde;o n&atilde;o terminou: ' + $reason + ' Feche esta janela e abra o conector de novo. Se n&atilde;o resolver, avise quem te ajudou: os detalhes ficaram no arquivo instalacao.log, na pasta do UniOver.') $false
         exit 1
     }
 }
@@ -582,29 +778,33 @@ if ($automatic) {
 # Qualquer falha daqui para baixo religa antes o agente que ja estava instalado e so entao encerra com o erro.
 trap { Restore-RunningAgent; break }
 $uv = Find-Uv
+Initialize-InstallFolder
 New-Item -ItemType Directory -Path $base -Force | Out-Null
 Stop-Agent
 Move-LegacyLayout
 Write-Readme
 Write-StartMenuShortcut
 $env:UNIOVER_CONFIG_FILE = $config
+$env:UNIOVER_HOME = $base
 $env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'runtime\venv'
 
 Get-AgentSource $source
 Remove-Item -LiteralPath (Join-Path $base 'update-trial.txt') -Force -ErrorAction SilentlyContinue
-Write-Config $config @("api_url = " + ($ApiUrl | ConvertTo-Json -Compress))
+Remove-Item -LiteralPath (Join-Path $base 'runtime\update-trial.txt') -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Path (Split-Path $config -Parent) -Force | Out-Null
+$configLines = @()
+foreach ($entry in (Get-BaseConfig).GetEnumerator()) { $configLines += ($entry.Key + ' = ' + ($entry.Value | ConvertTo-Json -Compress)) }
+Write-Config $config $configLines
 
-Write-Host 'Preparando o ambiente Python...'
-& $uv --directory $source sync
-if ($LASTEXITCODE -ne 0) {
-    throw 'Nao foi possivel preparar o agente.'
-}
+Write-Host 'Preparando o UniOver...'
+Invoke-Prepare $uv
+Invoke-SelfCheck $uv
 
-Write-Host 'Aprovacao do agente'
-Write-Host 'O proximo comando mostrara um codigo e um QR. Abra o app UniOver e aprove.'
+Write-Host 'Ligando este computador a sua conta'
+Write-Host 'O proximo comando mostrara um codigo e um desenho (QR). Abra o app UniOver e aprove.'
 & $uv --directory $source run uniover-agent pair
 if ($LASTEXITCODE -ne 0) {
-    throw 'O pareamento do agente nao foi concluido.'
+    throw 'Este computador nao foi ligado a sua conta.'
 }
 
 # O pareamento preserva chaves locais; trocamos so os campos da TV para nunca guardar token aqui.
@@ -615,16 +815,17 @@ if ($TvKind -eq 'samsung') {
 }
 & $uv --directory $source run uniover-agent tv-pair --kind $TvKind --host $TvHost
 if ($LASTEXITCODE -ne 0) {
-    throw 'O pareamento da TV nao foi concluido.'
+    throw 'A TV nao foi ligada ao UniOver.'
 }
 
-$answer = Read-Host "Registrar a tarefa '$taskName' para iniciar ao entrar no Windows? (s/N)"
+$answer = Read-Host 'Fazer o UniOver iniciar sozinho quando voce entrar no Windows? (s/N)'
 if ($answer -match '^[sS]') {
     Write-AgentLauncher
     Register-AgentTask
     Start-ScheduledTask -TaskName $taskName
-    Write-Host 'Tarefa registrada e iniciada.'
+    Write-InstallDiagnosis $uv
+    Write-Host 'Pronto: o UniOver ja esta funcionando e vai iniciar sozinho.'
 }
 else {
-    Write-Host 'A tarefa nao foi registrada. Para iniciar agora: uv run uniover-agent run'
+    Write-Host 'Ele nao vai iniciar sozinho. Para iniciar agora: uv run uniover-agent run'
 }
