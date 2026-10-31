@@ -11,15 +11,13 @@ import { AssessmentsListSkeleton } from './assessment-skeletons';
   template: `
     <div class="page" aria-labelledby="title">
       <header>
-        <p class="eyebrow" i18n="@@training.assessments.eyebrow">Histórico pessoal</p>
+        <p class="eyebrow" i18n="@@training.assessments.eyebrow">Histórico Pessoal</p>
         <h1 id="title" i18n="@@training.assessments.title">Avaliações Físicas</h1>
       </header>
       <aside class="privacy" role="note">
         <strong i18n="@@training.assessments.private-title">Somente Neste Aparelho</strong>
         <p i18n="@@training.assessments.private-copy">
-          Este histórico e os arquivos anexados não são enviados nem sincronizados. Se os dados do
-          navegador forem apagados, você poderá perder os registros. Exporte uma cópia para
-          guardá-los.
+          Nada aqui é enviado ou sincronizado. Exporte uma cópia para não perder os registros.
         </p>
       </aside>
       <div class="actions">
@@ -32,9 +30,9 @@ import { AssessmentsListSkeleton } from './assessment-skeletons';
         <app-assessments-list-skeleton />
       } @else if (rows().length === 0) {
         <section class="empty">
-          <h2 i18n="@@training.assessments.empty-title">Seu histórico começa aqui</h2>
+          <h2 i18n="@@training.assessments.empty-title">Seu Histórico Começa Aqui</h2>
           <p i18n="@@training.assessments.empty-copy">
-            Registre uma avaliação ou importe um arquivo de avaliação exportado pelo UniOver.
+            Registre uma avaliação ou importe um arquivo.
           </p>
         </section>
       } @else {
@@ -100,6 +98,11 @@ import { AssessmentsListSkeleton } from './assessment-skeletons';
     }
     .privacy strong {
       color: var(--a-ink);
+    }
+    /* O título do vazio cabe numa linha em qualquer largura. */
+    .empty h2 {
+      font-size: clamp(1.0625rem, 5vw, 1.375rem);
+      white-space: nowrap;
     }
     .privacy p,
     .muted,

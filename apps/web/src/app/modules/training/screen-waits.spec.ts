@@ -102,7 +102,7 @@ describe('the waits of the Training screens', () => {
     await eventually(harness.fixture, () =>
       expect(el.querySelector('app-loading-frame')).toBeNull(),
     );
-    expect(el.textContent).toContain('Seu histórico começa aqui');
+    expect(el.textContent).toContain('Seu Histórico Começa Aqui');
   });
 
   it('keeps an assessment in a skeleton, with its header, until it is read', async () => {

@@ -32,9 +32,7 @@ function todayKey(): string {
   template: `
     <div class="page" aria-labelledby="title">
       <header>
-        <p class="eyebrow" i18n="@@training.assessments.editor-eyebrow">
-          Dados guardados neste aparelho
-        </p>
+        <p class="eyebrow" i18n="@@training.assessments.editor-eyebrow">Só Neste Aparelho</p>
         <h1 id="title">{{ editing() ? editTitle : newTitle }}</h1>
       </header>
       @if (recordLoading()) {
