@@ -33,6 +33,8 @@ const IDENTITY_ACTIONS = [
   'guest_invite_accepted',
   'guest_invite_revoked',
   'guest_revoked',
+  'guest_paused',
+  'guest_resumed',
   'session_revoked',
   'permissions_changed',
   'profile_updated',

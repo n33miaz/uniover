@@ -25,6 +25,7 @@ const GUEST: GuestSummary = {
   email: 'bia@exemplo.com',
   createdAt: '2026-10-19T15:00:00Z',
   disabledAt: null,
+  pausedAt: null,
   permissions: ['module:tv', 'tv:control', 'tv:power', 'tv:launch', 'tv:history'],
 };
 

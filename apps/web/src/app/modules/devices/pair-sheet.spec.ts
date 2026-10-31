@@ -27,6 +27,7 @@ describe('PairSheet', () => {
     id,
     displayName,
     disabledAt,
+    pausedAt: null,
     email: `${id}@uniover.test`,
     createdAt: '2026-10-01T00:00:00Z',
     permissions: ['module:tv'],
