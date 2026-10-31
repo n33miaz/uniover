@@ -1,0 +1,108 @@
+/* Folha que sobe de baixo: o <dialog> modal ocupa a largura toda e cola no rodapé (a mesma do atalho na tela de início). */
+.sheet {
+  --dialog-shift: 40px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  max-height: 88dvh;
+  margin: auto 0 0;
+  padding: var(--space-2) var(--gutter) 0;
+  border: 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--a-surface-raised);
+  color: var(--a-ink);
+  box-shadow: var(--shadow-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (min-width: 640px) {
+  .sheet {
+    width: min(100%, 34rem);
+    margin-inline: auto;
+  }
+}
+
+.sheet[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sheet::backdrop {
+  background: rgb(8 16 10 / 0.52);
+}
+
+.grabber {
+  display: block;
+  flex: none;
+  width: 40px;
+  height: 5px;
+  margin: 0 auto var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--a-line);
+}
+
+/* Pouco texto e tudo no centro: o ícone, o título numa linha e uma frase. */
+.content {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
+}
+
+h2 {
+  margin: 0;
+  max-width: 100%;
+  font-size: clamp(1.1rem, 5.4vw, var(--fs-title));
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.text,
+.tv-name {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  text-wrap: balance;
+}
+
+.tv-name {
+  color: var(--a-ink);
+  font-weight: 650;
+}
+
+.footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex: none;
+  gap: 10px;
+  margin: 0 calc(-1 * var(--gutter));
+  padding: var(--space-3) var(--gutter);
+  padding-bottom: calc(var(--space-3) + var(--safe-bottom));
+  border-top: 1px solid var(--a-line);
+  background: var(--a-surface-raised);
+}
+
+.footer button {
+  flex: 1 1 0;
+}

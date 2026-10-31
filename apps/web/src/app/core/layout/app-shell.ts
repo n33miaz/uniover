@@ -13,6 +13,7 @@ import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router
 import { filter, map, startWith } from 'rxjs';
 import { AuthService } from '../auth/auth.service';
 import { InstallHint } from '../pwa/install-hint';
+import { TvPermissionHost } from '../tv-permission/tv-permission-host';
 import { SessionState } from '../session/session-state';
 import { PageTopBar } from '../../shared/ui/page-top-bar';
 import { TabBar } from '../../shared/ui/tab-bar/tab-bar';
@@ -35,7 +36,7 @@ const HOME_BACK: ShellBack = {
  */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, TabBar, InstallHint, GearIcon, PageTopBar],
+  imports: [RouterOutlet, RouterLink, TabBar, InstallHint, TvPermissionHost, GearIcon, PageTopBar],
   template: `
     @if (data().shellStyle !== 'training' && data().title; as title) {
       <app-page-top-bar [title]="title" [backLabel]="lead().label" (back)="goBack()">
@@ -64,6 +65,8 @@ const HOME_BACK: ShellBack = {
     }
     <!-- Fora do <main>: a folha do atalho na tela de início é diálogo (camada do topo) e nunca entra no layout. -->
     <app-install-hint />
+    <!-- Antes de qualquer tela: a TV que esqueceu o UniOver pede o aceite numa folha modal (só se houver pendência). -->
+    <app-tv-permission />
   `,
   styles: `
     :host {
