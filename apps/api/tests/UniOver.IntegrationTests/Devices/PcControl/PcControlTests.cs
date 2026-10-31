@@ -408,6 +408,74 @@ public sealed class PcControlTests(PostgresFixture postgres)
         command.GetProperty("type").GetString().Should().Be("pc.media.v1");
     }
 
+    // ---- qual PC ----
+
+    /// <summary>
+    /// A convidada com o próprio PC pareado (e a permissão do PC): o dela vence o da casa, ligado ou não. Com o dela
+    /// desligado a resposta é 503, e o PC da casa, conectado, não recebe nada.
+    /// </summary>
+    [Fact]
+    public async Task APersonDrivesHerOwnPc_NeverTheHouseOneWhenHerOwnIsOff()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var house = await ConnectPcAsync(app);
+
+        var guest = await app.App.NewGuestAsync(["module:tv", "module:pc"]);
+        await app.App.ConfirmWithPasswordAsync(guest);
+        var started = await app.App.StartAsync("PC da Raphael");
+        using var approved = await app.App.ApproveOwnRawAsync(guest.Login, new { userCode = started.UserCode, tvName = "TV da Raphael" });
+        approved.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var poll = await app.App.PollRawAsync(started.PairingId, started.DeviceCode);
+        var credentials = await DevicesApp.JsonAsync(poll);
+        var slug = credentials.GetProperty("agentId").GetString()!;
+        var own = await FakeAgent.ConnectAsync(app.Server, slug, credentials.GetProperty("deviceToken").GetString()!);
+        await own.SendHelloAsync("0.1.0+3f2a9c1d4e5b", "transport.keepalive.v1", Capability);
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(slug)?.AgentVersion is not null, "hello do PC dela");
+
+        // Com o PC dela ligado, é o dela que recebe, e o da casa não.
+        var online = PostAsync(app, "media", new { action = "PLAY_PAUSE" }, guest.Login.AccessToken);
+        var command = await AnswerAsync(own);
+        using var delivered = await Within(online);
+        delivered.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("target").GetString().Should().Be($"agent:{slug}");
+
+        // Com o dela desligado, a resposta é "desconectado": nada vai ao PC da casa.
+        await own.DisposeAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(slug)?.Connected == false, "queda registrada");
+        using var offline = await PostAsync(app, "media", new { action = "PLAY_PAUSE" }, guest.Login.AccessToken);
+        offline.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        using var status = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: guest.Login.AccessToken);
+        (await DevicesApp.JsonAsync(status)).GetProperty("online").GetBoolean().Should().BeFalse();
+
+        // E o dono, que pareou o PC da casa, continua mandando nele.
+        var mine = PostAsync(app, "media", new { action = "MUTE" });
+        var houseCommand = await AnswerAsync(house);
+        using var ok = await Within(mine);
+        ok.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        houseCommand.GetProperty("target").GetString().Should().Be($"agent:{app.Agent.Slug}");
+    }
+
+    [Fact]
+    public async Task AmongSeveralPcsOfTheSamePerson_TheConnectedOneWins()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var first = await ConnectPcAsync(app);
+        await first.DisposeAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda registrada");
+
+        var second = await app.PairAnotherAsync("Segundo PC");
+        await using var secondAgent = await FakeAgent.ConnectAsync(app.Server, second.Slug, second.Token);
+        await secondAgent.SendHelloAsync("0.1.0+3f2a9c1d4e5b", "transport.keepalive.v1", Capability);
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(second.Slug)?.AgentVersion is not null, "hello do segundo PC");
+
+        var http = PostAsync(app, "key", new { key = "ENTER" });
+        var command = await AnswerAsync(secondAgent);
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("target").GetString().Should().Be($"agent:{second.Slug}");
+    }
+
     // ---- limite de taxa do movimento ----
 
     [Fact]

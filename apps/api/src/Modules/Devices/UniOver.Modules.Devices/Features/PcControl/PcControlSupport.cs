@@ -44,7 +44,8 @@ internal sealed record PcTarget(Guid AgentId, string Slug, bool Connected);
 /// Qual computador o controle do PC usa. Só conta agente ativo que declarou <c>pc.control.v1</c> (o dono ligou o
 /// controle naquele PC). Cada pessoa usa o computador que ela mesma pareou; sem um, usa o da casa (outro agente com a
 /// capacidade). Isso é de propósito: conceder <c>module:pc</c> a um convidado é entregar a ele o PC da casa, e quem
-/// tem o próprio PC pareado nunca mexe no de outra pessoa por engano. Entre vários, o conectado vence.
+/// tem o próprio PC pareado nunca mexe no de outra pessoa, nem quando o dela está desligado. Entre vários da mesma
+/// origem, o conectado vence.
 /// </summary>
 internal sealed class PcAgentResolver(DevicesDbContext db, IAgentPresenceReader presence)
 {
@@ -58,8 +59,10 @@ internal sealed class PcAgentResolver(DevicesDbContext db, IAgentPresenceReader 
         var capable = agents
             .Select(a => (Agent: a, Info: presence.Get(a.Slug)))
             .Where(x => x.Info is not null && x.Info.Capabilities.Contains(PcMessages.Capability, StringComparer.Ordinal))
-            .OrderByDescending(x => x.Info!.Connected)
-            .ThenByDescending(x => x.Agent.PairedBy == userId)
+            // Os da própria pessoa vêm primeiro, ligados ou não: se o PC dela está desligado a resposta é "desconectado", e
+            // nunca o PC de outra pessoa. O conectado só desempata dentro de cada grupo.
+            .OrderByDescending(x => x.Agent.PairedBy == userId)
+            .ThenByDescending(x => x.Info!.Connected)
             .ThenBy(x => x.Agent.CreatedAt)
             .FirstOrDefault();
 
