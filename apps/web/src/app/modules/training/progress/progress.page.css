@@ -10,11 +10,6 @@
   margin-inline: auto;
 }
 
-.loading {
-  height: 360px;
-  border-radius: var(--radius-lg);
-}
-
 /* As seções que se abrem: um grupo só, com um fio entre elas. */
 .sections > * + * {
   border-top: 1px solid var(--a-line);

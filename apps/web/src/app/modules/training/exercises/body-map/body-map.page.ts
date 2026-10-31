@@ -35,6 +35,7 @@ import { BODY_ZONES, BodyFace, faceFor } from './body-zones';
 import { rectPath } from './body-shapes';
 import { intensityOf, legendSteps } from './muscle-intensity';
 import { MuscleList, MuscleListGroup } from './muscle-list';
+import { BodyMapSkeleton } from './body-map-skeleton';
 
 /**
  * Mapa do corpo: a silhueta (frente ou costas) com um botão por músculo. Tocar num músculo abre, embaixo, o painel com os
@@ -46,7 +47,7 @@ import { MuscleList, MuscleListGroup } from './muscle-list';
  */
 @Component({
   selector: 'app-training-body-map-page',
-  imports: [BodyFigure, BodyPanel, MuscleList, TrainingGlyph],
+  imports: [BodyFigure, BodyPanel, MuscleList, TrainingGlyph, BodyMapSkeleton],
   providers: [BodyMapData, LastSetLabels],
   templateUrl: './body-map.page.html',
   styleUrl: './body-map.page.css',

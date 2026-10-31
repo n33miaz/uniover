@@ -35,6 +35,7 @@ import {
   sameExerciseName,
   validateExerciseForm,
 } from './exercise-form';
+import { TrainingFormSkeleton } from '../../shell/training-form-skeleton';
 
 /**
  * Novo exercício (e edição de um exercício próprio): nome, músculo principal, equipamento, tipo de registro e
@@ -43,12 +44,13 @@ import {
  */
 @Component({
   selector: 'app-exercise-form-page',
-  imports: [TrainingGlyph, TrainingChips, TrainingSheet],
+  imports: [TrainingGlyph, TrainingChips, TrainingSheet, TrainingFormSkeleton],
   templateUrl: './exercise-form.page.html',
   styleUrl: './exercise-form.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ExerciseFormPage {
+  protected readonly loadingLabel = $localize`:@@training.form.loading:Carregando o exercício…`;
   private readonly catalog = inject(CatalogRepository);
   private readonly writer = inject(CatalogWriter);
   private readonly back = inject(BackNavigation);

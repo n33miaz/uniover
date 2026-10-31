@@ -26,6 +26,7 @@ import { SetEditSheet } from './set-edit-sheet';
 import { TodayGlyph } from './today-glyph';
 import { TodayStore } from './today-store';
 import { setText } from './today-text';
+import { SessionSummarySkeleton } from './workout-skeletons';
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
@@ -37,7 +38,7 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
  */
 @Component({
   selector: 'app-session-summary',
-  imports: [TrainingGlyph, TodayGlyph, SetEditSheet],
+  imports: [TrainingGlyph, TodayGlyph, SetEditSheet, SessionSummarySkeleton],
   templateUrl: './session-summary.html',
   styleUrl: './session-summary.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

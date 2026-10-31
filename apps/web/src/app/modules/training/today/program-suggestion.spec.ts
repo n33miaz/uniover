@@ -7,6 +7,8 @@ import { eventually, setupScreen } from '../shell/screen-test-kit';
 import { ProgramSuggestion } from './program-suggestion';
 
 describe('ProgramSuggestion', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   async function open(withDays = true) {
     const api = new FakeRoutineApi();
     const [duplo] = api.dto.items;
@@ -38,6 +40,24 @@ describe('ProgramSuggestion', () => {
   }
 
   const text = (el: HTMLElement) => el.textContent?.replace(/\s+/g, ' ') ?? '';
+
+  it('holds the shape of the program rows, with the wait announced, until the list is read', async () => {
+    let release!: (templates: never[]) => void;
+    vi.spyOn(RoutineRepository.prototype, 'templates').mockReturnValue(
+      new Promise((resolve) => (release = resolve)),
+    );
+    const { fixture, el } = await open();
+
+    const frame = el.querySelector('app-training-rows-skeleton app-loading-frame');
+    expect(frame?.getAttribute('aria-busy')).toBe('true');
+    expect(frame?.querySelector('[role="status"]')?.textContent?.trim()).toBe(
+      'Carregando os programas…',
+    );
+    expect(el.querySelector('.ui-spinner')).toBeNull();
+
+    release([]);
+    await eventually(fixture, () => expect(el.querySelector('app-loading-frame')).toBeNull());
+  });
 
   it('offers the programs with their days, and never the historical one', async () => {
     const { fixture, el } = await open();

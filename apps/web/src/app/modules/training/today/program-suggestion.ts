@@ -3,6 +3,7 @@ import type { RoutineTemplate } from '../data/routines/routine';
 import { RoutineRepository } from '../data/routines/routine-repository';
 import { isProgramTemplate, programSummary } from '../routines/program-summary';
 import { TrainingGlyph } from '../shell/training-glyph';
+import { TrainingRowsSkeleton } from '../shell/training-rows-skeleton';
 
 /**
  * A sugestão do programa da semana: enquanto a conta não tem programa ativo, Hoje oferece os programas disponíveis
@@ -11,7 +12,7 @@ import { TrainingGlyph } from '../shell/training-glyph';
  */
 @Component({
   selector: 'app-program-suggestion',
-  imports: [TrainingGlyph],
+  imports: [TrainingGlyph, TrainingRowsSkeleton],
   template: `
     @if (sheetMode() || loading() || programs().length > 0 || error()) {
       <section
@@ -26,10 +27,7 @@ import { TrainingGlyph } from '../shell/training-glyph';
           </h3>
         }
         @if (loading()) {
-          <p class="status" role="status">
-            <span class="ui-spinner" aria-hidden="true"></span>
-            <span i18n="@@training.program.loading">Carregando os programas…</span>
-          </p>
+          <app-training-rows-skeleton [label]="loadingLabel" [rows]="3" />
         }
         @if (programs().length > 0) {
           <ul class="ui-group ui-plain">
@@ -87,9 +85,6 @@ import { TrainingGlyph } from '../shell/training-glyph';
       line-height: 1.2;
     }
     .status {
-      display: flex;
-      align-items: center;
-      gap: var(--space-3);
       margin: 0;
       color: var(--a-ink2);
     }
@@ -123,6 +118,7 @@ export class ProgramSuggestion {
 
   protected readonly programs = signal<readonly RoutineTemplate[]>([]);
   protected readonly loading = signal(true);
+  protected readonly loadingLabel = $localize`:@@training.program.loading:Carregando os programas…`;
   protected readonly choosing = signal<string | null>(null);
   protected readonly error = signal('');
 

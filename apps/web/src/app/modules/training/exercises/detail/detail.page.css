@@ -294,15 +294,6 @@
   min-height: var(--tap);
 }
 
-.title-skeleton {
-  width: 60%;
-  height: 28px;
-}
-
-.block-skeleton {
-  height: 140px;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .back {
     transition: none;

@@ -24,9 +24,7 @@
   </header>
 
   @if (!data.ready()) {
-    <div class="stage ui-card skeleton" aria-hidden="true">
-      <span class="ui-skeleton"></span>
-    </div>
+    <app-body-map-skeleton />
   } @else if (catalogEmpty()) {
     <section class="empty ui-card" aria-labelledby="map-empty-title">
       <span class="ui-tile lg"><app-training-glyph name="dumbbell" /></span>

@@ -96,11 +96,7 @@
   </div>
 
   @if (!ready()) {
-    <ul class="ui-group ui-plain skeleton" aria-hidden="true">
-      @for (row of [1, 2, 3, 4]; track row) {
-        <li class="ui-skeleton-row"><span class="ui-skeleton"></span></li>
-      }
-    </ul>
+    <app-training-rows-skeleton [label]="loadingLabel" [rows]="6" [thumb]="true" />
   } @else if (catalogEmpty()) {
     <section class="empty ui-card" aria-labelledby="empty-title">
       <span class="ui-tile lg"><app-training-glyph name="dumbbell" /></span>

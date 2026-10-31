@@ -32,7 +32,33 @@ async function settled(fixture: { detectChanges(): void; whenStable(): Promise<u
 }
 
 describe('RoutinePickerSheet agenda', () => {
-  afterEach(() => localStorage.clear());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it('holds the shape of the settings sections until their values are read, and then shows only the real ones', async () => {
+    let release!: (value: number | null) => void;
+    vi.spyOn(GoalRepository.prototype, 'value').mockReturnValue(
+      new Promise((resolve) => (release = resolve)),
+    );
+    setupTraining().pause();
+    const fixture = TestBed.createComponent(RoutinePickerSheet);
+    fixture.componentRef.setInput('entries', []);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+
+    const frame = element.querySelector('app-picker-settings-skeleton app-loading-frame');
+    expect(frame?.getAttribute('aria-busy')).toBe('true');
+    expect(frame?.querySelector('[role="status"]')?.textContent?.trim()).toBe(
+      'Carregando as opções da rotina…',
+    );
+    expect(element.querySelector('textarea')).toBeNull();
+
+    release(null);
+    await eventually(fixture, () => expect(element.querySelector('.settings')).not.toBeNull());
+    expect(element.querySelector('app-picker-settings-skeleton')).toBeNull();
+  });
 
   it('does not let a note and an absence saved together erase each other', async () => {
     const { fixture, element, todayKey } = await open();

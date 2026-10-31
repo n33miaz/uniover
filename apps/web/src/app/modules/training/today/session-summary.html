@@ -128,7 +128,9 @@
       (closed)="editSet.set(null)"
     />
   }
-} @else if (data() === null) {
+} @else if (data() === undefined) {
+  <app-session-summary-skeleton />
+} @else {
   <section class="summary missing ui-card" aria-labelledby="missing-title">
     <h1
       id="missing-title"

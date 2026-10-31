@@ -16,6 +16,7 @@ import { ExerciseRowBody } from '../exercises/exercise-row-body';
 import { MUSCLE_GROUP_IDS, muscleGroupLabel, muscleLabel } from '../domain/taxonomy';
 import { ChipOption, TrainingChips } from '../shell/training-chips';
 import { TrainingGlyph } from '../shell/training-glyph';
+import { TrainingRowsSkeleton } from '../shell/training-rows-skeleton';
 import { TrainingSheet } from '../shell/training-sheet';
 
 /** Quantas linhas a folha mostra de cada vez; a busca estreita o resto. */
@@ -28,7 +29,7 @@ export const CHOOSER_PAGE_SIZE = 50;
  */
 @Component({
   selector: 'app-exercise-chooser-sheet',
-  imports: [TrainingSheet, TrainingChips, TrainingGlyph, ExerciseRowBody],
+  imports: [TrainingSheet, TrainingChips, TrainingGlyph, TrainingRowsSkeleton, ExerciseRowBody],
   template: `
     <app-training-sheet [heading]="heading()" [dismissLabel]="cancelLabel" (closed)="closed.emit()">
       <div class="tools">
@@ -71,7 +72,9 @@ export const CHOOSER_PAGE_SIZE = 50;
         }
       </div>
 
-      @if (ready() && shown().length === 0) {
+      @if (!ready()) {
+        <app-training-rows-skeleton [label]="loadingLabel" [rows]="5" [thumb]="true" />
+      } @else if (shown().length === 0) {
         <p class="none" role="status" i18n="@@training.chooser.none">Nenhum exercício achado.</p>
       } @else {
         <ul class="list ui-group ui-plain">
@@ -113,6 +116,7 @@ export class ExerciseChooserSheet {
   readonly closed = output<void>();
 
   protected readonly cancelLabel = $localize`:@@training.chooser.cancel:Cancelar`;
+  protected readonly loadingLabel = $localize`:@@training.chooser.loading:Carregando os exercícios…`;
   protected readonly scopeLabel = $localize`:@@training.chooser.scope:Quais exercícios mostrar`;
   protected readonly groupFilterLabel = $localize`:@@training.filter.group:Filtrar por grupo muscular`;
   protected readonly groupOptions: readonly ChipOption[] = [

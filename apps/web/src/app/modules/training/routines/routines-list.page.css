@@ -149,18 +149,6 @@
   font-size: var(--fs-small);
 }
 
-.skeleton li {
-  display: flex;
-  align-items: center;
-  min-height: 60px;
-  padding: var(--space-3) var(--space-4);
-}
-
-.skeleton .ui-skeleton {
-  width: 62%;
-  height: 18px;
-}
-
 /* Marca da rotina: uma linha pequena em cima do nome, para o nome e o resumo ficarem com a largura toda. */
 .eyebrow {
   color: var(--a-ink3);

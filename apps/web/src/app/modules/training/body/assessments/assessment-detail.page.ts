@@ -30,14 +30,15 @@ import {
   type AssessmentBodyField,
   type AssessmentBodyCandidate,
 } from './assessment-body-transfer';
+import { AssessmentDetailSkeleton } from './assessment-skeletons';
 
 @Component({
   selector: 'app-physical-assessment-detail-page',
-  imports: [RouterLink],
+  imports: [RouterLink, AssessmentDetailSkeleton],
   template: `
     <div class="page" aria-labelledby="title">
       @if (loading()) {
-        <p role="status" i18n="@@training.assessments.loading">Carregando avaliação…</p>
+        <app-assessment-detail-skeleton />
       } @else if (assessment(); as row) {
         <header>
           <p class="eyebrow" i18n="@@training.assessments.historical">Registro histórico</p>
@@ -838,13 +839,16 @@ export class PhysicalAssessmentDetailPage {
       this.loading.set(false);
       return;
     }
-    const [row, documents] = await Promise.all([
-      this.repository.get(id),
-      this.repository.documents(id),
-    ]);
-    this.assessment.set(row ?? null);
-    this.docs.set(documents);
-    this.loading.set(false);
+    try {
+      const [row, documents] = await Promise.all([
+        this.repository.get(id),
+        this.repository.documents(id),
+      ]);
+      this.assessment.set(row ?? null);
+      this.docs.set(documents);
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   private revokePreview(): void {

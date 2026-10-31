@@ -167,15 +167,6 @@ textarea.ui-input {
   margin-top: var(--space-1);
 }
 
-.title-skeleton {
-  width: 60%;
-  height: 28px;
-}
-
-.block-skeleton {
-  height: 140px;
-}
-
 /* Músculo principal: um campo que abre a lista por grupo. Não é o seletor nativo: o formulário fica igual em qualquer aparelho. */
 .picker {
   display: flex;

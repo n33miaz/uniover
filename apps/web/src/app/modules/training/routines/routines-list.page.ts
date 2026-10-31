@@ -17,6 +17,7 @@ import { TrainingGlyph } from '../shell/training-glyph';
 import { SwapStore } from '../today/swap-store';
 import { RoutineEntry, buildRoutineEntries } from './routine-stats';
 import { TemplateCreated, TemplatesSheet } from './templates-sheet';
+import { RoutinesListSkeleton } from './routines-list-skeleton';
 
 /**
  * Lista de rotinas, na ordem da sequência (A, B, C...). A próxima abre em destaque; a lista compacta fica sob demanda,
@@ -24,7 +25,7 @@ import { TemplateCreated, TemplatesSheet } from './templates-sheet';
  */
 @Component({
   selector: 'app-routines-list-page',
-  imports: [RouterLink, ExercisesSwitch, TrainingGlyph, TemplatesSheet],
+  imports: [RouterLink, ExercisesSwitch, TrainingGlyph, TemplatesSheet, RoutinesListSkeleton],
   templateUrl: './routines-list.page.html',
   styleUrl: './routines-list.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

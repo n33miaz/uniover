@@ -3,10 +3,11 @@ import { RouterLink } from '@angular/router';
 import { PhysicalAssessmentRepository } from '../../data/physical-assessments/physical-assessment-repository';
 import type { LocalPhysicalAssessment } from '../../data/physical-assessments/physical-assessment';
 import { assessmentTitle } from './assessment-format';
+import { AssessmentsListSkeleton } from './assessment-skeletons';
 
 @Component({
   selector: 'app-physical-assessments-page',
-  imports: [RouterLink],
+  imports: [RouterLink, AssessmentsListSkeleton],
   template: `
     <div class="page" aria-labelledby="title">
       <header>
@@ -28,9 +29,7 @@ import { assessmentTitle } from './assessment-format';
         >
       </div>
       @if (loading()) {
-        <p class="muted" role="status" i18n="@@training.assessments.loading">
-          Carregando histórico…
-        </p>
+        <app-assessments-list-skeleton />
       } @else if (rows().length === 0) {
         <section class="empty">
           <h2 i18n="@@training.assessments.empty-title">Seu histórico começa aqui</h2>
@@ -195,7 +194,11 @@ export class PhysicalAssessmentsPage {
   }
 
   private async load(): Promise<void> {
-    this.rows.set((await this.repository.list()).reverse());
-    this.loading.set(false);
+    try {
+      this.rows.set((await this.repository.list()).reverse());
+    } finally {
+      // Banco que não abre não prende a tela no brilho: a lista fica vazia e a moldura de espera já cuida do prazo.
+      this.loading.set(false);
+    }
   }
 }

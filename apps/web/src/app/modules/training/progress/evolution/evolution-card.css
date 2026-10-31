@@ -81,10 +81,6 @@
   font-size: var(--fs-label);
 }
 
-.loading {
-  min-height: 172px;
-}
-
 /* Sem gráfico: o motivo e o caminho (um botão só). */
 .empty {
   display: flex;

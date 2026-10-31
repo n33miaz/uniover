@@ -11,6 +11,7 @@ import { PhotoStore } from '../data/photos/photo-store';
 import { ProgressPhotoSync } from '../data/photos/progress-photo-sync';
 import { TrainingSheet } from '../shell/training-sheet';
 import { formatBytes, formatFullDate } from './body-text';
+import { BodyPhotosSkeleton } from './body-skeleton';
 
 interface DisplayPhoto extends PhotoInfo {
   readonly src: string;
@@ -18,7 +19,7 @@ interface DisplayPhoto extends PhotoInfo {
 
 @Component({
   selector: 'app-body-photo-panel',
-  imports: [TrainingSheet],
+  imports: [TrainingSheet, BodyPhotosSkeleton],
   template: `
     <section class="photos" aria-labelledby="photos-title">
       <h2 id="photos-title" i18n="@@training.body.photos.title">Fotos de Progresso</h2>
@@ -95,7 +96,9 @@ interface DisplayPhoto extends PhotoInfo {
       @if (error(); as message) {
         <p class="error" role="alert">{{ message }}</p>
       }
-      @if (photos().length) {
+      @if (!loaded()) {
+        <app-body-photos-skeleton />
+      } @else if (photos().length) {
         <div class="grid">
           @for (photo of photos(); track photo.id) {
             <article class="photo-card" [class.cloud-photo]="isCloudPhoto(photo.id)">
@@ -203,6 +206,8 @@ export class BodyPhotoPanel {
   private readonly store = inject(PhotoStore);
   protected readonly sync = inject(ProgressPhotoSync);
   protected readonly photos = signal<readonly DisplayPhoto[]>([]);
+  /** A lista só vale depois da primeira leitura do aparelho: antes disso "nenhuma foto" seria uma afirmação falsa. */
+  protected readonly loaded = signal(false);
   protected readonly usage = signal<PhotoUsage | null>(null);
   protected readonly selected = signal<readonly string[]>([]);
   protected readonly confirmingId = signal<string | null>(null);
@@ -408,6 +413,8 @@ export class BodyPhotoPanel {
       this.error.set(
         $localize`:@@training.body.photos.load-error:Não foi possível acessar as fotos salvas neste aparelho.`,
       );
+    } finally {
+      this.loaded.set(true);
     }
   }
 }

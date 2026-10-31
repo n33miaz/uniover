@@ -34,7 +34,9 @@
   <p class="ui-visually-hidden" role="status">{{ restOverText() }}</p>
 
   @if (live.session() === undefined) {
-    @if (live.ready() && !leaving()) {
+    @if (!live.ready()) {
+      <app-live-session-skeleton />
+    } @else if (!leaving()) {
       <section class="calm ui-card" aria-labelledby="gone-title">
         <span class="ui-tile lg"><app-training-glyph name="info" /></span>
         <h2 id="gone-title" i18n="@@training.live.gone-title">Este Treino Foi Encerrado</h2>
