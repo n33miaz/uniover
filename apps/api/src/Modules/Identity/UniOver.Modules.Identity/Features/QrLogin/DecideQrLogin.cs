@@ -188,6 +188,7 @@ internal sealed class QrLoginDecisionHandler(
     IdentityDbContext db,
     PasswordService passwords,
     LoginAuditWriter audit,
+    FailedLoginCounter failures,
     TimeProvider time,
     IOptions<IdentityModuleOptions> options)
 {
@@ -266,7 +267,7 @@ internal sealed class QrLoginDecisionHandler(
 
                 if (passwords.Verify(user, command.Password) == PasswordCheck.Failed)
                 {
-                    user.RegisterFailure(now, options.Value.Lockout);
+                    await failures.RegisterAsync(user.Id, now, options.Value.Lockout, cancellationToken);
                     audit.Add(user.Id, AuditEvents.LoginFailed, command.Client, "qr-login");
                     await db.SaveChangesAsync(cancellationToken);
                     return new ApproveQrLoginResult(ApproveQrLoginStatus.InvalidPassword);

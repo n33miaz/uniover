@@ -36,6 +36,7 @@ internal sealed class BeginPasskeyRegistrationHandler(
     WebAuthn webAuthn,
     ChallengeStore challenges,
     LoginAuditWriter audit,
+    FailedLoginCounter failures,
     TimeProvider time,
     IOptions<IdentityModuleOptions> options)
 {
@@ -61,7 +62,7 @@ internal sealed class BeginPasskeyRegistrationHandler(
 
         if (passwords.Verify(user, command.Password) == PasswordCheck.Failed)
         {
-            user.RegisterFailure(now, options.Value.Lockout);
+            await failures.RegisterAsync(user.Id, now, options.Value.Lockout, cancellationToken);
             audit.Add(user.Id, AuditEvents.LoginFailed, command.Client, "passkey-registration");
             await db.SaveChangesAsync(cancellationToken);
             return new BeginPasskeyRegistrationResult(BeginPasskeyRegistrationStatus.InvalidPassword);
