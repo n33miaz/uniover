@@ -57,7 +57,7 @@ internal sealed class ConfirmStepUpWithPasswordHandler(
 
         var now = time.GetUtcNow();
         var user = await db.Users.SingleOrDefaultAsync(u => u.Id == command.UserId, cancellationToken);
-        if (user is null || user.IsDisabled)
+        if (user is null || user.IsBlocked)
         {
             return new ConfirmStepUpWithPasswordResult(ConfirmStepUpWithPasswordStatus.Unauthenticated);
         }

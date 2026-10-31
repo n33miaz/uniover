@@ -92,7 +92,7 @@ internal sealed class SetGuestPermissionsHandler(
         grants.Invalidate(guestId);
 
         var summary = new GuestSummary(
-            account.Id, account.DisplayName, account.Email, account.CreatedAt, account.DisabledAt, PermissionRules.Effective(wanted));
+            account.Id, account.DisplayName, account.Email, account.CreatedAt, account.DisabledAt, account.PausedAt, PermissionRules.Effective(wanted));
         return new SetGuestPermissionsResult(SetGuestPermissionsStatus.Updated, summary);
     }
 
