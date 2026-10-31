@@ -9140,6 +9140,8 @@ export interface components {
       tvLabel: null | string;
     };
     TvState: {
+      /** @default true */
+      agentLinked: boolean;
       agentOnline: boolean;
       app: null | string;
       connection: string;

@@ -65,6 +65,14 @@ public class DomainTests
     }
 
     [Fact]
+    public void State_SaysWhetherTheTvHasAnAgentLinked_AndAssumesItDoesWhenNobodyTellsOtherwise()
+    {
+        TvState.From(null, agentOnline: false).AgentLinked.Should().BeTrue();
+        TvState.From(Snapshot(), agentOnline: false, agentLinked: false).AgentLinked.Should().BeFalse();
+        TvState.From(null, agentOnline: false, agentLinked: false).AgentLinked.Should().BeFalse();
+    }
+
+    [Fact]
     public void State_BeforeAnyReport_IsUnknown()
     {
         var state = TvState.From(null, agentOnline: true);

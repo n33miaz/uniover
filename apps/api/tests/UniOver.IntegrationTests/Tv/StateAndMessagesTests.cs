@@ -46,6 +46,7 @@ public sealed class StateAndMessagesTests(PostgresFixture postgres)
         body.GetProperty("app").GetString().Should().Be("com.exemplo.video");
         body.GetProperty("connection").GetString().Should().Be("hot");
         body.GetProperty("agentOnline").GetBoolean().Should().BeTrue();
+        body.GetProperty("agentLinked").GetBoolean().Should().BeTrue();
 
         // Depois da espera da gravação: só power, app e connection vão para o banco; o volume não tem coluna.
         await app.AdvanceUntilAsync(async () => await StateRowAsync(app) != "nenhuma", "estado gravado");
