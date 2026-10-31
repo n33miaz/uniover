@@ -6,7 +6,7 @@
   max-width: 100%;
   max-height: 88dvh;
   margin: auto 0 0;
-  padding: var(--space-2) var(--gutter) 0;
+  padding: 0 var(--gutter) calc(var(--space-4) + var(--safe-bottom));
   border: 0;
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: var(--a-surface-raised);
@@ -28,22 +28,47 @@
   background: rgb(8 16 10 / 0.52);
 }
 
+/* Cabeçalho fixo no alto da folha: a alça, o título no centro e o único "Concluir" sempre à mão, mesmo com a lista rolando. */
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin-inline: calc(-1 * var(--gutter));
+  padding: var(--space-2) var(--gutter);
+  background: var(--a-surface-raised);
+}
+
 .grabber {
   display: block;
   width: 40px;
   height: 5px;
-  margin: 0 auto var(--space-3);
+  margin: 0 auto var(--space-1);
   border-radius: var(--radius-pill);
   background: var(--a-line);
 }
 
+/* Três colunas: as laterais iguais mantêm o título no eixo da folha, com ou sem o botão ao lado. */
+.head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+}
+
 h2 {
-  margin: 0 0 var(--space-4);
+  grid-column: 2;
+  margin: 0;
   font-size: clamp(1.125rem, 5vw, 1.25rem);
   font-weight: 750;
   letter-spacing: -0.01em;
   text-align: center;
   white-space: nowrap;
+}
+
+.done {
+  grid-column: 3;
+  justify-self: end;
+  min-height: var(--tap);
+  padding-inline: var(--space-3);
 }
 
 /* O título recebe o foco ao abrir só para o leitor de tela e o teclado começarem ali. Ele não é um controle e o WebKit trata esse
@@ -56,7 +81,7 @@ h2:focus {
 .rows {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -78,10 +103,10 @@ h2:focus {
 .row {
   display: grid;
   grid-template-areas: 'grip ico name moves show';
-  grid-template-columns: 36px 36px minmax(0, 1fr) auto auto;
+  /* Todos os alvos de toque têm 44 px; o ícone encolhe um pouco para o nome seguir inteiro numa linha nos 390 px. */
+  grid-template-columns: var(--tap) 32px minmax(0, 1fr) auto 52px;
   align-items: center;
-  /* Folga mínima entre as colunas: nos 390 px cada pixel a mais para o nome evita quebrar ou cortar o texto. */
-  gap: 2px;
+  gap: 0;
   padding: var(--space-1) var(--space-1) var(--space-1) 0;
   border: 1px solid var(--a-line);
   border-radius: var(--radius);
@@ -106,18 +131,18 @@ h2:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* A alça é só um atalho de arrastar (as setas fazem o mesmo por toque): mais estreita que 44 px para sobrar largura ao nome. */
-  width: 36px;
+  /* Alça de arrastar: o desenho dos seis pontos é a pista de que a linha se move, com 44 px de alvo. */
+  width: var(--tap);
   height: var(--tap);
   color: var(--a-ink2);
   cursor: grab;
   touch-action: none;
 }
 
-/* O mesmo ícone de app dos cartões da Início, em 36 px: marca verde nos módulos que abrem, cinza nos "Em Breve". */
+/* O mesmo ícone de app dos cartões da Início, em 32 px: marca verde nos módulos que abrem, cinza nos "Em Breve". */
 .ico {
   grid-area: ico;
-  --module-icon-size: 36px;
+  --module-icon-size: 32px;
   --module-icon-radius: var(--radius-sm);
   --a-on-module-app: #fff;
   --module-app-bg: var(--a-accent);
@@ -156,8 +181,8 @@ h2:focus {
 .name {
   grid-area: name;
   min-width: 0;
-  /* Nome ao lado de grip, ícone, setas e chave: nos 390 px sobra pouco, então a fonte acompanha a largura e o nome
-     fica numa linha só ("Monitor dos Serviços"); se ainda assim faltar, termina em reticências. */
+  /* Nome ao lado de alça, ícone e chave: a fonte acompanha a largura e o nome fica numa linha só; se ainda assim
+     faltar, termina em reticências. */
   overflow: hidden;
   padding-inline-start: 6px;
   font-size: clamp(0.75rem, 3.1vw, 0.875rem);
@@ -210,23 +235,6 @@ h2:focus {
 .icon-button:disabled {
   opacity: 0.3;
   cursor: default;
-}
-
-/* Rodapé fixo na base da folha: as duas saídas sempre à mão, mesmo com a lista rolando. */
-.footer {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  gap: 10px;
-  margin: var(--space-4) calc(-1 * var(--gutter)) 0;
-  padding: var(--space-3) var(--gutter);
-  padding-bottom: calc(var(--space-3) + var(--safe-bottom));
-  border-top: 1px solid var(--a-line);
-  background: var(--a-surface-raised);
-}
-
-.footer button {
-  flex: 1 1 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,8 +1,13 @@
 <dialog #dialog class="sheet ui-dialog" aria-labelledby="sheet-title" (cancel)="cancel($event)">
-  <span class="grabber" aria-hidden="true"></span>
-  <header class="head">
-    <h2 id="sheet-title" tabindex="-1" i18n="@@home.sheet.title">Personalizar</h2>
-  </header>
+  <div class="top">
+    <span class="grabber" aria-hidden="true"></span>
+    <header class="head">
+      <h2 id="sheet-title" tabindex="-1" i18n="@@home.sheet.title">Personalizar</h2>
+      <button type="button" class="done ui-btn primary" (click)="apply()" i18n="@@home.sheet.done">
+        Concluir
+      </button>
+    </header>
+  </div>
 
   <ul class="rows">
     @for (item of draft(); track item.id; let first = $first; let last = $last) {
@@ -66,13 +71,4 @@
   <button type="button" class="restore" (click)="restoreDefaults()" i18n="@@home.sheet.restore">
     Voltar ao Padrão
   </button>
-
-  <div class="footer">
-    <button type="button" class="secondary ui-btn" (click)="cancel()" i18n="@@home.sheet.cancel">
-      Cancelar
-    </button>
-    <button type="button" class="primary ui-btn" (click)="apply()" i18n="@@home.sheet.apply">
-      Aplicar
-    </button>
-  </div>
 </dialog>
