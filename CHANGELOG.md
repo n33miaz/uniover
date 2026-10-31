@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.30.0](https://github.com/n33miaz/uniover/compare/v0.29.0...v0.30.0) (2026-10-31)
+
+
+### Features
+
+* **agent:** log why it was away
+* **web:** show since when the pc is off
+
+
+### Bug Fixes
+
+* **agent:** reconnect fast, never die on errors
+* **agent:** task repeats and restarts
+* **api:** keep agent green while reconnecting
+
 ## [0.29.0](https://github.com/n33miaz/uniover/compare/v0.28.0...v0.29.0) (2026-10-31)
 
 
