@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.29.0](https://github.com/n33miaz/uniover/compare/v0.28.0...v0.29.0) (2026-10-31)
+
+
+### Features
+
+* **contracts:** add agent diagnostics message
+* **agent:** queue diagnostics safely
+* **agent:** record why the agent stopped
+* **agent:** verify updates before swapping
+* **agent:** guard the supervisor
+* **agent:** check and repair itself
+* **agent:** simple installer, pick the folder
+* **api:** keep agent diagnostics for 7 days
+* **web:** show agent errors in system
+
+
+### Bug Fixes
+
+* **agent:** keep background tasks alive
+* **agent:** install the crash hooks once
+* **agent:** sync with the frozen lock on the pc
+
 ## [0.24.0](https://github.com/n33miaz/uniover/compare/v0.23.0...v0.24.0) (2026-10-31)
 
 
