@@ -96,6 +96,9 @@ internal static class TvPermissionMap
         new("GET", "/api/v1/tv/tvs/{id:guid}/cleanup-reports"),
         new("GET", "/api/v1/tv/tvs/{id:guid}/apps"),
         new("PUT", "/api/v1/tv/tvs/{id:guid}/members", "tv.bind-agent", new { userIds = new[] { Guid.NewGuid() } }),
+        new("GET", "/api/v1/tv/siri/tokens"),
+        new("POST", "/api/v1/tv/siri/tokens", "tv.siri-token", new { name = "iPhone", tvId = Guid.NewGuid(), actions = new[] { "volume_up" } }),
+        new("DELETE", "/api/v1/tv/siri/tokens/{id:guid}"),
         new("POST", "/api/v1/tv/layout", Body: LayoutBody),
         new("PUT", "/api/v1/tv/layout", Body: LayoutBody),
     ];
