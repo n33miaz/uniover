@@ -50,4 +50,8 @@ As ilustrações do Everkinetic que só existem em PNG pesavam de 140 a 300 KB c
 A adaptação (WebP leve, recorte único por par, proporção dos SVG) vive em `apps/web/assets-derived/<fonte>/`, fora da
 pasta dos originais, com o `LICENSE` da fonte e um `NOTICE` que indica o que foi alterado, como a CC BY-SA 4.0 exige. Os
 originais continuam sem modificação em `assets-third-party/` e deixam de ser publicados; o build publica só a adaptação.
-A tela de créditos diz o que foi feito. O script `apps/web/scripts/optimize-exercise-art.py` reproduz os arquivos.
+A tela de créditos diz o que foi feito. Os scripts `apps/web/scripts/render-exercise-svg.mjs` e
+`apps/web/scripts/optimize-exercise-art.py` reproduzem os arquivos.
+
+Depois, as figuras de origem SVG passaram pela mesma adaptação (rasterizadas e padronizadas em 536x550, até 20 KB cada),
+para que todas as ilustrações tenham o mesmo tamanho e enquadramento. Os SVG originais seguem intactos e sem publicação.

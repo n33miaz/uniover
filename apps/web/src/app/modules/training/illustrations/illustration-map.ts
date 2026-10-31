@@ -1,7 +1,7 @@
 /**
  * Ilustrações dos exercícios (Everkinetic, CC BY-SA 4.0). Os originais (SVG e PNG) ficam sem modificação em
- * `assets-third-party/everkinetic/`; os PNG são publicados na versão adaptada (WebP leve, em `assets-derived/everkinetic/`,
- * com aviso próprio das mudanças). Cada exercício do catálogo que tem um equivalente SEGURO (mesmo movimento
+ * `assets-third-party/everkinetic/`; o app publica a versão adaptada de todos (WebP leve de 536x550, mesmo recorte
+ * nas duas poses, em `assets-derived/everkinetic/`, com aviso próprio das mudanças). Cada exercício do catálogo que tem um equivalente SEGURO (mesmo movimento
  * e mesmo equipamento) aponta para o par de poses; o que não está aqui não mostra imagem nenhuma. Na dúvida, fica
  * de fora: nunca se usa a figura de outro exercício.
  */
@@ -10,9 +10,9 @@
 export interface ExerciseIllustrationEntry {
   /** Título do exercício na origem (em inglês), para o crédito. */
   readonly title: string;
-  /** Nomes de arquivo (em `/exercise-art/`) da pose inicial e da final. */
+  /** Nomes de arquivo (em `/exercise-art/`) da pose inicial e da final, sempre WebP. */
   readonly frames: readonly [string, string];
-  /** Onde o arquivo da primeira pose está na origem, no commit fixado. */
+  /** Onde o arquivo original da primeira pose está na origem, no commit fixado. */
   readonly sourceUrl: string;
 }
 
@@ -25,14 +25,14 @@ export const EXERCISE_ART_BASE = '/exercise-art/';
 function art(title: string, id: string): ExerciseIllustrationEntry {
   return {
     title,
-    frames: [`${id}-relaxation.svg`, `${id}-tension.svg`],
+    frames: [`${id}-relaxation.webp`, `${id}-tension.webp`],
     sourceUrl: `https://github.com/everkinetic/data/blob/${EVERKINETIC_COMMIT}/dist/svg/${id}-relaxation.svg`,
   };
 }
 
 /**
- * Alguns exercícios só têm o par original em PNG no repositório da origem. O app publica a adaptação leve em WebP (mesmo
- * nome, recorte único do par, proporção dos SVG); o crédito aponta para o PNG original.
+ * Alguns exercícios só têm o par original em PNG no repositório da origem. A adaptação leve em WebP tem o nome do PNG
+ * (recorte único do par, mesma proporção de todas as figuras); o crédito aponta para o PNG original.
  */
 function pngArt(
   title: string,
