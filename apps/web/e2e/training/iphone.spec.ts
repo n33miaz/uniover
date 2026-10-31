@@ -185,9 +185,9 @@ test.describe('convidado que só tem o Treino', () => {
     }
     await page.goto('/ajustes');
     await expect(page).toHaveURL(/\/ajustes$/);
-    const back = page.getByRole('link', { name: 'Voltar ao Início' });
-    await expect(back).toHaveAttribute('href', '/');
-    await expect(page.getByRole('link', { name: 'Voltar ao controle' })).toHaveCount(0);
+    const back = page.getByRole('button', { name: 'Voltar ao Início' });
+    await expect(back).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Voltar ao controle' })).toHaveCount(0);
     await back.click();
     await expect(page).toHaveURL(/\/$/);
     expect(tvRequests).toEqual([]);
