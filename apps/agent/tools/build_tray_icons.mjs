@@ -27,7 +27,7 @@ const BASE_DISC = '#1F8A4C';
 const STATES = {
   connected: '#1F8A4C',
   reconnecting: '#C26A00',
-  error: '#C62828',
+  error: '#B71C1C',
   updating: '#1F6FD1',
 };
 

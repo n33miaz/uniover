@@ -8,9 +8,12 @@
     <path d="M43.7 20.3A16.5 16.5 0 0 1 43.7 43.7"/>
     <path d="M20.3 20.3A16.5 16.5 0 0 0 20.3 43.7"/>
   </g>
+<!-- O anel do selo tem a cor do disco e é cortado pelo disco (clipPath): sobre a marca abre um vão, como um recorte, em vez de
+     um anel branco que se juntaria à onda e viraria um gancho; fora do disco não há anel. -->
+  <clipPath id="disc"><circle cx="32" cy="32" r="31"/></clipPath>
   <g id="attention">
-    <circle cx="47" cy="47" r="12" fill="#FFFFFF"/>
-    <circle cx="47" cy="47" r="9.6" fill="#D92D20"/>
+    <circle cx="47" cy="47" r="12" fill="#1F8A4C" clip-path="url(#disc)"/>
+    <circle cx="47" cy="47" r="9.6" fill="#FF5C45"/>
     <rect x="45.3" y="39.6" width="3.4" height="9" rx="1.7" fill="#FFFFFF"/>
     <circle cx="47" cy="52.6" r="1.9" fill="#FFFFFF"/>
   </g>
