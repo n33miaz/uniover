@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.AgentProtocol;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Devices.Features.Diagnostics;
 using UniOver.Modules.Devices.Features.Presence;
 using UniOver.Modules.Devices.Features.RemoteCare;
 using UniOver.Modules.Devices.Ports;
@@ -202,6 +203,10 @@ internal sealed partial class AgentHub(
                 break;
             }
 
+            case AgentMessageTypes.AgentDiagnosticsV1:
+                await RecordDiagnosticsAsync(agentId, envelope, cancellationToken);
+                break;
+
             case AgentMessageTypes.AgentLogsV1:
                 CompleteLogs(agentId, envelope);
                 break;
@@ -270,6 +275,30 @@ internal sealed partial class AgentHub(
         if (!logReports.Complete(agentId, body.GetProperty("requestId").GetGuid(), report))
         {
             LogLogsDiscarded(agentId);
+        }
+    }
+
+    /// <summary>
+    /// Guarda as ocorrências que o agente contou sobre si. Falha do banco não derruba a conexão (é informativo) e o texto
+    /// do agente nunca vai para o log, só o tipo do erro.
+    /// </summary>
+    private async Task RecordDiagnosticsAsync(string agentId, ValidatedEnvelope envelope, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = scopes.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<AgentDiagnosticsStore>();
+            await store.RecordAsync(agentId, AgentDiagnosticsStore.Parse(envelope.Body), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+#pragma warning disable CA1031 // Os diagnósticos são informativos: falha do banco não pode derrubar a conexão do agente.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            LogDiagnosticsFailed(agentId, ex.GetType().Name);
         }
     }
 
@@ -502,6 +531,9 @@ internal sealed partial class AgentHub(
     // Nos três abaixo só o tipo do erro: o tratador pode ter falhado no banco, e a mensagem do driver cita servidor e conexão.
     [LoggerMessage(Level = LogLevel.Error, Message = "Tratador falhou ao processar {Type} do agente {AgentId} ({Error}).")]
     private partial void LogHandlerFailed(string agentId, string type, string error);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Não foi possível gravar os diagnósticos do agente {AgentId} ({ErrorType}).")]
+    private partial void LogDiagnosticsFailed(string agentId, string errorType);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao conduzir a sessão do agente {AgentId} ({Error}).")]
     private partial void LogSessionFailed(string agentId, string error);

@@ -22,6 +22,8 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
 
     public DbSet<AgentOutage> AgentOutages => Set<AgentOutage>();
 
+    public DbSet<AgentDiagnosticEvent> AgentDiagnosticEvents => Set<AgentDiagnosticEvent>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -101,6 +103,22 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
             // Uma queda aberta por agente: dois ciclos do monitor (ou duas instâncias) nunca abrem a mesma queda duas vezes.
             e.HasIndex(x => x.AgentId).IsUnique().HasFilter("recovered_at IS NULL").HasDatabaseName("ux_agent_outages_open");
             e.HasIndex(x => x.DetectedAt);
+            e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AgentDiagnosticEvent>(e =>
+        {
+            e.ToTable("agent_diagnostic_events");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Kind).HasMaxLength(AgentDiagnosticEvent.KindMax).IsRequired();
+            e.Property(x => x.Severity).HasMaxLength(AgentDiagnosticEvent.SeverityMax).IsRequired();
+            e.Property(x => x.Component).HasMaxLength(AgentDiagnosticEvent.ComponentMax);
+            e.Property(x => x.Detail).HasMaxLength(AgentDiagnosticEvent.DetailMax).IsRequired();
+
+            // O agente reenvia o mesmo lote depois de uma queda de conexão: o id do evento é único por agente.
+            e.HasIndex(x => new { x.AgentId, x.EventId }).IsUnique();
+            e.HasIndex(x => new { x.AgentId, x.At });
             e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
         });
 

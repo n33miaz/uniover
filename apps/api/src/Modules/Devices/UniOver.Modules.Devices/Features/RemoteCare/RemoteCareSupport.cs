@@ -20,6 +20,9 @@ internal static class RemoteCareDefaults
     /// <summary>Capacidade do <c>hello</c> de quem entende atualizar e reiniciar pelo supervisor.</summary>
     public const string MaintenanceCapability = "agent.maintenance.v1";
 
+    /// <summary>Capacidade do <c>hello</c> de quem sabe contar os próprios erros à API (<c>agent.diagnostics.v1</c>).</summary>
+    public const string DiagnosticsCapability = "agent.diagnostics.v1";
+
     /// <summary>Ação de confirmação (passkey) das duas ações que mexem no PC do amigo à distância.</summary>
     public const string StepUpAction = "devices.agent-maintenance";
 
