@@ -507,6 +507,34 @@ test.describe('convidado: Início só com os módulos permitidos', () => {
   });
 });
 
+test.describe('convidado pausado', () => {
+  test('a entrada diz só "Acesso Pausado", sem detalhe, e a conta volta a entrar quando é retomada', async ({
+    page,
+  }, info) => {
+    const invite = identity.seedInvite();
+    await acceptInvite(page, invite.token);
+    await expect(page).toHaveURL(/\/$/);
+    identity.loggedIn = false;
+    identity.role = 'owner';
+    identity.guests[0].pausedAt = '2026-10-19T16:00:00Z';
+
+    await page.goto('/entrar');
+    await page.getByLabel('E-mail').fill(GUEST.email);
+    await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
+    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+    const notice = page.getByRole('alert').filter({ hasText: 'Acesso Pausado' });
+    await expect(notice).toBeVisible();
+    await expect(notice).toHaveText(/^\s*Acesso Pausado\s*$/);
+    await expect(page).toHaveURL(/\/entrar/);
+    await expectNoHorizontalScroll(page);
+    await screenshot(page, `test-results/acesso-pausado-${info.project.name}.png`);
+
+    identity.guests[0].pausedAt = null;
+    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+    await expect(page).toHaveURL(/\/$/);
+  });
+});
+
 test.describe('convidado sem módulo liberado', () => {
   test('vê só os três planejados, com o último centralizado', async ({ page }) => {
     identity.guests.push({
