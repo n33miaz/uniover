@@ -37,12 +37,13 @@ export class CatalogRepository {
   readonly revision = this._revision.asReadonly();
 
   async search(query: CatalogQuery = {}): Promise<LocalExercise[]> {
-    const rows = await this.collect(query);
+    const rows = await this.collect(query).toArray();
     return query.sort === 'recent' ? rows.sort(byRecent) : rows.sort(byName);
   }
 
-  async count(query: CatalogQuery = {}): Promise<number> {
-    return (await this.collect(query)).length;
+  /** Quantos passam no filtro. Conta no banco, sem trazer as linhas para a memória (o catálogo inteiro tem centenas). */
+  count(query: CatalogQuery = {}): Promise<number> {
+    return this.collect(query).count();
   }
 
   /** O exercício vivo, ou `undefined` se não existe ou foi apagado. */
@@ -93,7 +94,7 @@ export class CatalogRepository {
     this._revision.update((value) => value + 1);
   }
 
-  private collect(query: CatalogQuery): Promise<LocalExercise[]> {
+  private collect(query: CatalogQuery) {
     const tokens = searchTokens(query.text ?? '');
     const groupMuscles = query.group ? musclesOfGroup(query.group) : null;
     const groupSet = groupMuscles ? new Set<string>(groupMuscles) : null;
@@ -106,16 +107,14 @@ export class CatalogRepository {
     else if (groupMuscles) source = table.where('primaryMuscles').anyOf(groupMuscles).distinct();
     else source = table.toCollection();
 
-    return source
-      .filter(
-        (row) =>
-          row.deletedAt === null &&
-          (!query.equipment || row.equipment === query.equipment) &&
-          (!query.muscle || row.primaryMuscles.includes(query.muscle)) &&
-          (!groupSet || row.primaryMuscles.some((muscle) => groupSet.has(muscle))) &&
-          matchesTokens(row.nameKey, tokens),
-      )
-      .toArray();
+    return source.filter(
+      (row) =>
+        row.deletedAt === null &&
+        (!query.equipment || row.equipment === query.equipment) &&
+        (!query.muscle || row.primaryMuscles.includes(query.muscle)) &&
+        (!groupSet || row.primaryMuscles.some((muscle) => groupSet.has(muscle))) &&
+        matchesTokens(row.nameKey, tokens),
+    );
   }
 }
 

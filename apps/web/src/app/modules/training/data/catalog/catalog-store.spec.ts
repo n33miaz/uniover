@@ -116,4 +116,38 @@ describe('CatalogStore', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(store.results().map((row) => row.name)).toEqual(['Rosca direta']);
   });
+
+  it('leaves the skeleton with an empty list when the local database fails, and recovers on the next read', async () => {
+    const { store, repository } = await setup();
+    const real = repository.search.bind(repository);
+    vi.spyOn(repository, 'search').mockRejectedValueOnce(new Error('indexeddb unavailable'));
+
+    await eventually(() => expect(store.ready()).toBe(true));
+    expect(store.results()).toEqual([]);
+    expect(store.total()).toBe(0);
+
+    vi.spyOn(repository, 'search').mockImplementation(real);
+    store.setQuery({ text: 'supino' });
+    await eventually(() => expect(store.results().map((row) => row.name)).toEqual(['Supino reto']));
+    // A falha não gravou o total: a releitura o conta de novo.
+    expect(store.total()).toBe(3);
+  });
+
+  it('counts the whole catalog once per write, not once per filter change', async () => {
+    const { store, repository } = await setup();
+    await eventually(() => expect(store.ready()).toBe(true));
+    const count = vi.spyOn(repository, 'count');
+
+    store.setQuery({ text: 'supino' });
+    await eventually(() => expect(store.results()).toHaveLength(1));
+    store.setQuery({ text: 'rosca' });
+    await eventually(() =>
+      expect(store.results().map((row) => row.name)).toEqual(['Rosca direta']),
+    );
+    expect(count).not.toHaveBeenCalled();
+
+    await repository.applyRemote([localExercise('d', { name: 'Elevação pélvica' })]);
+    await eventually(() => expect(store.total()).toBe(4));
+    expect(count).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,6 +1,7 @@
 import { Location } from '@angular/common';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
+import { CatalogRepository } from '../../data/catalog/catalog-repository';
 import { TrainingSync } from '../../data/sync/training-sync';
 import { localExercise } from '../../data/sync/training-test-kit';
 import type { LocalSession, LocalSet } from '../../data/sessions/session';
@@ -51,6 +52,20 @@ describe('ExerciseLibraryPage', () => {
     expect(count(el)).toBe('5 exercícios');
     expect(el.textContent).not.toContain('Catálogo em português');
     expect(rows(el)[4].querySelector('.sub')?.textContent).toContain('Peito · Barra');
+  });
+
+  it('rereads the catalog once after the typing stops, not on every letter', async () => {
+    const { fixture, el } = await open();
+    await eventually(fixture, () => expect(names(el)).toHaveLength(5));
+    const reread = vi.spyOn(TestBed.inject(CatalogRepository), 'search');
+
+    for (const partial of ['i', 'in', 'incl', 'inclin']) type(el, partial);
+    // O campo mostra o que foi digitado na hora; a lista espera a pausa.
+    expect(search(el).value).toBe('inclin');
+    expect(reread).not.toHaveBeenCalled();
+
+    await eventually(fixture, () => expect(names(el)).toEqual(['Supino inclinado com halteres']));
+    expect(reread).toHaveBeenCalledTimes(1);
   });
 
   it('links each row to the exercise sheet', async () => {

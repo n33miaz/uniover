@@ -40,6 +40,8 @@ import { TrainingRowsSkeleton } from '../../shell/training-rows-skeleton';
 export const PAGE_SIZE = 50;
 /** Espera depois da última tecla antes de gravar a busca no endereço. */
 const SEARCH_URL_DELAY_MS = 300;
+/** Espera depois da última tecla antes de reler o catálogo: digitar não refaz a leitura do banco a cada letra. */
+export const SEARCH_QUERY_DELAY_MS = 150;
 
 /**
  * Catálogo de exercícios: busca (sem acento e sem caixa), filtros por grupo e equipamento e a lista. Tudo vem do
@@ -78,6 +80,8 @@ export class ExerciseLibraryPage {
   /** O bloco de equipamento abre sozinho quando já há um equipamento escolhido (vindo do endereço). */
   protected readonly equipmentOpen = signal(false);
   private readonly limit = signal(PAGE_SIZE);
+  /** O texto que a lista de fato usa: acompanha `text` com a espera da digitação (o campo mostra `text` na hora). */
+  private readonly searched = signal('');
 
   protected readonly ready = this.store.ready;
   protected readonly total = this.store.total;
@@ -150,13 +154,14 @@ export class ExerciseLibraryPage {
   });
 
   private searchTimer: ReturnType<typeof setTimeout> | undefined;
+  private queryTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor() {
     // O endereço que chega de fora: a primeira abertura, um link do mapa do corpo ou o botão "voltar". O que a própria
     // tela escreve (`mirror`) não passa pelo roteador e por isso não volta por aqui.
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((map) => {
       const incoming = parseLibraryParams(map);
-      this.text.set(incoming.q);
+      this.setText(incoming.q);
       this.group.set(incoming.group);
       this.muscle.set(incoming.muscle);
       this.equipment.set(incoming.equipment);
@@ -164,8 +169,15 @@ export class ExerciseLibraryPage {
     });
 
     // Tela -> banco local: cada mudança de filtro relê a lista, e a lista volta à primeira página.
+    // Lê `searched` e não `text`: o texto ainda sendo digitado não refaz a leitura.
     effect(() => {
-      this.store.setQuery(toCatalogQuery(this.params()));
+      const query = toCatalogQuery({
+        q: this.searched(),
+        group: this.group(),
+        muscle: this.muscle(),
+        equipment: this.equipment(),
+      });
+      this.store.setQuery(query);
       untracked(() => this.limit.set(PAGE_SIZE));
     });
 
@@ -175,13 +187,18 @@ export class ExerciseLibraryPage {
       untracked(() => this.lastSets.request(visible));
     });
 
-    inject(DestroyRef).onDestroy(() => clearTimeout(this.searchTimer));
+    inject(DestroyRef).onDestroy(() => {
+      clearTimeout(this.searchTimer);
+      clearTimeout(this.queryTimer);
+    });
   }
 
   protected onSearch(value: string): void {
     this.text.set(value);
     clearTimeout(this.searchTimer);
     this.searchTimer = setTimeout(() => this.mirror(), SEARCH_URL_DELAY_MS);
+    clearTimeout(this.queryTimer);
+    this.queryTimer = setTimeout(() => this.searched.set(this.text()), SEARCH_QUERY_DELAY_MS);
   }
 
   protected pickGroup(id: string): void {
@@ -201,7 +218,7 @@ export class ExerciseLibraryPage {
   }
 
   protected clearFilters(): void {
-    this.text.set('');
+    this.setText('');
     this.group.set('');
     this.muscle.set('');
     this.equipment.set('');
@@ -210,6 +227,13 @@ export class ExerciseLibraryPage {
 
   protected toggleEquipment(): void {
     this.equipmentOpen.update((open) => !open);
+  }
+
+  /** Troca o texto da busca sem espera (endereço, limpar filtros): só a digitação é que espera. */
+  private setText(value: string): void {
+    clearTimeout(this.queryTimer);
+    this.text.set(value);
+    this.searched.set(value);
   }
 
   protected showMore(): void {
