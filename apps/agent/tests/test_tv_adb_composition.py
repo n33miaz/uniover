@@ -71,7 +71,7 @@ def test_adb_is_wired_with_one_line_and_the_text_handler_is_not_replaced(
     assert setup.handlers["tv.text.v1"] is created[0]
     assert setup.text is not None
     assert {"tv.apps.refresh.v1", "tv.app.launch.v1"} <= set(setup.handlers)
-    assert len(setup.prepare) == 1
+    assert len(setup.prepare) == 2  # o ADB e o TV Livre
     assert len(setup.after_hello) == 1
     # O anunciante da lista e o temporizador da limpeza automática.
     # anunciante da lista, temporizador da limpeza e laço do modo foco
@@ -110,6 +110,7 @@ async def test_capability_is_declared_when_the_adb_answers(
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
         "tv.focus-closes-background.v1",
+        "tv.livre.v1",
     ]
     assert adb.connects == 1
 
@@ -133,6 +134,7 @@ async def test_capability_is_still_declared_when_the_tv_is_off_right_now(
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
         "tv.focus-closes-background.v1",
+        "tv.livre.v1",
     ]
 
 
@@ -201,6 +203,7 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
         "tv.focus-closes-background.v1",
+        "tv.livre.v1",
     ]
     lists = [m for m in api.received if m["type"] == "tv.apps.v1"]
     # Uma lista por iniciativa do agente (sessão quente depois do `hello`) e a do pedido.

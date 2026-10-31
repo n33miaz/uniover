@@ -75,6 +75,8 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_AAPT_PATH` | caminho do `aapt2` (padrão: o mais novo em `%LOCALAPPDATA%\Android\Sdk\build-tools`, ou em `ANDROID_HOME`); sem ele a lista de apps segue sem ícones |
 | `UNIOVER_ICONS_DIR` | pasta do cache de ícones (padrão `%LOCALAPPDATA%\UniOver\icons`; um arquivo por pacote e versão do app, e o nome leva a versão da regra de escolha do ícone: ao mudar a regra, o que a antiga guardou é ignorado e refeito) |
 | `UNIOVER_TV_CLEANUP_KEEP` | pacotes que a limpeza da TV **nunca** fecha, além dos protegidos de fábrica (ver "Limpeza da TV"): nomes de pacote do Android separados por vírgula (`com.exemplo.app,com.outro.app`); no `agent.toml`, `tv_cleanup_keep` como lista ou como esse mesmo texto. Item fora do formato de pacote é erro de configuração e o agente não sobe |
+| `UNIOVER_TV_LIVRE` | `0` desliga o módulo TV Livre neste PC (padrão: ligado, sempre opt-in por comando do dono; ver "TV Livre") |
+| `UNIOVER_TV_LIVRE_APK_URL` | pasta HTTPS da publicação com `uniover-launcher.apk` e `uniover-launcher.apk.sha256` (padrão: a última publicação do repositório) |
 
 Arquivo local (fora do repositório): `%LOCALAPPDATA%\UniOver\config\agent.toml`, com `api_url` e `agent_id`. Nunca
 guarda segredo.
@@ -381,6 +383,31 @@ volta em dois quadros, nesta ordem: `tv.cleanup.result.v1` (apps fechados, memó
 falharam, com o `requestId` do pedido) e `command.result.v1`. O registro (`INFO`) leva só contagens e MB.
 
 A primeira execução deve ser feita com a TV ligada, sabendo que **o app que estiver passando vai fechar**.
+
+## TV Livre (launcher próprio da Android TV)
+
+Só para Android TV e Google TV com Android 9 ou mais, e só com o `adb` neste PC. O agente anuncia a capacidade
+`tv.livre.v1`; a TV Samsung nunca a recebe. **Nada acontece sozinho**: cada passo é um comando do dono, feito pela
+tela da web, e todos são reversíveis. A sequência é a do README de `apps/tv-launcher`:
+
+1. **Instalar**: lê a versão do Android, captura o launcher de fábrica e **ensaia a volta**
+   (`set-home-activity` do original precisa responder `Success`); sem esse ensaio nada é instalado. Baixa o APK da
+   publicação (`UNIOVER_TV_LIVRE_APK_URL`, padrão a última publicação do repositório, só HTTPS), confere o sha256
+   publicado ao lado (`uniover-launcher.apk.sha256`) e instala. O launcher de fábrica segue como padrão.
+2. **Aplicar a configuração**: envia `config.json` (e `wallpaper.jpg`) como `.tmp` e renomeia, ou, se a pasta do app
+   não existir, pelo broadcast (sem foto). A configuração é conferida pelo agente contra o contrato.
+3. **Definir como padrão**: só vale depois de verificar com `resolve-activity`; se não pegou, devolve o original.
+   O launcher de fábrica só é desativado se o dono pedir, e depois dessa verificação.
+4. **Voltar ao Original**: reabilita, define o original, verifica e **só então** desinstala.
+   Se não der para confirmar a tela inicial original, nada é desinstalado.
+
+O que foi desativado e o launcher de fábrica ficam em `tv-livre-<endereço da TV>.json` na pasta de instalação,
+gravados antes de cada passo; o mesmo arquivo guarda as últimas 50 ações (auditoria local). Desativar app usa
+`pm disable-user` (reversível) com lista de proteção própria: o launcher de fábrica e o novo, o teclado e os serviços de
+acessibilidade em uso, o serviço do controle remoto, as Configurações e as peças do sistema.
+
+`UNIOVER_TV_LIVRE=0` desliga o módulo neste PC. Limite honesto: o hash vem do mesmo endereço do APK, então a conferência
+protege de download corrompido, não de uma publicação comprometida; fixar a assinatura do projeto no APK fecha essa porta.
 
 ## Ícones dos apps da TV
 

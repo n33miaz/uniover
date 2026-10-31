@@ -118,6 +118,10 @@ class Settings(BaseSettings):
     # ícones) e a pasta do cache (padrão: `%LOCALAPPDATA%\UniOver\icons`).
     aapt_path: str | None = None
     icons_dir: str | None = None
+    # TV Livre (launcher próprio da TV Android): sempre opt-in por comando do dono; esta chave só
+    # decide se o agente oferece o módulo. O APK vem da publicação, conferido pelo hash.
+    tv_livre: bool = True
+    tv_livre_apk_url: str = "https://github.com/n33miaz/uniover/releases/latest/download"
     # Limpeza da TV: pacotes que nunca são fechados, além dos protegidos de fábrica. Na variável de
     # ambiente, separados por vírgula; no arquivo, uma lista TOML ou o mesmo texto. Sem `NoDecode` o
     # pydantic-settings exigiria JSON na variável.
