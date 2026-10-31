@@ -19,6 +19,7 @@ internal static class AgentMessageDirections
     {
         AgentMessageTypes.AgentHelloV1,
         AgentKeepAlive,
+        AgentMessageTypes.AgentDiagnosticsV1,
         AgentMessageTypes.AgentLogsV1,
         AgentMessageTypes.AgentUpdateStatusV1,
         AgentMessageTypes.CommandResultV1,

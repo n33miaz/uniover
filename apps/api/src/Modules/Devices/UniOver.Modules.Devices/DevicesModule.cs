@@ -12,6 +12,7 @@ using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Contracts.Pairing;
 using UniOver.Modules.Devices.Features.ApprovePairing;
 using UniOver.Modules.Devices.Features.DenyPairing;
+using UniOver.Modules.Devices.Features.Diagnostics;
 using UniOver.Modules.Devices.Features.GetModuleInfo;
 using UniOver.Modules.Devices.Features.ListAgents;
 using UniOver.Modules.Devices.Features.Outages;
@@ -78,6 +79,8 @@ public static class DevicesModule
         services.AddScoped<RevokeAgentHandler>();
         services.AddScoped<AgentOutageMonitor>();
         services.AddScoped<AgentAlertsHandler>();
+        services.AddScoped<AgentDiagnosticsStore>();
+        services.AddScoped<AgentDiagnosticsHandler>();
         services.AddHostedService<AgentOutageWorker>();
         services.AddSingleton(sp => new PublishedBuild(
             sp.GetRequiredService<IConfiguration>()["RENDER_GIT_COMMIT"]?.Trim().ToLowerInvariant(),
@@ -104,6 +107,7 @@ public static class DevicesModule
         group.MapListAgents();
         group.MapRevokeAgent();
         group.MapAgentAlerts();
+        group.MapAgentDiagnostics();
         group.MapAgentLogs();
         group.MapAgentMaintenance();
         return endpoints;

@@ -631,6 +631,70 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/devices/agents/diagnostics': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          limit?: number | string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AgentDiagnosticsResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/devices/events': {
     parameters: {
       query?: never;
@@ -8115,6 +8179,26 @@ export interface components {
       lastSeenAt: null | string;
       /** Format: date-time */
       recoveredAt: null | string;
+    };
+    AgentDiagnosticItem: {
+      /** Format: uuid */
+      agentId: string;
+      agentName: string;
+      /** Format: date-time */
+      at: string;
+      component: null | string;
+      /** Format: int32 */
+      count: number | string;
+      detail: string;
+      /** Format: uuid */
+      id: string;
+      kind: string;
+      severity: string;
+    };
+    AgentDiagnosticsResponse: {
+      items: components['schemas']['AgentDiagnosticItem'][];
+      /** Format: int32 */
+      retentionDays: number | string;
     };
     AgentLogsRequest: {
       /** Format: int32 */
