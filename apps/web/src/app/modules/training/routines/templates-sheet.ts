@@ -97,9 +97,7 @@ export interface TemplateCreated {
             </li>
           }
         </ul>
-        <p class="note" i18n="@@training.templates.note">
-          O modelo é o ponto de partida; o Programa Semanal organiza as rotinas da semana.
-        </p>
+        <p class="note" i18n="@@training.templates.note">O modelo é só o ponto de partida.</p>
       }
       @if (error(); as message) {
         <p class="ui-notice bad" role="alert">

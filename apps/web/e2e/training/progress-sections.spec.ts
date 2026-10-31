@@ -171,9 +171,7 @@ test.describe('calendário de frequência', () => {
     await expect(frequency).toContainText(
       'Constância: entre 1 e 2 treinos por semana nas duas últimas semanas',
     );
-    await expect(frequency).toContainText(
-      'Sem meta de treinos por semana: você define na seção Semana.',
-    );
+    await expect(frequency).toContainText('Sem meta semanal definida.');
   });
 
   test('vai ao mês anterior e volta, sem passar do mês de hoje', async ({ page, context }) => {
