@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { expect, screenshot, test } from '../fixtures';
 import { expectNoA11yViolations, settle } from '../screens/screen-helpers';
-import { SEED_EXERCISE_IDS } from './support/training-seed';
+import { SEED_EXERCISE_IDS, seedExercise } from './support/training-seed';
 import {
   openTraining,
   startTraining,
@@ -203,6 +203,84 @@ test.describe('exercícios: lista, busca e ficha', () => {
     await page.getByRole('button', { name: 'Ver Todos os 5 Passos' }).click();
     await expect(page.locator('.steps li')).toHaveCount(5);
     await expect(page.locator('.origin')).toHaveCount(0);
+  });
+
+  test('a biblioteca mostra a figura dos exercícios completados depois (WebP e SVG)', async ({
+    page,
+    context,
+  }, info) => {
+    const server = await startTraining(context, page);
+    const extra = [
+      ['barra-fixa-supinada', 'Barra fixa supinada', 'lats', 'bodyweight'],
+      ['prancha-lateral', 'Prancha lateral', 'abdominals', 'bodyweight'],
+      ['remada-invertida', 'Remada invertida', 'middle_back', 'bodyweight'],
+      ['agachamento-hack-na-maquina', 'Agachamento hack na máquina', 'quadriceps', 'machine'],
+      [
+        'triceps-frances-unilateral-com-halter',
+        'Tríceps francês unilateral',
+        'triceps',
+        'dumbbell',
+      ],
+    ] as const;
+    server.seed(
+      'exercises',
+      extra.map(([slug, name, primary, equipment], index) =>
+        seedExercise({
+          n: 201 + index,
+          slug,
+          name,
+          primary,
+          equipment,
+          instructions: ['Faça o movimento com controle.'],
+        }),
+      ),
+    );
+    await openTraining(page, '/treino/exercicios');
+    await waitForCatalog(page);
+
+    for (const [term, file] of [
+      ['barra fixa supinada', 'chin-ups-1.webp'],
+      ['prancha lateral', '0113-relaxation.svg'],
+    ]) {
+      await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill(term);
+      const thumb = page.locator('.list .ui-row .thumb img').first();
+      await expect(thumb).toBeVisible();
+      await expect(thumb).toHaveAttribute('src', `/exercise-art/${file}`);
+      await expect(thumb).toHaveAttribute('loading', 'lazy');
+      await expect
+        .poll(() => thumb.evaluate((image: HTMLImageElement) => image.naturalWidth))
+        .toBeGreaterThan(0);
+    }
+
+    if (process.env['TRAINING_SHOTS_DIR']) {
+      await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('');
+      await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('a');
+      await settle(page);
+      await expect
+        .poll(() =>
+          page
+            .locator('.list .ui-row .thumb img')
+            .evaluateAll((images) => images.every((image) => (image as HTMLImageElement).complete)),
+        )
+        .toBe(true);
+      await screenshot(
+        page,
+        join(process.env['TRAINING_SHOTS_DIR'], `biblioteca-ilustracoes-${info.project.name}.png`),
+      );
+      await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('prancha lateral');
+    }
+
+    await rows(page).first().click();
+    await expect(page.getByRole('heading', { name: 'Prancha lateral' })).toBeVisible();
+    const frames = page.locator('app-exercise-illustration img');
+    await expect(frames).toHaveCount(2);
+    await expect
+      .poll(() =>
+        frames.evaluateAll((images) =>
+          images.every((image) => (image as HTMLImageElement).naturalWidth > 0),
+        ),
+      )
+      .toBe(true);
   });
 
   test('a ficha sem ilustração mantém apenas as faces com músculos destacados', async ({

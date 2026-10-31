@@ -5,7 +5,8 @@ import { TrainingGlyph } from '../shell/training-glyph';
 /**
  * A miniatura de 64 px de um exercício nas listas (biblioteca, seletores e a rotina de Hoje): somente a primeira pose de
  * uma ilustração confirmada, sem animação no espaço curto da lista. Sem arte segura para o `slug`, a moldura mostra o
- * glifo neutro e não sugere outro movimento. É decorativa: o nome do exercício está na linha, ao lado.
+ * glifo neutro e não sugere outro movimento. É decorativa: o nome do exercício está na linha, ao lado. A imagem carrega
+ * sob demanda (`lazy`) e é decodificada fora da thread principal: a biblioteca tem dezenas de linhas e só as visíveis pagam.
  */
 @Component({
   selector: 'app-exercise-thumb',
@@ -13,7 +14,14 @@ import { TrainingGlyph } from '../shell/training-glyph';
   host: { class: 'thumb', 'aria-hidden': 'true' },
   template: `
     @if (imageUrl(); as source) {
-      <img [src]="source" [alt]="''" width="64" height="64" />
+      <img
+        [src]="source"
+        [alt]="''"
+        width="64"
+        height="64"
+        [attr.loading]="'lazy'"
+        [attr.decoding]="'async'"
+      />
     } @else {
       <span class="placeholder">
         <app-training-glyph name="dumbbell" />

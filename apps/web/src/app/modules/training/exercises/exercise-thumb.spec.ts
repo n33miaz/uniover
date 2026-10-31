@@ -17,6 +17,12 @@ describe('ExerciseThumb', () => {
     expect(el.querySelector('.placeholder')).toBeNull();
   });
 
+  it('loads the thumbnail on demand and decodes it off the main thread', () => {
+    const img = render('supino-reto-com-barra').querySelector('img');
+    expect(img?.getAttribute('loading')).toBe('lazy');
+    expect(img?.getAttribute('decoding')).toBe('async');
+  });
+
   it('falls back to the neutral frame without a safe illustration or without the exercise', () => {
     for (const slug of ['prancha-isometrica', null]) {
       const el = render(slug);
