@@ -5,17 +5,23 @@
 /*
  * Densidade da primeira tela (390×664): a data, o cartão do dia, a semana com os totais e os dois atalhos cabem acima da
  * barra de baixo, sem rolar. Por isso o respiro entre os blocos é de 8 px e cada bloco é compacto.
- * A margem negativa no topo cancela o espaço que a casca deixa entre a faixa de sincronização e a tela: a data fica colada
- * no começo do conteúdo.
- * TODO: remover a margem negativa quando a casca do Treino (navegação) tirar esse espaço.
+ * O respiro entre o topo e a data é o da casca do Treino (a mesma folga de todas as telas): esta tela não soma o dela.
  */
 .home {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   max-width: 40rem;
-  margin-block-start: calc(var(--space-3) * -1);
   margin-inline: auto;
+}
+
+/*
+ * A sugestão de programa pode abrir vazia (sem programas para mostrar): o elemento dela não pode ocupar uma linha do
+ * espaçamento da coluna, senão a data desce 8 px a mais que o primeiro conteúdo das outras telas. Com `contents` o cartão,
+ * quando existe, continua sendo filho direto da coluna.
+ */
+app-program-suggestion {
+  display: contents;
 }
 
 /* A rotina do dia: o nome, o resumo e UMA ação principal logo abaixo, antes da lista. */

@@ -1,5 +1,5 @@
 import { Page } from '@playwright/test';
-import { expect, test } from '../fixtures';
+import { expect, screenshot, test } from '../fixtures';
 import { settle } from '../screens/screen-helpers';
 import { SEED_EXERCISE_IDS } from './support/training-seed';
 import { seedPastWorkout } from './support/today-seed';
@@ -118,13 +118,19 @@ test.describe('Hoje: a primeira tela', () => {
     }
     expect(await page.evaluate(() => window.scrollY), 'a tela não rolou').toBe(0);
 
-    // A data fica colada no começo do conteúdo, sem o vão que sobrava embaixo do cabeçalho.
+    // A data abre com o mesmo respiro das outras telas (12 px sob a folga do cabeçalho): nem colada ao círculo de voltar,
+    // nem com o vão que sobrava embaixo do cabeçalho.
     const header = await box(page, 'app-page-top-bar');
     const date = await box(page, '.date');
-    expect(
-      date.y - (header.y + header.height),
-      'vão entre o cabeçalho e a data',
-    ).toBeLessThanOrEqual(28);
+    const gap = date.y - (header.y + header.height);
+    expect(gap, 'vão entre o cabeçalho e a data').toBeGreaterThanOrEqual(12);
+    expect(gap, 'vão entre o cabeçalho e a data').toBeLessThanOrEqual(14);
+    if (process.env['TOP_BAR_PRINTS_DIR']) {
+      await screenshot(
+        page,
+        `${process.env['TOP_BAR_PRINTS_DIR']}/treino-hoje-com-data-${test.info().project.name}.png`,
+      );
+    }
 
     // Os alvos de toque continuam com 44 px.
     for (const selector of [
