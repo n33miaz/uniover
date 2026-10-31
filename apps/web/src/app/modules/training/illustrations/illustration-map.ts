@@ -233,6 +233,12 @@ export const EXERCISE_ILLUSTRATIONS: Readonly<Record<string, ExerciseIllustratio
     'standing-one-arm-triceps-extension-with-dumbbell',
   ),
   'elevacao-de-perna-para-tras-em-pe': art('Body Leg Lifts', '0111'),
+  // Na origem a figura é a da rosca em banco inclinado, palmas para cima (o texto da origem pede exatamente isso).
+  'rosca-inclinada-com-halteres': art('Flexor Incline Curls with Dumbbell', '0228'),
+  // Mesma posição no banco, mas com as palmas voltadas para o corpo, sem girar o punho: a rosca martelo.
+  'rosca-martelo-inclinada-com-halteres': art('Incline Inner Biceps Curl with Dumbbell', '0231'),
+  // Remada com um joelho e a mão no banco, halter puxado até o tronco; o título de origem destaca o ombro posterior.
+  'remada-unilateral-com-halter': art('Rear Deltoid Row Dumbbell', '0024'),
 };
 
 /** A ilustração do exercício, ou `undefined` quando não há uma segura. */
