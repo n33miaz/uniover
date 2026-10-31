@@ -95,6 +95,7 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             e.Property(x => x.FocusModeEnabled).HasDefaultValue(false);
             e.Property(x => x.ShortAnimationsEnabled).HasDefaultValue(false);
             e.Property(x => x.FocusClosesBackground).HasDefaultValue(false);
+            e.Property(x => x.PermissionNeeded).HasDefaultValue(false);
             e.Property(x => x.RestrictedBackgroundPackages).HasMaxLength(4000).HasDefaultValue("[]").IsRequired();
 
             // Exatamente uma TV padrão por enquanto: o índice único parcial impede uma segunda linha padrão mesmo

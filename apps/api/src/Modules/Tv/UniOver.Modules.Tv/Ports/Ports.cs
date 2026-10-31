@@ -146,3 +146,32 @@ public interface ITvAgentPresence
     /// </summary>
     bool IsOfflineBeyondReconnectGrace(string agentId);
 }
+
+/// <summary>
+/// Uma TV que o agente achou na rede local dele (<c>tv.discovery.v1</c>). O <c>Id</c> é opaco e estável (o agente o
+/// deriva do identificador da TV): nunca é um endereço IP nem um MAC, e nada de rede sai da API.
+/// </summary>
+public sealed record TvNearby(string Id, string Kind, string? Name, bool Controlled);
+
+/// <summary>Uma procura de TVs em andamento: o pedido e a espera pela lista do agente. Descartar libera a vez.</summary>
+public interface ITvDiscoveryTicket : IDisposable
+{
+    /// <summary>O que vai no corpo de <c>tv.discover.v1</c> e volta na lista.</summary>
+    Guid RequestId { get; }
+
+    /// <summary>Espera a lista deste pedido; nula se não chegou a tempo.</summary>
+    Task<IReadOnlyList<TvNearby>?> WaitAsync(TimeSpan grace, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Junta a lista que o agente manda por iniciativa própria ao pedido HTTP que a espera, uma procura por computador
+/// (duas no mesmo computador disputariam a mesma varredura). Em memória, da instância do contêiner.
+/// </summary>
+public interface ITvDiscoveryReports
+{
+    /// <summary>Começa uma procura no computador; nulo se ele já tem outra em andamento.</summary>
+    ITvDiscoveryTicket? TryBegin(string agentId);
+
+    /// <summary>Entrega a lista à procura do computador e do <paramref name="requestId"/>; ignora o que ninguém espera.</summary>
+    void Complete(string agentId, Guid requestId, IReadOnlyList<TvNearby> tvs);
+}
