@@ -48,8 +48,8 @@ describe('ExerciseDetailPage', () => {
       );
       expect(chips(el)).toEqual([
         'Peitoral',
-        'Tríceps · secundário',
-        'Ombros · secundário',
+        'Tríceps · Secundário',
+        'Ombros · Secundário',
         'Barra',
       ]);
       expect(el.querySelectorAll('app-exercise-illustration img')).toHaveLength(2);
@@ -168,7 +168,7 @@ describe('ExerciseDetailPage', () => {
       await eventually(fixture, () =>
         expect(el.querySelector('h2')?.textContent).toContain('Remada'),
       );
-      expect(chips(el)).toContain('própria');
+      expect(chips(el)).toContain('Própria');
       expect(text(el)).toContain('Exercício criado por você neste aparelho');
       expect(el.querySelector('a[href$="/editar"]')?.getAttribute('href')).toBe(
         '/treino/exercicios/meu/editar',

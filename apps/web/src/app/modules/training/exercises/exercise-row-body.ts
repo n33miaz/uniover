@@ -18,7 +18,7 @@ import { ExerciseThumb } from './exercise-thumb';
       <span class="sub">{{ support() }}</span>
     </span>
     @if (exercise().source === 'own') {
-      <span class="ui-chip accent" i18n="@@training.exercise.own">própria</span>
+      <span class="ui-chip accent" i18n="@@training.exercise.own">Própria</span>
     }
   `,
   styleUrl: './exercise-row-body.css',
