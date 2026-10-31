@@ -1,6 +1,9 @@
 import { StorageRefreshMarker } from './refresh-marker';
 
 describe('StorageRefreshMarker', () => {
+  // Os arquivos de teste dividem o mesmo `localStorage`: outro arquivo pode ter deixado a marca de renovação armada.
+  beforeEach(() => localStorage.clear());
+
   afterEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
