@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.28.0](https://github.com/n33miaz/uniover/compare/v0.27.0...v0.28.0) (2026-10-31)
+
+
+### Features
+
+* **training:** catalog read timeout and retry
+
+
+### Bug Fixes
+
+* **training:** read catalog in batches, no cursor
+
 ## [0.27.0](https://github.com/n33miaz/uniover/compare/v0.26.0...v0.27.0) (2026-10-31)
 
 
