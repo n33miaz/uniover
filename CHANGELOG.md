@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.32.0](https://github.com/n33miaz/uniover/compare/v0.31.0...v0.32.0) (2026-10-31)
+
+
+### Features
+
+* **api:** pause and resume guest accounts
+* **contracts:** guest pause field and routes
+* **web:** pause and resume people
+* **web:** show paused access on sign in
+* **web:** open credits as a collapsible sheet
+* **api:** add readiness health endpoint
+* **api:** structured logs with a request trace
+* **api:** list dead letters for the owner
+* **web:** show failed events in system health
+* **contracts:** permission and discovery messages
+* **agent:** ask the TV for permission once
+* **api:** permission state per Samsung TV
+* **web:** tv permission sheet on entry
+* **web:** nearby tvs and permission in settings
+* **identity:** recover a lost refresh with proof
+* **web:** recover a lost refresh with a key
+
+
+### Bug Fixes
+
+* **api:** throttle invalid agent tokens
+* **api:** cap request body size
+* **api:** purge dead refresh families
+* **api:** count login failures atomically
+* **identity:** lock the family on every revocation
+
+
+### Performance Improvements
+
+* **tv:** audit commands off the request path
+
 ## [0.31.0](https://github.com/n33miaz/uniover/compare/v0.30.0...v0.31.0) (2026-10-31)
 
 
