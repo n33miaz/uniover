@@ -1,0 +1,124 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.typing {
+  display: flex;
+  gap: var(--space-2);
+}
+.field {
+  flex: 1;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  /* 16px: abaixo disso o Safari do iPhone dá zoom ao focar. */
+  font: inherit;
+  font-size: 1rem;
+}
+.field:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+.typing .ui-btn {
+  min-height: 52px;
+}
+
+.keys {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.keys.main {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.key {
+  display: grid;
+  place-items: center;
+  min-height: 48px;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 650;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.key:active:not(:disabled) {
+  transform: scale(0.97);
+  background: var(--a-accent-soft);
+}
+.key:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.key:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+/* Setas em cruz: cima no meio, as outras três embaixo. */
+.arrows {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  width: min(100%, 280px);
+  margin: 0 auto;
+}
+.arrows .key {
+  min-height: 52px;
+  font-size: 1.25rem;
+}
+.arrows [data-key='UP'] {
+  grid-column: 2;
+  grid-row: 1;
+}
+.arrows [data-key='LEFT'] {
+  grid-column: 1;
+  grid-row: 2;
+}
+.arrows [data-key='DOWN'] {
+  grid-column: 2;
+  grid-row: 2;
+}
+.arrows [data-key='RIGHT'] {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.section {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-body);
+}
+
+.error {
+  margin: 0;
+  color: var(--a-bad);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

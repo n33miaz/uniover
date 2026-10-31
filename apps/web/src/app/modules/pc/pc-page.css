@@ -1,0 +1,130 @@
+:host {
+  display: block;
+}
+
+/* A tela cabe entre o topo e a barra de abas: o conteúdo cresce, e o touchpad ocupa o que sobra. */
+.pc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: calc(100dvh - 170px - var(--safe-bottom));
+  padding: var(--space-1) var(--gutter) var(--space-4);
+}
+
+/* Verde primeiro: o estado é a primeira coisa da tela, com cor e forma (o ponto cheio ou vazado). */
+.status {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-pill);
+  background: var(--a-surface);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+.status .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.status[data-phase='ready'] {
+  border-color: color-mix(in srgb, var(--a-ok) 45%, var(--a-line));
+  background: var(--a-ok-soft);
+  color: var(--a-ok-ink);
+}
+.status[data-phase='ready'] .dot {
+  background: var(--a-ok);
+}
+.status[data-phase='offline'] .dot,
+.status[data-phase='unavailable'] .dot {
+  background: none;
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+.status[data-phase='loading'] .dot {
+  background: var(--a-warn);
+  animation: pc-pulse 1.2s ease-in-out infinite;
+}
+@keyframes pc-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status[data-phase='loading'] .dot {
+    animation: none;
+  }
+}
+
+.loading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.pad-skeleton {
+  display: block;
+  flex: 1;
+  min-height: 220px;
+  border-radius: 24px;
+}
+.row-skeleton {
+  display: block;
+  height: 52px;
+  border-radius: var(--radius);
+}
+
+.empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+.empty .art {
+  width: 72px;
+  height: 72px;
+  fill: none;
+  stroke: var(--a-ink3);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.empty .art.asleep {
+  stroke: var(--a-ink2);
+}
+.empty h2 {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-title);
+}
+.empty p {
+  margin: 0;
+  color: var(--a-ink2);
+}
+.empty code {
+  max-width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-xs);
+  background: var(--a-elev);
+  color: var(--a-ink);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+.empty .ui-btn {
+  margin-top: var(--space-3);
+}
+
+.notice {
+  margin: 0;
+  color: var(--a-bad);
+  font-size: var(--fs-small);
+  font-weight: 650;
+  text-align: center;
+}

@@ -1,4 +1,5 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
+import { PcAvailability } from './pc-availability';
 import { ScopedModuleSlug } from './module-slugs';
 
 export type ModuleStatus = 'available' | 'soon';
@@ -13,10 +14,20 @@ export interface ModuleDefinition {
    * um módulo apenas planejado não ganha rota, manifest nem escopo no service worker, e a Início o mostra sem link.
    */
   readonly slug?: ScopedModuleSlug;
+  /**
+   * Caminho de um módulo que tem tela mas mora dentro do app principal, sem manifest nem escopo próprios (não é um app
+   * instalável à parte). Sem `slug` nem `route` o módulo é só planejado.
+   */
+  readonly route?: string;
+  /**
+   * O módulo só deixa de ser "Em Breve" quando a casa tem o que ele precisa: `pc-agent` pede um computador com o controle
+   * do PC ligado. Enquanto isso o cartão fica como planejado, sem link.
+   */
+  readonly liveWith?: 'pc-agent';
   readonly title: string;
   /** Uma linha que diz para que serve o módulo (ou para que vai servir, quando ainda é "em breve"). */
   readonly description: string;
-  /** Ação principal mostrada no bloco da Início; só existe junto com o `slug`. */
+  /** Ação principal mostrada no bloco da Início; só existe junto com o `slug` ou o `route`. */
   readonly actionLabel?: string;
   readonly icon: ModuleIconName;
   readonly status: ModuleStatus;
@@ -30,6 +41,8 @@ export interface ModuleDefinition {
  */
 @Injectable({ providedIn: 'root' })
 export class ModuleRegistry {
+  private readonly pcAvailability = inject(PcAvailability);
+
   readonly modules: readonly ModuleDefinition[] = [
     {
       id: 'tv',
@@ -93,8 +106,11 @@ export class ModuleRegistry {
     },
     {
       id: 'pc',
+      route: 'pc',
+      liveWith: 'pc-agent',
       title: $localize`:@@module.pc.title:Controle do PC`,
-      description: $localize`:@@module.pc.hint:Mais adiante: controlar o PC`,
+      description: $localize`:@@module.pc.hint:Mouse, teclado, mídia e energia`,
+      actionLabel: $localize`:@@module.pc.action:Abrir controle`,
       icon: 'desktop',
       status: 'soon',
       defaultSize: 'small',
@@ -105,8 +121,18 @@ export class ModuleRegistry {
     return this.modules.find((module) => module.id === id);
   }
 
+  /**
+   * O que o módulo é agora: o do catálogo, exceto o que depende da casa (`liveWith`), que passa a "disponível" quando a casa
+   * tem o que ele precisa. Quem desenha a Início e a folha de edição pergunta aqui, nunca ao campo `status`.
+   */
+  statusOf(module: ModuleDefinition): ModuleStatus {
+    if (module.liveWith === 'pc-agent' && this.pcAvailability.available()) return 'available';
+    return module.status;
+  }
+
   /** Caminho da tela do módulo, ou `null` enquanto ele é só planejado (sem rota para abrir). */
   path(module: ModuleDefinition): string | null {
-    return module.slug ? `/${module.slug}` : null;
+    const target = module.slug ?? module.route;
+    return target && this.statusOf(module) === 'available' ? `/${target}` : null;
   }
 }
