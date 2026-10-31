@@ -25,6 +25,7 @@ describe('people permissions', () => {
         'tv:edit-shortcuts',
         'tv:history',
         'module:training',
+        'module:pc',
       ]);
     });
 
@@ -100,6 +101,7 @@ describe('people permissions', () => {
       expect(hasModule(['tv:control'])).toBe(false);
       expect(hasModule(['module:tv'])).toBe(true);
       expect(hasModule(['module:training'])).toBe(true);
+      expect(hasModule(['module:pc'])).toBe(true);
     });
 
     it('names the model a list matches, and calls anything else custom', () => {
@@ -148,6 +150,10 @@ describe('people permissions', () => {
 
     it('says only "see the TV" when that is all there is', () => {
       expect(permissionSummary(['module:tv'])).toBe('Ver a TV');
+      expect(permissionSummary(['module:pc'])).toBe('Controlar o PC');
+      expect(permissionSummary(['module:training', 'module:pc'])).toBe(
+        'Usar o Treino · Controlar o PC',
+      );
     });
 
     it('lists the TV and the Training together', () => {
@@ -157,7 +163,7 @@ describe('people permissions', () => {
     });
 
     it('says what to do when nothing is on, instead of an empty line', () => {
-      expect(permissionSummary([])).toContain('Ligue ao menos a TV ou o Treino');
+      expect(permissionSummary([])).toContain('Ligue ao menos um módulo');
     });
 
     it('never shows a technical identifier', () => {
@@ -171,6 +177,7 @@ describe('people permissions', () => {
         expect(permissionOptionLabel(permission)).not.toBe(permission);
         expect(permissionOptionLabel(permission)).not.toMatch(/:/);
       }
+      expect(permissionOptionLabel('module:pc')).toBe('Controlar o PC');
       expect(permissionOptionLabel('tv:control')).toBe('Usar o controle e o teclado');
       expect(permissionOptionLabel('tv:launch')).toBe('Abrir apps e atualizar a lista');
       expect(permissionOptionLabel('tv:edit-shortcuts')).toBe('Editar e reordenar atalhos');

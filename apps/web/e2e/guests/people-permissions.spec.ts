@@ -145,7 +145,7 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
       pick: 'Personalizado',
       expected: [...ALL_PERMISSIONS],
       summary:
-        'Controlar a TV · Desligar a TV · Abrir apps · Editar atalhos · Ver o histórico · Usar o Treino',
+        'Controlar a TV · Desligar a TV · Abrir apps · Editar atalhos · Ver o histórico · Usar o Treino · Controlar o PC',
     },
   ] as const;
 
@@ -166,6 +166,7 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
       if (scenario.pick === 'Personalizado') {
         await page.getByRole('switch', { name: 'Editar e reordenar atalhos' }).check();
         await page.getByRole('switch', { name: 'Usar o Treino' }).check();
+        await page.getByRole('switch', { name: 'Controlar o PC' }).check();
       }
       await page.getByRole('button', { name: 'Gerar convite' }).click();
 
@@ -224,7 +225,9 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
     await page.getByRole('switch', { name: 'Ver a TV' }).uncheck();
 
     await expect(page.getByRole('button', { name: 'Gerar convite' })).toBeDisabled();
-    await expect(page.getByRole('status').filter({ hasText: 'Ligue ao menos a TV' })).toBeVisible();
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Ligue ao menos um módulo' }),
+    ).toBeVisible();
     expect(invitePosts()).toHaveLength(0);
 
     // Ligando um módulo de volta, o botão volta.
@@ -329,9 +332,7 @@ test.describe('Pessoas: mudar o que alguém pode fazer', () => {
     const sheet = await openSheet(page, 'Raphael');
     await sheet.getByRole('switch', { name: 'Usar o Treino' }).uncheck();
     await expect(sheet.getByRole('button', { name: 'Salvar' })).toBeDisabled();
-    await expect(
-      sheet.getByText('Ligue ao menos a TV ou o Treino', { exact: false }),
-    ).toBeVisible();
+    await expect(sheet.getByText('Ligue ao menos um módulo', { exact: false })).toBeVisible();
     expect(permissionPuts()).toHaveLength(0);
   });
 

@@ -53,6 +53,7 @@ export const ALL_PERMISSIONS = [
   'tv:edit-shortcuts',
   'tv:history',
   'module:training',
+  'module:pc',
 ] as const;
 
 /** O modelo "só controle da TV" da API: o que a convidada tem (a TV inteira, desligar inclusive, sem editar atalhos). */
@@ -173,8 +174,8 @@ function permissionErrors(requested: unknown): string[] | null {
   if (list.some((p) => !(ALL_PERMISSIONS as readonly string[]).includes(p))) {
     errors.push('A lista tem uma permissão que não existe.');
   }
-  if (!list.some((p) => p === 'module:tv' || p === 'module:training')) {
-    errors.push('Escolha ao menos um módulo (TV ou Treino) para dar acesso.');
+  if (!list.some((p) => p === 'module:tv' || p === 'module:training' || p === 'module:pc')) {
+    errors.push('Escolha ao menos um módulo (TV, Treino ou Controle do PC) para dar acesso.');
   }
   if (list.some((p) => TV_ACTIONS.includes(p)) && !list.includes('module:tv')) {
     errors.push('Uma permissão da TV precisa do módulo da TV na lista.');

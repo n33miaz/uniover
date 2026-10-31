@@ -83,6 +83,16 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.agent-online:Computador de volta`;
     case 'agent_rollback_requested':
       return $localize`:@@settings.audit.action.agent-rollback-requested:Volta do aparelho à versão anterior pedida`;
+    case 'pc_lock':
+      return $localize`:@@settings.audit.action.pc-lock:PC bloqueado`;
+    case 'pc_sleep':
+      return $localize`:@@settings.audit.action.pc-sleep:PC suspenso`;
+    case 'pc_shutdown':
+      return $localize`:@@settings.audit.action.pc-shutdown:Desligamento do PC pedido`;
+    case 'pc_shutdown_cancelled':
+      return $localize`:@@settings.audit.action.pc-shutdown-cancelled:Desligamento do PC cancelado`;
+    case 'pc_app_launch':
+      return $localize`:@@settings.audit.action.pc-app-launch:App aberto no PC`;
     // TV
     case 'tv.key':
       return $localize`:@@settings.audit.action.tv-key:Tecla enviada à TV`;
@@ -261,6 +271,11 @@ export function describeTarget(item: AuditItem): string | null {
     case 'agent_rollback_requested':
     case 'agent_offline':
     case 'agent_online':
+    case 'pc_lock':
+    case 'pc_sleep':
+    case 'pc_shutdown':
+    case 'pc_shutdown_cancelled':
+    case 'pc_app_launch':
       // Nesta fonte o alvo é o nome do aparelho no cadastro (texto de gente).
       return target;
     default:

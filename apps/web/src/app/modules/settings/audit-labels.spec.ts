@@ -54,6 +54,11 @@ const DEVICES_ACTIONS = [
   'agent_rollback_requested',
   'agent_offline',
   'agent_online',
+  'pc_lock',
+  'pc_sleep',
+  'pc_shutdown',
+  'pc_shutdown_cancelled',
+  'pc_app_launch',
 ];
 const TV_ACTIONS = [
   'tv.key',

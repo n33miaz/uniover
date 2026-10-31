@@ -55,6 +55,7 @@ describe('PeoplePermissionPicker', () => {
       'Modelos prontos',
       'TV',
       'Treino',
+      'Controle do PC',
     ]);
     expect(options().map((o) => o.text)).toEqual([
       'Ver a TV',
@@ -64,14 +65,15 @@ describe('PeoplePermissionPicker', () => {
       'Editar e reordenar atalhos',
       'Ver o histórico',
       'Usar o Treino',
+      'Controlar o PC',
     ]);
   });
 
   it('groups with fieldset and legend, and every switch is a real labelled switch', async () => {
     const { el } = await render();
-    expect(el.querySelectorAll('fieldset')).toHaveLength(3);
+    expect(el.querySelectorAll('fieldset')).toHaveLength(4);
     const switches = el.querySelectorAll<HTMLInputElement>('input[role="switch"]');
-    expect(switches).toHaveLength(7);
+    expect(switches).toHaveLength(8);
     for (const input of Array.from(switches)) {
       expect(input.type).toBe('checkbox');
       expect(input.closest('label')?.textContent?.trim().length).toBeGreaterThan(0);
@@ -86,6 +88,16 @@ describe('PeoplePermissionPicker', () => {
     expect(option('Editar e reordenar atalhos').checked).toBe(false);
     expect(option('Usar o Treino').checked).toBe(false);
     expect(chosenModel()).toEqual(['Só controlar a TV']);
+  });
+
+  it('the PC control is a module of its own: turning it on needs nothing else, and it keeps the others', async () => {
+    const { flip, option, list } = await render(['module:training']);
+    expect(option('Controlar o PC').checked).toBe(false);
+    await flip('Controlar o PC');
+    expect(option('Controlar o PC').checked).toBe(true);
+    expect(list()).toEqual(['module:training', 'module:pc']);
+    await flip('Controlar o PC');
+    expect(list()).toEqual(['module:training']);
   });
 
   it('turning on a TV action turns on "see the TV" first', async () => {
@@ -175,7 +187,7 @@ describe('PeoplePermissionPicker', () => {
   it('warns, instead of summarizing, when no module is on', async () => {
     const { el, flip, summary } = await render(['module:training']);
     await flip('Usar o Treino');
-    expect(summary()).toContain('Ligue ao menos a TV ou o Treino');
+    expect(summary()).toContain('Ligue ao menos um módulo');
     expect(el.querySelector('.summary')?.classList.contains('warn')).toBe(true);
     expect(el.querySelector('.summary')?.getAttribute('role')).toBe('status');
   });
