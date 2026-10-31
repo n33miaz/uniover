@@ -264,6 +264,37 @@ export class GuestsSection {
     }
   }
 
+  protected pauseGuestLabel(guest: GuestSummary): string {
+    return $localize`:@@settings.guests.pause-label:Pausar o acesso de ${guest.displayName}:name:`;
+  }
+
+  protected resumeGuestLabel(guest: GuestSummary): string {
+    return $localize`:@@settings.guests.resume-label:Retomar o acesso de ${guest.displayName}:name:`;
+  }
+
+  /** Pausa ou retoma: a conta e as permissões ficam como estão, só o acesso para enquanto durar. */
+  protected async togglePause(guest: GuestSummary): Promise<void> {
+    if (this.busy()) return;
+    this.busy.set(true);
+    const pausing = !guest.pausedAt;
+    try {
+      await this.auth.authorized((token) =>
+        pausing ? this.api.pauseGuest(token, guest.id) : this.api.resumeGuest(token, guest.id),
+      );
+      await this.load();
+      this.say(
+        pausing
+          ? $localize`:@@settings.guests.paused:Acesso pausado.`
+          : $localize`:@@settings.guests.resumed:Acesso retomado.`,
+        false,
+      );
+    } catch {
+      this.say($localize`:@@settings.guests.pause-failed:Não foi possível mudar agora.`, true);
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
   protected async revokeGuest(guest: GuestSummary): Promise<void> {
     if (this.busy()) return;
     this.busy.set(true);
