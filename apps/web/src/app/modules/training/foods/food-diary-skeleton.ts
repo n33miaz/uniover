@@ -3,8 +3,9 @@ import { LoadingFrame } from '../../../shared/ui/skeleton/loading-frame';
 import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
 
 /**
- * O esqueleto do diário enquanto os lançamentos do dia são lidos: dois grupos de refeição, cada um com o título e a soma
- * na ponta, e uma linha de lançamento (nome, gramas e calorias, e a faixa das ações). O dia e o formulário de baixo já são
+ * O esqueleto do diário enquanto os lançamentos do dia são lidos: um grupo de refeição, com o título e a soma na ponta e
+ * uma linha de lançamento (nome, gramas e calorias, e a faixa das ações). Um só, de propósito: o dia que mais se abre é o
+ * que ainda não tem lançamento (só o recado), e um esqueleto maior que isso faria a lista pular para cima. O dia e o formulário de baixo já são
  * os reais; só a lista espera. Com `page` (a espera pelo banco antes de a tela existir) o esqueleto também desenha o que a
  * tela traz em volta: o título, o cartão do dia, os grupos de refeição e o formulário.
  */
@@ -138,7 +139,7 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
       width: 38%;
       height: 14px;
       min-height: 0;
-      margin-block: 15px;
+      margin-block: var(--space-1);
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -147,7 +148,7 @@ export class FoodDiarySkeleton {
   /** A tela ainda nem existe: desenha também o título, o cartão do dia e o formulário. */
   readonly page = input(false);
   protected readonly label = $localize`:@@training.food.loading:Carregando lançamentos…`;
-  protected readonly groups = [1, 2];
+  protected readonly groups = [1];
   protected readonly bars = [1, 2, 3, 4, 5];
 }
 

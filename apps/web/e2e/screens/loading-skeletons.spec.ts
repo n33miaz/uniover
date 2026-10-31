@@ -423,8 +423,6 @@ const TRAINING_SCREENS: readonly TrainingScreen[] = [
   {
     name: 'alimentação',
     path: '/treino/alimentacao',
-    // A lista do dia é de um tamanho só quando há lançamentos; o simulador começa com o diário vazio (só o recado).
-    maxShift: 0.2,
     done: (page) => page.locator('app-training-page').first(),
   },
 ];
