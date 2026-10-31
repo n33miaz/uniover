@@ -93,11 +93,13 @@ def test_outside_windows_everything_is_refused() -> None:
 
 @pytest.mark.skipif(sys.platform != "win32", reason="a estrutura nativa só existe no Windows")
 def test_native_structures_match_the_windows_layout_without_sending_anything() -> None:
-    # Só monta as estruturas: nenhum evento é enviado ao sistema.
-    assert pc_windows.native_size() == (40 if sys.maxsize > 2**32 else 28)
-    mouse = pc_windows.to_native(RawInput("mouse", MOUSE_MOVE, 3, -4))
-    assert (mouse.type, mouse.union.mi.dx, mouse.union.mi.dy) == (0, 3, -4)
-    wheel = pc_windows.to_native(RawInput("mouse", 0x0800, data=-120))
-    assert wheel.union.mi.mouseData == 0xFFFFFF88
-    key = pc_windows.to_native(RawInput("keyboard", 0x0004, scan=0x00E7))
-    assert (key.type, key.union.ki.wScan, key.union.ki.dwFlags) == (1, 0xE7, 4)
+    # Só monta as estruturas, sem enviar evento algum. O `if` (e não só o `skipif`) é o que o mypy
+    # entende: fora do Windows estas funções não existem no módulo.
+    if sys.platform == "win32":
+        assert pc_windows.native_size() == (40 if sys.maxsize > 2**32 else 28)
+        mouse = pc_windows.to_native(RawInput("mouse", MOUSE_MOVE, 3, -4))
+        assert (mouse.type, mouse.union.mi.dx, mouse.union.mi.dy) == (0, 3, -4)
+        wheel = pc_windows.to_native(RawInput("mouse", 0x0800, data=-120))
+        assert wheel.union.mi.mouseData == 0xFFFFFF88
+        key = pc_windows.to_native(RawInput("keyboard", 0x0004, scan=0x00E7))
+        assert (key.type, key.union.ki.wScan, key.union.ki.dwFlags) == (1, 0xE7, 4)
