@@ -7,13 +7,15 @@ import asyncio
 import logging
 
 from uniover_agent.adapters.tv_samsung import (
+    SAMSUNG_PERMISSION_TIMEOUT_SECONDS,
     SAMSUNG_PORT,
     SamsungClient,
     SamsungFactory,
     _SamsungTvWs,
+    is_permission_failure,
 )
 
-SAMSUNG_PAIR_TIMEOUT_SECONDS = 60.0
+SAMSUNG_PAIR_TIMEOUT_SECONDS = SAMSUNG_PERMISSION_TIMEOUT_SECONDS
 # `close()` é síncrono na biblioteca e algumas TVs não respondem ao fechamento. O pareamento já
 # terminou neste ponto; não faz sentido segurar o instalador por isso.
 SAMSUNG_CLOSE_TIMEOUT_SECONDS = 3.0
@@ -36,10 +38,16 @@ async def pair_samsung_tv(
     host: str,
     name: str,
     *,
+    token: str | None = None,
     factory: SamsungFactory = _pairing_factory,
 ) -> str:
-    """Espera o aceite na TV e devolve apenas o token para quem o guarda no cofre."""
-    client: SamsungClient = factory(host, None, name)
+    """Espera o aceite na TV e devolve apenas o token para quem o guarda no cofre.
+
+    Com `token` (o que já estava guardado), uma TV que ainda o reconhece conecta sem mostrar
+    aviso nenhum; uma que o esqueceu mostra o aviso "Permitir" e espera. O `name` é sempre o mesmo
+    do primeiro pareamento: é a ele que a TV liga a permissão.
+    """
+    client: SamsungClient = factory(host, token, name)
     try:
         async with asyncio.timeout(SAMSUNG_PAIR_TIMEOUT_SECONDS):
             await asyncio.to_thread(client.open)
@@ -50,7 +58,10 @@ async def pair_samsung_tv(
         raise SamsungPairingError("o aviso na TV não foi aceito em até 60 segundos") from None
     except SamsungPairingError:
         raise
-    except Exception:
+    except Exception as exc:
+        if is_permission_failure(exc):
+            # Tempo esgotado do aviso, recusa ou a TV desistindo: nenhum token chegou.
+            raise SamsungPairingError("o aviso na TV não foi aceito em até 60 segundos") from None
         raise SamsungPairingError(
             "não consegui parear com a TV Samsung; confira o endereço, se ela está ligada "
             "e aceite o aviso"

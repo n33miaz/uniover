@@ -86,6 +86,7 @@ def test_host_with_certificate_builds_the_session(monkeypatch: pytest.MonkeyPatc
         "tv.text.v1",
         "tv.wake.v1",
         "tv.app.launch.v1",
+        "tv.discover.v1",
     }
     assert setup.background == []
     assert setup.after_hello == []

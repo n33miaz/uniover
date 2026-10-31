@@ -7,21 +7,37 @@ o token explicitamente.
 
 import asyncio
 import logging
+import ssl
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 import httpx
+import websocket
 from samsungtvws import SamsungTVWS
+from samsungtvws import exceptions as samsung_exceptions
 from samsungtvws import helper as samsung_helper
+from samsungtvws.event import (
+    IGNORE_EVENTS_AT_STARTUP,
+    MS_CHANNEL_CONNECT_EVENT,
+    MS_CHANNEL_UNAUTHORIZED,
+)
 
 from uniover_agent.adapters.tv_discovery import samsung_identity
 from uniover_agent.adapters.tv_samsung_volume import SamsungVolume
 from uniover_agent.core.tv.locator import TvIdentity
-from uniover_agent.ports import TvNotPaired, TvUnreachable
+from uniover_agent.ports import TvNotPaired, TvPermissionNeeded, TvUnreachable
 
 _log = logging.getLogger(__name__)
 
 SAMSUNG_PORT = 8002
+# O nome com que o UniOver se apresenta à TV. A TV liga o token (e o "Permitir" que a pessoa deu) a
+# este nome: mudá-lo, ou deixá-lo depender de configuração, faria a TV perguntar tudo de novo. O
+# valor é o mesmo que sempre foi o padrão e não pode mudar.
+SAMSUNG_CLIENT_NAME = "UniOver"
+# Quanto o aviso "Permitir" fica à espera de alguém na frente da TV.
+SAMSUNG_PERMISSION_TIMEOUT_SECONDS = 60.0
+# Evento com que a TV desiste do aviso que ninguém respondeu.
+MS_CHANNEL_TIMEOUT = "ms.channel.timeOut"
 SAMSUNG_REST_PORT = 8001
 SAMSUNG_TIMEOUT_SECONDS = 5.0
 SAMSUNG_APP_TIMEOUT_SECONDS = 3.0
@@ -145,10 +161,62 @@ class SamsungClient(Protocol):
 SamsungFactory = Callable[[str, str | None, str], SamsungClient]
 PowerFetcher = Callable[[str], Awaitable[bool | None]]
 IdentitySink = Callable[[TvIdentity], None]
+# Pede a permissão à TV (com o token guardado, se houver) e devolve o token que ela entregou.
+TokenRequester = Callable[[str | None], Awaitable[str]]
+
+
+class SamsungAwaitingPermission(Exception):  # noqa: N818
+    """A TV atendeu o WebSocket mas não concluiu a conexão: espera alguém aceitar o aviso.
+
+    Sem esta distinção a espera do aviso é indistinguível de uma TV lenta (as duas estouram o tempo
+    do soquete), e a abertura seguinte faria a TV mostrar o aviso outra vez.
+    """
+
+
+def is_permission_failure(exc: BaseException) -> bool:
+    """A TV recusou ou deixou pendente a permissão do UniOver (e não: está fora do ar ou lenta)."""
+    if isinstance(exc, SamsungAwaitingPermission | samsung_exceptions.UnauthorizedError):
+        return True
+    if isinstance(exc, samsung_exceptions.ConnectionFailure):
+        payload = exc.args[0] if exc.args else None
+        return isinstance(payload, dict) and payload.get("event") == MS_CHANNEL_TIMEOUT
+    return False
 
 
 class _SamsungTvWs(SamsungTVWS):
-    """Pequena extensão da biblioteca para o evento EDEN de ícones, ainda não exposto por ela."""
+    """Extensão da biblioteca: o evento EDEN de ícones e a abertura que separa o aviso pendente."""
+
+    def open(self) -> websocket.WebSocket:
+        """Igual à da biblioteca (2.7.2), mas o tempo esgotado **depois** do aperto de mão do
+        WebSocket vira `SamsungAwaitingPermission`: a TV está viva e espera o aceite."""
+        if self.connection:
+            return self.connection
+        url = self._format_websocket_url(self.endpoint)
+        sslopt = {"cert_reqs": ssl.CERT_NONE} if self._is_ssl_connection() else {}
+        connection = websocket.create_connection(
+            url, self.timeout, sslopt=sslopt, connection="Connection: Upgrade"
+        )
+        try:
+            event: str | None = None
+            response: dict[str, Any] = {}
+            while event is None or event in IGNORE_EVENTS_AT_STARTUP:
+                try:
+                    data = connection.recv()
+                except websocket.WebSocketTimeoutException:
+                    raise SamsungAwaitingPermission from None
+                response = samsung_helper.process_api_response(data)
+                event = response.get("event", "*")
+                self._websocket_event(event, response)
+            if event == MS_CHANNEL_UNAUTHORIZED:
+                raise samsung_exceptions.UnauthorizedError(response)
+            if event != MS_CHANNEL_CONNECT_EVENT:
+                raise samsung_exceptions.ConnectionFailure(response)
+            self._check_for_token(response)
+        except BaseException:
+            connection.close()
+            raise
+        self.connection = connection
+        return connection
 
     def app_icon(self, icon_path: str) -> str | None:
         # A resposta vem no mesmo socket síncrono usado pelo `app_list`; não iniciamos o loop de
@@ -235,6 +303,8 @@ class SamsungTvDriver:
         volume: SamsungVolume | None = None,
         on_identity: IdentitySink | None = None,
         save_token: Callable[[str], None] | None = None,
+        permission_needed: bool = False,
+        request_token: TokenRequester | None = None,
         app_ids: tuple[str, ...] = (),
         rest_transport: httpx.AsyncBaseTransport | None = None,
         ws_timeout_seconds: float = SAMSUNG_TIMEOUT_SECONDS,
@@ -249,6 +319,10 @@ class SamsungTvDriver:
         self._upnp = volume or SamsungVolume(host, transport=rest_transport)
         self._on_identity = on_identity
         self._save_token = save_token
+        self._permission_needed = permission_needed
+        self._request_token = request_token
+        self._permission_lock = asyncio.Lock()
+        self._permission: list[Callable[[bool], None]] = []
         self._app_ids = tuple(dict.fromkeys((*SAMSUNG_APP_IDS, *app_ids)))
         self._rest_transport = rest_transport
         self._ws_timeout_seconds = ws_timeout_seconds
@@ -266,15 +340,70 @@ class SamsungTvDriver:
     def connected(self) -> bool:
         return self._connected
 
+    @property
+    def permission_needed(self) -> bool:
+        """A TV não reconhece mais o UniOver: nenhuma conexão é tentada até um pedido explícito."""
+        return self._permission_needed
+
+    def on_permission(self, callback: Callable[[bool], None]) -> None:
+        """Avisa quando a permissão passa a ser necessária (`True`) ou volta a valer (`False`)."""
+        self._permission.append(callback)
+
+    def _set_permission_needed(self, needed: bool) -> None:
+        if self._permission_needed == needed:
+            return
+        self._permission_needed = needed
+        for callback in self._permission:
+            try:
+                callback(needed)
+            except Exception:
+                _log.exception("falha no aviso de permissão da TV Samsung")
+
+    async def reachable(self) -> bool:
+        """A TV responde ao REST? Leitura passiva, que nunca dispara o aviso de permissão."""
+        return await fetch_samsung_info(self._host) is not None
+
+    async def request_permission(self) -> bool:
+        """Pede o aviso "Permitir" na TV e espera o aceite; `True` se a TV o concedeu.
+
+        É o único caminho que fala com a TV enquanto a permissão é necessária, e só roda quando a
+        pessoa pede. Com o token guardado, uma TV que ainda o reconhece conecta na hora e nada
+        aparece na tela. O token novo, se houver, vai para o cofre.
+        """
+        if self._request_token is None:
+            return False
+        async with self._permission_lock:
+            await self.disconnect()
+            try:
+                token = await self._request_token(self._token)
+            except Exception:
+                return False
+            if token != self._token:
+                self._token = token
+                if self._save_token is not None:
+                    self._save_token(token)
+            self._set_permission_needed(False)
+            return True
+
     async def connect(self) -> None:
         if self._connected:
             return
+        if self._permission_needed:
+            # Sem tocar na rede: cada tentativa faria a TV mostrar o aviso sem ninguém ter pedido.
+            raise TvPermissionNeeded("a TV Samsung pediu a permissão do UniOver de novo")
         if not self._token:
             raise TvNotPaired("a TV Samsung ainda não foi pareada")
         client = self._factory(self._host, self._token, self._name)
         try:
-            await self._call_client(client.open)
-        except Exception:
+            # Um pouco além do tempo do soquete: o aviso pendente precisa chegar como tal (e não
+            # como um tempo esgotado daqui) para a TV não ser incomodada outra vez.
+            await self._call_client(client.open, wait_seconds=self._ws_timeout_seconds * 1.2)
+        except Exception as exc:
+            if is_permission_failure(exc):
+                self._set_permission_needed(True)
+                raise TvPermissionNeeded(
+                    "a TV Samsung pediu a permissão do UniOver de novo"
+                ) from None
             raise TvUnreachable("a TV Samsung não respondeu ao controle remoto") from None
         self._client = client
         self._connected = True
