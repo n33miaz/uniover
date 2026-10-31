@@ -38,6 +38,8 @@ export interface MockGuest {
   password: string;
   createdAt: string;
   disabledAt: string | null;
+  /** O dono pausou o acesso (reversível); ausente vale sem pausa. */
+  pausedAt?: string | null;
   /** O nome já foi escolhido pela pessoa (o `displayNameConfirmed` do `/me`); ausente vale como escolhido. */
   nameConfirmed?: boolean;
   /** O que a pessoa pode fazer (ausente vale `guestPermissions` do simulador). */
@@ -376,6 +378,7 @@ export async function mockIdentityApi(
         (g) => g.email === body?.['email'] && g.password === body?.['password'] && !g.disabledAt,
       );
       const isOwner = body?.['email'] === OWNER.email && body?.['password'] === OWNER.password;
+      if (guest?.pausedAt) return problem(route, 401, 'guest-paused', 'Acesso pausado.');
       if (!isOwner && !guest) {
         return problem(route, 401, 'unauthenticated', 'E-mail ou senha inválidos.');
       }
@@ -638,14 +641,17 @@ export async function mockIdentityApi(
       return json(
         route,
         200,
-        mock.guests.map(({ id, displayName, email, createdAt, disabledAt, permissions }) => ({
-          id,
-          displayName,
-          email,
-          createdAt,
-          disabledAt,
-          permissions: permissions ?? [...mock.guestPermissions],
-        })),
+        mock.guests.map(
+          ({ id, displayName, email, createdAt, disabledAt, pausedAt, permissions }) => ({
+            id,
+            displayName,
+            email,
+            createdAt,
+            disabledAt,
+            pausedAt: pausedAt ?? null,
+            permissions: permissions ?? [...mock.guestPermissions],
+          }),
+        ),
       );
     }
     if (method === 'POST' && path === '/guest-invites') {
@@ -703,15 +709,26 @@ export async function mockIdentityApi(
         return problem(route, 409, 'guest-revoked', 'O acesso deste convidado foi revogado.');
       }
       found.permissions = inCatalogOrder(body?.['permissions'] as string[]);
-      const { id, displayName, email, createdAt, disabledAt } = found;
+      const { id, displayName, email, createdAt, disabledAt, pausedAt } = found;
       return json(route, 200, {
         id,
         displayName,
         email,
         createdAt,
         disabledAt,
+        pausedAt: pausedAt ?? null,
         permissions: found.permissions,
       });
+    }
+    const guestPause = /^\/guests\/([^/]+)\/(pause|resume)$/.exec(path);
+    if (method === 'POST' && guestPause) {
+      const found = mock.guests.find((g) => g.id === guestPause[1]);
+      if (!found) return route.fulfill({ status: 404 });
+      if (found.disabledAt) {
+        return problem(route, 409, 'guest-revoked', 'O acesso deste convidado foi revogado.');
+      }
+      found.pausedAt = guestPause[2] === 'pause' ? '2026-10-19T16:00:00Z' : null;
+      return route.fulfill({ status: 204 });
     }
     const guestRevoke = /^\/guests\/([^/]+)\/revoke$/.exec(path);
     if (method === 'POST' && guestRevoke) {

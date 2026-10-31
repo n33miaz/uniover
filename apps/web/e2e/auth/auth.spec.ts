@@ -347,7 +347,7 @@ test.describe('ajustes', () => {
     await expect(page.getByText('0.5.0-teste')).toBeVisible();
     await expect(page.getByRole('link', { name: /^Créditos/ })).toHaveAttribute(
       'href',
-      '/ajustes/creditos',
+      '/ajustes/sobre/creditos',
     );
   });
 
