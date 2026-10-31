@@ -3668,6 +3668,126 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/shortcuts/tv': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['SiriCommandRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['SiriCommandOk'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Bad Gateway */
+        502: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Service Unavailable */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Gateway Timeout */
+        504: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/training/body/entries': {
     parameters: {
       query?: never;
@@ -7251,6 +7371,144 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/tv/siri/tokens': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['SiriTokenListResponse'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['CreateSiriTokenRequest'];
+        };
+      };
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['CreatedSiriToken'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/tv/siri/tokens/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Not Found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/state': {
     parameters: {
       query?: never;
@@ -8145,6 +8403,19 @@ export interface components {
       action: null | string;
       password: null | string;
     };
+    CreatedSiriToken: {
+      actions: string[];
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      expiresAt: null | string;
+      /** Format: uuid */
+      id: string;
+      name: string;
+      token: string;
+      /** Format: uuid */
+      tvId: string;
+    };
     CreateGuestInviteRequest: {
       displayName: null | string;
       permissions?: null | string[];
@@ -8157,6 +8428,14 @@ export interface components {
       id: string;
       permissions: string[];
       token: string;
+    };
+    CreateSiriTokenRequest: {
+      actions: null | string[];
+      /** Format: int32 */
+      expiresInDays: null | number | string;
+      name: null | string;
+      /** Format: uuid */
+      tvId: null | string;
     };
     CreateTvRequest: {
       agentSlug: null | string;
@@ -8684,6 +8963,36 @@ export interface components {
       updatedAt: string;
       /** Format: double */
       weightKg: null | number | string;
+    };
+    SiriCommandOk: {
+      /** Format: int32 */
+      latencyMs: number;
+      message: string;
+      ok: boolean;
+    };
+    SiriCommandRequest: {
+      action: null | string;
+      app: null | string;
+      key: null | string;
+      tv: null | string;
+    };
+    SiriTokenListResponse: {
+      items: components['schemas']['SiriTokenSummary'][];
+    };
+    SiriTokenSummary: {
+      actions: string[];
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      expiresAt: null | string;
+      /** Format: uuid */
+      id: string;
+      /** Format: date-time */
+      lastUsedAt: null | string;
+      name: string;
+      /** Format: uuid */
+      tvId: string;
+      tvName: string;
     };
     StartPairingRequest: {
       agentName: null | string;
