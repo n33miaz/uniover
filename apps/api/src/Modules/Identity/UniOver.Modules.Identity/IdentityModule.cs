@@ -72,6 +72,7 @@ public static class IdentityModule
         services.AddSingleton<AccessTokenIssuer>();
         services.AddSingleton<AuthCookieWriter>();
         services.AddScoped<LoginAuditWriter>();
+        services.AddScoped<FailedLoginCounter>();
         services.AddSingleton<SystemSettingsService>();
         services.AddSingleton<UniOver.Modules.Identity.Contracts.ISystemSettings>(sp => sp.GetRequiredService<SystemSettingsService>());
 

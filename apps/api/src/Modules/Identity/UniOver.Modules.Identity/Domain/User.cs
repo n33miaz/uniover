@@ -135,20 +135,8 @@ public sealed class User
     public TimeSpan RemainingLockout(DateTimeOffset now) =>
         LockoutUntil is { } until && until > now ? until - now : TimeSpan.Zero;
 
-    /// <summary>Conta a falha e, se passou do limite, define até quando a conta fica bloqueada.</summary>
-    public void RegisterFailure(DateTimeOffset now, LockoutPolicy policy)
-    {
-        ArgumentNullException.ThrowIfNull(policy);
-
-        FailedLoginCount++;
-        LastFailedAt = now;
-
-        var delay = policy.DelayFor(FailedLoginCount);
-        if (delay > TimeSpan.Zero)
-        {
-            LockoutUntil = now + delay;
-        }
-    }
+    // A falha NÃO é contada aqui: somar em memória e gravar de volta perdia tentativas paralelas. O contador e o bloqueio
+    // progressivo vivem em FailedLoginCounter (um UPDATE atômico no banco).
 
     /// <summary>O sucesso zera o contador e o bloqueio.</summary>
     public void RegisterSuccess()
