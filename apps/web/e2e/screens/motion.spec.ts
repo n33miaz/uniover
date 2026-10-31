@@ -133,9 +133,9 @@ test.describe('folhas e avisos', () => {
     expect(entering).toEqual(expect.arrayContaining(['opacity', 'translate']));
     await settle(page);
 
-    // Saída: ao cancelar, a folha ganha a classe `closing` e fica no DOM durante o esmaecer (160 ms).
+    // Saída: ao descartar, a folha ganha a classe `closing` e fica no DOM durante o esmaecer (160 ms).
     const exit = await sheet.evaluate(async (dialog) => {
-      (dialog.querySelector('.footer .secondary') as HTMLElement).click();
+      dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
       const start = performance.now();
       let sawClosing = false;
       while (document.contains(dialog) && performance.now() - start < 1500) {

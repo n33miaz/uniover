@@ -136,6 +136,9 @@ test.describe('Início', () => {
       await page.getByRole('button', { name: 'Editar' }).click();
       const sheet = page.getByRole('dialog', { name: 'Personalizar' });
       await expect(sheet).toBeVisible();
+      await expect(sheet.locator('.head .done')).toHaveText('Concluir');
+      await expect(sheet.locator('.footer')).toHaveCount(0);
+      await expect(sheet.locator('.grip')).toHaveCount(8);
       await settle(page);
       // O foco inicial é o título (nenhuma seta ganha anel sem a pessoa ter tocado) e cada nome cabe numa linha, sem corte.
       await expect(sheet.getByRole('heading', { name: 'Personalizar' })).toBeFocused();
@@ -186,6 +189,24 @@ test.describe('Início', () => {
       await screenshot(page, `test-results/screens/home-${part}-${info.project.name}-light.png`);
     }
     expect(new Set(scenes).size).toBe(3);
+  });
+
+  test('centraliza a marca e nem consulta os avisos dos computadores', async ({ page }) => {
+    const alertRequests: string[] = [];
+    await page.route('**/api/v1/devices/agent-alerts', (route) => {
+      alertRequests.push(route.request().url());
+      return route.fulfill({ contentType: 'application/json', body: '[]' });
+    });
+    await openHome(page, 'light');
+    expect(alertRequests).toEqual([]);
+
+    const center = await page.locator('.home-topbar .brand').evaluate((brand) => {
+      const box = brand.getBoundingClientRect();
+      return { brand: box.left + box.width / 2, viewport: window.innerWidth };
+    });
+    expect(center.brand).toBeCloseTo(center.viewport / 2, 0);
+    await expect(page.locator('.agent-status')).toHaveAttribute('aria-label', 'Agente ligado');
+    await expect(page.locator('.agent-alert')).toHaveCount(0);
   });
 
   test('estado vazio da Início com todos os módulos ocultos', async ({ page }, info) => {

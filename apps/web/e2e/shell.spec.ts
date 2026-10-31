@@ -36,8 +36,7 @@ test.describe('início e navegação', () => {
     await page.goto('/');
     await expect(page.locator('html')).toHaveAttribute('lang', 'pt-BR');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Bom dia|Boa tarde|Boa noite/);
-    await expect(agentIndicator(page)).toHaveAttribute('aria-label', 'Agente sem dados');
-    await expect(agentIndicator(page)).toHaveAttribute('title', 'Agente sem dados');
+    await expect(agentIndicator(page)).toHaveCount(0);
     await expect(blocks(page)).toHaveCount(MODULE_COUNT);
     await expect(page.getByRole('navigation', { name: 'Abas do módulo' })).toHaveCount(0);
     await expectNoHorizontalScroll(page);
@@ -121,7 +120,7 @@ test.describe('início e navegação', () => {
     await page.getByRole('button', { name: 'Editar', exact: true }).click();
     const sheet = page.getByRole('dialog', { name: 'Personalizar' });
     await sheet.locator('li', { hasText: 'Controle do PC' }).getByRole('switch').uncheck();
-    await sheet.getByRole('button', { name: 'Aplicar', exact: true }).click();
+    await sheet.getByRole('button', { name: 'Concluir', exact: true }).click();
 
     const cards = blocks(page);
     await expect(cards).toHaveCount(MODULE_COUNT - 1);
@@ -204,7 +203,7 @@ test.describe('início e navegação', () => {
     await page.getByRole('button', { name: 'Editar' }).click();
     const sheet = page.getByRole('dialog', { name: 'Personalizar' });
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByRole('button', { name: /fechar|close/i })).toHaveCount(0);
+    await expect(sheet.getByRole('button', { name: 'Concluir', exact: true })).toBeVisible();
     await settle(page); // fim da animação de subida
     await screenshot(page, `test-results/sheet-${info.project.name}.png`);
     await expectNoSeriousA11yViolations(page);
@@ -221,16 +220,16 @@ test.describe('início e navegação', () => {
     await page.getByRole('button', { name: 'Editar' }).click();
     await expect(sheet).toBeVisible();
 
-    // Cancelar descarta o que foi feito na folha.
+    // Esc descarta o que foi feito na folha.
     await sheet.getByRole('button', { name: 'Descer TV' }).click();
-    await sheet.getByRole('button', { name: 'Cancelar' }).click();
+    await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
     await expect(titles).toHaveText(['TV', 'Treino', ...PLANNED]);
 
-    // Aplicar guarda a nova ordem.
+    // Concluir guarda a nova ordem.
     await page.getByRole('button', { name: 'Editar' }).click();
     await sheet.getByRole('button', { name: 'Descer TV' }).click();
-    await sheet.getByRole('button', { name: 'Aplicar' }).click();
+    await sheet.getByRole('button', { name: 'Concluir' }).click();
     await expect(sheet).toBeHidden();
     await expect(titles).toHaveText(['Treino', 'TV', ...PLANNED]);
 
@@ -241,13 +240,13 @@ test.describe('início e navegação', () => {
     // Módulo desligado some da grade.
     await page.getByRole('button', { name: 'Editar' }).click();
     await sheet.locator('li', { hasText: 'Treino' }).getByRole('switch').uncheck();
-    await sheet.getByRole('button', { name: 'Aplicar' }).click();
+    await sheet.getByRole('button', { name: 'Concluir' }).click();
     await expect(titles).toHaveText(['TV', ...PLANNED]);
 
     // Um módulo em breve também pode ser ocultado.
     await page.getByRole('button', { name: 'Editar' }).click();
     await sheet.locator('li', { hasText: 'Rede da Casa' }).getByRole('switch').uncheck();
-    await sheet.getByRole('button', { name: 'Aplicar' }).click();
+    await sheet.getByRole('button', { name: 'Concluir' }).click();
     await expect(titles).toHaveText(['TV', ...PLANNED.filter((name) => name !== 'Rede da Casa')]);
   });
 
@@ -283,7 +282,9 @@ test.describe('casca offline e service worker', () => {
 
     await context.setOffline(true);
     await page.reload();
-    await expect(agentIndicator(page)).toBeVisible();
+    // Sem rede e sem estado lembrado a casca abre com a marca e sem ponto: não há o que afirmar sobre o agente.
+    await expect(page.locator('.brand')).toBeVisible();
+    await expect(agentIndicator(page)).toHaveCount(0);
     await expect(blocks(page)).toHaveCount(MODULE_COUNT);
     await expect(status(page, 'Sem conexão')).toBeVisible();
     await expect(status(page, 'Acordando')).toHaveCount(0);

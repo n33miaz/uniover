@@ -60,6 +60,8 @@ export interface MockTvState {
   app: string | null;
   connection: string;
   agentOnline: boolean;
+  /** A TV da conta tem agente vinculado (ausente vale sim, como na API antiga). */
+  agentLinked?: boolean;
   updatedAt: string | null;
 }
 
