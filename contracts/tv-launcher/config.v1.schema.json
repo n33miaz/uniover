@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/tv-launcher/config.v1.schema.json",
+  "title": "tv-launcher config v1",
+  "description": "Configuração do launcher da TV. Quem escreve é o agente do PC (via adb); quem lê é o APK de apps/tv-launcher. O esquema é estrito para quem escreve; o launcher é tolerante ao ler (campo desconhecido é ignorado e valor inválido volta ao padrão, nunca derruba a home).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "revision"],
+  "$defs": {
+    "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+    "package": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$"
+    }
+  },
+  "properties": {
+    "schema": { "const": 1, "description": "Versão do contrato. Mudança incompatível cria config.v2; o launcher ignora arquivos de versão que não conhece." },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647,
+      "description": "Número que só cresce a cada escrita do agente. Quando o launcher recebe a configuração por duas vias (arquivo e broadcast), vale a de maior revision."
+    },
+    "clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "size": { "enum": ["small", "medium", "large"], "default": "large" },
+        "format": { "enum": ["24h", "12h", "auto"], "default": "24h", "description": "auto segue o formato do sistema da TV." },
+        "seconds": { "type": "boolean", "default": false },
+        "date": { "type": "boolean", "default": true }
+      }
+    },
+    "wallpaper": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["gradient", "solid", "photo"], "default": "gradient" },
+        "colors": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/color" },
+          "description": "Degradê: 2 ou 3 cores, da primeira à última no sentido de angle. Cor sólida: a primeira. Foto: usadas como fundo se a foto faltar."
+        },
+        "angle": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 315,
+          "multipleOf": 45,
+          "default": 315,
+          "description": "Direção do degradê, como no Android (anti-horário a partir da direita): 0 = esquerda para a direita, 90 = de baixo para cima, 270 = de cima para baixo, 315 = do canto superior esquerdo ao inferior direito. Só múltiplos de 45."
+        },
+        "photo": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,64}\\.(jpg|jpeg|png|webp)$",
+          "description": "Nome do arquivo (sem pasta) dentro da pasta do app na TV, enviado pelo agente já reduzido (1920x1080, abaixo de 400 KB)."
+        },
+        "dim": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.8,
+          "default": 0.25,
+          "description": "Escurecimento por cima da foto, para o relógio e os ícones continuarem legíveis."
+        }
+      }
+    },
+    "apps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": ["listed", "all"],
+          "default": "all",
+          "description": "listed: só os apps de items, na ordem dada. all: todos os instalados com ícone, items primeiro (na ordem dada) e o resto em ordem alfabética, menos os de hidden."
+        },
+        "items": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "#/$defs/package" } },
+        "hidden": { "type": "array", "maxItems": 256, "uniqueItems": true, "items": { "$ref": "#/$defs/package" } },
+        "showFactory": {
+          "type": "boolean",
+          "default": false,
+          "description": "No modo all: mostrar também os apps de fábrica (de sistema e nunca atualizados). Um app citado em items aparece mesmo assim."
+        }
+      }
+    },
+    "icons": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "shape": { "enum": ["circle"], "default": "circle" },
+        "size": { "enum": ["small", "medium", "large"], "default": "medium" },
+        "labels": { "enum": ["always", "focus", "never"], "default": "always", "description": "Quando mostrar o nome do app abaixo do ícone." }
+      }
+    },
+    "builtin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "settings": { "type": "boolean", "default": true, "description": "Ícone de Configurações da TV no fim da fileira. É a saída de emergência: só desligue com o agente atualizado e a reversão ensaiada." },
+        "sleep": { "type": "boolean", "default": false, "description": "Ícone Dormir no fim da fileira." }
+      }
+    },
+    "sleep": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxMinutes": { "type": "integer", "minimum": 0, "maximum": 720, "default": 0, "description": "Sai do Modo Dormir sozinho depois deste tempo. 0 = só acorda com tecla." }
+      }
+    }
+  }
+}

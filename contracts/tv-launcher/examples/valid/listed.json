@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "revision": 7,
+  "apps": {
+    "mode": "listed",
+    "items": ["com.google.android.youtube.tv", "com.netflix.ninja", "com.spotify.tv.android"]
+  },
+  "wallpaper": { "type": "gradient", "colors": ["#1B2440", "#3A2D5C"], "angle": 315 }
+}
