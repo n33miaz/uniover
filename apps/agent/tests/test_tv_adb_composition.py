@@ -194,6 +194,7 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
         "transport.keepalive.v1",
         "agent.logs.v1",
         "agent.maintenance.v1",
+        "agent.diagnostics.v1",
         "tv.remote",
         "tv.kind.android",
         *ANDROID_KEYS,

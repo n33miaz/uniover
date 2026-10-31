@@ -43,9 +43,42 @@ def _powershell() -> str:
     )
 
 
-def installation_base() -> Path:
+LOCATION_FILE = "location.txt"
+HOME_ENV = "UNIOVER_HOME"
+
+
+def anchor_dir() -> Path:
+    r"""A pasta fixa `%LOCALAPPDATA%\UniOver`: o lançador, a tarefa e o ponteiro da pasta escolhida.
+
+    Fica sempre no mesmo lugar para a tarefa agendada e o lançador nunca dependerem de uma
+    escolha que o dono pode ter feito: o Windows só precisa achar `launcher.vbs` aqui.
+    """
     local = os.environ.get("LOCALAPPDATA")
     return (Path(local) if local else Path.home() / ".config") / "UniOver"
+
+
+def chosen_location(anchor: Path | None = None) -> Path | None:
+    """A pasta que o dono escolheu na instalação (`location.txt` na pasta fixa), se ainda existe.
+
+    O caminho vem de um arquivo de texto (UTF-8) e não do registro nem do `.vbs`: o Script Host lê
+    em página de código ANSI e estragaria um caminho com acento, e os testes isolam a instalação só
+    por variável de ambiente.
+    """
+    pointer = (anchor if anchor is not None else anchor_dir()) / LOCATION_FILE
+    try:
+        text = pointer.read_text(encoding="utf-8-sig").strip().splitlines()[0].strip()
+    except OSError, IndexError:
+        return None
+    chosen = Path(text)
+    return chosen if chosen.is_absolute() and chosen.is_dir() else None
+
+
+def installation_base() -> Path:
+    """Onde ficam `app`, `runtime`, `config`, `logs` e `web`: a pasta escolhida ou a padrão."""
+    override = os.environ.get(HOME_ENV)
+    if override and Path(override).is_absolute():
+        return Path(override)
+    return chosen_location() or anchor_dir()
 
 
 def _is_real_installation(root: Path) -> bool:
@@ -126,6 +159,7 @@ def migrate_layout(base: Path | None = None) -> Path:
         root,
         start_now=took_over_legacy_wrapper and can_take_over and base is None,
         real=base is None,
+        anchor=anchor_dir() if base is None else root,
     )
     _write_readme(root)
     return root
@@ -282,13 +316,16 @@ def _windows_script_host_works(root: Path) -> bool:
         mark.unlink(missing_ok=True)
 
 
-def _register_launcher_task(root: Path) -> bool:
+def _register_launcher_task(
+    anchor: Path, root: Path | None = None, *, name: str = TASK_NAME
+) -> bool:
     """Reaponta a tarefa do usuário para o lançador sem console, sem precisar de administrador.
 
     À prova de falha: só troca depois de provar que o Script Host funciona, confere a tarefa depois
     da troca e a devolve ao que era se a conferência falhar. `False` deixa tudo como estava.
     """
-    if not os.path.exists(_wscript()) or not _write_launcher_vbs(root):
+    root = root if root is not None else anchor
+    if not os.path.exists(_wscript()) or not _write_launcher_vbs(anchor):
         return False
     if not _windows_script_host_works(root):
         _note(root, "tarefa mantida: o Windows Script Host não executou o script de prova")
@@ -303,7 +340,7 @@ def _register_launcher_task(root: Path) -> bool:
                 "-WindowStyle",
                 "Hidden",
                 "-Command",
-                launcher_task_script(root),
+                launcher_task_script(anchor, name),
             ],
             check=False,
             capture_output=True,
@@ -317,7 +354,7 @@ def _register_launcher_task(root: Path) -> bool:
     return result.returncode == 0
 
 
-def _ensure_hidden_launcher_task(root: Path) -> None:
+def _ensure_hidden_launcher_task(root: Path, anchor: Path | None = None) -> None:
     """Instalações antigas passam a abrir o lançador sem console na primeira execução nova."""
     marker = root / "runtime" / "launcher-task"
     failed = root / "runtime" / "launcher-task.failed"
@@ -329,7 +366,13 @@ def _ensure_hidden_launcher_task(root: Path) -> None:
     if _recently_failed(failed):
         return
     try:
-        if _register_launcher_task(root):
+        # Pasta padrão: lançador e dados no mesmo lugar. Pasta escolhida: o lançador fica na fixa.
+        registered = (
+            _register_launcher_task(root)
+            if anchor is None or anchor == root
+            else _register_launcher_task(anchor, root)
+        )
+        if registered:
             marker.write_text(LAUNCHER_TASK_VERSION, encoding="ascii")
             failed.unlink(missing_ok=True)
             _note(root, "tarefa agendada passou a abrir o lançador sem console")
@@ -391,20 +434,28 @@ def _prepare_legacy_takeover(root: Path, legacy_source: Path, *, register_task: 
     return not register_task or _register_launcher_task(root)
 
 
-def _install_launcher(root: Path, *, start_now: bool, real: bool = False) -> None:
-    """Finaliza a promoção depois que `app` já existe."""
+def _install_launcher(
+    root: Path, *, start_now: bool, real: bool = False, anchor: Path | None = None
+) -> None:
+    """Finaliza a promoção depois que `app` já existe.
+
+    O lançador e o `launcher.vbs` ficam na pasta fixa (`anchor`, a subpasta UniOver de
+    `%LOCALAPPDATA%`): é onde a tarefa agendada os procura, mesmo que o dono tenha escolhido
+    outra pasta para o resto.
+    """
+    anchor = anchor if anchor is not None else root
     launcher = root / "app" / "tools" / "launcher.ps1"
     runner = root / "app" / "tools" / "run-agent.ps1"
     if not launcher.is_file() or not runner.is_file():
         return
     try:
-        if not _copy_launcher(launcher, root / "launcher.ps1"):
+        if not _copy_launcher(launcher, anchor / "launcher.ps1"):
             return
         fallback = root / "run-agent.fallback.ps1"
         if not fallback.exists() and not _copy_launcher(runner, fallback):
             return
-        if os.name == "nt" and real and _is_real_installation(root):
-            _ensure_hidden_launcher_task(root)
+        if os.name == "nt" and real and _is_real_installation(anchor):
+            _ensure_hidden_launcher_task(root, anchor)
             _apply_power_settings(root)
         if os.name == "nt" and start_now:
             # A tarefa antiga ainda está executando `agent-src`. Sobe o lançador novo fora
@@ -412,8 +463,8 @@ def _install_launcher(root: Path, *, start_now: bool, real: bool = False) -> Non
             # `app\tools\run-agent.ps1` e não depende de novo logon. O WScript é um programa de
             # janela (sem console): ele cria o PowerShell oculto, então nada pisca na tela. Se o
             # Script Host não funcionar neste PC, o PowerShell oculto sobe o mesmo lançador.
-            if _write_launcher_vbs(root) and _windows_script_host_works(root):
-                command = [_wscript(), "//B", "//Nologo", str(root / "launcher.vbs")]
+            if _write_launcher_vbs(anchor) and _windows_script_host_works(root):
+                command = [_wscript(), "//B", "//Nologo", str(anchor / "launcher.vbs")]
             else:
                 command = [
                     _powershell(),
@@ -423,7 +474,7 @@ def _install_launcher(root: Path, *, start_now: bool, real: bool = False) -> Non
                     "-WindowStyle",
                     "Hidden",
                     "-File",
-                    str(root / "launcher.ps1"),
+                    str(anchor / "launcher.ps1"),
                 ]
             popen_hidden(command, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
             os.environ["UNIOVER_LEGACY_TAKEOVER"] = "1"
@@ -435,10 +486,21 @@ def _install_launcher(root: Path, *, start_now: bool, real: bool = False) -> Non
 def _write_readme(root: Path) -> None:
     text = (
         "UniOver\n\n"
-        "Esta pasta guarda o agente que conecta este computador ao UniOver e a TV.\n"
-        "Ele inicia sozinho e se atualiza automaticamente.\n\n"
-        "Se algo nao funcionar, rode de novo o conectar-uniover.cmd.\n"
-        "Para remover, execute o instalador com -Uninstall e depois apague esta pasta se quiser.\n"
+        "Esta pasta guarda o UniOver deste computador: o programa que liga o PC ao app e a TV.\n"
+        "Ele inicia sozinho quando voce entra no Windows, fica perto do relogio e se atualiza e\n"
+        "se arruma sozinho.\n\n"
+        "O que tem aqui (voce nao precisa mexer em nada):\n"
+        "  app       o programa em si (troca sozinho a cada atualizacao; a versao anterior fica\n"
+        "            guardada ao lado)\n"
+        "  config    suas configuracoes\n"
+        "  logs      o que o UniOver fez e o que deu errado (agent.log, supervisor.log,\n"
+        "            instalacao.log)\n"
+        "  runtime   o que ele precisa para funcionar e o estado das atualizacoes\n"
+        "  web       a pagina de conexao\n"
+        "  tv        a chave de acesso a sua TV\n"
+        "  icons     as figuras dos apps da TV\n\n"
+        "Se algo nao funcionar, rode de novo o arquivo conectar-uniover.cmd.\n"
+        "Para remover, execute o instalador com -Uninstall e, se quiser, apague esta pasta.\n"
     )
     try:
         (root / "LEIA-ME.txt").write_text(text, encoding="utf-8")

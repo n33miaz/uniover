@@ -449,7 +449,7 @@ def test_main_restarts_run_with_fresh_settings_after_a_move(
     update_config(isolated_env, {"tv_host": "192.168.0.10"})
     seen: list[str | None] = []
 
-    async def fake_run(settings: Settings, open_store: Any) -> int:
+    async def fake_run(settings: Settings, open_store: Any, kit: Any = None) -> int:
         seen.append(settings.tv_host)
         if len(seen) == 1:
             update_config(isolated_env, {"tv_host": "192.168.0.77"})
