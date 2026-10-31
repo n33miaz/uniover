@@ -671,6 +671,24 @@ button.ui-row:active {
   }
 }
 
+/* Espera curta não pisca: o que espera já ocupa o lugar (a tela não pula quando o dado chega), mas só se mostra depois do
+   atraso. Vale num contêiner de formas ou direto numa forma (`ui-skeleton`), que soma o atraso ao brilho. */
+.ui-wait {
+  animation: ui-wait-in 1ms linear var(--wait-delay, 200ms) backwards;
+}
+
+.ui-skeleton.ui-wait {
+  animation:
+    ui-shimmer 2s ease-in-out infinite,
+    ui-wait-in 1ms linear var(--wait-delay, 200ms) backwards;
+}
+
+@keyframes ui-wait-in {
+  from {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ui-rise,
   .ui-spinner {
@@ -680,6 +698,12 @@ button.ui-row:active {
   .ui-skeleton {
     background: var(--skeleton-base, var(--a-elev));
     animation: ui-pulse 2.2s ease-in-out infinite;
+  }
+
+  .ui-skeleton.ui-wait {
+    animation:
+      ui-pulse 2.2s ease-in-out infinite,
+      ui-wait-in 1ms linear var(--wait-delay, 200ms) backwards;
   }
 
   .ui-btn,
