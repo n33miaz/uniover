@@ -145,3 +145,14 @@ def test_the_private_pystray_hooks_we_override_still_exist() -> None:
     for name in ("_assert_icon_handle", "_message", "_update_icon", "_release_icon"):
         assert callable(getattr(pystray.Icon, name, None)), name
     assert issubclass(SharpIcon, pystray.Icon)
+
+
+def test_the_image_handed_to_pystray_is_the_frame_closest_to_the_tray_size() -> None:
+    from uniover_agent.adapters.tray import _frame  # noqa: PLC0415
+
+    folder = assets_dir()
+
+    assert _frame(folder / "connected.ico", 16).size == (16, 16)
+    assert _frame(folder / "connected.ico", 24).size == (24, 24)
+    assert _frame(folder / "connected.ico", 22).size in {(20, 20), (24, 24)}
+    assert _frame(folder / "error-attention.ico", 1000).size == (256, 256)
