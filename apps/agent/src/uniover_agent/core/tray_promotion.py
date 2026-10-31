@@ -10,7 +10,7 @@ depois, nada o traz de volta.
 import re
 from typing import Final, Literal
 
-from uniover_agent.ports.tray import NotifyIconEntry, NotifyIconSettings, PromotionMarker
+from uniover_agent.ports.tray import ICON_ID, NotifyIconEntry, NotifyIconSettings, PromotionMarker
 
 PromotionResult = Literal["promoted", "already_done", "not_found", "failed"]
 
@@ -37,15 +37,17 @@ def same_executable(entry_path: str, own_path: str) -> bool:
 
 
 def find_entry(entries: list[NotifyIconEntry], own_path: str) -> NotifyIconEntry | None:
-    """A linha do nosso ícone: o executável é o mesmo e a dica começa com UniOver (ou ainda está
-    vazia).
+    """A linha do nosso ícone: mesmo executável, `UID` do nosso ícone e dica começando por UniOver.
 
     O executável é, em geral, o `python.exe` do ambiente, que outros programas Python também usam; a
-    dica separa."""
+    dica separa. Linha sem dica não vale: não dá para ter certeza de que é nossa, e promover a
+    errada gastaria a única vez que a promoção acontece."""
     for entry in entries:
         if not same_executable(entry.executable_path, own_path):
             continue
-        if entry.tooltip == "" or entry.tooltip.startswith(TOOLTIP_PREFIX):
+        if entry.uid is not None and entry.uid != ICON_ID:
+            continue
+        if entry.tooltip.startswith(TOOLTIP_PREFIX):
             return entry
     return None
 

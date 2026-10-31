@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from uniover_agent.adapters.tray import promote_in_background
+from uniover_agent.adapters.tray_controller import promote_in_background
 from uniover_agent.adapters.tray_registry import FilePromotionMarker, WindowsNotifyIconSettings
 from uniover_agent.core.tray_promotion import find_entry, promote_once, same_executable
-from uniover_agent.ports.tray import NotifyIconEntry
+from uniover_agent.ports.tray import ICON_ID, NotifyIconEntry
 
 OWN = r"C:\Users\pessoa\AppData\Local\Programs\Python\Python314\python.exe"
 
@@ -89,8 +89,25 @@ def test_other_programs_using_the_same_python_are_left_alone() -> None:
     assert settings.promoted == []
 
 
-def test_an_entry_without_a_tooltip_yet_still_matches() -> None:
-    assert find_entry([NotifyIconEntry("333", OWN, "")], OWN) is not None
+def test_an_entry_without_a_tooltip_is_never_taken_for_ours() -> None:
+    """Outro programa Python com a dica vazia seria promovido no lugar do nosso (só há uma vez)."""
+    blank = NotifyIconEntry("333", OWN, "")
+    settings, marker = FakeSettings([blank]), MemoryMarker()
+
+    assert find_entry([blank], OWN) is None
+    assert promote_once(settings, marker, OWN) == "not_found"
+    assert settings.promoted == []
+    assert marker.paths == []
+
+
+def test_an_entry_with_another_icon_id_is_not_ours() -> None:
+    foreign = NotifyIconEntry("444", OWN, "UniOver: parece nosso", uid=4242)
+    ours = NotifyIconEntry("555", OWN, "UniOver: conectado", uid=ICON_ID)
+
+    assert find_entry([foreign], OWN) is None
+    assert find_entry([foreign, ours], OWN) is ours
+    # Linha sem UID (versão antiga do Windows) vale pela dica.
+    assert find_entry([NotifyIconEntry("666", OWN, "UniOver: conectado")], OWN) is not None
 
 
 def test_the_path_comparison_ignores_case_and_accepts_known_folder_prefixes() -> None:
