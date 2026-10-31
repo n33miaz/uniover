@@ -51,25 +51,33 @@ internal sealed class CleanupSettingsPublisher(
         var threshold = await settings.TvDeepCleanupMemoryThresholdMbAsync(cancellationToken);
         foreach (var (tv, info) in targets)
         {
-            var body = info!.Capabilities.Contains(LightSettingsCapability, StringComparer.Ordinal)
-                ? LightBody(tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled,
-                    tv.RestrictedBackgroundPackages, tv.FocusClosesBackground, light, deep, threshold,
-                    info.Capabilities.Contains(FocusClosesBackgroundCapability, StringComparer.Ordinal))
-                : JsonSerializer.SerializeToElement(new
-                {
-                    lightEnabled = light,
-                    deepEnabled = deep,
-                    deepThresholdMb = threshold,
-                    closeBackgroundApps = tv.AllowBackgroundAppClosing,
-                });
+            var body = BuildBody(
+                info!.Capabilities, tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled,
+                tv.RestrictedBackgroundPackages, tv.FocusClosesBackground, light, deep, threshold);
             await sender.PostAsync(tv.AgentSlug, new TvMessage("tv.cleanup.config.v1", body), cancellationToken);
         }
     }
 
-    private static JsonElement LightBody(
-        bool closeBackgroundApps, bool focus, bool shortAnimations, string packages, bool focusCloses,
-        bool light, bool deep, int threshold, bool knowsFocusCloses)
+    /// <summary>
+    /// O corpo que o agente entende: sem <see cref="LightSettingsCapability"/> vai exatamente o corpo antigo, e o campo
+    /// <c>focusClosesBackground</c> só existe para quem anuncia <see cref="FocusClosesBackgroundCapability"/>.
+    /// </summary>
+    internal static JsonElement BuildBody(
+        IReadOnlyList<string> capabilities, bool closeBackgroundApps, bool focus, bool shortAnimations, string packages,
+        bool focusCloses, bool light, bool deep, int threshold)
     {
+        if (!capabilities.Contains(LightSettingsCapability, StringComparer.Ordinal))
+        {
+            return JsonSerializer.SerializeToElement(new
+            {
+                lightEnabled = light,
+                deepEnabled = deep,
+                deepThresholdMb = threshold,
+                closeBackgroundApps,
+            });
+        }
+
+        var knowsFocusCloses = capabilities.Contains(FocusClosesBackgroundCapability, StringComparer.Ordinal);
         var fields = new Dictionary<string, object>
         {
             ["lightEnabled"] = light,

@@ -247,6 +247,35 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task FocusClosesBackground_IsRefusedForAnAgentWithoutTheCapability_AndTheFieldIsNeverSent()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Sala");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Sala");
+
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync("2.0.0", "tv.remote", "tv.cleanup.automatic.v1", "tv.light-settings.v1");
+        var body = (await TvApp.NextCommandAsync(connection)).GetProperty("body");
+        body.TryGetProperty("focusClosesBackground", out _).Should().BeFalse();
+        body.GetProperty("focusEnabled").GetBoolean().Should().BeFalse();
+
+        using (var on = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new
+        {
+            focusModeEnabled = true,
+            focusClosesBackground = true,
+        }))
+        {
+            on.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await TvApp.JsonAsync(on)).GetProperty("type").GetString().Should().EndWith("/tv-light-settings-unsupported");
+        }
+
+        await using var db = app.Db();
+        (await db.Tvs.AsNoTracking().SingleAsync(t => t.Id == tvId, Ct)).FocusClosesBackground.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task CleanupConfig_ForAnAgentWithoutLightSettings_KeepsExactlyTheOldBody()
     {
         await using var app = await TvApp.StartAsync(postgres);
