@@ -52,6 +52,10 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             e.Property(x => x.UserAgent).HasMaxLength(CommandAuditEntry.UserAgentMax);
             e.HasIndex(x => new { x.TvId, x.OccurredAt });
             e.HasIndex(x => x.OccurredAt);
+
+            // O teto diário conta as linhas do usuário no dia a cada gravação, e o histórico por pessoa filtra por usuário: sem
+            // este índice as duas viram varredura da trilha inteira (30 dias de teclas).
+            e.HasIndex(x => new { x.UserId, x.OccurredAt });
         });
 
         modelBuilder.Entity<Shortcut>(e =>

@@ -13,7 +13,8 @@ internal sealed record TvCommandOrigin(Guid UserId, ClientInfo Client);
 /// <summary>
 /// O caminho comum de todo comando para a TV: escolhe o agente configurado (o salvo no app, ou a variável de reserva) e
 /// o tempo limite, entrega, e deixa a linha de auditoria (inclusive quando o agente está fora do ar ou não responde).
-/// Falha ao gravar a auditoria nunca impede nem desfaz o comando: vira log de erro.
+/// Falha ao gravar a auditoria nunca impede nem desfaz o comando: vira log de erro. Em produção o <c>ITvCommandAudit</c> que
+/// chega aqui é a fila (<see cref="Adapters.QueuedCommandAudit"/>): o comando responde sem esperar o banco e a linha é gravada depois.
 /// </summary>
 internal sealed partial class TvCommandRunner(
     IOptions<TvModuleOptions> options,

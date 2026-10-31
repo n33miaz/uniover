@@ -61,6 +61,7 @@ public static class DevicesModule
         services.AddScoped<IAgentDirectory, EfAgentDirectory>();
 
         services.AddSingleton<IDeviceTokenCache, InMemoryDeviceTokenCache>();
+        services.AddSingleton<IDeviceTokenAttemptGuard, InMemoryDeviceTokenAttemptGuard>();
         services.AddScoped<IDeviceTokenValidator, DeviceTokenValidator>();
         services.AddScoped<PairingAuditWriter>();
 

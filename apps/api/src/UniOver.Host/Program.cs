@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using UniOver.BuildingBlocks.Messaging;
+using UniOver.BuildingBlocks.Persistence;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices;
 using UniOver.Modules.Devices.Features.Agents;
@@ -18,9 +20,12 @@ if (!string.IsNullOrWhiteSpace(port))
 
 builder.Services.AddUniOverProblemDetails();
 builder.Services.AddUniOverRateLimiting(builder.Configuration);
+builder.Services.AddUniOverRequestLimits(builder.Configuration);
+builder.Services.AddUniOverRequestLogging(builder.Configuration);
 builder.Services.AddUniOverSecurityHeaders(builder.Configuration);
 builder.Services.AddUniOverPwa(builder.Configuration);
-builder.Services.AddHealthChecks();
+// A verificação do banco leva a etiqueta "ready": só /health/ready a executa (ver o mapeamento abaixo).
+builder.Services.AddHealthChecks().AddUniOverDatabaseCheck();
 builder.Services.AddOpenApi(options => options.AddIdempotencyHeader());
 
 // [composição: eventos]
@@ -45,9 +50,13 @@ var app = builder.Build();
 
 // Ordem importa: IP real primeiro (o limite por IP depende dele), cabeçalhos e erros antes de qualquer resposta.
 app.UseUniOverForwardedHeaders();
+// Registro de cada requisição logo depois do IP real: vê o status final, inclusive o dos erros tratados abaixo dele.
+app.UseUniOverRequestLogging();
 app.UseUniOverSecurityHeaders();
 app.UseUniOverProblemDetails();
 app.UseUniOverStaticFiles();
+// Teto de corpo para toda rota (a rota de foto e a de importação declaram o próprio); antes da autenticação e de qualquer leitura.
+app.UseUniOverRequestBodyLimit();
 // [pipeline: autenticação] UseAuthentication e UseAuthorization entram aqui.
 app.UseUniOverAuthentication();
 
@@ -61,10 +70,20 @@ if (app.Environment.IsDevelopment())
 }
 
 // /health/live e /openapi nunca tocam no banco: o monitor externo os chama a cada 5 min e uma consulta
-// manteria o compute do Neon acordado o mês inteiro.
-app.MapHealthChecks("/health/live").AllowAnonymous();
+// manteria o compute do Neon acordado o mês inteiro. O predicado vazio é o que garante isso: sem ele a rota executaria
+// toda verificação registrada, inclusive a do banco.
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
+
+// /health/ready consulta o banco (SELECT 1, com o resultado guardado por 30 s) e devolve só o status, 200 ou 503. É para
+// diagnóstico e para o primeiro toque depois de um tempo parado; NÃO é para monitor de 5 em 5 minutos (mantém o Neon
+// acordado e estoura as horas de compute do plano gratuito). Por ser anônima e acordar o banco, tem limite por IP.
+app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains(HealthTags.Ready) })
+    .AllowAnonymous()
+    .RequireRateLimiting(RateLimitPolicies.HealthReady);
 var productVersion = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 app.MapDeploymentVersion(builder.Configuration, productVersion);
+// Eventos que esgotaram as tentativas e saíram da fila (só o dono): a Saúde do Sistema os mostra.
+app.MapDeadLetters().RequireAuthorization(UniOverAuth.OwnerPolicy).RequireRateLimiting(RateLimitPolicies.Commands);
 app.MapTvEndpoints();
 app.MapTrainingEndpoints();
 app.MapIdentityEndpoints();
