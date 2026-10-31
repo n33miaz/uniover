@@ -23,6 +23,9 @@ export interface MockTv {
   capabilities: string[];
   /** Fechar apps em segundo plano na limpeza desta TV; ausente vale desligado, como na API. */
   allowBackgroundAppClosing?: boolean;
+  /** Modo Foco e o fechamento dos outros apps nele; ausentes valem desligado, como na API. */
+  focusModeEnabled?: boolean;
+  focusClosesBackground?: boolean;
   /** As últimas limpezas, como `GET /tvs/{id}/cleanup-reports` devolve. */
   cleanupReports?: Record<string, unknown>[];
   state?: MockTvState;
@@ -490,6 +493,8 @@ async function handleTvs(
     online: tv.online,
     capabilities: tv.capabilities,
     allowBackgroundAppClosing: tv.allowBackgroundAppClosing ?? false,
+    focusModeEnabled: tv.focusModeEnabled ?? false,
+    focusClosesBackground: tv.focusClosesBackground ?? false,
   });
   const found = target[1] ? tvs.find((tv) => tv.id === target[1]) : undefined;
 
@@ -533,6 +538,12 @@ async function handleTvs(
     if (typeof slug === 'string') found.agentSlug = slug;
     if (typeof body?.['allowBackgroundAppClosing'] === 'boolean') {
       found.allowBackgroundAppClosing = body['allowBackgroundAppClosing'];
+    }
+    if (typeof body?.['focusModeEnabled'] === 'boolean') {
+      found.focusModeEnabled = body['focusModeEnabled'];
+    }
+    if (typeof body?.['focusClosesBackground'] === 'boolean') {
+      found.focusClosesBackground = body['focusClosesBackground'];
     }
     await json(route, 200, summary(found));
     return true;

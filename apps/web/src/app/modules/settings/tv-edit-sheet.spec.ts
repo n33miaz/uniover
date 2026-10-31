@@ -430,6 +430,106 @@ describe('TvEditSheet', () => {
       expect(el.textContent).not.toContain('Não foi possível carregar os apps agora.');
     });
 
+    describe('closing the other apps while the focus mode is on', () => {
+      const WITH_CLOSING: TvItem = {
+        ...TV,
+        kind: 'android',
+        capabilities: ['tv.remote', 'tv.adb', 'tv.focus-closes-background.v1'],
+      };
+      const closingSwitch = (el: HTMLElement) =>
+        Array.from(el.querySelectorAll<HTMLElement>('label.toggle'))
+          .find((label) => label.textContent?.includes('Fechar Outros Apps no Foco'))
+          ?.querySelector<HTMLInputElement>('input');
+      const focusSwitch = (el: HTMLElement) =>
+        Array.from(el.querySelectorAll<HTMLElement>('label.toggle'))
+          .find((label) => label.textContent?.trim() === 'Modo Foco')!
+          .querySelector<HTMLInputElement>('input')!;
+
+      it('only appears with the focus mode on, and starts off until its own click', async () => {
+        const { el, save, settle } = await render(WITH_CLOSING, [OWN]);
+        expect(closingSwitch(el)).toBeUndefined();
+
+        focusSwitch(el).click();
+        await settle();
+        // Ligar o Modo Foco não dá o consentimento de encerrar apps à força.
+        expect(closingSwitch(el)?.checked).toBe(false);
+
+        await save();
+        expect(api.updateTv).toHaveBeenCalledWith('tv-2', {
+          focusModeEnabled: true,
+          focusClosesBackground: false,
+          shortAnimationsEnabled: false,
+          restrictedBackgroundPackages: [],
+        });
+      });
+
+      it('is turned on only by its own click', async () => {
+        const { el, save, settle } = await render(WITH_CLOSING, [OWN]);
+        focusSwitch(el).click();
+        await settle();
+        closingSwitch(el)!.click();
+        await settle();
+        await save();
+
+        expect(api.updateTv).toHaveBeenCalledWith('tv-2', {
+          focusModeEnabled: true,
+          focusClosesBackground: true,
+          shortAnimationsEnabled: false,
+          restrictedBackgroundPackages: [],
+        });
+      });
+
+      it('can be turned off on its own while the focus mode stays on', async () => {
+        const { el, save, settle } = await render(
+          { ...WITH_CLOSING, focusModeEnabled: true, focusClosesBackground: true },
+          [OWN],
+        );
+        expect(closingSwitch(el)?.checked).toBe(true);
+
+        closingSwitch(el)!.click();
+        await settle();
+        await save();
+
+        expect(api.updateTv).toHaveBeenCalledWith('tv-2', {
+          focusModeEnabled: true,
+          focusClosesBackground: false,
+          shortAnimationsEnabled: false,
+          restrictedBackgroundPackages: [],
+        });
+      });
+
+      it('is not offered, and not sent, for a computer whose agent does not announce it', async () => {
+        const { el, settle } = await render(ANDROID, [OWN]);
+        focusSwitch(el).click();
+        await settle();
+        expect(closingSwitch(el)).toBeUndefined();
+      });
+
+      it('names the apps the focus mode closed in the cleanup list', async () => {
+        api.tvApps.mockResolvedValue([{ package: 'com.example.musica', label: 'Música' }]);
+        api.tvCleanupReports.mockResolvedValue([
+          {
+            kind: 'light',
+            trigger: 'focus',
+            startedAt: '2026-10-28T20:00:00Z',
+            durationMs: 900,
+            memoryBeforeMb: null,
+            memoryAfterMb: null,
+            closedApps: 2,
+            closedPackages: ['com.example.musica', 'com.example.jogo'],
+            backgroundProcesses: null,
+            sessionOpenMs: null,
+            result: 'completed',
+            reason: null,
+          },
+        ]);
+        const { el } = await render(WITH_CLOSING, [OWN]);
+        expect(el.querySelector('.report .report-title')?.textContent).toContain('Modo Foco');
+        expect(el.querySelector('.report')?.textContent).toContain('Fechou 2 apps');
+        expect(el.querySelector('.report')?.textContent).toContain('Música, com.example.jogo');
+      });
+    });
+
     it('turns every light setting off with Voltar ao Original so the agent restores the values it read', async () => {
       const android: TvItem = {
         ...TV,

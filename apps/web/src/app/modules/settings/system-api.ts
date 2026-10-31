@@ -33,6 +33,8 @@ export interface TvItem {
   /** A limpeza pode fechar apps em segundo plano nesta TV. Desligado até o administrador ligar. */
   readonly allowBackgroundAppClosing: boolean;
   readonly focusModeEnabled?: boolean;
+  /** Com o Modo Foco ligado, fecha os outros apps em segundo plano. Só existe em TV cujo agente anuncia a capacidade. */
+  readonly focusClosesBackground?: boolean;
   readonly shortAnimationsEnabled?: boolean;
   readonly restrictedBackgroundPackages?: readonly string[];
 }
@@ -108,6 +110,7 @@ function readTv(value: unknown): TvItem | null {
     online: dto['online'] === true,
     allowBackgroundAppClosing: dto['allowBackgroundAppClosing'] === true,
     ...(dto['focusModeEnabled'] === true ? { focusModeEnabled: true } : {}),
+    ...(dto['focusClosesBackground'] === true ? { focusClosesBackground: true } : {}),
     ...(dto['shortAnimationsEnabled'] === true ? { shortAnimationsEnabled: true } : {}),
     ...(Array.isArray(dto['restrictedBackgroundPackages'])
       ? {
@@ -209,6 +212,7 @@ export class SystemApi {
       agentSlug?: string;
       allowBackgroundAppClosing?: boolean;
       focusModeEnabled?: boolean;
+      focusClosesBackground?: boolean;
       shortAnimationsEnabled?: boolean;
       restrictedBackgroundPackages?: readonly string[];
     },
@@ -219,6 +223,8 @@ export class SystemApi {
     if (change.allowBackgroundAppClosing !== undefined)
       body['allowBackgroundAppClosing'] = change.allowBackgroundAppClosing;
     if (change.focusModeEnabled !== undefined) body['focusModeEnabled'] = change.focusModeEnabled;
+    if (change.focusClosesBackground !== undefined)
+      body['focusClosesBackground'] = change.focusClosesBackground;
     if (change.shortAnimationsEnabled !== undefined)
       body['shortAnimationsEnabled'] = change.shortAnimationsEnabled;
     if (change.restrictedBackgroundPackages !== undefined)
