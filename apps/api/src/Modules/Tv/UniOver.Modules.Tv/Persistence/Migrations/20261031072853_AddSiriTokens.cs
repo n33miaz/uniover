@@ -1,5 +1,6 @@
 ﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
+using UniOver.BuildingBlocks.Persistence;
 
 #nullable disable
 
