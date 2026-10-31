@@ -1,0 +1,275 @@
+<div class="page">
+  <div class="intro ui-card">
+    <span class="ui-tile"><app-settings-glyph name="tv" /></span>
+    <p class="hint" i18n="@@settings.siri.intro">
+      Diga “E aí Siri” ou toque num atalho do iPhone para controlar a TV sem abrir o app.
+    </p>
+  </div>
+
+  <div class="messages" [attr.aria-live]="'polite'">
+    @if (note(); as current) {
+      <p
+        class="ui-notice"
+        [class.ok]="!current.error"
+        [class.bad]="current.error"
+        [attr.role]="current.error ? 'alert' : null"
+      >
+        <app-settings-glyph [name]="current.error ? 'alert' : 'checkCircle'" />
+        <span>{{ current.text }}</span>
+      </p>
+    }
+  </div>
+
+  @if (created(); as key) {
+    <section class="created ui-card" aria-labelledby="siri-created-title">
+      <h2 id="siri-created-title" class="title" i18n="@@settings.siri.created-title">
+        Chave criada
+      </h2>
+      <p class="ui-notice warn">
+        <app-settings-glyph name="alert" />
+        <span i18n="@@settings.siri.created-warning"
+          >Copie agora. Por segurança, ela não aparece de novo.</span
+        >
+      </p>
+      <input
+        class="token ui-input ui-selectable"
+        type="text"
+        readonly
+        aria-label="Chave dos atalhos"
+        i18n-aria-label="@@settings.siri.token-label"
+        [value]="key.token"
+        (focus)="$any($event.target).select()"
+      />
+      <div class="messages" [attr.aria-live]="'polite'">
+        @if (tokenNote(); as current) {
+          <p class="ui-notice" [class.ok]="!current.error" [class.bad]="current.error">
+            <span>{{ current.text }}</span>
+          </p>
+        }
+      </div>
+      <button type="button" class="primary ui-btn block" (click)="copyToken()">
+        <app-settings-glyph name="copy" />
+        <span i18n="@@settings.siri.copy-token-button">Copiar chave</span>
+      </button>
+      <h3 class="subtitle" i18n="@@settings.siri.steps-title">Monte um atalho para cada ação</h3>
+      <app-siri-steps
+        [tvId]="key.tvId"
+        [actions]="key.actions"
+        [appNames]="namesOf(key.tvId)"
+        [token]="key.token"
+      />
+      <button type="button" class="secondary ui-btn block" (click)="finish()">
+        <span i18n="@@settings.siri.done">Concluir</span>
+      </button>
+    </section>
+  } @else if (creating()) {
+    <form class="form ui-card" aria-labelledby="siri-form-title" (submit)="create($event)">
+      <h2 id="siri-form-title" class="title" i18n="@@settings.siri.form-title">Nova chave</h2>
+
+      <div class="ui-field">
+        <label for="siri-name" i18n="@@settings.siri.name">Nome</label>
+        <input
+          class="ui-input"
+          id="siri-name"
+          type="text"
+          [attr.maxlength]="maxName"
+          required
+          [value]="name()"
+          (input)="name.set(value($event))"
+        />
+      </div>
+
+      @if ((tvs()?.length ?? 0) > 1) {
+        <fieldset class="group">
+          <legend class="legend" i18n="@@settings.siri.tv">TV</legend>
+          <div class="chips">
+            @for (tv of tvs(); track tv.id) {
+              <label class="chip" [class.on]="tvId() === tv.id">
+                <input
+                  class="sr-only"
+                  type="radio"
+                  name="siri-tv"
+                  [checked]="tvId() === tv.id"
+                  (change)="pickTv(tv.id)"
+                />
+                <span>{{ tv.name }}</span>
+              </label>
+            }
+          </div>
+        </fieldset>
+      }
+
+      @for (block of groups(); track block.group) {
+        <fieldset class="group">
+          <legend class="legend">{{ block.title }}</legend>
+          <ul class="ui-group switches">
+            @for (action of block.actions; track action.code) {
+              <li>
+                <label class="option">
+                  <span class="option-title">{{ action.label }}</span>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    class="ui-switch"
+                    [checked]="has(action.code)"
+                    (change)="toggle(action.code, $event)"
+                  />
+                </label>
+              </li>
+            }
+          </ul>
+        </fieldset>
+      }
+
+      <fieldset class="group">
+        <legend class="legend" i18n="@@settings.siri.expiry">Validade</legend>
+        <div class="chips">
+          @for (option of expiries; track option.label) {
+            <label class="chip" [class.on]="expiryDays() === option.days">
+              <input
+                class="sr-only"
+                type="radio"
+                name="siri-expiry"
+                [checked]="expiryDays() === option.days"
+                (change)="expiryDays.set(option.days)"
+              />
+              <span>{{ option.label }}</span>
+            </label>
+          }
+        </div>
+      </fieldset>
+
+      <p class="hint" i18n="@@settings.siri.passkey-hint">Criar a chave pede a sua passkey.</p>
+      <div class="actions">
+        <button
+          type="button"
+          class="secondary ui-btn"
+          (click)="closeCreate()"
+          i18n="@@settings.cancel"
+        >
+          Cancelar
+        </button>
+        <button type="submit" class="primary ui-btn" [disabled]="!canCreate()">
+          <span i18n="@@settings.siri.create">Criar chave</span>
+        </button>
+      </div>
+    </form>
+  } @else if (keys() !== null && tvs() !== null) {
+    @if ((tvs()?.length ?? 0) === 0) {
+      <p class="empty ui-card" i18n="@@settings.siri.no-tv">
+        Nenhuma TV configurada ainda. Pareie um computador em Dispositivos primeiro.
+      </p>
+    } @else if (atLimit()) {
+      <p class="ui-notice warn">
+        <app-settings-glyph name="alert" />
+        <span i18n="@@settings.siri.limit"
+          >Você chegou ao limite de {{ maxKeys }} chaves. Revogue uma para criar outra.</span
+        >
+      </p>
+    } @else {
+      <button type="button" class="primary ui-btn block" (click)="openCreate()">
+        <app-settings-glyph name="plus" />
+        <span i18n="@@settings.siri.new">Criar chave</span>
+      </button>
+    }
+  }
+
+  @if (keys(); as list) {
+    @if (list.length > 0) {
+      <section class="keys" aria-labelledby="siri-keys-title">
+        <h2 id="siri-keys-title" class="ui-section-label" i18n="@@settings.siri.keys-title">
+          Suas chaves
+        </h2>
+        <ul class="list">
+          @for (key of list; track key.id) {
+            <li class="item ui-card">
+              <div class="head">
+                <span class="ui-tile"><app-settings-glyph name="key" /></span>
+                <div class="info">
+                  <strong class="name">{{ key.name }}</strong>
+                  <span class="meta">{{ summary(key) }}</span>
+                  <span class="meta">{{ used(key) }}</span>
+                  @if (expires(key); as until) {
+                    <span class="meta">{{ until }}</span>
+                  }
+                </div>
+              </div>
+              @if (confirmingId() === key.id) {
+                <div
+                  class="confirm ui-notice bad"
+                  role="group"
+                  [attr.aria-label]="revokeQuestion(key)"
+                >
+                  <app-settings-glyph name="alert" />
+                  <div class="confirm-body">
+                    <p class="question">{{ revokeQuestion(key) }}</p>
+                    <div class="actions">
+                      <button
+                        type="button"
+                        class="secondary ui-btn"
+                        (click)="confirmingId.set(null)"
+                        i18n="@@settings.cancel"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        class="danger ui-btn"
+                        [disabled]="busy()"
+                        (click)="revoke(key)"
+                        i18n="@@settings.siri.revoke"
+                      >
+                        Revogar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              } @else {
+                <div class="actions">
+                  <button
+                    type="button"
+                    class="secondary ui-btn"
+                    [attr.aria-expanded]="openId() === key.id"
+                    [attr.aria-label]="howLabel(key)"
+                    (click)="toggleOpen(key)"
+                  >
+                    <span i18n="@@settings.siri.how-button">Como montar</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="secondary ui-btn"
+                    [attr.aria-label]="revokeLabel(key)"
+                    (click)="ask(key)"
+                  >
+                    <app-settings-glyph name="trash" />
+                    <span i18n="@@settings.siri.revoke">Revogar</span>
+                  </button>
+                </div>
+              }
+              @if (openId() === key.id) {
+                <app-siri-steps
+                  [tvId]="key.tvId"
+                  [actions]="key.actions"
+                  [appNames]="namesOf(key.tvId)"
+                />
+              }
+            </li>
+          }
+        </ul>
+      </section>
+    }
+  } @else if (loadFailed()) {
+    <p class="empty ui-card" role="alert" i18n="@@settings.siri.load-failed">
+      Não foi possível carregar as chaves agora.
+    </p>
+  } @else {
+    <app-loading-skeleton
+      [kind]="'cards'"
+      [count]="2"
+      i18n-label="@@settings.siri.loading"
+      label="Carregando as chaves…"
+      [reload]="false"
+      (retried)="load()"
+    />
+  }
+</div>
