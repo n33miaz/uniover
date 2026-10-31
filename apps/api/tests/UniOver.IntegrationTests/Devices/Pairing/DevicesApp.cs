@@ -40,6 +40,8 @@ internal sealed record DevicesAppOptions
 
     public int? TokenCacheSeconds { get; init; }
 
+    public int? TokenFailureLimit { get; init; }
+
     public DbCommandInterceptor? CommandInterceptor { get; init; }
 
     /// <summary>
@@ -153,6 +155,11 @@ internal sealed class DevicesApp : IAsyncDisposable
         if (options.ExpiresMinutes is { } minutes)
         {
             settings["Modules:Devices:Pairing:ExpiresMinutes"] = minutes.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (options.TokenFailureLimit is { } failureLimit)
+        {
+            settings["Modules:Devices:TokenFailureLimit"] = failureLimit.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
         if (options.TokenCacheSeconds is { } cache)
