@@ -17,8 +17,8 @@ import { HomeGlyph } from './home-glyph';
 import { ModuleAppIcon } from './module-app-icon';
 
 /**
- * Folha de edição da Início: sobe de baixo, sem botão de fechar (a saída é "Cancelar" ou "Aplicar").
- * Trabalha numa cópia; só "Aplicar" devolve a nova disposição. A folha desce antes de avisar o pai, que a tira do DOM.
+ * Folha de edição da Início: sobe de baixo e trabalha numa cópia. Só "Concluir" devolve a nova disposição; Esc e o
+ * toque fora descartam a cópia. A folha desce antes de avisar o pai, que a tira do DOM.
  */
 @Component({
   selector: 'app-home-edit-sheet',

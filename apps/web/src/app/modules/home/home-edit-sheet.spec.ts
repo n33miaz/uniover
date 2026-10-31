@@ -45,16 +45,15 @@ describe('HomeEditSheet', () => {
     return { host: fixture.componentInstance, el: fixture.nativeElement as HTMLElement, fixture };
   }
 
-  it('opens as a modal dialog without a close button', async () => {
+  it('opens as a modal dialog with a single conclude action in the centered header', async () => {
     const { el } = await render();
     const dialog = el.querySelector('dialog')!;
     expect(dialog.hasAttribute('open')).toBe(true);
     expect(dialog.getAttribute('aria-labelledby')).toBe('sheet-title');
     expect(dialog.querySelector('h2')?.textContent?.trim()).toBe('Personalizar');
-    const buttons = Array.from(dialog.querySelectorAll('.footer button')).map((b) =>
-      b.textContent?.trim(),
-    );
-    expect(buttons).toEqual(['Cancelar', 'Aplicar']);
+    expect(dialog.querySelector('.footer')).toBeNull();
+    expect(dialog.querySelectorAll('.head button')).toHaveLength(1);
+    expect(dialog.querySelector('.done')?.textContent?.trim()).toBe('Concluir');
   });
 
   it('puts the initial focus on the title, not on the first arrow', async () => {
@@ -120,15 +119,10 @@ describe('HomeEditSheet', () => {
     expect(el.querySelectorAll('.size, .hint')).toHaveLength(0);
   });
 
-  it('cancels with Cancelar and with the native cancel event (Esc)', async () => {
-    const first = await render();
-    first.el.querySelector<HTMLButtonElement>('.secondary')!.click();
-    expect(first.host.cancelled).toBe(true);
-    expect(first.host.applied).toBeNull();
-
-    const second = await render();
-    second.el.querySelector('dialog')!.dispatchEvent(new Event('cancel', { cancelable: true }));
-    expect(second.host.cancelled).toBe(true);
+  it('cancels with the native cancel event (Esc)', async () => {
+    const { host, el } = await render();
+    el.querySelector('dialog')!.dispatchEvent(new Event('cancel', { cancelable: true }));
+    expect(host.cancelled).toBe(true);
   });
 
   it('cancels on the backdrop, keeps clicks inside open, and waits for the exit motion', async () => {
@@ -205,7 +199,7 @@ describe('HomeEditSheet', () => {
     expect(dialog.classList.contains('closing')).toBe(true);
     expect(host.applied).toBeNull();
 
-    el.querySelector<HTMLButtonElement>('.secondary')!.click(); // tarde demais para cancelar
+    dialog.dispatchEvent(new Event('cancel', { cancelable: true })); // tarde demais para cancelar
     end();
     await vi.waitFor(() => expect(host.applied).not.toBeNull());
     expect(host.cancelled).toBe(false);
