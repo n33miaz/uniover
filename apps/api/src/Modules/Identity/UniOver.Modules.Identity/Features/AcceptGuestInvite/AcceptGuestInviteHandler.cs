@@ -107,6 +107,7 @@ internal sealed class AcceptGuestInviteHandler(
         db.UserGrants.AddRange(permissions.Permissions.Select(p => UserGrant.Create(user.Id, p, invite.CreatedBy, now)));
         db.RefreshTokens.Add(RefreshToken.Create(
             user.Id, familyId, hash, now, expiresAt, command.Client.Ip, command.Client.UserAgent));
+        DeviceKeyRegistration.Add(db, familyId, user.Id, command.Client, now);
         audit.Add(user.Id, AuditEvents.GuestInviteAccepted, command.Client, inviteId.ToString("N"));
         audit.Add(user.Id, AuditEvents.LoginSucceeded, command.Client);
 

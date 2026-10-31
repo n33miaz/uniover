@@ -195,7 +195,8 @@ internal sealed class IdentityApp : IAsyncDisposable
         bool clientHeader = true,
         string? forwardedFor = null,
         string? userAgent = null,
-        Guid? idempotencyKey = null)
+        Guid? idempotencyKey = null,
+        IReadOnlyDictionary<string, string>? extraHeaders = null)
     {
         using var request = new HttpRequestMessage(method, url);
         if (body is not null)
@@ -228,6 +229,11 @@ internal sealed class IdentityApp : IAsyncDisposable
             request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
         }
 
+        foreach (var (name, value) in extraHeaders ?? new Dictionary<string, string>())
+        {
+            request.Headers.TryAddWithoutValidation(name, value);
+        }
+
         if (method == HttpMethod.Post || method == HttpMethod.Put || method == HttpMethod.Patch || method == HttpMethod.Delete)
         {
             request.Headers.Add("Idempotency-Key", (idempotencyKey ?? Guid.NewGuid()).ToString());
@@ -236,12 +242,15 @@ internal sealed class IdentityApp : IAsyncDisposable
         return await Client.SendAsync(request, TestContext.Current.CancellationToken);
     }
 
-    public Task<HttpResponseMessage> LoginRawAsync(string email, string password, string? forwardedFor = null, string? userAgent = null) =>
-        SendAsync(HttpMethod.Post, "/api/v1/identity/auth/login", new { email, password }, forwardedFor: forwardedFor, userAgent: userAgent);
+    public Task<HttpResponseMessage> LoginRawAsync(
+        string email, string password, string? forwardedFor = null, string? userAgent = null, TestDevice? device = null) =>
+        SendAsync(
+            HttpMethod.Post, "/api/v1/identity/auth/login", new { email, password },
+            forwardedFor: forwardedFor, userAgent: userAgent, extraHeaders: device?.KeyHeaders());
 
-    public async Task<LoggedIn> LoginAsync(string? email = null, string? password = null)
+    public async Task<LoggedIn> LoginAsync(string? email = null, string? password = null, TestDevice? device = null)
     {
-        using var response = await LoginRawAsync(email ?? OwnerEmail, password ?? OwnerPassword);
+        using var response = await LoginRawAsync(email ?? OwnerEmail, password ?? OwnerPassword, device: device);
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
         var cookie = Cookies(response).Single(c => c.Name == "uo_rt");
@@ -250,6 +259,45 @@ internal sealed class IdentityApp : IAsyncDisposable
 
     public Task<HttpResponseMessage> RefreshRawAsync(string? secret, bool clientHeader = true) =>
         SendAsync(HttpMethod.Post, "/api/v1/identity/auth/refresh", cookie: secret is null ? null : "uo_rt=" + secret, clientHeader: clientHeader);
+
+    /// <summary>Primeiro passo da recuperação: pede o desafio de uso único para o token do cookie.</summary>
+    public Task<HttpResponseMessage> ChallengeRawAsync(string? secret, bool clientHeader = true) =>
+        SendAsync(HttpMethod.Post, "/api/v1/identity/auth/refresh/challenge", cookie: secret is null ? null : "uo_rt=" + secret, clientHeader: clientHeader);
+
+    /// <summary>Pede o desafio e devolve o texto <c>id.nonce</c> e a família (32 hexadecimais) que o aparelho assina.</summary>
+    public async Task<(string Challenge, string FamilyId)> ChallengeAsync(string secret)
+    {
+        using var response = await ChallengeRawAsync(secret);
+        response.EnsureSuccessStatusCode();
+        var body = await JsonAsync(response);
+        return (body.GetProperty("challenge").GetString()!, body.GetProperty("familyId").GetString()!);
+    }
+
+    /// <summary>Refresh com o desafio e a prova da recuperação (os dois cabeçalhos).</summary>
+    public Task<HttpResponseMessage> RefreshWithProofAsync(string? secret, string? challenge, string? proof)
+    {
+        var headers = new Dictionary<string, string>();
+        if (challenge is not null)
+        {
+            headers["X-UniOver-Recovery-Challenge"] = challenge;
+        }
+
+        if (proof is not null)
+        {
+            headers["X-UniOver-Recovery-Proof"] = proof;
+        }
+
+        return SendAsync(
+            HttpMethod.Post, "/api/v1/identity/auth/refresh", cookie: secret is null ? null : "uo_rt=" + secret, extraHeaders: headers);
+    }
+
+    /// <summary>A recuperação inteira como o aparelho faz: desafio, assinatura, refresh.</summary>
+    public async Task<HttpResponseMessage> RecoverAsync(string secret, TestDevice device)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        var (challenge, family) = await ChallengeAsync(secret);
+        return await RefreshWithProofAsync(secret, challenge, device.Sign(family, challenge));
+    }
 
     public Task<HttpResponseMessage> GetAsync(string url, string? bearer = null, string? cookie = null) =>
         SendAsync(HttpMethod.Get, url, bearer: bearer, cookie: cookie, clientHeader: false);
@@ -385,4 +433,27 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider
             lines.Enqueue($"{logLevel} {category}: {formatter(state, exception)} {exception}");
         }
     }
+}
+
+/// <summary>Aparelho de teste: um par ECDSA P-256 e a assinatura que o navegador faria sobre o desafio da recuperação.</summary>
+internal sealed class TestDevice : IDisposable
+{
+    private readonly System.Security.Cryptography.ECDsa _key = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+
+    public string PublicKey => System.Buffers.Text.Base64Url.EncodeToString(_key.ExportSubjectPublicKeyInfo());
+
+    public IReadOnlyDictionary<string, string> KeyHeaders() => new Dictionary<string, string> { ["X-UniOver-Device-Key"] = PublicKey };
+
+    /// <summary>Assina <c>uniover-refresh-recovery|v1|família|id-do-desafio|nonce</c> (o mesmo texto que o navegador monta).</summary>
+    public string Sign(string familyId, string challenge)
+    {
+        var parts = challenge.Split('.');
+        var message = System.Text.Encoding.UTF8.GetBytes($"uniover-refresh-recovery|v1|{familyId}|{parts[0]}|{parts[1]}");
+        return System.Buffers.Text.Base64Url.EncodeToString(_key.SignData(
+            message,
+            System.Security.Cryptography.HashAlgorithmName.SHA256,
+            System.Security.Cryptography.DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
+    }
+
+    public void Dispose() => _key.Dispose();
 }

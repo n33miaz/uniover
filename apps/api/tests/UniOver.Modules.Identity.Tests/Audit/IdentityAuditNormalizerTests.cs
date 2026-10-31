@@ -22,6 +22,7 @@ public class IdentityAuditNormalizerTests
     [InlineData(AuditEvents.LoginLocked, AuditOutcome.Denied)]
     [InlineData(AuditEvents.RefreshSucceeded, AuditOutcome.Success)]
     [InlineData(AuditEvents.RefreshReuseDetected, AuditOutcome.Denied)]
+    [InlineData(AuditEvents.RefreshRecovered, AuditOutcome.Success)]
     [InlineData(AuditEvents.Logout, AuditOutcome.Success)]
     [InlineData(AuditEvents.OwnerCreated, AuditOutcome.Success)]
     [InlineData(AuditEvents.PasskeyRegistered, AuditOutcome.Success)]

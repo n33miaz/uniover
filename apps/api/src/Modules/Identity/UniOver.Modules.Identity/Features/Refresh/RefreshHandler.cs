@@ -32,12 +32,14 @@ internal sealed record RefreshResult(
 
 /// <summary>
 /// Refresh rotativo. Cada uso gira o token dentro da família; um token já girado que reaparece fora da
-/// tolerância revoga a família inteira (alguém guardou uma cópia).
+/// tolerância revoga a família inteira (alguém guardou uma cópia). Única exceção: o mesmo aparelho, com a prova da chave
+/// da família sobre um desafio de uso único, recupera UMA vez o token girado cuja resposta se perdeu (ADR 0015).
 /// </summary>
 internal sealed class RefreshHandler(
     IdentityDbContext db,
     AccessTokenIssuer tokens,
     LoginAuditWriter audit,
+    RefreshRecoveryService recovery,
     TimeProvider time,
     IOptions<IdentityModuleOptions> options)
 {
@@ -63,11 +65,10 @@ internal sealed class RefreshHandler(
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var familyId = token.FamilyId;
 
-        // Toda rotação e revogação da família passa pela mesma trava transacional. Sem ela, o replay pode atualizar
-        // os tokens existentes enquanto uma rotação ainda está para inserir o sucessor, deixando esse sucessor ativo.
-        await db.Database.ExecuteSqlAsync(
-            $"SELECT pg_advisory_xact_lock(hashtextextended({familyId.ToString("N")}, 0))",
-            cancellationToken);
+        // Toda rotação e revogação da família (inclusive o "Sair") passa pela mesma trava transacional. Sem ela, o replay
+        // pode atualizar os tokens existentes enquanto uma rotação ainda está para inserir o sucessor, deixando esse
+        // sucessor ativo.
+        await FamilyLock.AcquireAsync(db, familyId, cancellationToken);
         await db.Entry(token).ReloadAsync(cancellationToken);
         if (db.Entry(token).State == EntityState.Detached)
         {
@@ -76,12 +77,29 @@ internal sealed class RefreshHandler(
 
         var now = time.GetUtcNow();
 
+        // O token que o cliente apresentou; numa recuperação é o antigo, e `token` passa a ser o sucessor que ele nunca recebeu.
+        var presented = token;
+        var recovered = false;
         switch (token.Evaluate(now, policy.ReuseGrace))
         {
             case RefreshDecision.Reuse:
-                await RevokeFamilyAsync(token, now, command.Client, cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-                return new RefreshResult(RefreshStatus.Unauthenticated);
+                var candidate = await recovery.CheckAsync(token, now, policy, cancellationToken);
+                var denial = candidate.Denial;
+                if (denial is null)
+                {
+                    denial = await recovery.ConsumeAndVerifyAsync(token, candidate.Key!, command.Client, now, cancellationToken);
+                }
+
+                if (denial is not null)
+                {
+                    await recovery.RevokeFamilyForReuseAsync(token, now, command.Client, denial, cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    return new RefreshResult(RefreshStatus.Unauthenticated);
+                }
+
+                token = candidate.Successor!;
+                recovered = true;
+                break;
             case RefreshDecision.Conflict:
                 return new RefreshResult(RefreshStatus.Conflict);
             case RefreshDecision.Expired:
@@ -119,7 +137,9 @@ internal sealed class RefreshHandler(
         var claimed = await db.RefreshTokens
             .Where(t => t.Id == tokenId && t.UsedAt == null && t.RevokedAt == null)
             .ExecuteUpdateAsync(
-                s => s.SetProperty(t => t.UsedAt, now).SetProperty(t => t.ReplacedById, next.Id),
+                s => s.SetProperty(t => t.UsedAt, now)
+                    .SetProperty(t => t.ReplacedById, next.Id)
+                    .SetProperty(t => t.RecoveredAt, recovered ? now : (DateTimeOffset?)null),
                 cancellationToken);
         if (claimed != 1)
         {
@@ -127,7 +147,22 @@ internal sealed class RefreshHandler(
         }
 
         db.RefreshTokens.Add(next);
-        audit.Add(token.UserId, AuditEvents.RefreshSucceeded, command.Client);
+        if (recovered)
+        {
+            // O token apresentado gastou a única recuperação dele; o sucessor consumido acima também (sem cadeia).
+            var presentedId = presented.Id;
+            await db.RefreshTokens
+                .Where(t => t.Id == presentedId)
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.RecoveredAt, now), cancellationToken);
+            audit.Add(
+                token.UserId, AuditEvents.RefreshRecovered, command.Client,
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"after-{(int)(now - presented.UsedAt!.Value).TotalSeconds}s"));
+        }
+        else
+        {
+            audit.Add(token.UserId, AuditEvents.RefreshSucceeded, command.Client);
+        }
+
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -138,25 +173,5 @@ internal sealed class RefreshHandler(
             (int)settings.AccessLifetime.TotalSeconds,
             secret,
             expiresAt - now);
-    }
-
-    private async Task RevokeFamilyAsync(RefreshToken token, DateTimeOffset now, ClientInfo client, CancellationToken cancellationToken)
-    {
-        var familyId = token.FamilyId;
-        await db.RefreshTokens
-            .Where(t => t.FamilyId == familyId && t.RevokedAt == null)
-            .ExecuteUpdateAsync(
-                s => s.SetProperty(t => t.RevokedAt, now).SetProperty(t => t.RevokedReason, RevokeReasons.Reuse),
-                cancellationToken);
-
-        // Sessão possivelmente roubada: nenhuma confirmação dela continua valendo.
-        await db.StepUpConfirmations
-            .Where(c => c.SessionFamilyId == familyId)
-            .ExecuteDeleteAsync(cancellationToken);
-
-        // Quem apresentou o token já usado não está autenticado (pode ser o ladrão ou o aparelho do dono com um cookie velho):
-        // o ator fica nulo e a conta do token é o alvo, como nas tentativas de login que falham.
-        audit.Add(null, AuditEvents.RefreshReuseDetected, client, AuditAboutAccount.Detail(token.UserId));
-        await db.SaveChangesAsync(cancellationToken);
     }
 }
