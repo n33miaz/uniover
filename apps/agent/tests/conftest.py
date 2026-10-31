@@ -1,9 +1,14 @@
 """Isolamento: nenhum teste toca na configuração nem no certificado reais do usuário."""
 
+import faulthandler
+import sys
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
+from uniover_agent.adapters import crash_trace
 from uniover_agent.adapters import wol as _wol
 
 # O envio real do pacote mágico (os testes trocam `wol._send`; o do próprio WOL o usa de volta).
@@ -16,6 +21,7 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     ARP, o SSDP e o mDNS são trocados por respostas fixas (os testes que precisam de outra
     resposta a trocam de novo)."""
     from uniover_agent import main as main_module  # noqa: PLC0415
+    from uniover_agent.adapters import self_update as self_update_module  # noqa: PLC0415
     from uniover_agent.adapters import (  # noqa: PLC0415
         tv_discovery,
         tv_locate,
@@ -60,8 +66,24 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tv_locate, "arp_mac", no_mac)
     monkeypatch.setattr(wol, "_send", lambda mac, host: None)
     monkeypatch.setattr(tv_samsung, "fetch_samsung_info", no_info)
+    # A conferência dos arquivos contra o GitHub nunca sai da máquina nos testes (sem ela, a
+    # atualização segue só com o zip, como no PC sem acesso à API do GitHub).
+    monkeypatch.setattr(self_update_module, "fetch_git_tree", lambda sha: None)
     monkeypatch.setattr("uniover_agent.adapters.tv_samsung_volume.ssdp_locations", lambda host: [])
     monkeypatch.setattr(tv_locate, "arp_table", no_arp)
+
+
+@pytest.fixture(autouse=True)
+def restore_process_hooks() -> Iterator[None]:
+    """O rastro de queda que `run` liga (ganchos e faulthandler) volta ao que o pytest tinha."""
+    excepthook, threading_hook = sys.excepthook, threading.excepthook
+    yield
+    sys.excepthook, threading.excepthook = excepthook, threading_hook
+    faulthandler.disable()
+    faulthandler.enable()
+    for handle in crash_trace._keep_open:
+        handle.close()
+    crash_trace._keep_open.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -86,6 +108,10 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         "TV_CLEANUP_KEEP",
         "UPDATE_DRILL",
         "UPDATE_SOURCE_URL",
+        "UPDATE_CHANNEL",
+        "SELF_CARE",
+        "HOME",
+        "SUPERVISED",
     ):
         monkeypatch.delenv(f"UNIOVER_{name}", raising=False)
     # A pasta do certificado da TV vive em `%LOCALAPPDATA%`: nenhum teste toca na real.
