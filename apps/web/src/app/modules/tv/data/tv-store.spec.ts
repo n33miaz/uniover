@@ -193,12 +193,16 @@ describe('TvStore', () => {
     it('"hibernating" is "controle dormindo" and the buttons still work (the first command reconnects)', async () => {
       api.state.mockResolvedValue({ ...hot, connection: 'hibernating' });
       await started();
-      // O pedido de acordar acabou de sair: a sessão dormindo ainda conta como "acordando" (verde).
+      // O dono pediu verde "mesmo quando estiver dormindo": a sessão dormindo sai verde (hot), logo na leitura...
       expect(store.state()?.connection).toBe('hibernating');
+      expect(store.lastKnownStatus()).toBe('hibernating');
       expect(store.status()).toBe('hot');
-      // Passado o prazo do acordar sem o estado mudar, ela aparece como dormindo de verdade.
-      await vi.advanceTimersByTimeAsync(8_000);
-      expect(store.status()).toBe('hibernating');
+      // ...depois do prazo do acordar, e também quando o evento "dormindo" chega depois de uma leitura "ligada".
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(store.status()).toBe('hot');
+      emit('tv.state', hot);
+      emit('tv.state', { ...hot, connection: 'hibernating' });
+      expect(store.status()).toBe('hot');
       expect(store.canSend()).toBe(true);
       expect(store.disabledReason()).toBeNull();
     });
