@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.26.0](https://github.com/n33miaz/uniover/compare/v0.25.0...v0.26.0) (2026-10-31)
+
+
+### Features
+
+* **web:** complete exercise illustrations
+* **api:** publish photo routes only when enabled
+* **web:** retire cloud photos, add previews
+* **web:** block selection and tap highlight
+
+
+### Performance Improvements
+
+* **web:** lazy exercise thumbnails
+
 ## [0.25.0](https://github.com/n33miaz/uniover/compare/v0.24.0...v0.25.0) (2026-10-31)
 
 
