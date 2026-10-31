@@ -162,7 +162,7 @@ describe('LiveHomeStatus', () => {
         agent: 'online',
         watcher: 'unknown',
         serviceDown: false,
-        agentAlert: null,
+        agentLinked: true,
       });
     });
 
@@ -419,14 +419,25 @@ describe('LiveHomeStatus', () => {
       expect(live.status()).toMatchObject({ agent: 'online', serviceDown: false });
     });
 
-    it.each([401, 403, 404])(
-      'is not reported for a %i, but the agent state is dropped and its remembered value erased',
+    it('drops the agent state and its remembered value on a 401', () => {
+      expect(localStorage.getItem('uniover.home.agent.v2.1')).toBe('online');
+      advance(30_000);
+      http.expectOne(STATE).flush('', { status: 401, statusText: 'Resposta' });
+      expect(live.status()).toMatchObject({ agent: 'unknown', serviceDown: false });
+      expect(localStorage.getItem('uniover.home.agent.v2.1')).toBeNull();
+    });
+
+    it.each([403, 404])(
+      'is not reported for a %i: the account sees no TV, so it has no agent and no dot',
       (status) => {
-        expect(localStorage.getItem('uniover.home.agent.v2.1')).toBe('online');
         advance(30_000);
         http.expectOne(STATE).flush('', { status, statusText: 'Resposta' });
-        expect(live.status()).toMatchObject({ agent: 'unknown', serviceDown: false });
-        expect(localStorage.getItem('uniover.home.agent.v2.1')).toBeNull();
+        expect(live.status()).toMatchObject({
+          agent: 'unknown',
+          agentLinked: false,
+          serviceDown: false,
+        });
+        expect(localStorage.getItem('uniover.home.agent.v2.1')).toBe('none');
       },
     );
 
@@ -495,7 +506,7 @@ describe('LiveHomeStatus', () => {
         agent: 'unknown',
         watcher: 'unknown',
         serviceDown: false,
-        agentAlert: null,
+        agentLinked: null,
       });
       advance(120_000);
       http.expectNone(STATE);
@@ -513,14 +524,13 @@ describe('LiveHomeStatus', () => {
       expect(open.mock.calls[0][0]).toBe('/api/v1/tv/events');
     });
 
-    it('never asks for the computer-down notices, which belong to the owner', () => {
+    it('never asks for the computer-down notices, which the home no longer shows to anyone', () => {
       signIn('guest', { id: 'g1', permissions: TV });
       watch();
       answer();
       advance(30_000);
       answer();
       http.expectNone(ALERTS);
-      expect(live.status().agentAlert).toBeNull();
     });
 
     it('does not borrow what the owner left remembered in the same browser', () => {
@@ -548,85 +558,83 @@ describe('LiveHomeStatus', () => {
       signIn('owner');
       watch();
       answer({ agentOnline: true });
-      http.expectOne(ALERTS).flush([
-        {
-          id: 'o1',
-          agentId: 'a1',
-          agentName: 'PC da sala',
-          detectedAt: '2026-10-20T09:00:00Z',
-          lastSeenAt: null,
-          recoveredAt: null,
-        },
-      ]);
-      expect(live.status().agentAlert).not.toBeNull();
+      expect(live.status().agent).toBe('online');
 
       // Sem passar por "sair": o mesmo navegador passa direto para a conta do convidado.
       signIn('guest', { id: 'g1', permissions: TV });
       TestBed.tick();
-      expect(live.status().agent).toBe('unknown');
-      expect(live.status().agentAlert).toBeNull();
+      expect(live.status()).toMatchObject({ agent: 'unknown', agentLinked: null });
       answer({ agentOnline: false });
       expect(live.status().agent).toBe('offline');
       http.expectNone(ALERTS);
     });
+
+    it('does not carry the "no agent" memory of one account to the next', () => {
+      localStorage.setItem('uniover.home.agent.v2.1', 'none');
+      signIn('guest', { id: 'g1', permissions: TV });
+      watch();
+      expect(live.status().agentLinked).toBeNull();
+      expect(live.loading()).toBe(false);
+      advance(400);
+      expect(live.loading()).toBe(true);
+      answer({ agentOnline: true });
+      expect(live.status()).toMatchObject({ agent: 'online', agentLinked: true });
+    });
   });
 
-  describe('agent alert', () => {
+  describe('account without an agent', () => {
     beforeEach(() => signIn());
 
-    const alert = (recoveredAt: string | null, name = 'PC da sala') => ({
-      id: 'o1',
-      agentId: 'a1',
-      agentName: name,
-      detectedAt: '2026-10-20T09:00:00Z',
-      lastSeenAt: null,
-      recoveredAt,
+    it('says there is no agent linked, and never shows a wait for it', () => {
+      watch();
+      answer({ agentOnline: false, agentLinked: false, connection: 'disconnected' });
+      expect(live.status()).toMatchObject({ agent: 'unknown', agentLinked: false });
+      advance(10_000);
+      expect(live.loading()).toBe(false);
+      expect(localStorage.getItem('uniover.home.agent.v2.1')).toBe('none');
     });
 
-    it('shows the computer that is down, from the same poll as the state', () => {
+    it('opens already knowing it, so the wait never flashes again', () => {
+      localStorage.setItem('uniover.home.agent.v2.1', 'none');
+      watch();
+      expect(live.status().agentLinked).toBe(false);
+      advance(8_000);
+      expect(live.loading()).toBe(false);
+      answer({ agentOnline: false, agentLinked: false });
+      expect(live.status().agentLinked).toBe(false);
+    });
+
+    it('comes back as soon as the API says an agent was linked', () => {
+      localStorage.setItem('uniover.home.agent.v2.1', 'none');
+      watch();
+      answer({ agentOnline: true, agentLinked: true });
+      expect(live.status()).toMatchObject({ agent: 'online', agentLinked: true });
+      expect(localStorage.getItem('uniover.home.agent.v2.1')).toBe('online');
+    });
+
+    it('reads a body without the field as linked (older API)', () => {
       watch();
       answer({ agentOnline: false });
-      http.expectOne(ALERTS).flush([alert(null)]);
-      expect(live.status().agentAlert).toEqual({ name: 'PC da sala', recovered: false });
+      expect(live.status()).toMatchObject({ agent: 'offline', agentLinked: true });
     });
 
-    it('says it is back when the only notice is a recovered one', () => {
+    it('follows the stream: unlinked, then linked again', () => {
       watch();
-      answer();
-      http.expectOne(ALERTS).flush([alert('2026-10-20T09:30:00Z')]);
-      expect(live.status().agentAlert).toEqual({ name: 'PC da sala', recovered: true });
+      answer({ agentOnline: true });
+      emit('tv.state', { agentOnline: false, agentLinked: false });
+      expect(live.status().agentLinked).toBe(false);
+      emit('tv.state', { agentOnline: true, agentLinked: true });
+      expect(live.status()).toMatchObject({ agent: 'online', agentLinked: true });
     });
+  });
 
-    it('prefers an open outage over a recovered one', () => {
+  describe('never asks for computer alerts', () => {
+    it('does not call the alerts route, not even for the owner', () => {
+      signIn();
       watch();
       answer();
-      http
-        .expectOne(ALERTS)
-        .flush([alert('2026-10-20T09:30:00Z', 'PC antigo'), alert(null, 'PC da sala')]);
-      expect(live.status().agentAlert).toEqual({ name: 'PC da sala', recovered: false });
-    });
-
-    it('clears the notice when the list comes back empty', () => {
-      watch();
+      advance(60_000);
       answer();
-      http.expectOne(ALERTS).flush([alert(null)]);
-      advance(30_000);
-      answer();
-      http.expectOne(ALERTS).flush([]);
-      expect(live.status().agentAlert).toBeNull();
-    });
-
-    it('ignores a failed read: no notice and no "service down"', () => {
-      watch();
-      answer();
-      http.expectOne(ALERTS).flush(null, { status: 500, statusText: 'x' });
-      expect(live.status().agentAlert).toBeNull();
-      expect(live.status().serviceDown).toBe(false);
-    });
-
-    it('never asks a guest', () => {
-      signIn('guest');
-      watch();
       http.expectNone(ALERTS);
     });
   });

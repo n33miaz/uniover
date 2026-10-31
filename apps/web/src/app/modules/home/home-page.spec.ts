@@ -47,6 +47,7 @@ describe('HomePage', () => {
     agent: 'unknown',
     watcher: 'unknown',
     serviceDown: false,
+    agentLinked: null,
   });
   const loading = signal(false);
   const release = vi.fn();
@@ -62,7 +63,13 @@ describe('HomePage', () => {
 
   beforeEach(() => {
     localStorage.clear();
-    status.set({ userName: null, agent: 'unknown', watcher: 'unknown', serviceDown: false });
+    status.set({
+      userName: null,
+      agent: 'unknown',
+      watcher: 'unknown',
+      serviceDown: false,
+      agentLinked: null,
+    });
     loading.set(false);
     release.mockClear();
     watch.mockClear();
@@ -118,13 +125,10 @@ describe('HomePage', () => {
     expect((await render()).el.querySelector('h1')?.textContent).toBe('Boa noite, Neemias');
   });
 
-  it('shows the agent state in the accessible indicator, without the old info strip', async () => {
+  it('shows the current agent state in the accessible indicator only when there is a state', async () => {
     const { el } = await render();
-    const indicator = el.querySelector<HTMLElement>('.agent-status')!;
     expect(el.querySelector('.chips')).toBeNull();
-    expect(indicator.classList.contains('neutral')).toBe(true);
-    expect(indicator.getAttribute('aria-label')).toBe('Agente sem dados');
-    expect(indicator.getAttribute('title')).toBe('Agente sem dados');
+    expect(el.querySelector('.agent-status')).toBeNull();
 
     status.set({ ...status(), agent: 'online' });
     const online = (await render()).el.querySelector<HTMLElement>('.agent-status')!;
@@ -235,34 +239,64 @@ describe('HomePage', () => {
     ).toBe(false);
   });
 
-  it('shows a discreet badge to Dispositivos while the computer is down, and when it is back', async () => {
+  it('shows only the state dot of the agent, never a badge about another computer', async () => {
     status.set({
       userName: null,
       agent: 'offline',
       watcher: 'unknown',
       serviceDown: false,
-      agentAlert: { name: 'PC da sala', recovered: false },
+      agentLinked: true,
     });
-    const { fixture, el } = await render();
-    const badge = el.querySelector<HTMLAnchorElement>('.agent-alert')!;
-    expect(badge.textContent?.trim()).toBe('PC da sala sem sinal');
-    expect(badge.getAttribute('href')).toBe('/ajustes/dispositivos');
+    const { el } = await render();
+    expect(el.querySelector('.agent-alert')).toBeNull();
+    expect(el.querySelector<HTMLElement>('.agent-status')?.getAttribute('aria-label')).toBe(
+      'Agente desligado',
+    );
+  });
+
+  it('shows no dot at all when the account has no agent linked', async () => {
+    status.set({
+      userName: null,
+      agent: 'unknown',
+      watcher: 'unknown',
+      serviceDown: false,
+      agentLinked: false,
+    });
+    const { el } = await render();
+    expect(el.querySelector('.agent-status')).toBeNull();
+  });
+
+  it('pulses the dot while the state is still being read, and stops once it is known', async () => {
+    status.set({
+      userName: null,
+      agent: 'unknown',
+      watcher: 'unknown',
+      serviceDown: false,
+      agentLinked: null,
+    });
+    loading.set(true);
+    const { el, fixture } = await render();
+    expect(el.querySelector('.agent-status.connecting')).not.toBeNull();
+    loading.set(false);
     status.set({
       userName: null,
       agent: 'online',
       watcher: 'unknown',
       serviceDown: false,
-      agentAlert: { name: 'PC da sala', recovered: true },
+      agentLinked: true,
     });
     fixture.detectChanges();
-    expect(el.querySelector('.agent-alert')?.textContent?.trim()).toBe('PC da sala voltou');
-    status.set({ userName: null, agent: 'online', watcher: 'unknown', serviceDown: false });
-    fixture.detectChanges();
-    expect(el.querySelector('.agent-alert')).toBeNull();
+    expect(el.querySelector('.agent-status.connecting')).toBeNull();
+    expect(el.querySelector('.agent-status.ok')).not.toBeNull();
   });
 
-  it('puts Configurações in the header card and removes the old shortcuts', async () => {
+  it('centers the brand in its own top bar and puts Configurações beside it', async () => {
     const { el } = await render();
+    const topbar = el.querySelector<HTMLElement>('.home-topbar')!;
+    const brand = topbar.querySelector<HTMLElement>('.brand')!;
+    expect(brand.textContent?.trim()).toBe('UniOver');
+    expect(brand.parentElement).toBe(topbar);
+    expect(topbar.querySelector('.agent-slot')).not.toBeNull();
     expect(el.querySelector<HTMLAnchorElement>('.hero-settings')?.getAttribute('href')).toBe(
       '/ajustes',
     );
@@ -305,7 +339,7 @@ describe('HomePage', () => {
     expect(el.querySelector('.shortcuts')).toBeNull();
   });
 
-  it('mostra ao convidado com a TV a bolinha do agente dele, sem o aviso de queda do dono', async () => {
+  it('mostra ao convidado com a TV a bolinha do agente dele, e nada sobre computadores de outras pessoas', async () => {
     TestBed.inject(SessionState).setUser({
       id: ACCOUNT,
       email: 'convidado@exemplo.com',
@@ -318,7 +352,7 @@ describe('HomePage', () => {
       agent: 'offline',
       watcher: 'unknown',
       serviceDown: false,
-      agentAlert: { name: 'PC da sala', recovered: false },
+      agentLinked: true,
     });
     const { el } = await render();
     const dot = el.querySelector('.agent-status');
@@ -335,7 +369,13 @@ describe('HomePage', () => {
       role: 'guest',
       permissions: ['module:training'],
     });
-    status.set({ userName: null, agent: 'online', watcher: 'unknown', serviceDown: false });
+    status.set({
+      userName: null,
+      agent: 'online',
+      watcher: 'unknown',
+      serviceDown: false,
+      agentLinked: true,
+    });
     const { el } = await render();
     expect(el.querySelector('.agent-status')).toBeNull();
     expect(el.querySelector('.agent-alert')).toBeNull();
@@ -419,7 +459,7 @@ describe('HomePage', () => {
     expect(el.querySelector('dialog')?.hasAttribute('open')).toBe(true);
   });
 
-  it('opens the edit sheet, and Cancelar discards while Aplicar saves', async () => {
+  it('opens the edit sheet, where Esc discards and Concluir saves', async () => {
     const { fixture, el } = await render();
     const press = async (selector: string, index = 0) => {
       el.querySelectorAll<HTMLButtonElement>(selector)[index].click();
@@ -428,18 +468,19 @@ describe('HomePage', () => {
 
     expect(el.querySelector('app-home-edit-sheet')).toBeNull();
     await press('button.edit');
-    const dialog = el.querySelector('dialog');
-    expect(dialog?.hasAttribute('open')).toBe(true);
-    expect(dialog?.querySelector('[aria-label="Fechar"]')).toBeNull();
+    const sheet = el.querySelector<HTMLDialogElement>('dialog')!;
+    expect(sheet.hasAttribute('open')).toBe(true);
+    expect(sheet.querySelector('.done')?.textContent?.trim()).toBe('Concluir');
 
     await press('.moves .down'); // desce a TV
-    await press('.footer .secondary'); // Cancelar
+    sheet.dispatchEvent(new Event('cancel', { cancelable: true }));
+    await fixture.whenStable();
     expect(el.querySelector('app-home-edit-sheet')).toBeNull();
     expect(titles(el)).toEqual(['TV', 'Treino', ...PLANNED]);
 
     await press('button.edit');
     await press('.moves .down');
-    await press('.footer .primary'); // Aplicar
+    await press('.done'); // Concluir
     expect(titles(el)).toEqual(['Treino', 'TV', ...PLANNED]);
     expect(JSON.parse(localStorage.getItem(KEY)!)[0].id).toBe('training');
   });

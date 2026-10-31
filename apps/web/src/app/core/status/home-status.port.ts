@@ -3,12 +3,6 @@ import { Signal } from '@angular/core';
 export type AgentState = 'unknown' | 'online' | 'offline';
 export type WatcherState = 'unknown' | 'ok' | 'alert';
 
-/** O aviso de queda do computador: o nome dele e se já voltou. Só o dono recebe. */
-export interface AgentAlertNote {
-  readonly name: string;
-  readonly recovered: boolean;
-}
-
 /** O que a faixa de informações da Início precisa saber. */
 export interface HomeStatus {
   /** Nome para a saudação; `null` até haver sessão. */
@@ -16,8 +10,11 @@ export interface HomeStatus {
   readonly agent: AgentState;
   readonly watcher: WatcherState;
   readonly serviceDown: boolean;
-  /** Aviso de queda ainda não visto (nulo sem aviso ou fora do dono). */
-  readonly agentAlert?: AgentAlertNote | null;
+  /**
+   * A TV desta conta tem um agente vinculado? `false`: nenhum ponto (não há agente dela); `null`: ainda não se sabe.
+   * O agente é sempre o da própria conta (o do dono para o dono, o do convidado para ele), nunca o de outra pessoa.
+   */
+  readonly agentLinked: boolean | null;
 }
 
 /**

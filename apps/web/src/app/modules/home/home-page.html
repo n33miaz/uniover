@@ -1,39 +1,32 @@
 <section class="home">
-  <p class="brand" i18n="@@home.brand">UniOver</p>
+  <header class="home-topbar">
+    <a
+      class="hero-settings ui-tap"
+      routerLink="/ajustes"
+      aria-label="Configurações"
+      i18n-aria-label="@@home.settings-label"
+    >
+      <app-home-glyph name="gear" />
+    </a>
+    <p class="brand" i18n="@@home.brand">UniOver</p>
+    <span class="agent-slot">
+      @if (canSeeAgent()) {
+        @if (agentIndicator(); as agent) {
+          <span
+            class="agent-status"
+            [class.ok]="agent.tone === 'ok'"
+            [class.warn]="agent.tone === 'warn'"
+            [class.connecting]="agent.tone === 'connecting'"
+            role="status"
+            [attr.aria-label]="agent.label"
+            [attr.title]="agent.label"
+          ></span>
+        }
+      }
+    </span>
+  </header>
   <header class="hero ui-rise">
     <app-home-glyph class="scene" [name]="dayPart()" />
-    <div class="hero-actions">
-      <a
-        class="hero-settings ui-tap"
-        routerLink="/ajustes"
-        aria-label="Configurações"
-        i18n-aria-label="@@home.settings-label"
-      >
-        <app-home-glyph name="gear" />
-      </a>
-      @if (canSeeAgent()) {
-        @let agent = agentIndicator();
-        <span
-          class="agent-status"
-          [class.ok]="agent.tone === 'ok'"
-          [class.warn]="agent.tone === 'warn'"
-          [class.neutral]="agent.tone === 'neutral'"
-          [class.connecting]="agent.tone === 'connecting'"
-          role="status"
-          [attr.aria-label]="agent.label"
-          [attr.title]="agent.label"
-        ></span>
-      }
-      @if (agentAlert(); as alert) {
-        <a
-          class="agent-alert"
-          [class.ok]="alert.recovered"
-          routerLink="/ajustes/dispositivos"
-          [attr.aria-label]="alert.label"
-          >{{ alert.label }}</a
-        >
-      }
-    </div>
     <div class="hero-text">
       @if (loading()) {
         <span appSkeleton class="date-skeleton"></span>
