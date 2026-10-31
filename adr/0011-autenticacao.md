@@ -1,6 +1,6 @@
 # 0011. Autenticação: senha, JWT curto, refresh rotativo em cookie, passkey para ação perigosa, token de dispositivo
 
-- **Status:** Aceito
+- **Status:** Aceito. A detecção de reuso tem uma exceção, a recuperação comprovada de [0015](0015-recuperacao-do-refresh.md).
 - **Data:** 18/10/2026
 
 ## Contexto
