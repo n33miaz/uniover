@@ -24,6 +24,12 @@ public static class TvAuth
     /// </summary>
     public const string BindAgentAction = TvPairingActions.BindAgent;
 
+    /// <summary>
+    /// Ação de confirmação de criar uma chave para os Atalhos do iPhone: ela dá poder de comando sobre a TV a quem a tiver,
+    /// então só o administrador, e só com a passkey (como criar uma TV ou um convite).
+    /// </summary>
+    public const string SiriTokenAction = "tv.siri-token";
+
     /// <summary>Ver a TV: estado, lista de atalhos e o fluxo ao vivo (<c>module:tv</c>).</summary>
     internal static readonly string Module = AccessPermissions.Policy(AccessPermissions.TvModule);
 

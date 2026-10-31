@@ -32,6 +32,8 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
 
     public DbSet<CleanupReportEntry> CleanupReports => Set<CleanupReportEntry>();
 
+    public DbSet<SiriToken> SiriTokens => Set<SiriToken>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -169,6 +171,22 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             e.Property(x => x.BackgroundProcesses);
             e.Property(x => x.SessionOpenMs);
             e.HasIndex(x => new { x.TvId, x.StartedAt });
+        });
+
+        modelBuilder.Entity<SiriToken>(e =>
+        {
+            e.ToTable("siri_tokens");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+
+            // Sem FK de propósito: a conta é do Identity (só o id) e a TV só é conferida no uso.
+            e.Property(x => x.Name).HasMaxLength(SiriToken.NameMax).IsRequired();
+            e.Property(x => x.TokenHash).HasColumnType("bytea").IsRequired();
+            e.Property(x => x.Actions).HasColumnType("text[]").IsRequired();
+
+            // O hash é o que a chave apresentada procura: único e indexado, sem varrer a tabela.
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => x.UserId);
         });
 
         modelBuilder.AddOutbox().AddDeadLetters();

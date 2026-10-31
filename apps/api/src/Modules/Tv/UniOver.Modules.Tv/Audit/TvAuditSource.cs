@@ -25,6 +25,9 @@ internal static class TvAuditNormalizer
         TvCommandNames.ShortcutsReorder,
         TvCommandNames.ShortcutUpdate,
         TvCommandNames.ConfigBind,
+        TvCommandNames.SiriTokenCreate,
+        TvCommandNames.SiriTokenRevoke,
+        TvCommandNames.SiriDenied,
         TvCommandNames.AuditLimit,
     ];
 

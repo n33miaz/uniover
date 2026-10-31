@@ -78,7 +78,7 @@ Tudo isto vive em `UniOver.BuildingBlocks.Web`; o Host só compõe.
   `https://uniover.app/problems/<codigo>` e `traceId`. Exceção não tratada, validação e status sem corpo
   (404, 405, 429...) seguem o mesmo formato.
 - **Limite de requisições**: políticas nomeadas (`login`, `refresh`, `pairing`, `commands`, `guest-invite`, `profile` e as três
-  da entrada pelo QR, `qr-start`, `qr-poll` e `qr-decide`), com valores padrão ajustáveis em `RateLimiting:<politica>`. Estouro devolve 429 com `Retry-After`. Os módulos
+  da entrada pelo QR, `qr-start`, `qr-poll` e `qr-decide`, mais `siri`, das ordens dos Atalhos do iPhone, por IP), com valores padrão ajustáveis em `RateLimiting:<politica>`. Estouro devolve 429 com `Retry-After`. Os módulos
   aplicam a política com `.RequireRateLimiting(...)`.
 - **IP real atrás de proxy**: `ForwardedHeaders:Enabled` vem **desligado**; ligue só onde há proxy confiável
   (o limite por IP depende disso).

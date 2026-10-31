@@ -35,6 +35,15 @@ public static class TvCommandNames
     /// Não entra no histórico curto de comandos da TV: só na trilha do administrador.
     /// </summary>
     public const string AuditLimit = "tv.audit.limit";
+
+    /// <summary>O administrador criou uma chave para os Atalhos do iPhone: dá poder de comando a quem a tiver, então a trilha nunca a corta. O detalhe é o nome da chave.</summary>
+    public const string SiriTokenCreate = "tv.siri.create";
+
+    /// <summary>O administrador revogou uma chave dos Atalhos do iPhone. O detalhe é o nome da chave.</summary>
+    public const string SiriTokenRevoke = "tv.siri.revoke";
+
+    /// <summary>Uma chave dos Atalhos pediu o que não tinha direito (ação fora da lista, outra TV ou permissão perdida). O detalhe é a ação pedida e o motivo.</summary>
+    public const string SiriDenied = "tv.siri.denied";
 }
 
 /// <summary>

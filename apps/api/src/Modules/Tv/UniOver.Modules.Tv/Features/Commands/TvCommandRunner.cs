@@ -7,8 +7,15 @@ using UniOver.Modules.Tv.Ports;
 
 namespace UniOver.Modules.Tv.Features.Commands;
 
-/// <summary>Quem mandou o comando e de onde (o endpoint monta; o handler não toca no <c>HttpContext</c>).</summary>
-internal sealed record TvCommandOrigin(Guid UserId, ClientInfo Client);
+/// <summary>
+/// Quem mandou o comando e de onde (o endpoint monta; o handler não toca no <c>HttpContext</c>). <paramref name="Via"/>
+/// diz por qual porta a ordem chegou quando não foi o app: a trilha a anota no detalhe (<c>via=siri</c>).
+/// </summary>
+internal sealed record TvCommandOrigin(Guid UserId, ClientInfo Client, string? Via = null)
+{
+    /// <summary>A ordem veio de um atalho do iPhone (chave dos Atalhos), não de uma sessão do app.</summary>
+    public const string ViaSiri = "siri";
+}
 
 /// <summary>
 /// O caminho comum de todo comando para a TV: escolhe o agente configurado (o salvo no app, ou a variável de reserva) e
@@ -113,7 +120,7 @@ internal sealed partial class TvCommandRunner(
                 origin.UserId,
                 string.IsNullOrWhiteSpace(agentId) ? null : agentId,
                 command,
-                detail,
+                origin.Via is null ? detail : $"{detail} via={origin.Via}".TrimStart(),
                 outcome.IsDelivered,
                 outcome.IsDelivered ? null : outcome.ErrorCode ?? outcome.Status.ToString(),
                 outcome.Status is TvSendStatus.NotConfigured or TvSendStatus.AgentOffline ? null : (int)outcome.Latency.TotalMilliseconds,

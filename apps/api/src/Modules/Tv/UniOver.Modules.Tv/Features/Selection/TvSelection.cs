@@ -153,7 +153,8 @@ internal static class TvSelectionEndpointFilter
         var path = context.HttpContext.Request.Path.Value;
         if (path is not null && (path.EndsWith("/info", StringComparison.Ordinal)
             || path.StartsWith("/api/v1/tv/config", StringComparison.Ordinal)
-            || path.StartsWith("/api/v1/tv/tvs", StringComparison.Ordinal)))
+            || path.StartsWith("/api/v1/tv/tvs", StringComparison.Ordinal)
+            || path.StartsWith("/api/v1/tv/siri", StringComparison.Ordinal)))
         {
             return await next(context);
         }
