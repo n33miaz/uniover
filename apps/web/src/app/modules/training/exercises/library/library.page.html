@@ -97,6 +97,18 @@
 
   @if (!ready()) {
     <app-training-rows-skeleton [label]="loadingLabel" [rows]="6" [thumb]="true" />
+  } @else if (failed()) {
+    <section class="empty ui-card" aria-labelledby="failed-title">
+      <span class="ui-tile lg"><app-training-glyph name="dumbbell" /></span>
+      <h3 id="failed-title" i18n="@@training.library.read-failed-title">
+        Os Exercícios Não Abriram
+      </h3>
+      <p i18n="@@training.library.read-failed-text">O aparelho não conseguiu ler o catálogo.</p>
+      <button type="button" class="primary ui-btn block" (click)="retryRead()">
+        <app-training-glyph name="refresh" />
+        <span i18n="@@training.library.read-retry">Tentar de Novo</span>
+      </button>
+    </section>
   } @else if (catalogEmpty()) {
     <section class="empty ui-card" aria-labelledby="empty-title">
       <span class="ui-tile lg"><app-training-glyph name="dumbbell" /></span>
