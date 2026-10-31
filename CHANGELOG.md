@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.22.0](https://github.com/n33miaz/uniover/compare/v0.21.0...v0.22.0) (2026-10-30)
+
+
+### Features
+
+* **tv:** say if the TV has an agent linked
+* **home:** centered brand and discreet agent dot
+* **home:** clearer customize sheet
+
 ## [0.21.0](https://github.com/n33miaz/uniover/compare/v0.20.0...v0.21.0) (2026-10-30)
 
 
