@@ -37,6 +37,25 @@ export interface TvItem {
   readonly focusClosesBackground?: boolean;
   readonly shortAnimationsEnabled?: boolean;
   readonly restrictedBackgroundPackages?: readonly string[];
+  /** A TV Samsung esqueceu o UniOver: falta alguém escolher "Permitir" na tela dela (o agente não pede sozinho). */
+  readonly permissionNeeded?: boolean;
+}
+
+/** Uma TV compatível que o computador achou na rede dele. O `id` é opaco: nunca há endereço nem MAC. */
+export interface NearbyTv {
+  readonly id: string;
+  readonly kind: 'android' | 'samsung';
+  readonly name: string | null;
+  /** É a TV que este computador já controla. */
+  readonly controlled: boolean;
+}
+
+/** Como terminou a procura: `ok` (lista, talvez vazia), computador sem sinal, agente antigo, procura em andamento ou falha. */
+export type NearbyStatus = 'ok' | 'offline' | 'unsupported' | 'busy' | 'failed';
+
+export interface NearbyResult {
+  readonly status: NearbyStatus;
+  readonly items: readonly NearbyTv[];
 }
 
 export interface TvAppOption {
@@ -112,6 +131,7 @@ function readTv(value: unknown): TvItem | null {
     ...(dto['focusModeEnabled'] === true ? { focusModeEnabled: true } : {}),
     ...(dto['focusClosesBackground'] === true ? { focusClosesBackground: true } : {}),
     ...(dto['shortAnimationsEnabled'] === true ? { shortAnimationsEnabled: true } : {}),
+    ...(dto['permissionNeeded'] === true ? { permissionNeeded: true } : {}),
     ...(Array.isArray(dto['restrictedBackgroundPackages'])
       ? {
           restrictedBackgroundPackages: dto['restrictedBackgroundPackages'].filter(
@@ -197,6 +217,38 @@ export class SystemApi {
     const dto = await firstValueFrom(this.http.get<{ items?: unknown }>(`${BASE}/tvs`));
     if (!Array.isArray(dto?.items)) throw new Error('Lista de TVs em formato inesperado.');
     return dto.items.map(readTv).filter((tv): tv is TvItem => tv !== null);
+  }
+
+  /**
+   * As TVs compatíveis que o computador achou na rede dele (só o administrador). Leva alguns segundos: o agente varre a
+   * rede. Nunca lança por causa do estado do computador; o `status` conta o que houve.
+   */
+  async nearbyTvs(agentSlug: string): Promise<NearbyResult> {
+    const dto = await firstValueFrom(
+      this.http.get<{ status?: unknown; items?: unknown }>(`${BASE}/tvs/nearby`, {
+        params: { agent: agentSlug },
+      }),
+    );
+    const status = (['ok', 'offline', 'unsupported', 'busy'] as const).find(
+      (value) => value === dto?.status,
+    );
+    const items = Array.isArray(dto?.items) ? dto.items : [];
+    return {
+      status: status ?? 'failed',
+      items: items.flatMap((item): NearbyTv[] => {
+        const tv = item as Record<string, unknown> | null;
+        if (!tv || typeof tv['id'] !== 'string') return [];
+        if (tv['kind'] !== 'android' && tv['kind'] !== 'samsung') return [];
+        return [
+          {
+            id: tv['id'],
+            kind: tv['kind'],
+            name: typeof tv['name'] === 'string' ? tv['name'] : null,
+            controlled: tv['controlled'] === true,
+          },
+        ];
+      }),
+    };
   }
 
   /** Cria uma TV ligada a um computador pareado que ainda não tem TV (409 se já tiver). Exige a passkey. */
