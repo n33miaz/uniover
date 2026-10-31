@@ -279,4 +279,4 @@ def test_the_sync_of_the_candidate_is_locked(
     monkeypatch.setenv("UV", "uv")
     monkeypatch.setattr(subprocess, "run", fake)
     run_uv_sync(tmp_path / "app.new")
-    assert "--locked" in seen[0]
+    assert "--frozen" in seen[0]
