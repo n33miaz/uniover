@@ -253,6 +253,27 @@ describe('AuthService', () => {
     });
   });
 
+  describe('paused guest', () => {
+    it('marks the session as paused when the refresh is refused for that reason, and clears it on the next sign-in', async () => {
+      api.refresh.mockResolvedValue(tokens('jwt'));
+      await service().init();
+      api.refresh.mockRejectedValue(problem(401, 'guest-paused'));
+      expect(await service().renew()).toBe('unauthenticated');
+      expect(service().status()).toBe('anonymous');
+      expect(session().paused()).toBe(true);
+
+      api.login.mockResolvedValue(tokens('jwt-2'));
+      await service().login('bia@exemplo.com', 'senha');
+      expect(session().paused()).toBe(false);
+    });
+
+    it('does not mark a plain 401 as paused', async () => {
+      api.refresh.mockRejectedValue(problem(401));
+      await service().init();
+      expect(session().paused()).toBe(false);
+    });
+  });
+
   describe('login and logout', () => {
     it('login stores the session in memory only', async () => {
       api.login.mockResolvedValue(tokens('eyJ.secret.token'));

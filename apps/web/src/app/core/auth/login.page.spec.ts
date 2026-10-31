@@ -231,6 +231,20 @@ describe('LoginPage', () => {
       expect(field(el, 'login-password').hasAttribute('aria-invalid')).toBe(false);
     });
 
+    it('says only "Acesso Pausado" when the owner paused the account, with no other detail', async () => {
+      api.login.mockRejectedValue(new ApiProblem(401, 'guest-paused', 'x'));
+      const el = await render();
+      await fillAndSubmit(el);
+      expect(notice(el)?.textContent?.trim()).toBe('Acesso Pausado');
+      expect(text(el)).not.toContain('incorretos');
+    });
+
+    it('shows the pause notice when the session itself ended because of it', async () => {
+      TestBed.inject(SessionState).markPaused();
+      const el = await render();
+      expect(text(el)).toContain('Acesso Pausado');
+    });
+
     it('keeps what was typed after a refusal', async () => {
       api.login.mockRejectedValue(new ApiProblem(401, '', 'x'));
       const el = await render();
