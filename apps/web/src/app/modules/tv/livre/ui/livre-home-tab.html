@@ -1,0 +1,115 @@
+@if (store.draft(); as draft) {
+  <app-livre-preview [config]="draft" [apps]="store.preview()" [photoUrl]="store.photoUrl()" />
+
+  @let groups = store.groups();
+  @if (groups.chosen.length + groups.others.length + groups.factory.length === 0) {
+    <p class="empty" i18n="@@tv-livre.home.no-apps">
+      Nenhum app encontrado. Atualize o estado em Instalação.
+    </p>
+  } @else {
+    @if (groups.chosen.length > 0) {
+      <section class="group">
+        <h2 class="ui-section-label" i18n="@@tv-livre.home.chosen">Na Home</h2>
+        <ul class="ui-group ui-plain">
+          @for (row of groups.chosen; track row.package; let first = $first; let last = $last) {
+            <li class="app" [attr.data-package]="row.package">
+              <ng-container *ngTemplateOutlet="rowHead; context: { $implicit: row }" />
+              <div class="moves">
+                <button
+                  type="button"
+                  class="move"
+                  [disabled]="first || !enabled()"
+                  [attr.aria-label]="upLabel(row)"
+                  (click)="store.moveApp(row.package, -1)"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path [attr.d]="'M6 15l6-6 6 6'" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="move"
+                  [disabled]="last || !enabled()"
+                  [attr.aria-label]="downLabel(row)"
+                  (click)="store.moveApp(row.package, 1)"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path [attr.d]="'M6 9l6 6 6-6'" />
+                  </svg>
+                </button>
+              </div>
+              <ng-container *ngTemplateOutlet="rowSwitch; context: { $implicit: row }" />
+            </li>
+          }
+        </ul>
+      </section>
+    } @else {
+      <p class="hint" i18n="@@tv-livre.home.all-hint">
+        Sem escolha, aparecem todos, menos os de fábrica.
+      </p>
+    }
+
+    @if (groups.others.length > 0) {
+      <section class="group">
+        <h2 class="ui-section-label" i18n="@@tv-livre.home.others">Outros Apps</h2>
+        <ul class="ui-group ui-plain">
+          @for (row of groups.others; track row.package) {
+            <li class="app" [attr.data-package]="row.package">
+              <ng-container *ngTemplateOutlet="rowHead; context: { $implicit: row }" />
+              <ng-container *ngTemplateOutlet="rowSwitch; context: { $implicit: row }" />
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    @if (groups.factory.length > 0) {
+      <section class="group">
+        <button
+          type="button"
+          class="fold ui-row"
+          [attr.aria-expanded]="factoryOpen()"
+          [attr.aria-controls]="'livre-factory'"
+          (click)="toggleFactory()"
+        >
+          <span class="ui-row-text">
+            <span class="ui-row-title" i18n="@@tv-livre.home.factory">De Fábrica</span>
+          </span>
+          <span class="ui-chip">{{ groups.factory.length }}</span>
+          <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path [attr.d]="'M6 9l6 6 6-6'" />
+          </svg>
+        </button>
+        @if (factoryOpen()) {
+          <ul id="livre-factory" class="ui-group ui-plain">
+            @for (row of groups.factory; track row.package) {
+              <li class="app" [attr.data-package]="row.package">
+                <ng-container *ngTemplateOutlet="rowHead; context: { $implicit: row }" />
+                <ng-container *ngTemplateOutlet="rowSwitch; context: { $implicit: row }" />
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+  }
+}
+
+<ng-template #rowHead let-row>
+  <app-tv-app-icon class="icon" [shortcut]="row.subject" />
+  <span class="name">{{ row.label }}</span>
+</ng-template>
+
+<ng-template #rowSwitch let-row>
+  <label class="show">
+    <input
+      type="checkbox"
+      role="switch"
+      class="ui-switch"
+      [attr.aria-label]="showLabel(row)"
+      [checked]="row.chosen"
+      [disabled]="!enabled() || row.disabled"
+      (change)="store.setAppChosen(row.package, checked($event))"
+    />
+  </label>
+</ng-template>

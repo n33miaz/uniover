@@ -3,7 +3,7 @@ import { ScopedModuleSlug } from './module-slugs';
 
 export type ModuleStatus = 'available' | 'soon';
 export type ModuleIconName =
-  'tv' | 'activity' | 'health' | 'monitor' | 'network' | 'backup' | 'bell' | 'desktop';
+  'tv' | 'activity' | 'launcher' | 'health' | 'monitor' | 'network' | 'backup' | 'bell' | 'desktop';
 export type WidgetSize = 'small' | 'wide';
 
 export interface ModuleDefinition {
@@ -16,7 +16,12 @@ export interface ModuleDefinition {
   readonly title: string;
   /** Uma linha que diz para que serve o módulo (ou para que vai servir, quando ainda é "em breve"). */
   readonly description: string;
-  /** Ação principal mostrada no bloco da Início; só existe junto com o `slug`. */
+  /**
+   * Caminho completo de um módulo que mora dentro de outro (o TV Livre, em `/tv/livre`): sem `slug` próprio, não ganha
+   * manifest nem escopo no service worker, que são os do módulo onde ele vive.
+   */
+  readonly route?: string;
+  /** Ação principal mostrada no bloco da Início; só existe junto com o `slug` ou com a `route`. */
   readonly actionLabel?: string;
   readonly icon: ModuleIconName;
   readonly status: ModuleStatus;
@@ -48,6 +53,16 @@ export class ModuleRegistry {
       description: $localize`:@@home.module.training-hint:Fichas, séries e progresso`,
       actionLabel: $localize`:@@module.training.action:Ver treino`,
       icon: 'activity',
+      status: 'available',
+      defaultSize: 'small',
+    },
+    {
+      id: 'tv-livre',
+      route: '/tv/livre',
+      title: $localize`:@@module.tv-livre.title:TV Livre`,
+      description: $localize`:@@home.module.tv-livre-hint:A tela inicial da sua TV`,
+      actionLabel: $localize`:@@module.tv-livre.action:Configurar`,
+      icon: 'launcher',
       status: 'available',
       defaultSize: 'small',
     },
@@ -107,6 +122,6 @@ export class ModuleRegistry {
 
   /** Caminho da tela do módulo, ou `null` enquanto ele é só planejado (sem rota para abrir). */
   path(module: ModuleDefinition): string | null {
-    return module.slug ? `/${module.slug}` : null;
+    return module.route ?? (module.slug ? `/${module.slug}` : null);
   }
 }

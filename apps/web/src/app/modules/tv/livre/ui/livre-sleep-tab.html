@@ -1,0 +1,35 @@
+<button
+  type="button"
+  class="sleep ui-btn primary block"
+  [disabled]="!idle()"
+  [attr.aria-busy]="sleeping()"
+  (click)="store.sleep()"
+>
+  @if (sleeping()) {
+    <span class="ui-spinner" aria-hidden="true"></span>
+  } @else {
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path [attr.d]="'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z'" />
+    </svg>
+  }
+  <span i18n="@@tv-livre.sleep.button">Modo Dormir</span>
+</button>
+
+<p class="hint" i18n="@@tv-livre.sleep.hint">Qualquer tecla do controle acorda a TV.</p>
+
+<div class="ui-field">
+  <label for="livre-sleep-max" i18n="@@tv-livre.sleep.max-label">Acordar Sozinho (Minutos)</label>
+  <input
+    id="livre-sleep-max"
+    class="ui-input"
+    type="number"
+    [attr.inputmode]="'numeric'"
+    min="0"
+    [max]="maxMinutes"
+    step="5"
+    [value]="minutes()"
+    [disabled]="!idle()"
+    (change)="setMinutes($event)"
+  />
+  <p class="hint" i18n="@@tv-livre.sleep.max-hint">Zero deixa a TV dormindo até uma tecla.</p>
+</div>

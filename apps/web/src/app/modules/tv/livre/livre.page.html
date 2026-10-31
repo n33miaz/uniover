@@ -1,0 +1,123 @@
+<section
+  class="livre"
+  [class.ui-has-action-bar]="showApply()"
+  [class.has-notice]="showApply() && store.notice() !== null"
+>
+  @if (store.view()) {
+    <div
+      class="tabs"
+      role="tablist"
+      aria-label="Telas do TV Livre"
+      i18n-aria-label="@@tv-livre.tabs.label"
+    >
+      @for (tab of tabs; track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          class="tab"
+          [id]="'livre-tab-' + tab.id"
+          [attr.aria-selected]="active() === tab.id"
+          [attr.aria-controls]="'livre-panel'"
+          [attr.tabindex]="active() === tab.id ? 0 : -1"
+          (click)="select(tab.id)"
+          (keydown)="onTabKey($event)"
+        >
+          {{ tab.label }}
+        </button>
+      }
+    </div>
+
+    @if (store.block(); as block) {
+      <div class="ui-notice warn block" role="status">
+        @if (block === 'unsupported') {
+          <p i18n="@@tv-livre.block.unsupported">Esta TV não é compatível com o TV Livre.</p>
+        } @else {
+          <p i18n="@@tv-livre.block.offline">O agente da TV está fora do ar.</p>
+          <button type="button" class="ui-btn secondary" (click)="store.load()">
+            <span i18n="@@tv-livre.retry">Tentar de Novo</span>
+          </button>
+        }
+      </div>
+    }
+
+    <div
+      id="livre-panel"
+      role="tabpanel"
+      class="panel"
+      [attr.aria-labelledby]="'livre-tab-' + active()"
+    >
+      @switch (active()) {
+        @case ('home') {
+          <app-livre-home-tab />
+        }
+        @case ('background') {
+          <app-livre-background-tab />
+        }
+        @case ('sleep') {
+          <app-livre-sleep-tab />
+        }
+        @case ('install') {
+          <app-livre-install-tab />
+        }
+      }
+    </div>
+
+    @if (showApply()) {
+      <div class="ui-action-bar">
+        <div class="ui-action-bar-inner">
+          <ng-container *ngTemplateOutlet="noticeTemplate" />
+          <button
+            type="button"
+            class="ui-btn primary block"
+            [disabled]="store.busy() !== null"
+            [attr.aria-busy]="applying()"
+            (click)="store.apply()"
+          >
+            @if (applying()) {
+              <span class="ui-spinner" aria-hidden="true"></span>
+              <span i18n="@@tv-livre.apply.busy">Aplicando…</span>
+            } @else {
+              <span i18n="@@tv-livre.apply">Aplicar na TV</span>
+            }
+          </button>
+        </div>
+      </div>
+    } @else {
+      <ng-container *ngTemplateOutlet="noticeTemplate" />
+    }
+  } @else if (store.loadFailure(); as failure) {
+    <div class="ui-notice bad block" role="alert">
+      <p>{{ failure }}</p>
+      <button type="button" class="ui-btn secondary" (click)="store.load()">
+        <span i18n="@@tv-livre.retry-load">Tentar de Novo</span>
+      </button>
+    </div>
+  } @else {
+    <app-loading-frame
+      label="Carregando o TV Livre…"
+      i18n-label="@@tv-livre.loading"
+      [reload]="false"
+      (retried)="store.load()"
+    >
+      <span appSkeleton class="skeleton-tabs"></span>
+      <span appSkeleton class="skeleton-preview"></span>
+      <span appSkeleton class="skeleton-row"></span>
+      <span appSkeleton class="skeleton-row"></span>
+      <span appSkeleton class="skeleton-row"></span>
+    </app-loading-frame>
+  }
+</section>
+
+<!-- O resultado do último pedido: erro pede atenção (alert), o resto é só informação (status). -->
+<ng-template #noticeTemplate>
+  @if (store.notice(); as notice) {
+    <p
+      class="ui-notice"
+      [class.ok]="notice.kind === 'ok'"
+      [class.bad]="notice.kind === 'error'"
+      [attr.role]="notice.kind === 'error' ? 'alert' : 'status'"
+    >
+      {{ notice.text }}
+    </p>
+  }
+</ng-template>

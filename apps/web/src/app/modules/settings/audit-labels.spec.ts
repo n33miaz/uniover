@@ -69,6 +69,13 @@ const TV_ACTIONS = [
   'tv.shortcuts.reorder',
   'tv.shortcut.update',
   'tv.config.bind',
+  'tv.livre.refresh',
+  'tv.livre.install',
+  'tv.livre.apply',
+  'tv.livre.set-home',
+  'tv.livre.restore',
+  'tv.livre.set-apps',
+  'tv.livre.sleep',
 ];
 
 function item(overrides: Partial<AuditItem> = {}): AuditItem {

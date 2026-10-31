@@ -11,6 +11,7 @@ import { RouterLink } from '@angular/router';
 import { canUseModule } from '../../core/auth/guest-home';
 import { ModulePrefs, WidgetPref } from '../../core/modules/module-prefs';
 import { ModuleDefinition, ModuleRegistry } from '../../core/modules/module-registry';
+import { TV_LIVRE_ENTRY } from '../../core/modules/tv-livre-entry.port';
 import { SessionState } from '../../core/session/session-state';
 import { HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
@@ -75,12 +76,15 @@ export class HomePage {
   private readonly prefs = inject(ModulePrefs);
   private readonly session = inject(SessionState);
   protected readonly registry = inject(ModuleRegistry);
+  private readonly livreEntry = inject(TV_LIVRE_ENTRY);
 
   private readonly editButton = viewChild<ElementRef<HTMLButtonElement>>('editButton');
 
   constructor() {
     // O estado da casa só é consultado enquanto a Início está na tela: o acompanhamento acaba com o componente.
     inject(DestroyRef).onDestroy(this.statusPort.watch());
+    // O cartão do TV Livre depende de a TV atual declarar a capacidade: a lista de TVs é renovada ao abrir a Início.
+    this.livreEntry.refresh();
   }
 
   protected readonly editing = signal(false);
@@ -182,6 +186,9 @@ export class HomePage {
   }
 
   private canSeeModule(id: string): boolean {
+    // O TV Livre é só do dono e só existe para a TV que o suporta: some para o convidado e para a TV sem a capacidade
+    // (a Samsung, por exemplo), na grade e na folha de edição.
+    if (id === 'tv-livre') return !this.session.isGuest() && this.livreEntry.available();
     if (!this.session.isGuest()) return true;
     if (this.registry.find(id)?.status === 'soon') {
       return GUEST_PLANNED_MODULES.includes(id);
