@@ -29,7 +29,7 @@ internal static class IdentityAuditNormalizer
     /// aí o ator é nulo, e as linhas ANTIGAS, gravadas com a conta como autora, não têm o id no detalhe e seguem como estão).
     /// </summary>
     public static IReadOnlyList<string> TargetAccountEvents { get; } =
-        [AuditEvents.GuestRevoked, AuditEvents.SessionRevoked, AuditEvents.PermissionsChanged, AuditEvents.LoginFailed, AuditEvents.LoginLocked, AuditEvents.RefreshReuseDetected];
+        [AuditEvents.GuestRevoked, AuditEvents.GuestPaused, AuditEvents.GuestResumed, AuditEvents.SessionRevoked, AuditEvents.PermissionsChanged, AuditEvents.LoginFailed, AuditEvents.LoginLocked, AuditEvents.RefreshReuseDetected];
 
     public static AuditOutcome OutcomeOf(string eventName) =>
         FailureEvents.Contains(eventName) ? AuditOutcome.Failure
@@ -68,6 +68,8 @@ internal static class IdentityAuditNormalizer
                 break;
 
             case AuditEvents.GuestRevoked:
+            case AuditEvents.GuestPaused:
+            case AuditEvents.GuestResumed:
                 if (TryAccount(entry.Detail, out var revoked))
                 {
                     targetUser = revoked;

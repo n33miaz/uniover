@@ -19,6 +19,9 @@ internal enum RefreshStatus
     /// <summary>Token desconhecido, vencido, revogado ou reutilizado: o cliente precisa de um login novo.</summary>
     Unauthenticated,
 
+    /// <summary>O dono pausou a conta: a sessão foi derrubada na pausa e o app mostra só "Acesso pausado".</summary>
+    Paused,
+
     /// <summary>Duas abas giraram o mesmo token juntas; o cliente relê o cookie novo e tenta de novo.</summary>
     Conflict,
 }
@@ -76,6 +79,14 @@ internal sealed class RefreshHandler(
 
         var now = time.GetUtcNow();
 
+        // Sessão derrubada pela pausa: não é reuso de token (nada vazou), então não revoga a família nem grava alerta de
+        // segurança. Com a pausa em vigor o app mostra o aviso; depois de retomada, só pede um login novo.
+        if (token.RevokedReason == RevokeReasons.GuestPaused)
+        {
+            var paused = await db.Users.AnyAsync(u => u.Id == token.UserId && u.PausedAt != null, cancellationToken);
+            return new RefreshResult(paused ? RefreshStatus.Paused : RefreshStatus.Unauthenticated);
+        }
+
         switch (token.Evaluate(now, policy.ReuseGrace))
         {
             case RefreshDecision.Reuse:
@@ -92,9 +103,9 @@ internal sealed class RefreshHandler(
         var userId = token.UserId;
         var account = await db.Users
             .Where(u => u.Id == userId)
-            .Select(u => new { u.Role, u.DisabledAt })
+            .Select(u => new { u.Role, u.DisabledAt, u.PausedAt })
             .SingleOrDefaultAsync(cancellationToken);
-        if (account is null || account.DisabledAt is not null)
+        if (account is null || account.DisabledAt is not null || account.PausedAt is not null)
         {
             return new RefreshResult(RefreshStatus.Unauthenticated);
         }

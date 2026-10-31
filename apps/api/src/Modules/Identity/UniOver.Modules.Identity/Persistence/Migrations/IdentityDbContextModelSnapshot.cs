@@ -535,6 +535,10 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("password_hash");
 
+                    b.Property<DateTimeOffset?>("PausedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("paused_at");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
