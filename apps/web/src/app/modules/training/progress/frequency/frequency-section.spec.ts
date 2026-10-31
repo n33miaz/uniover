@@ -159,7 +159,7 @@ describe('ProgressFrequency', () => {
       expect(text(el)).toContain('Constância: 1 treino por semana nas duas últimas semanas'),
     );
     expect(text(el)).not.toContain('(meta:');
-    expect(text(el)).toContain('Sem meta de treinos por semana: você define na seção Semana.');
+    expect(text(el)).toContain('Sem meta semanal definida.');
   });
 
   it('counts the streak against the weekly goal once there is one', async () => {
@@ -171,6 +171,6 @@ describe('ProgressFrequency', () => {
         'Constância: 1 treino por semana nas duas últimas semanas (meta: 1). 3 semanas seguidas com a meta',
       );
     });
-    expect(text(el)).not.toContain('Sem meta de treinos por semana');
+    expect(text(el)).not.toContain('Sem meta semanal definida');
   });
 });
