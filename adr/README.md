@@ -27,6 +27,8 @@ que o código é como é, sem precisar adivinhar.
 | [0008](0008-contrato-do-agente.md) | Contrato do agente: envelope versionado, JSON Schema e AsyncAPI | Aceito |
 | [0009](0009-postgres-schema-por-modulo.md) | Postgres (Neon) com um schema e um DbContext por módulo | Aceito |
 | [0010](0010-eventos-com-outbox.md) | Eventos de integração por porta própria com outbox em Postgres | Aceito |
-| [0011](0011-autenticacao.md) | Autenticação: senha, JWT curto, refresh rotativo, passkey e token de dispositivo | Aceito |
+| [0011](0011-autenticacao.md) | Autenticação: senha, JWT curto, refresh rotativo, passkey e token de dispositivo | Aceito (exceção em 0015) |
 | [0012](0012-material-de-terceiros.md) | Material de terceiros com licença própria | Aceito |
 | [0013](0013-fluxo-de-git.md) | Fluxo de git: `develop` e `main` protegidas, Conventional Commits | Aceito |
+| [0014](0014-csp-com-nonce.md) | CSP estrita com nonce por requisição | Aceito |
+| [0015](0015-recuperacao-do-refresh.md) | Recuperação do refresh cuja resposta se perdeu, com prova da chave do aparelho | Aceito |
