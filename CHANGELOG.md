@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.21.0](https://github.com/n33miaz/uniover/compare/v0.20.0...v0.21.0) (2026-10-30)
+
+
+### Features
+
+* **web:** add the shared page top bar
+* **training:** sync ring and state sheet
+* **training:** thumbnails in the open routine
+* **training:** body map values per region
+* **training:** one top bar and a single back
+
 ## [0.20.0](https://github.com/n33miaz/uniover/compare/v0.19.0...v0.20.0) (2026-10-30)
 
 
