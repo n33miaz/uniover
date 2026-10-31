@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.30.0](https://github.com/n33miaz/uniover/compare/v0.29.0...v0.30.0) (2026-10-31)
+
+
+### Features
+
+* **contracts:** add pc control messages
+* **agent:** add gated pc control
+* **api:** add pc control routes and permission
+* **web:** grant and audit the pc module
+* **web:** add the pc control module
+
+
+### Bug Fixes
+
+* **api:** drive the caller's own pc first
+
 ## [0.29.0](https://github.com/n33miaz/uniover/compare/v0.28.0...v0.29.0) (2026-10-31)
 
 
