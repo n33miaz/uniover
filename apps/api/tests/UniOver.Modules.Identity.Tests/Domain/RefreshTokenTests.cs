@@ -63,6 +63,29 @@ public class RefreshTokenTests
     }
 
     [Fact]
+    public void Eligibility_OnlyARotatedUnrevokedTokenInsideTheWindowWithoutARecoveryYet()
+    {
+        var window = TimeSpan.FromMinutes(10);
+        var rotated = NewToken();
+        rotated.MarkRotated(Now, Guid.NewGuid());
+
+        rotated.Eligibility(Now.AddMinutes(10), window).Should().Be(RecoveryEligibility.Eligible);
+        rotated.Eligibility(Now.AddMinutes(10).AddSeconds(1), window).Should().Be(RecoveryEligibility.OutsideWindow);
+        rotated.Eligibility(Now.AddSeconds(1), TimeSpan.Zero).Should().Be(RecoveryEligibility.OutsideWindow, "janela zero desliga a recuperação");
+        NewToken().Eligibility(Now, window).Should().Be(RecoveryEligibility.NotRotated, "nunca girou");
+
+        var revoked = NewToken();
+        revoked.MarkRotated(Now, Guid.NewGuid());
+        revoked.Revoke(Now, RevokeReasons.Logout);
+        revoked.Eligibility(Now, window).Should().Be(RecoveryEligibility.NotRotated);
+
+        var recovered = NewToken();
+        recovered.MarkRotated(Now, Guid.NewGuid());
+        recovered.MarkRecovered(Now.AddSeconds(5));
+        recovered.Eligibility(Now.AddSeconds(6), window).Should().Be(RecoveryEligibility.AlreadyRecovered, "uma recuperação por token girado");
+    }
+
+    [Fact]
     public void Revoke_KeepsTheFirstReason()
     {
         var token = NewToken();
@@ -107,6 +130,8 @@ public class RefreshPolicyTests
         Policy.SlidingWindow.Should().Be(TimeSpan.FromDays(14));
         Policy.AbsoluteLifetime.Should().Be(TimeSpan.FromDays(90));
         Policy.ReuseGrace.Should().Be(TimeSpan.FromSeconds(3));
+        Policy.RecoveryWindow.Should().Be(TimeSpan.FromMinutes(10));
+        Policy.ChallengeLifetime.Should().Be(TimeSpan.FromMinutes(2));
     }
 
     [Fact]
