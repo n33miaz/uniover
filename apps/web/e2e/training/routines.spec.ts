@@ -88,9 +88,7 @@ test.describe('rotinas: lista e modelos', () => {
     await expect(sheet.getByRole('button', { name: /Full body/ })).toBeVisible();
     await sheet.getByRole('button', { name: /ABC/ }).click();
     await expect(sheet).toContainText('A · Peito e tríceps');
-    await expect(sheet).toContainText(
-      'O modelo é o ponto de partida; o Programa Semanal organiza as rotinas da semana.',
-    );
+    await expect(sheet).toContainText('O modelo é só o ponto de partida.');
     await sheet.getByRole('button', { name: 'Usar Este Modelo' }).click();
     await expect(page.locator('.next-card')).toBeVisible();
     await expect(page.getByText(/Modelo ABC escolhido. Hoje abre no treino do dia./)).toBeVisible();

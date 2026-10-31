@@ -111,7 +111,7 @@ export class RoutineEditorPage {
     ? $localize`:@@training.editor.title-edit:Editar Rotina`
     : $localize`:@@training.editor.title-new:Nova Rotina`;
   protected readonly itemsLabel = $localize`:@@training.editor.items-label:Exercícios da rotina`;
-  protected readonly dragHint = $localize`:@@training.editor.hint:Mude a ordem com as setas, ou arraste pela alça.`;
+  protected readonly dragHint = $localize`:@@training.editor.hint:Ordene com as setas ou arraste.`;
 
   protected readonly fields: readonly FieldConfig[] = [
     {
