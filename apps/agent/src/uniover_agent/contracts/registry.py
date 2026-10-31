@@ -23,9 +23,13 @@ from .tv_apps_v2 import TvAppsV2Message
 from .tv_cleanup_config_v1 import TvCleanupConfigV1Message
 from .tv_cleanup_result_v1 import TvCleanupResultV1Message
 from .tv_cleanup_v1 import TvCleanupV1Message
+from .tv_discover_v1 import TvDiscoverV1Message
+from .tv_discovery_v1 import TvDiscoveryV1Message
 from .tv_key_v1 import TvKeyV1Message
 from .tv_key_v2 import TvKeyV2Message
 from .tv_key_v3 import TvKeyV3Message
+from .tv_permission_request_v1 import TvPermissionRequestV1Message
+from .tv_permission_v1 import TvPermissionV1Message
 from .tv_power_off_v1 import TvPowerOffV1Message
 from .tv_state_v1 import TvStateV1Message
 from .tv_text_v1 import TvTextV1Message
@@ -50,9 +54,13 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "tv.cleanup.config.v1": TvCleanupConfigV1Message,
     "tv.cleanup.result.v1": TvCleanupResultV1Message,
     "tv.cleanup.v1": TvCleanupV1Message,
+    "tv.discover.v1": TvDiscoverV1Message,
+    "tv.discovery.v1": TvDiscoveryV1Message,
     "tv.key.v1": TvKeyV1Message,
     "tv.key.v2": TvKeyV2Message,
     "tv.key.v3": TvKeyV3Message,
+    "tv.permission.request.v1": TvPermissionRequestV1Message,
+    "tv.permission.v1": TvPermissionV1Message,
     "tv.power.off.v1": TvPowerOffV1Message,
     "tv.state.v1": TvStateV1Message,
     "tv.text.v1": TvTextV1Message,
