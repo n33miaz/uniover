@@ -316,6 +316,48 @@ test.describe('dispositivos', () => {
     await expect(page.getByRole('button', { name: 'Parear dispositivo' })).toBeEnabled();
   });
 
+  test('avisa a falha de atualização numa linha, cabe na tela e some ao dispensar', async ({
+    page,
+    browserName,
+  }, info) => {
+    devices.agents.push(storedAgent({ id: 'a1', slug: 'pc-casa', name: 'PC de casa' }));
+    devices.alerts.push({
+      id: 'u1',
+      agentId: 'a1',
+      agentName: 'PC de casa',
+      detectedAt: '2026-10-31T14:30:00Z',
+      lastSeenAt: null,
+      recoveredAt: null,
+      kind: 'update_failed',
+      detail: 'não atualizei agora: sem rede',
+    });
+    await openDevices(page, browserName, false);
+
+    const alert = page.locator('.alert');
+    await expect(alert.locator('strong')).toHaveText('Falha de Atualização');
+    await expect(alert).toContainText('PC de casa, em ');
+    await expect(alert).toHaveClass(/warn/);
+    // O título cabe numa linha: a altura do texto em destaque é a de uma linha só.
+    const lines = await alert
+      .locator('strong')
+      .evaluate(
+        (node) =>
+          node.getBoundingClientRect().height / parseFloat(getComputedStyle(node).lineHeight),
+      );
+    expect(lines).toBeLessThan(1.5);
+    await expectNoHorizontalScroll(page);
+    await settle(page);
+    await screenshot(page, info.outputPath('devices-update-alert.png'));
+    const { violations } = await new AxeBuilder({ page }).analyze();
+    expect(seriousViolations(violations)).toEqual([]);
+
+    await alert.getByRole('button', { name: 'Dispensar' }).click();
+    await expect(page.locator('.alert')).toHaveCount(0);
+    expect(
+      devices.requests.some((r) => r.method === 'POST' && r.path === '/agent-alerts/u1/seen'),
+    ).toBe(true);
+  });
+
   test('mostra versão, sistema, TV e conexão de cada dispositivo', async ({
     page,
     browserName,

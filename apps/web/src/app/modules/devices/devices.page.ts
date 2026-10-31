@@ -429,6 +429,10 @@ export class DevicesPage {
 
   protected alertTitle(alert: AgentAlert): string {
     const name = alert.agentName;
+    if (alert.kind === 'update_failed') {
+      // Título curto, que cabe numa linha ao lado do botão; o nome do computador vai na linha de baixo.
+      return $localize`:@@devices.alert.update-failed:Falha de Atualização`;
+    }
     return alert.recoveredAt
       ? $localize`:@@devices.alert.back:${name}:name: voltou`
       : $localize`:@@devices.alert.down:${name}:name: está sem sinal`;
@@ -436,6 +440,10 @@ export class DevicesPage {
 
   protected alertDetail(alert: AgentAlert): string {
     const since = this.contactFormat.format(new Date(alert.recoveredAt ?? alert.detectedAt));
+    if (alert.kind === 'update_failed') {
+      const name = alert.agentName;
+      return $localize`:@@devices.alert.update-failed-at:${name}:name:, em ${since}:time:`;
+    }
     return alert.recoveredAt
       ? $localize`:@@devices.alert.back-at:Voltou em ${since}:time:`
       : $localize`:@@devices.alert.down-at:Sem sinal desde ${since}:time:`;

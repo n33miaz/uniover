@@ -108,7 +108,7 @@ export interface StoredTv {
   readonly memberIds: readonly string[];
 }
 
-/** Um aviso de queda do computador, como a API o devolve. */
+/** Um aviso do computador (queda ou falha de atualização), como a API o devolve. */
 export interface StoredAlert {
   id: string;
   agentId: string;
@@ -116,6 +116,8 @@ export interface StoredAlert {
   detectedAt: string;
   lastSeenAt: string | null;
   recoveredAt: string | null;
+  kind?: 'offline' | 'update_failed';
+  detail?: string | null;
 }
 
 export interface DevicesMock {
