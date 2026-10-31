@@ -93,6 +93,9 @@ Tudo isto vive em `UniOver.BuildingBlocks.Web`; o Host só compõe.
   `RequestLoggingMiddleware` escreve uma linha por requisição (método, **rota** e não a URL, status, duração; aviso acima de
   `RequestLogging:SlowMilliseconds`) e devolve o `X-Trace-Id`. Falhas de tarefa de fundo gravam tipo e pilha, nunca a mensagem
   (`ErrorDetail.Stack`), e nenhum `[LoggerMessage]` recebe a exceção inteira (regra em `LoggingRulesTests`).
+- **Eventos mortos**: `GET /api/v1/system/dead-letters` (só o dono) junta as `dead_letters` de todos os módulos com outbox (os 50
+  mais recentes de cada um e o total), sem o conteúdo do evento; a Saúde do Sistema o mostra. Ir para a fila de mortos também
+  grava um log de erro.
 - **Cabeçalhos de segurança**: CSP estrita sem `unsafe-inline` e com nonce por requisição (veja
   [`adr/0014`](../../adr/0014-csp-com-nonce.md)), HSTS fora de Development, `nosniff`, Referrer-Policy,
   Permissions-Policy, COOP e `Cache-Control: no-store` em `/api/*`.

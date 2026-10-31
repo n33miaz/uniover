@@ -265,6 +265,7 @@ public sealed partial class OutboxDispatcher(
                     LastError = message.LastError,
                 });
                 message.ProcessedAt = now;
+                LogDeadLettered(message.Id, message.Type, message.Attempts, message.LastError);
             }
             else
             {
@@ -309,6 +310,10 @@ public sealed partial class OutboxDispatcher(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Entrega do evento {EventId} ({EventType}) falhou na tentativa {Attempts}: {Error}.")]
     private partial void LogDeliveryFailed(Guid eventId, string eventType, int attempts, string error);
+
+    // Nível Error de propósito: o evento saiu da fila e não volta sozinho. Quem olha o log (e a lista do Sistema) precisa ver.
+    [LoggerMessage(Level = LogLevel.Error, Message = "O evento {EventId} ({EventType}) foi para a fila de mortos depois de {Attempts} tentativa(s): {Error}.")]
+    private partial void LogDeadLettered(Guid eventId, string eventType, int attempts, string error);
 
     private sealed class UnknownEventTypeException : Exception;
 }

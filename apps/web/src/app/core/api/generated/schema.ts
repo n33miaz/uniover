@@ -3668,6 +3668,59 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/system/dead-letters': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['DeadLetterReport'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/training/body/entries': {
     parameters: {
       query?: never;
@@ -8475,6 +8528,25 @@ export interface components {
       license: null | string;
       licenseUrl: null | string;
       source: string;
+    };
+    DeadLetterItem: {
+      /** Format: int32 */
+      attempts: number | string;
+      /** Format: date-time */
+      failedAt: string;
+      /** Format: uuid */
+      id: string;
+      lastError: null | string;
+      module: string;
+      /** Format: date-time */
+      occurredAt: string;
+      type: string;
+    };
+    DeadLetterReport: {
+      items: components['schemas']['DeadLetterItem'][];
+      /** Format: int32 */
+      total: number | string;
+      unavailableModules: string[];
     };
     DenyPairingRequest: {
       userCode: null | string;
