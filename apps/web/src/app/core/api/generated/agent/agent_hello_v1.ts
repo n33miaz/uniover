@@ -4,6 +4,7 @@ export type AgentHelloV1BodyCapabilitiesItem =
   | 'transport.keepalive.v1'
   | 'agent.logs.v1'
   | 'agent.maintenance.v1'
+  | 'agent.diagnostics.v1'
   | 'tv.cleanup.automatic.v1'
   | 'tv.light-settings.v1'
   | 'tv.focus-closes-background.v1'
