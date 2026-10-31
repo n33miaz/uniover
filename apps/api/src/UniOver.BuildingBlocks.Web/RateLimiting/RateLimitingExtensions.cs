@@ -37,7 +37,16 @@ public static class RateLimitPolicies
     /// <summary>Manutenção remota de um agente (ver o registro, atualizar, reiniciar): por conta, baixa, pois cada pedido vai ao PC de alguém.</summary>
     public const string Maintenance = "maintenance";
 
-    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance];
+    /// <summary>
+    /// Movimento do mouse do controle do PC: o app manda até uns 30 toques por segundo (um pedido por vez, somando o
+    /// que o dedo andou enquanto esperava), então o balde é largo e por conta. É o único com teto assim.
+    /// </summary>
+    public const string PcPointer = "pc-pointer";
+
+    /// <summary>Energia e favoritos do PC (bloquear, suspender, desligar, abrir programa): por conta e baixo, pois cada pedido age no PC de alguém.</summary>
+    public const string PcPower = "pc-power";
+
+    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, PcPointer, PcPower];
 }
 
 /// <summary>Uma política configurável em <c>RateLimiting:&lt;política&gt;</c>.</summary>
@@ -67,6 +76,8 @@ public static class RateLimitingExtensions
         [RateLimitPolicies.QrPoll] = new() { Permitted = 90, WindowSeconds = 60, Partition = "ip" },
         [RateLimitPolicies.QrDecide] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.Maintenance] = new() { Permitted = 12, WindowSeconds = 60, Partition = "user" },
+        [RateLimitPolicies.PcPointer] = new() { Permitted = 2400, WindowSeconds = 60, Partition = "user" },
+        [RateLimitPolicies.PcPower] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
     };
 
     /// <summary>

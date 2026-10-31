@@ -41,6 +41,7 @@ from uniover_agent.adapters.pairing_page import (
     write_pairing_page,
     write_progress_page,
 )
+from uniover_agent.adapters.pc_windows import WindowsPcInput, WindowsPcLauncher, WindowsPcPower
 from uniover_agent.adapters.qr_terminal import render_ascii, render_for
 from uniover_agent.adapters.secret_store_keyring import KeyringSecretStore, SecretStoreError
 from uniover_agent.adapters.self_update import read_version, self_update
@@ -97,6 +98,8 @@ from uniover_agent.core import (
     LOGS_REQUEST_TYPE,
     MAINTENANCE_CAPABILITY,
     MAINTENANCE_TYPE,
+    PC_CONTROL_CAPABILITY,
+    PC_SILENT_TYPES,
     POWER_OFF_CAPABILITY,
     AppIconPublisher,
     AppsAnnouncer,
@@ -110,6 +113,7 @@ from uniover_agent.core import (
     Handler,
     IconResolver,
     PairAgent,
+    PcApp,
     ProcessMessage,
     ResultStatus,
     SamsungTvApps,
@@ -128,6 +132,9 @@ from uniover_agent.core import (
     WatchdogEvents,
     agent_logs_handler,
     agent_maintenance_handler,
+    parse_favorites,
+    pc_apps_announcer,
+    pc_handlers,
     tv_app_launch_handler,
     tv_apps_refresh_handler,
     tv_cleanup_handler,
@@ -147,6 +154,9 @@ from uniover_agent.ports import (
     PairingExpired,
     PairingInfo,
     PairingTicket,
+    PcInput,
+    PcLauncher,
+    PcPower,
     SecretStore,
     Transport,
     TransportError,
@@ -739,13 +749,67 @@ def compose_icons(
     return publisher
 
 
+@dataclass(slots=True)
+class PcSetup:
+    """O controle do PC, quando ligado: os comandos `pc.*`, a capacidade e o aviso dos favoritos."""
+
+    handlers: dict[str, Handler]
+    capabilities: list[str]
+    after_hello: list[Callable[[], Awaitable[None]]]
+    apps: list[PcApp]
+
+
+def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com padrão
+    settings: Settings,
+    transport: Transport,
+    envelopes: EnvelopeFactory,
+    *,
+    platform: str = sys.platform,
+    pc_input: PcInput | None = None,
+    power: PcPower | None = None,
+    launcher: PcLauncher | None = None,
+) -> PcSetup | None:
+    """O controle do PC só existe quando a pessoa o ligou neste PC (`pc_control`) e o sistema é o
+    Windows. Sem isso nenhum comando `pc.*` é aceito e a capacidade não é declarada: a API nem
+    oferece o módulo (mover o mouse e digitar à distância é poder demais para valer por padrão)."""
+    if not settings.pc_control:
+        return None
+    if platform != "win32":
+        _log.warning("controle do PC ligado, mas só o Windows o suporta; nada foi habilitado")
+        return None
+    apps = parse_favorites(settings.pc_apps)
+    handlers = pc_handlers(
+        pc_input or WindowsPcInput(),
+        power or WindowsPcPower(),
+        launcher or WindowsPcLauncher(),
+        apps,
+        shutdown_delay_seconds=settings.pc_shutdown_delay_seconds,
+    )
+    return PcSetup(
+        handlers,
+        [PC_CONTROL_CAPABILITY],
+        [pc_apps_announcer(apps, transport, envelopes)],
+        apps,
+    )
+
+
 def build_handler(
-    clock: Clock, tv: TvSetup | None = None, care: dict[str, Handler] | None = None
+    clock: Clock,
+    tv: TvSetup | None = None,
+    care: dict[str, Handler] | None = None,
+    pc: PcSetup | None = None,
 ) -> HandleCommand:
     """Comandos que este agente sabe executar. Sem aparelhos habilitados, só os da manutenção
     remota (registro e atualização, que valem sem TV): todo outro comando é recusado e registrado
     (nada finge que apertou uma tecla)."""
-    return HandleCommand({**(tv.handlers if tv is not None else {}), **(care or {})}, clock)
+    return HandleCommand(
+        {
+            **(tv.handlers if tv is not None else {}),
+            **(pc.handlers if pc is not None else {}),
+            **(care or {}),
+        },
+        clock,
+    )
 
 
 def log_file_path(settings: Settings) -> Path:
@@ -1027,6 +1091,7 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
         user_agent=f"uniover-agent/{agent_version()}",
     )
     tv = build_tv(settings, clock, transport, envelopes, secrets)
+    pc = build_pc(settings, transport, envelopes)
     if tv is not None:
         for step in tv.prepare:
             await step()
@@ -1034,11 +1099,12 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
         agent_id,
         gate,
         build_handler(
-            clock, tv, build_remote_care(settings, transport, envelopes, secrets, agent_id)
+            clock, tv, build_remote_care(settings, transport, envelopes, secrets, agent_id), pc
         ),
         envelopes,
         transport,
         background_types=tv.background_commands if tv is not None else (),
+        silent_types=PC_SILENT_TYPES if pc is not None else (),
         on_command=(
             lambda command: (
                 tv.cleanup_scheduler.note_message(command.type)
@@ -1060,6 +1126,8 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
             await announcer.announce(manager.snapshot())
 
         after_hello = [announce_tv, *tv.after_hello]
+    if pc is not None:
+        after_hello = [*after_hello, *pc.after_hello]
 
     async def on_connected() -> None:
         tray.connected()
@@ -1079,6 +1147,7 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
             LOGS_CAPABILITY,
             MAINTENANCE_CAPABILITY,
             *(tuple(tv.capabilities) if tv is not None else ()),
+            *(tuple(pc.capabilities) if pc is not None else ()),
         ),
         on_connected=on_connected,
         on_disconnected=tray.disconnected,
@@ -1307,6 +1376,24 @@ async def tv_find(
     return EXIT_OK
 
 
+def pc_control(settings: Settings, state: str) -> int:
+    """`pc-control on|off|status`: grava no `agent.toml` se este PC aceita o controle pelo app. Vale
+    na próxima vez que o agente iniciar."""
+    if state == "status":
+        print("ligado" if settings.pc_control else "desligado")
+        return EXIT_OK
+    enabled = state == "on"
+    update_config(config_path(), {"pc_control": enabled})
+    if enabled:
+        print(
+            "Controle do PC ligado. Reinicie o agente para valer. Os favoritos ficam em "
+            "`pc_apps` no agent.toml (`Nome=destino`)."
+        )
+    else:
+        print("Controle do PC desligado. Reinicie o agente para valer.")
+    return EXIT_OK
+
+
 def update_agent(*, sync: bool) -> int:
     """Atualiza o agente instalado pela `main`. Nunca falha: o agente atual continua valendo."""
     migrate_layout()
@@ -1381,11 +1468,17 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "tv-volume", help="mostra por quais caminhos o agente consegue ler o volume da TV (só lê)"
     )
+    pc_parser = sub.add_parser(
+        "pc-control", help="liga ou desliga o controle deste PC pelo app (mouse, teclado, mídia)"
+    )
+    pc_parser.add_argument(
+        "state", choices=("on", "off", "status"), help="`on` liga, `off` desliga, `status` mostra"
+    )
     sub.add_parser("tray", help=argparse.SUPPRESS)
     return parser
 
 
-def main(  # noqa: PLR0911 - um retorno por comando
+def main(  # noqa: PLR0911, PLR0912 - um retorno por comando
     argv: Sequence[str] | None = None, *, secrets: SecretStore | None = None
 ) -> int:
     args = _parser().parse_args(argv)
@@ -1432,6 +1525,8 @@ def main(  # noqa: PLR0911 - um retorno por comando
             return asyncio.run(tv_volume(settings))
         if command == "self-update":
             return update_agent(sync=not args.no_sync)
+        if command == "pc-control":
+            return pc_control(settings, args.state)
         if command == "tray":
             # pystray e Pillow sao opcionais para o processo principal: sem bandeja, a TV segue
             # funcionando e o supervisor tentara o icone de novo depois.

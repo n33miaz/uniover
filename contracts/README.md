@@ -37,6 +37,27 @@ existe, a API não envia o batimento novo para preservar a compatibilidade duran
 | `tv.cleanup.v1` | API para agente | `requestId` (UUID gerado pela API): fecha os apps abertos na TV e libera memória pelo ADB, sem derrubar o controle remoto. |
 | `tv.cleanup.result.v1` | agente para API | O que a limpeza fez: `requestId` (o do pedido), `closedApps`, `memoryBeforeMb`, `memoryAfterMb` e `freedMb` (inteiros, ou `null` quando a memória não pôde ser lida; `freedMb` nunca é negativo), `failedSteps` (etapas que não deram certo, como `force-stop:com.exemplo.app`) e `at`. |
 
+## Controle do PC
+
+Só o agente que declara a capacidade `pc.control.v1` (no `agent.hello.v1`) recebe estas mensagens; ela só é declarada
+quando a pessoa liga o controle no próprio PC (`pc_control` no arquivo de configuração do agente, desligado por
+padrão). Todas descem da API para o agente e voltam em `command.result.v1`, exceto `pc.apps.v1`, que sobe, e `pc.pointer.v1`, que o agente executa sem responder (a API manda o movimento do mouse sem esperar resposta; uma resposta por movimento só encheria o canal). As listas de
+teclas e de ações são fechadas: nada fora delas chega ao Windows, e o corpo nunca leva caminho de programa.
+
+| `type` | Direção | Corpo |
+|---|---|---|
+| `pc.pointer.v1` | API para agente | `dx`, `dy` (pixels relativos, -2000 a 2000) e `scrollX`/`scrollY` opcionais (unidades de roda: 120 é um clique da roda, -1200 a 1200; sinal do Windows, positivo é direita e cima). O app soma os toques do dedo antes de mandar e o agente limita cada valor. |
+| `pc.click.v1` | API para agente | `button` (`LEFT`, `RIGHT`, `MIDDLE`) e `action` opcional (`CLICK`, padrão, `DOUBLE`, `DOWN`, `UP`; os dois últimos são o arrastar). |
+| `pc.key.v1` | API para agente | `key` (Enter, Backspace, Delete, Tab, Escape, Space, setas, Home, End, PageUp/PageDown, `F1` a `F12`, `A` a `Z`) e `modifiers` opcionais (`CTRL`, `ALT`, `SHIFT`, `WIN`, sem repetir). |
+| `pc.text.v1` | API para agente | `text`: 1 a 200 caracteres, sem caracteres de controle; digitado como Unicode, então acentos e símbolos funcionam em qualquer layout. |
+| `pc.media.v1` | API para agente | `action` (`PLAY_PAUSE`, `NEXT`, `PREVIOUS`, `STOP`, `VOLUME_UP`, `VOLUME_DOWN`, `MUTE`) e `steps` opcional (1 a 10, só para o volume). |
+| `pc.power.v1` | API para agente | `action`: `LOCK`, `SLEEP`, `SHUTDOWN` (contagem do Windows, com o aviso na tela do PC) ou `CANCEL_SHUTDOWN`. A confirmação com a pessoa é do app e da API. |
+| `pc.app.launch.v1` | API para agente | `appId`: o identificador de um favorito que o próprio agente publicou. |
+| `pc.apps.v1` | agente para API | `apps`: lista de `{ id, label }` (até 24) dos favoritos configurados no PC, e `at`. A lista é sempre completa; o agente a manda logo depois do `hello`. |
+
+Falhas voltam em `command.result.v1` com `error.code` estável: `unsupported` (sistema sem suporte), `unknown_app` (favorito
+que não existe mais) e `failed` (o Windows recusou).
+
 ## Manutenção remota
 
 Só o administrador, e só por agente: ver o registro e pedir ao agente que se atualize ou reinicie. As capacidades

@@ -72,6 +72,13 @@ export const routes: Routes = [
         loadChildren: () =>
           import('./modules/training/training.routes').then((m) => m.TRAINING_ROUTES),
       },
+      {
+        // O módulo mora dentro do app principal (sem manifest nem escopo próprios, ao contrário da TV e do Treino).
+        path: 'pc',
+        canMatch: [moduleGuard('pc')],
+        data: { title: $localize`:@@module.pc.title:Controle do PC` },
+        loadChildren: () => import('./modules/pc/pc.routes').then((m) => m.PC_ROUTES),
+      },
       // Endereços antigos continuam úteis, mas a tela deixou de existir: toda conta tem a própria Início.
       { path: 'sem-acesso', pathMatch: 'full', redirectTo: '/' },
       {

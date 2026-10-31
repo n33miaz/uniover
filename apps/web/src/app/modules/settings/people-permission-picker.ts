@@ -1,6 +1,7 @@
 import { Component, computed, input, model, signal } from '@angular/core';
 import {
   PermissionModel,
+  PC_MODULE,
   TRAINING_MODULE,
   TV_ACTIONS,
   TV_MODULE,
@@ -19,7 +20,7 @@ let nextPicker = 0;
 
 /**
  * Seletor do que uma pessoa poderá ver e fazer: modelos prontos em cima e, embaixo, um interruptor por permissão,
- * agrupados em TV e Treino. Serve ao convite e à edição das permissões de quem já entrou.
+ * agrupados em TV, Treino e Controle do PC. Serve ao convite e à edição das permissões de quem já entrou.
  *
  * O toque no interruptor nunca é recusado: a escolha da pessoa vale primeiro e as dependências se acertam depois (ligar
  * uma ação da TV liga "Ver a TV"; desligar "Ver a TV" desliga as ações). Lista sem módulo nenhum não é impedida aqui:
@@ -41,6 +42,7 @@ export class PeoplePermissionPicker {
   protected readonly models: readonly PermissionModel[] = ['tv-control', 'training', 'custom'];
   protected readonly tvModule = TV_MODULE;
   protected readonly trainingModule = TRAINING_MODULE;
+  protected readonly pcModule = PC_MODULE;
   protected readonly tvOptions: readonly string[] = [TV_MODULE, ...TV_ACTIONS];
 
   /**

@@ -65,6 +65,16 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/tv/shortcuts/{id:guid}/launch", RateLimitPolicies.Commands),
         ("PUT", "/api/v1/tv/shortcuts/order", RateLimitPolicies.Commands),
 
+        // Controle do PC: o movimento do mouse tem balde próprio e largo (dezenas por segundo); energia e favoritos, um baixo; o resto, o dos comandos.
+        ("POST", "/api/v1/pc/pointer", RateLimitPolicies.PcPointer),
+        ("POST", "/api/v1/pc/click", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/pc/key", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/pc/text", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/pc/media", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/pc/power", RateLimitPolicies.PcPower),
+        ("POST", "/api/v1/pc/apps/{appId}/launch", RateLimitPolicies.PcPower),
+        ("GET", "/api/v1/pc/status", RateLimitPolicies.Commands),
+
         // Trocar o computador que controla a TV: ação rara de administrador, com o mesmo limite baixo das outras que pedem passkey.
         ("PUT", "/api/v1/tv/config/agent", RateLimitPolicies.Login),
     ];

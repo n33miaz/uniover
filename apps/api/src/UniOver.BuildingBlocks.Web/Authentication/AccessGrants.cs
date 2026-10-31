@@ -33,6 +33,9 @@ public static class AccessPermissions
     /// <summary>Usar o módulo de Treino (só os dados da própria conta).</summary>
     public const string TrainingModule = "module:training";
 
+    /// <summary>Controlar o PC pelo app (mouse, teclado, mídia, energia). O dono tem por padrão; o convidado só se concedido.</summary>
+    public const string PcModule = "module:pc";
+
     /// <summary>Prefixo do nome das políticas por permissão (uma por item do catálogo).</summary>
     public const string PolicyPrefix = "permission:";
 
@@ -46,10 +49,11 @@ public static class AccessPermissions
         TvEditShortcuts,
         TvHistory,
         TrainingModule,
+        PcModule,
     ];
 
     /// <summary>As permissões de módulo: dar acesso a uma área inteira. Toda concessão precisa de ao menos uma.</summary>
-    public static IReadOnlyList<string> Modules { get; } = [TvModule, TrainingModule];
+    public static IReadOnlyList<string> Modules { get; } = [TvModule, TrainingModule, PcModule];
 
     private static readonly FrozenSet<string> KnownSet = All.ToFrozenSet(StringComparer.Ordinal);
 

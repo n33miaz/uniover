@@ -357,15 +357,13 @@ describe('GuestsSection', () => {
       await openPermissions(fixture, el);
       await flip(fixture, el, 'Ver a TV');
       expect(button(el, 'Gerar convite')!.disabled).toBe(true);
-      expect(el.querySelector('.summary')?.textContent).toContain(
-        'Ligue ao menos a TV ou o Treino',
-      );
+      expect(el.querySelector('.summary')?.textContent).toContain('Ligue ao menos um módulo');
       submit(el);
       expect(people.createInvite).not.toHaveBeenCalled();
 
       // Recolhido, o aviso continua à vista.
       await openPermissions(fixture, el);
-      expect(el.querySelector('.perms-toggle')?.textContent).toContain('Ligue ao menos a TV');
+      expect(el.querySelector('.perms-toggle')?.textContent).toContain('Ligue ao menos um módulo');
     });
 
     it('cancelling closes the form and forgets the name and the choices', async () => {

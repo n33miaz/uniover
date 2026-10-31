@@ -157,3 +157,21 @@ async def test_api_keepalive_is_accepted_without_executing_or_replying() -> None
 
     assert spy.calls == []
     assert transport.sent == []
+
+
+async def test_a_silent_type_is_executed_but_never_answered() -> None:
+    spy = Spy()
+    clock = FakeClock()
+    gate = EnvelopeGate(AGENT_ID)
+    transport = FakeTransport()
+    process = ProcessMessage(
+        AGENT_ID,
+        gate,
+        HandleCommand({"tv.key.v1": spy}, clock),
+        EnvelopeFactory(AGENT_ID, gate, clock),
+        transport,
+        silent_types={"tv.key.v1"},
+    )
+    await process(dump(tv_key("HOME")))
+    assert [c.body for c in spy.calls] == [{"key": "HOME"}]
+    assert transport.sent == []

@@ -122,6 +122,21 @@ class Settings(BaseSettings):
     # ambiente, separados por vírgula; no arquivo, uma lista TOML ou o mesmo texto. Sem `NoDecode` o
     # pydantic-settings exigiria JSON na variável.
     tv_cleanup_keep: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Controle do PC pelo app (mouse, teclado, mídia, energia). Desligado por padrão: só o dono
+    # liga, neste PC (`uniover-agent pc-control on`). Sem isto o agente nem declara a capacidade.
+    pc_control: bool = False
+    # Favoritos que o app pode abrir: `Nome=destino` (programa, documento ou endereço). Só o nome e
+    # um identificador viajam; o destino fica neste PC. Na variável de ambiente, separados por `;`.
+    pc_apps: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Contagem do desligamento (o Windows avisa na tela durante ela); o app pode cancelar antes.
+    pc_shutdown_delay_seconds: int = Field(default=30, ge=10, le=300)
+
+    @field_validator("pc_apps", mode="before")
+    @classmethod
+    def _split_pc_apps(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(";") if part.strip()]
+        return value
 
     @field_validator("tv_cleanup_keep", mode="before")
     @classmethod

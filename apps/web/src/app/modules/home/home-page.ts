@@ -11,6 +11,7 @@ import { RouterLink } from '@angular/router';
 import { canUseModule } from '../../core/auth/guest-home';
 import { ModulePrefs, WidgetPref } from '../../core/modules/module-prefs';
 import { ModuleDefinition, ModuleRegistry } from '../../core/modules/module-registry';
+import { PcAvailability } from '../../core/modules/pc-availability';
 import { SessionState } from '../../core/session/session-state';
 import { HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
@@ -74,6 +75,7 @@ export class HomePage {
   protected readonly loading = this.statusPort.loading;
   private readonly prefs = inject(ModulePrefs);
   private readonly session = inject(SessionState);
+  private readonly pcAvailability = inject(PcAvailability);
   protected readonly registry = inject(ModuleRegistry);
 
   private readonly editButton = viewChild<ElementRef<HTMLButtonElement>>('editButton');
@@ -81,6 +83,9 @@ export class HomePage {
   constructor() {
     // O estado da casa só é consultado enquanto a Início está na tela: o acompanhamento acaba com o componente.
     inject(DestroyRef).onDestroy(this.statusPort.watch());
+    // O cartão do Controle do PC só deixa de ser "Em Breve" quando a casa tem um computador com o controle ligado. Só quem
+    // pode usar o módulo pergunta: para as outras contas a API recusaria, e o cartão segue como planejado.
+    if (this.canUsePc()) void this.pcAvailability.refresh();
   }
 
   protected readonly editing = signal(false);
@@ -183,11 +188,16 @@ export class HomePage {
 
   private canSeeModule(id: string): boolean {
     if (!this.session.isGuest()) return true;
-    if (this.registry.find(id)?.status === 'soon') {
+    const module = this.registry.find(id);
+    if (module && this.registry.statusOf(module) === 'soon') {
       return GUEST_PLANNED_MODULES.includes(id);
     }
     const permissions = this.session.knownPermissions();
     return permissions !== null && canUseModule('guest', permissions, id);
+  }
+
+  private canUsePc(): boolean {
+    return canUseModule(this.session.role(), this.session.knownPermissions(), 'pc');
   }
 
   /** Módulos liberados vêm primeiro; os três planejados ficam no fim, sempre na mesma ordem. */

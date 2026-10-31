@@ -186,7 +186,7 @@ describe('PeoplePermissionsSheet', () => {
     const { el, flip, button, save } = await render({ ...GUEST, permissions: ['module:training'] });
     await flip('Usar o Treino');
     expect(button('Salvar').disabled).toBe(true);
-    expect(el.querySelector('.summary')?.textContent).toContain('Ligue ao menos a TV ou o Treino');
+    expect(el.querySelector('.summary')?.textContent).toContain('Ligue ao menos um módulo');
     await save();
     expect(api.setPermissions).not.toHaveBeenCalled();
   });

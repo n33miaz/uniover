@@ -2,6 +2,7 @@ import { permissionLabels } from './settings-titles';
 
 export const TV_MODULE = 'module:tv';
 export const TRAINING_MODULE = 'module:training';
+export const PC_MODULE = 'module:pc';
 
 /** As ações da TV: cada uma só vale com o módulo da TV (a API recusa a lista que traga uma sem ele). */
 export const TV_ACTIONS = [
@@ -13,9 +14,9 @@ export const TV_ACTIONS = [
 ] as const;
 
 /** O catálogo fechado de permissões da API, na ordem em que ela o devolve (a mesma ordem vale para o que a tela envia). */
-export const CATALOG: readonly string[] = [TV_MODULE, ...TV_ACTIONS, TRAINING_MODULE];
+export const CATALOG: readonly string[] = [TV_MODULE, ...TV_ACTIONS, TRAINING_MODULE, PC_MODULE];
 
-const MODULES: readonly string[] = [TV_MODULE, TRAINING_MODULE];
+const MODULES: readonly string[] = [TV_MODULE, TRAINING_MODULE, PC_MODULE];
 
 /** Modelo "só controlar a TV": o mesmo que a API concede a um convite sem lista (a TV inteira, menos editar atalhos). */
 export const TV_CONTROL_ONLY: readonly string[] = [
@@ -117,7 +118,7 @@ export function permissionSummary(permissions: readonly string[]): string {
 
 /** O aviso de quando nada está ligado; aparece no lugar do resumo e é a razão de "Gerar convite" e "Salvar" ficarem apagados. */
 export function noModuleText(): string {
-  return $localize`:@@settings.people.no-module:Ligue ao menos a TV ou o Treino. Para tirar todo o acesso, revogue a pessoa.`;
+  return $localize`:@@settings.people.no-module:Ligue ao menos um módulo. Para tirar todo o acesso, revogue a pessoa.`;
 }
 
 /** A frase de cada interruptor, em linguagem de gente (os rótulos curtos do resumo ficam em `permissionLabels`). */
@@ -137,6 +138,8 @@ export function permissionOptionLabel(permission: string): string {
       return $localize`:@@settings.people.option.tv-history:Ver o histórico`;
     case TRAINING_MODULE:
       return $localize`:@@settings.people.option.training:Usar o Treino`;
+    case PC_MODULE:
+      return $localize`:@@settings.people.option.pc:Controlar o PC`;
     default:
       return permission;
   }

@@ -18,7 +18,7 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("identity")
-                .HasAnnotation("ProductVersion", "10.0.13")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -160,7 +160,7 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
 
                     b.ToTable("guest_invites", "identity", t =>
                         {
-                            t.HasCheckConstraint("ck_guest_invites_permissions", "cardinality(permissions) > 0 AND permissions <@ ARRAY['module:tv', 'tv:control', 'tv:power', 'tv:launch', 'tv:edit-shortcuts', 'tv:history', 'module:training']::text[]");
+                            t.HasCheckConstraint("ck_guest_invites_permissions", "cardinality(permissions) > 0 AND permissions <@ ARRAY['module:tv', 'tv:control', 'tv:power', 'tv:launch', 'tv:edit-shortcuts', 'tv:history', 'module:training', 'module:pc']::text[]");
                         });
                 });
 
@@ -580,7 +580,7 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
 
                     b.ToTable("user_grants", "identity", t =>
                         {
-                            t.HasCheckConstraint("ck_user_grants_permission", "permission IN ('module:tv', 'tv:control', 'tv:power', 'tv:launch', 'tv:edit-shortcuts', 'tv:history', 'module:training')");
+                            t.HasCheckConstraint("ck_user_grants_permission", "permission IN ('module:tv', 'tv:control', 'tv:power', 'tv:launch', 'tv:edit-shortcuts', 'tv:history', 'module:training', 'module:pc')");
                         });
                 });
 

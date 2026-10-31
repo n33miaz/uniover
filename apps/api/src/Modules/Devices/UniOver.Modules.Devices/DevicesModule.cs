@@ -15,6 +15,7 @@ using UniOver.Modules.Devices.Features.DenyPairing;
 using UniOver.Modules.Devices.Features.GetModuleInfo;
 using UniOver.Modules.Devices.Features.ListAgents;
 using UniOver.Modules.Devices.Features.Outages;
+using UniOver.Modules.Devices.Features.PcControl;
 using UniOver.Modules.Devices.Features.PollPairing;
 using UniOver.Modules.Devices.Features.RemoteCare;
 using UniOver.Modules.Devices.Features.RevokeAgent;
@@ -85,6 +86,12 @@ public static class DevicesModule
         services.AddScoped<RemoteCareResolver>();
         services.AddScoped<AgentLogsHandler>();
         services.AddScoped<AgentMaintenanceHandler>();
+
+        // Controle do PC: os favoritos que cada agente anunciou ficam em memória (o agente os manda a cada conexão).
+        services.AddSingleton<PcAppsStore>();
+        services.AddScoped<IAgentMessageHandler, PcAgentMessageHandler>();
+        services.AddScoped<PcAgentResolver>();
+        services.AddScoped<PcControlHandler>();
         services.AddAuthorizationBuilder().AddPolicy(PairingPolicies.ApproveOwn, PairingPolicies.Configure);
         return services;
     }
@@ -106,6 +113,7 @@ public static class DevicesModule
         group.MapAgentAlerts();
         group.MapAgentLogs();
         group.MapAgentMaintenance();
+        endpoints.MapPcControl();
         return endpoints;
     }
 }

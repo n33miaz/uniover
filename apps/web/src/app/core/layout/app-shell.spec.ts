@@ -47,7 +47,12 @@ const routes = [
 ];
 
 describe('AppShell', () => {
-  beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter(routes)] }));
+  beforeEach(() => {
+    // Os arquivos de teste de um mesmo trabalhador dividem o `localStorage`: a dica de papel e de permissões que outro
+    // arquivo deixou (um convidado sem o Treino, por exemplo) mudaria o que a casca mostra e para onde os guardas levam.
+    localStorage.clear();
+    TestBed.configureTestingModule({ providers: [provideRouter(routes)] });
+  });
 
   const root = (harness: RouterTestingHarness) => harness.routeNativeElement as HTMLElement;
 

@@ -11,6 +11,14 @@ from uniover_agent.core.envelope_gate import Accepted, EnvelopeGate, GateResult,
 from uniover_agent.core.envelopes import INVALID_MESSAGE, EnvelopeFactory
 from uniover_agent.core.handle_command import HandleCommand, Handler
 from uniover_agent.core.pair_agent import PairAgent, PairedAgent
+from uniover_agent.core.pc import (
+    PC_CONTROL_CAPABILITY,
+    PC_SILENT_TYPES,
+    PcApp,
+    parse_favorites,
+    pc_apps_announcer,
+    pc_handlers,
+)
 from uniover_agent.core.process_message import ProcessMessage
 from uniover_agent.core.redaction import redact, redact_line
 from uniover_agent.core.remote_care import (
@@ -78,6 +86,8 @@ __all__ = [
     "LOGS_REQUEST_TYPE",
     "MAINTENANCE_CAPABILITY",
     "MAINTENANCE_TYPE",
+    "PC_CONTROL_CAPABILITY",
+    "PC_SILENT_TYPES",
     "POWER_OFF_CAPABILITY",
     "REVOKED_MESSAGE",
     "TV_NOT_PAIRED",
@@ -104,6 +114,7 @@ __all__ = [
     "PackageLauncher",
     "PairAgent",
     "PairedAgent",
+    "PcApp",
     "PowerOffResult",
     "ProcessMessage",
     "Rejected",
@@ -131,6 +142,9 @@ __all__ = [
     "agent_maintenance_handler",
     "describe_apps",
     "is_protected",
+    "parse_favorites",
+    "pc_apps_announcer",
+    "pc_handlers",
     "redact",
     "redact_line",
     "tv_app_launch_handler",

@@ -84,6 +84,9 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         "ADB_PULL_TIMEOUT_SECONDS",
         "ICONS_DIR",
         "TV_CLEANUP_KEEP",
+        "PC_CONTROL",
+        "PC_APPS",
+        "PC_SHUTDOWN_DELAY_SECONDS",
         "UPDATE_DRILL",
         "UPDATE_SOURCE_URL",
     ):
