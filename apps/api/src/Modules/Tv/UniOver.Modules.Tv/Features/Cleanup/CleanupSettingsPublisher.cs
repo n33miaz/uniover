@@ -24,13 +24,19 @@ internal sealed class CleanupSettingsPublisher(
     /// </summary>
     public const string LightSettingsCapability = "tv.light-settings.v1";
 
+    /// <summary>
+    /// Quem a anuncia fecha os apps de fundo no Modo Foco. Mesma razão da capacidade acima: o campo novo só vai a quem
+    /// o entende, e o agente só o recebe verdadeiro com o Modo Foco ligado nesta TV.
+    /// </summary>
+    public const string FocusClosesBackgroundCapability = "tv.focus-closes-background.v1";
+
     public async Task PublishAsync(string? agentSlug = null, CancellationToken cancellationToken = default)
     {
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TvDbContext>();
         var tvs = await db.Tvs.AsNoTracking()
             .Where(tv => agentSlug == null || tv.AgentSlug == agentSlug)
-            .Select(tv => new { tv.AgentSlug, tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled, tv.RestrictedBackgroundPackages })
+            .Select(tv => new { tv.AgentSlug, tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled, tv.RestrictedBackgroundPackages, tv.FocusClosesBackground })
             .ToListAsync(cancellationToken);
         var targets = tvs
             .Select(tv => (Tv: tv, Info: presence.Get(tv.AgentSlug)))
@@ -46,16 +52,9 @@ internal sealed class CleanupSettingsPublisher(
         foreach (var (tv, info) in targets)
         {
             var body = info!.Capabilities.Contains(LightSettingsCapability, StringComparer.Ordinal)
-                ? JsonSerializer.SerializeToElement(new
-                {
-                    lightEnabled = light,
-                    deepEnabled = deep,
-                    deepThresholdMb = threshold,
-                    closeBackgroundApps = tv.AllowBackgroundAppClosing,
-                    focusEnabled = tv.FocusModeEnabled,
-                    shortAnimationsEnabled = tv.ShortAnimationsEnabled,
-                    restrictedPackages = ReadPackages(tv.RestrictedBackgroundPackages),
-                })
+                ? LightBody(tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled,
+                    tv.RestrictedBackgroundPackages, tv.FocusClosesBackground, light, deep, threshold,
+                    info.Capabilities.Contains(FocusClosesBackgroundCapability, StringComparer.Ordinal))
                 : JsonSerializer.SerializeToElement(new
                 {
                     lightEnabled = light,
@@ -65,6 +64,26 @@ internal sealed class CleanupSettingsPublisher(
                 });
             await sender.PostAsync(tv.AgentSlug, new TvMessage("tv.cleanup.config.v1", body), cancellationToken);
         }
+    }
+
+    private static JsonElement LightBody(
+        bool closeBackgroundApps, bool focus, bool shortAnimations, string packages, bool focusCloses,
+        bool light, bool deep, int threshold, bool knowsFocusCloses)
+    {
+        var fields = new Dictionary<string, object>
+        {
+            ["lightEnabled"] = light,
+            ["deepEnabled"] = deep,
+            ["deepThresholdMb"] = threshold,
+            ["closeBackgroundApps"] = closeBackgroundApps,
+            ["focusEnabled"] = focus,
+            ["shortAnimationsEnabled"] = shortAnimations,
+            ["restrictedPackages"] = ReadPackages(packages),
+        };
+        // Só o Modo Foco ligado nesta TV pode mandar fechar apps: desligado, o campo vai falso.
+        if (knowsFocusCloses)
+            fields["focusClosesBackground"] = focus && focusCloses;
+        return JsonSerializer.SerializeToElement(fields);
     }
 
     private static string[] ReadPackages(string json)

@@ -41,6 +41,12 @@ public sealed class ConfiguredTv
 
     public bool ShortAnimationsEnabled { get; private set; }
 
+    /// <summary>
+    /// Com o Modo Foco ligado nesta TV, fecha os outros apps em segundo plano enquanto um stream está em primeiro
+    /// plano. Só vale com <see cref="FocusModeEnabled"/>; nunca é enviado ao agente com o foco desligado.
+    /// </summary>
+    public bool FocusClosesBackground { get; private set; }
+
     /// <summary>Lista fechada de apps escolhidos para a restrição; nunca inclui pacote do sistema por confiança no cliente.</summary>
     public string RestrictedBackgroundPackages { get; private set; } = "[]";
 
@@ -112,15 +118,18 @@ public sealed class ConfiguredTv
     }
 
     public bool SetLightSettings(bool? focusModeEnabled, bool? shortAnimationsEnabled,
-        IReadOnlyList<string>? restrictedPackages, Guid updatedBy, DateTimeOffset now)
+        IReadOnlyList<string>? restrictedPackages, Guid updatedBy, DateTimeOffset now, bool? focusClosesBackground = null)
     {
         var packages = restrictedPackages is null ? RestrictedBackgroundPackages : JsonSerializer.Serialize(
             restrictedPackages.Where(CanRestrictInBackground).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
         var focus = focusModeEnabled ?? FocusModeEnabled;
         var animations = shortAnimationsEnabled ?? ShortAnimationsEnabled;
-        if (focus == FocusModeEnabled && animations == ShortAnimationsEnabled && packages == RestrictedBackgroundPackages)
+        var closes = focusClosesBackground ?? FocusClosesBackground;
+        if (focus == FocusModeEnabled && animations == ShortAnimationsEnabled && packages == RestrictedBackgroundPackages
+            && closes == FocusClosesBackground)
             return false;
         FocusModeEnabled = focus;
+        FocusClosesBackground = closes;
         ShortAnimationsEnabled = animations;
         RestrictedBackgroundPackages = packages;
         UpdatedAt = now;

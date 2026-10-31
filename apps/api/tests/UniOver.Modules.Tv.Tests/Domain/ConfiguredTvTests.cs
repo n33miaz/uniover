@@ -121,6 +121,20 @@ public class ConfiguredTvTests
         tv.BackgroundPackages().Should().Equal("com.exemplo.a", "com.exemplo.b");
     }
 
+    [Fact]
+    public void FocusClosesBackground_StartsOff_AndOnlyAChangeCounts()
+    {
+        var tv = ConfiguredTv.CreateDefault("TV", "pc-casa", Admin, Now);
+        tv.FocusClosesBackground.Should().BeFalse();
+
+        tv.SetLightSettings(null, null, null, Admin, Now.AddMinutes(1), false).Should().BeFalse();
+        tv.SetLightSettings(true, null, null, Admin, Now.AddMinutes(2), true).Should().BeTrue();
+        (tv.FocusModeEnabled, tv.FocusClosesBackground).Should().Be((true, true));
+        tv.SetLightSettings(null, null, null, Admin, Now.AddMinutes(3), true).Should().BeFalse();
+        tv.SetLightSettings(null, null, null, Admin, Now.AddMinutes(4), false).Should().BeTrue();
+        tv.FocusClosesBackground.Should().BeFalse();
+    }
+
     [Theory]
     [InlineData("android")]
     [InlineData("com.android.systemui")]

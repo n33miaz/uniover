@@ -282,6 +282,12 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<bool>("FocusClosesBackground")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("focus_closes_background");
+
                     b.Property<bool>("FocusModeEnabled")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
