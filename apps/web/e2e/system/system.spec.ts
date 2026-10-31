@@ -3,7 +3,7 @@ import { IdentityMock, OWNER, mockIdentityApi } from '../auth/identity-mock';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import { expectNoA11yViolations, settle, smallTargets } from '../screens/screen-helpers';
 import { MockTv, TvMock, installFakeEventSource, mockTvApi } from '../tv/tv-mock';
-import { MockComputer, SystemMock, mockSystemApi } from './system-mock';
+import { MockComputer, MockDiagnostic, SystemMock, mockSystemApi } from './system-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -114,6 +114,91 @@ const row = (page: Page, name: string) =>
   page.locator('ul.tvs button.ui-row', { has: page.getByText(name, { exact: true }) });
 const sheet = (page: Page) => page.locator('app-tv-edit-sheet dialog');
 const requestsTo = (method: string) => tv.requests.filter((r) => r.method === method);
+
+/** Três ocorrências de um computador de casa: um erro repetido, um aviso e um reparo, com horas relativas a agora. */
+function seedDiagnostics(): void {
+  const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  const base = { agentId: '00000000-0000-4000-8000-000000000100', agentName: 'PC de casa' };
+  const items: MockDiagnostic[] = [
+    {
+      ...base,
+      id: 'e1',
+      at: ago(4),
+      kind: 'background.failed',
+      severity: 'error',
+      component: 'tv.session',
+      detail: 'TimeoutError em session.py:watch; tarefa reiniciada',
+      count: 3,
+    },
+    {
+      ...base,
+      id: 'e2',
+      at: ago(35),
+      kind: 'update.rejected',
+      severity: 'warn',
+      component: null,
+      detail: 'Atualização recusada: o pacote não conferiu com o commit.',
+      count: 1,
+    },
+    {
+      ...base,
+      id: 'e3',
+      at: ago(180),
+      kind: 'repair.done',
+      severity: 'info',
+      component: null,
+      detail: 'Início automático refeito.',
+      count: 1,
+    },
+  ];
+  system.diagnostics.push(...items);
+}
+
+const errors = (page: Page) => page.locator('app-system-agent-errors-section');
+
+test.describe('Configurações > Sistema > Erros dos Agentes', () => {
+  for (const scheme of SCHEMES) {
+    test(`lista o que o agente contou, com gravidade em palavra, no tema ${scheme}`, async ({
+      page,
+    }, info) => {
+      seedPaired();
+      seedDiagnostics();
+      await open(page, scheme);
+
+      await expect(
+        errors(page).getByRole('heading', { level: 2, name: 'Erros dos Agentes' }),
+      ).toBeVisible();
+      const rows = errors(page).locator('li.event');
+      await expect(rows).toHaveCount(3);
+      await expect(rows.nth(0)).toContainText('Tarefa de fundo falhou');
+      await expect(rows.nth(0)).toContainText('PC de casa · tv.session');
+      await expect(rows.nth(0)).toContainText('há 4 min · 3 vezes');
+      await expect(rows.nth(0).locator('.chip')).toHaveText('Erro');
+      await expect(rows.nth(1).locator('.chip')).toHaveText('Aviso');
+      await expect(rows.nth(2).locator('.chip')).toHaveText('Info');
+      await check(page, info, 'system-agent-errors', scheme);
+    });
+  }
+
+  test('sem erros, diz que não há nenhum nos últimos 7 dias', async ({ page }) => {
+    seedPaired();
+    await open(page);
+    await expect(errors(page).getByText('Nenhum erro nos últimos 7 dias.')).toBeVisible();
+    await expect(errors(page).locator('li.event')).toHaveCount(0);
+  });
+
+  test('se a leitura falha, mostra o erro e deixa tentar de novo', async ({ page }) => {
+    seedPaired();
+    seedDiagnostics();
+    system.failDiagnostics = 1;
+    await open(page);
+    await expect(errors(page).getByRole('alert')).toHaveText(
+      'Não foi possível carregar os erros agora.',
+    );
+    await errors(page).getByRole('button', { name: 'Tentar de novo' }).click();
+    await expect(errors(page).locator('li.event')).toHaveCount(3);
+  });
+});
 
 test.describe('Configurações > Sistema > TVs', () => {
   test('edita o limite pelo app após confirmar com a passkey', async ({ page, browserName }) => {

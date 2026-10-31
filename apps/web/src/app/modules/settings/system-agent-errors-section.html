@@ -1,0 +1,73 @@
+<section class="errors ui-rise" aria-labelledby="agent-errors-title">
+  <div class="errors-head">
+    <h2
+      id="agent-errors-title"
+      class="ui-section-label"
+      i18n="@@settings.system.agent-errors.title"
+    >
+      Erros dos Agentes
+    </h2>
+    <button
+      type="button"
+      class="secondary ui-btn"
+      (click)="load()"
+      i18n="@@settings.system.agent-errors.refresh"
+    >
+      Atualizar
+    </button>
+  </div>
+
+  @if (diagnostics(); as read) {
+    @if (read.items.length === 0) {
+      <div class="empty">
+        <app-settings-glyph name="checkCircle" />
+        <p i18n="@@settings.system.agent-errors.empty">
+          Nenhum erro nos últimos {{ read.retentionDays }} dias.
+        </p>
+      </div>
+    } @else {
+      <ul class="events ui-group">
+        @for (event of read.items; track event.id) {
+          <li class="event ui-row">
+            <span
+              class="ui-tile"
+              [class.bad]="event.severity === 'error'"
+              [class.warn]="event.severity === 'warn'"
+            >
+              <app-settings-glyph [name]="glyph(event)" />
+            </span>
+            <span class="ui-row-text">
+              <span class="ui-row-title">{{ title(event) }}</span>
+              <span class="ui-row-sub">{{ where(event) }}</span>
+              <span class="detail">{{ event.detail }}</span>
+              <span class="ui-row-sub when">{{ when(event) }}</span>
+            </span>
+            <span
+              class="chip ui-chip"
+              [class.bad]="event.severity === 'error'"
+              [class.warn]="event.severity === 'warn'"
+              >{{ severity(event) }}</span
+            >
+          </li>
+        }
+      </ul>
+    }
+  } @else if (failed()) {
+    <p class="empty bad" role="alert" i18n="@@settings.system.agent-errors.failed">
+      Não foi possível carregar os erros agora.
+    </p>
+    <button
+      type="button"
+      class="retry secondary ui-btn"
+      (click)="load()"
+      i18n="@@settings.system.agent-errors.retry"
+    >
+      Tentar de novo
+    </button>
+  } @else {
+    <p class="loading" role="status">
+      <span class="ui-spinner" aria-hidden="true"></span>
+      <span i18n="@@settings.system.agent-errors.loading">Carregando…</span>
+    </p>
+  }
+</section>

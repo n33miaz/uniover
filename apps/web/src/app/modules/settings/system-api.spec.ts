@@ -194,4 +194,36 @@ describe('SystemApi', () => {
     http.expectOne('/api/v1/tv/tvs/tv-2/members').flush({});
     await expect(read).rejects.toThrow();
   });
+
+  it('reads what the agents reported about themselves, asking for the newest 50 by default', async () => {
+    const read = api.agentDiagnostics();
+    const request = http.expectOne('/api/v1/devices/agents/diagnostics?limit=50');
+    expect(request.request.method).toBe('GET');
+    request.flush({
+      retentionDays: 7,
+      items: [
+        {
+          id: 'e1',
+          agentId: 'a1',
+          agentName: 'PC da sala',
+          at: '2026-10-31T12:00:00Z',
+          kind: 'background.failed',
+          severity: 'error',
+          component: 'tv.session',
+          detail: 'TimeoutError',
+          count: 3,
+        },
+      ],
+    });
+    const result = await read;
+    expect(result.retentionDays).toBe(7);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ severity: 'error', count: 3, component: 'tv.session' });
+  });
+
+  it('refuses a diagnostics list in an unexpected format', async () => {
+    const read = api.agentDiagnostics(10);
+    http.expectOne('/api/v1/devices/agents/diagnostics?limit=10').flush({});
+    await expect(read).rejects.toThrow();
+  });
 });

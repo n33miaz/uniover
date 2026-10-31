@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import type { components } from '../../core/api/generated/schema';
 import { APP_CONFIG } from '../../core/config/app-config';
+import { AgentDiagnostics, readAgentDiagnostics } from './agent-diagnostics';
 
 /** A configuração da TV padrão, como a API a entrega (tipo gerado do OpenAPI). */
 export type TvConfig = components['schemas']['TvConfigResponse'];
@@ -160,6 +161,18 @@ export class SystemApi {
       connected,
       lastSeenAt: lastSeenAt ?? null,
     }));
+  }
+
+  /** O que os próprios computadores contaram sobre si nos últimos dias, do mais novo ao mais velho (só o administrador). */
+  async agentDiagnostics(limit = 50): Promise<AgentDiagnostics> {
+    const dto = await firstValueFrom(
+      this.http.get<components['schemas']['AgentDiagnosticsResponse']>(
+        `${APP_CONFIG.apiBase}/v1/devices/agents/diagnostics`,
+        { params: { limit } },
+      ),
+    );
+    if (!dto || !Array.isArray(dto.items)) throw new Error('Lista de erros em formato inesperado.');
+    return readAgentDiagnostics(dto);
   }
 
   /** O endpoint de saúde é público e não lê dados da conta. */
