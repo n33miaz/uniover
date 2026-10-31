@@ -82,6 +82,10 @@ Tudo isto vive em `UniOver.BuildingBlocks.Web`; o Host só compõe.
   aplicam a política com `.RequireRateLimiting(...)`.
 - **IP real atrás de proxy**: `ForwardedHeaders:Enabled` vem **desligado**; ligue só onde há proxy confiável
   (o limite por IP depende disso).
+- **Saúde**: `/health/live` nunca toca no banco (o predicado vazio garante: nenhuma verificação roda) e é a sonda do monitor de
+  5 em 5 min e do Render; `/health/version` devolve o commit publicado; `/health/ready` faz `SELECT 1` (resultado guardado por 30 s,
+  falha por 5 s, limite de 12 por minuto por IP) e responde só 200 ou 503. **Não aponte um monitor de 5 min para `/health/ready`**:
+  manteria o Neon gratuito acordado e estouraria as horas de compute. O passo a passo está no planejamento ("manter no ar").
 - **Cabeçalhos de segurança**: CSP estrita sem `unsafe-inline` e com nonce por requisição (veja
   [`adr/0014`](../../adr/0014-csp-com-nonce.md)), HSTS fora de Development, `nosniff`, Referrer-Policy,
   Permissions-Policy, COOP e `Cache-Control: no-store` em `/api/*`.
