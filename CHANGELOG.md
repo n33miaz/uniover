@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.25.0](https://github.com/n33miaz/uniover/compare/v0.24.0...v0.25.0) (2026-10-31)
+
+
+### Features
+
+* **web:** keep the tv green until it is sure
+* **web:** redo the tv top bar and pc off seal
+* **web:** add quick chips to the power sheet
+* **web:** add tv shaped skeletons
+* **web:** show a sleeping remote as green
+
+
+### Bug Fixes
+
+* **web:** show the initial on blank app icons
+
 ## [0.24.0](https://github.com/n33miaz/uniover/compare/v0.23.0...v0.24.0) (2026-10-31)
 
 
