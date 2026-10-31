@@ -9,6 +9,11 @@ import { CreditsPage } from './credits.page';
 const LAZY_LOAD_TIMEOUT_MS = 20_000;
 
 describe('credits route', () => {
+  // A dica de papel e de permissões que outro arquivo do mesmo trabalhador deixou no `localStorage` (um convidado sem o
+  // Treino) faria o guarda do módulo levar à Início, que a casca deste teste não provê.
+  beforeEach(() => localStorage.clear());
+  afterEach(() => localStorage.clear());
+
   const shell = routes.find((route) => route.path === '')!;
   const settings = (shell.children ?? []).find((child) => child.path === 'ajustes')!;
   const children = settings.children ?? [];
