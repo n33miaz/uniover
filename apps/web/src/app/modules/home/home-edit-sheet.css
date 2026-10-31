@@ -102,9 +102,10 @@ h2:focus {
 
 .row {
   display: grid;
-  grid-template-areas: 'grip ico name moves show';
-  /* Todos os alvos de toque têm 44 px; o ícone encolhe um pouco para o nome seguir inteiro numa linha nos 390 px. */
-  grid-template-columns: var(--tap) 32px minmax(0, 1fr) auto 52px;
+  /* A alça de arrastar é o jeito de mover; as setas existem só para teclado e leitor de tela (ver .moves). */
+  position: relative;
+  grid-template-areas: 'grip ico name show';
+  grid-template-columns: var(--tap) 36px minmax(0, 1fr) 52px;
   align-items: center;
   gap: 0;
   padding: var(--space-1) var(--space-1) var(--space-1) 0;
@@ -139,10 +140,10 @@ h2:focus {
   touch-action: none;
 }
 
-/* O mesmo ícone de app dos cartões da Início, em 32 px: marca verde nos módulos que abrem, cinza nos "Em Breve". */
+/* O mesmo ícone de app dos cartões da Início, em 36 px: marca verde nos módulos que abrem, cinza nos "Em Breve". */
 .ico {
   grid-area: ico;
-  --module-icon-size: 32px;
+  --module-icon-size: 36px;
   --module-icon-radius: var(--radius-sm);
   --a-on-module-app: #fff;
   --module-app-bg: var(--a-accent);
@@ -192,9 +193,31 @@ h2:focus {
   white-space: nowrap;
 }
 
+/* Setas só para acessibilidade: fora da vista e do layout, mas no foco do teclado e do leitor de tela. Ao receber o foco por
+   teclado ficam visíveis, por cima da linha, para quem navega sem ver onde está. */
 .moves {
-  grid-area: moves;
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 60px;
   display: flex;
+  align-items: center;
+  width: 1px;
+  height: 1px;
+  margin: auto 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.moves:has(:focus-visible) {
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip-path: none;
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-2);
 }
 
 /* O interruptor ganha a área toda do rótulo: 44 px de altura, sem texto ao lado. */
