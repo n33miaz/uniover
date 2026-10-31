@@ -208,6 +208,8 @@ test.describe('início e navegação', () => {
         copyable: read(copyable),
         copyableChild: read(copyableChild),
         bodyTouchCallout,
+        // O WebKit de bancada do Playwright não conhece a propriedade (só o Safari do aparelho): nele não há o que medir.
+        tapHighlightKnown: CSS.supports('-webkit-tap-highlight-color', 'transparent'),
       };
       input.remove();
       textarea.remove();
@@ -230,7 +232,9 @@ test.describe('início e navegação', () => {
       expect(allowed).toMatchObject({ userSelect: 'text', webkitUserSelect: 'text' });
     }
     // O realce azul do toque some em toda a interface (transparente: o navegador devolve rgba com alfa 0).
-    for (const element of [styles.text, styles.button, styles.link, styles.input]) {
+    for (const element of styles.tapHighlightKnown
+      ? [styles.text, styles.button, styles.link, styles.input]
+      : []) {
       expect(element.tapHighlight).toMatch(/^(transparent|rgba\(0, 0, 0, 0\))$/);
     }
     if (styles.bodyTouchCallout) {
