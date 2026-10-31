@@ -250,21 +250,52 @@ async def test_the_light_settings_loop_calls_the_closer_only_while_focus_is_acti
     )
     settings._focus_enabled = True
 
-    adb.media_playing_value = False
+    adb.media_owners = frozenset()
     await settings._check_focus()
     assert stopped(adb) == []  # sem mídia tocando não há foco
 
-    adb.media_playing_value = True
+    adb.media_owners = frozenset({STREAM})
     await settings._check_focus()
     assert stopped(adb) == [GAME]
 
-    adb.media_playing_value = False
+    adb.media_owners = frozenset()
     clock.advance(181)
     await settings._check_focus()  # o foco terminou: o estado do fechador volta ao início
-    adb.media_playing_value = True
+    adb.media_owners = frozenset({STREAM})
     clock.advance(1)
     await settings._check_focus()
     assert stopped(adb) == [GAME, GAME]
+
+
+async def test_stream_in_front_browsing_while_another_app_plays_closes_nothing() -> None:
+    # Netflix na frente, mas quem toca é o Spotify: ninguém está assistindo, então não há foco.
+    adb = tv(STREAM, MUSIC, GAME)
+    clock = FakeClock()
+    holds: list[bool] = []
+    closer = FocusBackgroundCloser(adb, clock, lambda: STREAM)
+    closer.configure(True)
+    settings = TvLightSettings(
+        adb,
+        clock,
+        holds.append,
+        lambda: STREAM,
+        on_focus=closer.on_focus,
+        on_focus_end=closer.reset,
+    )
+    settings._focus_enabled = True
+    adb.media_owners = frozenset({MUSIC})
+
+    await settings._check_focus()
+
+    assert settings.focus_active is False
+    assert holds == []
+    assert stopped(adb) == []
+
+    # Quando a sessão que toca passa a ser a do app da frente, o foco liga e o fechamento age.
+    adb.media_owners = frozenset({STREAM, MUSIC})
+    await settings._check_focus()
+    assert settings.focus_active is True
+    assert sorted(stopped(adb)) == sorted([MUSIC, GAME])
 
 
 async def test_the_app_that_just_came_to_the_front_is_never_closed() -> None:
@@ -388,7 +419,7 @@ async def test_media_in_an_app_outside_the_catalog_starts_neither_focus_nor_clos
         on_focus_end=closer.reset,
     )
     settings._focus_enabled = True
-    adb.media_playing_value = True
+    adb.media_owners = frozenset({GAME})
 
     await settings._check_focus()
 

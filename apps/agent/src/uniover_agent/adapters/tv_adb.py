@@ -47,6 +47,7 @@ from uniover_agent.adapters.tv_adb_parsing import (
     parse_package_list,
     parse_package_paths,
     parse_package_versions,
+    parse_playback_sessions,
     parse_running_packages,
     parse_setting_value,
     quote_for_device_shell,
@@ -333,16 +334,29 @@ class AdbTv:
             raise AdbCommandFailed("a TV não informou os processos")
         return packages
 
-    async def media_playing(self) -> bool:
-        """Lê a mídia sem aceitar uma saída incompleta como se fosse silêncio."""
+    async def _playback_sessions(self) -> list[tuple[str | None, int]]:
+        """As sessões de mídia da TV; uma saída incompleta nunca vale como silêncio."""
         output = await self._locked_shell("dumpsys media_session")
         self._require_success(output, "a TV não informou a sessão de mídia")
-        states = [
-            int(value) for value in re.findall(r"PlaybackState[^\n]*state=(\d+)", output.text)
-        ]
-        if not states or any(state not in _PLAYBACK_STATES for state in states):
+        sessions = parse_playback_sessions(output.text)
+        if not sessions or any(state not in _PLAYBACK_STATES for _, state in sessions):
             raise AdbCommandFailed("a TV informou uma sessão de mídia ambígua")
-        return _PLAYBACK_PLAYING in states
+        return sessions
+
+    async def media_playing(self) -> bool:
+        """Há alguma sessão tocando, de qualquer app?"""
+        return any(state == _PLAYBACK_PLAYING for _, state in await self._playback_sessions())
+
+    async def playing_media_packages(self) -> frozenset[str]:
+        """Os apps donos de uma sessão tocando; sessão tocando sem dono é leitura ambígua."""
+        owners: set[str] = set()
+        for package, state in await self._playback_sessions():
+            if state != _PLAYBACK_PLAYING:
+                continue
+            if package is None:
+                raise AdbCommandFailed("a TV informou uma sessão de mídia sem dono")
+            owners.add(package)
+        return frozenset(owners)
 
     async def read_volume(self) -> int | None:
         """O volume de música (0 a 100) pelo shell da TV; `None` se nenhum comando o informa.

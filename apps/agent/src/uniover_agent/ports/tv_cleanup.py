@@ -50,6 +50,13 @@ class TvAdbCleanup(Protocol):
         """Há mídia tocando? Leitura ambígua ou indisponível levanta ``AdbError``."""
         ...
 
+    async def playing_media_packages(self) -> frozenset[str]:
+        """Apps donos de uma sessão de mídia tocando (vazio: nada toca).
+
+        Leitura ambígua, indisponível ou com sessão tocando sem dono levanta ``AdbError``.
+        """
+        ...
+
     async def global_setting(self, name: str) -> str | None:
         """Valor atual de uma configuração global conhecida do Android."""
         ...

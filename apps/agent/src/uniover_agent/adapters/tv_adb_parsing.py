@@ -236,6 +236,31 @@ def parse_component_packages(value: str | None) -> frozenset[str]:
     return frozenset(packages)
 
 
+# `dumpsys media_session`: cada sessão abre com "TAG pacote/TAG (userId=0)", traz `package=pacote`
+# e, mais abaixo, `state=PlaybackState {state=3, ...}` (3 = tocando).
+_SESSION_HEADER: Final = re.compile(r"\(userId=\d+\)$")
+_SESSION_PACKAGE: Final = re.compile(r"^package=(\S+)$")
+_PLAYBACK_STATE: Final = re.compile(r"PlaybackState[^\n]*?state=(\d+)")
+
+
+def parse_playback_sessions(text: str) -> list[tuple[str | None, int]]:
+    """Cada `PlaybackState` de `dumpsys media_session` com o pacote dono da sessão.
+
+    O dono é `None` quando a sessão não declarou `package=` antes do estado: quem lê trata isso
+    como dúvida, nunca como "qualquer app".
+    """
+    package: str | None = None
+    sessions: list[tuple[str | None, int]] = []
+    for line in clean_lines(text):
+        if _SESSION_HEADER.search(line):
+            package = None
+        elif (owner := _SESSION_PACKAGE.match(line)) is not None:
+            package = owner[1] if is_valid_package(owner[1]) else None
+        elif (state := _PLAYBACK_STATE.search(line)) is not None:
+            sessions.append((package, int(state[1])))
+    return sessions
+
+
 def parse_running_packages(text: str) -> frozenset[str]:
     """Pacotes com processo vivo, de `ps -A`: o nome do processo é a última coluna de cada linha.
 

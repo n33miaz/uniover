@@ -291,19 +291,22 @@ class TvLightSettings:
 
     async def _check_focus(self) -> None:
         try:
-            playing = await self._adb.media_playing()
+            owners = await self._adb.playing_media_packages()
         except AdbError:
             # Sem leitura confiável, a trégua termina: o trabalho de fundo nunca fica suspenso
             # no escuro.
             self._set_focus(False)
             return
         now = self._clock.monotonic()
-        if playing and self._foreground() in VIDEO_PACKAGES:
+        front = self._foreground()
+        # Só vale o vídeo que está na frente **e** é dono da sessão que toca: com o Netflix
+        # navegando e o Spotify tocando, ninguém está assistindo e nada pode ser fechado.
+        if front in VIDEO_PACKAGES and front in owners:
             self._last_playing = now
             if self._set_focus(True):
                 await self._warm_session()
             if self._on_focus is not None:
-                await self._on_focus(self._foreground())
+                await self._on_focus(front)
         elif self._last_playing is None or now - self._last_playing >= FOCUS_STOP_GRACE_SECONDS:
             self._set_focus(False)
 
