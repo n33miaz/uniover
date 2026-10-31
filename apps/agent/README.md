@@ -75,9 +75,29 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_AAPT_PATH` | caminho do `aapt2` (padrão: o mais novo em `%LOCALAPPDATA%\Android\Sdk\build-tools`, ou em `ANDROID_HOME`); sem ele a lista de apps segue sem ícones |
 | `UNIOVER_ICONS_DIR` | pasta do cache de ícones (padrão `%LOCALAPPDATA%\UniOver\icons`; um arquivo por pacote e versão do app, e o nome leva a versão da regra de escolha do ícone: ao mudar a regra, o que a antiga guardou é ignorado e refeito) |
 | `UNIOVER_TV_CLEANUP_KEEP` | pacotes que a limpeza da TV **nunca** fecha, além dos protegidos de fábrica (ver "Limpeza da TV"): nomes de pacote do Android separados por vírgula (`com.exemplo.app,com.outro.app`); no `agent.toml`, `tv_cleanup_keep` como lista ou como esse mesmo texto. Item fora do formato de pacote é erro de configuração e o agente não sobe |
+| `UNIOVER_PC_CONTROL` | `1` liga o controle deste PC pelo app (mouse, teclado, mídia, energia, favoritos). **Desligado por padrão**: sem isto o agente nem declara a capacidade `pc.control.v1` e recusa todo `pc.*`. Mais fácil: `uv run uniover-agent pc-control on` (grava no `agent.toml`; `off` desliga, `status` mostra) e reiniciar o agente |
+| `UNIOVER_PC_APPS` | favoritos que o app pode abrir, `Nome=destino` (programa, documento ou endereço), separados por `;`. No `agent.toml`, `pc_apps` como lista (`["Navegador=C:\...\chrome.exe", "Notas=notepad"]`). O app só recebe o nome e um identificador; o destino nunca sai do PC |
+| `UNIOVER_PC_SHUTDOWN_DELAY_SECONDS` | contagem do desligamento pedido pelo app, de 10 a 300 (padrão `30`); o Windows avisa na tela durante ela e o app pode cancelar antes do fim |
 
 Arquivo local (fora do repositório): `%LOCALAPPDATA%\UniOver\config\agent.toml`, com `api_url` e `agent_id`. Nunca
 guarda segredo.
+
+## Controle do PC
+
+Com `pc-control on` o app passa a mexer neste PC: touchpad (mover, clicar, rolar), teclado (texto e teclas especiais),
+mídia (tocar, faixa, volume, mudo), energia (bloquear, suspender, desligar com a contagem do Windows e cancelar) e os
+favoritos de `pc_apps`. Tudo é a API do Windows pelo `ctypes` (`SendInput`, `LockWorkStation`, `SetSuspendState`,
+`shutdown.exe`), sem dependência nova, e só roda no Windows. O agente continua só discando para fora: nada escuta porta.
+
+- **Desligado por padrão.** O agente se atualiza sozinho, e remotear mouse e teclado é poder demais para valer sem o dono
+  ligar neste PC. Sem `pc_control` o `hello` não traz `pc.control.v1` e a API nem oferece o módulo.
+- **Listas fechadas.** Teclas, botões, ações de mídia e de energia são as do contrato; um favorito só abre pelo
+  identificador que este PC publicou (`pc.apps.v1`).
+- **O texto digitado nunca vai para o registro** (pode ser senha). Desligar e suspender ficam no registro, sem detalhe.
+- **Suspender** responde à API antes de adormecer (o PC leva a conexão junto). Não existe aviso do Windows para a
+  suspensão (só para o desligamento): quem confirma é o app.
+- O Windows recusa a entrada simulada quando a janela em foco tem mais privilégio (UAC, um app como administrador): o
+  comando volta como `failed`.
 
 ## TV Samsung (Tizen)
 

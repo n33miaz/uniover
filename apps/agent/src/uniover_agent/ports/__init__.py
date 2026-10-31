@@ -27,6 +27,7 @@ from uniover_agent.ports.pairing import (
     PollResult,
     PollSlowDown,
 )
+from uniover_agent.ports.pc import PcInput, PcLauncher, PcPower, PcUnsupported
 from uniover_agent.ports.transport import (
     ConnectionReplaced,
     CredentialRejected,
@@ -105,6 +106,10 @@ __all__ = [
     "PairingRateLimited",
     "PairingTicket",
     "PairingUnavailable",
+    "PcInput",
+    "PcLauncher",
+    "PcPower",
+    "PcUnsupported",
     "PollApproved",
     "PollPending",
     "PollResult",

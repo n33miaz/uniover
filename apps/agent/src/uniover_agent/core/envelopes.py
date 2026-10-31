@@ -181,6 +181,14 @@ class EnvelopeFactory:
         }
         return self._build("tv.watchdog.v1", body, None)
 
+    def pc_apps(self, apps: Sequence[tuple[str, str]]) -> dict[str, Any]:
+        """`pc.apps.v1`: pares (identificador, nome) dos favoritos que este PC deixa abrir."""
+        body: dict[str, Any] = {
+            "apps": [{"id": app_id, "label": label} for app_id, label in apps],
+            "at": self._utc_now(),
+        }
+        return self._build("pc.apps.v1", body, None)
+
     def tv_apps_v2(
         self,
         apps: Sequence[tuple[str, str, AppIcon | None]],
