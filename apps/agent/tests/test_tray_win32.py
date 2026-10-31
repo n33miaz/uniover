@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from uniover_agent.adapters.tray import SharpIcon, assets_dir
+from uniover_agent.adapters.tray_assets import assets_dir
 from uniover_agent.adapters.tray_win32 import (
     SingleInstance,
     load_icon_handle,
@@ -45,7 +45,7 @@ def test_the_small_icon_size_is_one_the_icon_files_have() -> None:
 
 @windows_only
 def test_the_ico_is_loaded_at_the_exact_size_asked() -> None:
-    destroy = ctypes.windll.user32.DestroyIcon
+    destroy = ctypes.windll.user32.DestroyIcon  # type: ignore[attr-defined,unused-ignore]
     for size in (16, 20, 24, 32):
         handle = load_icon_handle(assets_dir() / "connected.ico", size)
         assert handle
@@ -59,6 +59,8 @@ def test_a_missing_ico_gives_no_handle(tmp_path: Path) -> None:
 
 @windows_only
 def test_the_icon_takes_the_exact_size_instead_of_the_default_32() -> None:
+    from uniover_agent.adapters.tray import SharpIcon  # noqa: PLC0415
+
     icon = SharpIcon("teste", Image.new("RGBA", (16, 16)))
     icon.ico_file = assets_dir() / "error-attention.ico"
     icon.icon_size = 24
@@ -75,6 +77,8 @@ def test_the_icon_takes_the_exact_size_instead_of_the_default_32() -> None:
 
 @windows_only
 def test_without_an_ico_file_the_icon_falls_back_to_pystray() -> None:
+    from uniover_agent.adapters.tray import SharpIcon  # noqa: PLC0415
+
     icon = SharpIcon("teste", Image.new("RGBA", (16, 16), (255, 0, 0, 255)))
 
     icon._assert_icon_handle()
@@ -92,6 +96,8 @@ def test_the_icon_id_sent_to_the_shell_is_fixed_and_the_structure_is_complete(
 
     sent: list[tuple[int, object]] = []
     monkeypatch.setattr(win32, "Shell_NotifyIcon", lambda code, data: sent.append((code, data)))
+    from uniover_agent.adapters.tray import SharpIcon  # noqa: PLC0415
+
     first = SharpIcon("um", Image.new("RGBA", (16, 16)))
     second = SharpIcon("dois", Image.new("RGBA", (16, 16)))
     for icon in (first, second):
