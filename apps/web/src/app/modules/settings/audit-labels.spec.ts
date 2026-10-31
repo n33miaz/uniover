@@ -65,6 +65,8 @@ const TV_ACTIONS = [
   'tv.power-off',
   'tv.cleanup',
   'tv.cleanup.setting',
+  'tv.permission.request',
+  'tv.discover',
   'tv.apps.refresh',
   'tv.shortcuts.reorder',
   'tv.shortcut.update',

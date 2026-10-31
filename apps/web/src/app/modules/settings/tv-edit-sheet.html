@@ -17,17 +17,53 @@
       />
     </div>
 
+    @if (creating() && (searching() || nearby().length > 0)) {
+      <fieldset class="group">
+        <legend class="ui-section-label" i18n="@@settings.system.tv.sheet.nearby">
+          TVs Encontradas
+        </legend>
+        @if (nearby().length > 0) {
+          <ul class="ui-group">
+            @for (row of nearby(); track row.key) {
+              <li>
+                <label class="choice ui-row">
+                  <input
+                    type="radio"
+                    name="tv-edit-computer"
+                    [value]="row.slug"
+                    [checked]="agent() === row.slug"
+                    (click)="pickNearby(row)"
+                  />
+                  <span class="ui-row-text">
+                    <span class="ui-row-title">{{ nearbyTitle(row) }}</span>
+                    <span class="ui-row-sub">{{ row.computerName }}</span>
+                  </span>
+                  <span class="ui-chip accent" i18n="@@settings.system.tv.sheet.nearby-chip"
+                    >Na Sua Rede</span
+                  >
+                </label>
+              </li>
+            }
+          </ul>
+        }
+        @if (searching()) {
+          <p class="loading" role="status">
+            <span class="ui-spinner" aria-hidden="true"></span>
+            <span i18n="@@settings.system.tv.sheet.nearby-searching">Procurando TVs…</span>
+          </p>
+        }
+      </fieldset>
+    }
+
     <fieldset class="group">
-      <legend class="ui-section-label" i18n="@@settings.system.tv.sheet.computer">
-        Computador
-      </legend>
+      <legend class="ui-section-label">{{ computersLegend() }}</legend>
       @if (computers().length === 0) {
         <p class="empty" i18n="@@settings.system.tv.sheet.no-computer">
           Nenhum computador livre. Pareie um em Dispositivos.
         </p>
       } @else {
         <ul class="ui-group">
-          @for (computer of computers(); track computer.slug) {
+          @for (computer of listedComputers(); track computer.slug) {
             <li>
               <label class="choice ui-row">
                 <input
@@ -50,6 +86,34 @@
         </ul>
       }
     </fieldset>
+
+    @if (showPermission()) {
+      <fieldset class="group">
+        <legend class="ui-section-label" i18n="@@settings.system.tv.sheet.permission">
+          Permissão da TV
+        </legend>
+        <p class="cleanup-hint">
+          @if (permissionNeeded()) {
+            <span i18n="@@settings.system.tv.sheet.permission-needed"
+              >A TV pediu a permissão do UniOver de novo.</span
+            >
+          } @else {
+            <span i18n="@@settings.system.tv.sheet.permission-ok"
+              >A TV reconhece o UniOver. Peça de novo só se ela esquecer.</span
+            >
+          }
+        </p>
+        <button
+          type="button"
+          class="secondary ui-btn"
+          [disabled]="busy() || leaving()"
+          (click)="permissionOpen.set(true)"
+          i18n="@@settings.system.tv.sheet.permission-ask"
+        >
+          Pedir Agora
+        </button>
+      </fieldset>
+    }
 
     <fieldset class="group">
       <legend class="ui-section-label" i18n="@@settings.system.tv.sheet.members">Quem usa</legend>
@@ -334,4 +398,13 @@
       </div>
     </div>
   </form>
+
+  @if (permissionOpen()) {
+    <app-tv-permission-sheet
+      [tvId]="current()!.id"
+      [tvName]="current()!.name"
+      [stillNeeded]="permissionProbe"
+      (closed)="permissionClosed($event)"
+    />
+  }
 </dialog>

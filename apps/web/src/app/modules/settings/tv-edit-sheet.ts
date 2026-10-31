@@ -23,7 +23,15 @@ import {
 import { cleanupKindText, cleanupOutcomeText } from '../../shared/tv-cleanup-text';
 import { SettingsGlyph } from './settings-glyph';
 import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
-import { SystemApi, TvAppOption, TvCleanupReportItem, TvComputer, TvItem } from './system-api';
+import { TvPermissionSheet } from '../../core/tv-permission/tv-permission-sheet';
+import {
+  NearbyTv,
+  SystemApi,
+  TvAppOption,
+  TvCleanupReportItem,
+  TvComputer,
+  TvItem,
+} from './system-api';
 
 /** Tamanho máximo do nome da TV, o mesmo da API. */
 const NAME_MAX = 60;
@@ -32,6 +40,14 @@ const FOCUS_CLOSES_CAPABILITY = 'tv.focus-closes-background.v1';
 
 /** O que a folha estava fazendo quando deu erro: cada passo tem as suas recusas. */
 type Step = 'create' | 'update' | 'members' | 'delete';
+
+/** Uma TV que um computador achou na rede dele, com o computador que a achou. */
+interface NearbyRow {
+  readonly key: string;
+  readonly slug: string;
+  readonly computerName: string;
+  readonly tv: NearbyTv;
+}
 
 function sameSet(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((item) => b.includes(item));
@@ -50,7 +66,7 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
  */
 @Component({
   selector: 'app-tv-edit-sheet',
-  imports: [SettingsGlyph, LoadingSkeleton],
+  imports: [SettingsGlyph, LoadingSkeleton, TvPermissionSheet],
   templateUrl: './tv-edit-sheet.html',
   styleUrl: './tv-edit-sheet.css',
 })
@@ -111,6 +127,34 @@ export class TvEditSheet implements OnInit {
   protected readonly members = signal<readonly string[]>([]);
   private readonly savedMembers = signal<readonly string[] | null>(null);
   protected readonly peopleFailed = signal(false);
+
+  /**
+   * Ao criar: as TVs compatíveis que os computadores ligados acharam na rede deles, para escolher primeiro entre elas.
+   * `searching` enquanto o agente varre a rede (leva alguns segundos); a folha nunca espera por isso para salvar.
+   */
+  protected readonly nearby = signal<readonly NearbyRow[]>([]);
+  protected readonly searching = signal(false);
+  /** Os computadores que sobram depois das TVs achadas: só eles aparecem na lista de baixo ao criar. */
+  protected readonly otherComputers = computed(() => {
+    const found = new Set(this.nearby().map((row) => row.slug));
+    return this.computers().filter((computer) => !found.has(computer.slug));
+  });
+  protected readonly listedComputers = computed(() =>
+    this.creating() ? this.otherComputers() : this.computers(),
+  );
+  protected readonly computersLegend = computed(() =>
+    this.creating() && this.nearby().length > 0
+      ? $localize`:@@settings.system.tv.sheet.other-computers:Outros Computadores`
+      : $localize`:@@settings.system.tv.sheet.computer:Computador`,
+  );
+
+  /** Só a TV Samsung tem permissão a conceder; o resto da folha não muda. */
+  protected readonly showPermission = computed(() => {
+    const tv = this.current();
+    return tv !== null && (tv.kind === 'samsung' || tv.permissionNeeded === true);
+  });
+  protected readonly permissionNeeded = computed(() => this.current()?.permissionNeeded === true);
+  protected readonly permissionOpen = signal(false);
 
   protected readonly busy = signal(false);
   protected readonly leaving = signal(false);
@@ -189,7 +233,59 @@ export class TvEditSheet implements OnInit {
     void this.loadPeople();
     void this.loadReports();
     void this.loadApps();
+    if (this.creating()) void this.searchNearby();
   }
+
+  /** Pergunta, computador por computador, que TVs ele acha na rede; erro de um não atrapalha os outros. */
+  private async searchNearby(): Promise<void> {
+    const online = this.computers().filter((computer) => computer.online);
+    if (online.length === 0) return;
+    this.searching.set(true);
+    try {
+      for (const computer of online) {
+        try {
+          const result = await this.api.nearbyTvs(computer.slug);
+          if (this.leaving()) return;
+          const rows = result.items.map((tv) => ({
+            key: `${computer.slug}:${tv.id}`,
+            slug: computer.slug,
+            computerName: computer.name,
+            tv,
+          }));
+          if (rows.length > 0) this.nearby.update((list) => [...list, ...rows]);
+        } catch {
+          // Sem lista deste computador: ele continua na lista de baixo, como sempre.
+        }
+      }
+    } finally {
+      this.searching.set(false);
+    }
+  }
+
+  /** Escolher uma TV achada escolhe o computador que a achou e, com o nome em branco, usa o nome dela. */
+  protected pickNearby(row: NearbyRow): void {
+    this.agent.set(row.slug);
+    if (this.name().trim() === '' && row.tv.name) this.name.set(row.tv.name.slice(0, NAME_MAX));
+  }
+
+  protected nearbyTitle(row: NearbyRow): string {
+    return row.tv.name ?? (row.tv.kind === 'samsung' ? 'Samsung' : 'Android TV');
+  }
+
+  /** O aceite foi dado (ou a folha só fechou): a TV deixa de aparecer como pendente e a página relê a lista. */
+  protected permissionClosed(granted: boolean): void {
+    this.permissionOpen.set(false);
+    if (!granted) return;
+    this.dirty = true;
+    this.current.update((tv) => (tv ? { ...tv, permissionNeeded: false } : tv));
+  }
+
+  /** A TV desta folha ainda precisa do aceite? Lê a lista do administrador (ele vê todas as TVs). */
+  protected readonly permissionProbe = async (): Promise<boolean> => {
+    const id = this.current()?.id;
+    const list = await this.api.tvs();
+    return list.find((tv) => tv.id === id)?.permissionNeeded === true;
+  };
 
   /** A linha de uma limpeza: o tipo e quando foi, e embaixo o que fez ou por que foi pulada. */
   protected reportTitle(report: TvCleanupReportItem): string {
