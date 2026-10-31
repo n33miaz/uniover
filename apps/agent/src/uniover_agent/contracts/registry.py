@@ -8,6 +8,7 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 from .envelope import Envelope
+from .agent_diagnostics_v1 import AgentDiagnosticsV1Message
 from .agent_hello_v1 import AgentHelloV1Message
 from .agent_keepalive_v1 import AgentKeepaliveV1Message
 from .agent_logs_request_v1 import AgentLogsRequestV1Message
@@ -35,6 +36,7 @@ from .tv_watchdog_v1 import TvWatchdogV1Message
 ENVELOPE_MODEL: type[BaseModel] = Envelope
 
 MESSAGE_MODELS: dict[str, type[BaseModel]] = {
+    "agent.diagnostics.v1": AgentDiagnosticsV1Message,
     "agent.hello.v1": AgentHelloV1Message,
     "agent.keepalive.v1": AgentKeepaliveV1Message,
     "agent.logs.request.v1": AgentLogsRequestV1Message,

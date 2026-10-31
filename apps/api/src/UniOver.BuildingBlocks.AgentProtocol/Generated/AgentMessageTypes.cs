@@ -7,6 +7,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated;
 /// <summary>Valores do campo <c>type</c> das mensagens entre a API e o agente.</summary>
 public static class AgentMessageTypes
 {
+    /// <summary>Tipo de mensagem <c>agent.diagnostics.v1</c>.</summary>
+    public const string AgentDiagnosticsV1 = "agent.diagnostics.v1";
+
     /// <summary>Tipo de mensagem <c>agent.hello.v1</c>.</summary>
     public const string AgentHelloV1 = "agent.hello.v1";
 
@@ -79,6 +82,7 @@ public static class AgentMessageTypes
     /// <summary>Todos os tipos conhecidos, em ordem alfabética.</summary>
     public static readonly IReadOnlyList<string> All =
     [
+        AgentDiagnosticsV1,
         AgentHelloV1,
         AgentKeepaliveV1,
         AgentLogsRequestV1,

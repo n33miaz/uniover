@@ -51,6 +51,14 @@ da TV que ele controla) e `update` (o estado da auto-atualização, abaixo), tod
 | `agent.maintenance.v1` | API para agente | `action`: `update` (o supervisor roda a auto-atualização agora; o agente só reinicia se houver versão nova) `restart` (o supervisor reinicia o agente) ou `rollback` (o supervisor volta para a versão anterior guardada em `app.previous`, bloqueia a que sai e reinicia; o agente recusa com `no_previous_version` se não houver). |
 | `agent.update.status.v1` | agente para API | O estado da auto-atualização, o mesmo objeto de `update` no `hello`: `outcome` (`not_checked`, `updating`, `updated`, `up_to_date`, `failed`, `blocked` ou `rolled_back`), `installedSha` e `installedAt` (a versão instalada), `latestSha` (o commit mais novo que a última checagem viu), `checkedAt`, `nextCheckAt`, `reason` (curto, já sem segredos, até 200 caracteres), `blockedSha` (versão que caiu repetidamente) e `rolledBack` (houve volta à versão anterior). Só `outcome` é obrigatório. O agente manda quando a checagem roda; agente antigo não manda nada e a tela diz "versão desconhecida". |
 
+## Diagnóstico do agente
+
+O agente guarda num arquivo local (limitado, sem duplicar) os erros e as ocorrências dele mesmo (queda do processo, tarefa de fundo que falhou, reparo feito, atualização recusada) e os envia depois do `hello`. A capacidade `agent.diagnostics.v1` diz que ele sabe. O texto já chega sem caminhos, endereços, nomes de usuário e segredos; a API guarda por pouco tempo e só o administrador vê, em Sistema.
+
+| `type` | Direção | Corpo |
+|---|---|---|
+| `agent.diagnostics.v1` | agente para API | `events` (1 a 20, na ordem em que aconteceram): `id` (UUID, a API ignora repetidos), `at`, `kind` (`a-z`, `0-9`, `_` e `.`, até 48), `severity` (`info`, `warn`, `error`), `component` opcional (até 32), `detail` (1 a 300 caracteres, já sem dados pessoais) e `count` opcional (quantas vezes a mesma ocorrência se repetiu antes do envio). Sem resposta: o agente apaga o que enviou. |
+
 Como na limpeza da TV, `agent.logs.v1` sai **antes** do `command.result.v1` do mesmo comando. `agent.maintenance.v1` só é
 respondido com `command.result.v1`, assim que o pedido foi entregue ao supervisor do Windows (o mesmo mecanismo do menu da
 bandeja). O agente reinicia por conta do supervisor, nunca por um código de saída do próprio processo.

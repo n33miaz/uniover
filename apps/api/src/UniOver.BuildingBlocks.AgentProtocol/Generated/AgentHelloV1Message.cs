@@ -123,7 +123,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentLogsV1, AgentMaintenanceV1, TransportKeepaliveV1, TvAdb, TvCleanupAutomaticV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvPowerOffV1, TvRemote };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentLogsV1, AgentMaintenanceV1, TransportKeepaliveV1, TvAdb, TvCleanupAutomaticV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvPowerOffV1, TvRemote };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -189,6 +189,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             var value = reader.GetString();
             switch (value)
             {
+                case "agent.diagnostics.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.AgentDiagnosticsV1;
                 case "agent.logs.v1":
                     return AgentHelloV1BodyCapabilitiesItem.AgentLogsV1;
                 case "agent.maintenance.v1":
@@ -261,6 +263,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         {
             switch (value)
             {
+                case AgentHelloV1BodyCapabilitiesItem.AgentDiagnosticsV1:
+                    JsonSerializer.Serialize(writer, "agent.diagnostics.v1", options);
+                    return;
                 case AgentHelloV1BodyCapabilitiesItem.AgentLogsV1:
                     JsonSerializer.Serialize(writer, "agent.logs.v1", options);
                     return;

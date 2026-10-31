@@ -1,6 +1,7 @@
 /* GERADO por `npm --prefix contracts run generate` — não editar. */
 
 export * from './envelope';
+export * from './agent_diagnostics_v1';
 export * from './agent_hello_v1';
 export * from './agent_keepalive_v1';
 export * from './agent_logs_request_v1';

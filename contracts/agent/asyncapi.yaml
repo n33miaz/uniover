@@ -146,6 +146,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/agent.update.status.v1.schema.json'
+      agentDiagnostics:
+        name: agent.diagnostics.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/agent.diagnostics.v1.schema.json'
 operations:
   sendApiKeepalive:
     action: send
@@ -306,3 +311,10 @@ operations:
     summary: A API recebe o estado da auto-atualização do agente (versão instalada, a mais nova vista, resultado da última checagem).
     messages:
       - $ref: '#/channels/agentEvents/messages/agentUpdateStatus'
+  receiveAgentDiagnostics:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe erros e ocorrências do próprio agente (sem dados pessoais) para o administrador ver em Sistema.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/agentDiagnostics'
