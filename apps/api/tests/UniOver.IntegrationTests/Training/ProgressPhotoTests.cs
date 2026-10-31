@@ -283,9 +283,12 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
         using var read = await app.SendAsync(HttpMethod.Get, $"/api/v1/training/progress-photos/{id}/content", bearer: member.Login.AccessToken);
         using var delete = await app.SendAsync(HttpMethod.Put, $"/api/v1/training/progress-photos/{id}/deletion", bearer: member.Login.AccessToken);
 
-        // A nuvem de fotos está aposentada: sem a configuração ligada de propósito, as rotas nem existem.
-        foreach (var response in new[] { list, put, read, delete })
+        // A nuvem de fotos está aposentada: sem a configuração ligada de propósito, as rotas nem existem. Leitura cai no
+        // 404 do fallback da API; escrita cai no 405 dele, que só atende GET e HEAD (nenhuma das duas chega ao Treino).
+        foreach (var response in new[] { list, read })
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        foreach (var response in new[] { put, delete })
+            response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
 
         await using var db = app.Db();
         (await db.Set<ProgressPhoto>().CountAsync(TestContext.Current.CancellationToken)).Should().Be(0, "sem armazenamento nada é gravado, nem metadado");
