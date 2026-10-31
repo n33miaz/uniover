@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.25.0](https://github.com/n33miaz/uniover/compare/v0.24.0...v0.25.0) (2026-10-31)
+
+
+### Features
+
+* **api:** pause and resume guest accounts
+* **contracts:** guest pause field and routes
+* **web:** pause and resume people
+* **web:** show paused access on sign in
+* **web:** open credits as a collapsible sheet
+
+
+### Bug Fixes
+
+* **web:** add room under the page top bar
+* **home:** center the brand text on the screen
+* **training:** title case chips and routine name
+
 ## [0.24.0](https://github.com/n33miaz/uniover/compare/v0.23.0...v0.24.0) (2026-10-31)
 
 

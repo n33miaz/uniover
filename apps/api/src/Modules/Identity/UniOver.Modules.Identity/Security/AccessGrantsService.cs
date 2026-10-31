@@ -102,11 +102,11 @@ internal sealed partial class AccessGrantsService(
 
         var account = await db.Users.AsNoTracking()
             .Where(u => u.Id == userId)
-            .Select(u => new { u.Role, u.DisabledAt })
+            .Select(u => new { u.Role, u.DisabledAt, u.PausedAt })
             .SingleOrDefaultAsync(cancellationToken);
 
         // Conta que não existe (apagada à mão) ou revogada não tem nada.
-        if (account is null || account.DisabledAt is not null)
+        if (account is null || account.DisabledAt is not null || account.PausedAt is not null)
         {
             return None;
         }

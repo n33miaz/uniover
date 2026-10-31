@@ -40,9 +40,9 @@ internal sealed class GuestAccountStatus(
             // Conta que não existe (apagada à mão) ou que não é de convidado também não vale como convidado ativo.
             var disabledAt = await db.Users.AsNoTracking()
                 .Where(u => u.Id == userId && u.Role == AccountRoles.Guest)
-                .Select(u => new { u.DisabledAt })
+                .Select(u => new { u.DisabledAt, u.PausedAt })
                 .SingleOrDefaultAsync(cancellationToken);
-            active = disabledAt is not null && disabledAt.DisabledAt is null;
+            active = disabledAt is not null && disabledAt.DisabledAt is null && disabledAt.PausedAt is null;
         }
 #pragma warning disable CA1031 // Falha fechada: sem conseguir conferir a conta, o convidado não passa (e nada é gravado no cache).
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -57,6 +57,9 @@ internal sealed class GuestAccountStatus(
 
     /// <summary>Marca a conta como revogada já, sem esperar o prazo do cache.</summary>
     public void MarkRevoked(Guid userId) => Store(userId, active: false, time.GetUtcNow());
+
+    /// <summary>Esquece a resposta guardada (a conta foi retomada): a próxima conferência lê o banco.</summary>
+    public void Forget(Guid userId) => _cache.TryRemove(userId, out _);
 
     private void Store(Guid userId, bool active, DateTimeOffset now)
     {

@@ -37,6 +37,7 @@ const guest = (
   email: `${name.toLowerCase()}@exemplo.com`,
   createdAt: '2026-10-19T15:00:00Z',
   disabledAt,
+  pausedAt: null,
   permissions,
 });
 
@@ -52,6 +53,8 @@ describe('GuestsSection', () => {
     guests: vi.fn(),
     revokeGuestInvite: vi.fn(),
     revokeGuest: vi.fn(),
+    pauseGuest: vi.fn(),
+    resumeGuest: vi.fn(),
     sessions: vi.fn(),
   };
   const people = { createInvite: vi.fn(), setPermissions: vi.fn(), usage: vi.fn() };
@@ -196,6 +199,7 @@ describe('GuestsSection', () => {
       expect(Array.from(bia.querySelectorAll('button')).map((b) => b.textContent?.trim())).toEqual([
         'Sessões',
         'Permissões',
+        'Pausar',
         'Revogar acesso',
       ]);
       const permissions = Array.from(bia.querySelectorAll('button')).find(
@@ -479,6 +483,37 @@ describe('GuestsSection', () => {
       submit(el);
       await vi.waitFor(() => expect(button(el, 'Copiar link')).toBeDefined());
       expect(button(el, 'Compartilhar')).toBeUndefined();
+    });
+  });
+
+  describe('pausing', () => {
+    it('pauses a guest with one click, with no confirmation, and reloads', async () => {
+      api.pauseGuest.mockResolvedValue(undefined);
+      const { el } = await render();
+      api.guests.mockResolvedValue([{ ...guest('g1', 'Bia'), pausedAt: '2026-10-28T10:00:00Z' }]);
+      button(el, 'Pausar')!.click();
+      await vi.waitFor(() => expect(api.pauseGuest).toHaveBeenCalledWith('t', 'g1'));
+      await vi.waitFor(() => expect(el.textContent).toContain('Acesso pausado.'));
+      expect(el.querySelector('.paused')?.textContent).toContain('Pausado');
+    });
+
+    it('offers Retomar for a paused guest and resumes it', async () => {
+      api.guests.mockResolvedValue([{ ...guest('g1', 'Bia'), pausedAt: '2026-10-28T10:00:00Z' }]);
+      api.resumeGuest.mockResolvedValue(undefined);
+      const { el } = await render();
+      expect(button(el, 'Pausar')).toBeUndefined();
+      api.guests.mockResolvedValue([guest('g1', 'Bia')]);
+      button(el, 'Retomar')!.click();
+      await vi.waitFor(() => expect(api.resumeGuest).toHaveBeenCalledWith('t', 'g1'));
+      await vi.waitFor(() => expect(el.textContent).toContain('Acesso retomado.'));
+      expect(el.querySelector('.paused')).toBeNull();
+    });
+
+    it('says so when the pause fails', async () => {
+      api.pauseGuest.mockRejectedValue(new Error('x'));
+      const { el } = await render();
+      button(el, 'Pausar')!.click();
+      await vi.waitFor(() => expect(el.textContent).toContain('Não foi possível mudar agora.'));
     });
   });
 

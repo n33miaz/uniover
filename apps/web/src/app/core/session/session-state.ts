@@ -149,6 +149,7 @@ export class SessionState {
   // Comparação por conteúdo: reler `/me` sem mudança de verdade não troca o valor, então nenhuma tela é refeita à toa.
   private readonly _user = signal<SessionUser | null>(null, { equal: sameUser });
   private readonly _expiresAt = signal<number | null>(null);
+  private readonly _paused = signal(false);
   private readonly _roleHint = signal<AccountRole | null>(readRoleHint());
   private readonly _permissionsHint = signal<readonly string[] | null>(readPermissionsHint());
   private readonly _accountHint = signal<string | null>(readAccountHint());
@@ -160,6 +161,8 @@ export class SessionState {
   #accountHintStored = this._accountHint() !== null;
 
   readonly status = this._status.asReadonly();
+  /** O dono pausou o acesso desta conta: a última renovação foi recusada por isso. */
+  readonly paused = this._paused.asReadonly();
   readonly user = this._user.asReadonly();
   /** Instante (ms desde 1970) em que o token de acesso vence; não é o token. */
   readonly expiresAt = this._expiresAt.asReadonly();
@@ -286,6 +289,7 @@ export class SessionState {
       writePermissionsHint(null);
     }
     this._tokenAccount.set(subject);
+    this._paused.set(false);
     this._expiresAt.set(nowMs + expiresInSeconds * 1000);
     this._status.set('authenticated');
     // A conta já é conhecida pelo token, antes de o `/me` voltar: a dica é gravada agora, então o próximo começo sem rede (e
@@ -330,6 +334,11 @@ export class SessionState {
   /** Sessão não confirmada: mantém usuário e token vencido de lado, sem apagar nada do aparelho. */
   setPending(): void {
     if (this._status() !== 'authenticated' || this.bearer() === null) this._status.set('pending');
+  }
+
+  /** Marca que a sessão acabou porque o dono pausou o acesso (a tela de entrada avisa; `setToken` desfaz). */
+  markPaused(): void {
+    this._paused.set(true);
   }
 
   /** Esquece token e usuário da memória (e a dica da conta). Não toca em IndexedDB nem em filas locais. */

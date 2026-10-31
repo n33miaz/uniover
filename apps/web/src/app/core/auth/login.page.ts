@@ -10,7 +10,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { ApiProblem } from './api-problem';
+import { ApiProblem, isGuestPaused } from './api-problem';
 import { AuthField } from './auth-field';
 import { AuthLayout } from './auth-layout';
 import { AuthBanner, AuthCountdown, AuthNotice, AuthTone } from './auth-notice';
@@ -19,9 +19,11 @@ import { isPlausibleEmail } from './auth-validation';
 import { QrLoginPanel } from './qr/qr-login-panel';
 import { AuthService } from './auth.service';
 import { createCountdown, describeWait, formatCountdown } from './countdown';
+import { SessionState } from '../session/session-state';
 import { safeNextUrl } from './next-url';
 
-type LoginError = 'invalid' | 'bad-request' | 'network' | 'failed' | 'locked' | 'rate-limited';
+type LoginError =
+  'invalid' | 'bad-request' | 'network' | 'failed' | 'locked' | 'rate-limited' | 'paused';
 
 /**
  * Tela de entrada. A mensagem de erro é a mesma para e-mail inexistente e senha errada (a API também não
@@ -39,6 +41,7 @@ type LoginError = 'invalid' | 'bad-request' | 'network' | 'failed' | 'locked' | 
 })
 export class LoginPage {
   private readonly auth = inject(AuthService);
+  private readonly session = inject(SessionState);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly doc = inject(DOCUMENT);
@@ -83,9 +86,16 @@ export class LoginPage {
   );
 
   protected readonly banner = computed<AuthBanner | null>(() => {
-    const error = this.error();
+    // A sessão que acabou por pausa já chega aqui avisada: o aviso vale até a pessoa tentar entrar de novo.
+    const error = this.error() ?? (this.session.paused() ? 'paused' : null);
     if (!error) return null;
     switch (error) {
+      case 'paused':
+        return this.plain(
+          'warn',
+          'alert-circle',
+          $localize`:@@auth.login.error.paused:Acesso Pausado`,
+        );
       case 'invalid':
         return this.plain(
           'bad',
@@ -171,6 +181,8 @@ export class LoginPage {
       this.error.set(locked ? 'locked' : 'rate-limited');
       this.waitTotal.set(Math.max(0, Math.ceil(problem.retryAfterSeconds ?? 0)));
       this.wait.start(this.waitTotal());
+    } else if (problem && isGuestPaused(problem)) {
+      this.error.set('paused');
     } else if (problem?.status === 401) {
       this.error.set('invalid');
     } else if (problem?.status === 400) {

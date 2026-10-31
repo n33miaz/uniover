@@ -64,18 +64,18 @@ describe('AboutPage', () => {
     const credits = Array.from(el.querySelectorAll<HTMLAnchorElement>('a')).find((a) =>
       a.textContent?.trim().startsWith('Créditos'),
     );
-    expect(credits?.getAttribute('href')).toBe('/ajustes/creditos');
+    expect(credits?.getAttribute('href')).toBe('/ajustes/sobre/creditos');
   });
 
   it('offers credits to a guest with Training, because the route accepts that module', async () => {
     api.me.mockResolvedValue({ ...ME, role: 'guest', permissions: ['module:training'] });
     const { el } = await render();
-    expect(el.querySelector('a[href="/ajustes/creditos"]')).not.toBeNull();
+    expect(el.querySelector('a[href="/ajustes/sobre/creditos"]')).not.toBeNull();
   });
 
   it('does not offer credits to a guest without Training', async () => {
     api.me.mockResolvedValue({ ...ME, role: 'guest', permissions: ['module:tv'] });
     const { el } = await render();
-    expect(el.querySelector('a[href="/ajustes/creditos"]')).toBeNull();
+    expect(el.querySelector('a[href="/ajustes/sobre/creditos"]')).toBeNull();
   });
 });

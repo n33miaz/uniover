@@ -148,6 +148,15 @@ export class AuthApi {
     return this.send('POST', `/guests/${encodeURIComponent(id)}/revoke`, { token });
   }
 
+  /** Pausa a conta do convidado (reversível): ele não entra nem renova a sessão até ser retomado. */
+  pauseGuest(token: string, id: string): Promise<void> {
+    return this.send('POST', `/guests/${encodeURIComponent(id)}/pause`, { token });
+  }
+
+  resumeGuest(token: string, id: string): Promise<void> {
+    return this.send('POST', `/guests/${encodeURIComponent(id)}/resume`, { token });
+  }
+
   sessions(token: string, guestId: string | null = null): Promise<readonly LoginSession[]> {
     const path = guestId === null ? '/sessions' : `/guests/${encodeURIComponent(guestId)}/sessions`;
     return this.send('GET', path, { token });

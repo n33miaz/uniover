@@ -137,5 +137,6 @@ public static class RevokeReasons
     public const string Reuse = "reuse";
     public const string Logout = "logout";
     public const string GuestRevoked = "guest-revoked";
+    public const string GuestPaused = "guest-paused";
     public const string SessionRevoked = "session-revoked";
 }

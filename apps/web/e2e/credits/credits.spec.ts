@@ -36,13 +36,21 @@ test.describe('créditos', () => {
   test('abre por Configurações e mostra título, autor, fonte e licença de cada material', async ({
     page,
   }, info) => {
+    // Movimento reduzido: a folha já aparece parada, sem esperar a subida (e o print sai nítido).
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await signIn(page);
     await page.goto('/ajustes/sobre');
     await page.getByRole('link', { name: /^Créditos/ }).click();
-    await expect(page).toHaveURL(/\/ajustes\/creditos$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Créditos' })).toBeVisible();
+    await expect(page).toHaveURL(/\/ajustes\/sobre\/creditos$/);
+    await expect(page.getByRole('dialog', { name: 'Créditos' })).toBeVisible();
 
+    // Cada fonte vem recolhida, com o título e a licença à vista: o toque abre.
+    const closed = page.locator('.list > li', { hasText: 'Everkinetic' });
+    await expect(closed.locator('summary')).toContainText('CC BY-SA 4.0');
+    await expect(closed.getByRole('link')).toHaveCount(0);
+    await screenshot(page, `test-results/credits-folha-${info.project.name}.png`);
     const everkinetic = page.locator('.list > li', { hasText: 'Everkinetic' });
+    await everkinetic.locator('summary').click();
     await expect(everkinetic).toContainText('Greg Priday');
     await expect(everkinetic).toContainText('CC BY-SA 4.0');
     await expect(everkinetic).toContainText('Sem alterações');
@@ -56,6 +64,7 @@ test.describe('créditos', () => {
     );
 
     const freeDb = page.locator('.list > li', { hasText: 'free-exercise-db' });
+    await freeDb.locator('summary').click();
     await expect(freeDb).toContainText('Unlicense');
     await expect(freeDb).toContainText('As imagens dessa fonte não são usadas');
 
@@ -65,8 +74,9 @@ test.describe('créditos', () => {
     await expectNoHorizontalScroll(page);
     await screenshot(page, `test-results/credits-${info.project.name}.png`);
 
-    // Um só voltar: a seta do cabeçalho leva à lista de Configurações.
-    await expect(page.getByRole('link', { name: '← Ajustes' })).toHaveCount(0);
+    // Fechar a folha volta para Sobre; de lá, a seta leva à lista de Configurações.
+    await page.getByRole('button', { name: 'Fechar' }).click();
+    await expect(page).toHaveURL(/\/ajustes\/sobre$/);
     await page.getByRole('button', { name: 'Voltar às Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
   });
@@ -75,10 +85,10 @@ test.describe('créditos', () => {
     test(`sem violações sérias de acessibilidade no tema ${scheme === 'light' ? 'claro' : 'escuro'}`, async ({
       page,
     }, info) => {
-      await page.emulateMedia({ colorScheme: scheme });
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
       await signIn(page);
       await page.goto('/ajustes/creditos');
-      await expect(page.getByRole('heading', { level: 1, name: 'Créditos' })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Créditos' })).toBeVisible();
       await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
       await expectNoHorizontalScroll(page);
       await screenshot(page, `test-results/credits-${scheme}-${info.project.name}.png`);
@@ -90,10 +100,11 @@ test.describe('créditos', () => {
   test('os alvos de toque dos links têm pelo menos 44 px de altura', async ({ page }) => {
     await signIn(page);
     await page.goto('/ajustes/creditos');
-    await expect(page.getByRole('heading', { level: 1, name: 'Créditos' })).toBeVisible();
-    const links = page.locator('.list a, button.back');
+    await expect(page.getByRole('dialog', { name: 'Créditos' })).toBeVisible();
+    for (const summary of await page.locator('.list summary').all()) await summary.click();
+    const links = page.locator('.list a');
     const count = await links.count();
-    expect(count).toBeGreaterThanOrEqual(5);
+    expect(count).toBeGreaterThanOrEqual(4);
     for (let index = 0; index < count; index += 1) {
       const box = await links.nth(index).boundingBox();
       expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
@@ -112,8 +123,9 @@ test.describe('créditos sem conexão', () => {
 
     await context.setOffline(true);
     await page.goto('/ajustes/creditos');
-    await expect(page).toHaveURL(/\/ajustes\/creditos$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Créditos' })).toBeVisible();
+    await expect(page).toHaveURL(/\/ajustes\/sobre\/creditos$/);
+    await expect(page.getByRole('dialog', { name: 'Créditos' })).toBeVisible();
+    await page.locator('.list > li', { hasText: 'Everkinetic' }).locator('summary').click();
     await expect(page.locator('.list > li', { hasText: 'Everkinetic' })).toContainText(
       'Greg Priday',
     );
