@@ -221,6 +221,8 @@ test.describe('exercícios: lista, busca e ficha', () => {
         'triceps',
         'dumbbell',
       ],
+      ['rosca-inclinada-com-halteres', 'Rosca inclinada com halteres', 'biceps', 'dumbbell'],
+      ['remada-unilateral-com-halter', 'Remada unilateral com halter', 'middle_back', 'dumbbell'],
     ] as const;
     server.seed(
       'exercises',
@@ -240,6 +242,8 @@ test.describe('exercícios: lista, busca e ficha', () => {
 
     for (const [term, file] of [
       ['barra fixa supinada', 'chin-ups-1.webp'],
+      ['rosca inclinada', '0228-relaxation.webp'],
+      ['remada unilateral', '0024-relaxation.webp'],
       ['prancha lateral', '0113-relaxation.webp'],
     ]) {
       await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill(term);
