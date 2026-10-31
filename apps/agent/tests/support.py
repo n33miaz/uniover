@@ -13,8 +13,8 @@ from websockets.http11 import Request, Response
 
 AGENT_ID = "pc-casa"
 # O que uma TV Android declara no `hello` além do tipo e do `tv.remote`: desligar com leitura e as
-# teclas opcionais.
-ANDROID_KEYS = ["tv.power.off.v1", "tv.key.v3", "tv.key.INPUT"]
+# teclas opcionais e a procura de TVs na rede.
+ANDROID_KEYS = ["tv.power.off.v1", "tv.key.v3", "tv.key.INPUT", "tv.discovery.v1"]
 TOKEN = "uo_dev_TOKEN-SECRETO-DE-TESTE"
 
 

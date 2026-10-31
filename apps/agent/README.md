@@ -91,6 +91,26 @@ Use uma Samsung recente na mesma rede do PC, com o controle por rede liberado:
 3. Se o aviso não aparecer, na TV procure **Gerenciador de Conexão do Dispositivo** ou **Notificação de acesso**,
    permita o PC e tente o pareamento outra vez.
 
+### Permissão da TV: um aviso só
+
+A TV liga o "Permitir" ao **nome do cliente** (sempre `UniOver`) e ao token. O nome fica gravado no cofre, em
+`samsung-name:<nome-da-tv>`, junto do token: atualizar ou reinstalar o agente não o muda, e a configuração
+(`tv_client_name`) deixa de valer para a Samsung. Token guardado antes desta regra mantém o nome com que foi pareado.
+
+Se a TV esquecer o UniOver (permissão revogada ou vencida), o agente **não insiste**: cada tentativa faria o aviso
+aparecer na tela sem ninguém ter pedido. Ele grava a marca `samsung-permission:<nome-da-tv>` no cofre (sobrevive a
+reiniciar), para de abrir conexões, avisa a API (`tv.permission.v1` com `needed`) e responde `tv_permission_needed` aos
+comandos. A pessoa que usa a TV recebe, ao entrar no app, uma folha curta com **Pedir Agora**; só esse pedido
+(`tv.permission.request.v1`) volta a falar com a TV, uma vez, com o token guardado: uma TV que ainda o reconhece conecta
+sem aviso nenhum. Aceito o aviso, o token novo vai para o cofre, a marca some e a API é avisada (`granted`).
+
+### Procura de TVs na rede
+
+O agente também responde a `tv.discover.v1` com as TVs compatíveis que acha na rede dele (a mesma varredura do
+`tv-find`: só leitura de identificação). A lista nunca leva endereço IP nem MAC: cada TV vai com um `id` opaco e estável e
+a marca `controlled` (é a que o agente já controla). O app a usa ao adicionar uma TV, mostrando primeiro as achadas
+(**Na Sua Rede**).
+
 O agente mantém o WebSocket Samsung aberto enquanto há uso e o hiberna como faz com Android. Lê a energia pelo
 REST da TV (`on`, `standby` ou `off`; sem resposta fica `unknown`) e não repete `POWER` em menos de dez segundos.
 Teclas, volume, canais, números, mídia e início funcionam pelo canal Samsung. A lista primeiro pede o catálogo pelo

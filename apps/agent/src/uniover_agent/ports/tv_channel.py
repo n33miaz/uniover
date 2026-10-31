@@ -29,6 +29,15 @@ class TvNotPaired(TvChannelError):  # noqa: N818
     """Falta o par certificado/chave ou a TV o recusou: repetir não adianta, é preciso parear."""
 
 
+class TvPermissionNeeded(TvNotPaired):
+    """A TV não reconhece mais o UniOver (permissão revogada ou vencida).
+
+    Subclasse de `TvNotPaired` de propósito: repetir não adianta e, pior, cada tentativa faria a TV
+    mostrar o aviso "Permitir" de novo sem ninguém ter pedido. Só um pedido explícito (a pessoa
+    tocando em "Pedir Agora" no app) volta a falar com a TV nesse estado.
+    """
+
+
 class TvChannel(Protocol):
     @property
     def connected(self) -> bool: ...

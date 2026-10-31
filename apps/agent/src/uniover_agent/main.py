@@ -62,6 +62,7 @@ from uniover_agent.adapters.tv_locate import (
     build_locator,
     identify_tv,
 )
+from uniover_agent.adapters.tv_nearby import build_finder
 from uniover_agent.adapters.tv_pairing import (
     TvPairingError,
     ask_code_in_window,
@@ -69,7 +70,11 @@ from uniover_agent.adapters.tv_pairing import (
     pair_tv,
 )
 from uniover_agent.adapters.tv_remote_v2 import ANDROID_OPTIONAL_KEYS, AndroidTvRemoteV2
-from uniover_agent.adapters.tv_samsung import SAMSUNG_OPTIONAL_KEYS, SamsungTvDriver
+from uniover_agent.adapters.tv_samsung import (
+    SAMSUNG_CLIENT_NAME,
+    SAMSUNG_OPTIONAL_KEYS,
+    SamsungTvDriver,
+)
 from uniover_agent.adapters.tv_samsung_pairing import SamsungPairingError, pair_samsung_tv
 from uniover_agent.adapters.tv_samsung_volume import SamsungVolume
 from uniover_agent.adapters.tv_volume_check import check_volume
@@ -93,10 +98,12 @@ from uniover_agent.config import (
     tv_cert_dir,
 )
 from uniover_agent.core import (
+    DISCOVERY_CAPABILITY,
     LOGS_CAPABILITY,
     LOGS_REQUEST_TYPE,
     MAINTENANCE_CAPABILITY,
     MAINTENANCE_TYPE,
+    PERMISSION_CAPABILITY,
     POWER_OFF_CAPABILITY,
     AppIconPublisher,
     AppsAnnouncer,
@@ -120,6 +127,7 @@ from uniover_agent.core import (
     TvIdentity,
     TvKnown,
     TvLightSettings,
+    TvPermission,
     TvRelocator,
     TvSessionManager,
     TvStatePublisher,
@@ -132,6 +140,7 @@ from uniover_agent.core import (
     tv_apps_refresh_handler,
     tv_cleanup_handler,
     tv_cleanup_skipped_handler,
+    tv_discover_handler,
     tv_key_handler,
     tv_power_off_handler,
     tv_text_handler,
@@ -274,6 +283,28 @@ def build_tv(
     envelopes: EnvelopeFactory,
     secrets: SecretStore | None = None,
 ) -> TvSetup | None:
+    """A sessão da TV (veja `build_driver_setup`) e, nela, a procura de TVs na rede do agente."""
+    setup = build_driver_setup(settings, clock, transport, envelopes, secrets)
+    if setup is not None:
+        attach_discovery(setup, settings)
+    return setup
+
+
+def attach_discovery(setup: TvSetup, settings: Settings) -> None:
+    """Acrescenta `tv.discover.v1`: ao adicionar uma TV, o app mostra as que estão na rede."""
+    finder = build_finder(settings.tv_host, setup.known)
+    setup.handlers["tv.discover.v1"] = tv_discover_handler(finder, setup.transport, setup.envelopes)
+    setup.background_commands.add("tv.discover.v1")
+    setup.capabilities.append(DISCOVERY_CAPABILITY)
+
+
+def build_driver_setup(
+    settings: Settings,
+    clock: Clock,
+    transport: Transport,
+    envelopes: EnvelopeFactory,
+    secrets: SecretStore | None = None,
+) -> TvSetup | None:
     """Sessão pelo driver configurado, ou `None` se a TV ainda não foi pareada.
 
     A capacidade `tv.remote` só é declarada à API quando há endereço da TV **e** o par
@@ -396,6 +427,34 @@ def samsung_token_name(tv_name: str) -> str:
     return f"samsung:{tv_name}"
 
 
+def samsung_client_name_key(tv_name: str) -> str:
+    """Onde o cofre guarda o nome com que o UniOver se apresentou à TV (junto do token)."""
+    return f"samsung-name:{tv_name}"
+
+
+def samsung_permission_key(tv_name: str) -> str:
+    """Marca no cofre: a TV pediu a permissão de novo e o agente parou de tentar (sobrevive a
+    reiniciar e a atualizar o agente, para a TV não ser incomodada outra vez)."""
+    return f"samsung-permission:{tv_name}"
+
+
+def resolve_samsung_client_name(secrets: SecretStore, tv_name: str, legacy_name: str) -> str:
+    """O nome do cliente na TV, sempre o mesmo depois de escolhido.
+
+    A TV liga a permissão ao nome: trocá-lo faria o aviso "Permitir" voltar. O nome fica no cofre
+    (que atualizar ou reinstalar o agente não apaga). Token já guardado sem nome gravado é de
+    antes desta regra: foi pareado com `legacy_name` (a configuração), que passa a ser o nome
+    gravado. Sem token, vale o nome fixo do UniOver.
+    """
+    key = samsung_client_name_key(tv_name)
+    stored = secrets.get(key)
+    if stored:
+        return stored
+    name = legacy_name if secrets.get(samsung_token_name(tv_name)) else SAMSUNG_CLIENT_NAME
+    secrets.set(key, name)
+    return name
+
+
 def build_samsung_tv(
     settings: Settings,
     clock: Clock,
@@ -409,22 +468,41 @@ def build_samsung_tv(
         return None
     token_name = samsung_token_name(settings.tv_name)
     token = secrets.get(token_name)
+    # Sem token ou com a marca de permissão: a TV precisa do aceite de alguém. A sessão é montada
+    # do mesmo jeito (para o app poder pedi-lo), mas nenhuma conexão é tentada antes do pedido.
+    marked = secrets.get(samsung_permission_key(settings.tv_name)) is not None
+    needs_permission = token is None or marked
     if token is None:
         _log.warning(
-            "TV Samsung configurada, mas ainda não pareada. "
-            "Rode `uniover-agent tv-pair --kind samsung`."
+            "TV Samsung configurada, mas ainda sem permissão. "
+            "Peça pelo app ou rode `uniover-agent tv-pair --kind samsung`."
         )
-        return None
     host = require_tv_host(settings.tv_host)
     known = TvKnown(settings.tv_id_hint, settings.tv_mac)
+    client_name = resolve_samsung_client_name(secrets, settings.tv_name, settings.tv_client_name)
+    permission_key = samsung_permission_key(settings.tv_name)
+
+    async def request_token(current: str | None) -> str:
+        return await pair_samsung_tv(host, client_name, token=current)
+
     remote = SamsungTvDriver(
         host,
         token,
-        settings.tv_client_name,
+        client_name,
         save_token=lambda value: secrets.set(token_name, value),
+        permission_needed=needs_permission,
+        request_token=request_token,
         app_ids=tuple(settings.tv_samsung_apps),
         on_identity=lambda identity: remember_tv_identity(known, identity),
     )
+
+    def remember_permission(needed: bool) -> None:
+        if needed:
+            secrets.set(permission_key, "needed")
+        else:
+            secrets.delete(permission_key)
+
+    remote.on_permission(remember_permission)
 
     async def wake_on_lan() -> bool:
         # O MAC vem do arquivo ou é aprendido na primeira conexão; sem ele não há pacote mágico.
@@ -447,6 +525,7 @@ def build_samsung_tv(
         apps, lambda: manager.snapshot().connection == "hot", monotonic=clock.monotonic
     )
     manager.subscribe(announcer.on_state)
+    permission = TvPermission(remote, manager, transport, envelopes)
     return TvSetup(
         manager,
         transport,
@@ -456,6 +535,7 @@ def build_samsung_tv(
             "tv.key.v2": keys,
             "tv.key.v3": keys,
             "tv.power.off.v1": tv_power_off_handler(manager),
+            "tv.permission.request.v1": permission.handler(),
             "tv.wake.v1": tv_wake_handler(manager),
             "tv.app.launch.v1": tv_app_launch_handler(
                 manager, packages=apps, links_supported=False
@@ -473,10 +553,13 @@ def build_samsung_tv(
             "tv.remote",
             "tv.kind.samsung",
             POWER_OFF_CAPABILITY,
+            PERMISSION_CAPABILITY,
             *key_capabilities(SAMSUNG_OPTIONAL_KEYS),
         ],
         background=[announcer.run],
-        after_hello=[announcer.after_hello],
+        after_hello=[permission.announce, announcer.after_hello],
+        # O pedido responde em segundos, mas não pode segurar a recepção enquanto a TV é consultada.
+        background_commands={"tv.permission.request.v1"},
         known=known,
     )
 
@@ -1175,8 +1258,11 @@ async def tv_pair(  # noqa: PLR0911, PLR0913, PLR0917 - espelha a linha de coman
             return EXIT_OK
         print(f"Pareando com a TV Samsung em {tv_host}. Aceite o aviso na TV em até 60 segundos.")
         try:
-            token = await pair_samsung_tv(tv_host, settings.tv_client_name)
+            # O mesmo nome de sempre: a TV liga a permissão a ele.
+            client_name = resolve_samsung_client_name(secrets, tv_name, settings.tv_client_name)
+            token = await pair_samsung_tv(tv_host, client_name)
             secrets.set(samsung_token_name(tv_name), token)
+            secrets.delete(samsung_permission_key(tv_name))
         except SamsungPairingError as exc:
             print(f"Falha no pareamento da TV Samsung: {exc}", file=sys.stderr)
             return EXIT_FAILURE

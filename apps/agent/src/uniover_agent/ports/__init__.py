@@ -49,6 +49,7 @@ from uniover_agent.ports.tv_channel import (
     TvChannel,
     TvChannelError,
     TvNotPaired,
+    TvPermissionNeeded,
     TvPortClosed,
     TvUnreachable,
 )
@@ -119,6 +120,7 @@ __all__ = [
     "TvChannelError",
     "TvDriver",
     "TvNotPaired",
+    "TvPermissionNeeded",
     "TvPortClosed",
     "TvRemote",
     "TvUnreachable",
