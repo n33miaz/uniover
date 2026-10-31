@@ -90,6 +90,41 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/agent.maintenance.v1.schema.json'
+      pcPointer:
+        name: pc.pointer.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.pointer.v1.schema.json'
+      pcClick:
+        name: pc.click.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.click.v1.schema.json'
+      pcKey:
+        name: pc.key.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.key.v1.schema.json'
+      pcText:
+        name: pc.text.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.text.v1.schema.json'
+      pcMedia:
+        name: pc.media.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.media.v1.schema.json'
+      pcPower:
+        name: pc.power.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.power.v1.schema.json'
+      pcAppLaunch:
+        name: pc.app.launch.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.app.launch.v1.schema.json'
   agentEvents:
     address: uniover/{agentId}/evt
     description: Agente para API. No WebSocket é o mesmo socket; no MQTT, o tópico de eventos.
@@ -146,6 +181,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/agent.update.status.v1.schema.json'
+      pcApps:
+        name: pc.apps.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.apps.v1.schema.json'
 operations:
   sendApiKeepalive:
     action: send
@@ -306,3 +346,59 @@ operations:
     summary: A API recebe o estado da auto-atualização do agente (versão instalada, a mais nova vista, resultado da última checagem).
     messages:
       - $ref: '#/channels/agentEvents/messages/agentUpdateStatus'
+  sendPcPointer:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API envia o movimento do mouse e a rolagem já somados pelo app.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcPointer'
+  sendPcClick:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API envia um clique do mouse (ou o apertar e soltar de um arrasto).
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcClick'
+  sendPcKey:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API envia uma tecla do teclado do PC, com modificadores opcionais.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcKey'
+  sendPcText:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API envia um texto para digitar no PC.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcText'
+  sendPcMedia:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API envia uma tecla de mídia do PC (tocar, faixa, volume, mudo).
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcMedia'
+  sendPcPower:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API pede bloquear, suspender ou desligar o PC (com a contagem do Windows) ou cancelar o desligamento.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcPower'
+  sendPcAppLaunch:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API pede para abrir um app favorito do PC pelo identificador que o agente publicou.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcAppLaunch'
+  receivePcApps:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe a lista de apps favoritos que o PC deixa abrir pelo app.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/pcApps'

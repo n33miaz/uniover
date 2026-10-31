@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/pc.power.v1.schema.json",
+  "title": "pc.power.v1",
+  "description": "API para agente: energia do PC. `LOCK` bloqueia a sessão; `SLEEP` suspende; `SHUTDOWN` agenda o desligamento com a contagem do Windows (aviso na tela do PC) e `CANCEL_SHUTDOWN` cancela essa contagem. Quem confirma com a pessoa é o app e a API; o agente não repete nem adia nada.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "pc.power.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "LOCK",
+            "SLEEP",
+            "SHUTDOWN",
+            "CANCEL_SHUTDOWN"
+          ]
+        }
+      }
+    }
+  }
+}

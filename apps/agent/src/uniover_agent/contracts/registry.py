@@ -16,6 +16,14 @@ from .agent_maintenance_v1 import AgentMaintenanceV1Message
 from .agent_update_status_v1 import AgentUpdateStatusV1Message
 from .api_keepalive_v1 import ApiKeepaliveV1Message
 from .command_result_v1 import CommandResultV1Message
+from .pc_app_launch_v1 import PcAppLaunchV1Message
+from .pc_apps_v1 import PcAppsV1Message
+from .pc_click_v1 import PcClickV1Message
+from .pc_key_v1 import PcKeyV1Message
+from .pc_media_v1 import PcMediaV1Message
+from .pc_pointer_v1 import PcPointerV1Message
+from .pc_power_v1 import PcPowerV1Message
+from .pc_text_v1 import PcTextV1Message
 from .tv_app_launch_v1 import TvAppLaunchV1Message
 from .tv_apps_refresh_v1 import TvAppsRefreshV1Message
 from .tv_apps_v1 import TvAppsV1Message
@@ -43,6 +51,14 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "agent.update.status.v1": AgentUpdateStatusV1Message,
     "api.keepalive.v1": ApiKeepaliveV1Message,
     "command.result.v1": CommandResultV1Message,
+    "pc.app.launch.v1": PcAppLaunchV1Message,
+    "pc.apps.v1": PcAppsV1Message,
+    "pc.click.v1": PcClickV1Message,
+    "pc.key.v1": PcKeyV1Message,
+    "pc.media.v1": PcMediaV1Message,
+    "pc.pointer.v1": PcPointerV1Message,
+    "pc.power.v1": PcPowerV1Message,
+    "pc.text.v1": PcTextV1Message,
     "tv.app.launch.v1": TvAppLaunchV1Message,
     "tv.apps.refresh.v1": TvAppsRefreshV1Message,
     "tv.apps.v1": TvAppsV1Message,

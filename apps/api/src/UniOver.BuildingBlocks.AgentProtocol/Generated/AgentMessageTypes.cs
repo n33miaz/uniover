@@ -31,6 +31,30 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>command.result.v1</c>.</summary>
     public const string CommandResultV1 = "command.result.v1";
 
+    /// <summary>Tipo de mensagem <c>pc.app.launch.v1</c>.</summary>
+    public const string PcAppLaunchV1 = "pc.app.launch.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.apps.v1</c>.</summary>
+    public const string PcAppsV1 = "pc.apps.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.click.v1</c>.</summary>
+    public const string PcClickV1 = "pc.click.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.key.v1</c>.</summary>
+    public const string PcKeyV1 = "pc.key.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.media.v1</c>.</summary>
+    public const string PcMediaV1 = "pc.media.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.pointer.v1</c>.</summary>
+    public const string PcPointerV1 = "pc.pointer.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.power.v1</c>.</summary>
+    public const string PcPowerV1 = "pc.power.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.text.v1</c>.</summary>
+    public const string PcTextV1 = "pc.text.v1";
+
     /// <summary>Tipo de mensagem <c>tv.app.launch.v1</c>.</summary>
     public const string TvAppLaunchV1 = "tv.app.launch.v1";
 
@@ -87,6 +111,14 @@ public static class AgentMessageTypes
         AgentUpdateStatusV1,
         ApiKeepaliveV1,
         CommandResultV1,
+        PcAppLaunchV1,
+        PcAppsV1,
+        PcClickV1,
+        PcKeyV1,
+        PcMediaV1,
+        PcPointerV1,
+        PcPowerV1,
+        PcTextV1,
         TvAppLaunchV1,
         TvAppsRefreshV1,
         TvAppsV1,
