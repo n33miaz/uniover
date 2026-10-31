@@ -348,7 +348,6 @@ test.describe('Configurações', () => {
       title: 'Segurança',
       route: '**/api/v1/identity/passkeys',
       empty: 'Nenhuma passkey cadastrada.',
-      loading: 'Carregando as passkeys…',
       error: 'Não foi possível carregar as passkeys agora.',
     },
     {
@@ -356,7 +355,6 @@ test.describe('Configurações', () => {
       title: 'Pessoas',
       route: '**/api/v1/identity/guests',
       empty: 'Ninguém foi convidado ainda.',
-      loading: 'Carregando os convidados…',
       error: 'Não foi possível carregar os convidados agora.',
     },
   ]) {
@@ -384,7 +382,11 @@ test.describe('Configurações', () => {
       let release!: () => void;
       gate = new Promise<void>((resolve) => (release = resolve));
       await page.reload();
-      await expect(page.getByText(screen.loading)).toBeVisible();
+      // O esqueleto da forma da lista (com a espera anunciada): sem o texto solto de antes, nunca uma área vazia.
+      await expect(
+        page.locator('app-loading-skeleton app-loading-frame[aria-busy="true"]').first(),
+      ).toBeVisible();
+      await settle(page);
       await screenshot(page, printPath(info, `settings-${name}-loading`, 'light'), {
         fullPage: true,
       });
