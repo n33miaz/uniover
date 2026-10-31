@@ -63,7 +63,8 @@ uniover/
 ├─ apps/
 │  ├─ api/      API .NET 10: solução, módulos e testes
 │  ├─ web/      PWA Angular 22
-│  └─ agent/    agente local Python 3.14
+│  ├─ agent/    agente local Python 3.14
+│  └─ tv-launcher/   tela inicial da TV (Android, Kotlin)
 ├─ contracts/   contratos entre linguagens (HTTP e agente)
 ├─ adr/         decisões de arquitetura
 ├─ assets-third-party/   material de terceiros com licença própria
@@ -84,6 +85,9 @@ npm --prefix apps/web ci && npm --prefix apps/web start
 
 # Agente (Python 3.14, uv)
 uv --directory apps/agent run pytest
+
+# Tela inicial da TV (JDK 21 e Android SDK)
+cd apps/tv-launcher && ./gradlew testDebugUnitTest assembleRelease
 ```
 
 ## Segurança
