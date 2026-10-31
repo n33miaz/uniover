@@ -57,7 +57,7 @@ import { Skeleton } from '../../../../shared/ui/skeleton/skeleton';
       aspect-ratio: 268 / 275;
       border-radius: var(--radius);
     }
-    .sk.sk-chips {
+    .sk-chips {
       display: flex;
       justify-content: center;
       gap: 6px;

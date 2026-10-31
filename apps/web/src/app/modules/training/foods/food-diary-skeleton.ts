@@ -16,6 +16,7 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
       @if (page()) {
         <span appSkeleton class="sk-page-title"></span>
         <span appSkeleton class="sk-day-card"></span>
+        <span appSkeleton class="sk-note"></span>
         <div class="sk-bars">
           @for (bar of bars; track bar) {
             <span appSkeleton class="sk-bar"></span>
@@ -45,13 +46,13 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
     :host {
       display: block;
     }
-    .sk.sk-groups,
-    .sk.sk-bars {
+    .sk-groups,
+    .sk-bars {
       display: grid;
       gap: var(--space-3);
     }
     /* As medidas da tela pronta (o título, o cartão do dia, a.sk-barra de cada refeição e o formulário). */
-    .sk-page.sk-title {
+    .sk-page-title {
       display: block;
       width: 40%;
       height: 24px;
@@ -61,6 +62,14 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
     .sk-day-card {
       display: block;
       height: 70px;
+      min-height: 0;
+      margin-bottom: var(--space-3);
+      border-radius: var(--radius-lg, 1rem);
+    }
+    /* O recado (ou a lista de lançamentos) que a tela traz entre o cartão do dia e os grupos de refeição. */
+    .sk-note {
+      display: block;
+      height: 92px;
       min-height: 0;
       margin-bottom: var(--space-3);
       border-radius: var(--radius-lg, 1rem);
@@ -159,7 +168,7 @@ export class FoodDiarySkeleton {
     :host {
       display: block;
     }
-    .sk.sk-results {
+    .sk-results {
       display: grid;
       gap: 0.35rem;
     }

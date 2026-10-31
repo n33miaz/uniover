@@ -75,7 +75,7 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
       justify-content: space-between;
       gap: var(--space-3);
     }
-    .sk-eye.sk-row {
+    .sk-eyebrow {
       display: block;
       width: 20%;
       height: 14px;
@@ -103,7 +103,7 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
       height: 12px;
       min-height: 0;
     }
-    .sk.sk-signals {
+    .sk-signals {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: var(--space-2);
@@ -118,7 +118,7 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
       height: 420px;
       border-radius: var(--radius);
     }
-    .sk.sk-links {
+    .sk-links {
       display: flex;
       flex-direction: column;
     }
@@ -265,7 +265,7 @@ export class BodyPhotosSkeleton {
       width: 50%;
       height: 28px;
     }
-    .sk.sk-macros {
+    .sk-macros {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: var(--space-2);
