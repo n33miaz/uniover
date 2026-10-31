@@ -65,6 +65,18 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/tv/shortcuts/{id:guid}/launch", RateLimitPolicies.Commands),
         ("PUT", "/api/v1/tv/shortcuts/order", RateLimitPolicies.Commands),
 
+        // TV Livre: cada rota que escreve ou fala com a TV leva o limite de comandos.
+        ("POST", "/api/v1/tv/livre/refresh", RateLimitPolicies.Commands),
+        ("PUT", "/api/v1/tv/livre/config", RateLimitPolicies.Commands),
+        ("PUT", "/api/v1/tv/livre/photo", RateLimitPolicies.Commands),
+        ("DELETE", "/api/v1/tv/livre/photo", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/tv/livre/apply", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/tv/livre/install", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/tv/livre/set-home", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/tv/livre/restore", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/tv/livre/sleep", RateLimitPolicies.Commands),
+        ("POST", "/api/v1/tv/livre/apps/visibility", RateLimitPolicies.Commands),
+
         // Trocar o computador que controla a TV: ação rara de administrador, com o mesmo limite baixo das outras que pedem passkey.
         ("PUT", "/api/v1/tv/config/agent", RateLimitPolicies.Login),
     ];

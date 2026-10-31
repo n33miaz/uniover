@@ -39,6 +39,10 @@ internal sealed partial class TvCommandRunner(
     /// Tempo próprio de espera (a limpeza leva vários segundos); sem ele vale o padrão do módulo, que depende de a
     /// sessão com a TV estar dormindo ou não.
     /// </param>
+    /// <param name="audited">
+    /// <c>false</c> não deixa linha na trilha (os pedaços da foto do TV Livre: uma aplicação são até 16 mensagens, e a trilha
+    /// fala da ação, não do transporte). Quem a usa registra o resultado com <see cref="RecordAsync(TvCommandOrigin, string, string?, TvSendOutcome)"/>.
+    /// </param>
     public async Task<TvSendOutcome> RunAsync(
         TvCommandOrigin origin,
         string command,
@@ -46,7 +50,8 @@ internal sealed partial class TvCommandRunner(
         TvMessage message,
         bool waitForReply,
         CancellationToken cancellationToken,
-        TimeSpan? replyTimeout = null)
+        TimeSpan? replyTimeout = null,
+        bool audited = true)
     {
         ArgumentNullException.ThrowIfNull(origin);
         ArgumentNullException.ThrowIfNull(message);
@@ -87,8 +92,25 @@ internal sealed partial class TvCommandRunner(
             AnnounceOffline(target);
         }
 
-        await RecordAsync(origin, target.Id, agentId, command, detail, outcome);
+        if (audited)
+        {
+            await RecordAsync(origin, target.Id, agentId, command, detail, outcome);
+        }
+
         return outcome;
+    }
+
+    /// <summary>
+    /// Deixa a linha de um comando que foi enviado com <c>audited: false</c> (ou que falhou no meio de uma sequência de
+    /// mensagens), apontando para a TV e o agente desta requisição.
+    /// </summary>
+    internal async Task RecordAsync(TvCommandOrigin origin, string command, string? detail, TvSendOutcome outcome)
+    {
+        ArgumentNullException.ThrowIfNull(origin);
+        ArgumentNullException.ThrowIfNull(outcome);
+
+        var target = await ResolveTargetAsync(CancellationToken.None);
+        await RecordAsync(origin, target.Id, target.AgentSlug, command, detail, outcome);
     }
 
     /// <summary>A TV (e o agente) a que o comando desta requisição se destina: a escolhida, ou a de reserva.</summary>

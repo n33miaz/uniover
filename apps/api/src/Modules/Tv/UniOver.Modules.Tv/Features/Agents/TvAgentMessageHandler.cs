@@ -7,6 +7,7 @@ using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Contracts;
 using UniOver.Modules.Tv.Domain;
+using UniOver.Modules.Tv.Features.TvLivre;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
 using UniOver.SharedKernel;
@@ -15,7 +16,7 @@ namespace UniOver.Modules.Tv.Features.Agents;
 
 /// <summary>
 /// Trata o que o agente manda por iniciativa própria: o estado da TV, a lista de apps, os eventos do vigia e o relatório
-/// da limpeza (que a requisição HTTP em espera recolhe pelo <c>requestId</c>). O
+/// da limpeza e o estado do TV Livre (que a requisição HTTP em espera recolhe pelo <c>requestId</c>). O
 /// Devices já validou a mensagem contra o contrato, então os campos existem e têm o tipo certo. Só vale o agente
 /// que controla a TV agora (o salvo no app, ou a variável de reserva): mensagem de outro agente pareado é ignorada,
 /// inclusive a do computador que foi trocado.
@@ -26,6 +27,8 @@ internal sealed partial class TvAgentMessageHandler(
     TvStatePersister persister,
     ITvStreamPublisher stream,
     ITvCleanupReports cleanupReports,
+    ITvLivreRequests livreRequests,
+    TvLivreStore livreStore,
     ITvShortcutReader shortcutReader,
     IAgentPresenceReader presence,
     TvDbContext db,
@@ -38,7 +41,7 @@ internal sealed partial class TvAgentMessageHandler(
     public IReadOnlyCollection<string> HandledTypes { get; } =
         [
             AgentMessageTypes.TvStateV1, AgentMessageTypes.TvAppsV1, AgentMessageTypes.TvAppsV2, AgentMessageTypes.TvWatchdogV1,
-            AgentMessageTypes.TvCleanupResultV1,
+            AgentMessageTypes.TvCleanupResultV1, AgentMessageTypes.TvLivreStateV1,
         ];
 
     public async Task HandleAsync(InboundMessage message, CancellationToken cancellationToken)
@@ -71,10 +74,28 @@ internal sealed partial class TvAgentMessageHandler(
             case AgentMessageTypes.TvWatchdogV1:
                 await HandleWatchdogAsync(tvId, message, cancellationToken);
                 break;
+            case AgentMessageTypes.TvLivreStateV1:
+                await HandleLivreStateAsync(tvId, message, cancellationToken);
+                break;
             case AgentMessageTypes.TvCleanupResultV1:
                 await HandleCleanupResultAsync(tvId, message, cancellationToken);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Guarda o último estado do TV Livre da TV e avisa o pedido que o espera (pelo <c>requestId</c>). Primeiro o banco, depois
+    /// o aviso: quem acorda lê o dado definitivo. O agente manda o estado depois de CADA passo, inclusive dos que falharam, e
+    /// os de outro agente nem chegam aqui (a conferência do agente que controla a TV é a do início de <see cref="HandleAsync"/>).
+    /// </summary>
+    private async Task HandleLivreStateAsync(Guid tvId, InboundMessage message, CancellationToken cancellationToken)
+    {
+        var body = message.Body;
+        var requestId = body.GetProperty("requestId").GetGuid();
+        var entry = await livreStore.EnsureAsync(tvId, cancellationToken);
+        entry.SaveState(body.GetRawText(), requestId, body.GetProperty("at").GetDateTimeOffset(), time.GetUtcNow());
+        await db.SaveChangesAsync(cancellationToken);
+        livreRequests.StateStored(tvId, requestId);
     }
 
     private async Task HandleCleanupResultAsync(Guid tvId, InboundMessage message, CancellationToken cancellationToken)

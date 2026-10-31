@@ -512,6 +512,53 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                     b.ToTable("tv_layouts", "tv");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvLivreEntry", b =>
+                {
+                    b.Property<Guid>("TvId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tv_id");
+
+                    b.Property<string>("ConfigJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("config_json");
+
+                    b.Property<byte[]>("PhotoData")
+                        .HasColumnType("bytea")
+                        .HasColumnName("photo_data");
+
+                    b.Property<string>("PhotoSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("photo_sha256");
+
+                    b.Property<int>("Revision")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("revision");
+
+                    b.Property<DateTimeOffset?>("StateAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("state_at");
+
+                    b.Property<string>("StateJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("state_json");
+
+                    b.Property<Guid?>("StateRequestId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("state_request_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("TvId")
+                        .HasName("pk_tv_livre");
+
+                    b.ToTable("tv_livre", "tv");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvMember", b =>
                 {
                     b.Property<Guid>("TvId")

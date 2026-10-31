@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using System.Text.Json;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
+using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Ports;
 
 namespace UniOver.Modules.Tv.Adapters;
@@ -77,6 +78,58 @@ internal static class TvMessages
     public static TvMessage Cleanup(Guid requestId) =>
         new(AgentMessageTypes.TvCleanupV1, BodyOf(
             new TvCleanupV1Message { Body = new TvCleanupV1Body { RequestId = requestId } }.ToJson()));
+
+    /// <summary>
+    /// Um passo do TV Livre. O <paramref name="requestId"/> é gerado pela API e volta no estado do agente (o <c>id</c> do
+    /// envelope é do Devices). Cada passo só leva os campos que o contrato lhe reserva: <c>revision</c>, <c>configJson</c> e
+    /// <c>photoId</c> no <c>apply</c>; <c>disableFactory</c> no <c>set-home</c>; <c>uninstall</c> no <c>restore</c>;
+    /// <c>disable</c> e <c>enable</c> no <c>set-apps</c>. A API só o manda a agente que anuncia <c>tv.livre.v1</c>.
+    /// </summary>
+    public static TvMessage TvLivre(
+        Guid requestId,
+        TvLivreAction action,
+        int? revision = null,
+        string? configJson = null,
+        Guid? photoId = null,
+        bool? disableFactory = null,
+        bool? uninstall = null,
+        IReadOnlyList<string>? disable = null,
+        IReadOnlyList<string>? enable = null) =>
+        new(AgentMessageTypes.TvLivreV1, BodyOf(
+            new TvLivreV1Message
+            {
+                Body = new TvLivreV1Body
+                {
+                    RequestId = requestId,
+                    // O nome de cada valor do enum gerado é o do contrato em PascalCase (set-home vira SetHome).
+                    Action = Enum.Parse<TvLivreV1BodyAction>(action.ToString()),
+                    Revision = revision,
+                    ConfigJson = configJson,
+                    PhotoId = photoId,
+                    DisableFactory = disableFactory,
+                    Uninstall = uninstall,
+                    Disable = disable?.ToArray(),
+                    Enable = enable?.ToArray(),
+                },
+            }.ToJson()));
+
+    /// <summary>
+    /// Um pedaço da foto do fundo. Cada pedaço vai numa mensagem própria porque o transporte recusa as de mais de 64 KB; o
+    /// <paramref name="sha256"/> é o da foto inteira (o mesmo em todos os pedaços) e o agente o confere ao juntar.
+    /// </summary>
+    public static TvMessage TvLivrePhotoChunk(Guid photoId, int index, int total, string sha256, ReadOnlySpan<byte> data) =>
+        new(AgentMessageTypes.TvLivrePhotoV1, BodyOf(
+            new TvLivrePhotoV1Message
+            {
+                Body = new TvLivrePhotoV1Body
+                {
+                    PhotoId = photoId,
+                    Index = index,
+                    Total = total,
+                    Sha256 = sha256,
+                    Data = Convert.ToBase64String(data),
+                },
+            }.ToJson()));
 
     /// <summary>Nome do valor no contrato (o que viaja no JSON), descoberto pelo próprio conversor gerado.</summary>
     private static string WireName(TvKeyV2BodyKey key) =>

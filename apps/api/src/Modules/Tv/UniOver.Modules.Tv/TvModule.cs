@@ -31,6 +31,7 @@ using UniOver.Modules.Tv.Features.ReorderShortcuts;
 using UniOver.Modules.Tv.Features.SendKey;
 using UniOver.Modules.Tv.Features.SendText;
 using UniOver.Modules.Tv.Features.Selection;
+using UniOver.Modules.Tv.Features.TvLivre;
 using UniOver.Modules.Tv.Features.UpdateShortcut;
 using UniOver.Modules.Tv.Features.Tvs;
 using UniOver.Modules.Tv.Features.Wake;
@@ -87,6 +88,7 @@ public static class TvModule
         services.AddSingleton<ITvCommandSender, DevicesGatewayCommandSender>();
         services.AddSingleton<ITvCleanupSettingsPublisher, CleanupSettingsPublisher>();
         services.AddSingleton<ITvCleanupReports, InMemoryTvCleanupReports>();
+        services.AddSingleton<ITvLivreRequests, InMemoryTvLivreRequests>();
         services.AddSingleton<TvStatePersister>();
         services.AddScoped<TvStateProvider>();
         services.AddSingleton<TvStreamPublisher>();
@@ -120,6 +122,8 @@ public static class TvModule
         services.AddScoped<RefreshShortcutsHandler>();
         services.AddScoped<WakeHandler>();
         services.AddScoped<CleanupHandler>();
+        services.AddScoped<TvLivreStore>();
+        services.AddScoped<TvLivreHandler>();
         services.AddScoped<RecentCommandsHandler>();
         services.AddScoped<StreamEventsHandler>();
         services.AddScoped<TvConfigView>();
@@ -151,6 +155,7 @@ public static class TvModule
         group.MapRefreshShortcuts();
         group.MapWake();
         group.MapCleanup();
+        group.MapTvLivre();
         group.MapRecentCommands();
         group.MapStreamEvents();
         group.MapGetConfig();
