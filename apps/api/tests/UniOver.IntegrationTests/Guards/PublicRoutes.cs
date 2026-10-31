@@ -19,6 +19,9 @@ internal static class PublicRoutes
         new("*", "/health/live", "sonda de vida usada pelo monitor externo"),
         new("GET", "/health/version", "versão pública conferida pela esteira após o deploy"),
 
+        // Consulta o banco (resultado guardado por 30 s) e devolve só 200 ou 503; limite por IP próprio. Para diagnóstico, não para monitor.
+        new("*", "/health/ready", "prontidão: confirma que o banco responde, só o status"),
+
         // Só existe em Development; documenta a API para quem desenvolve.
         new("*", "/openapi/{documentName}.json", "documento OpenAPI, mapeado apenas em Development"),
 
