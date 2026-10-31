@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "revision": 42,
+  "clock": { "enabled": true, "size": "large", "format": "24h", "seconds": false, "date": true },
+  "wallpaper": { "type": "gradient", "colors": ["#10151F", "#2B3A67", "#6C5B9E"], "angle": 270 },
+  "apps": {
+    "mode": "all",
+    "items": ["com.google.android.youtube.tv", "com.netflix.ninja"],
+    "hidden": ["com.tcl.store", "com.example.bloatware"],
+    "showFactory": false
+  },
+  "icons": { "shape": "circle", "size": "medium", "labels": "always" },
+  "builtin": { "settings": true, "sleep": true },
+  "sleep": { "maxMinutes": 480 }
+}
