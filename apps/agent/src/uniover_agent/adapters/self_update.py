@@ -14,6 +14,7 @@ isso, deixa o ambiente virtual **fora** dela (`UV_PROJECT_ENVIRONMENT`) e roda o
 `--project` (sem mudar o diretório corrente): o próprio processo que atualiza não a trava.
 """
 
+import hashlib
 import logging
 import os
 import re
@@ -34,7 +35,13 @@ from uniover_agent.adapters.process import run_hidden
 _log = logging.getLogger(__name__)
 
 REPOSITORY = "n33miaz/uniover"
-COMMIT_URL = f"https://api.github.com/repos/{REPOSITORY}/commits/main"
+# De que ramo o agente se atualiza. Hoje é a `develop` (decisão do dono: a `develop` é a produção);
+# quando a publicação voltar a sair pela `main`, basta trocar este padrão (ou o `update_channel` do
+# `agent.toml`, por PC) para `main`.
+CHANNELS = ("main", "develop")
+DEFAULT_CHANNEL = "develop"
+COMMIT_URL = f"https://api.github.com/repos/{REPOSITORY}/commits/{{channel}}"
+TREE_URL = f"https://api.github.com/repos/{REPOSITORY}/git/trees/{{sha}}?recursive=1"
 ARCHIVE_URL = f"https://github.com/{REPOSITORY}/archive/{{sha}}.zip"
 # Ensaio de atualização (`tools/upgrade-drill.ps1`): com `UNIOVER_UPDATE_DRILL=1`, as duas
 # consultas deste módulo vão para um servidor local em vez do GitHub. Sem a variável de modo
@@ -59,6 +66,10 @@ class SelfUpdateError(Exception):
     """A atualização não pôde ser concluída; a instalação atual ficou intacta."""
 
 
+class UpdateRejected(SelfUpdateError):  # noqa: N818 - nome do domínio: o pacote foi recusado
+    """O pacote baixado não passou na conferência de integridade: não é para ser instalado."""
+
+
 def drill_origin() -> str | None:
     """Origem local do ensaio de atualização, ou `None` fora do modo ensaio (o normal).
 
@@ -77,9 +88,14 @@ def drill_origin() -> str | None:
     return value
 
 
-def commit_url() -> str:
+def commit_url(channel: str = DEFAULT_CHANNEL) -> str:
     origin = drill_origin()
-    return COMMIT_URL if origin is None else f"{origin}/commit"
+    return COMMIT_URL.format(channel=channel) if origin is None else f"{origin}/commit"
+
+
+def tree_url(sha: str) -> str:
+    origin = drill_origin()
+    return TREE_URL.format(sha=sha) if origin is None else f"{origin}/tree/{sha}"
 
 
 def archive_url(sha: str) -> str:
@@ -87,9 +103,9 @@ def archive_url(sha: str) -> str:
     return ARCHIVE_URL.format(sha=sha) if origin is None else f"{origin}/archive/{sha}.zip"
 
 
-def latest_commit() -> str:
-    """Commit atual da `main` (40 hexadecimais)."""
-    url = commit_url()
+def latest_commit(channel: str = DEFAULT_CHANNEL) -> str:
+    """Commit atual do ramo do canal (40 hexadecimais)."""
+    url = commit_url(channel)
     try:
         response = httpx.get(
             url,
@@ -136,6 +152,128 @@ def read_version(source: Path) -> str | None:
     except OSError:
         return None
     return text or None
+
+
+def update_in_trial(source: Path) -> bool:
+    """A versão instalada ainda está em prova (o supervisor não a confirmou)?
+
+    Enquanto está, a pasta `app.previous` é a última versão que se provou boa: atualizar de novo a
+    trocaria por uma versão que ainda ninguém viu funcionar. O arquivo é do supervisor do Windows.
+    """
+    try:
+        text = (source.parent / "runtime" / "update-trial.txt").read_text(encoding="ascii")
+    except OSError, ValueError:
+        return False
+    version = read_version(source)
+    return version is not None and text.strip().split("|", 1)[0] == version
+
+
+def verify_archive(archive: Path, sha: str) -> None:
+    """O zip está inteiro (CRC de cada arquivo) e é mesmo do commit pedido.
+
+    O GitHub grava o commit no comentário do zip: um pacote de outro commit, ou de outro lugar, não
+    passa. É a conferência que não depende de a rede ser confiável.
+    """
+    try:
+        with zipfile.ZipFile(archive) as bundle:
+            damaged = bundle.testzip()
+            comment = bundle.comment.decode("ascii", errors="replace").strip()
+    except zipfile.BadZipFile, OSError:
+        raise UpdateRejected("o pacote baixado não é um zip válido") from None
+    if damaged is not None:
+        raise UpdateRejected("o pacote baixado está corrompido")
+    if comment != sha:
+        raise UpdateRejected("o pacote baixado não é do commit esperado")
+
+
+def _git_blob_sha1(data: bytes) -> str:
+    return hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
+
+
+def agent_blob_hashes(archive: Path) -> dict[str, tuple[str, str]]:
+    """Arquivo de `apps/agent` -> (hash do git dos bytes do zip, o mesmo com fins de linha LF).
+
+    O zip de `git archive` converte fins de linha conforme o `.gitattributes` (os `.ps1` saem em
+    CRLF); o hash no repositório é o do texto normalizado em LF. Aceita-se qualquer um dos dois.
+    """
+    found: dict[str, tuple[str, str]] = {}
+    with zipfile.ZipFile(archive) as bundle:
+        for info in bundle.infolist():
+            parts = PurePosixPath(info.filename).parts
+            is_agent_file = len(parts) >= len(AGENT_PREFIX) + 2 and parts[1:3] == AGENT_PREFIX
+            if not is_agent_file or info.is_dir():
+                continue
+            if (info.external_attr >> 16) & _FILE_TYPE_MASK == _SYMLINK:
+                continue
+            data = bundle.read(info)
+            found["/".join(parts[3:])] = (
+                _git_blob_sha1(data),
+                _git_blob_sha1(data.replace(b"\r\n", b"\n")),
+            )
+    return found
+
+
+def fetch_git_tree(sha: str) -> dict[str, str] | None:
+    """Os arquivos de `apps/agent` do commit segundo o GitHub (caminho -> hash do git).
+
+    `None` quando não dá para conferir (rede, limite de consultas, árvore grande demais para a API):
+    quem chama segue sem esta conferência e diz isso no registro, em vez de travar toda
+    atualização.
+    """
+    try:
+        response = httpx.get(
+            tree_url(sha),
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "uniover-agent"},
+            timeout=_TIMEOUT,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except httpx.HTTPError, ValueError:
+        return None
+    if (
+        not isinstance(data, dict)
+        or data.get("truncated")
+        or not isinstance(data.get("tree"), list)
+    ):
+        return None
+    prefix = "/".join(AGENT_PREFIX) + "/"
+    files: dict[str, str] = {}
+    for entry in data["tree"]:
+        if not isinstance(entry, dict):
+            return None
+        path, kind, blob = entry.get("path"), entry.get("type"), entry.get("sha")
+        if not isinstance(path, str) or not path.startswith(prefix) or kind != "blob":
+            continue
+        if entry.get("mode") == "120000":
+            continue
+        if not isinstance(blob, str):
+            return None
+        files[path.removeprefix(prefix)] = blob
+    return files or None
+
+
+def verify_tree(
+    archive: Path, sha: str, fetch: Callable[[str], dict[str, str] | None] | None = None
+) -> bool:
+    """Confere cada arquivo do pacote contra a árvore do commit no GitHub.
+
+    Devolve `False` se a árvore não pôde ser obtida (a conferência não aconteceu) e levanta
+    `UpdateRejected` se houve conferência e algo não bate: arquivo a mais, a menos ou diferente.
+    """
+    # Resolvido na chamada (e não no padrão do parâmetro): quem troca `fetch_git_tree` vale.
+    expected = (fetch or fetch_git_tree)(sha)
+    if expected is None:
+        return False
+    try:
+        actual = agent_blob_hashes(archive)
+    except zipfile.BadZipFile, OSError:
+        raise UpdateRejected("o pacote baixado não é um zip válido") from None
+    if set(actual) != set(expected):
+        raise UpdateRejected("os arquivos do pacote não são os do commit")
+    for path, blob in expected.items():
+        if blob not in actual[path]:
+            raise UpdateRejected("um arquivo do pacote difere do commit")
+    return True
 
 
 def extract_agent(archive: Path, destination: Path) -> None:
@@ -307,7 +445,7 @@ def run_uv_sync(source: Path, *, pause: float = 3.0) -> None:
     environment = candidate_env(source)
     shutil.rmtree(environment, ignore_errors=True)
     _run_uv(
-        ["sync", "--project", str(source), "--quiet"],
+        ["sync", "--locked", "--project", str(source), "--quiet"],
         what="a sincronização das dependências",
         timeout=600,
         cwd=source.parent,
@@ -318,9 +456,13 @@ def run_uv_sync(source: Path, *, pause: float = 3.0) -> None:
 
 
 def run_uv_check(source: Path) -> None:
-    """Importa o núcleo e o contrato mínimo antes de promover uma atualização.
+    """Ensaio da candidata antes de ela ser promovida: roda o auto-diagnóstico dela.
 
-    Usa o mesmo ambiente descartável, sem sincronizar de novo (`--no-sync`)."""
+    O diagnóstico (`uniover_agent.selfcheck`) importa o código, carrega os contratos e lê a
+    configuração **real** deste PC com as regras da versão nova: uma candidata que não aceita o
+    `agent.toml` de hoje nunca subiria, e é melhor descobrir isso aqui do que depois da troca. Usa o
+    mesmo ambiente
+    descartável, sem sincronizar de novo (`--no-sync`), e não toca em nada da instalação."""
     _run_uv(
         [
             "run",
@@ -328,10 +470,10 @@ def run_uv_check(source: Path) -> None:
             "--project",
             str(source),
             "python",
-            "-c",
-            "import uniover_agent.main; import uniover_agent.contracts.agent_hello_v1",
+            "-m",
+            "uniover_agent.selfcheck",
         ],
-        what="a verificação rápida da atualização",
+        what="o auto-diagnóstico da versão nova",
         timeout=120,
         cwd=source.parent,
         environment=candidate_env(source),
@@ -348,24 +490,39 @@ class UpdateResult:
     outcome: str | None = field(default=None, compare=False)
     latest: str | None = field(default=None, compare=False)
     blocked: str | None = field(default=None, compare=False)
+    # A conferência de integridade recusou o pacote (e não uma falha comum de rede ou de disco).
+    rejected: bool = field(default=False, compare=False)
 
 
-def self_update(  # noqa: PLR0913 - dependências injetadas deixam a atualização testável sem rede
+def self_update(  # noqa: PLR0911, PLR0913 - dependências injetadas deixam a atualização testável sem rede
     source: Path,
     *,
     sync: bool = True,
-    fetch_latest: Callable[[], str] = latest_commit,
+    channel: str = DEFAULT_CHANNEL,
+    fetch_latest: Callable[[], str] | None = None,
     download: Callable[[str, Path], None] = download_archive,
     run_sync: Callable[[Path], None] = run_uv_sync,
     run_check: Callable[[Path], None] = run_uv_check,
+    verify: Callable[[Path, str], None] = verify_archive,
+    verify_files: Callable[[Path, str], bool] = verify_tree,
 ) -> UpdateResult:
-    """Atualiza `source` (a `app` instalada) se a `main` andou. Nunca levanta por falha de
-    rede nem de disco: devolve o motivo em `message`."""
+    """Atualiza `source` (a `app` instalada) se o ramo do canal andou. Nunca levanta por falha de
+    rede nem de disco: devolve o motivo em `message`.
+
+    Antes de trocar a pasta, a candidata passa por: conferência do zip (inteiro e do commit pedido),
+    conferência dos arquivos contra a árvore do commit no GitHub, `uv sync --locked` num ambiente só
+    dela e o auto-diagnóstico dela. Qualquer falha deixa a instalação como estava.
+    """
     if not source.is_dir():
         return UpdateResult(False, "agente não instalado pelo instalador; nada a atualizar")
+    if update_in_trial(source):
+        # `app.previous` é a última versão que se provou boa: a troca a apagaria.
+        return UpdateResult(
+            False, "a versão instalada ainda está em prova; atualizo quando ela se confirmar"
+        )
     sha: str | None = None
     try:
-        sha = fetch_latest()
+        sha = (fetch_latest or (lambda: latest_commit(channel)))()
         if read_version(source) == sha:
             return UpdateResult(
                 False, "o agente já está na versão mais recente", "up_to_date", latest=sha
@@ -382,6 +539,11 @@ def self_update(  # noqa: PLR0913 - dependências injetadas deixam a atualizaç�
         try:
             archive = workspace / "main.zip"
             download(sha, archive)
+            verify(archive, sha)
+            if verify_files(archive, sha):
+                _log.info("pacote conferido: os arquivos batem com o commit %s", sha[:12])
+            else:
+                _log.warning("não consegui conferir os arquivos contra o GitHub; sigo só com o zip")
             new = source.with_name(source.name + ".new")
             shutil.rmtree(new, ignore_errors=True)
             try:
@@ -399,6 +561,9 @@ def self_update(  # noqa: PLR0913 - dependências injetadas deixam a atualizaç�
                 shutil.rmtree(candidate_env(new), ignore_errors=True)
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
+    except UpdateRejected as exc:
+        _log.error("atualização recusada: %s", exc, extra={"recorded": True})
+        return UpdateResult(False, f"pacote recusado: {exc}", "failed", latest=sha, rejected=True)
     except (SelfUpdateError, OSError) as exc:
         _log.warning("auto-atualização adiada: %s", exc)
         return UpdateResult(False, f"não atualizei agora: {exc}", "failed", latest=sha)

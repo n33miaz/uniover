@@ -34,8 +34,10 @@ OLD = "a" * 40
 NEW = "b" * 40
 
 
-def make_zip(path: Path, files: dict[str, str]) -> None:
+def make_zip(path: Path, files: dict[str, str], comment: str = NEW) -> None:
+    """Zip no formato do GitHub: o commit vem gravado no comentário (a atualização o confere)."""
     with zipfile.ZipFile(path, "w") as bundle:
+        bundle.comment = comment.encode("ascii")
         for name, content in files.items():
             bundle.writestr(name, content)
 
@@ -321,7 +323,14 @@ def patch_http(monkeypatch: pytest.MonkeyPatch, handler: Handler) -> list[httpx.
 def test_latest_commit_reads_the_sha_from_the_github_api(monkeypatch: pytest.MonkeyPatch) -> None:
     requests = patch_http(monkeypatch, lambda r: httpx.Response(200, json={"sha": NEW}))
     assert latest_commit() == NEW
-    assert [str(r.url) for r in requests] == [module.COMMIT_URL]
+    assert [str(r.url) for r in requests] == [module.COMMIT_URL.format(channel="develop")]
+
+
+def test_latest_commit_asks_for_the_branch_of_the_channel(monkeypatch: pytest.MonkeyPatch) -> None:
+    requests = patch_http(monkeypatch, lambda r: httpx.Response(200, json={"sha": NEW}))
+    assert latest_commit("main") == NEW
+    assert str(requests[0].url).endswith("/commits/main")
+    assert module.DEFAULT_CHANNEL == "develop"
 
 
 @pytest.mark.parametrize(
@@ -406,7 +415,15 @@ def test_uv_sync_runs_in_a_throwaway_environment_and_never_in_the_running_one(
     candidate = tmp_path / "app.new"
     run_uv_sync(candidate)
     [(command, kwargs)] = fake.calls
-    assert command == ["C:/uv/uv.exe", "sync", "--project", str(candidate), "--quiet"]
+    # `--locked`: o uv.lock manda, uma dependência diferente da ensaiada nunca entra sozinha.
+    assert command == [
+        "C:/uv/uv.exe",
+        "sync",
+        "--locked",
+        "--project",
+        str(candidate),
+        "--quiet",
+    ]
     # O ambiente do agente em uso (arquivos presos no Windows) fica intocado.
     assert kwargs["env"]["UV_PROJECT_ENVIRONMENT"] == str(tmp_path / "app.new.venv")
     assert kwargs["capture_output"] is True
@@ -428,8 +445,8 @@ def test_uv_check_uses_the_same_environment_without_syncing_again(
         "--project",
         str(tmp_path / "app.new"),
         "python",
-        "-c",
-        "import uniover_agent.main; import uniover_agent.contracts.agent_hello_v1",
+        "-m",
+        "uniover_agent.selfcheck",
     ]
     assert kwargs["env"]["UV_PROJECT_ENVIRONMENT"] == str(tmp_path / "app.new.venv")
 
@@ -523,13 +540,17 @@ def test_the_self_update_command_always_exits_zero_and_says_what_happened(
 ) -> None:
     seen: dict[str, object] = {}
 
-    def fake(source: Path, *, sync: bool) -> UpdateResult:
-        seen.update(source=source, sync=sync)
+    def fake(source: Path, *, sync: bool, channel: str) -> UpdateResult:
+        seen.update(source=source, sync=sync, channel=channel)
         return UpdateResult(False, "não atualizei agora: sem rede")
 
     monkeypatch.setattr(main_module, "self_update", fake)
     assert main(["self-update", "--no-sync"]) == EXIT_OK
     assert "sem rede" in capsys.readouterr().out
-    assert seen == {"source": tmp_path / "localappdata" / "UniOver" / "app", "sync": False}
+    assert seen == {
+        "source": tmp_path / "localappdata" / "UniOver" / "app",
+        "sync": False,
+        "channel": "develop",
+    }
     assert main(["self-update"]) == EXIT_OK
     assert seen["sync"] is True
