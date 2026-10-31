@@ -96,10 +96,16 @@ export class RoutineEditorPage {
   protected readonly confirmingLeave = signal(false);
   protected readonly confirmingDelete = signal(false);
 
-  protected readonly errors = computed(() =>
-    this.submitted() ? validateDraft(this.draft()) : { reps: new Set<string>() },
-  );
   protected readonly dirty = computed(() => isDraftDirty(this.initial(), this.draft()));
+  // Os avisos aparecem assim que a pessoa mexe: o Salvar fica desligado enquanto houver erro, e sem o aviso ela
+  // não teria como saber o que falta.
+  protected readonly errors = computed(() =>
+    this.submitted() || this.dirty() ? validateDraft(this.draft()) : { reps: new Set<string>() },
+  );
+  /** Salvar só vale com algo mudado, tudo válido e nenhuma gravação em andamento. */
+  protected readonly saveDisabled = computed(
+    () => this.saving() || !this.dirty() || hasErrors(validateDraft(this.draft())),
+  );
 
   protected readonly title = this.editing
     ? $localize`:@@training.editor.title-edit:Editar Rotina`

@@ -109,13 +109,47 @@ describe('ExerciseFormPage', () => {
       ]);
     });
 
-    it('asks for the name and the muscle, and saves nothing', async () => {
+    it('keeps Save off while nothing changed, and does not scold an untouched form', async () => {
       const { fixture, el } = await open('/treino/exercicios/novo');
-      button(el, 'Salvar Exercício').click();
-      await eventually(fixture, () => expect(text(el)).toContain('Dê um nome ao exercício.'));
+      fixture.detectChanges();
+      expect(button(el, 'Salvar Exercício').disabled).toBe(true);
+      expect(text(el)).not.toContain('Dê um nome ao exercício.');
+      expect(text(el)).not.toContain('Escolha o músculo principal.');
+    });
+
+    it('keeps Save off and says what is missing, and saves nothing', async () => {
+      const { fixture, el } = await open('/treino/exercicios/novo');
+      const input = field<HTMLInputElement>(el, '#exercise-name');
+      input.value = 'Remada articulada';
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      // O nome está certo, falta o músculo: o botão fica desligado e o aviso diz o motivo.
+      expect(button(el, 'Salvar Exercício').disabled).toBe(true);
       expect(text(el)).toContain('Escolha o músculo principal.');
+      expect(text(el)).not.toContain('Dê um nome ao exercício.');
+      // Só o músculo escolhido, sem nome: o aviso do nome aparece e o botão continua desligado.
+      input.value = '   ';
+      input.dispatchEvent(new Event('input'));
+      chooseMuscle(fixture, el, 'chest');
+      expect(text(el)).toContain('Dê um nome ao exercício.');
       expect(field(el, '#exercise-name').getAttribute('aria-invalid')).toBe('true');
+      expect(button(el, 'Salvar Exercício').disabled).toBe(true);
       expect(await TestBed.inject(OfflineQueue).items()).toHaveLength(0);
+    });
+
+    it('turns Save on once the name and the muscle are there', async () => {
+      const { fixture, el } = await open('/treino/exercicios/novo');
+      fill(fixture, el, 'Remada articulada', 'middle_back');
+      expect(button(el, 'Salvar Exercício').disabled).toBe(false);
+    });
+
+    it('keeps Save in the fixed bar at the bottom, where the notices also live', async () => {
+      const { fixture, el } = await open('/treino/exercicios/novo');
+      fixture.detectChanges();
+      const bar = field(el, '.ui-action-bar');
+      expect(bar.contains(button(el, 'Salvar Exercício'))).toBe(true);
+      expect(bar.contains(button(el, 'Cancelar'))).toBe(true);
+      expect(field(el, 'form').classList.contains('ui-has-action-bar')).toBe(true);
     });
 
     it('saves as your own exercise, queues the write once, and opens the sheet', async () => {
@@ -270,8 +304,11 @@ describe('ExerciseFormPage', () => {
         expect(field<HTMLInputElement>(el, '#exercise-name').value).not.toBe(''),
       );
       const input = field<HTMLInputElement>(el, '#exercise-name');
+      expect(button(el, 'Salvar Exercício').disabled).toBe(true);
       input.value = 'Remada na máquina articulada';
       input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      expect(button(el, 'Salvar Exercício').disabled).toBe(false);
       button(el, 'Salvar Exercício').click();
       await vi.waitFor(() => expect(router.url).toBe('/treino/exercicios/meu'), { timeout: 3000 });
       expect((await trainingDb.exercises.get('meu'))?.name).toBe('Remada na máquina articulada');

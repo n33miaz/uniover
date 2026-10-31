@@ -212,7 +212,8 @@ test.describe('rotinas: editor', () => {
     for (let n = 0; n < 6; n++) {
       await page.getByRole('button', { name: 'Aumentar repetições mínimas' }).click();
     }
-    await page.getByRole('button', { name: 'Salvar Rotina' }).click();
+    // Com erro o Salvar fica desligado, e os avisos já dizem o que falta.
+    await expect(page.getByRole('button', { name: 'Salvar Rotina' })).toBeDisabled();
     await expect(page.getByText('Dê um nome à rotina.')).toBeVisible();
     await expect(page.getByText('A repetição mínima não pode passar da máxima.')).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/treino/rotinas/${SEED_ROUTINE_IDS.a}$`));

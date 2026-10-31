@@ -164,7 +164,6 @@ textarea.ui-input {
   display: grid;
   grid-template-columns: 1fr 1.5fr;
   gap: var(--space-2);
-  margin-top: var(--space-1);
 }
 
 /* Músculo principal: um campo que abre a lista por grupo. Não é o seletor nativo: o formulário fica igual em qualquer aparelho. */
