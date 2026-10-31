@@ -123,7 +123,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentLogsV1, AgentMaintenanceV1, TransportKeepaliveV1, TvAdb, TvCleanupAutomaticV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvPowerOffV1, TvRemote };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentLogsV1, AgentMaintenanceV1, TransportKeepaliveV1, TvAdb, TvCleanupAutomaticV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvPowerOffV1, TvRemote };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -199,6 +199,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.TvAdb;
                 case "tv.cleanup.automatic.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvCleanupAutomaticV1;
+                case "tv.focus-closes-background.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.TvFocusClosesBackgroundV1;
                 case "tv.key.ASPECT":
                     return AgentHelloV1BodyCapabilitiesItem.TvKeyAspect;
                 case "tv.key.BLUE":
@@ -273,6 +275,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvCleanupAutomaticV1:
                     JsonSerializer.Serialize(writer, "tv.cleanup.automatic.v1", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvFocusClosesBackgroundV1:
+                    JsonSerializer.Serialize(writer, "tv.focus-closes-background.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvKeyAspect:
                     JsonSerializer.Serialize(writer, "tv.key.ASPECT", options);

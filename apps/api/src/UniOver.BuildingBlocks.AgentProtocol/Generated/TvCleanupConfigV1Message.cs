@@ -58,6 +58,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public long DeepThresholdMb { get; set; }
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("focusClosesBackground")]
+        public bool? FocusClosesBackground { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("focusEnabled")]
         public bool? FocusEnabled { get; set; }
 

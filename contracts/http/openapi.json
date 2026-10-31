@@ -4475,6 +4475,10 @@
             },
             "type": "array"
           },
+          "focusClosesBackground": {
+            "default": false,
+            "type": "boolean"
+          },
           "focusModeEnabled": {
             "default": false,
             "type": "boolean"
@@ -4585,6 +4589,12 @@
             ]
           },
           "allowBackgroundAppClosing": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "focusClosesBackground": {
             "type": [
               "null",
               "boolean"

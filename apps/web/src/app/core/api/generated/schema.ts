@@ -9157,6 +9157,8 @@ export interface components {
       allowBackgroundAppClosing: boolean;
       capabilities: string[];
       /** @default false */
+      focusClosesBackground: boolean;
+      /** @default false */
       focusModeEnabled: boolean;
       /** Format: uuid */
       id: string;
@@ -9181,6 +9183,7 @@ export interface components {
     UpdateTvRequest: {
       agentSlug: null | string;
       allowBackgroundAppClosing?: null | boolean;
+      focusClosesBackground?: null | boolean;
       focusModeEnabled?: null | boolean;
       name: null | string;
       restrictedBackgroundPackages?: null | string[];
