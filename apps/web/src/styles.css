@@ -240,6 +240,11 @@ a {
   outline-offset: 2px;
 }
 
+/* O clique de mouse ou o toque não deixam o anel padrão do navegador; só o foco de teclado aparece (regra acima). */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 /* No app instalado (sem barra do navegador) o Android com gestos não informa inset: garante respiro mínimo. */
 @media (display-mode: standalone) and (pointer: coarse) {
   :root {
@@ -253,14 +258,25 @@ main {
 }
 
 /*
- * O toque prolongado no iOS não deve abrir a lupa nem o menu do sistema sobre a interface. Campos que recebem texto
- * restauram explicitamente a seleção e o menu de colar, para que essa proteção não atrapalhe a edição.
+ * Fora de um campo de digitação nada é selecionável, e o toque não pinta o retângulo azul padrão do navegador: o app é
+ * uma interface de toque, não um documento. O toque prolongado no iOS também não abre a lupa nem o menu do sistema sobre
+ * botões, cartões e imagens. Campos que recebem texto restauram a seleção e o menu de colar (editar não pode quebrar), e
+ * texto que a pessoa precisa copiar ganha a classe `ui-selectable` (hoje, só o registro do agente). O que é para copiar
+ * em geral vai num campo somente leitura ou num botão "Copiar". O foco de teclado continua visível (`:focus-visible`).
  */
+html,
 body,
 body * {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Arrastar uma imagem ou um link abriria o "fantasma" de arrasto do navegador por cima da interface. */
+img,
+a {
+  -webkit-user-drag: none;
 }
 
 input:not([type]),
@@ -278,7 +294,9 @@ input[type='tel' i],
 input[type='url' i],
 textarea,
 [contenteditable],
-[contenteditable] * {
+[contenteditable] *,
+.ui-selectable,
+.ui-selectable * {
   user-select: text;
   -webkit-user-select: text;
   -webkit-touch-callout: default;

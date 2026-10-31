@@ -150,7 +150,9 @@ test.describe('início e navegação', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   });
 
-  test('remove a seleção da interface sem bloquear campos de texto', async ({ page }) => {
+  test('remove a seleção e o realce azul da interface sem bloquear campos de texto', async ({
+    page,
+  }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -158,13 +160,38 @@ test.describe('início e navegação', () => {
       const input = document.createElement('input');
       input.type = 'text';
       const textarea = document.createElement('textarea');
-      document.body.append(input, textarea);
+      const editable = document.createElement('div');
+      editable.setAttribute('contenteditable', 'true');
+      const copyable = document.createElement('pre');
+      copyable.className = 'ui-selectable';
+      copyable.textContent = 'registro';
+      const copyableChild = document.createElement('span');
+      copyable.append(copyableChild);
+      document.body.append(input, textarea, editable, copyable);
 
+      // Nem todo motor devolve o realce do toque no estilo calculado (o WebKit de bancada não devolve): sem ele, lê a
+      // regra da folha de estilo que vale para o elemento.
+      const tapHighlight = (element: Element): string => {
+        const computed = getComputedStyle(element);
+        const direct =
+          (computed as unknown as { webkitTapHighlightColor?: string }).webkitTapHighlightColor ||
+          computed.getPropertyValue('-webkit-tap-highlight-color');
+        if (direct) return direct;
+        for (const sheet of Array.from(document.styleSheets)) {
+          for (const rule of Array.from(sheet.cssRules)) {
+            if (!(rule instanceof CSSStyleRule) || !element.matches(rule.selectorText)) continue;
+            const value = rule.style.getPropertyValue('-webkit-tap-highlight-color');
+            if (value) return value;
+          }
+        }
+        return '';
+      };
       const read = (element: Element) => {
         const computed = getComputedStyle(element);
         return {
           userSelect: computed.userSelect,
           webkitUserSelect: computed.getPropertyValue('-webkit-user-select'),
+          tapHighlight: tapHighlight(element),
         };
       };
 
@@ -174,22 +201,76 @@ test.describe('início e navegação', () => {
       const result = {
         text: read(document.querySelector('h1')!),
         button: read(document.querySelector('button')!),
+        link: read(document.querySelector('a')!),
         input: read(input),
         textarea: read(textarea),
+        editable: read(editable),
+        copyable: read(copyable),
+        copyableChild: read(copyableChild),
         bodyTouchCallout,
       };
       input.remove();
       textarea.remove();
+      editable.remove();
+      copyable.remove();
       return result;
     });
 
-    expect(styles.text).toMatchObject({ userSelect: 'none', webkitUserSelect: 'none' });
-    expect(styles.button).toMatchObject({ userSelect: 'none', webkitUserSelect: 'none' });
-    expect(styles.input).toMatchObject({ userSelect: 'text', webkitUserSelect: 'text' });
-    expect(styles.textarea).toMatchObject({ userSelect: 'text', webkitUserSelect: 'text' });
+    for (const blocked of [styles.text, styles.button, styles.link]) {
+      expect(blocked).toMatchObject({ userSelect: 'none', webkitUserSelect: 'none' });
+    }
+    // Só campos de digitação e o texto marcado para copiar aceitam seleção.
+    for (const allowed of [
+      styles.input,
+      styles.textarea,
+      styles.editable,
+      styles.copyable,
+      styles.copyableChild,
+    ]) {
+      expect(allowed).toMatchObject({ userSelect: 'text', webkitUserSelect: 'text' });
+    }
+    // O realce azul do toque some em toda a interface (transparente: o navegador devolve rgba com alfa 0).
+    for (const element of [styles.text, styles.button, styles.link, styles.input]) {
+      expect(element.tapHighlight).toMatch(/^(transparent|rgba\(0, 0, 0, 0\))$/);
+    }
     if (styles.bodyTouchCallout) {
       expect(styles.bodyTouchCallout).toBe('none');
     }
+  });
+
+  test('o toque duplo ou longo não seleciona texto fora do campo, e dentro dele seleciona', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    const heading = page.getByRole('heading', { level: 1 });
+    await expect(heading).toBeVisible();
+    await heading.click({ clickCount: 3 });
+    expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).toBe('');
+
+    await page.evaluate(() => {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.id = 'campo-de-teste';
+      input.value = 'texto do campo';
+      document.body.append(input);
+    });
+    await page.locator('#campo-de-teste').click({ clickCount: 3 });
+    expect(
+      await page.evaluate(() => {
+        const field = document.querySelector<HTMLInputElement>('#campo-de-teste')!;
+        return (field.selectionEnd ?? 0) - (field.selectionStart ?? 0);
+      }),
+    ).toBeGreaterThan(0);
+  });
+
+  test('o foco de teclado continua visível e o clique não deixa anel', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await page.keyboard.press('Tab');
+    const focused = page.locator(':focus-visible');
+    await expect(focused).toHaveCount(1);
+    const outline = await focused.evaluate((element) => getComputedStyle(element).outlineStyle);
+    expect(outline).not.toBe('none');
   });
 
   test('folha de edição: reordena, cancela e aplica', async ({ page }, info) => {
