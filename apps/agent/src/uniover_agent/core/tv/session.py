@@ -570,7 +570,11 @@ class TvSessionManager:
         """Laço de fundo: confere a inatividade até ser cancelado."""
         while True:
             await self._clock.sleep(self._poll_seconds)
-            await self.hibernate_if_idle()
+            try:
+                await self.hibernate_if_idle()
+            except Exception:
+                # Sem este `try`, a falha matava o laço em silêncio e a TV nunca mais hibernava.
+                _log.exception("falha ao conferir a hibernação da sessão com a TV; sigo vigiando")
 
     async def aclose(self) -> None:
         """Encerramento do agente: cancela o que estiver em segundo plano e fecha os canais."""

@@ -404,6 +404,15 @@ class SamsungTvDriver:
                 raise TvPermissionNeeded(
                     "a TV Samsung pediu a permissão do UniOver de novo"
                 ) from None
+            # Antes a causa se perdia aqui: token recusado e TV fora do ar viravam a mesma frase. O
+            # tipo da exceção e o aviso de recusa (a TV responde, mas não aceita o token) vão para o
+            # registro.
+            refused = "unauthorized" in str(exc).lower() or "token" in str(exc).lower()
+            _log.warning(
+                "a TV Samsung não abriu o controle remoto (%s)%s",
+                type(exc).__name__,
+                "; parece que ela recusou o token" if refused else "",
+            )
             raise TvUnreachable("a TV Samsung não respondeu ao controle remoto") from None
         self._client = client
         self._connected = True
