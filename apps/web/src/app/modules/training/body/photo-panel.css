@@ -14,7 +14,6 @@ h2 {
   font-size: clamp(1.1rem, 4.8vw, 1.25rem);
 }
 .local-only,
-.cloud-status,
 .usage,
 .retention,
 .empty {
@@ -25,24 +24,6 @@ h2 {
   padding: var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--a-surface-2);
-}
-.cloud-choice {
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius-sm);
-  background: var(--a-surface-2);
-}
-.cloud-choice h3,
-.cloud-choice p {
-  margin: 0;
-}
-.cloud-choice p,
-.cloud-photo-state,
-.storage-badge {
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
 }
 .add-photo {
   position: relative;
@@ -79,21 +60,6 @@ h2 {
   padding: var(--space-2);
   border: 1px solid var(--a-line);
   border-radius: var(--radius-sm);
-}
-.photo-card.cloud-photo {
-  border-color: var(--a-accent);
-  background: var(--a-accent-soft);
-}
-.storage-badge {
-  justify-self: start;
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-pill, 999px);
-  background: var(--a-surface-2);
-  font-weight: 650;
-}
-.storage-badge.cloud {
-  color: var(--a-accent-ink);
-  background: var(--a-accent-soft);
 }
 .image-button {
   display: block;

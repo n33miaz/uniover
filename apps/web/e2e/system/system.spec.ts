@@ -158,21 +158,13 @@ test.describe('Configurações > Sistema > TVs', () => {
     });
   });
 
-  test('mostra o estado do bucket de fotos e só deixa ligar quando ele está pronto', async ({
-    page,
-  }) => {
+  test('não oferece mais fotos na nuvem', async ({ page }) => {
     seedPaired();
     await open(page);
-    await expect(page.getByText('Bucket pronto no servidor.')).toBeVisible();
-    await expect(page.getByRole('switch', { name: 'Fotos na Nuvem' })).toBeEnabled();
-  });
-
-  test('sem bucket no servidor, avisa e trava o interruptor de fotos', async ({ page }) => {
-    seedPaired();
-    system.bucketConfigured = false;
-    await open(page);
-    await expect(page.getByText(/ainda não configurado no servidor/)).toBeVisible();
-    await expect(page.getByRole('switch', { name: 'Fotos na Nuvem' })).toBeDisabled();
+    await expect(page.getByRole('switch', { name: 'Limpeza Leve Automática' })).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Fotos na Nuvem' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Fotos' })).toHaveCount(0);
+    await expect(page.getByText(/bucket/i)).toHaveCount(0);
   });
 
   test('a linha Sistema da lista leva à tela', async ({ page }) => {

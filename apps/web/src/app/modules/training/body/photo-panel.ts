@@ -6,14 +6,18 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import type { PhotoCloudState, PhotoInfo, PhotoUsage } from '../data/photos/photo';
+import type { PhotoInfo, PhotoUsage } from '../data/photos/photo';
 import { PhotoStore } from '../data/photos/photo-store';
-import { ProgressPhotoSync } from '../data/photos/progress-photo-sync';
 import { TrainingSheet } from '../shell/training-sheet';
 import { formatBytes, formatFullDate } from './body-text';
 import { BodyPhotosSkeleton } from './body-skeleton';
 
+/** `src` é a miniatura da lista; a foto inteira só é lida ao ampliar ou comparar (`FullPhoto`). */
 interface DisplayPhoto extends PhotoInfo {
+  readonly src: string;
+}
+
+interface FullPhoto extends PhotoInfo {
   readonly src: string;
 }
 
@@ -23,47 +27,6 @@ interface DisplayPhoto extends PhotoInfo {
   template: `
     <section class="photos" aria-labelledby="photos-title">
       <h2 id="photos-title" i18n="@@training.body.photos.title">Fotos de Progresso</h2>
-      @if (!sync.accepted()) {
-        <section class="cloud-choice" aria-labelledby="cloud-title">
-          <h3 id="cloud-title" i18n="@@training.body.photos.cloud-title">Fotos na Nuvem</h3>
-          <p i18n="@@training.body.photos.cloud-description">
-            Suas novas fotos vão para a nuvem privada, só sua. Para apagar, use Apagar na foto: a
-            cópia na nuvem sai também.
-          </p>
-          <button
-            class="secondary ui-btn"
-            type="button"
-            (click)="acceptCloud()"
-            i18n="@@training.body.photos.cloud-accept"
-          >
-            Ativar Fotos na Nuvem
-          </button>
-        </section>
-      } @else {
-        <p class="cloud-status" aria-live="polite" i18n-aria-live="@@common.aria.polite">
-          {{ cloudStatusLabel() }}
-        </p>
-        @if (hasUnsent()) {
-          <button
-            class="secondary ui-btn"
-            type="button"
-            (click)="sendDevicePhotos()"
-            i18n="@@training.body.photos.cloud-send-device"
-          >
-            Enviar Fotos Deste Aparelho
-          </button>
-        }
-        @if (hasErrors()) {
-          <button
-            class="secondary ui-btn"
-            type="button"
-            (click)="retryCloud()"
-            i18n="@@training.body.photos.cloud-retry"
-          >
-            Tentar De Novo
-          </button>
-        }
-      }
       <p class="usage" aria-live="polite" i18n-aria-live="@@common.aria.polite">
         <span i18n="@@training.body.photos.usage">Fotos: {{ photoBytesText() }}</span>
         @if (usage()?.quotaBytes; as quota) {
@@ -73,17 +36,9 @@ interface DisplayPhoto extends PhotoInfo {
           >
         }
       </p>
-      @if (cloudOn()) {
-        <p class="retention" i18n="@@training.body.photos.retention-cloud">
-          As fotos já enviadas ficam guardadas na nuvem privada. As que ainda não foram enviadas só
-          existem neste aparelho.
-        </p>
-      } @else {
-        <p class="retention" i18n="@@training.body.photos.retention">
-          Se o navegador apagar os dados do site, suas fotos somem. Salve uma cópia de vez em
-          quando.
-        </p>
-      }
+      <p class="retention" i18n="@@training.body.photos.retention">
+        Se o navegador apagar os dados do site, suas fotos somem. Salve uma cópia de vez em quando.
+      </p>
       <label class="primary ui-btn add-photo">
         <span i18n="@@training.body.photos.add">Tirar ou Escolher Foto</span>
         <input
@@ -101,24 +56,21 @@ interface DisplayPhoto extends PhotoInfo {
       } @else if (photos().length) {
         <div class="grid">
           @for (photo of photos(); track photo.id) {
-            <article class="photo-card" [class.cloud-photo]="isCloudPhoto(photo.id)">
+            <article class="photo-card">
               <button
                 class="image-button"
                 type="button"
                 (click)="view(photo)"
                 [attr.aria-label]="viewLabel(photo.takenOn)"
               >
-                <img [src]="photo.src" [alt]="photoAlt(photo.takenOn)" />
+                <img
+                  [src]="photo.src"
+                  [alt]="photoAlt(photo.takenOn)"
+                  [attr.loading]="'lazy'"
+                  [attr.decoding]="'async'"
+                />
               </button>
               <time>{{ formatDate(photo.takenOn) }}</time>
-              <small class="storage-badge" [class.cloud]="isCloudPhoto(photo.id)">{{
-                photoStorageLabel(photo.id)
-              }}</small>
-              @if (sync.stateOf(photo.id); as cloud) {
-                @if (cloud.state !== 'cloud') {
-                  <small class="cloud-photo-state">{{ photoCloudLabel(cloud.state) }}</small>
-                }
-              }
               <button
                 class="compare-choice secondary ui-btn"
                 type="button"
@@ -182,7 +134,7 @@ interface DisplayPhoto extends PhotoInfo {
           <h3 id="compare-title" i18n="@@training.body.photos.comparison">Comparação</h3>
           @for (photo of comparison(); track photo.id) {
             <figure>
-              <img [src]="photo.src" [alt]="photoAlt(photo.takenOn)" />
+              <img [src]="photo.src" [alt]="photoAlt(photo.takenOn)" [attr.decoding]="'async'" />
               <figcaption>{{ formatDate(photo.takenOn) }}</figcaption>
             </figure>
           }
@@ -204,22 +156,20 @@ interface DisplayPhoto extends PhotoInfo {
 })
 export class BodyPhotoPanel {
   private readonly store = inject(PhotoStore);
-  protected readonly sync = inject(ProgressPhotoSync);
   protected readonly photos = signal<readonly DisplayPhoto[]>([]);
   /** A lista só vale depois da primeira leitura do aparelho: antes disso "nenhuma foto" seria uma afirmação falsa. */
   protected readonly loaded = signal(false);
   protected readonly usage = signal<PhotoUsage | null>(null);
   protected readonly selected = signal<readonly string[]>([]);
   protected readonly confirmingId = signal<string | null>(null);
-  protected readonly viewing = signal<DisplayPhoto | null>(null);
+  protected readonly viewing = signal<FullPhoto | null>(null);
   protected readonly error = signal('');
   protected readonly message = signal('');
-  protected readonly comparison = signal<readonly DisplayPhoto[]>([]);
+  protected readonly comparison = signal<readonly FullPhoto[]>([]);
 
   constructor() {
     effect(() => {
       this.store.revision();
-      this.sync.revision();
       untracked(() => void this.load());
     });
   }
@@ -257,34 +207,35 @@ export class BodyPhotoPanel {
         $localize`:@@training.body.photos.invalid:Não foi possível abrir esta imagem. Escolha outra foto.`,
       );
     } else {
-      await this.sync.queueNew(result.photo.id);
-      this.message.set(
-        this.sync.accepted()
-          ? $localize`:@@training.body.photos.saved-cloud:Foto salva e preparada para enviar.`
-          : $localize`:@@training.body.photos.saved:Foto salva só neste aparelho.`,
-      );
+      this.message.set($localize`:@@training.body.photos.saved:Foto salva só neste aparelho.`);
     }
     await this.load();
   }
 
-  protected toggle(id: string): void {
+  protected async toggle(id: string): Promise<void> {
     const current = this.selected();
     const next = current.includes(id)
       ? current.filter((value) => value !== id)
       : [...current, id].slice(-2);
     this.selected.set(next);
-    this.comparison.set(
-      next.length === 2
-        ? next.map((value) => this.photos().find((photo) => photo.id === value)!).filter(Boolean)
-        : [],
-    );
+    if (next.length !== 2) {
+      this.comparison.set([]);
+      return;
+    }
+    // A comparação mostra as duas fotos inteiras: só agora elas são lidas e viram `data:`.
+    const pair = await Promise.all(next.map((value) => this.full(value)));
+    // Se a seleção mudou enquanto as fotos eram lidas, esta resposta ficou velha.
+    if (this.selected() !== next) return;
+    this.comparison.set(pair.filter((photo): photo is FullPhoto => photo !== null));
   }
 
-  protected view(photo: DisplayPhoto): void {
-    this.viewing.set(photo);
+  protected async view(photo: DisplayPhoto): Promise<void> {
+    const full = await this.full(photo.id);
+    if (full !== null) this.viewing.set(full);
   }
+
   protected async remove(id: string): Promise<void> {
-    await this.sync.remove(id);
+    await this.store.remove(id);
     this.confirmingId.set(null);
     this.selected.set(this.selected().filter((value) => value !== id));
     this.comparison.set([]);
@@ -319,81 +270,12 @@ export class BodyPhotoPanel {
     return $localize`:@@training.body.photos.alt:Foto de progresso de ${formatFullDate(date)}:date:`;
   }
 
-  protected async acceptCloud(): Promise<void> {
-    this.error.set('');
-    try {
-      await this.sync.accept();
-    } catch {
-      this.error.set(
-        $localize`:@@training.body.photos.cloud-accept-error:Não foi possível guardar sua escolha agora.`,
-      );
-    }
-  }
-
-  protected async sendDevicePhotos(): Promise<void> {
-    await this.sync.sendDevicePhotos();
-    this.message.set(
-      $localize`:@@training.body.photos.cloud-send-status:As fotos deste aparelho foram preparadas para enviar.`,
-    );
-  }
-
-  protected async retryCloud(): Promise<void> {
-    await this.sync.retry();
-  }
-
-  /** Só oferece o envio manual quando há foto local que ainda não entrou na fila nem chegou à nuvem. */
-  protected hasUnsent(): boolean {
-    return this.sync.hasUnsent(this.photos().map((photo) => photo.id));
-  }
-
-  /** A nuvem está aceita neste aparelho e o servidor respondeu: o aviso de retenção muda. */
-  protected cloudOn(): boolean {
-    return this.sync.accepted() && this.sync.availability() === 'available';
-  }
-
-  protected hasErrors(): boolean {
-    return this.photos().some((photo) => this.sync.stateOf(photo.id)?.state === 'error');
-  }
-
-  protected cloudStatusLabel(): string {
-    switch (this.sync.availability()) {
-      case 'checking':
-        return $localize`:@@training.body.photos.cloud-checking:Conferindo a nuvem privada…`;
-      case 'available':
-        return $localize`:@@training.body.photos.cloud-ready:Nuvem privada ativa neste aparelho.`;
-      case 'disabled':
-        return $localize`:@@training.body.photos.cloud-disabled:Fotos na Nuvem está desligado no sistema.`;
-      case 'unavailable':
-        return $localize`:@@training.body.photos.cloud-unavailable:Nuvem privada indisponível. Suas fotos continuam neste aparelho.`;
-      default:
-        return $localize`:@@training.body.photos.cloud-waiting:Suas fotos continuam neste aparelho.`;
-    }
-  }
-
-  protected photoCloudLabel(state: PhotoCloudState): string {
-    switch (state) {
-      case 'pending':
-        return $localize`:@@training.body.photos.cloud-pending:Aguardando envio`;
-      case 'uploading':
-        return $localize`:@@training.body.photos.cloud-uploading:Enviando`;
-      case 'error':
-        return $localize`:@@training.body.photos.cloud-error:Erro ao enviar`;
-      case 'cloud':
-        return $localize`:@@training.body.photos.cloud-saved:Na nuvem privada`;
-      case 'deleting':
-        return $localize`:@@training.body.photos.cloud-deleting:Apagando`;
-    }
-  }
-
-  /** O destino visível impede confundir o acompanhamento na nuvem com anexos de uma avaliação, que ficam locais. */
-  protected isCloudPhoto(id: string): boolean {
-    return this.sync.stateOf(id)?.state === 'cloud';
-  }
-
-  protected photoStorageLabel(id: string): string {
-    return this.isCloudPhoto(id)
-      ? $localize`:@@training.body.photos.storage-cloud:Nuvem Privada`
-      : $localize`:@@training.body.photos.storage-device:Neste Aparelho`;
+  /** A foto inteira (bytes em `data:`) de um id que ainda está na lista. */
+  private async full(id: string): Promise<FullPhoto | null> {
+    const info = this.photos().find((photo) => photo.id === id);
+    if (info === undefined) return null;
+    const src = await this.store.dataUrl(id).catch(() => null);
+    return src === null ? null : { ...info, src };
   }
 
   private async load(): Promise<void> {
@@ -402,7 +284,7 @@ export class BodyPhotoPanel {
       const photos = await Promise.all(
         items.map(async (photo) => ({
           ...photo,
-          src: (await this.store.dataUrl(photo.id)) ?? '',
+          src: (await this.store.thumbUrl(photo.id)) ?? '',
         })),
       );
       this.photos.set(photos.filter((photo) => photo.src.startsWith('data:')));

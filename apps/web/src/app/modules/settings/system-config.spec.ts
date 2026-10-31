@@ -16,7 +16,6 @@ const initial: SystemSettingValue[] = [
   { key: 'training.off-contact', value: 'server@example.test', source: 'server' },
   { key: 'devices.max-per-guest', value: 2, source: 'server' },
   { key: 'devices.agent-offline-minutes', value: 10, source: 'server' },
-  { key: 'training.photo-storage-enabled', value: false, source: 'server' },
   { key: 'tv.light-cleanup-enabled', value: true, source: 'server' },
   { key: 'tv.deep-cleanup-enabled', value: true, source: 'server' },
   { key: 'tv.deep-cleanup-memory-threshold-mb', value: 160, source: 'server' },
@@ -34,12 +33,10 @@ describe('SystemPage configuration', () => {
     systemSettings: vi.fn(),
     saveSystemSetting: vi.fn(),
     resetSystemSetting: vi.fn(),
-    photoBucket: vi.fn(),
   };
 
   beforeEach(() => {
     api.systemSettings.mockReset().mockResolvedValue(initial);
-    api.photoBucket.mockReset().mockResolvedValue({ configured: true });
     api.saveSystemSetting.mockReset().mockImplementation(async (key: string, value: unknown) => ({
       key,
       value,
@@ -134,36 +131,13 @@ describe('SystemPage configuration', () => {
     expect(delay.value).toBe('15');
   });
 
-  it('says the server bucket is ready and keeps the photo switch usable', async () => {
+  it('no longer offers cloud photos in the system settings', async () => {
     const { el } = await render('owner');
-    expect(el.querySelector('.bucket')?.textContent).toContain('Bucket pronto no servidor.');
-    expect(el.querySelector<HTMLInputElement>('#photo-storage')!.disabled).toBe(false);
-    expect(el.textContent).toContain('nuvem privada');
-  });
-
-  it('warns that the bucket is missing and blocks turning the photos on', async () => {
-    api.photoBucket.mockResolvedValue({ configured: false });
-    const { el } = await render('owner');
-    expect(el.querySelector('.bucket')?.textContent).toContain('ainda não configurado');
-    expect(el.querySelector<HTMLInputElement>('#photo-storage')!.disabled).toBe(true);
-  });
-
-  it('keeps the photo switch off the hook when the bucket status cannot be read', async () => {
-    api.photoBucket.mockRejectedValue(new Error('offline'));
-    const { el } = await render('owner');
+    expect(el.querySelector('#photo-storage')).toBeNull();
     expect(el.querySelector('.bucket')).toBeNull();
-    expect(el.querySelector<HTMLInputElement>('#photo-storage')!.disabled).toBe(false);
-  });
-
-  it('lets an already enabled photo switch be turned off even if the bucket went missing', async () => {
-    api.photoBucket.mockResolvedValue({ configured: false });
-    api.systemSettings.mockResolvedValue(
-      initial.map((item) =>
-        item.key === 'training.photo-storage-enabled' ? { ...item, value: true } : item,
-      ),
-    );
-    const { el } = await render('owner');
-    expect(el.querySelector<HTMLInputElement>('#photo-storage')!.disabled).toBe(false);
+    expect(el.textContent).not.toContain('Fotos na Nuvem');
+    expect(el.textContent).not.toContain('nuvem privada');
+    expect(el.textContent).not.toContain('Bucket');
   });
 
   it('shows the automatic cleanup switches and saves their values', async () => {
