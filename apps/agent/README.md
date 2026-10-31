@@ -188,7 +188,7 @@ janela, faz `uv sync` e `run`; se o agente cair, volta com espera crescente (5 s
 
 **Bandeja.** Perto do relógio aparece o ícone do UniOver: um disco redondo com a marca, cuja cor diz o estado
 (verde conectado, laranja reconectando, vermelho sem conexão, azul atualizando). Quando algo pede atenção (hoje, uma
-atualização que falhou) um selo vermelho aparece no canto inferior direito, sem mudar a cor do disco. A dica traz o
+atualização que falhou) um selo vermelho-alaranjado aparece no canto inferior direito, recortando o disco, sem mudar a cor dele. A dica traz o
 estado e o nome da TV. O menu tem Abrir UniOver, Status, Ver Registro, Atualizar Agora, Reiniciar e Sair.
 
 - **Sair só fecha o ícone.** O agente e o supervisor continuam rodando. O ícone deixa `runtime\tray-closed`, e o
@@ -209,12 +209,13 @@ estado e o nome da TV. O menu tem Abrir UniOver, Status, Ver Registro, Atualizar
   é fixo (`hID`), para o Windows lembrar onde a pessoa o deixou.
 - **Sempre visível, uma vez.** O Windows 11 esconde ícones novos no menu "^". Depois do primeiro registro o ícone
   procura sua linha em `HKCU\Control Panel\NotifyIconSettings\<id>` (a que tem `ExecutablePath` igual ao do próprio
-  processo, em geral o `python.exe` do ambiente, e `InitialTooltip` começando por "UniOver"), grava `IsPromoted=1` e
+  processo, em geral o `python.exe` do ambiente, `InitialTooltip` começando por "UniOver" e `UID` igual ao do ícone), grava
+  `IsPromoted=1` e
   deixa `runtime\tray-promoted.json`. Com a marca, nunca mais escreve: quem esconder o ícone depois não o vê voltar.
   A chave não é documentada pela Microsoft e o Windows pode ignorar a mudança até o próximo registro do ícone; se a
   linha não aparecer em 2 minutos, tenta de novo na próxima abertura do ícone.
 
-Se a bandeja não estiver disponível, o agente continua normalmente; um ícone que cai logo ao abrir é reaberto com espera
+O ensaio de atualização não mexe nesse registro. Se a bandeja não estiver disponível, o agente continua normalmente; um ícone que cai logo ao abrir é reaberto com espera
 crescente (15 s até 30 min) e a queda vira diagnóstico. A pasta `%LOCALAPPDATA%\UniOver` fica organizada em `app`,
 `runtime`, `config`, `logs` e `web`, com um `LEIA-ME.txt`. Instalações antigas são migradas preservando
 `agent_id`, configuração e os tokens do Cofre do Windows.
