@@ -822,8 +822,6 @@ test.describe('ponto de estado clicável', () => {
     };
 
     await check('Conectada', 'connected');
-    await sendState(page, { connection: 'hibernating' });
-    await check('Dormindo', 'sleeping');
     await sendState(page, { agentOnline: false, connection: 'disconnected', volume: null });
     await check('Agente desligado', 'agent-off');
     await sendState(page, {});
@@ -838,10 +836,10 @@ test.describe('ponto de estado clicável', () => {
     await context.setOffline(true);
     await check('Sem rede', 'offline');
 
-    expect(shapes.size).toBe(5);
-    expect(new Set(shapes.values()).size, 'uma forma diferente por fase').toBe(5);
-    // Conectada, dormindo, agente desligado e vermelho (atenção e sem rede) são tons diferentes.
-    expect(new Set(colors.values()).size, 'tons por fase').toBeGreaterThanOrEqual(4);
+    expect(shapes.size).toBe(4);
+    expect(new Set(shapes.values()).size, 'uma forma diferente por fase').toBe(4);
+    // Conectada, agente desligado e vermelho (atenção e sem rede) são tons diferentes.
+    expect(new Set(colors.values()).size, 'tons por fase').toBeGreaterThanOrEqual(3);
   });
 
   test('"conectando" pulsa só para quem não pediu menos movimento', async ({ page }) => {
@@ -897,27 +895,29 @@ test.describe('ponto de estado clicável', () => {
     await expect(panel).toHaveCount(0);
   });
 
-  test('dormindo: oferece "Acordar o controle", que pede o aquecimento e fecha o painel', async ({
+  test('dormindo sai verde, como ligado: o primeiro toque acorda, e o painelzinho não oferece acordar', async ({
     page,
   }) => {
     await openTv(page);
     await sendState(page, { connection: 'hibernating' });
-    await expect(statusDot(page, 'Dormindo')).toBeVisible();
-    // O primeiro comando reconecta: dormindo, os botões seguem valendo.
+    // Pedido do dono: verde mesmo com a sessão dormindo, e para sempre (nada de "Dormindo" azul).
+    await expect(statusDot(page, 'Conectada')).toHaveAttribute('data-phase', 'connected');
+    await expect(statusDot(page, 'Dormindo')).toHaveCount(0);
     await expect(button(page, 'OK')).toBeEnabled();
 
     await statusDot(page).click();
     const panel = statusPanel(page);
-    await expect(panel).toContainText(/Só o controle está dormindo/);
+    await expect(panel).toContainText('acorda no primeiro toque');
+    await expect(panel.getByRole('button')).toHaveCount(0);
     await expect(page.getByText(/TV desligada/i)).toHaveCount(0);
     await expect(page.getByText('hiberna em')).toHaveCount(0);
     await expectNoSeriousViolations(page);
+    await page.keyboard.press('Escape');
 
-    const before = tv.count('/wake');
-    await panel.getByRole('button', { name: 'Acordar o controle' }).click();
-    await expect.poll(() => tv.count('/wake')).toBe(before + 1);
-    await expect(panel).toHaveCount(0);
-    await expect(statusDot(page)).toBeFocused();
+    // O primeiro comando é que acorda a sessão: a tecla sai normalmente.
+    const before = tv.keysSent().length;
+    await button(page, 'OK').click();
+    await expect.poll(() => tv.keysSent().slice(before)).toEqual(['OK']);
   });
 
   test('sem o agente: "Tentar de Novo" lê o estado de novo e libera os botões quando ele volta', async ({
@@ -2317,7 +2317,7 @@ test.describe('acessibilidade e tema', () => {
       await page.emulateMedia({ colorScheme: scheme });
       await openTv(page);
       await sendState(page, { connection: 'hibernating' });
-      await expect(statusDot(page, 'Dormindo')).toBeVisible();
+      await expect(statusDot(page, 'Conectada')).toBeVisible();
       await screenshot(page, `test-results/tv-control-${scheme}-${info.project.name}.png`);
       await expectNoSeriousViolations(page);
 
