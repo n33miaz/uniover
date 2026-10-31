@@ -71,6 +71,10 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             e.Property(x => x.TokenHash).HasColumnType("bytea").IsRequired();
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.HasIndex(x => x.FamilyId);
+
+            // O início da família (MIN(created_at)) é lido a cada renovação e a limpeza agrupa por família: sem este índice
+            // composto as duas viram varredura da tabela inteira, que cresce uma linha por rotação.
+            e.HasIndex(x => new { x.FamilyId, x.CreatedAt });
             e.Property(x => x.RevokedReason).HasMaxLength(40);
             e.Property(x => x.Ip).HasMaxLength(AuditText.IpMax);
             e.Property(x => x.UserAgent).HasMaxLength(AuditText.UserAgentMax);

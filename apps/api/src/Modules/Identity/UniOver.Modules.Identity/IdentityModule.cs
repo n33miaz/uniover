@@ -82,6 +82,9 @@ public static class IdentityModule
         services.AddAuditPurge<IdentityDbContext>(
             configuration, IdentityDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.SecurityDays);
 
+        // Limpeza das famílias de refresh mortas, no mesmo despertar diário da retenção da auditoria (sem relógio novo).
+        services.AddRefreshFamilyCleanup();
+
         services.AddScoped<LoginHandler>();
         services.AddScoped<RefreshHandler>();
         services.AddScoped<LogoutHandler>();
