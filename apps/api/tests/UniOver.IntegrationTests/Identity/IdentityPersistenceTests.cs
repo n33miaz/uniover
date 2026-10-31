@@ -86,7 +86,7 @@ public sealed class IdentityPersistenceTests(PostgresFixture postgres) : IDispos
 
         columns.Should().Equal(
             "created_at", "disabled_at", "display_name", "display_name_confirmed_at", "email", "failed_login_count", "id", "last_failed_at",
-            "lockout_until", "password_hash", "role");
+            "lockout_until", "password_hash", "paused_at", "role");
     }
 
     [Fact]
