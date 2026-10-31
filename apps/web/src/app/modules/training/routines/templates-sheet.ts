@@ -14,6 +14,7 @@ import {
 import { daysText, programSummary } from './program-summary';
 import { TrainingGlyph } from '../shell/training-glyph';
 import { TrainingSheet } from '../shell/training-sheet';
+import { TrainingRowsSkeleton } from '../shell/training-rows-skeleton';
 
 /** O que a folha avisa à lista quando cria as rotinas de um modelo. */
 export interface TemplateCreated {
@@ -35,14 +36,11 @@ export interface TemplateCreated {
  */
 @Component({
   selector: 'app-templates-sheet',
-  imports: [TrainingSheet, TrainingGlyph],
+  imports: [TrainingSheet, TrainingGlyph, TrainingRowsSkeleton],
   template: `
     <app-training-sheet [heading]="heading" [dismissLabel]="cancelLabel" (closed)="closed.emit()">
       @if (loading()) {
-        <p class="loading" role="status">
-          <span class="ui-spinner" aria-hidden="true"></span>
-          <span i18n="@@training.templates.loading">Carregando os modelos…</span>
-        </p>
+        <app-training-rows-skeleton [label]="loadingLabel" [rows]="3" />
       }
       @if (templates().length > 0) {
         <ul class="ui-group ui-plain">
@@ -112,13 +110,6 @@ export interface TemplateCreated {
     </app-training-sheet>
   `,
   styles: `
-    .loading {
-      display: flex;
-      align-items: center;
-      gap: var(--space-3);
-      margin: 0;
-      color: var(--a-ink2);
-    }
     .note {
       margin: 0;
       color: var(--a-ink2);
@@ -182,6 +173,7 @@ export interface TemplateCreated {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TemplatesSheet {
+  protected readonly loadingLabel = $localize`:@@training.templates.loading:Carregando os modelos…`;
   private readonly routines = inject(RoutineRepository);
   private readonly sheet = viewChild.required(TrainingSheet);
 

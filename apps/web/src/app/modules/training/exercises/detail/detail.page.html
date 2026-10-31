@@ -1,8 +1,5 @@
 @if (exercise() === undefined) {
-  <div class="detail" aria-hidden="true">
-    <div class="ui-skeleton title-skeleton"></div>
-    <div class="ui-skeleton block-skeleton"></div>
-  </div>
+  <app-exercise-detail-skeleton />
 } @else if (exercise() === null) {
   <section class="detail missing">
     <p class="ui-notice" role="status">

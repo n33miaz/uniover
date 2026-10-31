@@ -3,6 +3,7 @@ import { FoodRepository, type OwnFoodDraft } from '../data/foods/food-repository
 import type { LocalFood } from '../data/foods/food';
 import { MealRepository, type MealDraft } from '../data/meals/meal-repository';
 import { type LocalMealEntry, type MealType } from '../data/meals/meal';
+import { FoodDiarySkeleton, FoodSearchSkeleton } from './food-diary-skeleton';
 
 type EntryMode = 'food' | 'free';
 type SearchState =
@@ -10,6 +11,7 @@ type SearchState =
 
 @Component({
   selector: 'app-food-diary-page',
+  imports: [FoodDiarySkeleton, FoodSearchSkeleton],
   template: `
     <section class="page" aria-labelledby="diary-title">
       <header class="page-header">
@@ -41,7 +43,7 @@ type SearchState =
       </section>
 
       @if (!loaded()) {
-        <p role="status" class="notice" i18n="@@training.food.loading">Carregando lançamentos…</p>
+        <app-food-diary-skeleton />
       } @else if (loadError()) {
         <section class="error" role="alert">
           <p>{{ loadError() }}</p>
@@ -201,7 +203,7 @@ type SearchState =
               <p class="notice" role="status">{{ searchMessage() }}</p>
             }
             @if (searchState() === 'loading') {
-              <p role="status" class="muted" i18n="@@training.food.searching">Buscando…</p>
+              <app-food-search-skeleton />
             }
             @if (foods().length > 0) {
               <ul class="food-results" aria-label="{{ resultsLabel }}">

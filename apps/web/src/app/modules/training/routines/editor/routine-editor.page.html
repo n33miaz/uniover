@@ -1,8 +1,5 @@
 @if (state() === 'loading') {
-  <section class="editor" aria-hidden="true">
-    <div class="ui-skeleton title-skeleton"></div>
-    <div class="ui-skeleton block-skeleton"></div>
-  </section>
+  <app-training-form-skeleton [label]="loadingLabel" [fields]="1" [rows]="3" />
 } @else if (state() === 'missing') {
   <section class="editor">
     <p class="ui-notice" role="status">

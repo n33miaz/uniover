@@ -38,6 +38,7 @@ import { formatDayMonth, formatKg } from '../../shell/format';
 import { TrainingGlyph } from '../../shell/training-glyph';
 import { TrainingSheet } from '../../shell/training-sheet';
 import { ExerciseMuscles } from './exercise-muscles';
+import { ExerciseDetailSkeleton } from './detail-skeleton';
 
 /** Quantos passos de "Como fazer" aparecem antes do "Ver todos". */
 export const STEPS_PREVIEW = 3;
@@ -76,7 +77,14 @@ export function historyRows(points: readonly DailyPoint[], limit = HISTORY_DAYS)
  */
 @Component({
   selector: 'app-exercise-detail-page',
-  imports: [RouterLink, TrainingGlyph, TrainingSheet, ExerciseIllustration, ExerciseMuscles],
+  imports: [
+    RouterLink,
+    TrainingGlyph,
+    TrainingSheet,
+    ExerciseIllustration,
+    ExerciseMuscles,
+    ExerciseDetailSkeleton,
+  ],
   templateUrl: './detail.page.html',
   styleUrl: './detail.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

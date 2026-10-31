@@ -40,21 +40,8 @@
   }
 
   @if (!store.ready() || !store.homeReady()) {
-    <!-- A forma do cartão da rotina (data, nome, resumo e botão): a tela não pula quando a leitura local termina. A semana embaixo já aparece com as datas. -->
-    <div class="skeleton-home" aria-hidden="true">
-      <span class="ui-skeleton sk-date"></span>
-      <div class="routine ui-card skeleton">
-        <div class="routine-head">
-          <span class="ui-skeleton sk-tile"></span>
-          <div class="routine-id sk-lines">
-            <span class="ui-skeleton sk-eyebrow"></span>
-            <span class="ui-skeleton sk-title"></span>
-          </div>
-        </div>
-        <span class="ui-skeleton sk-meta"></span>
-        <span class="ui-skeleton big"></span>
-      </div>
-    </div>
+    <!-- A forma do cartão do dia: a tela não pula quando a leitura local termina. A semana embaixo já aparece com as datas. -->
+    <app-today-skeleton />
   } @else if (store.active(); as running) {
     <!-- Treino aberto neste aparelho: a ação é continuar. -->
     <section class="routine ui-card" aria-labelledby="routine-title">

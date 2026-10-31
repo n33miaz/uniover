@@ -14,10 +14,11 @@ import type { EnergyState } from './body-store';
 import { formatKcalNumber, parseDecimal } from './body-text';
 import { MealRepository } from '../data/meals/meal-repository';
 import { RouterLink } from '@angular/router';
+import { BodyMealsSkeleton } from './body-skeleton';
 
 @Component({
   selector: 'app-body-energy-panel',
-  imports: [RouterLink],
+  imports: [RouterLink, BodyMealsSkeleton],
   template: `
     <section class="energy" aria-labelledby="energy-title">
       <h2 id="energy-title" i18n="@@training.body.energy.title">Meta de Calorias</h2>
@@ -80,9 +81,7 @@ import { RouterLink } from '@angular/router';
         } @else if (mealsError()) {
           <p class="error" role="alert">{{ mealsError() }}</p>
         } @else {
-          <p class="muted" role="status" i18n="@@training.body.energy.meals-loading">
-            Lendo seus lançamentos locais…
-          </p>
+          <app-body-meals-skeleton />
         }
         <p class="muted" i18n="@@training.body.energy.nonprescriptive">
           Valores para acompanhamento pessoal; não são orientação médica.

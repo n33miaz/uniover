@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
-import { setupScreen } from '../shell/screen-test-kit';
+import { eventually, setupScreen } from '../shell/screen-test-kit';
 import { BodyPage } from './body.page';
 
 describe('BodyPage painel de sinais', () => {
@@ -9,9 +9,11 @@ describe('BodyPage painel de sinais', () => {
   async function open() {
     await setupScreen();
     const fixture = TestBed.createComponent(BodyPage);
-    await fixture.whenStable();
     fixture.detectChanges();
-    return { fixture, el: fixture.nativeElement as HTMLElement };
+    const el = fixture.nativeElement as HTMLElement;
+    // Até a leitura do banco local terminar a aba é o esqueleto: o que o teste confere é a tela de verdade.
+    await eventually(fixture, () => expect(el.querySelector('app-body-skeleton')).toBeNull());
+    return { fixture, el };
   }
 
   it('mostra os sinais na ordem de consulta e mantém o peso como ação principal', async () => {

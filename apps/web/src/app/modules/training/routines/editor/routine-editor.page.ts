@@ -41,6 +41,7 @@ import {
   toggleLink,
   validateDraft,
 } from './routine-draft';
+import { TrainingFormSkeleton } from '../../shell/training-form-skeleton';
 
 interface FieldConfig {
   readonly key: ItemField;
@@ -58,12 +59,13 @@ interface FieldConfig {
  */
 @Component({
   selector: 'app-routine-editor-page',
-  imports: [TrainingGlyph, ExercisePickerSheet],
+  imports: [TrainingGlyph, ExercisePickerSheet, TrainingFormSkeleton],
   templateUrl: './routine-editor.page.html',
   styleUrl: './routine-editor.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RoutineEditorPage {
+  protected readonly loadingLabel = $localize`:@@training.editor.loading:Carregando a rotina…`;
   private readonly routines = inject(RoutineRepository);
   private readonly catalog = inject(CatalogRepository);
   private readonly back = inject(BackNavigation);

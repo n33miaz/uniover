@@ -37,6 +37,7 @@ import { LiveSetExtras, LiveSetFields } from './set-fields';
 import { type MenuAction, SessionMenuSheet } from './session-menu-sheet';
 import { TodayGlyph } from './today-glyph';
 import { TodayStore } from './today-store';
+import { LiveSessionSkeleton } from './workout-skeletons';
 import {
   awaitingSetsText,
   repsRangeText,
@@ -69,6 +70,7 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
   selector: 'app-live-session',
   imports: [
     RouterLink,
+    LiveSessionSkeleton,
     TrainingGlyph,
     TodayGlyph,
     RestCard,

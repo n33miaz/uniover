@@ -16,6 +16,7 @@ import { ChipOption, TrainingChips } from '../../shell/training-chips';
 import { TrainingGlyph } from '../../shell/training-glyph';
 import { TrainingSheet } from '../../shell/training-sheet';
 import { ExerciseRowBody } from '../exercise-row-body';
+import { TrainingRowsSkeleton } from '../../shell/training-rows-skeleton';
 
 /** Quantas linhas a folha mostra de cada vez; a busca estreita o resto. */
 export const PICKER_PAGE_SIZE = 50;
@@ -27,7 +28,7 @@ export const PICKER_PAGE_SIZE = 50;
  */
 @Component({
   selector: 'app-exercise-picker-sheet',
-  imports: [TrainingSheet, TrainingChips, TrainingGlyph, ExerciseRowBody],
+  imports: [TrainingSheet, TrainingChips, TrainingGlyph, ExerciseRowBody, TrainingRowsSkeleton],
   template: `
     <app-training-sheet [heading]="heading" [dismissLabel]="cancelLabel" (closed)="closed.emit()">
       <div class="tools">
@@ -61,7 +62,9 @@ export const PICKER_PAGE_SIZE = 50;
         />
       </div>
 
-      @if (ready() && results().length === 0) {
+      @if (!ready()) {
+        <app-training-rows-skeleton [label]="loadingLabel" [rows]="5" [thumb]="true" />
+      } @else if (results().length === 0) {
         <p class="none" role="status" i18n="@@training.picker.none">Nenhum exercício achado.</p>
       } @else {
         <ul class="list ui-group ui-plain">
@@ -90,6 +93,7 @@ export const PICKER_PAGE_SIZE = 50;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ExercisePickerSheet {
+  protected readonly loadingLabel = $localize`:@@training.picker.loading:Carregando os exercícios…`;
   private readonly catalog = inject(CatalogRepository);
   private readonly sheet = viewChild.required(TrainingSheet);
 

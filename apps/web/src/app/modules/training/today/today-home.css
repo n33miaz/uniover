@@ -293,64 +293,6 @@ app-program-suggestion {
   font-size: var(--fs-small);
 }
 
-.skeleton {
-  display: flex;
-  align-items: center;
-  min-height: 72px;
-  padding: var(--space-4);
-}
-
-.skeleton .ui-skeleton {
-  width: 62%;
-  height: 18px;
-}
-
-.skeleton .ui-skeleton.big {
-  height: 56px;
-  width: 100%;
-}
-
-/* O esqueleto repete a forma do cartão do dia: data, ladrilho com duas linhas, resumo e botão de 56 px. */
-.skeleton-home {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.skeleton-home .skeleton {
-  align-items: stretch;
-  flex-direction: column;
-  gap: var(--space-3);
-  min-height: 0;
-}
-.skeleton-home .ui-skeleton.sk-date {
-  width: 9rem;
-  height: 16px;
-}
-.skeleton-home .ui-skeleton.sk-tile {
-  flex: none;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-sm);
-}
-.sk-lines {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 6px;
-}
-.skeleton-home .ui-skeleton.sk-eyebrow {
-  width: 30%;
-  height: 12px;
-}
-.skeleton-home .ui-skeleton.sk-title {
-  width: 70%;
-  height: 20px;
-}
-.skeleton-home .ui-skeleton.sk-meta {
-  width: 55%;
-  height: 14px;
-}
-
 /* O "?" do glossário: um quadrado de toque ao lado da ação, sem ocupar uma linha própria. */
 .actions > .glossary-link {
   display: inline-grid;

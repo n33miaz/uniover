@@ -2,6 +2,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ViewEncapsulation,
   computed,
   effect,
@@ -17,13 +18,18 @@ import { ExerciseHistory } from './exercise-history';
 import { LiveStore } from './live-store';
 import { SessionSummary } from './session-summary';
 import { TodayHome } from './today-home';
+import { TodaySkeleton } from './today-skeleton';
 import { TodayStore } from './today-store';
+import { SessionSummarySkeleton } from './workout-skeletons';
 
 /** Onde fica, no endereço, a visão do treino ao vivo e a do resumo (o treino em si vive no banco local). */
 export const LIVE_PARAM = 'sessao';
 export const LIVE_VALUE = 'ao-vivo';
 export const SUMMARY_PARAM = 'resumo';
 export const HISTORY_PARAM = 'historico';
+
+/** O atraso do esqueleto compartilhado (`--wait-delay` em styles.css), em milissegundos. */
+const SKELETON_DELAY_MS = 200;
 
 /**
  * A aba Hoje mostra o dia e o resumo histórico (`?resumo=<treino>`). A sessão aberta vive em rotas próprias, para que a
@@ -34,12 +40,21 @@ export const HISTORY_PARAM = 'historico';
  */
 @Component({
   selector: 'app-training-today-page',
-  imports: [TodayHome, SessionSummary],
+  imports: [TodayHome, SessionSummary, SessionSummarySkeleton, TodaySkeleton],
   providers: [TodayStore, LiveStore, ExerciseHistory],
-  host: { '[attr.data-focus]': "summaryId() !== null ? '' : null" },
+  host: {
+    '[attr.data-focus]': "summaryId() !== null ? '' : null",
+    // Passado o atraso de uma espera, a seguinte (a de Hoje depois desta) já se mostra de uma vez: se cada uma esperasse o
+    // próprio atraso, haveria um vazio entre as duas.
+    '[style.--wait-delay]': "waited() ? '0ms' : null",
+  },
   template: `
     @if (!store.ready()) {
-      <div class="ui-card waiting" aria-hidden="true"><span class="ui-skeleton"></span></div>
+      @if (summaryId() !== null) {
+        <app-session-summary-skeleton />
+      } @else {
+        <app-today-skeleton [withWeek]="true" />
+      }
     } @else if (summaryId(); as id) {
       <app-session-summary [sessionId]="id" [showSets]="historyOpen()" (done)="leave()" />
     } @else {
@@ -49,18 +64,6 @@ export const HISTORY_PARAM = 'historico';
   // Sem encapsulamento de propósito: a regra mira a barra de abas e o cabeçalho da casca do app, fora deste componente.
   encapsulation: ViewEncapsulation.None,
   styles: `
-    app-training-today-page .waiting {
-      display: flex;
-      align-items: center;
-      min-height: 72px;
-      padding: var(--space-4);
-    }
-
-    app-training-today-page .waiting .ui-skeleton {
-      width: 62%;
-      height: 18px;
-    }
-
     body:has(app-training-today-page[data-focus]) app-tab-bar,
     body:has(app-training-today-page[data-focus]) app-shell > header,
     app-training-page:has(app-training-today-page[data-focus]) app-training-sync-line {
@@ -79,6 +82,10 @@ export class TodayPage {
 
   private readonly params = toSignal(this.route.queryParamMap, { requireSync: true });
 
+  /** A espera pela leitura local já passou do atraso em que o esqueleto aparece. */
+  protected readonly waited = signal(false);
+  private readonly settled = computed(() => this.store.ready() && this.store.homeReady());
+
   /** A primeira leitura do treino aberto já aconteceu e o endereço foi conferido (uma vez só). */
   private readonly checked = signal(false);
 
@@ -86,6 +93,14 @@ export class TodayPage {
   /** O calendário abre o histórico já com as séries visíveis; ao concluir agora, elas continuam atrás do botão de edição. */
   protected readonly historyOpen = computed(() => this.params().get(HISTORY_PARAM) === '1');
   constructor() {
+    const timer = setTimeout(() => {
+      if (!this.settled()) this.waited.set(true);
+    }, SKELETON_DELAY_MS);
+    // Pronto o dia, a marca cai: o que esperar depois (uma folha, uma lista) volta a respeitar o atraso.
+    effect(() => {
+      if (this.settled()) untracked(() => this.waited.set(false));
+    });
+    inject(DestroyRef).onDestroy(() => clearTimeout(timer));
     // O resumo é uma tela aberta sobre Hoje: a única seta do topo fecha o resumo (e não sai de Hoje para o Início).
     effect((onCleanup) => {
       if (this.summaryId() === null) return;

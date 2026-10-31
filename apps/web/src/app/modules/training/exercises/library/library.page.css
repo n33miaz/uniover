@@ -152,15 +152,3 @@
   justify-content: center;
   gap: var(--space-2);
 }
-
-.skeleton li {
-  display: flex;
-  align-items: center;
-  min-height: 60px;
-  padding: var(--space-3) var(--space-4);
-}
-
-.skeleton .ui-skeleton {
-  width: 62%;
-  height: 18px;
-}

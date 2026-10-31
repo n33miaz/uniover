@@ -28,6 +28,7 @@ import {
   rowsInPeriod,
 } from './weight/weight-model';
 import { WeightSheet } from './weight/weight-sheet';
+import { BodySkeleton } from './body-skeleton';
 
 type BodyView = 'summary' | 'records' | 'photos';
 
@@ -45,6 +46,7 @@ type BodyView = 'summary' | 'records' | 'photos';
     BodyPhotoPanel,
     BodyMapPanel,
     BodyRegionHistorySheet,
+    BodySkeleton,
   ],
   template: `
     <div class="page" aria-labelledby="body-title">
@@ -82,7 +84,9 @@ type BodyView = 'summary' | 'records' | 'photos';
         [class.backward]="viewDirection() === 'backward'"
         (animationend)="clearViewDirection($event)"
       >
-        @if (view() === 'summary') {
+        @if (!store.ready() && view() !== 'photos') {
+          <app-body-skeleton [view]="view() === 'summary' ? 'summary' : 'records'" />
+        } @else if (view() === 'summary') {
           <section class="weight-card ui-card" aria-labelledby="weight-panel-title">
             <div class="card-heading">
               <h2 id="weight-panel-title" class="eyebrow" i18n="@@training.body.weight.title">
@@ -92,9 +96,7 @@ type BodyView = 'summary' | 'records' | 'photos';
                 <p class="weight-value">{{ formatWeight(weight.latest.weightKg) }}</p>
               }
             </div>
-            @if (!store.ready()) {
-              <p class="muted" i18n="@@training.body.loading">Carregando seus registros…</p>
-            } @else if (store.weight(); as weight) {
+            @if (store.weight(); as weight) {
               <div class="weight-meta">
                 <span>{{ weight.isToday ? todayLabel : lastLabel(weight.latest.date) }}</span>
                 @if (weight.delta; as delta) {

@@ -34,6 +34,7 @@ import {
   toCatalogQuery,
   toQueryParams,
 } from './library-params';
+import { TrainingRowsSkeleton } from '../../shell/training-rows-skeleton';
 
 /** Quantas linhas a lista mostra de cada vez; o resto vem em "Mostrar mais". */
 export const PAGE_SIZE = 50;
@@ -48,13 +49,21 @@ const SEARCH_URL_DELAY_MS = 300;
  */
 @Component({
   selector: 'app-exercise-library-page',
-  imports: [RouterLink, ExercisesSwitch, TrainingChips, TrainingGlyph, ExerciseRowBody],
+  imports: [
+    RouterLink,
+    ExercisesSwitch,
+    TrainingChips,
+    TrainingGlyph,
+    ExerciseRowBody,
+    TrainingRowsSkeleton,
+  ],
   providers: [LastSetLabels],
   templateUrl: './library.page.html',
   styleUrl: './library.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ExerciseLibraryPage {
+  protected readonly loadingLabel = $localize`:@@training.library.loading:Carregando os exercícios…`;
   private readonly store = inject(CatalogStore);
   private readonly sync = inject(TrainingSync);
   private readonly connectivity = inject(ConnectivityService);

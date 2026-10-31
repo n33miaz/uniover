@@ -1,6 +1,6 @@
 <div class="progress">
   @if (!ready()) {
-    <div class="loading ui-skeleton" aria-hidden="true"></div>
+    <app-progress-skeleton />
   } @else if (exercise(); as current) {
     <app-progress-evolution
       [exercise]="current"

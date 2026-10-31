@@ -14,11 +14,7 @@
   }
 
   @if (!ready()) {
-    <ul class="ui-group ui-plain skeleton" aria-hidden="true">
-      @for (row of [1, 2, 3]; track row) {
-        <li><span class="ui-skeleton"></span></li>
-      }
-    </ul>
+    <app-routines-list-skeleton />
   } @else if (entries().length === 0) {
     <section class="empty ui-card" aria-labelledby="routines-empty-title">
       <span class="ui-tile lg"><app-training-glyph name="list" /></span>

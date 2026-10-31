@@ -19,6 +19,7 @@ import { LiveStore } from './live-store';
 import { type MenuAction, SessionMenuSheet } from './session-menu-sheet';
 import { TodayStore } from './today-store';
 import { awaitingSetsText } from './today-text';
+import { WorkoutDaySkeleton } from './workout-skeletons';
 
 /**
  * A escolha do exercício durante um treino aberto. Ela deixa a pessoa trocar de máquina sem reordenar a rotina nem
@@ -27,7 +28,7 @@ import { awaitingSetsText } from './today-text';
  */
 @Component({
   selector: 'app-workout-day',
-  imports: [RouterLink, TrainingGlyph, ExerciseChooserSheet, SessionMenuSheet],
+  imports: [RouterLink, TrainingGlyph, ExerciseChooserSheet, SessionMenuSheet, WorkoutDaySkeleton],
   providers: [TodayStore, LiveStore, ExerciseHistory],
   template: `
     <section class="day" aria-labelledby="workout-title">
@@ -40,7 +41,9 @@ import { awaitingSetsText } from './today-text';
         </p>
       }
 
-      @if (live.ready() && live.session() === undefined) {
+      @if (!live.ready()) {
+        <app-workout-day-skeleton />
+      } @else if (live.session() === undefined) {
         <section class="empty ui-card" aria-labelledby="empty-title">
           <span class="ui-tile lg"><app-training-glyph name="info" /></span>
           <h2 id="empty-title" i18n="@@training.day.empty-title">Treino Não Encontrado</h2>

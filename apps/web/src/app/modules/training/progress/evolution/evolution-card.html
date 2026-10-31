@@ -20,7 +20,7 @@
 
     @switch (view()) {
       @case ('loading') {
-        <div class="loading ui-skeleton" aria-hidden="true"></div>
+        <app-progress-chart-skeleton />
       }
       @case ('chart') {
         @if (readout(); as read) {

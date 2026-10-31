@@ -171,7 +171,64 @@ describe('TrainingAccountScope', () => {
       expect(el.querySelector('[role="status"]')?.textContent?.trim()).toBe(
         'Confirmando a sua conta…',
       );
+      // Não é só um texto: a forma do que vem depois (aqui uma lista, pelo endereço) ocupa o lugar, com a espera anunciada.
+      expect(
+        el.querySelector('app-training-rows-skeleton app-loading-frame')?.getAttribute('aria-busy'),
+      ).toBe('true');
+      expect(el.querySelector('app-today-skeleton')).toBeNull();
       expect((await kit.dbOptions.indexedDB.databases()).map((db) => db.name)).toEqual([]);
+    });
+
+    it('opens Today with the shape of Today: the day, the week and no list', async () => {
+      const kit = await open('/treino');
+      kit.account.signInAs(null);
+      const { fixture, el } = await show(kit);
+
+      fixture.detectChanges();
+      expect(el.querySelector('app-today-skeleton .sk-week')).not.toBeNull();
+      expect(el.querySelector('app-training-rows-skeleton')).toBeNull();
+      expect(
+        el.querySelector('app-today-skeleton app-loading-frame')?.getAttribute('aria-busy'),
+      ).toBe('true');
+    });
+
+    // Cada endereço de entrada espera com a forma da tela que vai abrir, para a troca pela tela pronta não pular.
+    for (const [url, skeleton] of [
+      ['/treino/exercicios/abc', 'app-exercise-detail-skeleton'],
+      ['/treino/exercicios/mapa', 'app-body-map-skeleton'],
+      ['/treino/exercicios/novo', 'app-training-form-skeleton'],
+      ['/treino/rotinas', 'app-routines-list-skeleton'],
+      ['/treino/rotinas/abc', 'app-training-form-skeleton'],
+      ['/treino/progresso', 'app-progress-skeleton'],
+      ['/treino/alimentacao', 'app-food-diary-skeleton'],
+      ['/treino/corpo', 'app-body-skeleton'],
+      ['/treino/corpo/avaliacoes', 'app-assessments-list-skeleton'],
+      ['/treino/corpo/avaliacoes/abc', 'app-assessment-detail-skeleton'],
+      ['/treino/sessao', 'app-workout-day-skeleton'],
+      ['/treino/sessao/exercicio', 'app-live-session-skeleton'],
+      ['/treino/glossario', 'app-training-rows-skeleton'],
+    ] as const) {
+      it(`waits for ${url} with the shape of that screen`, async () => {
+        const kit = await open(url);
+        kit.account.signInAs(null);
+        const { fixture, el } = await show(kit);
+
+        fixture.detectChanges();
+        expect(el.querySelector(skeleton)).not.toBeNull();
+        expect(el.querySelector(`${skeleton} app-loading-frame`)?.getAttribute('aria-busy')).toBe(
+          'true',
+        );
+      });
+    }
+
+    it('draws the whole diary page while waiting, since none of it exists yet', async () => {
+      const kit = await open('/treino/alimentacao');
+      kit.account.signInAs(null);
+      const { fixture, el } = await show(kit);
+
+      fixture.detectChanges();
+      expect(el.querySelector('app-food-diary-skeleton .sk-day-card')).not.toBeNull();
+      expect(el.querySelector('app-food-diary-skeleton .sk-editor')).not.toBeNull();
     });
 
     it('uses the shared top bar with only "Treino" while waiting, with no header of its own', async () => {

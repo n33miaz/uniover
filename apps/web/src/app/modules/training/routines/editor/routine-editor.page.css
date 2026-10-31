@@ -288,12 +288,3 @@
     transition: none;
   }
 }
-
-.title-skeleton {
-  width: 60%;
-  height: 28px;
-}
-
-.block-skeleton {
-  height: 140px;
-}

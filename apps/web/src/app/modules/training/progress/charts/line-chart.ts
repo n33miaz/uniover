@@ -29,7 +29,13 @@ const FALLBACK_WIDTH = 300;
  */
 @Component({
   selector: 'app-progress-line-chart',
-  template: `<div #host class="plot" [class.ui-skeleton]="!ready()" aria-hidden="true"></div>`,
+  template: `<div
+    #host
+    class="plot"
+    [class.ui-skeleton]="!ready()"
+    [class.ui-wait]="!ready()"
+    aria-hidden="true"
+  ></div>`,
   styleUrl: './line-chart.css',
   // O DOM do gráfico é criado pela biblioteca, fora do modelo: estilo encapsulado não o alcançaria.
   encapsulation: ViewEncapsulation.None,

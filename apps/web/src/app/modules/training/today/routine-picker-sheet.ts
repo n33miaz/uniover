@@ -17,6 +17,7 @@ import type { RoutineEntry } from '../routines/routine-stats';
 import { TrainingSheet } from '../shell/training-sheet';
 import { absenceDays } from './absence-range';
 import { routineSummary } from './today-text';
+import { PickerSettingsSkeleton } from './workout-skeletons';
 
 /**
  * Folha "Configurar Rotina": as rotinas ativas na ordem da sequência (um toque escolhe e fecha; a escolha vale só para o
@@ -25,7 +26,7 @@ import { routineSummary } from './today-text';
  */
 @Component({
   selector: 'app-routine-picker-sheet',
-  imports: [TrainingSheet],
+  imports: [TrainingSheet, PickerSettingsSkeleton],
   template: `
     <app-training-sheet [heading]="heading" [dismissLabel]="closeLabel" (closed)="closed.emit()">
       @if (entries().length > 0) {
@@ -58,7 +59,9 @@ import { routineSummary } from './today-text';
       }
 
       <!-- As seções só aparecem com os valores já lidos: um campo preenchido depois da digitação apagaria o que a pessoa escreveu. -->
-      @if (ready()) {
+      @if (!ready()) {
+        <app-picker-settings-skeleton />
+      } @else {
         <section class="settings" aria-labelledby="goal-title">
           <h3 id="goal-title" i18n="@@training.today.flexible-goal">Meta Flexível</h3>
           <label class="field">

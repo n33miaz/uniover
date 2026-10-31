@@ -28,6 +28,7 @@ import { RoutinePickerSheet } from './routine-picker-sheet';
 import { TodayGlyph } from './today-glyph';
 import { type RoutineLine, TodayStore } from './today-store';
 import { ageLabel, dayLabel, repsRangeText, routineSummary } from './today-text';
+import { TodaySkeleton } from './today-skeleton';
 import { WeekCalendar } from './week-calendar';
 
 /**
@@ -48,6 +49,7 @@ import { WeekCalendar } from './week-calendar';
     TodayGlyph,
     RoutinePickerSheet,
     ProgramSuggestion,
+    TodaySkeleton,
     TemplatesSheet,
     TrainingSheet,
     WeekCalendar,
