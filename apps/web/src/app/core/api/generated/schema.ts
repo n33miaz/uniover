@@ -8590,10 +8590,12 @@ export interface components {
       /** Format: uuid */
       agentId: string;
       agentName: string;
+      detail: null | string;
       /** Format: date-time */
       detectedAt: string;
       /** Format: uuid */
       id: string;
+      kind: string;
       /** Format: date-time */
       lastSeenAt: null | string;
       /** Format: date-time */

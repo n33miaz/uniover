@@ -72,12 +72,21 @@
           "agentName": {
             "type": "string"
           },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "detectedAt": {
             "format": "date-time",
             "type": "string"
           },
           "id": {
             "format": "uuid",
+            "type": "string"
+          },
+          "kind": {
             "type": "string"
           },
           "lastSeenAt": {
@@ -101,7 +110,9 @@
           "agentName",
           "detectedAt",
           "lastSeenAt",
-          "recoveredAt"
+          "recoveredAt",
+          "kind",
+          "detail"
         ],
         "type": "object"
       },
