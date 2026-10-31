@@ -20,6 +20,7 @@ if (!string.IsNullOrWhiteSpace(port))
 
 builder.Services.AddUniOverProblemDetails();
 builder.Services.AddUniOverRateLimiting(builder.Configuration);
+builder.Services.AddUniOverRequestLimits(builder.Configuration);
 builder.Services.AddUniOverSecurityHeaders(builder.Configuration);
 builder.Services.AddUniOverPwa(builder.Configuration);
 // A verificação do banco leva a etiqueta "ready": só /health/ready a executa (ver o mapeamento abaixo).
@@ -51,6 +52,8 @@ app.UseUniOverForwardedHeaders();
 app.UseUniOverSecurityHeaders();
 app.UseUniOverProblemDetails();
 app.UseUniOverStaticFiles();
+// Teto de corpo para toda rota (a rota de foto e a de importação declaram o próprio); antes da autenticação e de qualquer leitura.
+app.UseUniOverRequestBodyLimit();
 // [pipeline: autenticação] UseAuthentication e UseAuthorization entram aqui.
 app.UseUniOverAuthentication();
 
