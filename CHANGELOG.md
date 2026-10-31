@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.29.0](https://github.com/n33miaz/uniover/compare/v0.28.0...v0.29.0) (2026-10-31)
+
+
+### Features
+
+* **contracts:** add tv launcher config schema
+* **tv-launcher:** add home, sleep mode and config
+
 ## [0.28.0](https://github.com/n33miaz/uniover/compare/v0.27.0...v0.28.0) (2026-10-31)
 
 
