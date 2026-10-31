@@ -50,14 +50,34 @@ O wrapper fixa o Gradle 8.13. A versão do app é a do arquivo `VERSION` da raiz
 
 ### Assinatura
 
-O release sai assinado com a **chave de depuração do Android** da máquina que compilou (`~/.android/debug.keystore`),
-de propósito: a esteira monta o APK sem ter segredo nenhum. Duas consequências:
+O launcher é assinado com uma **chave fixa do projeto** (PKCS12, RSA 4096, alias `uniover-tv`, válida até 2056).
+Todo build oficial, local ou do runner, sai com o mesmo certificado, e por isso a TV aceita a atualização por cima
+do app instalado, sem desinstalar.
 
-- Um APK compilado em outra máquina (outra chave de depuração) **não atualiza** o instalado: o ADB responde
-  `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Para trocar, siga "Voltar ao original" até o fim (que desinstala) e instale
-  de novo. O agente deve sempre instalar o APK que o próprio agente carrega, nunca um compilado à parte.
-- Para assinar com uma chave do projeto, passe as quatro propriedades (por `-P` ou variável de ambiente):
+- **Certificado (público), SHA-256:**
+  `F7:82:15:1A:18:E6:BC:3F:F2:2A:20:1F:F5:58:FD:83:3F:EB:21:20:18:20:34:A3:DE:C6:AE:AB:41:B1:2B:FC`
+  (também em `signing-cert.sha256`, que o script local e a esteira usam para conferir o APK).
+- **Build local:** `pwsh -NoProfile -File apps/tv-launcher/tools/build-release.ps1`. O script lê a chave de
+  `.secrets/tv-launcher/` na raiz do repositório principal (também numa worktree), monta o release, confere com o
+  `apksigner` que o certificado é o da chave do projeto e falha se não for. `-Destino <pasta>` copia o APK como
+  `uniover-launcher.apk`.
+- **Esteira (job `tv-launcher`):** lê os segredos do repositório `UNIOVER_TV_KEYSTORE_BASE64`,
+  `UNIOVER_TV_KEYSTORE_PASSWORD`, `UNIOVER_TV_KEY_ALIAS` e `UNIOVER_TV_KEY_PASSWORD`, decodifica o keystore num arquivo
+  temporário do runner, assina o release, confere o certificado contra `signing-cert.sha256` e apaga o arquivo ao
+  sair do passo. Evento sem segredos (PR de fora ou de robô) assina com a chave de depuração do runner: serve para
+  provar que o build monta, mas esse APK não é o oficial.
+- **Onde fica a chave:** fora do git. `.secrets/tv-launcher/uniover-tv.p12` e `senha.txt` (pasta no `.gitignore`),
+  mais um backup cifrado pelo Windows (DPAPI) em `Documents\UniOver-chaves` com o script
+  `restaurar-tv-launcher.ps1`, que só abre na mesma conta e na mesma máquina. Quem perder a chave e o backup perde
+  também a atualização por cima: só resta desinstalar e instalar de novo na TV. Guarde uma cópia do `.p12` e da senha
+  num cofre de senhas.
+- **Sem a chave** (por exemplo, ao compilar sem as propriedades), o release sai com a chave de depuração da máquina e
+  **não atualiza** um APK oficial instalado: o ADB responde `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. O agente deve
+  instalar sempre o APK oficial que ele próprio carrega.
+- Para assinar à mão com outra chave, passe as quatro propriedades (por `-P` ou variável de ambiente):
   `UNIOVER_TV_STORE_FILE`, `UNIOVER_TV_STORE_PASSWORD`, `UNIOVER_TV_KEY_ALIAS`, `UNIOVER_TV_KEY_PASSWORD`.
+- A TV que já tem um APK assinado com a chave de depuração antiga precisa de **uma** desinstalação ("Voltar ao
+  original" até o fim) para trocar para a chave do projeto; dali em diante as atualizações entram por cima.
 
 ## Configuração
 
