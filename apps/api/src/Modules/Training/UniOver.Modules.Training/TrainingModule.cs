@@ -121,7 +121,11 @@ public static class TrainingModule
         group.MapCalendarEntries();
         group.MapBody();
         group.MapFoods();
-        group.MapProgressPhotos();
+        // A nuvem de fotos de progresso foi aposentada: as rotas só existem quando a configuração a liga de propósito
+        // (Modules:Training:Photos:Storage:Enabled, que exige o bucket completo). Sem isso a API nem as publica (404), e o
+        // contrato HTTP não as lista. Nenhum dado é apagado: a tabela e a camada de armazenamento ficam como estão.
+        if (endpoints.ServiceProvider.GetRequiredService<ProgressPhotoStorageOptions>().Enabled)
+            group.MapProgressPhotos();
 
         // [composição: training] as próximas áreas do módulo acrescentam as suas rotas aqui.
         return endpoints;

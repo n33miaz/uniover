@@ -150,7 +150,7 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task QuotaAndDisabledStorageHaveClearResponses()
+    public async Task QuotaIsEnforced_AndWithoutTheConfigurationTheRouteIsAbsent()
     {
         var store = new FakeProgressPhotoStore();
         await using var limited = await TrainingApp.StartAsync(postgres, new TrainingAppOptions
@@ -166,7 +166,7 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
         await using var disabled = await TrainingApp.StartAsync(postgres);
         var disabledMember = await disabled.NewGuestAsync("Outra conta", ["module:training"], 71);
         using var listed = await disabled.SendAsync(HttpMethod.Get, "/api/v1/training/progress-photos", bearer: disabledMember.Login.AccessToken);
-        listed.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        listed.StatusCode.Should().Be(HttpStatusCode.NotFound, "a nuvem de fotos está aposentada: sem a configuração ligada, a rota não existe");
     }
 
     [Fact]
@@ -272,7 +272,7 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task WithoutTheStorageConfigured_TheAppRuns_AndEveryRouteSaysThePhotosStayOnTheDevice()
+    public async Task WithoutTheStorageConfigured_TheAppRuns_AndTheCloudPhotoRoutesAreNotPublished()
     {
         await using var app = await TrainingApp.StartAsync(postgres);
         var member = await app.NewGuestAsync("Conta", ["module:training"], 77);
@@ -283,13 +283,9 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
         using var read = await app.SendAsync(HttpMethod.Get, $"/api/v1/training/progress-photos/{id}/content", bearer: member.Login.AccessToken);
         using var delete = await app.SendAsync(HttpMethod.Put, $"/api/v1/training/progress-photos/{id}/deletion", bearer: member.Login.AccessToken);
 
+        // A nuvem de fotos está aposentada: sem a configuração ligada de propósito, as rotas nem existem.
         foreach (var response in new[] { list, put, read, delete })
-        {
-            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-            var problem = await TrainingApp.JsonAsync(response);
-            problem.GetProperty("type").GetString().Should().EndWith("progress-photo-storage-disabled");
-            problem.GetProperty("title").GetString().Should().Contain("só neste aparelho");
-        }
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         await using var db = app.Db();
         (await db.Set<ProgressPhoto>().CountAsync(TestContext.Current.CancellationToken)).Should().Be(0, "sem armazenamento nada é gravado, nem metadado");
