@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TV Livre</string>
+    <string name="sleep_name">Dormir</string>
+    <string name="sleep_tile">Dormir</string>
+    <string name="settings_tile">Configurações</string>
+    <string name="cannot_open">Não foi possível abrir este app</string>
+</resources>
