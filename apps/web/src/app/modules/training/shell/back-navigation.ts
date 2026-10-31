@@ -1,5 +1,9 @@
 import { Location } from '@angular/common';
-import { Injectable, inject } from '@angular/core';
+import { Injectable, type Signal, computed, inject } from '@angular/core';
+import { canUseModule } from '../../../core/auth/guest-home';
+import { isStandalone } from '../../../core/pwa/install-env';
+import { INSTALL_ENV } from '../../../core/pwa/install-hint.service';
+import { SessionState } from '../../../core/session/session-state';
 import { NavigationEnd, NavigationStart, Router } from '@angular/router';
 
 /**
@@ -168,4 +172,27 @@ export class BackNavigation {
     const segments = this.router.parseUrl(url).root.children['primary']?.segments ?? [];
     return segments.map((segment) => segment.path).join('/');
   }
+}
+
+/**
+ * O rótulo da seta do topo do Treino (`null` = sem seta), igual na casca e no esqueleto que a antecede, para o voltar já
+ * estar lá enquanto o banco abre. A seta existe em toda tela, com uma exceção: quem só tem o Treino e o abriu pelo app
+ * instalado não tem para onde ir a partir de uma aba (a Início fica fora do escopo `/treino/`, e o iOS o tiraria do app);
+ * para ele a raiz das abas fica sem seta. As telas internas voltam ao pai de sempre. Chamar num contexto de injeção.
+ */
+export function injectTrainingBackLabel(
+  url: () => string,
+  hasHandler: () => boolean,
+): Signal<string | null> {
+  const session = inject(SessionState);
+  const installed = isStandalone(inject(INSTALL_ENV));
+  const text = $localize`:@@training.shell.back:Voltar`;
+  return computed<string | null>(() => {
+    if (!hasHandler() && trainingParent(url()) === null) {
+      const onlyTraining =
+        session.isGuest() && !canUseModule(session.role(), session.knownPermissions(), 'tv');
+      if (installed && onlyTraining) return null;
+    }
+    return text;
+  });
 }

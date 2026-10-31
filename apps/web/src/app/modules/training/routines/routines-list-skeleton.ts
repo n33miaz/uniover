@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { LoadingFrame } from '../../../shared/ui/skeleton/loading-frame';
 import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
 
@@ -12,6 +12,9 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
   template: `
     <app-loading-frame [label]="label">
       <div class="sk-stack">
+        @if (withSwitch()) {
+          <span appSkeleton class="sk-switch"></span>
+        }
         <div class="sk-next-card ui-card">
           <div class="sk-main">
             <span appSkeleton class="sk-tile"></span>
@@ -23,6 +26,12 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
           <span appSkeleton class="sk-start"></span>
         </div>
         <span appSkeleton class="sk-more"></span>
+        @if (withSwitch()) {
+          <div class="sk-actions">
+            <span appSkeleton class="sk-start"></span>
+            <span appSkeleton class="sk-start"></span>
+          </div>
+        }
       </div>
     </app-loading-frame>
   `,
@@ -75,6 +84,19 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
       height: 56px;
       border-radius: var(--radius);
     }
+    .sk-switch {
+      display: block;
+      height: 52px;
+      border-radius: var(--radius);
+    }
+    .sk-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-2);
+    }
+    .sk-actions .sk-start {
+      height: 52px;
+    }
     .sk-more {
       display: block;
       height: var(--tap);
@@ -84,5 +106,7 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RoutinesListSkeleton {
+  /** Com o seletor Catálogo | Rotinas e os botões de baixo: a tela inteira ainda não existe (o banco abre). */
+  readonly withSwitch = input(false);
   protected readonly label = $localize`:@@training.routines.loading:Carregando as rotinas…`;
 }

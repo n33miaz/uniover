@@ -444,6 +444,12 @@ test.describe('esqueleto de espera: Treino', () => {
       await expect.poll(async () => (await watched(page)).seen, { timeout: 5000 }).toBe(true);
       await expect(page.locator(BUSY).first()).toBeAttached();
       await expectNoHorizontalScroll(page);
+      // O topo já é o da tela de verdade enquanto o banco abre: o título e a seta de voltar, no lugar de sempre.
+      const top = page.locator('app-page-top-bar');
+      await expect(top.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
+      await expect(top.getByRole('button', { name: 'Voltar' })).toBeVisible();
+      const arrow = await top.getByRole('button', { name: 'Voltar' }).boundingBox();
+      expect(arrow?.width ?? 0).toBeGreaterThanOrEqual(44);
 
       await expect(screen.done(page)).toBeVisible({ timeout: 25_000 });
       await expectNoWaitLeft(page);
