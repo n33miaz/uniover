@@ -30,9 +30,6 @@ export class SystemPage {
   protected readonly contact = signal('');
   protected readonly limit = signal(2);
   protected readonly offlineMinutes = signal(10);
-  protected readonly photos = signal(false);
-  /** Se o bucket do servidor está completo; `null` enquanto não se sabe (ou se a leitura falhou). */
-  protected readonly bucketConfigured = signal<boolean | null>(null);
   protected readonly lightCleanup = signal(true);
   protected readonly deepCleanup = signal(true);
   protected readonly deepCleanupThreshold = signal(160);
@@ -70,9 +67,6 @@ export class SystemPage {
       this.offlineMinutes.set(
         Number(values.find((item) => item.key === 'devices.agent-offline-minutes')?.value ?? 10),
       );
-      this.photos.set(
-        values.find((item) => item.key === 'training.photo-storage-enabled')?.value === true,
-      );
       this.lightCleanup.set(
         values.find((item) => item.key === 'tv.light-cleanup-enabled')?.value !== false,
       );
@@ -93,20 +87,6 @@ export class SystemPage {
     } finally {
       this.configLoading.set(false);
     }
-    // Só informativo: se a leitura falhar, a tela segue sem a linha de estado (o servidor ainda recusa ligar sem bucket).
-    try {
-      this.bucketConfigured.set((await this.api.photoBucket()).configured === true);
-    } catch {
-      this.bucketConfigured.set(null);
-    }
-  }
-
-  protected bucketStatus(): string | null {
-    const configured = this.bucketConfigured();
-    if (configured === null) return null;
-    return configured
-      ? $localize`:@@settings.system.config.bucket-ready:Bucket pronto no servidor.`
-      : $localize`:@@settings.system.config.bucket-not-ready:Bucket ainda não configurado no servidor. Configure-o antes de ligar as fotos.`;
   }
 
   protected setting(key: SystemSettingKey): SystemSettingValue | undefined {
@@ -181,11 +161,9 @@ export class SystemPage {
           ? $localize`:@@settings.system.config.partial:Uma parte foi salva e outra não. Os valores da tela seguem como você os deixou: confira e salve de novo.`
           : problem && isStepUpRequired(problem)
             ? $localize`:@@settings.system.config.unconfirmed:A mudança não foi confirmada com a passkey.`
-            : problem?.kind === 'photo-bucket-not-configured'
-              ? $localize`:@@settings.system.config.bucket-missing:Configure o bucket no servidor antes de ligar as fotos.`
-              : problem?.status === 400
-                ? $localize`:@@settings.system.config.invalid:Confira o valor e tente de novo.`
-                : $localize`:@@settings.system.config.save-error:Não foi possível salvar agora.`,
+            : problem?.status === 400
+              ? $localize`:@@settings.system.config.invalid:Confira o valor e tente de novo.`
+              : $localize`:@@settings.system.config.save-error:Não foi possível salvar agora.`,
       );
     } finally {
       this.busy.set(null);

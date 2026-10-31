@@ -82,37 +82,6 @@
           </button>
         </form>
       </section>
-      <section class="config-group ui-group" aria-labelledby="system-photos-title">
-        <h3 id="system-photos-title" i18n="@@settings.system.config.photos-group">Fotos</h3>
-        <div class="config-row">
-          <label class="switch-line" for="photo-storage">
-            <span i18n="@@settings.system.config.photos">Fotos na Nuvem</span>
-            <input
-              id="photo-storage"
-              type="checkbox"
-              role="switch"
-              class="ui-switch"
-              [checked]="photos()"
-              [disabled]="busy() !== null || (bucketConfigured() === false && !photos())"
-              (change)="toggle('training.photo-storage-enabled', photos, $any($event.target))"
-            />
-          </label>
-          <span class="source">{{ source('training.photo-storage-enabled') }}</span>
-          <p class="hint" i18n="@@settings.system.config.photos-hint">
-            Guarda as fotos de progresso na nuvem privada.
-          </p>
-          @if (bucketStatus(); as status) {
-            <p
-              class="hint bucket"
-              [class.ok]="bucketConfigured()"
-              [class.bad]="!bucketConfigured()"
-              role="status"
-            >
-              {{ status }}
-            </p>
-          }
-        </div>
-      </section>
       <section class="config-group ui-group" aria-labelledby="system-cleanup-title">
         <h3 id="system-cleanup-title" i18n="@@settings.system.config.cleanup-group">Limpeza</h3>
         <div class="config-row">

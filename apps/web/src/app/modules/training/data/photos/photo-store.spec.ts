@@ -231,6 +231,47 @@ describe('PhotoStore', () => {
     });
   });
 
+  describe('thumbUrl', () => {
+    it('makes a small thumbnail on the first read, keeps it, and reuses it afterwards', async () => {
+      const t = setup();
+      t.encoder.content = 'x'.repeat(5_000);
+      const photo = saved(await t.store.add(original()));
+      t.encoder.calls.length = 0;
+      t.encoder.content = 'miniatura';
+
+      const first = (await t.store.thumbUrl(photo.id)) as string;
+      const second = (await t.store.thumbUrl(photo.id)) as string;
+
+      expect(first).toMatch(/^data:image\/jpeg;base64,/);
+      expect(atob(first.split(',')[1])).toBe('miniatura');
+      expect(second).toBe(first);
+      // Só a primeira leitura reduz; a segunda vem do que ficou guardado.
+      expect(t.encoder.calls).toHaveLength(1);
+      expect(t.encoder.calls[0].options).toEqual({ maxSide: 360, quality: 0.7 });
+      const row = await t.trainingDb.photos.get(photo.id);
+      expect(row?.thumb?.byteLength).toBe('miniatura'.length);
+      expect(row?.bytes).toBe(5_000);
+    });
+
+    it('falls back to the whole photo when it cannot be reduced, and leaves no thumbnail', async () => {
+      const t = setup();
+      t.encoder.content = 'foto-inteira';
+      const photo = saved(await t.store.add(original()));
+      t.encoder.result = 'not-an-image';
+
+      const url = (await t.store.thumbUrl(photo.id)) as string;
+
+      expect(atob(url.split(',')[1])).toBe('foto-inteira');
+      expect((await t.trainingDb.photos.get(photo.id))?.thumb).toBeUndefined();
+    });
+
+    it('is null for a photo that does not exist', async () => {
+      const t = setup();
+
+      expect(await t.store.thumbUrl('nao-existe')).toBeNull();
+    });
+  });
+
   describe('remove', () => {
     it('removes the photo from the device, and says when there was none', async () => {
       const t = setup();
@@ -241,6 +282,16 @@ describe('PhotoStore', () => {
 
       expect(await t.store.list()).toEqual([]);
       expect(await t.store.dataUrl(photo.id)).toBeNull();
+    });
+
+    it('also drops the leftover of the retired cloud queue for that photo', async () => {
+      const t = setup();
+      const photo = saved(await t.store.add(original()));
+      await t.trainingDb.photoSync.put({ id: photo.id, state: 'cloud', error: false });
+
+      await t.store.remove(photo.id);
+
+      expect(await t.trainingDb.photoSync.get(photo.id)).toBeUndefined();
     });
   });
 

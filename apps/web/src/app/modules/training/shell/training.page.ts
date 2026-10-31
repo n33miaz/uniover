@@ -17,7 +17,6 @@ import { INSTALL_ENV, InstallHintService } from '../../../core/pwa/install-hint.
 import { SessionState } from '../../../core/session/session-state';
 import { PageTopBar } from '../../../shared/ui/page-top-bar';
 import { SessionRepository } from '../data/sessions/session-repository';
-import { ProgressPhotoSync } from '../data/photos/progress-photo-sync';
 import { TrainingSync } from '../data/sync/training-sync';
 import { BackNavigation, trainingParent } from './back-navigation';
 import { SyncIssuesSheet } from './sync-issues-sheet';
@@ -210,7 +209,6 @@ export class TrainingPage {
   private readonly router = inject(Router);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly sync = inject(TrainingSync);
-  private readonly photoSync = inject(ProgressPhotoSync);
   private readonly sessions = inject(SessionRepository);
   private readonly install = inject(InstallHintService);
   private readonly navigation = inject(BackNavigation);
@@ -331,7 +329,6 @@ export class TrainingPage {
   constructor() {
     // Sem esperar: o `start()` hidrata a fila e puxa em segundo plano; a tela lê do banco local desde já.
     void this.sync.start();
-    this.photoSync.start();
 
     // Relê o treino aberto a cada gravação do aparelho (iniciar, série, encerrar, descartar). A resposta mais velha, que
     // chega depois de uma mais nova, é descartada.

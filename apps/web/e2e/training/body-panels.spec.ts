@@ -119,7 +119,7 @@ test('prioriza sinais e mantém calorias e fotos acessíveis', async ({ page, co
   expect(violations).toEqual([]);
 });
 
-test('envia uma foto nova para a nuvem privada depois da aceitação explícita', async ({
+test('as fotos de progresso ficam só no aparelho, sem opção de nuvem', async ({
   page,
   context,
 }) => {
@@ -128,8 +128,11 @@ test('envia uma foto nova para a nuvem privada depois da aceitação explícita'
   await page.getByRole('button', { name: 'Entendi' }).click();
   await page.getByRole('button', { name: 'Fotos', exact: true }).click();
   const photos = page.locator('app-body-photo-panel');
-  await photos.getByRole('button', { name: 'Ativar Fotos na Nuvem' }).click();
-  await expect(photos.getByText('Nuvem privada ativa neste aparelho.')).toBeVisible();
+  await expect(
+    photos.getByText('Se o navegador apagar os dados do site', { exact: false }),
+  ).toBeVisible();
+  await expect(photos.getByText(/nuvem/i)).toHaveCount(0);
+  await expect(photos.getByRole('button', { name: /Nuvem/i })).toHaveCount(0);
 
   const png = Buffer.from(
     await page.evaluate(() => {
@@ -149,11 +152,8 @@ test('envia uma foto nova para a nuvem privada depois da aceitação explícita'
     mimeType: 'image/png',
     buffer: png,
   });
-
-  await expect.poll(() => server.writes('progress-photos'), { timeout: 15_000 }).toBe(1);
-  await expect(photos.locator('.photo-card.cloud-photo .storage-badge')).toHaveText(
-    'Nuvem Privada',
-  );
-  await expect(photos.getByRole('button', { name: 'Enviar Fotos Deste Aparelho' })).toHaveCount(0);
-  await expect(photos.getByText(/ficam guardadas na nuvem privada/)).toBeVisible();
+  await expect(photos.locator('.photo-card')).toHaveCount(1);
+  await expect(photos.getByText('Foto salva só neste aparelho.')).toBeVisible();
+  // Nada sobe: o servidor de teste nem tem mais rota de foto, e nenhuma chamada a ela foi feita.
+  expect(server.hits.filter((hit) => hit.path.startsWith('progress-photos'))).toEqual([]);
 });

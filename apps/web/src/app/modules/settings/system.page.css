@@ -51,14 +51,6 @@
   font-size: var(--fs-small);
 }
 
-.config-row .bucket.ok {
-  color: var(--a-ok-ink);
-}
-
-.config-row .bucket.bad {
-  color: var(--a-bad-ink);
-}
-
 .error {
   color: var(--a-bad);
 }

@@ -24,8 +24,6 @@ export interface SystemMock {
   /** Quantas leituras seguintes respondem 500 (para o estado de erro e o "Tentar de novo"). */
   failReads: number;
   settings: { key: string; value: string | number | boolean; source: 'app' | 'server' }[];
-  /** Se o servidor tem o bucket de fotos completo (a tela mostra o estado e trava o interruptor sem ele). */
-  bucketConfigured: boolean;
 }
 
 const PROBLEM_BASE = 'https://uniover.app/problems/';
@@ -83,12 +81,10 @@ export async function mockSystemApi(
     current: null,
     source: 'none',
     failReads: 0,
-    bucketConfigured: true,
     settings: [
       { key: 'training.off-contact', value: 'foods@example.test', source: 'server' },
       { key: 'devices.max-per-guest', value: 2, source: 'server' },
       { key: 'devices.agent-offline-minutes', value: 10, source: 'server' },
-      { key: 'training.photo-storage-enabled', value: false, source: 'server' },
       { key: 'tv.light-cleanup-enabled', value: true, source: 'server' },
       { key: 'tv.deep-cleanup-enabled', value: true, source: 'server' },
       { key: 'tv.deep-cleanup-memory-threshold-mb', value: 160, source: 'server' },
@@ -103,12 +99,6 @@ export async function mockSystemApi(
       return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
     if (identity.role !== 'owner') return route.fulfill({ status: 403 });
     const path = new URL(request.url()).pathname;
-    if (request.method() === 'GET' && path.endsWith('/photo-bucket'))
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ configured: mock.bucketConfigured }),
-      });
     if (request.method() === 'GET')
       return route.fulfill({
         status: 200,
@@ -127,8 +117,7 @@ export async function mockSystemApi(
     const value = (request.postDataJSON() as { value: unknown }).value;
     if (
       (key === 'training.off-contact' && (typeof value !== 'string' || !value.includes('@'))) ||
-      (key === 'devices.max-per-guest' && (typeof value !== 'number' || value < 1 || value > 20)) ||
-      (key === 'training.photo-storage-enabled' && typeof value !== 'boolean')
+      (key === 'devices.max-per-guest' && (typeof value !== 'number' || value < 1 || value > 20))
     ) {
       return problem(route, 400, 'validation-failed', 'Valor inválido.');
     }
