@@ -109,6 +109,7 @@ async def test_capability_is_declared_when_the_adb_answers(
         "tv.adb",
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
+        "tv.focus-closes-background.v1",
     ]
     assert adb.connects == 1
 
@@ -131,6 +132,7 @@ async def test_capability_is_still_declared_when_the_tv_is_off_right_now(
         "tv.adb",
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
+        "tv.focus-closes-background.v1",
     ]
 
 
@@ -198,6 +200,7 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
         "tv.adb",
         "tv.cleanup.automatic.v1",
         "tv.light-settings.v1",
+        "tv.focus-closes-background.v1",
     ]
     lists = [m for m in api.received if m["type"] == "tv.apps.v1"]
     # Uma lista por iniciativa do agente (sessão quente depois do `hello`) e a do pedido.

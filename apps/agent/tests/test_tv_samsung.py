@@ -867,6 +867,7 @@ def test_samsung_configuration_selects_its_capabilities_without_adb(
     assert "tv.cleanup.config.v1" not in setup.handlers  # sem limpeza automática na Samsung
     assert "tv.cleanup.automatic.v1" not in setup.capabilities
     assert "tv.light-settings.v1" not in setup.capabilities
+    assert "tv.focus-closes-background.v1" not in setup.capabilities  # fechar apps é só Android
     assert setup.text is None
     assert "token-secreto" not in caplog.text
 

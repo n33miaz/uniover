@@ -10,7 +10,8 @@ import random
 import re
 import socket
 import sys
-from collections.abc import Awaitable, Callable, Coroutine, Sequence
+import uuid
+from collections.abc import Awaitable, Callable, Collection, Coroutine, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from importlib import metadata
@@ -104,6 +105,7 @@ from uniover_agent.core import (
     ConnectionSupervisor,
     EnvelopeFactory,
     EnvelopeGate,
+    FocusBackgroundCloser,
     HandleCommand,
     Handler,
     IconResolver,
@@ -147,6 +149,7 @@ from uniover_agent.ports import (
     PairingTicket,
     SecretStore,
     Transport,
+    TransportError,
     TvNotPaired,
     TvUnreachable,
 )
@@ -498,6 +501,65 @@ def remember_tv_identity(known: TvKnown, identity: TvIdentity) -> None:
         _log.info("identidade da TV guardada para reencontrá-la se o endereço mudar")
 
 
+def compose_focus_closer(
+    setup: TvSetup,
+    adb: AdbTv,
+    clock: Clock,
+    keep: Collection[str],
+    is_busy: Callable[[], bool],
+) -> FocusBackgroundCloser:
+    """Fechamento de apps de fundo do Modo Foco; o relatório entra nas limpezas como `focus`."""
+
+    async def report(packages: tuple[str, ...], duration_ms: int) -> None:
+        request_id = str(uuid.uuid4())
+        try:
+            await setup.transport.send(
+                setup.envelopes.tv_cleanup_result(
+                    request_id,
+                    request_id,
+                    closed_apps=len(packages),
+                    closed_packages=packages,
+                    memory_before_mb=None,
+                    memory_after_mb=None,
+                    freed_mb=None,
+                    failed_steps=(),
+                    kind="light",
+                    trigger="focus",
+                    result="completed",
+                    duration_ms=duration_ms,
+                )
+            )
+        except TransportError:
+            _log.info("não consegui enviar o relatório do Modo Foco")
+
+    return FocusBackgroundCloser(
+        adb, clock, lambda: setup.manager.snapshot().app, report, keep, is_busy
+    )
+
+
+def compose_light_settings(
+    setup: TvSetup,
+    adb: AdbTv,
+    clock: Clock,
+    keep: Collection[str],
+    is_busy: Callable[[], bool],
+) -> tuple[FocusBackgroundCloser, TvLightSettings]:
+    """Ajustes leves da TV, já ligados ao fechamento de apps de fundo do Modo Foco."""
+    manager = setup.manager
+    closer = compose_focus_closer(setup, adb, clock, keep, is_busy)
+    light_settings = TvLightSettings(
+        adb,
+        clock,
+        manager.set_keep_hot,
+        lambda: manager.snapshot().app,
+        installation_base() / "tv-light-settings.json",
+        manager.wake,
+        closer.on_focus,
+        closer.reset,
+    )
+    return closer, light_settings
+
+
 def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> AdbTv | None:
     """Liga o canal ADB: lista de apps, abertura por pacote e digitação pelo `input text`.
 
@@ -524,13 +586,9 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
     )
     manager = setup.manager
     manager.add_channel(adb)
-    light_settings = TvLightSettings(
-        adb,
-        clock,
-        manager.set_keep_hot,
-        lambda: manager.snapshot().app,
-        installation_base() / "tv-light-settings.json",
-        manager.wake,
+
+    focus_closer, light_settings = compose_light_settings(
+        setup, adb, clock, keep, lambda: cleanup.running
     )
     icons = compose_icons(setup, settings, adb, clock, lambda: light_settings.focus_active)
     if icons is not None:
@@ -567,6 +625,10 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
             bool(body["deepEnabled"]),
             int(body["deepThresholdMb"]),
             bool(body.get("closeBackgroundApps", False)),
+        )
+        # Só o `true` explícito e com o Modo Foco ligado nesta TV libera o fechamento.
+        focus_closer.configure(
+            bool(body.get("focusEnabled", False)) and body.get("focusClosesBackground") is True
         )
         await light_settings.configure(
             bool(body.get("focusEnabled", False)),
@@ -608,7 +670,7 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
         setup.capabilities.append("tv.cleanup.automatic.v1")
         # Os campos novos de `tv.cleanup.config.v1` só vão a quem declara esta capacidade: o schema
         # antigo recusa campo desconhecido e perderia a mensagem inteira.
-        setup.capabilities.append("tv.light-settings.v1")
+        setup.capabilities.extend(("tv.light-settings.v1", "tv.focus-closes-background.v1"))
 
     setup.prepare.append(declare_when_usable)
     return adb
