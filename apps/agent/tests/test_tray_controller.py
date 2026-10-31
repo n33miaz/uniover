@@ -26,6 +26,8 @@ class World:
         self.opened_urls: list[str] = []
         self.opened_files: list[Path] = []
         self.balloons: list[tuple[str, str]] = []
+        # Falso: o ícone ainda não existe na bandeja (nada é entregue).
+        self.deliver = True
         self.records: list[tuple[str, Severity, str]] = []
         self.stopped = 0
 
@@ -36,12 +38,17 @@ class World:
             read_inputs=lambda _: self.inputs,
             open_url=self.opened_urls.append,
             open_file=self.opened_files.append,
-            notify=lambda message, title: self.balloons.append((message, title)),
+            notify=self._notify,
             stop=self._stop,
             record=lambda kind, severity, detail: self.records.append((kind, severity, detail)),
             site_url="https://uniover.example",
             version=lambda: "b" * 40,
         )
+
+    def _notify(self, message: str, title: str) -> bool:
+        if self.deliver:
+            self.balloons.append((message, title))
+        return self.deliver
 
     def _stop(self) -> None:
         self.stopped += 1
@@ -165,6 +172,36 @@ class TestUpdateFailureBalloon:
         controller.refresh()
 
         assert len(world.balloons) == 2
+
+    def test_the_first_read_before_the_icon_exists_does_not_swallow_the_balloon(
+        self, world: World
+    ) -> None:
+        """Falha no logon: o supervisor atualiza antes de o ícone abrir; só depois ele avisa."""
+        self.failed(world)
+        controller = world.controller()
+
+        view = controller.refresh(announce=False)
+
+        assert view.attention
+        assert world.balloons == []
+        assert not (world.base / "runtime" / NOTIFIED_FILE).exists()
+        controller.refresh()
+        assert len(world.balloons) == 1
+
+    def test_a_balloon_that_could_not_be_shown_is_tried_again(self, world: World) -> None:
+        self.failed(world)
+        controller = world.controller()
+        world.deliver = False
+
+        controller.refresh()
+        controller.refresh()
+        assert world.balloons == []
+        assert not (world.base / "runtime" / NOTIFIED_FILE).exists()
+
+        world.deliver = True
+        controller.refresh()
+        controller.refresh()
+        assert len(world.balloons) == 1
 
     def test_a_healthy_update_never_opens_a_balloon(self, world: World) -> None:
         world.inputs = TrayInputs(

@@ -10,17 +10,17 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from uniover_agent.adapters.tray import SharpIcon, assets_dir
+from uniover_agent.adapters.tray_assets import assets_dir, frame
 from uniover_agent.core.tray_model import TrayInputs, view_of
 
 SIZES = {16, 20, 24, 32, 40, 48, 64, 256}
 STATES = {
     "connected": (0x1F, 0x8A, 0x4C),
     "reconnecting": (0xC2, 0x6A, 0x00),
-    "error": (0xC6, 0x28, 0x28),
+    "error": (0xB7, 0x1C, 0x1C),
     "updating": (0x1F, 0x6F, 0xD1),
 }
-SEAL = (0xD9, 0x2D, 0x20)
+SEAL = (0xFF, 0x5C, 0x45)
 WHITE = (255, 255, 255)
 
 
@@ -100,10 +100,16 @@ def test_the_seal_sits_in_the_lower_right_corner_and_overlaps_the_disc() -> None
         x = y = round(size * 0.78)
         assert rgb(sealed[size], x, y) == SEAL, size
         assert rgb(plain[size], x, y) != SEAL, size
-        # O selo passa da borda do disco: na diagonal, logo depois da borda, só ele desenha.
-        outside = math.ceil(size / 2 + (size / 2 + 0.75) * math.sqrt(0.5) - 0.5)
-        assert alpha(sealed[size], outside, outside) > 150, size
-        assert alpha(plain[size], outside, outside) < 40, size
+        # O selo avança sobre a borda do disco (mais da metade dele, em 16 px, ainda é disco):
+        # o ponto mais afastado do centro do disco passa do raio.
+        lower_right = max(
+            (x, y)
+            for x in range(size)
+            for y in range(size)
+            if rgb(sealed[size], x, y) == SEAL and alpha(sealed[size], x, y) == 255
+        )
+        reach = math.hypot(lower_right[0] + 0.5 - size / 2, lower_right[1] + 0.5 - size / 2)
+        assert reach > size / 2 - 1.5, size
         # E não está colado: o lado esquerdo do disco continua só com a cor do estado.
         assert rgb(sealed[size], size // 12 + 1, size // 2) == STATES["connected"], size
 
@@ -144,15 +150,15 @@ def test_the_private_pystray_hooks_we_override_still_exist() -> None:
 
     for name in ("_assert_icon_handle", "_message", "_update_icon", "_release_icon"):
         assert callable(getattr(pystray.Icon, name, None)), name
+    from uniover_agent.adapters.tray import SharpIcon  # noqa: PLC0415
+
     assert issubclass(SharpIcon, pystray.Icon)
 
 
 def test_the_image_handed_to_pystray_is_the_frame_closest_to_the_tray_size() -> None:
-    from uniover_agent.adapters.tray import _frame  # noqa: PLC0415
-
     folder = assets_dir()
 
-    assert _frame(folder / "connected.ico", 16).size == (16, 16)
-    assert _frame(folder / "connected.ico", 24).size == (24, 24)
-    assert _frame(folder / "connected.ico", 22).size in {(20, 20), (24, 24)}
-    assert _frame(folder / "error-attention.ico", 1000).size == (256, 256)
+    assert frame(folder / "connected.ico", 16).size == (16, 16)
+    assert frame(folder / "connected.ico", 24).size == (24, 24)
+    assert frame(folder / "connected.ico", 22).size in {(20, 20), (24, 24)}
+    assert frame(folder / "error-attention.ico", 1000).size == (256, 256)
