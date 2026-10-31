@@ -33,6 +33,8 @@ public class IdentityAuditNormalizerTests
     [InlineData(AuditEvents.GuestInviteAccepted, AuditOutcome.Success)]
     [InlineData(AuditEvents.GuestInviteRevoked, AuditOutcome.Success)]
     [InlineData(AuditEvents.GuestRevoked, AuditOutcome.Success)]
+    [InlineData(AuditEvents.GuestPaused, AuditOutcome.Success)]
+    [InlineData(AuditEvents.GuestResumed, AuditOutcome.Success)]
     [InlineData(AuditEvents.SessionRevoked, AuditOutcome.Success)]
     [InlineData(AuditEvents.PermissionsChanged, AuditOutcome.Success)]
     [InlineData(AuditEvents.ProfileUpdated, AuditOutcome.Success)]
@@ -186,6 +188,17 @@ public class IdentityAuditNormalizerTests
 
         record.TargetUserId.Should().BeNull();
         record.Detail.Should().Be(detail.Length == 0 ? null : detail);
+    }
+
+    [Theory]
+    [InlineData(AuditEvents.GuestPaused)]
+    [InlineData(AuditEvents.GuestResumed)]
+    public void GuestPausedAndResumed_PointAtTheAccount(string eventName)
+    {
+        var record = Normalize(eventName, Admin, Guest.ToString("N"));
+
+        record.TargetUserId.Should().Be(Guest);
+        record.Detail.Should().BeNull();
     }
 
     [Fact]
