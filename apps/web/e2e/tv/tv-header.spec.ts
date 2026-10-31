@@ -1144,7 +1144,7 @@ test.describe('folha de desligar', () => {
     await expect(sheet).toBeVisible();
     // O estado mais alto da folha: atalho escolhido, com a confirmação do horário na tela.
     await sheet.getByRole('button', { name: '30 min' }).click();
-    await expect(sheet.getByRole('button', { name: 'Confirmar agendamento' })).toBeAttached();
+    await expect(sheet.getByRole('button', { name: /^Agendar para/ })).toBeAttached();
     const off = sheet.getByRole('button', { name: 'Desligar', exact: true });
     await expect
       .poll(async () => {
