@@ -60,6 +60,14 @@ export function isPermissionDenied(problem: ApiProblem): boolean {
   return problem.status === 403 && problem.kind === FORBIDDEN_PROBLEM && !isStepUpRequired(problem);
 }
 
+/** `type` (sufixo) do 401 que a API dá quando o dono pausou a conta do convidado. */
+export const GUEST_PAUSED_PROBLEM = 'guest-paused';
+
+/** Entrada ou renovação recusada porque o dono pausou o acesso: o app mostra só "Acesso Pausado", sem mais detalhe. */
+export function isGuestPaused(problem: ApiProblem): boolean {
+  return problem.status === 401 && problem.kind === GUEST_PAUSED_PROBLEM;
+}
+
 /** `Retry-After` em segundos inteiros ou em data HTTP; devolve segundos (mínimo 1) ou `null` se ausente/ilegível. */
 export function parseRetryAfter(value: string | null, nowMs: number = Date.now()): number | null {
   if (!value) return null;
