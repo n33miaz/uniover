@@ -13,6 +13,7 @@ export type AgentHelloV1BodyCapabilitiesItem =
   | 'tv.kind.samsung'
   | 'tv.key.v3'
   | 'tv.power.off.v1'
+  | 'tv.livre.v1'
   | 'tv.key.INPUT'
   | 'tv.key.INFO'
   | 'tv.key.GUIDE'
