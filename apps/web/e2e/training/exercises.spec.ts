@@ -252,24 +252,6 @@ test.describe('exercícios: lista, busca e ficha', () => {
         .toBeGreaterThan(0);
     }
 
-    if (process.env['TRAINING_SHOTS_DIR']) {
-      await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('');
-      await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('a');
-      await settle(page);
-      await expect
-        .poll(() =>
-          page
-            .locator('.list .ui-row .thumb img')
-            .evaluateAll((images) => images.every((image) => (image as HTMLImageElement).complete)),
-        )
-        .toBe(true);
-      await screenshot(
-        page,
-        join(process.env['TRAINING_SHOTS_DIR'], `biblioteca-ilustracoes-${info.project.name}.png`),
-      );
-      await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('prancha lateral');
-    }
-
     await rows(page).first().click();
     await expect(page.getByRole('heading', { name: 'Prancha lateral' })).toBeVisible();
     const frames = page.locator('app-exercise-illustration img');
@@ -281,6 +263,17 @@ test.describe('exercícios: lista, busca e ficha', () => {
         ),
       )
       .toBe(true);
+
+    if (process.env['TRAINING_SHOTS_DIR']) {
+      await openTraining(page, '/treino/exercicios');
+      await waitForCatalog(page);
+      await rows(page).filter({ hasText: 'Remada invertida' }).scrollIntoViewIfNeeded();
+      await settle(page);
+      await screenshot(
+        page,
+        join(process.env['TRAINING_SHOTS_DIR'], `biblioteca-ilustracoes-${info.project.name}.png`),
+      );
+    }
   });
 
   test('a ficha sem ilustração mantém apenas as faces com músculos destacados', async ({
