@@ -40,7 +40,7 @@ export function parsePcStatus(dto: unknown): PcStatus | null {
 }
 
 /**
- * Se a casa tem um computador com o controle do PC ligado. A Início usa para decidir se o cartão ainda é "Em Breve"; a tela
+ * Se a PRÓPRIA conta tem um computador seu com o controle do PC ligado (a API nunca mostra o PC de outra pessoa). A Início usa para decidir se o cartão ainda é "Em Breve"; a tela
  * do módulo usa o mesmo estado para saber se o computador está conectado e quais favoritos oferecer. Fica em `core/` porque
  * os dois lados (Início e módulo) precisam dele e um módulo nunca importa de outro.
  *

@@ -1,5 +1,5 @@
 import { DestroyRef, ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { RouterLink, RouterOutlet } from '@angular/router';
 import { Skeleton } from '../../shared/ui/skeleton/skeleton';
 import { PcStore } from './data/pc-store';
 
@@ -10,7 +10,7 @@ import { PcStore } from './data/pc-store';
  */
 @Component({
   selector: 'app-pc-page',
-  imports: [RouterOutlet, Skeleton],
+  imports: [RouterLink, RouterOutlet, Skeleton],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="pc" [attr.data-phase]="store.phase()">
@@ -32,9 +32,14 @@ import { PcStore } from './data/pc-store';
               <rect x="3" y="4" width="18" height="12" rx="2" />
               <path [attr.d]="'M8 20h8M12 16v4'" />
             </svg>
-            <h2 i18n="@@pc.unavailable.title">Nenhum PC Ligado</h2>
-            <p i18n="@@pc.unavailable.text">No PC, rode este comando e reinicie o agente:</p>
+            <h2 i18n="@@pc.unavailable.title">Nenhum PC Seu Conectado</h2>
+            <p i18n="@@pc.unavailable.text">
+              Instale o conector no seu PC e, nele, ligue o controle e reinicie o agente:
+            </p>
             <code>{{ enableCommand }}</code>
+            <a routerLink="/conectar" class="ui-btn" i18n="@@pc.unavailable.install">
+              Instalar o Conector
+            </a>
           </div>
         }
         @case ('offline') {

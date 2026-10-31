@@ -45,10 +45,11 @@ describe('PcPage', () => {
     expect(root.querySelector('router-outlet')).toBeNull();
   });
 
-  it('with no PC set up, says how to turn the control on instead of showing a dead pad', () => {
+  it('with no PC of the person own, says how to install the connector and turn the control on, instead of a dead pad', () => {
     open('unavailable');
     expect(status().textContent?.trim()).toBe('Sem PC');
-    expect(root.querySelector('h2')?.textContent).toBe('Nenhum PC Ligado');
+    expect(root.querySelector('h2')?.textContent).toBe('Nenhum PC Seu Conectado');
+    expect(root.querySelector('.empty a')?.getAttribute('href')).toBe('/conectar');
     expect(root.querySelector('code')?.textContent).toBe('uniover-agent pc-control on');
     expect(root.querySelector('router-outlet')).toBeNull();
   });

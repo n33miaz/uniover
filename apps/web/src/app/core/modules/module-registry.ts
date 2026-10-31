@@ -20,7 +20,7 @@ export interface ModuleDefinition {
    */
   readonly route?: string;
   /**
-   * O módulo só deixa de ser "Em Breve" quando a casa tem o que ele precisa: `pc-agent` pede um computador com o controle
+   * O módulo só deixa de ser "Em Breve" quando a conta tem o que ele precisa: `pc-agent` pede um computador DELA com o controle
    * do PC ligado. Enquanto isso o cartão fica como planejado, sem link.
    */
   readonly liveWith?: 'pc-agent';
@@ -122,7 +122,7 @@ export class ModuleRegistry {
   }
 
   /**
-   * O que o módulo é agora: o do catálogo, exceto o que depende da casa (`liveWith`), que passa a "disponível" quando a casa
+   * O que o módulo é agora: o do catálogo, exceto o que depende da conta (`liveWith`), que passa a "disponível" quando a conta
    * tem o que ele precisa. Quem desenha a Início e a folha de edição pergunta aqui, nunca ao campo `status`.
    */
   statusOf(module: ModuleDefinition): ModuleStatus {

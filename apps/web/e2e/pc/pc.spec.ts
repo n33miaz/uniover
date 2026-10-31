@@ -301,11 +301,15 @@ test.describe('Estados', () => {
     await expect(page.locator('.pad')).toBeVisible();
   });
 
-  test('sem PC com o controle ligado: diz como ligar', async ({ page }) => {
+  test('sem PC seu com o controle ligado: diz como instalar e ligar', async ({ page }) => {
     pc.status = { available: false, online: false, apps: [] };
     await page.goto('/pc');
-    await expect(page.getByRole('heading', { name: 'Nenhum PC Ligado' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Nenhum PC Seu Conectado' })).toBeVisible();
     await expect(page.getByText('uniover-agent pc-control on')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Instalar o Conector' })).toHaveAttribute(
+      'href',
+      '/conectar',
+    );
     await expectNoHorizontalScroll(page);
     await expectNoA11yViolations(page);
   });
