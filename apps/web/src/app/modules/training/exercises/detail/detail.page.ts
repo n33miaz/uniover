@@ -148,7 +148,7 @@ export class ExerciseDetailPage {
     for (const id of [...extraPrimary, ...exercise.secondaryMuscles]) {
       const name = muscleLabel(id);
       list.push({
-        text: $localize`:@@training.detail.secondary:${name}:name: · secundário`,
+        text: $localize`:@@training.detail.secondary:${name}:name: · Secundário`,
         accent: false,
       });
     }

@@ -49,7 +49,7 @@ test.describe('exercício próprio criado sem rede', () => {
     await expect(page.locator('app-training-page')).toBeVisible();
     await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('articulada');
     await expect(page.locator('.list .name')).toHaveText(['Remada na máquina articulada']);
-    await expect(page.locator('.list .ui-chip', { hasText: 'própria' })).toBeVisible();
+    await expect(page.locator('.list .ui-chip', { hasText: 'Própria' })).toBeVisible();
     await expectPendingUnreachable(page);
     expect(server.writes('exercises')).toBe(0);
 

@@ -40,7 +40,7 @@ import { TodayGlyph } from './today-glyph';
                 <span class="ui-row-sub">{{ detail(entry) }}</span>
               </span>
               @if (entry.key === focusKey()) {
-                <span class="ui-chip accent" i18n="@@training.plan.now">agora</span>
+                <span class="ui-chip accent" i18n="@@training.plan.now">Agora</span>
               }
             </button>
           </li>

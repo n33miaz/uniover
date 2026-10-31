@@ -146,7 +146,7 @@ test.describe('exercícios: lista, busca e ficha', () => {
     await page.getByRole('link', { name: 'Entenda o Treino' }).click();
     await expect(page.getByRole('heading', { name: 'Entenda o Treino' })).toBeVisible();
     await expect(page.getByText('Programa Semanal')).toBeVisible();
-    await expect(page.getByText('Plano do Dia')).toBeVisible();
+    await expect(page.getByText('Rotina do Dia')).toBeVisible();
     await expect(page.getByText('Rotina', { exact: true })).toBeVisible();
     await expect(page.getByText('Exercício', { exact: true })).toBeVisible();
     // A tela entra com uma transição curta de opacidade: o contraste só vale depois dela.
@@ -303,7 +303,7 @@ test.describe('exercícios: lista, busca e ficha', () => {
 });
 
 test.describe('exercício próprio', () => {
-  test('cria, vê na lista com a marca "própria", edita e apaga', async ({ page, context }) => {
+  test('cria, vê na lista com a marca "Própria", edita e apaga', async ({ page, context }) => {
     const server = await startTraining(context, page);
     await openTraining(page, '/treino/exercicios/novo');
     await page.getByLabel('Nome').fill('Remada na máquina articulada');
@@ -319,7 +319,7 @@ test.describe('exercício próprio', () => {
     await page.goto('/treino/exercicios');
     await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('articulada');
     await expect(rows(page)).toHaveText(['Remada na máquina articulada']);
-    await expect(page.locator('.list .ui-chip', { hasText: 'própria' })).toBeVisible();
+    await expect(page.locator('.list .ui-chip', { hasText: 'Própria' })).toBeVisible();
     await expect.poll(() => server.writes('exercises'), PUSH).toBe(1);
 
     await rows(page).first().click();
