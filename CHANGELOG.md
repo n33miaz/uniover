@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.26.0](https://github.com/n33miaz/uniover/compare/v0.25.0...v0.26.0) (2026-10-31)
+
+
+### Features
+
+* **contracts:** permission and discovery messages
+* **agent:** ask the TV for permission once
+* **api:** permission state per Samsung TV
+* **web:** tv permission sheet on entry
+* **web:** nearby tvs and permission in settings
+
 ## [0.25.0](https://github.com/n33miaz/uniover/compare/v0.24.0...v0.25.0) (2026-10-31)
 
 
