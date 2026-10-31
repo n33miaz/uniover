@@ -186,10 +186,36 @@ janela, faz `uv sync` e `run`; se o agente cair, volta com espera crescente (5 s
 10 min de agente saudável). Se o `uv` ou o ambiente virtual quebrarem numa atualização do Windows, recria
 `%LOCALAPPDATA%\UniOver\runtime\venv`. O registro fica em `%LOCALAPPDATA%\UniOver\logs\agent.log`.
 
-**Bandeja e pasta do PC.** Perto do relógio aparece o ícone do UniOver: verde para TV ligada, amarelo para estado
-desconhecido/TV desligada e vermelho sem conexão. A dica traz o nome da TV. O menu abre o UniOver, o registro, pede
-uma atualização ou reinicia o agente; não há opção de desligar por engano. Se a bandeja não estiver disponível, o
-agente continua normalmente e tenta o ícone de novo. A pasta `%LOCALAPPDATA%\UniOver` fica organizada em `app`,
+**Bandeja.** Perto do relógio aparece o ícone do UniOver: um disco redondo com a marca, cuja cor diz o estado
+(verde conectado, laranja reconectando, vermelho sem conexão, azul atualizando). Quando algo pede atenção (hoje, uma
+atualização que falhou) um selo vermelho aparece no canto inferior direito, sem mudar a cor do disco. A dica traz o
+estado e o nome da TV. O menu tem Abrir UniOver, Status, Ver Registro, Atualizar Agora, Reiniciar e Sair.
+
+- **Sair só fecha o ícone.** O agente e o supervisor continuam rodando. O ícone deixa `runtime\tray-closed`, e o
+  supervisor não o reabre enquanto o sinal valer: até o próximo logon (o sinal é velho se foi deixado antes de a sessão
+  do Windows atual começar) ou até a pessoa abrir o atalho **UniOver Agente** do menu Iniciar (`tools\tray-open.vbs`,
+  que apaga o sinal e chama o lançador; o ícone volta em poucos segundos). O supervisor cria esse atalho ao subir, se
+  faltar, para ele chegar também a quem já tinha o UniOver instalado. Uma atualização não traz o ícone de volta.
+- **Balão do Windows só em falha de atualização**, uma vez por resultado (`runtime\tray-notified.json`). Atualizar,
+  conectar, reiniciar e o resto não abrem balão.
+- **Todo erro vai para o diagnóstico.** Falha de atualização (`update.failed`, `update.rejected`, `update.sync_failed`,
+  `update.rollback_failed`, em severidade `error`, escritas pelo agente e pelo supervisor) e falhas do próprio ícone
+  (componente `tray`) entram na fila `runtime\diagnostics.jsonl`, vão para "Erros dos Agentes" em Sistema e geram o
+  alerta "Falha de Atualização" no app do dono.
+- **Ícone nítido.** Os `.ico` de `assets\tray` (um por estado, com e sem selo, de 16 a 256 px) saem dos SVGs da mesma
+  pasta por `tools\build_tray_icons.mjs` (`node apps/agent/tools/build_tray_icons.mjs [pasta-de-previas]`). 16, 20 e 24
+  px têm desenho próprio na grade do pixel; o ícone é carregado no tamanho exato da bandeja na escala atual (o processo
+  declara suporte a DPI) em vez de o pystray carregar 32 px e o Windows encolher. O identificador do ícone no Windows
+  é fixo (`hID`), para o Windows lembrar onde a pessoa o deixou.
+- **Sempre visível, uma vez.** O Windows 11 esconde ícones novos no menu "^". Depois do primeiro registro o ícone
+  procura sua linha em `HKCU\Control Panel\NotifyIconSettings\<id>` (a que tem `ExecutablePath` igual ao do próprio
+  processo, em geral o `python.exe` do ambiente, e `InitialTooltip` começando por "UniOver"), grava `IsPromoted=1` e
+  deixa `runtime\tray-promoted.json`. Com a marca, nunca mais escreve: quem esconder o ícone depois não o vê voltar.
+  A chave não é documentada pela Microsoft e o Windows pode ignorar a mudança até o próximo registro do ícone; se a
+  linha não aparecer em 2 minutos, tenta de novo na próxima abertura do ícone.
+
+Se a bandeja não estiver disponível, o agente continua normalmente; um ícone que cai logo ao abrir é reaberto com espera
+crescente (15 s até 30 min) e a queda vira diagnóstico. A pasta `%LOCALAPPDATA%\UniOver` fica organizada em `app`,
 `runtime`, `config`, `logs` e `web`, com um `LEIA-ME.txt`. Instalações antigas são migradas preservando
 `agent_id`, configuração e os tokens do Cofre do Windows.
 
