@@ -17,11 +17,12 @@ namespace UniOver.Modules.Tv.Features.Tvs;
 internal sealed record TvSummary(
     Guid Id, string Name, bool IsDefault, string? AgentSlug, string? Kind, bool Online, IReadOnlyList<string> Capabilities,
     bool AllowBackgroundAppClosing = false, bool FocusModeEnabled = false, bool ShortAnimationsEnabled = false,
-    IReadOnlyList<string>? RestrictedBackgroundPackages = null);
+    IReadOnlyList<string>? RestrictedBackgroundPackages = null, bool FocusClosesBackground = false);
 internal sealed record TvListResponse(IReadOnlyList<TvSummary> Items);
 internal sealed record CreateTvRequest(string? AgentSlug, string? Name);
 internal sealed record UpdateTvRequest(string? AgentSlug, string? Name, bool? AllowBackgroundAppClosing = null,
-    bool? FocusModeEnabled = null, bool? ShortAnimationsEnabled = null, IReadOnlyList<string?>? RestrictedBackgroundPackages = null);
+    bool? FocusModeEnabled = null, bool? ShortAnimationsEnabled = null, IReadOnlyList<string?>? RestrictedBackgroundPackages = null,
+    bool? FocusClosesBackground = null);
 internal sealed record TvMembersResponse(IReadOnlyList<Guid> UserIds);
 internal sealed record UpdateTvMembersRequest(IReadOnlyList<Guid>? UserIds);
 
@@ -85,7 +86,8 @@ internal sealed class ManageTvsHandler(
         }
 
         if (errors.Count > 0 || (request.AgentSlug is null && name is null && request.AllowBackgroundAppClosing is null
-            && request.FocusModeEnabled is null && request.ShortAnimationsEnabled is null && request.RestrictedBackgroundPackages is null))
+            && request.FocusModeEnabled is null && request.ShortAnimationsEnabled is null && request.RestrictedBackgroundPackages is null
+            && request.FocusClosesBackground is null))
         {
             return (null, "invalid");
         }
@@ -123,7 +125,7 @@ internal sealed class ManageTvsHandler(
         tv.Rebind(agentSlug, name, userId, now);
         var closingChanged = request.AllowBackgroundAppClosing is { } allow && tv.SetBackgroundAppClosing(allow, userId, now);
         var lightChanged = tv.SetLightSettings(request.FocusModeEnabled, request.ShortAnimationsEnabled,
-            request.RestrictedBackgroundPackages?.OfType<string>().ToArray(), userId, now);
+            request.RestrictedBackgroundPackages?.OfType<string>().ToArray(), userId, now, request.FocusClosesBackground);
         if (closingChanged || lightChanged)
         {
             // O EfCommandAudit usa este mesmo TvDbContext: um SaveChanges grava a TV e a trilha juntas.
@@ -196,7 +198,8 @@ internal sealed class ManageTvsHandler(
     }
 
     private static bool WantsLightSettings(UpdateTvRequest request) =>
-        request.FocusModeEnabled == true || request.ShortAnimationsEnabled == true || request.RestrictedBackgroundPackages is { Count: > 0 };
+        request.FocusModeEnabled == true || request.ShortAnimationsEnabled == true || request.RestrictedBackgroundPackages is { Count: > 0 }
+        || request.FocusClosesBackground == true;
 
     public async Task<TvAppsResponse?> AppsAsync(Guid id, CancellationToken cancellationToken)
     {
@@ -286,7 +289,7 @@ internal sealed class ManageTvsHandler(
             : capabilities.Contains("tv.kind.samsung", StringComparer.Ordinal) ? "samsung"
             : null;
         return new TvSummary(tv.Id, tv.Name, tv.IsDefault, tv.AgentSlug, kind, info?.Connected == true, capabilities,
-            tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled, tv.BackgroundPackages());
+            tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled, tv.BackgroundPackages(), tv.FocusClosesBackground);
     }
 
     private static Dictionary<string, string[]> Validate(string? agentSlug, string? name, bool requireAgent, out string? normalizedName)

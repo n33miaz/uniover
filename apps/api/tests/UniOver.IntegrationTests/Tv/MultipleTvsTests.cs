@@ -209,6 +209,44 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task FocusClosesBackground_OnlyReachesAgentsThatKnowIt_AndOnlyWithFocusModeOn()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Sala");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Sala");
+
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync(
+            "2.0.0", "tv.remote", "tv.cleanup.automatic.v1", "tv.light-settings.v1", "tv.focus-closes-background.v1");
+        (await TvApp.NextCommandAsync(connection)).GetProperty("body").GetProperty("focusClosesBackground").GetBoolean()
+            .Should().BeFalse();
+
+        using (var on = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new
+        {
+            focusModeEnabled = true,
+            focusClosesBackground = true,
+        }))
+        {
+            on.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await TvApp.JsonAsync(on)).GetProperty("focusClosesBackground").GetBoolean().Should().BeTrue();
+        }
+
+        (await TvApp.NextCommandAsync(connection)).GetProperty("body").GetProperty("focusClosesBackground").GetBoolean()
+            .Should().BeTrue();
+
+        // Com o Modo Foco desligado a preferência fica guardada, mas o agente recebe falso: nada é fechado.
+        using (var off = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { focusModeEnabled = false }))
+        {
+            off.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        (await TvApp.NextCommandAsync(connection)).GetProperty("body").GetProperty("focusClosesBackground").GetBoolean()
+            .Should().BeFalse();
+    }
+
+    [Fact]
     public async Task CleanupConfig_ForAnAgentWithoutLightSettings_KeepsExactlyTheOldBody()
     {
         await using var app = await TvApp.StartAsync(postgres);
