@@ -6,14 +6,18 @@
       <ul class="facts ui-plain">
         <li>
           <app-auth-glyph name="shield" />
-          <span class="device">{{ device() }}</span>
+          <span class="device-label" i18n="@@auth.qr-approve.computer">Computador</span>
+          <strong class="device">{{ device() }}</strong>
         </li>
         <li [class.warn]="!info()?.sameNetwork">
           <app-auth-glyph [name]="info()?.sameNetwork ? 'check-circle' : 'alert-circle'" />
+          <span class="network-label" i18n="@@auth.qr-approve.network-label">Rede</span>
           @if (info()?.sameNetwork) {
-            <span i18n="@@auth.qr-approve.same-network">Na mesma rede deste celular</span>
+            <span class="network-value" i18n="@@auth.qr-approve.same-network"
+              >Na mesma rede deste celular</span
+            >
           } @else {
-            <span i18n="@@auth.qr-approve.other-network">Em outra rede</span>
+            <span class="network-value" i18n="@@auth.qr-approve.other-network">Em outra rede</span>
           }
         </li>
       </ul>
@@ -108,10 +112,7 @@
     }
     @default {
       <h1 i18n="@@auth.qr-approve.loading-title">Entrar no computador?</h1>
-      <p class="done" role="status">
-        <span class="ui-spinner" aria-hidden="true"></span>
-        <span i18n="@@auth.qr-approve.loading">Abrindo…</span>
-      </p>
+      <app-qr-approve-skeleton />
     }
   }
 </app-auth-layout>

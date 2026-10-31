@@ -18,7 +18,7 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("tv")
-                .HasAnnotation("ProductVersion", "10.0.13")
+                .HasAnnotation("ProductVersion", "10.0.14")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -115,6 +115,82 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                     b.ToTable("outbox_messages", "tv");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Tv.Domain.CleanupReportEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AppsClosed")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("apps_closed");
+
+                    b.Property<int?>("BackgroundProcesses")
+                        .HasColumnType("integer")
+                        .HasColumnName("background_processes");
+
+                    b.Property<int>("ClosedApps")
+                        .HasColumnType("integer")
+                        .HasColumnName("closed_apps");
+
+                    b.Property<int>("DurationMs")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_ms");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<int?>("MemoryAfterMb")
+                        .HasColumnType("integer")
+                        .HasColumnName("memory_after_mb");
+
+                    b.Property<int?>("MemoryBeforeMb")
+                        .HasColumnType("integer")
+                        .HasColumnName("memory_before_mb");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("result");
+
+                    b.Property<int?>("SessionOpenMs")
+                        .HasColumnType("integer")
+                        .HasColumnName("session_open_ms");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("trigger");
+
+                    b.Property<Guid>("TvId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tv_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_cleanup_reports");
+
+                    b.HasIndex("TvId", "StartedAt")
+                        .HasDatabaseName("ix_cleanup_reports_tv_id_started_at");
+
+                    b.ToTable("cleanup_reports", "tv");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Tv.Domain.CommandAuditEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -196,9 +272,27 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                         .HasColumnType("character varying(40)")
                         .HasColumnName("agent_slug");
 
+                    b.Property<bool>("AllowBackgroundAppClosing")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("allow_background_app_closing");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
+
+                    b.Property<bool>("FocusClosesBackground")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("focus_closes_background");
+
+                    b.Property<bool>("FocusModeEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("focus_mode_enabled");
 
                     b.Property<bool>("IsDefault")
                         .HasColumnType("boolean")
@@ -209,6 +303,20 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                         .HasMaxLength(60)
                         .HasColumnType("character varying(60)")
                         .HasColumnName("name");
+
+                    b.Property<string>("RestrictedBackgroundPackages")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("restricted_background_packages");
+
+                    b.Property<bool>("ShortAnimationsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("short_animations_enabled");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")

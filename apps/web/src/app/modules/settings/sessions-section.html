@@ -10,54 +10,60 @@
       <ul class="sessions">
         @for (item of list; track item.id) {
           <li class="session ui-card">
-            <strong>{{ device(item) }}</strong>
-            @if (item.isCurrent) {
-              <span class="ui-chip ok" i18n="@@settings.sessions.current">Este aparelho</span>
-            }
-            @if (item.ip) {
-              <span class="detail" i18n="@@settings.sessions.ip">IP {{ item.ip }}</span>
-            }
-            <span class="detail">{{ created(item) }}</span>
-            <span class="detail">{{ lastUsed(item) }}</span>
-            @if (confirmingId() === item.id) {
-              <div
-                class="confirm ui-notice bad"
-                role="group"
-                aria-label="Confirmar encerramento"
-                i18n-aria-label="@@settings.sessions.confirm-label"
-              >
-                <p i18n="@@settings.sessions.confirm">Encerrar esta sessão?</p>
-                <div class="actions">
+            <details>
+              <summary>
+                <strong>{{ device(item) }}</strong>
+                @if (item.isCurrent) {
+                  <span class="ui-chip ok" i18n="@@settings.sessions.current">Este aparelho</span>
+                }
+              </summary>
+              <div class="session-details">
+                @if (item.ip) {
+                  <span class="detail" i18n="@@settings.sessions.ip">IP {{ item.ip }}</span>
+                }
+                <span class="detail">{{ created(item) }}</span>
+                <span class="detail">{{ lastUsed(item) }}</span>
+                @if (confirmingId() === item.id) {
+                  <div
+                    class="confirm ui-notice bad"
+                    role="group"
+                    aria-label="Confirmar encerramento"
+                    i18n-aria-label="@@settings.sessions.confirm-label"
+                  >
+                    <p i18n="@@settings.sessions.confirm">Encerrar esta sessão?</p>
+                    <div class="actions">
+                      <button
+                        type="button"
+                        class="secondary ui-btn"
+                        (click)="confirmingId.set(null)"
+                        i18n="@@settings.cancel"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        class="danger ui-btn"
+                        [disabled]="busy()"
+                        (click)="revoke(item)"
+                        i18n="@@settings.sessions.end"
+                      >
+                        Encerrar
+                      </button>
+                    </div>
+                  </div>
+                } @else {
                   <button
                     type="button"
                     class="secondary ui-btn"
-                    (click)="confirmingId.set(null)"
-                    i18n="@@settings.cancel"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    class="danger ui-btn"
                     [disabled]="busy()"
-                    (click)="revoke(item)"
+                    (click)="ask(item)"
                     i18n="@@settings.sessions.end"
                   >
                     Encerrar
                   </button>
-                </div>
+                }
               </div>
-            } @else {
-              <button
-                type="button"
-                class="secondary ui-btn"
-                [disabled]="busy()"
-                (click)="ask(item)"
-                i18n="@@settings.sessions.end"
-              >
-                Encerrar
-              </button>
-            }
+            </details>
           </li>
         }
       </ul>
@@ -110,6 +116,13 @@
       </button>
     </div>
   } @else {
-    <p role="status" i18n="@@settings.sessions.loading">Carregando sessões…</p>
+    <app-loading-skeleton
+      [kind]="'cards'"
+      [count]="2"
+      i18n-label="@@settings.sessions.loading"
+      label="Carregando sessões…"
+      [reload]="false"
+      (retried)="retry()"
+    />
   }
 </section>

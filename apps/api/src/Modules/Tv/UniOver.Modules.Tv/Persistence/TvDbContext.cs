@@ -30,6 +30,8 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
 
     public DbSet<WatchdogEvent> WatchdogEvents => Set<WatchdogEvent>();
 
+    public DbSet<CleanupReportEntry> CleanupReports => Set<CleanupReportEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -89,6 +91,11 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
 
             // Sem FK de propósito: o agente é do Devices e a conta que salvou é do Identity (só os valores).
             e.Property(x => x.AgentSlug).HasMaxLength(ConfiguredTv.AgentSlugMax).IsRequired();
+            e.Property(x => x.AllowBackgroundAppClosing).HasDefaultValue(false);
+            e.Property(x => x.FocusModeEnabled).HasDefaultValue(false);
+            e.Property(x => x.ShortAnimationsEnabled).HasDefaultValue(false);
+            e.Property(x => x.FocusClosesBackground).HasDefaultValue(false);
+            e.Property(x => x.RestrictedBackgroundPackages).HasMaxLength(4000).HasDefaultValue("[]").IsRequired();
 
             // Exatamente uma TV padrão por enquanto: o índice único parcial impede uma segunda linha padrão mesmo
             // com dois salvamentos ao mesmo tempo. O mesmo agente pode controlar várias TVs no futuro, então o
@@ -147,6 +154,21 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             e.Property(x => x.Severity).HasMaxLength(WatchdogEvent.SeverityMax).IsRequired();
             e.Property(x => x.Detail).HasMaxLength(WatchdogEvent.DetailMax).IsRequired();
             e.HasIndex(x => x.OccurredAt);
+        });
+
+        modelBuilder.Entity<CleanupReportEntry>(e =>
+        {
+            e.ToTable("cleanup_reports");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Kind).HasMaxLength(CleanupReportEntry.KindMax).IsRequired();
+            e.Property(x => x.Trigger).HasMaxLength(CleanupReportEntry.TriggerMax).IsRequired();
+            e.Property(x => x.Result).HasMaxLength(CleanupReportEntry.ResultMax).IsRequired();
+            e.Property(x => x.Reason).HasMaxLength(CleanupReportEntry.ReasonMax);
+            e.Property(x => x.AppsClosed).HasMaxLength(CleanupReportEntry.AppsMax).IsRequired();
+            e.Property(x => x.BackgroundProcesses);
+            e.Property(x => x.SessionOpenMs);
+            e.HasIndex(x => new { x.TvId, x.StartedAt });
         });
 
         modelBuilder.AddOutbox().AddDeadLetters();

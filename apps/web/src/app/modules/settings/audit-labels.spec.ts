@@ -52,6 +52,8 @@ const DEVICES_ACTIONS = [
   'agent_update_requested',
   'agent_restart_requested',
   'agent_rollback_requested',
+  'agent_offline',
+  'agent_online',
 ];
 const TV_ACTIONS = [
   'tv.key',
@@ -60,6 +62,7 @@ const TV_ACTIONS = [
   'tv.wake',
   'tv.power-off',
   'tv.cleanup',
+  'tv.cleanup.setting',
   'tv.apps.refresh',
   'tv.shortcuts.reorder',
   'tv.shortcut.update',
@@ -121,7 +124,7 @@ describe('action labels', () => {
 describe('module and outcome', () => {
   it('names each source in words, with a generic name for a new one', () => {
     expect(moduleLabel('identity')).toBe('Conta e acesso');
-    expect(moduleLabel('devices')).toBe('Aparelhos');
+    expect(moduleLabel('devices')).toBe('Dispositivos');
     expect(moduleLabel('tv')).toBe('TV');
     expect(moduleLabel('novo')).toBe('Outro módulo');
   });
@@ -199,6 +202,9 @@ describe('describeTarget', () => {
     expect(describeTarget(item({ action: 'tv.config.bind', target: 'pc-casa' }))).toBe(
       'Computador pc-casa',
     );
+    expect(
+      describeTarget(item({ action: 'tv.cleanup.setting', target: 'background-app-closing=on' })),
+    ).toBe('Ligado');
   });
 
   it('says what was confirmed with the passkey, in words', () => {
@@ -316,7 +322,7 @@ describe('retentionText', () => {
       'Guardamos por 180 dias (TV: 30 dias)',
     );
     expect(retentionText(sources({ identity: 180, devices: 90, tv: 30 }), [])).toBe(
-      'Guardamos por 180 dias (Aparelhos: 90 dias; TV: 30 dias)',
+      'Guardamos por 180 dias (Dispositivos: 90 dias; TV: 30 dias)',
     );
   });
 

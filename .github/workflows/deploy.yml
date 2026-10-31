@@ -10,9 +10,11 @@ name: Deploy
 # - O Render deve ficar com o auto-deploy DESLIGADO: quem dispara a troca do código é o deploy hook, depois das
 #   migrations. Sem o segredo RENDER_DEPLOY_HOOK_URL, as migrations rodam e o deploy é pulado com aviso.
 
+# Por enquanto a develop é a produção (pedido do dono em 27/10): cada merge na develop publica. Para voltar a
+# publicar pela main, troque a branch abaixo.
 on:
   push:
-    branches: [main]
+    branches: [develop]
   workflow_dispatch:
 
 permissions:
@@ -27,8 +29,28 @@ env:
   APP_URL: ${{ vars.APP_URL || 'https://uniover.onrender.com' }}
 
 jobs:
+  # Trava a publicação sem versão nova: VERSION precisa ser SemVer, maior que a maior tag v* (ou igual a ela, se a tag
+  # aponta para este mesmo commit: redeploy) e igual ao que o package.json, o lock, o agente e a API repetem. Roda antes
+  # das migrations: um deploy barrado aqui não mexe no banco. A versão é preparada no PR com
+  # `node scripts/release-version.mjs --prepare patch|minor|major`.
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # as tags precisam vir junto
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Conferir a versão da publicação
+        run: node scripts/release-version.mjs --verify
+
   migrate:
     name: migrate
+    needs: version
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
@@ -171,6 +193,10 @@ jobs:
               sys.exit(1)
           settings.setdefault("PGPORT", "5432")
           settings["PGSSLMODE"] = SSL_MODES.get(settings.get("PGSSLMODE", "require").lower(), "require")
+          if settings["PGSSLMODE"] in ("verify-ca", "verify-full"):
+              # O psql não herda as raízes do sistema com o modo de verificação sozinho.
+              settings["PGSSLMODE"] = "verify-full"
+              settings["PGSSLROOTCERT"] = "system"
 
           # Cada parte sai dos logs ANTES de qualquer uso (o erro do psql pode citar o servidor).
           for name in ("PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD"):
@@ -218,7 +244,9 @@ jobs:
           fi
           echo "::add-mask::$HOOK_URL"
           # A URL do hook é credencial: sem -v, sem eco, e o erro do curl (que poderia citá-la) é descartado.
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 -X POST "$HOOK_URL" 2>/dev/null || true)
+          # O ref fixa o commit deste push, qualquer que seja a branch ligada ao serviço no Render.
+          case "$HOOK_URL" in *\?*) sep='&' ;; *) sep='?' ;; esac
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 -X POST "${HOOK_URL}${sep}ref=${GITHUB_SHA}" 2>/dev/null || true)
           case "$code" in
             200)
               echo "Deploy iniciado no Render."
@@ -283,3 +311,56 @@ jobs:
           allow_issue_writing: false
           fail_action: true
           artifact_name: zap-baseline-producao
+
+  # Depois do deploy confirmado: a tag v<VERSION> no commit publicado e o GitHub Release com a entrada do CHANGELOG.
+  # Idempotente: se a tag já existe neste mesmo commit só garante o Release; se aponta para outro commit, falha. A tag
+  # nasce do próprio `gh release create --target`, então nada aqui faz push de git e o checkout não guarda credencial.
+  # É o único job com permissão de escrita.
+  release:
+    name: release
+    needs: deploy
+    if: needs.deploy.outputs.deployed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Criar a tag e o Release da versão publicada
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version=$(tr -d '\r\n' < VERSION)
+          tag="v$version"
+          awk -v heading="## [$version]" '
+            index($0, heading) == 1 { printing = 1; next }
+            printing && /^## / { exit }
+            printing { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::não achei a entrada $version no CHANGELOG.md."
+            exit 1
+          fi
+          # Tag existente: precisa apontar para o commit publicado. Tag nova: o Release a cria neste commit.
+          if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            tagged_sha=$(git rev-list -n 1 "$tag")
+            if [ "$tagged_sha" != "$GITHUB_SHA" ]; then
+              echo "::error::a tag $tag já aponta para $tagged_sha, não para o commit publicado $GITHUB_SHA."
+              exit 1
+            fi
+            echo "A tag $tag já aponta para este commit."
+            target=(--verify-tag)
+          else
+            target=(--target "$GITHUB_SHA")
+          fi
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "O Release $tag já existe; nada a fazer."
+          else
+            gh release create "$tag" "${target[@]}" --title "UniOver $version" --notes-file release-notes.md
+            echo "Release $tag criado."
+          fi

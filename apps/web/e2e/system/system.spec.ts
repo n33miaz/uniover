@@ -115,26 +115,56 @@ const row = (page: Page, name: string) =>
 const sheet = (page: Page) => page.locator('app-tv-edit-sheet dialog');
 const requestsTo = (method: string) => tv.requests.filter((r) => r.method === method);
 
-test.describe('Ajustes > Sistema > TVs', () => {
+test.describe('Configurações > Sistema > TVs', () => {
   test('edita o limite pelo app após confirmar com a passkey', async ({ page, browserName }) => {
     seedPaired();
     await preparePasskey(page, browserName);
     await open(page);
-    await expect(page.getByLabel('Computadores por convidado')).toHaveValue('2');
+    await expect(page.getByLabel('Computadores por Convidado')).toHaveValue('2');
     await expect(page.getByText('do servidor').first()).toBeVisible();
-    await page.getByLabel('Computadores por convidado').fill('4');
-    await page.getByRole('button', { name: 'Salvar limite' }).click();
+    await page.getByLabel('Computadores por Convidado').fill('4');
+    await page.getByRole('button', { name: 'Salvar Dispositivos' }).click();
     if (browserName === 'chromium') {
       const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
       await expect(dialog).toBeVisible();
       await dialog.getByRole('button', { name: 'Confirmar' }).click();
     }
     await expect(page.getByText('Configuração salva.')).toBeVisible();
-    await expect(page.getByLabel('Computadores por convidado')).toHaveValue('4');
+    await expect(page.getByLabel('Computadores por Convidado')).toHaveValue('4');
     expect(system.settings.find((item) => item.key === 'devices.max-per-guest')).toMatchObject({
       value: 4,
       source: 'app',
     });
+  });
+
+  test('o interruptor salva ao alternar, sem botão de salvar ao lado', async ({
+    page,
+    browserName,
+  }) => {
+    seedPaired();
+    await preparePasskey(page, browserName);
+    await open(page);
+    await expect(page.getByRole('button', { name: /^Salvar Limpeza/ })).toHaveCount(0);
+    await page.getByText('Limpeza Leve Automática').click();
+    if (browserName === 'chromium') {
+      const dialog = page.getByRole('dialog', { name: 'Confirmar com passkey' });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole('button', { name: 'Confirmar' }).click();
+    }
+    await expect(page.getByText('Configuração salva.')).toBeVisible();
+    expect(system.settings.find((item) => item.key === 'tv.light-cleanup-enabled')).toMatchObject({
+      value: false,
+      source: 'app',
+    });
+  });
+
+  test('não oferece mais fotos na nuvem', async ({ page }) => {
+    seedPaired();
+    await open(page);
+    await expect(page.getByRole('switch', { name: 'Limpeza Leve Automática' })).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Fotos na Nuvem' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Fotos' })).toHaveCount(0);
+    await expect(page.getByText(/bucket/i)).toHaveCount(0);
   });
 
   test('a linha Sistema da lista leva à tela', async ({ page }) => {
@@ -143,7 +173,7 @@ test.describe('Ajustes > Sistema > TVs', () => {
     await page.getByRole('link', { name: /^Sistema/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/sistema$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Sistema' })).toBeVisible();
-    await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
+    await page.getByRole('button', { name: 'Voltar às Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
   });
 
@@ -198,9 +228,9 @@ test.describe('Ajustes > Sistema > TVs', () => {
 
       await expect(page.getByText('Nenhuma TV ainda.')).toBeVisible();
       await expect(page.getByText('Todo computador pareado já tem uma TV.')).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Ir para Aparelhos' })).toHaveAttribute(
+      await expect(page.getByRole('link', { name: 'Ir para Dispositivos' })).toHaveAttribute(
         'href',
-        '/ajustes/aparelhos',
+        '/ajustes/dispositivos',
       );
       await expect(page.getByRole('button', { name: 'Adicionar TV' })).toHaveCount(0);
       await check(page, info, 'system-empty', scheme);
@@ -278,6 +308,79 @@ test.describe('Ajustes > Sistema > TVs', () => {
     await expect(row(page, 'Sala')).toContainText('PC de casa');
     expect(requestsTo('PATCH').every((r) => !('agentSlug' in (r.body ?? {})))).toBe(true);
     expect(tv.tvs![0].agentSlug).toBe('pc-casa');
+  });
+
+  test('mostra as últimas limpezas e o interruptor de fechar apps, desligado, e o liga com a passkey', async ({
+    page,
+    browserName,
+  }, info) => {
+    seedPaired();
+    tv.tvs![0].cleanupReports = [
+      {
+        kind: 'light',
+        trigger: 'automatic',
+        startedAt: '2026-10-27T11:05:00Z',
+        durationMs: 900,
+        memoryBeforeMb: 210,
+        memoryAfterMb: 290,
+        closedApps: 0,
+        closedPackages: [],
+        backgroundProcesses: 14,
+        sessionOpenMs: null,
+        result: 'completed',
+        reason: null,
+      },
+      {
+        kind: 'deep',
+        trigger: 'automatic',
+        startedAt: '2026-10-27T10:05:00Z',
+        durationMs: 0,
+        memoryBeforeMb: null,
+        memoryAfterMb: null,
+        closedApps: 0,
+        closedPackages: [],
+        backgroundProcesses: null,
+        sessionOpenMs: 11500,
+        result: 'skipped',
+        reason: 'media-in-use',
+      },
+    ];
+    await preparePasskey(page, browserName);
+    await open(page);
+
+    await row(page, 'Casa').click();
+    const toggle = sheet(page).getByRole('switch', { name: 'Fechar Apps em Segundo Plano' });
+    await expect(toggle).not.toBeChecked();
+    await expect(sheet(page).locator('.report .report-outcome')).toHaveText([
+      'Liberou 80 MB',
+      'Pulada: TV em uso',
+    ]);
+    await expect(sheet(page).getByRole('button', { name: 'Salvar' })).toBeDisabled();
+    await sheet(page).locator('.report').last().scrollIntoViewIfNeeded();
+    await settle(page);
+    await screenshot(page, shot(info, 'system-cleanup-reports', 'light'));
+
+    await toggle.check();
+    await expect(sheet(page).getByRole('button', { name: 'Salvar' })).toBeEnabled();
+    await sheet(page).locator('.cleanup-hint').last().scrollIntoViewIfNeeded();
+    await settle(page);
+    await screenshot(page, shot(info, 'system-cleanup-switch', 'light'));
+    await sheet(page).getByRole('button', { name: 'Salvar' }).click();
+    if (browserName === 'chromium') {
+      await page
+        .getByRole('dialog', { name: 'Confirmar com passkey' })
+        .getByRole('button', { name: 'Confirmar' })
+        .click();
+    }
+
+    await expect(page.getByText('Pronto: as TVs foram atualizadas.')).toBeVisible();
+    // Só a opção vai no corpo: nome e computador não mudaram.
+    expect(
+      requestsTo('PATCH').every(
+        (r) => Object.keys(r.body ?? {}).join() === 'allowBackgroundAppClosing',
+      ),
+    ).toBe(true);
+    expect(tv.tvs![0].allowBackgroundAppClosing).toBe(true);
   });
 
   test('cancelar a passkey não troca nada', async ({ page, browserName }) => {

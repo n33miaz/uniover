@@ -30,6 +30,7 @@ from uniover_agent.ports.pairing import (
 from uniover_agent.ports.transport import (
     ConnectionReplaced,
     CredentialRejected,
+    ServerRestarting,
     Transport,
     TransportError,
 )
@@ -53,7 +54,7 @@ from uniover_agent.ports.tv_channel import (
     TvUnreachable,
 )
 from uniover_agent.ports.tv_cleanup import TvAdbCleanup
-from uniover_agent.ports.tv_driver import TvDriver
+from uniover_agent.ports.tv_driver import TextFieldStatus, TvDriver
 from uniover_agent.ports.tv_remote import TvRemote
 
 
@@ -110,6 +111,8 @@ __all__ = [
     "PollResult",
     "PollSlowDown",
     "SecretStore",
+    "ServerRestarting",
+    "TextFieldStatus",
     "Transport",
     "TransportError",
     "TvAdb",

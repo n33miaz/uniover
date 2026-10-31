@@ -73,7 +73,7 @@ interface IssueRow {
                   [attr.aria-label]="retryLabel(row)"
                   (click)="retry(row)"
                 >
-                  <span i18n="@@training.issues.retry">Tentar de novo</span>
+                  <span i18n="@@training.issues.retry">Tentar de Novo</span>
                 </button>
                 <button
                   type="button"
@@ -99,7 +99,7 @@ export class SyncIssuesSheet {
 
   readonly closed = output<void>();
 
-  protected readonly heading = $localize`:@@training.issues.title:Alterações com erro`;
+  protected readonly heading = $localize`:@@training.issues.title:Alterações com Erro`;
   protected readonly rows = signal<readonly IssueRow[]>([]);
   protected readonly confirming = signal<string | null>(null);
 

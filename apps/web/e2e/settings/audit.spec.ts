@@ -185,14 +185,14 @@ async function applyFilters(page: Page, ...labels: string[]) {
   await expect(sheet(page)).toHaveCount(0);
 }
 
-test.describe('Ajustes > Auditoria', () => {
+test.describe('Configurações > Auditoria', () => {
   test('a linha Auditoria da lista leva à tela e a seta volta para a lista', async ({ page }) => {
     audit.items = seedTrail();
     await page.goto('/ajustes');
     await page.getByRole('link', { name: /^Auditoria/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/auditoria$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Auditoria' })).toBeVisible();
-    await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
+    await page.getByRole('button', { name: 'Voltar às Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
   });
 
@@ -221,7 +221,7 @@ test.describe('Ajustes > Auditoria', () => {
       await expect(page.locator('main')).not.toContainText('login_failed');
       // IP e aparelho ficam atrás de um toque.
       await expect(page.locator('main')).not.toContainText('203.0.113.7');
-      await expect(page.getByText('Estes registros ficam guardados por segurança')).toBeVisible();
+      await expect(page.getByText('Cada ação guarda data, IP e aparelho')).toBeVisible();
       await expect(page.getByText('Guardamos por 180 dias')).toBeVisible();
       await check(page, info, 'audit-list', scheme);
     });
@@ -406,7 +406,7 @@ test.describe('Ajustes > Auditoria', () => {
     await expect(page.getByRole('button', { name: 'Exportar CSV' })).toBeDisabled();
     await applyFilters(page, 'Erro');
     await expect(
-      page.getByText('A auditoria só funciona com internet', { exact: false }),
+      page.getByText('Sem internet. A lista volta quando a conexão voltar', { exact: false }),
     ).toBeVisible();
     await expect(page.getByText('Não foi possível')).toHaveCount(0);
     await check(page, info, 'audit-offline', 'light');
@@ -426,23 +426,23 @@ test.describe('Ajustes > Auditoria', () => {
     // Trocar também o ID simularia uma resposta de outra conta, corretamente descartada pela sessão.
     identity.role = 'guest';
     await page.getByRole('button', { name: 'Carregar mais' }).click();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
   });
 });
 
-test.describe('Ajustes > Auditoria para quem não é administrador', () => {
-  test('a convidada não vê o item, e o endereço digitado à mão a leva ao controle sem nenhuma chamada à trilha', async ({
+test.describe('Configurações > Auditoria para quem não é administrador', () => {
+  test('a convidada não vê o item, e o endereço digitado à mão a leva à Início sem nenhuma chamada à trilha', async ({
     page,
   }) => {
     audit.items = seedTrail();
     signInAsGuest();
     await page.goto('/ajustes');
-    await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
     await expect(page.getByText('Auditoria')).toHaveCount(0);
     await expect(page.locator('a[href="/ajustes/auditoria"]')).toHaveCount(0);
 
     await page.goto('/ajustes/auditoria');
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
     expect(audit.requests).toEqual([]);
   });
 });

@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "revision": 9,
+  "wallpaper": { "type": "photo", "photo": "wallpaper.jpg", "dim": 0.3, "colors": ["#101820", "#243B55"] },
+  "clock": { "size": "medium", "format": "auto", "seconds": true, "date": false },
+  "icons": { "labels": "focus", "size": "large" }
+}

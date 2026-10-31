@@ -9,6 +9,7 @@ import {
   signal,
 } from '@angular/core';
 import { ApiProblem } from '../api-problem';
+import { LoadingSkeleton } from '../../../shared/ui/skeleton/loading-skeleton';
 import { AuthApi, QrLoginStarted } from '../auth-api';
 import { AuthGlyph } from '../auth-glyph';
 import { AuthService } from '../auth.service';
@@ -42,7 +43,7 @@ export const QR_PANEL_CONFIG = new InjectionToken<QrPanelConfig>('QR_PANEL_CONFI
  */
 @Component({
   selector: 'app-qr-login',
-  imports: [QrCode, AuthGlyph],
+  imports: [QrCode, AuthGlyph, LoadingSkeleton],
   templateUrl: './qr-login-panel.html',
   styleUrl: './qr-login-panel.css',
 })
@@ -59,6 +60,8 @@ export class QrLoginPanel {
   protected readonly link = signal('');
   protected readonly visible = computed(() => this.phase() !== 'idle');
   protected readonly spinning = computed(() => this.phase() === 'starting');
+  /** Em altura baixa (celular em pé, janela curta) o bloco nasce recolhido: o formulário de senha vem primeiro. */
+  protected readonly startOpen = signal(true);
 
   /** Cada ciclo (um QR) tem um número; o que ficou para trás (renovação, destruição) se reconhece por ele e para. */
   private cycle = 0;
@@ -75,6 +78,7 @@ export class QrLoginPanel {
     const win = this.doc.defaultView;
     // Só em computador; sem `matchMedia` (ambiente sem tela) o bloco nem tenta.
     if (!win?.matchMedia?.('(hover: hover) and (pointer: fine)').matches) return;
+    this.startOpen.set(!win.matchMedia('(max-height: 700px)').matches);
     void this.auth.init().then(() => {
       if (this.destroyed || this.auth.status() === 'authenticated') return;
       void this.run();

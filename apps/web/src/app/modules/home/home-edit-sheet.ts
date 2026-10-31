@@ -11,17 +11,18 @@ import {
   viewChild,
 } from '@angular/core';
 import { WidgetPref, moveWidget, moveWidgetTo } from '../../core/modules/module-prefs';
-import { ModuleRegistry } from '../../core/modules/module-registry';
+import { ModuleIconName, ModuleRegistry } from '../../core/modules/module-registry';
 import { leaveDialog, onDialogBackdropClick } from '../../shared/ui/dialog-motion';
-import { HomeGlyph, HomeGlyphName, moduleGlyph } from './home-glyph';
+import { HomeGlyph } from './home-glyph';
+import { ModuleAppIcon } from './module-app-icon';
 
 /**
- * Folha de edição da Início: sobe de baixo, sem botão de fechar (a saída é "Cancelar" ou "Aplicar").
- * Trabalha numa cópia; só "Aplicar" devolve a nova disposição. A folha desce antes de avisar o pai, que a tira do DOM.
+ * Folha de edição da Início: sobe de baixo e trabalha numa cópia. Só "Concluir" devolve a nova disposição; Esc e o
+ * toque fora descartam a cópia. A folha desce antes de avisar o pai, que a tira do DOM.
  */
 @Component({
   selector: 'app-home-edit-sheet',
-  imports: [HomeGlyph],
+  imports: [HomeGlyph, ModuleAppIcon],
   templateUrl: './home-edit-sheet.html',
   styleUrl: './home-edit-sheet.css',
 })
@@ -47,6 +48,9 @@ export class HomeEditSheet implements OnInit {
       // showModal prende o foco na folha, deixa o resto da tela inerte e trata o Esc.
       const dialog = this.dialog().nativeElement;
       dialog.showModal();
+      // O foco inicial vai para o título (e não para a primeira seta, que ganharia um anel sem a pessoa ter tocado em nada); o anel
+      // só aparece com teclado (`:focus-visible`). Quem navega por teclado segue do título para o primeiro controle.
+      dialog.querySelector<HTMLElement>('#sheet-title')?.focus({ preventScroll: true });
       onDialogBackdropClick(dialog, () => this.cancel());
     });
   }
@@ -55,9 +59,14 @@ export class HomeEditSheet implements OnInit {
     return this.registry.find(id)?.title ?? id;
   }
 
-  protected glyph(id: string): HomeGlyphName {
-    const module = this.registry.find(id);
-    return module ? moduleGlyph(module.icon) : 'grid';
+  /** O mesmo ícone de app do cartão da Início; módulo desconhecido cai no desenho genérico da TV. */
+  protected iconOf(id: string): ModuleIconName {
+    return this.registry.find(id)?.icon ?? 'tv';
+  }
+
+  /** Módulo sem tela ainda: o ícone fica no cinza discreto, como no cartão "Em Breve". */
+  protected isPlanned(id: string): boolean {
+    return this.registry.find(id)?.status === 'soon';
   }
 
   protected showLabel(id: string): string {
@@ -74,6 +83,23 @@ export class HomeEditSheet implements OnInit {
 
   protected setEnabled(id: string, enabled: boolean): void {
     this.draft.update((list) => list.map((item) => (item.id === id ? { ...item, enabled } : item)));
+  }
+
+  /**
+   * Volta à ordem do catálogo, com todos os módulos visíveis, sem fechar a folha: a pessoa ainda revisa antes de
+   * aplicar. Só entram os módulos que a folha já mostra (o convidado não ganha o que a conta dele não vê).
+   */
+  protected restoreDefaults(): void {
+    const position = (id: string) => this.registry.modules.findIndex((module) => module.id === id);
+    this.draft.set(
+      [...this.widgets()]
+        .sort((a, b) => position(a.id) - position(b.id))
+        .map((item) => ({
+          ...item,
+          size: this.registry.find(item.id)?.defaultSize ?? item.size,
+          enabled: true,
+        })),
+    );
   }
 
   protected move(id: string, delta: -1 | 1): void {

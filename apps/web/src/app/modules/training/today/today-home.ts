@@ -8,15 +8,21 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { QUEUE_RUNTIME } from '../../../core/offline-queue/queue-ports';
 import { CatalogRepository } from '../data/catalog/catalog-repository';
 import { RoutineRepository } from '../data/routines/routine-repository';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { TrainingSync } from '../data/sync/training-sync';
-import { IllustrationPrefetcher } from '../illustrations/illustration-prefetcher';
+import { ExerciseThumb } from '../exercises/exercise-thumb';
+import {
+  IllustrationPrefetcher,
+  illustrationFiles,
+} from '../illustrations/illustration-prefetcher';
+import { programSummary } from '../routines/program-summary';
 import type { RoutineEntry } from '../routines/routine-stats';
+import { type TemplateCreated, TemplatesSheet } from '../routines/templates-sheet';
 import { formatKg } from '../shell/format';
 import { TrainingGlyph } from '../shell/training-glyph';
 import { TrainingSheet } from '../shell/training-sheet';
@@ -25,22 +31,29 @@ import { RoutinePickerSheet } from './routine-picker-sheet';
 import { TodayGlyph } from './today-glyph';
 import { type RoutineLine, TodayStore } from './today-store';
 import { ageLabel, dayLabel, repsRangeText, routineSummary } from './today-text';
+import { TodaySkeleton } from './today-skeleton';
 import { WeekCalendar } from './week-calendar';
 
 /**
- * A aba Hoje antes (e fora) do treino ao vivo: o resumo da semana em cima e, embaixo, a rotina do dia com uma ação
- * principal ("Iniciar treino"). Também é onde se continua um treino aberto, se escolhe outra rotina, se começa um treino
- * livre e onde aparecem os avisos que importam (treino aberto em outro aparelho, treino recusado pelo servidor).
+ * A aba Hoje antes (e fora) do treino ao vivo, na versão "começar sem procurar": a data, o cartão da rotina do dia com a
+ * ação principal ("Iniciar Treino") e a engrenagem de configuração no canto, a semana com meta para confirmar o
+ * contexto e dois atalhos (o programa da semana e o treino de ontem). A lista de exercícios fica recolhida atrás de
+ * "Ver Rotina". Também é onde se continua um treino aberto, se configura a rotina (trocar de ficha, meta, ausência e
+ * nota), se começa um treino livre e onde aparecem os avisos que importam (treino aberto em outro aparelho, treino
+ * recusado pelo servidor).
  * Lê tudo do banco local: sem rede não há erro, só o que está guardado no aparelho.
  */
 @Component({
   selector: 'app-today-home',
   imports: [
     RouterLink,
+    ExerciseThumb,
     TrainingGlyph,
     TodayGlyph,
     RoutinePickerSheet,
     ProgramSuggestion,
+    TodaySkeleton,
+    TemplatesSheet,
     TrainingSheet,
     WeekCalendar,
   ],
@@ -61,15 +74,23 @@ export class TodayHome {
   private readonly sync = inject(TrainingSync);
   private readonly prefetcher = inject(IllustrationPrefetcher);
   private readonly runtime = inject(QUEUE_RUNTIME);
+  private readonly router = inject(Router);
   protected readonly online = inject(ConnectivityService).online;
 
   /** O treino abriu (ou já estava aberto): a página mostra o treino ao vivo. */
   readonly started = output<void>();
 
+  /** O conjunto de exercícios cujas figuras já estão todas guardadas no aparelho. */
   private warmedKey = '';
+  /** O conjunto que está sendo aquecido agora: evita duas buscas iguais ao mesmo tempo. */
+  private warmingKey = '';
 
   protected readonly pickerOpen = signal(false);
+  /** A lista de exercícios da rotina do cartão: recolhida até a pessoa pedir. */
+  protected readonly routineOpen = signal(false);
   protected readonly programChoiceOpen = signal(false);
+  /** "Comparar Modelos": o programa ativo se compara com os outros e se troca sem sair de Hoje. */
+  protected readonly templatesOpen = signal(false);
   private readonly pendingRoutineId = signal<string | null>(null);
   protected readonly starting = signal(false);
   protected readonly confirmingClose = signal(false);
@@ -78,9 +99,9 @@ export class TodayHome {
     readonly tone: 'ok' | 'warn';
   } | null>(null);
 
-  protected readonly freeName = $localize`:@@training.today.free-name:Treino livre`;
-  protected readonly programHeading = $localize`:@@training.today.program-heading:Programa da semana`;
-  protected readonly programSkipLabel = $localize`:@@training.today.program-skip:Seguir sem programa`;
+  protected readonly freeName = $localize`:@@training.today.free-name:Treino Livre`;
+  protected readonly programHeading = $localize`:@@training.today.program-heading:Programa Semanal`;
+  protected readonly programSkipLabel = $localize`:@@training.today.program-skip:Seguir sem Programa`;
   protected readonly confirmLabel = $localize`:@@training.today.forgotten-label:Confirmar o encerramento do treino do outro aparelho`;
   protected readonly linesLabel = $localize`:@@training.today.lines-label:Exercícios da rotina`;
   protected readonly missingName = $localize`:@@training.today.missing-name:Exercício removido`;
@@ -95,6 +116,54 @@ export class TodayHome {
     return entry === undefined ? '' : routineSummary(entry);
   });
   protected readonly catalogMissing = computed(() => this.store.catalogCount() === 0);
+  /**
+   * Os atalhos aparecem quando a tela já leu o banco local. O programa e o histórico moram no aparelho: só iniciar um
+   * treino depende do catálogo, então estes atalhos não esperam por ele.
+   */
+  protected readonly showLinks = computed(
+    () =>
+      this.store.ready() &&
+      this.store.homeReady() &&
+      (this.programRow() !== null || this.previousRow() !== null),
+  );
+  /** "Treino Livre" e o glossário: só com a rotina do dia na tela, como antes (o descanso e o vazio têm os seus botões). */
+  protected readonly showFree = computed(
+    () =>
+      this.store.ready() &&
+      this.store.homeReady() &&
+      this.store.active() === undefined &&
+      this.store.otherDevice() === undefined &&
+      this.entry() !== undefined,
+  );
+  /**
+   * O resumo do programa ativo ("Seg Peito · Ter Costas ..."), o mesmo texto da escolha do programa; `null` sem programa
+   * (a sugestão no topo já cobre esse caso) e vazio quando as fichas dele foram apagadas.
+   */
+  protected readonly programRow = computed<string | null>(() => {
+    const programId = this.store.programId();
+    if (programId === null) return null;
+    const routines = this.store
+      .entries()
+      .flatMap((entry) =>
+        entry.routine.programId === programId
+          ? [{ name: entry.routine.name, weekdays: entry.routine.weekdays ?? [] }]
+          : [],
+      );
+    return routines.length === 0 ? '' : programSummary(routines);
+  });
+  protected readonly previousRow = computed(() => {
+    const previous = this.store.previousWorkout();
+    if (previous === null) return null;
+    return previous.yesterday
+      ? {
+          title: $localize`:@@training.today.yesterday:Treino de Ontem`,
+          sub: $localize`:@@training.today.view-summary:Ver Resumo`,
+        }
+      : {
+          title: $localize`:@@training.today.last-workout:Último Treino`,
+          sub: dayLabel(new Date(`${previous.dayKey}T12:00:00`).getTime()),
+        };
+  });
   protected readonly progressText = computed(() => {
     const progress = this.store.activeProgress();
     if (progress === null) return '';
@@ -126,8 +195,10 @@ export class TodayHome {
       untracked(() => void this.store.loadHome());
     });
     // Com rede, as ilustrações das rotinas ativas vão para o cache: na academia, sem sinal, elas aparecem do mesmo jeito.
+    // A rede voltando também dispara: uma busca que caiu no meio é refeita, em vez de ficar esquecida.
     effect(() => {
       const entries = this.store.entries();
+      this.online();
       untracked(() => void this.warmIllustrations(entries));
     });
   }
@@ -180,6 +251,27 @@ export class TodayHome {
     } finally {
       this.starting.set(false);
     }
+  }
+
+  /** O resumo reutiliza a página que já edita e apaga séries, sempre a partir do banco local (como no calendário). */
+  protected openPrevious(): void {
+    const previous = this.store.previousWorkout();
+    if (previous === null) return;
+    void this.router.navigate(['/treino'], {
+      queryParams: { resumo: previous.sessionId, historico: '1' },
+    });
+  }
+
+  /** Um modelo virou o programa da semana: Hoje relê as fichas e volta à ficha do dia do novo programa. */
+  protected onTemplateChosen(event: TemplateCreated): void {
+    const name = event.name;
+    this.store.chosenRoutineId.set(null);
+    void this.store.loadHome();
+    if (!event.program) return;
+    this.message.set({
+      tone: 'ok',
+      text: $localize`:@@training.today.program-chosen:Modelo ${name}:name: escolhido. Hoje abre no treino do dia.`,
+    });
   }
 
   protected async chooseProgram(): Promise<void> {
@@ -249,10 +341,18 @@ export class TodayHome {
         if (exercise) slugs.push(exercise.slug);
       }
     }
-    // A mesma lista não é buscada de novo a cada gravação: o aquecimento é uma vez por conjunto de exercícios.
-    const key = [...new Set(slugs)].sort().join('|');
-    if (key === this.warmedKey) return;
-    this.warmedKey = key;
-    await this.prefetcher.warm(slugs);
+    // A mesma lista não é buscada de novo a cada gravação: o aquecimento é uma vez por conjunto de exercícios, e só
+    // vale como feito quando todos os arquivos estão guardados. Rede que cai no meio, ou um arquivo recusado, deixa o
+    // conjunto por fazer: a próxima gravação, a volta da rede ou a próxima abertura da tela tenta de novo.
+    const files = illustrationFiles(slugs);
+    const key = [...files].sort().join('|');
+    if (key === this.warmedKey || key === this.warmingKey) return;
+    this.warmingKey = key;
+    try {
+      const stored = await this.prefetcher.warm(slugs);
+      if (stored >= files.length) this.warmedKey = key;
+    } finally {
+      this.warmingKey = '';
+    }
   }
 }

@@ -59,8 +59,10 @@ const SCREENS: readonly Screen[] = [
     name: 'novo exercício com erros',
     open: async (page) => {
       await openTraining(page, '/treino/exercicios/novo');
-      await page.getByRole('button', { name: 'Salvar exercício' }).click();
-      await expect(page.getByText('Dê um nome ao exercício.')).toBeVisible();
+      // Só o nome: o Salvar fica desligado e o aviso diz o que falta.
+      await page.getByLabel('Nome').fill('Remada');
+      await expect(page.getByText('Escolha o músculo principal.')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Salvar Exercício' })).toBeDisabled();
     },
   },
   {
@@ -85,8 +87,8 @@ const SCREENS: readonly Screen[] = [
     name: 'folha de adicionar a um treino',
     open: async (page) => {
       await openTraining(page, `/treino/exercicios/${SEED_EXERCISE_IDS.pushUp}`);
-      await page.getByRole('button', { name: 'Adicionar a um treino' }).click();
-      await expect(page.getByRole('dialog', { name: 'Adicionar a um treino' })).toBeVisible();
+      await page.getByRole('button', { name: 'Adicionar a um Treino' }).click();
+      await expect(page.getByRole('dialog', { name: 'Adicionar a um Treino' })).toBeVisible();
     },
   },
   {
@@ -95,6 +97,27 @@ const SCREENS: readonly Screen[] = [
       await openTraining(page, '/treino/rotinas');
       await page.getByRole('button', { name: 'Comparar Modelos' }).click();
       await expect(page.getByRole('button', { name: /Full body/ })).toBeVisible();
+    },
+  },
+  {
+    name: 'glossário',
+    open: async (page) => {
+      await openTraining(page, '/treino/glossario');
+      await expect(page.locator('app-page-top-bar .back')).toBeVisible();
+    },
+  },
+  {
+    name: 'diário alimentar',
+    open: async (page) => {
+      await openTraining(page, '/treino/alimentacao');
+      await expect(page.locator('app-page-top-bar .back')).toBeVisible();
+    },
+  },
+  {
+    name: 'avaliações do corpo',
+    open: async (page) => {
+      await openTraining(page, '/treino/corpo/avaliacoes');
+      await expect(page.locator('app-page-top-bar .back')).toBeVisible();
     },
   },
   {
@@ -121,6 +144,20 @@ for (const scheme of ['light', 'dark'] as const) {
         await expectNoHorizontalScroll(page);
         await expectNoA11yViolations(page);
         expect(await smallTargets(page)).toEqual([]);
+        // A seta compartilhada do topo tem alvo de 44 px e foco visível.
+        const back = page.locator('app-page-top-bar .back');
+        const box = (await back.boundingBox())!;
+        expect(box.width).toBeGreaterThanOrEqual(44);
+        expect(box.height).toBeGreaterThanOrEqual(44);
+        // Foco pelo teclado (é ele que mostra o anel de foco). Com uma folha modal aberta o topo fica inerte: só vale sem ela.
+        if ((await page.locator('dialog[open]').count()) === 0) {
+          await back.focus();
+          await page.keyboard.press('Shift+Tab');
+          await page.keyboard.press('Tab');
+          await expect(back).toBeFocused();
+          const outline = await back.evaluate((node) => getComputedStyle(node).outlineStyle);
+          expect(outline).not.toBe('none');
+        }
       });
     }
   });
@@ -134,24 +171,33 @@ test.describe('pendências e movimento', () => {
     await openTraining(page, '/treino/exercicios/novo');
     await page.getByLabel('Nome').fill('Remada');
     await chooseMuscle(page, 'Meio das costas');
-    await page.getByRole('button', { name: 'Salvar exercício' }).click();
-    // Só com a falha já registrada o ícone abre a lista (antes disso o toque atualiza).
-    await expect(page.getByText('1 com erro')).toBeVisible();
-    await page.locator('.training-header .status').click();
-    await expect(page.getByRole('dialog', { name: 'Alterações com erro' })).toBeVisible();
+    await page.getByRole('button', { name: 'Salvar Exercício' }).click();
+    // Só com a falha já registrada o anel oferece a lista dos recusados.
+    await page.locator('app-page-top-bar .ring').click();
+    await expect(page.getByRole('dialog', { name: 'Sincronização' })).toBeVisible();
+    await settle(page);
+    await expectNoA11yViolations(page);
+    await page.getByRole('button', { name: 'Ver os Recusados' }).click();
+    await expect(page.getByRole('dialog', { name: 'Alterações com Erro' })).toBeVisible();
     await settle(page);
     await expectNoA11yViolations(page);
     expect(await smallTargets(page)).toEqual([]);
   });
 
-  test('a ilustração só se mexe sem o pedido de movimento reduzido; com ele, há o botão', async ({
+  test('a ilustração só se mexe sem o pedido de movimento reduzido; com ele, o toque troca a posição', async ({
     page,
     context,
   }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await startTraining(context, page);
     await openTraining(page, `/treino/exercicios/${SEED_EXERCISE_IDS.bench}`);
-    await expect(page.getByRole('button', { name: 'Ver outra posição' })).toBeVisible();
+    const art = page.getByRole('button', { name: /trocar de posição/ });
+    await expect(art).toBeVisible();
+    await expect(page.getByText('Ver outra posição')).toHaveCount(0);
+    const frames = page.locator('app-exercise-illustration .frame');
+    await expect(frames.nth(0)).toHaveClass(/on/);
+    await art.click();
+    await expect(frames.nth(1)).toHaveClass(/on/);
   });
 
   test('o foco aparece em quem recebe a tabulação (busca e primeira linha)', async ({

@@ -1,22 +1,23 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/auth/auth.guard';
-import { moduleGuard, noAccessGuard, ownerOnlyGuard } from './core/auth/role.guard';
+import { moduleGuard, ownerOnlyGuard } from './core/auth/role.guard';
 import { welcomeGuard } from './core/auth/welcome.guard';
 import { AppShell } from './core/layout/app-shell';
 import { ShellBack } from './core/layout/route-data';
 import { SETTINGS_TITLES } from './modules/settings/settings-titles';
 
-/** Cada tela de Ajustes volta para a lista, não para o Início. */
+/** Cada tela de Configurações volta para a lista, não para o Início. */
 const SETTINGS_BACK: ShellBack = {
   link: '/ajustes',
-  label: $localize`:@@settings.back-label:Voltar aos Ajustes`,
+  label: $localize`:@@settings.back-label:Voltar às Configurações`,
 };
 
 // Cada módulo de tela é uma rota preguiçosa. O `data.title` de uma rota liga o cabeçalho do shell (com o
 // retorno ao Início) e as abas vêm do `data.tabs` da rota filha do próprio módulo. O convidado alcança os módulos que a
 // conta dele libera (a TV e o Treino, cada um pela permissão `module:*`) e a parte de Ajustes que é dele (lista, Perfil,
-// Aparência e Sobre): o que sobra leva `ownerOnlyGuard` (e a API recusa com 403 de qualquer jeito). Quem não pode usar
-// um módulo vai ao primeiro que pode; quem não tem nenhum, à tela de "sem acesso".
+// Aparência, Segurança com as próprias sessões e Sobre): o que sobra leva `ownerOnlyGuard` (e a API recusa com 403 de
+// qualquer jeito). Quem não pode usar
+// um módulo volta à Início, que mostra somente o que a conta pode abrir.
 export const routes: Routes = [
   {
     // O celular onde a pessoa já entrou abre o QR de um computador aqui e confirma. Exige sessão: quem ainda não entrou
@@ -56,11 +57,11 @@ export const routes: Routes = [
       {
         path: '',
         pathMatch: 'full',
-        canMatch: [ownerOnlyGuard],
         loadChildren: () => import('./modules/home/home.routes').then((m) => m.HOME_ROUTES),
       },
       {
         path: 'tv',
+        canMatch: [moduleGuard('tv')],
         data: { title: $localize`:@@module.tv.title:TV` },
         loadChildren: () => import('./modules/tv/tv.routes').then((m) => m.TV_ROUTES),
       },
@@ -71,16 +72,12 @@ export const routes: Routes = [
         loadChildren: () =>
           import('./modules/training/training.routes').then((m) => m.TRAINING_ROUTES),
       },
+      // Endereços antigos continuam úteis, mas a tela deixou de existir: toda conta tem a própria Início.
+      { path: 'sem-acesso', pathMatch: 'full', redirectTo: '/' },
       {
-        path: 'sem-acesso',
-        canMatch: [noAccessGuard],
-        data: { title: $localize`:@@no-access.route-title:Sem acesso` },
-        loadComponent: () => import('./core/auth/no-access.page').then((m) => m.NoAccessPage),
-      },
-      {
-        // Ajustes é uma lista; cada linha abre uma tela filha, com a seta voltando para a lista.
+        // Configurações é uma lista; cada linha abre uma tela filha, com a seta voltando para a lista.
         path: 'ajustes',
-        data: { title: $localize`:@@settings.title:Ajustes`, settings: true },
+        data: { title: $localize`:@@settings.title:Configurações`, settings: true },
         children: [
           {
             path: '',
@@ -101,8 +98,8 @@ export const routes: Routes = [
               import('./modules/settings/appearance.page').then((m) => m.AppearancePage),
           },
           {
+            // Sem `ownerOnlyGuard`: o convidado vê só as próprias sessões (a tela esconde as passkeys, que são do dono).
             path: 'seguranca',
-            canMatch: [ownerOnlyGuard],
             data: { title: SETTINGS_TITLES.security, back: SETTINGS_BACK },
             loadComponent: () =>
               import('./modules/settings/security.page').then((m) => m.SecurityPage),
@@ -126,20 +123,19 @@ export const routes: Routes = [
             loadComponent: () => import('./modules/settings/system.page').then((m) => m.SystemPage),
           },
           {
-            path: 'aparelhos',
-            canMatch: [ownerOnlyGuard],
-            data: { title: $localize`:@@devices.route.title:Aparelhos`, back: SETTINGS_BACK },
-            loadComponent: () =>
-              import('./modules/devices/devices.page').then((m) => m.DevicesPage),
-          },
-          {
             // Destino do QR que o agente mostra no PC (`?codigo=`). Sem `ownerOnlyGuard` de propósito: o convidado que o
             // abre vê o aviso "peça ao administrador" em vez de ser levado embora sem explicação. A tela só mostra o
             // aviso para ele (nenhuma chamada à API), e a API recusa com 403 de qualquer jeito.
             path: 'dispositivos',
-            data: { title: $localize`:@@devices.route.title:Aparelhos`, back: SETTINGS_BACK },
+            data: { title: $localize`:@@devices.route.title:Dispositivos`, back: SETTINGS_BACK },
             loadComponent: () =>
               import('./modules/devices/devices.page').then((m) => m.DevicesPage),
+          },
+          {
+            // Links e atalhos salvos antes da reorganização seguem chegando à tela nova.
+            path: 'aparelhos',
+            pathMatch: 'full',
+            redirectTo: 'dispositivos',
           },
           {
             path: 'sobre',

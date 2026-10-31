@@ -28,10 +28,14 @@ describe('LiveHomeStatus', () => {
     document.dispatchEvent(new Event('visibilitychange'));
     TestBed.tick();
   };
-  const signIn = (role: string | undefined = 'owner') => {
+  const signIn = (
+    role: string | undefined = 'owner',
+    { id = '1', permissions }: { id?: string; permissions?: string[] } = {},
+  ) => {
     session.setToken('token-de-teste', 600);
-    session.setUser({ id: '1', email: 'a@b.c', displayName: 'Neemias', role });
+    session.setUser({ id, email: 'a@b.c', displayName: 'Neemias', role, permissions });
   };
+  const ALERTS = '/api/v1/devices/agent-alerts';
   /** A tela aparece: começa o acompanhamento e deixa os efeitos rodarem. */
   const watch = () => {
     const stop = live.watch();
@@ -84,6 +88,7 @@ describe('LiveHomeStatus', () => {
   afterEach(() => {
     for (const stop of stops) stop();
     TestBed.tick();
+    localStorage.clear();
     vi.useRealTimers();
   });
 
@@ -105,7 +110,15 @@ describe('LiveHomeStatus', () => {
       expect(open).not.toHaveBeenCalled();
     });
 
-    it('never calls for a guest', () => {
+    it('never calls for a guest without the TV', () => {
+      signIn('guest', { permissions: ['module:training'] });
+      watch();
+      advance(120_000);
+      http.expectNone(STATE);
+      expect(open).not.toHaveBeenCalled();
+    });
+
+    it('never calls for a guest whose permission list is not known', () => {
       signIn('guest');
       watch();
       advance(120_000);
@@ -149,7 +162,44 @@ describe('LiveHomeStatus', () => {
         agent: 'online',
         watcher: 'unknown',
         serviceDown: false,
+        agentLinked: true,
       });
+    });
+
+    it('reutiliza o último estado salvo antes da primeira leitura em segundo plano', () => {
+      localStorage.setItem('uniover.home.agent.v2.1', 'online');
+      const cached = TestBed.runInInjectionContext(() => new LiveHomeStatus());
+      expect(cached.status().agent).toBe('online');
+      expect(cached.loading()).toBe(false);
+    });
+
+    it('só mostra espera depois do atraso, e a resposta troca pelo estado sem apagar a tela', () => {
+      watch();
+      expect(live.loading()).toBe(false);
+      advance(399);
+      expect(live.loading()).toBe(false);
+      advance(1);
+      expect(live.loading()).toBe(true);
+      answer({ agentOnline: true });
+      expect(live.loading()).toBe(false);
+      expect(live.status().agent).toBe('online');
+    });
+
+    it('para a espera sozinha se a leitura nunca volta (o brilho não fica em laço)', () => {
+      watch();
+      advance(400);
+      expect(live.loading()).toBe(true);
+      advance(7_599);
+      expect(live.loading()).toBe(true);
+      advance(1);
+      expect(live.loading()).toBe(false);
+    });
+
+    it('guarda o último estado por conta, sob a chave dela', () => {
+      watch();
+      answer({ agentOnline: true });
+      expect(localStorage.getItem('uniover.home.agent.v2.1')).toBe('online');
+      expect(localStorage.getItem('uniover.home.agent.v1')).toBeNull();
     });
 
     it('says the agent is off', () => {
@@ -363,12 +413,31 @@ describe('LiveHomeStatus', () => {
       expect(live.status().serviceDown).toBe(true);
     });
 
-    it.each([401, 403, 404, 429, 500])(
-      'is not reported for a %i, which the API itself answered',
+    it.each([429, 500])('is not reported for a %i, and the last state stays', (status) => {
+      advance(30_000);
+      http.expectOne(STATE).flush('', { status, statusText: 'Resposta' });
+      expect(live.status()).toMatchObject({ agent: 'online', serviceDown: false });
+    });
+
+    it('drops the agent state and its remembered value on a 401', () => {
+      expect(localStorage.getItem('uniover.home.agent.v2.1')).toBe('online');
+      advance(30_000);
+      http.expectOne(STATE).flush('', { status: 401, statusText: 'Resposta' });
+      expect(live.status()).toMatchObject({ agent: 'unknown', serviceDown: false });
+      expect(localStorage.getItem('uniover.home.agent.v2.1')).toBeNull();
+    });
+
+    it.each([403, 404])(
+      'is not reported for a %i: the account sees no TV, so it has no agent and no dot',
       (status) => {
         advance(30_000);
         http.expectOne(STATE).flush('', { status, statusText: 'Resposta' });
-        expect(live.status()).toMatchObject({ agent: 'online', serviceDown: false });
+        expect(live.status()).toMatchObject({
+          agent: 'unknown',
+          agentLinked: false,
+          serviceDown: false,
+        });
+        expect(localStorage.getItem('uniover.home.agent.v2.1')).toBe('none');
       },
     );
 
@@ -437,9 +506,136 @@ describe('LiveHomeStatus', () => {
         agent: 'unknown',
         watcher: 'unknown',
         serviceDown: false,
+        agentLinked: null,
       });
       advance(120_000);
       http.expectNone(STATE);
+    });
+  });
+  describe('a guest with the TV', () => {
+    const TV = ['module:tv', 'tv:control'];
+
+    it('reads the state and opens the stream of their own TV', () => {
+      signIn('guest', { id: 'g1', permissions: TV });
+      watch();
+      answer({ agentOnline: true });
+      expect(live.status().agent).toBe('online');
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(open.mock.calls[0][0]).toBe('/api/v1/tv/events');
+    });
+
+    it('never asks for the computer-down notices, which the home no longer shows to anyone', () => {
+      signIn('guest', { id: 'g1', permissions: TV });
+      watch();
+      answer();
+      advance(30_000);
+      answer();
+      http.expectNone(ALERTS);
+    });
+
+    it('does not borrow what the owner left remembered in the same browser', () => {
+      localStorage.setItem('uniover.home.agent.v2.1', 'online');
+      signIn('guest', { id: 'g1', permissions: TV });
+      watch();
+      expect(live.status().agent).toBe('unknown');
+      answer({ agentOnline: false });
+      expect(live.status().agent).toBe('offline');
+      expect(localStorage.getItem('uniover.home.agent.v2.g1')).toBe('offline');
+      expect(localStorage.getItem('uniover.home.agent.v2.1')).toBe('online');
+    });
+
+    it('stops reading as soon as the TV permission is taken away', () => {
+      signIn('guest', { id: 'g1', permissions: TV });
+      watch();
+      const pending = http.expectOne(STATE);
+      signIn('guest', { id: 'g1', permissions: ['module:training'] });
+      TestBed.tick();
+      expect(pending.cancelled).toBe(true);
+      expect(events.observed).toBe(false);
+    });
+
+    it('drops what the previous account knew when another one takes the browser', () => {
+      signIn('owner');
+      watch();
+      answer({ agentOnline: true });
+      expect(live.status().agent).toBe('online');
+
+      // Sem passar por "sair": o mesmo navegador passa direto para a conta do convidado.
+      signIn('guest', { id: 'g1', permissions: TV });
+      TestBed.tick();
+      expect(live.status()).toMatchObject({ agent: 'unknown', agentLinked: null });
+      answer({ agentOnline: false });
+      expect(live.status().agent).toBe('offline');
+      http.expectNone(ALERTS);
+    });
+
+    it('does not carry the "no agent" memory of one account to the next', () => {
+      localStorage.setItem('uniover.home.agent.v2.1', 'none');
+      signIn('guest', { id: 'g1', permissions: TV });
+      watch();
+      expect(live.status().agentLinked).toBeNull();
+      expect(live.loading()).toBe(false);
+      advance(400);
+      expect(live.loading()).toBe(true);
+      answer({ agentOnline: true });
+      expect(live.status()).toMatchObject({ agent: 'online', agentLinked: true });
+    });
+  });
+
+  describe('account without an agent', () => {
+    beforeEach(() => signIn());
+
+    it('says there is no agent linked, and never shows a wait for it', () => {
+      watch();
+      answer({ agentOnline: false, agentLinked: false, connection: 'disconnected' });
+      expect(live.status()).toMatchObject({ agent: 'unknown', agentLinked: false });
+      advance(10_000);
+      expect(live.loading()).toBe(false);
+      expect(localStorage.getItem('uniover.home.agent.v2.1')).toBe('none');
+    });
+
+    it('opens already knowing it, so the wait never flashes again', () => {
+      localStorage.setItem('uniover.home.agent.v2.1', 'none');
+      watch();
+      expect(live.status().agentLinked).toBe(false);
+      advance(8_000);
+      expect(live.loading()).toBe(false);
+      answer({ agentOnline: false, agentLinked: false });
+      expect(live.status().agentLinked).toBe(false);
+    });
+
+    it('comes back as soon as the API says an agent was linked', () => {
+      localStorage.setItem('uniover.home.agent.v2.1', 'none');
+      watch();
+      answer({ agentOnline: true, agentLinked: true });
+      expect(live.status()).toMatchObject({ agent: 'online', agentLinked: true });
+      expect(localStorage.getItem('uniover.home.agent.v2.1')).toBe('online');
+    });
+
+    it('reads a body without the field as linked (older API)', () => {
+      watch();
+      answer({ agentOnline: false });
+      expect(live.status()).toMatchObject({ agent: 'offline', agentLinked: true });
+    });
+
+    it('follows the stream: unlinked, then linked again', () => {
+      watch();
+      answer({ agentOnline: true });
+      emit('tv.state', { agentOnline: false, agentLinked: false });
+      expect(live.status().agentLinked).toBe(false);
+      emit('tv.state', { agentOnline: true, agentLinked: true });
+      expect(live.status()).toMatchObject({ agent: 'online', agentLinked: true });
+    });
+  });
+
+  describe('never asks for computer alerts', () => {
+    it('does not call the alerts route, not even for the owner', () => {
+      signIn();
+      watch();
+      answer();
+      advance(60_000);
+      answer();
+      http.expectNone(ALERTS);
     });
   });
 });

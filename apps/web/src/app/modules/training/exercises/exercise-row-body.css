@@ -14,35 +14,15 @@
   min-width: 0;
 }
 
-/* A miniatura orienta a varredura da lista; quando não há arte segura, o glifo neutro não sugere outro movimento. */
-.thumb {
-  display: grid;
-  flex: 0 0 44px;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  overflow: hidden;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius);
-  background: var(--a-elev);
-  color: var(--a-accent-ink);
-}
-
-.thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  background: #fff;
-}
-
-.thumb app-training-glyph {
-  width: 22px;
-  height: 22px;
-}
-
+/* Nome longo quebra em até duas linhas: com a miniatura de 64 px sobra pouca largura no celular, e cortar numa linha só esconderia o fim do nome. */
 .name {
+  display: -webkit-box;
+  overflow: hidden;
   font-weight: 650;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 /* Uma linha só: a lista é para escanear, o detalhe fica na ficha. */

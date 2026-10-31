@@ -33,7 +33,7 @@ function seriousViolations(
 }
 
 test.describe('créditos', () => {
-  test('abre por Ajustes e mostra título, autor, fonte e licença de cada material', async ({
+  test('abre por Configurações e mostra título, autor, fonte e licença de cada material', async ({
     page,
   }, info) => {
     await signIn(page);
@@ -45,7 +45,7 @@ test.describe('créditos', () => {
     const everkinetic = page.locator('.list > li', { hasText: 'Everkinetic' });
     await expect(everkinetic).toContainText('Greg Priday');
     await expect(everkinetic).toContainText('CC BY-SA 4.0');
-    await expect(everkinetic).toContainText('Sem alterações');
+    await expect(everkinetic).toContainText('sem alterações');
     await expect(everkinetic.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute(
       'href',
       'https://creativecommons.org/licenses/by-sa/4.0/',
@@ -65,11 +65,9 @@ test.describe('créditos', () => {
     await expectNoHorizontalScroll(page);
     await screenshot(page, `test-results/credits-${info.project.name}.png`);
 
-    // A seta do cabeçalho e o botão da própria tela levam à lista de Ajustes.
-    await page.getByRole('link', { name: 'Voltar aos Ajustes' }).click();
-    await expect(page).toHaveURL(/\/ajustes$/);
-    await page.goBack();
-    await page.getByRole('link', { name: '← Ajustes' }).click();
+    // Um só voltar: a seta do cabeçalho leva à lista de Configurações.
+    await expect(page.getByRole('link', { name: '← Ajustes' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Voltar às Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
   });
 
@@ -93,7 +91,7 @@ test.describe('créditos', () => {
     await signIn(page);
     await page.goto('/ajustes/creditos');
     await expect(page.getByRole('heading', { level: 1, name: 'Créditos' })).toBeVisible();
-    const links = page.locator('.list a, a.back');
+    const links = page.locator('.list a, button.back');
     const count = await links.count();
     expect(count).toBeGreaterThanOrEqual(5);
     for (let index = 0; index < count; index += 1) {

@@ -32,28 +32,35 @@ public sealed record TvStateSnapshot(string Power, int? Volume, string? App, str
         && string.Equals(Connection, other.Connection, StringComparison.Ordinal);
 }
 
-/// <summary>O estado como a tela o vê: a leitura do agente combinada com a presença dele.</summary>
+/// <summary>
+/// O estado como a tela o vê: a leitura do agente combinada com a presença dele. <c>AgentLinked</c> diz se a TV da conta
+/// tem um computador (agente) vinculado: sem vínculo não há o que ligar ou desligar, e a Início não mostra o ponto do agente.
+/// </summary>
 public sealed record TvState(
     string Power,
     [property: JsonNumberHandling(JsonNumberHandling.Strict)] int? Volume,
     string? App,
     string Connection,
     bool AgentOnline,
-    DateTimeOffset? UpdatedAt)
+    DateTimeOffset? UpdatedAt,
+    bool AgentLinked = true,
+    DateTimeOffset? OfflineSince = null)
 {
     /// <summary>
     /// Sem agente conectado não há sessão com a TV: a conexão é sempre <c>disconnected</c> e o volume (que só o
     /// agente sabe) some. Isto é calculado na leitura e nunca gravado.
     /// </summary>
-    public static TvState From(TvStateSnapshot? snapshot, bool agentOnline)
+    public static TvState From(TvStateSnapshot? snapshot, bool agentOnline, bool agentLinked = true, DateTimeOffset? offlineSince = null)
     {
+        // `OfflineSince` só existe com o agente fora: é desde quando a tela diz "PC desligado desde...".
+        var since = agentOnline ? null : offlineSince;
         if (snapshot is null)
         {
-            return new TvState(TvStateText.PowerUnknown, null, null, TvStateText.ConnectionDisconnected, agentOnline, null);
+            return new TvState(TvStateText.PowerUnknown, null, null, TvStateText.ConnectionDisconnected, agentOnline, null, agentLinked, since);
         }
 
         return agentOnline
-            ? new TvState(snapshot.Power, snapshot.Volume, snapshot.App, snapshot.Connection, true, snapshot.UpdatedAt)
-            : new TvState(snapshot.Power, null, snapshot.App, TvStateText.ConnectionDisconnected, false, snapshot.UpdatedAt);
+            ? new TvState(snapshot.Power, snapshot.Volume, snapshot.App, snapshot.Connection, true, snapshot.UpdatedAt, agentLinked)
+            : new TvState(snapshot.Power, null, snapshot.App, TvStateText.ConnectionDisconnected, false, snapshot.UpdatedAt, agentLinked, since);
     }
 }

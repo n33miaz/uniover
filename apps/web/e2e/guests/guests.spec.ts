@@ -103,8 +103,12 @@ test.describe('convite do dono (passkey)', () => {
     // O convite mora em Pessoas.
     await page.goto('/ajustes/pessoas');
     await expect(page.getByRole('heading', { level: 1, name: 'Pessoas' })).toBeVisible();
-    await expect(page.getByRole('heading', { level: 2, name: 'Convidados' })).toBeVisible();
+    // O título é um só: o do cabeçalho da tela (h1), sem repetir no conteúdo (nenhum h2 com o mesmo nome).
+    await expect(page.getByRole('heading', { level: 2, name: 'Pessoas e Permissões' })).toHaveCount(
+      0,
+    );
     await expect(page.getByText('Ninguém foi convidado ainda.')).toBeVisible();
+    await page.getByRole('tab', { name: 'Convites' }).click();
     await page.getByRole('button', { name: 'Convidar alguém' }).click();
     await page.getByLabel('Nome do convidado').fill(GUEST.displayName);
     await page.getByRole('button', { name: 'Gerar convite' }).click();
@@ -149,13 +153,14 @@ test.describe('convite do dono (passkey)', () => {
     await page.getByRole('button', { name: `Revogar o convite de ${GUEST.displayName}` }).click();
     await page.getByRole('button', { name: 'Revogar', exact: true }).click();
     await expect(page.getByText('Convite revogado.')).toBeVisible();
+    await page.getByRole('tab', { name: 'Pessoas' }).click();
     await expect(page.getByText('Ninguém foi convidado ainda.')).toBeVisible();
     expect(identity.invites[0].status).toBe('revoked');
   });
 });
 
-test.describe('convidado: só o controle da TV', () => {
-  test('aceita o convite, define a própria senha e cai direto no controle, sem Início nem voltar', async ({
+test.describe('convidado: Início só com os módulos permitidos', () => {
+  test('aceita o convite, define a própria senha e cai na Início sem atalhos de administrador', async ({
     page,
   }, info) => {
     // Além dos três do controle, um app instalado que o dono não fixou (o convidado o abre) e um que saiu da TV (não aparece).
@@ -210,12 +215,22 @@ test.describe('convidado: só o controle da TV', () => {
     await page.getByLabel('Repita a senha').fill(GUEST.password);
     await page.getByRole('button', { name: 'Continuar', exact: true }).click();
 
-    // Visão única: cai no controle, sem Início, sem voltar, sem abas.
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('article.card h3')).toHaveText([
+      'TV',
+      'Controle do PC',
+      'Rede da Casa',
+      'Backup de Fotos',
+    ]);
+    await expect(page.locator('.shortcuts')).toHaveCount(0);
+    await expect(page.locator('.hero-settings')).toHaveAttribute('aria-label', 'Configurações');
+    // O convidado com a TV vê o estado do agente DELE (a bolinha), nunca o aviso de queda do computador do dono.
+    await expect(page.locator('.agent-status')).toHaveCount(1);
+    await expect(page.locator('.agent-alert')).toHaveCount(0);
+    await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
-    await expect(page.getByRole('link', { name: /Início/ })).toHaveCount(0);
-    await expect(page.getByText('Início', { exact: true })).toHaveCount(0);
-    await expect(page.locator('a[href="/"]')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Voltar ao Início' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Configurações' })).toHaveCount(0);
     await expect(page.getByRole('navigation')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Desligar a TV' })).toBeVisible();
 
@@ -277,35 +292,37 @@ test.describe('convidado: só o controle da TV', () => {
     }
   });
 
-  test('as telas do dono o devolvem ao controle, e nenhuma chamada fora da TV é feita', async ({
+  test('as telas do dono o devolvem à Início, e nenhuma chamada administrativa é feita', async ({
     page,
   }) => {
     const invite = identity.seedInvite();
     await acceptInvite(page, invite.token);
-    await expect(page).toHaveURL(/\/tv$/);
-    await showTv(page);
+    await expect(page).toHaveURL(/\/$/);
 
     const urls: string[] = [];
     page.on('request', (request) => urls.push(new URL(request.url()).pathname));
     for (const path of [
       '/',
       '/treino',
-      '/ajustes/seguranca',
       '/ajustes/pessoas',
-      '/ajustes/aparelhos',
       '/ajustes/sistema',
       '/ajustes/creditos',
       '/nao-existe',
     ]) {
       await page.goto(path);
-      await expect(page).toHaveURL(/\/tv$/);
-      await expect(page.getByRole('heading', { level: 1, name: 'TV' })).toBeVisible();
-      await expect(page.getByRole('link', { name: /Início/ })).toHaveCount(0);
+      await expect(page).toHaveURL(/\/$/);
+      await expect(page.locator('article.card h3')).toHaveText([
+        'TV',
+        'Controle do PC',
+        'Rede da Casa',
+        'Backup de Fotos',
+      ]);
+      await expect(page.locator('.shortcuts')).toHaveCount(0);
     }
 
-    // Recarregar mantém a sessão (cookie) e o papel: continua só no controle.
+    // Recarregar mantém a sessão (cookie) e o papel: continua na Início filtrada.
     await page.reload();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
 
     const outside = urls.filter(
       (path) =>
@@ -318,73 +335,86 @@ test.describe('convidado: só o controle da TV', () => {
     expect(identity.requests.map((r) => r.path)).not.toContain('/passkeys');
   });
 
-  test('o botão redondo do cabeçalho leva aos Ajustes da convidada: Perfil, Aparência, Aparelhos e Sobre', async ({
+  test('a convidada chega às Configurações pela Início (o topo da TV não tem engrenagem): Perfil, Aparência, Dispositivos e Sobre', async ({
     page,
   }) => {
     const invite = identity.seedInvite();
     await acceptInvite(page, invite.token);
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
 
-    const settings = page.locator('header.head').getByRole('link', { name: 'Ajustes' });
-    await expect(settings).toBeVisible();
-
-    // Os três pontos do menu ficam ao lado da engrenagem, na esquerda e antes do nome; à direita só o desligar.
-    const header = page.locator('header.head');
-    const gearBox = (await settings.boundingBox())!;
+    // O topo da TV: a volta e o menu à esquerda antes do nome; à direita o ponto de estado e o desligar. Sem engrenagem.
+    const header = page.locator('.tv > header.head');
+    await expect(header.getByRole('link', { name: 'Configurações' })).toHaveCount(0);
+    const backBox = (await header.getByRole('link', { name: 'Voltar ao Início' }).boundingBox())!;
     const menuBox = (await header
       .getByRole('button', { name: 'Mais opções', exact: true })
       .boundingBox())!;
     const nameBox = (await header.locator('h1').boundingBox())!;
     const powerBox = (await header.getByRole('button', { name: 'Desligar a TV' }).boundingBox())!;
-    expect(Math.abs(menuBox.y - gearBox.y), 'na mesma linha da engrenagem').toBeLessThanOrEqual(1);
-    expect(menuBox.x, 'depois da engrenagem').toBeGreaterThanOrEqual(gearBox.x + gearBox.width);
+    expect(Math.abs(menuBox.y - backBox.y), 'na mesma linha da volta').toBeLessThanOrEqual(1);
+    expect(menuBox.x, 'depois da volta').toBeGreaterThanOrEqual(backBox.x + backBox.width);
     expect(nameBox.x, 'antes do nome').toBeGreaterThanOrEqual(menuBox.x + menuBox.width);
     expect(powerBox.x, 'o desligar depois do nome').toBeGreaterThanOrEqual(
       nameBox.x + nameBox.width - 1,
     );
-    await expect(header.locator('.actions').getByRole('button')).toHaveCount(1);
+    await expect(header.locator('.actions').getByRole('button')).toHaveCount(2);
 
-    await settings.click();
+    // As Configurações ficam na Início: a seta leva até lá e o botão da Início abre a lista.
+    await header.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole('link', { name: 'Configurações' }).click();
     await expect(page).toHaveURL(/\/ajustes$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Configurações' })).toBeVisible();
     await expect(page.locator('a.ui-row .ui-row-title')).toHaveText([
       'Perfil',
       'Aparência',
-      'Aparelhos',
+      'Segurança',
+      'Dispositivos',
       'Sobre',
     ]);
-    // "Aparelhos" é só o download do conector do PC (a convidada tem a TV); o resto do administrador não aparece.
-    await expect(page.getByRole('link', { name: /Aparelhos/ })).toHaveAttribute(
+    // "Dispositivos" é só o download do conector do PC (a convidada tem a TV); o resto do administrador não aparece.
+    await expect(page.getByRole('link', { name: /Dispositivos/ })).toHaveAttribute(
       'href',
       '/ajustes/dispositivos',
     );
-    await expect(page.getByText('Baixar o conector do PC', { exact: true })).toBeVisible();
-    for (const name of ['Segurança', 'Pessoas', 'Auditoria', 'Sistema']) {
+    for (const name of ['Pessoas e Permissões', 'Auditoria', 'Sistema']) {
       await expect(page.getByText(name, { exact: true })).toHaveCount(0);
     }
-    await expect(page.getByText(`${GUEST.displayName} · Convidado`)).toBeVisible();
+    await expect(page.locator('a.ui-row .ui-row-sub')).toHaveCount(0);
 
-    // A seta leva de volta ao controle (a convidada não tem Início).
-    await page.getByRole('link', { name: 'Voltar ao controle' }).click();
-    await expect(page).toHaveURL(/\/tv$/);
+    await page.getByRole('button', { name: 'Voltar ao Início' }).click();
+    await expect(page).toHaveURL(/\/$/);
   });
 
-  test('a sessão da convidada nunca chama rota de administrador nos Ajustes, e o servidor recusa se ela chamar à mão', async ({
+  test('a sessão da convidada nunca chama rota de administrador nas Configurações, e o servidor recusa se ela chamar à mão', async ({
     page,
   }) => {
     const invite = identity.seedInvite();
     await acceptInvite(page, invite.token);
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
 
     const urls: string[] = [];
     page.on('request', (request) => urls.push(new URL(request.url()).pathname));
     const before = identity.requests.length;
-    for (const path of ['/ajustes', '/ajustes/perfil', '/ajustes/aparencia', '/ajustes/sobre']) {
+    for (const path of [
+      '/ajustes',
+      '/ajustes/perfil',
+      '/ajustes/aparencia',
+      '/ajustes/seguranca',
+      '/ajustes/sobre',
+    ]) {
       await page.goto(path);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     }
+    // Segurança da convidada: só as próprias sessões, sem passkeys.
+    await page.goto('/ajustes/seguranca');
+    await expect(page.getByRole('heading', { level: 1, name: 'Segurança' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Sessões de Acesso' })).toBeVisible();
+    await expect(page.getByText(/passkey/i)).toHaveCount(0);
     // Salvar o nome também é só da própria conta.
     await page.goto('/ajustes/perfil');
     await page.getByLabel('Como devemos te chamar').fill('Alice Souza');
@@ -400,7 +430,7 @@ test.describe('convidado: só o controle da TV', () => {
     );
     // Só a leitura pública da versão, o renovar da sessão, a própria conta, o salvar do nome e a lista das próprias sessões.
     expect(new Set(sent.map((request) => request.replace(/^(GET|POST|PATCH) /, '')))).toEqual(
-      new Set(['/info', '/auth/refresh', '/me', '/sessions']),
+      new Set(['/health/version', '/auth/refresh', '/me', '/sessions']),
     );
 
     // O servidor recusa o que ela chamar à mão: o papel dela não passa nessas rotas (a API tem o teste dela; aqui o
@@ -424,7 +454,8 @@ test.describe('convidado: só o controle da TV', () => {
   }) => {
     const invite = identity.seedInvite();
     await acceptInvite(page, invite.token);
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
     await page.goto('/ajustes/perfil');
     await expect(page.getByText('Convidado', { exact: true })).toBeVisible();
@@ -462,7 +493,7 @@ test.describe('convidado: só o controle da TV', () => {
   }) => {
     const invite = identity.seedInvite();
     await acceptInvite(page, invite.token);
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
     identity.loggedIn = false;
     identity.role = 'owner';
 
@@ -470,15 +501,14 @@ test.describe('convidado: só o controle da TV', () => {
     await page.getByLabel('E-mail').fill(GUEST.email);
     await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
     await page.getByRole('button', { name: 'Entrar', exact: true }).click();
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
+    await page.getByRole('link', { name: 'TV: Abrir controle' }).click();
     await showTv(page);
   });
 });
 
-test.describe('convidado sem nenhum módulo: tela simples', () => {
-  test('o cartão fica no meio da altura, e não colado no alto com a tela vazia embaixo', async ({
-    page,
-  }) => {
+test.describe('convidado sem módulo liberado', () => {
+  test('vê só os três planejados, com o último centralizado', async ({ page }) => {
     identity.guests.push({
       id: '00000000-0000-4000-8000-000000000071',
       displayName: GUEST.displayName,
@@ -491,19 +521,23 @@ test.describe('convidado sem nenhum módulo: tela simples', () => {
     identity.role = 'guest';
     identity.loggedIn = true;
     await page.goto('/');
-    await expect(page).toHaveURL(/\/sem-acesso$/);
-    const card = page.locator('app-no-access-page .card');
-    await expect(card).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+    const cards = page.locator('article.card');
+    await expect(cards.locator('h3')).toHaveText([
+      'Controle do PC',
+      'Rede da Casa',
+      'Backup de Fotos',
+    ]);
+    await expect(page.locator('.agent-status')).toHaveCount(0);
+    await expect(page.locator('.shortcuts')).toHaveCount(0);
+    await expect(cards.last().locator('xpath=..')).toHaveClass(/\bcentered-last\b/);
     await expectNoHorizontalScroll(page);
 
-    // Geometria, não texto: o vão em cima do cartão (abaixo do cabeçalho) e o de baixo são parecidos. Sobra uma folga
-    // para o centro cair um pouco acima do meio, de propósito.
-    const header = (await page.locator('header.bar').boundingBox())!;
-    const box = (await card.boundingBox())!;
-    const viewport = page.viewportSize()!;
-    const above = box.y - (header.y + header.height);
-    const below = viewport.height - (box.y + box.height);
-    expect(above).toBeGreaterThan(24);
-    expect(Math.abs(above - below)).toBeLessThan(64);
+    // A última linha tem só um cartão: ele conserva a mesma largura e fica no eixo da própria grade.
+    const grid = (await page.locator('.guest-grid').boundingBox())!;
+    const first = (await cards.nth(0).boundingBox())!;
+    const last = (await cards.nth(2).boundingBox())!;
+    expect(last.width).toBeCloseTo(first.width, 1);
+    expect(Math.abs(last.x + last.width / 2 - (grid.x + grid.width / 2))).toBeLessThan(1);
   });
 });

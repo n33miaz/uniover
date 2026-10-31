@@ -163,6 +163,17 @@ export function buildLivePlan(input: LivePlanInput): LivePlan {
       };
     }
     const beyond = entry.doneSets >= item.targetSets;
+    // Numa supersérie só se descansa quando o par fechou a rodada: a escolha de um dos dois não pula essa regra.
+    const roundClosed = entries
+      .filter(
+        (other) =>
+          other.itemId !== null &&
+          other.itemId !== item.id &&
+          !other.skipped &&
+          item.supersetGroup !== null &&
+          itemsById.get(other.itemId)?.supersetGroup === item.supersetGroup,
+      )
+      .every((other) => other.doneSets >= entry.doneSets + 1);
     return {
       key: entry.key,
       itemId: item.id,
@@ -173,7 +184,7 @@ export function buildLivePlan(input: LivePlanInput): LivePlan {
       repMin: item.repMin,
       repMax: item.repMax,
       restSeconds: item.restSeconds,
-      rest: true,
+      rest: roundClosed,
       supersetGroup: item.supersetGroup,
       extra: beyond,
       swapped: entry.swapped,

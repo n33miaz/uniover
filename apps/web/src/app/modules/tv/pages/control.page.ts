@@ -108,20 +108,32 @@ export class ControlPage {
     this.rowPills() ? ['less', 'level', 'more'] : ['more', 'level', 'less'],
   );
 
+  /** O nível que o agente leu na TV (ou na soundbar). Sem leitura possível o app não inventa um número. */
+  private readonly volumeRead = computed(() => this.store.state()?.volume ?? null);
+  /** Os passos que a TV confirmou há pouco, para a pílula responder ao toque quando não há nível a mostrar. */
+  private readonly volumeSteps = computed(() =>
+    this.volumeRead() === null ? this.store.volumeNudge() : 0,
+  );
+  protected readonly volumeKnown = computed(() => this.volumeRead() !== null);
   protected readonly volumeText = computed(() => {
-    const volume = this.store.state()?.volume;
-    return volume === null || volume === undefined ? '–' : String(volume);
+    const volume = this.volumeRead();
+    if (volume !== null) return String(volume);
+    const steps = this.volumeSteps();
+    if (steps === 0) return '';
+    return `${steps > 0 ? '+' : '−'}${Math.abs(steps)}`;
   });
   /** Quanto da pílula de volume se enche (0 a 100); sem nível conhecido fica vazia. */
   protected readonly volumePercent = computed(() => {
-    const volume = this.store.state()?.volume;
-    return volume === null || volume === undefined ? 0 : Math.min(100, Math.max(0, volume));
+    const volume = this.volumeRead();
+    return volume === null ? 0 : Math.min(100, Math.max(0, volume));
   });
   protected readonly volumeLabel = computed(() => {
-    const volume = this.store.state()?.volume;
-    return volume === null || volume === undefined
-      ? $localize`:@@tv.volume.unknown:Volume desconhecido`
-      : $localize`:@@tv.volume.level:Volume ${volume}:level:`;
+    const volume = this.volumeRead();
+    if (volume !== null) return $localize`:@@tv.volume.level:Volume ${volume}:level:`;
+    const text = this.volumeText();
+    return text === ''
+      ? $localize`:@@tv.volume.unread:Volume sem leitura`
+      : $localize`:@@tv.volume.nudge:Volume ${text}:steps:`;
   });
 
   protected askKeyboard(event: Event): void {

@@ -77,6 +77,20 @@ npm ci
 npm run validate
 ```
 
+## Configuração do launcher da TV
+
+`tv-launcher/config.v1.schema.json` descreve o `config.json` que o agente grava na TV e que o APK de
+`apps/tv-launcher` lê (relógio, papel de parede, apps visíveis e ordem, ícones, Modo Dormir). Não é uma mensagem
+do envelope: vive à parte, sem tipos gerados, e o `npm run validate` confere os exemplos de
+`tv-launcher/examples/valid` (todos passam) e `examples/invalid` (todos falham). O launcher lê os mesmos exemplos nos
+seus testes.
+
+- Versão no próprio arquivo (`"schema": 1`). Mudança incompatível cria `config.v2.schema.json`; o launcher ignora um
+  arquivo de versão que não conhece e segue com o que já tinha.
+- O esquema é estrito para quem escreve (campo desconhecido é erro). O launcher é tolerante ao ler: ignora campo
+  desconhecido e volta ao padrão num valor inválido, para uma home nunca cair por causa de um arquivo mal escrito.
+- `revision` cresce a cada escrita; com duas vias de entrega (arquivo e broadcast), vale a maior.
+
 ## Geração
 
 `contracts/` é a fonte de verdade: tudo que as três linguagens usam sai daqui, nunca é editado à mão e leva no

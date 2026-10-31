@@ -100,11 +100,21 @@ respondem, consulta pelo REST um catálogo de apps conhecidos e os IDs extras em
 ao canal Samsung. A lista usa aliases internos válidos no contrato, mas abre o `appId` original Tizen. Não há ADB,
 limpeza de apps, abertura de links ou digitação pelo canal desta TV: esses pedidos retornam `unsupported`.
 
-O canal Samsung só envia teclas e não informa o volume. O agente tenta lê-lo pelo serviço UPnP RenderingControl: acha a
-descrição por SSDP (primeiro direto à TV, depois no grupo multicast; o endereço do serviço vem da própria descrição, sem
-porta nem caminho fixos) e consulta `GetVolume` uma vez ao abrir a sessão e uma vez depois de cada tecla de volume ou
-mudo, nunca por sondagem. Modelo sem esse serviço fica com o volume desconhecido, e a descoberta não se repete a cada
-tecla. Além das teclas básicas, o agente declara no `hello` as teclas extras que a TV tem (`tv.key.INPUT`,
+O canal Samsung só envia teclas e não informa o volume. O agente tenta lê-lo pelo serviço UPnP RenderingControl, por
+uma cascata que guarda o caminho que funcionou nesta TV: (1) a descrição do renderizador na porta 9197 (`/dmr`), (2) o
+endereço de controle padrão das TVs Tizen, direto, e (3) SSDP (primeiro direto à TV, depois no grupo multicast), que
+vai por último porque o multicast falha com várias placas de rede, VPN ou firewall. A consulta `GetVolume` roda uma
+vez ao abrir a sessão e uma vez depois de cada tecla de volume ou mudo, nunca por sondagem. Uma primeira falha não é
+veredito (o serviço pode subir depois do canal remoto): a cascata se repete com espera crescente (5, 15, 45 e 120 s) e
+só depois a TV é dada como sem o serviço, o que vale por 30 min. Na Android TV o nível chega sozinho pelo canal
+remoto; só se ele nunca chegar o agente pergunta ao shell (`cmd media_session volume`, depois `dumpsys audio`), que
+cobre a saída por soundbar HDMI-ARC. Para ver na TV de verdade o que responde, sem apertar tecla nenhuma:
+
+```
+uv run uniover-agent tv-volume
+```
+
+Sem nenhum caminho possível o volume fica desconhecido e o app mostra só o retorno do toque. Além das teclas básicas, o agente declara no `hello` as teclas extras que a TV tem (`tv.key.INPUT`,
 `tv.key.GUIDE`, `tv.key.RED`...), e a web as oferece como botões extras.
 
 ### Instalação em um clique
@@ -200,10 +210,15 @@ sem aviso de "app aberto"** (`tv.wake.v1`). O primeiro comando depois de hiberna
 aquecimento é medido e registrado no log. Se a TV não responder, tenta de novo com espera de 1, 2 e 4 s e
 então responde `tv_unreachable`: nunca fica num laço infinito.
 
+A descoberta (`tv-find` e o reencontro da TV) escuta o anúncio mDNS `_androidtvremote2._tcp` por 1,5 s, ao
+mesmo tempo da varredura TCP da /24, que continua como reserva.
+
 Texto (`tv.text.v1`): cada mensagem traz o texto completo do campo (0 a 200 caracteres). A TV **insere** o que
 recebe, então o agente guarda o que ele mesmo digitou, apaga o excedente com `DEL` (uma tecla por caractere) e
 digita só o acréscimo. **Texto vazio apaga tudo o que o agente digitou.** Sem campo em foco a TV ignora em
-silêncio. O acréscimo vai por um canal só (nunca dividido, para a ordem não depender de dois caminhos):
+silêncio. Quando a TV informa o estado do campo em foco (valor e cursor), o agente parte do valor real em
+vez do palpite e a troca de campo vem por esse aviso, não pela pausa de 20 s; sem o aviso, nada muda. O
+acréscimo vai por um canal só (nunca dividido, para a ordem não depender de dois caminhos):
 
 - **teclas do controle remoto**, se `UNIOVER_TV_TEXT_BY_KEYS=1` e **todos** os caracteres do acréscimo têm tecla
   sem ambiguidade: `a`-`z` minúsculas, `0`-`9`, espaço e `. , - /`. Cada caractere é um pacote no mesmo fluxo do

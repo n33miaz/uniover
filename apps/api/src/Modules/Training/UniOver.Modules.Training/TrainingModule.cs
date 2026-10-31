@@ -11,6 +11,7 @@ using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Training.Adapters;
 using UniOver.Modules.Training.Catalog;
 using UniOver.Modules.Training.Features.Body;
+using UniOver.Modules.Training.Features.CalendarEntries;
 using UniOver.Modules.Training.Features.Catalog.GetCatalogCredits;
 using UniOver.Modules.Training.Features.Catalog.ImportWger;
 using UniOver.Modules.Training.Features.Catalog.PullExercises;
@@ -92,6 +93,7 @@ public static class TrainingModule
         services.AddRoutines();
         services.AddSessions();
         services.AddGoals();
+        services.AddCalendarEntries();
         services.AddBody();
         services.AddFoods();
         services.AddScoped<ProgressPhotoHandler>();
@@ -116,9 +118,14 @@ public static class TrainingModule
         group.MapRoutines();
         group.MapSessions();
         group.MapGoals();
+        group.MapCalendarEntries();
         group.MapBody();
         group.MapFoods();
-        group.MapProgressPhotos();
+        // A nuvem de fotos de progresso foi aposentada: as rotas só existem quando a configuração a liga de propósito
+        // (Modules:Training:Photos:Storage:Enabled, que exige o bucket completo). Sem isso a API nem as publica (404), e o
+        // contrato HTTP não as lista. Nenhum dado é apagado: a tabela e a camada de armazenamento ficam como estão.
+        if (endpoints.ServiceProvider.GetRequiredService<ProgressPhotoStorageOptions>().Enabled)
+            group.MapProgressPhotos();
 
         // [composição: training] as próximas áreas do módulo acrescentam as suas rotas aqui.
         return endpoints;

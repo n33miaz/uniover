@@ -178,13 +178,21 @@ SOAP_VOLUME = (
 
 
 def upnp_tv(
-    volume: int | None = 37, *, requests: list[httpx.Request] | None = None
+    volume: int | None = 37,
+    *,
+    requests: list[httpx.Request] | None = None,
+    renderer: bool = True,
 ) -> httpx.MockTransport:
-    """A TV simulada: o renderizador em `:9197/dmr`, o servidor da Netflix em `:9080`."""
+    """A TV simulada: o renderizador em `:9197/dmr`, o servidor da Netflix em `:9080`.
+
+    Com `renderer=False` a TV não tem o serviço: tudo o que se pergunta é 404.
+    """
 
     def respond(request: httpx.Request) -> httpx.Response:
         if requests is not None:
             requests.append(request)
+        if not renderer:
+            return httpx.Response(404)
         if request.url.port == 9080:
             return httpx.Response(200, text="status=ok")
         if request.method == "GET" and request.url.path == "/dmr":
@@ -203,28 +211,72 @@ def discover(*locations: str) -> Callable[[str], list[str]]:
     return lambda _host: list(locations)
 
 
-async def test_samsung_volume_is_read_from_the_service_the_description_announces() -> None:
+async def test_samsung_volume_is_read_from_the_description_on_the_renderer_port() -> None:
     requests: list[httpx.Request] = []
+    searches: list[str] = []
+
+    def never_searched(host: str) -> list[str]:
+        searches.append(host)
+        return []
+
     reader = SamsungVolume(
-        "192.168.0.11",
-        transport=upnp_tv(37, requests=requests),
-        # A TV anuncia vários dispositivos: o primeiro (Netflix, texto puro) não é a descrição.
-        discover=discover("http://192.168.0.11:9080", "http://192.168.0.11:9197/dmr"),
+        "192.168.0.11", transport=upnp_tv(37, requests=requests), discover=never_searched
     )
     assert await reader.read() == 37
     assert reader.available is True
+    assert reader.method == volume_module.METHOD_DESCRIPTION
+    # Sem multicast: a descrição na porta do renderizador resolve, e o SSDP nem é perguntado.
+    assert searches == []
     assert [(request.method, request.url.port, request.url.path) for request in requests] == [
-        ("GET", 9080, "/"),
         ("GET", 9197, "/dmr"),
         ("POST", 9197, "/upnp/control/RenderingControl1"),
     ]
-    # A descoberta vale pela conexão: a leitura seguinte vai direto ao serviço.
+    # O caminho que funcionou fica guardado: a leitura seguinte vai direto ao serviço.
     requests.clear()
     assert await reader.read() == 37
     assert [request.method for request in requests] == ["POST"]
 
 
-async def test_samsung_volume_without_rendering_control_is_asked_once_and_never_again() -> None:
+async def test_samsung_volume_falls_back_to_the_fixed_control_address() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path == "/upnp/control/RenderingControl1":
+            return httpx.Response(200, text=SOAP_VOLUME.format(21))
+        return httpx.Response(404)
+
+    reader = SamsungVolume(
+        "192.168.0.11", transport=httpx.MockTransport(respond), discover=discover()
+    )
+    assert await reader.read() == 21
+    assert reader.method == volume_module.METHOD_DIRECT
+
+
+async def test_samsung_volume_finds_a_renderer_that_only_ssdp_announces() -> None:
+    description = DESCRIPTION.replace("/upnp/control/RenderingControl1", "/odd/control")
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.port == 9197:
+            raise httpx.ConnectError("refused", request=request)
+        if request.url.port == 9080:
+            return httpx.Response(200, text="status=ok")
+        if request.method == "GET":
+            return httpx.Response(200, text=description)
+        return httpx.Response(200, text=SOAP_VOLUME.format(44))
+
+    reader = SamsungVolume(
+        "192.168.0.11",
+        transport=httpx.MockTransport(respond),
+        # A TV anuncia vários dispositivos: o primeiro (texto puro) não é a descrição.
+        discover=discover("http://192.168.0.11:9080", "http://192.168.0.11:7676/desc"),
+    )
+    assert await reader.read() == 44
+    assert reader.method == volume_module.METHOD_SSDP
+    posts = [(r.url.port, r.url.path) for r in requests if r.method == "POST"]
+    assert posts[-1] == (7676, "/odd/control")
+
+
+async def test_samsung_volume_without_the_service_backs_off_then_stops_asking() -> None:
     requests: list[httpx.Request] = []
     searches: list[str] = []
 
@@ -235,28 +287,97 @@ async def test_samsung_volume_without_rendering_control_is_asked_once_and_never_
     now = [100.0]
     reader = SamsungVolume(
         "192.168.0.11",
-        transport=upnp_tv(requests=requests),
+        transport=upnp_tv(None, requests=requests, renderer=False),
         discover=only_netflix,
         monotonic=lambda: now[0],
     )
     assert reader.available is None
     assert await reader.read() is None
-    assert reader.available is False
-    discovery_requests = len(requests)
-    for _ in range(3):
+    # Uma falha não é veredito (o serviço de uma TV que acabou de ligar pode demorar a subir).
+    assert reader.available is None
+    # Dentro da espera nada vai à rede.
+    asked = len(requests)
+    assert await reader.read() is None
+    assert len(requests) == asked
+    for wait in volume_module.RETRY_STEPS_SECONDS[:-1]:
+        now[0] += wait
         assert await reader.read() is None
-    assert searches == ["192.168.0.11"]
-    assert len(requests) == discovery_requests
-    # Sessão reaberta logo depois: a descoberta recente vale, a TV não é perguntada de novo.
-    reader.reset()
     assert reader.available is False
-    # Passado o prazo, a TV pode ter mudado: descobre de novo.
+    assert len(searches) == len(volume_module.RETRY_STEPS_SECONDS)
+    # Com o veredito dado, a TV não é perguntada nem em minutos nem na sessão reaberta.
+    asked = len(requests)
+    now[0] += 600
+    assert await reader.read() is None
+    reader.reset()
+    assert await reader.read() is None
+    assert len(requests) == asked
+    # Passado o prazo longo, a TV pode ter mudado: pergunta de novo.
     now[0] += volume_module.REDISCOVER_SECONDS
     reader.reset()
     assert reader.available is None
+    assert await reader.read() is None
+    assert len(requests) > asked
 
 
-async def test_samsung_volume_follows_a_location_without_path_and_the_url_base() -> None:
+async def test_samsung_volume_recovers_when_the_service_comes_up_after_the_session_opens() -> None:
+    service_up = [False]
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if not service_up[0]:
+            raise httpx.ConnectError("refused", request=request)
+        if request.method == "GET":
+            return httpx.Response(200, text=DESCRIPTION)
+        return httpx.Response(200, text=SOAP_VOLUME.format(30))
+
+    reader = SamsungVolume(
+        "192.168.0.11", transport=httpx.MockTransport(respond), discover=discover()
+    )
+    assert await reader.read() is None
+    service_up[0] = True
+    # A sessão reabre: sem veredito ainda, a cascata roda de novo na hora.
+    reader.reset()
+    assert await reader.read() == 30
+    assert reader.available is True
+
+
+async def test_samsung_volume_goes_through_the_cascade_again_when_the_remembered_path_dies() -> (
+    None
+):
+    state = {"description": True}
+    description = DESCRIPTION.replace("/upnp/control/RenderingControl1", "/custom/control")
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "GET":
+            return httpx.Response(200 if state["description"] else 404, text=description)
+        if request.url.path == "/custom/control":
+            return (
+                httpx.Response(200, text=SOAP_VOLUME.format(9))
+                if state["description"]
+                else httpx.Response(404)
+            )
+        if request.url.path == "/upnp/control/RenderingControl1":
+            return httpx.Response(200, text=SOAP_VOLUME.format(12))
+        return httpx.Response(404)
+
+    reader = SamsungVolume(
+        "192.168.0.11", transport=httpx.MockTransport(respond), discover=discover()
+    )
+    assert await reader.read() == 9
+    assert reader.method == volume_module.METHOD_DESCRIPTION
+    state["description"] = False
+    requests.clear()
+    assert await reader.read() == 12
+    assert reader.method == volume_module.METHOD_DIRECT
+    assert [(r.method, r.url.path) for r in requests] == [
+        ("POST", "/custom/control"),
+        ("GET", "/dmr"),
+        ("POST", "/upnp/control/RenderingControl1"),
+    ]
+
+
+async def test_samsung_volume_follows_the_url_base_of_the_description() -> None:
     description = (
         '<root xmlns="urn:schemas-upnp-org:device-1-0">'
         "<URLBase>http://192.168.0.11:7676/</URLBase><device><deviceList><device><serviceList>"
@@ -273,13 +394,11 @@ async def test_samsung_volume_follows_a_location_without_path_and_the_url_base()
         return httpx.Response(200, text=SOAP_VOLUME.format(12))
 
     reader = SamsungVolume(
-        "192.168.0.11",
-        transport=httpx.MockTransport(respond),
-        discover=discover("http://192.168.0.11:9080"),
+        "192.168.0.11", transport=httpx.MockTransport(respond), discover=discover()
     )
     assert await reader.read() == 12
     assert [(r.method, r.url.port, r.url.path) for r in requests] == [
-        ("GET", 9080, "/"),
+        ("GET", 9197, "/dmr"),
         ("POST", 7676, "/upnp/control/RenderingControl1"),
     ]
 
@@ -288,7 +407,8 @@ async def test_samsung_volume_never_raises_whatever_goes_wrong() -> None:
     def broken(host: str) -> list[str]:
         raise RuntimeError(host)
 
-    assert await SamsungVolume("192.168.0.11", discover=broken).read() is None
+    nothing = upnp_tv(None, renderer=False)
+    assert await SamsungVolume("192.168.0.11", discover=broken, transport=nothing).read() is None
 
     garbage = httpx.MockTransport(
         lambda request: httpx.Response(200, content=bytes([255, 254, 60]))
@@ -304,22 +424,37 @@ async def test_samsung_volume_ignores_announcements_that_point_to_another_machin
     requests: list[httpx.Request] = []
     reader = SamsungVolume(
         "192.168.0.11",
-        transport=upnp_tv(requests=requests),
+        transport=upnp_tv(None, requests=requests, renderer=False),
         discover=discover("http://10.0.0.9:9197/dmr"),
     )
     assert await reader.read() is None
-    assert requests == []
+    assert all(request.url.host == "192.168.0.11" for request in requests)
 
 
 async def test_samsung_volume_reads_nothing_when_the_service_fails() -> None:
-    reader = SamsungVolume(
-        "192.168.0.11",
-        transport=upnp_tv(None),
-        discover=discover("http://192.168.0.11:9197/dmr"),
-    )
+    reader = SamsungVolume("192.168.0.11", transport=upnp_tv(None), discover=discover())
     assert await reader.read() is None
-    # O serviço existe: uma falha de leitura não o dá como ausente.
-    assert reader.available is True
+    # Uma falha de leitura não é veredito: a TV tem o serviço, mas ele não devolveu o nível.
+    assert reader.available is None
+
+
+async def test_samsung_volume_diagnosis_reports_every_path_without_sending_keys() -> None:
+    reader = SamsungVolume(
+        "192.168.0.11", transport=upnp_tv(55), discover=discover("http://192.168.0.11:9197/dmr")
+    )
+    attempts = await reader.diagnose()
+    assert [(a.method, a.ok) for a in attempts] == [
+        (volume_module.METHOD_DESCRIPTION, True),
+        (volume_module.METHOD_DIRECT, False),
+        (volume_module.METHOD_SSDP, False),
+    ]
+    assert "55" in attempts[0].detail
+    assert all("192.168" not in a.detail for a in attempts)
+
+    dead = SamsungVolume(
+        "192.168.0.11", transport=upnp_tv(None, renderer=False), discover=discover()
+    )
+    assert not any(a.ok for a in await dead.diagnose())
 
 
 async def test_the_log_never_carries_the_internal_address_of_the_tv(
@@ -331,10 +466,14 @@ async def test_the_log_never_carries_the_internal_address_of_the_tv(
         transport=upnp_tv(37),
         discover=discover("http://192.168.0.11:9080", "http://192.168.0.11:9197/dmr"),
     )
+    failing = SamsungVolume(
+        "192.168.0.11", transport=upnp_tv(None, renderer=False), discover=discover()
+    )
     with caplog.at_level(logging.DEBUG, logger=volume_module.__name__):
         assert await reader.read() == 37
+        assert await failing.read() is None
     messages = [record.getMessage() for record in caplog.records]
-    assert any("serviço UPnP encontrado" in message for message in messages)
+    assert any("caminho" in message and "respondeu" in message for message in messages)
     for leaked in ("192.168", "9197", "9080", "/dmr", "RenderingControl1", "http"):
         assert not any(leaked in message for message in messages), leaked
 
@@ -509,11 +648,14 @@ async def test_samsung_does_not_poll_the_volume() -> None:
 
 
 async def test_samsung_without_the_volume_service_costs_no_traffic_per_key() -> None:
-    reader = SamsungVolume("192.168.0.11", discover=lambda _host: [])
+    reader = SamsungVolume(
+        "192.168.0.11", transport=upnp_tv(None, renderer=False), discover=lambda _host: []
+    )
     manager = samsung_with_volume(FakeSamsungClient(), reader)
     await manager.wake()
     await manager.settle()
-    assert reader.available is False
+    # A primeira falha não é veredito, mas abre a espera: as teclas logo depois não vão à rede.
+    assert reader.available is None
     assert manager.snapshot().volume is None
     searches: list[str] = []
 
@@ -722,6 +864,10 @@ def test_samsung_configuration_selects_its_capabilities_without_adb(
     assert envelopes.hello("0.1.0", tuple(setup.capabilities))["body"]["capabilities"] == expected
     assert "tv.key.v3" in setup.handlers
     assert "tv.cleanup.v1" in setup.handlers
+    assert "tv.cleanup.config.v1" not in setup.handlers  # sem limpeza automática na Samsung
+    assert "tv.cleanup.automatic.v1" not in setup.capabilities
+    assert "tv.light-settings.v1" not in setup.capabilities
+    assert "tv.focus-closes-background.v1" not in setup.capabilities  # fechar apps é só Android
     assert setup.text is None
     assert "token-secreto" not in caplog.text
 

@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { TvStore } from '../data/tv-store';
-import { FakeTvStore, createFakeTvStore } from '../tv-test-kit';
+import { FakeTvStore, createFakeTvStore, makeTv } from '../tv-test-kit';
 import { PowerSheet } from './power-sheet';
 
 function clickBackdrop(dialog: HTMLDialogElement): void {
@@ -46,6 +46,16 @@ describe('PowerSheet', () => {
     expect(dialog.getAttribute('aria-labelledby')).toBe('power-title');
   });
 
+  it('names the TV that will receive the shutdown only when there is more than one', () => {
+    store.tvs.set([makeTv('sala', { name: 'Sala' })]);
+    fixture.detectChanges();
+    expect(root.querySelector('.target')).toBeNull();
+
+    store.tvs.set([makeTv('sala', { name: 'Sala' }), makeTv('quarto', { name: 'Quarto' })]);
+    fixture.detectChanges();
+    expect(root.querySelector('.target')?.textContent?.trim()).toBe('Para: Sala');
+  });
+
   it('explains the reading only for an agent that does it, and describes the dialog with it', async () => {
     const dialog = root.querySelector('dialog')!;
     expect(root.textContent).not.toContain('O agente só desliga se a TV estiver ligada');
@@ -61,30 +71,85 @@ describe('PowerSheet', () => {
     expect(dialog.getAttribute('aria-describedby')).toBe('power-text power-checked');
   });
 
-  it('keeps the power confirmation at the end of the sheet', () => {
-    expect(
-      buttons()
-        .slice(-2)
-        .map((b) => b.textContent?.trim()),
-    ).toEqual(['Cancelar', 'Desligar']);
+  it('puts the one destructive action first and big, then the schedule, and Cancelar last', () => {
+    const order = buttons().map((b) => b.textContent?.trim());
+    expect(order[0]).toBe('Desligar');
+    expect(order.at(-1)).toBe('Cancelar');
+    expect(root.querySelector('button.danger.now')).not.toBeNull();
+    // A ação destrutiva é a única vermelha, e a folha começa com o foco em Cancelar, nunca nela.
+    expect(root.querySelectorAll('button.danger')).toHaveLength(1);
+    expect(document.activeElement).toBe(named('Cancelar'));
   });
 
-  describe('Agendar desligamento', () => {
+  describe('Agendar', () => {
     const row = () => root.querySelector<HTMLElement>('.schedule')!;
+    const chip = (name: string) =>
+      [...row().querySelectorAll<HTMLButtonElement>('.chip')].find(
+        (b) => b.textContent?.trim() === name,
+      )!;
+    const confirm = () => row().querySelector<HTMLButtonElement>('.schedule-confirm')!;
 
     it('shows why scheduling is unavailable without a safe online agent', () => {
-      expect(row().textContent).toContain('Agendar desligamento');
+      expect(row().textContent).toContain('Agendar');
       expect(row().textContent).toContain('Agendamento disponível com TV configurada');
       expect(row().querySelector('button, input')).toBeNull();
     });
 
-    it('confirms the local date and time before saving', async () => {
+    it('offers quick times as chips: 15 min, 30 min, 1 h, 2 h and Personalizar', () => {
       store.canSchedulePowerOff.set(true);
       fixture.detectChanges();
-      named('30 min').click();
+      expect([...row().querySelectorAll('.chip')].map((b) => b.textContent?.trim())).toEqual([
+        '15 min',
+        '30 min',
+        '1 h',
+        '2 h',
+        'Personalizar',
+      ]);
+      expect(row().querySelector('input[type="time"]')).toBeNull();
+    });
+
+    it('a chip marks itself as chosen and offers the time it would shut down at', () => {
+      store.canSchedulePowerOff.set(true);
       fixture.detectChanges();
-      expect(row().textContent).toContain('Desligar em');
-      named('Confirmar agendamento').click();
+      expect(confirm()).toBeNull();
+      chip('15 min').click();
+      fixture.detectChanges();
+      expect(chip('15 min').getAttribute('aria-pressed')).toBe('true');
+      expect(chip('30 min').getAttribute('aria-pressed')).toBe('false');
+      const clock = new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short' }).format(
+        new Date(Date.now() + 15 * 60_000),
+      );
+      expect(confirm().textContent?.trim()).toBe('Agendar para ' + clock);
+    });
+
+    it('each chip schedules its own number of minutes, from now', async () => {
+      store.canSchedulePowerOff.set(true);
+      fixture.detectChanges();
+      for (const [name, minutes] of [
+        ['15 min', 15],
+        ['30 min', 30],
+        ['1 h', 60],
+        ['2 h', 120],
+      ] as const) {
+        store.savePowerSchedule.mockClear();
+        const before = Date.now();
+        chip(name).click();
+        fixture.detectChanges();
+        confirm().click();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        const [dueAtUtc] = store.savePowerSchedule.mock.calls[0];
+        const delta = new Date(dueAtUtc).getTime() - before;
+        expect(Math.abs(delta - minutes * 60_000), name).toBeLessThan(2_000);
+      }
+    });
+
+    it('saves with the local zone and without sending POWER or closing the sheet', async () => {
+      store.canSchedulePowerOff.set(true);
+      fixture.detectChanges();
+      chip('30 min').click();
+      fixture.detectChanges();
+      confirm().click();
       await fixture.whenStable();
       expect(store.savePowerSchedule).toHaveBeenCalledOnce();
       const [dueAtUtc, zone] = store.savePowerSchedule.mock.calls[0];
@@ -94,10 +159,25 @@ describe('PowerSheet', () => {
       expect(store.powerOff).not.toHaveBeenCalled();
     });
 
-    it('shows the active schedule and cancels it without sending POWER', async () => {
+    it('Personalizar reveals the time of the day and proposes it', () => {
+      store.canSchedulePowerOff.set(true);
+      fixture.detectChanges();
+      chip('Personalizar').click();
+      fixture.detectChanges();
+      expect(chip('Personalizar').getAttribute('aria-pressed')).toBe('true');
+      const input = row().querySelector<HTMLInputElement>('input[type="time"]')!;
+      expect(input.value).toBe('22:00');
+      expect(confirm()).not.toBeNull();
+      input.value = '23:15';
+      input.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      expect(confirm().textContent).toContain('23:15');
+    });
+
+    it('with a schedule shows "Desliga às HH:MM" and the time left, and cancels it without sending POWER', async () => {
       store.powerSchedule.set({
         id: 'schedule',
-        dueAtUtc: new Date(Date.now() + 3600_000).toISOString(),
+        dueAtUtc: new Date(Date.now() + 65 * 60_000).toISOString(),
         timeZone: 'America/Sao_Paulo',
         status: 'pending',
         result: null,
@@ -105,10 +185,34 @@ describe('PowerSheet', () => {
         version: 2,
       });
       fixture.detectChanges();
-      named('Cancelar agendamento').click();
+      const active = row().querySelector('.schedule-active')!;
+      expect(active.textContent).toMatch(/Desliga às \d{2}:\d{2}/);
+      expect(active.querySelector('.left')?.textContent).toMatch(/^em 1 h [56] min$/);
+      named('Cancelar Agendamento').click();
       await fixture.whenStable();
       expect(store.cancelPowerSchedule).toHaveBeenCalledOnce();
       expect(store.powerOff).not.toHaveBeenCalled();
+    });
+
+    it('says the time left in minutes, in whole hours, and nothing once it has passed', () => {
+      const due = (minutes: number) => ({
+        id: 'schedule',
+        dueAtUtc: new Date(Date.now() + minutes * 60_000 - 1_000).toISOString(),
+        timeZone: 'America/Sao_Paulo',
+        status: 'pending' as const,
+        result: null,
+        reason: null,
+        version: 2,
+      });
+      store.powerSchedule.set(due(25));
+      fixture.detectChanges();
+      expect(row().querySelector('.left')?.textContent).toBe('em 25 min');
+      store.powerSchedule.set(due(120));
+      fixture.detectChanges();
+      expect(row().querySelector('.left')?.textContent).toBe('em 2 h');
+      store.powerSchedule.set({ ...due(0), dueAtUtc: new Date(Date.now() - 60_000).toISOString() });
+      fixture.detectChanges();
+      expect(row().querySelector('.left')).toBeNull();
     });
 
     it('shows the last dispatch result discreetly', () => {
@@ -125,9 +229,11 @@ describe('PowerSheet', () => {
       expect(root.querySelector('.schedule-result')?.textContent).toContain('Estado incerto');
     });
 
-    it('sits above the buttons, so the confirmation stays the last thing the eye reaches', () => {
-      const footer = root.querySelector('.footer')!;
-      expect(row().compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    it('sits between the main action and Cancelar, so the main action stays the first thing the eye reaches', () => {
+      const now = root.querySelector('.now')!;
+      const close = root.querySelector('.close')!;
+      expect(now.compareDocumentPosition(row()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(row().compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
   });
 

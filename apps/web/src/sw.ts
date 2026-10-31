@@ -10,6 +10,7 @@ import { NavigationRoute, registerRoute } from 'workbox-routing';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheFirst, NetworkOnly } from 'workbox-strategies';
 import { SCOPED_MODULE_SLUGS } from './app/core/modules/module-slugs';
+import { EXERCISE_ART_CACHE } from './app/modules/training/illustrations/illustration-cache';
 
 declare const self: ServiceWorkerGlobalScope & {
   // O build troca este marcador pela lista de arquivos da casca (com hash de conteúdo).
@@ -41,7 +42,7 @@ registerRoute(
 registerRoute(
   ({ url }) => url.origin === self.location.origin && url.pathname.startsWith('/exercise-art/'),
   new CacheFirst({
-    cacheName: 'exercise-art',
+    cacheName: EXERCISE_ART_CACHE,
     plugins: [new ExpirationPlugin({ maxEntries: 400, maxAgeSeconds: 90 * 24 * 60 * 60 })],
   }),
 );

@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { localExercise, setupTraining } from '../sync/training-test-kit';
 import { CatalogRepository } from './catalog-repository';
-import { CatalogStore } from './catalog-store';
+import { CatalogStore, READ_TIMEOUT_MS } from './catalog-store';
 import { CatalogWriter } from './catalog-writer';
 
 /** Os efeitos só rodam quando o Angular os executa; o teste faz isso a cada tentativa. */
@@ -115,5 +115,66 @@ describe('CatalogStore', () => {
     await slow;
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(store.results().map((row) => row.name)).toEqual(['Rosca direta']);
+  });
+
+  it('leaves the skeleton with the failed flag when the local database fails, and recovers on retry', async () => {
+    const { store, repository } = await setup();
+    const real = repository.search.bind(repository);
+    vi.spyOn(repository, 'search').mockRejectedValueOnce(new Error('indexeddb unavailable'));
+
+    await eventually(() => expect(store.ready()).toBe(true));
+    expect(store.results()).toEqual([]);
+    expect(store.total()).toBe(0);
+    expect(store.failed()).toBe(true);
+
+    vi.spyOn(repository, 'search').mockImplementation(real);
+    store.setQuery({ text: 'supino' });
+    await eventually(() => expect(store.results().map((row) => row.name)).toEqual(['Supino reto']));
+    // A falha não gravou o total: a releitura o conta de novo.
+    expect(store.total()).toBe(3);
+    expect(store.failed()).toBe(false);
+  });
+
+  it('turns a read that never answers into the failed state, and retry reads again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { store, repository } = await setup();
+      const real = repository.search.bind(repository);
+      vi.spyOn(repository, 'search').mockImplementationOnce(
+        () => new Promise<never>(() => undefined),
+      );
+      TestBed.tick();
+      expect(store.ready()).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(READ_TIMEOUT_MS + 1);
+      expect(store.ready()).toBe(true);
+      expect(store.failed()).toBe(true);
+
+      vi.spyOn(repository, 'search').mockImplementation(real);
+      store.retry();
+      await vi.waitFor(() => expect(store.failed()).toBe(false));
+      expect(store.results()).toHaveLength(3);
+      expect(store.total()).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('counts the whole catalog once per write, not once per filter change', async () => {
+    const { store, repository } = await setup();
+    await eventually(() => expect(store.ready()).toBe(true));
+    const count = vi.spyOn(repository, 'count');
+
+    store.setQuery({ text: 'supino' });
+    await eventually(() => expect(store.results()).toHaveLength(1));
+    store.setQuery({ text: 'rosca' });
+    await eventually(() =>
+      expect(store.results().map((row) => row.name)).toEqual(['Rosca direta']),
+    );
+    expect(count).not.toHaveBeenCalled();
+
+    await repository.applyRemote([localExercise('d', { name: 'Elevação pélvica' })]);
+    await eventually(() => expect(store.total()).toBe(4));
+    expect(count).toHaveBeenCalledTimes(1);
   });
 });

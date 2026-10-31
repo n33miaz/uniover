@@ -2,10 +2,12 @@ import { Component, computed, effect, inject, input, signal, untracked } from '@
 import { AuthApi, LoginSession } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { SessionState } from '../../core/session/session-state';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 
 /** Sessões do dono ou da pessoa escolhida. O servidor decide a propriedade de cada família. */
 @Component({
   selector: 'app-sessions-section',
+  imports: [LoadingSkeleton],
   templateUrl: './sessions-section.html',
   styleUrl: './sessions-section.css',
 })
@@ -47,7 +49,7 @@ export class SessionsSection {
     const name = this.guestName();
     return name
       ? $localize`:@@settings.sessions.guest-title:Sessões de ${name}:name:`
-      : $localize`:@@settings.sessions.title:Onde você está conectado`;
+      : $localize`:@@settings.sessions.title:Sessões de Acesso`;
   }
 
   protected device(item: LoginSession): string {

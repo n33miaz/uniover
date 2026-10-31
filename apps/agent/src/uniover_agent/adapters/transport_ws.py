@@ -15,13 +15,21 @@ from websockets.exceptions import (
 )
 from websockets.frames import Close
 
-from uniover_agent.ports import ConnectionReplaced, CredentialRejected, TransportError
+from uniover_agent.ports import (
+    ConnectionReplaced,
+    CredentialRejected,
+    ServerRestarting,
+    TransportError,
+)
 
 _log = logging.getLogger(__name__)
 
 # Igual ao limite do servidor: mensagem maior fecha a conexão com 1009.
 MAX_MESSAGE_BYTES: Final = 64 * 1024
 PING_INTERVAL_SECONDS: Final = 20.0
+# Quanto esperar o pong antes de dar a conexão por morta. O padrão da biblioteca (20 s) derrubava
+# o canal com 1011 por um soluço do PC ou da rede; 60 s ainda detecta conexão morta a tempo.
+PING_TIMEOUT_SECONDS: Final = 60.0
 # Acordar a API dormindo (Render) pode passar de 4 minutos: a abertura espera até 5.
 OPEN_TIMEOUT_SECONDS: Final = 300.0
 
@@ -32,6 +40,8 @@ _REPLACED_CLOSE_CODE: Final = 4409
 # Códigos de aplicação que a API usa para recusa de credencial depois do upgrade.
 _CREDENTIAL_CLOSE_CODES: Final = frozenset({4401, 4403})
 _CREDENTIAL_STATUS: Final = frozenset({401, 403})
+# 1001 (indo embora) e 1012 (reinício do serviço): o servidor está trocando de instância.
+_RESTART_CLOSE_CODES: Final = frozenset({1001, 1012})
 
 
 def build_ws_url(api_url: str, agent_id: str) -> str:
@@ -51,6 +61,8 @@ def _close_outcome(close: Close | None) -> Exception | None:
         return ConnectionReplaced("outra conexão do mesmo agente assumiu")
     if reason == _REVOKED_REASON or close.code in _CREDENTIAL_CLOSE_CODES:
         return CredentialRejected("o servidor encerrou por revogação da credencial")
+    if close.code in _RESTART_CLOSE_CODES:
+        return ServerRestarting(f"código {close.code}")
     return None
 
 
@@ -61,7 +73,7 @@ class WebSocketTransport:
     `Authorization` do upgrade: nunca em URL, log ou mensagem de erro.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - opções do canal, todas com padrão
         self,
         url: str,
         token_provider: Callable[[], str | None],
@@ -69,6 +81,7 @@ class WebSocketTransport:
         user_agent: str = "uniover-agent",
         open_timeout: float = OPEN_TIMEOUT_SECONDS,
         ping_interval: float = PING_INTERVAL_SECONDS,
+        ping_timeout: float = PING_TIMEOUT_SECONDS,
     ) -> None:
         if url.startswith("ws://"):
             _log.warning("canal sem criptografia (ws://); só para desenvolvimento")
@@ -81,6 +94,7 @@ class WebSocketTransport:
         self._user_agent = user_agent
         self._open_timeout = open_timeout
         self._ping_interval = ping_interval
+        self._ping_timeout = ping_timeout
         self._ws: ClientConnection | None = None
 
     @property
@@ -97,6 +111,7 @@ class WebSocketTransport:
                 additional_headers={"Authorization": f"Bearer {token}"},
                 user_agent_header=self._user_agent,
                 ping_interval=self._ping_interval,
+                ping_timeout=self._ping_timeout,
                 max_size=MAX_MESSAGE_BYTES,
                 open_timeout=self._open_timeout,
             )
@@ -131,8 +146,12 @@ class WebSocketTransport:
             outcome = _close_outcome(exc.rcvd)
             if outcome is not None:
                 raise outcome from None
-            code = exc.rcvd.code if exc.rcvd else exc.sent.code if exc.sent else None
-            raise TransportError(f"fechada pelo servidor (código {code})") from None
+            if exc.rcvd is None:
+                # Nenhum quadro de fechamento veio: ou a conexão sumiu (proxy, rede) ou fomos nós,
+                # por falta de pong (1011 enviado). Não é "o servidor fechou".
+                sent = f", enviado {exc.sent.code}" if exc.sent else ""
+                raise TransportError(f"conexão perdida sem aviso do servidor{sent}") from None
+            raise TransportError(f"fechada pelo servidor (código {exc.rcvd.code})") from None
         # Fechamento limpo: ainda assim o motivo pode ser `replaced` ou revogação.
         outcome = _close_outcome(ws.protocol.close_rcvd)
         if outcome is not None:

@@ -36,6 +36,19 @@ export interface TvPowerScheduleResponse {
   last: TvPowerSchedule | null;
 }
 
+export interface TvCleanupReport {
+  kind: string;
+  trigger: string;
+  startedAt: string;
+  durationMs: number;
+  memoryBeforeMb: number | null;
+  memoryAfterMb: number | null;
+  freedMb: number | null;
+  closedApps: number;
+  result: string;
+  reason: string | null;
+}
+
 /** Caminho do fluxo de eventos (o cookie de bilhete do `StreamService` é a credencial, nunca um token na URL). */
 export const TV_EVENTS_PATH = `${BASE}/events`;
 
@@ -173,11 +186,17 @@ export class TvApi {
   }
 
   /**
-   * Fecha os apps abertos na TV e libera memória, sem derrubar o controle. Leva alguns segundos (o servidor espera o
-   * agente por até 30 s), e devolve o que o agente relatou.
+   * Limpa a TV: alivia a memória e, só com o interruptor da TV ligado, fecha apps em segundo plano; não derruba o
+   * controle. Leva alguns segundos (o servidor espera o agente por até 30 s), e devolve o que o agente relatou.
    */
   async cleanup(): Promise<TvCleanupResult> {
     return firstValueFrom(this.http.post<TvCleanupResult>(`${BASE}/cleanup`, null, this.target()));
+  }
+
+  latestCleanup(): Promise<TvCleanupReport | null> {
+    return firstValueFrom(
+      this.http.get<TvCleanupReport | null>(`${BASE}/cleanup/latest`, this.target()),
+    );
   }
 
   async launch(id: string): Promise<void> {

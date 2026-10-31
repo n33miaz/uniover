@@ -62,6 +62,39 @@ describe('AppsPanel', () => {
     expect(launcher(1).querySelector('app-tv-app-icon')).not.toBeNull();
   });
 
+  it('shows the most recent cleanup in a short sentence', async () => {
+    store.lastCleanup.set({
+      at: new Date('2026-10-27T16:05:00'),
+      freedMb: 120,
+      result: 'completed',
+      reason: null,
+    });
+    await render();
+    expect(root.textContent).toContain('Limpeza feita às 16:05, liberou 120 MB.');
+  });
+
+  it('says a skipped cleanup was skipped because the TV was in use, or why otherwise', async () => {
+    store.lastCleanup.set({
+      at: new Date('2026-10-27T16:05:00'),
+      freedMb: null,
+      result: 'skipped',
+      reason: 'media-in-use',
+    });
+    await render();
+    expect(root.textContent).toContain('Limpeza pulada: TV em uso.');
+  });
+
+  it('names the model reason when the cleanup was skipped on a Samsung', async () => {
+    store.lastCleanup.set({
+      at: new Date('2026-10-27T16:05:00'),
+      freedMb: null,
+      result: 'skipped',
+      reason: 'model-unconfirmed',
+    });
+    await render();
+    expect(root.textContent).toContain('Limpeza pulada: modelo não confirmado.');
+  });
+
   it('names an app by the owner name, then by the name the agent publishes, then "Atalho n"', async () => {
     store.shortcuts.set([
       makeShortcut(1, { customLabel: 'Sala', tvLabel: 'YouTube' }),
@@ -930,11 +963,39 @@ describe('AppsPanel', () => {
     });
   });
 
-  it('says it is loading before the first list arrives', async () => {
-    store.shortcuts.set(null);
-    await render();
-    expect(root.textContent).toContain('Carregando os apps');
-    expect(root.querySelector('.empty')).toBeNull();
+  describe('before the first list arrives', () => {
+    it('draws nothing at first (a fast list does not flash), with the text for the screen reader already there', async () => {
+      store.shortcuts.set(null);
+      await render();
+      expect(root.querySelector('.loading')).not.toBeNull();
+      expect(root.querySelector('.loading .sr')?.textContent?.trim()).toBe('Carregando os apps…');
+      expect(root.querySelector('.loading-bar')).toBeNull();
+      expect(root.querySelector('.empty')).toBeNull();
+    });
+
+    it('draws the search bar and the grid of tiles, in the real shapes, once the store says the wait is long', async () => {
+      store.shortcuts.set(null);
+      store.shortcutsLoading.set(true);
+      await render();
+      expect(root.querySelector('.loading-bar.ui-skeleton')).not.toBeNull();
+      expect(root.querySelectorAll('.loading-tiles span.ui-skeleton')).toHaveLength(4);
+      expect(root.querySelector('.empty')).toBeNull();
+    });
+
+    it('never keeps shimmering: past the deadline it says so and offers "Tentar de Novo", which reads again', async () => {
+      store.shortcuts.set(null);
+      store.shortcutsFailed.set(true);
+      await render();
+      expect(root.querySelector('.loading')).toBeNull();
+      expect(root.querySelector('.ui-skeleton')).toBeNull();
+      expect(root.querySelector('.empty-title')?.textContent?.trim()).toBe(
+        'Não Foi Possível Carregar os Apps',
+      );
+      const retry = buttonByText('Tentar de Novo');
+      retry.click();
+      await render();
+      expect(store.refresh).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('has no grid or list switch any more: it is always a grid', () => {

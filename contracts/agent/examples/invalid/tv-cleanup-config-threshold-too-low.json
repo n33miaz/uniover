@@ -1,0 +1,2 @@
+{ "v": 1, "id": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea2", "type": "tv.cleanup.config.v1", "source": "api", "target": "agent:pc-casa",
+  "ts": "2026-10-27T14:00:00Z", "correlationId": null, "body": {"lightEnabled":true,"deepEnabled":true,"deepThresholdMb":10,"closeBackgroundApps":false} }

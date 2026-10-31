@@ -45,8 +45,9 @@ describe('StatusIndicator', () => {
     it.each<[TvStatus, string, string]>([
       ['hot', 'connected', 'Conectada'],
       ['hibernating', 'sleeping', 'Dormindo'],
-      ['loading', 'connecting', 'Conectando'],
-      ['waking', 'connecting', 'Servidor acordando'],
+      ['loading', 'connecting', 'Reconectando…'],
+      ['unresponsive', 'no-reply', 'Sem Resposta'],
+      ['pc-off', 'pc-off', 'PC Desligado'],
       ['agent-off', 'agent-off', 'Agente desligado'],
       ['offline', 'offline', 'Sem rede'],
       ['unconfigured', 'attention', 'Sem agente configurado'],
@@ -54,7 +55,7 @@ describe('StatusIndicator', () => {
       await setStatus(status);
       expect(phase()).toBe(expectedPhase);
       expect(trigger().getAttribute('aria-label')).toBe(`Estado do controle: ${title}`);
-      expect(root.querySelector('app-status-dot svg')?.getAttribute('data-phase')).toBe(
+      expect(root.querySelector('app-status-dot [data-phase]')?.getAttribute('data-phase')).toBe(
         expectedPhase,
       );
     });
@@ -88,6 +89,25 @@ describe('StatusIndicator', () => {
       expect(panel()?.querySelector('.time')?.textContent).toBe('Atualizado às 14:02');
       expect(panel()?.getAttribute('aria-labelledby')).toBe(panel()?.querySelector('strong')?.id);
       expect(panel()?.querySelector('button')).toBeNull();
+    });
+
+    it('lists the known remote service problems only when the repair failed', async () => {
+      await toggle();
+      expect(panel()?.querySelector('.hints')).toBeNull();
+      trigger().click();
+      store.watchdog.set({
+        kind: 'repair_failed',
+        severity: 'error',
+        detail: '',
+        attempts: 3,
+        at: '2026-10-19T14:02:00Z',
+      });
+      await render();
+      await toggle();
+      const titles = [...(panel()?.querySelectorAll('.hints li strong') ?? [])].map(
+        (item) => item.textContent,
+      );
+      expect(titles).toEqual(['Serviço Desatualizado', 'Serviços Parados', 'Caixa de TV']);
     });
 
     it('does not show a time when none was seen', async () => {
@@ -229,12 +249,12 @@ describe('StatusIndicator', () => {
         expect(panel()?.textContent).toContain('O primeiro toque acorda.');
       });
 
-      it('"Tentar de novo" stays for who only views: reading the state is allowed', async () => {
+      it('"Tentar de Novo" stays for who only views: reading the state is allowed', async () => {
         grant('module:tv');
         await setStatus('agent-off');
         await toggle();
         const action = panel()!.querySelector<HTMLButtonElement>('.action')!;
-        expect(action.textContent?.trim()).toBe('Tentar de novo');
+        expect(action.textContent?.trim()).toBe('Tentar de Novo');
         action.click();
         await render();
         expect(store.refresh).toHaveBeenCalledTimes(1);
@@ -248,16 +268,52 @@ describe('StatusIndicator', () => {
       });
     });
 
-    it('without the agent it offers "Tentar de novo", which reads the state again and then tries to wake', async () => {
+    it('without the agent it offers "Tentar de Novo", which reads the state again and then tries to wake', async () => {
       await setStatus('agent-off');
       await toggle();
       const action = panel()!.querySelector<HTMLButtonElement>('.action')!;
-      expect(action.textContent?.trim()).toBe('Tentar de novo');
+      expect(action.textContent?.trim()).toBe('Tentar de Novo');
       action.click();
       await render();
       expect(store.refresh).toHaveBeenCalledTimes(1);
       expect(store.wake).toHaveBeenCalledTimes(1);
       expect(panel()).toBeNull();
+    });
+
+    it('while it is not sure yet the dot is green and says so, with nothing to retry', async () => {
+      await setStatus('loading');
+      await toggle();
+      expect(phase()).toBe('connecting');
+      expect(panel()?.querySelector('.title strong')?.textContent).toBe('Reconectando…');
+      expect(panel()?.textContent).toContain('Os botões já funcionam');
+      expect(panel()?.querySelector('.action')).toBeNull();
+    });
+
+    it('with the PC off the dot is the sleeping-monitor icon and the panel names since when', async () => {
+      store.agentOffText.set('PC Desligado desde 28/10 19:24');
+      await setStatus('pc-off');
+      expect(root.querySelector('.trigger app-status-dot app-pc-off-icon')).not.toBeNull();
+      expect(root.querySelector('.trigger app-status-dot svg.dot')).toBeNull();
+      await toggle();
+      expect(panel()?.querySelector('.title strong')?.textContent).toBe(
+        'PC Desligado desde 28/10 19:24',
+      );
+      expect(panel()?.querySelector('.action')?.textContent?.trim()).toBe('Tentar de Novo');
+    });
+
+    it('only the PC-off state changes the shape of the dot: the others stay plain dots', async () => {
+      for (const status of ['hot', 'loading', 'unresponsive', 'agent-off', 'offline'] as const) {
+        await setStatus(status);
+        expect(root.querySelector('.trigger app-pc-off-icon'), status).toBeNull();
+        expect(root.querySelector('.trigger app-status-dot svg.dot'), status).not.toBeNull();
+      }
+    });
+
+    it('a read with no answer is "Sem Resposta" and offers to try again', async () => {
+      await setStatus('unresponsive');
+      await toggle();
+      expect(panel()?.querySelector('.title strong')?.textContent).toBe('Sem Resposta');
+      expect(panel()?.querySelector('.action')?.textContent?.trim()).toBe('Tentar de Novo');
     });
 
     it('blocks the action while it works, so a double touch asks once', async () => {
@@ -315,7 +371,8 @@ describe('StatusIndicator', () => {
       'hot',
       'hibernating',
       'loading',
-      'waking',
+      'unresponsive',
+      'pc-off',
       'agent-off',
       'offline',
       'unconfigured',

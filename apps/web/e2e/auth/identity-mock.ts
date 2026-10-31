@@ -322,6 +322,23 @@ export async function mockIdentityApi(
     };
   };
 
+  await context.route('**/health/version', async (route) => {
+    const request = route.request();
+    const method = request.method();
+    const headers = request.headers();
+    mock.requests.push({
+      method,
+      url: request.url(),
+      path: '/health/version',
+      headers,
+      body: null,
+    });
+
+    if (mock.offline) return route.abort('internetdisconnected');
+    if (method !== 'GET') return problem(route, 405, 'method-not-allowed', 'Método não aceito.');
+    return json(route, 200, { commit: 'a'.repeat(40), version: '0.5.0-teste' });
+  });
+
   await context.route('**/api/v1/identity/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -587,6 +604,35 @@ export async function mockIdentityApi(
           permissions: i.permissions ?? [...TV_CONTROL_ONLY],
         })),
       );
+    }
+    // Uso por pessoa (só contagens): números fixos, para os testes conferirem o que a tela mostra.
+    if (method === 'GET' && path === '/people-usage') {
+      const counts = { last7Days: 12, last30Days: 40 };
+      const workouts = { last7Days: 3, last30Days: 9 };
+      return json(route, 200, [
+        {
+          id: OWNER_ID,
+          displayName: mock.owner.displayName,
+          role: 'owner',
+          disabledAt: null,
+          lastAccessAt: new Date().toISOString(),
+          activeSessions: 1,
+          tvCommands: counts,
+          workouts,
+        },
+        ...mock.guests.map((guest) => ({
+          id: guest.id,
+          displayName: guest.displayName,
+          role: 'guest',
+          disabledAt: guest.disabledAt,
+          lastAccessAt: guest.disabledAt
+            ? null
+            : new Date(Date.now() - 3 * 3_600_000).toISOString(),
+          activeSessions: guest.disabledAt ? 0 : 2,
+          tvCommands: counts,
+          workouts,
+        })),
+      ]);
     }
     if (method === 'GET' && path === '/guests') {
       return json(

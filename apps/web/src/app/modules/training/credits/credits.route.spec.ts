@@ -4,16 +4,20 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from '../../../app.routes';
 import { CreditsPage } from './credits.page';
 
+// Estes dois testes carregam módulos sob demanda (e o segundo, o shell inteiro): com a máquina ocupada pelas outras suítes o
+// primeiro carregamento passava dos 5 s do padrão e o teste falhava só às vezes.
+const LAZY_LOAD_TIMEOUT_MS = 20_000;
+
 describe('credits route', () => {
   const shell = routes.find((route) => route.path === '')!;
   const settings = (shell.children ?? []).find((child) => child.path === 'ajustes')!;
   const children = settings.children ?? [];
 
-  it('is one of the screens of Ajustes, next to the others', () => {
+  it('is one of the screens of Configurações, next to the others', () => {
     expect(children.map((route) => route.path)).toContain('creditos');
   });
 
-  it('is inside the shell, behind the same guard, with its own title and the way back to Ajustes', () => {
+  it('is inside the shell, behind the same guard, with its own title and the way back to Configurações', () => {
     expect(shell.canMatch).toBeDefined();
     const route = children.find((child) => child.path === 'creditos')!;
     const data = route.data as { title: string; back: { link: string } };
@@ -27,18 +31,26 @@ describe('credits route', () => {
     expect(route.canMatch).toHaveLength(1);
   });
 
-  it('lazy-loads the credits page', async () => {
-    const route = children.find((child) => child.path === 'creditos')!;
-    expect(await (route.loadComponent as () => Promise<unknown>)()).toBe(CreditsPage);
-  });
+  it(
+    'lazy-loads the credits page',
+    async () => {
+      const route = children.find((child) => child.path === 'creditos')!;
+      expect(await (route.loadComponent as () => Promise<unknown>)()).toBe(CreditsPage);
+    },
+    LAZY_LOAD_TIMEOUT_MS,
+  );
 
-  it('renders the credits page inside the shell', async () => {
-    TestBed.configureTestingModule({ providers: [provideRouter(routes)] });
-    const harness = await RouterTestingHarness.create();
-    await harness.navigateByUrl('/ajustes/creditos');
-    const root = harness.routeNativeElement as HTMLElement;
-    expect(root.matches('app-shell')).toBe(true);
-    expect(root.querySelector('app-credits-page')).not.toBeNull();
-    expect(root.querySelector('h1')?.textContent).toBe('Créditos');
-  });
+  it(
+    'renders the credits page inside the shell',
+    async () => {
+      TestBed.configureTestingModule({ providers: [provideRouter(routes)] });
+      const harness = await RouterTestingHarness.create();
+      await harness.navigateByUrl('/ajustes/creditos');
+      const root = harness.routeNativeElement as HTMLElement;
+      expect(root.matches('app-shell')).toBe(true);
+      expect(root.querySelector('app-credits-page')).not.toBeNull();
+      expect(root.querySelector('h1')?.textContent).toBe('Créditos');
+    },
+    LAZY_LOAD_TIMEOUT_MS,
+  );
 });

@@ -86,21 +86,29 @@
       <a
         class="ui-btn secondary compact"
         routerLink="/treino/exercicios/mapa"
-        aria-label="Mapa do corpo"
+        aria-label="Mapa do Treino"
         i18n-aria-label="@@training.library.map-label"
       >
         <app-training-glyph name="target" />
-        <span i18n="@@training.library.map">Mapa</span>
+        <span i18n="@@training.library.map">Mapa do Treino</span>
       </a>
     </div>
   </div>
 
   @if (!ready()) {
-    <ul class="ui-group ui-plain skeleton" aria-hidden="true">
-      @for (row of [1, 2, 3, 4]; track row) {
-        <li class="ui-skeleton-row"><span class="ui-skeleton"></span></li>
-      }
-    </ul>
+    <app-training-rows-skeleton [label]="loadingLabel" [rows]="6" [thumb]="true" />
+  } @else if (failed()) {
+    <section class="empty ui-card" aria-labelledby="failed-title">
+      <span class="ui-tile lg"><app-training-glyph name="dumbbell" /></span>
+      <h3 id="failed-title" i18n="@@training.library.read-failed-title">
+        Os Exercícios Não Abriram
+      </h3>
+      <p i18n="@@training.library.read-failed-text">O aparelho não conseguiu ler o catálogo.</p>
+      <button type="button" class="primary ui-btn block" (click)="retryRead()">
+        <app-training-glyph name="refresh" />
+        <span i18n="@@training.library.read-retry">Tentar de Novo</span>
+      </button>
+    </section>
   } @else if (catalogEmpty()) {
     <section class="empty ui-card" aria-labelledby="empty-title">
       <span class="ui-tile lg"><app-training-glyph name="dumbbell" /></span>
@@ -110,7 +118,7 @@
           Os exercícios chegam em instantes e ficam guardados no aparelho.
         </p>
       } @else {
-        <h3 id="empty-title" i18n="@@training.library.empty-title">O catálogo ainda não chegou</h3>
+        <h3 id="empty-title" i18n="@@training.library.empty-title">O Catálogo Ainda Não Chegou</h3>
         @if (online()) {
           <p i18n="@@training.library.empty-online">
             Na primeira abertura o aparelho baixa os exercícios. Depois disso eles funcionam sem
@@ -124,17 +132,17 @@
         }
         <button type="button" class="primary ui-btn block" (click)="retryDownload()">
           <app-training-glyph name="refresh" />
-          <span i18n="@@training.library.retry">Tentar baixar</span>
+          <span i18n="@@training.library.retry">Tentar Baixar</span>
         </button>
       }
     </section>
   } @else if (results().length === 0) {
     <section class="empty ui-card" aria-labelledby="none-title">
-      <h3 id="none-title" i18n="@@training.library.none-title">Nenhum exercício achado</h3>
+      <h3 id="none-title" i18n="@@training.library.none-title">Nenhum Exercício Achado</h3>
       <p i18n="@@training.library.none-text">Tente outra palavra ou tire algum filtro.</p>
       <div class="empty-actions">
         <button type="button" class="secondary ui-btn" (click)="clearFilters()">
-          <span i18n="@@training.library.clear">Limpar filtros</span>
+          <span i18n="@@training.library.clear">Limpar Filtros</span>
         </button>
         @if (text().trim() !== '') {
           <a
@@ -161,7 +169,7 @@
     </ul>
     @if (hidden() > 0) {
       <button type="button" class="more secondary ui-btn block" (click)="showMore()">
-        <span i18n="@@training.library.more">Mostrar mais ({{ hidden() }})</span>
+        <span i18n="@@training.library.more">Mostrar Mais ({{ hidden() }})</span>
       </button>
     }
   }

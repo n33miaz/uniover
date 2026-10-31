@@ -11,6 +11,7 @@ import {
 import { RouterLink } from '@angular/router';
 import { SessionState } from '../../core/session/session-state';
 import { SettingsGlyph } from './settings-glyph';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { SystemApi, TvComputer, TvItem } from './system-api';
 import { TvEditSheet } from './tv-edit-sheet';
 
@@ -36,7 +37,7 @@ interface OpenSheet {
  */
 @Component({
   selector: 'app-system-tv-section',
-  imports: [RouterLink, SettingsGlyph, TvEditSheet],
+  imports: [RouterLink, SettingsGlyph, LoadingSkeleton, TvEditSheet],
   templateUrl: './system-tv-section.html',
   styleUrl: './system-tv-section.css',
 })

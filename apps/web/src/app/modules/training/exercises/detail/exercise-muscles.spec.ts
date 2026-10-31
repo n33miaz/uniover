@@ -49,4 +49,12 @@ describe('ExerciseMuscles', () => {
     fixture.detectChanges();
     expect(captions(fixture.nativeElement)).toEqual(['Costas']);
   });
+
+  it('copies the size of the illustration card only when it sits beside one', () => {
+    const fixture = create(['chest'], ['triceps']);
+    expect(fixture.nativeElement.classList.contains('fill')).toBe(false);
+    fixture.componentRef.setInput('fill', true);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.classList.contains('fill')).toBe(true);
+  });
 });

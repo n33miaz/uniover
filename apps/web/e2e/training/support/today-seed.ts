@@ -34,7 +34,12 @@ export function seedPastWorkout(
   ageMs: number,
   sets: readonly PastSet[],
 ): void {
-  const startedAt = Date.now() - ageMs;
+  // Treino de poucos minutos atrás nunca começa antes de hoje: um teste rodado logo depois da meia-noite semeava o treino no
+  // dia anterior (e, na virada do sábado, na semana anterior) e a tela de Hoje não o contava. Treino de dias atrás fica como está.
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const raw = Date.now() - ageMs;
+  const startedAt = ageMs < DAY ? Math.max(raw, startOfToday.getTime() + 60_000) : raw;
   const at = dotnetInstant(startedAt);
   server.seed('sessions', [
     {
@@ -78,9 +83,8 @@ export function seedPastWorkout(
  * 42,5 kg × 6–8, e a série de 42,5 kg × 8 bate o recorde de carga máxima (antes 40 kg).
  */
 export function seedBenchHistory(server: TrainingServer): void {
-  // Oito dias atrás: sempre cai ANTES da semana de hoje (segunda a domingo). Com poucos dias, a data e as séries (que se
-  // completam minutos depois do início) caíam dentro da semana de hoje de quinta a domingo, e o resumo da semana contava
-  // treino a mais; o teste que passava de segunda a quarta falhava de quinta a domingo.
+  // Oito dias atrás: sempre cai ANTES da semana de hoje (domingo a sábado). Com poucos dias, a data e as séries (que se
+  // completam minutos depois do início) podem cair na semana atual e somar um treino a mais ao resumo.
   seedPastWorkout(
     server,
     1,

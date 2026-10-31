@@ -20,6 +20,7 @@ internal static class TvAuditNormalizer
         TvCommandNames.PowerOff,
         TvCommandNames.PowerSchedule,
         TvCommandNames.Cleanup,
+        TvCommandNames.CleanupSetting,
         TvCommandNames.AppsRefresh,
         TvCommandNames.ShortcutsReorder,
         TvCommandNames.ShortcutUpdate,

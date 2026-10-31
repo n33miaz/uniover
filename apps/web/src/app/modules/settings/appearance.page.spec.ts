@@ -2,7 +2,6 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { AuthApi } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
-import { ModulePrefs, modulePrefsStorageKey } from '../../core/modules/module-prefs';
 import { INSTALL_ENV, InstallHintService } from '../../core/pwa/install-hint.service';
 import { themePreferenceStorageKey } from '../../core/session/appearance.service';
 import { AppearancePage } from './appearance.page';
@@ -33,27 +32,27 @@ describe('AppearancePage', () => {
   }
 
   describe('theme', () => {
-    it('offers automatic (default), light and dark', async () => {
+    it('offers light, dark and automatic (default), in the same order as the quick selector', async () => {
       const { el } = await render();
       const options = Array.from(el.querySelectorAll<HTMLInputElement>('input[name="theme"]'));
-      expect(options.map((o) => o.value)).toEqual(['auto', 'light', 'dark']);
-      expect(options.map((o) => o.checked)).toEqual([true, false, false]);
+      expect(options.map((o) => o.value)).toEqual(['light', 'dark', 'auto']);
+      expect(options.map((o) => o.checked)).toEqual([false, false, true]);
       expect(el.querySelector('#theme-title')?.textContent?.trim()).toBe('Tema');
-      expect(el.querySelector('fieldset legend')?.textContent).toBe('Como o app aparece');
+      expect(el.querySelector('fieldset legend')?.textContent?.trim()).toBe('Como o app aparece');
     });
 
     it('shows a sample of each theme, hidden from readers, next to a short label', async () => {
       const { el } = await render();
       const cards = Array.from(el.querySelectorAll('label.theme'));
       expect(cards.map((c) => c.querySelector('.theme-label')?.textContent?.trim())).toEqual([
-        'Automático',
         'Claro',
         'Escuro',
+        'Automático',
       ]);
       for (const card of cards) {
         expect(card.querySelector('.preview')?.getAttribute('aria-hidden')).toBe('true');
       }
-      expect(el.querySelector('fieldset .hint')?.textContent).toContain('Automático acompanha');
+      expect(el.querySelector('fieldset .hint')).toBeNull();
     });
 
     it('choosing dark saves the preference and applies the theme attribute', async () => {
@@ -67,75 +66,10 @@ describe('AppearancePage', () => {
     });
   });
 
-  describe('modules on the home screen', () => {
-    const rows = (el: HTMLElement) =>
-      Array.from(el.querySelectorAll('#modules-title ~ ul li')).map((li) => ({
-        name: li.querySelector('.module-name')?.textContent?.trim(),
-        chip: li.querySelector('.chip')?.textContent?.trim(),
-        on: li.querySelector<HTMLInputElement>('input')?.checked,
-      }));
-
-    it('lists every module with its real or coming-soon chip and a switch', async () => {
-      const { el } = await render();
-      expect(rows(el)).toEqual([
-        { name: 'TV', chip: 'Disponível', on: true },
-        { name: 'Treino', chip: 'Disponível', on: true },
-        { name: 'Saúde e eventos', chip: 'Em breve', on: true },
-        { name: 'Monitor dos serviços', chip: 'Em breve', on: true },
-        { name: 'Rede da casa', chip: 'Em breve', on: true },
-        { name: 'Backup de fotos', chip: 'Em breve', on: true },
-        { name: 'Avisos', chip: 'Em breve', on: true },
-        { name: 'Controle do PC', chip: 'Em breve', on: true },
-      ]);
-      expect(el.querySelector('input[role="switch"]')).not.toBeNull();
-      expect(el.querySelector('label.module')?.getAttribute('for')).toBe('module-tv');
-    });
-
-    it('turning a module off saves the choice locally and takes it out of the home grid list', async () => {
-      const { fixture, el } = await render();
-      const tv = el.querySelector<HTMLInputElement>('#module-tv')!;
-      tv.checked = false;
-      tv.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-
-      expect(rows(el)[0].on).toBe(false);
-      // A escolha é guardada por conta: a da sessão carregada (`ME`).
-      expect(JSON.parse(localStorage.getItem(modulePrefsStorageKey(ME.id))!)).toContainEqual(
-        expect.objectContaining({ id: 'tv', enabled: false }),
-      );
-      expect(
-        TestBed.inject(ModulePrefs)
-          .visible()
-          .map((w) => w.definition.id),
-      ).toEqual(['training', 'health', 'monitor', 'network', 'backup', 'notifications', 'pc']);
-    });
-
-    it('lets a planned module be turned off and on again from here', async () => {
-      const { fixture, el } = await render();
-      const toggle = (checked: boolean) => {
-        const input = el.querySelector<HTMLInputElement>('#module-network')!;
-        input.checked = checked;
-        input.dispatchEvent(new Event('change'));
-        fixture.detectChanges();
-      };
-      const visible = () =>
-        TestBed.inject(ModulePrefs)
-          .visible()
-          .map((w) => w.definition.id);
-      toggle(false);
-      expect(visible()).not.toContain('network');
-      toggle(true);
-      expect(visible()).toContain('network');
-    });
-
-    it('is not shown to a guest, who has no home screen to arrange', async () => {
-      api.me.mockResolvedValue({ ...ME, role: 'guest' });
-      const { el } = await render();
-      expect(el.querySelector('#modules-title')).toBeNull();
-      expect(el.querySelector('input[role="switch"]')).toBeNull();
-      // O tema continua valendo para todos.
-      expect(el.querySelectorAll('input[name="theme"]')).toHaveLength(3);
-    });
+  it('keeps module visibility out of Appearance, so it has one home for customization', async () => {
+    const { el } = await render();
+    expect(el.querySelector('#modules-title')).toBeNull();
+    expect(el.querySelector('input[role="switch"]')).toBeNull();
   });
 
   describe('shortcut on the home screen', () => {

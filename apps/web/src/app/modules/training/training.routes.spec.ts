@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { collectShellData } from '../../core/layout/route-data';
 import { TrainingSync } from './data/sync/training-sync';
-import { setupScreen } from './shell/screen-test-kit';
+import { eventually, setupScreen } from './shell/screen-test-kit';
 import { TRAINING_ROUTES } from './training.routes';
 
 describe('training routes', () => {
@@ -34,6 +34,9 @@ describe('training routes', () => {
     const paths = children.map((child) => child.path);
     expect(paths).toEqual([
       '',
+      'sessao',
+      'sessao/exercicio',
+      'glossario',
       'exercicios',
       'exercicios/novo',
       'exercicios/mapa',
@@ -98,6 +101,9 @@ describe('training routes', () => {
 
     it.each([
       '/treino/exercicios/novo',
+      '/treino/sessao',
+      '/treino/sessao/exercicio',
+      '/treino/glossario',
       '/treino/exercicios/abc/editar',
       '/treino/rotinas/nova',
       '/treino/rotinas/abc',
@@ -120,8 +126,8 @@ describe('training routes', () => {
       // A rota abre o escopo da conta, e a casca do módulo fica dentro dele.
       expect(el.matches('app-training-account-scope')).toBe(true);
       expect(el.querySelector('app-training-page')).not.toBeNull();
-      expect(el.querySelector('.training-header h1')?.textContent).toBe('UniOver Treino');
-      expect(el.querySelector('.training-header .status')).not.toBeNull();
+      expect(el.querySelector('app-page-top-bar h1')?.textContent).toBe('Treino');
+      expect(el.querySelector('.status')).toBeNull();
       expect(el.querySelector('app-training-today-page')).not.toBeNull();
       expect(start).toHaveBeenCalledTimes(1);
       start.mockRestore();
@@ -143,10 +149,15 @@ describe('training routes', () => {
 
     it('links the Body screen to the local physical assessment history', async () => {
       const { harness } = await navigate('/treino/corpo');
+      // A aba Corpo é o esqueleto até a leitura do banco local terminar.
+      await eventually(harness.fixture, () =>
+        expect(harness.routeNativeElement!.querySelector('app-body-skeleton')).toBeNull(),
+      );
       const link = harness.routeNativeElement!.querySelector<HTMLAnchorElement>(
         'a[routerlink="/treino/corpo/avaliacoes"]',
       );
-      expect(link?.textContent).toContain('Histórico de avaliações físicas');
+      expect(link?.textContent).toContain('Avaliações Físicas');
+      expect(link?.textContent).toContain('Ver Histórico');
       expect(link?.getAttribute('href')).toBe('/treino/corpo/avaliacoes');
       link!.click();
       await harness.fixture.whenStable();

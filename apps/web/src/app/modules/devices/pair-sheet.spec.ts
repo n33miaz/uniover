@@ -269,7 +269,9 @@ describe('PairSheet', () => {
       const { fixture, el, button, type } = await render();
       await type('BCDF2345');
       fixture.detectChanges();
-      expect(el.textContent).toContain('Carregando pessoas');
+      expect(
+        el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+      ).not.toBeNull();
       expect(button('Aprovar').disabled).toBe(true);
 
       finish([]);
@@ -277,6 +279,7 @@ describe('PairSheet', () => {
         fixture.detectChanges();
         expect(button('Aprovar').disabled).toBe(false);
       });
+      expect(el.querySelector('app-loading-skeleton')).toBeNull();
     });
 
     it('shows a short error with Tentar de novo when the list fails, and never approves blind', async () => {
@@ -394,6 +397,6 @@ describe('PairSheet', () => {
     fixture.detectChanges();
     expect(button('Aprovar').disabled).toBe(true);
     expect(button('Recusar código').disabled).toBe(true);
-    expect(el.textContent).toContain('Sem conexão: parear, recusar e revogar precisam de rede.');
+    expect(el.textContent).toContain('Sem conexão: isto precisa de rede.');
   });
 });

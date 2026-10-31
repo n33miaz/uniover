@@ -1,0 +1,23 @@
+Everkinetic (ilustrações de exercícios), versão adaptada para o app
+
+Esta pasta guarda ADAPTAÇÕES de ilustrações do Everkinetic, feitas pelo UniOver. Os originais, sem modificação,
+ficam em ../../assets-third-party/everkinetic/ (ver o NOTICE de lá para origem, autor e commit).
+
+Origem:     https://github.com/everkinetic/data, commit 446bb9a3d0c3beb6b84f7c9d77dfc8af707a2ab6
+Autor:      Greg Priday (criador do Everkinetic) e colaboradores do repositório
+Licença:    Creative Commons Atribuição-CompartilhaIgual 4.0 Internacional (CC BY-SA 4.0).
+            Texto em https://creativecommons.org/licenses/by-sa/4.0/ (o arquivo LICENSE desta pasta é o
+            LICENSE.md do repositório de origem, idêntico byte a byte). Estas adaptações são distribuídas sob a mesma
+            licença, CC BY-SA 4.0.
+
+O que foi alterado (indicação exigida pela licença):
+- Os 10 pares de PNG de src/images-web (20 arquivos NOME-1.png e NOME-2.png) foram convertidos para WebP com perda
+  leve (qualidade 85), com recorte pela caixa do desenho (a mesma para as duas poses do par), centralização sobre
+  fundo branco na proporção 268:275 dos SVG e redução para 536x550 pixels. O desenho em si não foi redesenhado,
+  recolorido nem retocado.
+- Os SVG não foram alterados e não têm adaptação: são publicados a partir dos originais.
+- Os arquivos são gerados por apps/web/scripts/optimize-exercise-art.py a partir dos PNG originais; rodar o script
+  de novo reproduz estes arquivos.
+
+Os arquivos são publicados em /exercise-art/ e recebem o mesmo crédito dos originais. A licença do UniOver não se
+aplica a eles.

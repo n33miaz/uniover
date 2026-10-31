@@ -58,7 +58,12 @@ export class StatusIndicator {
   );
   protected readonly phase = computed(() => indicatorPhase(this.indicator()));
   protected readonly text = computed(() =>
-    indicatorText(this.indicator(), this.store.hibernateMinutes, this.access.control()),
+    indicatorText(
+      this.indicator(),
+      this.store.hibernateMinutes,
+      this.access.control(),
+      this.store.agentOffText(),
+    ),
   );
 
   /**

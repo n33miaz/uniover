@@ -82,7 +82,7 @@ export class ExerciseHistorySheet {
   readonly picked = output<string>();
   readonly closed = output<void>();
 
-  protected readonly heading = $localize`:@@training.progress.pick.title:Outro exercício`;
+  protected readonly heading = $localize`:@@training.progress.pick.title:Outro Exercício`;
   protected readonly cancelLabel = $localize`:@@training.progress.pick.cancel:Cancelar`;
   protected readonly text = signal('');
 

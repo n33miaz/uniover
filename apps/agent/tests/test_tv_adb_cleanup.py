@@ -280,7 +280,7 @@ FORBIDDEN = (
 
 async def test_the_whole_cleanup_runs_exactly_these_adb_commands() -> None:
     runner = full_cleanup_runner()
-    report = await TvCleanup(make(runner), FakeClock()).run()
+    report = await TvCleanup(make(runner), FakeClock(), allow_app_closing=True).run()
     assert runner.calls == [
         CONNECT,
         GET_STATE,
@@ -307,7 +307,7 @@ async def test_the_whole_cleanup_runs_exactly_these_adb_commands() -> None:
 
 async def test_no_forbidden_command_ever_reaches_the_adb() -> None:
     runner = full_cleanup_runner()
-    await TvCleanup(make(runner), FakeClock()).run()
+    await TvCleanup(make(runner), FakeClock(), allow_app_closing=True).run()
     commands = [" ".join(call) for call in runner.calls]
     for call in commands:
         assert not any(word in call for word in FORBIDDEN), call
@@ -316,10 +316,63 @@ async def test_no_forbidden_command_ever_reaches_the_adb() -> None:
     assert all(len(call) == 4 for call in runner.calls if call[2:3] == ("shell",))
 
 
+def trim_memory(package: str) -> str:
+    return f"am send-trim-memory '{package}' RUNNING_CRITICAL"
+
+
+def mutating_app_commands(runner: FakeAdbRunner) -> list[str]:
+    """Comandos que fecham, matam ou alteram app. `pm list packages` só lê a lista: fica de fora."""
+    return [
+        command
+        for command in runner.shell_commands()
+        if command.startswith(("am force-stop", "am kill", "am start", "input keyevent"))
+        or (command.startswith("pm ") and not command.startswith("pm list packages"))
+    ]
+
+
+async def test_with_the_option_off_no_command_stops_kills_or_changes_an_app() -> None:
+    """Regra do dono: apps da TV dele não são tocados. O padrão do `TvCleanup` é desligado."""
+    for trim_only_run in ("manual", "light", "light-without-foreground"):
+        runner = full_cleanup_runner()
+        runner.script[shell(trim_memory("com.cnvs.apptv"))] = ok("")
+        runner.script[shell(trim_memory("com.spotify.tv.android"))] = ok("")
+        cleanup = TvCleanup(make(runner), FakeClock())
+        if trim_only_run == "manual":
+            report = await cleanup.run()
+        elif trim_only_run == "light":
+            report = await cleanup.run_light("com.spotify.tv.android")
+        else:
+            report = await cleanup.run_light(None)
+        assert mutating_app_commands(runner) == [], trim_only_run
+        assert report.closed_apps == 0, trim_only_run
+        assert report.closed_packages == (), trim_only_run
+    # A limpeza manual com a opção desligada ainda alivia a memória, só que sem encerrar nada.
+    runner = full_cleanup_runner()
+    runner.script[shell(trim_memory("com.cnvs.apptv"))] = ok("")
+    runner.script[shell(trim_memory("com.spotify.tv.android"))] = ok("")
+    await TvCleanup(make(runner), FakeClock()).run()
+    assert [c for c in runner.shell_commands() if "send-trim-memory" in c] == [
+        trim_memory("com.cnvs.apptv"),
+        trim_memory("com.spotify.tv.android"),
+    ]
+
+
+async def test_with_the_option_on_the_light_cleanup_still_never_stops_the_foreground_app() -> None:
+    runner = full_cleanup_runner()
+    runner.script[shell(trim_memory("com.cnvs.apptv"))] = ok("")
+    await TvCleanup(make(runner), FakeClock(), allow_app_closing=True).run_light(
+        "com.spotify.tv.android"
+    )
+    commands = runner.shell_commands()
+    assert force_stop("com.cnvs.apptv") in commands
+    assert force_stop("com.spotify.tv.android") not in commands
+    assert HOME_KEY not in commands
+
+
 async def test_a_tv_that_goes_silent_mid_cleanup_stops_the_sequence_there() -> None:
     runner = full_cleanup_runner()
     runner.script[shell(KILL_ALL)] = TimeoutError()
-    report = await TvCleanup(make(runner), FakeClock()).run()
+    report = await TvCleanup(make(runner), FakeClock(), allow_app_closing=True).run()
     assert runner.shell_commands()[-1] == KILL_ALL
     assert report.failed_steps == ("kill-background", "adb-lost")
     assert report.closed_apps == 0
@@ -331,3 +384,191 @@ async def test_a_timeout_in_a_cleanup_command_is_typed() -> None:
     runner.script[shell(MEMORY)] = TimeoutError()
     with pytest.raises(AdbTimeout):
         await make(runner).memory_available_mb()
+
+
+# --- ajustes leves: configurações globais e permissão de segundo plano ----------------------
+
+
+async def test_a_global_animation_setting_is_read_written_and_restored_with_fixed_commands() -> (
+    None
+):
+    runner = authorized()
+    name = "window_animation_scale"
+    runner.script[shell(f"settings get global {name}")] = ok(NOISE + "1.25\r\n")
+    runner.script[shell(f"settings put global {name} 0.5")] = ok("")
+    runner.script[shell(f"settings put global {name} 1.25")] = ok("")
+    runner.script[shell(f"settings delete global {name}")] = ok("Deleted 1 rows\r\n")
+    tv = make(runner)
+
+    assert await tv.global_setting(name) == "1.25"
+    await tv.put_global_setting(name, "0.5")
+    await tv.restore_global_setting(name, "1.25")
+    await tv.restore_global_setting(name, None)
+
+    assert runner.calls[-3:] == [
+        ("-s", SERIAL, "shell", f"settings put global {name} 0.5"),
+        ("-s", SERIAL, "shell", f"settings put global {name} 1.25"),
+        ("-s", SERIAL, "shell", f"settings delete global {name}"),
+    ]
+
+
+@pytest.mark.parametrize("original", ["1.25", "0", "0.0", "2", "10.5"])
+async def test_any_decimal_original_can_be_restored(original: str) -> None:
+    runner = authorized()
+    runner.script[shell(f"settings put global animator_duration_scale {original}")] = ok("")
+    await make(runner).restore_global_setting("animator_duration_scale", original)
+    assert runner.calls[-1][-1] == f"settings put global animator_duration_scale {original}"
+
+
+async def test_an_absent_original_is_restored_by_deleting_the_setting() -> None:
+    runner = authorized()
+    runner.script[shell("settings delete global animator_duration_scale")] = ok("")
+    await make(runner).restore_global_setting("animator_duration_scale", None)
+    assert runner.calls[-1][-1] == "settings delete global animator_duration_scale"
+
+
+async def test_a_global_setting_that_is_not_set_reads_as_none() -> None:
+    runner = authorized()
+    runner.script[shell("settings get global animator_duration_scale")] = ok("null\r\n")
+    assert await make(runner).global_setting("animator_duration_scale") is None
+
+
+async def test_an_original_that_is_not_a_decimal_is_refused_before_anything_is_changed() -> None:
+    runner = authorized()
+    runner.script[shell("settings get global window_animation_scale")] = ok("1; reboot\r\n")
+    with pytest.raises(AdbCommandFailed):
+        await make(runner).global_setting("window_animation_scale")
+
+
+async def test_only_the_three_animation_settings_and_safe_values_reach_the_shell() -> None:
+    runner = authorized()
+    tv = make(runner)
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.global_setting("secure_something; reboot")
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.put_global_setting("window_animation_scale", "0.5; reboot")
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.put_global_setting("window_animation_scale", "2")
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.put_global_setting("adb_enabled", "0.5")
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.restore_global_setting("adb_enabled", "1")
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.restore_global_setting("window_animation_scale", "1; reboot")
+    with pytest.raises(ValueError, match="configuração global inválida"):
+        await tv.restore_global_setting("window_animation_scale", "-1")
+    assert not any("settings" in call[-1] for call in runner.calls)
+
+
+async def test_a_failing_global_setting_command_is_a_failure() -> None:
+    runner = authorized()
+    runner.script[shell("settings put global window_animation_scale 0.5")] = ok("erro", 255)
+    with pytest.raises(AdbCommandFailed):
+        await make(runner).put_global_setting("window_animation_scale", "0.5")
+    runner.script[shell("settings delete global window_animation_scale")] = ok("erro", 255)
+    with pytest.raises(AdbCommandFailed):
+        await make(runner).restore_global_setting("window_animation_scale", None)
+
+
+BACKGROUND_GET = "cmd appops get 'com.exemplo.video' RUN_ANY_IN_BACKGROUND"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("RUN_ANY_IN_BACKGROUND: allow\r\n", "allow"),
+        ("Uid mode: RUN_ANY_IN_BACKGROUND: ignore\r\n", "ignore"),
+        ("RUN_ANY_IN_BACKGROUND: default; rejectTime=+1m\r\n", "default"),
+        ("No operations.\r\n", None),
+    ],
+)
+async def test_the_background_mode_is_read_from_the_appops_line(
+    text: str, expected: str | None
+) -> None:
+    runner = authorized()
+    runner.script[shell(BACKGROUND_GET)] = ok(text)
+    assert await make(runner).app_background_mode("com.exemplo.video") == expected
+
+
+async def test_an_ambiguous_background_answer_is_refused_so_nothing_is_changed() -> None:
+    runner = authorized()
+    runner.script[shell(BACKGROUND_GET)] = ok("RUN_ANY_IN_BACKGROUND: foreground\r\n")
+    with pytest.raises(AdbCommandFailed):
+        await make(runner).app_background_mode("com.exemplo.video")
+
+
+async def test_the_background_mode_is_set_only_for_a_valid_package_and_mode() -> None:
+    runner = authorized()
+    runner.script[shell("cmd appops set 'com.exemplo.video' RUN_ANY_IN_BACKGROUND ignore")] = ok("")
+    tv = make(runner)
+
+    await tv.set_app_background_mode("com.exemplo.video", "ignore")
+
+    assert runner.calls[-1] == (
+        "-s",
+        SERIAL,
+        "shell",
+        "cmd appops set 'com.exemplo.video' RUN_ANY_IN_BACKGROUND ignore",
+    )
+    calls_before = len(runner.calls)
+    with pytest.raises(ValueError, match="configuração de app inválida"):
+        await tv.set_app_background_mode("x; reboot", "ignore")
+    with pytest.raises(ValueError, match="configuração de app inválida"):
+        await tv.set_app_background_mode("com.exemplo.video", "deny")
+    with pytest.raises(ValueError, match="nome de pacote inválido"):
+        await tv.app_background_mode("a b")
+    assert len(runner.calls) == calls_before
+
+
+async def test_a_failing_appops_set_is_a_failure() -> None:
+    runner = authorized()
+    runner.script[shell("cmd appops set 'com.exemplo.video' RUN_ANY_IN_BACKGROUND ignore")] = ok(
+        "Unknown option", 255
+    )
+    with pytest.raises(AdbCommandFailed):
+        await make(runner).set_app_background_mode("com.exemplo.video", "ignore")
+
+
+MEDIA_SESSION = "dumpsys media_session"
+SPOTIFY_PLAYING = (
+    "  Sessions Stack - have 2 sessions:\r\n"
+    "    Spotify com.spotify.tv.android/Spotify (userId=0)\r\n"
+    "      package=com.spotify.tv.android\r\n"
+    "      state=PlaybackState {state=3, position=1200}\r\n"
+    "    Netflix com.netflix.ninja/Netflix (userId=0)\r\n"
+    "      package=com.netflix.ninja\r\n"
+    "      state=PlaybackState {state=2, position=900}\r\n"
+)
+
+
+async def test_playing_media_packages_name_the_owner_of_each_playing_session() -> None:
+    runner = authorized()
+    runner.script[shell(MEDIA_SESSION)] = ok(NOISE + SPOTIFY_PLAYING)
+    adb = make(runner)
+    assert await adb.playing_media_packages() == {"com.spotify.tv.android"}
+    assert await adb.media_playing() is True
+
+
+async def test_paused_sessions_have_no_playing_owner() -> None:
+    runner = authorized()
+    runner.script[shell(MEDIA_SESSION)] = ok(SPOTIFY_PLAYING.replace("state=3", "state=2"))
+    adb = make(runner)
+    assert await adb.playing_media_packages() == frozenset()
+    assert await adb.media_playing() is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "  Sessions Stack - have 0 sessions:\r\n",
+        "    X a.b/X (userId=0)\r\n      package=a.b\r\n      state=PlaybackState {state=9}\r\n",
+        # tocando, mas sem dono declarado: dúvida, nunca "qualquer app"
+        "    X a.b/X (userId=0)\r\n      state=PlaybackState {state=3}\r\n",
+    ],
+)
+async def test_an_ambiguous_media_session_reading_is_a_failure(text: str) -> None:
+    runner = authorized()
+    runner.script[shell(MEDIA_SESSION)] = ok(text)
+    with pytest.raises(AdbCommandFailed):
+        await make(runner).playing_media_packages()

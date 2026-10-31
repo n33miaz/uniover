@@ -33,6 +33,7 @@ import {
 } from '../progress-text';
 import { ProgressGlyph } from '../progress-glyph';
 import { ProgressSeg, type SegOption } from '../progress-seg';
+import { ProgressChartSkeleton } from '../progress-skeleton';
 
 /** O "chip" que abre a lista de todos os exercícios com histórico; nunca fica ligado. */
 export const OTHER_EXERCISE = '__other';
@@ -69,6 +70,7 @@ type View = 'loading' | 'chart' | 'none' | 'period' | 'estimate';
     ProgressSeg,
     ProgressLineChart,
     GoalSheet,
+    ProgressChartSkeleton,
   ],
   templateUrl: './evolution-card.html',
   styleUrl: './evolution-card.css',

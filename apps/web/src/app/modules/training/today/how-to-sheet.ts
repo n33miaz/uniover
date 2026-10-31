@@ -21,7 +21,7 @@ import { TrainingSheet } from '../shell/training-sheet';
         </div>
       }
       @if (exercise().instructions.length > 0) {
-        <h3 class="ui-section-label" i18n="@@training.howto.steps">Passo a passo</h3>
+        <h3 class="ui-section-label" i18n="@@training.howto.steps">Passo a Passo</h3>
         <ol class="steps">
           @for (step of exercise().instructions; track $index) {
             <li>{{ step }}</li>

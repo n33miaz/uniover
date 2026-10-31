@@ -185,6 +185,31 @@ describe('ShortcutRow', () => {
       expect(hint()).toBe('Fixe apps aqui: abra o menu, no topo.');
     });
 
+    it('draws a skeleton of tiles, same size as the real ones, only while the store says it is loading and the list is missing', () => {
+      store.shortcuts.set(null);
+      empty();
+      expect(root.querySelector('.waiting')).toBeNull();
+      store.shortcutsLoading.set(true);
+      fixture.detectChanges();
+      const slots = root.querySelectorAll('.waiting .ui-skeleton.tile');
+      expect(slots).toHaveLength(4);
+      expect(root.querySelector('.waiting')!.getAttribute('aria-hidden')).toBe('true');
+      // Só a região dos atalhos fica ocupada para o leitor de tela.
+      expect(root.querySelector('.top')!.getAttribute('aria-busy')).toBe('true');
+      expect(root.querySelector('.hint')).toBeNull();
+      store.shortcutsLoading.set(false);
+      fixture.detectChanges();
+      expect(root.querySelector('.waiting')).toBeNull();
+      expect(root.querySelector('.top')!.getAttribute('aria-busy')).toBeNull();
+    });
+
+    it('never keeps the skeleton once the list is known, even if the store still says loading', () => {
+      store.shortcutsLoading.set(true);
+      empty();
+      expect(root.querySelector('.waiting')).toBeNull();
+      expect(hint()).toBe('Fixe apps aqui: abra o menu, no topo.');
+    });
+
     it('gives way to the tiles when a shortcut is pinned', () => {
       empty();
       fixture.componentRef.setInput('shortcuts', [makeShortcut(1)]);

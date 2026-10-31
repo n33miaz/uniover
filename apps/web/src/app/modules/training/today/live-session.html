@@ -1,25 +1,27 @@
 <section class="live" aria-labelledby="live-title">
-  <header class="head">
-    <button type="button" class="icon ui-tap" [attr.aria-label]="backLabel" (click)="back.emit()">
-      <app-training-glyph name="back" />
-    </button>
-    <div class="titles">
-      <h1 id="live-title" #title class="title" tabindex="-1">{{ heading() }}</h1>
-      <p class="sub">{{ subtitle() }}</p>
-    </div>
-    <button
-      type="button"
-      class="icon ui-tap"
-      [attr.aria-haspopup]="'dialog'"
-      [attr.aria-label]="menuLabel"
-      (click)="sheet.set('menu')"
-    >
-      <app-today-glyph name="dots" />
-    </button>
-  </header>
-  @if (progress(); as percent) {
-    <div class="bar" aria-hidden="true">
-      <span class="fill" [style.--progress]="percent + '%'"></span>
+  <h2
+    id="live-title"
+    #title
+    class="title ui-visually-hidden"
+    tabindex="-1"
+    i18n="@@training.live.title"
+  >
+    Treino
+  </h2>
+  @if (live.session() !== undefined) {
+    <div class="tools">
+      <label class="screen">
+        <app-today-glyph name="screen" />
+        <input
+          type="checkbox"
+          role="switch"
+          class="ui-switch"
+          [attr.aria-label]="screenLabel()"
+          [checked]="screenOn()"
+          [disabled]="!screenSupported()"
+          (change)="onScreen($any($event.target))"
+        />
+      </label>
     </div>
   }
   @if (awaitingText(); as waiting) {
@@ -32,84 +34,119 @@
   <p class="ui-visually-hidden" role="status">{{ restOverText() }}</p>
 
   @if (live.session() === undefined) {
-    @if (live.ready() && !leaving()) {
+    @if (!live.ready()) {
+      <app-live-session-skeleton />
+    } @else if (!leaving()) {
       <section class="calm ui-card" aria-labelledby="gone-title">
         <span class="ui-tile lg"><app-training-glyph name="info" /></span>
-        <h2 id="gone-title" i18n="@@training.live.gone-title">Este treino foi encerrado</h2>
+        <h2 id="gone-title" i18n="@@training.live.gone-title">Este Treino Foi Encerrado</h2>
         <p i18n="@@training.live.gone-text">
-          Ele já não está aberto neste aparelho (foi encerrado em outro lugar). O que você fez está
-          salvo.
+          Foi encerrado em outro lugar. O que você fez está salvo.
         </p>
-        <button type="button" class="primary ui-btn" (click)="back.emit()">
-          <span i18n="@@training.live.gone-back">Voltar a Hoje</span>
-        </button>
+        <a routerLink="/treino" class="primary ui-btn" i18n="@@training.live.gone-back"
+          >Escolher Treino</a
+        >
       </section>
     }
   } @else {
-    <div class="body">
+    <div class="body" [class.resting]="timer.active()">
       @if (focus(); as current) {
-        @if (exercise(); as ex) {
-          <div class="exercise">
-            @if (thumb(); as src) {
-              <button
-                type="button"
-                class="thumb ui-tap"
-                [attr.aria-label]="howToLabel(ex.name)"
-                (click)="sheet.set('steps')"
-              >
-                <img [src]="src" alt="" width="56" height="56" [attr.decoding]="'async'" />
-              </button>
-            }
-            <div class="who">
+        <!--
+          A primeira parte: nome, série, ilustração e os campos. A ilustração toma o que sobra da altura da tela; tudo o que
+          é secundário (última vez, esforço, anotação, aquecimento, séries feitas) fica logo abaixo, atrás de um toque ou de
+          uma rolagem curta.
+        -->
+        <div class="first">
+          @if (exercise(); as ex) {
+            <div class="top">
               <h2 class="name">{{ ex.name }}</h2>
-              <ul class="chips ui-plain">
-                @for (chip of chips(); track chip.text) {
-                  <li class="ui-chip" [class.accent]="chip.accent">{{ chip.text }}</li>
+              <p class="sub">
+                <span class="routine">{{ heading() }}</span>
+                @if (positionText()) {
+                  <span class="position">{{ positionText() }}</span>
                 }
-              </ul>
+              </p>
+              @if (tags().length > 0) {
+                <ul class="chips ui-plain">
+                  @for (tag of tags(); track tag) {
+                    <li class="ui-chip accent">{{ tag }}</li>
+                  }
+                </ul>
+              }
             </div>
-          </div>
-        }
+          }
 
-        @if (timer.active()) {
-          <app-rest-card [canVibrate]="canVibrate" />
-        }
-
-        @if (bannerLines().length > 0) {
-          <div class="record" role="status">
-            <div class="record-head">
-              <app-today-glyph class="star" name="star" />
-              <p class="record-title" i18n="@@training.live.record-title">Recorde!</p>
-              <button
-                type="button"
-                class="icon small ui-tap"
-                [attr.aria-label]="dismissLabel"
-                (click)="live.dismissBanner()"
+          <div class="focus">
+            <h3 id="set-title" class="set-title">{{ setTitle() }}</h3>
+            @if (draft().warmup) {
+              <span class="goal ui-chip warn" i18n="@@training.live.warmup-chip">Aquecimento</span>
+            } @else if (current.targetSets !== null) {
+              <span class="goal ui-chip" i18n="@@training.live.range"
+                >Meta {{ repsRange() }} reps</span
               >
-                <app-training-glyph name="close" />
-              </button>
-            </div>
-            @for (line of bannerLines(); track line) {
-              <p class="record-line">{{ line }}</p>
             }
           </div>
-        }
 
-        @if (lastText() || suggestion() || firstTime()) {
-          <app-focus-hint [last]="lastText()" [tip]="suggestion()" [firstTime]="firstTime()" />
-        }
+          @if (timer.active()) {
+            <app-rest-card
+              [canVibrate]="canVibrate"
+              [record]="recordText()"
+              [last]="lastText()"
+              [nextSet]="setTitle()"
+              (finishExercise)="finishExerciseFromRest()"
+              (finishWorkout)="finish()"
+            />
+          }
 
-        @if (exercise(); as ex) {
-          <section class="setcard ui-card" aria-labelledby="set-title">
-            <div class="setcard-head">
-              <div class="set-id">
-                <h3 id="set-title" class="set-title">{{ setTitle() }}</h3>
-                @if (current.targetSets !== null) {
-                  <span class="range" i18n="@@training.live.range"
-                    >faixa {{ repsRange() }} repetições</span
-                  >
-                }
+          @if (exercise(); as ex) {
+            @if (thumb() !== null) {
+              <!-- Recolhida no descanso: fora da ordem de foco e da leitura, para o botão dela não ficar preso numa caixa de 2 px. -->
+              <div class="art" [attr.inert]="timer.active() ? '' : null">
+                <app-exercise-illustration [slug]="ex.slug" [name]="ex.name" />
               </div>
+            }
+            <section class="setcard ui-card" aria-labelledby="set-title">
+              <app-live-set-fields
+                [exercise]="ex"
+                [(value)]="draft"
+                [issue]="live.issue()"
+                [extras]="false"
+              />
+            </section>
+          }
+        </div>
+
+        <div class="more">
+          @if (bannerLines().length > 0 && !timer.active()) {
+            <div class="record" role="status">
+              <div class="record-head">
+                <app-today-glyph class="star" name="star" />
+                <p class="record-title" i18n="@@training.live.record-title">Recorde!</p>
+                <button
+                  type="button"
+                  class="icon small ui-tap"
+                  [attr.aria-label]="dismissLabel"
+                  (click)="live.dismissBanner()"
+                >
+                  <app-training-glyph name="close" />
+                </button>
+              </div>
+              @for (line of bannerLines(); track line) {
+                <p class="record-line">{{ line }}</p>
+              }
+            </div>
+          }
+
+          @if (lastText() || suggestion() || firstTime()) {
+            <app-focus-hint [last]="lastText()" [tip]="suggestion()" [firstTime]="firstTime()" />
+          }
+
+          @if (exercise()) {
+            <div class="extras">
+              <!-- Recriado a cada série e a cada exercício: o esforço e a anotação voltam recolhidos junto com o cartão. -->
+              @for (key of [extrasKey()]; track key) {
+                <app-live-set-extras [(value)]="draft" [collapsible]="true" />
+              }
               <label class="warm">
                 <span i18n="@@training.live.warmup">Aquecimento</span>
                 <input
@@ -121,83 +158,76 @@
                 />
               </label>
             </div>
-            <app-live-set-fields [exercise]="ex" [(value)]="draft" [issue]="live.issue()" />
-          </section>
-        }
+          }
 
-        @if (doneRows().length > 0) {
-          <section class="done" aria-labelledby="done-title">
-            <h3 id="done-title" class="ui-section-label" i18n="@@training.live.done">
-              Feitas neste exercício
-            </h3>
-            <ul class="ui-group ui-plain">
-              @for (row of doneRows(); track row.set.id) {
-                <li>
-                  <button
-                    type="button"
-                    class="ui-row"
-                    [attr.aria-haspopup]="'dialog'"
-                    (click)="openEdit(row.set)"
-                  >
-                    <span class="ui-tile" [class.off]="row.number === 0">
-                      @if (row.number > 0) {
-                        {{ row.number }}
-                      } @else {
-                        <app-today-glyph name="clock" />
-                      }
-                    </span>
-                    <span class="ui-row-text">
-                      <span class="ui-row-title">{{ row.text }}</span>
-                      @if (row.detail) {
-                        <span class="ui-row-sub">{{ row.detail }}</span>
-                      }
-                    </span>
-                    @if (row.record) {
-                      <span class="ui-chip warn medal">
-                        <app-today-glyph name="star" />
-                        <span i18n="@@training.live.record-tag">recorde</span>
+          @if (doneRows().length > 0) {
+            <section class="done" aria-labelledby="done-title">
+              <h3 id="done-title" class="ui-section-label" i18n="@@training.live.done">
+                Feitas Neste Exercício
+              </h3>
+              <ul class="ui-group ui-plain">
+                @for (row of doneRows(); track row.set.id) {
+                  <li>
+                    <button
+                      type="button"
+                      class="ui-row"
+                      [attr.aria-haspopup]="'dialog'"
+                      (click)="openEdit(row.set)"
+                    >
+                      <span class="ui-tile" [class.off]="row.number === 0">
+                        @if (row.number > 0) {
+                          {{ row.number }}
+                        } @else {
+                          <app-today-glyph name="clock" />
+                        }
                       </span>
-                    }
-                    <app-training-glyph class="pencil" name="pencil" />
-                  </button>
-                </li>
-              }
-            </ul>
-          </section>
-        }
+                      <span class="ui-row-text">
+                        <span class="ui-row-title">{{ row.text }}</span>
+                        @if (row.detail) {
+                          <span class="ui-row-sub">{{ row.detail }}</span>
+                        }
+                      </span>
+                      @if (row.record) {
+                        <span class="ui-chip warn medal">
+                          <app-today-glyph name="star" />
+                          <span i18n="@@training.live.record-tag">Recorde</span>
+                        </span>
+                      }
+                      <app-training-glyph class="pencil" name="pencil" />
+                    </button>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
+        </div>
       } @else if (live.plan().planDone) {
         <section class="calm ui-card" aria-labelledby="calm-title">
           <span class="ui-tile ok lg"><app-training-glyph name="check" /></span>
-          <h2 id="calm-title" i18n="@@training.live.plan-done-title">O plano de hoje acabou</h2>
+          <h2 id="calm-title" i18n="@@training.live.plan-done-title">A Rotina de Hoje Acabou</h2>
           <p i18n="@@training.live.plan-done-text">
-            Você pode fazer mais uma série de algum exercício, acrescentar outro ou terminar o
-            treino.
+            Faça mais uma série, acrescente outro exercício ou termine.
           </p>
           <div class="calm-actions">
             <button type="button" class="secondary ui-btn" (click)="sheet.set('plan')">
               <app-training-glyph name="list" />
-              <span i18n="@@training.live.more-set">Mais uma série</span>
+              <span i18n="@@training.live.more-set">Mais uma Série</span>
             </button>
             <button type="button" class="secondary ui-btn" (click)="sheet.set('add')">
               <app-training-glyph name="plus" />
-              <span i18n="@@training.live.add">Adicionar exercício</span>
+              <span i18n="@@training.live.add">Adicionar Exercício</span>
             </button>
           </div>
         </section>
       } @else {
         <section class="calm ui-card" aria-labelledby="calm-title">
           <span class="ui-tile lg"><app-training-glyph name="dumbbell" /></span>
-          <h2 id="calm-title" i18n="@@training.live.free-title">
-            Treino livre: escolha o primeiro exercício
-          </h2>
-          <p i18n="@@training.live.free-text">
-            Os exercícios entram à medida que você escolhe. O descanso entre as séries é de 90 s.
-          </p>
+          <h2 id="calm-title" i18n="@@training.live.free-title">Escolha o Primeiro Exercício</h2>
         </section>
       }
     </div>
 
-    <div class="dock">
+    <div class="dock" [class.resting]="timer.active()">
       @if (live.notice(); as note) {
         <p class="notice ui-notice" role="status" [class.warn]="note.tone === 'warn'">
           <app-training-glyph [name]="note.tone === 'warn' ? 'alert' : 'check'" />
@@ -213,13 +243,13 @@
       >
         @if (focus()) {
           <app-training-glyph name="check" />
-          <span i18n="@@training.live.complete">Concluir série</span>
+          <span i18n="@@training.live.complete">Concluir Série</span>
         } @else if (live.plan().planDone) {
           <app-training-glyph name="check" />
-          <span i18n="@@training.live.finish">Terminar treino</span>
+          <span i18n="@@training.live.finish">Terminar Treino</span>
         } @else {
           <app-training-glyph name="plus" />
-          <span i18n="@@training.live.choose">Escolher exercício</span>
+          <span i18n="@@training.live.choose">Escolher Exercício</span>
         }
       </button>
     </div>
@@ -234,11 +264,8 @@
       [canSwitch]="canSwitch()"
       [chosen]="focus()?.chosen === true"
       [canFinish]="live.workingSets() > 0"
-      [screenSupported]="screenSupported()"
-      [screenOn]="screenOn()"
-      [screenRefused]="screenRefused()"
+      [showScreen]="false"
       (action)="onMenu($event)"
-      (screen)="onScreen($event)"
       (closed)="sheet.set(null)"
     />
   }

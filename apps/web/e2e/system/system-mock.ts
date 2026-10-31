@@ -84,7 +84,10 @@ export async function mockSystemApi(
     settings: [
       { key: 'training.off-contact', value: 'foods@example.test', source: 'server' },
       { key: 'devices.max-per-guest', value: 2, source: 'server' },
-      { key: 'training.photo-storage-enabled', value: false, source: 'server' },
+      { key: 'devices.agent-offline-minutes', value: 10, source: 'server' },
+      { key: 'tv.light-cleanup-enabled', value: true, source: 'server' },
+      { key: 'tv.deep-cleanup-enabled', value: true, source: 'server' },
+      { key: 'tv.deep-cleanup-memory-threshold-mb', value: 160, source: 'server' },
     ],
   };
 
@@ -114,8 +117,7 @@ export async function mockSystemApi(
     const value = (request.postDataJSON() as { value: unknown }).value;
     if (
       (key === 'training.off-contact' && (typeof value !== 'string' || !value.includes('@'))) ||
-      (key === 'devices.max-per-guest' && (typeof value !== 'number' || value < 1 || value > 20)) ||
-      (key === 'training.photo-storage-enabled' && typeof value !== 'boolean')
+      (key === 'devices.max-per-guest' && (typeof value !== 'number' || value < 1 || value > 20))
     ) {
       return problem(route, 400, 'validation-failed', 'Valor inválido.');
     }
@@ -126,6 +128,26 @@ export async function mockSystemApi(
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(setting),
+    });
+  });
+
+  // A leitura de saúde lista os computadores pareados: o mesmo conjunto da configuração da TV.
+  await context.route('**/api/v1/devices/agents', async (route) => {
+    if (identity.offline) return route.abort('internetdisconnected');
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        mock.computers
+          .filter((computer) => !computer.revoked)
+          .map((computer, index) => ({
+            id: `00000000-0000-4000-8000-00000000010${index}`,
+            slug: computer.slug,
+            name: computer.name,
+            connected: computer.online,
+            lastSeenAt: '2026-10-28T09:00:00Z',
+          })),
+      ),
     });
   });
 

@@ -160,4 +160,22 @@ describe('AgentLogSheet', () => {
     button('Fechar').click();
     expect(closed()).toBe(1);
   });
+
+  it('holds the block of the log as a busy skeleton while the agent answers', async () => {
+    let finish: (log: AgentLog) => void = () => undefined;
+    api.logs.mockReturnValue(new Promise<AgentLog>((resolve) => (finish = resolve)));
+    const { fixture, el } = await render();
+
+    expect(
+      el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+    ).not.toBeNull();
+    expect(el.querySelector('pre')).toBeNull();
+
+    finish(LOG);
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(el.querySelector('app-loading-skeleton')).toBeNull();
+    });
+    expect(el.querySelector('pre')?.textContent).toBe(LOG.text);
+  });
 });

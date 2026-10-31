@@ -19,6 +19,8 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    private static readonly string[] RestrictedApps = ["com.exemplo.video"];
+
     private static async Task<VirtualAuthenticator> ConfirmedOwnerAsync(TvApp app)
     {
         var authenticator = new VirtualAuthenticator();
@@ -101,6 +103,329 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
 
         using var repeated = await app.PostAsync("/api/v1/tv/tvs", new { agentSlug = raphaelAgent.Slug, name = "Duplicada" });
         repeated.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task BackgroundAppClosing_IsOffByDefault_AuditsTheChange_AndReachesTheAgent()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Sala");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Sala");
+
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync("2.0.0", "tv.remote", "tv.cleanup.automatic.v1");
+        // Ao conectar, o agente recebe a configuração com o fechamento de apps desligado.
+        var first = await TvApp.NextCommandAsync(connection);
+        first.GetProperty("type").GetString().Should().Be("tv.cleanup.config.v1");
+        first.GetProperty("body").GetProperty("closeBackgroundApps").GetBoolean().Should().BeFalse();
+
+        using (var list = await app.GetAsync("/api/v1/tv/tvs"))
+        {
+            var item = (await TvApp.JsonAsync(list)).GetProperty("items").EnumerateArray()
+                .Single(i => i.GetProperty("id").GetGuid() == tvId);
+            item.GetProperty("allowBackgroundAppClosing").GetBoolean().Should().BeFalse();
+        }
+
+        using (var on = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { allowBackgroundAppClosing = true }))
+        {
+            on.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await TvApp.JsonAsync(on)).GetProperty("allowBackgroundAppClosing").GetBoolean().Should().BeTrue();
+        }
+
+        var changed = await TvApp.NextCommandAsync(connection);
+        changed.GetProperty("type").GetString().Should().Be("tv.cleanup.config.v1");
+        changed.GetProperty("body").GetProperty("closeBackgroundApps").GetBoolean().Should().BeTrue();
+
+        // Repetir o mesmo valor não grava de novo nem republica.
+        using (var same = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { allowBackgroundAppClosing = true }))
+        {
+            same.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        using (var off = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { allowBackgroundAppClosing = false }))
+        {
+            off.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        await using var db = app.Db();
+        var trail = await db.CommandAudit.AsNoTracking()
+            .Where(a => a.Command == TvCommandNames.CleanupSetting && a.TvId == tvId)
+            .OrderBy(a => a.OccurredAt).Select(a => a.Detail).ToListAsync(Ct);
+        trail.Should().Equal("background-app-closing=on", "background-app-closing=off");
+        (await db.Tvs.AsNoTracking().SingleAsync(t => t.Id == tvId, Ct)).AllowBackgroundAppClosing.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task LightSettings_StartOff_AreAuditedWithoutThePackageList_ReachTheAgent_AndRefuseTooManyApps()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Sala");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Sala");
+
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync("2.0.0", "tv.remote", "tv.cleanup.automatic.v1", "tv.light-settings.v1");
+        var first = (await TvApp.NextCommandAsync(connection)).GetProperty("body");
+        (first.GetProperty("focusEnabled").GetBoolean(), first.GetProperty("shortAnimationsEnabled").GetBoolean(),
+            first.GetProperty("restrictedPackages").GetArrayLength()).Should().Be((false, false, 0));
+
+        using (var on = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new
+        {
+            focusModeEnabled = true,
+            shortAnimationsEnabled = true,
+            restrictedBackgroundPackages = RestrictedApps,
+        }))
+        {
+            on.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await TvApp.JsonAsync(on)).GetProperty("restrictedBackgroundPackages").EnumerateArray()
+                .Select(p => p.GetString()).Should().Equal("com.exemplo.video");
+        }
+
+        var changed = (await TvApp.NextCommandAsync(connection)).GetProperty("body");
+        (changed.GetProperty("focusEnabled").GetBoolean(), changed.GetProperty("shortAnimationsEnabled").GetBoolean())
+            .Should().Be((true, true));
+        changed.GetProperty("restrictedPackages").EnumerateArray().Select(p => p.GetString()).Should().Equal("com.exemplo.video");
+
+        using (var tooMany = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new
+        {
+            restrictedBackgroundPackages = Enumerable.Range(0, 101).Select(i => $"com.exemplo.app{i}").ToArray(),
+        }))
+        {
+            tooMany.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        using (var apps = await app.GetAsync($"/api/v1/tv/tvs/{tvId}/apps"))
+        {
+            apps.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        await using var db = app.Db();
+        var trail = await db.CommandAudit.AsNoTracking()
+            .Where(a => a.Command == TvCommandNames.CleanupSetting && a.TvId == tvId).Select(a => a.Detail).ToListAsync(Ct);
+        trail.Should().Equal("light-settings");
+    }
+
+    [Fact]
+    public async Task FocusClosesBackground_OnlyReachesAgentsThatKnowIt_AndOnlyWithFocusModeOn()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Sala");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Sala");
+
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync(
+            "2.0.0", "tv.remote", "tv.cleanup.automatic.v1", "tv.light-settings.v1", "tv.focus-closes-background.v1");
+        (await TvApp.NextCommandAsync(connection)).GetProperty("body").GetProperty("focusClosesBackground").GetBoolean()
+            .Should().BeFalse();
+
+        using (var on = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new
+        {
+            focusModeEnabled = true,
+            focusClosesBackground = true,
+        }))
+        {
+            on.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await TvApp.JsonAsync(on)).GetProperty("focusClosesBackground").GetBoolean().Should().BeTrue();
+        }
+
+        (await TvApp.NextCommandAsync(connection)).GetProperty("body").GetProperty("focusClosesBackground").GetBoolean()
+            .Should().BeTrue();
+
+        // Com o Modo Foco desligado a preferência fica guardada, mas o agente recebe falso: nada é fechado.
+        using (var off = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { focusModeEnabled = false }))
+        {
+            off.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        (await TvApp.NextCommandAsync(connection)).GetProperty("body").GetProperty("focusClosesBackground").GetBoolean()
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task FocusClosesBackground_IsRefusedForAnAgentWithoutTheCapability_AndTheFieldIsNeverSent()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Sala");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Sala");
+
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync("2.0.0", "tv.remote", "tv.cleanup.automatic.v1", "tv.light-settings.v1");
+        var body = (await TvApp.NextCommandAsync(connection)).GetProperty("body");
+        body.TryGetProperty("focusClosesBackground", out _).Should().BeFalse();
+        body.GetProperty("focusEnabled").GetBoolean().Should().BeFalse();
+
+        using (var on = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new
+        {
+            focusModeEnabled = true,
+            focusClosesBackground = true,
+        }))
+        {
+            on.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await TvApp.JsonAsync(on)).GetProperty("type").GetString().Should().EndWith("/tv-light-settings-unsupported");
+        }
+
+        await using var db = app.Db();
+        (await db.Tvs.AsNoTracking().SingleAsync(t => t.Id == tvId, Ct)).FocusClosesBackground.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CleanupConfig_ForAnAgentWithoutLightSettings_KeepsExactlyTheOldBody()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Raphael");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Raphael");
+
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync("2.0.0", "tv.remote", "tv.cleanup.automatic.v1");
+        var first = (await TvApp.NextCommandAsync(connection)).GetProperty("body");
+        // O schema antigo tem additionalProperties:false: qualquer campo a mais derrubaria a mensagem inteira.
+        first.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal)
+            .Should().Equal("closeBackgroundApps", "deepEnabled", "deepThresholdMb", "lightEnabled");
+
+        using (var on = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { focusModeEnabled = true, allowBackgroundAppClosing = true }))
+        {
+            on.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var changed = (await TvApp.NextCommandAsync(connection)).GetProperty("body");
+        changed.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal)
+            .Should().Equal("closeBackgroundApps", "deepEnabled", "deepThresholdMb", "lightEnabled");
+        changed.GetProperty("closeBackgroundApps").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task LightSettings_RefuseAnInvalidAppList_WithAFieldError()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Sala");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Sala");
+
+        var invalid = new object?[]
+        {
+            new string?[] { "com.exemplo.a", null },
+            new[] { "semponto" },
+            new[] { "com.exemplo; reboot" },
+            new[] { "com.exemplo.a", "com.exemplo.a" },
+            new[] { "com.android.vending" },
+            new[] { "com.google.android.tv.remote.service" },
+            Enumerable.Range(0, 101).Select(i => $"com.exemplo.app{i}").ToArray(),
+        };
+        foreach (var list in invalid)
+        {
+            using var response = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { restrictedBackgroundPackages = list });
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await TvApp.JsonAsync(response)).GetProperty("errors").TryGetProperty("restrictedBackgroundPackages", out _).Should().BeTrue();
+        }
+
+        await using var db = app.Db();
+        (await db.Tvs.AsNoTracking().SingleAsync(t => t.Id == tvId, Ct)).BackgroundPackages().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task LightSettings_AreRefusedForASamsungTv_ButTurningThemOffIsAccepted()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Raphael");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Raphael");
+
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync("2.0.0", "tv.remote", "tv.kind.samsung");
+        await TvApp.WaitUntilAsync(
+            () => app.Presence.Get(agent.Slug)?.Capabilities.Contains("tv.kind.samsung", StringComparer.Ordinal) == true,
+            "capacidade da Samsung anunciada");
+
+        using (var on = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { shortAnimationsEnabled = true }))
+        {
+            on.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            // Código estável: a tela não pode confundir esta recusa com "computador já em uso" (também 409).
+            (await TvApp.JsonAsync(on)).GetProperty("type").GetString().Should().EndWith("/tv-light-settings-unsupported");
+        }
+
+        using (var off = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { shortAnimationsEnabled = false }))
+        {
+            off.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        await using var db = app.Db();
+        (await db.Tvs.AsNoTracking().SingleAsync(t => t.Id == tvId, Ct)).ShortAnimationsEnabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task AutomaticCleanupReports_AreStored_AndListedForTheAdministratorWithTheReasonItSkipped()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        var tvId = await BindDefaultAsync(app);
+        await using var agent = await app.ConnectAndWaitAsync();
+
+        var requestId = Guid.NewGuid();
+        await agent.SendTextAsync(agent.Envelope("tv.cleanup.result.v1", new System.Text.Json.Nodes.JsonObject
+        {
+            ["requestId"] = requestId.ToString(),
+            ["closedApps"] = 0,
+            ["closedPackages"] = new System.Text.Json.Nodes.JsonArray(),
+            ["memoryBeforeMb"] = null,
+            ["memoryAfterMb"] = null,
+            ["freedMb"] = null,
+            ["failedSteps"] = new System.Text.Json.Nodes.JsonArray(),
+            ["at"] = "2026-10-27T12:00:00Z",
+            ["kind"] = "deep",
+            ["trigger"] = "automatic",
+            ["result"] = "skipped",
+            ["reason"] = "media-in-use",
+            ["durationMs"] = 0,
+        }, requestId));
+
+        await TvApp.WaitUntilAsync(() =>
+        {
+            using var db = app.Db();
+            return db.CleanupReports.Any(r => r.TvId == tvId);
+        }, "relatório automático gravado");
+
+        using var response = await app.GetAsync($"/api/v1/tv/tvs/{tvId}/cleanup-reports");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var item = (await TvApp.JsonAsync(response)).GetProperty("items").EnumerateArray().Should().ContainSingle().Subject;
+        (item.GetProperty("kind").GetString(), item.GetProperty("trigger").GetString(), item.GetProperty("result").GetString(),
+            item.GetProperty("reason").GetString(), item.GetProperty("closedApps").GetInt32())
+            .Should().Be(("deep", "automatic", "skipped", "media-in-use", 0));
+
+        using var missing = await app.GetAsync($"/api/v1/tv/tvs/{Guid.NewGuid()}/cleanup-reports");
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task BackgroundAppClosing_RequiresAnAdministratorWithARecentStrongConfirmation()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var guest = await app.NewGuestAsync("Convidado", ["module:tv"], 85);
+
+        using (var withoutConfirmation = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{Guid.NewGuid()}", new { allowBackgroundAppClosing = true }))
+        {
+            withoutConfirmation.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        var defaultTvId = await BindDefaultAsync(app);
+        using (var asGuest = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{defaultTvId}", new { allowBackgroundAppClosing = true }, guest.Login.AccessToken))
+        {
+            asGuest.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+
+        await using var db = app.Db();
+        (await db.Tvs.AsNoTracking().SingleAsync(t => t.Id == defaultTvId, Ct)).AllowBackgroundAppClosing.Should().BeFalse();
     }
 
     [Fact]

@@ -130,6 +130,26 @@ export function routineSummary(routine: {
   return parts.join(' · ');
 }
 
+/** O nome compacto da rotina no topo do registro: identifica o treino sem disputar espaço com os controles da série. */
+export function liveRoutineName(name: string): string {
+  const separator = name.indexOf(' · ');
+  if (separator < 0) return name;
+  const prefix = name.slice(0, separator);
+  const detail = name
+    .slice(separator + 3)
+    .replace(/ e /g, ' ')
+    .toLocaleLowerCase('pt-BR');
+  return `${prefix} - ${detail}`;
+}
+
+/** "3 séries aguardando envio": as séries do treino que ainda não chegaram ao servidor; `null` quando não há nenhuma. */
+export function awaitingSetsText(count: number): string | null {
+  if (count === 0) return null;
+  return count === 1
+    ? $localize`:@@training.live.awaiting-one:1 série aguardando envio`
+    : $localize`:@@training.live.awaiting-many:${count}:count: séries aguardando envio`;
+}
+
 /** "há 3 h": há quanto tempo o treino de outro aparelho foi aberto. */
 export function ageLabel(milliseconds: number): string {
   const hours = Math.floor(milliseconds / 3_600_000);

@@ -50,6 +50,7 @@ const TV: TvItem = {
   kind: 'samsung',
   online: true,
   capabilities: ['tv.remote', 'tv.kind.samsung'],
+  allowBackgroundAppClosing: false,
 };
 const DEFAULT_TV: TvItem = { ...TV, id: 'tv-1', name: 'Sala', isDefault: true, kind: 'android' };
 
@@ -72,6 +73,8 @@ describe('TvEditSheet', () => {
     updateTv: vi.fn(),
     deleteTv: vi.fn(),
     tvMembers: vi.fn(),
+    tvCleanupReports: vi.fn(),
+    tvApps: vi.fn(),
     setTvMembers: vi.fn(),
   };
   const authApi = { guests: vi.fn() };
@@ -90,6 +93,8 @@ describe('TvEditSheet', () => {
     }));
     api.deleteTv.mockReset().mockResolvedValue(undefined);
     api.tvMembers.mockReset().mockResolvedValue(['g1']);
+    api.tvCleanupReports.mockReset().mockResolvedValue([]);
+    api.tvApps.mockReset().mockResolvedValue([]);
     api.setTvMembers
       .mockReset()
       .mockImplementation(async (_id: string, ids: readonly string[]) => [...ids]);
@@ -270,7 +275,7 @@ describe('TvEditSheet', () => {
 
     it('says when there is no free computer', async () => {
       const { el, button } = await render(null, []);
-      expect(el.textContent).toContain('Nenhum computador livre. Pareie um em Aparelhos.');
+      expect(el.textContent).toContain('Nenhum computador livre. Pareie um em Dispositivos.');
       expect(button('Salvar').disabled).toBe(true);
     });
   });
@@ -319,6 +324,299 @@ describe('TvEditSheet', () => {
       expect(api.updateTv).not.toHaveBeenCalled();
       expect(api.setTvMembers).toHaveBeenCalledWith('tv-2', ['g2']);
       expect(closed).toEqual([true]);
+    });
+
+    it('offers the background app closing switch off by default, only when editing', async () => {
+      const edit = await render(TV, [OWN]);
+      const toggle = edit.el.querySelector<HTMLInputElement>('label.toggle input')!;
+      expect(toggle.checked).toBe(false);
+      expect(edit.el.querySelector('label.toggle .toggle-title')?.textContent?.trim()).toBe(
+        'Fechar Apps em Segundo Plano',
+      );
+      expect(edit.button('Salvar').disabled).toBe(true);
+
+      const creating = await render(null, [OWN]);
+      expect(creating.el.querySelector('label.toggle')).toBeNull();
+    });
+
+    it('shows that the light settings are unsupported on Samsung without offering a switch', async () => {
+      const { el } = await render(TV, [OWN]);
+      expect(el.textContent).toContain('Não suportado nesta TV.');
+      expect(el.textContent).not.toContain('Animações Mais Curtas');
+    });
+
+    it('starts every light setting off on an Android TV and sends them together when one is turned on', async () => {
+      api.tvApps.mockResolvedValue([
+        { package: 'com.example.video', label: 'Vídeo' },
+        { package: 'com.example.musica', label: 'Música' },
+      ]);
+      const android: TvItem = { ...TV, kind: 'android', capabilities: ['tv.remote', 'tv.adb'] };
+      const { el, save, settle, closed } = await render(android, [OWN]);
+      const switches = () =>
+        Array.from(el.querySelectorAll<HTMLInputElement>('label.toggle input')).slice(0, 4);
+      expect(switches().map((item) => item.checked)).toEqual([false, false, false, false]);
+      expect(el.textContent).toContain('Atualização automática da Play Store');
+      expect(el.textContent).toContain('Disponível em breve');
+
+      switches()[0]!.click();
+      switches()[3]!.click();
+      await settle();
+      await save();
+
+      expect(api.updateTv).toHaveBeenCalledWith('tv-2', {
+        focusModeEnabled: true,
+        shortAnimationsEnabled: false,
+        restrictedBackgroundPackages: ['com.example.musica'],
+      });
+      expect(closed).toEqual([true]);
+    });
+
+    const ANDROID: TvItem = { ...TV, kind: 'android', capabilities: ['tv.remote', 'tv.adb'] };
+
+    it('shows the unsupported-TV text for its own 409 and not the computer-in-use one', async () => {
+      api.updateTv.mockRejectedValueOnce(problem(409, 'tv-light-settings-unsupported'));
+      const { el, save, settle, error } = await render(ANDROID, [OWN]);
+      el.querySelector<HTMLInputElement>('label.toggle input')!.click();
+      await settle();
+      await save();
+      expect(error()).toBe('Não Suportado Nesta TV.');
+    });
+
+    it('keeps the computer-in-use text for the 409 of another kind', async () => {
+      api.updateTv.mockRejectedValueOnce(problem(409));
+      const { el, save, settle, error } = await render(ANDROID, [OWN]);
+      el.querySelector<HTMLInputElement>('label.toggle input')!.click();
+      await settle();
+      await save();
+      expect(error()).toBe('Esse computador já controla outra TV. Escolha outro.');
+    });
+
+    it('explains a 400 on the app list instead of the generic failure', async () => {
+      api.updateTv.mockRejectedValueOnce(
+        problem(400, 'validation-failed', {
+          errors: { restrictedBackgroundPackages: ['inválida'] },
+        }),
+      );
+      const { el, save, settle, error } = await render(ANDROID, [OWN]);
+      el.querySelector<HTMLInputElement>('label.toggle input')!.click();
+      await settle();
+      await save();
+      expect(error()).toContain('A lista de apps tem algo inválido');
+    });
+
+    it('tells loading, failed (with a retry) and empty apart in the app list', async () => {
+      let resolveApps: (value: { package: string; label: string }[]) => void = () => undefined;
+      api.tvApps.mockReturnValueOnce(new Promise((resolve) => (resolveApps = resolve)));
+      const { el, settle, button } = await render(ANDROID, [OWN]);
+      expect(
+        el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+      ).not.toBeNull();
+      expect(el.textContent).not.toContain('Nenhum app disponível');
+
+      resolveApps([]);
+      await settle();
+      expect(el.textContent).toContain('Nenhum app disponível para escolher ainda.');
+      expect(button('Tentar de Novo')).toBeUndefined();
+    });
+
+    it('shows the failure with Tentar de Novo and recovers on the retry', async () => {
+      api.tvApps.mockRejectedValueOnce(new Error('falhou'));
+      const { el, settle, button } = await render(ANDROID, [OWN]);
+      expect(el.textContent).toContain('Não foi possível carregar os apps agora.');
+      expect(el.textContent).not.toContain('Nenhum app disponível');
+
+      api.tvApps.mockResolvedValueOnce([{ package: 'com.example.video', label: 'Vídeo' }]);
+      button('Tentar de Novo').click();
+      await settle();
+      expect(el.textContent).toContain('Vídeo');
+      expect(el.textContent).not.toContain('Não foi possível carregar os apps agora.');
+    });
+
+    describe('closing the other apps while the focus mode is on', () => {
+      const WITH_CLOSING: TvItem = {
+        ...TV,
+        kind: 'android',
+        capabilities: ['tv.remote', 'tv.adb', 'tv.focus-closes-background.v1'],
+      };
+      const closingSwitch = (el: HTMLElement) =>
+        Array.from(el.querySelectorAll<HTMLElement>('label.toggle'))
+          .find((label) => label.textContent?.includes('Fechar Outros Apps no Foco'))
+          ?.querySelector<HTMLInputElement>('input');
+      const focusSwitch = (el: HTMLElement) =>
+        Array.from(el.querySelectorAll<HTMLElement>('label.toggle'))
+          .find((label) => label.textContent?.trim() === 'Modo Foco')!
+          .querySelector<HTMLInputElement>('input')!;
+
+      it('only appears with the focus mode on, and starts off until its own click', async () => {
+        const { el, save, settle } = await render(WITH_CLOSING, [OWN]);
+        expect(closingSwitch(el)).toBeUndefined();
+
+        focusSwitch(el).click();
+        await settle();
+        // Ligar o Modo Foco não dá o consentimento de encerrar apps à força.
+        expect(closingSwitch(el)?.checked).toBe(false);
+
+        await save();
+        expect(api.updateTv).toHaveBeenCalledWith('tv-2', {
+          focusModeEnabled: true,
+          focusClosesBackground: false,
+          shortAnimationsEnabled: false,
+          restrictedBackgroundPackages: [],
+        });
+      });
+
+      it('is turned on only by its own click', async () => {
+        const { el, save, settle } = await render(WITH_CLOSING, [OWN]);
+        focusSwitch(el).click();
+        await settle();
+        closingSwitch(el)!.click();
+        await settle();
+        await save();
+
+        expect(api.updateTv).toHaveBeenCalledWith('tv-2', {
+          focusModeEnabled: true,
+          focusClosesBackground: true,
+          shortAnimationsEnabled: false,
+          restrictedBackgroundPackages: [],
+        });
+      });
+
+      it('can be turned off on its own while the focus mode stays on', async () => {
+        const { el, save, settle } = await render(
+          { ...WITH_CLOSING, focusModeEnabled: true, focusClosesBackground: true },
+          [OWN],
+        );
+        expect(closingSwitch(el)?.checked).toBe(true);
+
+        closingSwitch(el)!.click();
+        await settle();
+        await save();
+
+        expect(api.updateTv).toHaveBeenCalledWith('tv-2', {
+          focusModeEnabled: true,
+          focusClosesBackground: false,
+          shortAnimationsEnabled: false,
+          restrictedBackgroundPackages: [],
+        });
+      });
+
+      it('is not offered, and not sent, for a computer whose agent does not announce it', async () => {
+        const { el, settle } = await render(ANDROID, [OWN]);
+        focusSwitch(el).click();
+        await settle();
+        expect(closingSwitch(el)).toBeUndefined();
+      });
+
+      it('names the apps the focus mode closed in the cleanup list', async () => {
+        api.tvApps.mockResolvedValue([{ package: 'com.example.musica', label: 'Música' }]);
+        api.tvCleanupReports.mockResolvedValue([
+          {
+            kind: 'light',
+            trigger: 'focus',
+            startedAt: '2026-10-28T20:00:00Z',
+            durationMs: 900,
+            memoryBeforeMb: null,
+            memoryAfterMb: null,
+            closedApps: 2,
+            closedPackages: ['com.example.musica', 'com.example.jogo'],
+            backgroundProcesses: null,
+            sessionOpenMs: null,
+            result: 'completed',
+            reason: null,
+          },
+        ]);
+        const { el } = await render(WITH_CLOSING, [OWN]);
+        expect(el.querySelector('.report .report-title')?.textContent).toContain('Modo Foco');
+        expect(el.querySelector('.report')?.textContent).toContain('Fechou 2 apps');
+        expect(el.querySelector('.report')?.textContent).toContain('Música, com.example.jogo');
+      });
+    });
+
+    it('turns every light setting off with Voltar ao Original so the agent restores the values it read', async () => {
+      const android: TvItem = {
+        ...TV,
+        kind: 'android',
+        capabilities: ['tv.remote', 'tv.adb'],
+        focusModeEnabled: true,
+        shortAnimationsEnabled: true,
+        restrictedBackgroundPackages: ['com.example.video'],
+      };
+      const { button, save, settle } = await render(android, [OWN]);
+      button('Voltar ao Original').click();
+      await settle();
+      await save();
+
+      expect(api.updateTv).toHaveBeenCalledWith('tv-2', {
+        focusModeEnabled: false,
+        shortAnimationsEnabled: false,
+        restrictedBackgroundPackages: [],
+      });
+    });
+
+    it('sends only the background app closing option when only the switch changed', async () => {
+      const { el, save, settle, closed } = await render(TV, [OWN]);
+      el.querySelector<HTMLInputElement>('label.toggle input')!.click();
+      await settle();
+      await save();
+      expect(api.updateTv).toHaveBeenCalledWith('tv-2', { allowBackgroundAppClosing: true });
+      expect(api.setTvMembers).not.toHaveBeenCalled();
+      expect(closed).toEqual([true]);
+    });
+
+    it('starts the switch on for a TV that already allows it, and sends off when it is flipped back', async () => {
+      const { el, save, settle } = await render({ ...TV, allowBackgroundAppClosing: true }, [OWN]);
+      const toggle = el.querySelector<HTMLInputElement>('label.toggle input')!;
+      expect(toggle.checked).toBe(true);
+      toggle.click();
+      await settle();
+      await save();
+      expect(api.updateTv).toHaveBeenCalledWith('tv-2', { allowBackgroundAppClosing: false });
+    });
+
+    it('lists the latest cleanups with what each one did or why it was skipped', async () => {
+      api.tvCleanupReports.mockResolvedValue([
+        {
+          kind: 'light',
+          trigger: 'automatic',
+          startedAt: '2026-10-27T11:05:00Z',
+          durationMs: 800,
+          memoryBeforeMb: 200,
+          memoryAfterMb: 260,
+          closedApps: 0,
+          closedPackages: [],
+          backgroundProcesses: 12,
+          sessionOpenMs: null,
+          result: 'completed',
+          reason: null,
+        },
+        {
+          kind: 'deep',
+          trigger: 'automatic',
+          startedAt: '2026-10-27T10:05:00Z',
+          durationMs: 0,
+          memoryBeforeMb: null,
+          memoryAfterMb: null,
+          closedApps: 0,
+          closedPackages: [],
+          backgroundProcesses: null,
+          sessionOpenMs: null,
+          result: 'skipped',
+          reason: 'media-in-use',
+        },
+      ]);
+      const { el } = await render(TV, [OWN]);
+      expect(api.tvCleanupReports).toHaveBeenCalledWith('tv-2');
+      const lines = Array.from(el.querySelectorAll('.report .report-outcome')).map((n) =>
+        n.textContent?.trim(),
+      );
+      expect(lines).toEqual(['Liberou 60 MB', 'Pulada: TV em uso']);
+      expect(el.querySelector('.report .report-title')?.textContent).toContain('Leve automática');
+    });
+
+    it('does not ask for cleanups when creating a TV', async () => {
+      const { el } = await render(null, [OWN]);
+      expect(api.tvCleanupReports).not.toHaveBeenCalled();
+      expect(el.querySelector('.report')).toBeNull();
     });
 
     it('treats the same people in another order as no change', async () => {

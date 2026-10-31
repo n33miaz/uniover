@@ -22,12 +22,12 @@ import { monthLabel, monthOnly } from '../progress-text';
 const weekdayShort = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' });
 const weekdayLong = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', timeZone: 'UTC' });
 
-/** Os sete dias da semana na ordem do calendário (segunda a domingo), curtos para o cabeçalho e por extenso para o leitor. */
+/** Os sete dias da semana na ordem do calendário (domingo a sábado), curtos para o cabeçalho e por extenso para o leitor. */
 export const WEEKDAYS: readonly { readonly short: string; readonly long: string }[] = Array.from(
   { length: 7 },
   (_, index) => {
-    // 1º de janeiro de 2024 foi uma segunda-feira.
-    const day = Date.UTC(2024, 0, 1 + index);
+    // 31 de dezembro de 2023 foi um domingo.
+    const day = Date.UTC(2023, 11, 31 + index);
     return {
       short: weekdayShort.format(day).replace('.', ''),
       long: weekdayLong.format(day),
@@ -86,7 +86,7 @@ interface Read {
 }
 
 /**
- * A frequência: o calendário do mês (segunda a domingo) com os dias de treino preenchidos (forma e cor, não só cor) e o
+ * A frequência: o calendário do mês (domingo a sábado) com os dias de treino preenchidos (forma e cor, não só cor) e o
  * dia de hoje com contorno, a navegação de mês a mês e a constância das duas últimas semanas.
  */
 @Component({

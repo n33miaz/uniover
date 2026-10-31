@@ -32,9 +32,9 @@ test.describe('mapa do corpo: da figura à lista', () => {
     await startTraining(context, page);
     await openTraining(page, '/treino/exercicios');
     await waitForCatalog(page);
-    await page.getByRole('link', { name: 'Mapa do corpo' }).click();
+    await page.getByRole('link', { name: 'Mapa do Treino' }).click();
     await expect(page).toHaveURL(/\/treino\/exercicios\/mapa$/);
-    await expect(page.getByRole('heading', { name: 'Mapa do corpo' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Mapa do Treino' })).toBeVisible();
 
     await showFace(page, 'Costas');
     await expect(page).toHaveURL(/face=back/);
@@ -276,9 +276,9 @@ test.describe('mapa do corpo: sem rede', () => {
     await openTraining(page, '/treino/exercicios');
     await waitForCatalog(page);
     // Com rede, o aparelho traz o catálogo e o treino da semana; só então a rede cai.
-    await page.getByRole('link', { name: 'Mapa do corpo' }).click();
+    await page.getByRole('link', { name: 'Mapa do Treino' }).click();
     await expect(zone(page, 'chest')).toHaveAttribute('data-level', '3');
-    await page.getByRole('button', { name: 'Voltar para Exercícios' }).click();
+    await page.locator('app-page-top-bar .back').click();
     await expect(page).toHaveURL(/\/treino\/exercicios$/);
     await expect(page.getByText('Sem rede')).toHaveCount(0);
 
@@ -286,7 +286,7 @@ test.describe('mapa do corpo: sem rede', () => {
     await page.evaluate(() => window.dispatchEvent(new Event('offline')));
     await expectOfflineIcon(page);
 
-    await page.getByRole('link', { name: 'Mapa do corpo' }).click();
+    await page.getByRole('link', { name: 'Mapa do Treino' }).click();
     await expect(zone(page, 'chest')).toHaveAttribute(
       'aria-label',
       'Peitoral, 5 exercícios, 12 séries nesta semana',
@@ -299,7 +299,7 @@ test.describe('mapa do corpo: sem rede', () => {
       'Puxada supinada na polia',
       'Remada unilateral com halter',
     ]);
-    await expect(page.getByText('O catálogo ainda não chegou')).toHaveCount(0);
+    await expect(page.getByText('O Catálogo Ainda Não Chegou')).toHaveCount(0);
   });
 
   test('o catálogo que ainda não chegou tem o mesmo aviso da lista de Exercícios', async ({
@@ -309,13 +309,13 @@ test.describe('mapa do corpo: sem rede', () => {
     const server = await startTraining(context, page, { catalog: false });
     server.offline = true;
     await openTraining(page, '/treino/exercicios/mapa');
-    await expect(page.getByText('O catálogo ainda não chegou')).toBeVisible();
+    await expect(page.getByText('O Catálogo Ainda Não Chegou')).toBeVisible();
     await expect(
       page.getByText('Na primeira abertura o aparelho baixa os exercícios.'),
     ).toBeVisible();
     await page.evaluate(() => window.dispatchEvent(new Event('offline')));
     await expect(page.getByText('Sem rede, o aparelho ainda não tem os exercícios.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Tentar baixar' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Tentar Baixar' })).toBeVisible();
     await expect(page.locator('.figure')).toHaveCount(0);
   });
 });

@@ -1,5 +1,442 @@
 # Changelog
 
+## [0.31.0](https://github.com/n33miaz/uniover/compare/v0.30.0...v0.31.0) (2026-10-31)
+
+
+### Features
+
+* **web:** keep the tv green until it is sure
+* **web:** redo the tv top bar and pc off seal
+* **web:** add quick chips to the power sheet
+* **web:** add tv shaped skeletons
+* **web:** show a sleeping remote as green
+
+
+### Bug Fixes
+
+* **web:** show the initial on blank app icons
+
+## [0.30.0](https://github.com/n33miaz/uniover/compare/v0.29.0...v0.30.0) (2026-10-31)
+
+
+### Features
+
+* **agent:** log why it was away
+* **web:** show since when the pc is off
+
+
+### Bug Fixes
+
+* **agent:** reconnect fast, never die on errors
+* **agent:** task repeats and restarts
+* **api:** keep agent green while reconnecting
+
+## [0.29.0](https://github.com/n33miaz/uniover/compare/v0.28.0...v0.29.0) (2026-10-31)
+
+
+### Features
+
+* **contracts:** add tv launcher config schema
+* **tv-launcher:** add home, sleep mode and config
+
+## [0.28.0](https://github.com/n33miaz/uniover/compare/v0.27.0...v0.28.0) (2026-10-31)
+
+
+### Features
+
+* **training:** catalog read timeout and retry
+
+
+### Bug Fixes
+
+* **training:** read catalog in batches, no cursor
+
+## [0.27.0](https://github.com/n33miaz/uniover/compare/v0.26.0...v0.27.0) (2026-10-31)
+
+
+### Features
+
+* **training:** fixed save bar on the editors
+
+
+### Bug Fixes
+
+* **training:** keep illustrations for offline use
+
+
+### Performance Improvements
+
+* **training:** lighter catalog search and rows
+
+## [0.26.0](https://github.com/n33miaz/uniover/compare/v0.25.0...v0.26.0) (2026-10-31)
+
+
+### Features
+
+* **web:** complete exercise illustrations
+* **api:** publish photo routes only when enabled
+* **web:** retire cloud photos, add previews
+* **web:** block selection and tap highlight
+
+
+### Performance Improvements
+
+* **web:** lazy exercise thumbnails
+
+## [0.25.0](https://github.com/n33miaz/uniover/compare/v0.24.0...v0.25.0) (2026-10-31)
+
+
+### Features
+
+* **web:** shared loading frame and skeletons
+* **web:** skeletons in settings and devices
+* **training:** shaped skeletons on every screen
+
+
+### Bug Fixes
+
+* **training:** skeleton classes and shapes
+
+## [0.24.0](https://github.com/n33miaz/uniover/compare/v0.23.0...v0.24.0) (2026-10-31)
+
+
+### Bug Fixes
+
+* **web:** add room under the page top bar
+* **home:** center the brand text on the screen
+* **training:** title case chips and routine name
+
+## [0.23.0](https://github.com/n33miaz/uniover/compare/v0.22.0...v0.23.0) (2026-10-31)
+
+
+### Features
+
+* **tv:** say if the TV has an agent linked
+* **home:** centered brand and discreet agent dot
+* **home:** clearer customize sheet
+* **contracts:** focus closes background field
+* **api:** focus closes background per TV
+* **agent:** close background apps in focus mode
+* **web:** close other apps in focus switch
+
+
+### Bug Fixes
+
+* **home:** scale sheet glyphs, hide arrows
+* **agent:** focus needs the media owner in front
+* **agent:** protect Google TV, log sweep cap
+* **api:** refuse focus closing without capability
+* **api:** latest cleanup skips focus reports
+
+## [0.22.0](https://github.com/n33miaz/uniover/compare/v0.21.0...v0.22.0) (2026-10-30)
+
+
+### Features
+
+* **tv:** say if the TV has an agent linked
+* **home:** centered brand and discreet agent dot
+* **home:** clearer customize sheet
+
+## [0.21.0](https://github.com/n33miaz/uniover/compare/v0.20.0...v0.21.0) (2026-10-30)
+
+
+### Features
+
+* **web:** add the shared page top bar
+* **training:** sync ring and state sheet
+* **training:** thumbnails in the open routine
+* **training:** body map values per region
+* **training:** one top bar and a single back
+
+## [0.20.0](https://github.com/n33miaz/uniover/compare/v0.19.0...v0.20.0) (2026-10-30)
+
+
+### Features
+
+* **web:** standard top bar for module screens
+* **web:** title-only settings with theme selector
+* **web:** shorter settings copy and wide action
+
+
+### Bug Fixes
+
+* **web:** drop agent state when TV is hidden
+* **web:** no focus ring on top bar title
+* **web:** devices dead code and owner hint
+
+## [0.19.0](https://github.com/n33miaz/uniover/compare/v0.18.4...v0.19.0) (2026-10-30)
+
+
+### Features
+
+* **api:** mark one agent alert as seen
+* **api:** guest invites last 7 days
+* **web:** refresh devices screen
+* **web:** collapse the qr login panel
+* **web:** skeletons in settings screens
+* **web:** guest sees own agent state
+* **web:** guest security shows own sessions
+* **web:** drop usage counters from people
+
+
+### Bug Fixes
+
+* **web:** keep power button in view
+
+## [0.18.4](https://github.com/n33miaz/uniover/compare/v0.18.3...v0.18.4) (2026-10-30)
+
+
+### Bug Fixes
+
+* **ci:** trust roots for audit cleanup
+
+## [0.18.3](https://github.com/n33miaz/uniover/compare/v0.18.2...v0.18.3) (2026-10-30)
+
+
+### Features
+
+* **training:** refresh today and week
+
+## [0.18.2](https://github.com/n33miaz/uniover/compare/v0.18.1...v0.18.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* **tv:** read volume across devices
+
+## [0.18.1](https://github.com/n33miaz/uniover/compare/v0.18.0...v0.18.1) (2026-10-29)
+
+
+### Features
+
+* **web:** add safe-area and keyboard tokens
+
+
+### Bug Fixes
+
+* **web:** use safe-bottom token on footers
+* **web:** lift sheets and tabs above keyboard
+* **web:** stop keyboard watcher on destroy
+* **web:** drop doubled safe inset in training
+
+## [0.18.0](https://github.com/n33miaz/uniover/compare/v0.17.0...v0.18.0) (2026-10-28)
+
+
+### Features
+
+* **web:** home top, cards and customize
+* **web:** guest home and one back
+
+
+### Bug Fixes
+
+* **web:** animated skeleton on slow open
+
+## [0.17.0](https://github.com/n33miaz/uniover/compare/v0.16.0...v0.17.0) (2026-10-28)
+
+
+### Features
+
+* **training:** live set as option C
+* **training:** record on rest, hints folded
+* **training:** start from the next routine
+* **training:** six more exercise drawings
+
+
+### Bug Fixes
+
+* **training:** same size for art and muscles
+* **training:** glossary terms and title case
+* **training:** keep 56px steppers on press
+
+## [0.16.0](https://github.com/n33miaz/uniover/compare/v0.15.0...v0.16.0) (2026-10-28)
+
+
+### Features
+
+* **agent:** type with the real field state
+* **agent:** find the tv by mdns
+* **web:** tips when tv services stop
+
+## [0.15.0](https://github.com/n33miaz/uniover/compare/v0.14.0...v0.15.0) (2026-10-28)
+
+
+### Features
+
+* **contracts:** tv light settings capability
+* **agent:** reversible tv light settings
+* **tv:** store and publish light settings
+* **web:** light settings on the tv sheet
+
+## [0.14.0](https://github.com/n33miaz/uniover/compare/v0.13.1...v0.14.0) (2026-10-28)
+
+
+### Features
+
+* **training:** body signals and map polish
+* **training:** mark cloud photos apart
+* **tv:** app skeleton and compact schedule
+
+
+### Bug Fixes
+
+* **training:** one back on body assessments
+* **tv:** cleanup text follows the per-tv switch
+
+## [0.13.1](https://github.com/n33miaz/uniover/compare/v0.13.0...v0.13.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **devices:** allow cleanup config to the agent
+
+## [0.13.0](https://github.com/n33miaz/uniover/compare/v0.12.0...v0.13.0) (2026-10-28)
+
+
+### Features
+
+* **api:** report photo bucket readiness
+* **web:** devices readable at a glance
+* **web:** health in four cards and bucket state
+* **web:** tidy profile, security and appearance
+
+## [0.12.0](https://github.com/n33miaz/uniover/compare/v0.11.1...v0.12.0) (2026-10-28)
+
+
+### Features
+
+* **training:** glossary of plan words
+* **training:** bigger exercise media and map name
+
+
+### Bug Fixes
+
+* **training:** title case and unified names
+
+## [0.11.1](https://github.com/n33miaz/uniover/compare/v0.11.0...v0.11.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **web:** never reload into the old shell
+
+## [0.11.0](https://github.com/n33miaz/uniover/compare/v0.10.0...v0.11.0) (2026-10-28)
+
+
+### Features
+
+* **training:** sync progress photos to the cloud
+
+## [0.10.0](https://github.com/n33miaz/uniover/compare/v0.9.0...v0.10.0) (2026-10-28)
+
+
+### Features
+
+* **contracts:** tv cleanup config message
+* **agent:** schedule light and deep tv cleanup
+* **tv:** per-tv app closing and cleanup reports
+* **web:** cleanup reports and app closing switch
+
+## [0.9.0](https://github.com/n33miaz/uniover/compare/v0.8.1...v0.9.0) (2026-10-28)
+
+
+### Features
+
+* **training:** sync calendar notes and absences
+* **training:** store calendar entries locally
+* **training:** today with week goal and month
+
+## [0.8.1](https://github.com/n33miaz/uniover/compare/v0.8.0...v0.8.1) (2026-10-28)
+
+
+### Features
+
+* **web:** update skeleton mirrors the home
+
+
+### Bug Fixes
+
+* **web:** never hold the first screen on /me
+
+## [0.8.0](https://github.com/n33miaz/uniover/compare/v0.7.0...v0.8.0) (2026-10-28)
+
+
+### Features
+
+* **training:** store full body measurements
+* **training:** measure both sides of the body
+* **training:** body map inside the body tab
+
+## [0.7.0](https://github.com/n33miaz/uniover/compare/v0.6.0...v0.7.0) (2026-10-28)
+
+
+### Features
+
+* **training:** auto-alternate exercise poses
+* **training:** clearer sync status button
+* **training:** rework the live session screens
+
+
+### Bug Fixes
+
+* **training:** back returns to the right screen
+* **training:** restore back on exercise detail
+* **training:** only flag a real next routine
+
+## [0.6.0](https://github.com/n33miaz/uniover/compare/v0.5.2...v0.6.0) (2026-10-27)
+
+
+### Features
+
+* **api:** count usage per person
+* **api:** alert when an agent goes offline
+* **web:** show usage per person
+* **web:** show agent offline alerts
+
+## [0.5.2](https://github.com/n33miaz/uniover/compare/v0.5.1...v0.5.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* **web:** make update replace the shell
+
+## [0.5.1](https://github.com/n33miaz/uniover/compare/v0.5.0...v0.5.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **training:** fit weight chart to data
+
+## [0.5.0](https://github.com/n33miaz/uniover/compare/v0.4.3...v0.5.0) (2026-10-27)
+
+
+### Features
+
+* **release:** version every publication from one VERSION file, with a tag and a GitHub Release
+* **api:** report the product version in the deployment check
+* **web:** show the published version on the about screen
+* **agent:** report the product version
+
+
+## [0.4.3](https://github.com/n33miaz/uniover/compare/v0.4.2...v0.4.3) (2026-10-27)
+
+
+### Features
+
+* **training:** body signals panel
+* **training:** title case body labels
+
+
+## [0.4.2](https://github.com/n33miaz/uniover/compare/v0.4.1...v0.4.2) (2026-10-27)
+
+
+### Features
+
+* **web:** show modules as app icons
+* **web:** open home for guests
+* **web:** rename devices and settings
+
+
 ## [0.4.1](https://github.com/n33miaz/uniover/compare/v0.4.0...v0.4.1) (2026-10-27)
 
 

@@ -104,7 +104,7 @@ describe('ProfilePage', () => {
     it('calls the owner "Administrador"', async () => {
       const { el } = await render();
       expect(el.querySelector('.role-text')?.textContent?.trim()).toBe('Administrador');
-      expect(el.querySelector('.all')?.textContent).toContain('tem acesso a tudo');
+      expect(el.querySelector('.all')?.textContent).toContain('Acesso a tudo');
     });
 
     it('calls the guest "Convidado" and lists what the guest can do, from the permissions', async () => {
@@ -131,6 +131,13 @@ describe('ProfilePage', () => {
       ).toEqual(['Editar atalhos', 'Usar o Treino']);
     });
 
+    it('keeps an unknown permission visible without exposing its technical identifier', async () => {
+      api.me.mockResolvedValue({ ...GUEST, permissions: ['module:training', 'new:permission'] });
+      const { el } = await render();
+      expect(el.querySelector('.abilities')?.textContent).toContain('Permissão adicional');
+      expect(el.querySelector('.abilities')?.textContent).not.toContain('new:permission');
+    });
+
     it('says plainly when the guest has nothing released yet', async () => {
       api.me.mockResolvedValue({ ...GUEST, permissions: [] });
       const { el } = await render();
@@ -140,11 +147,11 @@ describe('ProfilePage', () => {
   });
 
   describe('changing the name', () => {
-    it('starts with the current name, a counter and a note that it can be changed any time', async () => {
+    it('starts with the current name, a counter and a note about where it shows', async () => {
       const { el } = await render();
       expect(input(el).value).toBe('Dono da Casa');
       expect(el.querySelector('.counter')?.textContent?.trim()).toBe('12 de 60');
-      expect(el.querySelector('#profile-name-hint')?.textContent).toContain('quando quiser');
+      expect(el.querySelector('#profile-name-hint')?.textContent).toContain('saudação do app');
       expect(input(el).getAttribute('autocomplete')).toBe('nickname');
       expect(input(el).getAttribute('aria-describedby')).toBe('profile-name-hint');
     });
@@ -314,7 +321,7 @@ describe('ProfilePage', () => {
       el.querySelector<HTMLButtonElement>('button.secondary')!.click();
       await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/entrar'));
       fixture.detectChanges();
-      expect(el.textContent).toContain('o servidor ainda não soube');
+      expect(el.textContent).toContain('sessão encerrada só neste aparelho');
     });
   });
 

@@ -126,6 +126,34 @@ public sealed class SystemSettingsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task OwnerCanSaveTheOfflineAgentAlertDelay()
+    {
+        await using var app = await PasskeyApp.StartAsync(postgres, new PasskeyAppOptions
+        {
+            Extra = new Dictionary<string, string?> { ["Modules:Devices:Alerts:OfflineMinutes"] = "12" },
+        });
+        var owner = await app.LoginAsync();
+        using var authenticator = new VirtualAuthenticator();
+        await app.RegisterAsync(owner, authenticator);
+
+        using var before = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
+        var initial = await PasskeyApp.JsonAsync(before);
+        initial.EnumerateArray().Single(item => item.GetProperty("key").GetString() == SystemSettingKeys.AgentOfflineMinutes)
+            .GetProperty("value").GetInt32().Should().Be(12);
+
+        using var confirm = await app.ConfirmAsync(owner, authenticator, StepUpActions.SystemSettingsChange);
+        confirm.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var saved = await app.SendAsync(HttpMethod.Put, Route + "/" + SystemSettingKeys.AgentOfflineMinutes,
+            new { value = 15 }, owner.AccessToken);
+        saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PasskeyApp.JsonAsync(saved)).GetProperty("value").GetInt32().Should().Be(15);
+
+        await using var db = app.Db();
+        (await db.LoginAudit.SingleAsync(a => a.Event == AuditEvents.SystemSettingChanged, Ct)).Detail
+            .Should().Be(SystemSettingKeys.AgentOfflineMinutes);
+    }
+
+    [Fact]
     public async Task PhotoSwitchTakesEffectWithBucketConfiguration()
     {
         await using var app = await PasskeyApp.StartAsync(postgres, new PasskeyAppOptions
@@ -150,5 +178,51 @@ public sealed class SystemSettingsTests(PostgresFixture postgres)
             new { value = true }, owner.AccessToken);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         (await settings.PhotoStorageEnabledAsync(Ct)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task PhotoBucketStatus_ReportsWhetherTheServerBucketIsComplete_AndHidesItsDetails()
+    {
+        await using var without = await PasskeyApp.StartAsync(postgres);
+        var ownerWithout = await without.LoginAsync();
+        using var missing = await without.SendAsync(HttpMethod.Get, Route + "/photo-bucket", bearer: ownerWithout.AccessToken);
+        missing.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PasskeyApp.JsonAsync(missing)).GetProperty("configured").GetBoolean().Should().BeFalse();
+
+        await using var with = await PasskeyApp.StartAsync(postgres, new PasskeyAppOptions
+        {
+            Extra = new Dictionary<string, string?>
+            {
+                ["Modules:Training:Photos:Storage:ServiceUrl"] = "https://objects.example.test",
+                ["Modules:Training:Photos:Storage:Bucket"] = "private-test",
+                ["Modules:Training:Photos:Storage:AccessKey"] = "synthetic-access",
+                ["Modules:Training:Photos:Storage:SecretKey"] = "synthetic-secret",
+            },
+        });
+        var ownerWith = await with.LoginAsync();
+        using var present = await with.SendAsync(HttpMethod.Get, Route + "/photo-bucket", bearer: ownerWith.AccessToken);
+        var body = await present.Content.ReadAsStringAsync(Ct);
+        present.StatusCode.Should().Be(HttpStatusCode.OK);
+        body.Should().Contain("true").And.NotContain("private-test").And.NotContain("synthetic");
+    }
+
+    [Fact]
+    public async Task GuestCannotReadThePhotoBucketStatus()
+    {
+        await using var app = await PasskeyApp.StartAsync(postgres);
+        var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow());
+        using var read = await app.SendAsync(HttpMethod.Get, Route + "/photo-bucket", bearer: guest.Login.AccessToken);
+        read.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task TvCleanupSettings_DefaultToEnabledWithASafeMemoryThreshold()
+    {
+        await using var app = await PasskeyApp.StartAsync(postgres);
+        var settings = app.Services.GetRequiredService<ISystemSettings>();
+
+        (await settings.TvLightCleanupEnabledAsync(Ct)).Should().BeTrue();
+        (await settings.TvDeepCleanupEnabledAsync(Ct)).Should().BeTrue();
+        (await settings.TvDeepCleanupMemoryThresholdMbAsync(Ct)).Should().Be(160);
     }
 }

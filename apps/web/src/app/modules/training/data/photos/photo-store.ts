@@ -14,6 +14,10 @@ import {
   realBrowserEnv,
 } from './photo-encoder';
 
+/** Maior lado da miniatura da lista e qualidade do JPEG dela: a lista mostra cartões de ~170 px de largura. */
+const THUMB_MAX_SIDE = 360;
+const THUMB_QUALITY = 0.7;
+
 /** O codificador da foto. O padrão usa a tela de desenho do navegador; os testes trocam por um falso. */
 export const PHOTO_ENCODER = new InjectionToken<PhotoEncoder>('PHOTO_ENCODER', {
   providedIn: 'root',
@@ -76,7 +80,7 @@ function toBase64(bytes: Uint8Array): string {
 /**
  * Único ponto de acesso às fotos de progresso. **Só no aparelho**: este serviço não conhece a fila de escrita, o puxador do
  * servidor nem a exportação, e é isso que garante que foto nunca sobe. A tela mostra a foto por **`data:` URL**
- * (`dataUrl`): a política de segurança do app só aceita `img-src 'self' data:`, então `blob:` em `<img>` NÃO é permitido e
+ * (`thumbUrl` na lista, `dataUrl` na foto inteira): a política de segurança do app só aceita `img-src 'self' data:`, então `blob:` em `<img>` NÃO é permitido e
  * não se usa `URL.createObjectURL` para mostrar.
  *
  * Risco real, a medir no aparelho: o iOS pode apagar os dados de um site sem uso por 7 dias (e a proteção por
@@ -134,11 +138,38 @@ export class PhotoStore {
   async list(): Promise<PhotoInfo[]> {
     const rows = await this.db.photos.toArray();
     return rows
+      .filter((row) => row.hidden !== true)
       .map((row) => this.info(row))
       .sort((a, b) => b.takenOn.localeCompare(a.takenOn) || b.addedAt - a.addedAt);
   }
 
-  /** A foto como `data:` URL (é a que a tela põe no `<img>`), ou `null` se não há foto com esse id. */
+  /**
+   * A miniatura como `data:` URL (é a que a lista põe no `<img>`): uma foto de ~200 KB vira ~20 KB, e o base64 deixa de
+   * pesar na thread principal a cada abertura da aba. Foto sem miniatura gera uma na primeira leitura e a guarda; se não
+   * conseguir reduzir, cai na foto inteira. `null` se não há foto com esse id.
+   */
+  async thumbUrl(id: string): Promise<string | null> {
+    const row = await this.db.photos.get(id);
+    if (row === undefined) return null;
+    if (row.thumb !== undefined)
+      return `data:${row.type};base64,${toBase64(new Uint8Array(row.thumb))}`;
+    const encoded = await this.encoder
+      .encode(new Blob([row.data], { type: row.type }), {
+        maxSide: THUMB_MAX_SIDE,
+        quality: THUMB_QUALITY,
+      })
+      .catch(() => null);
+    if (encoded === null) return `data:${row.type};base64,${toBase64(new Uint8Array(row.data))}`;
+    const thumb = await readBytes(encoded.blob);
+    try {
+      await this.db.photos.update(id, { thumb });
+    } catch {
+      // Sem espaço para o cache: a miniatura ainda serve nesta abertura.
+    }
+    return `data:${encoded.blob.type || row.type};base64,${toBase64(new Uint8Array(thumb))}`;
+  }
+
+  /** A foto inteira como `data:` URL (visão ampliada e comparação), ou `null` se não há foto com esse id. */
   async dataUrl(id: string): Promise<string | null> {
     const row = await this.db.photos.get(id);
     if (row === undefined) return null;
@@ -149,7 +180,11 @@ export class PhotoStore {
   async remove(id: string): Promise<boolean> {
     const existed = (await this.db.photos.get(id)) !== undefined;
     if (!existed) return false;
-    await this.db.photos.delete(id);
+    // O resto da fila da nuvem aposentada, se esta foto teve um, sai junto: não fica linha órfã.
+    await this.db.transaction('rw', this.db.photos, this.db.photoSync, async () => {
+      await this.db.photos.delete(id);
+      await this.db.photoSync.delete(id);
+    });
     this.touch();
     return true;
   }

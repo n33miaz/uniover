@@ -38,6 +38,7 @@ import { formatDayMonth, formatKg } from '../../shell/format';
 import { TrainingGlyph } from '../../shell/training-glyph';
 import { TrainingSheet } from '../../shell/training-sheet';
 import { ExerciseMuscles } from './exercise-muscles';
+import { ExerciseDetailSkeleton } from './detail-skeleton';
 
 /** Quantos passos de "Como fazer" aparecem antes do "Ver todos". */
 export const STEPS_PREVIEW = 3;
@@ -76,7 +77,14 @@ export function historyRows(points: readonly DailyPoint[], limit = HISTORY_DAYS)
  */
 @Component({
   selector: 'app-exercise-detail-page',
-  imports: [RouterLink, TrainingGlyph, TrainingSheet, ExerciseIllustration, ExerciseMuscles],
+  imports: [
+    RouterLink,
+    TrainingGlyph,
+    TrainingSheet,
+    ExerciseIllustration,
+    ExerciseMuscles,
+    ExerciseDetailSkeleton,
+  ],
   templateUrl: './detail.page.html',
   styleUrl: './detail.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -148,7 +156,7 @@ export class ExerciseDetailPage {
     for (const id of [...extraPrimary, ...exercise.secondaryMuscles]) {
       const name = muscleLabel(id);
       list.push({
-        text: $localize`:@@training.detail.secondary:${name}:name: · secundário`,
+        text: $localize`:@@training.detail.secondary:${name}:name: · Secundário`,
         accent: false,
       });
     }
@@ -184,9 +192,8 @@ export class ExerciseDetailPage {
   });
 
   protected readonly stepsPreview = STEPS_PREVIEW;
-  protected readonly backLabel = $localize`:@@training.detail.back:Voltar para Exercícios`;
   protected readonly chipsLabel = $localize`:@@training.detail.chips:Músculos e equipamento`;
-  protected readonly addHeading = $localize`:@@training.detail.add-heading:Adicionar a um treino`;
+  protected readonly addHeading = $localize`:@@training.detail.add-heading:Adicionar a um Treino`;
   protected readonly cancelLabel = $localize`:@@training.detail.add-cancel:Cancelar`;
 
   private ticket = 0;

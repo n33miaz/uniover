@@ -1,6 +1,10 @@
 @if (visible()) {
-  <section class="qr" aria-labelledby="qr-login-title">
-    <h2 id="qr-login-title" i18n="@@auth.qr.title">Entrar com o celular</h2>
+  <details
+    class="qr"
+    [open]="startOpen()"
+    (toggle)="startOpen.set($any($event.currentTarget).open)"
+  >
+    <summary i18n="@@auth.qr.title">Entrar com o celular</summary>
 
     <div class="stage">
       @switch (phase()) {
@@ -47,12 +51,15 @@
           </button>
         }
         @default {
-          <p class="state" role="status">
-            <span class="ui-spinner" aria-hidden="true"></span>
-            <span i18n="@@auth.qr.starting">Gerando o QR…</span>
-          </p>
+          <app-loading-skeleton
+            [kind]="'qr'"
+            i18n-label="@@auth.qr.starting"
+            label="Gerando o QR…"
+            [reload]="false"
+            (retried)="retry()"
+          />
         }
       }
     </div>
-  </section>
+  </details>
 }

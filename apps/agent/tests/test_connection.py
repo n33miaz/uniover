@@ -12,7 +12,12 @@ from uniover_agent.core import (
     EnvelopeFactory,
     EnvelopeGate,
 )
-from uniover_agent.ports import ConnectionReplaced, CredentialRejected, TransportError
+from uniover_agent.ports import (
+    ConnectionReplaced,
+    CredentialRejected,
+    ServerRestarting,
+    TransportError,
+)
 
 from .support import AGENT_ID
 
@@ -188,3 +193,84 @@ async def test_on_connected_runs_after_the_hello_on_every_connection() -> None:
     with pytest.raises(asyncio.CancelledError):
         await task
     assert order[:2] == ["hello=1", "hello=2"]
+
+
+async def test_server_restart_reconnects_fast_without_growing_the_backoff() -> None:
+    restarting: list[str | bytes | Exception] = [ServerRestarting("código 1012")]
+    scripts: list[list[str | bytes | Exception]] = [
+        restarting,
+        restarting,
+        restarting,
+        [TransportError("cai")],
+    ]
+    transport = FakeTransport(scripts)
+    harness = Harness(transport)
+    await harness.run_until(lambda: len(harness.clock.sleeps) >= 4)
+    # Três avisos de reinício: espera curta e fixa; a primeira queda comum ainda começa em 1 s.
+    assert harness.clock.sleeps[:4] == [POLICY.restart_wait] * 3 + [1]
+    assert POLICY.restart_wait < 1
+
+
+async def test_unexpected_exception_in_the_loop_does_not_kill_the_agent() -> None:
+    transport = FakeTransport([[RuntimeError("bug")], ["ok"]])
+    harness = Harness(transport)
+    await harness.run_until(lambda: transport.connects >= 2 and harness.processed == ["ok"])
+    assert harness.processed == ["ok"]
+    assert harness.clock.sleeps[0] == 1
+
+
+async def test_exception_from_message_processing_reconnects() -> None:
+    transport = FakeTransport([["ruim"], ["bom"]])
+    harness = Harness(transport)
+    original = harness._process
+
+    async def explode_once(raw: str | bytes) -> None:
+        if raw == "ruim":
+            raise ValueError("falha ao processar")
+        await original(raw)
+
+    harness.supervisor._process = explode_once
+    await harness.run_until(lambda: harness.processed == ["bom"])
+    assert harness.processed == ["bom"]
+
+
+async def test_keepalive_send_failure_closes_the_channel_so_the_loop_reconnects() -> None:
+    release = asyncio.Event()
+
+    class BrokenKeepalive(FakeTransport):
+        async def send(self, message: dict[str, Any]) -> None:
+            if message["type"] == "agent.keepalive.v1":
+                raise TransportError("canal quebrado")
+            await super().send(message)
+
+        async def incoming(self):  # type: ignore[no-untyped-def]
+            # Fica aberto como uma conexão meio morta, até o laço fechá-la.
+            await release.wait()
+            raise TransportError("fechado")
+            yield
+
+        async def close(self) -> None:
+            release.set()
+            await super().close()
+
+    transport = BrokenKeepalive()
+    clock = FakeClock()
+    supervisor = ConnectionSupervisor(
+        transport,
+        lambda raw: asyncio.sleep(0),
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        clock,
+        middle,
+        agent_version="0.1.0",
+        capabilities=[],
+        keepalive_interval=0.01,
+    )
+    task = asyncio.create_task(supervisor.run())
+    for _ in range(300):
+        if transport.connects >= 2:
+            break
+        await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert transport.connects >= 2

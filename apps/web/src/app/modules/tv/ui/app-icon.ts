@@ -51,17 +51,24 @@ export class AppIcon {
   private readonly declared = computed(
     () => iconSource(this.shortcut().iconDataUri) ?? samsungIconSource(this.shortcut().package),
   );
-  protected readonly source = computed(() => {
-    const uri = this.declared();
-    return uri && uri !== this.failed() ? uri : null;
-  });
 
-  /** O ajuste do ícone atual: `null` até ele ser medido (ou se não deu para medir). Um ícone já medido vem na hora. */
-  protected readonly fit = computed(() => {
-    const uri = this.source();
+  /** O ajuste do ícone declarado: `null` até ele ser medido (ou se não deu para medir). Um ícone já medido vem na hora. */
+  private readonly measuredFit = computed(() => {
+    const uri = this.declared();
     this.measured();
     return uri ? (cachedIconFit(uri) ?? null) : null;
   });
+
+  /**
+   * A imagem a mostrar. Nunca um azulejo vazio: sem imagem, com imagem que falhou ao carregar ou com imagem sem tinta
+   * nenhuma (toda transparente), vale a inicial do app (`null` aqui).
+   */
+  protected readonly source = computed(() => {
+    const uri = this.declared();
+    return uri && uri !== this.failed() && this.measuredFit()?.blank !== true ? uri : null;
+  });
+
+  protected readonly fit = computed(() => (this.source() ? this.measuredFit() : null));
 
   protected readonly hue = computed(() => `hue-${fallbackHue(this.shortcut().package)}`);
   protected readonly glyph = computed(() => fallbackGlyph(this.shortcut()));

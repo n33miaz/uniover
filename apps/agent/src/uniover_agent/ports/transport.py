@@ -16,6 +16,10 @@ class ConnectionReplaced(TransportError):  # noqa: N818
     """Outra instância do mesmo agente assumiu a conexão (um dono por conexão)."""
 
 
+class ServerRestarting(TransportError):  # noqa: N818
+    """O servidor avisou que reinicia (deploy, troca de instância): volta-se logo, sem espera."""
+
+
 class Transport(Protocol):
     """Canal de envelopes com a API; WebSocket hoje, MQTT depois, mesmo envelope."""
 

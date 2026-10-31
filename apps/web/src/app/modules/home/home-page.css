@@ -11,6 +11,38 @@
   margin-inline: auto;
 }
 
+/* Barra do alto: a marca no centro de verdade (as duas colunas laterais têm a mesma largura, com ou sem o ponto do agente) e
+   a engrenagem e o ponto no mesmo eixo vertical dela. */
+.home-topbar {
+  display: grid;
+  grid-template-columns: var(--tap) minmax(0, 1fr) var(--tap);
+  align-items: center;
+  min-height: var(--tap);
+}
+
+.brand {
+  margin: 0;
+  color: var(--a-accent-ink);
+  /* O nome do sistema é o título da tela: maior e mais pesado que o resto, ainda numa linha só em qualquer largura. */
+  font-size: clamp(1.5rem, 7vw, 2rem);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.06em;
+  /* O espaçamento entre letras também fica depois da última e puxaria o desenho meio espaço para a esquerda: o respiro à
+     esquerda devolve o texto ao centro da tela (a caixa já está no centro, com as colunas laterais iguais). */
+  padding-inline-start: 0.06em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* O ponto encosta na borda do conteúdo (mesma margem da engrenagem do outro lado); a coluna segue com 44 px. */
+.agent-slot {
+  display: grid;
+  place-items: center end;
+  width: var(--tap);
+  height: var(--tap);
+}
+
 /* Saudação: faixa suave com a hora do dia desenhada ao fundo. */
 .hero {
   position: relative;
@@ -46,6 +78,79 @@
   position: relative;
 }
 
+.hero-settings {
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  /* O alvo de toque tem 44 px, mas o desenho encosta na borda do conteúdo, alinhado aos cartões abaixo. */
+  margin-inline-start: calc((21px - var(--tap)) / 2);
+  border-radius: 50%;
+  color: var(--a-ink2);
+}
+
+.hero-settings app-home-glyph {
+  --glyph-size: 21px;
+}
+
+/* O ponto informa o estado sem competir com a marca. Só a conexão em andamento ganha um halo leve, para não parecer um
+   alerta nem disputar atenção com a saudação. */
+.agent-status {
+  --tone: var(--a-ink3);
+  position: relative;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+
+.agent-status.ok {
+  --tone: var(--a-ok);
+}
+
+.agent-status.warn {
+  --tone: var(--a-warn);
+}
+
+.agent-status.connecting {
+  --tone: var(--a-accent);
+  animation: agent-connect 1.8s ease-in-out infinite;
+}
+
+@keyframes agent-connect {
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--tone) 22%, transparent);
+    opacity: 0.72;
+  }
+}
+
+/* Sobre a faixa verde o cinza padrão quase some: a espera usa a cor da marca, mais forte no meio do brilho. */
+.date-skeleton,
+.greeting-skeleton,
+.time-skeleton {
+  --skeleton-base: color-mix(in srgb, var(--a-accent) 16%, transparent);
+  --skeleton-glint: color-mix(in srgb, var(--a-accent) 6%, transparent);
+  display: block;
+}
+
+.date-skeleton {
+  width: 10rem;
+  min-height: 0.8rem;
+  margin-bottom: var(--space-2);
+}
+
+.greeting-skeleton {
+  width: clamp(9rem, 48vw, 14rem);
+  min-height: clamp(1.35rem, 5vw, 2rem);
+}
+
+.time-skeleton {
+  width: 4.25rem;
+  min-height: 2.25rem;
+  align-self: end;
+}
+
 .date {
   margin: 0 0 var(--space-1);
   color: var(--a-ink2);
@@ -73,64 +178,44 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
-/* Faixa de informações úteis. */
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2);
-}
-
-/* Atalhos e cartões de módulo compartilham raio, toque e foco. */
-.shortcut,
+/* Cartões de módulo compartilham raio e toque. */
 .card {
   -webkit-tap-highlight-color: transparent;
   border-radius: var(--radius);
 }
 
-/* Atalhos: ladrilho e nome, centrados na meia linha. */
-.shortcuts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-
-.shortcut {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  height: 100%;
-  min-height: 64px;
-  padding: var(--space-2) var(--space-3);
-  color: var(--a-ink);
-  font-size: clamp(0.875rem, 4vw, 1rem);
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.shortcut:focus-visible {
-  outline: 3px solid var(--a-accent);
-  outline-offset: 2px;
-}
-
-.shortcut:active {
-  transform: scale(0.97);
-}
-
-/* Cabeçalho da seção de módulos: título e edição na mesma linha, com o mesmo toque dos outros botões. */
+/* Cabeçalho da seção: o título tem peso próprio, e a ação não concorre com ele. */
 .section-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
   margin-top: var(--space-1);
+  padding-inline: var(--space-1);
+}
+
+.section-head h2 {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .edit {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
   flex: none;
-  padding-inline: var(--space-3);
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--a-accent-ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .edit app-home-glyph {
@@ -149,8 +234,13 @@ h1 {
   min-width: 0;
 }
 
-.widget.wide {
-  grid-column: 1 / -1;
+/* Com quantidade ímpar, qualquer último cartão ocupa meia linha e fica no eixo da grade. */
+@media (max-width: 599px) {
+  .widget.centered-last {
+    grid-column: 1 / -1;
+    width: calc((100% - var(--space-3)) / 2);
+    justify-self: center;
+  }
 }
 
 .empty {
@@ -166,8 +256,13 @@ h1 {
     grid-column: span 2;
   }
 
-  .widget.wide {
-    grid-column: span 6;
+  /* Na grade de três cartões por linha, um ou dois itens finais também permanecem no centro. */
+  .widget:last-child:nth-child(3n + 1) {
+    grid-column: 3 / span 2;
+  }
+
+  .widget:nth-last-child(2):nth-child(3n + 1) {
+    grid-column: 2 / span 2;
   }
 }
 
@@ -177,33 +272,39 @@ h1 {
   flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
-  min-height: 220px;
+  /* Altura só o bastante para o bloco mais alto (ícone, nome e "Em Breve"): os ativos e os "Em Breve" têm o mesmo tamanho e,
+     como o bloco é centralizado, nenhum deles sobra vazio embaixo. */
+  min-height: clamp(160px, 42vw, 176px);
   min-width: 0;
-  padding: var(--space-4) var(--space-3) var(--space-3);
+  /* Ícone e nome formam um bloco no centro; a folga em cima e embaixo é a mesma e deixa o selo livre. */
+  padding: var(--space-4) var(--space-3);
   text-align: center;
 }
 
-/* Ladrilho: cor do módulo em tom suave; o desenho leva o traço na cor cheia. O cartão calmo (sem tela) fica neutro. */
-.card {
-  --mod: var(--a-accent);
+/* Módulo em breve: cartão vazado, com borda tracejada na cor das linhas (vale nos dois temas), e o rótulo fica
+   embaixo do nome. O ícone mantém o tamanho dos prontos, só um pouco mais calmo. */
+.card.planned {
+  border: 2px dashed var(--a-line);
+  background: transparent;
+  box-shadow: none;
 }
 
-.card[data-module='training'] {
-  --mod: var(--a-ok);
+.card.planned .ico {
+  opacity: 0.9;
 }
 
+/* Os módulos que já existem usam a cor da marca; os planejados ficam em verde-cinza discreto. */
 .ico {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--mod) 14%, var(--a-surface));
-  color: color-mix(in srgb, var(--mod) 78%, var(--a-ink));
+  --module-icon-size: clamp(72px, 19vw, 80px);
+  --module-app-bg: var(--a-accent);
+  --a-on-module-app: #fff;
+  --module-icon-radius: var(--radius-sm);
 }
 
-.card.calm .ico {
-  background: var(--a-elev);
-  color: var(--a-ink2);
+.card.planned .ico {
+  --module-app-bg: color-mix(in srgb, var(--a-ink2) 88%, var(--a-elev));
 }
 
 h3 {
@@ -215,24 +316,6 @@ h3 {
   line-height: 1.25;
   overflow-wrap: anywhere;
   text-wrap: balance;
-}
-
-.card-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-  width: 100%;
-  min-width: 0;
-}
-
-.desc {
-  margin: 0;
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  text-wrap: pretty;
 }
 
 /* O link se estende por cima do cartão inteiro, então a ação visível e o cartão levam ao mesmo lugar. */
@@ -252,41 +335,31 @@ h3 {
   transform: scale(0.97);
 }
 
-.card-foot {
-  display: flex;
-  flex: 1 0 auto;
-  flex-direction: column;
-  align-items: center;
-  justify-content: end;
-  gap: var(--space-2);
-  width: 100%;
+/* O verde claro do tema escuro é bom para texto, mas não para o desenho branco dentro do ícone. */
+@media (prefers-color-scheme: dark) {
+  .ico {
+    --module-app-bg: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
+  }
+
+  .card.planned .ico {
+    --module-app-bg: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
+  }
 }
 
-/* A faixa de selos tem sempre a altura de um selo: cartão com e sem selo fica no mesmo ritmo. */
-.badges {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-1);
-  min-width: 0;
-  min-height: 26px;
+:host-context([data-theme='dark']) .ico {
+  --module-app-bg: color-mix(in srgb, var(--a-accent) 30%, var(--a-bg));
 }
 
-.card-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-height: var(--tap);
-  color: var(--a-accent-ink);
-  font-size: var(--fs-small);
-  font-weight: 700;
-  line-height: 1.2;
+:host-context([data-theme='dark']) .card.planned .ico {
+  --module-app-bg: color-mix(in srgb, var(--a-ink2) 22%, var(--a-elev));
 }
 
-.card-action app-home-glyph {
-  --glyph-size: 18px;
+:host-context([data-theme='light']) .ico {
+  --module-app-bg: var(--a-accent);
+}
+
+:host-context([data-theme='light']) .card.planned .ico {
+  --module-app-bg: color-mix(in srgb, var(--a-ink2) 88%, var(--a-elev));
 }
 
 /* Estado vazio. */
@@ -314,7 +387,9 @@ h3 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shortcut:active,
+  .agent-status.connecting {
+    animation: none;
+  }
   .card.ui-press:active {
     transform: none;
   }

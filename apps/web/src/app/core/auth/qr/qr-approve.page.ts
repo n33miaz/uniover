@@ -15,6 +15,7 @@ import { AuthGlyph } from '../auth-glyph';
 import { AuthLayout } from '../auth-layout';
 import { AuthService } from '../auth.service';
 import { deviceLabel } from './device-label';
+import { QrApproveSkeleton } from './qr-approve-skeleton';
 
 type View = 'loading' | 'ready' | 'invalid' | 'approved' | 'denied' | 'error';
 type Problem = 'wrong-password' | 'locked' | 'network' | 'failed';
@@ -27,7 +28,7 @@ type Problem = 'wrong-password' | 'locked' | 'network' | 'failed';
  */
 @Component({
   selector: 'app-qr-approve-page',
-  imports: [AuthLayout, AuthField, AuthGlyph, RouterLink],
+  imports: [AuthLayout, AuthField, AuthGlyph, QrApproveSkeleton, RouterLink],
   templateUrl: './qr-approve.page.html',
   styleUrl: './qr-approve.page.css',
 })

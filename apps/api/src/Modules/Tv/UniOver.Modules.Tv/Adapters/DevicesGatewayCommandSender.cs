@@ -58,6 +58,11 @@ internal sealed class DevicesAgentPresence(IAgentPresenceReader presence, TimePr
 {
     public bool IsOnline(string agentId) => !string.IsNullOrEmpty(agentId) && presence.Get(agentId)?.Connected == true;
 
+    public DateTimeOffset? OfflineSince(string agentId) =>
+        string.IsNullOrEmpty(agentId) || presence.Get(agentId) is not { Connected: false } info
+            ? null
+            : info.DisconnectedAt ?? info.LastMessageAt;
+
     public bool IsOfflineBeyondReconnectGrace(string agentId) =>
         !string.IsNullOrEmpty(agentId)
         && presence.OfflineSince(agentId) is { } since

@@ -1,17 +1,22 @@
+import { DOCUMENT } from '@angular/common';
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import {
   ApplicationConfig,
+  DestroyRef,
+  ErrorHandler,
   Injector,
   inject,
   provideAppInitializer,
   provideBrowserGlobalErrorListeners,
 } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, withNavigationErrorHandler } from '@angular/router';
 import { routes } from './app.routes';
 import { idempotencyInterceptor } from './core/api/idempotency.interceptor';
 import { authInterceptor } from './core/auth/auth.interceptor';
 import { AuthService } from './core/auth/auth.service';
 import { connectivityInterceptor } from './core/connectivity/connectivity.interceptor';
+import { watchKeyboardInset } from './core/layout/keyboard-inset';
+import { ChunkAwareErrorHandler, recoverFromChunkNavigationError } from './core/pwa/chunk-error';
 import { InstallHintService } from './core/pwa/install-hint.service';
 import { ModuleHeadService } from './core/pwa/module-head.service';
 import { PwaUpdateService } from './core/pwa/pwa-update.service';
@@ -24,7 +29,9 @@ export const appConfig: ApplicationConfig = {
     // Sem `withViewTransitions`: no WebKit do Playwright (Windows), a transição nativa de tela junto das animações de
     // entrada (`ui-rise`) derrubava a página em cerca de 1 a cada 4 execuções do mesmo fluxo; sem uma das duas, nunca.
     // A tela nova entra pelas animações de entrada dela mesma (`ui-rise` e `ui-stagger`, em styles.css).
-    provideRouter(routes),
+    // Um pedaço de código que sumiu (a casca aberta é de antes do deploy) atualiza o app sozinho em vez de deixar a tela vazia.
+    provideRouter(routes, withNavigationErrorHandler(recoverFromChunkNavigationError)),
+    { provide: ErrorHandler, useClass: ChunkAwareErrorHandler },
     // A Início lê o estado da casa pela porta; o adaptador real fala com a API e com o fluxo em tempo real.
     { provide: HomeStatusPort, useExisting: LiveHomeStatus },
     provideHttpClient(
@@ -36,6 +43,13 @@ export const appConfig: ApplicationConfig = {
     provideAppInitializer(() => inject(PwaUpdateService).start()),
     // Guarda o pedido de instalação do navegador (Chromium o entrega uma vez, cedo, antes de a sessão confirmar).
     provideAppInitializer(() => inject(InstallHintService).start()),
+    // Mantém --kb-inset (teclado virtual) para os rodapés fixos subirem junto.
+    provideAppInitializer(() => {
+      const doc = inject(DOCUMENT);
+      if (!doc.defaultView) return;
+      const stop = watchKeyboardInset(doc.defaultView, doc.documentElement);
+      inject(DestroyRef).onDestroy(stop);
+    }),
     // Acerta manifest, ícone e nome do <head> pelo módulo aberto (o servidor só os escolhe ao entregar a página).
     provideAppInitializer(() => inject(ModuleHeadService).start()),
     // Confirma a sessão pelo cookie de refresh sem segurar a primeira tela (o guarda espera, com limite de tempo).

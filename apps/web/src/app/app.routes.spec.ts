@@ -2,12 +2,27 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
+import { IDBFactory as FakeIDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
 import { routes } from './app.routes';
 import { ApiProblem } from './core/auth/api-problem';
 import { AuthApi } from './core/auth/auth-api';
+import { OFFLINE_DB_FACTORY, OfflineDb } from './core/offline-queue/offline-db';
 import { FakeAccountScope } from './core/offline-queue/queue-test-kit';
 import { AccountScope } from './core/session/account-scope';
 import { HomeStatus, HomeStatusPort } from './core/status/home-status.port';
+import { TRAINING_DB_FACTORY, TrainingDb } from './modules/training/data/training-db';
+
+/**
+ * Os bancos locais da conta (fila offline e Treino) em memória. Sem isto o jsdom, que não tem IndexedDB, deixava a Dexie
+ * rejeitar a abertura fora de qualquer teste ("IndexedDB API missing") assim que o shell sobe com uma conta conhecida.
+ */
+function inMemoryDatabases() {
+  const options = { indexedDB: new FakeIDBFactory(), IDBKeyRange: FakeIDBKeyRange };
+  return [
+    { provide: OFFLINE_DB_FACTORY, useValue: (name: string) => new OfflineDb(name, options) },
+    { provide: TRAINING_DB_FACTORY, useValue: (name: string) => new TrainingDb(name, options) },
+  ];
+}
 
 describe('app routes', () => {
   // Aqui não há sessão nem mock da API: o papel vem só da dica guardada no `localStorage`, que os arquivos de teste
@@ -21,6 +36,7 @@ describe('app routes', () => {
         provideRouter(routes),
         // O Treino só abre com uma conta conhecida (o banco local é por conta): estas rotas só olham o roteamento.
         { provide: AccountScope, useValue: new FakeAccountScope() },
+        ...inMemoryDatabases(),
         // A Início lê o estado da casa pela porta; aqui só interessa que a rota a desenha.
         {
           provide: HomeStatusPort,
@@ -30,7 +46,9 @@ describe('app routes', () => {
               agent: 'unknown',
               watcher: 'unknown',
               serviceDown: false,
+              agentLinked: null,
             }),
+            loading: signal(false),
             watch: () => () => undefined,
           },
         },
@@ -69,16 +87,30 @@ describe('app routes', () => {
     expect(harness.routeNativeElement?.matches('app-connect-page')).toBe(true);
   });
 
-  it('sends an unknown screen of Ajustes home', async () => {
+  it('sends an unknown screen of Configurações home', async () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/ajustes/nada');
     expect(TestBed.inject(Router).url).toBe('/');
+  });
+
+  it('redirects the saved devices address to Dispositivos', async () => {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/ajustes/aparelhos');
+    expect(TestBed.inject(Router).url).toBe('/ajustes/dispositivos');
+    expect(harness.routeNativeElement?.querySelector('app-devices-page')).not.toBeNull();
   });
 
   it('sends unknown paths home', async () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/nada');
     expect(TestBed.inject(Router).url).toBe('/');
+  });
+
+  it('redireciona o endereço antigo sem acesso para Início', async () => {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/sem-acesso');
+    expect(TestBed.inject(Router).url).toBe('/');
+    expect(harness.routeNativeElement?.querySelector('app-home-page')).not.toBeNull();
   });
 
   it('serves the invite page outside the shell and without a session', async () => {
@@ -89,19 +121,11 @@ describe('app routes', () => {
 });
 
 describe('app routes for a guest', () => {
-  const api = { refresh: vi.fn(), me: vi.fn() };
+  const api = { refresh: vi.fn(), me: vi.fn(), sessions: vi.fn() };
   const TV = ['module:tv', 'tv:control'];
   const TRAINING = ['module:training'];
   // Telas só do dono: o convidado nunca as abre, qualquer que seja o módulo que a conta dele libera.
-  const OWNER_ONLY = [
-    '/',
-    '/ajustes/seguranca',
-    '/ajustes/pessoas',
-    '/ajustes/aparelhos',
-    '/ajustes/auditoria',
-    '/ajustes/sistema',
-    '/nada',
-  ];
+  const OWNER_ONLY = ['/ajustes/pessoas', '/ajustes/auditoria', '/ajustes/sistema', '/nada'];
 
   /** A conta do convidado, com a lista de permissões que a API devolve (sem a lista: resposta antiga, não se sabe). */
   function signInAs(permissions?: string[]) {
@@ -131,6 +155,7 @@ describe('app routes for a guest', () => {
     localStorage.clear();
     api.refresh.mockReset().mockResolvedValue({ accessToken: 't', expiresIn: 600 });
     api.me.mockReset();
+    api.sessions.mockReset().mockResolvedValue([]);
     signInAs(TV);
     TestBed.configureTestingModule({
       providers: [
@@ -138,6 +163,21 @@ describe('app routes for a guest', () => {
         { provide: AuthApi, useValue: api },
         // O Treino só abre com uma conta conhecida (o banco local é por conta): estas rotas só olham o roteamento.
         { provide: AccountScope, useValue: new FakeAccountScope() },
+        ...inMemoryDatabases(),
+        {
+          provide: HomeStatusPort,
+          useValue: {
+            status: signal<HomeStatus>({
+              userName: null,
+              agent: 'unknown',
+              watcher: 'unknown',
+              serviceDown: false,
+              agentLinked: null,
+            }),
+            loading: signal(false),
+            watch: () => () => undefined,
+          },
+        },
       ],
     });
   });
@@ -146,21 +186,39 @@ describe('app routes for a guest', () => {
 
   describe('who only has the TV', () => {
     it.each([...OWNER_ONLY, '/treino', '/ajustes/creditos'])(
-      'sends %s to the TV: it is not a screen this guest may use',
+      'sends %s to Início: it is not a screen this guest may use',
       async (url) => {
         const { url: landed, root } = await go(url);
-        expect(landed).toBe('/tv');
-        expect(root.querySelector('app-tv-page')).not.toBeNull();
+        expect(landed).toBe('/');
+        expect(root.querySelector('app-home-page')).not.toBeNull();
+      },
+    );
+  });
+
+  describe('Segurança', () => {
+    it.each([
+      ['the TV', TV],
+      ['the Treino', TRAINING],
+    ])(
+      'opens for a guest with %s, with the own sessions and no passkeys',
+      async (_name, permissions) => {
+        signInAs(permissions);
+        const { url, root } = await go('/ajustes/seguranca');
+        expect(url).toBe('/ajustes/seguranca');
+        expect(root.querySelector('app-security-page')).not.toBeNull();
+        expect(root.querySelector('app-sessions-section')).not.toBeNull();
+        expect(root.querySelector('app-security-section')).toBeNull();
+        expect(root.textContent).not.toContain('Passkeys');
       },
     );
   });
 
   describe('who only has the Treino', () => {
-    it.each(OWNER_ONLY)('sends %s straight to the Treino, never through the TV', async (url) => {
+    it.each(OWNER_ONLY)('sends %s to Início, never through the TV', async (url) => {
       signInAs(TRAINING);
       const { url: landed, root } = await go(url);
-      expect(landed).toBe('/treino');
-      expect(root.querySelector('app-training-page')).not.toBeNull();
+      expect(landed).toBe('/');
+      expect(root.querySelector('app-home-page')).not.toBeNull();
       expect(root.querySelector('app-tv-page')).toBeNull();
     });
 
@@ -175,21 +233,29 @@ describe('app routes for a guest', () => {
       expect(root.querySelector(selector)).not.toBeNull();
     });
 
-    it('has the round settings button in the Treino, with no way to the Início', async () => {
+    it('gives the guest one top arrow in the Treino header, and no second header or link of its own', async () => {
       signInAs(TRAINING);
       const { root } = await go('/treino');
-      const header = root.querySelector('header')!;
-      expect(header.querySelector('a[href="/"]')).toBeNull();
-      expect(header.querySelectorAll('a')).toHaveLength(1);
-      expect(header.querySelector('a')?.getAttribute('href')).toBe('/ajustes');
-      expect(header.querySelector('a')?.getAttribute('aria-label')).toBe('Ajustes');
+      expect(root.querySelectorAll('app-page-top-bar')).toHaveLength(1);
+      expect(root.querySelectorAll('app-page-top-bar .back')).toHaveLength(1);
+      expect(root.querySelector('app-page-top-bar .back')?.getAttribute('aria-label')).toBe(
+        'Voltar',
+      );
+      expect(root.querySelector('app-page-top-bar h1')?.textContent).toBe('Treino');
     });
   });
 
+  it('does not let a guest with only Treino open the TV by address', async () => {
+    signInAs(TRAINING);
+    const { url, root } = await go('/tv');
+    expect(url).toBe('/');
+    expect(root.querySelector('app-home-page')).not.toBeNull();
+  });
+
   describe('who has both modules', () => {
-    it('starts on the TV (the first in the registry) and may open the Treino too', async () => {
+    it('starts on Início and may open the Treino too', async () => {
       signInAs([...TV, ...TRAINING]);
-      expect((await go('/')).url).toBe('/tv');
+      expect((await go('/')).url).toBe('/');
       const { url, root } = await go('/treino');
       expect(url).toBe('/treino');
       expect(root.querySelector('app-training-page')).not.toBeNull();
@@ -198,25 +264,25 @@ describe('app routes for a guest', () => {
 
   describe('who has no module at all', () => {
     it.each([...OWNER_ONLY, '/treino', '/ajustes/creditos'])(
-      'sends %s to the "no access" screen, not to a module',
+      'sends %s to Início, not to a module',
       async (url) => {
         signInAs([]);
         const { url: landed, root } = await go(url);
-        expect(landed).toBe('/sem-acesso');
-        expect(root.querySelector('app-no-access-page')).not.toBeNull();
+        expect(landed).toBe('/');
+        expect(root.querySelector('app-home-page')).not.toBeNull();
         expect(root.querySelector('app-tv-page, app-training-page')).toBeNull();
       },
     );
   });
 
-  it('keeps the TV as the home when the list of permissions is not known (an older answer)', async () => {
+  it('keeps Início as the home when the list of permissions is not known (an older answer)', async () => {
     signInAs(undefined);
-    expect((await go('/')).url).toBe('/tv');
+    expect((await go('/')).url).toBe('/');
   });
 
-  it('never leaves the "no access" screen to someone who does have a module', async () => {
+  it('sends the old "no access" screen to Início when the guest does have a module', async () => {
     signInAs(TRAINING);
-    expect((await go('/sem-acesso')).url).toBe('/treino');
+    expect((await go('/sem-acesso')).url).toBe('/');
   });
 
   it.each([
@@ -231,12 +297,12 @@ describe('app routes for a guest', () => {
     expect(root.querySelector(selector)).not.toBeNull();
   });
 
-  it('has no way out of the control but the round settings button (no Início, no tabs)', async () => {
+  it('has the Início arrow and no settings gear in the control header (no tabs)', async () => {
     const { root } = await go('/tv');
-    expect(root.querySelector('a[href="/"], app-tab-bar, header .back')).toBeNull();
-    const settings = root.querySelector('header.head a.settings');
-    expect(settings?.getAttribute('href')).toBe('/ajustes');
-    expect(settings?.getAttribute('aria-label')).toBe('Ajustes');
+    expect(root.querySelector('a[href="/"]')?.getAttribute('aria-label')).toBe('Voltar ao Início');
+    expect(root.querySelector('app-tab-bar')).toBeNull();
+    // Configurações é só pela Início: o topo da TV não tem mais a engrenagem.
+    expect(root.querySelector('header.head a.settings, header.head a[href="/ajustes"]')).toBeNull();
   });
 });
 

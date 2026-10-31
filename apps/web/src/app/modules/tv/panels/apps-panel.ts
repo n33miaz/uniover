@@ -10,10 +10,11 @@ import {
   output,
   signal,
 } from '@angular/core';
+import { cleanupReasonText } from '../../../shared/tv-cleanup-text';
 import { TvAccess } from '../data/tv-access';
 import { controlRanks, movedOrder } from '../data/tv-order';
 import { TvStore } from '../data/tv-store';
-import { TvShortcut, shortcutLabel } from '../data/tv-types';
+import { TvShortcut, clockText, shortcutLabel } from '../data/tv-types';
 import { AppIcon } from '../ui/app-icon';
 import { CleanupSheet } from '../ui/cleanup-sheet';
 import { TvIcon } from '../ui/tv-icon';
@@ -112,6 +113,8 @@ export class AppsPanel {
   protected readonly busy = signal(false);
   /** Pedindo a lista à TV (mostra "Buscando…"); o erro, se houver, aparece no aviso do próprio painel. */
   protected readonly refreshing = signal(false);
+  /** Lendo a lista de novo depois de ela não ter vindo no prazo ("Tentar de Novo"). */
+  protected readonly reloading = signal(false);
   /** Já pediu a lista à TV pelo menos uma vez, com sucesso (para dizer que ela segue vazia). */
   protected readonly asked = signal(false);
 
@@ -123,6 +126,18 @@ export class AppsPanel {
   protected readonly cleanLabel = computed(() =>
     this.store.cleaning() ? this.cleaningText : $localize`:@@tv.cleanup.open:Limpar a TV`,
   );
+  protected readonly lastCleanupText = computed(() => {
+    const result = this.store.lastCleanup();
+    if (!result) return '';
+    if (result.result === 'skipped') {
+      const reason = cleanupReasonText(result.reason);
+      return $localize`:@@tv.cleanup.last-skipped:Limpeza pulada: ${reason}:reason:.`;
+    }
+    const freed = result.freedMb ?? 0;
+    return freed >= 1
+      ? $localize`:@@tv.cleanup.last-result:Limpeza feita às ${clockText(result.at)}:time:, liberou ${freed}:mb: MB.`
+      : $localize`:@@tv.cleanup.last-done:Limpeza feita às ${clockText(result.at)}:time:.`;
+  });
 
   /** O botão de atualizar é só um ícone: o nome acessível diz também o que está acontecendo. */
   protected readonly refreshLabel = computed(() =>
@@ -164,6 +179,17 @@ export class AppsPanel {
       if (await this.store.refreshShortcuts()) this.asked.set(true);
     } finally {
       this.refreshing.set(false);
+    }
+  }
+
+  /** Lê tudo de novo (o estado e a lista de apps): a lista que não veio no prazo ganha uma nova espera, com esqueleto. */
+  protected async reload(): Promise<void> {
+    if (this.reloading()) return;
+    this.reloading.set(true);
+    try {
+      await this.store.refresh();
+    } finally {
+      this.reloading.set(false);
     }
   }
 

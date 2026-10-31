@@ -255,7 +255,7 @@ def test_the_real_launcher_swap_works_in_task_scheduler_and_rolls_back_on_failur
         assert failed.returncode in (3, 4), failed.stderr
         assert actions() == [old_action]
 
-        # Sucesso: só a ação muda e o gatilho continua.
+        # Sucesso: a ação, os gatilhos (logon + repetição) e o reinício por falha são trocados.
         done = powershell(launcher_task_script(new_root, name))
         assert done.returncode == 0, done.stderr or done.stdout
         (action,) = actions()
@@ -263,7 +263,17 @@ def test_the_real_launcher_swap_works_in_task_scheduler_and_rolls_back_on_failur
         assert Path(executable).name.lower() == "wscript.exe"
         assert arguments == f'//B //Nologo "{new_root / "launcher.vbs"}"'
         triggers = powershell(f"(Get-ScheduledTask -TaskName '{name}').Triggers.Count")
-        assert triggers.stdout.strip() == "1"
+        assert triggers.stdout.strip() == "2"
+        restart = powershell(
+            f"$s=(Get-ScheduledTask -TaskName '{name}').Settings;"
+            "'' + $s.RestartCount + '|' + $s.RestartInterval + '|' + $s.MultipleInstances"
+        )
+        assert restart.stdout.strip() == "999|PT1M|IgnoreNew", restart.stderr
+        repetition = powershell(
+            f"(Get-ScheduledTask -TaskName '{name}').Triggers | "
+            "ForEach-Object { $_.Repetition.Interval }"
+        )
+        assert "PT10M" in repetition.stdout
 
         # Sem a tarefa (apagada), o mesmo script registra uma completa.
         powershell(f"Unregister-ScheduledTask -TaskName '{name}' -Confirm:$false")

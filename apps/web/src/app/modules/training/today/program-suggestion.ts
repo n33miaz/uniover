@@ -3,6 +3,7 @@ import type { RoutineTemplate } from '../data/routines/routine';
 import { RoutineRepository } from '../data/routines/routine-repository';
 import { isProgramTemplate, programSummary } from '../routines/program-summary';
 import { TrainingGlyph } from '../shell/training-glyph';
+import { TrainingRowsSkeleton } from '../shell/training-rows-skeleton';
 
 /**
  * A sugestão do programa da semana: enquanto a conta não tem programa ativo, Hoje oferece os programas disponíveis
@@ -11,25 +12,22 @@ import { TrainingGlyph } from '../shell/training-glyph';
  */
 @Component({
   selector: 'app-program-suggestion',
-  imports: [TrainingGlyph],
+  imports: [TrainingGlyph, TrainingRowsSkeleton],
   template: `
     @if (sheetMode() || loading() || programs().length > 0 || error()) {
       <section
         class="suggest ui-card"
         [attr.aria-labelledby]="sheetMode() ? null : 'program-title'"
-        aria-label="Escolha seu programa"
+        aria-label="Escolha Seu Programa"
         i18n-aria-label="@@training.program.label"
       >
         @if (!sheetMode()) {
           <h3 id="program-title" class="title" i18n="@@training.program.title">
-            Escolha seu programa
+            Escolha Seu Programa
           </h3>
         }
         @if (loading()) {
-          <p class="status" role="status">
-            <span class="ui-spinner" aria-hidden="true"></span>
-            <span i18n="@@training.program.loading">Carregando os programas…</span>
-          </p>
+          <app-training-rows-skeleton [label]="loadingLabel" [rows]="3" />
         }
         @if (programs().length > 0) {
           <ul class="ui-group ui-plain">
@@ -87,9 +85,6 @@ import { TrainingGlyph } from '../shell/training-glyph';
       line-height: 1.2;
     }
     .status {
-      display: flex;
-      align-items: center;
-      gap: var(--space-3);
       margin: 0;
       color: var(--a-ink2);
     }
@@ -116,13 +111,14 @@ export class ProgramSuggestion {
   readonly dismissible = input(false);
   /** Dentro da folha, o título vem dela e a sugestão também informa quando não há programa local. */
   readonly sheetMode = input(false);
-  readonly dismissLabel = input($localize`:@@training.program.dismiss:Agora não`);
+  readonly dismissLabel = input($localize`:@@training.program.dismiss:Agora Não`);
   readonly dismissed = output<void>();
   /** A escolha foi gravada no aparelho; quem abriu a folha decide qual treino começar em seguida. */
   readonly selected = output<RoutineTemplate>();
 
   protected readonly programs = signal<readonly RoutineTemplate[]>([]);
   protected readonly loading = signal(true);
+  protected readonly loadingLabel = $localize`:@@training.program.loading:Carregando os programas…`;
   protected readonly choosing = signal<string | null>(null);
   protected readonly error = signal('');
 

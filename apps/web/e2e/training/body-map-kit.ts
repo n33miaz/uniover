@@ -14,7 +14,7 @@ const SESSION_ID = '30000000-0000-4000-8000-000000000001';
 
 /**
  * Põe no servidor um treino desta semana com séries de trabalho por exercício (`[exercício, quantas séries]`). Os instantes
- * são os de agora, para a série cair sempre na semana de hoje (segunda a domingo). Chamar depois de `startTraining` e antes de
+ * são os de agora, para a série cair sempre na semana de hoje (domingo a sábado). Chamar depois de `startTraining` e antes de
  * abrir a tela: o mapa lê o que o aparelho puxou.
  */
 export function seedWeek(

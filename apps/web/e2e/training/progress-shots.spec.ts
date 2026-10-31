@@ -27,10 +27,7 @@ const slug = (name: string) =>
 
 /** A captura espera a primeira sincronização acabar e as leituras do aparelho se assentarem: sem isso o print pega a tela no meio do carregamento. */
 async function steady(page: Page): Promise<void> {
-  await expect(page.locator('.training-header .status')).toHaveAttribute(
-    'aria-label',
-    /Sincronizado às|Sem rede/,
-  );
+  await expect(page.locator('app-page-top-bar .ring[data-state="busy"]')).toHaveCount(0);
   await expect(page.locator('.ui-skeleton')).toHaveCount(0);
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 400)));
 }
@@ -52,7 +49,7 @@ const EXTRAS: readonly ExtraShot[] = [
     name: 'gráfico com meta, sem rede',
     run: async (page, context, server) => {
       await openProgress(page);
-      await page.getByRole('button', { name: 'Definir meta' }).click();
+      await page.getByRole('button', { name: 'Definir Meta' }).click();
       const sheet = page.getByRole('dialog', { name: /^Meta de 1RM/ });
       await sheet.getByLabel('Meta de 1RM, em kg').fill('55');
       await sheet.getByRole('button', { name: 'Salvar' }).click();
@@ -62,7 +59,8 @@ const EXTRAS: readonly ExtraShot[] = [
       server.offline = true;
       await context.setOffline(true);
       await page.evaluate(() => window.dispatchEvent(new Event('offline')));
-      await expect(page.getByText(/Sem rede/).first()).toBeVisible();
+      // O estado sem rede mora no anel do cabeçalho.
+      await expect(page.locator('app-page-top-bar .ring')).toHaveAttribute('data-state', 'offline');
       await expectChartDrawn(page);
     },
   },
@@ -81,7 +79,7 @@ const EXTRAS: readonly ExtraShot[] = [
       await openProgress(page);
       await section(page, /^Semana/).click();
       await page.getByRole('button', { name: 'Semana anterior' }).click();
-      await expect(page.locator('app-progress-week .range b')).toHaveText('12 a 18 de outubro');
+      await expect(page.locator('app-progress-week .range b')).toHaveText('11 a 17 de outubro');
     },
   },
   {
@@ -93,7 +91,7 @@ const EXTRAS: readonly ExtraShot[] = [
         await page.getByRole('button', { name: 'Semana anterior' }).click();
       }
       await expect(page.locator('app-progress-week .range b')).toHaveText(
-        '28 de setembro a 4 de outubro',
+        '27 de setembro a 3 de outubro',
       );
     },
   },
@@ -110,7 +108,7 @@ const EXTRAS: readonly ExtraShot[] = [
     name: 'todas as seções abertas',
     run: async (page) => {
       await openProgress(page);
-      for (const title of [/^Recordes/, /^Semana/, /^Frequência/, /^Exportar e compartilhar/]) {
+      for (const title of [/^Recordes/, /^Semana/, /^Frequência/, /^Exportar e Compartilhar/]) {
         await section(page, title).click();
       }
       await expect(page.locator('app-progress-frequency .day.on')).toHaveCount(5);

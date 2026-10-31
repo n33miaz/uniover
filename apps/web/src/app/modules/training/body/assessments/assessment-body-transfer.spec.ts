@@ -46,7 +46,7 @@ function bodyEntry(note: string, values: Partial<LocalBodyEntry> = {}): LocalBod
 }
 
 describe('assessment to body transfer', () => {
-  it('offers only unambiguous supported values and never promotes references, placeholders or side-specific values', () => {
+  it('offers only unambiguous supported values and never promotes references or placeholders', () => {
     const row = assessment([
       { type: 'weight', reportedValue: '82,4', unit: 'kg', kind: 'measured', method: 'balança' },
       { type: 'waist', reportedValue: 86, unit: 'cm', kind: 'measured', source: 'fita' },
@@ -61,17 +61,53 @@ describe('assessment to body transfer', () => {
     expect(assessmentBodyCandidates(row)).toMatchObject([
       { field: 'weightKg', value: 82.4 },
       { field: 'waistCm', value: 86 },
+      { field: 'abdomenCm', value: 80 },
+      { field: 'calfLeftCm', value: 39 },
     ]);
     expect(assessmentBodyCandidates(row).map(({ field }) => field)).toEqual([
       'weightKg',
       'waistCm',
+      'abdomenCm',
+      'calfLeftCm',
     ]);
   });
 
-  it('does not map abdomen to waist without an explicit site equivalence', () => {
+  it('keeps abdomen separate from waist', () => {
     const row = assessment([{ type: 'abdomen', reportedValue: 80, unit: 'cm', kind: 'measured' }]);
 
-    expect(assessmentBodyCandidates(row)).toEqual([]);
+    expect(assessmentBodyCandidates(row).map(({ field }) => field)).toEqual(['abdomenCm']);
+  });
+
+  it('maps new bilateral and skinfold measures only with exact type, side and unit', () => {
+    const row = assessment([
+      { type: 'chest', reportedValue: 90, unit: 'cm', kind: 'measured' },
+      { type: 'arm-contracted', reportedValue: 33, unit: 'cm', kind: 'measured', side: 'right' },
+      { type: 'arm-contracted', reportedValue: 32.5, unit: 'cm', kind: 'measured', side: 'left' },
+      { type: 'forearm', reportedValue: 27, unit: 'cm', kind: 'measured', side: 'right' },
+      { type: 'calf', reportedValue: '00', unit: 'cm', kind: 'measured', side: 'left' },
+      { type: 'skinfold-chest', reportedValue: 8, unit: 'mm', kind: 'measured' },
+      { type: 'skinfold-abdominal', reportedValue: 15, unit: 'mm', kind: 'measured' },
+      { type: 'skinfold-thigh', reportedValue: 13, unit: 'mm', kind: 'measured' },
+    ]);
+    const fields = assessmentBodyCandidates(row).map(({ field }) => field);
+    expect(fields).toEqual([
+      'chestCm',
+      'armRightCm',
+      'armLeftCm',
+      'forearmRightCm',
+      'chestSkinfoldMm',
+      'abdomenSkinfoldMm',
+      'thighSkinfoldMm',
+    ]);
+    expect(assessmentBodyDraft(row, assessmentBodyCandidates(row))).toMatchObject({
+      chestCm: 90,
+      armRightCm: 33,
+      armLeftCm: 32.5,
+      forearmRightCm: 27,
+      chestSkinfoldMm: 8,
+      abdomenSkinfoldMm: 15,
+      thighSkinfoldMm: 13,
+    });
   });
 
   it('maps the assessed day, exact supported values and source details into a single body entry', () => {

@@ -67,7 +67,8 @@ fieldset {
   padding: 0;
 }
 
-.hint {
+.hint,
+.cleanup-hint {
   margin: 0 0 var(--space-2);
   color: var(--a-ink2);
   font-size: var(--fs-small);
@@ -108,7 +109,8 @@ fieldset {
 }
 
 /* Pessoas: cada linha inteira é o alvo do toque (o interruptor em si tem 32 px de altura). */
-.option {
+.option,
+.toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -118,11 +120,42 @@ fieldset {
   cursor: pointer;
 }
 
-.option:has(input:focus-visible) {
+.option:has(input:focus-visible),
+.toggle:has(input:focus-visible) {
   background: var(--a-surface-2);
 }
 
-.option-title {
+/* Aviso curto sob o interruptor que encerra apps à força. */
+.toggle-hint {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-2);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.reports-title {
+  margin: var(--space-3) 0 var(--space-2);
+  padding: 0;
+}
+
+.report {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-4);
+}
+
+.report-title {
+  font-weight: 650;
+}
+
+.report-outcome {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.option-title,
+.toggle-title {
   min-width: 0;
   font-weight: 650;
   overflow-wrap: anywhere;
@@ -141,15 +174,6 @@ fieldset {
 .empty.bad {
   border-color: color-mix(in srgb, var(--a-bad) 45%, var(--a-line));
   color: var(--a-bad-ink);
-}
-
-.loading {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin: 0;
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
 }
 
 .confirm {
@@ -186,7 +210,7 @@ fieldset {
   gap: var(--space-2);
   margin: var(--space-1) calc(-1 * var(--gutter)) 0;
   padding: var(--space-3) var(--gutter);
-  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--space-3) + var(--safe-bottom));
   border-top: 1px solid var(--a-line);
   background: var(--a-surface-raised);
 }

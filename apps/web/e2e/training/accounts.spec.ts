@@ -156,9 +156,9 @@ async function ownerSavesOffline(page: Page) {
   await goInApp(page, '/treino/exercicios/novo');
   await page.getByLabel('Nome').fill(MINE);
   await chooseMuscle(page, 'Meio das costas');
-  await page.getByRole('button', { name: 'Salvar exercício' }).click();
+  await page.getByRole('button', { name: 'Salvar Exercício' }).click();
   await expect(page.getByRole('heading', { name: MINE })).toBeVisible();
-  await expect(page.getByText('1 ainda não sincronizado')).toBeVisible();
+  await expect(page.locator('app-page-top-bar .ring')).toHaveAttribute('data-state', 'offline');
   expect(await queued(page, OWNER_ID)).toBe(1);
   expect(server.writes('exercises', OWNER_ID)).toBe(0);
 }
@@ -249,7 +249,7 @@ test.describe('o treino ao vivo de duas contas no mesmo navegador', () => {
     await page.goto('/entrar');
     await signIn(page, OWNER.email, OWNER.password);
     await goInApp(page, '/treino');
-    await expect(page.getByRole('heading', { name: 'Semana', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Esta Semana', exact: true })).toBeVisible();
     await expect(page.locator('.lines .ui-row').first()).toContainText('última vez 40 kg × 10');
     await beginWorkout(page);
     server.offline = true;
@@ -264,10 +264,10 @@ test.describe('o treino ao vivo de duas contas no mesmo navegador', () => {
     await goOnline(page);
     await signIn(page, GUEST.email, GUEST.password);
     await goInApp(page, '/treino');
-    await expect(page.getByText('Sem rotinas ainda')).toBeVisible();
+    await expect(page.getByText('Sem Rotinas Ainda')).toBeVisible();
     await expect(page.locator('app-week-calendar .week-days .day.done')).toHaveCount(0);
-    await expect(page.getByText('Treino em andamento')).toHaveCount(0);
-    await expect(page.getByText('Continuar treino')).toHaveCount(0);
+    await expect(page.getByText('Treino em Andamento')).toHaveCount(0);
+    await expect(page.getByText('Continuar Treino')).toHaveCount(0);
     await expect(page.locator('.sending')).toHaveCount(0);
     await expect(page.getByText('ainda não sincronizado')).toHaveCount(0);
     // O motor de B passou por aqui (puxou o que é dele), e a série de A não saiu com o token de B.
@@ -283,7 +283,7 @@ test.describe('o treino ao vivo de duas contas no mesmo navegador', () => {
     await signOut(page);
     await signIn(page, OWNER.email, OWNER.password);
     await goInApp(page, '/treino');
-    await expect(page.getByText('Treino em andamento')).toBeVisible();
+    await expect(page.getByText('Treino em Andamento')).toBeVisible();
     await expect(page.locator('app-week-calendar .week-days .day.done')).toHaveCount(1);
     await expect.poll(() => server.writes('sets', OWNER_ID), { timeout: 20_000 }).toBe(1);
     expect(server.writes('sets', GUEST_ID)).toBe(0);

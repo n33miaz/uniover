@@ -71,6 +71,7 @@ const invitePosts = () =>
 const permissionPuts = () => mock.requests.filter((r) => r.method === 'PUT');
 
 async function startInvite(page: Page, name: string): Promise<void> {
+  await page.getByRole('tab', { name: 'Convites' }).click();
   await page.getByRole('button', { name: 'Convidar alguém' }).click();
   await page.getByLabel('Nome do convidado').fill(name);
 }
@@ -102,7 +103,8 @@ test.describe('Pessoas: a lista', () => {
     ]);
     await expect(page.locator('.revoked')).toHaveText('Acesso revogado');
     await expect(page.getByRole('button', { name: /^Permissões de Carla/ })).toHaveCount(0);
-    await expect(page.getByRole('heading', { level: 3, name: 'Convites pendentes' })).toBeVisible();
+    await page.getByRole('tab', { name: 'Convites' }).click();
+    await expect(page.getByRole('heading', { level: 2, name: 'Convites pendentes' })).toBeVisible();
 
     await expect(page.getByRole('button', { name: 'Convidar alguém' })).toBeVisible();
     await expect(page.locator('form.invite')).toHaveCount(0);
@@ -183,6 +185,7 @@ test.describe('Pessoas: convidar escolhendo o que a pessoa poderá fazer', () =>
       await expect(
         page.locator('.person', { hasText: 'Raphael' }).locator('.abilities'),
       ).toHaveText(scenario.summary);
+      await page.getByRole('tab', { name: 'Convites' }).click();
       await expect(page.getByRole('button', { name: 'Convidar alguém' })).toBeVisible();
     });
   }
@@ -450,7 +453,7 @@ test.describe('Pessoas: mudar o que alguém pode fazer', () => {
 });
 
 test.describe('Pessoas: quem não é administrador nunca vê a tela', () => {
-  test('a convidada é levada ao controle e o servidor recusa o que ela chamar à mão', async ({
+  test('a convidada é levada à Início e o servidor recusa o que ela chamar à mão', async ({
     context,
     page,
   }) => {
@@ -466,7 +469,8 @@ test.describe('Pessoas: quem não é administrador nunca vê a tela', () => {
     });
     mock.role = 'guest';
     await page.goto('/ajustes/pessoas');
-    await expect(page).toHaveURL(/\/tv$/);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('.shortcuts a[href="/ajustes/aparelhos"]')).toHaveCount(0);
     await expect(page.getByText('Permissões de', { exact: false })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Convidar alguém' })).toHaveCount(0);
     // A tela dela nunca chamou a rota de administrador.

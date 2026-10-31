@@ -1,7 +1,7 @@
 :host {
   display: block;
   /* Ao revelar o painel (rolagem até ele), a barra de abas, que gruda embaixo, não pode cobri-lo. */
-  scroll-margin-bottom: calc(var(--space-4) + 56px + env(safe-area-inset-bottom));
+  scroll-margin-bottom: calc(var(--space-4) + 56px + var(--safe-bottom));
 }
 
 .panel {

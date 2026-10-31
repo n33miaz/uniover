@@ -75,6 +75,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.cleanup.v1.schema.json'
+      tvCleanupConfig:
+        name: tv.cleanup.config.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.cleanup.config.v1.schema.json'
       agentLogsRequest:
         name: agent.logs.request.v1
         contentType: application/json
@@ -259,6 +264,13 @@ operations:
     summary: A API pede ao agente que feche os apps da TV e libere memória, sem derrubar o controle remoto.
     messages:
       - $ref: '#/channels/agentCommands/messages/tvCleanup'
+  sendTvCleanupConfig:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API atualiza as preferências de limpeza automática no agente compatível.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvCleanupConfig'
   receiveTvCleanupResult:
     action: receive
     channel:

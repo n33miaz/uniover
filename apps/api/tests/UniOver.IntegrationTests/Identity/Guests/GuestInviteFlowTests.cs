@@ -87,7 +87,7 @@ public sealed class GuestInviteFlowTests(PostgresFixture postgres)
         var created = await CreateInviteAsync(app, owner, authenticator);
 
         created.NoStore.Should().BeTrue("a resposta traz o segredo");
-        created.ExpiresAt.Should().Be(app.Time.GetUtcNow().AddHours(48), "validade padrão de 48 h");
+        created.ExpiresAt.Should().Be(app.Time.GetUtcNow().AddDays(7), "validade padrão de 7 dias");
         await using var db = app.Db();
         var stored = await db.GuestInvites.SingleAsync(Ct);
         stored.Id.Should().Be(created.Id);

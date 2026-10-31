@@ -9,6 +9,7 @@ from websockets.asyncio.server import ServerConnection
 from uniover_agent.adapters.fakes import FakeSecretStore, FakeTvAdb, FakeTvRemote
 from uniover_agent.config import ConfigError, Settings, require_cleanup_keep
 from uniover_agent.core import Command
+from uniover_agent.core.domain import TvState
 from uniover_agent.main import EXIT_CREDENTIAL_REJECTED, run
 from uniover_agent.ports import LaunchableApp
 
@@ -18,6 +19,13 @@ from .test_tv_composition import TV_HOST, make_tv, pair_fake_tv
 
 REQUEST_ID = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea0"
 COMMAND_ID = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e9f"
+CONFIG_ID = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e90"
+CONFIG_ALLOWING = {
+    "lightEnabled": True,
+    "deepEnabled": False,
+    "deepThresholdMb": 160,
+    "closeBackgroundApps": True,
+}
 
 
 def running_tv() -> FakeTvAdb:
@@ -107,6 +115,11 @@ async def test_the_owner_keep_list_reaches_the_cleanup(
     enable_adb(monkeypatch, tmp_path, adb)
     setup = make_tv(Settings(tv_host=TV_HOST, tv_cleanup_keep=["com.spotify.tv.android"]))
     assert setup is not None
+    # O fechamento de apps só existe depois que a API liberou, para esta TV, pelo canal de
+    # configuração.
+    await setup.handlers["tv.cleanup.config.v1"](
+        Command(CONFIG_ID, "tv.cleanup.config.v1", CONFIG_ALLOWING)
+    )
     result = await setup.handlers["tv.cleanup.v1"](
         Command(COMMAND_ID, "tv.cleanup.v1", {"requestId": REQUEST_ID})
     )
@@ -115,6 +128,36 @@ async def test_the_owner_keep_list_reaches_the_cleanup(
         "force-stop:com.cnvs.apptv",
         "force-stop:com.android.vending",
     ]
+
+
+async def test_by_default_the_composed_cleanup_never_stops_or_kills_an_app(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regra do dono: sem a opção por TV, a limpeza (manual ou configurada) não fecha app nenhum."""
+    adb = running_tv()
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+    enable_adb(monkeypatch, tmp_path, adb)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None
+
+    async def clean() -> None:
+        result = await setup.handlers["tv.cleanup.v1"](
+            Command(COMMAND_ID, "tv.cleanup.v1", {"requestId": REQUEST_ID})
+        )
+        assert result.status.value == "ok"
+
+    await clean()
+    await setup.handlers["tv.cleanup.config.v1"](
+        Command(
+            CONFIG_ID, "tv.cleanup.config.v1", {**CONFIG_ALLOWING, "closeBackgroundApps": False}
+        )
+    )
+    await clean()
+
+    assert not any(
+        step in {"go-home", "kill-background"} or step.startswith("force-stop:")
+        for step in adb.cleanup_log
+    )
 
 
 # --- ponta a ponta ----------------------------------------------------------------------------
@@ -128,6 +171,8 @@ async def test_run_answers_the_cleanup_with_the_report_first_and_the_result_afte
     enable_adb(monkeypatch, tmp_path, adb)
 
     async def script(connection: ServerConnection) -> None:
+        await connection.send(dump(envelope("tv.cleanup.config.v1", CONFIG_ALLOWING, id=CONFIG_ID)))
+        await asyncio.sleep(0.3)
         await connection.send(
             dump(envelope("tv.cleanup.v1", {"requestId": REQUEST_ID}, id=COMMAND_ID))
         )
@@ -151,3 +196,82 @@ async def test_run_answers_the_cleanup_with_the_report_first_and_the_result_afte
     assert (report["body"]["memoryBeforeMb"], report["body"]["memoryAfterMb"]) == (300, 700)
     assert result["body"] == {"ok": True}
     assert "go-home" in adb.cleanup_log
+
+
+async def test_the_light_settings_from_the_config_are_applied_only_to_the_chosen_apps_and_undone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regra do dono: só o que a pessoa ligou muda na TV, e desligar devolve o valor lido antes."""
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    adb = running_tv()
+    adb.global_values["window_animation_scale"] = "1.25"
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+    enable_adb(monkeypatch, tmp_path, adb)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None
+    assert setup.light_settings is not None
+
+    # Sem os campos novos (API antiga) nada é tocado.
+    await setup.handlers["tv.cleanup.config.v1"](
+        Command(CONFIG_ID, "tv.cleanup.config.v1", CONFIG_ALLOWING)
+    )
+    assert not any(step.startswith(("global-", "appops-")) for step in adb.cleanup_log)
+
+    await setup.handlers["tv.cleanup.config.v1"](
+        Command(
+            CONFIG_ID,
+            "tv.cleanup.config.v1",
+            {
+                **CONFIG_ALLOWING,
+                "shortAnimationsEnabled": True,
+                "restrictedPackages": ["com.spotify.tv.android", "com.android.vending", 7],
+            },
+        )
+    )
+    assert adb.global_values["window_animation_scale"] == "0.5"
+    assert [s for s in adb.cleanup_log if s.startswith("appops-set")] == [
+        "appops-set:com.spotify.tv.android:ignore"
+    ]
+
+    await setup.handlers["tv.cleanup.config.v1"](
+        Command(CONFIG_ID, "tv.cleanup.config.v1", CONFIG_ALLOWING)
+    )
+    assert adb.global_values["window_animation_scale"] == "1.25"
+    assert adb.background_modes["com.spotify.tv.android"] is None
+
+
+@pytest.mark.parametrize(
+    ("focus_enabled", "closes", "expected"),
+    [
+        (True, True, ["force-stop:com.cnvs.apptv", "force-stop:com.spotify.tv.android"]),
+        (True, None, []),
+        (True, False, []),
+        (False, True, []),
+    ],
+)
+async def test_focus_mode_closes_background_apps_only_when_the_tv_asked_for_both(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    focus_enabled: bool,
+    closes: bool | None,
+    expected: list[str],
+) -> None:
+    adb = running_tv()
+    adb.media_owners = frozenset({"com.netflix.ninja"})
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+    enable_adb(monkeypatch, tmp_path, adb)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None and setup.light_settings is not None
+    body = {**CONFIG_ALLOWING, "closeBackgroundApps": False, "focusEnabled": focus_enabled}
+    if closes is not None:
+        body["focusClosesBackground"] = closes
+    await setup.handlers["tv.cleanup.config.v1"](Command(CONFIG_ID, "tv.cleanup.config.v1", body))
+
+    # O app da frente vem da sessão da TV: tanto o foco quanto a revalidação do fechador leem dela.
+    monkeypatch.setattr(
+        setup.manager, "snapshot", lambda: TvState("on", None, "com.netflix.ninja", "hot")
+    )
+    setup.light_settings._foreground = lambda: "com.netflix.ninja"
+    await setup.light_settings._check_focus()
+
+    assert [s for s in adb.cleanup_log if s.startswith("force-stop")] == expected

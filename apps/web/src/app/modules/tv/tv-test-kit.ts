@@ -26,6 +26,7 @@ export function makeTv(id: string, overrides: Partial<TvSummary> = {}): TvSummar
     kind: 'android',
     online: true,
     capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb'],
+    allowBackgroundAppClosing: false,
     ...overrides,
   };
 }
@@ -130,13 +131,27 @@ export function createFakeTvStore() {
     canSend: signal(true),
     disabledReason: signal<string | null>(null),
     seenAtText: signal('14:02'),
+    agentOffText: signal<string | null>(null),
+    pcOff: signal(false),
+    pcOffSince: signal<string | null>(null),
+    stateLoading: signal(false),
+    shortcutsLoading: signal(false),
+    shortcutsFailed: signal(false),
+    loading: signal(false),
     streamStatus: signal<TvStreamStatus>('live'),
     notice: signal<TvNotice | null>(null),
     watchdogNote: signal<string | null>(null),
     watchdog: signal<TvWatchdog | null>(null),
     notConfigured: signal(false),
     inFlightKeys: signal(0),
+    volumeNudge: signal(0),
     cleaning: signal(false),
+    lastCleanup: signal<{
+      at: Date;
+      freedMb: number | null;
+      result: 'completed' | 'skipped';
+      reason: string | null;
+    } | null>(null),
     hibernateMinutes: 5,
     start: vi.fn(),
     stop: vi.fn(),

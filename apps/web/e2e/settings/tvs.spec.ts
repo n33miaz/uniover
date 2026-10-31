@@ -133,7 +133,7 @@ const row = (page: Page, name: string) =>
 const sheet = (page: Page) => page.locator('app-tv-edit-sheet dialog');
 const writes = (method: string) => tv.requests.filter((r) => r.method === method);
 
-test.describe('Ajustes > Sistema > TVs', () => {
+test.describe('Configurações > Sistema > TVs', () => {
   test('a linha Sistema leva à tela das TVs', async ({ page }) => {
     seed();
     await page.goto('/ajustes');
@@ -188,6 +188,35 @@ test.describe('Ajustes > Sistema > TVs', () => {
     });
   }
 
+  test('o fechamento dos outros apps no Modo Foco só liga por clique próprio', async ({
+    page,
+  }, info) => {
+    seed();
+    tv.tvs![0]!.capabilities = [
+      ...CASA.capabilities,
+      'tv.light-settings.v1',
+      'tv.focus-closes-background.v1',
+    ];
+    await open(page);
+    await row(page, 'Casa').click();
+    const dialog = sheet(page);
+    await expect(dialog).toBeVisible();
+    const closing = dialog.getByRole('switch', { name: 'Fechar Outros Apps no Foco' });
+    await expect(closing).toHaveCount(0);
+
+    await dialog.getByRole('switch', { name: 'Modo Foco' }).check();
+    await expect(closing).not.toBeChecked();
+    await closing.check();
+    await closing.scrollIntoViewIfNeeded();
+    await check(page, info, 'tvs-foco-fecha-apps', 'light');
+
+    await dialog.getByRole('button', { name: 'Salvar' }).click();
+    await expect(dialog).toBeHidden();
+    expect(writes('PATCH').map((r) => r.body)).toEqual([
+      expect.objectContaining({ focusModeEnabled: true, focusClosesBackground: true }),
+    ]);
+  });
+
   test('adiciona uma TV com o computador livre e as pessoas marcadas', async ({ page }) => {
     seed();
     await open(page);
@@ -206,9 +235,9 @@ test.describe('Ajustes > Sistema > TVs', () => {
 
     // Todo computador já tem uma TV: a ação some e a tela leva a Aparelhos.
     await expect(page.getByRole('button', { name: 'Adicionar TV' })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Ir para Aparelhos' })).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'Ir para Dispositivos' })).toHaveAttribute(
       'href',
-      '/ajustes/aparelhos',
+      '/ajustes/dispositivos',
     );
   });
 

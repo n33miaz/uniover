@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Banner 16:9 que o launcher de fábrica mostra para este app (aparece na lista de apps da TV). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path
+        android:fillColor="#1B2440"
+        android:pathData="M0,0h320v180h-320z" />
+    <path
+        android:fillColor="#3A2D5C"
+        android:pathData="M0,180L320,0L320,180z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M160,60a30,30 0,1 0,0.001 0z" />
+    <path
+        android:fillColor="#1B2440"
+        android:pathData="M160,72a18,18 0,1 0,0.001 0z" />
+</vector>

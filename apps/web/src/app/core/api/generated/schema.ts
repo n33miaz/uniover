@@ -85,6 +85,163 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/devices/agent-alerts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AgentAlert'][];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/devices/agent-alerts/{id}/seen': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/devices/agent-alerts/seen': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/devices/agents': {
     parameters: {
       query?: never;
@@ -2866,6 +3023,59 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/identity/people-usage': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PersonUsage'][];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/identity/sessions': {
     parameters: {
       query?: never;
@@ -3360,6 +3570,98 @@ export interface paths {
       };
     };
     post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          key: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['SystemSettingValue'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/identity/system-settings/photo-bucket': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PhotoBucketStatus'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -3618,6 +3920,169 @@ export interface paths {
           };
           content: {
             'application/json': components['schemas']['BodyProfileResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unprocessable Entity */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/calendar-entries': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          after?: string;
+          limit?: number | string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['CalendarEntriesResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/training/calendar-entries/{dayKey}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: {
+          /** @description UUID opcional para repetir uma escrita sem repetir seu efeito. */
+          'Idempotency-Key'?: string;
+        };
+        path: {
+          dayKey: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['CalendarEntryRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['CalendarEntryResponse'];
           };
         };
         /** @description Bad Request */
@@ -5017,303 +5482,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/v1/training/progress-photos': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get: {
-      parameters: {
-        query?: never;
-        header?: never;
-        path?: never;
-        cookie?: never;
-      };
-      requestBody?: never;
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/json': components['schemas']['ProgressPhotoResponse'][];
-          };
-        };
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-        /** @description Service Unavailable */
-        503: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-      };
-    };
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/training/progress-photos/{id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put: {
-      parameters: {
-        query?: {
-          takenOn?: string;
-        };
-        header?: never;
-        path: {
-          id: string;
-        };
-        cookie?: never;
-      };
-      requestBody?: never;
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/json': components['schemas']['ProgressPhotoResponse'];
-          };
-        };
-        /** @description Bad Request */
-        400: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-        /** @description Conflict */
-        409: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-        /** @description Payload Too Large */
-        413: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-        /** @description Unsupported Media Type */
-        415: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-        /** @description Service Unavailable */
-        503: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-      };
-    };
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/training/progress-photos/{id}/content': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get: {
-      parameters: {
-        query?: never;
-        header?: never;
-        path: {
-          id: string;
-        };
-        cookie?: never;
-      };
-      requestBody?: never;
-      responses: {
-        /** @description OK */
-        200: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content?: never;
-        };
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-        /** @description Not Found */
-        404: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-        /** @description Service Unavailable */
-        503: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-      };
-    };
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/training/progress-photos/{id}/deletion': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put: {
-      parameters: {
-        query?: never;
-        header?: never;
-        path: {
-          id: string;
-        };
-        cookie?: never;
-      };
-      requestBody?: never;
-      responses: {
-        /** @description No Content */
-        204: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content?: never;
-        };
-        /** @description Unauthorized */
-        401: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-        /** @description Forbidden */
-        403: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-        /** @description Service Unavailable */
-        503: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            'application/problem+json': components['schemas']['ProblemDetails'];
-          };
-        };
-      };
-    };
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/api/v1/training/routine-templates': {
     parameters: {
       query?: never;
@@ -5976,6 +6144,66 @@ export interface paths {
         };
       };
     };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/tv/cleanup/latest': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['CleanupReportView'];
+          };
+        };
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -7305,6 +7533,80 @@ export interface paths {
     };
     trace?: never;
   };
+  '/api/v1/tv/tvs/{id}/apps': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvAppsResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/tv/tvs/{id}/cleanup-reports': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvCleanupReportsResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/tvs/{id}/members': {
     parameters: {
       query?: never;
@@ -7504,6 +7806,19 @@ export interface components {
       password: null | string;
       token: null | string;
     };
+    AgentAlert: {
+      /** Format: uuid */
+      agentId: string;
+      agentName: string;
+      /** Format: date-time */
+      detectedAt: string;
+      /** Format: uuid */
+      id: string;
+      /** Format: date-time */
+      lastSeenAt: null | string;
+      /** Format: date-time */
+      recoveredAt: null | string;
+    };
     AgentLogsRequest: {
       /** Format: int32 */
       lines: null | number | string;
@@ -7697,13 +8012,37 @@ export interface components {
     };
     BodyEntryResponse: {
       /** Format: double */
+      abdomenCm: null | number | string;
+      /** Format: double */
+      abdomenSkinfoldMm: null | number | string;
+      /** Format: double */
       armCm: null | number | string;
       /** Format: double */
+      armLeftCm: null | number | string;
+      /** Format: double */
+      armRightCm: null | number | string;
+      /** Format: double */
       bodyFatPct: null | number | string;
+      /** Format: double */
+      calfCm: null | number | string;
+      /** Format: double */
+      calfLeftCm: null | number | string;
+      /** Format: double */
+      calfRightCm: null | number | string;
+      /** Format: double */
+      chestCm: null | number | string;
+      /** Format: double */
+      chestSkinfoldMm: null | number | string;
       /** Format: date-time */
       clientUpdatedAt: string;
       deleted: boolean;
       fatMethod: null | string;
+      /** Format: double */
+      forearmCm: null | number | string;
+      /** Format: double */
+      forearmLeftCm: null | number | string;
+      /** Format: double */
+      forearmRightCm: null | number | string;
       /** Format: double */
       hipCm: null | number | string;
       /** Format: uuid */
@@ -7715,6 +8054,12 @@ export interface components {
       note: null | string;
       /** Format: double */
       thighCm: null | number | string;
+      /** Format: double */
+      thighLeftCm: null | number | string;
+      /** Format: double */
+      thighRightCm: null | number | string;
+      /** Format: double */
+      thighSkinfoldMm: null | number | string;
       /** Format: date-time */
       updatedAt: string;
       /** Format: double */
@@ -7735,9 +8080,50 @@ export interface components {
       /** Format: date-time */
       updatedAt: string;
     };
+    CalendarEntriesResponse: {
+      items: components['schemas']['CalendarEntryResponse'][];
+      nextCursor: null | string;
+    };
+    CalendarEntryRequest: {
+      absent: boolean;
+      /** Format: date-time */
+      clientUpdatedAt: null | string;
+      deleted: boolean;
+      note: null | string;
+    };
+    CalendarEntryResponse: {
+      absent: boolean;
+      /** Format: date-time */
+      clientUpdatedAt: string;
+      dayKey: string;
+      deleted: boolean;
+      /** Format: uuid */
+      id: string;
+      note: null | string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
     CatalogCreditsResponse: {
       sources: components['schemas']['CreditSource'][];
       wgerAuthors: components['schemas']['WgerCredit'][];
+    };
+    CleanupReportView: {
+      /** Format: int32 */
+      closedApps: number | string;
+      /** Format: int32 */
+      durationMs: number | string;
+      /** Format: int32 */
+      freedMb: null | number | string;
+      kind: string;
+      /** Format: int32 */
+      memoryAfterMb: null | number | string;
+      /** Format: int32 */
+      memoryBeforeMb: null | number | string;
+      reason: null | string;
+      result: string;
+      /** Format: date-time */
+      startedAt: string;
+      trigger: string;
     };
     CompletePasskeyRegistrationRequest: {
       /** Format: uuid */
@@ -7798,6 +8184,7 @@ export interface components {
     };
     DeploymentVersion: {
       commit: null | string;
+      version: string;
     };
     DevicesModuleInfo: {
       module: string;
@@ -7982,6 +8369,29 @@ export interface components {
       lastUsedAt: null | string;
       name: string;
     };
+    PersonUsage: {
+      /** Format: int32 */
+      activeSessions: number | string;
+      /** Format: date-time */
+      disabledAt: null | string;
+      displayName: string;
+      /** Format: uuid */
+      id: string;
+      /** Format: date-time */
+      lastAccessAt: null | string;
+      role: string;
+      tvCommands: components['schemas']['PersonUsageCounts'];
+      workouts: components['schemas']['PersonUsageCounts'];
+    };
+    PersonUsageCounts: {
+      /** Format: int32 */
+      last7Days: number | string;
+      /** Format: int32 */
+      last30Days: number | string;
+    };
+    PhotoBucketStatus: {
+      configured: boolean;
+    };
     PollPairingRequest: {
       deviceCode: null | string;
       /** Format: uuid */
@@ -8029,20 +8439,6 @@ export interface components {
       status?: null | number | string;
       title?: null | string;
       type?: null | string;
-    };
-    ProgressPhotoResponse: {
-      /** Format: int64 */
-      byteLength: number | string;
-      /** Format: date-time */
-      createdAt: string;
-      /** Format: int32 */
-      height: number | string;
-      /** Format: uuid */
-      id: string;
-      /** Format: date */
-      takenOn: string;
-      /** Format: int32 */
-      width: number | string;
     };
     /** @enum {unknown} */
     PublicKeyCredentialType: 'public-key' | 'invalid' | null;
@@ -8339,6 +8735,13 @@ export interface components {
       platform: string;
       slug: string;
     };
+    TvAppOption: {
+      label: string;
+      package: string;
+    };
+    TvAppsResponse: {
+      items: components['schemas']['TvAppOption'][];
+    };
     TvCleanupOk: {
       /** Format: int32 */
       closedApps: number;
@@ -8352,6 +8755,30 @@ export interface components {
       /** Format: int32 */
       memoryBeforeMb: null | number | string;
       ok: boolean;
+    };
+    TvCleanupReportItem: {
+      /** Format: int32 */
+      backgroundProcesses: null | number | string;
+      /** Format: int32 */
+      closedApps: number | string;
+      closedPackages: string[];
+      /** Format: int32 */
+      durationMs: number | string;
+      kind: string;
+      /** Format: int32 */
+      memoryAfterMb: null | number | string;
+      /** Format: int32 */
+      memoryBeforeMb: null | number | string;
+      reason: null | string;
+      result: string;
+      /** Format: int32 */
+      sessionOpenMs: null | number | string;
+      /** Format: date-time */
+      startedAt: string;
+      trigger: string;
+    };
+    TvCleanupReportsResponse: {
+      items: components['schemas']['TvCleanupReportItem'][];
     };
     TvCommandOk: {
       /** Format: int32 */
@@ -8402,9 +8829,13 @@ export interface components {
       tvLabel: null | string;
     };
     TvState: {
+      /** @default true */
+      agentLinked: boolean;
       agentOnline: boolean;
       app: null | string;
       connection: string;
+      /** Format: date-time */
+      offlineSince?: null | string;
       power: string;
       /** Format: date-time */
       updatedAt: null | string;
@@ -8413,13 +8844,22 @@ export interface components {
     };
     TvSummary: {
       agentSlug: null | string;
+      /** @default false */
+      allowBackgroundAppClosing: boolean;
       capabilities: string[];
+      /** @default false */
+      focusClosesBackground: boolean;
+      /** @default false */
+      focusModeEnabled: boolean;
       /** Format: uuid */
       id: string;
       isDefault: boolean;
       kind: null | string;
       name: string;
       online: boolean;
+      restrictedBackgroundPackages?: null | string[];
+      /** @default false */
+      shortAnimationsEnabled: boolean;
     };
     UpdateProfileRequest: {
       displayName: null | string;
@@ -8433,17 +8873,46 @@ export interface components {
     };
     UpdateTvRequest: {
       agentSlug: null | string;
+      allowBackgroundAppClosing?: null | boolean;
+      focusClosesBackground?: null | boolean;
+      focusModeEnabled?: null | boolean;
       name: null | string;
+      restrictedBackgroundPackages?: null | string[];
+      shortAnimationsEnabled?: null | boolean;
     };
     UpsertBodyEntryRequest: {
       /** Format: double */
+      abdomenCm?: null | number | string;
+      /** Format: double */
+      abdomenSkinfoldMm?: null | number | string;
+      /** Format: double */
       armCm: null | number | string;
       /** Format: double */
+      armLeftCm?: null | number | string;
+      /** Format: double */
+      armRightCm?: null | number | string;
+      /** Format: double */
       bodyFatPct: null | number | string;
+      /** Format: double */
+      calfCm?: null | number | string;
+      /** Format: double */
+      calfLeftCm?: null | number | string;
+      /** Format: double */
+      calfRightCm?: null | number | string;
+      /** Format: double */
+      chestCm?: null | number | string;
+      /** Format: double */
+      chestSkinfoldMm?: null | number | string;
       /** Format: date-time */
       clientUpdatedAt: null | string;
       deleted: boolean;
       fatMethod: null | string;
+      /** Format: double */
+      forearmCm?: null | number | string;
+      /** Format: double */
+      forearmLeftCm?: null | number | string;
+      /** Format: double */
+      forearmRightCm?: null | number | string;
       /** Format: double */
       hipCm: null | number | string;
       /** Format: date */
@@ -8453,6 +8922,12 @@ export interface components {
       note: null | string;
       /** Format: double */
       thighCm: null | number | string;
+      /** Format: double */
+      thighLeftCm?: null | number | string;
+      /** Format: double */
+      thighRightCm?: null | number | string;
+      /** Format: double */
+      thighSkinfoldMm?: null | number | string;
       /** Format: double */
       waistCm: null | number | string;
       /** Format: double */

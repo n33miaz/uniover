@@ -21,6 +21,7 @@ import { ProgressFrequency } from './frequency/frequency-section';
 import { ProgressHistory } from './history';
 import { ProgressRecords } from './records/records-section';
 import { ProgressWeek } from './week/week-section';
+import { ProgressSkeleton } from './progress-skeleton';
 
 /** Quantos exercícios aparecem como chips; os demais ficam em "Outro exercício". */
 export const CHIP_LIMIT = 6;
@@ -44,6 +45,7 @@ export const CHIP_LIMIT = 6;
     ProgressFrequency,
     ProgressExport,
     ExerciseHistorySheet,
+    ProgressSkeleton,
   ],
   providers: [ProgressHistory],
   templateUrl: './progress.page.html',
@@ -109,7 +111,7 @@ export class ProgressPage {
     if (options.length > CHIP_LIMIT) {
       shown.push({
         id: OTHER_EXERCISE,
-        label: $localize`:@@training.progress.exercise.other:Outro exercício`,
+        label: $localize`:@@training.progress.exercise.other:Outro Exercício`,
       });
     }
     return shown;

@@ -3,25 +3,16 @@
 }
 
 .rest {
+  align-items: center;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  text-align: center;
   border: 1px solid var(--a-line);
   border-radius: var(--radius-lg);
   background: var(--a-surface);
   box-shadow: var(--shadow-1);
-}
-
-.top {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.when {
-  flex: 1 1 auto;
-  min-width: 0;
 }
 
 .title {
@@ -33,32 +24,81 @@
 
 .clock {
   margin: 0;
-  font-size: 1.75rem;
+  font-size: clamp(3rem, 15vw, 4rem);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  line-height: 1.05;
 }
 
 .goal {
-  margin-left: 6px;
+  margin: calc(-1 * var(--space-1)) 0 0;
   white-space: nowrap;
   color: var(--a-ink2);
   font-weight: 500;
 }
 
-.goal::before {
-  content: '· ';
-}
-
+/* A ação principal do descanso é seguir: pular o que falta ou fechar o aviso. "+15 s" fica ao lado, secundário. */
 .actions {
   display: flex;
-  flex: none;
+  width: 100%;
   gap: var(--space-2);
 }
 
-.actions .ui-btn {
-  min-height: 48px;
-  padding: 0 var(--space-3);
+.actions .skip {
+  flex: 1 1 auto;
+  min-height: 52px;
+}
+
+.actions .add {
+  flex: none;
+  min-height: 52px;
+}
+
+/* Encerrar o exercício ou o treino é secundário: duas linhas de texto lado a lado, sem peso de botão. */
+.finish {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  gap: var(--space-2);
+}
+
+.ghost {
+  min-height: var(--tap);
+  padding: 0 var(--space-2);
+  border-color: var(--a-line);
+  background: transparent;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+}
+
+/* Recorde, última carga e próxima série: cada linha vai até a outra ponta; um item sozinho ocupa a linha toda. */
+.details {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  gap: var(--space-2);
+}
+
+.details p {
+  flex: 1 1 calc(50% - var(--space-2));
+  margin: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--a-surface-2);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.details .wide {
+  flex-basis: 100%;
+  white-space: pre-line;
+}
+
+.details span {
+  display: block;
+  font-size: var(--fs-label);
+  font-weight: 700;
 }
 
 .note {
@@ -72,13 +112,20 @@
   border-color: var(--a-accent);
   background: var(--a-accent);
   color: var(--a-on-accent);
-  animation: done 700ms var(--ease-out) 1;
 }
 
 .over .title,
 .over .goal,
-.over .note {
+.over .note,
+.over .ghost {
   color: inherit;
+}
+
+/* O cartão já é a cor cheia: o botão de fechar vira o claro, para continuar sendo o principal. */
+.over .skip {
+  border-color: var(--a-surface);
+  background: var(--a-surface);
+  color: var(--a-ink);
 }
 
 @keyframes done {
@@ -90,8 +137,20 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@keyframes enter {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+}
+
+/* O cartão entra com um deslize curto (a ilustração recolhe ao mesmo tempo); o pulso do fim também só vale para quem não pediu menos movimento. */
+@media (prefers-reduced-motion: no-preference) {
+  .rest {
+    animation: enter 220ms var(--ease-out) both;
+  }
+
   .over {
-    animation: none;
+    animation: done 200ms var(--ease-out) 1;
   }
 }

@@ -7,9 +7,10 @@ import tomllib
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
+from zeroconf import ServiceStateChange
 
 from uniover_agent import main as main_module
 from uniover_agent.adapters import arp as arp_module
@@ -17,9 +18,11 @@ from uniover_agent.adapters import tv_discovery
 from uniover_agent.adapters.arp import parse_arp_table
 from uniover_agent.adapters.tv_discovery import (
     ANDROID_REMOTE_PORT,
+    MDNS_SERVICE_TYPE,
     SAMSUNG_REST_PORT,
     DiscoveredTv,
     PortState,
+    discover_android_tvs,
     find_tvs,
     http_json,
     local_ipv4,
@@ -386,3 +389,319 @@ def test_tv_find_is_a_command_line_subcommand(
     monkeypatch.setattr(main_module, "find_tvs", find)
     assert main(["tv-find", "--kind", "android"]) == EXIT_OK
     assert saved(isolated_env)["tv_host"] == "192.168.0.40"
+
+
+# --- mDNS (zeroconf trocado por dublês: nenhum pacote sai pela rede) -----------------------------
+
+ANNOUNCED = {
+    "Sala._androidtvremote2._tcp.local.": ["10.9.9.20"],
+    "Quarto._androidtvremote2._tcp.local.": ["10.1.2.31", "fe80::1"],
+    "Muda._androidtvremote2._tcp.local.": [],
+}
+
+
+class FakeAsyncZeroconf:
+    instances: ClassVar[list[FakeAsyncZeroconf]] = []
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.zeroconf = object()
+        self.closed = False
+        FakeAsyncZeroconf.instances.append(self)
+
+    async def async_close(self) -> None:
+        self.closed = True
+
+
+class FakeBrowser:
+    cancelled = False
+
+    def __init__(self, zeroconf: Any, service_type: str, handlers: list[Any]) -> None:
+        assert service_type == MDNS_SERVICE_TYPE
+        for name in ANNOUNCED:
+            # Como a biblioteca real: tudo por nome.
+            handlers[0](
+                zeroconf=zeroconf,
+                service_type=service_type,
+                name=name,
+                state_change=ServiceStateChange.Added,
+            )
+        handlers[0](
+            zeroconf=zeroconf,
+            service_type=service_type,
+            name="Sala._x.local.",
+            state_change=ServiceStateChange.Removed,
+        )
+
+    async def async_cancel(self) -> None:
+        FakeBrowser.cancelled = True
+
+
+class FakeInfo:
+    def __init__(self, service_type: str, name: str) -> None:
+        self.name = name
+
+    async def async_request(self, zeroconf: Any, timeout: int) -> bool:  # noqa: ASYNC109
+        return bool(ANNOUNCED[self.name])
+
+    def parsed_addresses(self, version: Any) -> list[str]:
+        return [a for a in ANNOUNCED[self.name] if ":" not in a]
+
+
+@pytest.fixture
+def fake_zeroconf(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeAsyncZeroconf.instances.clear()
+    FakeBrowser.cancelled = False
+    monkeypatch.setattr(tv_discovery, "AsyncZeroconf", FakeAsyncZeroconf)
+    monkeypatch.setattr(tv_discovery, "AsyncServiceBrowser", FakeBrowser)
+    monkeypatch.setattr(tv_discovery, "AsyncServiceInfo", FakeInfo)
+
+
+async def test_mdns_lists_the_announced_android_tvs_by_address(fake_zeroconf: None) -> None:
+    found = await discover_android_tvs(0.01)
+    assert [(tv.host, tv.kind, tv.name) for tv in found] == [
+        ("10.1.2.31", "android", "Quarto"),
+        ("10.9.9.20", "android", "Sala"),
+    ]
+    # Fecha o que abriu, para não deixar soquete de multicast para trás.
+    assert FakeBrowser.cancelled
+    assert all(zc.closed for zc in FakeAsyncZeroconf.instances)
+
+
+async def test_mdns_that_cannot_start_is_just_an_empty_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken(**kwargs: Any) -> None:
+        raise OSError("sem multicast")
+
+    monkeypatch.setattr(tv_discovery, "AsyncZeroconf", broken)
+    assert await discover_android_tvs(0.01) == []
+
+
+async def test_mdns_failing_halfway_still_closes_what_it_opened(
+    monkeypatch: pytest.MonkeyPatch, fake_zeroconf: None
+) -> None:
+    class Exploding(FakeBrowser):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise RuntimeError("falha do zeroconf")
+
+    monkeypatch.setattr(tv_discovery, "AsyncServiceBrowser", Exploding)
+    assert await discover_android_tvs(0.01) == []
+    assert all(zc.closed for zc in FakeAsyncZeroconf.instances)
+
+
+def _scan_network() -> FakeNetwork:
+    return FakeNetwork(
+        {"10.1.2.21": {ANDROID_REMOTE_PORT}, "10.1.2.40": {SAMSUNG_REST_PORT}},
+        {"10.1.2.40": SAMSUNG_INFO},
+    )
+
+
+async def _find(
+    kind: str | None, mdns: Any, network: FakeNetwork | None = None
+) -> list[DiscoveredTv]:
+    network = network or _scan_network()
+    return await find_tvs(
+        kind,  # type: ignore[arg-type]
+        local="10.1.2.5",
+        connect=network.connect,
+        fetch_json=network.fetch_json,
+        lookup_mac=network.lookup_mac,
+        discover_mdns=mdns,
+    )
+
+
+async def test_find_tvs_adds_what_mdns_found_to_the_scan_without_duplicates() -> None:
+    async def mdns(listen_seconds: float) -> list[DiscoveredTv]:
+        return [
+            DiscoveredTv("10.1.2.21", "android", name="Sala"),
+            DiscoveredTv("10.9.9.20", "android", name="Outra sub-rede"),
+        ]
+
+    found = await _find(None, mdns)
+    assert [(tv.host, tv.kind, tv.name) for tv in found] == [
+        ("10.1.2.21", "android", "Sala"),
+        ("10.1.2.40", "samsung", "[TV] Sala"),
+        ("10.9.9.20", "android", "Outra sub-rede"),
+    ]
+
+
+async def test_find_tvs_keeps_the_scan_result_when_mdns_fails() -> None:
+    async def mdns(listen_seconds: float) -> list[DiscoveredTv]:
+        raise RuntimeError("sem multicast")
+
+    found = await _find("android", mdns)
+    assert [tv.host for tv in found] == ["10.1.2.21"]
+
+
+async def test_find_tvs_does_not_ask_mdns_for_a_samsung() -> None:
+    asked: list[float] = []
+
+    async def mdns(listen_seconds: float) -> list[DiscoveredTv]:
+        asked.append(listen_seconds)
+        return [DiscoveredTv("10.9.9.20", "android")]
+
+    found = await _find("samsung", mdns)
+    assert [tv.host for tv in found] == ["10.1.2.40"]
+    assert asked == []
+
+
+async def test_mdns_runs_beside_the_scan_not_after_it() -> None:
+    started = asyncio.Event()
+    seen: list[bool] = []
+
+    async def mdns(listen_seconds: float) -> list[DiscoveredTv]:
+        started.set()
+        return []
+
+    class Probing(FakeNetwork):
+        async def connect(self, host: str, port: int) -> bool:
+            await asyncio.sleep(0)
+            seen.append(started.is_set())
+            return await super().connect(host, port)
+
+    await _find("android", mdns, Probing({}))
+    assert seen
+    assert all(seen)
+
+
+class Journal:
+    """A ordem em que o encerramento do mDNS mexeu em cada peça."""
+
+    def __init__(self) -> None:
+        self.events: list[str] = []
+        self.reading = 0
+        self.started: list[str] = []
+
+
+def closing_doubles(monkeypatch: pytest.MonkeyPatch, journal: Journal) -> None:
+    """Anúncio que chega durante o `async_cancel` e uma leitura que nunca termina sozinha."""
+
+    class Zeroconf(FakeAsyncZeroconf):
+        async def async_close(self) -> None:
+            # Ao fechar os soquetes, nenhuma leitura pode continuar viva.
+            journal.events.append(f"zeroconf.close(reading={journal.reading})")
+            await super().async_close()
+
+    class Browser(FakeBrowser):
+        def __init__(self, zeroconf: Any, service_type: str, handlers: list[Any]) -> None:
+            self._zeroconf, self._type, self._handler = zeroconf, service_type, handlers[0]
+            self._announce("Trava._androidtvremote2._tcp.local.")
+
+        def _announce(self, name: str) -> None:
+            self._handler(
+                zeroconf=self._zeroconf,
+                service_type=self._type,
+                name=name,
+                state_change=ServiceStateChange.Added,
+            )
+
+        async def async_cancel(self) -> None:
+            journal.events.append("browser.cancel")
+            self._announce("Tarde._androidtvremote2._tcp.local.")  # chegou no meio do encerramento
+
+    class Info(FakeInfo):
+        async def async_request(self, zeroconf: Any, timeout: int) -> bool:  # noqa: ASYNC109
+            journal.started.append(self.name)
+            journal.reading += 1
+            try:
+                await asyncio.Event().wait()
+            finally:
+                journal.reading -= 1
+            return True
+
+    ANNOUNCED["Trava._androidtvremote2._tcp.local."] = ["10.1.2.77"]
+    ANNOUNCED["Tarde._androidtvremote2._tcp.local."] = ["10.1.2.78"]
+    monkeypatch.setattr(tv_discovery, "AsyncZeroconf", Zeroconf)
+    monkeypatch.setattr(tv_discovery, "AsyncServiceBrowser", Browser)
+    monkeypatch.setattr(tv_discovery, "AsyncServiceInfo", Info)
+
+
+@pytest.fixture
+def announced_cleanup() -> Iterator[None]:
+    yield
+    ANNOUNCED.pop("Trava._androidtvremote2._tcp.local.", None)
+    ANNOUNCED.pop("Tarde._androidtvremote2._tcp.local.", None)
+
+
+async def test_mdns_closing_cancels_the_browser_then_the_reads_and_only_then_the_sockets(
+    monkeypatch: pytest.MonkeyPatch, announced_cleanup: None
+) -> None:
+    journal = Journal()
+    closing_doubles(monkeypatch, journal)
+    assert await discover_android_tvs(0.05) == []
+    # O navegador parou primeiro; a leitura pendurada foi cancelada antes do fechamento; o anúncio
+    # que chegou durante o encerramento não abriu leitura nova.
+    assert journal.events == ["browser.cancel", "zeroconf.close(reading=0)"]
+    assert journal.started == ["Trava._androidtvremote2._tcp.local."]
+
+
+async def test_mdns_cancelled_from_outside_still_closes_everything(
+    monkeypatch: pytest.MonkeyPatch, announced_cleanup: None
+) -> None:
+    journal = Journal()
+    closing_doubles(monkeypatch, journal)
+    task = asyncio.create_task(discover_android_tvs(30))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert journal.events == ["browser.cancel", "zeroconf.close(reading=0)"]
+
+
+async def test_find_tvs_cancelled_from_outside_cancels_and_awaits_the_mdns_task() -> None:
+    journal = Journal()
+    network = _scan_network()
+
+    async def slow_connect(host: str, port: int) -> bool:
+        await asyncio.sleep(30)
+        return False
+
+    async def mdns(listen_seconds: float) -> list[DiscoveredTv]:
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            journal.events.append("mdns.cancelled")
+            await asyncio.sleep(0.01)  # fechar os soquetes leva um instante
+            journal.events.append("mdns.closed")
+            raise
+        return []
+
+    task = asyncio.create_task(
+        find_tvs(
+            "android",
+            local="10.1.2.5",
+            connect=slow_connect,
+            fetch_json=network.fetch_json,
+            lookup_mac=network.lookup_mac,
+            discover_mdns=mdns,
+        )
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    # O cancelamento só volta a quem chamou depois de a escuta acabar de fechar.
+    assert journal.events == ["mdns.cancelled", "mdns.closed"]
+
+
+async def test_find_tvs_whose_scan_fails_cancels_and_awaits_the_mdns_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal = Journal()
+
+    async def broken_scan(*args: Any, **kwargs: Any) -> list[DiscoveredTv]:
+        await asyncio.sleep(0.02)
+        raise RuntimeError("varredura quebrada")
+
+    async def mdns(listen_seconds: float) -> list[DiscoveredTv]:
+        try:
+            await asyncio.sleep(30)
+        finally:
+            await asyncio.sleep(0.01)
+            journal.events.append("mdns.closed")
+        return []
+
+    monkeypatch.setattr(tv_discovery, "scan_hosts", broken_scan)
+    with pytest.raises(RuntimeError, match="varredura quebrada"):
+        await find_tvs("android", local="10.1.2.5", discover_mdns=mdns)
+    assert journal.events == ["mdns.closed"]

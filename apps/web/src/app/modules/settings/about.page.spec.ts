@@ -4,18 +4,19 @@ import { ApiProblem, networkProblem } from '../../core/auth/api-problem';
 import { AuthApi } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { version } from '../../../../package.json';
+import { LOADING_TIMING } from '../../shared/ui/skeleton/loading-frame';
 import { AboutPage } from './about.page';
 
 const ME = { id: '1', email: 'dono@exemplo.com', displayName: 'Dono da Casa' };
 
 describe('AboutPage', () => {
-  const api = { refresh: vi.fn(), me: vi.fn(), info: vi.fn() };
+  const api = { refresh: vi.fn(), me: vi.fn(), deploymentVersion: vi.fn() };
 
   beforeEach(() => {
     localStorage.clear();
     api.refresh.mockReset().mockResolvedValue({ accessToken: 't', expiresIn: 600 });
     api.me.mockReset().mockResolvedValue(ME);
-    api.info.mockReset().mockResolvedValue({ module: 'identity', version: '1.2.3', dependsOn: [] });
+    api.deploymentVersion.mockReset().mockResolvedValue({ commit: 'abc', version: '0.5.0' });
     TestBed.configureTestingModule({
       providers: [provideRouter([]), { provide: AuthApi, useValue: api }],
     });
@@ -34,21 +35,44 @@ describe('AboutPage', () => {
   it('shows the app version from package.json and the API version', async () => {
     const { el } = await render();
     const versions = el.querySelector('#versions-title + dl')!.textContent!;
-    expect(versions).toContain('1.2.3');
+    expect(versions).toContain('0.5.0');
     expect(versions).toContain(version);
   });
 
   it('handles an API that does not answer', async () => {
-    api.info.mockRejectedValue(new ApiProblem(0, 'network', 'x'));
+    api.deploymentVersion.mockRejectedValue(new ApiProblem(0, 'network', 'x'));
     const { el } = await render();
     expect(el.querySelector('#versions-title + dl')!.textContent).toContain('indisponível agora');
   });
 
-  it('asks only for the public information route, without a token (it is not an administrator route)', async () => {
+  it('uses a version skeleton while the public version is still loading', async () => {
+    api.deploymentVersion.mockReturnValue(new Promise(() => undefined));
+    await TestBed.inject(AuthService).init();
+    const fixture = TestBed.createComponent(AboutPage);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.version-skeleton')).not.toBeNull();
+  });
+
+  it('gives up on a server that never answers instead of shimmering forever', async () => {
+    api.deploymentVersion.mockReturnValue(new Promise(() => undefined));
+    TestBed.overrideProvider(LOADING_TIMING, { useValue: { giveUpAfterMs: 20 } });
+    await TestBed.inject(AuthService).init();
+    const fixture = TestBed.createComponent(AboutPage);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.version-skeleton')).not.toBeNull();
+
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.version-skeleton')).toBeNull();
+    });
+    expect(fixture.nativeElement.textContent).toContain('indisponível agora');
+  });
+
+  it('asks only for the public deployment version route, without a token', async () => {
     api.refresh.mockRejectedValue(networkProblem());
     await render();
-    expect(api.info).toHaveBeenCalledTimes(1);
-    expect(api.info.mock.calls[0]).toEqual([]);
+    expect(api.deploymentVersion).toHaveBeenCalledTimes(1);
+    expect(api.deploymentVersion.mock.calls[0]).toEqual([]);
   });
 
   it('links the credits entry to the credits screen for the administrator', async () => {
@@ -59,12 +83,15 @@ describe('AboutPage', () => {
     expect(credits?.getAttribute('href')).toBe('/ajustes/creditos');
   });
 
-  it('does not offer the credits to a guest: the screen is only for the administrator, so the link would bounce', async () => {
-    api.me.mockResolvedValue({ ...ME, role: 'guest' });
+  it('offers credits to a guest with Training, because the route accepts that module', async () => {
+    api.me.mockResolvedValue({ ...ME, role: 'guest', permissions: ['module:training'] });
+    const { el } = await render();
+    expect(el.querySelector('a[href="/ajustes/creditos"]')).not.toBeNull();
+  });
+
+  it('does not offer credits to a guest without Training', async () => {
+    api.me.mockResolvedValue({ ...ME, role: 'guest', permissions: ['module:tv'] });
     const { el } = await render();
     expect(el.querySelector('a[href="/ajustes/creditos"]')).toBeNull();
-    expect(el.textContent).not.toContain('Créditos');
-    // As versões continuam valendo para todos.
-    expect(el.querySelector('#versions-title + dl')!.textContent).toContain('1.2.3');
   });
 });

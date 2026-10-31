@@ -25,21 +25,32 @@
 .next-card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   padding: var(--space-4);
-  color: inherit;
-  text-decoration: none;
 }
 
+/* O corpo do cartão é o atalho da edição; o botão de baixo inicia o treino. */
 .next-main {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
+  min-height: var(--tap);
+  color: inherit;
+  text-decoration: none;
 }
 
 .next-main .ui-row-text {
+  flex: 1 1 auto;
   min-width: 0;
+}
+
+/* Título numa linha só: o texto completo continua no nome acessível do atalho e na tela de edição. */
+.next-main .ui-row-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .show-more {
@@ -97,6 +108,26 @@
   white-space: nowrap;
 }
 
+/* Entrada do glossário: um link de texto centralizado sob as ações, com alvo de toque de 44 px. */
+.glossary-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  align-self: center;
+  min-height: var(--tap);
+  padding-inline: var(--space-3);
+  color: var(--a-accent-ink);
+  font-size: var(--fs-small);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.glossary-link app-training-glyph {
+  width: 18px;
+  height: 18px;
+}
+
 .empty {
   display: flex;
   flex-direction: column;
@@ -116,18 +147,6 @@
   margin: 0;
   color: var(--a-ink2);
   font-size: var(--fs-small);
-}
-
-.skeleton li {
-  display: flex;
-  align-items: center;
-  min-height: 60px;
-  padding: var(--space-3) var(--space-4);
-}
-
-.skeleton .ui-skeleton {
-  width: 62%;
-  height: 18px;
 }
 
 /* Marca da rotina: uma linha pequena em cima do nome, para o nome e o resumo ficarem com a largura toda. */

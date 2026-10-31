@@ -63,6 +63,8 @@ describe('QrApprovePage', () => {
     expect(el.querySelector('h1')?.textContent).toBe('Entrar no computador?');
     expect(text(el)).toContain('Chrome no Windows');
     expect(text(el)).toContain('Na mesma rede deste celular');
+    expect(el.querySelector('.device-label')?.textContent).toBe('Computador');
+    expect(el.querySelector('.network-label')?.textContent).toBe('Rede');
     expect(text(el)).toContain('Confirme só se foi você quem abriu o QR.');
     expect(button(el, 'Confirmar')).toBeTruthy();
     expect(button(el, 'Cancelar')).toBeTruthy();
@@ -199,5 +201,28 @@ describe('QrApprovePage', () => {
     await settle();
 
     expect(el.querySelector('h1')?.textContent).toBe('QR vencido');
+  });
+
+  it('holds the shape of the confirmation as a busy skeleton until the computer is known', async () => {
+    let finish: (value: ReturnType<typeof info>) => void = () => undefined;
+    api.qrInfo.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl(`/entrar/qr?codigo=${CODE}`);
+    harness.fixture.detectChanges();
+    const el = harness.routeNativeElement as HTMLElement;
+
+    // O título já é o da tela de verdade; o corpo é só a forma (duas linhas, o aviso e os dois botões).
+    expect(el.querySelector('h1')?.textContent).toBe('Entrar no computador?');
+    expect(el.querySelector('app-loading-frame[aria-busy="true"]')).not.toBeNull();
+    expect(el.querySelectorAll('.ui-skeleton').length).toBeGreaterThan(4);
+    expect(el.querySelector('.shape')?.getAttribute('aria-hidden')).toBe('true');
+    expect(button(el, 'Confirmar')).toBeUndefined();
+
+    finish(info());
+    await harness.fixture.whenStable();
+    harness.fixture.detectChanges();
+    expect(el.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(el.querySelector('.ui-skeleton')).toBeNull();
+    expect(button(el, 'Confirmar')).toBeTruthy();
   });
 });

@@ -147,6 +147,30 @@ public class BodyRulesTests
     }
 
     [Fact]
+    public void NewMeasurements_AreValidatedIndividually_AndKeepTheLegacyFieldsOptional()
+    {
+        var valid = ValidEntry() with
+        {
+            ChestCm = 90m,
+            AbdomenCm = 80m,
+            ForearmRightCm = 27m,
+            CalfLeftCm = 36m,
+            ArmRightCm = 33m,
+            ThighLeftCm = 58m,
+            ChestSkinfoldMm = 8m,
+            AbdomenSkinfoldMm = 15m,
+            ThighSkinfoldMm = 13m,
+        };
+
+        RunEntry(valid, out var command).Should().BeEmpty();
+        command!.ChestCm.Should().Be(90m);
+        command.ChestSkinfoldMm.Should().Be(8m);
+
+        var errors = RunEntry(valid with { ForearmRightCm = 9m, ChestSkinfoldMm = 100.1m }, out _);
+        errors.Keys.Should().BeEquivalentTo("forearmRightCm", "chestSkinfoldMm");
+    }
+
+    [Fact]
     public void TheFatMethod_GoesWithThePercentAndOnlyWithIt()
     {
         RunEntry(ValidEntry() with { BodyFatPct = 15m, FatMethod = null }, out _).Should().ContainKey("fatMethod");

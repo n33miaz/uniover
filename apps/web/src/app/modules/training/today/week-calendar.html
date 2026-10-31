@@ -1,7 +1,15 @@
 <section class="week ui-card" aria-labelledby="week-title">
   <div class="week-head">
-    <h3 id="week-title" i18n="@@training.today.calendar.title">Semana</h3>
+    <h3 id="week-title">{{ weekTitle() }}</h3>
     <div class="nav">
+      @if (goalCount()) {
+        <small class="week-count"
+          >{{ goalCount() }}
+          <span class="ui-visually-hidden" i18n="@@training.today.calendar.goal-unit"
+            >treinos</span
+          ></small
+        >
+      }
       <button
         type="button"
         class="nav-button"
@@ -35,6 +43,9 @@
         class="day"
         [class.done]="hasWorkout(day.key, weekWorkouts())"
         [class.today]="isToday(day.key)"
+        [class.planned]="stateOf(day, weekWorkouts()) === 'planned'"
+        [class.rest]="stateOf(day, weekWorkouts()) === 'rest'"
+        [class.absent]="stateOf(day, weekWorkouts()) === 'absent'"
         [class.future]="isFuture(day.key)"
         [attr.aria-label]="weekDayLabel(day, index, weekWorkouts())"
         [attr.aria-current]="isToday(day.key) ? 'date' : null"
@@ -48,10 +59,15 @@
 
   <div class="week-bottom">
     <p class="week-progress">
+      @if (remainingLine()) {
+        <span>{{ remainingLine() }}</span>
+      }
       @if (paid()) {
         <span class="paid" i18n="@@training.today.calendar.paid">Tá pago!</span>
       }
-      <span>{{ goalLine() }}</span>
+      @if (!goalCount()) {
+        <span>{{ noGoalLine }}</span>
+      }
     </p>
     <button
       type="button"
@@ -59,29 +75,29 @@
       (click)="openDay()"
       i18n="@@training.today.calendar.open"
     >
-      Ver calendário
+      Ver Mês
     </button>
   </div>
-  @if (weekWorkouts() !== null) {
-    <dl class="stats">
-      <div>
-        <dt i18n="@@training.today.calendar.sessions">Treinos</dt>
-        <dd>{{ weekCount() }}</dd>
-      </div>
-      <div>
-        <dt i18n="@@training.today.calendar.sets">Séries</dt>
-        <dd>{{ weekSets() }}</dd>
-      </div>
-      <div>
-        <dt i18n="@@training.today.calendar.volume">Volume</dt>
-        <dd>{{ weekVolume() }}</dd>
-      </div>
-    </dl>
-  }
+  <!-- Os três números ficam sempre na tela: enquanto a semana é lida, um traço guarda o lugar (sem salto de altura). -->
+  <dl class="stats">
+    <div>
+      <dt i18n="@@training.today.calendar.sessions">Treinos</dt>
+      <dd>{{ statsReady() ? weekCount() : '—' }}</dd>
+    </div>
+    <div>
+      <dt i18n="@@training.today.calendar.sets">Séries</dt>
+      <dd>{{ statsReady() ? weekSets() : '—' }}</dd>
+    </div>
+    <div>
+      <dt i18n="@@training.today.calendar.volume">Volume</dt>
+      <dd>{{ statsReady() ? weekVolume() : '—' }}</dd>
+    </div>
+  </dl>
 </section>
 
 @if (sheetOpen()) {
-  <app-training-sheet [heading]="calendarHeading" (closed)="sheetOpen.set(false)">
+  <!-- O título é o mês e o ano da grade: ele acompanha as setas, e o acessível do diálogo também. -->
+  <app-training-sheet [heading]="monthLabel()" (closed)="sheetOpen.set(false)">
     <div class="month-nav">
       <button
         type="button"
@@ -92,7 +108,7 @@
       >
         <span aria-hidden="true">‹</span>
       </button>
-      <h3>{{ monthLabel() }}</h3>
+      <p class="streak">{{ streakLine() }}</p>
       <button
         type="button"
         class="nav-button"
@@ -119,6 +135,9 @@
             class="month-day"
             [class.done]="hasWorkout(day.key, monthWorkouts())"
             [class.today]="isToday(day.key)"
+            [class.planned]="monthStateOf(day) === 'planned'"
+            [class.rest]="monthStateOf(day) === 'rest'"
+            [class.absent]="monthStateOf(day) === 'absent'"
             [class.selected]="selectedKey() === day.key"
             [attr.aria-label]="dayLabel(day, monthWorkouts())"
             [attr.aria-pressed]="selectedKey() === day.key"
@@ -141,6 +160,14 @@
     }
     <section class="day-detail" aria-labelledby="selected-day-title">
       <h3 id="selected-day-title">{{ selectedLabel() }}</h3>
+      @if (selectedEntry()?.note; as note) {
+        <p class="day-note">
+          <span i18n="@@training.today.calendar.note-label">Nota:</span> {{ note }}
+        </p>
+      }
+      @if (selectedEntry()?.absent) {
+        <p class="day-note" i18n="@@training.today.calendar.absent-label">Ausência planejada</p>
+      }
       @if (selectedWorkouts().length === 0) {
         <p i18n="@@training.today.calendar.no-session">Nenhum treino registrado neste dia.</p>
       } @else {

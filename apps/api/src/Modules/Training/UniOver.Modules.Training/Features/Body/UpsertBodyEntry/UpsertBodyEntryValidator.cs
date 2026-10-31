@@ -51,6 +51,21 @@ internal static class UpsertBodyEntryValidator
         CheckCircumference(errors, "hipCm", request.HipCm);
         CheckCircumference(errors, "armCm", request.ArmCm);
         CheckCircumference(errors, "thighCm", request.ThighCm);
+        CheckCircumference(errors, "chestCm", request.ChestCm);
+        CheckCircumference(errors, "abdomenCm", request.AbdomenCm);
+        CheckCircumference(errors, "forearmCm", request.ForearmCm);
+        CheckCircumference(errors, "calfCm", request.CalfCm);
+        CheckCircumference(errors, "armRightCm", request.ArmRightCm);
+        CheckCircumference(errors, "armLeftCm", request.ArmLeftCm);
+        CheckCircumference(errors, "forearmRightCm", request.ForearmRightCm);
+        CheckCircumference(errors, "forearmLeftCm", request.ForearmLeftCm);
+        CheckCircumference(errors, "thighRightCm", request.ThighRightCm);
+        CheckCircumference(errors, "thighLeftCm", request.ThighLeftCm);
+        CheckCircumference(errors, "calfRightCm", request.CalfRightCm);
+        CheckCircumference(errors, "calfLeftCm", request.CalfLeftCm);
+        CheckSkinfold(errors, "chestSkinfoldMm", request.ChestSkinfoldMm);
+        CheckSkinfold(errors, "abdomenSkinfoldMm", request.AbdomenSkinfoldMm);
+        CheckSkinfold(errors, "thighSkinfoldMm", request.ThighSkinfoldMm);
 
         // O método só existe junto do percentual (e vice-versa): gordura sem dizer de onde veio não se grava.
         if (request.BodyFatPct is not null)
@@ -93,6 +108,21 @@ internal static class UpsertBodyEntryValidator
             request.HipCm,
             request.ArmCm,
             request.ThighCm,
+            request.ChestCm,
+            request.AbdomenCm,
+            request.ForearmCm,
+            request.CalfCm,
+            request.ArmRightCm,
+            request.ArmLeftCm,
+            request.ForearmRightCm,
+            request.ForearmLeftCm,
+            request.ThighRightCm,
+            request.ThighLeftCm,
+            request.CalfRightCm,
+            request.CalfLeftCm,
+            request.ChestSkinfoldMm,
+            request.AbdomenSkinfoldMm,
+            request.ThighSkinfoldMm,
             string.IsNullOrEmpty(note) ? null : note,
             TimeStamps.ToStorage(request.ClientUpdatedAt!.Value),
             request.Deleted);
@@ -104,6 +134,14 @@ internal static class UpsertBodyEntryValidator
         if (value is { } cm && !BodyLimits.IsValidCircumference(cm))
         {
             errors[field] = [$"A medida deve ficar entre {BodyLimits.CircumferenceMinCm} e {BodyLimits.CircumferenceMaxCm} cm, com no máximo {BodyLimits.OneDecimalScale} casa decimal."];
+        }
+    }
+
+    private static void CheckSkinfold(Dictionary<string, string[]> errors, string field, decimal? value)
+    {
+        if (value is { } mm && !BodyLimits.IsValidSkinfold(mm))
+        {
+            errors[field] = [$"A dobra deve ficar entre {BodyLimits.SkinfoldMinMm} e {BodyLimits.SkinfoldMaxMm} mm, com uma casa decimal."];
         }
     }
 }

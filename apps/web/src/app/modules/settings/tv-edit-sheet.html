@@ -23,7 +23,7 @@
       </legend>
       @if (computers().length === 0) {
         <p class="empty" i18n="@@settings.system.tv.sheet.no-computer">
-          Nenhum computador livre. Pareie um em Aparelhos.
+          Nenhum computador livre. Pareie um em Dispositivos.
         </p>
       } @else {
         <ul class="ui-group">
@@ -82,12 +82,200 @@
           </ul>
         }
       } @else {
-        <p class="loading" role="status">
-          <span class="ui-spinner" aria-hidden="true"></span>
-          <span i18n="@@settings.system.tv.sheet.loading">Carregando…</span>
-        </p>
+        <app-loading-skeleton
+          [kind]="'options'"
+          [count]="2"
+          i18n-label="@@settings.system.tv.sheet.loading"
+          label="Carregando as pessoas…"
+          [reload]="false"
+          (retried)="loadPeople()"
+        />
       }
     </fieldset>
+
+    @if (!creating()) {
+      <fieldset class="group">
+        <legend class="ui-section-label" i18n="@@settings.system.tv.sheet.light-settings">
+          TV Mais Leve
+        </legend>
+        @if (tv()?.kind === 'samsung') {
+          <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.light-settings-unsupported">
+            Não suportado nesta TV.
+          </p>
+        } @else {
+          <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.light-settings-hint">
+            Todos os ajustes ficam desligados até você ligar e voltam ao valor original ao desligar.
+          </p>
+          <ul class="ui-group">
+            <li>
+              <label class="toggle">
+                <span class="toggle-title" i18n="@@settings.system.tv.sheet.focus">Modo Foco</span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="ui-switch"
+                  [checked]="focusMode()"
+                  (change)="focusMode.set($any($event.target).checked)"
+                />
+              </label>
+            </li>
+            @if (focusMode() && supportsFocusCloses()) {
+              <li>
+                <label class="toggle">
+                  <span class="toggle-title" i18n="@@settings.system.tv.sheet.focus-closes"
+                    >Fechar Outros Apps no Foco</span
+                  >
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    class="ui-switch"
+                    [checked]="focusCloses()"
+                    (change)="focusCloses.set($any($event.target).checked)"
+                  />
+                </label>
+                <p class="toggle-hint" i18n="@@settings.system.tv.sheet.focus-closes-hint">
+                  Encerra à força; downloads e avisos deles param.
+                </p>
+              </li>
+            }
+            <li>
+              <label class="toggle">
+                <span class="toggle-title" i18n="@@settings.system.tv.sheet.short-animations"
+                  >Animações Mais Curtas</span
+                >
+                <input
+                  type="checkbox"
+                  role="switch"
+                  class="ui-switch"
+                  [checked]="shortAnimations()"
+                  (change)="shortAnimations.set($any($event.target).checked)"
+                />
+              </label>
+            </li>
+          </ul>
+          <p
+            class="reports-title ui-section-label"
+            i18n="@@settings.system.tv.sheet.restrict-background"
+          >
+            Restringir Apps em Segundo Plano
+          </p>
+          @switch (appsState()) {
+            @case ('loading') {
+              <app-loading-skeleton
+                [kind]="'options'"
+                i18n-label="@@settings.system.tv.sheet.apps-loading"
+                label="Carregando os apps…"
+                [reload]="false"
+                (retried)="retryApps()"
+              />
+            }
+            @case ('error') {
+              <p class="empty bad" role="alert" i18n="@@settings.system.tv.sheet.apps-failed">
+                Não foi possível carregar os apps agora.
+              </p>
+              <button
+                type="button"
+                class="secondary ui-btn"
+                (click)="retryApps()"
+                i18n="@@settings.system.tv.sheet.apps-retry"
+              >
+                Tentar de Novo
+              </button>
+            }
+            @default {
+              @if (apps().length === 0) {
+                <p class="empty" i18n="@@settings.system.tv.sheet.no-apps">
+                  Nenhum app disponível para escolher ainda.
+                </p>
+              } @else {
+                <ul class="ui-group">
+                  @for (app of apps(); track app.package) {
+                    <li>
+                      <label class="toggle">
+                        <span class="toggle-title">{{ app.label }}</span>
+                        <input
+                          type="checkbox"
+                          role="switch"
+                          class="ui-switch"
+                          [checked]="isRestricted(app.package)"
+                          (change)="toggleRestricted(app.package, $event)"
+                        />
+                      </label>
+                    </li>
+                  }
+                </ul>
+              }
+            }
+          }
+          <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.play-store-manual">
+            Atualização automática da Play Store: desative na TV em Play Store &gt; Configurações
+            &gt; Atualizar apps automaticamente.
+          </p>
+          @if (tv()?.capabilities?.includes('tv.adb')) {
+            <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.launcher-soon">
+              Lançador mais leve: Disponível em breve nesta TV. Nenhum app será instalado agora.
+            </p>
+          }
+          <button
+            type="button"
+            class="secondary ui-btn"
+            (click)="restoreLightSettings()"
+            i18n="@@settings.system.tv.sheet.restore-light-settings"
+          >
+            Voltar ao Original
+          </button>
+        }
+      </fieldset>
+      <fieldset class="group">
+        <legend class="ui-section-label" i18n="@@settings.system.tv.sheet.cleanup">Limpeza</legend>
+        <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.close-background-hint">
+          Ligado, a limpeza pode fechar apps abertos em segundo plano. Desligado, nenhum app é
+          tocado.
+        </p>
+        <ul class="ui-group">
+          <li>
+            <label class="toggle">
+              <span class="toggle-title" i18n="@@settings.system.tv.sheet.close-background"
+                >Fechar Apps em Segundo Plano</span
+              >
+              <input
+                type="checkbox"
+                role="switch"
+                class="ui-switch"
+                [checked]="closeBackground()"
+                (change)="toggleCloseBackground($event)"
+              />
+            </label>
+          </li>
+        </ul>
+        <p class="reports-title ui-section-label" i18n="@@settings.system.tv.sheet.reports">
+          Últimas limpezas
+        </p>
+        @if (reportsFailed()) {
+          <p class="empty bad" role="alert" i18n="@@settings.system.tv.sheet.reports-failed">
+            Não foi possível carregar as limpezas agora.
+          </p>
+        } @else if (reports(); as list) {
+          @if (list.length === 0) {
+            <p class="empty" i18n="@@settings.system.tv.sheet.reports-empty">
+              Nenhuma limpeza ainda.
+            </p>
+          } @else {
+            <ul class="ui-group reports">
+              @for (report of list; track report.startedAt) {
+                <li class="report">
+                  <span class="report-title">{{ reportTitle(report) }}</span>
+                  <span class="report-outcome">{{ reportOutcome(report) }}</span>
+                  @if (reportApps(report); as closedApps) {
+                    <span class="report-outcome">{{ closedApps }}</span>
+                  }
+                </li>
+              }
+            </ul>
+          }
+        }
+      </fieldset>
+    }
 
     @if (canRemove()) {
       @if (confirmingRemove()) {

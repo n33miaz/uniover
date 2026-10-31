@@ -1,5 +1,8 @@
 /* GERADO por `npm --prefix contracts run generate` — não editar. */
 
+export type TvCleanupResultV1BodyKind = 'light' | 'deep' | 'manual';
+export type TvCleanupResultV1BodyResult = 'completed' | 'skipped';
+
 /**
  * Agente para API: o que a limpeza da TV fez. Sai antes do command.result.v1 do mesmo comando (correlationId = id do comando) e repete o requestId de tv.cleanup.v1. Só existe quando a limpeza rodou; se o ADB não respondeu, o agente só manda command.result.v1 com erro.
  */
@@ -16,6 +19,10 @@ export interface TvCleanupResultV1Message {
 export interface TvCleanupResultV1Body {
   requestId: string;
   closedApps: number;
+  /**
+   * @maxItems 500
+   */
+  closedPackages?: string[];
   memoryBeforeMb: number | null;
   memoryAfterMb: number | null;
   freedMb: number | null;
@@ -24,4 +31,11 @@ export interface TvCleanupResultV1Body {
    */
   failedSteps: string[];
   at: string;
+  kind?: TvCleanupResultV1BodyKind;
+  trigger?: string;
+  result?: TvCleanupResultV1BodyResult;
+  reason?: string;
+  durationMs?: number;
+  backgroundProcesses?: number;
+  sessionOpenMs?: number;
 }

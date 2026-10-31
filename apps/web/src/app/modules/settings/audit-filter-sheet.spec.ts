@@ -88,7 +88,7 @@ describe('AuditFilterSheet', () => {
   it('offers the people (marking the viewer), the modules, the outcomes and the periods as chips', async () => {
     const { chips } = await render();
     expect(chips('Pessoa')).toEqual(['Todas as pessoas', 'Dono da Casa (você)', 'Bruno']);
-    expect(chips('Módulo')).toEqual(['Aparelhos', 'Conta e acesso', 'TV']);
+    expect(chips('Módulo')).toEqual(['Dispositivos', 'Conta e acesso', 'TV']);
     expect(chips('Resultado')).toEqual(['Todos', 'Sucesso', 'Erro', 'Recusado']);
     expect(chips('Período')).toEqual([
       'Todo o período',
@@ -116,7 +116,7 @@ describe('AuditFilterSheet', () => {
   it('picks several modules at once and groups their actions under the name of each', async () => {
     const { click, chips, el } = await render();
     click('TV');
-    click('Aparelhos');
+    click('Dispositivos');
     expect(chips('Ação')).toEqual([
       'Todas as ações',
       'Pareamento aprovado',
@@ -126,7 +126,7 @@ describe('AuditFilterSheet', () => {
     ]);
     expect(
       Array.from(el.querySelectorAll('.group-label')).map((g) => g.textContent?.trim()),
-    ).toEqual(['Aparelhos', 'TV']);
+    ).toEqual(['Dispositivos', 'TV']);
   });
 
   it('keeps Aplicar disabled until something changed, then applies exactly what was chosen', async () => {
@@ -229,12 +229,14 @@ describe('AuditFilterSheet', () => {
     expect(dialog.open).toBe(false);
   });
 
-  it('says the people are loading, and shows the person already chosen meanwhile', async () => {
+  it('shows the people as a busy skeleton while they load, with the person already chosen meanwhile', async () => {
     const { el, chips, checked } = await render({
       people: null,
       filter: { ...EMPTY_FILTER, person: { id: 'g1', name: 'Bruno' } },
     });
-    expect(el.textContent).toContain('Carregando as pessoas');
+    expect(
+      el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+    ).not.toBeNull();
     expect(chips('Pessoa')).toEqual(['Todas as pessoas', 'Bruno']);
     expect(checked()).toContain('Bruno');
   });

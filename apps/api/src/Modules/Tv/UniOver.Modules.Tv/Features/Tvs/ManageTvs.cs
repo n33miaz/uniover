@@ -4,26 +4,45 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
 using UniOver.Modules.Tv.Features.Config;
 using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Persistence;
+using UniOver.Modules.Tv.Ports;
 
 namespace UniOver.Modules.Tv.Features.Tvs;
 
-internal sealed record TvSummary(Guid Id, string Name, bool IsDefault, string? AgentSlug, string? Kind, bool Online, IReadOnlyList<string> Capabilities);
+internal sealed record TvSummary(
+    Guid Id, string Name, bool IsDefault, string? AgentSlug, string? Kind, bool Online, IReadOnlyList<string> Capabilities,
+    bool AllowBackgroundAppClosing = false, bool FocusModeEnabled = false, bool ShortAnimationsEnabled = false,
+    IReadOnlyList<string>? RestrictedBackgroundPackages = null, bool FocusClosesBackground = false);
 internal sealed record TvListResponse(IReadOnlyList<TvSummary> Items);
 internal sealed record CreateTvRequest(string? AgentSlug, string? Name);
-internal sealed record UpdateTvRequest(string? AgentSlug, string? Name);
+internal sealed record UpdateTvRequest(string? AgentSlug, string? Name, bool? AllowBackgroundAppClosing = null,
+    bool? FocusModeEnabled = null, bool? ShortAnimationsEnabled = null, IReadOnlyList<string?>? RestrictedBackgroundPackages = null,
+    bool? FocusClosesBackground = null);
 internal sealed record TvMembersResponse(IReadOnlyList<Guid> UserIds);
 internal sealed record UpdateTvMembersRequest(IReadOnlyList<Guid>? UserIds);
+
+/// <summary>Uma limpeza como o administrador a vê em Sistema: o que fez, o que pulou e por quê (<c>Reason</c> é um código).</summary>
+internal sealed record TvCleanupReportItem(
+    string Kind, string Trigger, DateTimeOffset StartedAt, int DurationMs, int? MemoryBeforeMb, int? MemoryAfterMb,
+    int ClosedApps, IReadOnlyList<string> ClosedPackages, int? BackgroundProcesses, int? SessionOpenMs, string Result,
+    string? Reason);
+
+internal sealed record TvCleanupReportsResponse(IReadOnlyList<TvCleanupReportItem> Items);
+internal sealed record TvAppOption(string Package, string Label);
+internal sealed record TvAppsResponse(IReadOnlyList<TvAppOption> Items);
 
 /// <summary>
 /// Administração das TVs e das filiações. O tipo vem da capacidade anunciada pelo agente conectado em vez de uma
 /// configuração duplicada: <c>tv.kind.android</c> e <c>tv.kind.samsung</c> são declarações que o agente já envia à API.
 /// </summary>
-internal sealed class ManageTvsHandler(TvDbContext db, IAgentDirectory agents, IAgentPresenceReader presence, TimeProvider time)
+internal sealed class ManageTvsHandler(
+    TvDbContext db, IAgentDirectory agents, IAgentPresenceReader presence, TimeProvider time, ITvCommandAudit audit,
+    ITvCleanupSettingsPublisher cleanupPublisher)
 {
     public async Task<TvListResponse> ListAsync(IReadOnlyList<TvTarget> visible, bool isOwner, CancellationToken cancellationToken)
     {
@@ -57,10 +76,18 @@ internal sealed class ManageTvsHandler(TvDbContext db, IAgentDirectory agents, I
         return (ToSummary(tv), null);
     }
 
-    public async Task<(TvSummary? Tv, string? Error)> UpdateAsync(Guid id, UpdateTvRequest request, Guid userId, CancellationToken cancellationToken)
+    public async Task<(TvSummary? Tv, string? Error)> UpdateAsync(Guid id, UpdateTvRequest request, TvCommandOrigin origin, CancellationToken cancellationToken)
     {
+        var userId = origin.UserId;
         var errors = Validate(request.AgentSlug, request.Name, requireAgent: false, out var name);
-        if (errors.Count > 0 || (request.AgentSlug is null && name is null))
+        if (!ConfiguredTv.IsValidRestrictedPackages(request.RestrictedBackgroundPackages))
+        {
+            return (null, "invalid-packages");
+        }
+
+        if (errors.Count > 0 || (request.AgentSlug is null && name is null && request.AllowBackgroundAppClosing is null
+            && request.FocusModeEnabled is null && request.ShortAnimationsEnabled is null && request.RestrictedBackgroundPackages is null
+            && request.FocusClosesBackground is null))
         {
             return (null, "invalid");
         }
@@ -88,8 +115,49 @@ internal sealed class ManageTvsHandler(TvDbContext db, IAgentDirectory agents, I
             agentSlug = listing.Slug;
         }
 
-        tv.Rebind(agentSlug, name, userId, time.GetUtcNow());
-        await db.SaveChangesAsync(cancellationToken);
+        // Samsung (Tizen) não tem esses ajustes: ligar algum é recusado de forma explícita; desligar é sempre aceito.
+        if (WantsLightSettings(request) && presence.Get(agentSlug)?.Capabilities.Contains("tv.kind.samsung", StringComparer.Ordinal) == true)
+        {
+            return (null, "unsupported");
+        }
+
+        // Agente presente que não entende o fechamento no Modo Foco: ligar a opção seria um interruptor que não faz nada.
+        if (IsFocusClosesUnsupported(request, presence.Get(agentSlug)))
+        {
+            return (null, "unsupported");
+        }
+
+        var now = time.GetUtcNow();
+        tv.Rebind(agentSlug, name, userId, now);
+        var closingChanged = request.AllowBackgroundAppClosing is { } allow && tv.SetBackgroundAppClosing(allow, userId, now);
+        var lightChanged = tv.SetLightSettings(request.FocusModeEnabled, request.ShortAnimationsEnabled,
+            request.RestrictedBackgroundPackages?.OfType<string>().ToArray(), userId, now, request.FocusClosesBackground);
+        if (closingChanged || lightChanged)
+        {
+            // O EfCommandAudit usa este mesmo TvDbContext: um SaveChanges grava a TV e a trilha juntas.
+            await audit.RecordAsync(
+                CommandAuditEntry.Create(
+                    userId, tv.AgentSlug, TvCommandNames.CleanupSetting,
+                    // A trilha guarda só o que mudou, nunca a lista de pacotes: o texto é curto e estável.
+                    (closingChanged, lightChanged) switch
+                    {
+                        (true, true) => "background-app-closing+light-settings",
+                        (true, false) => tv.AllowBackgroundAppClosing ? "background-app-closing=on" : "background-app-closing=off",
+                        _ => "light-settings",
+                    },
+                    ok: true, errorCode: null, latencyMs: null, origin.Client, now, tv.Id),
+                cancellationToken);
+        }
+        else
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        if (closingChanged || lightChanged)
+        {
+            await PublishCleanupSettingsAsync(tv.AgentSlug, cancellationToken);
+        }
+
         return (ToSummary(tv), null);
     }
 
@@ -118,6 +186,57 @@ internal sealed class ManageTvsHandler(TvDbContext db, IAgentDirectory agents, I
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;
+    }
+
+    /// <summary>As últimas limpezas desta TV, da mais nova para a mais antiga; <c>null</c> se a TV não existe.</summary>
+    public async Task<TvCleanupReportsResponse?> CleanupReportsAsync(Guid id, CancellationToken cancellationToken)
+    {
+        if (!await db.Tvs.AnyAsync(t => t.Id == id, cancellationToken))
+        {
+            return null;
+        }
+
+        var rows = await db.CleanupReports.AsNoTracking().Where(r => r.TvId == id)
+            .OrderByDescending(r => r.StartedAt).Take(CleanupReportsShown).ToListAsync(cancellationToken);
+        return new TvCleanupReportsResponse([.. rows.Select(r => new TvCleanupReportItem(
+            r.Kind, r.Trigger, r.StartedAt, r.DurationMs, r.MemoryBeforeMb, r.MemoryAfterMb, r.ClosedApps,
+            PackagesOf(r.AppsClosed), r.BackgroundProcesses, r.SessionOpenMs, r.Result, r.Reason))]);
+    }
+
+    /// <summary>
+    /// Só o <c>true</c> é recusado, e só quando o agente já se apresentou sem a capacidade. Agente que nunca se conectou desde
+    /// que a API subiu não é conhecido: a preferência fica guardada e só chega a quem a anunciar.
+    /// </summary>
+    internal static bool IsFocusClosesUnsupported(UpdateTvRequest request, AgentPresenceInfo? info) =>
+        request.FocusClosesBackground == true && info is not null
+        && !info.Capabilities.Contains(Cleanup.CleanupSettingsPublisher.FocusClosesBackgroundCapability, StringComparer.Ordinal);
+
+    private static bool WantsLightSettings(UpdateTvRequest request) =>
+        request.FocusModeEnabled == true || request.ShortAnimationsEnabled == true || request.RestrictedBackgroundPackages is { Count: > 0 }
+        || request.FocusClosesBackground == true;
+
+    public async Task<TvAppsResponse?> AppsAsync(Guid id, CancellationToken cancellationToken)
+    {
+        if (!await db.Tvs.AnyAsync(t => t.Id == id, cancellationToken)) return null;
+        var apps = await db.Shortcuts.AsNoTracking().Where(s => s.TvId == id && s.Installed)
+            .OrderBy(s => s.CustomLabel ?? s.TvLabel ?? s.Package)
+            .Select(s => new TvAppOption(s.Package, s.CustomLabel ?? s.TvLabel ?? s.Package)).ToListAsync(cancellationToken);
+        // A lista de bloqueio é a mesma que SetLightSettings aplica: o que não pode ser restringido nem é oferecido.
+        return new TvAppsResponse([.. apps.Where(a => ConfiguredTv.CanRestrictInBackground(a.Package))]);
+    }
+
+    private const int CleanupReportsShown = 10;
+
+    private static string[] PackagesOf(string json)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<string[]>(json) ?? [];
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return [];
+        }
     }
 
     public async Task<TvMembersResponse?> MembersAsync(Guid id, CancellationToken cancellationToken)
@@ -163,6 +282,19 @@ internal sealed class ManageTvsHandler(TvDbContext db, IAgentDirectory agents, I
         return new TvMembersResponse([.. userIds.Order()]);
     }
 
+    /// <summary>A mudança já está gravada; se o agente não receber agora, recebe ao conectar de novo.</summary>
+    private async Task PublishCleanupSettingsAsync(string agentSlug, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await cleanupPublisher.PublishAsync(agentSlug, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Entrega é melhor esforço: o administrador não deve ver erro numa preferência que ficou salva.
+        }
+    }
+
     private TvSummary ToSummary(ConfiguredTv tv)
     {
         var info = presence.Get(tv.AgentSlug);
@@ -170,7 +302,8 @@ internal sealed class ManageTvsHandler(TvDbContext db, IAgentDirectory agents, I
         var kind = capabilities.Contains("tv.kind.android", StringComparer.Ordinal) ? "android"
             : capabilities.Contains("tv.kind.samsung", StringComparer.Ordinal) ? "samsung"
             : null;
-        return new TvSummary(tv.Id, tv.Name, tv.IsDefault, tv.AgentSlug, kind, info?.Connected == true, capabilities);
+        return new TvSummary(tv.Id, tv.Name, tv.IsDefault, tv.AgentSlug, kind, info?.Connected == true, capabilities,
+            tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled, tv.BackgroundPackages(), tv.FocusClosesBackground);
     }
 
     private static Dictionary<string, string[]> Validate(string? agentSlug, string? name, bool requireAgent, out string? normalizedName)
@@ -194,6 +327,8 @@ internal static class ManageTvsEndpoint
         group.MapPatch("/tvs/{id:guid}", UpdateAsync).RequireAuthorization(StepUp.Policy(TvAuth.BindAgentAction)).Produces<TvSummary>().ProducesProblem(StatusCodes.Status409Conflict);
         group.MapDelete("/tvs/{id:guid}", DeleteAsync).RequireAuthorization(StepUp.Policy(TvAuth.BindAgentAction)).Produces(StatusCodes.Status204NoContent).ProducesProblem(StatusCodes.Status409Conflict);
         group.MapGet("/tvs/{id:guid}/members", MembersAsync).RequireAuthorization(UniOverAuth.OwnerPolicy).Produces<TvMembersResponse>();
+        group.MapGet("/tvs/{id:guid}/cleanup-reports", CleanupReportsAsync).RequireAuthorization(UniOverAuth.OwnerPolicy).Produces<TvCleanupReportsResponse>();
+        group.MapGet("/tvs/{id:guid}/apps", AppsAsync).RequireAuthorization(UniOverAuth.OwnerPolicy).Produces<TvAppsResponse>();
         group.MapPut("/tvs/{id:guid}/members", ReplaceMembersAsync).RequireAuthorization(StepUp.Policy(TvAuth.BindAgentAction)).Produces<TvMembersResponse>();
     }
 
@@ -212,10 +347,10 @@ internal static class ManageTvsEndpoint
         return Result(tv, error);
     }
 
-    private static async Task<IResult> UpdateAsync(Guid id, UpdateTvRequest? request, ICurrentUser current, ManageTvsHandler handler, CancellationToken ct)
+    private static async Task<IResult> UpdateAsync(Guid id, UpdateTvRequest? request, ICurrentUser current, HttpContext http, ManageTvsHandler handler, CancellationToken ct)
     {
-        if (current.UserId is not { } userId || request is null) return TvProblems.Unauthenticated();
-        var (tv, error) = await handler.UpdateAsync(id, request, userId, ct);
+        if (request is null || TvHttp.OriginOf(current, http) is not { } origin) return TvProblems.Unauthenticated();
+        var (tv, error) = await handler.UpdateAsync(id, request, origin, ct);
         return Result(tv, error);
     }
 
@@ -233,6 +368,12 @@ internal static class ManageTvsEndpoint
     private static async Task<IResult> MembersAsync(Guid id, ManageTvsHandler handler, CancellationToken ct) =>
         await handler.MembersAsync(id, ct) is { } result ? TypedResults.Ok(result) : TypedResults.NotFound();
 
+    private static async Task<IResult> CleanupReportsAsync(Guid id, ManageTvsHandler handler, CancellationToken ct) =>
+        await handler.CleanupReportsAsync(id, ct) is { } result ? TypedResults.Ok(result) : TypedResults.NotFound();
+
+    private static async Task<IResult> AppsAsync(Guid id, ManageTvsHandler handler, CancellationToken ct) =>
+        await handler.AppsAsync(id, ct) is { } result ? TypedResults.Ok(result) : TypedResults.NotFound();
+
     private static async Task<IResult> ReplaceMembersAsync(Guid id, UpdateTvMembersRequest? request, ManageTvsHandler handler, CancellationToken ct) =>
         await handler.ReplaceMembersAsync(id, request?.UserIds, ct) is { } result ? TypedResults.Ok(result) : TypedResults.NotFound();
 
@@ -241,6 +382,14 @@ internal static class ManageTvsEndpoint
         null => TypedResults.Ok(tv!),
         "agent-in-use" => Results.Problem(statusCode: StatusCodes.Status409Conflict, title: "O agente já controla outra TV."),
         "missing" => TypedResults.NotFound(),
+        // Tipo próprio: a tela não pode confundir esta recusa com o 409 de "computador já em uso".
+        "unsupported" => Results.Problem(
+            statusCode: StatusCodes.Status409Conflict, title: "Esta TV não suporta esses ajustes.",
+            type: ProblemDetailsExtensions.TypeBase + "tv-light-settings-unsupported"),
+        "invalid-packages" => ProblemDetailsExtensions.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["restrictedBackgroundPackages"] = ["Escolha até 100 apps válidos, sem repetir e sem apps do sistema, do lançador, do teclado ou do controle remoto."],
+        }),
         _ => ProblemDetailsExtensions.ValidationProblem(new Dictionary<string, string[]> { ["body"] = ["Dados da TV inválidos."] }),
     };
 }

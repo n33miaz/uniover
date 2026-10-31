@@ -73,7 +73,9 @@ def test_adb_is_wired_with_one_line_and_the_text_handler_is_not_replaced(
     assert {"tv.apps.refresh.v1", "tv.app.launch.v1"} <= set(setup.handlers)
     assert len(setup.prepare) == 1
     assert len(setup.after_hello) == 1
-    assert len(setup.background) == 1
+    # O anunciante da lista e o temporizador da limpeza automática.
+    # anunciante da lista, temporizador da limpeza e laço do modo foco
+    assert len(setup.background) == 3
     # A capacidade só vem depois do teste de conexão (passo de preparação).
     assert setup.capabilities == ["tv.remote", "tv.kind.android", *ANDROID_KEYS]
 
@@ -100,7 +102,15 @@ async def test_capability_is_declared_when_the_adb_answers(
     assert setup is not None
     for step in setup.prepare:
         await step()
-    assert setup.capabilities == ["tv.remote", "tv.kind.android", *ANDROID_KEYS, "tv.adb"]
+    assert setup.capabilities == [
+        "tv.remote",
+        "tv.kind.android",
+        *ANDROID_KEYS,
+        "tv.adb",
+        "tv.cleanup.automatic.v1",
+        "tv.light-settings.v1",
+        "tv.focus-closes-background.v1",
+    ]
     assert adb.connects == 1
 
 
@@ -115,7 +125,15 @@ async def test_capability_is_still_declared_when_the_tv_is_off_right_now(
     assert setup is not None
     for step in setup.prepare:
         await step()
-    assert setup.capabilities == ["tv.remote", "tv.kind.android", *ANDROID_KEYS, "tv.adb"]
+    assert setup.capabilities == [
+        "tv.remote",
+        "tv.kind.android",
+        *ANDROID_KEYS,
+        "tv.adb",
+        "tv.cleanup.automatic.v1",
+        "tv.light-settings.v1",
+        "tv.focus-closes-background.v1",
+    ]
 
 
 async def test_capability_is_not_declared_when_the_tv_did_not_authorize_this_pc(
@@ -180,6 +198,9 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
         "tv.kind.android",
         *ANDROID_KEYS,
         "tv.adb",
+        "tv.cleanup.automatic.v1",
+        "tv.light-settings.v1",
+        "tv.focus-closes-background.v1",
     ]
     lists = [m for m in api.received if m["type"] == "tv.apps.v1"]
     # Uma lista por iniciativa do agente (sessão quente depois do `hello`) e a do pedido.

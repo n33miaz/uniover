@@ -120,7 +120,7 @@ describe('FoodDiaryPage', () => {
       input.dispatchEvent(new Event('input'));
     }
     fixture.detectChanges();
-    button(fixture, 'Salvar alimento').click();
+    button(fixture, 'Salvar Alimento').click();
     await vi.waitFor(() => {
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.selected-food strong')?.textContent).toBe(
@@ -229,7 +229,7 @@ describe('FoodDiaryPage', () => {
     );
 
     meals.entriesOf.mockResolvedValueOnce([entry]);
-    button(fixture, 'Tentar novamente').click();
+    button(fixture, 'Tentar Novamente').click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Iogurte natural');
@@ -238,7 +238,7 @@ describe('FoodDiaryPage', () => {
   it('rejects a free-form entry with a blank nutrient instead of treating it as zero', async () => {
     const fixture = await open();
     meals.addEntry.mockResolvedValue({ status: 'invalid' });
-    button(fixture, 'Lançamento livre').click();
+    button(fixture, 'Lançamento Livre').click();
     fixture.detectChanges();
     const set = (selector: string, value: string) => {
       const input = fixture.nativeElement.querySelector(selector) as HTMLInputElement;
@@ -249,7 +249,7 @@ describe('FoodDiaryPage', () => {
     set('#free-kcal', '0');
     set('#free-protein', '0');
     set('#free-carbs', '0');
-    button(fixture, 'Registrar refeição').click();
+    button(fixture, 'Registrar Refeição').click();
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -266,7 +266,7 @@ describe('FoodDiaryPage', () => {
     fat.value = '0';
     fat.dispatchEvent(new Event('input'));
     meals.addEntry.mockResolvedValue({ status: 'saved', entry });
-    button(fixture, 'Registrar refeição').click();
+    button(fixture, 'Registrar Refeição').click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(meals.addEntry).toHaveBeenLastCalledWith(
@@ -280,7 +280,7 @@ describe('FoodDiaryPage', () => {
     const fixture = await open();
     meals.addEntry.mockRejectedValue(new Error('storage unavailable'));
     foods.saveOwn.mockRejectedValue(new Error('storage unavailable'));
-    const free = button(fixture, 'Lançamento livre');
+    const free = button(fixture, 'Lançamento Livre');
     free.click();
     fixture.detectChanges();
     const name = fixture.nativeElement.querySelector('#free-name') as HTMLInputElement;
@@ -291,13 +291,13 @@ describe('FoodDiaryPage', () => {
       input.value = '0';
       input.dispatchEvent(new Event('input'));
     }
-    button(fixture, 'Registrar refeição').click();
+    button(fixture, 'Registrar Refeição').click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain(
       'Confira os campos',
     );
-    expect(button(fixture, 'Registrar refeição').disabled).toBe(false);
+    expect(button(fixture, 'Registrar Refeição').disabled).toBe(false);
 
     button(fixture, 'Alimento').click();
     fixture.detectChanges();
@@ -312,7 +312,7 @@ describe('FoodDiaryPage', () => {
     const summary = fixture.nativeElement.querySelector('.own-food summary') as HTMLElement;
     summary.click();
     fixture.detectChanges();
-    button(fixture, 'Salvar alimento').click();
+    button(fixture, 'Salvar Alimento').click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain(
@@ -330,7 +330,7 @@ describe('FoodDiaryPage', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     meals.editEntry.mockRejectedValue(new Error('storage unavailable'));
-    button(fixture, 'Salvar alterações').click();
+    button(fixture, 'Salvar Alterações').click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain(

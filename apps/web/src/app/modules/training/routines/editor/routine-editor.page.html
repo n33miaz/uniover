@@ -1,8 +1,5 @@
 @if (state() === 'loading') {
-  <section class="editor" aria-hidden="true">
-    <div class="ui-skeleton title-skeleton"></div>
-    <div class="ui-skeleton block-skeleton"></div>
-  </section>
+  <app-training-form-skeleton [label]="loadingLabel" [fields]="1" [rows]="3" />
 } @else if (state() === 'missing') {
   <section class="editor">
     <p class="ui-notice" role="status">
@@ -12,16 +9,12 @@
       >
     </p>
     <button type="button" class="secondary ui-btn block" (click)="leave()">
-      <app-training-glyph name="back" />
-      <span i18n="@@training.editor.missing-back">Voltar às rotinas</span>
+      <span i18n="@@training.editor.missing-back">Abrir Rotinas</span>
     </button>
   </section>
 } @else if (state() === 'ready') {
-  <form class="editor" novalidate (submit)="$event.preventDefault(); save()">
+  <form class="editor ui-has-action-bar" novalidate (submit)="$event.preventDefault(); save()">
     <header class="head">
-      <button type="button" class="back ui-tap" [attr.aria-label]="backLabel" (click)="cancel()">
-        <app-training-glyph name="back" />
-      </button>
       <h2 class="title">{{ title }}</h2>
     </header>
 
@@ -186,7 +179,7 @@
                     (click)="askRemove(item.id)"
                   >
                     <app-training-glyph name="trash" />
-                    <span i18n="@@training.editor.remove">Remover da rotina</span>
+                    <span i18n="@@training.editor.remove">Remover da Rotina</span>
                   </button>
                 }
               </div>
@@ -220,7 +213,7 @@
 
     <button type="button" class="secondary ui-btn block" (click)="openPicker()">
       <app-training-glyph name="plus" />
-      <span i18n="@@training.editor.add">Adicionar exercício</span>
+      <span i18n="@@training.editor.add">Adicionar Exercício</span>
     </button>
 
     @if (editing) {
@@ -228,7 +221,7 @@
         <label class="ui-row option">
           <span class="ui-row-text">
             <span class="ui-row-title" i18n="@@training.editor.active"
-              >Na sequência de treinos</span
+              >Na Sequência de Treinos</span
             >
             <span class="ui-row-sub" i18n="@@training.editor.active-hint"
               >Desligada, não é sugerida.</span
@@ -244,40 +237,6 @@
         </label>
       </div>
     }
-
-    @if (saveError(); as message) {
-      <p class="ui-notice bad" role="alert">
-        <app-training-glyph name="alert" />
-        <span>{{ message }}</span>
-      </p>
-    }
-
-    @if (confirmingLeave()) {
-      <div class="ui-notice warn" role="alert">
-        <span class="confirm-text">
-          <span i18n="@@training.editor.leave-ask"
-            >Sair sem salvar? O que você mudou aqui será perdido.</span
-          >
-          <span class="pair">
-            <button type="button" class="secondary ui-btn" (click)="leave()">
-              <span i18n="@@training.editor.leave-yes">Sair sem salvar</span>
-            </button>
-            <button type="button" class="primary ui-btn" (click)="keepEditing()">
-              <span i18n="@@training.editor.leave-no">Continuar editando</span>
-            </button>
-          </span>
-        </span>
-      </div>
-    }
-
-    <div class="actions">
-      <button type="button" class="secondary ui-btn" (click)="cancel()">
-        <span i18n="@@training.editor.cancel">Cancelar</span>
-      </button>
-      <button type="submit" class="primary ui-btn" [disabled]="saving()">
-        <span i18n="@@training.editor.save">Salvar rotina</span>
-      </button>
-    </div>
 
     @if (editing) {
       @if (confirmingDelete()) {
@@ -300,10 +259,48 @@
       } @else {
         <button type="button" class="destructive secondary ui-btn block" (click)="askDelete()">
           <app-training-glyph name="trash" />
-          <span i18n="@@training.editor.delete">Apagar rotina</span>
+          <span i18n="@@training.editor.delete">Apagar Rotina</span>
         </button>
       }
     }
+
+    <div class="ui-action-bar">
+      <div class="ui-action-bar-inner">
+        @if (saveError(); as message) {
+          <p class="ui-notice bad" role="alert">
+            <app-training-glyph name="alert" />
+            <span>{{ message }}</span>
+          </p>
+        }
+
+        @if (confirmingLeave()) {
+          <div class="ui-notice warn" role="alert">
+            <span class="confirm-text">
+              <span i18n="@@training.editor.leave-ask"
+                >Sair sem salvar? O que você mudou aqui será perdido.</span
+              >
+              <span class="pair">
+                <button type="button" class="secondary ui-btn" (click)="leave()">
+                  <span i18n="@@training.editor.leave-yes">Sair sem Salvar</span>
+                </button>
+                <button type="button" class="primary ui-btn" (click)="keepEditing()">
+                  <span i18n="@@training.editor.leave-no">Continuar Editando</span>
+                </button>
+              </span>
+            </span>
+          </div>
+        }
+
+        <div class="actions">
+          <button type="button" class="secondary ui-btn" (click)="cancel()">
+            <span i18n="@@training.editor.cancel">Cancelar</span>
+          </button>
+          <button type="submit" class="primary ui-btn" [disabled]="saveDisabled()">
+            <span i18n="@@training.editor.save">Salvar Rotina</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </form>
 
   @if (pickerOpen()) {

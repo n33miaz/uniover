@@ -49,11 +49,11 @@ export class ModuleRegistry {
       actionLabel: $localize`:@@module.training.action:Ver treino`,
       icon: 'activity',
       status: 'available',
-      defaultSize: 'wide',
+      defaultSize: 'small',
     },
     {
       id: 'health',
-      title: $localize`:@@module.health.title:Saúde e eventos`,
+      title: $localize`:@@module.health.title:Saúde e Eventos`,
       description: $localize`:@@module.health.hint:Aparelhos e linha do tempo`,
       icon: 'health',
       status: 'soon',
@@ -61,7 +61,7 @@ export class ModuleRegistry {
     },
     {
       id: 'monitor',
-      title: $localize`:@@module.monitor.title:Monitor dos serviços`,
+      title: $localize`:@@module.monitor.title:Monitor dos Serviços`,
       description: $localize`:@@module.monitor.hint:Seus serviços na internet`,
       icon: 'monitor',
       status: 'soon',
@@ -69,7 +69,7 @@ export class ModuleRegistry {
     },
     {
       id: 'network',
-      title: $localize`:@@module.network.title:Rede da casa`,
+      title: $localize`:@@module.network.title:Rede da Casa`,
       description: $localize`:@@module.network.hint:A rede de casa num lugar só`,
       icon: 'network',
       status: 'soon',
@@ -77,7 +77,7 @@ export class ModuleRegistry {
     },
     {
       id: 'backup',
-      title: $localize`:@@module.backup.title:Backup de fotos`,
+      title: $localize`:@@module.backup.title:Backup de Fotos`,
       description: $localize`:@@module.backup.hint:Cópia das fotos do Android`,
       icon: 'backup',
       status: 'soon',

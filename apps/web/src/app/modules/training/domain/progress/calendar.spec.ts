@@ -37,13 +37,13 @@ describe('dateKey', () => {
 });
 
 describe('weekRange', () => {
-  it('runs from Monday to Sunday: 12 to 18 October 2026 (12/10 was a Monday)', () => {
-    const week = weekRange(sp(2026, 10, 18, 9, 30), SP);
+  it('runs from Sunday to Saturday: 11 to 17 October 2026 (11/10 was a Sunday)', () => {
+    const week = weekRange(sp(2026, 10, 17, 9, 30), SP);
 
-    expect(week.startKey).toBe('2026-10-12');
-    expect(week.endKey).toBe('2026-10-18');
-    expect(week.start).toBe(sp(2026, 10, 12));
-    expect(week.end).toBe(sp(2026, 10, 19));
+    expect(week.startKey).toBe('2026-10-11');
+    expect(week.endKey).toBe('2026-10-17');
+    expect(week.start).toBe(sp(2026, 10, 11));
+    expect(week.end).toBe(sp(2026, 10, 18));
   });
 
   it('has exactly seven days in Sao Paulo, where summer time no longer exists', () => {
@@ -55,50 +55,52 @@ describe('weekRange', () => {
     expect(summer.end - summer.start).toBe(7 * 24 * HOUR);
   });
 
-  it('puts Sunday 23:59:59.999 in the week and Monday 00:00 in the next one (local midnight)', () => {
-    const lastMoment = weekRange(sp(2026, 10, 18, 23, 59, 59, 999), SP);
-    const nextMoment = weekRange(sp(2026, 10, 19, 0, 0, 0, 0), SP);
+  it('puts Saturday 23:59:59.999 in the week and Sunday 00:00 in the next one (local midnight)', () => {
+    const lastMoment = weekRange(sp(2026, 10, 17, 23, 59, 59, 999), SP);
+    const nextMoment = weekRange(sp(2026, 10, 18, 0, 0, 0, 0), SP);
 
-    expect(lastMoment.startKey).toBe('2026-10-12');
-    expect(nextMoment.startKey).toBe('2026-10-19');
+    expect(lastMoment.startKey).toBe('2026-10-11');
+    expect(nextMoment.startKey).toBe('2026-10-18');
     expect(nextMoment.start).toBe(lastMoment.end);
   });
 
-  it('crosses the month: 31 August to 6 September 2026', () => {
+  it('crosses the month: 30 August to 5 September 2026', () => {
     const week = weekRange(sp(2026, 9, 2, 8), SP);
 
-    expect(week.startKey).toBe('2026-08-31');
-    expect(week.endKey).toBe('2026-09-06');
+    expect(week.startKey).toBe('2026-08-30');
+    expect(week.endKey).toBe('2026-09-05');
   });
 
-  it('crosses the year: 28 December 2026 to 3 January 2027', () => {
+  it('crosses the year: 27 December 2026 to 2 January 2027', () => {
     const week = weekRange(sp(2027, 1, 1, 8), SP);
 
-    expect(week.startKey).toBe('2026-12-28');
-    expect(week.endKey).toBe('2027-01-03');
-    expect(weekRange(sp(2026, 12, 31, 23, 59), SP).startKey).toBe('2026-12-28');
+    expect(week.startKey).toBe('2026-12-27');
+    expect(week.endKey).toBe('2027-01-02');
+    expect(weekRange(sp(2026, 12, 31, 23, 59), SP).startKey).toBe('2026-12-27');
   });
 
   it('counts a week with a clock change as 169 hours when the clock goes back (New York, 1 November 2026)', () => {
+    // 1º de novembro de 2026 é um domingo: a semana nasce no dia de 25 horas.
     const week = weekRange(Date.UTC(2026, 10, 1, 12), NY);
 
-    expect(week.startKey).toBe('2026-10-26');
-    expect(week.endKey).toBe('2026-11-01');
+    expect(week.startKey).toBe('2026-11-01');
+    expect(week.endKey).toBe('2026-11-07');
     expect(week.end - week.start).toBe(169 * HOUR);
-    expect(week.start).toBe(Date.UTC(2026, 9, 26, 4));
-    expect(week.end).toBe(Date.UTC(2026, 10, 2, 5));
+    expect(week.start).toBe(Date.UTC(2026, 10, 1, 4));
+    expect(week.end).toBe(Date.UTC(2026, 10, 8, 5));
   });
 
   it('counts a week with a clock change as 167 hours when the clock goes forward (New York, 8 March 2026)', () => {
     const week = weekRange(Date.UTC(2026, 2, 8, 12), NY);
 
+    expect(week.startKey).toBe('2026-03-08');
     expect(week.end - week.start).toBe(167 * HOUR);
   });
 
   it('gives the same weeks whatever the hour of the day', () => {
-    const monday = weekRange(sp(2026, 10, 14), SP);
+    const wednesday = weekRange(sp(2026, 10, 14), SP);
     for (const hour of [0, 6, 12, 18, 23]) {
-      expect(weekRange(sp(2026, 10, 14, hour), SP)).toEqual(monday);
+      expect(weekRange(sp(2026, 10, 14, hour), SP)).toEqual(wednesday);
     }
   });
 });
@@ -130,8 +132,8 @@ describe('calendar arithmetic', () => {
       month: 2,
       day: 29,
     });
-    expect(weekdayIndex({ year: 2026, month: 10, day: 12 })).toBe(0);
-    expect(weekdayIndex({ year: 2026, month: 10, day: 18 })).toBe(6);
+    expect(weekdayIndex({ year: 2026, month: 10, day: 11 })).toBe(0);
+    expect(weekdayIndex({ year: 2026, month: 10, day: 17 })).toBe(6);
   });
 
   it('civilDateOf reads the local day', () => {

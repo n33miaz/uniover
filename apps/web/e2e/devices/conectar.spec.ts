@@ -71,7 +71,7 @@ test.describe('página pública /conectar', () => {
         ).toBeVisible();
       }
 
-      // Nenhuma chamada à API de aparelhos: a página é pública.
+      // Nenhuma chamada à API de dispositivos: a página é pública.
       expect(devices.requests).toHaveLength(0);
       await expectNoHorizontalScroll(page);
       await settle(page);
@@ -140,32 +140,32 @@ test.describe('página pública /conectar', () => {
 test.describe('convidado com a TV', () => {
   test.use({ userAgent: WINDOWS_UA });
 
-  test('vê o botão de baixar o conector em Aparelhos e aprova só o próprio PC, sem lista', async ({
+  test('vê o botão de baixar o conector em Dispositivos e aprova só o próprio PC, sem lista', async ({
     page,
   }, info) => {
     seedGuest(['module:tv', 'tv:control']);
     await page.goto('/ajustes');
-    await page.getByRole('link', { name: /^Aparelhos/ }).click();
+    await page.getByRole('link', { name: /^Dispositivos/ }).click();
     await expect(page).toHaveURL(/\/ajustes\/dispositivos$/);
 
     await expect(page.getByRole('button', { name: 'Aprovar este computador' })).toBeVisible();
     await expect(page.getByText('Peça ao administrador para aprovar.')).toHaveCount(0);
     const link = page.getByRole('link', { name: 'Baixar conector' });
     await expect(link).toHaveAttribute('href', '/conectar/conectar-uniover.cmd');
-    await expect(page.getByRole('button', { name: 'Parear aparelho' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Parear dispositivo' })).toHaveCount(0);
     expect(devices.requests).toHaveLength(0);
     await expectNoHorizontalScroll(page);
     await settle(page);
     await screenshot(page, info.outputPath('guest-download.png'));
   });
 
-  test('sem a TV não ganha o botão nem a linha em Ajustes', async ({ page }) => {
+  test('sem a TV não ganha o botão nem a linha em Configurações', async ({ page }) => {
     seedGuest(['module:training']);
     await page.goto('/ajustes/dispositivos');
     await expect(page.getByText('Peça ao administrador para aprovar.')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Baixar conector' })).toHaveCount(0);
     await page.goto('/ajustes');
-    await expect(page.getByRole('link', { name: /^Aparelhos/ })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /^Dispositivos/ })).toHaveCount(0);
   });
 
   test('aprova o próprio PC: senha de novo, TV só dele e nunca a padrão', async ({
@@ -288,7 +288,7 @@ test.describe('aprovar com "Para quem é a TV"', () => {
     devices.openCodes.add('BCDF2345');
 
     await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
-    const sheet = page.getByRole('dialog', { name: 'Parear aparelho' });
+    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
     await expect(sheet).toBeVisible();
     const person = sheet.getByRole('switch', { name: 'Raphael' });
     await expect(person).not.toBeChecked();
@@ -298,7 +298,7 @@ test.describe('aprovar com "Para quem é a TV"', () => {
     await screenshot(page, info.outputPath('pair-for-whom.png'));
 
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
-    await expect(page.getByText('Aparelho PC de casa pareado.')).toBeVisible();
+    await expect(page.getByText('Dispositivo PC de casa pareado.')).toBeVisible();
 
     expect(devices.tvs).toEqual([
       { name: 'TV de Raphael', agentSlug: devices.agents[0].slug, memberIds: [GUEST_ID] },
@@ -311,9 +311,9 @@ test.describe('aprovar com "Para quem é a TV"', () => {
     devices.openCodes.add('BCDF2345');
 
     await page.goto('/ajustes/dispositivos?codigo=bcdf2345');
-    const sheet = page.getByRole('dialog', { name: 'Parear aparelho' });
+    const sheet = page.getByRole('dialog', { name: 'Parear dispositivo' });
     await sheet.getByRole('button', { name: 'Aprovar' }).click();
-    await expect(page.getByText('Aparelho PC de casa pareado.')).toBeVisible();
+    await expect(page.getByText('Dispositivo PC de casa pareado.')).toBeVisible();
 
     expect(devices.tvs).toEqual([
       { name: 'PC de casa', agentSlug: devices.agents[0].slug, memberIds: [] },

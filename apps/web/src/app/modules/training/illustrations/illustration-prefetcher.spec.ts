@@ -2,7 +2,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { illustrationFor } from './illustration-map';
-import { IllustrationPrefetcher } from './illustration-prefetcher';
+import { IllustrationPrefetcher, illustrationFiles } from './illustration-prefetcher';
 
 const WITH_ART = 'supino-reto-com-barra';
 const ALSO_WITH_ART = 'agachamento-livre-com-barra';
@@ -28,7 +28,7 @@ describe('IllustrationPrefetcher', () => {
   beforeEach(() => {
     online.set(true);
     setSaveData(undefined);
-    fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    fetchMock = vi.fn().mockImplementation(async () => ({ ok: true, clone: () => ({}) }));
     vi.stubGlobal('fetch', fetchMock);
   });
 
@@ -102,5 +102,74 @@ describe('IllustrationPrefetcher', () => {
   it('returns zero for an empty list', async () => {
     expect(await prefetcher().warm([])).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('lists the files of a set of exercises without repeating any', () => {
+    const files = illustrationFiles(['exercicio-sem-arte', WITH_ART, WITH_ART]);
+    expect(files).toEqual([...illustrationFor(WITH_ART)!.frames]);
+  });
+
+  describe('with the runtime cache', () => {
+    /** Um `caches` de mentira: guarda só os endereços, o suficiente para `match` e `put`. */
+    function stubCaches(initial: string[] = []) {
+      const stored = new Set(initial);
+      const cache = {
+        match: vi.fn(async (url: string) => (stored.has(url) ? ({} as Response) : undefined)),
+        put: vi.fn(async (url: string) => void stored.add(url)),
+      };
+      const open = vi.fn(async () => cache);
+      vi.stubGlobal('caches', { open });
+      return { stored, cache, open };
+    }
+
+    const art = (slug: string) =>
+      illustrationFor(slug)!.frames.map((file) => `/exercise-art/${file}`);
+
+    it('stores each file itself, so it is kept even when the service worker is not in control yet', async () => {
+      const { stored, open } = stubCaches();
+      const count = await prefetcher().warm([WITH_ART]);
+      expect(open).toHaveBeenCalledWith('exercise-art');
+      expect([...stored]).toEqual(art(WITH_ART));
+      expect(count).toBe(2);
+    });
+
+    it('does not fetch again what is already stored, and counts it as ready', async () => {
+      const { cache } = stubCaches(art(WITH_ART));
+      const count = await prefetcher().warm([WITH_ART]);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(cache.put).not.toHaveBeenCalled();
+      expect(count).toBe(2);
+    });
+
+    it('fetches only the missing file after an interrupted run', async () => {
+      const [first, second] = art(WITH_ART);
+      const { stored } = stubCaches([first]);
+      const count = await prefetcher().warm([WITH_ART]);
+      expect(urls()).toEqual([second]);
+      expect([...stored].sort()).toEqual([first, second].sort());
+      expect(count).toBe(2);
+    });
+
+    it('does not count a file that could not be stored', async () => {
+      const { cache } = stubCaches();
+      cache.put.mockRejectedValueOnce(new DOMException('quota', 'QuotaExceededError'));
+      const count = await prefetcher().warm([WITH_ART]);
+      expect(count).toBe(0);
+    });
+
+    it('does not count a file the network never delivered', async () => {
+      const { stored } = stubCaches();
+      fetchMock
+        .mockResolvedValueOnce({ ok: true, clone: () => ({}) })
+        .mockRejectedValue(new TypeError('x'));
+      const count = await prefetcher().warm([WITH_ART]);
+      expect(count).toBe(1);
+      expect(stored.size).toBe(1);
+    });
+
+    it('still warms when the browser refuses to open the cache', async () => {
+      vi.stubGlobal('caches', { open: vi.fn().mockRejectedValue(new Error('denied')) });
+      expect(await prefetcher().warm([WITH_ART])).toBe(2);
+    });
   });
 });

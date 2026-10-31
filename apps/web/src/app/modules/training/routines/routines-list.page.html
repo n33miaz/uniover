@@ -14,15 +14,11 @@
   }
 
   @if (!ready()) {
-    <ul class="ui-group ui-plain skeleton" aria-hidden="true">
-      @for (row of [1, 2, 3]; track row) {
-        <li><span class="ui-skeleton"></span></li>
-      }
-    </ul>
+    <app-routines-list-skeleton />
   } @else if (entries().length === 0) {
     <section class="empty ui-card" aria-labelledby="routines-empty-title">
       <span class="ui-tile lg"><app-training-glyph name="list" /></span>
-      <h2 id="routines-empty-title" i18n="@@training.routines.empty-title">Sem rotinas ainda</h2>
+      <h2 id="routines-empty-title" i18n="@@training.routines.empty-title">Sem Rotinas Ainda</h2>
       <p i18n="@@training.routines.empty-text">
         Uma rotina é a lista de exercícios de um treino (Treino A, Treino B...). Monte a sua do zero
         ou comece por um modelo pronto.
@@ -30,17 +26,30 @@
     </section>
   } @else {
     @if (featured(); as next) {
-      <a class="next-card ui-card" [routerLink]="['/treino/rotinas', next.routine.id]">
+      <section class="next-card ui-card" aria-labelledby="next-routine-title">
         <span class="eyebrow next" i18n="@@training.routines.next">Próxima</span>
-        <span class="next-main">
+        <!-- O corpo do cartão abre a edição da rotina; iniciar o treino é o botão de baixo. -->
+        <a class="next-main" [routerLink]="['/treino/rotinas', next.routine.id]">
           <span class="ui-tile" [class.off]="!next.routine.active">{{ next.letter }}</span>
           <span class="ui-row-text">
-            <span class="ui-row-title">{{ next.routine.name }}</span>
+            <span id="next-routine-title" class="ui-row-title">{{ next.routine.name }}</span>
             <span class="ui-row-sub">{{ summary(next) }}</span>
           </span>
           <app-training-glyph class="chevron" name="next" />
-        </span>
-      </a>
+        </a>
+        <button
+          type="button"
+          class="start primary ui-btn block"
+          [disabled]="starting()"
+          (click)="start(next.routine.id)"
+        >
+          @if (continuing()) {
+            <span i18n="@@training.routines.continue">Continuar Treino</span>
+          } @else {
+            <span i18n="@@training.routines.start">Iniciar Treino</span>
+          }
+        </button>
+      </section>
     }
 
     @if (hasMore()) {
@@ -106,6 +115,11 @@
       <span i18n="@@training.routines.template">Comparar Modelos</span>
     </button>
   </div>
+  <!-- O glossário tem entrada com texto: o ícone sozinho passava despercebido. -->
+  <a class="glossary-link" routerLink="/treino/glossario">
+    <app-training-glyph name="info" />
+    <span i18n="@@training.glossary.link">Entenda o Treino</span>
+  </a>
   @if (!online()) {
     <p class="ui-notice warn" role="status">
       <app-training-glyph name="offline" />

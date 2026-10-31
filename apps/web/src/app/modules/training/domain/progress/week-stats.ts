@@ -37,7 +37,7 @@ export interface WeeklyVolume {
  * Volume da semana: **séries de trabalho** por músculo, não quilos. Só o músculo principal do exercício (o primeiro da
  * lista) conta, e aquecimento não conta. O app mostra, não recomenda número de séries: não há norma única.
  *
- * `weekStart` é o início da semana (`weekRange(...).start`); a semana termina na segunda seguinte, no mesmo fuso.
+ * `weekStart` é o início da semana (`weekRange(...).start`); a semana termina no domingo seguinte, no mesmo fuso.
  */
 export function weeklySetsByGroup(
   sets: readonly WeekSet[],
@@ -91,7 +91,7 @@ export function trainedDays(
 }
 
 export interface ConstancyWeek {
-  /** Início da semana (segunda) em ms e como `AAAA-MM-DD`. */
+  /** Início da semana (domingo) em ms e como `AAAA-MM-DD`. */
   readonly start: number;
   readonly startKey: string;
   /** Treinos da semana. */
@@ -118,20 +118,20 @@ export function weeklyConstancy(
   now: number,
   weeks = 8,
 ): Constancy {
-  // A segunda da semana atual, e daí para trás de sete em sete dias do calendário (nunca de 168 em 168 horas: a semana
+  // O domingo da semana atual, e daí para trás de sete em sete dias do calendário (nunca de 168 em 168 horas: a semana
   // que atravessa uma mudança de horário tem 167 ou 169).
-  const monday = civilDateOf(weekRange(now, timeZone).start, timeZone);
+  const sunday = civilDateOf(weekRange(now, timeZone).start, timeZone);
   const result: ConstancyWeek[] = [];
   for (let back = weeks - 1; back >= 0; back--) {
-    const weekMonday = addDays(monday, -7 * back);
-    const start = startOfDay(weekMonday, timeZone);
-    const end = startOfDay(addDays(weekMonday, 7), timeZone);
+    const weekSunday = addDays(sunday, -7 * back);
+    const start = startOfDay(weekSunday, timeZone);
+    const end = startOfDay(addDays(weekSunday, 7), timeZone);
     const count = sessions.filter(
       (session) => session.startedAt >= start && session.startedAt < end,
     ).length;
     result.push({
       start,
-      startKey: dateKeyOf(weekMonday),
+      startKey: dateKeyOf(weekSunday),
       sessions: count,
       met: count >= goalPerWeek,
     });

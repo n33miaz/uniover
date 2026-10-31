@@ -26,6 +26,21 @@ internal sealed class BodyEntryConfiguration : IEntityTypeConfiguration<BodyEntr
             t.HasCheckConstraint("ck_body_entries_hip", Circumference("hip_cm"));
             t.HasCheckConstraint("ck_body_entries_arm", Circumference("arm_cm"));
             t.HasCheckConstraint("ck_body_entries_thigh", Circumference("thigh_cm"));
+            t.HasCheckConstraint("ck_body_entries_chest", Circumference("chest_cm"));
+            t.HasCheckConstraint("ck_body_entries_abdomen", Circumference("abdomen_cm"));
+            t.HasCheckConstraint("ck_body_entries_forearm", Circumference("forearm_cm"));
+            t.HasCheckConstraint("ck_body_entries_calf", Circumference("calf_cm"));
+            t.HasCheckConstraint("ck_body_entries_arm_right", Circumference("arm_right_cm"));
+            t.HasCheckConstraint("ck_body_entries_arm_left", Circumference("arm_left_cm"));
+            t.HasCheckConstraint("ck_body_entries_forearm_right", Circumference("forearm_right_cm"));
+            t.HasCheckConstraint("ck_body_entries_forearm_left", Circumference("forearm_left_cm"));
+            t.HasCheckConstraint("ck_body_entries_thigh_right", Circumference("thigh_right_cm"));
+            t.HasCheckConstraint("ck_body_entries_thigh_left", Circumference("thigh_left_cm"));
+            t.HasCheckConstraint("ck_body_entries_calf_right", Circumference("calf_right_cm"));
+            t.HasCheckConstraint("ck_body_entries_calf_left", Circumference("calf_left_cm"));
+            t.HasCheckConstraint("ck_body_entries_chest_skinfold", Skinfold("chest_skinfold_mm"));
+            t.HasCheckConstraint("ck_body_entries_abdomen_skinfold", Skinfold("abdomen_skinfold_mm"));
+            t.HasCheckConstraint("ck_body_entries_thigh_skinfold", Skinfold("thigh_skinfold_mm"));
             t.HasCheckConstraint("ck_body_entries_fat_method", "fat_method IS NULL OR fat_method IN ('navy', 'manual', 'bioimpedance')");
 
             // O método só existe junto do percentual (e vice-versa): "gordura sem dizer de onde veio" não se grava.
@@ -37,7 +52,11 @@ internal sealed class BodyEntryConfiguration : IEntityTypeConfiguration<BodyEntr
             t.HasCheckConstraint(
                 "ck_body_entries_not_empty",
                 "(weight_kg IS NOT NULL OR body_fat_pct IS NOT NULL OR waist_cm IS NOT NULL OR neck_cm IS NOT NULL " +
-                "OR hip_cm IS NOT NULL OR arm_cm IS NOT NULL OR thigh_cm IS NOT NULL) OR deleted_at IS NOT NULL");
+                "OR hip_cm IS NOT NULL OR arm_cm IS NOT NULL OR thigh_cm IS NOT NULL OR chest_cm IS NOT NULL OR abdomen_cm IS NOT NULL " +
+                "OR forearm_cm IS NOT NULL OR calf_cm IS NOT NULL OR arm_right_cm IS NOT NULL OR arm_left_cm IS NOT NULL " +
+                "OR forearm_right_cm IS NOT NULL OR forearm_left_cm IS NOT NULL OR thigh_right_cm IS NOT NULL OR thigh_left_cm IS NOT NULL " +
+                "OR calf_right_cm IS NOT NULL OR calf_left_cm IS NOT NULL OR chest_skinfold_mm IS NOT NULL OR abdomen_skinfold_mm IS NOT NULL " +
+                "OR thigh_skinfold_mm IS NOT NULL) OR deleted_at IS NOT NULL");
         });
         e.HasKey(x => x.Id);
         e.Property(x => x.Id).ValueGeneratedNever();
@@ -52,6 +71,21 @@ internal sealed class BodyEntryConfiguration : IEntityTypeConfiguration<BodyEntr
         e.Property(x => x.HipCm).HasPrecision(4, 1);
         e.Property(x => x.ArmCm).HasPrecision(4, 1);
         e.Property(x => x.ThighCm).HasPrecision(4, 1);
+        e.Property(x => x.ChestCm).HasPrecision(4, 1);
+        e.Property(x => x.AbdomenCm).HasPrecision(4, 1);
+        e.Property(x => x.ForearmCm).HasPrecision(4, 1);
+        e.Property(x => x.CalfCm).HasPrecision(4, 1);
+        e.Property(x => x.ArmRightCm).HasPrecision(4, 1);
+        e.Property(x => x.ArmLeftCm).HasPrecision(4, 1);
+        e.Property(x => x.ForearmRightCm).HasPrecision(4, 1);
+        e.Property(x => x.ForearmLeftCm).HasPrecision(4, 1);
+        e.Property(x => x.ThighRightCm).HasPrecision(4, 1);
+        e.Property(x => x.ThighLeftCm).HasPrecision(4, 1);
+        e.Property(x => x.CalfRightCm).HasPrecision(4, 1);
+        e.Property(x => x.CalfLeftCm).HasPrecision(4, 1);
+        e.Property(x => x.ChestSkinfoldMm).HasPrecision(4, 1);
+        e.Property(x => x.AbdomenSkinfoldMm).HasPrecision(4, 1);
+        e.Property(x => x.ThighSkinfoldMm).HasPrecision(4, 1);
         e.Property(x => x.Note).HasMaxLength(BodyLimits.NoteMax);
 
         // A linha do tempo do dono (a tela lê por data) e a ordem do cursor da leitura incremental, sempre dentro de um usuário.
@@ -67,6 +101,9 @@ internal sealed class BodyEntryConfiguration : IEntityTypeConfiguration<BodyEntr
 
     private static string Circumference(string column) =>
         $"{column} IS NULL OR {column} BETWEEN {Num(BodyLimits.CircumferenceMinCm)} AND {Num(BodyLimits.CircumferenceMaxCm)}";
+
+    private static string Skinfold(string column) =>
+        $"{column} IS NULL OR {column} BETWEEN {Num(BodyLimits.SkinfoldMinMm)} AND {Num(BodyLimits.SkinfoldMaxMm)}";
 }
 
 internal sealed class BodyProfileConfiguration : IEntityTypeConfiguration<BodyProfile>

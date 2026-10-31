@@ -21,6 +21,13 @@ export interface MockTv {
   kind: 'android' | 'samsung' | null;
   online: boolean;
   capabilities: string[];
+  /** Fechar apps em segundo plano na limpeza desta TV; ausente vale desligado, como na API. */
+  allowBackgroundAppClosing?: boolean;
+  /** Modo Foco e o fechamento dos outros apps nele; ausentes valem desligado, como na API. */
+  focusModeEnabled?: boolean;
+  focusClosesBackground?: boolean;
+  /** As últimas limpezas, como `GET /tvs/{id}/cleanup-reports` devolve. */
+  cleanupReports?: Record<string, unknown>[];
   state?: MockTvState;
   shortcuts?: MockShortcut[];
 }
@@ -56,7 +63,11 @@ export interface MockTvState {
   app: string | null;
   connection: string;
   agentOnline: boolean;
+  /** A TV da conta tem agente vinculado (ausente vale sim, como na API antiga). */
+  agentLinked?: boolean;
   updatedAt: string | null;
+  /** Desde quando o agente está fora (a API só manda com ele fora): é o que confirma o "PC Desligado". */
+  offlineSince?: string | null;
 }
 
 /** Falha que a próxima chamada de comando devolve (e que se repete até o teste limpar). */
@@ -127,6 +138,7 @@ function requiredPermission(method: string, path: string): string | null {
     return 'module:tv';
   }
   if (method === 'GET' && path === '/commands/recent') return 'tv:history';
+  if (method === 'GET' && path === '/cleanup/latest') return 'tv:control';
   if (method === 'POST' && ['/wake', '/keys', '/text', '/cleanup'].includes(path))
     return 'tv:control';
   if (method === 'POST' && path === '/power/off') return 'tv:power';
@@ -408,6 +420,10 @@ export async function mockTvApi(context: BrowserContext, identity: IdentityMock)
       if (mock.cleanupGate) await mock.cleanupGate;
       return json(route, 200, mock.cleanupResult);
     }
+    if (method === 'GET' && path === '/cleanup/latest') {
+      // Sem limpeza gravada a API responde 204, e a tela não mostra nada.
+      return route.fulfill({ status: 204 });
+    }
     if (method === 'POST' && path === '/shortcuts/refresh') {
       return json(route, 200, { ok: true, latencyMs: 40 });
     }
@@ -449,12 +465,13 @@ async function handleTvs(
       kind: tv.kind,
       online: tv.online,
       capabilities: tv.capabilities,
+      allowBackgroundAppClosing: tv.allowBackgroundAppClosing ?? false,
     }));
     await json(route, 200, { items });
     return true;
   }
 
-  const target = /^\/tvs(?:\/([^/]+)(\/members)?)?$/.exec(path);
+  const target = /^\/tvs(?:\/([^/]+)(\/members|\/cleanup-reports|\/apps)?)?$/.exec(path);
   if (!target) return false;
   if (!owner) {
     await problem(route, { status: 403, kind: 'forbidden' });
@@ -477,6 +494,9 @@ async function handleTvs(
     kind: tv.kind,
     online: tv.online,
     capabilities: tv.capabilities,
+    allowBackgroundAppClosing: tv.allowBackgroundAppClosing ?? false,
+    focusModeEnabled: tv.focusModeEnabled ?? false,
+    focusClosesBackground: tv.focusClosesBackground ?? false,
   });
   const found = target[1] ? tvs.find((tv) => tv.id === target[1]) : undefined;
 
@@ -518,6 +538,15 @@ async function handleTvs(
     }
     if (typeof body?.['name'] === 'string') found.name = body['name'].trim();
     if (typeof slug === 'string') found.agentSlug = slug;
+    if (typeof body?.['allowBackgroundAppClosing'] === 'boolean') {
+      found.allowBackgroundAppClosing = body['allowBackgroundAppClosing'];
+    }
+    if (typeof body?.['focusModeEnabled'] === 'boolean') {
+      found.focusModeEnabled = body['focusModeEnabled'];
+    }
+    if (typeof body?.['focusClosesBackground'] === 'boolean') {
+      found.focusClosesBackground = body['focusClosesBackground'];
+    }
     await json(route, 200, summary(found));
     return true;
   }
@@ -530,6 +559,22 @@ async function handleTvs(
     mock.tvs = tvs.filter((tv) => tv.id !== found.id);
     delete mock.members[found.id];
     await route.fulfill({ status: 204 });
+    return true;
+  }
+
+  if (target[2] === '/apps' && method === 'GET') {
+    const items = (found.shortcuts ?? [])
+      .filter((shortcut) => shortcut.installed)
+      .map((shortcut) => ({
+        package: shortcut.package,
+        label: shortcut.customLabel ?? shortcut.tvLabel ?? shortcut.package,
+      }));
+    await json(route, 200, { items });
+    return true;
+  }
+
+  if (target[2] === '/cleanup-reports' && method === 'GET') {
+    await json(route, 200, { items: found.cleanupReports ?? [] });
     return true;
   }
 

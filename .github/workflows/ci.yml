@@ -25,6 +25,7 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       agent: ${{ steps.filter.outputs.agent }}
       contracts: ${{ steps.filter.outputs.contracts }}
+      tv_launcher: ${{ steps.filter.outputs.tv_launcher }}
       image: ${{ steps.filter.outputs.image }}
       api_matrix: ${{ steps.plan.outputs.api_matrix }}
       e2e_matrix: ${{ steps.plan.outputs.e2e_matrix }}
@@ -51,6 +52,11 @@ jobs:
               - '.github/workflows/ci.yml'
             contracts:
               - 'contracts/**'
+              - '.github/workflows/ci.yml'
+            tv_launcher:
+              - 'apps/tv-launcher/**'
+              - 'contracts/tv-launcher/**'
+              - 'VERSION'
               - '.github/workflows/ci.yml'
             image:
               - 'Dockerfile'
@@ -284,6 +290,33 @@ jobs:
       - name: Validar esquemas e exemplos
         run: npm run validate
 
+  tv-launcher:
+    name: tv-launcher
+    needs: changes
+    if: needs.changes.outputs.tv_launcher == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: apps/tv-launcher
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # O gradle-wrapper.jar é um binário no repositório: confere o hash contra os publicados pelo Gradle.
+      - uses: gradle/actions/wrapper-validation@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          min-wrapper-count: 1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: 21
+      # O SDK do Android já vem na imagem do runner. O release sai assinado com a chave de depuração, sem segredo.
+      - name: Testes de unidade e de tela
+        run: ./gradlew --no-daemon testDebugUnitTest
+      - name: Montar o APK de release
+        run: ./gradlew --no-daemon assembleRelease
+
   image:
     name: image
     needs: changes
@@ -383,7 +416,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, commits, api, web, e2e, audit-pwa, agent, contracts, image]
+    needs: [changes, commits, api, web, e2e, audit-pwa, agent, contracts, tv-launcher, image]
     runs-on: ubuntu-latest
     steps:
       - name: Resumir

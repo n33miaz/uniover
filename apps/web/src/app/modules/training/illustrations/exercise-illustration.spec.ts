@@ -1,8 +1,10 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
+  AUTO_RUN_MS,
   ExerciseIllustration,
   FRAME_INTERVAL_MS,
+  TAP_RUN_MS,
   IllustrationState,
 } from './exercise-illustration';
 import { illustrationFor } from './illustration-map';
@@ -53,11 +55,11 @@ describe('ExerciseIllustration', () => {
     expect(states).toEqual(['ready']);
   });
 
-  it('alternates the original PNG poses in movement order', () => {
+  it('alternates the light WebP poses in movement order', () => {
     create('puxada-aberta-na-polia', 'Puxada aberta na polia');
     expect(images().map((img) => img.getAttribute('src'))).toEqual([
-      '/exercise-art/wide-grip-lat-pull-down-2.png',
-      '/exercise-art/wide-grip-lat-pull-down-1.png',
+      '/exercise-art/wide-grip-lat-pull-down-2.webp',
+      '/exercise-art/wide-grip-lat-pull-down-1.webp',
     ]);
     expect(visible()[0]).toBe(images()[0]);
     vi.advanceTimersByTime(FRAME_INTERVAL_MS);
@@ -66,15 +68,15 @@ describe('ExerciseIllustration', () => {
     expect(states).toEqual(['ready']);
   });
 
-  it('describes each pose with the name and its number', () => {
+  it('names the whole drawing for assistive technology and keeps the poses out of the reading order', () => {
     create(SLUG, 'Supino reto com barra');
-    expect(images().map((img) => img.alt)).toEqual([
-      'Supino reto com barra, posição 1 de 2',
-      'Supino reto com barra, posição 2 de 2',
-    ]);
+    expect(button()?.getAttribute('aria-label')).toBe('Supino reto com barra, repetir a animação');
+    expect(
+      images().every((img) => img.alt === '' && img.getAttribute('aria-hidden') === 'true'),
+    ).toBe(true);
   });
 
-  it('starts on the first pose and flips every second', () => {
+  it('starts on the first pose and flips on its own', () => {
     create(SLUG);
     expect(visible()).toEqual([images()[0]]);
     vi.advanceTimersByTime(FRAME_INTERVAL_MS - 1);
@@ -88,24 +90,55 @@ describe('ExerciseIllustration', () => {
     expect(visible()).toEqual([images()[0]]);
   });
 
-  it('hides the pose that is out of sight from assistive technology', () => {
+  it('draws both poses in exactly the same box', () => {
     create(SLUG);
-    expect(images()[0].hasAttribute('aria-hidden')).toBe(false);
-    expect(images()[1].getAttribute('aria-hidden')).toBe('true');
+    expect(images().every((img) => img.classList.contains('frame'))).toBe(true);
+    expect(images().map((img) => [img.width, img.height])).toEqual([
+      [268, 275],
+      [268, 275],
+    ]);
   });
 
-  it('has no button while it animates', () => {
+  it('stops by itself after about 30 seconds and keeps the pose it was on', () => {
     create(SLUG);
-    expect(button()).toBeNull();
+    vi.advanceTimersByTime(AUTO_RUN_MS + FRAME_INTERVAL_MS * 3);
+    fixture.detectChanges();
+    expect(vi.getTimerCount()).toBe(0);
+    const stopped = visible()[0];
+    vi.advanceTimersByTime(FRAME_INTERVAL_MS * 4);
+    fixture.detectChanges();
+    expect(visible()[0]).toBe(stopped);
   });
 
-  it('does not animate with reduced motion: first pose and a button to see the other one', () => {
+  it('a tap flips the pose and makes it move again for about two minutes', () => {
+    create(SLUG);
+    vi.advanceTimersByTime(AUTO_RUN_MS + 1);
+    fixture.detectChanges();
+    expect(vi.getTimerCount()).toBe(0);
+    const before = visible()[0];
+
+    button()!.click();
+    fixture.detectChanges();
+    expect(visible()[0]).not.toBe(before);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    vi.advanceTimersByTime(TAP_RUN_MS - FRAME_INTERVAL_MS);
+    fixture.detectChanges();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    vi.advanceTimersByTime(FRAME_INTERVAL_MS * 2);
+    fixture.detectChanges();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not animate with reduced motion: first pose, and a tap swaps the position', () => {
     reduced.set(true);
     create(SLUG);
     vi.advanceTimersByTime(FRAME_INTERVAL_MS * 5);
     fixture.detectChanges();
     expect(visible()).toEqual([images()[0]]);
-    expect(button()?.textContent?.trim()).toBe('Ver outra posição');
+    expect(vi.getTimerCount()).toBe(0);
+    expect(button()?.getAttribute('aria-label')).toContain('trocar de posição');
+    expect(el().textContent).not.toContain('Ver outra posição');
 
     button()!.click();
     fixture.detectChanges();
@@ -113,6 +146,7 @@ describe('ExerciseIllustration', () => {
     button()!.click();
     fixture.detectChanges();
     expect(visible()).toEqual([images()[0]]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('stops and starts moving when the preference changes', () => {
@@ -122,11 +156,9 @@ describe('ExerciseIllustration', () => {
     vi.advanceTimersByTime(FRAME_INTERVAL_MS * 3);
     fixture.detectChanges();
     expect(vi.getTimerCount()).toBe(0);
-    expect(button()).not.toBeNull();
     reduced.set(false);
     fixture.detectChanges();
-    expect(vi.getTimerCount()).toBe(1);
-    expect(button()).toBeNull();
+    expect(vi.getTimerCount()).toBe(2);
   });
 
   it('renders no image, no button and no timer when there is no illustration, and says so', () => {
@@ -163,7 +195,7 @@ describe('ExerciseIllustration', () => {
 
   it('clears its timer when destroyed', () => {
     create(SLUG);
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(2);
     fixture.destroy();
     expect(vi.getTimerCount()).toBe(0);
   });

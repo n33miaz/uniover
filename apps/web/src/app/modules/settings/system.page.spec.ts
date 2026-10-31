@@ -5,7 +5,7 @@ import { routes } from '../../app.routes';
 import { SystemApi } from './system-api';
 
 describe('system route', () => {
-  it('renders the page lazily, inside the shell, under Ajustes, with the TV section', async () => {
+  it('renders the page lazily, inside the shell, under Configurações, with the TV section', async () => {
     TestBed.configureTestingModule({
       providers: [
         provideRouter(routes),
@@ -14,6 +14,9 @@ describe('system route', () => {
           useValue: {
             tvConfig: () => new Promise(() => undefined),
             systemSettings: () => new Promise(() => undefined),
+            agents: () => Promise.resolve([]),
+            tvs: () => Promise.resolve([]),
+            deploymentVersion: () => Promise.resolve({ commit: null }),
           },
         },
       ],

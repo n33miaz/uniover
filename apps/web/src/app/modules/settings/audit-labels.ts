@@ -58,7 +58,7 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.qr-login-succeeded:Computador entrou pelo QR`;
     case 'audit_exported':
       return $localize`:@@settings.audit.action.audit-exported:Auditoria exportada`;
-    // Aparelhos
+    // Dispositivos
     case 'pairing_started':
       return $localize`:@@settings.audit.action.pairing-started:Pareamento iniciado`;
     case 'pairing_approved':
@@ -77,6 +77,10 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.agent-update-requested:Atualização do aparelho pedida`;
     case 'agent_restart_requested':
       return $localize`:@@settings.audit.action.agent-restart-requested:Reinício do aparelho pedido`;
+    case 'agent_offline':
+      return $localize`:@@settings.audit.action.agent-offline:Computador sem sinal`;
+    case 'agent_online':
+      return $localize`:@@settings.audit.action.agent-online:Computador de volta`;
     case 'agent_rollback_requested':
       return $localize`:@@settings.audit.action.agent-rollback-requested:Volta do aparelho à versão anterior pedida`;
     // TV
@@ -92,6 +96,8 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.tv-power-off:TV desligada`;
     case 'tv.cleanup':
       return $localize`:@@settings.audit.action.tv-cleanup:Limpeza da TV`;
+    case 'tv.cleanup.setting':
+      return $localize`:@@settings.audit.action.tv-cleanup-setting:Fechar apps em segundo plano alterado`;
     case 'tv.apps.refresh':
       return $localize`:@@settings.audit.action.tv-apps-refresh:Lista de apps atualizada`;
     case 'tv.shortcuts.reorder':
@@ -116,7 +122,7 @@ export function moduleLabel(code: string): string {
     case 'identity':
       return $localize`:@@settings.audit.module.identity:Conta e acesso`;
     case 'devices':
-      return $localize`:@@settings.audit.module.devices:Aparelhos`;
+      return $localize`:@@settings.audit.module.devices:Dispositivos`;
     case 'tv':
       return $localize`:@@settings.audit.module.tv:TV`;
     default:
@@ -232,6 +238,12 @@ export function describeTarget(item: AuditItem): string | null {
     }
     case 'tv.app.launch':
       return $localize`:@@settings.audit.target.app:App ${target}:app:`;
+    case 'tv.cleanup.setting':
+      return target === 'background-app-closing=on'
+        ? $localize`:@@settings.audit.target.close-background-on:Ligado`
+        : target === 'background-app-closing=off'
+          ? $localize`:@@settings.audit.target.close-background-off:Desligado`
+          : null;
     case 'tv.config.bind':
       return $localize`:@@settings.audit.target.computer:Computador ${target}:computer:`;
     case 'step_up_succeeded':
@@ -247,6 +259,8 @@ export function describeTarget(item: AuditItem): string | null {
     case 'agent_update_requested':
     case 'agent_restart_requested':
     case 'agent_rollback_requested':
+    case 'agent_offline':
+    case 'agent_online':
       // Nesta fonte o alvo é o nome do aparelho no cadastro (texto de gente).
       return target;
     default:

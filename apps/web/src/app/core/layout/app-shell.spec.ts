@@ -59,25 +59,33 @@ describe('AppShell', () => {
     expect(el.querySelector('main .content')).not.toBeNull();
   });
 
-  it('shows the header with the arrow back to Início and the title inside a module', async () => {
+  const back = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('header .lead button.back');
+  const settingsLink = (el: HTMLElement) => el.querySelector('header .actions a[href="/ajustes"]');
+
+  it('shows the top bar with the arrow back to Início and the title inside a module', async () => {
     const harness = await RouterTestingHarness.create('/mod');
     const el = root(harness);
     expect(el.querySelector('h1')?.textContent).toBe('Módulo');
-    const back = el.querySelector('header a.back')!;
-    expect(back.getAttribute('href')).toBe('/');
-    expect(back.getAttribute('aria-label')).toBe('Voltar ao Início');
-    // Só a seta: sem texto visível, e o desenho é decorativo (o nome acessível está no link).
-    expect(back.textContent?.trim()).toBe('');
-    expect(back.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-    expect(back.querySelectorAll('svg path').length).toBe(2);
-    // Seta e título na mesma linha do cabeçalho, nessa ordem.
-    expect(Array.from(el.querySelector('header')!.children).map((c) => c.tagName)).toEqual([
-      'A',
-      'H1',
-    ]);
+    const arrow = back(el)!;
+    expect(arrow.getAttribute('aria-label')).toBe('Voltar ao Início');
+    // Só a seta: sem texto visível, e o desenho é decorativo (o nome acessível está no botão).
+    expect(arrow.textContent?.trim()).toBe('');
+    expect(arrow.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    expect(arrow.querySelectorAll('svg path').length).toBe(2);
+    // Três áreas: a volta, o título no meio e as ações (vazia para o dono).
+    const head = el.querySelector('header')!;
+    expect(Array.from(head.children).map((c) => c.className)).toEqual(['lead', 'name', 'actions']);
+    expect(head.querySelector('.actions')?.childElementCount).toBe(0);
   });
 
-  describe('for a guest (no Início)', () => {
+  it('goes back to Início when the arrow is pressed', async () => {
+    const harness = await RouterTestingHarness.create('/mod');
+    back(root(harness))!.click();
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/');
+  });
+
+  describe('for a guest', () => {
     beforeEach(() => {
       TestBed.inject(SessionState).setUser({
         id: '1',
@@ -88,54 +96,47 @@ describe('AppShell', () => {
     });
     afterEach(() => localStorage.clear());
 
-    it('has no way back to Início: the round settings button takes the place of the arrow', async () => {
+    it('has the same arrow back to Início as the owner, and the round settings button on the right', async () => {
       const harness = await RouterTestingHarness.create('/mod');
       const el = root(harness);
       expect(el.querySelector('h1')?.textContent).toBe('Módulo');
-      expect(el.querySelector('header a[href="/"]')).toBeNull();
-      const links = el.querySelectorAll('header a');
-      expect(links).toHaveLength(1);
-      const settings = links[0];
-      expect(settings.getAttribute('href')).toBe('/ajustes');
-      expect(settings.getAttribute('aria-label')).toBe('Ajustes');
+      expect(back(el)?.getAttribute('aria-label')).toBe('Voltar ao Início');
+      const settings = settingsLink(el)!;
+      expect(settings.getAttribute('aria-label')).toBe('Configurações');
       expect(settings.textContent?.trim()).toBe('');
       expect(settings.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-      // No mesmo lugar e com o mesmo botão da seta: primeiro item do cabeçalho, antes do título.
-      expect(Array.from(el.querySelector('header')!.children).map((c) => c.tagName)).toEqual([
-        'A',
-        'H1',
+      // A seta à esquerda, o título no meio, a engrenagem à direita.
+      expect(Array.from(el.querySelector('header')!.children).map((c) => c.className)).toEqual([
+        'lead',
+        'name',
+        'actions',
       ]);
     });
 
-    it('uses the same round button as the arrow (same size class), only the drawing changes', async () => {
-      const guestHarness = await RouterTestingHarness.create('/mod');
-      const guestButton = root(guestHarness).querySelector('header a')!;
-      expect(guestButton.classList.contains('back')).toBe(true);
-      expect(guestButton.querySelectorAll('svg path').length).toBeGreaterThan(0);
-    });
-
-    it('inside Ajustes there is an arrow back to the control, not the settings button', async () => {
+    it('inside Ajustes there is only the arrow back to Início, not the settings button', async () => {
       const harness = await RouterTestingHarness.create('/ajustes');
-      const back = root(harness).querySelector('header a')!;
-      expect(back.getAttribute('href')).toBe('/tv');
-      expect(back.getAttribute('aria-label')).toBe('Voltar ao controle');
-      expect(root(harness).querySelectorAll('header a')).toHaveLength(1);
+      const el = root(harness);
+      expect(back(el)?.getAttribute('aria-label')).toBe('Voltar ao Início');
+      expect(settingsLink(el)).toBeNull();
     });
 
-    it('a screen of Ajustes goes back to the list', async () => {
+    it('a screen of Ajustes goes back to the list, without the settings button', async () => {
       const harness = await RouterTestingHarness.create('/ajustes/perfil');
-      const back = root(harness).querySelector('header a')!;
-      expect(back.getAttribute('href')).toBe('/ajustes');
-      expect(back.getAttribute('aria-label')).toBe('Voltar aos Ajustes');
+      const el = root(harness);
+      expect(back(el)?.getAttribute('aria-label')).toBe('Voltar aos Ajustes');
+      expect(settingsLink(el)).toBeNull();
+      back(el)!.click();
+      await harness.fixture.whenStable();
+      expect(TestBed.inject(Router).url).toBe('/ajustes');
     });
 
     it.each([
-      ['has only the Treino', ['module:training'], '/treino', 'Voltar ao Treino'],
-      ['has the TV and the Treino', ['module:tv', 'module:training'], '/tv', 'Voltar ao controle'],
-      ['has no module', [], '/sem-acesso', 'Voltar'],
+      ['has only the Treino', ['module:training']],
+      ['has the TV and the Treino', ['module:tv', 'module:training']],
+      ['has no module', []],
     ])(
-      'inside Ajustes, a guest who %s goes back to his own home',
-      async (_name, permissions, link, label) => {
+      'whatever the permissions, a guest who %s has the same arrow and button',
+      async (_name, permissions) => {
         TestBed.inject(SessionState).setUser({
           id: '1',
           email: 'a@b.c',
@@ -143,62 +144,36 @@ describe('AppShell', () => {
           role: 'guest',
           permissions,
         });
-        const harness = await RouterTestingHarness.create('/ajustes');
-        const back = root(harness).querySelector('header a')!;
-        expect(back.getAttribute('href')).toBe(link);
-        expect(back.getAttribute('aria-label')).toBe(label);
+        const harness = await RouterTestingHarness.create('/mod');
+        for (const url of ['/mod', '/ajustes']) {
+          await harness.navigateByUrl(url);
+          expect(back(root(harness))?.getAttribute('aria-label')).toBe('Voltar ao Início');
+          expect(settingsLink(root(harness)) !== null).toBe(url === '/mod');
+        }
       },
     );
-
-    it('in a module the guest who only has the Treino also gets the round settings button, not an arrow', async () => {
-      TestBed.inject(SessionState).setUser({
-        id: '1',
-        email: 'a@b.c',
-        displayName: 'A',
-        role: 'guest',
-        permissions: ['module:training'],
-      });
-      const harness = await RouterTestingHarness.create('/mod');
-      const links = root(harness).querySelectorAll('header a');
-      expect(links).toHaveLength(1);
-      expect(links[0].getAttribute('href')).toBe('/ajustes');
-      expect(links[0].getAttribute('aria-label')).toBe('Ajustes');
-    });
-
-    it('a guest who only controls TV also keeps the round settings button, not a way back to Início', async () => {
-      TestBed.inject(SessionState).setUser({
-        id: '1',
-        email: 'a@b.c',
-        displayName: 'A',
-        role: 'guest',
-        permissions: ['module:tv', 'tv:control'],
-      });
-      const harness = await RouterTestingHarness.create('/mod');
-      const links = root(harness).querySelectorAll('header a');
-      expect(links).toHaveLength(1);
-      expect(links[0].getAttribute('href')).toBe('/ajustes');
-      expect(links[0].getAttribute('aria-label')).toBe('Ajustes');
-      expect(root(harness).querySelector('header a[href="/"]')).toBeNull();
-    });
   });
 
   describe('for the owner in Ajustes', () => {
     it('the list goes back to Início, and a screen of Ajustes goes back to the list', async () => {
       const harness = await RouterTestingHarness.create('/ajustes');
-      const back = root(harness).querySelector('header a')!;
-      expect(back.getAttribute('href')).toBe('/');
-      expect(back.getAttribute('aria-label')).toBe('Voltar ao Início');
+      expect(back(root(harness))?.getAttribute('aria-label')).toBe('Voltar ao Início');
 
       await harness.navigateByUrl('/ajustes/perfil');
-      const nested = root(harness).querySelector('header a')!;
-      expect(nested.getAttribute('href')).toBe('/ajustes');
-      expect(nested.getAttribute('aria-label')).toBe('Voltar aos Ajustes');
+      expect(back(root(harness))?.getAttribute('aria-label')).toBe('Voltar aos Ajustes');
       expect(root(harness).querySelector('h1')?.textContent).toBe('Perfil');
     });
 
     it('never shows the settings button to the owner (the arrow stays, as before)', async () => {
       const harness = await RouterTestingHarness.create('/mod');
-      expect(root(harness).querySelector('header a[href="/ajustes"]')).toBeNull();
+      expect(settingsLink(root(harness))).toBeNull();
+    });
+
+    it('marks the main area of Ajustes, so the cards take the corner of the TV cards', async () => {
+      const harness = await RouterTestingHarness.create('/ajustes');
+      expect(root(harness).querySelector('main')?.classList.contains('settings-main')).toBe(true);
+      await harness.navigateByUrl('/mod');
+      expect(root(harness).querySelector('main')?.classList.contains('settings-main')).toBe(false);
     });
 
     it('moves the focus to the title when going between Ajustes screens, so keyboard and screen reader land on the new one', async () => {

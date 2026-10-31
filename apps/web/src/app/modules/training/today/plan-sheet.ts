@@ -16,7 +16,7 @@ import { TodayGlyph } from './today-glyph';
     <app-training-sheet [heading]="heading" (closed)="closed.emit()">
       <button sheetAction type="button" class="secondary ui-btn" (click)="add.emit()">
         <app-training-glyph name="plus" />
-        <span i18n="@@training.plan.add">Adicionar exercício</span>
+        <span i18n="@@training.plan.add">Adicionar Exercício</span>
       </button>
       <ul class="list ui-group ui-plain">
         @for (entry of entries(); track entry.key; let index = $index) {
@@ -40,7 +40,7 @@ import { TodayGlyph } from './today-glyph';
                 <span class="ui-row-sub">{{ detail(entry) }}</span>
               </span>
               @if (entry.key === focusKey()) {
-                <span class="ui-chip accent" i18n="@@training.plan.now">agora</span>
+                <span class="ui-chip accent" i18n="@@training.plan.now">Agora</span>
               }
             </button>
           </li>
@@ -72,7 +72,7 @@ export class PlanSheet {
   readonly add = output<void>();
   readonly closed = output<void>();
 
-  protected readonly heading = $localize`:@@training.plan.title:Exercícios do treino`;
+  protected readonly heading = $localize`:@@training.plan.title:Exercícios do Treino`;
   protected readonly fallbackName = $localize`:@@training.plan.unknown:Exercício removido`;
 
   protected isComplete(entry: LiveEntry): boolean {

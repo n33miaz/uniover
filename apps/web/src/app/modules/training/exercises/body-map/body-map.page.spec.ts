@@ -63,6 +63,7 @@ describe('BodyMapPage', () => {
   it('shows the front of the body, with one zone per muscle and the exercise count in its label', async () => {
     const { fixture, el } = await open();
     await eventually(fixture, () => expect(zone(el, 'chest')).not.toBeNull());
+    expect(el.querySelector('.title')?.textContent?.trim()).toBe('Mapa do Treino');
     expect(zoneMuscles(el)).toEqual([
       'neck',
       'shoulders',
@@ -372,14 +373,6 @@ describe('BodyMapPage', () => {
       expect(el.querySelector('.figure')).toBeNull();
       expect(el.querySelector('app-muscle-list')).toBeNull();
     });
-  });
-
-  it('goes back to the exercises when there is no history to go back to', async () => {
-    const { fixture, el, router } = await open();
-    await eventually(fixture, () => expect(zone(el, 'chest')).not.toBeNull());
-    const navigate = vi.spyOn(router, 'navigateByUrl');
-    el.querySelector<HTMLButtonElement>('.back')!.click();
-    expect(navigate).toHaveBeenCalledWith('/treino/exercicios');
   });
 
   it('announces the muscle that was chosen, in text, for a screen reader', async () => {

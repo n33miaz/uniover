@@ -33,7 +33,7 @@ function sets(
   }));
 }
 
-/** A semana de referência, de 12 a 18 de outubro: treino A (16 séries), B (18) e C (20), 54 ao todo. */
+/** A semana de referência, de 11 a 17 de outubro (domingo a sábado): treino A (16 séries), B (18) e C (20), 54 ao todo. */
 function referenceWeek(): WeekSet[] {
   return [
     // Treino A (seg 12): peito 10 + tríceps 6, mais 2 de aquecimento que não contam.
@@ -111,12 +111,12 @@ describe('weeklySetsByGroup', () => {
     expect(volume.byMuscle).toEqual({ chest: 3 });
   });
 
-  it('takes Sunday 23:59 and leaves out Monday 00:00 of the next week and the week before', () => {
+  it('takes Saturday 23:59 and leaves out Sunday 00:00 of the next week and the week before', () => {
     const edges: WeekSet[] = [
-      { exerciseId: 'supino', setType: 'work', completedAt: at('2026-10-12', 0, 0) },
-      { exerciseId: 'supino', setType: 'work', completedAt: at('2026-10-18', 23, 59) },
-      { exerciseId: 'supino', setType: 'work', completedAt: at('2026-10-19', 0, 0) },
-      { exerciseId: 'supino', setType: 'work', completedAt: at('2026-10-11', 23, 59) },
+      { exerciseId: 'supino', setType: 'work', completedAt: at('2026-10-11', 0, 0) },
+      { exerciseId: 'supino', setType: 'work', completedAt: at('2026-10-17', 23, 59) },
+      { exerciseId: 'supino', setType: 'work', completedAt: at('2026-10-18', 0, 0) },
+      { exerciseId: 'supino', setType: 'work', completedAt: at('2026-10-10', 23, 59) },
     ];
 
     expect(weeklySetsByGroup(edges, exercises, week.start, SAO_PAULO).total).toBe(2);
@@ -152,9 +152,9 @@ describe('weeklySetsByGroup', () => {
   });
 
   it('reads the week from any instant inside it', () => {
-    const fromSunday = weekRange(at('2026-10-18', 20), SAO_PAULO);
+    const fromSaturday = weekRange(at('2026-10-17', 20), SAO_PAULO);
 
-    expect(weeklySetsByGroup(referenceWeek(), exercises, fromSunday.start, SAO_PAULO).total).toBe(
+    expect(weeklySetsByGroup(referenceWeek(), exercises, fromSaturday.start, SAO_PAULO).total).toBe(
       54,
     );
     expect(
@@ -169,7 +169,7 @@ describe('weeklySetsByGroup', () => {
     expect(volume.byMuscle).toEqual({});
   });
 
-  it('measures a week that crosses the month: 31 August to 6 September', () => {
+  it('measures a week that crosses the month: 30 August to 5 September', () => {
     const crossing = weekRange(at('2026-09-02'), SAO_PAULO);
     const both = [
       ...sets('supino', 2, '2026-08-31'),
@@ -180,7 +180,7 @@ describe('weeklySetsByGroup', () => {
     expect(weeklySetsByGroup(both, exercises, crossing.start, SAO_PAULO).total).toBe(5);
   });
 
-  it('measures a week that crosses the year: 28 December to 3 January', () => {
+  it('measures a week that crosses the year: 27 December to 2 January', () => {
     const crossing = weekRange(at('2027-01-01'), SAO_PAULO);
     const both = [
       ...sets('supino', 2, '2026-12-30'),
@@ -233,7 +233,7 @@ describe('trainedDays', () => {
 });
 
 describe('weeklyConstancy', () => {
-  const now = at('2026-10-18', 20);
+  const now = at('2026-10-17', 20);
 
   const sessions = (days: string[]) => days.map((day) => ({ startedAt: at(day, 8) }));
 
@@ -253,8 +253,8 @@ describe('weeklyConstancy', () => {
     );
 
     expect(result.weeks).toHaveLength(8);
-    expect(result.weeks.at(-1)).toMatchObject({ startKey: '2026-10-12', sessions: 3, met: true });
-    expect(result.weeks.at(-2)).toMatchObject({ startKey: '2026-10-05', sessions: 3, met: true });
+    expect(result.weeks.at(-1)).toMatchObject({ startKey: '2026-10-11', sessions: 3, met: true });
+    expect(result.weeks.at(-2)).toMatchObject({ startKey: '2026-10-04', sessions: 3, met: true });
     expect(result.consecutiveMetWeeks).toBe(2);
   });
 
@@ -286,33 +286,33 @@ describe('weeklyConstancy', () => {
       now,
     );
 
-    expect(result.weeks.at(-3)).toMatchObject({ startKey: '2026-09-28', sessions: 1, met: false });
+    expect(result.weeks.at(-3)).toMatchObject({ startKey: '2026-09-27', sessions: 1, met: false });
     expect(result.consecutiveMetWeeks).toBe(2);
   });
 
-  it('counts the weeks by the local Monday, the earliest first', () => {
+  it('counts the weeks by the local Sunday, the earliest first', () => {
     const result = weeklyConstancy([], 3, SAO_PAULO, now, 3);
 
     expect(result.weeks.map((week) => week.startKey)).toEqual([
-      '2026-09-28',
-      '2026-10-05',
-      '2026-10-12',
+      '2026-09-27',
+      '2026-10-04',
+      '2026-10-11',
     ]);
     expect(result.consecutiveMetWeeks).toBe(0);
   });
 
-  it('puts a Sunday-night workout in its own week and a Monday-midnight one in the next', () => {
+  it('puts a Saturday-night workout in its own week and a Sunday-midnight one in the next', () => {
     const result = weeklyConstancy(
-      [{ startedAt: at('2026-10-18', 23, 59) }, { startedAt: at('2026-10-19', 0, 0) }],
+      [{ startedAt: at('2026-10-17', 23, 59) }, { startedAt: at('2026-10-18', 0, 0) }],
       1,
       SAO_PAULO,
-      at('2026-10-19', 12),
+      at('2026-10-18', 12),
       2,
     );
 
     expect(result.weeks.map((week) => [week.startKey, week.sessions])).toEqual([
-      ['2026-10-12', 1],
-      ['2026-10-19', 1],
+      ['2026-10-11', 1],
+      ['2026-10-18', 1],
     ]);
   });
 
@@ -320,9 +320,9 @@ describe('weeklyConstancy', () => {
     const result = weeklyConstancy([], 3, SAO_PAULO, at('2027-01-05'), 3);
 
     expect(result.weeks.map((week) => week.startKey)).toEqual([
-      '2026-12-21',
-      '2026-12-28',
-      '2027-01-04',
+      '2026-12-20',
+      '2026-12-27',
+      '2027-01-03',
     ]);
   });
 });

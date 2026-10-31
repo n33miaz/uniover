@@ -3,11 +3,13 @@ using System.Net.Mail;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -16,6 +18,9 @@ namespace UniOver.Modules.Identity.Features.SystemSettings;
 
 internal sealed record SaveSystemSettingRequest(JsonElement Value);
 
+/// <summary>Se o servidor tem o bucket de fotos completo; nunca devolve endereço, nome nem credenciais.</summary>
+internal sealed record PhotoBucketStatus(bool Configured);
+
 internal static class SystemSettingsEndpoint
 {
     public static void MapSystemSettings(this IEndpointRouteBuilder group)
@@ -23,10 +28,16 @@ internal static class SystemSettingsEndpoint
         // Só o dono lê: o contato e o estado do bucket não são assunto de convidado.
         group.MapGet("/system-settings", ReadAsync).RequireAuthorization(UniOverAuth.OwnerPolicy)
             .Produces<IReadOnlyList<SystemSettingValue>>().ProducesProblem(401).ProducesProblem(403);
+        group.MapGet("/system-settings/photo-bucket", ReadPhotoBucket).RequireAuthorization(UniOverAuth.OwnerPolicy)
+            .Produces<PhotoBucketStatus>().ProducesProblem(401).ProducesProblem(403);
         group.MapPut("/system-settings/{key}", SaveAsync)
             .RequireAuthorization(StepUp.Policy(StepUpActions.SystemSettingsChange))
             .RequireRateLimiting(RateLimitPolicies.Login)
             .Produces<SystemSettingValue>().ProducesProblem(400).ProducesProblem(401).ProducesProblem(403).ProducesProblem(409);
+        group.MapDelete("/system-settings/{key}", ResetAsync)
+            .RequireAuthorization(StepUp.Policy(StepUpActions.SystemSettingsChange))
+            .RequireRateLimiting(RateLimitPolicies.Login)
+            .Produces<SystemSettingValue>().ProducesProblem(401).ProducesProblem(403);
     }
 
     private static async Task<IResult> ReadAsync(SystemSettingsService settings, CancellationToken cancellationToken)
@@ -37,10 +48,15 @@ internal static class SystemSettingsEndpoint
         return TypedResults.Ok(values);
     }
 
+    // Deixa a tela dizer se ligar as fotos vai funcionar antes de a pessoa tentar (e confirmar a passkey à toa).
+    private static Ok<PhotoBucketStatus> ReadPhotoBucket(IConfiguration configuration) =>
+        TypedResults.Ok(new PhotoBucketStatus(HasPhotoBucket(configuration)));
+
     private static async Task<IResult> SaveAsync(
         string key, SaveSystemSettingRequest? request, HttpContext http, ICurrentUser current,
         IdentityDbContext db, SystemSettingsService settings, LoginAuditWriter audit,
-        IConfiguration configuration, TimeProvider time, CancellationToken cancellationToken)
+        IConfiguration configuration, TimeProvider time, ITvCleanupSettingsPublisher? cleanupPublisher,
+        CancellationToken cancellationToken)
     {
         if (current.UserId is not { } ownerId) return IdentityProblems.Unauthenticated();
         if (!TryNormalize(key, request?.Value ?? default, out var valueJson))
@@ -73,6 +89,8 @@ internal static class SystemSettingsEndpoint
                 type: ProblemDetailsExtensions.TypeBase + "system-setting-conflict");
         }
         settings.Invalidate(key);
+        if (IsTvCleanupKey(key) && cleanupPublisher is not null)
+            await cleanupPublisher.PublishAsync(cancellationToken: cancellationToken);
         return TypedResults.Ok(await settings.ReadAsync(key, cancellationToken));
     }
 
@@ -91,13 +109,46 @@ internal static class SystemSettingsEndpoint
                 if (!value.TryGetInt32(out var limit) || limit is < 1 or > 20) return false;
                 json = limit.ToString(CultureInfo.InvariantCulture);
                 return true;
+            case SystemSettingKeys.AgentOfflineMinutes when value.ValueKind == JsonValueKind.Number:
+                if (!value.TryGetInt32(out var minutes) || minutes is < 1 or > 1440) return false;
+                json = minutes.ToString(CultureInfo.InvariantCulture);
+                return true;
             case SystemSettingKeys.PhotoStorageEnabled when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+            case SystemSettingKeys.TvLightCleanupEnabled when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+            case SystemSettingKeys.TvDeepCleanupEnabled when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                 json = value.GetBoolean() ? "true" : "false";
+                return true;
+            case SystemSettingKeys.TvDeepCleanupMemoryThresholdMb when value.ValueKind == JsonValueKind.Number:
+                if (!value.TryGetInt32(out var threshold) || threshold is < 64 or > 512) return false;
+                json = threshold.ToString(CultureInfo.InvariantCulture);
                 return true;
             default:
                 return false;
         }
     }
+
+    private static async Task<IResult> ResetAsync(
+        string key, HttpContext http, ICurrentUser current, IdentityDbContext db, SystemSettingsService settings,
+        LoginAuditWriter audit, ITvCleanupSettingsPublisher? cleanupPublisher, CancellationToken cancellationToken)
+    {
+        if (current.UserId is not { } ownerId) return IdentityProblems.Unauthenticated();
+        if (!SystemSettingKeys.All.Contains(key, StringComparer.Ordinal)) return Results.BadRequest();
+
+        var row = await db.SystemSettings.SingleOrDefaultAsync(s => s.Key == key, cancellationToken);
+        if (row is not null)
+        {
+            db.SystemSettings.Remove(row);
+            audit.Add(ownerId, AuditEvents.SystemSettingChanged, ClientInfo.From(http), key);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        settings.Invalidate(key);
+        if (IsTvCleanupKey(key) && cleanupPublisher is not null)
+            await cleanupPublisher.PublishAsync(cancellationToken: cancellationToken);
+        return TypedResults.Ok(await settings.ReadAsync(key, cancellationToken));
+    }
+
+    private static bool IsTvCleanupKey(string key) => key is SystemSettingKeys.TvLightCleanupEnabled
+        or SystemSettingKeys.TvDeepCleanupEnabled or SystemSettingKeys.TvDeepCleanupMemoryThresholdMb;
 
     // A região fica de fora: o Treino tem um padrão para ela (us-east-2), então "sem região no ambiente" ainda é um bucket
     // completo para ele, e exigi-la aqui travaria quem usa o padrão.

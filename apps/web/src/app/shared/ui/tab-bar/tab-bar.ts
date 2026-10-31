@@ -43,9 +43,6 @@ function isWithin(path: string, base: string): boolean {
   template: `
     <nav
       [class.training]="variant() === 'training'"
-      [class.active-0]="activeIndex() === 0"
-      [class.active-1]="activeIndex() === 1"
-      [class.active-2]="activeIndex() === 2"
       aria-label="Abas do módulo"
       i18n-aria-label="@@shared.tabs"
     >
@@ -58,27 +55,30 @@ function isWithin(path: string, base: string): boolean {
               [attr.aria-current]="isActive(tab) ? 'page' : null"
             >
               @if (tab.icon) {
-                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-                  @switch (tab.icon) {
-                    @case ('today') {
-                      <rect x="3.5" y="5.5" width="17" height="15" rx="2.5" />
-                      <path [attr.d]="'M8 3.5v4M16 3.5v4M3.5 10h17M8 14h2m4 0h2m-8 3h2m4 0h2'" />
+                <!-- A pílula do item ativo fica só atrás do ícone; o rótulo embaixo nunca some. -->
+                <span class="pill" aria-hidden="true">
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                    @switch (tab.icon) {
+                      @case ('today') {
+                        <rect x="3.5" y="5.5" width="17" height="15" rx="2.5" />
+                        <path [attr.d]="'M8 3.5v4M16 3.5v4M3.5 10h17M8 14h2m4 0h2m-8 3h2m4 0h2'" />
+                      }
+                      @case ('exercises') {
+                        <path [attr.d]="'M5 9v6m3-9v12m8-12v12m3-9v6M8 12h8'" />
+                      }
+                      @case ('progress') {
+                        <path [attr.d]="'M4 19.5h16M5.5 16l4-4 3 2.5 6-7'" />
+                        <path [attr.d]="'M15 7.5h3.5V11'" />
+                      }
+                      @case ('body') {
+                        <circle cx="12" cy="5" r="2.25" />
+                        <path
+                          [attr.d]="'M8.5 21v-5.5l-2-3.5 2-3h7l2 3-2 3.5V21m-7-8h7m-5 2.5v5m-4-9L5 16m14-4 1.5 4'"
+                        />
+                      }
                     }
-                    @case ('exercises') {
-                      <path [attr.d]="'M5 9v6m3-9v12m8-12v12m3-9v6M8 12h8'" />
-                    }
-                    @case ('progress') {
-                      <path [attr.d]="'M4 19.5h16M5.5 16l4-4 3 2.5 6-7'" />
-                      <path [attr.d]="'M15 7.5h3.5V11'" />
-                    }
-                    @case ('body') {
-                      <circle cx="12" cy="5" r="2.25" />
-                      <path
-                        [attr.d]="'M8.5 21v-5.5l-2-3.5 2-3h7l2 3-2 3.5V21m-7-8h7m-5 2.5v5m-4-9L5 16m14-4 1.5 4'"
-                      />
-                    }
-                  }
-                </svg>
+                  </svg>
+                </span>
               }
               <span>{{ tab.label }}</span>
             </a>
@@ -91,7 +91,7 @@ function isWithin(path: string, base: string): boolean {
     nav {
       background: var(--a-surface);
       border-top: 1px solid var(--a-line);
-      padding-bottom: env(safe-area-inset-bottom);
+      padding-bottom: var(--safe-bottom);
     }
     ul {
       display: flex;
@@ -118,6 +118,9 @@ function isWithin(path: string, base: string): boolean {
         border-color var(--dur-base) var(--ease-out),
         background-color var(--dur-fast) linear;
     }
+    .pill {
+      display: contents;
+    }
     .icon {
       display: none;
     }
@@ -140,38 +143,25 @@ function isWithin(path: string, base: string): boolean {
       flex-direction: column;
       gap: 3px;
       min-height: 64px;
-      padding: 5px 4px 6px;
+      justify-content: center;
+      padding: 4px 4px 6px;
       border-top: 0;
       font-size: 0.75rem;
       line-height: 1.1;
       touch-action: manipulation;
     }
-    nav.training ul {
-      position: relative;
-    }
-    nav.training ul::before {
-      position: absolute;
-      top: 6px;
-      left: 6px;
-      width: calc(33.333333% - 12px);
-      height: 26px;
+    /* Pílula atrás do ícone, só no item ativo: 64 por 30 de área, e o item inteiro segue com 44 de altura ou mais. */
+    nav.training .pill {
+      display: grid;
+      place-items: center;
+      width: 64px;
+      height: 30px;
       border-radius: 999px;
+      background: transparent;
+      transition: background-color var(--dur-base) var(--ease-out);
+    }
+    nav.training a.active .pill {
       background: var(--a-accent-soft);
-      content: '';
-      opacity: 0;
-      transition: transform 220ms var(--ease-out);
-    }
-    nav.training.active-0 ul::before {
-      opacity: 1;
-      transform: translateX(0);
-    }
-    nav.training.active-1 ul::before {
-      opacity: 1;
-      transform: translateX(calc(100% + 12px));
-    }
-    nav.training.active-2 ul::before {
-      opacity: 1;
-      transform: translateX(calc(200% + 24px));
     }
     nav.training li {
       position: relative;
@@ -186,9 +176,6 @@ function isWithin(path: string, base: string): boolean {
       stroke-linecap: round;
       stroke-linejoin: round;
     }
-    nav.training a.active::before {
-      content: none;
-    }
     nav.training a:active {
       background: transparent;
     }
@@ -199,7 +186,7 @@ function isWithin(path: string, base: string): boolean {
       a {
         transition: none;
       }
-      nav.training ul::before {
+      nav.training .pill {
         transition: none;
       }
     }
@@ -225,9 +212,5 @@ export class TabBar {
     const path = pathOf(this.url());
     if (tab.nested ? isWithin(path, tab.link) : path === pathOf(tab.link)) return true;
     return (tab.also ?? []).some((base) => isWithin(path, pathOf(base)));
-  }
-
-  protected activeIndex(): number {
-    return this.tabs().findIndex((tab) => this.isActive(tab));
   }
 }

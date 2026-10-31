@@ -103,7 +103,7 @@ async function reloadWith(page: Page, prefs: Record<string, unknown>) {
   await settle(page);
 }
 
-const header = (page: Page) => page.locator('header.head');
+const header = (page: Page) => page.locator('.tv > header.head');
 const backLink = (page: Page) => header(page).getByRole('link', { name: 'Voltar ao Início' });
 const menuButton = (page: Page) => header(page).getByRole('button', { name: 'Mais opções' });
 const menuDialog = (page: Page) => page.getByRole('dialog', { name: 'Mais opções' });
@@ -136,9 +136,9 @@ async function expectNoVerticalScroll(page: Page) {
 }
 
 /**
- * O centro do nome (o <h1>) tem de coincidir com o centro da TELA, e o ponto de estado não pode tocar nos botões. Vale
- * para o administrador e para a convidada: o botão da esquerda é a seta ou a engrenagem, e depois dele vem o menu;
- * à direita fica o desligar.
+ * O centro do nome (o texto, e também o <h1>) tem de coincidir com o centro da TELA, com ou sem a seta do seletor de TV. À
+ * esquerda ficam a seta de voltar e os três pontos; à direita, o ponto de estado, colado à esquerda do desligar, e o
+ * desligar. O ponto fica longe do nome.
  */
 async function expectTitleCentered(page: Page) {
   const viewport = await page.evaluate(() => window.innerWidth);
@@ -146,14 +146,37 @@ async function expectTitleCentered(page: Page) {
   expect(Math.abs(title.x + title.width / 2 - viewport / 2), 'centro do nome').toBeLessThanOrEqual(
     2,
   );
+  const text = await box(header(page).locator('.title-text'));
+  expect(
+    Math.abs(text.x + text.width / 2 - viewport / 2),
+    'centro do texto do nome, seja qual for o que há ao lado',
+  ).toBeLessThanOrEqual(2);
 
-  const dot = await box(statusDot(page));
-  expect(dot.x, 'o ponto fica depois do começo do nome').toBeGreaterThanOrEqual(title.x);
-  expect(dot.x + dot.width, 'o ponto cabe na tela').toBeLessThanOrEqual(viewport);
+  const head = await box(header(page));
+  const back = await box(backLink(page));
   const menu = await box(menuButton(page));
-  expect(menu.x + menu.width, 'o menu não encosta no nome').toBeLessThanOrEqual(title.x + 0.5);
+  const dot = await box(statusDot(page));
   const power = await box(powerButton(page));
-  expect(dot.x + dot.width, 'o ponto não encosta no desligar').toBeLessThanOrEqual(power.x + 0.5);
+  expect(Math.abs(back.x - head.x), 'a seta na ponta esquerda').toBeLessThanOrEqual(1);
+  expect(Math.abs(menu.y - back.y), 'o menu na mesma linha da seta').toBeLessThanOrEqual(1);
+  expect(menu.x - (back.x + back.width), 'o menu logo depois da seta').toBeGreaterThanOrEqual(3);
+  expect(menu.x - (back.x + back.width), 'e perto dela').toBeLessThanOrEqual(10);
+  expect(menu.x + menu.width, 'o menu não encosta no nome').toBeLessThanOrEqual(title.x + 0.5);
+  expect(dot.x, 'o ponto fica depois do nome').toBeGreaterThanOrEqual(title.x + title.width - 0.5);
+  expect(
+    power.x - (dot.x + dot.width),
+    'o ponto colado à esquerda do desligar',
+  ).toBeGreaterThanOrEqual(-0.5);
+  expect(power.x - (dot.x + dot.width), 'e perto dele').toBeLessThanOrEqual(8);
+  expect(
+    Math.abs(dot.y + dot.height / 2 - (power.y + power.height / 2)),
+    'o ponto e o desligar no mesmo eixo',
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(power.x + power.width - (head.x + head.width)),
+    'o desligar na ponta direita',
+  ).toBeLessThanOrEqual(1);
+  expect(dot.x + dot.width, 'o ponto cabe na tela').toBeLessThanOrEqual(viewport);
   await expect(statusDot(page)).toBeVisible();
 }
 
@@ -270,31 +293,16 @@ test.describe('cabeçalho: voltar, energia, nome e menu', () => {
     await screenshot(page, `test-results/tv-header-default-${info.project.name}.png`);
   });
 
-  test('o menu fica logo depois da seta, à esquerda, e à direita fica só o desligar', async ({
+  test('o topo: voltar e os três pontos à esquerda, o nome no centro e, à direita, o ponto de estado e o desligar', async ({
     page,
   }) => {
     await openTv(page);
-    const head = await box(header(page));
-    const back = await box(backLink(page));
-    const power = await box(powerButton(page));
-    const menu = await box(menuButton(page));
-    const title = await box(header(page).locator('h1'));
-
-    // A seta na ponta esquerda; o menu logo ao lado, na mesma linha, com o respiro de 6 px entre os dois.
-    expect(Math.abs(back.x - head.x), 'a seta na ponta esquerda').toBeLessThanOrEqual(1);
-    expect(Math.abs(menu.y - back.y), 'mesma linha').toBeLessThanOrEqual(1);
-    expect(menu.x - (back.x + back.width), 'o menu logo depois da seta').toBeGreaterThanOrEqual(4);
-    expect(menu.x - (back.x + back.width), 'e perto dela').toBeLessThanOrEqual(10);
-    // O nome vem depois dos dois e o desligar fica sozinho, na ponta direita.
-    expect(title.x).toBeGreaterThanOrEqual(menu.x + menu.width);
-    expect(power.x).toBeGreaterThanOrEqual(title.x + title.width - 1);
-    expect(
-      Math.abs(power.x + power.width - (head.x + head.width)),
-      'o desligar na ponta direita',
-    ).toBeLessThanOrEqual(1);
-    await expect(header(page).locator('.actions').getByRole('button')).toHaveCount(1);
-    await expect(header(page).locator('.lead').getByRole('button')).toHaveCount(1);
+    await expectTitleCentered(page);
     await expect(header(page).locator('.lead').getByRole('link')).toHaveCount(1);
+    await expect(header(page).locator('.lead').getByRole('button')).toHaveCount(1);
+    // Ponto e desligar à direita, e nenhuma engrenagem em lugar nenhum do topo.
+    await expect(header(page).locator('.actions').getByRole('button')).toHaveCount(2);
+    await expect(header(page).getByRole('link', { name: 'Configurações' })).toHaveCount(0);
 
     // O desenho são três pontos na vertical (um traço mais alto que largo).
     const shape = await menuButton(page)
@@ -324,7 +332,9 @@ test.describe('cabeçalho: voltar, energia, nome e menu', () => {
     await expect(powerButton(page)).toBeFocused();
   });
 
-  test('o nome é o da TV, no meio da tela, com o ponto de estado ao lado', async ({ page }) => {
+  test('o nome é o da TV, no meio da tela, com o ponto de estado junto do desligar', async ({
+    page,
+  }) => {
     await openTv(page);
     await expect(header(page).getByRole('heading', { level: 1 })).toHaveText('TV');
     await expectTitleCentered(page);
@@ -365,7 +375,7 @@ test.describe('cabeçalho: voltar, energia, nome e menu', () => {
     });
   }
 
-  test('o nome mais longo: no meio, contido, o ponto empurrado para fora e o painelzinho dentro da tela', async ({
+  test('o nome mais longo: no meio, contido e o painelzinho do ponto dentro da tela', async ({
     page,
   }, info) => {
     await openTv(page, { name: LONG_NAME });
@@ -1052,8 +1062,8 @@ test.describe('folha de desligar', () => {
     await expect(sheet).toBeVisible();
 
     // O desligar imediato continua disponível, mesmo quando o agente não oferece a operação segura.
-    await expect(sheet.getByRole('button')).toHaveText(['Cancelar', 'Desligar']);
-    const row = sheet.getByRole('region', { name: 'Agendar desligamento' });
+    await expect(sheet.getByRole('button')).toHaveText(['Desligar', 'Cancelar']);
+    const row = sheet.getByRole('region', { name: 'Agendar' });
     await expect(row).toBeVisible();
     await expect(row).toContainText('Agendamento disponível com TV configurada');
     await expect(row.locator('button, input')).toHaveCount(0);
@@ -1076,12 +1086,27 @@ test.describe('folha de desligar', () => {
     await powerButton(page).click();
     const sheet = powerDialog(page);
     await expect(sheet).toBeVisible();
+    // Os tempos prontos são chips, na ordem do pedido; "Personalizar" abre o horário do dia.
+    await expect(sheet.locator('.chip')).toHaveText([
+      '15 min',
+      '30 min',
+      '1 h',
+      '2 h',
+      'Personalizar',
+    ]);
+    await expect(powerButton(page).locator('.scheduled')).toHaveCount(0);
     await sheet.getByRole('button', { name: '30 min' }).click();
-    await expect(sheet).toContainText('Desligar em');
-    await sheet.getByRole('button', { name: 'Confirmar agendamento' }).click();
-    await expect(sheet).toContainText('Agendado para');
+    await expect(sheet.getByRole('button', { name: '30 min' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await sheet.getByRole('button', { name: /^Agendar para \d{2}:\d{2}$/ }).click();
+    await expect(sheet.locator('.schedule-active')).toContainText(/Desliga às \d{2}:\d{2}/);
+    await expect(sheet.locator('.schedule-active .left')).toContainText(/^em (29|30) min$/);
+    // O botão de energia ganha o relógio miúdo; a hora e o tempo que falta ficam só dentro da folha.
+    await expect(powerButton(page).locator('.scheduled')).toHaveCount(1);
     await sheet.getByRole('button', { name: '1 h' }).click();
-    await sheet.getByRole('button', { name: 'Confirmar agendamento' }).click();
+    await sheet.getByRole('button', { name: /^Agendar para \d{2}:\d{2}$/ }).click();
     await expect
       .poll(
         () =>
@@ -1090,12 +1115,45 @@ test.describe('folha de desligar', () => {
           ).length,
       )
       .toBe(2);
-    await sheet.getByRole('button', { name: 'Cancelar agendamento' }).click();
-    await expect(sheet).not.toContainText('Agendado para');
+    await sheet.getByRole('button', { name: 'Cancelar Agendamento' }).click();
+    await expect(sheet).not.toContainText('Desliga às');
+    await expect(powerButton(page).locator('.scheduled')).toHaveCount(0);
     expect(tv.count('/power/off')).toBe(0);
     expect(await smallTargets(page)).toEqual([]);
     await expectNoHorizontalScroll(page);
     await expectNoA11yViolations(page);
+  });
+
+  test('o botão Desligar fica visível sem rolar, mesmo com o agendamento aberto', async ({
+    page,
+  }, info) => {
+    tv.tvs = [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'TV',
+        isDefault: true,
+        agentSlug: 'pc-casa',
+        kind: 'android',
+        online: true,
+        capabilities: ['tv.remote', 'tv.kind.android', 'tv.power.off.v1'],
+      },
+    ];
+    await openTv(page);
+    await powerButton(page).click();
+    const sheet = powerDialog(page);
+    await expect(sheet).toBeVisible();
+    // O estado mais alto da folha: atalho escolhido, com a confirmação do horário na tela.
+    await sheet.getByRole('button', { name: '30 min' }).click();
+    await expect(sheet.getByRole('button', { name: /^Agendar para/ })).toBeAttached();
+    const off = sheet.getByRole('button', { name: 'Desligar', exact: true });
+    await expect
+      .poll(async () => {
+        const box = await off.boundingBox();
+        const height = page.viewportSize()!.height;
+        return box !== null && box.y >= 0 && box.y + box.height <= height + 0.5;
+      })
+      .toBe(true);
+    await screenshot(page, `test-results/config-2/power-schedule-${info.project.name}.png`);
   });
 
   test('entra por transição (parte do @starting-style) e sai marcada como saindo antes de sumir', async ({
@@ -1133,7 +1191,7 @@ test.describe('folha de desligar', () => {
 
     // A saída: o pedido marca a folha como saindo no mesmo instante, e só então ela some (o teto é de segurança).
     const leaving = await page.evaluate(async () => {
-      document.querySelector<HTMLElement>('app-power-sheet dialog .secondary')!.click();
+      document.querySelector<HTMLElement>('app-power-sheet dialog .close')!.click();
       let markedClosing = false;
       const start = performance.now();
       while (performance.now() - start < 3000) {
@@ -1165,7 +1223,7 @@ test.describe('folha de desligar', () => {
 
     // Sem saída animada: a folha nunca é marcada como saindo, e vai embora.
     const leaving = await page.evaluate(async () => {
-      document.querySelector<HTMLElement>('app-power-sheet dialog .secondary')!.click();
+      document.querySelector<HTMLElement>('app-power-sheet dialog .close')!.click();
       let markedClosing = false;
       const start = performance.now();
       while (performance.now() - start < 3000) {
@@ -1401,40 +1459,19 @@ async function openTvAsGuest(page: Page) {
   await settle(page);
 }
 
-const settingsButton = (page: Page) => header(page).getByRole('link', { name: 'Ajustes' });
+const settingsButton = (page: Page) => header(page).getByRole('link', { name: 'Configurações' });
 
-test.describe('cabeçalho da convidada: botão redondo de configurações no lugar da seta', () => {
-  test('é um círculo de 44 px do mesmo visual da seta, no canto esquerdo, e o nome segue no meio', async ({
+test.describe('cabeçalho da convidada: o mesmo topo do dono, sem engrenagem', () => {
+  test('a seta, os três pontos e o desligar são os mesmos círculos de 44 px; não há botão de configurações', async ({
     page,
   }, info) => {
     await openTvAsGuest(page);
-    const gear = settingsButton(page);
-    await expect(gear).toBeVisible();
-    await expect(gear).toHaveText('');
-    await expect(gear).toHaveAttribute('href', '/ajustes');
-    // Sem Início para a convidada: nada de seta de voltar.
-    await expect(header(page).getByRole('link', { name: 'Voltar ao Início' })).toHaveCount(0);
-    await expect(page.locator('a[href="/"]')).toHaveCount(0);
+    await expect(settingsButton(page)).toHaveCount(0);
+    await expect(header(page).locator('app-gear-icon')).toHaveCount(0);
+    const back = header(page).getByRole('link', { name: 'Voltar ao Início' });
+    await expect(back).toHaveAttribute('href', '/');
 
-    // O desenho é o traço da seta (2,2, pontas redondas, 22 px) e é decorativo.
-    const svg = await gear.locator('svg').evaluate((el) => ({
-      attributes: Object.fromEntries([...el.attributes].map((a) => [a.name, a.value])),
-      paths: el.querySelectorAll('path').length,
-    }));
-    expect(svg.attributes).toMatchObject({
-      viewBox: '0 0 24 24',
-      width: '22',
-      height: '22',
-      fill: 'none',
-      stroke: 'currentColor',
-      'stroke-width': '2.2',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'aria-hidden': 'true',
-    });
-    expect(svg.paths).toBeGreaterThan(0);
-
-    for (const target of [gear, menuButton(page), powerButton(page)]) {
+    for (const target of [back, menuButton(page), powerButton(page)]) {
       const size = await box(target);
       expect(size.width).toBeCloseTo(44, 0);
       expect(size.height).toBeCloseTo(44, 0);
@@ -1449,37 +1486,14 @@ test.describe('cabeçalho da convidada: botão redondo de configurações no lug
           radius: css.borderTopLeftRadius,
         };
       });
-    expect(await style(gear)).toEqual(await style(menuButton(page)));
-
-    // Na ponta esquerda do cabeçalho (onde a seta ficaria), antes do nome, e o nome no meio da TELA.
-    const head = await box(header(page));
-    const place = await box(gear);
-    expect(Math.abs(place.x - head.x)).toBeLessThanOrEqual(1);
-    const viewport = await page.evaluate(() => window.innerWidth);
-    const title = await box(header(page).locator('h1'));
-    expect(
-      Math.abs(title.x + title.width / 2 - viewport / 2),
-      'centro do nome',
-    ).toBeLessThanOrEqual(2);
-    expect(title.x, 'o nome não encosta nos botões').toBeGreaterThanOrEqual(place.x + place.width);
-
-    // O menu fica ao lado da engrenagem, na mesma linha, e antes do nome; à direita só o desligar.
-    const menu = await box(menuButton(page));
-    const power = await box(powerButton(page));
-    expect(Math.abs(menu.y - place.y), 'mesma linha').toBeLessThanOrEqual(1);
-    expect(menu.x - (place.x + place.width), 'logo depois da engrenagem').toBeGreaterThanOrEqual(4);
-    expect(menu.x - (place.x + place.width), 'e perto dela').toBeLessThanOrEqual(10);
-    expect(title.x, 'o nome vem depois do menu').toBeGreaterThanOrEqual(menu.x + menu.width);
-    expect(
-      Math.abs(power.x + power.width - (head.x + head.width)),
-      'o desligar na ponta direita',
-    ).toBeLessThanOrEqual(1);
-    await expect(header(page).locator('.actions').getByRole('button')).toHaveCount(1);
+    expect(await style(back)).toEqual(await style(menuButton(page)));
+    expect(await style(powerButton(page))).toEqual(await style(menuButton(page)));
+    await expectTitleCentered(page);
 
     await screenshot(page, `test-results/tv-header-guest-${info.project.name}.png`);
   });
 
-  test('o nome fica no meio da tela, curto, médio ou longo, com a engrenagem e os três pontos à esquerda', async ({
+  test('o nome fica no meio da tela, curto, médio ou longo, com o ponto e o desligar à direita', async ({
     page,
   }, info) => {
     await openTvAsGuest(page);
@@ -1498,25 +1512,14 @@ test.describe('cabeçalho da convidada: botão redondo de configurações no lug
     }
   });
 
-  test('tocar nele abre os Ajustes da convidada, e a seta volta ao controle', async ({ page }) => {
+  test('a seta volta à Início, de onde se chega às Configurações', async ({ page }) => {
     await openTvAsGuest(page);
-    await settingsButton(page).click();
-    await expect(page).toHaveURL(/\/ajustes$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Ajustes' })).toBeVisible();
-    await expect(page.locator('a.ui-row .ui-row-title')).toHaveText([
-      'Perfil',
-      'Aparência',
-      'Aparelhos',
-      'Sobre',
-    ]);
-    await page.getByRole('link', { name: 'Voltar ao controle' }).click();
-    await expect(page).toHaveURL(/\/tv$/);
-    await expect(settingsButton(page)).toBeVisible();
+    await page.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('article[data-module="tv"]')).toBeVisible();
   });
 
-  test('o dono continua com a seta e não ganha o botão de configurações no controle', async ({
-    page,
-  }) => {
+  test('o dono também não tem botão de configurações no controle', async ({ page }) => {
     await openTv(page);
     await expect(backLink(page)).toBeVisible();
     await expect(settingsButton(page)).toHaveCount(0);
@@ -1529,23 +1532,16 @@ test.describe('cabeçalho da convidada: botão redondo de configurações no lug
       await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
       await openTvAsGuest(page);
       await expectNoA11yViolations(page);
-      expect(
-        (await smallTargets(page)).filter((found) => found.includes('Ajustes')),
-        'o botão de configurações tem 44 px',
-      ).toEqual([]);
+      expect(await smallTargets(page), 'todos os alvos do topo têm 44 px').toEqual([]);
       await screenshot(page, `test-results/tv-header-guest-${scheme}-${info.project.name}.png`);
     });
   }
 
-  test('em paisagem curta o botão continua no canto, inteiro e sem rolagem horizontal', async ({
+  test('em paisagem curta o topo continua inteiro, com o nome no meio e sem rolagem horizontal', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 844, height: 390 });
     await openTvAsGuest(page);
-    const place = await box(settingsButton(page));
-    expect(place.width).toBeCloseTo(44, 0);
-    expect(place.x).toBeGreaterThanOrEqual(0);
-    // E o nome segue no meio da tela, com os três pontos ao lado da engrenagem e só o desligar à direita.
     await expectTitleCentered(page);
     await expectNoHorizontalScroll(page);
   });

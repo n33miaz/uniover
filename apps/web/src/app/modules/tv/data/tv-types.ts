@@ -24,6 +24,8 @@ export interface TvState {
   readonly connection: TvConnection;
   readonly agentOnline: boolean;
   readonly updatedAt: string | null;
+  /** Desde quando o agente está fora (a API sabe; vem só com ele fora). */
+  readonly offlineSince?: string | null;
 }
 
 /** Tipo da TV, como o agente a declara: muda o que o controle oferece (a Samsung não tem teclado nem limpeza). */
@@ -42,6 +44,8 @@ export interface TvSummary {
   readonly kind: TvKind | null;
   readonly online: boolean;
   readonly capabilities: readonly string[];
+  /** A limpeza desta TV pode fechar apps em segundo plano; desligado, ela só alivia a memória. */
+  readonly allowBackgroundAppClosing?: boolean;
 }
 
 /** O que uma TV pode ou não oferecer no controle. */
@@ -107,6 +111,7 @@ function parseTv(value: unknown): TvSummary | null {
     kind: dto['kind'] === 'android' || dto['kind'] === 'samsung' ? dto['kind'] : null,
     online: dto['online'] === true,
     capabilities,
+    allowBackgroundAppClosing: dto['allowBackgroundAppClosing'] === true,
   };
 }
 
@@ -155,6 +160,7 @@ export function parseState(value: unknown): TvState | null {
     connection: toConnection(dto.connection, agentOnline),
     agentOnline,
     updatedAt: typeof dto.updatedAt === 'string' ? dto.updatedAt : null,
+    offlineSince: !agentOnline && typeof dto.offlineSince === 'string' ? dto.offlineSince : null,
   };
 }
 
@@ -215,6 +221,21 @@ export function shortcutLabel(
 }
 
 /** Hora local `HH:MM` de um instante ISO; vazio se o texto não for uma data. */
+/** "28/10 19:24" no horário local; vazio se o valor não é uma data. */
+export function dayClockText(value: string | number | Date | null): string {
+  if (value === null) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+    .format(date)
+    .replace(',', '');
+}
+
 export function clockText(value: string | number | Date | null): string {
   if (value === null) return '';
   const date = value instanceof Date ? value : new Date(value);

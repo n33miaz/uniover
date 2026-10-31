@@ -15,6 +15,7 @@ from uniover_agent.adapters.tv_adb_parsing import (
     parse_device_state,
     parse_launchable,
     parse_package_list,
+    parse_playback_sessions,
     quote_for_device_shell,
 )
 from uniover_agent.ports import LaunchableApp, is_adb_typable
@@ -174,3 +175,41 @@ def test_text_the_adb_cannot_type_faithfully_is_refused(text: str) -> None:
     assert not is_adb_typable(text)
     with pytest.raises(ValueError, match="fidelidade"):
         input_text_command(text)
+
+
+MEDIA_SESSIONS_SAMPLE = (
+    "MEDIA SESSION SERVICE (dumpsys media_session)\r\n"
+    "  Sessions Stack - have 2 sessions:\r\n"
+    "    SpotifyMediaSession com.spotify.tv.android/SpotifyMediaSession (userId=0)\r\n"
+    "      ownerPid=2400, ownerUid=10141, userId=0\r\n"
+    "      package=com.spotify.tv.android\r\n"
+    "      active=true\r\n"
+    "      state=PlaybackState {state=3, position=1200, buffered position=0, speed=1.0}\r\n"
+    "    NetflixSession com.netflix.ninja/NetflixSession (userId=0)\r\n"
+    "      ownerPid=2500, ownerUid=10142, userId=0\r\n"
+    "      package=com.netflix.ninja\r\n"
+    "      active=true\r\n"
+    "      state=PlaybackState {state=2, position=900, buffered position=0, speed=0.0}\r\n"
+)
+
+
+def test_each_playback_state_is_paired_with_the_package_of_its_session() -> None:
+    assert parse_playback_sessions(NOISE + MEDIA_SESSIONS_SAMPLE) == [
+        ("com.spotify.tv.android", 3),
+        ("com.netflix.ninja", 2),
+    ]
+
+
+def test_a_session_without_a_declared_package_has_no_owner() -> None:
+    text = (
+        "    First com.a.b/First (userId=0)\r\n"
+        "      package=com.exemplo.primeiro\r\n"
+        "      state=PlaybackState {state=3, position=1}\r\n"
+        "    Second com.c.d/Second (userId=0)\r\n"
+        "      state=PlaybackState {state=3, position=1}\r\n"
+    )
+    assert parse_playback_sessions(text) == [("com.exemplo.primeiro", 3), (None, 3)]
+
+
+def test_no_playback_state_means_no_sessions() -> None:
+    assert parse_playback_sessions("Sessions Stack - have 0 sessions:\r\n") == []

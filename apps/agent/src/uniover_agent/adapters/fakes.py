@@ -11,6 +11,7 @@ from uniover_agent.ports import (
     PairingInfo,
     PairingTicket,
     PollResult,
+    TextFieldStatus,
     TvUnreachable,
 )
 
@@ -62,6 +63,7 @@ class FakeTvRemote:
         self._app: list[Callable[[str], None]] = []
         self._volume: list[Callable[[int], None]] = []
         self._available: list[Callable[[bool], None]] = []
+        self._text_field: list[Callable[[TextFieldStatus], None]] = []
 
     @property
     def connected(self) -> bool:
@@ -112,6 +114,9 @@ class FakeTvRemote:
     def on_available(self, callback: Callable[[bool], None]) -> None:
         self._available.append(callback)
 
+    def on_text_field(self, callback: Callable[[TextFieldStatus], None]) -> None:
+        self._text_field.append(callback)
+
     # --- o que a TV empurra (usado pelos testes) ---
 
     def push_power(self, is_on: bool) -> None:
@@ -125,6 +130,10 @@ class FakeTvRemote:
     def push_volume(self, level: int) -> None:
         for callback in self._volume:
             callback(level)
+
+    def push_text_field(self, field: TextFieldStatus) -> None:
+        for callback in self._text_field:
+            callback(field)
 
     def drop(self) -> None:
         """A TV derrubou a sessão sem o agente pedir."""
@@ -188,6 +197,16 @@ class FakeTvAdb:
         self.running: frozenset[str] = frozenset()
         self.cleanup_log: list[str] = []
         self.cleanup_errors: dict[str, AdbError] = {}
+        self.media_playing_value = False
+        # Apps donos de sessão tocando (`dumpsys media_session`); `media_playing_value` segue
+        # valendo para quem só pergunta "toca algo?".
+        self.media_owners: frozenset[str] = frozenset()
+        self.global_values: dict[str, str | None] = {
+            "window_animation_scale": "1.0",
+            "transition_animation_scale": "1.0",
+            "animator_duration_scale": "1.0",
+        }
+        self.background_modes: dict[str, str | None] = {}
 
     @property
     def connected(self) -> bool:
@@ -254,6 +273,34 @@ class FakeTvAdb:
         self._cleanup_step("running")
         return self.running
 
+    async def media_playing(self) -> bool:
+        self._cleanup_step("media")
+        return self.media_playing_value or bool(self.media_owners)
+
+    async def playing_media_packages(self) -> frozenset[str]:
+        self._cleanup_step("media")
+        return self.media_owners
+
+    async def global_setting(self, name: str) -> str | None:
+        self._cleanup_step(f"global-get:{name}")
+        return self.global_values[name]
+
+    async def put_global_setting(self, name: str, value: str) -> None:
+        self._cleanup_step(f"global-put:{name}:{value}")
+        self.global_values[name] = value
+
+    async def restore_global_setting(self, name: str, original: str | None) -> None:
+        self._cleanup_step(f"global-restore:{name}:{original}")
+        self.global_values[name] = original
+
+    async def app_background_mode(self, package: str) -> str | None:
+        self._cleanup_step(f"appops-get:{package}")
+        return self.background_modes.get(package)
+
+    async def set_app_background_mode(self, package: str, mode: str) -> None:
+        self._cleanup_step(f"appops-set:{package}:{mode}")
+        self.background_modes[package] = None if mode == "default" else mode
+
     async def go_home(self) -> None:
         self._cleanup_step("go-home")
 
@@ -262,6 +309,9 @@ class FakeTvAdb:
 
     async def force_stop(self, package: str) -> None:
         self._cleanup_step(f"force-stop:{package}")
+
+    async def trim_memory(self, package: str) -> None:
+        self._cleanup_step(f"trim-memory:{package}")
 
 
 class FakeSecretStore:

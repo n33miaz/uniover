@@ -1,10 +1,13 @@
 @if (data(); as summary) {
   <section class="summary" aria-labelledby="summary-title">
-    <header class="hero">
-      <span class="ui-tile ok lg"><app-training-glyph name="check" /></span>
+    <header class="head">
       <h1 id="summary-title" #title class="title" tabindex="-1" i18n="@@training.summary.title">
-        Treino concluído
+        Treino Concluído
       </h1>
+    </header>
+
+    <div class="hero">
+      <span class="ui-tile ok lg"><app-training-glyph name="check" /></span>
       <p class="sub">
         {{ summary.routineName ?? freeName }}
         @if (minutes() !== null) {
@@ -15,7 +18,14 @@
         <app-training-glyph name="check" />
         <span i18n="@@training.summary.saved">Salvo no aparelho · {{ sendText() }}</span>
       </p>
-    </header>
+    </div>
+
+    @if (dayNote()) {
+      <p class="day-note">
+        <strong i18n="@@training.summary.day-note">Nota do Dia</strong>
+        {{ dayNote() }}
+      </p>
+    }
 
     <dl class="stats">
       <div class="stat">
@@ -45,7 +55,7 @@
     @if (summary.records.length > 0) {
       <section class="records" aria-labelledby="records-title">
         <h2 id="records-title" class="ui-section-label" i18n="@@training.summary.records-title">
-          Recordes de hoje
+          Recordes de Hoje
         </h2>
         <ul class="ui-group ui-plain">
           @for (record of summary.records; track record.exerciseName + record.kind) {
@@ -69,14 +79,14 @@
         (click)="editing.set(!editing())"
       >
         <app-training-glyph name="pencil" />
-        <span i18n="@@training.summary.edit">Editar treino</span>
+        <span i18n="@@training.summary.edit">Editar Treino</span>
       </button>
     }
 
     @if (showSets() || editing()) {
       <section class="sets" aria-labelledby="sets-title">
         <h2 id="sets-title" class="ui-section-label" i18n="@@training.summary.sets-title">
-          Séries do treino
+          Séries do Treino
         </h2>
         @if (summary.sets.length === 0) {
           <p class="none" i18n="@@training.summary.sets-none">Nenhuma série neste treino.</p>
@@ -101,14 +111,13 @@
     }
 
     <p class="note" i18n="@@training.summary.note">
-      Volume: carga × repetições das séries de trabalho (aquecimento não entra; nos halteres vale a
-      carga de um halter).
+      Volume sem aquecimento; nos halteres vale a carga de um halter.
     </p>
   </section>
 
   <div class="dock">
     <button type="button" class="primary ui-btn block go" (click)="done.emit()">
-      <span i18n="@@training.summary.done">Concluir treino</span>
+      <span i18n="@@training.summary.done">Concluir Treino</span>
     </button>
   </div>
 
@@ -119,7 +128,9 @@
       (closed)="editSet.set(null)"
     />
   }
-} @else if (data() === null) {
+} @else if (data() === undefined) {
+  <app-session-summary-skeleton />
+} @else {
   <section class="summary missing ui-card" aria-labelledby="missing-title">
     <h1
       id="missing-title"
@@ -128,13 +139,13 @@
       tabindex="-1"
       i18n="@@training.summary.missing-title"
     >
-      Treino não encontrado
+      Treino Não Encontrado
     </h1>
     <p class="sub" i18n="@@training.summary.missing-text">
       Ele pode ter sido apagado ou ainda estar aberto.
     </p>
     <button type="button" class="primary ui-btn" (click)="done.emit()">
-      <span i18n="@@training.summary.missing-back">Voltar a Hoje</span>
+      <span i18n="@@training.summary.missing-back">Escolher Treino</span>
     </button>
   </section>
 }

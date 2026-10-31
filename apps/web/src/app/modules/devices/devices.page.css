@@ -6,11 +6,6 @@
   margin-inline: auto;
 }
 
-.back {
-  align-self: flex-start;
-  text-decoration: none;
-}
-
 .section {
   display: flex;
   flex-direction: column;
@@ -35,6 +30,43 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
+}
+
+/* O estado importante cabe numa olhada; versão e histórico ficam no detalhe logo abaixo. */
+.status-summary {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.status-summary div {
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-sm);
+  background: var(--a-surface-2);
+}
+
+.status-summary dt {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.status-summary dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.status-summary .ok {
+  color: var(--a-ok-ink);
+}
+
+.status-summary .bad {
+  color: var(--a-bad-ink);
 }
 
 .name {
@@ -101,42 +133,31 @@
   color: var(--a-bad-ink);
 }
 
-.skeleton-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: var(--space-4);
-}
-
-.bar {
-  display: block;
-  width: 40%;
-  height: 14px;
-}
-
-.bar.wide {
-  width: 70%;
-}
-
 .retry {
   align-self: flex-start;
 }
 
-/* Ação principal primeiro; no celular, "Parear aparelho" é a principal e o aviso do PC vai logo abaixo. */
+/* A ação principal fecha a tela, em largura total (o `main` já reserva a área segura de baixo). */
 .cta {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: var(--space-2);
+}
+
+.cta > .ui-btn,
+.guest-pair,
+.download {
+  width: 100%;
 }
 
 .windows-only {
   margin: 0;
   color: var(--a-ink2);
   font-size: var(--fs-small);
+  text-align: center;
 }
 
 .download {
-  align-self: flex-start;
   text-decoration: none;
 }
 
@@ -146,4 +167,105 @@
   align-items: flex-start;
   gap: 0.2rem;
   margin-block: 0.25rem;
+}
+
+/* Avisos de queda: faixa discreta no alto, com o "Entendi" ao lado do texto. */
+.alerts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.alert {
+  align-self: stretch;
+}
+
+.alert .ui-btn {
+  flex: 0 0 auto;
+}
+
+.alert-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.alert-text span {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+/* Nome e estado na mesma linha; o estado quebra para baixo só em tela estreita. */
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  align-self: stretch;
+}
+
+.title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.head .chips {
+  margin-top: 0;
+}
+
+/* Ações principais à mão; as que mudam ou desfazem algo ficam separadas, num grupo com a borda do perigo. */
+.danger-zone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--a-bad) 35%, var(--a-line));
+  border-radius: var(--radius-sm);
+}
+
+/* Manutenção é secundária ao estado do computador e só ocupa espaço quando a pessoa pede. */
+.maintenance {
+  border-top: 1px solid var(--a-line);
+}
+
+.maintenance summary {
+  min-height: var(--tap);
+  padding-top: var(--space-2);
+  color: var(--a-ink2);
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.maintenance-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+
+.zone-label {
+  margin: 0;
+}
+
+.tvs-label {
+  margin-top: var(--space-2);
+}
+
+.tv-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tv-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
 }

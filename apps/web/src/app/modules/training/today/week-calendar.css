@@ -1,10 +1,11 @@
 :host {
   display: block;
 }
+/* Cartão compacto: cabe na primeira tela junto com o cartão do dia e os atalhos (ver today-home.css). */
 .week {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
   padding: var(--space-3);
 }
 .week-head,
@@ -17,13 +18,23 @@
 }
 .week-head h3 {
   margin: 0;
+  min-width: 0;
   font-size: 1.05rem;
   font-weight: 800;
+  white-space: nowrap;
+}
+.week-count {
+  color: var(--a-accent-ink);
+  font-size: var(--fs-small);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
 }
 .nav {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 0;
 }
+/* Setas pequenas ao lado do "1 de 3": o glifo é miúdo, o alvo continua de 44 px e a linha só ocupa a altura do título. */
 .nav-button {
   display: grid;
   place-items: center;
@@ -35,12 +46,15 @@
   background: transparent;
   color: var(--a-ink2);
   font: inherit;
-  font-size: 1.25rem;
+  font-size: 1rem;
   line-height: 1;
   cursor: pointer;
   transition:
     background-color 160ms ease,
     transform 160ms ease;
+}
+.week-head .nav-button {
+  margin-block: -10px;
 }
 .nav-button:active {
   transform: scale(0.94);
@@ -64,8 +78,8 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
-  min-height: 64px;
-  padding: 4px 0;
+  min-height: 52px;
+  padding: 2px 0;
   border: 0;
   border-radius: var(--radius-sm);
   background: var(--a-surface-2);
@@ -110,6 +124,27 @@
 .day.done {
   background: var(--a-accent-soft);
 }
+/* Planejado vai tracejado e hoje vai cheio: a diferença não depende só da cor. */
+.day.planned,
+.month-day.planned {
+  border: 1px dashed var(--a-accent);
+}
+.day.rest,
+.month-day.rest {
+  color: var(--a-ink3);
+  background: var(--a-elev);
+}
+.day.absent,
+.month-day.absent {
+  color: var(--a-ink2);
+  background: var(--a-warn-soft);
+  text-decoration: line-through;
+}
+.day-note {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
 .month-day.done {
   background: var(--a-accent-soft);
   color: var(--a-accent-ink);
@@ -131,7 +166,7 @@
 }
 .day::after {
   content: '';
-  min-height: 14px;
+  min-height: 12px;
   font-size: 0.78rem;
   font-weight: 900;
   line-height: 1;
@@ -155,6 +190,8 @@
 .calendar-link {
   flex: none;
   min-height: 44px;
+  /* O alvo de 44 px sobra para cima e para baixo da linha: ela só ocupa a altura do texto. */
+  margin-block: -10px;
   margin-left: auto;
   padding: 0 2px;
   border: 0;
@@ -171,8 +208,12 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
   margin: 0;
-  padding-top: var(--space-2);
+  padding-top: 6px;
   border-top: 1px solid var(--a-line);
+}
+.stats dd,
+.stats dt {
+  line-height: 1.25;
 }
 .stats div {
   display: flex;
@@ -231,6 +272,16 @@
   bottom: 1px;
   font-size: 0.7rem;
   font-weight: 900;
+}
+.month-nav .streak {
+  flex: 1 1 auto;
+}
+.streak {
+  margin: 0;
+  color: var(--a-accent-ink);
+  text-align: center;
+  font-size: var(--fs-small);
+  font-weight: 750;
 }
 .month-stats,
 .goal-note {

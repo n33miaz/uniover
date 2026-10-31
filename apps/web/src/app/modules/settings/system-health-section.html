@@ -1,0 +1,61 @@
+<section class="health ui-rise" aria-labelledby="health-title">
+  <div class="health-head">
+    <h2 id="health-title" class="ui-section-label" i18n="@@settings.system.health.title">Saúde</h2>
+    <button
+      type="button"
+      class="secondary ui-btn"
+      (click)="load()"
+      i18n="@@settings.system.health.refresh"
+    >
+      Atualizar
+    </button>
+  </div>
+  @if (agents()) {
+    <div
+      class="metrics"
+      aria-label="Resumo da saúde"
+      i18n-aria-label="@@settings.system.health.metrics-label"
+    >
+      <article class="metric">
+        <span class="metric-label" i18n="@@settings.system.health.metric-agent">Agente</span>
+        <strong [class.ok]="agentTone() === 'ok'" [class.bad]="agentTone() === 'bad'">
+          {{ agentMetric() }}
+        </strong>
+        <span class="metric-detail">{{ agentDetail() }}</span>
+      </article>
+      <article class="metric">
+        <span class="metric-label" i18n="@@settings.system.health.metric-tv">TV</span>
+        <strong [class.ok]="tvTone() === 'ok'" [class.bad]="tvTone() === 'bad'">
+          {{ tvMetric() }}
+        </strong>
+        <span class="metric-detail">{{ tvDetail() }}</span>
+      </article>
+      <article class="metric">
+        <span class="metric-label" i18n="@@settings.system.health.metric-api">API</span>
+        <strong class="ok">{{ apiMetric() }}</strong>
+        <span class="metric-detail" i18n="@@settings.system.health.api-detail"
+          >Resposta do servidor</span
+        >
+      </article>
+      <article class="metric">
+        <span class="metric-label" i18n="@@settings.system.health.metric-version">Versão</span>
+        <strong>{{ versionMetric() }}</strong>
+        <span class="metric-detail" i18n="@@settings.system.health.version-detail"
+          >API publicada</span
+        >
+      </article>
+    </div>
+  } @else if (failed()) {
+    <p class="error" role="alert" i18n="@@settings.system.health.failed">
+      Não foi possível carregar a saúde do sistema.
+    </p>
+  } @else {
+    <app-loading-skeleton
+      [kind]="'metrics'"
+      i18n-label="@@settings.system.health.loading"
+      label="Carregando a saúde do sistema…"
+      [reload]="false"
+      (retried)="load()"
+    />
+  }
+</section>

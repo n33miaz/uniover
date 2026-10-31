@@ -1,6 +1,6 @@
 <div class="progress">
   @if (!ready()) {
-    <div class="loading ui-skeleton" aria-hidden="true"></div>
+    <app-progress-skeleton />
   } @else if (exercise(); as current) {
     <app-progress-evolution
       [exercise]="current"
@@ -10,7 +10,7 @@
     />
 
     <h2 class="ui-visually-hidden" i18n="@@training.progress.details">
-      Mais detalhes do progresso
+      Mais Detalhes do Progresso
     </h2>
     <div class="sections ui-group">
       <app-progress-records [exerciseId]="current.id" />
@@ -30,7 +30,7 @@
     <section class="empty ui-card" aria-labelledby="progress-empty-title">
       <span class="ui-tile lg"><app-training-glyph name="chart" /></span>
       <h2 id="progress-empty-title" i18n="@@training.progress.empty.title">
-        Registre um treino para ver o progresso
+        Registre um Treino para Ver o Progresso
       </h2>
       <p i18n="@@training.progress.empty.text">
         Depois do primeiro treino, aqui aparecem a evolução da carga, os recordes, o volume da

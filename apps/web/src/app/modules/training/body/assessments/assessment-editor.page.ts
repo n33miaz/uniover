@@ -1,6 +1,6 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import type { PhysicalAssessmentMeasure } from '../../data/physical-assessments/physical-assessment';
 import {
   ASSESSMENT_DOCUMENT_MAX_BYTES,
@@ -8,6 +8,7 @@ import {
   PhysicalAssessmentRepository,
 } from '../../data/physical-assessments/physical-assessment-repository';
 import { measureLabel } from './assessment-format';
+import { AssessmentFormSkeleton } from './assessment-skeletons';
 
 interface AssessmentFormDraft {
   assessedOn: string;
@@ -27,222 +28,233 @@ function todayKey(): string {
 
 @Component({
   selector: 'app-physical-assessment-editor-page',
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, AssessmentFormSkeleton],
   template: `
     <div class="page" aria-labelledby="title">
-      <a
-        class="back"
-        routerLink="/treino/corpo/avaliacoes"
-        i18n="@@training.assessments.cancel-back"
-        >‹ Avaliações</a
-      >
       <header>
         <p class="eyebrow" i18n="@@training.assessments.editor-eyebrow">
           Dados guardados neste aparelho
         </p>
         <h1 id="title">{{ editing() ? editTitle : newTitle }}</h1>
       </header>
-      <form (ngSubmit)="save()">
-        <fieldset>
-          <legend i18n="@@training.assessments.identification">Identificação do registro</legend>
-          <label for="assessedOn" i18n="@@training.assessments.date">Data da avaliação</label>
-          <input
-            id="assessedOn"
-            name="assessedOn"
-            type="date"
-            required
-            [(ngModel)]="draft.assessedOn"
-          />
-          <label for="origin" i18n="@@training.assessments.origin"
-            >Origem / clínica / sistema</label
-          >
-          <input id="origin" name="origin" autocomplete="organization" [(ngModel)]="draft.origin" />
-          <label for="professional" i18n="@@training.assessments.professional"
-            >Profissional informado</label
-          >
-          <input id="professional" name="professional" [(ngModel)]="draft.professional" />
-        </fieldset>
-        <fieldset>
-          <legend i18n="@@training.assessments.report-context">
-            Contexto informado no relatório
-          </legend>
-          <label for="age" i18n="@@training.assessments.reported-age"
-            >Idade na data (se constar)</label
-          >
-          <input
-            id="age"
-            name="age"
-            type="number"
-            min="0"
-            max="130"
-            [(ngModel)]="draft.reportedAgeYears"
-          />
-          <label for="goal" i18n="@@training.assessments.goal">Objetivo informado</label>
-          <input id="goal" name="goal" [(ngModel)]="draft.statedGoal" />
-          <label for="activity" i18n="@@training.assessments.activity">Atividade informada</label>
-          <input id="activity" name="activity" [(ngModel)]="draft.activityStatus" />
-          <label for="frequency" i18n="@@training.assessments.frequency"
-            >Frequência planejada informada</label
-          >
-          <input
-            id="frequency"
-            name="frequency"
-            type="number"
-            min="0"
-            max="14"
-            [(ngModel)]="draft.plannedFrequencyPerWeek"
-          />
-        </fieldset>
-        <fieldset>
-          <legend i18n="@@training.assessments.measurements-title">Medidas e resultados</legend>
-          <p class="hint" i18n="@@training.assessments.measure-help">
-            Mantenha o valor como aparece no documento. Campos vazios não serão registrados.
-          </p>
-          @for (measure of measures(); track $index) {
-            <article class="measure-row">
-              <label [for]="'type-' + $index" i18n="@@training.assessments.measure-type"
-                >Medida</label
-              >
-              <input
-                [id]="'type-' + $index"
-                [name]="'type-' + $index"
-                [ngModel]="measure.type"
-                (ngModelChange)="updateMeasure($index, 'type', $event)"
-                list="measure-types"
-              />
-              <label [for]="'value-' + $index" i18n="@@training.assessments.measure-value"
-                >Valor</label
-              >
-              <div class="value-line">
+      @if (recordLoading()) {
+        <app-assessment-form-skeleton />
+      } @else {
+        <form class="ui-has-action-bar" (ngSubmit)="save()" (input)="touch()" (change)="touch()">
+          <fieldset>
+            <legend i18n="@@training.assessments.identification">Identificação do Registro</legend>
+            <label for="assessedOn" i18n="@@training.assessments.date">Data da avaliação</label>
+            <input
+              id="assessedOn"
+              name="assessedOn"
+              type="date"
+              required
+              [(ngModel)]="draft.assessedOn"
+            />
+            <label for="origin" i18n="@@training.assessments.origin"
+              >Origem / clínica / sistema</label
+            >
+            <input
+              id="origin"
+              name="origin"
+              autocomplete="organization"
+              [(ngModel)]="draft.origin"
+            />
+            <label for="professional" i18n="@@training.assessments.professional"
+              >Profissional informado</label
+            >
+            <input id="professional" name="professional" [(ngModel)]="draft.professional" />
+          </fieldset>
+          <fieldset>
+            <legend i18n="@@training.assessments.report-context">
+              Contexto Informado no Relatório
+            </legend>
+            <label for="age" i18n="@@training.assessments.reported-age"
+              >Idade na data (se constar)</label
+            >
+            <input
+              id="age"
+              name="age"
+              type="number"
+              min="0"
+              max="130"
+              [(ngModel)]="draft.reportedAgeYears"
+            />
+            <label for="goal" i18n="@@training.assessments.goal">Objetivo informado</label>
+            <input id="goal" name="goal" [(ngModel)]="draft.statedGoal" />
+            <label for="activity" i18n="@@training.assessments.activity">Atividade informada</label>
+            <input id="activity" name="activity" [(ngModel)]="draft.activityStatus" />
+            <label for="frequency" i18n="@@training.assessments.frequency"
+              >Frequência planejada informada</label
+            >
+            <input
+              id="frequency"
+              name="frequency"
+              type="number"
+              min="0"
+              max="14"
+              [(ngModel)]="draft.plannedFrequencyPerWeek"
+            />
+          </fieldset>
+          <fieldset>
+            <legend i18n="@@training.assessments.measurements-title">Medidas e Resultados</legend>
+            <p class="hint" i18n="@@training.assessments.measure-help">
+              Mantenha o valor como aparece no documento. Campos vazios não serão registrados.
+            </p>
+            @for (measure of measures(); track $index) {
+              <article class="measure-row">
+                <label [for]="'type-' + $index" i18n="@@training.assessments.measure-type"
+                  >Medida</label
+                >
                 <input
-                  [id]="'value-' + $index"
-                  [name]="'value-' + $index"
-                  [ngModel]="measure.reportedValue"
-                  (ngModelChange)="updateMeasure($index, 'reportedValue', $event)"
+                  [id]="'type-' + $index"
+                  [name]="'type-' + $index"
+                  [ngModel]="measure.type"
+                  (ngModelChange)="updateMeasure($index, 'type', $event)"
+                  list="measure-types"
                 />
+                <label [for]="'value-' + $index" i18n="@@training.assessments.measure-value"
+                  >Valor</label
+                >
+                <div class="value-line">
+                  <input
+                    [id]="'value-' + $index"
+                    [name]="'value-' + $index"
+                    [ngModel]="measure.reportedValue"
+                    (ngModelChange)="updateMeasure($index, 'reportedValue', $event)"
+                  />
+                  <input
+                    [attr.aria-label]="unitLabel"
+                    [name]="'unit-' + $index"
+                    [ngModel]="measure.unit"
+                    (ngModelChange)="updateMeasure($index, 'unit', $event)"
+                  />
+                </div>
+                <label [for]="'kind-' + $index" i18n="@@training.assessments.result-kind"
+                  >Tipo do resultado</label
+                >
+                <select
+                  [id]="'kind-' + $index"
+                  [name]="'kind-' + $index"
+                  [ngModel]="measure.kind"
+                  (ngModelChange)="updateMeasure($index, 'kind', $event)"
+                >
+                  <option value="measured" i18n="@@training.assessments.kind.measured">
+                    Medido
+                  </option>
+                  <option value="calculated" i18n="@@training.assessments.kind.calculated">
+                    Calculado pela origem
+                  </option>
+                  <option value="reference" i18n="@@training.assessments.kind.reference">
+                    Referência sugerida
+                  </option>
+                </select>
+                <label [for]="'side-' + $index" i18n="@@training.assessments.side">Lado</label>
+                <select
+                  [id]="'side-' + $index"
+                  [name]="'side-' + $index"
+                  [ngModel]="measure.side ?? ''"
+                  (ngModelChange)="updateMeasure($index, 'side', $event)"
+                >
+                  <option value="" i18n="@@training.assessments.side.none">Não se aplica</option>
+                  <option value="left" i18n="@@training.assessments.left">Esquerdo</option>
+                  <option value="right" i18n="@@training.assessments.right">Direito</option>
+                </select>
+                <label [for]="'method-' + $index" i18n="@@training.assessments.method"
+                  >Método</label
+                >
                 <input
-                  [attr.aria-label]="unitLabel"
-                  [name]="'unit-' + $index"
-                  [ngModel]="measure.unit"
-                  (ngModelChange)="updateMeasure($index, 'unit', $event)"
+                  [id]="'method-' + $index"
+                  [name]="'method-' + $index"
+                  [ngModel]="measure.method ?? ''"
+                  (ngModelChange)="updateMeasure($index, 'method', $event)"
                 />
-              </div>
-              <label [for]="'kind-' + $index" i18n="@@training.assessments.result-kind"
-                >Tipo do resultado</label
-              >
-              <select
-                [id]="'kind-' + $index"
-                [name]="'kind-' + $index"
-                [ngModel]="measure.kind"
-                (ngModelChange)="updateMeasure($index, 'kind', $event)"
-              >
-                <option value="measured" i18n="@@training.assessments.kind.measured">Medido</option>
-                <option value="calculated" i18n="@@training.assessments.kind.calculated">
-                  Calculado pela origem
-                </option>
-                <option value="reference" i18n="@@training.assessments.kind.reference">
-                  Referência sugerida
-                </option>
-              </select>
-              <label [for]="'side-' + $index" i18n="@@training.assessments.side">Lado</label>
-              <select
-                [id]="'side-' + $index"
-                [name]="'side-' + $index"
-                [ngModel]="measure.side ?? ''"
-                (ngModelChange)="updateMeasure($index, 'side', $event)"
-              >
-                <option value="" i18n="@@training.assessments.side.none">Não se aplica</option>
-                <option value="left" i18n="@@training.assessments.left">Esquerdo</option>
-                <option value="right" i18n="@@training.assessments.right">Direito</option>
-              </select>
-              <label [for]="'method-' + $index" i18n="@@training.assessments.method">Método</label>
-              <input
-                [id]="'method-' + $index"
-                [name]="'method-' + $index"
-                [ngModel]="measure.method ?? ''"
-                (ngModelChange)="updateMeasure($index, 'method', $event)"
-              />
-              <label [for]="'source-' + $index" i18n="@@training.assessments.provenance"
-                >Procedência deste campo</label
-              >
-              <input
-                [id]="'source-' + $index"
-                [name]="'source-' + $index"
-                [ngModel]="measure.source ?? ''"
-                (ngModelChange)="updateMeasure($index, 'source', $event)"
-              />
-              <button
-                type="button"
-                class="remove"
-                (click)="removeMeasure($index)"
-                [attr.aria-label]="removeMeasureLabel($index)"
-                i18n="@@training.assessments.remove-measure"
-              >
-                Remover medida
-              </button>
-            </article>
-          }
-          <datalist id="measure-types">
-            @for (type of knownTypes; track type) {
-              <option [value]="type">{{ label(type) }}</option>
+                <label [for]="'source-' + $index" i18n="@@training.assessments.provenance"
+                  >Procedência deste campo</label
+                >
+                <input
+                  [id]="'source-' + $index"
+                  [name]="'source-' + $index"
+                  [ngModel]="measure.source ?? ''"
+                  (ngModelChange)="updateMeasure($index, 'source', $event)"
+                />
+                <button
+                  type="button"
+                  class="remove"
+                  (click)="removeMeasure($index)"
+                  [attr.aria-label]="removeMeasureLabel($index)"
+                  i18n="@@training.assessments.remove-measure"
+                >
+                  Remover Medida
+                </button>
+              </article>
             }
-          </datalist>
-          <button
-            type="button"
-            class="secondary"
-            (click)="addMeasure()"
-            i18n="@@training.assessments.add-measure"
-          >
-            Adicionar medida
-          </button>
-        </fieldset>
-        <fieldset>
-          <legend i18n="@@training.assessments.attach-title">Fotos do relatório</legend>
-          <p class="hint" i18n="@@training.assessments.attach-local">
-            Os arquivos selecionados ficam somente neste aparelho e não são enviados.
-          </p>
-          <label for="documents" i18n="@@training.assessments.choose-images"
-            >Escolher imagens JPEG, PNG ou WebP</label
-          >
-          <input
-            id="documents"
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-            i18n-accept="@@training.assessments.accept-images"
-            multiple
-            (change)="attach($event)"
-          />
-          @if (documents() + pendingDocuments().length) {
-            <p class="hint">
-              {{ documents() + pendingDocuments().length }} {{ documentCountLabel }}
+            <datalist id="measure-types">
+              @for (type of knownTypes; track type) {
+                <option [value]="type">{{ label(type) }}</option>
+              }
+            </datalist>
+            <button
+              type="button"
+              class="secondary"
+              (click)="addMeasure()"
+              i18n="@@training.assessments.add-measure"
+            >
+              Adicionar Medida
+            </button>
+          </fieldset>
+          <fieldset>
+            <legend i18n="@@training.assessments.attach-title">Fotos do Relatório</legend>
+            <p class="hint" i18n="@@training.assessments.attach-local">
+              Os arquivos selecionados ficam somente neste aparelho e não são enviados.
             </p>
-          }
-          @if (pendingDocuments().length) {
-            <p class="hint" i18n="@@training.assessments.pending-files">
-              As novas imagens serão guardadas somente ao salvar a avaliação.
-            </p>
-          }
-        </fieldset>
-        <fieldset>
-          <legend i18n="@@training.assessments.notes-title">Observações</legend>
-          <label for="notes" i18n="@@training.assessments.notes-label"
-            >Observações do registro</label
-          >
-          <textarea id="notes" name="notes" rows="4" [(ngModel)]="draft.notes"></textarea>
-        </fieldset>
-        @if (status()) {
-          <p class="status" role="status">{{ status() }}</p>
-        }
-        <button
-          class="primary"
-          type="button"
-          [disabled]="saving()"
-          (click)="save()"
-          i18n="@@training.assessments.save"
-        >
-          Salvar avaliação
-        </button>
-      </form>
+            <label for="documents" i18n="@@training.assessments.choose-images"
+              >Escolher imagens JPEG, PNG ou WebP</label
+            >
+            <input
+              id="documents"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+              i18n-accept="@@training.assessments.accept-images"
+              multiple
+              (change)="attach($event)"
+            />
+            @if (documents() + pendingDocuments().length) {
+              <p class="hint">
+                {{ documents() + pendingDocuments().length }} {{ documentCountLabel }}
+              </p>
+            }
+            @if (pendingDocuments().length) {
+              <p class="hint" i18n="@@training.assessments.pending-files">
+                As novas imagens serão guardadas somente ao salvar a avaliação.
+              </p>
+            }
+          </fieldset>
+          <fieldset>
+            <legend i18n="@@training.assessments.notes-title">Observações</legend>
+            <label for="notes" i18n="@@training.assessments.notes-label"
+              >Observações do registro</label
+            >
+            <textarea id="notes" name="notes" rows="4" [(ngModel)]="draft.notes"></textarea>
+          </fieldset>
+          <div class="ui-action-bar">
+            <div class="ui-action-bar-inner">
+              @if (status()) {
+                <p class="status" role="status">{{ status() }}</p>
+              }
+              <button
+                class="primary"
+                type="button"
+                [disabled]="saveDisabled()"
+                (click)="save()"
+                i18n="@@training.assessments.save"
+              >
+                Salvar Avaliação
+              </button>
+            </div>
+          </div>
+        </form>
+      }
     </div>
   `,
   styles: `
@@ -252,7 +264,7 @@ function todayKey(): string {
     .page {
       display: grid;
       gap: var(--space-3);
-      padding: 0 var(--space-4) calc(var(--space-5) + env(safe-area-inset-bottom));
+      padding: 0 var(--space-4) var(--space-5);
     }
     header {
       display: grid;
@@ -370,11 +382,29 @@ export class PhysicalAssessmentEditorPage {
   private readonly router = inject(Router);
   private persistedId: string | undefined;
   protected readonly editing = signal(false);
+  /** Editar um registro existente espera a leitura dele: o formulário vazio não aparece antes para ser preenchido depois. */
+  protected readonly recordLoading = signal(false);
   protected readonly measures = signal<PhysicalAssessmentMeasure[]>([]);
   protected readonly documents = signal(0);
   protected readonly pendingDocuments = signal<File[]>([]);
   protected readonly saving = signal(false);
   protected readonly status = signal('');
+  /**
+   * O rascunho é um objeto comum ligado por `ngModel`, que o Angular não observa: o formulário avisa por `touch()` a cada
+   * digitação, e é essa versão que faz o estado de "mudou" e de "válido" ser relido.
+   */
+  private readonly edits = signal(0);
+  /** Como o formulário estava quando abriu (ou depois de carregar a avaliação); o que difere disso é mudança. */
+  private readonly baseline = signal('');
+  protected readonly dirty = computed(() => {
+    this.edits();
+    return this.snapshot() !== this.baseline() || this.pendingDocuments().length > 0;
+  });
+  /** Salvar só vale com algo mudado, a data preenchida e nenhuma gravação em andamento. */
+  protected readonly saveDisabled = computed(() => {
+    this.edits();
+    return this.saving() || !this.dirty() || !this.draft.assessedOn;
+  });
   protected readonly draft: AssessmentFormDraft = {
     assessedOn: todayKey(),
     origin: '',
@@ -385,8 +415,8 @@ export class PhysicalAssessmentEditorPage {
     plannedFrequencyPerWeek: '',
     notes: '',
   };
-  protected readonly editTitle = $localize`:@@training.assessments.edit-title:Editar avaliação`;
-  protected readonly newTitle = $localize`:@@training.assessments.new-title:Nova avaliação`;
+  protected readonly editTitle = $localize`:@@training.assessments.edit-title:Editar Avaliação`;
+  protected readonly newTitle = $localize`:@@training.assessments.new-title:Nova Avaliação`;
   protected readonly unitLabel = $localize`:@@training.assessments.unit:Unidade`;
   protected readonly documentCountLabel = $localize`:@@training.assessments.files-selected:arquivo(s) selecionado(s)`;
   protected readonly knownTypes = [
@@ -416,12 +446,18 @@ export class PhysicalAssessmentEditorPage {
   protected readonly label = measureLabel;
 
   constructor() {
+    this.baseline.set(this.snapshot());
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
       this.persistedId = id;
       this.editing.set(true);
+      this.recordLoading.set(true);
       void this.load(id);
     }
+  }
+
+  protected touch(): void {
+    this.edits.update((value) => value + 1);
   }
 
   protected addMeasure(): void {
@@ -557,9 +593,17 @@ export class PhysicalAssessmentEditorPage {
   }
 
   private async load(id: string): Promise<void> {
+    try {
+      await this.loadRecord(id);
+    } finally {
+      this.recordLoading.set(false);
+    }
+  }
+
+  private async loadRecord(id: string): Promise<void> {
     const row = await this.repository.get(id);
     if (!row) {
-      this.status.set($localize`:@@training.assessments.not-found:Avaliação não encontrada.`);
+      this.status.set($localize`:@@training.assessments.not-found:Avaliação Não Encontrada.`);
       return;
     }
     Object.assign(this.draft, {
@@ -574,7 +618,13 @@ export class PhysicalAssessmentEditorPage {
       notes: row.notes ?? '',
     });
     this.measures.set([...(row.measurements ?? [])]);
+    this.baseline.set(this.snapshot());
+    this.touch();
     this.documents.set((await this.repository.documents(id)).length);
+  }
+
+  private snapshot(): string {
+    return JSON.stringify([this.draft, this.measures()]);
   }
 
   private documentError(status: string): string {

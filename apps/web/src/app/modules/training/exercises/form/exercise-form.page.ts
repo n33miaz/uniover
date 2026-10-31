@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
@@ -23,6 +24,7 @@ import {
 import { BackNavigation } from '../../shell/back-navigation';
 import { ChipOption, TrainingChips } from '../../shell/training-chips';
 import { TrainingGlyph } from '../../shell/training-glyph';
+import { TrainingHeaderActions } from '../../shell/training-header-actions';
 import { TrainingSheet } from '../../shell/training-sheet';
 import {
   EMPTY_EXERCISE_FORM,
@@ -33,6 +35,7 @@ import {
   sameExerciseName,
   validateExerciseForm,
 } from './exercise-form';
+import { TrainingFormSkeleton } from '../../shell/training-form-skeleton';
 
 /**
  * Novo exercício (e edição de um exercício próprio): nome, músculo principal, equipamento, tipo de registro e
@@ -41,17 +44,19 @@ import {
  */
 @Component({
   selector: 'app-exercise-form-page',
-  imports: [TrainingGlyph, TrainingChips, TrainingSheet],
+  imports: [TrainingGlyph, TrainingChips, TrainingSheet, TrainingFormSkeleton],
   templateUrl: './exercise-form.page.html',
   styleUrl: './exercise-form.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ExerciseFormPage {
+  protected readonly loadingLabel = $localize`:@@training.form.loading:Carregando o exercício…`;
   private readonly catalog = inject(CatalogRepository);
   private readonly writer = inject(CatalogWriter);
   private readonly back = inject(BackNavigation);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly headerActions = inject(TrainingHeaderActions);
 
   /** Id do exercício que está sendo editado; vazio em "Novo exercício". */
   protected readonly editingId = this.route.snapshot.paramMap.get('id') ?? '';
@@ -72,8 +77,14 @@ export class ExerciseFormPage {
   protected readonly duplicate = signal(false);
 
   protected readonly dirty = computed(() => isFormDirty(this.initial(), this.form()));
+  // Os avisos aparecem assim que a pessoa mexe: o Salvar fica desligado enquanto houver erro, e sem o aviso ela
+  // não teria como saber o que falta.
   protected readonly issues = computed<readonly ExerciseFormIssue[]>(() =>
-    this.submitted() ? validateExerciseForm(this.form()) : [],
+    this.submitted() || this.dirty() ? validateExerciseForm(this.form()) : [],
+  );
+  /** Salvar só vale com algo mudado, tudo válido e nenhuma gravação em andamento. */
+  protected readonly saveDisabled = computed(
+    () => this.saving() || !this.dirty() || validateExerciseForm(this.form()).length > 0,
   );
   protected readonly nameError = computed(() => {
     const issues = this.issues();
@@ -106,11 +117,10 @@ export class ExerciseFormPage {
   protected readonly recordTypes = RECORD_TYPES.map((id) => ({ id, label: recordTypeLabel(id) }));
 
   protected readonly title = this.editing
-    ? $localize`:@@training.form.title-edit:Editar exercício`
-    : $localize`:@@training.form.title-new:Novo exercício`;
-  protected readonly backLabel = $localize`:@@training.form.back:Sair do formulário`;
+    ? $localize`:@@training.form.title-edit:Editar Exercício`
+    : $localize`:@@training.form.title-new:Novo Exercício`;
   protected readonly muscleOpen = signal(false);
-  protected readonly muscleHeading = $localize`:@@training.form.muscle-heading:Músculo principal`;
+  protected readonly muscleHeading = $localize`:@@training.form.muscle-heading:Músculo Principal`;
   protected readonly cancelLabel = $localize`:@@training.form.muscle-cancel:Cancelar`;
   protected readonly equipmentGroupLabel = $localize`:@@training.form.equipment-group:Equipamento`;
   protected readonly muscleShown = computed(() => {
@@ -129,6 +139,7 @@ export class ExerciseFormPage {
   private duplicateTicket = 0;
 
   constructor() {
+    inject(DestroyRef).onDestroy(this.headerActions.registerBack(() => this.cancel()));
     if (this.editing) void this.loadExisting();
     else {
       // "Criar “x”", da busca sem resultado, chega com o nome sugerido.

@@ -146,7 +146,7 @@ async function expectSound(page: Page) {
   }
 }
 
-const header = (page: Page) => page.locator('header.head');
+const header = (page: Page) => page.locator('.tv > header.head');
 const switcherButton = (page: Page) => header(page).locator('h1 button');
 const switchDialog = (page: Page) => page.getByRole('dialog', { name: 'Escolher a TV' });
 const chip = (page: Page, label: string) => page.locator(`.shortcut[aria-label="${label}"]`);
@@ -210,6 +210,37 @@ test.describe('duas TVs', () => {
     await settle(page);
     await shoot(page, 'seletor-aberto', info.project.name);
     await expectSound(page);
+  });
+
+  test('a seta do seletor não desloca o título: o texto fica no centro real da tela, com a seta solta ao lado', async ({
+    page,
+  }) => {
+    serve([CASA, RAPHAEL]);
+    await openTv(page, 'Casa');
+    const title = switcherButton(page);
+    const chevron = title.locator('.chevron');
+    await expect(chevron).toBeVisible();
+    // A seta sai do fluxo (posição absoluta): é por isso que o texto não se mexe.
+    await expect(chevron).toHaveCSS('position', 'absolute');
+    const viewport = page.viewportSize()!.width;
+    const text = (await title.locator('.title-text').boundingBox())!;
+    expect(
+      Math.abs(text.x + text.width / 2 - viewport / 2),
+      'o centro do texto é o centro da tela',
+    ).toBeLessThanOrEqual(1.5);
+    // A seta fica logo ao lado do fim do texto, e na mesma altura dele.
+    const arrow = (await chevron.boundingBox())!;
+    expect(arrow.x, 'a seta depois do texto').toBeGreaterThanOrEqual(text.x + text.width - 1);
+    expect(arrow.x - (text.x + text.width), 'e colada nele').toBeLessThanOrEqual(6);
+    expect(Math.abs(arrow.y + arrow.height / 2 - (text.y + text.height / 2))).toBeLessThanOrEqual(
+      4,
+    );
+    // E o mesmo centro de quando o título não é um seletor (uma TV só): a seta não muda nada.
+    serve([ALONE]);
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    const alone = (await page.locator('h1 .title-text').boundingBox())!;
+    expect(Math.abs(alone.x + alone.width / 2 - viewport / 2)).toBeLessThanOrEqual(1.5);
   });
 
   test('a folha fecha por Esc e pelo toque fora, e devolve o foco ao título', async ({ page }) => {
@@ -555,7 +586,7 @@ test.describe('capacidades da TV', () => {
     }
   });
 
-  test('o volume lido aparece no contador, e sem leitura o contador mostra um traço', async ({
+  test('o volume lido aparece no contador, e sem leitura o contador mostra o alto-falante', async ({
     page,
   }) => {
     serve(withHome(ALONE));
@@ -563,7 +594,8 @@ test.describe('capacidades da TV', () => {
     await expect(page.getByRole('img', { name: 'Volume 7' })).toBeVisible();
     serve(withHome({ ...ALONE, state: { ...ALONE.state!, volume: null } }));
     await openTv(page, 'Raphael');
-    await expect(page.locator('.pill.volume .level strong')).toHaveText('–');
+    await expect(page.getByRole('img', { name: 'Volume sem leitura' })).toBeVisible();
+    await expect(page.locator('.pill.volume .level strong')).toHaveCount(0);
   });
 
   test('com o agente desligado a TV não perde botões (a API não sabe o que ele faz)', async ({

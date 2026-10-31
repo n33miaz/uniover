@@ -126,7 +126,7 @@ class _Registered:
 
 
 class TvSessionManager:
-    def __init__(  # noqa: PLR0913 - cada argumento é um limite ou uma injeção, todos por nome
+    def __init__(  # noqa: PLR0913, PLR0915 - limites, injeções e estado da sessão ficam juntos
         self,
         clock: Clock,
         remote: TvDriver,
@@ -182,8 +182,12 @@ class TvSessionManager:
         self._connection: Connection = "hibernating"
         self._power: bool | None = None
         self._volume: int | None = None
+        self._remote_volume_seen = False
         self._app: str | None = None
         self._last_activity = clock.monotonic()
+        # O modo foco só segura a sessão enquanto a mídia está comprovadamente tocando. Não renova
+        # atividade: ao sair, a sessão volta a obedecer o mesmo relógio de antes.
+        self._keep_hot = False
         # Serializa abrir e fechar: dois comandos chegando juntos esperam o mesmo aquecimento.
         self._lock = asyncio.Lock()
         # Quando o último `POWER` chegou à TV (relógio monotônico) e a fila de quem o repete.
@@ -197,13 +201,14 @@ class TvSessionManager:
         # A recuperação em segundo plano já reabriu a sessão e ninguém usou o controle desde então.
         self._reopened_unattended = False
         self._listeners: list[Callable[[TvState], None]] = []
+        self._session_opened: list[Callable[[float], None]] = []
         self._repair_callbacks: list[Callable[[], None]] = []
         self._last_emitted: TvState | None = None
         self._tasks: set[asyncio.Task[None]] = set()
         self.warmups: deque[float] = deque(maxlen=_WARMUP_HISTORY)
         remote.on_power(self._on_power)
         remote.on_app(self._on_app)
-        remote.on_volume(self._on_volume)
+        remote.on_volume(self._on_remote_volume)
         remote.on_available(self._on_available)
 
     # --- interface pública -------------------------------------------------------------------
@@ -229,9 +234,18 @@ class TvSessionManager:
             power = "on" if self._power else "off"
         return TvState(power, self._volume, self._app, self._connection)
 
+    @property
+    def remote_volume_seen(self) -> bool:
+        """O canal remoto informou um nível nesta conexão; leitura de reserva não conta."""
+        return self._remote_volume_seen
+
     def subscribe(self, listener: Callable[[TvState], None]) -> None:
         """Avisa a cada mudança de estado publicável (chamada síncrona, no laço de eventos)."""
         self._listeners.append(listener)
+
+    def on_session_opened(self, callback: Callable[[float], None]) -> None:
+        """Avisa quando a TV acabou de responder e a sessão Remote v2 ficou pronta."""
+        self._session_opened.append(callback)
 
     def on_needs_repair(self, callback: Callable[[], None]) -> None:
         """Sinal para o vigia: a TV recusou a conexão (o serviço do controle pode ter morrido).
@@ -247,6 +261,10 @@ class TvSessionManager:
         Canal opcional que falha ao abrir só vai para o log: o controle por teclas segue.
         """
         self._channels.append(_Registered(channel, required))
+
+    def set_volume_reader(self, reader: Callable[[], Awaitable[int | None]] | None) -> None:
+        """Liga a leitura de volume depois da criação (a Android a recebe junto com o canal ADB)."""
+        self._volume_reader = reader
 
     def touch(self) -> None:
         """Renova o relógio de hibernação."""
@@ -272,6 +290,10 @@ class TvSessionManager:
         if key == POWER_KEY and direction == "SHORT":
             await self._send_power()
             return
+        if key in VOLUME_KEYS and direction in {"SHORT", "START_LONG"}:
+            # O nível empurrado ao abrir a sessão não prova que a TV continuará avisando
+            # depois das teclas. Faça isso antes do envio: o callback pode vir durante ele.
+            self._remote_volume_seen = False
         await self._run(lambda remote: remote.send_key(key, direction), validate=validate)
         if key in VOLUME_KEYS and direction in {"SHORT", "END_LONG"}:
             self._schedule_volume_read()
@@ -509,17 +531,21 @@ class TvSessionManager:
 
     async def hibernate_if_idle(self) -> bool:
         """Fecha os canais se passou o tempo sem comando; devolve se hibernou."""
-        if self._state is not SessionState.HOT or not self._is_idle():
+        if self._state is not SessionState.HOT or not self._is_idle() or self._keep_hot:
             return False
         async with self._lock:
             # Reconfere dentro do lock: um comando pode ter chegado enquanto se esperava.
-            if self._state is not SessionState.HOT or not self._is_idle():
+            if self._state is not SessionState.HOT or not self._is_idle() or self._keep_hot:
                 return False
             await self._close_channels()
             self._state = SessionState.HIBERNATING
             self._set_connection("hibernating")
             _log.info("TV hibernada depois de %.0f s sem uso", self._hibernate_seconds)
             return True
+
+    def set_keep_hot(self, keep_hot: bool) -> None:
+        """Impede temporariamente a hibernação, sem abrir sessão nem enviar tecla."""
+        self._keep_hot = keep_hot
 
     async def watch(self) -> None:
         """Laço de fundo: confere a inatividade até ser cancelado."""
@@ -676,6 +702,11 @@ class TvSessionManager:
         self._state = SessionState.HOT
         self.touch()
         self._set_connection("hot")
+        for callback in self._session_opened:
+            try:
+                callback(elapsed)
+            except Exception:
+                _log.exception("falha no aviso de sessão da TV")
         # Uma leitura ao abrir a sessão: o contador já aparece antes de qualquer tecla de volume.
         self._schedule_volume_read()
 
@@ -728,6 +759,7 @@ class TvSessionManager:
 
     async def _open_channels(self) -> None:
         self._connection_generation += 1
+        self._remote_volume_seen = False
         opened: list[TvChannel] = []
         for reg in self._channels:
             try:
@@ -862,6 +894,10 @@ class TvSessionManager:
     def _on_volume(self, level: int) -> None:
         self._volume = max(0, min(100, level))
         self._emit()
+
+    def _on_remote_volume(self, level: int) -> None:
+        self._remote_volume_seen = True
+        self._on_volume(level)
 
     def _on_available(self, available: bool) -> None:
         if not available:

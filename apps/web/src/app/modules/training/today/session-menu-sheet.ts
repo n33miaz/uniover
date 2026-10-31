@@ -19,45 +19,47 @@ export type MenuAction =
 
 /**
  * Folha "Opções do treino": o que não precisa estar sempre na tela. Separa o que é do exercício em foco (como fazer,
- * pular, substituir) do que é do treino (lista dos exercícios, acrescentar, terminar, cancelar) e traz o interruptor da
- * tela acesa, que nasce desligado. Cancelar o treino pede confirmação aqui mesmo.
+ * pular, substituir) do que é do treino (lista dos exercícios, acrescentar, terminar, cancelar). O interruptor da tela acesa
+ * (que nasce desligado) só aparece aqui quando `showScreen` está ligado, como na tela do dia; o registro ao vivo o tem no
+ * topo da própria tela. Cancelar o treino pede confirmação aqui mesmo.
  */
 @Component({
   selector: 'app-session-menu-sheet',
   imports: [TrainingSheet, TrainingGlyph, TodayGlyph],
   template: `
     <app-training-sheet [heading]="heading" (closed)="closed.emit()">
-      <div class="ui-group screen">
-        <label class="ui-row">
-          <span class="ui-tile"><app-today-glyph name="screen" /></span>
-          <span class="ui-row-text">
-            <span class="ui-row-title" i18n="@@training.menu.screen">Manter a tela acesa</span>
-            <span class="ui-row-sub">{{ screenHint() }}</span>
-          </span>
-          <input
-            type="checkbox"
-            role="switch"
-            class="ui-switch"
-            #toggle
-            [disabled]="!screenSupported()"
-            (change)="onScreen($event)"
-          />
-        </label>
-      </div>
-      <p class="platform" i18n="@@training.menu.platform">
-        Com a tela bloqueada o descanso continua contando, mas não avisa: ao voltar, o app mostra o
-        tempo certo. No iPhone, só a tela acesa evita isso (app instalado, iOS 18.4 ou mais novo).
-      </p>
+      @if (showScreen()) {
+        <div class="ui-group screen">
+          <label class="ui-row">
+            <span class="ui-tile"><app-today-glyph name="screen" /></span>
+            <span class="ui-row-text">
+              <span class="ui-row-title" i18n="@@training.menu.screen">Manter a Tela Acesa</span>
+              <span class="ui-row-sub">{{ screenHint() }}</span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              class="ui-switch"
+              #toggle
+              [disabled]="!screenSupported()"
+              (change)="onScreen($event)"
+            />
+          </label>
+        </div>
+        <p class="platform" i18n="@@training.menu.platform">
+          Com a tela bloqueada o descanso conta, mas não avisa.
+        </p>
+      }
 
       @if (hasFocus()) {
-        <h3 class="ui-section-label" i18n="@@training.menu.exercise">Este exercício</h3>
+        <h3 class="ui-section-label" i18n="@@training.menu.exercise">Este Exercício</h3>
         <ul class="ui-group ui-plain">
           @if (hasSteps()) {
             <li>
               <button type="button" class="ui-row" (click)="action.emit('steps')">
                 <span class="ui-tile"><app-training-glyph name="info" /></span>
                 <span class="ui-row-text">
-                  <span class="ui-row-title" i18n="@@training.menu.steps">Como fazer</span>
+                  <span class="ui-row-title" i18n="@@training.menu.steps">Como Fazer</span>
                 </span>
               </button>
             </li>
@@ -67,9 +69,9 @@ export type MenuAction =
               <button type="button" class="ui-row" (click)="action.emit('skip')">
                 <span class="ui-tile"><app-today-glyph name="skip" /></span>
                 <span class="ui-row-text">
-                  <span class="ui-row-title" i18n="@@training.menu.skip">Pular exercício</span>
+                  <span class="ui-row-title" i18n="@@training.menu.skip">Pular Exercício</span>
                   <span class="ui-row-sub" i18n="@@training.menu.skip-sub"
-                    >Sai do plano de hoje; as séries feitas ficam.</span
+                    >As séries feitas ficam.</span
                   >
                 </span>
               </button>
@@ -78,10 +80,8 @@ export type MenuAction =
               <button type="button" class="ui-row" (click)="action.emit('swap')">
                 <span class="ui-tile"><app-today-glyph name="swap" /></span>
                 <span class="ui-row-text">
-                  <span class="ui-row-title" i18n="@@training.menu.swap">Substituir exercício</span>
-                  <span class="ui-row-sub" i18n="@@training.menu.swap-sub"
-                    >Só hoje: a rotina não muda.</span
-                  >
+                  <span class="ui-row-title" i18n="@@training.menu.swap">Substituir Exercício</span>
+                  <span class="ui-row-sub" i18n="@@training.menu.swap-sub">Só hoje.</span>
                 </span>
               </button>
             </li>
@@ -91,22 +91,21 @@ export type MenuAction =
 
       <h3 class="ui-section-label" i18n="@@training.menu.workout">Treino</h3>
       <ul class="ui-group ui-plain">
-        <li>
-          <button type="button" class="ui-row" (click)="action.emit('plan')">
-            <span class="ui-tile"><app-training-glyph name="list" /></span>
-            <span class="ui-row-text">
-              <span class="ui-row-title" i18n="@@training.menu.plan">Exercícios do treino</span>
-              <span class="ui-row-sub" i18n="@@training.menu.plan-sub"
-                >Voltar a um exercício ou fazer mais uma série.</span
-              >
-            </span>
-          </button>
-        </li>
+        @if (showPlan()) {
+          <li>
+            <button type="button" class="ui-row" (click)="action.emit('plan')">
+              <span class="ui-tile"><app-training-glyph name="list" /></span>
+              <span class="ui-row-text">
+                <span class="ui-row-title" i18n="@@training.menu.plan">Exercícios do Treino</span>
+              </span>
+            </button>
+          </li>
+        }
         <li>
           <button type="button" class="ui-row" (click)="action.emit('add')">
             <span class="ui-tile"><app-training-glyph name="plus" /></span>
             <span class="ui-row-text">
-              <span class="ui-row-title" i18n="@@training.menu.add">Adicionar exercício</span>
+              <span class="ui-row-title" i18n="@@training.menu.add">Adicionar Exercício</span>
             </span>
           </button>
         </li>
@@ -115,7 +114,7 @@ export type MenuAction =
             <button type="button" class="ui-row" (click)="action.emit('follow')">
               <span class="ui-tile"><app-training-glyph name="back" /></span>
               <span class="ui-row-text">
-                <span class="ui-row-title" i18n="@@training.menu.follow">Seguir o plano</span>
+                <span class="ui-row-title" i18n="@@training.menu.follow">Seguir a Rotina</span>
               </span>
             </button>
           </li>
@@ -128,7 +127,7 @@ export type MenuAction =
             <button type="button" class="ui-row" (click)="action.emit('finish')">
               <span class="ui-tile ok"><app-training-glyph name="check" /></span>
               <span class="ui-row-text">
-                <span class="ui-row-title" i18n="@@training.menu.finish">Terminar treino</span>
+                <span class="ui-row-title" i18n="@@training.menu.finish">Terminar Treino</span>
               </span>
             </button>
           </li>
@@ -142,9 +141,9 @@ export type MenuAction =
           >
             <span class="ui-tile bad"><app-training-glyph name="trash" /></span>
             <span class="ui-row-text">
-              <span class="ui-row-title" i18n="@@training.menu.discard">Cancelar treino</span>
+              <span class="ui-row-title" i18n="@@training.menu.discard">Cancelar Treino</span>
               <span class="ui-row-sub" i18n="@@training.menu.discard-sub"
-                >Apaga o treino de hoje e as séries dele.</span
+                >Apaga o treino e as séries.</span
               >
             </span>
           </button>
@@ -159,10 +158,10 @@ export type MenuAction =
             </p>
             <div class="confirm-actions">
               <button type="button" class="danger ui-btn" (click)="action.emit('discard')">
-                <span i18n="@@training.menu.discard-yes">Sim, cancelar</span>
+                <span i18n="@@training.menu.discard-yes">Sim, Cancelar</span>
               </button>
               <button type="button" class="secondary ui-btn" (click)="confirming.set(false)">
-                <span i18n="@@training.menu.discard-no">Continuar treinando</span>
+                <span i18n="@@training.menu.discard-no">Continuar Treinando</span>
               </button>
             </div>
           </div>
@@ -179,10 +178,14 @@ export class SessionMenuSheet {
   readonly hasSteps = input(false);
   /** Pular e substituir só valem para exercício da rotina. */
   readonly canSwitch = input(false);
-  /** A pessoa escolheu um exercício fora do plano: aparece "Seguir o plano". */
+  /** A pessoa escolheu um exercício fora do plano: aparece "Seguir a Rotina". */
   readonly chosen = input(false);
+  /** A lista dos exercícios do treino (a tela do dia já é essa lista, então lá a linha não aparece). */
+  readonly showPlan = input(true);
   /** Só se termina um treino que tem série gravada; sem série, o caminho é cancelar. */
   readonly canFinish = input(false);
+  /** O interruptor da tela acesa na folha; o registro ao vivo o traz no topo da tela e esconde esta linha. */
+  readonly showScreen = input(true);
   readonly screenSupported = input(false);
   readonly screenOn = input(false);
   /** O aparelho recusou a tela acesa (bateria baixa, economia de energia). */
@@ -192,7 +195,7 @@ export class SessionMenuSheet {
   readonly screen = output<boolean>();
   readonly closed = output<void>();
 
-  protected readonly heading = $localize`:@@training.menu.title:Opções do treino`;
+  protected readonly heading = $localize`:@@training.menu.title:Opções do Treino`;
   protected readonly confirmLabel = $localize`:@@training.menu.discard-label:Confirmar o cancelamento do treino`;
   protected readonly confirming = signal(false);
   private readonly toggle = viewChild<ElementRef<HTMLInputElement>>('toggle');
@@ -213,13 +216,13 @@ export class SessionMenuSheet {
 
   protected readonly screenHint = computed(() => {
     if (!this.screenSupported()) {
-      return $localize`:@@training.menu.screen-unsupported:Este navegador não permite manter a tela acesa. Deixe o bloqueio automático em "Nunca" durante o treino.`;
+      return $localize`:@@training.menu.screen-unsupported:Este navegador não permite.`;
     }
     if (this.screenRefused()) {
-      return $localize`:@@training.menu.screen-refused:O aparelho recusou agora (bateria baixa ou economia de energia). Deixe o bloqueio automático em "Nunca" durante o treino.`;
+      return $localize`:@@training.menu.screen-refused:O aparelho recusou agora.`;
     }
     return this.screenOn()
-      ? $localize`:@@training.menu.screen-on:Ligada: a tela não apaga enquanto o treino está aberto.`
+      ? $localize`:@@training.menu.screen-on:Ligada: a tela não apaga.`
       : $localize`:@@training.menu.screen-off:Desligada: a tela apaga no tempo do aparelho.`;
   });
 }

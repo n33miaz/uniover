@@ -76,7 +76,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.getByText('3 exercícios achados')).toBeVisible();
       await shot(page, info, 'biblioteca-busca', scheme);
       await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('zzzz');
-      await expect(page.getByText('Nenhum exercício achado')).toBeVisible();
+      await expect(page.getByText('Nenhum Exercício Achado')).toBeVisible();
       await shot(page, info, 'biblioteca-sem-resultado', scheme);
     });
 
@@ -84,7 +84,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await startTraining(context, page, { extra: 70 });
       await openTraining(page, '/treino/exercicios');
       await waitForCatalog(page);
-      await page.getByRole('button', { name: /^Mostrar mais/ }).scrollIntoViewIfNeeded();
+      await page.getByRole('button', { name: /^Mostrar Mais/ }).scrollIntoViewIfNeeded();
       await shot(page, info, 'biblioteca-mostrar-mais', scheme);
     });
 
@@ -94,7 +94,7 @@ for (const scheme of ['light', 'dark'] as const) {
         const server = await startTraining(context, page, { catalog: false });
         server.offline = true;
         await openTraining(page, '/treino/exercicios');
-        await expect(page.getByText('O catálogo ainda não chegou')).toBeVisible();
+        await expect(page.getByText('O Catálogo Ainda Não Chegou')).toBeVisible();
         await shot(page, info, 'biblioteca-vazia', scheme);
       },
     );
@@ -105,7 +105,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.getByRole('heading', { name: 'Supino reto com barra' })).toBeVisible();
       await expect(page.locator('app-exercise-illustration img').first()).toBeVisible();
       await shot(page, info, 'ficha-com-arte', scheme);
-      await page.getByRole('button', { name: 'Ver todos os 5 passos' }).scrollIntoViewIfNeeded();
+      await page.getByRole('button', { name: 'Ver Todos os 5 Passos' }).scrollIntoViewIfNeeded();
       await shot(page, info, 'ficha-com-arte-meio', scheme);
     });
 
@@ -127,18 +127,18 @@ for (const scheme of ['light', 'dark'] as const) {
     shotTest('Ficha: adicionar a um treino', async ({ page, context }, info) => {
       await startTraining(context, page);
       await openTraining(page, `/treino/exercicios/${SEED_EXERCISE_IDS.pushUp}`);
-      await page.getByRole('button', { name: 'Adicionar a um treino' }).click();
-      await expect(page.getByRole('dialog', { name: 'Adicionar a um treino' })).toBeVisible();
+      await page.getByRole('button', { name: 'Adicionar a um Treino' }).click();
+      await expect(page.getByRole('dialog', { name: 'Adicionar a um Treino' })).toBeVisible();
       await shot(page, info, 'ficha-adicionar', scheme);
     });
 
     shotTest('Novo exercício: formulário vazio e com erros', async ({ page, context }, info) => {
       await startTraining(context, page);
       await openTraining(page, '/treino/exercicios/novo');
-      await expect(page.getByRole('heading', { name: 'Novo exercício' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Novo Exercício' })).toBeVisible();
       await shot(page, info, 'novo-exercicio', scheme);
-      await page.getByRole('button', { name: 'Salvar exercício' }).click();
-      await expect(page.getByText('Dê um nome ao exercício.')).toBeVisible();
+      await page.getByLabel('Nome').fill('Remada');
+      await expect(page.getByText('Escolha o músculo principal.')).toBeVisible();
       await shot(page, info, 'novo-exercicio-erros', scheme);
     });
 
@@ -162,7 +162,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.getByLabel('Nome').fill('Remada na máquina articulada');
       await chooseMuscle(page, 'Meio das costas');
       await chooseEquipment(page, 'Máquina');
-      await page.getByRole('button', { name: 'Salvar exercício' }).click();
+      await page.getByRole('button', { name: 'Salvar Exercício' }).click();
       await expect(
         page.getByRole('heading', { name: 'Remada na máquina articulada' }),
       ).toBeVisible();
@@ -179,7 +179,7 @@ for (const scheme of ['light', 'dark'] as const) {
     shotTest('Rotinas: sem nenhuma', async ({ page, context }, info) => {
       await startTraining(context, page, { routines: false });
       await openTraining(page, '/treino/rotinas');
-      await expect(page.getByText('Sem rotinas ainda')).toBeVisible();
+      await expect(page.getByText('Sem Rotinas Ainda')).toBeVisible();
       await shot(page, info, 'rotinas-vazio', scheme);
     });
 
@@ -205,7 +205,7 @@ for (const scheme of ['light', 'dark'] as const) {
     shotTest('Editor: a rotina', async ({ page, context }, info) => {
       await startTraining(context, page);
       await openTraining(page, `/treino/rotinas/${SEED_ROUTINE_IDS.a}`);
-      await expect(page.getByRole('heading', { name: 'Editar rotina' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Editar Rotina' })).toBeVisible();
       await expect(page.getByText('Supino reto com barra')).toBeVisible();
       await shot(page, info, 'editor', scheme);
     });
@@ -224,8 +224,8 @@ for (const scheme of ['light', 'dark'] as const) {
     shotTest('Editor: folha de adicionar exercício', async ({ page, context }, info) => {
       await startTraining(context, page);
       await openTraining(page, `/treino/rotinas/${SEED_ROUTINE_IDS.a}`);
-      await page.getByRole('button', { name: 'Adicionar exercício' }).click();
-      await expect(page.getByRole('dialog', { name: 'Adicionar exercício' })).toBeVisible();
+      await page.getByRole('button', { name: 'Adicionar Exercício' }).click();
+      await expect(page.getByRole('dialog', { name: 'Adicionar Exercício' })).toBeVisible();
       await shot(page, info, 'editor-adicionar', scheme);
     });
 
@@ -233,7 +233,6 @@ for (const scheme of ['light', 'dark'] as const) {
       await startTraining(context, page);
       await openTraining(page, '/treino/rotinas/nova');
       await page.getByLabel('Nome da rotina').fill('');
-      await page.getByRole('button', { name: 'Salvar rotina' }).click();
       await expect(page.getByText('Dê um nome à rotina.')).toBeVisible();
       await shot(page, info, 'editor-erros', scheme);
     });
@@ -250,11 +249,15 @@ for (const scheme of ['light', 'dark'] as const) {
       await openTraining(page, '/treino/exercicios/novo');
       await page.getByLabel('Nome').fill('Remada na máquina articulada');
       await chooseMuscle(page, 'Meio das costas');
-      await page.getByRole('button', { name: 'Salvar exercício' }).click();
-      await expect(page.getByText('1 com erro')).toBeVisible();
+      await page.getByRole('button', { name: 'Salvar Exercício' }).click();
+      await expect(page.locator('app-page-top-bar .ring[data-state="failed"]')).toBeVisible();
       await shot(page, info, 'pendencias-linha', scheme);
-      await page.locator('.training-header .status').click();
-      await expect(page.getByRole('dialog', { name: 'Alterações com erro' })).toBeVisible();
+      await page.locator('app-page-top-bar .ring').click();
+      await page
+        .getByRole('dialog', { name: 'Sincronização' })
+        .getByRole('button', { name: 'Ver os Recusados' })
+        .click();
+      await expect(page.getByRole('dialog', { name: 'Alterações com Erro' })).toBeVisible();
       await shot(page, info, 'pendencias-folha', scheme);
     });
 
@@ -268,45 +271,39 @@ for (const scheme of ['light', 'dark'] as const) {
     shotTest('Treino: cabeçalho e navegação', async ({ page, context }, info) => {
       await startTraining(context, page);
       await openTraining(page, '/treino');
-      const header = page.locator('.training-header');
+      const header = page.locator('app-page-top-bar');
       await expect(header.getByRole('heading', { name: 'Treino' })).toBeVisible();
-      await expect(header.locator('.back svg path')).toHaveCount(1);
-      await expect(header.getByRole('link', { name: 'Ajustes' })).toBeVisible();
-      await expect(header.locator('.status')).toBeVisible();
-      const titleBox = await header.getByRole('heading').boundingBox();
-      const statusBox = await header.locator('.status').boundingBox();
-      expect(statusBox!.x).toBeGreaterThan(titleBox!.x + titleBox!.width);
-      // Colado no topo e de borda a borda (a tela de baixo é que guarda o respiro lateral).
+      await expect(header.locator('.back svg path')).toHaveCount(2);
+      // Transparente, colado no topo e de borda a borda; sem engrenagem: Configurações saiu do cabeçalho.
+      await expect(page.getByRole('link', { name: 'Configurações' })).toHaveCount(0);
       const headerBox = await header.boundingBox();
       const viewport = page.viewportSize()!;
       expect(headerBox!.x).toBe(0);
       expect(headerBox!.y).toBe(0);
       expect(headerBox!.width).toBe(viewport.width);
-      // O toque sempre responde, mesmo com o puxar de fundo já em andamento, e nenhum texto aparece.
-      await page.emulateMedia({ reducedMotion: 'no-preference' });
-      const status = header.locator('.status');
-      await expect(status).toBeEnabled();
-      await status.click();
-      await expect(status).toHaveAttribute('data-state', 'busy');
-      await expect(page.locator('app-training-sync-line')).toBeHidden();
-      await expect(status).toHaveText('');
-      await expect(status).toHaveAttribute('data-state', 'ok');
+      // O título fica no centro, e o anel de sincronização só aparece quando há o que dizer (em dia, não há anel).
+      const titleBox = (await header.getByRole('heading').boundingBox())!;
+      expect(Math.abs(titleBox.x + titleBox.width / 2 - viewport.width / 2)).toBeLessThan(2);
+      await expect(header.locator('.ring')).toHaveCount(0);
       const tabs = page.getByRole('navigation', { name: 'Abas do módulo' });
       await expect(tabs).toBeVisible();
       const tapHighlights = await Promise.all(
-        [header.locator('.status'), tabs].map((element) =>
+        [tabs].map((element) =>
           element.evaluate((node) =>
             getComputedStyle(node).getPropertyValue('-webkit-tap-highlight-color').trim(),
           ),
         ),
       );
       if (info.project.name === 's23-fe') {
-        expect(tapHighlights).toEqual(['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)']);
+        expect(tapHighlights).toEqual(['rgba(0, 0, 0, 0)']);
       }
+      // A pílula da aba ativa fica só atrás do ícone (cada aba tem a sua), nunca atravessando a barra.
       const tabWidths = await tabs.locator('ul').evaluate((list) => ({
         bar: list.getBoundingClientRect().width,
-        activePill: Number.parseFloat(getComputedStyle(list, '::before').width),
+        activePill:
+          list.querySelector('a.active .pill')?.getBoundingClientRect().width ?? Number.NaN,
       }));
+      expect(tabWidths.activePill).toBeGreaterThan(0);
       expect(tabWidths.activePill).toBeLessThan(tabWidths.bar / 3);
       await expectNoHorizontalScroll(page);
       await shot(page, info, 'cabecalho-navegacao', scheme);

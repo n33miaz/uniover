@@ -16,6 +16,7 @@ Regras que moldam este adaptador:
 import asyncio
 import logging
 import os
+import re
 import shutil
 import sys
 import time
@@ -39,11 +40,14 @@ from uniover_agent.adapters.tv_adb_parsing import (
     parse_component_packages,
     parse_connect,
     parse_device_state,
+    parse_dumpsys_music_volume,
     parse_launchable,
+    parse_media_session_volume,
     parse_mem_available_mb,
     parse_package_list,
     parse_package_paths,
     parse_package_versions,
+    parse_playback_sessions,
     parse_running_packages,
     parse_setting_value,
     quote_for_device_shell,
@@ -73,6 +77,10 @@ _LEANBACK: Final = "android.intent.category.LEANBACK_LAUNCHER"
 _LAUNCHER: Final = "android.intent.category.LAUNCHER"
 _HOME: Final = "android.intent.category.HOME"
 _MAX_TEXT_LENGTH: Final = 200
+# Estados de `PlaybackState` que a leitura de mídia entende (none, stopped, paused, playing, error);
+# qualquer outro número é leitura ambígua. 3 é "tocando".
+_PLAYBACK_STATES: Final = frozenset({0, 1, 2, 3, 7})
+_PLAYBACK_PLAYING: Final = 3
 # Serviço do controle remoto da Android TV (portas 6466 e 6467). Os comandos de religar são os do
 # `reparar` do projeto da TV do dono (`ESP32/01-controle-tv/tv.ps1`): proteger o serviço do
 # matador de processos por falta de memória e iniciá-lo de novo. Fixos, sem dado externo.
@@ -86,6 +94,13 @@ _START_REMOTE_SERVICE: Final = (
     "am start-foreground-service -a com.android.athome.START_SERVICE "
     f"-n {_REMOTE_SERVICE}/.RemoteService"
 )
+_GLOBAL_SETTINGS: Final = frozenset(
+    {"window_animation_scale", "transition_animation_scale", "animator_duration_scale"}
+)
+# Decimal sem sinal nem expoente: o que o Android guarda nas escalas de animação.
+_DECIMAL: Final = re.compile(r"\d{1,6}(?:\.\d{1,6})?")
+_SHORT_ANIMATION_SCALE: Final = "0.5"
+_APP_BACKGROUND_MODES: Final = frozenset({"allow", "ignore", "default"})
 
 Runner = Callable[[Sequence[str], float], Awaitable[AdbOutput]]
 
@@ -319,6 +334,127 @@ class AdbTv:
             raise AdbCommandFailed("a TV não informou os processos")
         return packages
 
+    async def _playback_sessions(self) -> list[tuple[str | None, int]]:
+        """As sessões de mídia da TV; uma saída incompleta nunca vale como silêncio."""
+        output = await self._locked_shell("dumpsys media_session")
+        self._require_success(output, "a TV não informou a sessão de mídia")
+        sessions = parse_playback_sessions(output.text)
+        if not sessions or any(state not in _PLAYBACK_STATES for _, state in sessions):
+            raise AdbCommandFailed("a TV informou uma sessão de mídia ambígua")
+        return sessions
+
+    async def media_playing(self) -> bool:
+        """Há alguma sessão tocando, de qualquer app?"""
+        return any(state == _PLAYBACK_PLAYING for _, state in await self._playback_sessions())
+
+    async def playing_media_packages(self) -> frozenset[str]:
+        """Os apps donos de uma sessão tocando; sessão tocando sem dono é leitura ambígua."""
+        owners: set[str] = set()
+        for package, state in await self._playback_sessions():
+            if state != _PLAYBACK_PLAYING:
+                continue
+            if package is None:
+                raise AdbCommandFailed("a TV informou uma sessão de mídia sem dono")
+            owners.add(package)
+        return frozenset(owners)
+
+    async def read_volume(self) -> int | None:
+        """O volume de música (0 a 100) pelo shell da TV; `None` se nenhum comando o informa.
+
+        Reserva para a Android TV cujo canal remoto não empurra o nível (soundbar por HDMI-ARC/CEC,
+        firmware que não manda). Só lê. Nunca levanta por saída que não entende: "não sei".
+        """
+        for command, parse in (
+            ("cmd media_session volume --stream 3 --get", parse_media_session_volume),
+            ("dumpsys audio", parse_dumpsys_music_volume),
+        ):
+            output = await self._locked_shell(command)
+            if not command_succeeded(output):
+                continue
+            level = parse(output.text)
+            if level is not None:
+                return level
+        return None
+
+    async def diagnose_volume(self) -> list[tuple[str, bool, str]]:
+        """Cada comando de leitura de volume e o que ele devolveu: (nome, deu nível, detalhe)."""
+        found: list[tuple[str, bool, str]] = []
+        for name, command, parse in (
+            (
+                "media_session",
+                "cmd media_session volume --stream 3 --get",
+                parse_media_session_volume,
+            ),
+            ("dumpsys-audio", "dumpsys audio", parse_dumpsys_music_volume),
+        ):
+            output = await self._locked_shell(command)
+            if not command_succeeded(output):
+                found.append((name, False, "o comando falhou ou não existe nesta TV"))
+                continue
+            level = parse(output.text)
+            found.append(
+                (
+                    name,
+                    level is not None,
+                    "nível não encontrado na saída" if level is None else f"nível {level}",
+                )
+            )
+        return found
+
+    async def global_setting(self, name: str) -> str | None:
+        if name not in _GLOBAL_SETTINGS:
+            raise ValueError("configuração global inválida")
+        output = await self._locked_shell(f"settings get global {name}")
+        self._require_success(output, "a TV não informou a configuração")
+        value = parse_setting_value(output.text)
+        if value is not None and _DECIMAL.fullmatch(value) is None:
+            # Um original que não se sabe devolver não pode ser guardado: nada é alterado.
+            raise AdbCommandFailed("a TV informou um valor de animação que não é decimal")
+        return value
+
+    async def put_global_setting(self, name: str, value: str) -> None:
+        """Aplica o ajuste leve: só a escala curta, nunca texto livre."""
+        if name not in _GLOBAL_SETTINGS or value != _SHORT_ANIMATION_SCALE:
+            raise ValueError("configuração global inválida")
+        output = await self._locked_shell(f"settings put global {name} {value}")
+        self._require_success(output, "a TV não conseguiu mudar a configuração")
+
+    async def restore_global_setting(self, name: str, original: str | None) -> None:
+        """Devolve o que `global_setting` leu (qualquer decimal) ou apaga o que não existia."""
+        if name not in _GLOBAL_SETTINGS or (
+            original is not None and _DECIMAL.fullmatch(original) is None
+        ):
+            raise ValueError("configuração global inválida")
+        command = (
+            f"settings delete global {name}"
+            if original is None
+            else f"settings put global {name} {original}"
+        )
+        output = await self._locked_shell(command)
+        self._require_success(output, "a TV não conseguiu restaurar a configuração")
+
+    async def app_background_mode(self, package: str) -> str | None:
+        if not is_valid_package(package):
+            raise ValueError("nome de pacote inválido")
+        output = await self._locked_shell(
+            f"cmd appops get {quote_for_device_shell(package)} RUN_ANY_IN_BACKGROUND"
+        )
+        self._require_success(output, "a TV não informou a permissão do app")
+        match = re.search(r"RUN_ANY_IN_BACKGROUND:\s*(allow|ignore|default)\b", output.text)
+        if match is not None:
+            return match.group(1)
+        if "RUN_ANY_IN_BACKGROUND" in output.text:
+            raise AdbCommandFailed("a TV informou uma permissão de app ambígua")
+        return None
+
+    async def set_app_background_mode(self, package: str, mode: str) -> None:
+        if not is_valid_package(package) or mode not in _APP_BACKGROUND_MODES:
+            raise ValueError("configuração de app inválida")
+        output = await self._locked_shell(
+            f"cmd appops set {quote_for_device_shell(package)} RUN_ANY_IN_BACKGROUND {mode}"
+        )
+        self._require_success(output, "a TV não conseguiu mudar a permissão do app")
+
     async def go_home(self) -> None:
         output = await self._locked_shell("input keyevent KEYCODE_HOME")
         self._require_success(output, "a TV não foi para a tela inicial")
@@ -332,6 +468,14 @@ class AdbTv:
             raise ValueError("nome de pacote inválido")
         output = await self._locked_shell(f"am force-stop {quote_for_device_shell(package)}")
         self._require_success(output, "a TV não fechou o app")
+
+    async def trim_memory(self, package: str) -> None:
+        if not is_valid_package(package):
+            raise ValueError("nome de pacote inválido")
+        output = await self._locked_shell(
+            f"am send-trim-memory {quote_for_device_shell(package)} RUNNING_CRITICAL"
+        )
+        self._require_success(output, "a TV não reduziu a memória do app")
 
     async def restart_remote_service(self) -> None:
         """Religa o serviço do controle remoto da TV (o vigia chama quando as portas fecham).

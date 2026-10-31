@@ -67,7 +67,7 @@ async function openTvAs(page: Page, permissions: readonly string[] | 'owner') {
   await showTv(page);
 }
 
-const header = (page: Page) => page.locator('header.head');
+const header = (page: Page) => page.locator('.tv > header.head');
 const power = (page: Page) => header(page).getByRole('button', { name: 'Desligar a TV' });
 /** Os três pontos do cabeçalho: o menu com as linhas que a conta pode usar (ele nem existe para quem só vê). */
 const menuButton = (page: Page) =>
@@ -358,19 +358,19 @@ test.describe('(c) só ver', () => {
     expect(tv.denied).toEqual([]);
   });
 
-  test('o ponto de estado explica o estado, mas não oferece acordar o controle', async ({
+  test('o ponto de estado explica o estado (dormindo sai verde), mas não oferece acordar o controle', async ({
     page,
   }) => {
     await openTvAs(page, VIEW_ONLY);
     await emitSse(page, 'tv.state', { ...HOT_STATE, connection: 'hibernating' });
-    const dot = page.getByRole('button', { name: 'Estado do controle: Dormindo' });
+    const dot = page.getByRole('button', { name: 'Estado do controle: Conectada' });
     await expect(dot).toBeVisible();
     await dot.click();
-    const panel = page.getByRole('dialog').filter({ hasText: 'Dormindo' });
+    const panel = page.getByRole('dialog').filter({ hasText: 'Conectada' });
     await expect(panel).toBeVisible();
     await expect(panel.getByRole('button')).toHaveCount(0);
     // Só conta o estado: nada de "toque" nem de acordar, que quem só vê não pode fazer.
-    await expect(panel).toContainText('Só o controle está dormindo para poupar a TV');
+    await expect(panel).toContainText('Depois de 5 min sem uso ele dorme sozinho');
     await expect(panel).not.toContainText('toque');
     await expect(panel).not.toContainText('acorda');
     expect(writes()).toEqual([]);
@@ -425,19 +425,23 @@ test.describe('(d) tudo, como o dono', () => {
 });
 
 test.describe('sem acesso à TV (só o Treino)', () => {
-  test('uma frase e nenhuma chamada: sem fluxo, sem estado, sem atalhos', async ({ page }) => {
+  test('o endereço da TV leva à Início: sem fluxo, sem estado, sem atalhos, nenhuma chamada', async ({
+    page,
+  }) => {
     signInWith(TRAINING_ONLY);
     await page.goto('/tv');
-    await expect(page.getByText('Esta conta não tem acesso à TV.', { exact: true })).toBeVisible();
+    // A guarda do módulo manda quem não tem a TV para a Início, e a Início mostra só o Treino.
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('article[data-module="training"] a.card-link')).toBeVisible();
+    await expect(page.locator('article[data-module="tv"] a.card-link')).toHaveCount(0);
     await expect(okButton(page)).toHaveCount(0);
     await expect(power(page)).toHaveCount(0);
     await expect(menuButton(page)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /^Estado do controle/ })).toHaveCount(0);
     await settle(page);
     await expectNoHorizontalScroll(page);
     await expectNoA11yViolations(page);
 
-    // O sinal de que a tela já nasceu é a frase acima; daí em diante nada deve ter saído.
+    // Daí em diante nada deve ter saído para a API da TV.
     expect(await sseUrls(page)).toEqual([]);
     expect(tv.requests).toEqual([]);
     expect(tv.denied).toEqual([]);
@@ -458,6 +462,8 @@ test.describe('mudança de permissão', () => {
     await showTv(page);
     await expect(power(page)).toHaveCount(0);
     await menuButton(page).click();
+    // Espera o menu abrir de verdade: sem isso a linha ausente passa na hora e o Esc cairia antes de a folha existir.
+    await expect(menuDialog(page)).toBeVisible();
     await expect(menuRow(page, 'Apps da TV')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(menuDialog(page)).toHaveCount(0);

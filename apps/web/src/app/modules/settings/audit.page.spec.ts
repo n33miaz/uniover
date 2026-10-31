@@ -72,11 +72,7 @@ describe('AuditPage', () => {
     api.guests.mockResolvedValue([{ id: 'g1', name: 'Bruno' }]);
     TestBed.configureTestingModule({
       providers: [
-        provideRouter([
-          { path: 'tv', component: Blank },
-          { path: 'sem-acesso', component: Blank },
-          { path: '', component: Blank },
-        ]),
+        provideRouter([{ path: '', component: Blank }]),
         { provide: AuditApi, useValue: api },
         { provide: AuthApi, useValue: authApi },
         { provide: AuditDownload, useValue: download },
@@ -284,9 +280,7 @@ describe('AuditPage', () => {
     it('says the retention and the privacy sentence, calmly', async () => {
       signIn();
       const { text } = await render();
-      expect(text()).toContain(
-        'Estes registros ficam guardados por segurança: data, IP e aparelho de cada ação.',
-      );
+      expect(text()).toContain('Cada ação guarda data, IP e aparelho.');
       expect(text()).toContain('Guardamos por 180 dias (TV: 30 dias)');
     });
 
@@ -529,7 +523,7 @@ describe('AuditPage', () => {
       signIn();
       api.list.mockRejectedValueOnce(networkProblem());
       const { fixture, text, rows } = await render();
-      expect(text()).toContain('A auditoria só funciona com internet');
+      expect(text()).toContain('Sem internet. A lista volta quando a conexão voltar.');
       expect(text()).not.toContain('Não foi possível');
 
       TestBed.inject(ConnectivityService).online.set(false);
@@ -543,12 +537,13 @@ describe('AuditPage', () => {
       TestBed.inject(ConnectivityService).online.set(false);
       const { text, button } = await render();
       expect(api.list).not.toHaveBeenCalled();
-      expect(text()).toContain('A auditoria só funciona com internet');
+      expect(text()).toContain('Sem internet. A lista volta quando a conexão voltar.');
       expect(button('Exportar CSV').disabled).toBe(true);
     });
 
-    it('sends the person where the other administrator screens send them when the server says 403 and the role changed', async () => {
+    it('sends the person to the Início, like the other administrator screens, when the server says 403 and the role changed', async () => {
       signIn();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
       api.list.mockRejectedValueOnce(problem(403));
       authApi.me.mockResolvedValue({
         id: 'eu',
@@ -558,13 +553,14 @@ describe('AuditPage', () => {
         permissions: ['module:tv', 'tv:control'],
       });
       const { text } = await render();
-      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/tv'));
+      await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('/', { replaceUrl: true }));
       expect(authApi.me).toHaveBeenCalledTimes(1);
       expect(text()).not.toContain('Não foi possível');
     });
 
-    it('leads a guest who only has the training to the training, not to the TV', async () => {
+    it('leads a guest who only has the training to the Início too, where the training card waits', async () => {
       signIn();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
       api.list.mockRejectedValueOnce(problem(403));
       authApi.me.mockResolvedValue({
         id: 'eu',
@@ -573,12 +569,9 @@ describe('AuditPage', () => {
         role: 'guest',
         permissions: ['module:training'],
       });
-      TestBed.inject(Router).resetConfig([
-        { path: 'treino', component: Blank },
-        { path: '', component: Blank },
-      ]);
       await render();
-      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/treino'));
+      await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('/', { replaceUrl: true }));
+      expect(navigate).not.toHaveBeenCalledWith('/treino', expect.anything());
     });
 
     it('shows the common error, and never loops, when a 403 comes but the role is still administrator', async () => {
@@ -669,8 +662,9 @@ describe('AuditPage', () => {
       expect(api.export).toHaveBeenCalledTimes(1);
     });
 
-    it('also leaves when the export is refused with 403 because the role changed', async () => {
+    it('also leaves, to the Início, when the export is refused with 403 because the role changed', async () => {
       signIn();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
       api.export.mockRejectedValueOnce(problem(403));
       authApi.me.mockResolvedValue({
         id: 'eu',
@@ -682,7 +676,7 @@ describe('AuditPage', () => {
       const t = await render();
       t.button('Exportar CSV').click();
       await settle(t.fixture);
-      await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/tv'));
+      await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('/', { replaceUrl: true }));
     });
   });
 
@@ -702,5 +696,24 @@ describe('AuditPage', () => {
     } finally {
       for (const spy of spies) spy.mockRestore();
     }
+  });
+
+  it('holds the shape of the rows as a busy skeleton until the first page arrives', async () => {
+    const first = deferred<{ items: AuditItem[]; nextCursor: string | null }>();
+    api.list.mockReturnValue(first.promise);
+    signIn();
+    const { fixture, el, rows } = await render();
+
+    expect(
+      el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+    ).not.toBeNull();
+    // Cada linha leva o selo e a seta da linha de verdade: a lista não muda de altura quando chega.
+    expect(el.querySelectorAll('app-loading-skeleton .row .chip')).toHaveLength(4);
+    expect(rows()).toHaveLength(0);
+
+    first.resolve({ items: [entry(1), entry(2)], nextCursor: null });
+    await settle(fixture);
+    expect(el.querySelector('app-loading-skeleton')).toBeNull();
+    expect(rows()).toHaveLength(2);
   });
 });

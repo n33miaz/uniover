@@ -117,15 +117,6 @@
     radial-gradient(ellipse at 50% 42%, var(--a-surface-2) 25%, transparent 72%), var(--a-surface);
 }
 
-.skeleton {
-  min-height: calc(var(--figure-height) + 56px);
-}
-
-.skeleton .ui-skeleton {
-  flex: 1 1 auto;
-  border-radius: var(--radius);
-}
-
 .legend {
   display: flex;
   flex-wrap: wrap;

@@ -14,7 +14,9 @@ import {
   viewChild,
 } from '@angular/core';
 import { OfflineQueue } from '../../../core/offline-queue/offline-queue';
+import { CalendarEntryRepository } from '../data/calendar/calendar-entry-repository';
 import type { LocalSet } from '../data/sessions/session';
+import { dateKey, deviceTimeZone } from '../domain/progress/calendar';
 import type { SetType } from '../domain/session/session-model';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { formatKg } from '../shell/format';
@@ -24,6 +26,7 @@ import { SetEditSheet } from './set-edit-sheet';
 import { TodayGlyph } from './today-glyph';
 import { TodayStore } from './today-store';
 import { setText } from './today-text';
+import { SessionSummarySkeleton } from './workout-skeletons';
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
@@ -35,7 +38,7 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
  */
 @Component({
   selector: 'app-session-summary',
-  imports: [TrainingGlyph, TodayGlyph, SetEditSheet],
+  imports: [TrainingGlyph, TodayGlyph, SetEditSheet, SessionSummarySkeleton],
   templateUrl: './session-summary.html',
   styleUrl: './session-summary.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -44,6 +47,8 @@ export class SessionSummary {
   private readonly live = inject(LiveStore);
   private readonly today = inject(TodayStore);
   private readonly sessions = inject(SessionRepository);
+  private readonly calendarEntries = inject(CalendarEntryRepository);
+  private readonly zone = deviceTimeZone();
   private readonly queue = inject(OfflineQueue);
   private readonly injector = inject(Injector);
 
@@ -59,6 +64,8 @@ export class SessionSummary {
   protected readonly data = signal<SummaryData | null | undefined>(undefined);
   protected readonly editing = signal(false);
   protected readonly editSet = signal<LocalSet | null>(null);
+  /** A nota que a pessoa deixou no dia em que o treino começou; vazia quando não há. */
+  protected readonly dayNote = signal('');
 
   protected readonly minutes = computed(() => {
     const ms = this.data()?.summary.durationMs ?? null;
@@ -81,6 +88,7 @@ export class SessionSummary {
   constructor() {
     effect(() => {
       this.sessions.revision();
+      this.calendarEntries.revision();
       const id = this.sessionId();
       untracked(() => void this.load(id));
     });
@@ -132,12 +140,17 @@ export class SessionSummary {
     }
   }
 
-  protected readonly freeName = $localize`:@@training.summary.free:Treino livre`;
+  protected readonly freeName = $localize`:@@training.summary.free:Treino Livre`;
   protected readonly fallbackName = $localize`:@@training.summary.unknown:Exercício removido`;
 
   private async load(id: string): Promise<void> {
     try {
-      this.data.set(await this.live.loadSummary(id));
+      const data = await this.live.loadSummary(id);
+      this.data.set(data);
+      const entry = data
+        ? await this.calendarEntries.get(dateKey(data.session.startedAt, this.zone))
+        : undefined;
+      this.dayNote.set(entry?.note ?? '');
     } catch {
       // Sem banco local não há resumo para mostrar: cai no estado de "treino não encontrado".
       this.data.set(null);

@@ -1,19 +1,7 @@
 import type { AccountRole } from '../session/session-state';
 
-/** Quem não tem módulo nenhum: uma tela simples, com Perfil e Sair (nunca um módulo que a pessoa não pode usar). */
-export const NO_ACCESS_PATH = '/sem-acesso';
-
-/**
- * Para onde vai o convidado quando não se sabe o que ele pode (sem rede e sem dica da última sessão, ou resposta antiga
- * sem a lista): o controle da TV, como sempre foi. Quem decide de verdade é a API, com 403.
- */
-export const UNKNOWN_GUEST_HOME = '/tv';
-
-/** O que o guarda precisa saber de um módulo: o `id` do catálogo (a permissão é `module:<id>`) e o caminho da tela. */
-export interface HomeModule {
-  readonly id: string;
-  readonly slug?: string;
-}
+/** A Início é a entrada de toda conta, inclusive quando a lista de permissões ainda não chegou. */
+export const UNKNOWN_GUEST_HOME = '/';
 
 /** A permissão que libera um módulo, no catálogo da API (`module:tv`, `module:training`). */
 export function modulePermission(id: string): string {
@@ -37,21 +25,7 @@ export function canUseModule(
   return permissions.includes(modulePermission(id));
 }
 
-/**
- * A tela inicial de quem não tem o Início: o primeiro módulo que ele pode usar, na ordem do registro de módulos (a TV
- * antes do Treino). Sem nenhum, a tela de "sem acesso". Sem a lista (`null`), o controle da TV. O dono tem o Início (`/`).
- *
- * Nunca devolve um módulo que a pessoa não pode usar, então o redirecionamento não cai num guarda que a manda de volta.
- */
-export function homeFor(
-  role: AccountRole | null,
-  permissions: readonly string[] | null,
-  modules: readonly HomeModule[],
-): string {
-  if (role !== 'guest') return '/';
-  if (permissions === null) return UNKNOWN_GUEST_HOME;
-  const first = modules.find(
-    (module) => module.slug !== undefined && permissions.includes(modulePermission(module.id)),
-  );
-  return first ? `/${first.slug}` : NO_ACCESS_PATH;
+/** A Início é a entrada de toda conta; a grade filtra cada cartão pela permissão da conta. */
+export function homeFor(): string {
+  return '/';
 }

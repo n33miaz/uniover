@@ -23,6 +23,10 @@ latências diferentes. Do mais rápido para o mais lento:
   trecho, e no Android TV o `input text` sobe uma JVM a cada chamada;
 * **Remote v2** (`send_text`) para o resto (acentos, emoji, `%`, e quando o ADB não está pronto).
 
+Quando a TV informa o estado do campo em foco (valor, cursor, rótulo), `last_text` parte do valor
+real em vez do palpite, e a troca de campo vem por esse aviso, não pela pausa de 20 s (ver
+`observe_field`). Sem esse aviso, o comportamento é exatamente o descrito acima.
+
 `last_text` acompanha o que de fato aconteceu, passo a passo: uma falha no meio nunca faz o agente
 acreditar que o campo tem o que ele não conseguiu escrever (senão o diff seguinte apagaria texto do
 dono).
@@ -41,7 +45,7 @@ from dataclasses import dataclass
 from typing import Final, Protocol
 
 from uniover_agent.core.tv.session import TvSessionError
-from uniover_agent.ports import AdbError, AdbNotReady, is_adb_typable
+from uniover_agent.ports import AdbError, AdbNotReady, TextFieldStatus, is_adb_typable
 
 _log = logging.getLogger(__name__)
 
@@ -183,6 +187,9 @@ class TextReconciler:
         self._adb: AdbTyping | None = None
         self._last = ""
         self._last_at: float | None = None
+        self._field_counter: int | None = None
+        self._pending_field: TextFieldStatus | None = None
+        self._app: str | None = None
         self._lock = asyncio.Lock()
 
     @property
@@ -199,6 +206,59 @@ class TextReconciler:
         """Passa a digitar pelo ADB o que ele escreve com fidelidade (a composição liga isto)."""
         self._adb = adb
 
+    def observe_field(self, field: TextFieldStatus) -> None:
+        """Sincroniza a base do diff com o que a TV informou do campo em foco.
+
+        Com o estado em mãos, `last_text` deixa de ser palpite: é o valor real do campo, e uma troca
+        de campo chega por um contador novo em vez de depender da pausa desde a última digitação
+        (`_field_changed`). Sem nenhum aviso da TV, tudo segue como antes.
+
+        A TV ecoa cada edição, e o eco de um passo antigo pode chegar depois de a edição acabar:
+        reescrever `last_text` com ele faria o diff seguinte repetir ou apagar texto. Por isso só
+        o contador diferente (outro campo) troca a base; com o mesmo contador, o que o agente
+        acabou de fazer, passo a passo, segue sendo a fonte mais fiel. Pelo mesmo motivo, nada é
+        lido enquanto uma edição nossa está em andamento, e o primeiro aviso, se o agente já
+        digitou antes de recebê-lo, só registra o contador (o valor pode ser um passo
+        intermediário).
+
+        Um estado de outro campo (contador diferente) que chega no meio de uma edição não se
+        perde: fica guardado e entra assim que ela termina. Descartá-lo deixaria o contador antigo
+        valendo para o campo novo, e o comando seguinte apagaria o texto do campo anterior.
+        """
+        if self._lock.locked():
+            if field.counter != self._field_counter:
+                self._pending_field = field
+            return
+        self._accept(field)
+
+    def forget_field(self) -> None:
+        """Esquece o estado do campo: nova sessão com a TV ou outro app em foco.
+
+        Sem estado fresco do campo atual volta o comportamento conservador de antes: a base é o
+        que o agente digitou e a pausa de `field_idle_seconds` decide se o campo é outro. Nunca se
+        apaga com base em estado velho.
+        """
+        self._field_counter = None
+        self._pending_field = None
+
+    def observe_app(self, app: str) -> None:
+        """O app em foco mudou? Então o estado do campo era de outro lugar.
+
+        A TV repete o app a cada eco de edição; só a troca de verdade esquece o estado.
+        """
+        previous, self._app = self._app, app
+        if previous is not None and previous != app:
+            self.forget_field()
+
+    def _accept(self, field: TextFieldStatus) -> None:
+        previous, self._field_counter = self._field_counter, field.counter
+        if previous == field.counter:
+            return
+        if previous is None and self._last_at is not None:
+            return
+        self._last = unicodedata.normalize("NFC", field.value)
+        self._last_at = self._monotonic()
+
     async def set_text(self, text: str, *, queued: float = 0.0) -> None:
         """Faz o campo ter `text`. Levanta `TvSessionError` se a TV não pôde ser alcançada.
 
@@ -211,7 +271,12 @@ class TextReconciler:
         try:
             async with self._lock:
                 trace.lock_wait = self._monotonic() - asked
-                await self._reconcile(target, trace)
+                try:
+                    await self._reconcile(target, trace)
+                finally:
+                    pending, self._pending_field = self._pending_field, None
+                    if pending is not None:
+                        self._accept(pending)
         except TvSessionError as exc:
             trace.outcome = f"falha:{exc.code}"
             raise
@@ -244,7 +309,12 @@ class TextReconciler:
         Continuação ("mat" -> "matrix") ou apagar parcial ("matrix" -> "mat") é o mesmo campo,
         qualquer que seja a pausa: tratar como campo novo duplicaria ("matmatrix"). Só uma troca
         radical depois de uma pausa longa indica outro campo, e então nada é apagado.
+
+        Quando a TV já informou o estado do campo, `last_text` é o valor real e não há palpite a
+        corrigir pelo relógio: o texto novo é comparado com ele, apagando só o que sobra.
         """
+        if self._field_counter is not None:
+            return False
         if self._last_at is None:
             return True
         if now - self._last_at <= self._idle:

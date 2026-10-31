@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { expect, screenshot, test } from '../fixtures';
-import { expectNoA11yViolations } from '../screens/screen-helpers';
-import { SEED_EXERCISE_IDS } from './support/training-seed';
+import { expectNoA11yViolations, settle } from '../screens/screen-helpers';
+import { SEED_EXERCISE_IDS, seedExercise } from './support/training-seed';
 import {
   openTraining,
   startTraining,
@@ -28,13 +28,23 @@ async function expectCenteredComposition(page: import('@playwright/test').Page) 
         Math.max(...images.map((image) => image.right))) /
       2;
     const chips = hero.querySelector('.chips')!.getBoundingClientRect();
+    // Com ilustração, o cartão dela e o dos músculos têm a mesma largura e a mesma altura.
+    const sizeGap =
+      images.length === 2
+        ? Math.max(
+            Math.abs(images[0].width - images[1].width),
+            Math.abs(images[0].height - images[1].height),
+          )
+        : 0;
     return {
+      sizeGap,
       visualsBottom: visuals.bottom,
       chipsTop: chips.top,
       centerOffset: Math.abs(chips.left + chips.width / 2 - visuals.left - visuals.width / 2),
       imageOffset: Math.abs(imageCenter - visuals.left - visuals.width / 2),
     };
   });
+  expect(layout.sizeGap).toBeLessThan(1);
   expect(layout.chipsTop).toBeGreaterThanOrEqual(layout.visualsBottom);
   expect(layout.centerOffset).toBeLessThan(1);
   expect(layout.imageOffset).toBeLessThan(1);
@@ -79,8 +89,8 @@ test.describe('exercícios: lista, busca e ficha', () => {
     ]);
 
     await page.getByRole('button', { name: 'Costas', exact: true }).click();
-    await expect(page.getByText('Nenhum exercício achado')).toBeVisible();
-    await page.getByRole('button', { name: 'Limpar filtros' }).click();
+    await expect(page.getByText('Nenhum Exercício Achado')).toBeVisible();
+    await page.getByRole('button', { name: 'Limpar Filtros' }).click();
     await expect(page.getByText('16 exercícios')).toBeVisible();
   });
 
@@ -124,14 +134,36 @@ test.describe('exercícios: lista, busca e ficha', () => {
     ).toBeVisible();
   });
 
-  test('mostra de 50 em 50, com "Mostrar mais"', async ({ page, context }) => {
+  test('separa o Mapa do Treino do mapa corporal e abre o glossário', async ({ page, context }) => {
+    await startTraining(context, page);
+    await openTraining(page, '/treino/exercicios');
+    await waitForCatalog(page);
+    await page.getByRole('link', { name: 'Mapa do Treino' }).click();
+    await expect(page.getByRole('heading', { name: 'Mapa do Treino' })).toBeVisible();
+
+    // O glossário abre pelo link "Entenda o Treino" sob as ações de Rotinas e o voltar traz a lista de volta.
+    await openTraining(page, '/treino/rotinas');
+    await page.getByRole('link', { name: 'Entenda o Treino' }).click();
+    await expect(page.getByRole('heading', { name: 'Entenda o Treino' })).toBeVisible();
+    await expect(page.getByText('Programa Semanal')).toBeVisible();
+    await expect(page.getByText('Rotina do Dia')).toBeVisible();
+    await expect(page.getByText('Rotina', { exact: true })).toBeVisible();
+    await expect(page.getByText('Exercício', { exact: true })).toBeVisible();
+    // A tela entra com uma transição curta de opacidade: o contraste só vale depois dela.
+    await settle(page);
+    await expectNoA11yViolations(page);
+    await page.locator('app-page-top-bar .back').click();
+    await expect(page).toHaveURL(/\/treino\/rotinas$/);
+  });
+
+  test('mostra de 50 em 50, com "Mostrar Mais"', async ({ page, context }) => {
     await startTraining(context, page, { extra: 70 });
     await openTraining(page, '/treino/exercicios');
     await waitForCatalog(page);
     await expect(rows(page)).toHaveCount(50);
-    await page.getByRole('button', { name: /^Mostrar mais \(36\)/ }).click();
+    await page.getByRole('button', { name: /^Mostrar Mais \(36\)/ }).click();
     await expect(rows(page)).toHaveCount(86);
-    await expect(page.getByRole('button', { name: /^Mostrar mais/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Mostrar Mais/ })).toHaveCount(0);
   });
 
   test('a ficha mostra ilustração, músculos e passo a passo sem créditos inline', async ({
@@ -168,9 +200,80 @@ test.describe('exercícios: lista, busca e ficha', () => {
       );
     }
     await expect(page.locator('.steps li')).toHaveCount(3);
-    await page.getByRole('button', { name: 'Ver todos os 5 passos' }).click();
+    await page.getByRole('button', { name: 'Ver Todos os 5 Passos' }).click();
     await expect(page.locator('.steps li')).toHaveCount(5);
     await expect(page.locator('.origin')).toHaveCount(0);
+  });
+
+  test('a biblioteca mostra a figura dos exercícios completados depois (WebP e SVG)', async ({
+    page,
+    context,
+  }, info) => {
+    const server = await startTraining(context, page);
+    const extra = [
+      ['barra-fixa-supinada', 'Barra fixa supinada', 'lats', 'bodyweight'],
+      ['prancha-lateral', 'Prancha lateral', 'abdominals', 'bodyweight'],
+      ['remada-invertida', 'Remada invertida', 'middle_back', 'bodyweight'],
+      ['agachamento-hack-na-maquina', 'Agachamento hack na máquina', 'quadriceps', 'machine'],
+      [
+        'triceps-frances-unilateral-com-halter',
+        'Tríceps francês unilateral',
+        'triceps',
+        'dumbbell',
+      ],
+    ] as const;
+    server.seed(
+      'exercises',
+      extra.map(([slug, name, primary, equipment], index) =>
+        seedExercise({
+          n: 201 + index,
+          slug,
+          name,
+          primary,
+          equipment,
+          instructions: ['Faça o movimento com controle.'],
+        }),
+      ),
+    );
+    await openTraining(page, '/treino/exercicios');
+    await waitForCatalog(page);
+
+    for (const [term, file] of [
+      ['barra fixa supinada', 'chin-ups-1.webp'],
+      ['prancha lateral', '0113-relaxation.svg'],
+    ]) {
+      await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill(term);
+      const thumb = page.locator('.list .ui-row .thumb img').first();
+      await expect(thumb).toBeVisible();
+      await expect(thumb).toHaveAttribute('src', `/exercise-art/${file}`);
+      await expect(thumb).toHaveAttribute('loading', 'lazy');
+      await expect
+        .poll(() => thumb.evaluate((image: HTMLImageElement) => image.naturalWidth))
+        .toBeGreaterThan(0);
+    }
+
+    await rows(page).first().click();
+    await expect(page.getByRole('heading', { name: 'Prancha lateral' })).toBeVisible();
+    const frames = page.locator('app-exercise-illustration img');
+    await expect(frames).toHaveCount(2);
+    await expect
+      .poll(() =>
+        frames.evaluateAll((images) =>
+          images.every((image) => (image as HTMLImageElement).naturalWidth > 0),
+        ),
+      )
+      .toBe(true);
+
+    if (process.env['TRAINING_SHOTS_DIR']) {
+      await openTraining(page, '/treino/exercicios');
+      await waitForCatalog(page);
+      await rows(page).filter({ hasText: 'Remada invertida' }).scrollIntoViewIfNeeded();
+      await settle(page);
+      await screenshot(
+        page,
+        join(process.env['TRAINING_SHOTS_DIR'], `biblioteca-ilustracoes-${info.project.name}.png`),
+      );
+    }
   });
 
   test('a ficha sem ilustração mantém apenas as faces com músculos destacados', async ({
@@ -225,8 +328,8 @@ test.describe('exercícios: lista, busca e ficha', () => {
   }) => {
     const server = await startTraining(context, page);
     await openTraining(page, `/treino/exercicios/${SEED_EXERCISE_IDS.pushUp}`);
-    await page.getByRole('button', { name: 'Adicionar a um treino' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Adicionar a um treino' });
+    await page.getByRole('button', { name: 'Adicionar a um Treino' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Adicionar a um Treino' });
     await sheet.getByRole('button', { name: /Treino A/ }).click();
     await expect(page.getByText('Adicionado a Treino A · Peito e tríceps.')).toBeVisible();
     await expect.poll(() => server.writes('routines'), PUSH).toBe(1);
@@ -271,7 +374,7 @@ test.describe('exercícios: lista, busca e ficha', () => {
 });
 
 test.describe('exercício próprio', () => {
-  test('cria, vê na lista com a marca "própria", edita e apaga', async ({ page, context }) => {
+  test('cria, vê na lista com a marca "Própria", edita e apaga', async ({ page, context }) => {
     const server = await startTraining(context, page);
     await openTraining(page, '/treino/exercicios/novo');
     await page.getByLabel('Nome').fill('Remada na máquina articulada');
@@ -279,7 +382,7 @@ test.describe('exercício próprio', () => {
     await chooseEquipment(page, 'Máquina');
     await page.getByRole('button', { name: 'Instruções (opcional)' }).click();
     await page.getByLabel('Instruções do exercício').fill('Ajuste o banco.\nPuxe as alças.');
-    await page.getByRole('button', { name: 'Salvar exercício' }).click();
+    await page.getByRole('button', { name: 'Salvar Exercício' }).click();
     await expect(page.getByRole('heading', { name: 'Remada na máquina articulada' })).toBeVisible();
     await expect(page.getByText('Exercício criado por você neste aparelho.')).toBeVisible();
     await expect(page.locator('.steps li')).toHaveText(['Ajuste o banco.', 'Puxe as alças.']);
@@ -287,13 +390,13 @@ test.describe('exercício próprio', () => {
     await page.goto('/treino/exercicios');
     await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill('articulada');
     await expect(rows(page)).toHaveText(['Remada na máquina articulada']);
-    await expect(page.locator('.list .ui-chip', { hasText: 'própria' })).toBeVisible();
+    await expect(page.locator('.list .ui-chip', { hasText: 'Própria' })).toBeVisible();
     await expect.poll(() => server.writes('exercises'), PUSH).toBe(1);
 
     await rows(page).first().click();
     await page.getByRole('link', { name: 'Editar', exact: true }).click();
     await page.getByLabel('Nome').fill('Remada articulada');
-    await page.getByRole('button', { name: 'Salvar exercício' }).click();
+    await page.getByRole('button', { name: 'Salvar Exercício' }).click();
     await expect(page.getByRole('heading', { name: 'Remada articulada' })).toBeVisible();
     await expect
       .poll(
@@ -321,17 +424,17 @@ test.describe('exercício próprio', () => {
     await startTraining(context, page);
     await openTraining(page, '/treino/exercicios');
     await waitForCatalog(page);
-    await page.getByRole('link', { name: 'Novo exercício' }).click();
-    await expect(page.getByRole('heading', { name: 'Novo exercício' })).toBeVisible();
+    await page.getByRole('link', { name: 'Novo Exercício' }).click();
+    await expect(page.getByRole('heading', { name: 'Novo Exercício' })).toBeVisible();
     await page.getByRole('button', { name: 'Cancelar' }).click();
     await expect(page).toHaveURL(/\/treino\/exercicios$/);
 
-    await page.getByRole('link', { name: 'Novo exercício' }).click();
+    await page.getByRole('link', { name: 'Novo Exercício' }).click();
     await page.getByLabel('Nome').fill('Algo');
     await page.getByRole('button', { name: 'Cancelar' }).click();
     await expect(page.getByText('Sair sem salvar?')).toBeVisible();
     await expect(page).toHaveURL(/\/treino\/exercicios\/novo$/);
-    await page.getByRole('button', { name: 'Sair sem salvar' }).click();
+    await page.getByRole('button', { name: 'Sair sem Salvar' }).click();
     await expect(page).toHaveURL(/\/treino\/exercicios$/);
   });
 
@@ -341,7 +444,7 @@ test.describe('exercício próprio', () => {
     await page.getByLabel('Nome').fill('Supino reto com barra');
     await expect(page.getByText('Já existe um exercício com este nome')).toBeVisible();
     await chooseMuscle(page, 'Peitoral');
-    await page.getByRole('button', { name: 'Salvar exercício' }).click();
+    await page.getByRole('button', { name: 'Salvar Exercício' }).click();
     await expect(page).toHaveURL(/\/treino\/exercicios\/[0-9a-f-]{36}$/);
   });
 });

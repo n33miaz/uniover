@@ -75,7 +75,7 @@ describe('ExerciseFormPage', () => {
     it('starts empty, with the muscles listed by group', async () => {
       const { fixture, el } = await open('/treino/exercicios/novo');
       fixture.detectChanges();
-      expect(el.querySelector('h2')?.textContent).toContain('Novo exercício');
+      expect(el.querySelector('h2')?.textContent).toContain('Novo Exercício');
       expect(field<HTMLInputElement>(el, '#exercise-name').value).toBe('');
       // O músculo se escolhe numa lista por grupo (uma folha), não no seletor nativo.
       expect(field(el, '#exercise-muscle').textContent).toContain('Escolha o músculo');
@@ -109,20 +109,54 @@ describe('ExerciseFormPage', () => {
       ]);
     });
 
-    it('asks for the name and the muscle, and saves nothing', async () => {
+    it('keeps Save off while nothing changed, and does not scold an untouched form', async () => {
       const { fixture, el } = await open('/treino/exercicios/novo');
-      button(el, 'Salvar exercício').click();
-      await eventually(fixture, () => expect(text(el)).toContain('Dê um nome ao exercício.'));
+      fixture.detectChanges();
+      expect(button(el, 'Salvar Exercício').disabled).toBe(true);
+      expect(text(el)).not.toContain('Dê um nome ao exercício.');
+      expect(text(el)).not.toContain('Escolha o músculo principal.');
+    });
+
+    it('keeps Save off and says what is missing, and saves nothing', async () => {
+      const { fixture, el } = await open('/treino/exercicios/novo');
+      const input = field<HTMLInputElement>(el, '#exercise-name');
+      input.value = 'Remada articulada';
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      // O nome está certo, falta o músculo: o botão fica desligado e o aviso diz o motivo.
+      expect(button(el, 'Salvar Exercício').disabled).toBe(true);
       expect(text(el)).toContain('Escolha o músculo principal.');
+      expect(text(el)).not.toContain('Dê um nome ao exercício.');
+      // Só o músculo escolhido, sem nome: o aviso do nome aparece e o botão continua desligado.
+      input.value = '   ';
+      input.dispatchEvent(new Event('input'));
+      chooseMuscle(fixture, el, 'chest');
+      expect(text(el)).toContain('Dê um nome ao exercício.');
       expect(field(el, '#exercise-name').getAttribute('aria-invalid')).toBe('true');
+      expect(button(el, 'Salvar Exercício').disabled).toBe(true);
       expect(await TestBed.inject(OfflineQueue).items()).toHaveLength(0);
+    });
+
+    it('turns Save on once the name and the muscle are there', async () => {
+      const { fixture, el } = await open('/treino/exercicios/novo');
+      fill(fixture, el, 'Remada articulada', 'middle_back');
+      expect(button(el, 'Salvar Exercício').disabled).toBe(false);
+    });
+
+    it('keeps Save in the fixed bar at the bottom, where the notices also live', async () => {
+      const { fixture, el } = await open('/treino/exercicios/novo');
+      fixture.detectChanges();
+      const bar = field(el, '.ui-action-bar');
+      expect(bar.contains(button(el, 'Salvar Exercício'))).toBe(true);
+      expect(bar.contains(button(el, 'Cancelar'))).toBe(true);
+      expect(field(el, 'form').classList.contains('ui-has-action-bar')).toBe(true);
     });
 
     it('saves as your own exercise, queues the write once, and opens the sheet', async () => {
       const { fixture, el, router, trainingDb } = await open('/treino/exercicios/novo');
       fill(fixture, el, '  Remada articulada  ', 'middle_back');
       chooseEquipment(fixture, el, 'Máquina');
-      button(el, 'Salvar exercício').click();
+      button(el, 'Salvar Exercício').click();
       await vi.waitFor(() => expect(router.url).toMatch(/^\/treino\/exercicios\/[0-9a-f-]{36}$/), {
         timeout: 3000,
       });
@@ -157,7 +191,7 @@ describe('ExerciseFormPage', () => {
       time.checked = true;
       time.dispatchEvent(new Event('change'));
       fixture.detectChanges();
-      button(el, 'Salvar exercício').click();
+      button(el, 'Salvar Exercício').click();
       await vi.waitFor(() => expect(router.url).toMatch(/\/treino\/exercicios\/[0-9a-f-]{36}$/), {
         timeout: 3000,
       });
@@ -177,7 +211,7 @@ describe('ExerciseFormPage', () => {
         expect(text(el)).toContain('Já existe um exercício com este nome'),
       );
       expect(el.querySelector('.ui-notice.warn')).not.toBeNull();
-      button(el, 'Salvar exercício').click();
+      button(el, 'Salvar Exercício').click();
       await vi.waitFor(() => expect(router.url).toMatch(/\/treino\/exercicios\/[0-9a-f-]{36}$/), {
         timeout: 3000,
       });
@@ -191,7 +225,7 @@ describe('ExerciseFormPage', () => {
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl');
       field<HTMLButtonElement>(el, '.actions button').click();
       expect(el.querySelector('.leave')).toBeNull();
-      expect(navigate).toHaveBeenCalledWith('/treino/exercicios');
+      expect(navigate).toHaveBeenCalledWith('/treino/exercicios', { replaceUrl: true });
     });
 
     it('does not keep the exercise when the device has no room for the queue', async () => {
@@ -200,7 +234,7 @@ describe('ExerciseFormPage', () => {
         new QueueStorageFullError(),
       );
       fill(fixture, el, 'Remada articulada', 'middle_back');
-      button(el, 'Salvar exercício').click();
+      button(el, 'Salvar Exercício').click();
       await eventually(fixture, () => expect(text(el)).toContain('Sem espaço no aparelho'));
       expect(
         (await trainingDb.exercises.toArray()).some((row) => row.name === 'Remada articulada'),
@@ -214,10 +248,10 @@ describe('ExerciseFormPage', () => {
       const navigate = vi.spyOn(router, 'navigateByUrl');
       button(el, 'Cancelar').click();
       expect(el.querySelector('.leave')).toBeNull();
-      expect(navigate).toHaveBeenCalledWith('/treino/exercicios');
+      expect(navigate).toHaveBeenCalledWith('/treino/exercicios', { replaceUrl: true });
     });
 
-    it('asks first when something was typed, and "Continuar editando" keeps the form', async () => {
+    it('asks first when something was typed, and "Continuar Editando" keeps the form', async () => {
       const { fixture, el, router } = await open('/treino/exercicios/novo');
       fill(fixture, el, 'Algo', '');
       const navigate = vi.spyOn(router, 'navigateByUrl');
@@ -225,21 +259,21 @@ describe('ExerciseFormPage', () => {
       fixture.detectChanges();
       expect(text(el)).toContain('Sair sem salvar?');
       expect(navigate).not.toHaveBeenCalled();
-      button(el, 'Continuar editando').click();
+      button(el, 'Continuar Editando').click();
       fixture.detectChanges();
       expect(el.querySelector('.leave')).toBeNull();
       expect(field<HTMLInputElement>(el, '#exercise-name').value).toBe('Algo');
     });
 
-    it('leaves without saving after the confirmation, and the back arrow asks the same way', async () => {
+    it('leaves without saving after the confirmation', async () => {
       const { fixture, el, router, trainingDb } = await open('/treino/exercicios/novo');
       fill(fixture, el, 'Algo', 'chest');
       const navigate = vi.spyOn(router, 'navigateByUrl');
-      field<HTMLButtonElement>(el, 'button.back').click();
+      button(el, 'Cancelar').click();
       fixture.detectChanges();
       expect(text(el)).toContain('Sair sem salvar?');
-      button(el, 'Sair sem salvar').click();
-      expect(navigate).toHaveBeenCalledWith('/treino/exercicios');
+      button(el, 'Sair sem Salvar').click();
+      expect(navigate).toHaveBeenCalledWith('/treino/exercicios', { replaceUrl: true });
       expect((await trainingDb.exercises.toArray()).some((row) => row.name === 'Algo')).toBe(false);
     });
   });
@@ -250,7 +284,7 @@ describe('ExerciseFormPage', () => {
       await eventually(fixture, () =>
         expect(field<HTMLInputElement>(el, '#exercise-name').value).toBe('Remada na máquina'),
       );
-      expect(el.querySelector('h2')?.textContent).toContain('Editar exercício');
+      expect(el.querySelector('h2')?.textContent).toContain('Editar Exercício');
       expect(field(el, '#exercise-muscle').textContent).toContain('Meio das costas');
       const pressed = Array.from(
         el.querySelectorAll<HTMLButtonElement>('app-training-chips .chip[aria-pressed="true"]'),
@@ -270,9 +304,12 @@ describe('ExerciseFormPage', () => {
         expect(field<HTMLInputElement>(el, '#exercise-name').value).not.toBe(''),
       );
       const input = field<HTMLInputElement>(el, '#exercise-name');
+      expect(button(el, 'Salvar Exercício').disabled).toBe(true);
       input.value = 'Remada na máquina articulada';
       input.dispatchEvent(new Event('input'));
-      button(el, 'Salvar exercício').click();
+      fixture.detectChanges();
+      expect(button(el, 'Salvar Exercício').disabled).toBe(false);
+      button(el, 'Salvar Exercício').click();
       await vi.waitFor(() => expect(router.url).toBe('/treino/exercicios/meu'), { timeout: 3000 });
       expect((await trainingDb.exercises.get('meu'))?.name).toBe('Remada na máquina articulada');
       expect(await TestBed.inject(OfflineQueue).items()).toHaveLength(1);

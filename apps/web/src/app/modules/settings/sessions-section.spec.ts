@@ -84,6 +84,14 @@ describe('SessionsSection', () => {
     expect(api.revokeSession).toHaveBeenCalledWith('jwt', 'other', null);
   });
 
+  it('keeps session details folded until the person asks for them', async () => {
+    const { el } = await render();
+    const details = el.querySelector<HTMLDetailsElement>('li details')!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector('summary')?.textContent).toContain('Safari · iPhone/iPad');
+    expect(details.textContent).toContain('Último uso:');
+  });
+
   it('ends the other sessions only after confirmation', async () => {
     const { fixture, click } = await render();
     click('Encerrar as outras');
@@ -129,5 +137,16 @@ describe('SessionsSection', () => {
     role.set('guest');
     await render();
     expect(api.sessions).toHaveBeenCalledWith('jwt', null);
+  });
+
+  it('uses cards as the loading state instead of a loose sentence', () => {
+    api.sessions.mockReturnValue(new Promise(() => undefined));
+    const fixture = TestBed.createComponent(SessionsSection);
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(
+      root.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+    ).not.toBeNull();
+    expect(root.querySelectorAll('app-loading-skeleton .card')).toHaveLength(2);
   });
 });

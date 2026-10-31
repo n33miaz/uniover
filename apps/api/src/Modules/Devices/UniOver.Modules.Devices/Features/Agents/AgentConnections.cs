@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Features.Presence;
@@ -10,17 +11,29 @@ namespace UniOver.Modules.Devices.Features.Agents;
 /// mesmo lock: sem isso uma sessão antiga que termina logo depois de ser substituída marcaria o agente como
 /// desconectado (e o SSE emitiria uma queda falsa) mesmo com a sessão nova de pé. O aviso ao SSE é só uma escrita
 /// em fila (não bloqueia), então cabe dentro do lock e mantém a ordem dos eventos.
+/// <para>
+/// Graça de presença: a conexão do agente cai por motivos que não são dele (troca de instância no deploy, manutenção do
+/// Render, rede) e volta em segundos. Quando a sessão sai, o agente continua contando como conectado por
+/// <see cref="DevicesTransportOptions.PresenceGraceSeconds"/>; só se não voltar nesse prazo é que a queda é gravada e
+/// anunciada. O prazo não pode superar a espera do comando, para a tela não seguir verde quando o controle já falha.
+/// </para>
 /// </summary>
 internal sealed class AgentConnections(
     IPresenceStore presence,
     SseBroadcaster<PresenceUpdate> events,
-    IEnumerable<IAgentPresenceListener>? listeners = null) : IAgentSessionCloser
+    IEnumerable<IAgentPresenceListener>? listeners = null,
+    TimeProvider? time = null,
+    IOptions<DevicesTransportOptions>? options = null) : IAgentSessionCloser, IDisposable
 {
     private readonly IAgentPresenceListener[] _listeners = [.. listeners ?? []];
+    private readonly TimeProvider _time = time ?? TimeProvider.System;
+    private readonly TimeSpan _grace = options?.Value.PresenceGrace ?? TimeSpan.Zero;
 
     private readonly object _gate = new();
     private readonly Dictionary<string, IAgentSession> _sessions = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, TaskCompletionSource<IAgentSession>> _waiters = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, PendingDrop> _drops = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _revokedAgents = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<TaskCompletionSource<IAgentSession?>>> _waiters = new(StringComparer.Ordinal);
 
     /// <summary>Torna <paramref name="session"/> a dona da conexão do agente e devolve a sessão que ela substituiu, se havia.</summary>
     public IAgentSession? Attach(IAgentSession session, DateTimeOffset now)
@@ -28,11 +41,21 @@ internal sealed class AgentConnections(
         ArgumentNullException.ThrowIfNull(session);
         lock (_gate)
         {
+            if (_revokedAgents.Contains(session.AgentId))
+            {
+                throw new AgentSessionRevokedException();
+            }
+
             _sessions.TryGetValue(session.AgentId, out var previous);
             _sessions[session.AgentId] = session;
-            if (_waiters.Remove(session.AgentId, out var waiter))
+            // Voltou dentro da graça: não há queda a anunciar.
+            CancelDrop(session.AgentId);
+            if (_waiters.Remove(session.AgentId, out var waiters))
             {
-                waiter.TrySetResult(session);
+                foreach (var waiter in waiters)
+                {
+                    waiter.TrySetResult(session);
+                }
             }
             Announce(presence.MarkConnected(session.AgentId, now));
             return previous;
@@ -54,7 +77,12 @@ internal sealed class AgentConnections(
             }
 
             _sessions.Remove(session.AgentId);
-            if (presence.MarkDisconnected(session.AgentId, now) is { } info)
+            // Revogado não volta: sem graça, a queda vale na hora.
+            if (_grace > TimeSpan.Zero && !_revokedAgents.Contains(session.AgentId))
+            {
+                ScheduleDrop(session.AgentId, now, now + _grace);
+            }
+            else if (presence.MarkDisconnected(session.AgentId, now) is { } info)
             {
                 Announce(info);
             }
@@ -63,10 +91,71 @@ internal sealed class AgentConnections(
         }
     }
 
+    /// <summary>
+    /// O agente foi visto há pouco (<paramref name="lastSeenAt"/>) por outra instância, a anterior ao deploy, e ainda não
+    /// reconectou aqui: conta como conectado até <paramref name="lastSeenAt"/> mais a graça, e some se não voltar. Sem isto,
+    /// a API recém-subida diria "fora do ar" para todos até cada agente reconectar. Não anuncia a quem já está ouvindo
+    /// quando nada mudou, e não faz nada se há sessão aqui ou a graça já passou.
+    /// </summary>
+    public void ExpectReturn(string agentId, DateTimeOffset lastSeenAt, string? agentVersion)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
+        if (_grace <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        var expiresAt = lastSeenAt + _grace;
+        lock (_gate)
+        {
+            if (_revokedAgents.Contains(agentId)
+                || _sessions.ContainsKey(agentId)
+                || expiresAt <= _time.GetUtcNow()
+                || (_drops.TryGetValue(agentId, out var pending) && pending.ExpiresAt >= expiresAt))
+            {
+                return;
+            }
+
+            if (presence.MarkExpectedBack(agentId, lastSeenAt, agentVersion) is { } info)
+            {
+                Announce(info);
+            }
+
+            ScheduleDrop(agentId, lastSeenAt, expiresAt);
+        }
+    }
+
+    /// <summary>O agente que já tinha sumido antes da API subir: guarda o último sinal, sem sessão nem anúncio.</summary>
+    public void NoteLastSeen(string agentId, DateTimeOffset lastSeenAt, string? agentVersion)
+    {
+        lock (_gate)
+        {
+            if (!_sessions.ContainsKey(agentId) && !_drops.ContainsKey(agentId))
+            {
+                presence.NoteLastSeen(agentId, lastSeenAt, agentVersion);
+            }
+        }
+    }
+
+    /// <summary>Se o agente está sem sessão mas ainda dentro da graça (a tela o mostra conectado).</summary>
+    public bool IsInGrace(string agentId)
+    {
+        lock (_gate)
+        {
+            return _drops.ContainsKey(agentId);
+        }
+    }
+
     public bool TryGet(string agentId, out IAgentSession session)
     {
         lock (_gate)
         {
+            if (_revokedAgents.Contains(agentId))
+            {
+                session = null!;
+                return false;
+            }
+
             return _sessions.TryGetValue(agentId, out session!);
         }
     }
@@ -78,19 +167,26 @@ internal sealed class AgentConnections(
         ArgumentException.ThrowIfNullOrWhiteSpace(agentId);
         ArgumentNullException.ThrowIfNull(time);
 
-        TaskCompletionSource<IAgentSession> waiter;
+        var waiter = new TaskCompletionSource<IAgentSession?>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_gate)
         {
+            if (_revokedAgents.Contains(agentId))
+            {
+                return null;
+            }
+
             if (_sessions.TryGetValue(agentId, out var current))
             {
                 return current;
             }
 
-            if (!_waiters.TryGetValue(agentId, out waiter!))
+            if (!_waiters.TryGetValue(agentId, out var waiters))
             {
-                waiter = new TaskCompletionSource<IAgentSession>(TaskCreationOptions.RunContinuationsAsynchronously);
-                _waiters.Add(agentId, waiter);
+                waiters = new HashSet<TaskCompletionSource<IAgentSession?>>();
+                _waiters.Add(agentId, waiters);
             }
+
+            waiters.Add(waiter);
         }
 
         try
@@ -105,9 +201,13 @@ internal sealed class AgentConnections(
         {
             lock (_gate)
             {
-                if (_waiters.TryGetValue(agentId, out var current) && ReferenceEquals(current, waiter))
+                if (_waiters.TryGetValue(agentId, out var waiters))
                 {
-                    _waiters.Remove(agentId);
+                    waiters.Remove(waiter);
+                    if (waiters.Count == 0)
+                    {
+                        _waiters.Remove(agentId);
+                    }
                 }
             }
         }
@@ -120,7 +220,8 @@ internal sealed class AgentConnections(
         ArgumentException.ThrowIfNullOrWhiteSpace(capability);
         lock (_gate)
         {
-            return _sessions.TryGetValue(session.AgentId, out var current)
+            return !_revokedAgents.Contains(session.AgentId)
+                && _sessions.TryGetValue(session.AgentId, out var current)
                 && ReferenceEquals(current, session)
                 && presence.Get(session.AgentId)?.Capabilities.Contains(capability, StringComparer.Ordinal) == true;
         }
@@ -134,11 +235,45 @@ internal sealed class AgentConnections(
         lock (_gate)
         {
             _sessions.TryGetValue(agentId, out session);
+            if (reason == AgentCloseReason.Revoked)
+            {
+                _revokedAgents.Add(agentId);
+                if (_waiters.Remove(agentId, out var waiters))
+                {
+                    foreach (var waiter in waiters)
+                    {
+                        waiter.TrySetResult(null);
+                    }
+                }
+
+                if (session is null && _drops.TryGetValue(agentId, out var pending))
+                {
+                    // Caiu há pouco e foi revogado na graça: a queda vale agora.
+                    ExpireDrop(agentId, pending);
+                }
+            }
         }
 
         if (session is not null)
         {
-            await session.CloseAsync(reason, cancellationToken);
+            try
+            {
+                await session.CloseAsync(reason, cancellationToken);
+            }
+            catch when (reason == AgentCloseReason.Revoked)
+            {
+                // A revogação já foi gravada: falha ao fechar o socket não pode deixar presença verde.
+                Detach(session, _time.GetUtcNow());
+                try
+                {
+                    await session.DisposeAsync();
+                }
+#pragma warning disable CA1031 // A revogação já foi gravada e a sessão saiu do registro, mesmo se o socket não puder fechar.
+                catch (Exception)
+#pragma warning restore CA1031
+                {
+                }
+            }
         }
     }
 
@@ -146,7 +281,9 @@ internal sealed class AgentConnections(
     {
         lock (_gate)
         {
-            return _sessions.TryGetValue(session.AgentId, out var current) && ReferenceEquals(current, session);
+            return !_revokedAgents.Contains(session.AgentId)
+                && _sessions.TryGetValue(session.AgentId, out var current)
+                && ReferenceEquals(current, session);
         }
     }
 
@@ -226,4 +363,74 @@ internal sealed class AgentConnections(
             }
         }
     }
+
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            foreach (var pending in _drops.Values)
+            {
+                pending.Timer?.Dispose();
+            }
+
+            _drops.Clear();
+        }
+    }
+
+    /// <summary>Quem chama segura o lock. Substitui a espera anterior do agente, se havia.</summary>
+    private void ScheduleDrop(string agentId, DateTimeOffset disconnectedAt, DateTimeOffset expiresAt)
+    {
+        CancelDrop(agentId);
+        var pending = new PendingDrop(disconnectedAt, expiresAt);
+        _drops[agentId] = pending;
+        var due = expiresAt - _time.GetUtcNow();
+        pending.Timer = _time.CreateTimer(
+            _ => ExpireDrop(agentId, pending), null, due > TimeSpan.Zero ? due : TimeSpan.Zero, Timeout.InfiniteTimeSpan);
+    }
+
+    /// <summary>Quem chama segura o lock.</summary>
+    private void CancelDrop(string agentId)
+    {
+        if (_drops.Remove(agentId, out var pending))
+        {
+            pending.Timer?.Dispose();
+        }
+    }
+
+    /// <summary>A graça acabou sem o agente voltar: agora a queda vale, com o instante em que a conexão caiu de fato.</summary>
+    private void ExpireDrop(string agentId, PendingDrop pending)
+    {
+        lock (_gate)
+        {
+            // Voltou (ou a espera foi trocada por outra) enquanto o temporizador disparava.
+            if (!_drops.TryGetValue(agentId, out var current) || !ReferenceEquals(current, pending))
+            {
+                return;
+            }
+
+            CancelDrop(agentId);
+            if (_sessions.ContainsKey(agentId))
+            {
+                return;
+            }
+
+            if (presence.MarkDisconnected(agentId, pending.DisconnectedAt) is { } info)
+            {
+                Announce(info);
+            }
+        }
+    }
+
+    private sealed class PendingDrop(DateTimeOffset disconnectedAt, DateTimeOffset expiresAt)
+    {
+        public DateTimeOffset DisconnectedAt { get; } = disconnectedAt;
+
+        public DateTimeOffset ExpiresAt { get; } = expiresAt;
+
+        public ITimer? Timer { get; set; }
+    }
+}
+
+internal sealed class AgentSessionRevokedException : Exception
+{
 }

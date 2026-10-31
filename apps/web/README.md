@@ -59,6 +59,16 @@ Paleta p2 (verde-sálvia), claro e escuro, em `src/styles.css`. `ThemeService` s
 - **API fora do cache.** `/api/**` usa `NetworkOnly`; escrita offline é da fila do app, não do worker.
 - **Versão nova.** O worker novo espera; o app mostra "Nova versão disponível" e só troca quando o usuário aceita
   (`SKIP_WAITING`). O registro (`core/pwa/register-sw.ts`) só acontece em produção.
+- **Atualizar de verdade.** Ao tocar em "Atualizar", `PwaUpdateService` cobre a tela com um esqueleto (`update-skeleton.ts`),
+  pede o `SKIP_WAITING`, **espera o `controllerchange`** (prazo de 8 s), apaga os caches de execução (todos menos o precache
+  `workbox-precache*` e `exercise-art`) e só então recarrega, uma vez. Sem worker esperando, pede `registration.update()` e
+  espera a instalação. Nunca desregistra o worker. Se um pedaço de código da casca antiga já não existe (deploy trocou os
+  nomes), `chunk-error.ts` reconhece o erro (rota e `ErrorHandler`) e atualiza pelo mesmo caminho, uma vez por minuto no
+  máximo (guarda no `sessionStorage`); depois de uma atualização, um vigia recarrega uma vez se o primeiro conteúdo não vier.
+- **Teste da atualização.** `e2e/update/stale-shell.spec.ts` liga `e2e/server/two-versions-server.mjs`, que serve o build e,
+  no meio do teste, uma cópia com outro hash em todos os arquivos (`next-version.mjs`), com worker lento e API lenta.
+  Roda no `npm run e2e` e sozinho com `npx playwright test -c playwright.update.config.ts` (`UPDATE_E2E_DIST` aponta para
+  outro build; com `UPDATE_E2E_LEGACY=1` não exige o esqueleto, para ver a falha num build anterior ao conserto).
 - **CSP.** `index.html` leva `ngCspNonce="__CSP_NONCE__"` e o marcador do manifest; o servidor troca os dois.
   Nenhum `<script>` ou `<style>` em linha, e o critical CSS do Angular fica desligado (`inlineCritical: false`).
 - **Servidor de teste.** `e2e/server/static-server.mjs` serve o `dist` com fallback para o `index.html`, troca o

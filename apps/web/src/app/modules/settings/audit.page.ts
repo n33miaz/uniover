@@ -16,7 +16,6 @@ import { AuthApi } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { guestHome } from '../../core/auth/role.guard';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
-import { ModuleRegistry } from '../../core/modules/module-registry';
 import { SessionState } from '../../core/session/session-state';
 import { AuditApi } from './audit-api';
 import { AuditDownload } from './audit-download';
@@ -45,6 +44,7 @@ import {
   resolveQuery,
 } from './audit-model';
 import { SettingsGlyph } from './settings-glyph';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 
 /** Em que pé está a lista: carregando a primeira página, pronta, com erro, ou sem rede. */
 type Phase = 'loading' | 'ready' | 'error' | 'offline';
@@ -100,7 +100,7 @@ function fallbackFilename(now: Date): string {
  */
 @Component({
   selector: 'app-audit-page',
-  imports: [AuditFilterSheet, SettingsGlyph],
+  imports: [AuditFilterSheet, SettingsGlyph, LoadingSkeleton],
   templateUrl: './audit.page.html',
   styleUrl: './audit.page.css',
 })
@@ -112,7 +112,6 @@ export class AuditPage {
   private readonly authApi = inject(AuthApi);
   private readonly connectivity = inject(ConnectivityService);
   private readonly router = inject(Router);
-  private readonly registry = inject(ModuleRegistry);
   private readonly injector = inject(Injector);
 
   private readonly filterButton = viewChild<ElementRef<HTMLButtonElement>>('filterButton');
@@ -436,7 +435,7 @@ export class AuditPage {
       return false;
     }
     if (this.session.role() === 'owner') return false;
-    await this.router.navigateByUrl(guestHome(this.session, this.registry), { replaceUrl: true });
+    await this.router.navigateByUrl(guestHome(), { replaceUrl: true });
     return true;
   }
 }

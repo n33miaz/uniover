@@ -11,6 +11,7 @@ from uniover_agent.ports import (
     Clock,
     ConnectionReplaced,
     CredentialRejected,
+    ServerRestarting,
     Transport,
     TransportError,
 )
@@ -32,6 +33,9 @@ class BackoffPolicy:
     stable_after: float = 60.0
     # Espera depois de `replaced`: outra instância do mesmo agente assumiu; evita disputa.
     replaced_wait: float = 60.0
+    # Espera depois de o servidor avisar que reinicia (1012/1001): a API nova sobe em segundos,
+    # então volta-se logo, com jitter para uma frota de agentes não bater junta na porta.
+    restart_wait: float = 0.5
     # Fração de variação para mais e para menos (0,2 = de 80% a 120%).
     jitter: float = 0.2
 
@@ -84,6 +88,7 @@ class ConnectionSupervisor:
         self._agent_version = agent_version
         self._capabilities = tuple(capabilities)
         self._policy = policy or BackoffPolicy()
+        self._random = random
         self._backoff = Backoff(self._policy, random)
         # Roda a cada conexão, logo depois do `hello` (ex.: informar à API o estado atual da TV).
         self._on_connected = on_connected
@@ -142,8 +147,18 @@ class ConnectionSupervisor:
                 )
                 await self._clock.sleep(wait)
                 continue
+            except ServerRestarting as exc:
+                # Não cresce a espera: o aviso é do próprio servidor, não falha de rede.
+                wait = self._policy.restart_wait * (0.5 + self._random())
+                _log.info("servidor reiniciando (%s); volto em %.1f s", exc, wait)
+                await self._clock.sleep(wait)
+                continue
             except TransportError as exc:
                 _log.warning("conexão perdida (%s)", exc)
+            except Exception:
+                # Nada que o laço não preveja pode matar o agente: PC ligado há horas e agente fora
+                # do ar era exatamente isso. Registra a causa e reconecta com a espera normal.
+                _log.exception("falha inesperada na conexão; reconectando")
             else:
                 _log.info("conexão encerrada pelo servidor")
             delay = self._backoff.next_delay()
@@ -160,7 +175,7 @@ class ConnectionSupervisor:
             await self._transport.send(self._hello())
             if self._on_connected is not None:
                 await self._on_connected()
-            keepalive = asyncio.create_task(self._send_keepalives())
+            keepalive = asyncio.create_task(self._keepalive_guard())
             async for raw in self._transport.incoming():
                 await self._process(raw)
         finally:
@@ -175,6 +190,21 @@ class ConnectionSupervisor:
             await self._transport.close()
             if self._on_disconnected is not None:
                 self._on_disconnected()
+
+    async def _keepalive_guard(self) -> None:
+        """Se o batimento não consegue mais enviar, derruba o canal para o laço reconectar.
+
+        Sem isto a tarefa morria calada e a conexão ficava aberta, mas sem batimento nenhum.
+        """
+        try:
+            await self._send_keepalives()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _log.warning(
+                "o batimento não saiu (%s); fecho o canal para reconectar", type(exc).__name__
+            )
+            await self._transport.close()
 
     async def _send_keepalives(self) -> None:
         last_hello = self._clock.monotonic()

@@ -1,6 +1,6 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import type {
   LocalPhysicalAssessment,
   PhysicalAssessmentMeasure,
@@ -67,15 +67,12 @@ const ALLOWED_IMAGE_TYPES = new Set([
 
 @Component({
   selector: 'app-physical-assessment-import-page',
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule],
   template: `
     <div class="page" aria-labelledby="title">
-      <a class="back" routerLink="/treino/corpo/avaliacoes" i18n="@@training.assessments.back-list"
-        >‹ Avaliações</a
-      >
       <header>
         <p class="eyebrow" i18n="@@training.assessments.import-eyebrow">Prévia antes de gravar</p>
-        <h1 id="title" i18n="@@training.assessments.import-title">Importar avaliação</h1>
+        <h1 id="title" i18n="@@training.assessments.import-title">Importar Avaliação</h1>
       </header>
       <p class="explanation" i18n="@@training.assessments.import-help">
         Escolha um JSON exportado por uma avaliação do UniOver. Confira a procedência e marque cada
@@ -107,6 +104,17 @@ const ALLOWED_IMAGE_TYPES = new Set([
             A avaliação e os arquivos selecionados serão guardados apenas neste aparelho.
           </p>
         </section>
+        <p
+          class="preview-count"
+          role="status"
+          aria-live="polite"
+          i18n-aria-live="@@common.aria.polite"
+        >
+          {{ recognizedCount() }}
+          <span i18n="@@training.assessments.import-recognized">dados reconhecidos</span>
+          · {{ reviewCount() }}
+          <span i18n="@@training.assessments.import-review-count">para revisar</span>
+        </p>
         <fieldset>
           <legend i18n="@@training.assessments.confirm-fields">
             Confirme cada campo a importar
@@ -247,7 +255,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
           (click)="confirmImport()"
           i18n="@@training.assessments.confirm-import"
         >
-          Confirmar campos selecionados
+          Confirmar Campos Selecionados
         </button>
       }
     </div>
@@ -259,7 +267,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
     .page {
       display: grid;
       gap: var(--space-3);
-      padding: 0 var(--space-4) calc(var(--space-5) + env(safe-area-inset-bottom));
+      padding: 0 var(--space-4) var(--space-5);
     }
     h1,
     h2,
@@ -379,6 +387,12 @@ const ALLOWED_IMAGE_TYPES = new Set([
       border-radius: var(--radius-sm);
       background: var(--a-surface-2);
     }
+    .preview-count {
+      margin: 0;
+      color: var(--a-ink2);
+      font-size: var(--fs-small);
+      text-align: center;
+    }
     .primary {
       min-height: var(--tap);
       border: 0;
@@ -403,6 +417,10 @@ export class PhysicalAssessmentImportPage {
   protected readonly importedDocuments = signal<ImportedDocument[]>([]);
   protected readonly status = signal('');
   protected readonly saving = signal(false);
+  protected readonly recognizedCount = computed(() => this.candidates().length);
+  protected readonly reviewCount = computed(
+    () => this.candidates().filter((candidate) => !candidate.selected).length,
+  );
   protected readonly unitLabel = $localize`:@@training.assessments.unit:Unidade`;
   protected readonly title = (row: ImportAssessment) =>
     row.assessedOn

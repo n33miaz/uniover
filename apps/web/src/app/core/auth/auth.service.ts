@@ -314,13 +314,21 @@ export class AuthService {
    * Garante que o usuário da sessão esteja carregado quando há sessão confirmada: se a leitura logo depois do login
    * falhou (o servidor oscilou), tenta de novo uma vez. Falhar de novo não é erro: sem usuário, o guarda deixa a pessoa
    * seguir (rede ruim nunca a prende) e a pergunta do nome vem na próxima vez.
+   *
+   * A espera tem teto (metade do prazo da primeira confirmação): a primeira tela depende deste guarda, e uma leitura
+   * de `/me` lenta (o banco acordando, o servidor dormindo) deixava a navegação parada, sem nenhum conteúdo, por tanto
+   * tempo quanto a API levasse. Passado o teto o guarda libera a tela; a leitura segue em voo (é a mesma, sem pedido
+   * a mais) e o nome entra na saudação quando chegar.
    */
   async ensureUser(): Promise<void> {
     if (this.session.user() || this.session.status() !== 'authenticated') return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const patience = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, Math.round(this.config.initTimeoutMs / 2));
+    });
     // Falhar de novo não é erro (`fetchUser` engole): sem usuário a sessão vale do mesmo jeito (ver acima).
-    await this.fetchUser(null, () =>
-      this.authorized((token) => this.api.me(token), { stepUp: false, rereadOnForbidden: false }),
-    );
+    await Promise.race([this.refreshUser('renewal'), patience]);
+    clearTimeout(timer);
   }
 
   private origin(): string {
@@ -411,7 +419,13 @@ export class AuthService {
 
   /** Primeira leitura da conta com o token recém-emitido (login, convite, primeira renovação). */
   private loadUser(token: string): Promise<void> {
-    return this.fetchUser(null, () => this.api.me(token));
+    // Fica registrada como a leitura em voo: quem pedir a conta enquanto ela não volta (o guarda de boas-vindas) entra
+    // nela em vez de abrir uma segunda leitura.
+    const read: Promise<void> = this.fetchUser(null, () => this.api.me(token)).finally(() => {
+      if (this.userRead === read) this.userRead = null;
+    });
+    this.userRead = read;
+    return read;
   }
 
   /**

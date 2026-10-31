@@ -48,10 +48,21 @@ async function openHome(page: Page, scheme: Scheme) {
   await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
 }
 
-const strip = (page: Page) => page.locator('.chips li');
-const stripTexts = async (page: Page) =>
-  (await strip(page).allTextContents()).map((text) => text.trim());
-const tvBadge = (page: Page) => page.locator('article[data-module="tv"] .badges');
+const indicator = (page: Page) => page.locator('.agent-status');
+
+/** A bolinha é sempre um círculo (largura igual à altura e raio de pelo menos metade), em qualquer estado. */
+async function expectCircle(page: Page) {
+  const shape = await indicator(page).evaluate((dot) => {
+    const style = getComputedStyle(dot);
+    const radius = style.borderTopLeftRadius;
+    const { width, height } = dot.getBoundingClientRect();
+    const half = radius.endsWith('%') ? parseFloat(radius) >= 50 : parseFloat(radius) >= width / 2;
+    return { width, height, half };
+  });
+  expect(shape.width).toBeGreaterThan(0);
+  expect(shape.width).toBe(shape.height);
+  expect(shape.half).toBe(true);
+}
 const stateReads = () =>
   tv.requests.filter((request) => request.method === 'GET' && request.path === '/state').length;
 
@@ -59,38 +70,28 @@ function printPath(info: { project: { name: string } }, state: string, scheme: S
   return `test-results/home-status/home-${state}-${info.project.name}-${scheme}.png`;
 }
 
-/** Entrega ao app, pelo fluxo, o evento do vigia no formato que o agente manda. */
-const sendWatchdog = (page: Page, kind: string, severity: string) =>
-  emitSse(page, 'tv.watchdog', {
-    kind,
-    severity,
-    detail: '',
-    attempts: 1,
-    at: '2026-10-20T10:00:00Z',
-  });
-
 test.describe('Início: estado real da casa', () => {
   for (const scheme of SCHEMES) {
-    test(`agente ligado no tema ${scheme}: selos, print e acessibilidade`, async ({
+    test(`agente ligado no tema ${scheme}: bolinha, print e acessibilidade`, async ({
       page,
     }, info) => {
       await openHome(page, scheme);
-      await expect(strip(page).first()).toHaveText('Agente ligado');
-      expect(await stripTexts(page)).toEqual(['Agente ligado', 'Vigia sem dados']);
-      await expect(strip(page).first()).toHaveClass(/\bok\b/);
-      await expect(strip(page).nth(1)).not.toHaveClass(/\b(ok|warn)\b/);
-      await expect(tvBadge(page)).toContainText('Pronto para usar');
+      await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
+      await expect(indicator(page)).toHaveAttribute('title', 'Agente ligado');
+      await expect(indicator(page)).toHaveClass(/\bok\b/);
+      await expectCircle(page);
+
       const tvCard = page.locator('article[data-module="tv"]');
-      await expect(tvCard.locator('.desc')).toHaveText('Ligar, volume, canais e apps');
-      await expect(tvCard.locator('.card-action')).toHaveText('Abrir controle');
+      await expect(tvCard.locator('app-home-soon-badge')).toHaveCount(0);
+      await expect(tvCard.locator('.desc, .card-action')).toHaveCount(0);
       await expect(tvCard.locator('a.card-link')).toHaveAttribute(
         'aria-label',
         'TV: Abrir controle',
       );
-      await expect(page.locator('li.widget:has(article[data-module="training"])')).toHaveClass(
+      await expect(page.locator('li.widget:has(article[data-module="tv"])')).not.toHaveClass(
         /\bwide\b/,
       );
-      await expect(page.locator('li.widget:has(article[data-module="tv"])')).not.toHaveClass(
+      await expect(page.locator('li.widget:has(article[data-module="training"])')).not.toHaveClass(
         /\bwide\b/,
       );
       await settle(page);
@@ -100,112 +101,107 @@ test.describe('Início: estado real da casa', () => {
       await expectNoA11yViolations(page);
     });
 
-    test(`agente desligado no tema ${scheme}: selos, print e acessibilidade`, async ({
+    test(`agente desligado no tema ${scheme}: bolinha, print e acessibilidade`, async ({
       page,
     }, info) => {
       tv.state = { ...AGENT_OFF };
       await openHome(page, scheme);
-      await expect(strip(page).first()).toHaveText('Agente desligado');
-      expect(await stripTexts(page)).toEqual(['Agente desligado', 'Vigia sem dados']);
-      await expect(strip(page).first()).toHaveClass(/\bwarn\b/);
-      await expect(tvBadge(page)).toContainText('Sem agente em casa');
+      await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente desligado');
+      await expect(indicator(page)).toHaveAttribute('title', 'Agente desligado');
+      await expect(indicator(page)).toHaveClass(/\bwarn\b/);
+      await expectCircle(page);
       await settle(page);
       await expectNoHorizontalScroll(page);
       await screenshot(page, printPath(info, 'agent-off', scheme));
       expect(await smallTargets(page)).toEqual([]);
       await expectNoA11yViolations(page);
     });
-
-    test(`vigia em alerta e em ordem no tema ${scheme}: selos, print e acessibilidade`, async ({
-      page,
-    }, info) => {
-      await openHome(page, scheme);
-      await expect(strip(page).first()).toHaveText('Agente ligado');
-
-      await sendWatchdog(page, 'repair_failed', 'error');
-      await expect(strip(page).nth(1)).toHaveText('Vigia com aviso');
-      await expect(strip(page).nth(1)).toHaveClass(/\bwarn\b/);
-      await settle(page);
-      await screenshot(page, printPath(info, 'watcher-alert', scheme));
-      await expectNoA11yViolations(page);
-
-      await sendWatchdog(page, 'repaired', 'info');
-      await expect(strip(page).nth(1)).toHaveText('Vigia sem avisos');
-      await expect(strip(page).nth(1)).toHaveClass(/\bok\b/);
-      await expectNoA11yViolations(page);
-    });
-
-    test(`serviço fora do ar no tema ${scheme}: selos, print e acessibilidade`, async ({
-      context,
-      page,
-    }, info) => {
-      // A API não responde: a conexão é recusada.
-      await context.route('**/api/v1/tv/state', (route) => route.abort('connectionrefused'));
-      await openHome(page, scheme);
-      await expect(page.getByText('Serviço fora do ar', { exact: true })).toBeVisible();
-      expect(await stripTexts(page)).toEqual([
-        'Agente sem dados',
-        'Vigia sem dados',
-        'Serviço fora do ar',
-      ]);
-      await expect(tvBadge(page)).not.toContainText('Pronto para usar');
-      await settle(page);
-      await screenshot(page, printPath(info, 'service-down', scheme));
-      await expectNoA11yViolations(page);
-    });
   }
 
-  test('segue o agente em tempo real pelo fluxo, sem esperar a próxima leitura', async ({
-    page,
-  }) => {
+  test('sem resposta, a bolinha avisa sem texto visível', async ({ context, page }) => {
+    await context.route('**/api/v1/tv/state', (route) => route.abort('connectionrefused'));
     await openHome(page, 'light');
-    await expect(strip(page).first()).toHaveText('Agente ligado');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente sem resposta');
+    await expect(indicator(page)).toHaveAttribute('title', 'Agente sem resposta');
+    await expect(indicator(page)).toHaveClass(/\bwarn\b/);
+    await expectCircle(page);
+    await expect(page.locator('.chips')).toHaveCount(0);
+  });
+
+  test('segue o agente em tempo real pelo fluxo, sem exibir o vigia', async ({ page }) => {
+    await openHome(page, 'light');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
     await emitSse(page, 'tv.state', AGENT_OFF);
-    await expect(strip(page).first()).toHaveText('Agente desligado');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente desligado');
     await emitSse(page, 'tv.state', HOT_STATE);
-    await expect(strip(page).first()).toHaveText('Agente ligado');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
+    await expect(page.getByText(/Vigia/)).toHaveCount(0);
   });
 
   test('o fluxo só fica aberto com a Início na tela e a leitura volta com ela', async ({
     page,
   }) => {
     await openHome(page, 'light');
-    await expect(strip(page).first()).toHaveText('Agente ligado');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
     expect(await openStreams(page)).toBe(1);
     const reads = stateReads();
     expect(reads).toBeGreaterThanOrEqual(1);
 
     await page
-      .getByRole('link', { name: /Ajustes/ })
+      .getByRole('link', { name: /Configurações/ })
       .first()
       .click();
-    await expect(page.getByRole('heading', { level: 2, name: 'Conta' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Você' })).toBeVisible();
     await expect.poll(() => openStreams(page)).toBe(0);
 
     tv.state = { ...AGENT_OFF };
-    await page.getByRole('link', { name: /Início/ }).click();
-    await expect(strip(page).first()).toHaveText('Agente desligado');
+    await page.getByRole('button', { name: /Início/ }).click();
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente desligado');
     expect(await openStreams(page)).toBe(1);
     expect(stateReads()).toBeGreaterThan(reads);
   });
 
-  test('sem rede não consulta nem acusa erro, e ao voltar a rede lê de novo', async ({
-    context,
+  test('o convidado com a TV liberada vê a bolinha do agente DELE', async ({ page }) => {
+    identity.guests.push({
+      id: '00000000-0000-4000-8000-000000000061',
+      displayName: 'Raphael',
+      email: 'raphael@exemplo.com',
+      password: 'senha-do-raphael-123',
+      createdAt: '2026-10-21T15:00:00Z',
+      disabledAt: null,
+      permissions: ['module:tv', 'tv:control', 'module:training'],
+    });
+    identity.role = 'guest';
+    tv.state = { ...HOT_STATE, agentLinked: true };
+    await page.goto('/');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
+    tv.state = { ...AGENT_OFF, agentLinked: true };
+    await emitSse(page, 'tv.state', tv.state);
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente desligado');
+  });
+
+  test('sem agente vinculado à conta não há bolinha', async ({ page }) => {
+    tv.state = { ...AGENT_OFF, agentLinked: false };
+    await openHome(page, 'light');
+    await expect(indicator(page)).toHaveCount(0);
+  });
+
+  test('enquanto a leitura demora a bolinha pulsa suave, e com movimento reduzido fica parada', async ({
     page,
   }) => {
-    await openHome(page, 'light');
-    await expect(strip(page).first()).toHaveText('Agente ligado');
-    const reads = stateReads();
-
-    await context.setOffline(true);
-    await expect.poll(() => openStreams(page)).toBe(0);
-    expect(await stripTexts(page)).toEqual(['Agente ligado', 'Vigia sem dados']);
-    expect(stateReads()).toBe(reads);
-
-    tv.state = { ...AGENT_OFF };
-    await context.setOffline(false);
-    await expect(strip(page).first()).toHaveText('Agente desligado');
-    expect(await stripTexts(page)).not.toContain('Serviço fora do ar');
-    expect(stateReads()).toBeGreaterThan(reads);
+    let release!: () => void;
+    tv.stateGate = new Promise<void>((resolve) => (release = resolve));
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.goto('/');
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Conectando ao agente', {
+      timeout: 5000,
+    });
+    const animated = await indicator(page).evaluate((dot) => getComputedStyle(dot).animationName);
+    expect(animated).not.toBe('none');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const still = await indicator(page).evaluate((dot) => getComputedStyle(dot).animationName);
+    expect(still).toBe('none');
+    release();
+    await expect(indicator(page)).toHaveAttribute('aria-label', 'Agente ligado');
   });
 });

@@ -3,19 +3,19 @@ import { RouterLink } from '@angular/router';
 import { PhysicalAssessmentRepository } from '../../data/physical-assessments/physical-assessment-repository';
 import type { LocalPhysicalAssessment } from '../../data/physical-assessments/physical-assessment';
 import { assessmentTitle } from './assessment-format';
+import { AssessmentsListSkeleton } from './assessment-skeletons';
 
 @Component({
   selector: 'app-physical-assessments-page',
-  imports: [RouterLink],
+  imports: [RouterLink, AssessmentsListSkeleton],
   template: `
     <div class="page" aria-labelledby="title">
-      <a class="back" routerLink="/treino/corpo" i18n="@@training.assessments.back">‹ Corpo</a>
       <header>
         <p class="eyebrow" i18n="@@training.assessments.eyebrow">Histórico pessoal</p>
-        <h1 id="title" i18n="@@training.assessments.title">Avaliações físicas</h1>
+        <h1 id="title" i18n="@@training.assessments.title">Avaliações Físicas</h1>
       </header>
       <aside class="privacy" role="note">
-        <strong i18n="@@training.assessments.private-title">Somente neste aparelho</strong>
+        <strong i18n="@@training.assessments.private-title">Somente Neste Aparelho</strong>
         <p i18n="@@training.assessments.private-copy">
           Este histórico e os arquivos anexados não são enviados nem sincronizados. Se os dados do
           navegador forem apagados, você poderá perder os registros. Exporte uma cópia para
@@ -23,15 +23,13 @@ import { assessmentTitle } from './assessment-format';
         </p>
       </aside>
       <div class="actions">
-        <a class="primary" routerLink="nova" i18n="@@training.assessments.new">Nova avaliação</a>
+        <a class="primary" routerLink="nova" i18n="@@training.assessments.new">Nova Avaliação</a>
         <a class="secondary" routerLink="importar" i18n="@@training.assessments.import"
-          >Importar arquivo</a
+          >Importar Arquivo</a
         >
       </div>
       @if (loading()) {
-        <p class="muted" role="status" i18n="@@training.assessments.loading">
-          Carregando histórico…
-        </p>
+        <app-assessments-list-skeleton />
       } @else if (rows().length === 0) {
         <section class="empty">
           <h2 i18n="@@training.assessments.empty-title">Seu histórico começa aqui</h2>
@@ -64,7 +62,7 @@ import { assessmentTitle } from './assessment-format';
     .page {
       display: grid;
       gap: var(--space-3);
-      padding: 0 var(--space-4) calc(var(--space-5) + env(safe-area-inset-bottom));
+      padding: 0 var(--space-4) var(--space-5);
     }
     header {
       display: grid;
@@ -196,7 +194,11 @@ export class PhysicalAssessmentsPage {
   }
 
   private async load(): Promise<void> {
-    this.rows.set((await this.repository.list()).reverse());
-    this.loading.set(false);
+    try {
+      this.rows.set((await this.repository.list()).reverse());
+    } finally {
+      // Banco que não abre não prende a tela no brilho: a lista fica vazia e a moldura de espera já cuida do prazo.
+      this.loading.set(false);
+    }
   }
 }

@@ -22,9 +22,12 @@ export async function openToday(
   options: { path?: string; history?: boolean } = {},
 ): Promise<void> {
   await openTraining(page, options.path ?? '/treino');
-  await expect(page.getByRole('heading', { name: 'Semana', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Esta Semana', exact: true })).toBeVisible();
   if (options.history !== false) {
-    await expect(page.locator('.lines .ui-row').first()).toContainText('última vez 40 kg × 10');
+    // O histórico vem do servidor simulado: com a máquina ocupada o puxar passa dos 5 s padrão, então a espera é maior.
+    await expect(page.locator('.lines .ui-row').first()).toContainText('última vez 40 kg × 10', {
+      timeout: 20_000,
+    });
   }
 }
 
@@ -33,18 +36,20 @@ export async function openToday(
  * sem programa. Com programa ativo (ou treino já aberto) a folha não aparece e nada acontece.
  */
 export async function skipProgramChoice(page: Page): Promise<void> {
-  const skip = page.getByRole('button', { name: 'Seguir sem programa' });
-  const live = page.locator('app-live-session');
-  await expect(skip.or(live)).toBeVisible();
+  const skip = page.getByRole('button', { name: 'Seguir sem Programa' });
+  const day = page.locator('app-workout-day');
+  await expect(skip.or(day)).toBeVisible();
   if (await skip.isVisible()) await skip.click();
 }
 
-/** Toca em "Iniciar treino" e espera a tela do treino ao vivo. */
+/** Toca em "Iniciar Treino" e espera a tela do treino ao vivo. */
 export async function beginWorkout(page: Page, title = /Treino A/): Promise<void> {
-  await page.getByRole('button', { name: 'Iniciar treino' }).click();
+  await page.getByRole('button', { name: 'Iniciar Treino' }).click();
   await skipProgramChoice(page);
-  await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Concluir série' })).toBeEnabled();
+  await expect(page.locator('app-workout-day .routine-name')).toContainText(title);
+  await page.locator('app-workout-day .exercise.suggested').click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Treino' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Concluir Série' })).toBeEnabled();
 }
 
 /** Toca `times` vezes no botão de − ou + de um campo (pelo nome acessível). */
@@ -65,17 +70,44 @@ export function fieldValue(page: Page, group: 'Carga' | 'Repetições') {
  */
 export async function concludeSet(page: Page): Promise<void> {
   const before = await countRows(page, 'sets');
+  // No descanso o botão fixo de baixo sai: quem segue para a próxima série pula o descanso antes. Enquanto grava, o botão
+  // fica desabilitado, e o descanso já está no ar quando ele volta: esperar o botão habilitado OU o descanso é a ordem certa.
+  const rest = page.locator('.rest');
+  const skip = rest.getByRole('button', { name: /^(Pular Descanso|Fechar)$/ });
+  await expect(page.locator('app-live-session button.go:enabled').or(skip).first()).toBeVisible();
+  if (await skip.isVisible()) {
+    await skip.click();
+    await expect(rest).toHaveCount(0);
+  }
   await page.clock.fastForward(1000);
-  await page.getByRole('button', { name: 'Concluir série' }).click();
+  await page.getByRole('button', { name: 'Concluir Série' }).click();
   await expect.poll(() => countRows(page, 'sets')).toBe(before + 1);
 }
 
-/** Abre o menu do treino ("Opções do treino") e toca numa linha dele. */
+/** O menu do treino mora no topo da casca: os três pontos abrem a lista de ações e "Opções do treino" abre a folha dele. */
+export async function openSessionMenu(page: Page): Promise<void> {
+  await page.locator('app-page-top-bar').getByRole('button', { name: 'Mais opções' }).click();
+  await page
+    .getByRole('dialog', { name: 'Opções' })
+    .getByRole('button', { name: 'Opções do treino' })
+    .click();
+}
+
+/** Abre o menu do treino ("Opções do Treino") e toca numa linha dele. */
 export async function menu(page: Page, item: string | RegExp): Promise<void> {
-  await page.getByRole('button', { name: 'Opções do treino' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Opções do treino' });
+  await openSessionMenu(page);
+  const dialog = page.getByRole('dialog', { name: 'Opções do Treino' });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: item }).click();
+}
+
+/**
+ * Termina o treino pelo menu da tela do dia: ao concluir as séries previstas de um exercício o app volta a ela, e só
+ * então o menu que o teste abre é o dela (e não o do registro, que está de saída).
+ */
+export async function finishFromDay(page: Page): Promise<void> {
+  await expect(page.locator('app-workout-day')).toBeVisible();
+  await menu(page, /Terminar Treino/);
 }
 
 /** Aparelhos falsos: vibração, áudio e tela acesa, contados pela própria página (sem depender do navegador do teste). */

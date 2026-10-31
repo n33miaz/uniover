@@ -9,6 +9,24 @@ type Schemas = components['schemas'];
 export type CreatedInvite = Readonly<Schemas['CreateGuestInviteResponse']>;
 export type GuestPermissions = Readonly<Schemas['GuestSummary']>;
 
+/** Quantas vezes algo aconteceu nos últimos 7 e 30 dias. */
+export interface UsageCounts {
+  readonly last7Days: number;
+  readonly last30Days: number;
+}
+
+/** O uso de uma conta, só contagens: o dono vê quando entrou e quanto usou, nunca o conteúdo. */
+export interface PersonUsage {
+  readonly id: string;
+  readonly displayName: string;
+  readonly role: string;
+  readonly disabledAt: string | null;
+  readonly lastAccessAt: string | null;
+  readonly activeSessions: number;
+  readonly tvCommands: UsageCounts;
+  readonly workouts: UsageCounts;
+}
+
 const BASE = `${APP_CONFIG.apiBase}/v1/identity`;
 
 /**
@@ -20,6 +38,11 @@ const BASE = `${APP_CONFIG.apiBase}/v1/identity`;
 @Injectable({ providedIn: 'root' })
 export class PeopleApi {
   private readonly http = inject(HttpClient);
+
+  /** O uso de cada conta (último acesso, sessões, comandos da TV e treinos); só o administrador. */
+  usage(): Promise<readonly PersonUsage[]> {
+    return firstValueFrom(this.http.get<PersonUsage[]>(`${BASE}/people-usage`));
+  }
 
   /** Gerar o convite concede acesso: exige a passkey. A lista vai sempre explícita, para a tela mostrar o que foi enviado. */
   createInvite(displayName: string, permissions: readonly string[]): Promise<CreatedInvite> {

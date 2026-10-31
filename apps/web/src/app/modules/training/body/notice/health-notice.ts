@@ -27,7 +27,7 @@ export function fullNoticeTexts(): readonly string[] {
         <div class="head">
           <span class="ui-tile"><app-training-glyph name="info" /></span>
           <h3 id="body-notice-title" class="title" i18n="@@training.body.notice.title">
-            Antes de começar
+            Antes de Começar
           </h3>
         </div>
         <ul class="list">
@@ -72,7 +72,7 @@ export class HealthNotice {
   protected readonly store = inject(BodyNoticeStore);
 
   protected readonly texts = fullNoticeTexts();
-  protected readonly sheetHeading = $localize`:@@training.body.notice.sheet:Aviso de saúde`;
+  protected readonly sheetHeading = $localize`:@@training.body.notice.sheet:Aviso de Saúde`;
   protected readonly sheetOpen = signal(false);
 
   protected acknowledge(): void {

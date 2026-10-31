@@ -13,7 +13,6 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ControlPage } from './pages/control.page';
 import { ViewOnlyPage } from './pages/view-only.page';
 import { TV_PANEL_PARAM, TvPanelName, panelFromParam } from './data/tv-panels';
-import { GearIcon } from '../../core/layout/gear-icon';
 import { SessionState } from '../../core/session/session-state';
 import { TvAccess } from './data/tv-access';
 import { TvPrefs } from './data/tv-prefs';
@@ -28,21 +27,22 @@ import { TvMenu, TvMenuChoice } from './ui/tv-menu';
 import { TvSwitcher } from './ui/tv-switcher';
 import { PowerSheet } from './ui/power-sheet';
 import { TvSuggestionRequest } from './ui/shortcut-row';
+import { PcOffIcon } from './ui/pc-off-icon';
 import { StatusIndicator } from './ui/status-indicator';
 import { TvIcon } from './ui/tv-icon';
 import { TvPanel } from './ui/tv-panel';
 
 /**
  * Até quantas letras o nome cabe numa linha no tamanho inteiro (curto) e no médio. A coluna do meio do cabeçalho é a
- * tela menos duas colunas iguais (os botões dos lados e o ponto de estado ficam com elas), então o nome vai encolhendo
+ * tela menos duas colunas iguais (a da volta e dos três pontos, e a do ponto de estado e do desligar), então o nome vai encolhendo
  * e, se preciso, passa a usar até duas linhas. Os limites só dependem do número de letras, sem medir a tela.
  */
 const TITLE_SHORT_MAX = 6;
 const TITLE_MEDIUM_MAX = 12;
 
 /**
- * Tela única do módulo da TV: cabeçalho (à esquerda voltar ao Início e os três pontos do menu, no meio o nome com o ponto
- * de estado e à direita a energia), o controle e, por cima dele, o menu, os painéis flutuantes de Apps, Teclado e da
+ * Tela única do módulo da TV: cabeçalho (à esquerda voltar ao Início e os três pontos do menu, no meio o nome e à direita o
+ * ponto de estado e a energia), o controle e, por cima dele, o menu, os painéis flutuantes de Apps, Teclado e da
  * sugestão de atalho e as folhas de Personalizar, de desligar e de trocar de TV. O menu reúne os apps da TV, Personalizar e,
  * para o administrador, gerenciar as TVs; escolher uma linha fecha o menu e só então abre o painel dela, um modal por vez. Sem TV
  * configurada o controle dá lugar a um estado vazio com a ação certa para cada conta. O nome é o apelido
@@ -58,7 +58,7 @@ const TITLE_MEDIUM_MAX = 12;
   selector: 'app-tv-page',
   imports: [
     RouterLink,
-    GearIcon,
+    PcOffIcon,
     ControlPage,
     ViewOnlyPage,
     StatusIndicator,
@@ -82,7 +82,7 @@ export class TvPage {
   /** O que a conta pode fazer na TV: o que ela não pode, a tela não mostra. */
   protected readonly access = inject(TvAccess);
   protected readonly roundKeys = inject(TvRoundKeys);
-  /** Convidado vê só o controle: sem o retorno ao Início (ele não tem Início); no lugar, o botão de configurações. */
+  /** Quem administra pode escolher o computador da TV; o convidado só sabe que falta configurar. */
   protected readonly isGuest = inject(SessionState).isGuest;
 
   protected readonly powerOpen = signal(false);
@@ -134,8 +134,35 @@ export class TvPage {
   );
   /** Sem computador escolhido para a TV: nada de botões que não chegariam a lugar nenhum. */
   protected readonly unconfigured = computed(() => this.store.status() === 'unconfigured');
-  /** "Tentar de novo" só para o agente fora do ar: sem rede ou com o servidor acordando a tela já volta sozinha. */
-  protected readonly canRetry = computed(() => this.store.status() === 'agent-off');
+  /**
+   * "Tentar de Novo" para o agente fora do ar e para a leitura sem resposta: sem rede ou com o servidor acordando a tela já
+   * volta sozinha.
+   */
+  protected readonly canRetry = computed(() => {
+    const status = this.store.status();
+    return status === 'agent-off' || status === 'pc-off' || status === 'unresponsive';
+  });
+
+  /** Há um desligamento agendado (esperando ou já disparando): o botão de energia ganha o relógio miúdo. */
+  protected readonly scheduled = computed(() => {
+    const active = this.store.powerSchedule();
+    return active !== null && (active.status === 'pending' || active.status === 'dispatching');
+  });
+  protected readonly powerLabel = computed(() =>
+    this.scheduled()
+      ? $localize`:@@tv.power.label-scheduled:Desligar a TV, há desligamento agendado`
+      : $localize`:@@tv.power.label:Desligar a TV`,
+  );
+  /**
+   * Quantos botões tem o lado mais cheio do cabeçalho (a volta e os três pontos à esquerda; o ponto de estado e o desligar à
+   * direita): as duas colunas dos lados têm a largura dele, e o nome fica no centro da tela.
+   */
+  protected readonly sideCount = computed(() =>
+    Math.max(
+      1 + (this.hasMenu() ? 1 : 0),
+      (this.access.view() ? 1 : 0) + (this.access.power() ? 1 : 0),
+    ),
+  );
 
   /** Tamanho do nome no cabeçalho: o CSS escolhe a letra e as linhas por esta classe. */
   protected readonly titleSize = computed<'short' | 'medium' | 'long'>(() => {

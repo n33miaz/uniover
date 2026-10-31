@@ -48,19 +48,24 @@ describe('ExerciseDetailPage', () => {
       );
       expect(chips(el)).toEqual([
         'Peitoral',
-        'Tríceps · secundário',
-        'Ombros · secundário',
+        'Tríceps · Secundário',
+        'Ombros · Secundário',
         'Barra',
       ]);
       expect(el.querySelectorAll('app-exercise-illustration img')).toHaveLength(2);
-      expect(el.querySelector('.detail')?.firstElementChild?.classList.contains('hero')).toBe(true);
-      expect(el.querySelector('.detail .back')).toBeNull();
+      // Só o voltar vem antes da imagem; o nome segue logo depois dela.
+      expect(el.querySelector('.detail')?.firstElementChild?.classList.contains('head')).toBe(true);
+      expect(el.querySelector('.head')?.nextElementSibling?.classList.contains('hero')).toBe(true);
       const hero = el.querySelector('.hero')!;
       expect(hero.querySelector('.visuals')?.nextElementSibling?.classList.contains('chips')).toBe(
         true,
       );
       expect(hero.querySelectorAll('.visuals > *')).toHaveLength(2);
       expect(hero.querySelector('.visuals app-exercise-muscles')).not.toBeNull();
+      // Com ilustração, o cartão dos músculos acompanha o tamanho do cartão dela.
+      expect(hero.querySelector('.visuals app-exercise-muscles')?.classList.contains('fill')).toBe(
+        true,
+      );
       expect(hero.querySelector('h3')).toBeNull();
       expect(hero.querySelector('.muscle-legend')).toBeNull();
       expect(el.querySelectorAll('.muscle-figure')).toHaveLength(2);
@@ -79,12 +84,12 @@ describe('ExerciseDetailPage', () => {
     it('shows the first three steps and the rest after "Ver todos"', async () => {
       const { fixture, el } = await open('supino-reto');
       await eventually(fixture, () => expect(el.querySelectorAll('.steps li')).toHaveLength(3));
-      const more = button(el, /Ver todos os 5 passos/);
+      const more = button(el, /Ver Todos os 5 Passos/);
       expect(more.getAttribute('aria-expanded')).toBe('false');
       more.click();
       fixture.detectChanges();
       expect(el.querySelectorAll('.steps li')).toHaveLength(5);
-      expect(button(el, 'Ver menos').getAttribute('aria-expanded')).toBe('true');
+      expect(button(el, 'Ver Menos').getAttribute('aria-expanded')).toBe('true');
     });
   });
 
@@ -100,6 +105,7 @@ describe('ExerciseDetailPage', () => {
       expect(el.querySelector('.muscle-figure figcaption')?.textContent).toBe('Frente');
       expect(chips(el)).toEqual(['Abdômen', 'Peso do corpo', 'Tempo']);
       expect(el.querySelectorAll('.visuals > *')).toHaveLength(1);
+      expect(el.querySelector('app-exercise-muscles')?.classList.contains('fill')).toBe(false);
       expect(el.querySelector('.visuals')?.nextElementSibling?.classList.contains('chips')).toBe(
         true,
       );
@@ -162,7 +168,7 @@ describe('ExerciseDetailPage', () => {
       await eventually(fixture, () =>
         expect(el.querySelector('h2')?.textContent).toContain('Remada'),
       );
-      expect(chips(el)).toContain('própria');
+      expect(chips(el)).toContain('Própria');
       expect(text(el)).toContain('Exercício criado por você neste aparelho');
       expect(el.querySelector('a[href$="/editar"]')?.getAttribute('href')).toBe(
         '/treino/exercicios/meu/editar',
@@ -223,10 +229,10 @@ describe('ExerciseDetailPage', () => {
         ]);
       await eventually(fixture, () => expect(facts()[0]).toEqual(['Carga máxima', '45 kg']));
       expect(facts()[1]).toEqual(['1RM estimado', '54 kg']);
-      // Os três últimos dias, do mais novo ao mais velho; só os dias que bateram a carga máxima levam "recorde".
+      // Os três últimos dias, do mais novo ao mais velho; só os dias que bateram a carga máxima levam "Recorde".
       const days = facts().slice(2);
       expect(days.map(([, value]) => value)).toEqual(['45 kg × 6', '40 kg × 12', '42,5 kg × 8']);
-      expect(days.map(([day]) => /recorde/.test(day ?? ''))).toEqual([true, false, true]);
+      expect(days.map(([day]) => /Recorde/.test(day ?? ''))).toEqual([true, false, true]);
       expect(days.every(([day]) => /^\d{2}\/\d{2}/.test(day ?? ''))).toBe(true);
       const link = el.querySelector<HTMLAnchorElement>('a[href^="/treino/progresso"]')!;
       expect(link.getAttribute('href')).toBe('/treino/progresso?exercise=supino-reto');
@@ -263,8 +269,8 @@ describe('ExerciseDetailPage', () => {
     it('lists the routines and adds the exercise with 3 sets of 8 to 12 repetitions', async () => {
       const { fixture, el } = await open('prancha');
       const routine = await saveRoutine('Treino A', [item('i1', 'agachamento', 0)]);
-      await eventually(fixture, () => expect(button(el, /Adicionar a um treino/)).toBeDefined());
-      button(el, /Adicionar a um treino/).click();
+      await eventually(fixture, () => expect(button(el, /Adicionar a um Treino/)).toBeDefined());
+      button(el, /Adicionar a um Treino/).click();
       await eventually(fixture, () => expect(el.querySelector('dialog')).not.toBeNull());
       expect(el.querySelector('dialog')?.getAttribute('aria-labelledby')).toBeTruthy();
       const row = Array.from(el.querySelectorAll<HTMLButtonElement>('dialog .ui-row')).find(
@@ -290,8 +296,8 @@ describe('ExerciseDetailPage', () => {
 
     it('offers to create a routine with the exercise when there is none', async () => {
       const { fixture, el } = await open('prancha');
-      await eventually(fixture, () => expect(button(el, /Adicionar a um treino/)).toBeDefined());
-      button(el, /Adicionar a um treino/).click();
+      await eventually(fixture, () => expect(button(el, /Adicionar a um Treino/)).toBeDefined());
+      button(el, /Adicionar a um Treino/).click();
       await eventually(fixture, () => expect(el.querySelector('dialog')).not.toBeNull());
       expect(text(el)).toContain('Você ainda não tem rotinas');
       const create = el.querySelector<HTMLAnchorElement>('dialog a')!;
@@ -302,8 +308,8 @@ describe('ExerciseDetailPage', () => {
       const { fixture, el } = await open('prancha');
       const full = Array.from({ length: 40 }, (_, n) => item(`i${n}`, 'agachamento', n));
       await saveRoutine('Cheia', full);
-      await eventually(fixture, () => expect(button(el, /Adicionar a um treino/)).toBeDefined());
-      button(el, /Adicionar a um treino/).click();
+      await eventually(fixture, () => expect(button(el, /Adicionar a um Treino/)).toBeDefined());
+      button(el, /Adicionar a um Treino/).click();
       await eventually(fixture, () => expect(el.querySelector('dialog .ui-row')).not.toBeNull());
       el.querySelector<HTMLButtonElement>('dialog .ui-row')!.click();
       await eventually(fixture, () => expect(text(el)).toContain('máximo de exercícios'));
@@ -353,7 +359,7 @@ describe('ExerciseDetailPage', () => {
       await eventually(fixture, () => expect(text(el)).toContain('ajustado por você'));
       button(el, 'Editar').click();
       fixture.detectChanges();
-      button(el, 'Voltar ao padrão do equipamento').click();
+      button(el, 'Voltar ao Padrão do Equipamento').click();
       await vi.waitFor(async () =>
         expect((await trainingDb.exercises.get('supino-reto'))?.stepKg).toBeNull(),
       );
@@ -366,11 +372,11 @@ describe('ExerciseDetailPage', () => {
     });
   });
 
-  it('says the exercise was not found, with a way back', async () => {
-    const { fixture, el, router } = await open('nada');
-    await eventually(fixture, () => expect(text(el)).toContain('Exercício não encontrado'));
-    const navigate = vi.spyOn(router, 'navigateByUrl');
-    (el.querySelector('.back') as HTMLButtonElement).click();
-    expect(navigate).toHaveBeenCalledWith('/treino/exercicios');
+  it('does not render a second back button inside the exercise detail', async () => {
+    const { fixture, el } = await open('supino-reto');
+    await eventually(fixture, () =>
+      expect(el.querySelector('h2')?.textContent).toContain('Supino'),
+    );
+    expect(el.querySelector('.back')).toBeNull();
   });
 });

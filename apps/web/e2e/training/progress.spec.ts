@@ -104,7 +104,7 @@ test.describe('gráfico de evolução', () => {
   }) => {
     await startProgress(context, page);
     await openProgress(page);
-    await expect(page.getByRole('button', { name: 'Definir meta' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Definir Meta' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Carga máxima', exact: true }).click();
 
@@ -112,7 +112,7 @@ test.describe('gráfico de evolução', () => {
     await expect(when(page)).toHaveText('19/10 · 6 repetições');
     await expect(delta(page)).toHaveText('+12,5 kg desde 02/09');
     await expect(page.getByText('Maior carga de cada dia, em séries de trabalho.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Definir meta' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Definir Meta' })).toHaveCount(0);
     expect((await tableRows(page))[0]).toEqual(['19/10', '45 kg', '6']);
     await expectChartDrawn(page);
   });
@@ -144,7 +144,7 @@ test.describe('gráfico de evolução', () => {
     // Sem meta, nenhum pixel da cor da meta.
     expect((await chartPixels(page, ['--a-warn']))['--a-warn']).toBe(0);
 
-    await page.getByRole('button', { name: 'Definir meta' }).click();
+    await page.getByRole('button', { name: 'Definir Meta' }).click();
     const sheet = page.getByRole('dialog', { name: 'Meta de 1RM · Supino reto com barra' });
     await expect(sheet).toBeVisible();
     await sheet.getByLabel('Meta de 1RM, em kg').fill('55');
@@ -172,8 +172,8 @@ test.describe('gráfico de evolução', () => {
     await expect.poll(() => server.writes('goals')).toBe(2);
 
     await page.getByRole('button', { name: /^Meta: 60 kg/ }).click();
-    await sheet.getByRole('button', { name: 'Remover meta' }).click();
-    await expect(page.getByRole('button', { name: 'Definir meta' })).toBeVisible();
+    await sheet.getByRole('button', { name: 'Remover Meta' }).click();
+    await expect(page.getByRole('button', { name: 'Definir Meta' })).toBeVisible();
     await expect(chart(page)).not.toHaveAttribute('aria-label', /Meta de/);
     await expect.poll(() => server.writes('goals')).toBe(3);
     expect(puts()).toHaveLength(3);
@@ -183,7 +183,7 @@ test.describe('gráfico de evolução', () => {
   test('a meta é só do exercício em que foi definida', async ({ page, context }) => {
     await startProgress(context, page);
     await openProgress(page);
-    await page.getByRole('button', { name: 'Definir meta' }).click();
+    await page.getByRole('button', { name: 'Definir Meta' }).click();
     const sheet = page.getByRole('dialog', { name: /^Meta de 1RM/ });
     await sheet.getByLabel('Meta de 1RM, em kg').fill('55');
     await sheet.getByRole('button', { name: 'Salvar' }).click();
@@ -191,7 +191,7 @@ test.describe('gráfico de evolução', () => {
 
     await page.getByRole('button', { name: 'Agachamento livre com barra', exact: true }).click();
 
-    await expect(page.getByRole('button', { name: 'Definir meta' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Definir Meta' })).toBeVisible();
     await expect(chart(page)).not.toHaveAttribute('aria-label', /Meta de/);
   });
 
@@ -201,7 +201,7 @@ test.describe('gráfico de evolução', () => {
   }) => {
     const server = await startProgress(context, page);
     await openProgress(page);
-    await page.getByRole('button', { name: 'Definir meta' }).click();
+    await page.getByRole('button', { name: 'Definir Meta' }).click();
     const sheet = page.getByRole('dialog', { name: /^Meta de 1RM/ });
 
     await sheet.getByLabel('Meta de 1RM, em kg').fill('2000');
@@ -246,7 +246,7 @@ test.describe('recordes', () => {
       '19/10',
     ]);
     // Tudo foi batido no último dia treinado: todos com o selo.
-    await expect(rows.locator('.ui-chip')).toHaveText(['recorde', 'recorde', 'recorde', 'recorde']);
+    await expect(rows.locator('.ui-chip')).toHaveText(['Recorde', 'Recorde', 'Recorde', 'Recorde']);
     await expect(
       page.getByText('carga que você mais usou nos últimos quatro treinos'),
     ).toBeVisible();
@@ -318,7 +318,7 @@ test.describe('exercício, poucos dados e sem dados', () => {
     await openTraining(page, '/treino/progresso');
 
     await expect(
-      page.getByRole('heading', { name: 'Registre um treino para ver o progresso' }),
+      page.getByRole('heading', { name: 'Registre um Treino para Ver o Progresso' }),
     ).toBeVisible();
     await expect(page.locator('app-progress-evolution')).toHaveCount(0);
     await page.getByRole('link', { name: 'Ir para Hoje' }).click();
@@ -341,7 +341,7 @@ test.describe('exercício, poucos dados e sem dados', () => {
         'Nenhuma série de 1 a 10 repetições neste período: o 1RM não pode ser estimado.',
       ),
     ).toBeVisible();
-    await page.getByRole('button', { name: 'Ver a carga máxima' }).click();
+    await page.getByRole('button', { name: 'Ver a Carga Máxima' }).click();
     await expect(value(page)).toHaveText('50 kg');
     await expect(chart(page)).toBeVisible();
   });
@@ -372,7 +372,7 @@ test.describe('sem rede', () => {
     expect(await tableRows(page)).toHaveLength(8);
 
     blocked = false;
-    await page.getByRole('button', { name: 'Tentar de novo' }).click();
+    await page.getByRole('button', { name: 'Tentar de Novo' }).click();
     await expect(chart(page)).toBeVisible();
     await expectChartDrawn(page);
     await expect(page.getByText('Não foi possível carregar o gráfico agora.')).toHaveCount(0);

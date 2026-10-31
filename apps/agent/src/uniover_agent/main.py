@@ -10,7 +10,8 @@ import random
 import re
 import socket
 import sys
-from collections.abc import Awaitable, Callable, Coroutine, Sequence
+import uuid
+from collections.abc import Awaitable, Callable, Collection, Coroutine, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from importlib import metadata
@@ -19,6 +20,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from uniover_agent.adapters.absence_diary import AbsenceDiary
 from uniover_agent.adapters.agent_log_file import FileLogSource
 from uniover_agent.adapters.apk_tools import (
     Aapt2Inspector,
@@ -70,6 +72,8 @@ from uniover_agent.adapters.tv_pairing import (
 from uniover_agent.adapters.tv_remote_v2 import ANDROID_OPTIONAL_KEYS, AndroidTvRemoteV2
 from uniover_agent.adapters.tv_samsung import SAMSUNG_OPTIONAL_KEYS, SamsungTvDriver
 from uniover_agent.adapters.tv_samsung_pairing import SamsungPairingError, pair_samsung_tv
+from uniover_agent.adapters.tv_samsung_volume import SamsungVolume
+from uniover_agent.adapters.tv_volume_check import check_volume
 from uniover_agent.adapters.update_status import (
     FileUpdateStatus,
     default_status_path,
@@ -97,20 +101,26 @@ from uniover_agent.core import (
     POWER_OFF_CAPABILITY,
     AppIconPublisher,
     AppsAnnouncer,
+    Command,
+    CommandResult,
     ConnectionSupervisor,
     EnvelopeFactory,
     EnvelopeGate,
+    FocusBackgroundCloser,
     HandleCommand,
     Handler,
     IconResolver,
     PairAgent,
     ProcessMessage,
+    ResultStatus,
     SamsungTvApps,
     TextReconciler,
     TvApps,
     TvCleanup,
+    TvCleanupScheduler,
     TvIdentity,
     TvKnown,
+    TvLightSettings,
     TvRelocator,
     TvSessionManager,
     TvStatePublisher,
@@ -122,6 +132,7 @@ from uniover_agent.core import (
     tv_app_launch_handler,
     tv_apps_refresh_handler,
     tv_cleanup_handler,
+    tv_cleanup_skipped_handler,
     tv_key_handler,
     tv_power_off_handler,
     tv_text_handler,
@@ -139,6 +150,7 @@ from uniover_agent.ports import (
     PairingTicket,
     SecretStore,
     Transport,
+    TransportError,
     TvNotPaired,
     TvUnreachable,
 )
@@ -170,10 +182,10 @@ _BUILD_DIGITS = 12
 
 
 def build_version() -> str:
-    """Versão do pacote e, quando se sabe, o commit instalado (`0.1.0+3f2a9c1d4e5b`).
+    """Versão SemVer do produto e, quando se sabe, o commit instalado (`0.5.0+3f2a9c1d4e5b`).
 
-    É o que a tela do dono mostra: o número do pacote quase nunca muda, o commit diz de fato qual
-    código está rodando. O arquivo `.version` é o que a auto-atualização grava.
+    É o que a tela do dono mostra: o número identifica a publicação e o commit diz de fato qual
+    código está rodando. O arquivo `.version` é o que a auto-atualização grava e compara.
     """
     version = agent_version()
     try:
@@ -252,6 +264,8 @@ class TvSetup:
     known: TvKnown = field(default_factory=TvKnown)
     # O vigia do serviço do controle (só Android TV com `adb`): quem vê uma porta recusada o avisa.
     watchdog: TvWatchdog | None = None
+    cleanup_scheduler: TvCleanupScheduler | None = None
+    light_settings: TvLightSettings | None = None
 
 
 def build_tv(
@@ -310,6 +324,12 @@ def build_tv(
         key_pause_seconds=settings.tv_text_key_pause_ms / 1000,
         sleep=clock.sleep,
     )
+    # O estado real do campo (quando a TV o manda) semeia o diff da digitação; outro app em foco ou
+    # uma sessão nova o tornam velho, e então vale o comportamento de antes.
+    remote.on_text_field(text.observe_field)
+    remote.on_app(text.observe_app)
+    manager.on_session_opened(lambda _elapsed: text.forget_field())
+    manager.subscribe(lambda state: text.forget_field() if state.connection != "hot" else None)
     _log.info(
         "digitação na TV: teclas do controle remoto %s",
         "ligadas" if settings.tv_text_by_keys else "desligadas (padrão)",
@@ -338,8 +358,30 @@ def build_tv(
     )
     # Cada tarefa seguinte insere aqui só a linha dela; o gerenciador é o único dono da conexão.
     adb = compose_adb(setup, settings, host, clock)  # [composição: adb]
+    if adb is not None:
+        manager.set_volume_reader(volume_reader_when_push_is_silent(manager, adb))
     compose_watchdog(setup, settings, host, clock, adb)  # [composição: vigia]
     return setup
+
+
+def volume_reader_when_push_is_silent(
+    manager: TvSessionManager, adb: AdbTv
+) -> Callable[[], Awaitable[int | None]]:
+    """Reserva do volume da Android TV: lê pelo shell se não houve push após a última tecla.
+
+    O canal remoto da Android TV avisa o volume sozinho (de graça); ler pelo `adb` a cada tecla
+    seria carga a mais numa TV que já engasgou com ela. Por isso o `adb` só entra enquanto o estado
+    não atualizou o nível após a tecla, como em algumas soundbars por HDMI-ARC/CEC.
+    """
+
+    async def read() -> int | None:
+        if manager.remote_volume_seen:
+            return None
+        level = await adb.read_volume()
+        # Um push durante a consulta é mais recente que a resposta do shell.
+        return None if manager.remote_volume_seen else level
+
+    return read
 
 
 def key_capabilities(keys: Sequence[str]) -> list[str]:
@@ -421,7 +463,12 @@ def build_samsung_tv(
             ),
             "tv.apps.refresh.v1": tv_apps_refresh_handler(apps),
             "tv.text.v1": unsupported_handler("a TV Samsung não suporta digitação por este canal"),
-            "tv.cleanup.v1": unsupported_handler("a TV Samsung não suporta limpeza por ADB"),
+            "tv.cleanup.v1": tv_cleanup_skipped_handler(
+                transport,
+                envelopes,
+                "model-unconfirmed",
+                "a limpeza automática da TV Samsung fica desligada até confirmar o modelo",
+            ),
         },
         capabilities=[
             "tv.remote",
@@ -455,6 +502,65 @@ def remember_tv_identity(known: TvKnown, identity: TvIdentity) -> None:
         _log.info("identidade da TV guardada para reencontrá-la se o endereço mudar")
 
 
+def compose_focus_closer(
+    setup: TvSetup,
+    adb: AdbTv,
+    clock: Clock,
+    keep: Collection[str],
+    is_busy: Callable[[], bool],
+) -> FocusBackgroundCloser:
+    """Fechamento de apps de fundo do Modo Foco; o relatório entra nas limpezas como `focus`."""
+
+    async def report(packages: tuple[str, ...], duration_ms: int) -> None:
+        request_id = str(uuid.uuid4())
+        try:
+            await setup.transport.send(
+                setup.envelopes.tv_cleanup_result(
+                    request_id,
+                    request_id,
+                    closed_apps=len(packages),
+                    closed_packages=packages,
+                    memory_before_mb=None,
+                    memory_after_mb=None,
+                    freed_mb=None,
+                    failed_steps=(),
+                    kind="light",
+                    trigger="focus",
+                    result="completed",
+                    duration_ms=duration_ms,
+                )
+            )
+        except TransportError:
+            _log.info("não consegui enviar o relatório do Modo Foco")
+
+    return FocusBackgroundCloser(
+        adb, clock, lambda: setup.manager.snapshot().app, report, keep, is_busy
+    )
+
+
+def compose_light_settings(
+    setup: TvSetup,
+    adb: AdbTv,
+    clock: Clock,
+    keep: Collection[str],
+    is_busy: Callable[[], bool],
+) -> tuple[FocusBackgroundCloser, TvLightSettings]:
+    """Ajustes leves da TV, já ligados ao fechamento de apps de fundo do Modo Foco."""
+    manager = setup.manager
+    closer = compose_focus_closer(setup, adb, clock, keep, is_busy)
+    light_settings = TvLightSettings(
+        adb,
+        clock,
+        manager.set_keep_hot,
+        lambda: manager.snapshot().app,
+        installation_base() / "tv-light-settings.json",
+        manager.wake,
+        closer.on_focus,
+        closer.reset,
+    )
+    return closer, light_settings
+
+
 def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> AdbTv | None:
     """Liga o canal ADB: lista de apps, abertura por pacote e digitação pelo `input text`.
 
@@ -481,10 +587,19 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
     )
     manager = setup.manager
     manager.add_channel(adb)
-    icons = compose_icons(setup, settings, adb, clock)
+
+    focus_closer, light_settings = compose_light_settings(
+        setup, adb, clock, keep, lambda: cleanup.running
+    )
+    icons = compose_icons(setup, settings, adb, clock, lambda: light_settings.focus_active)
+    if icons is not None:
+        light_settings.on_release(icons.resume)
     apps = TvApps(manager, adb, setup.transport, setup.envelopes, icons)
     announcer = AppsAnnouncer(
-        apps, lambda: manager.snapshot().connection == "hot", monotonic=clock.monotonic
+        apps,
+        lambda: manager.snapshot().connection == "hot",
+        monotonic=clock.monotonic,
+        is_paused=lambda: light_settings.focus_active,
     )
     # O handler de `tv.text.v1` continua sendo um só: ele recebe o ADB, não é substituído.
     if setup.text is not None:
@@ -493,9 +608,46 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
     setup.handlers["tv.app.launch.v1"] = tv_app_launch_handler(manager, packages=apps)
     # A limpeza só mexe no ADB (nunca na sessão do controle remoto) e leva vários segundos: roda
     # fora do laço de mensagens, e as teclas seguem enquanto ela trabalha.
-    cleanup = TvCleanup(adb, clock, keep=keep)
+    cleanup = TvCleanup(adb, clock, keep=keep, allow_app_closing=False)
+    scheduler = TvCleanupScheduler(
+        cleanup,
+        adb,
+        clock,
+        setup.transport,
+        setup.envelopes,
+        lambda: setup.manager.snapshot().app,
+        lambda: light_settings.focus_active,
+    )
+
+    async def configure_cleanup(command: Command) -> CommandResult:
+        body = command.body
+        scheduler.configure(
+            bool(body["lightEnabled"]),
+            bool(body["deepEnabled"]),
+            int(body["deepThresholdMb"]),
+            bool(body.get("closeBackgroundApps", False)),
+        )
+        # Só o `true` explícito e com o Modo Foco ligado nesta TV libera o fechamento.
+        focus_closer.configure(
+            bool(body.get("focusEnabled", False)) and body.get("focusClosesBackground") is True
+        )
+        await light_settings.configure(
+            bool(body.get("focusEnabled", False)),
+            bool(body.get("shortAnimationsEnabled", False)),
+            [item for item in body.get("restrictedPackages", []) if isinstance(item, str)],
+        )
+        return CommandResult(command.id, ResultStatus.OK)
+
     setup.handlers["tv.cleanup.v1"] = tv_cleanup_handler(cleanup, setup.transport, setup.envelopes)
+    setup.handlers["tv.cleanup.config.v1"] = configure_cleanup
     setup.background_commands.add("tv.cleanup.v1")
+    setup.background.append(scheduler.run)
+    setup.background.append(light_settings.run)
+    setup.cleanup_scheduler = scheduler
+    setup.light_settings = light_settings
+    light_settings.on_release(announcer.resume)
+    light_settings.on_release(scheduler.resume)
+    manager.on_session_opened(scheduler.note_session_opened)
     manager.subscribe(announcer.on_state)
     setup.after_hello.append(announcer.after_hello)
     setup.background.append(announcer.run)
@@ -515,6 +667,11 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
         except Exception as exc:
             _log.info("ADB sem resposta agora (%s); será usado quando a TV responder", exc)
         setup.capabilities.append("tv.adb")
+        # A limpeza automática depende do mesmo ADB (que responde agora ou quando a TV ligar).
+        setup.capabilities.append("tv.cleanup.automatic.v1")
+        # Os campos novos de `tv.cleanup.config.v1` só vão a quem declara esta capacidade: o schema
+        # antigo recusa campo desconhecido e perderia a mensagem inteira.
+        setup.capabilities.extend(("tv.light-settings.v1", "tv.focus-closes-background.v1"))
 
     setup.prepare.append(declare_when_usable)
     return adb
@@ -548,7 +705,11 @@ def compose_watchdog(
 
 
 def compose_icons(
-    setup: TvSetup, settings: Settings, adb: AdbTv, clock: Clock
+    setup: TvSetup,
+    settings: Settings,
+    adb: AdbTv,
+    clock: Clock,
+    is_paused: Callable[[], bool] = lambda: False,
 ) -> AppIconPublisher | None:
     """Liga os ícones dos apps (extraídos do APK na TV). Sem `aapt2` neste PC, segue sem ícones.
 
@@ -572,6 +733,7 @@ def compose_icons(
         lambda: manager.snapshot().connection == "hot",
         clock.sleep,
         monotonic=clock.monotonic,
+        is_paused=is_paused,
     )
     manager.subscribe(publisher.on_state)
     setup.background.append(publisher.run)
@@ -731,12 +893,13 @@ async def pair(  # noqa: PLR0913 - o instalador soma uma opção a cada passo
     return EXIT_OK
 
 
-def build_relocator(
+def build_relocator(  # noqa: PLR0913, PLR0917
     settings: Settings,
     clock: Clock,
     is_hot: Callable[[], bool],
     known: TvKnown | None = None,
     on_refused: Callable[[], None] | None = None,
+    is_paused: Callable[[], bool] = lambda: False,
 ) -> TvRelocator | None:
     """Vigia do endereço da TV: só existe com `tv_host`.
 
@@ -813,7 +976,12 @@ def build_relocator(
             _log.info("MAC da TV guardado a partir da tabela ARP")
 
     return TvRelocator(
-        clock, is_hot=is_hot, reachable=reachable, rescan=rescan, on_alive=learn_arp_mac
+        clock,
+        is_hot=is_hot,
+        reachable=reachable,
+        rescan=rescan,
+        on_alive=learn_arp_mac,
+        is_paused=is_paused,
     )
 
 
@@ -872,6 +1040,13 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
         envelopes,
         transport,
         background_types=tv.background_commands if tv is not None else (),
+        on_command=(
+            lambda command: (
+                tv.cleanup_scheduler.note_message(command.type)
+                if tv is not None and tv.cleanup_scheduler is not None
+                else None
+            )
+        ),
     )
     publisher: TvStatePublisher | None = None
     after_hello: list[Callable[[], Awaitable[None]]] = []
@@ -887,8 +1062,16 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
 
         after_hello = [announce_tv, *tv.after_hello]
 
+    diary = AbsenceDiary(installation_base() / "runtime" / "last-alive", clock)
+    diary.start()
+
+    def on_disconnected() -> None:
+        tray.disconnected()
+        diary.disconnected()
+
     async def on_connected() -> None:
         tray.connected()
+        diary.connected()
         for step in after_hello:
             await step()
 
@@ -907,14 +1090,15 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
             *(tuple(tv.capabilities) if tv is not None else ()),
         ),
         on_connected=on_connected,
-        on_disconnected=tray.disconnected,
+        on_disconnected=on_disconnected,
         os_description=describe_os(),
         tv=(settings.tv_kind, settings.tv_host) if tv is not None and settings.tv_host else None,
         update_status=lambda: update_body(update_source.read()),
     )
     _log.info("agente %s iniciando (api %s)", agent_id, api_url)
     jobs: list[Callable[[], Coroutine[Any, Any, None]]] = [
-        UpdateStatusWatcher(update_source, transport, envelopes, clock).run
+        UpdateStatusWatcher(update_source, transport, envelopes, clock).run,
+        diary.run,
     ]
     if tv is not None:
         jobs = [*jobs, tv.manager.watch, *tv.background]
@@ -926,6 +1110,7 @@ async def run(settings: Settings, open_store: StoreFactory) -> int:  # noqa: PLR
             lambda: tv.manager.snapshot().connection == "hot",
             tv.known,
             tv.watchdog.request if tv.watchdog is not None else None,
+            lambda: tv.light_settings.focus_active if tv.light_settings is not None else False,
         )
         if tv is not None
         else None
@@ -1061,6 +1246,20 @@ def _describe(tv: DiscoveredTv) -> str:
     return f"{label} {tv.name} em {tv.host}" if tv.name else f"{label} em {tv.host}"
 
 
+async def tv_volume(settings: Settings) -> int:
+    """`tv-volume`: roda os caminhos de leitura do volume da TV configurada e conta o resultado."""
+    host = require_tv_host(settings.tv_host)
+    if settings.tv_kind == "samsung":
+        return await check_volume("samsung", samsung=SamsungVolume(host))
+    path = locate_adb(settings.adb_path)
+    adb = (
+        None
+        if path is None
+        else AdbTv(path, host, settings.tv_adb_port, timeout=settings.adb_timeout_seconds)
+    )
+    return await check_volume("android", adb=adb)
+
+
 async def tv_find(
     kind: TvKindName | None = None,
     *,
@@ -1189,6 +1388,9 @@ def _parser() -> argparse.ArgumentParser:
     update_parser.add_argument(
         "--no-sync", action="store_true", help="não roda `uv sync` depois (o instalador faz)"
     )
+    sub.add_parser(
+        "tv-volume", help="mostra por quais caminhos o agente consegue ler o volume da TV (só lê)"
+    )
     sub.add_parser("tray", help=argparse.SUPPRESS)
     return parser
 
@@ -1236,6 +1438,8 @@ def main(  # noqa: PLR0911 - um retorno por comando
             )
         if command == "tv-find":
             return asyncio.run(tv_find(args.kind))
+        if command == "tv-volume":
+            return asyncio.run(tv_volume(settings))
         if command == "self-update":
             return update_agent(sync=not args.no_sync)
         if command == "tray":

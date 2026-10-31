@@ -43,6 +43,21 @@ export const TRAINING_ROUTES: Routes = [
         loadComponent: () => import('./today/today.page').then((m) => m.TodayPage),
       },
       {
+        path: 'sessao',
+        data: NO_TABS,
+        loadComponent: () => import('./today/workout-day').then((m) => m.WorkoutDay),
+      },
+      {
+        path: 'sessao/exercicio',
+        data: NO_TABS,
+        loadComponent: () => import('./today/workout-exercise').then((m) => m.WorkoutExercise),
+      },
+      {
+        path: 'glossario',
+        data: NO_TABS,
+        loadComponent: () => import('./glossary/glossary.page').then((m) => m.TrainingGlossaryPage),
+      },
+      {
         path: 'exercicios',
         pathMatch: 'full',
         loadComponent: () =>

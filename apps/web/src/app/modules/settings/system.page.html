@@ -1,95 +1,177 @@
 <app-system-tv-section class="ui-rise" />
+<app-system-health-section />
 <section class="config ui-rise" aria-labelledby="system-config-title">
   <h2 id="system-config-title" class="ui-section-label" i18n="@@settings.system.config.title">
     Configuração
   </h2>
   @if (settings()) {
-    <div class="ui-group">
-      <form
-        class="config-row"
-        (submit)="$event.preventDefault(); save('training.off-contact', contact())"
-      >
-        <label for="off-contact" i18n="@@settings.system.config.contact"
-          >Contato de alimentos</label
+    <div class="config-groups">
+      <section class="config-group ui-group" aria-labelledby="system-contact-title">
+        <h3 id="system-contact-title" i18n="@@settings.system.config.contact-group">Alimentos</h3>
+        <form
+          class="config-row"
+          (submit)="$event.preventDefault(); save('training.off-contact', contact())"
         >
-        <span class="source">{{ source('training.off-contact') }}</span>
-        <input
-          id="off-contact"
-          class="ui-input"
-          type="email"
-          [value]="contact()"
-          (input)="contact.set($any($event.target).value)"
-          required
-          maxlength="200"
-        />
-        <button
-          type="submit"
-          class="ui-btn secondary"
-          [disabled]="busy() !== null"
-          i18n="@@settings.system.config.save-contact"
-        >
-          Salvar contato
-        </button>
-      </form>
-      <form
-        class="config-row"
-        (submit)="$event.preventDefault(); save('devices.max-per-guest', limit())"
-      >
-        <label for="guest-limit" i18n="@@settings.system.config.limit"
-          >Computadores por convidado</label
-        >
-        <span class="source">{{ source('devices.max-per-guest') }}</span>
-        <input
-          id="guest-limit"
-          class="ui-input"
-          type="number"
-          min="1"
-          max="20"
-          [value]="limit()"
-          (input)="limit.set(+$any($event.target).value)"
-          required
-        />
-        <button
-          type="submit"
-          class="ui-btn secondary"
-          [disabled]="busy() !== null"
-          i18n="@@settings.system.config.save-limit"
-        >
-          Salvar limite
-        </button>
-      </form>
-      <div class="config-row">
-        <label class="switch-line" for="photo-storage">
-          <span i18n="@@settings.system.config.photos">Fotos na nuvem</span>
+          <label for="off-contact" i18n="@@settings.system.config.contact"
+            >Contato de Alimentos</label
+          >
+          <span class="source">{{ source('training.off-contact') }}</span>
           <input
-            id="photo-storage"
-            type="checkbox"
-            role="switch"
-            class="ui-switch"
-            [checked]="photos()"
-            (change)="photos.set($any($event.target).checked)"
+            id="off-contact"
+            class="ui-input"
+            type="email"
+            [value]="contact()"
+            (input)="contact.set($any($event.target).value)"
+            required
+            maxlength="200"
           />
-        </label>
-        <span class="source">{{ source('training.photo-storage-enabled') }}</span>
+          <button
+            type="submit"
+            class="ui-btn secondary"
+            [disabled]="busy() !== null"
+            i18n="@@settings.system.config.save-contact"
+          >
+            Salvar Contato
+          </button>
+        </form>
+      </section>
+      <section class="config-group ui-group" aria-labelledby="system-devices-title">
+        <h3 id="system-devices-title" i18n="@@settings.system.config.devices-group">
+          Dispositivos
+        </h3>
+        <form class="config-form" (submit)="$event.preventDefault(); saveDeviceSettings()">
+          <div class="config-row">
+            <label for="guest-limit" i18n="@@settings.system.config.limit"
+              >Computadores por Convidado</label
+            >
+            <span class="source">{{ source('devices.max-per-guest') }}</span>
+            <input
+              id="guest-limit"
+              class="ui-input"
+              type="number"
+              min="1"
+              max="20"
+              [value]="limit()"
+              (input)="limit.set(+$any($event.target).value)"
+              required
+            />
+          </div>
+          <div class="config-row">
+            <label for="agent-offline-minutes" i18n="@@settings.system.config.agent-offline-minutes"
+              >Avisar Agente Off-line Após (minutos)</label
+            >
+            <span class="source">{{ source('devices.agent-offline-minutes') }}</span>
+            <input
+              id="agent-offline-minutes"
+              class="ui-input"
+              type="number"
+              min="1"
+              max="1440"
+              [value]="offlineMinutes()"
+              (input)="offlineMinutes.set(+$any($event.target).value)"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            class="ui-btn secondary"
+            [disabled]="busy() !== null"
+            i18n="@@settings.system.config.save-devices"
+          >
+            Salvar Dispositivos
+          </button>
+        </form>
+      </section>
+      <section class="config-group ui-group" aria-labelledby="system-cleanup-title">
+        <h3 id="system-cleanup-title" i18n="@@settings.system.config.cleanup-group">Limpeza</h3>
+        <div class="config-row">
+          <label class="switch-line" for="light-cleanup">
+            <span i18n="@@settings.system.config.light-cleanup">Limpeza Leve Automática</span>
+            <input
+              id="light-cleanup"
+              type="checkbox"
+              role="switch"
+              class="ui-switch"
+              [checked]="lightCleanup()"
+              [disabled]="busy() !== null"
+              (change)="toggle('tv.light-cleanup-enabled', lightCleanup, $any($event.target))"
+            />
+          </label>
+          <span class="source">{{ source('tv.light-cleanup-enabled') }}</span>
+        </div>
+        <div class="config-row">
+          <label class="switch-line" for="deep-cleanup">
+            <span i18n="@@settings.system.config.deep-cleanup">Limpeza Profunda Automática</span>
+            <input
+              id="deep-cleanup"
+              type="checkbox"
+              role="switch"
+              class="ui-switch"
+              [checked]="deepCleanup()"
+              [disabled]="busy() !== null"
+              (change)="toggle('tv.deep-cleanup-enabled', deepCleanup, $any($event.target))"
+            />
+          </label>
+          <span class="source">{{ source('tv.deep-cleanup-enabled') }}</span>
+        </div>
+        <form
+          class="config-row"
+          (submit)="
+            $event.preventDefault();
+            save('tv.deep-cleanup-memory-threshold-mb', deepCleanupThreshold())
+          "
+        >
+          <label for="deep-cleanup-threshold" i18n="@@settings.system.config.deep-cleanup-threshold"
+            >Memória Mínima para Limpeza Profunda (MB)</label
+          >
+          <span class="source">{{ source('tv.deep-cleanup-memory-threshold-mb') }}</span>
+          <input
+            id="deep-cleanup-threshold"
+            class="ui-input"
+            type="number"
+            min="64"
+            max="512"
+            [value]="deepCleanupThreshold()"
+            (input)="deepCleanupThreshold.set(+$any($event.target).value)"
+            required
+          />
+          <button
+            type="submit"
+            class="ui-btn secondary"
+            [disabled]="busy() !== null"
+            i18n="@@settings.system.config.save-deep-cleanup-threshold"
+          >
+            Salvar Memória Mínima
+          </button>
+        </form>
         <button
           type="button"
           class="ui-btn secondary"
           [disabled]="busy() !== null"
-          (click)="save('training.photo-storage-enabled', photos())"
-          i18n="@@settings.system.config.save-photos"
+          (click)="resetCleanupDefaults()"
+          i18n="@@settings.system.config.reset-cleanup"
         >
-          Salvar fotos
+          Voltar ao Padrão da Limpeza
         </button>
-      </div>
+      </section>
     </div>
-  } @else {
+  } @else if (configLoading()) {
+    <app-loading-skeleton
+      [kind]="'groups'"
+      [count]="2"
+      i18n-label="@@settings.system.config.loading"
+      label="Carregando configuração…"
+      [reload]="false"
+      (retried)="load()"
+    />
+  } @else if (configFailed()) {
     <button
       type="button"
       class="ui-btn secondary"
       (click)="load()"
       i18n="@@settings.system.config.retry"
     >
-      Carregar configuração
+      Tentar de Novo
     </button>
   }
   @if (saved()) {

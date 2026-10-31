@@ -98,7 +98,11 @@ public sealed class HttpOffClientTests
         public string Contact { get; set; } = contact;
         public Task<string> OffContactAsync(CancellationToken cancellationToken = default) => Task.FromResult(Contact);
         public Task<int> MaxComputersPerGuestAsync(CancellationToken cancellationToken = default) => Task.FromResult(2);
+        public Task<int> AgentOfflineMinutesAsync(CancellationToken cancellationToken = default) => Task.FromResult(10);
         public Task<bool> PhotoStorageEnabledAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<bool> TvLightCleanupEnabledAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task<bool> TvDeepCleanupEnabledAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task<int> TvDeepCleanupMemoryThresholdMbAsync(CancellationToken cancellationToken = default) => Task.FromResult(160);
     }
 
     private sealed class CaptureHandler(string body) : HttpMessageHandler

@@ -1,9 +1,9 @@
 import { ChangeDetectionStrategy, Component, effect, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { FoodRepository, type OwnFoodDraft } from '../data/foods/food-repository';
 import type { LocalFood } from '../data/foods/food';
 import { MealRepository, type MealDraft } from '../data/meals/meal-repository';
 import { type LocalMealEntry, type MealType } from '../data/meals/meal';
+import { FoodDiarySkeleton, FoodSearchSkeleton } from './food-diary-skeleton';
 
 type EntryMode = 'food' | 'free';
 type SearchState =
@@ -11,12 +11,11 @@ type SearchState =
 
 @Component({
   selector: 'app-food-diary-page',
-  imports: [RouterLink],
+  imports: [FoodDiarySkeleton, FoodSearchSkeleton],
   template: `
-    <main class="page" aria-labelledby="diary-title">
+    <section class="page" aria-labelledby="diary-title">
       <header class="page-header">
-        <a routerLink="/treino/corpo" class="back" i18n="@@training.food.back">Corpo</a>
-        <h1 id="diary-title" i18n="@@training.food.title">Diário alimentar</h1>
+        <h1 id="diary-title" i18n="@@training.food.title">Diário Alimentar</h1>
       </header>
 
       <section class="day-card" aria-label="{{ dayLabel }}">
@@ -44,17 +43,17 @@ type SearchState =
       </section>
 
       @if (!loaded()) {
-        <p role="status" class="notice" i18n="@@training.food.loading">Carregando lançamentos…</p>
+        <app-food-diary-skeleton />
       } @else if (loadError()) {
         <section class="error" role="alert">
           <p>{{ loadError() }}</p>
           <button type="button" class="secondary" (click)="loadDay()" i18n="@@training.food.retry">
-            Tentar novamente
+            Tentar Novamente
           </button>
         </section>
       } @else if (entries().length === 0) {
         <section class="empty">
-          <h2 i18n="@@training.food.empty-title">Nada registrado neste dia</h2>
+          <h2 i18n="@@training.food.empty-title">Nada Registrado Neste Dia</h2>
           <p i18n="@@training.food.empty-text">
             Se quiser, registre uma refeição para acompanhar seus dados.
           </p>
@@ -172,7 +171,7 @@ type SearchState =
             (click)="mode.set('free')"
             i18n="@@training.food.mode-free"
           >
-            Lançamento livre
+            Lançamento Livre
           </button>
         </div>
 
@@ -204,7 +203,7 @@ type SearchState =
               <p class="notice" role="status">{{ searchMessage() }}</p>
             }
             @if (searchState() === 'loading') {
-              <p role="status" class="muted" i18n="@@training.food.searching">Buscando…</p>
+              <app-food-search-skeleton />
             }
             @if (foods().length > 0) {
               <ul class="food-results" aria-label="{{ resultsLabel }}">
@@ -258,7 +257,7 @@ type SearchState =
             </div>
           }
           <details class="own-food">
-            <summary i18n="@@training.food.create-own">Cadastrar alimento próprio</summary>
+            <summary i18n="@@training.food.create-own">Cadastrar Alimento Próprio</summary>
             <div class="own-form">
               <div class="field">
                 <label for="own-name" i18n="@@training.food.food-name">Nome</label
@@ -336,7 +335,7 @@ type SearchState =
                 [disabled]="savingFood()"
                 i18n="@@training.food.save-food"
               >
-                Salvar alimento
+                Salvar Alimento
               </button>
             </div>
           </details>
@@ -433,7 +432,7 @@ type SearchState =
       @if (savedMessage()) {
         <p class="saved" role="status">{{ savedMessage() }}</p>
       }
-    </main>
+    </section>
   `,
   styleUrl: './food-diary.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -483,10 +482,10 @@ export class FoodDiaryPage {
   protected readonly nextDayLabel = $localize`:@@training.food.next-day:Dia seguinte`;
   protected readonly resultsLabel = $localize`:@@training.food.results:Resultados de alimentos`;
   protected readonly entryModeLabel = $localize`:@@training.food.entry-mode:Tipo de lançamento`;
-  protected readonly addHeading = $localize`:@@training.food.add-heading:Adicionar refeição`;
-  protected readonly editHeading = $localize`:@@training.food.edit-heading:Editar refeição`;
-  protected readonly saveLabel = $localize`:@@training.food.save-entry:Registrar refeição`;
-  protected readonly saveEditLabel = $localize`:@@training.food.save-edit:Salvar alterações`;
+  protected readonly addHeading = $localize`:@@training.food.add-heading:Adicionar Refeição`;
+  protected readonly editHeading = $localize`:@@training.food.edit-heading:Editar Refeição`;
+  protected readonly saveLabel = $localize`:@@training.food.save-entry:Registrar Refeição`;
+  protected readonly saveEditLabel = $localize`:@@training.food.save-edit:Salvar Alterações`;
   protected readonly editLabel = (name: string) =>
     $localize`:@@training.food.edit-label:Editar ${name}:name:`;
   protected readonly deleteLabel = (name: string) =>

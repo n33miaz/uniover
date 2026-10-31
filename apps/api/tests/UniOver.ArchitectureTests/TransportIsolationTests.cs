@@ -134,7 +134,10 @@ public class TransportIsolationTests
         var transport = new FakeTransport();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDevicesTransport(new ConfigurationBuilder().Build());
+        // Sem graça de presença: o teste confere a queda do agente na hora, não depois da espera de reconexão.
+        services.AddDevicesTransport(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Modules:Devices:Transport:PresenceGraceSeconds"] = "0" })
+            .Build());
         services.AddSingleton<IAgentTransport>(transport);
         await using var provider = services.BuildServiceProvider();
 

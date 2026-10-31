@@ -14,6 +14,7 @@ import {
 import { problemOf } from '../../core/auth/api-problem';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
 import { leaveDialog, onDialogBackdropClick } from '../../shared/ui/dialog-motion';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { AgentLog, DeviceAgent, DevicesApi } from './devices-api';
 
 /**
@@ -24,6 +25,7 @@ import { AgentLog, DeviceAgent, DevicesApi } from './devices-api';
  */
 @Component({
   selector: 'app-agent-log-sheet',
+  imports: [LoadingSkeleton],
   templateUrl: './agent-log-sheet.html',
   styleUrl: './agent-log-sheet.css',
 })

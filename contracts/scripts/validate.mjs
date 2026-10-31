@@ -63,5 +63,22 @@ for (const d of parsed.diagnostics.filter((x) => x.severity === 0)) {
   fail(`asyncapi.yaml: ${d.code} ${d.message} (${d.path.join("/")})`);
 }
 
+// Configuração do launcher da TV (tv-launcher/): um esquema só, fora do envelope do agente. Todo exemplo válido
+// passa e todo inválido falha; o APK lê os mesmos arquivos nos seus testes (apps/tv-launcher).
+const launcherRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "tv-launcher");
+const launcherSchema = read(join(launcherRoot, "config.v1.schema.json"));
+const launcherValidate = ajv.compile(launcherSchema);
+const launcherList = (d) => readdirSync(join(launcherRoot, "examples", d)).filter((f) => f.endsWith(".json")).sort();
+for (const f of launcherList("valid")) {
+  const doc = read(join(launcherRoot, "examples/valid", f));
+  if (!launcherValidate(doc)) fail(`tv-launcher: exemplo válido rejeitado (${f}): ${ajv.errorsText(launcherValidate.errors)}`);
+}
+const launcherInvalid = launcherList("invalid");
+if (launcherInvalid.length < 4) fail("tv-launcher: são necessários ao menos 4 exemplos inválidos");
+for (const f of launcherInvalid) {
+  if (launcherValidate(read(join(launcherRoot, "examples/invalid", f)))) fail(`tv-launcher: exemplo inválido aceito (${f})`);
+}
+
 if (failures) { console.error(`${failures} problema(s)`); process.exit(1); }
 console.log(`ok: ${byType.size} esquemas, ${list("examples/valid").length} válidos, ${invalid.length} inválidos`);
+console.log(`ok: tv-launcher config.v1, ${launcherList("valid").length} válidos, ${launcherInvalid.length} inválidos`);

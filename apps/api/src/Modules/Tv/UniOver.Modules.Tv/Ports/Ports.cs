@@ -67,7 +67,8 @@ public interface ITvCommandAudit
 
 /// <summary>O que a limpeza da TV fez, como o agente relatou (<c>tv.cleanup.result.v1</c>). Memória em MB.</summary>
 public sealed record TvCleanupReport(
-    int ClosedApps, int? MemoryBeforeMb, int? MemoryAfterMb, int? FreedMb, IReadOnlyList<string> FailedSteps);
+    int ClosedApps, int? MemoryBeforeMb, int? MemoryAfterMb, int? FreedMb, IReadOnlyList<string> FailedSteps,
+    IReadOnlyList<string>? ClosedPackages = null);
 
 /// <summary>Uma limpeza em andamento: o pedido e a espera pelo relatório do agente. Descartar libera a vez.</summary>
 public interface ITvCleanupTicket : IDisposable
@@ -138,6 +139,9 @@ public sealed record TvWatchdogEntry(
 public interface ITvAgentPresence
 {
     bool IsOnline(string agentId);
+
+    /// <summary>Desde quando o agente está fora (instante da queda ou do último sinal); nulo se conectado ou desconhecido.</summary>
+    DateTimeOffset? OfflineSince(string agentId);
 
     /// <summary>
     /// O agente está sem sessão há mais que a janela de reconexão do gateway. Dentro da janela é só uma queda curta

@@ -1,5 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { LoadingFrame } from '../../../shared/ui/skeleton/loading-frame';
+import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
 import { CREDIT_SOURCES } from './credits.data';
 import { WgerCredit, WgerCreditsReader } from './wger-credits';
 
@@ -10,7 +12,7 @@ import { WgerCredit, WgerCreditsReader } from './wger-credits';
  */
 @Component({
   selector: 'app-credits-page',
-  imports: [RouterLink],
+  imports: [LoadingFrame, RouterLink, Skeleton],
   templateUrl: './credits.page.html',
   styleUrl: './credits.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -23,6 +25,8 @@ export class CreditsPage {
   /** Link que sai do app: sem acesso à janela de origem e sem referência. */
   protected readonly linkRel = 'noopener noreferrer';
   protected readonly wger = signal<readonly WgerCredit[]>([]);
+  /** A leitura do banco local ainda não terminou: a seção do wger aparece como esqueleto até lá. */
+  protected readonly wgerLoading = signal(true);
 
   constructor() {
     void this.loadWger();
@@ -40,6 +44,8 @@ export class CreditsPage {
     } catch {
       // Banco local indisponível: a seção do wger só não aparece; o resto da tela segue valendo.
       this.wger.set([]);
+    } finally {
+      this.wgerLoading.set(false);
     }
   }
 }

@@ -39,6 +39,28 @@ app-tv-cleanup-sheet {
   white-space: nowrap;
 }
 
+/* Mantém a área da busca e da grade estável até a TV devolver a lista, sem sugerir que não há apps. */
+.loading {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.loading-bar,
+.loading-tiles span {
+  border-radius: var(--radius);
+}
+.loading-bar {
+  height: 48px;
+}
+.loading-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.loading-tiles span {
+  aspect-ratio: 1;
+}
+
 /* Estado vazio: sem a lista da TV ainda. */
 .empty {
   display: flex;

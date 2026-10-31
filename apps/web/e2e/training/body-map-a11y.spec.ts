@@ -52,7 +52,7 @@ const STATES: readonly State[] = [
     catalog: false,
     open: async (page) => {
       await openTraining(page, '/treino/exercicios/mapa');
-      await expect(page.getByText('O catálogo ainda não chegou')).toBeVisible();
+      await expect(page.getByText('O Catálogo Ainda Não Chegou')).toBeVisible();
     },
   },
 ];

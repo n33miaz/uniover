@@ -20,6 +20,8 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
 
     public DbSet<PairingAuditEntry> PairingAudit => Set<PairingAuditEntry>();
 
+    public DbSet<AgentOutage> AgentOutages => Set<AgentOutage>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -88,6 +90,18 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
 
             // Só o agente deste módulo pode ter o resumo; revogar não apaga o histórico que a tela ainda mostra.
             e.HasOne<Agent>().WithOne().HasForeignKey<AgentPresenceSnapshot>(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AgentOutage>(e =>
+        {
+            e.ToTable("agent_outages");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+
+            // Uma queda aberta por agente: dois ciclos do monitor (ou duas instâncias) nunca abrem a mesma queda duas vezes.
+            e.HasIndex(x => x.AgentId).IsUnique().HasFilter("recovered_at IS NULL").HasDatabaseName("ux_agent_outages_open");
+            e.HasIndex(x => x.DetectedAt);
+            e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<PairingAuditEntry>(e =>

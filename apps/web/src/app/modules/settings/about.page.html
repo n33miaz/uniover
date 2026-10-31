@@ -16,7 +16,10 @@
         <dt i18n="@@settings.about.api-version">Versão da API</dt>
         <dd>
           @if (apiVersion() === 'loading') {
-            <span i18n="@@settings.about.loading">consultando…</span>
+            <span class="version-skeleton ui-skeleton ui-wait bar" aria-hidden="true"></span>
+            <span class="ui-visually-hidden" i18n="@@settings.about.loading"
+              >Consultando versão…</span
+            >
           } @else if (apiVersion(); as version) {
             {{ version }}
           } @else {
@@ -37,9 +40,6 @@
           <span class="ui-tile"><app-settings-glyph name="heart" /></span>
           <span class="ui-row-text">
             <span class="ui-row-title" i18n="@@settings.about.credits">Créditos</span>
-            <span class="ui-row-sub" i18n="@@settings.about.credits-hint"
-              >Autores e licenças do material de terceiros</span
-            >
           </span>
           <app-settings-glyph class="chev" name="chevron" />
         </a>

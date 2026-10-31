@@ -10,7 +10,7 @@ import {
   emitSse,
   installFakeEventSource,
   mockTvApi,
-  sseUrls,
+  openStreams,
 } from './tv-mock';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -39,7 +39,8 @@ async function signIn(page: Page) {
 }
 
 async function showTv(page: Page) {
-  await expect.poll(() => sseUrls(page)).toEqual(['/api/v1/tv/events']);
+  // Só o fluxo da TV segue aberto: a Início também lê o estado (o convidado chega a ela pelo cartão) e o solta ao sair.
+  await expect.poll(() => openStreams(page)).toBe(1);
   await emitSse(page, 'tv.state', tv.state);
   await emitSse(page, 'tv.shortcuts', tv.shortcuts);
   await expect(page.getByRole('button', { name: 'OK', exact: true })).toBeVisible();
@@ -444,7 +445,7 @@ test.describe('atalhos maiores e centralizados', () => {
     });
   });
 
-  test('para o convidado (sem a seta de voltar) a fileira também é de 60 px e centralizada', async ({
+  test('para o convidado (com a seta de volta à Início) a fileira também é de 60 px e centralizada', async ({
     page,
   }) => {
     tv.shortcuts = shortcutsFor(FIT_CASES.slice(0, 4));
@@ -457,9 +458,14 @@ test.describe('atalhos maiores e centralizados', () => {
     await page.getByLabel('Senha', { exact: true }).fill(GUEST.password);
     await page.getByLabel('Repita a senha').fill(GUEST.password);
     await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+    // Toda conta entra pela Início; a convidada abre a TV pelo cartão dela.
+    await expect(page).toHaveURL(/\/$/);
+    await page.locator('article[data-module="tv"] a.card-link').click();
     await expect(page).toHaveURL(/\/tv$/);
     await showTv(page);
-    await expect(page.getByRole('link', { name: /Início/ })).toHaveCount(0);
+    await expect(
+      page.locator('header.head').getByRole('link', { name: 'Voltar ao Início' }),
+    ).toHaveAttribute('href', '/');
     await expect(page.locator('.shortcuts .shortcut')).toHaveCount(4);
     const gaps = await rowGaps(page);
     expect(gaps.width).toBeCloseTo(TILE, 0);

@@ -1,0 +1,59 @@
+<article class="glossary">
+  <header class="head">
+    <h2 i18n="@@training.glossary.title">Entenda o Treino</h2>
+  </header>
+
+  <!-- A ordem é a hierarquia: o Programa escolhe a Rotina de cada dia e a Rotina reúne Exercícios. Cada cartão leva à tela do termo. -->
+  <p class="lead" i18n="@@training.glossary.lead">
+    O Programa tem Rotinas, e cada Rotina tem Exercícios.
+  </p>
+
+  <ol class="terms ui-plain">
+    <li>
+      <a class="term ui-card" routerLink="/treino">
+        <span class="order" aria-hidden="true">1</span>
+        <div class="text">
+          <h3 i18n="@@training.glossary.program.title">Programa Semanal</h3>
+          <p i18n="@@training.glossary.program.text">Diz qual Rotina cai em cada dia da semana.</p>
+        </div>
+        <app-training-glyph class="chevron" name="next" />
+      </a>
+    </li>
+    <li>
+      <a class="term ui-card" routerLink="/treino">
+        <span class="order" aria-hidden="true">2</span>
+        <div class="text">
+          <h3 i18n="@@training.glossary.plan.title">Rotina do Dia</h3>
+          <p i18n="@@training.glossary.plan.text">
+            O treino marcado para hoje: a Rotina que o Programa escolhe, ou o descanso.
+          </p>
+        </div>
+        <app-training-glyph class="chevron" name="next" />
+      </a>
+    </li>
+    <li>
+      <a class="term ui-card" routerLink="/treino/rotinas">
+        <span class="order" aria-hidden="true">3</span>
+        <div class="text">
+          <h3 i18n="@@training.glossary.routine.title">Rotina</h3>
+          <p i18n="@@training.glossary.routine.text">
+            A lista de Exercícios de um treino, como o Treino A.
+          </p>
+        </div>
+        <app-training-glyph class="chevron" name="next" />
+      </a>
+    </li>
+    <li>
+      <a class="term ui-card" routerLink="/treino/exercicios">
+        <span class="order" aria-hidden="true">4</span>
+        <div class="text">
+          <h3 i18n="@@training.glossary.exercise.title">Exercício</h3>
+          <p i18n="@@training.glossary.exercise.text">
+            O movimento em que você registra as séries.
+          </p>
+        </div>
+        <app-training-glyph class="chevron" name="next" />
+      </a>
+    </li>
+  </ol>
+</article>

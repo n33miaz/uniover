@@ -1,14 +1,15 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AuthApi } from '../../core/auth/auth-api';
+import { canUseModule } from '../../core/auth/guest-home';
 import { SessionState } from '../../core/session/session-state';
 import { version as appVersion } from '../../../../package.json';
+import { LOADING_TIMING } from '../../shared/ui/skeleton/loading-frame';
 import { SettingsGlyph } from './settings-glyph';
 
 /**
- * Sobre: a versão do app (lida do `package.json` na compilação) e a da API (a rota de informação é pública: não é de
- * administrador), e o caminho para os Créditos. Serve a todos os papéis; a tela de Créditos, porém, é do administrador,
- * então a linha dela só aparece para ele.
+ * Sobre: a versão do app (lida do `package.json` na compilação) e a da API publicada, e o caminho para os Créditos. Serve
+ * a todos os papéis. Créditos é conteúdo do Treino, então aparece para qualquer pessoa que tenha esse módulo.
  */
 @Component({
   selector: 'app-about-page',
@@ -25,15 +26,22 @@ export class AboutPage {
   /** Versão do app, lida do `package.json` na compilação. */
   protected readonly appVersion: string | null = appVersion || null;
 
-  protected readonly showCredits = computed(() => this.session.role() === 'owner');
+  protected readonly showCredits = computed(() =>
+    canUseModule(this.session.role(), this.session.knownPermissions(), 'training'),
+  );
 
   constructor() {
     void this.loadApiVersion();
+    // Um servidor que não responde não deixa o brilho correndo para sempre: no prazo a linha diz que a versão está indisponível.
+    const giveUp = setTimeout(() => {
+      if (this.apiVersion() === 'loading') this.apiVersion.set(null);
+    }, inject(LOADING_TIMING).giveUpAfterMs);
+    inject(DestroyRef).onDestroy(() => clearTimeout(giveUp));
   }
 
   private async loadApiVersion(): Promise<void> {
     try {
-      this.apiVersion.set((await this.api.info()).version || null);
+      this.apiVersion.set((await this.api.deploymentVersion()).version || null);
     } catch {
       this.apiVersion.set(null);
     }

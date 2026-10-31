@@ -47,11 +47,11 @@ async function openHome(page: Page) {
 
 const toSettings = (page: Page) =>
   page
-    .getByRole('link', { name: /Ajustes/ })
+    .getByRole('link', { name: /Configurações/ })
     .first()
     .click();
 const settingsReady = (page: Page) =>
-  expect(page.getByRole('heading', { level: 2, name: 'Conta' })).toBeVisible();
+  expect(page.getByRole('heading', { level: 2, name: 'Você' })).toBeVisible();
 const sectionDelays = (page: Page) =>
   page.locator('.settings > *').evaluateAll((sections) =>
     sections.map((section) => {
@@ -82,12 +82,12 @@ test.describe('troca de tela', () => {
     await screenshot(page, `test-results/motion/settings-after-route-${info.project.name}.png`);
 
     // Voltar pela seta: a Início volta inteira e clicável, e a folha de edição abre.
-    await page.getByRole('link', { name: 'Voltar ao Início' }).click();
+    await page.getByRole('button', { name: 'Voltar ao Início' }).click();
     await expect(page.locator('app-home-page h1')).toContainText(OWNER.displayName.split(' ')[0]);
     await expect(page.locator('article.card')).toHaveCount(8);
     await settle(page);
     await page.getByRole('button', { name: 'Editar' }).click();
-    await expect(page.getByRole('dialog', { name: 'Editar a Início' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Personalizar' })).toBeVisible();
   });
 
   test('a tela nova não é coberta por nenhuma camada de transição durante a troca', async ({
@@ -121,7 +121,7 @@ test.describe('folhas e avisos', () => {
   test('a folha sobe ao abrir e desce antes de sair do DOM', async ({ page }) => {
     await openHome(page);
     await page.getByRole('button', { name: 'Editar' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Editar a Início' });
+    const sheet = page.getByRole('dialog', { name: 'Personalizar' });
     await expect(sheet).toBeVisible();
     // Entrada: a folha parte de um estado transparente e deslocado e vai ao estado final por transição.
     const entering = await sheet.evaluate((dialog) =>
@@ -133,9 +133,9 @@ test.describe('folhas e avisos', () => {
     expect(entering).toEqual(expect.arrayContaining(['opacity', 'translate']));
     await settle(page);
 
-    // Saída: ao cancelar, a folha ganha a classe `closing` e fica no DOM durante o esmaecer (160 ms).
+    // Saída: ao descartar, a folha ganha a classe `closing` e fica no DOM durante o esmaecer (160 ms).
     const exit = await sheet.evaluate(async (dialog) => {
-      (dialog.querySelector('.footer .secondary') as HTMLElement).click();
+      dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
       const start = performance.now();
       let sawClosing = false;
       while (document.contains(dialog) && performance.now() - start < 1500) {
@@ -216,7 +216,7 @@ test.describe('movimento reduzido', () => {
     expect(await longAnimations(page)).toEqual([]);
 
     await page.getByRole('button', { name: 'Editar' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Editar a Início' });
+    const sheet = page.getByRole('dialog', { name: 'Personalizar' });
     await expect(sheet).toBeVisible();
     expect(await longAnimations(page)).toEqual([]);
     expect(await sheet.evaluate((dialog) => getComputedStyle(dialog).transitionDuration)).toBe(

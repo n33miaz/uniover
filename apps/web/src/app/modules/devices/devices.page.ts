@@ -1,13 +1,14 @@
 import { Component, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { isStepUpRequired, problemOf } from '../../core/auth/api-problem';
 import { canUseModule } from '../../core/auth/guest-home';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
 import { SessionState } from '../../core/session/session-state';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { ConnectSheet } from './connect-sheet';
 import { AgentLogSheet } from './agent-log-sheet';
-import { DeviceAgent, DevicesApi, MaintenanceAction } from './devices-api';
+import { AgentAlert, DeviceAgent, DeviceTv, DevicesApi, MaintenanceAction } from './devices-api';
 import { GuestPairSheet } from './guest-pair-sheet';
 import { PairOutcome, PairSheet } from './pair-sheet';
 import { formatCodeInput } from './pairing-code';
@@ -24,7 +25,7 @@ const outdatedText = () =>
   $localize`:@@devices.outdated:Este computador ainda roda uma versão do agente sem essa função. Atualize o agente: ele se atualiza sozinho em algumas horas, e depois é só tentar de novo.`;
 
 /**
- * Aparelhos: lista dos agentes pareados, pareamento por código (com passkey), recusa de código e revogação.
+ * Dispositivos: lista dos agentes pareados, pareamento por código (com passkey), recusa de código e revogação.
  * Escrita nunca passa pela fila offline: sem rede, os botões ficam desabilitados e a tela explica.
  *
  * O QR que o agente mostra no PC abre esta tela com o código no endereço: a folha de aprovação já sobe com ele
@@ -38,7 +39,7 @@ const outdatedText = () =>
  */
 @Component({
   selector: 'app-devices-page',
-  imports: [RouterLink, PairSheet, ConnectSheet, AgentLogSheet, GuestPairSheet],
+  imports: [PairSheet, ConnectSheet, AgentLogSheet, GuestPairSheet, LoadingSkeleton],
   templateUrl: './devices.page.html',
   styleUrl: './devices.page.css',
 })
@@ -52,6 +53,11 @@ export class DevicesPage {
   protected readonly online = this.connectivity.online;
   protected readonly agents = signal<readonly DeviceAgent[] | null>(null);
   protected readonly loadFailed = signal(false);
+  /** Avisos de queda ainda não vistos; falhar em lê-los nunca atrapalha a lista. */
+  protected readonly alerts = signal<readonly AgentAlert[]>([]);
+  protected readonly dismissingAlertId = signal<string | null>(null);
+  /** As TVs e o computador de cada uma; sem elas a seção some. */
+  protected readonly tvs = signal<readonly DeviceTv[]>([]);
   protected readonly pairing = signal(false);
   protected readonly connecting = signal(false);
   /** Código vindo do endereço (já no formato da tela) para a folha de aprovação. */
@@ -68,9 +74,12 @@ export class DevicesPage {
   protected readonly canPairSelf = !this.canManage && this.canDownload;
   protected readonly guestPairing = signal(false);
   protected readonly connectorUrl = CONNECTOR_URL;
+  protected readonly loadingLabel = $localize`:@@devices.loading:Carregando os dispositivos…`;
   /** O conector só existe para Windows: nos outros aparelhos a tela diz isso em vez de oferecer o download. */
   protected readonly windowsPc = isWindowsPc(navigator);
   protected readonly revokingId = signal<string | null>(null);
+  /** Computadores com a manutenção aberta: a dobra sobrevive à confirmação em linha, que troca o bloco inteiro. */
+  protected readonly maintenanceOpen = signal<ReadonlySet<string>>(new Set());
   /** O pedido de atualizar ou reiniciar que espera a confirmação do dono, ou que está em andamento. */
   protected readonly maintaining = signal<{ id: string; action: MaintenanceAction } | null>(null);
   /** O aparelho cujo registro está aberto na folha. */
@@ -150,8 +159,23 @@ export class DevicesPage {
           : $localize`:@@devices.tv-generic:TV`;
     const host = agent.tvHost;
     return host
-      ? $localize`:@@devices.tv-info:TV: ${kind}:kind: · ${host}:host:`
-      : $localize`:@@devices.tv-kind:TV: ${kind}:kind:`;
+      ? $localize`:@@devices.tv-info:${kind}:kind: · ${host}:host:`
+      : $localize`:@@devices.tv-kind:${kind}:kind:`;
+  }
+
+  protected toggleMaintenance(agent: DeviceAgent, event: Event): void {
+    const open = (event.target as HTMLDetailsElement).open;
+    this.maintenanceOpen.update((current) => {
+      if (current.has(agent.id) === open) return current;
+      const next = new Set(current);
+      if (open) next.add(agent.id);
+      else next.delete(agent.id);
+      return next;
+    });
+  }
+
+  protected tvSummary(agent: DeviceAgent): string {
+    return this.tv(agent) ?? $localize`:@@devices.summary.no-tv:Sem TV vinculada`;
   }
 
   /**
@@ -384,11 +408,67 @@ export class DevicesPage {
 
   protected async load(): Promise<void> {
     this.loadFailed.set(false);
+    void this.loadExtras();
     try {
       this.agents.set(await this.api.list());
     } catch {
       this.loadFailed.set(true);
     }
+  }
+
+  /** Avisos e TVs são acréscimos: se falharem, a lista de computadores segue como está. */
+  private async loadExtras(): Promise<void> {
+    // `then` captura também o erro síncrono de um cliente incompleto: ler o acréscimo nunca derruba a tela.
+    const [alerts, tvs] = await Promise.allSettled([
+      Promise.resolve().then(() => this.api.alerts()),
+      Promise.resolve().then(() => this.api.tvs()),
+    ]);
+    this.alerts.set(alerts.status === 'fulfilled' ? alerts.value : []);
+    this.tvs.set(tvs.status === 'fulfilled' ? tvs.value : []);
+  }
+
+  protected alertTitle(alert: AgentAlert): string {
+    const name = alert.agentName;
+    return alert.recoveredAt
+      ? $localize`:@@devices.alert.back:${name}:name: voltou`
+      : $localize`:@@devices.alert.down:${name}:name: está sem sinal`;
+  }
+
+  protected alertDetail(alert: AgentAlert): string {
+    const since = this.contactFormat.format(new Date(alert.recoveredAt ?? alert.detectedAt));
+    return alert.recoveredAt
+      ? $localize`:@@devices.alert.back-at:Voltou em ${since}:time:`
+      : $localize`:@@devices.alert.down-at:Sem sinal desde ${since}:time:`;
+  }
+
+  protected async dismissAlert(alert: AgentAlert): Promise<void> {
+    if (this.dismissingAlertId()) return;
+    this.dismissingAlertId.set(alert.id);
+    try {
+      await this.api.markAlertSeen(alert.id);
+      this.alerts.update((items) => items.filter((item) => item.id !== alert.id));
+    } catch {
+      this.say(
+        $localize`:@@devices.alert.dismiss-failed:Não foi possível dispensar o aviso agora.`,
+        true,
+      );
+    } finally {
+      this.dismissingAlertId.set(null);
+    }
+  }
+
+  /** O computador que controla a TV, pelo nome (a TV só guarda o identificador dele). */
+  protected tvComputer(tv: DeviceTv): string {
+    const agent = this.agents()?.find((item) => item.slug === tv.agentSlug);
+    return agent
+      ? $localize`:@@devices.tv.computer:Computador: ${agent.name}:name:`
+      : $localize`:@@devices.tv.no-computer:Sem computador`;
+  }
+
+  protected tvState(tv: DeviceTv): string {
+    return tv.online
+      ? $localize`:@@devices.tv.online:Online`
+      : $localize`:@@devices.tv.offline:Sem Conexão`;
   }
 
   protected openPair(code = ''): void {
@@ -436,14 +516,17 @@ export class DevicesPage {
   protected async onPaired(outcome: PairOutcome): Promise<void> {
     this.pairing.set(false);
     if (outcome.kind === 'denied') {
-      this.say($localize`:@@devices.denied:Código recusado. Nenhum aparelho foi pareado.`, false);
+      this.say(
+        $localize`:@@devices.denied:Código recusado. Nenhum dispositivo foi pareado.`,
+        false,
+      );
       return;
     }
     const name = outcome.name;
     this.say(
       name
-        ? $localize`:@@devices.approved-named:Aparelho ${name}:name: pareado.`
-        : $localize`:@@devices.approved:Aparelho pareado.`,
+        ? $localize`:@@devices.approved-named:Dispositivo ${name}:name: pareado.`
+        : $localize`:@@devices.approved:Dispositivo pareado.`,
       false,
     );
     await this.load();
@@ -465,7 +548,7 @@ export class DevicesPage {
           list?.map((item) => (item.id === agent.id ? { ...item, revoked: true } : item)) ?? null,
       );
       this.revokingId.set(null);
-      this.say($localize`:@@devices.revoked:Aparelho revogado.`, false);
+      this.say($localize`:@@devices.revoked:Dispositivo revogado.`, false);
     } catch (error) {
       this.revokingId.set(null);
       const problem = problemOf(error);

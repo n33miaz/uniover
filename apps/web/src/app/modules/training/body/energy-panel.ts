@@ -14,20 +14,21 @@ import type { EnergyState } from './body-store';
 import { formatKcalNumber, parseDecimal } from './body-text';
 import { MealRepository } from '../data/meals/meal-repository';
 import { RouterLink } from '@angular/router';
+import { BodyMealsSkeleton } from './body-skeleton';
 
 @Component({
   selector: 'app-body-energy-panel',
-  imports: [RouterLink],
+  imports: [RouterLink, BodyMealsSkeleton],
   template: `
     <section class="energy" aria-labelledby="energy-title">
-      <h2 id="energy-title" i18n="@@training.body.energy.title">Meta de calorias</h2>
+      <h2 id="energy-title" i18n="@@training.body.energy.title">Meta de Calorias</h2>
       <section class="consumption" aria-labelledby="consumption-title">
         <div class="consumption-head">
           <h3 id="consumption-title" i18n="@@training.body.energy.consumed-title">
-            Consumo de hoje
+            Consumo de Hoje
           </h3>
           <a routerLink="/treino/alimentacao" i18n="@@training.body.energy.diary-link"
-            >Abrir diário</a
+            >Abrir Diário</a
           >
         </div>
         @if (mealsLoaded()) {
@@ -80,9 +81,7 @@ import { RouterLink } from '@angular/router';
         } @else if (mealsError()) {
           <p class="error" role="alert">{{ mealsError() }}</p>
         } @else {
-          <p class="muted" role="status" i18n="@@training.body.energy.meals-loading">
-            Lendo seus lançamentos locais…
-          </p>
+          <app-body-meals-skeleton />
         }
         <p class="muted" i18n="@@training.body.energy.nonprescriptive">
           Valores para acompanhamento pessoal; não são orientação médica.
@@ -99,7 +98,7 @@ import { RouterLink } from '@angular/router';
             (click)="editProfile.emit()"
             i18n="@@training.body.profile.complete"
           >
-            Preencher perfil
+            Preencher Perfil
           </button>
         }
         @case ('minor') {
@@ -125,20 +124,20 @@ import { RouterLink } from '@angular/router';
               <p class="warning" role="status">{{ belowText(ready.bmr) }}</p>
             }
             <details>
-              <summary i18n="@@training.body.energy.calculation">Como a meta foi calculada</summary>
+              <summary i18n="@@training.body.energy.calculation">Como a Meta Foi Calculada</summary>
               <dl>
                 <div>
-                  <dt i18n="@@training.body.energy.bmr">Taxa basal estimada</dt>
+                  <dt i18n="@@training.body.energy.bmr">Taxa Basal Estimada</dt>
                   <dd i18n="@@training.body.energy.kcal-value">
                     {{ formatKcalNumber(ready.bmr) }} kcal
                   </dd>
                 </div>
                 <div>
-                  <dt i18n="@@training.body.energy.factor">Fator de atividade</dt>
+                  <dt i18n="@@training.body.energy.factor">Fator de Atividade</dt>
                   <dd>{{ ready.factor }}</dd>
                 </div>
                 <div>
-                  <dt i18n="@@training.body.energy.expenditure">Gasto diário estimado</dt>
+                  <dt i18n="@@training.body.energy.expenditure">Gasto Diário Estimado</dt>
                   <dd i18n="@@training.body.energy.kcal-value">
                     {{ formatKcalNumber(ready.expenditure) }} kcal
                   </dd>
@@ -153,13 +152,13 @@ import { RouterLink } from '@angular/router';
                 (click)="editProfile.emit()"
                 i18n="@@training.body.energy.edit-factor"
               >
-                Editar fator
+                Editar Fator
               </button>
             </details>
             @if (editing()) {
               <div class="ui-field">
                 <label for="body-daily-goal" i18n="@@training.body.energy.edit-label"
-                  >Sua meta diária (kcal)</label
+                  >Sua Meta Diária (kcal)</label
                 >
                 <input
                   id="body-daily-goal"
@@ -184,7 +183,7 @@ import { RouterLink } from '@angular/router';
                   (click)="save(ready)"
                   i18n="@@training.body.energy.save"
                 >
-                  Salvar meta
+                  Salvar Meta
                 </button>
                 <button
                   class="secondary ui-btn"
@@ -202,7 +201,7 @@ import { RouterLink } from '@angular/router';
                 (click)="begin(ready)"
                 i18n="@@training.body.energy.choose"
               >
-                Escolher meta
+                Escolher Meta
               </button>
             }
           }

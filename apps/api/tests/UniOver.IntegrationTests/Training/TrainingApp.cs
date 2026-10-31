@@ -112,6 +112,20 @@ internal sealed class TrainingApp : IAsyncDisposable
 
     public IServiceProvider Services => _factory.Services;
 
+    /// <summary>
+    /// Liga o armazenamento privado das fotos de progresso com credenciais sintéticas. As rotas das fotos só existem
+    /// quando a configuração as liga, então as varreduras que olham o Treino inteiro precisam deste ajuste.
+    /// </summary>
+    public static void EnablePhotoStorage(IDictionary<string, string?> settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        settings["Modules:Training:Photos:Storage:Enabled"] = "true";
+        settings["Modules:Training:Photos:Storage:ServiceUrl"] = "https://objects.example.test";
+        settings["Modules:Training:Photos:Storage:Bucket"] = "private-test";
+        settings["Modules:Training:Photos:Storage:AccessKey"] = "synthetic-access";
+        settings["Modules:Training:Photos:Storage:SecretKey"] = "synthetic-secret";
+    }
+
     public static async Task<TrainingApp> StartAsync(PostgresFixture postgres, TrainingAppOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(postgres);
@@ -159,14 +173,7 @@ internal sealed class TrainingApp : IAsyncDisposable
             ["UNIOVER_OWNER_PASSWORD"] = password,
         };
         if (options.OffContact is not null) settings["TRAINING_OFF_CONTACT"] = options.OffContact;
-        if (options.PhotoStorageEnabled)
-        {
-            settings["Modules:Training:Photos:Storage:Enabled"] = "true";
-            settings["Modules:Training:Photos:Storage:ServiceUrl"] = "https://objects.example.test";
-            settings["Modules:Training:Photos:Storage:Bucket"] = "private-test";
-            settings["Modules:Training:Photos:Storage:AccessKey"] = "synthetic-access";
-            settings["Modules:Training:Photos:Storage:SecretKey"] = "synthetic-secret";
-        }
+        if (options.PhotoStorageEnabled) EnablePhotoStorage(settings);
         if (options.PhotoMaxAccountBytes is { } maxAccountBytes)
             settings["Modules:Training:Photos:MaxAccountBytes"] = maxAccountBytes.ToString(System.Globalization.CultureInfo.InvariantCulture);
         if (options.PhotoMaxAccountPhotos is { } maxAccountPhotos)

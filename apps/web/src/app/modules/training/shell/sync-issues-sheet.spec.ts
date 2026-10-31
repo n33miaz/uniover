@@ -49,7 +49,7 @@ describe('SyncIssuesSheet', () => {
     });
     await eventually(fixture, () => expect(issues(el)).toHaveLength(2));
     expect(el.querySelector('dialog')?.getAttribute('aria-labelledby')).toBeTruthy();
-    expect(text(el)).toContain('Alterações com erro');
+    expect(text(el)).toContain('Alterações com Erro');
     expect(issues(el)[0].textContent).toContain('Rotina');
     expect(issues(el)[0].textContent).toContain('“Treino A”');
     expect(issues(el)[0].textContent).toContain('relógio');
@@ -58,7 +58,7 @@ describe('SyncIssuesSheet', () => {
     expect(text(el)).not.toContain('Ainda na fila');
   });
 
-  it('names each button after the record, so "Tentar de novo" is not the same for all', async () => {
+  it('names each button after the record, so "Tentar de Novo" is not the same for all', async () => {
     const { fixture, el } = await render([ROUTINE, EXERCISE]);
     await eventually(fixture, () => expect(issues(el)).toHaveLength(2));
     const labels = Array.from(el.querySelectorAll('.issue button')).map((node) =>
@@ -72,7 +72,7 @@ describe('SyncIssuesSheet', () => {
     const { fixture, el, store, ids } = await render([ROUTINE]);
     await eventually(fixture, () => expect(issues(el)).toHaveLength(1));
     expect((await store().get(ids[0]))?.status).toBe('failed');
-    button(el, 'Tentar de novo').click();
+    button(el, 'Tentar de Novo').click();
     await vi.waitFor(async () => expect((await store().get(ids[0]))?.status).not.toBe('failed'));
     expect((await store().get(ids[0]))?.id).toBe(ids[0]);
   });

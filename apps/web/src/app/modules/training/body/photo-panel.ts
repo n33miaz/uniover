@@ -10,18 +10,23 @@ import type { PhotoInfo, PhotoUsage } from '../data/photos/photo';
 import { PhotoStore } from '../data/photos/photo-store';
 import { TrainingSheet } from '../shell/training-sheet';
 import { formatBytes, formatFullDate } from './body-text';
+import { BodyPhotosSkeleton } from './body-skeleton';
 
+/** `src` é a miniatura da lista; a foto inteira só é lida ao ampliar ou comparar (`FullPhoto`). */
 interface DisplayPhoto extends PhotoInfo {
+  readonly src: string;
+}
+
+interface FullPhoto extends PhotoInfo {
   readonly src: string;
 }
 
 @Component({
   selector: 'app-body-photo-panel',
-  imports: [TrainingSheet],
+  imports: [TrainingSheet, BodyPhotosSkeleton],
   template: `
     <section class="photos" aria-labelledby="photos-title">
-      <h2 id="photos-title" i18n="@@training.body.photos.title">Fotos de progresso</h2>
-      <p class="local-only" i18n="@@training.body.photos.local">Só neste aparelho</p>
+      <h2 id="photos-title" i18n="@@training.body.photos.title">Fotos de Progresso</h2>
       <p class="usage" aria-live="polite" i18n-aria-live="@@common.aria.polite">
         <span i18n="@@training.body.photos.usage">Fotos: {{ photoBytesText() }}</span>
         @if (usage()?.quotaBytes; as quota) {
@@ -35,7 +40,7 @@ interface DisplayPhoto extends PhotoInfo {
         Se o navegador apagar os dados do site, suas fotos somem. Salve uma cópia de vez em quando.
       </p>
       <label class="primary ui-btn add-photo">
-        <span i18n="@@training.body.photos.add">Tirar foto</span>
+        <span i18n="@@training.body.photos.add">Tirar ou Escolher Foto</span>
         <input
           type="file"
           [attr.accept]="'image/*'"
@@ -46,7 +51,9 @@ interface DisplayPhoto extends PhotoInfo {
       @if (error(); as message) {
         <p class="error" role="alert">{{ message }}</p>
       }
-      @if (photos().length) {
+      @if (!loaded()) {
+        <app-body-photos-skeleton />
+      } @else if (photos().length) {
         <div class="grid">
           @for (photo of photos(); track photo.id) {
             <article class="photo-card">
@@ -56,7 +63,12 @@ interface DisplayPhoto extends PhotoInfo {
                 (click)="view(photo)"
                 [attr.aria-label]="viewLabel(photo.takenOn)"
               >
-                <img [src]="photo.src" [alt]="photoAlt(photo.takenOn)" />
+                <img
+                  [src]="photo.src"
+                  [alt]="photoAlt(photo.takenOn)"
+                  [attr.loading]="'lazy'"
+                  [attr.decoding]="'async'"
+                />
               </button>
               <time>{{ formatDate(photo.takenOn) }}</time>
               <button
@@ -76,7 +88,7 @@ interface DisplayPhoto extends PhotoInfo {
                     (click)="remove(photo.id)"
                     i18n="@@training.body.photos.confirm-delete"
                   >
-                    Apagar foto
+                    Apagar Foto
                   </button>
                   <button
                     class="secondary ui-btn"
@@ -122,7 +134,7 @@ interface DisplayPhoto extends PhotoInfo {
           <h3 id="compare-title" i18n="@@training.body.photos.comparison">Comparação</h3>
           @for (photo of comparison(); track photo.id) {
             <figure>
-              <img [src]="photo.src" [alt]="photoAlt(photo.takenOn)" />
+              <img [src]="photo.src" [alt]="photoAlt(photo.takenOn)" [attr.decoding]="'async'" />
               <figcaption>{{ formatDate(photo.takenOn) }}</figcaption>
             </figure>
           }
@@ -145,13 +157,15 @@ interface DisplayPhoto extends PhotoInfo {
 export class BodyPhotoPanel {
   private readonly store = inject(PhotoStore);
   protected readonly photos = signal<readonly DisplayPhoto[]>([]);
+  /** A lista só vale depois da primeira leitura do aparelho: antes disso "nenhuma foto" seria uma afirmação falsa. */
+  protected readonly loaded = signal(false);
   protected readonly usage = signal<PhotoUsage | null>(null);
   protected readonly selected = signal<readonly string[]>([]);
   protected readonly confirmingId = signal<string | null>(null);
-  protected readonly viewing = signal<DisplayPhoto | null>(null);
+  protected readonly viewing = signal<FullPhoto | null>(null);
   protected readonly error = signal('');
   protected readonly message = signal('');
-  protected readonly comparison = signal<readonly DisplayPhoto[]>([]);
+  protected readonly comparison = signal<readonly FullPhoto[]>([]);
 
   constructor() {
     effect(() => {
@@ -198,22 +212,28 @@ export class BodyPhotoPanel {
     await this.load();
   }
 
-  protected toggle(id: string): void {
+  protected async toggle(id: string): Promise<void> {
     const current = this.selected();
     const next = current.includes(id)
       ? current.filter((value) => value !== id)
       : [...current, id].slice(-2);
     this.selected.set(next);
-    this.comparison.set(
-      next.length === 2
-        ? next.map((value) => this.photos().find((photo) => photo.id === value)!).filter(Boolean)
-        : [],
-    );
+    if (next.length !== 2) {
+      this.comparison.set([]);
+      return;
+    }
+    // A comparação mostra as duas fotos inteiras: só agora elas são lidas e viram `data:`.
+    const pair = await Promise.all(next.map((value) => this.full(value)));
+    // Se a seleção mudou enquanto as fotos eram lidas, esta resposta ficou velha.
+    if (this.selected() !== next) return;
+    this.comparison.set(pair.filter((photo): photo is FullPhoto => photo !== null));
   }
 
-  protected view(photo: DisplayPhoto): void {
-    this.viewing.set(photo);
+  protected async view(photo: DisplayPhoto): Promise<void> {
+    const full = await this.full(photo.id);
+    if (full !== null) this.viewing.set(full);
   }
+
   protected async remove(id: string): Promise<void> {
     await this.store.remove(id);
     this.confirmingId.set(null);
@@ -250,13 +270,21 @@ export class BodyPhotoPanel {
     return $localize`:@@training.body.photos.alt:Foto de progresso de ${formatFullDate(date)}:date:`;
   }
 
+  /** A foto inteira (bytes em `data:`) de um id que ainda está na lista. */
+  private async full(id: string): Promise<FullPhoto | null> {
+    const info = this.photos().find((photo) => photo.id === id);
+    if (info === undefined) return null;
+    const src = await this.store.dataUrl(id).catch(() => null);
+    return src === null ? null : { ...info, src };
+  }
+
   private async load(): Promise<void> {
     try {
       const [items, usage] = await Promise.all([this.store.list(), this.store.usage()]);
       const photos = await Promise.all(
         items.map(async (photo) => ({
           ...photo,
-          src: (await this.store.dataUrl(photo.id)) ?? '',
+          src: (await this.store.thumbUrl(photo.id)) ?? '',
         })),
       );
       this.photos.set(photos.filter((photo) => photo.src.startsWith('data:')));
@@ -267,6 +295,8 @@ export class BodyPhotoPanel {
       this.error.set(
         $localize`:@@training.body.photos.load-error:Não foi possível acessar as fotos salvas neste aparelho.`,
       );
+    } finally {
+      this.loaded.set(true);
     }
   }
 }

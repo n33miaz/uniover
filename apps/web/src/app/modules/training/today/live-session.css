@@ -6,17 +6,33 @@
 .live {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
   max-width: 40rem;
   margin-inline: auto;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  padding-bottom: 96px;
 }
 
-.head {
+.live:has(.resting) {
+  padding-bottom: var(--space-4);
+}
+
+/* O interruptor da tela acesa fica numa fileira logo abaixo do topo da casca, no canto de quem treina com a mão direita. */
+.tools {
   display: flex;
+  justify-content: flex-end;
+}
+
+.screen {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-1);
+  min-height: var(--tap);
+  color: var(--a-ink2);
+  cursor: pointer;
+}
+
+.screen app-today-glyph {
+  --glyph-size: 20px;
 }
 
 .icon {
@@ -41,41 +57,16 @@
   box-shadow: none;
 }
 
-.titles {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
 .title {
+  margin: 0;
+  text-align: center;
   font-size: 1.25rem;
   font-weight: 750;
   letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
 }
 
 .title:focus {
   outline: none;
-}
-
-.sub {
-  margin: 2px 0 0;
-  color: var(--a-ink2);
-  font-size: var(--fs-small);
-}
-
-.bar {
-  height: 4px;
-  overflow: hidden;
-  border-radius: var(--radius-pill);
-  background: var(--a-elev);
-}
-
-.fill {
-  display: block;
-  width: var(--progress, 0%);
-  height: 100%;
-  background: var(--a-accent);
-  transition: width var(--dur-base) var(--ease-out);
 }
 
 /* Séries gravadas no aparelho que ainda não chegaram ao servidor (sem rede, é o estado normal). */
@@ -95,57 +86,152 @@
   gap: var(--space-3);
 }
 
-/* O exercício: a miniatura (toque amplia, com o passo a passo) ao lado do nome. */
-.exercise {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.thumb {
-  flex: none;
-  width: 56px;
-  height: 56px;
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--a-line);
-  border-radius: var(--radius-sm);
-  /* O desenho é preto sobre branco e não se recolore (nem no tema escuro). */
-  background: #fff;
-  box-shadow: var(--shadow-1);
-  cursor: pointer;
-}
-
-.thumb img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.who {
+/*
+ * A primeira parte ocupa a altura da tela (menos o botão fixo de baixo): o que não cabe nela é secundário e fica logo abaixo.
+ * O que sobra de altura vai para a ilustração, que cresce até o limite da largura em que o desenho é nítido.
+ * `--live-top` é a distância do topo da tela até o início desta seção (entalhe, topo da casca do Treino, o respiro que a casca dá ao conteúdo e a fileira do interruptor).
+ */
+.first {
+  --live-top: calc(
+    env(safe-area-inset-top) + var(--space-3) + var(--tap) + var(--space-3) + var(--tap) +
+      var(--space-2)
+  );
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
+  min-height: calc(100vh - var(--live-top) - 96px - var(--safe-bottom));
+  min-height: calc(100svh - var(--live-top) - 96px - var(--safe-bottom));
+}
+
+.top {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 
+/* O nome do exercício numa linha só: a fonte acompanha a largura e, no limite, termina em reticências. */
 .name {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 750;
-  letter-spacing: -0.01em;
+  overflow: hidden;
+  font-size: clamp(1.125rem, 6vw, 1.5rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
   line-height: 1.2;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sub {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  font-weight: 650;
+}
+
+.routine {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.position {
+  flex: none;
 }
 
 .chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 0;
+  margin: var(--space-1) 0 0;
   padding: 0;
   list-style: none;
+}
+
+/* A série e a meta dela na mesma linha, logo acima do desenho. */
+.focus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.set-title {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.goal {
+  flex: none;
+}
+
+/*
+ * A ilustração: tudo o que sobra de altura na primeira parte. O componente limita a largura a 320 px e mantém a proporção do
+ * desenho, então a caixa tem teto de 328 px de altura; no descanso ela recolhe (o cronômetro é o foco) com a mesma transição
+ * da entrada do cartão.
+ */
+.art {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-height: 8.5rem;
+  max-height: 20.5rem;
+  overflow: hidden;
+}
+
+.art app-exercise-illustration {
+  width: auto;
+  max-width: 100%;
+  height: 100%;
+  aspect-ratio: 268 / 275;
+}
+
+.body.resting .art {
+  flex-grow: 0;
+  min-height: 0;
+  max-height: 0;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.body.resting .first {
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .art {
+    transition:
+      flex-grow 220ms var(--ease-out),
+      min-height 220ms var(--ease-out),
+      max-height 220ms var(--ease-out),
+      opacity 160ms var(--ease-out),
+      visibility 0s 220ms;
+  }
+
+  /* Ao voltar do descanso a ilustração fica visível já no começo da transição. */
+  .body:not(.resting) .art {
+    transition-delay: 0s;
+  }
+}
+
+/* A segunda parte: referência, esforço, anotação, aquecimento e as séries já feitas. */
+.more {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.extras {
+  display: flex;
+  flex-direction: column;
 }
 
 /* Recorde: um aviso quente e curto, sem festa. */
@@ -184,44 +270,20 @@
   font-weight: 650;
 }
 
-/* A série atual: o cartão onde a mão trabalha. */
+/* A série atual: o cartão onde a mão trabalha (só os campos; o título e a meta ficam acima do desenho). */
 .setcard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-}
-
-.setcard-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.set-id {
-  display: flex;
-  flex-direction: column;
-}
-
-.set-title {
-  margin: 0;
-  font-size: 1.125rem;
-  font-weight: 750;
-}
-
-.range {
-  color: var(--a-ink2);
-  font-size: var(--fs-label);
+  padding: var(--space-3) var(--space-4);
 }
 
 .warm {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
   min-height: var(--tap);
-  font-size: var(--fs-small);
+  padding: 0 var(--space-3);
   font-weight: 650;
+  cursor: pointer;
 }
 
 .done {
@@ -284,9 +346,9 @@
 .dock {
   position: fixed;
   inset-inline: 0;
-  bottom: 0;
+  bottom: var(--kb-inset);
   z-index: 2;
-  padding: var(--space-3) var(--gutter) calc(var(--space-3) + env(safe-area-inset-bottom));
+  padding: var(--space-3) var(--gutter) calc(var(--space-3) + var(--safe-bottom));
   border-top: 1px solid var(--a-line);
   background: var(--a-surface);
 }
@@ -310,14 +372,35 @@
   box-shadow: var(--shadow-2);
 }
 
+/*
+ * No descanso a ação principal é a do cartão ("Pular Descanso"): o botão fixo e a faixa de baixo saem, e o recado de
+ * "gravado" continua só para o leitor de tela. Nada cobre os atalhos.
+ */
+.dock.resting {
+  padding: 0;
+  border-top: 0;
+  background: none;
+  pointer-events: none;
+}
+
+.dock.resting > .go {
+  display: none;
+}
+
+.dock.resting .notice {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
 @media (hover: hover) {
   .icon:hover {
     background: var(--a-surface-2);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .fill {
-    transition: none;
   }
 }

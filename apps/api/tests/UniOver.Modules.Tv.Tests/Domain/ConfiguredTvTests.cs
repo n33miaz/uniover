@@ -87,4 +87,104 @@ public class ConfiguredTvTests
 
         tv.Name.Should().Be("Sala");
     }
+
+    [Fact]
+    public void BackgroundAppClosing_StartsOff_AndOnlyAChangeStampsWhoAndWhen()
+    {
+        var tv = ConfiguredTv.CreateDefault("TV", "pc-casa", Admin, Now);
+        tv.AllowBackgroundAppClosing.Should().BeFalse("a regra do dono é não mexer nos apps sem opção explícita");
+
+        tv.SetBackgroundAppClosing(false, Guid.NewGuid(), Now.AddMinutes(1)).Should().BeFalse();
+        tv.UpdatedAt.Should().Be(Now);
+
+        var other = Guid.NewGuid();
+        tv.SetBackgroundAppClosing(true, other, Now.AddMinutes(2)).Should().BeTrue();
+        (tv.AllowBackgroundAppClosing, tv.UpdatedBy, tv.UpdatedAt).Should().Be((true, other, Now.AddMinutes(2)));
+
+        tv.SetBackgroundAppClosing(false, Admin, Now.AddMinutes(3)).Should().BeTrue();
+        tv.AllowBackgroundAppClosing.Should().BeFalse();
+    }
+
+    [Fact]
+    public void LightSettings_StartOff_AndOnlyAChangeStampsWhoAndWhen()
+    {
+        var tv = ConfiguredTv.CreateDefault("TV", "pc-casa", Admin, Now);
+        (tv.FocusModeEnabled, tv.ShortAnimationsEnabled).Should().Be((false, false));
+        tv.BackgroundPackages().Should().BeEmpty();
+
+        tv.SetLightSettings(null, null, null, Guid.NewGuid(), Now.AddMinutes(1)).Should().BeFalse();
+        tv.SetLightSettings(false, false, [], Guid.NewGuid(), Now.AddMinutes(1)).Should().BeFalse();
+        tv.UpdatedAt.Should().Be(Now);
+
+        tv.SetLightSettings(true, null, ["com.exemplo.b", "com.exemplo.a", "com.exemplo.a"], Admin, Now.AddMinutes(2)).Should().BeTrue();
+        (tv.FocusModeEnabled, tv.ShortAnimationsEnabled).Should().Be((true, false));
+        tv.BackgroundPackages().Should().Equal("com.exemplo.a", "com.exemplo.b");
+    }
+
+    [Fact]
+    public void FocusClosesBackground_StartsOff_AndOnlyAChangeCounts()
+    {
+        var tv = ConfiguredTv.CreateDefault("TV", "pc-casa", Admin, Now);
+        tv.FocusClosesBackground.Should().BeFalse();
+
+        tv.SetLightSettings(null, null, null, Admin, Now.AddMinutes(1), false).Should().BeFalse();
+        tv.SetLightSettings(true, null, null, Admin, Now.AddMinutes(2), true).Should().BeTrue();
+        (tv.FocusModeEnabled, tv.FocusClosesBackground).Should().Be((true, true));
+        tv.SetLightSettings(null, null, null, Admin, Now.AddMinutes(3), true).Should().BeFalse();
+        tv.SetLightSettings(null, null, null, Admin, Now.AddMinutes(4), false).Should().BeTrue();
+        tv.FocusClosesBackground.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("android")]
+    [InlineData("com.android.systemui")]
+    [InlineData("com.android.vending")]
+    [InlineData("com.google.android.tv.remote.service")]
+    [InlineData("com.google.android.tvlauncher")]
+    [InlineData("com.google.android.inputmethod.latin")]
+    [InlineData("com.android.providers.media")]
+    [InlineData("com.tcl.launcher")]
+    [InlineData("com.exemplo.remote_control")]
+    [InlineData("nome invalido; rm -rf /")]
+    public void LightSettings_NeverKeepASystemLauncherKeyboardOrRemoteControlPackage(string package)
+    {
+        var tv = ConfiguredTv.CreateDefault("TV", "pc-casa", Admin, Now);
+
+        tv.SetLightSettings(null, null, [package, "com.exemplo.video"], Admin, Now.AddMinutes(1));
+
+        tv.BackgroundPackages().Should().Equal("com.exemplo.video");
+    }
+
+    [Fact]
+    public void IsValidRestrictedPackages_AcceptsNothingOrACleanList()
+    {
+        ConfiguredTv.IsValidRestrictedPackages(null).Should().BeTrue();
+        ConfiguredTv.IsValidRestrictedPackages([]).Should().BeTrue();
+        ConfiguredTv.IsValidRestrictedPackages(["com.exemplo.a", "com.exemplo.b"]).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsValidRestrictedPackages_RefusesWhatTheAgentOrTheColumnCannotTake()
+    {
+        ConfiguredTv.IsValidRestrictedPackages([.. Enumerable.Range(0, 101).Select(i => $"com.exemplo.app{i}")]).Should().BeFalse();
+        ConfiguredTv.IsValidRestrictedPackages([.. Enumerable.Range(0, 100).Select(i => $"com.exemplo.aplicativo.com.nome.bem.longo{i}")]).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("semponto")]
+    [InlineData("com.exemplo; reboot")]
+    [InlineData("com.android.vending")]
+    [InlineData("com.google.android.tv.remote.service")]
+    public void IsValidRestrictedPackages_RefusesANullInvalidOrProtectedItem(string? item)
+    {
+        ConfiguredTv.IsValidRestrictedPackages(["com.exemplo.a", item]).Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsValidRestrictedPackages_RefusesADuplicate()
+    {
+        ConfiguredTv.IsValidRestrictedPackages(["com.exemplo.a", "com.exemplo.a"]).Should().BeFalse();
+    }
 }

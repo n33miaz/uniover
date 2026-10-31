@@ -44,7 +44,18 @@ internal sealed partial class AgentHub(
         var closeReason = AgentCloseReason.Normal;
 
         var connectedAt = time.GetUtcNow();
-        var previous = connections.Attach(session, connectedAt);
+        IAgentSession? previous;
+        try
+        {
+            previous = connections.Attach(session, connectedAt);
+        }
+        catch (AgentSessionRevokedException)
+        {
+            // Um handshake validado antes da revogação não pode reabrir a presença depois dela.
+            await CloseQuietlyAsync(session, AgentCloseReason.Revoked);
+            await session.DisposeAsync();
+            return;
+        }
         await persistedPresence.RecordConnectedAsync(agentId, connectedAt, cancellationToken);
         using var heartbeatStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var heartbeat = SendKeepAlivesAsync(session, heartbeatStop.Token);
@@ -138,8 +149,14 @@ internal sealed partial class AgentHub(
         }
 
         var now = time.GetUtcNow();
-        connections.Touch(session, now);
         var isCurrent = connections.IsCurrent(session);
+        if (!isCurrent)
+        {
+            // A sessão substituída ou revogada não pode entregar respostas nem disparar tratadores.
+            return false;
+        }
+
+        connections.Touch(session, now);
         if (isCurrent && envelope.Type is not AgentMessageTypes.AgentHelloV1 and not AgentMessageTypes.AgentUpdateStatusV1)
         {
             await persistedPresence.TouchAsync(agentId, now, cancellationToken);

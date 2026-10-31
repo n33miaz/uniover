@@ -57,7 +57,7 @@ describe('RoutineEditorPage', () => {
   it('opens a routine: name, exercises in order, each with its goal in one line', async () => {
     const { fixture, el } = await open('/treino/rotinas/:id');
     await loaded(fixture, el);
-    expect(el.querySelector('h2')?.textContent).toContain('Editar rotina');
+    expect(el.querySelector('h2')?.textContent).toContain('Editar Rotina');
     expect(el.querySelector<HTMLInputElement>('#routine-name')!.value).toBe('Treino A');
     expect(names(el)).toEqual([
       'Supino reto com barra',
@@ -157,14 +157,14 @@ describe('RoutineEditorPage', () => {
 
     it('removes an exercise only after the confirmation', async () => {
       const { fixture, el } = await openFirst();
-      button(el, 'Remover da rotina').click();
+      button(el, 'Remover da Rotina').click();
       fixture.detectChanges();
       expect(text(el)).toContain('Remover este exercício da rotina?');
       expect(names(el)).toHaveLength(3);
       button(el, 'Manter').click();
       fixture.detectChanges();
       expect(el.querySelector('.panel .confirm')).toBeNull();
-      button(el, 'Remover da rotina').click();
+      button(el, 'Remover da Rotina').click();
       fixture.detectChanges();
       button(el, 'Remover').click();
       fixture.detectChanges();
@@ -176,7 +176,7 @@ describe('RoutineEditorPage', () => {
     it('opens the catalog list in a sheet and adds the chosen one with 3 sets of 8 to 12 repetitions', async () => {
       const { fixture, el } = await open('/treino/rotinas/:id');
       await loaded(fixture, el);
-      button(el, 'Adicionar exercício').click();
+      button(el, 'Adicionar Exercício').click();
       await eventually(fixture, () => expect(el.querySelector('dialog .ui-row')).not.toBeNull());
       const search = el.querySelector<HTMLInputElement>('dialog input[type="search"]')!;
       search.value = 'elevacao';
@@ -200,7 +200,7 @@ describe('RoutineEditorPage', () => {
       byLabel(el, 'Subir Agachamento livre').click();
       setName(el, 'Treino A · Pernas');
       fixture.detectChanges();
-      button(el, 'Salvar rotina').click();
+      button(el, 'Salvar Rotina').click();
       await vi.waitFor(() => expect(router.url).toBe('/treino/rotinas'), { timeout: 3000 });
       const saved = (await TestBed.inject(RoutineRepository).get(routineId))!;
       expect(saved.name).toBe('Treino A · Pernas');
@@ -216,7 +216,9 @@ describe('RoutineEditorPage', () => {
       const { fixture, el, routineId } = await open('/treino/rotinas/:id');
       await loaded(fixture, el);
       setName(el, '   ');
-      button(el, 'Salvar rotina').click();
+      fixture.detectChanges();
+      // Desligado, mas o aviso já diz o que falta.
+      expect(button(el, 'Salvar Rotina').disabled).toBe(true);
       await eventually(fixture, () => expect(text(el)).toContain('Dê um nome à rotina.'));
       expect(el.querySelector('#routine-name')?.getAttribute('aria-invalid')).toBe('true');
       expect((await TestBed.inject(RoutineRepository).get(routineId))?.name).toBe('Treino A');
@@ -229,7 +231,7 @@ describe('RoutineEditorPage', () => {
       fixture.detectChanges();
       for (let n = 0; n < 6; n++) byLabel(el, 'Aumentar repetições mínimas').click();
       fixture.detectChanges();
-      button(el, 'Salvar rotina').click();
+      expect(button(el, 'Salvar Rotina').disabled).toBe(true);
       await eventually(fixture, () =>
         expect(text(el)).toContain('A repetição mínima não pode passar da máxima.'),
       );
@@ -238,13 +240,40 @@ describe('RoutineEditorPage', () => {
       expect(stored.items[1].repMin).toBe(8);
     });
 
-    it('asks for at least one exercise', async () => {
+    it('keeps Save off while nothing changed, and does not scold an untouched routine', async () => {
+      const { fixture, el } = await open('/treino/rotinas/:id');
+      await loaded(fixture, el);
+      expect(button(el, 'Salvar Rotina').disabled).toBe(true);
+      expect(text(el)).not.toContain('Dê um nome à rotina.');
+      setName(el, 'Treino A · Pernas');
+      fixture.detectChanges();
+      expect(button(el, 'Salvar Rotina').disabled).toBe(false);
+      // Voltar ao nome de partida desfaz a mudança: nada a salvar.
+      setName(el, 'Treino A');
+      fixture.detectChanges();
+      expect(button(el, 'Salvar Rotina').disabled).toBe(true);
+    });
+
+    it('keeps Save off and asks for at least one exercise', async () => {
       const { fixture, el } = await open('/treino/rotinas/nova', false);
       await eventually(fixture, () => expect(el.querySelector('form')).not.toBeNull());
-      button(el, 'Salvar rotina').click();
-      await eventually(fixture, () =>
-        expect(text(el)).toContain('Adicione pelo menos um exercício.'),
-      );
+      expect(button(el, 'Salvar Rotina').disabled).toBe(true);
+      setName(el, 'Só o core');
+      fixture.detectChanges();
+      expect(text(el)).toContain('Adicione pelo menos um exercício.');
+      expect(button(el, 'Salvar Rotina').disabled).toBe(true);
+    });
+
+    it('keeps Save in the fixed bar at the bottom, where the notices also live', async () => {
+      const { fixture, el } = await open('/treino/rotinas/:id');
+      await loaded(fixture, el);
+      const bar = el.querySelector('.ui-action-bar')!;
+      expect(bar.contains(button(el, 'Salvar Rotina'))).toBe(true);
+      expect(bar.contains(button(el, 'Cancelar'))).toBe(true);
+      byLabel(el, 'Subir Agachamento livre').click();
+      button(el, 'Cancelar').click();
+      fixture.detectChanges();
+      expect(bar.textContent).toContain('Sair sem salvar?');
     });
   });
 
@@ -252,7 +281,7 @@ describe('RoutineEditorPage', () => {
     it('suggests the next letter as the name', async () => {
       const { fixture, el } = await open('/treino/rotinas/nova');
       await eventually(fixture, () => expect(el.querySelector('form')).not.toBeNull());
-      expect(el.querySelector('h2')?.textContent).toContain('Nova rotina');
+      expect(el.querySelector('h2')?.textContent).toContain('Nova Rotina');
       expect(el.querySelector<HTMLInputElement>('#routine-name')!.value).toBe('Treino B');
     });
 
@@ -262,14 +291,15 @@ describe('RoutineEditorPage', () => {
       const navigate = vi.spyOn(router, 'navigateByUrl');
       button(el, 'Cancelar').click();
       expect(el.querySelector('.ui-notice.warn')).toBeNull();
-      expect(navigate).toHaveBeenCalledWith('/treino/rotinas');
+      expect(navigate).toHaveBeenCalledWith('/treino/rotinas', { replaceUrl: true });
     });
 
     it('creates the routine with the exercises chosen', async () => {
       const { fixture, el, router } = await open('/treino/rotinas/nova?exercicio=prancha');
       await eventually(fixture, () => expect(names(el)).toHaveLength(1));
       setName(el, 'Só o core');
-      button(el, 'Salvar rotina').click();
+      fixture.detectChanges();
+      button(el, 'Salvar Rotina').click();
       await vi.waitFor(() => expect(router.url).toBe('/treino/rotinas'), { timeout: 3000 });
       const all = await TestBed.inject(RoutineRepository).listAll();
       const created = all.find((routine) => routine.name === 'Só o core')!;
@@ -279,7 +309,7 @@ describe('RoutineEditorPage', () => {
   });
 
   describe('leaving', () => {
-    it('asks before leaving with changes, and "Continuar editando" keeps them', async () => {
+    it('asks before leaving with changes, and "Continuar Editando" keeps them', async () => {
       const { fixture, el, router } = await open('/treino/rotinas/:id');
       await loaded(fixture, el);
       byLabel(el, 'Subir Agachamento livre').click();
@@ -288,13 +318,13 @@ describe('RoutineEditorPage', () => {
       fixture.detectChanges();
       expect(text(el)).toContain('Sair sem salvar?');
       expect(navigate).not.toHaveBeenCalled();
-      button(el, 'Continuar editando').click();
+      button(el, 'Continuar Editando').click();
       fixture.detectChanges();
       expect(names(el)[1]).toBe('Agachamento livre');
       button(el, 'Cancelar').click();
       fixture.detectChanges();
-      button(el, 'Sair sem salvar').click();
-      expect(navigate).toHaveBeenCalledWith('/treino/rotinas');
+      button(el, 'Sair sem Salvar').click();
+      expect(navigate).toHaveBeenCalledWith('/treino/rotinas', { replaceUrl: true });
     });
 
     it('leaves at once when nothing changed, and discards nothing in the queue', async () => {
@@ -303,7 +333,7 @@ describe('RoutineEditorPage', () => {
       const before = await TestBed.inject(OfflineQueue).items();
       const navigate = vi.spyOn(router, 'navigateByUrl');
       button(el, 'Cancelar').click();
-      expect(navigate).toHaveBeenCalledWith('/treino/rotinas');
+      expect(navigate).toHaveBeenCalledWith('/treino/rotinas', { replaceUrl: true });
       expect(await TestBed.inject(OfflineQueue).items()).toEqual(before);
     });
   });
@@ -314,7 +344,7 @@ describe('RoutineEditorPage', () => {
       await loaded(fixture, el);
       el.querySelector<HTMLInputElement>('.options input[role="switch"]')!.click();
       fixture.detectChanges();
-      button(el, 'Salvar rotina').click();
+      button(el, 'Salvar Rotina').click();
       await vi.waitFor(() => expect(router.url).toBe('/treino/rotinas'), { timeout: 3000 });
       expect((await TestBed.inject(RoutineRepository).get(routineId))?.active).toBe(false);
     });
@@ -322,13 +352,13 @@ describe('RoutineEditorPage', () => {
     it('deletes the routine by a tombstone only after the confirmation', async () => {
       const { fixture, el, router, routineId } = await open('/treino/rotinas/:id');
       await loaded(fixture, el);
-      button(el, 'Apagar rotina').click();
+      button(el, 'Apagar Rotina').click();
       fixture.detectChanges();
       expect(text(el)).toContain('Apagar esta rotina?');
       expect(await TestBed.inject(RoutineRepository).get(routineId)).toBeDefined();
       button(el, 'Manter').click();
       fixture.detectChanges();
-      button(el, 'Apagar rotina').click();
+      button(el, 'Apagar Rotina').click();
       fixture.detectChanges();
       button(el, 'Apagar').click();
       await vi.waitFor(() => expect(router.url).toBe('/treino/rotinas'), { timeout: 3000 });

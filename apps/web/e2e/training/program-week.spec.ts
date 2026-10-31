@@ -1,6 +1,6 @@
 import { Page } from '@playwright/test';
 import { expect, screenshot, test } from '../fixtures';
-import { beginWorkout, concludeSet, menu, stubDevice, tap } from './support/today-pages';
+import { beginWorkout, concludeSet, finishFromDay, stubDevice, tap } from './support/today-pages';
 import { countRows, openTraining, startTraining } from './support/training-pages';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
@@ -89,7 +89,7 @@ test.describe('programa da semana', () => {
     await openTraining(page, '/treino');
     await expect.poll(() => countRows(page, 'exercises')).toBeGreaterThan(0);
     const suggestion = page.locator('app-program-suggestion');
-    await expect(suggestion.getByRole('heading', { name: 'Escolha seu programa' })).toBeVisible();
+    await expect(suggestion.getByRole('heading', { name: 'Escolha Seu Programa' })).toBeVisible();
     await expect(suggestion).toContainText('Seg Peito · Ter Costas · Qua Pernas');
     await expect(suggestion).toContainText('Seg–sex alterna Empurrar / Puxar');
     await screenshot(page, info.outputPath('sugestao.png'));
@@ -131,12 +131,12 @@ test.describe('programa da semana', () => {
     await screenshot(page, info.outputPath('segunda.png'));
 
     // Pronta para tocar: inicia, ajusta a carga, registra as séries e termina o dia.
-    await beginWorkout(page, /Segunda · Peito/);
+    await beginWorkout(page, /Segunda - peito/);
     await tap(page, 'Aumentar a carga', 2);
     await concludeSet(page);
     await concludeSet(page);
-    await menu(page, /Terminar treino/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
+    await finishFromDay(page);
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino Concluído' })).toBeVisible();
     await expect
       .poll(
         () =>
@@ -214,12 +214,12 @@ test.describe('programa da semana', () => {
 
     await page.clock.setSystemTime(at(5));
     await openTraining(page, '/treino');
-    await expect(heading(page, 'Dia de descanso')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Iniciar treino', exact: true })).toHaveCount(0);
+    await expect(heading(page, 'Dia de Descanso')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Iniciar Treino', exact: true })).toHaveCount(0);
     await screenshot(page, info.outputPath('sabado.png'));
 
-    await page.getByRole('button', { name: 'Iniciar treino manual' }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Treino livre' })).toBeVisible();
+    await page.getByRole('button', { name: 'Iniciar Treino Manual' }).click();
+    await expect(page.locator('app-workout-day .routine-name')).toHaveText('Treino Livre');
   });
 
   test('A/B alterna nos dias de treino: segunda A, terça B', async ({ page, context }) => {
@@ -230,12 +230,12 @@ test.describe('programa da semana', () => {
 
     await openTraining(page, '/treino');
     await expect(heading(page, 'A · Empurrar')).toBeVisible();
-    await beginWorkout(page, /A · Empurrar/);
+    await beginWorkout(page, /A - empurrar/);
     await tap(page, 'Aumentar a carga', 2);
     await concludeSet(page);
     await concludeSet(page);
-    await menu(page, /Terminar treino/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Treino concluído' })).toBeVisible();
+    await finishFromDay(page);
+    await expect(page.getByRole('heading', { level: 1, name: 'Treino Concluído' })).toBeVisible();
 
     await page.clock.setSystemTime(at(1));
     await openTraining(page, '/treino');

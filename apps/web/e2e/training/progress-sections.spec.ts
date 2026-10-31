@@ -36,7 +36,7 @@ test.describe('semana e volume por músculo', () => {
     await header.click();
 
     const week = page.locator('app-progress-week');
-    await expect(week.locator('.range b')).toHaveText('19 a 25 de outubro');
+    await expect(week.locator('.range b')).toHaveText('18 a 24 de outubro');
     await expect(week.locator('.range span')).toHaveText('Esta semana');
     await expect(week.locator('.totals b')).toHaveText('2 treinos · 7 séries');
     await expect(week.locator('.totals span')).toHaveText('Semana anterior: 5 séries');
@@ -56,7 +56,7 @@ test.describe('semana e volume por músculo', () => {
     await expect(week).toContainText('não recomenda quanto fazer');
   });
 
-  test('anda de semana em semana, de segunda a domingo, e uma semana que cruza o mês leva os dois meses', async ({
+  test('anda de semana em semana, de domingo a sábado, e uma semana que cruza o mês leva os dois meses', async ({
     page,
     context,
   }) => {
@@ -69,7 +69,7 @@ test.describe('semana e volume por músculo', () => {
     await expect(next).toBeDisabled();
 
     await previous.click();
-    await expect(week.locator('.range b')).toHaveText('12 a 18 de outubro');
+    await expect(week.locator('.range b')).toHaveText('11 a 17 de outubro');
     await expect(week.locator('.range span')).toHaveText('Semana passada');
     await expect(week.locator('.totals b')).toHaveText('2 treinos · 5 séries');
     // Supino (2 séries) e remada (3 séries, costas).
@@ -79,17 +79,17 @@ test.describe('semana e volume por músculo', () => {
     ]);
 
     await previous.click();
-    await expect(week.locator('.range b')).toHaveText('5 a 11 de outubro');
+    await expect(week.locator('.range b')).toHaveText('4 a 10 de outubro');
     await expect(week.locator('.totals b')).toHaveText('1 treino · 1 série');
 
     await previous.click();
-    await expect(week.locator('.range b')).toHaveText('28 de setembro a 4 de outubro');
+    await expect(week.locator('.range b')).toHaveText('27 de setembro a 3 de outubro');
     await expect(week.locator('.totals b')).toHaveText('1 treino · 1 série');
 
     await next.click();
     await next.click();
     await next.click();
-    await expect(week.locator('.range b')).toHaveText('19 a 25 de outubro');
+    await expect(week.locator('.range b')).toHaveText('18 a 24 de outubro');
     await expect(next).toBeDisabled();
   });
 
@@ -105,7 +105,7 @@ test.describe('semana e volume por músculo', () => {
     await expect(week.locator('.totals b')).toHaveText('2 treinos · 7 séries');
 
     await week.getByRole('button', { name: 'Definir' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Meta de treinos por semana' });
+    const sheet = page.getByRole('dialog', { name: 'Meta de Treinos por Semana' });
     await sheet.getByLabel('Treinos por semana').fill('3');
     await sheet.getByRole('button', { name: 'Salvar' }).click();
     await expect(sheet).toHaveCount(0);
@@ -150,24 +150,24 @@ test.describe('calendário de frequência', () => {
     await expect(frequency.locator('.day.today')).toHaveText('21');
     await expect(frequency.locator('.day.today.on')).toHaveCount(0);
     await expect(frequency.locator('td[aria-current="date"]')).toHaveCount(1);
-    // Semana de segunda a domingo: 1º de outubro de 2026 é uma quinta-feira.
+    // Semana de domingo a sábado: 1º de outubro de 2026 é uma quinta-feira.
     await expect(frequency.locator('thead abbr')).toHaveText([
+      'dom',
       'seg',
       'ter',
       'qua',
       'qui',
       'sex',
       'sáb',
-      'dom',
     ]);
     const first = await frequency
       .locator('tbody tr')
       .first()
       .locator('td')
       .evaluateAll((cells) => cells.map((cell) => (cell.textContent ?? '').trim()));
-    expect(first).toEqual(['', '', '', '1', '2', '3', '4']);
+    expect(first).toEqual(['', '', '', '', '1', '2', '3']);
 
-    // As duas últimas semanas completas: 5 a 11/10 (1 treino) e 12 a 18/10 (2 treinos).
+    // As duas últimas semanas completas: 4 a 10/10 (1 treino) e 11 a 17/10 (2 treinos).
     await expect(frequency).toContainText(
       'Constância: entre 1 e 2 treinos por semana nas duas últimas semanas',
     );
@@ -203,13 +203,13 @@ test.describe('calendário de frequência', () => {
     await openProgress(page);
     await section(page, /^Semana/).click();
     await page.locator('app-progress-week').getByRole('button', { name: 'Definir' }).click();
-    const sheet = page.getByRole('dialog', { name: 'Meta de treinos por semana' });
+    const sheet = page.getByRole('dialog', { name: 'Meta de Treinos por Semana' });
     await sheet.getByLabel('Treinos por semana').fill('2');
     await sheet.getByRole('button', { name: 'Salvar' }).click();
     await expect(sheet).toHaveCount(0);
 
     await section(page, /^Frequência/).click();
-    // Semana de hoje (2 treinos) e a anterior (2) cumpriram; a de 5 a 11/10 (1) não.
+    // Semana de hoje (2 treinos) e a anterior (2) cumpriram; a de 4 a 10/10 (1) não.
     await expect(page.locator('app-progress-frequency')).toContainText(
       'Constância: entre 1 e 2 treinos por semana nas duas últimas semanas (meta: 2). 2 semanas seguidas com a meta',
     );
@@ -223,7 +223,7 @@ test.describe('calendário de frequência', () => {
  */
 async function openExport(page: Page) {
   await expect(section(page, /^Semana/)).toContainText('2 treinos · 7 séries');
-  await section(page, /^Exportar e compartilhar/).click();
+  await section(page, /^Exportar e Compartilhar/).click();
 }
 
 /** Fixa o que o aparelho faz ao compartilhar e ao copiar: o teste lê o que o app mandou, sem abrir folha do sistema. */
@@ -250,7 +250,7 @@ async function stubDevice(page: Page, mode: 'sem-compartilhar' | 'compartilhar')
 }
 
 const WEEK_TEXT = [
-  'Treino: resumo da semana de 19/10 a 25/10',
+  'Treino: resumo da semana de 18/10 a 24/10',
   'Treinos: 2',
   'Séries de trabalho: 7',
   // 3 × 45 × 6 (supino) + 4 × 60 × 8 (agachamento) = 810 + 1.920.
@@ -270,7 +270,7 @@ test.describe('exportar e compartilhar', () => {
 
     // No Chromium o baixar arquivo dispara o evento `download`. No WebKit o que acontece fica registrado no relatório.
     const download = page.waitForEvent('download', { timeout: 10_000 }).catch(() => null);
-    await page.getByRole('button', { name: /^Exportar tudo \(JSON\)/ }).click();
+    await page.getByRole('button', { name: /^Exportar Tudo \(JSON\)/ }).click();
     const file = await download;
 
     await expect(page.locator('app-progress-export')).toContainText(
@@ -309,7 +309,7 @@ test.describe('exportar e compartilhar', () => {
     await openExport(page);
 
     const download = page.waitForEvent('download', { timeout: 10_000 }).catch(() => null);
-    await page.getByRole('button', { name: /^Exportar séries \(CSV\)/ }).click();
+    await page.getByRole('button', { name: /^Exportar Séries \(CSV\)/ }).click();
     const file = await download;
 
     await expect(page.locator('app-progress-export')).toContainText(
@@ -348,7 +348,7 @@ test.describe('exportar e compartilhar', () => {
     await openProgress(page);
     await openExport(page);
 
-    await page.getByRole('button', { name: /^Compartilhar resumo da semana/ }).click();
+    await page.getByRole('button', { name: /^Compartilhar Resumo da Semana/ }).click();
 
     await expect(page.locator('app-progress-export')).toContainText(
       'Resumo enviado ao compartilhar do aparelho.',
@@ -370,7 +370,7 @@ test.describe('exportar e compartilhar', () => {
     await openProgress(page);
     await openExport(page);
 
-    await page.getByRole('button', { name: /^Compartilhar resumo da semana/ }).click();
+    await page.getByRole('button', { name: /^Compartilhar Resumo da Semana/ }).click();
 
     await expect(page.locator('app-progress-export')).toContainText(
       'Este aparelho não abre o compartilhar: o resumo foi copiado, é só colar onde quiser.',
@@ -394,7 +394,7 @@ test.describe('exportar e compartilhar', () => {
     await openProgress(page);
     await openExport(page);
 
-    await page.getByRole('button', { name: /^Compartilhar resumo da semana/ }).click();
+    await page.getByRole('button', { name: /^Compartilhar Resumo da Semana/ }).click();
 
     await expect(page.locator('app-progress-export')).toContainText(
       'Este aparelho não consegue compartilhar nem copiar o texto. Use o JSON ou o CSV.',

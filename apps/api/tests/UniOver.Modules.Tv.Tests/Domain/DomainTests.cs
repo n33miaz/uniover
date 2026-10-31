@@ -55,6 +55,16 @@ public class DomainTests
     }
 
     [Fact]
+    public void State_WithoutAnAgent_CarriesSinceWhenItIsOff_AndNothingWhenItIsOn()
+    {
+        var since = new DateTimeOffset(2026, 10, 28, 22, 24, 0, TimeSpan.Zero);
+
+        TvState.From(Snapshot(volume: 33), agentOnline: false, offlineSince: since).OfflineSince.Should().Be(since);
+        TvState.From(null, agentOnline: false, offlineSince: since).OfflineSince.Should().Be(since);
+        TvState.From(Snapshot(volume: 33), agentOnline: true, offlineSince: since).OfflineSince.Should().BeNull();
+    }
+
+    [Fact]
     public void State_WithTheAgentOnline_KeepsWhatTheAgentSaid()
     {
         var state = TvState.From(Snapshot(volume: 33, connection: "hibernating"), agentOnline: true);
@@ -62,6 +72,14 @@ public class DomainTests
         state.Connection.Should().Be("hibernating");
         state.Volume.Should().Be(33);
         state.AgentOnline.Should().BeTrue();
+    }
+
+    [Fact]
+    public void State_SaysWhetherTheTvHasAnAgentLinked_AndAssumesItDoesWhenNobodyTellsOtherwise()
+    {
+        TvState.From(null, agentOnline: false).AgentLinked.Should().BeTrue();
+        TvState.From(Snapshot(), agentOnline: false, agentLinked: false).AgentLinked.Should().BeFalse();
+        TvState.From(null, agentOnline: false, agentLinked: false).AgentLinked.Should().BeFalse();
     }
 
     [Fact]

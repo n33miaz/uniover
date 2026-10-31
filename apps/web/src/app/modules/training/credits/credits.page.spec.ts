@@ -25,9 +25,9 @@ describe('CreditsPage', () => {
       (row) => row.querySelector('dt')?.textContent?.trim() === label,
     );
 
-  it('goes back to Ajustes', async () => {
+  it('has no back link of its own: the header arrow is the only one', async () => {
     const el = await render();
-    expect(el.querySelector('a.back')?.getAttribute('href')).toBe('/ajustes');
+    expect(el.querySelector('a.back')).toBeNull();
   });
 
   it('lists every source with title, author, source, license, what was done and where it shows', async () => {
@@ -55,7 +55,8 @@ describe('CreditsPage', () => {
     expect(fact(item, 'Licença')?.querySelector('a')?.getAttribute('href')).toBe(
       'https://creativecommons.org/licenses/by-sa/4.0/',
     );
-    expect(fact(item, 'O que foi feito')?.textContent).toContain('Sem alterações');
+    expect(fact(item, 'O que foi feito')?.textContent).toContain('sem alterações');
+    expect(fact(item, 'O que foi feito')?.textContent).toContain('WebP');
   });
 
   it('says the free-exercise-db text was rewritten and its images are not used', async () => {
@@ -109,6 +110,33 @@ describe('CreditsPage', () => {
 
   it('still shows the fixed sources when the local database fails', async () => {
     const el = await render({ read: () => Promise.reject(new Error('indexeddb indisponível')) });
+    expect(items(el)).toHaveLength(CREDIT_SOURCES.length);
+  });
+
+  it('holds the wger section as a busy skeleton while the local database is read, then drops it', async () => {
+    let finish: (credits: WgerCredit[]) => void = () => undefined;
+    const pending = new Promise<WgerCredit[]>((resolve) => (finish = resolve));
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: WgerCreditsReader, useValue: { read: () => pending } },
+      ],
+    });
+    const fixture = TestBed.createComponent(CreditsPage);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+
+    const loading = el.querySelector('.wger-loading') as HTMLElement;
+    expect(loading.querySelector('app-loading-frame')?.getAttribute('aria-busy')).toBe('true');
+    expect(loading.querySelector('[role="status"]')?.textContent).toContain(
+      'Carregando os autores do wger',
+    );
+    expect(loading.querySelectorAll('.ui-skeleton').length).toBeGreaterThan(1);
+
+    finish([]);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el.querySelector('.wger-loading')).toBeNull();
     expect(items(el)).toHaveLength(CREDIT_SOURCES.length);
   });
 

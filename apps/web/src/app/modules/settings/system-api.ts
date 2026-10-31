@@ -30,18 +30,65 @@ export interface TvItem {
   readonly kind: 'android' | 'samsung' | null;
   readonly online: boolean;
   readonly capabilities: readonly string[];
+  /** A limpeza pode fechar apps em segundo plano nesta TV. Desligado até o administrador ligar. */
+  readonly allowBackgroundAppClosing: boolean;
+  readonly focusModeEnabled?: boolean;
+  /** Com o Modo Foco ligado, fecha os outros apps em segundo plano. Só existe em TV cujo agente anuncia a capacidade. */
+  readonly focusClosesBackground?: boolean;
+  readonly shortAnimationsEnabled?: boolean;
+  readonly restrictedBackgroundPackages?: readonly string[];
+}
+
+export interface TvAppOption {
+  readonly package: string;
+  readonly label: string;
+}
+
+/** Uma limpeza da TV como o Sistema a mostra: o que fez ou por que foi pulada (`reason` é um código estável). */
+export interface TvCleanupReportItem {
+  readonly kind: string;
+  readonly trigger: string;
+  readonly startedAt: string;
+  readonly durationMs: number;
+  readonly memoryBeforeMb: number | null;
+  readonly memoryAfterMb: number | null;
+  readonly closedApps: number;
+  readonly closedPackages: readonly string[];
+  readonly backgroundProcesses: number | null;
+  readonly sessionOpenMs: number | null;
+  readonly result: string;
+  readonly reason: string | null;
 }
 
 const BASE = `${APP_CONFIG.apiBase}/v1/tv`;
 const SETTINGS_BASE = `${APP_CONFIG.apiBase}/v1/identity/system-settings`;
 
 export type SystemSettingKey =
-  'training.off-contact' | 'devices.max-per-guest' | 'training.photo-storage-enabled';
+  | 'training.off-contact'
+  | 'devices.max-per-guest'
+  | 'devices.agent-offline-minutes'
+  | 'tv.light-cleanup-enabled'
+  | 'tv.deep-cleanup-enabled'
+  | 'tv.deep-cleanup-memory-threshold-mb';
 
 export interface SystemSettingValue {
   readonly key: SystemSettingKey;
   readonly value: string | number | boolean;
   readonly source: 'app' | 'server';
+}
+
+/** Um computador pareado, só o que a leitura de saúde mostra (o módulo de dispositivos tem o tipo completo). */
+export interface HealthAgent {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly connected: boolean;
+  readonly lastSeenAt: string | null;
+}
+
+/** Identificação pública da versão da API em execução. */
+export interface DeploymentVersion {
+  readonly commit: string | null;
 }
 
 function readTv(value: unknown): TvItem | null {
@@ -55,6 +102,17 @@ function readTv(value: unknown): TvItem | null {
     agentSlug: typeof dto['agentSlug'] === 'string' ? dto['agentSlug'] : null,
     kind: dto['kind'] === 'android' || dto['kind'] === 'samsung' ? dto['kind'] : null,
     online: dto['online'] === true,
+    allowBackgroundAppClosing: dto['allowBackgroundAppClosing'] === true,
+    ...(dto['focusModeEnabled'] === true ? { focusModeEnabled: true } : {}),
+    ...(dto['focusClosesBackground'] === true ? { focusClosesBackground: true } : {}),
+    ...(dto['shortAnimationsEnabled'] === true ? { shortAnimationsEnabled: true } : {}),
+    ...(Array.isArray(dto['restrictedBackgroundPackages'])
+      ? {
+          restrictedBackgroundPackages: dto['restrictedBackgroundPackages'].filter(
+            (item): item is string => typeof item === 'string',
+          ),
+        }
+      : {}),
     capabilities: Array.isArray(dto['capabilities'])
       ? dto['capabilities'].filter((item): item is string => typeof item === 'string')
       : [],
@@ -80,12 +138,37 @@ export class SystemApi {
     return firstValueFrom(this.http.get<SystemSettingValue[]>(SETTINGS_BASE));
   }
 
+  /** Os computadores pareados e o estado de cada um (só o administrador). */
+  async agents(): Promise<HealthAgent[]> {
+    const items = await firstValueFrom(
+      this.http.get<HealthAgent[]>(`${APP_CONFIG.apiBase}/v1/devices/agents`),
+    );
+    return items.map(({ id, slug, name, connected, lastSeenAt }) => ({
+      id,
+      slug,
+      name,
+      connected,
+      lastSeenAt: lastSeenAt ?? null,
+    }));
+  }
+
+  /** O endpoint de saúde é público e não lê dados da conta. */
+  deploymentVersion(): Promise<DeploymentVersion> {
+    return firstValueFrom(this.http.get<DeploymentVersion>(`${APP_CONFIG.apiBase}/health/version`));
+  }
+
   saveSystemSetting(
     key: SystemSettingKey,
     value: string | number | boolean,
   ): Promise<SystemSettingValue> {
     return firstValueFrom(
       this.http.put<SystemSettingValue>(`${SETTINGS_BASE}/${encodeURIComponent(key)}`, { value }),
+    );
+  }
+
+  resetSystemSetting(key: SystemSettingKey): Promise<SystemSettingValue> {
+    return firstValueFrom(
+      this.http.delete<SystemSettingValue>(`${SETTINGS_BASE}/${encodeURIComponent(key)}`),
     );
   }
 
@@ -111,14 +194,56 @@ export class SystemApi {
     return readTvOrThrow(await firstValueFrom(this.http.post(`${BASE}/tvs`, { agentSlug, name })));
   }
 
-  /** Muda só o que vier (nome e/ou computador). Exige a passkey. */
-  async updateTv(id: string, change: { name?: string; agentSlug?: string }): Promise<TvItem> {
-    const body: Record<string, string> = {};
+  /** Muda só o que vier (nome, computador e/ou fechar apps em segundo plano). Exige a passkey. */
+  async updateTv(
+    id: string,
+    change: {
+      name?: string;
+      agentSlug?: string;
+      allowBackgroundAppClosing?: boolean;
+      focusModeEnabled?: boolean;
+      focusClosesBackground?: boolean;
+      shortAnimationsEnabled?: boolean;
+      restrictedBackgroundPackages?: readonly string[];
+    },
+  ): Promise<TvItem> {
+    const body: Record<string, string | boolean | string[]> = {};
     if (change.name !== undefined) body['name'] = change.name;
     if (change.agentSlug !== undefined) body['agentSlug'] = change.agentSlug;
+    if (change.allowBackgroundAppClosing !== undefined)
+      body['allowBackgroundAppClosing'] = change.allowBackgroundAppClosing;
+    if (change.focusModeEnabled !== undefined) body['focusModeEnabled'] = change.focusModeEnabled;
+    if (change.focusClosesBackground !== undefined)
+      body['focusClosesBackground'] = change.focusClosesBackground;
+    if (change.shortAnimationsEnabled !== undefined)
+      body['shortAnimationsEnabled'] = change.shortAnimationsEnabled;
+    if (change.restrictedBackgroundPackages !== undefined)
+      body['restrictedBackgroundPackages'] = [...change.restrictedBackgroundPackages];
     return readTvOrThrow(
       await firstValueFrom(this.http.patch(`${BASE}/tvs/${encodeURIComponent(id)}`, body)),
     );
+  }
+
+  async tvApps(id: string): Promise<TvAppOption[]> {
+    const dto = await firstValueFrom(
+      this.http.get<{ items?: TvAppOption[] }>(`${BASE}/tvs/${encodeURIComponent(id)}/apps`),
+    );
+    if (!Array.isArray(dto?.items)) throw new Error('Lista de apps em formato inesperado.');
+    return dto.items.filter(
+      (item): item is TvAppOption =>
+        typeof item?.package === 'string' && typeof item?.label === 'string',
+    );
+  }
+
+  /** As últimas limpezas da TV, da mais nova para a mais antiga. */
+  async tvCleanupReports(id: string): Promise<TvCleanupReportItem[]> {
+    const dto = await firstValueFrom(
+      this.http.get<{ items?: TvCleanupReportItem[] }>(
+        `${BASE}/tvs/${encodeURIComponent(id)}/cleanup-reports`,
+      ),
+    );
+    if (!Array.isArray(dto?.items)) throw new Error('Relatórios de limpeza em formato inesperado.');
+    return dto.items;
   }
 
   /** Remove a TV (a padrão não: 409). Exige a passkey. */

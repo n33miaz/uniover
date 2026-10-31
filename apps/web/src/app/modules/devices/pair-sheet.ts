@@ -20,6 +20,7 @@ import {
   onDialogBackdropClick,
   restoreDialogFocus,
 } from '../../shared/ui/dialog-motion';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { DevicesApi } from './devices-api';
 import { MAX_DEVICE_NAME, formatCodeInput, isValidDeviceName, normalizeCode } from './pairing-code';
 
@@ -35,6 +36,7 @@ export type PairOutcome =
  */
 @Component({
   selector: 'app-pair-sheet',
+  imports: [LoadingSkeleton],
   templateUrl: './pair-sheet.html',
   styleUrl: './pair-sheet.css',
 })
@@ -218,7 +220,7 @@ export class PairSheet {
         : $localize`:@@devices.pair.error.rate-limited:Muitas tentativas seguidas. Espere um pouco e tente de novo.`;
     }
     if (problem?.status === 400) {
-      return $localize`:@@devices.pair.error.invalid:Confira o código e o nome do aparelho (letras, números, espaço e . _ ( ) -).`;
+      return $localize`:@@devices.pair.error.invalid:Confira o código e o nome do dispositivo (letras, números, espaço e . _ ( ) -).`;
     }
     if (problem?.isNetwork) {
       return $localize`:@@devices.pair.error.network:Sem conexão com o servidor. Tente de novo.`;

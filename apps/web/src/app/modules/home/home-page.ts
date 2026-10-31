@@ -8,14 +8,19 @@ import {
   viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { canUseModule } from '../../core/auth/guest-home';
 import { ModulePrefs, WidgetPref } from '../../core/modules/module-prefs';
 import { ModuleDefinition, ModuleRegistry } from '../../core/modules/module-registry';
+import { SessionState } from '../../core/session/session-state';
 import { HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
 import { HomeEditSheet } from './home-edit-sheet';
-import { HomeGlyph, HomeGlyphName, moduleGlyph } from './home-glyph';
+import { HomeGlyph } from './home-glyph';
+import { ModuleAppIcon } from './module-app-icon';
+import { HomeSoonBadge } from './home-soon-badge';
+import { Skeleton } from '../../shared/ui/skeleton/skeleton';
 
-type ChipTone = 'neutral' | 'ok' | 'warn';
+type ChipTone = 'ok' | 'warn' | 'connecting';
 type DayPart = 'morning' | 'afternoon' | 'evening';
 
 interface InfoChip {
@@ -24,12 +29,8 @@ interface InfoChip {
   readonly tone: ChipTone;
 }
 
-interface Shortcut {
-  readonly id: string;
-  readonly link: string;
-  readonly glyph: HomeGlyphName;
-  readonly title: string;
-}
+/** Planejados que a Início do convidado apresenta no fim da grade, na ordem escolhida. */
+const GUEST_PLANNED_MODULES: readonly string[] = ['pc', 'network', 'backup'];
 
 /** Parte do dia: manhã até 11h59, tarde até 17h59, noite no resto (a mesma régua da saudação). */
 export function dayPartFor(hour: number): DayPart {
@@ -57,12 +58,12 @@ export function greetingFor(hour: number): string {
 }
 
 /**
- * Início: saudação com data e hora, faixa de informações, atalhos e um bloco por módulo, que o usuário
+ * Início: saudação com data e hora, estado discreto do agente e um bloco por módulo, que o usuário
  * reordena e redimensiona.
  */
 @Component({
   selector: 'app-home-page',
-  imports: [RouterLink, HomeGlyph, HomeEditSheet],
+  imports: [RouterLink, HomeGlyph, HomeEditSheet, ModuleAppIcon, HomeSoonBadge, Skeleton],
   templateUrl: './home-page.html',
   styleUrl: './home-page.css',
 })
@@ -70,7 +71,9 @@ export class HomePage {
   private readonly clock = inject(ClockService);
   private readonly statusPort = inject(HomeStatusPort);
   private readonly status = this.statusPort.status;
+  protected readonly loading = this.statusPort.loading;
   private readonly prefs = inject(ModulePrefs);
+  private readonly session = inject(SessionState);
   protected readonly registry = inject(ModuleRegistry);
 
   private readonly editButton = viewChild<ElementRef<HTMLButtonElement>>('editButton');
@@ -81,9 +84,23 @@ export class HomePage {
   }
 
   protected readonly editing = signal(false);
-  /** Blocos na ordem, no tamanho e na visibilidade que a pessoa escolheu. */
-  protected readonly widgets = this.prefs.visible;
-  protected readonly allWidgets = this.prefs.widgets;
+  protected readonly isGuest = this.session.isGuest;
+  /** Convidado vê os módulos liberados e os três planejados reservados para esta grade. */
+  protected readonly widgets = computed(() => {
+    const visible = this.prefs
+      .visible()
+      .filter((widget) => this.canSeeModule(widget.definition.id));
+    return this.isGuest()
+      ? visible.sort((first, second) => this.guestOrder(first.definition.id, second.definition.id))
+      : visible;
+  });
+  /** A folha de edição também não revela nem altera módulos fora do acesso da conta. */
+  protected readonly allWidgets = computed(() => {
+    const widgets = this.prefs.widgets().filter((widget) => this.canSeeModule(widget.id));
+    return this.isGuest()
+      ? widgets.sort((first, second) => this.guestOrder(first.id, second.id))
+      : widgets;
+  });
 
   protected readonly dayPart = computed(() => dayPartFor(this.clock.now().getHours()));
 
@@ -105,93 +122,48 @@ export class HomePage {
     ),
   );
 
-  /** Atalhos para o que mais se procura fora dos módulos; só rotas que existem hoje. */
-  protected readonly shortcuts: readonly Shortcut[] = [
-    {
-      id: 'devices',
-      link: '/ajustes/aparelhos',
-      glyph: 'laptop',
-      title: $localize`:@@home.shortcut.devices:Aparelhos`,
-    },
-    {
-      id: 'settings',
-      link: '/ajustes',
-      glyph: 'sliders',
-      title: $localize`:@@home.shortcut.settings:Ajustes`,
-    },
-  ];
-
-  /** Faixa de informações úteis. Sem dado real mostra "sem dados" em vez de inventar um estado. */
-  protected readonly chips = computed<readonly InfoChip[]>(() => {
+  /**
+   * Estado curto do agente DESTA conta: sem agente vinculado ou sem estado confirmado não há ponto (nem reserva de espaço
+   * que sugira um computador pareado). Só a leitura em andamento, ainda sem estado, mostra a bolinha pulsando.
+   */
+  protected readonly agentIndicator = computed<InfoChip | null>(() => {
     const status = this.status();
-    const agent: InfoChip =
-      status.agent === 'online'
-        ? { id: 'agent', label: $localize`:@@home.chip.agent-on:Agente ligado`, tone: 'ok' }
-        : status.agent === 'offline'
-          ? { id: 'agent', label: $localize`:@@home.chip.agent-off:Agente desligado`, tone: 'warn' }
-          : {
-              id: 'agent',
-              label: $localize`:@@home.chip.agent-unknown:Agente sem dados`,
-              tone: 'neutral',
-            };
-    const watcher: InfoChip =
-      status.watcher === 'ok'
-        ? { id: 'watcher', label: $localize`:@@home.chip.watcher-ok:Vigia sem avisos`, tone: 'ok' }
-        : status.watcher === 'alert'
-          ? {
-              id: 'watcher',
-              label: $localize`:@@home.chip.watcher-alert:Vigia com aviso`,
-              tone: 'warn',
-            }
-          : {
-              id: 'watcher',
-              label: $localize`:@@home.chip.watcher-unknown:Vigia sem dados`,
-              tone: 'neutral',
-            };
-    const chips = [agent, watcher];
-    if (status.serviceDown) {
-      chips.push({
-        id: 'service',
-        label: $localize`:@@home.chip.service-down:Serviço fora do ar`,
-        tone: 'warn',
-      });
+    if (status.agentLinked === false) return null;
+    if (this.loading() && status.agent === 'unknown') {
+      return {
+        id: 'agent',
+        label: $localize`:@@home.agent-connecting:Conectando ao agente`,
+        tone: 'connecting',
+      };
     }
-    return chips;
+    if (status.agent === 'online')
+      return { id: 'agent', label: $localize`:@@home.chip.agent-on:Agente ligado`, tone: 'ok' };
+    if (status.serviceDown)
+      return {
+        id: 'agent',
+        label: $localize`:@@home.agent-unresponsive:Agente sem resposta`,
+        tone: 'warn',
+      };
+    if (status.agent === 'offline')
+      return {
+        id: 'agent',
+        label: $localize`:@@home.chip.agent-off:Agente desligado`,
+        tone: 'warn',
+      };
+    return null;
   });
+
+  /**
+   * A bolinha do agente aparece para quem usa a TV, dono ou convidado: o estado lido é o do agente da TV da própria conta,
+   * nunca o de outra pessoa (a Início não mostra avisos sobre computadores alheios).
+   */
+  protected readonly canSeeAgent = computed(() => this.canSeeModule('tv'));
 
   /** Nome do link do cartão: o nome visível primeiro e a ação depois, para o leitor de tela dizer o que acontece. */
   protected linkLabel(module: ModuleDefinition): string {
     return module.actionLabel
       ? $localize`:@@home.module-link:${module.title}:title:: ${module.actionLabel}:action:`
       : module.title;
-  }
-
-  protected glyphFor(module: ModuleDefinition): HomeGlyphName {
-    return moduleGlyph(module.icon);
-  }
-
-  /**
-   * Estado ao vivo do módulo, só quando já existe no que a Início conhece: o controle da TV depende do agente.
-   * Sem dado (agente desconhecido) não mostra nada, em vez de inventar.
-   */
-  protected live(module: ModuleDefinition): InfoChip | null {
-    if (module.id !== 'tv') return null;
-    switch (this.status().agent) {
-      case 'online':
-        return {
-          id: 'tv-live',
-          label: $localize`:@@home.live.tv-on:Pronto para usar`,
-          tone: 'ok',
-        };
-      case 'offline':
-        return {
-          id: 'tv-live',
-          label: $localize`:@@home.live.tv-off:Sem agente em casa`,
-          tone: 'warn',
-        };
-      default:
-        return null;
-    }
   }
 
   protected openEditor(): void {
@@ -207,5 +179,28 @@ export class HomePage {
     this.editing.set(false);
     // O diálogo some do DOM; devolve o foco para quem o abriu.
     queueMicrotask(() => this.editButton()?.nativeElement.focus());
+  }
+
+  private canSeeModule(id: string): boolean {
+    if (!this.session.isGuest()) return true;
+    if (this.registry.find(id)?.status === 'soon') {
+      return GUEST_PLANNED_MODULES.includes(id);
+    }
+    const permissions = this.session.knownPermissions();
+    return permissions !== null && canUseModule('guest', permissions, id);
+  }
+
+  /** Módulos liberados vêm primeiro; os três planejados ficam no fim, sempre na mesma ordem. */
+  private guestOrder(first: string, second: string): number {
+    const rank = (id: string) => {
+      const planned = GUEST_PLANNED_MODULES.indexOf(id);
+      return planned < 0 ? -1 : planned;
+    };
+    const firstRank = rank(first);
+    const secondRank = rank(second);
+    if (firstRank < 0 && secondRank < 0) return 0;
+    if (firstRank < 0) return -1;
+    if (secondRank < 0) return 1;
+    return firstRank - secondRank;
   }
 }

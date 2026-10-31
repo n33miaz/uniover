@@ -4,16 +4,18 @@ import { ConnectivityBanner } from './core/connectivity/connectivity-banner';
 import { AppearanceService } from './core/session/appearance.service';
 import { SessionNotice } from './core/session/session-notice';
 import { UpdateBanner } from './core/pwa/update-banner';
+import { UpdateSkeleton } from './core/pwa/update-skeleton';
 import { ThemeService } from './core/theme/theme.service';
 
 @Component({
-  imports: [RouterOutlet, UpdateBanner, ConnectivityBanner, SessionNotice],
+  imports: [RouterOutlet, UpdateBanner, UpdateSkeleton, ConnectivityBanner, SessionNotice],
   selector: 'app-root',
   template: `
     <app-update-banner />
     <app-connectivity-banner />
     <app-session-notice />
     <router-outlet />
+    <app-update-skeleton />
   `,
 })
 export class App {

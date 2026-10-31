@@ -236,6 +236,31 @@ def parse_component_packages(value: str | None) -> frozenset[str]:
     return frozenset(packages)
 
 
+# `dumpsys media_session`: cada sessão abre com "TAG pacote/TAG (userId=0)", traz `package=pacote`
+# e, mais abaixo, `state=PlaybackState {state=3, ...}` (3 = tocando).
+_SESSION_HEADER: Final = re.compile(r"\(userId=\d+\)$")
+_SESSION_PACKAGE: Final = re.compile(r"^package=(\S+)$")
+_PLAYBACK_STATE: Final = re.compile(r"PlaybackState[^\n]*?state=(\d+)")
+
+
+def parse_playback_sessions(text: str) -> list[tuple[str | None, int]]:
+    """Cada `PlaybackState` de `dumpsys media_session` com o pacote dono da sessão.
+
+    O dono é `None` quando a sessão não declarou `package=` antes do estado: quem lê trata isso
+    como dúvida, nunca como "qualquer app".
+    """
+    package: str | None = None
+    sessions: list[tuple[str | None, int]] = []
+    for line in clean_lines(text):
+        if _SESSION_HEADER.search(line):
+            package = None
+        elif (owner := _SESSION_PACKAGE.match(line)) is not None:
+            package = owner[1] if is_valid_package(owner[1]) else None
+        elif (state := _PLAYBACK_STATE.search(line)) is not None:
+            sessions.append((package, int(state[1])))
+    return sessions
+
+
 def parse_running_packages(text: str) -> frozenset[str]:
     """Pacotes com processo vivo, de `ps -A`: o nome do processo é a última coluna de cada linha.
 
@@ -258,3 +283,63 @@ def command_succeeded(output: AdbOutput) -> bool:
     return not any(
         line.startswith("Error") or "Exception" in line for line in clean_lines(output.text)
     )
+
+
+# --- volume lido pelo shell (para a TV cujo canal remoto não informa o nível) ----------------
+
+# `cmd media_session volume --stream 3 --get` (3 = música): "volume is 7 in range [0..15]".
+_MEDIA_SESSION_VOLUME: Final = re.compile(
+    r"volume\s+is\s+(\d+)\s+in\s+range\s+\[(\d+)\.\.(\d+)\]", re.IGNORECASE
+)
+_MUSIC_MIN: Final = re.compile(r"^\s*Min:\s*(\d+)\s*$", re.MULTILINE)
+_MUSIC_MAX: Final = re.compile(r"^\s*Max:\s*(\d+)\s*$", re.MULTILINE)
+_MUSIC_DEVICES: Final = re.compile(r"^\s*Devices:\s*(.+?)\s*$", re.MULTILINE)
+_MUSIC_CURRENT: Final = re.compile(r"^\s*Current:\s*(.+?)\s*$", re.MULTILINE)
+# Entrada de `Current:`: "2 (speaker): 8" ou "40000000 (default): 11".
+_MUSIC_ENTRY: Final = re.compile(r"\d+\s*\(([^)]*)\)\s*:\s*(\d+)")
+
+
+def volume_percent_of(level: int, minimum: int, maximum: int) -> int | None:
+    """O nível da TV (`minimum` a `maximum`) em porcentagem; `None` se a faixa não faz sentido."""
+    if maximum <= minimum or not minimum <= level <= maximum:
+        return None
+    return round((level - minimum) * 100 / (maximum - minimum))
+
+
+def parse_media_session_volume(text: str) -> int | None:
+    """O volume de música (0 a 100) de `cmd media_session volume --get`; `None` se não vem."""
+    match = _MEDIA_SESSION_VOLUME.search(text)
+    if match is None:
+        return None
+    return volume_percent_of(int(match[1]), int(match[2]), int(match[3]))
+
+
+def parse_dumpsys_music_volume(text: str) -> int | None:
+    """O volume de música (0 a 100) do bloco `STREAM_MUSIC` de `dumpsys audio`.
+
+    Com a saída de som por HDMI-ARC/CEC o bloco lista um nível por saída e diz em `Devices:` qual
+    está ativa; vale a ativa e, sem a linha, o primeiro nível listado.
+    """
+    start = text.find("- STREAM_MUSIC:")
+    if start < 0:
+        return None
+    block = text[start + len("- STREAM_MUSIC:") :]
+    following = re.search(r"^\s*- STREAM_[A-Z_]+:", block, re.MULTILINE)
+    if following is not None:
+        block = block[: following.start()]
+    low, high, current = (
+        _MUSIC_MIN.search(block),
+        _MUSIC_MAX.search(block),
+        _MUSIC_CURRENT.search(block),
+    )
+    if low is None or high is None or current is None:
+        return None
+    entries = _MUSIC_ENTRY.findall(current[1])
+    if not entries:
+        return None
+    active = _MUSIC_DEVICES.search(block)
+    chosen = entries[0]
+    if active is not None:
+        names = {name.strip().casefold() for name in active[1].split(",")}
+        chosen = next((entry for entry in entries if entry[0].strip().casefold() in names), chosen)
+    return volume_percent_of(int(chosen[1]), int(low[1]), int(high[1]))

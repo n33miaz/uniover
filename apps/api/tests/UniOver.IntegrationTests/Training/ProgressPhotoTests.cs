@@ -150,7 +150,7 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task QuotaAndDisabledStorageHaveClearResponses()
+    public async Task QuotaIsEnforced_AndWithoutTheConfigurationTheRouteIsAbsent()
     {
         var store = new FakeProgressPhotoStore();
         await using var limited = await TrainingApp.StartAsync(postgres, new TrainingAppOptions
@@ -166,7 +166,7 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
         await using var disabled = await TrainingApp.StartAsync(postgres);
         var disabledMember = await disabled.NewGuestAsync("Outra conta", ["module:training"], 71);
         using var listed = await disabled.SendAsync(HttpMethod.Get, "/api/v1/training/progress-photos", bearer: disabledMember.Login.AccessToken);
-        listed.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        listed.StatusCode.Should().Be(HttpStatusCode.NotFound, "a nuvem de fotos está aposentada: sem a configuração ligada, a rota não existe");
     }
 
     [Fact]
@@ -272,7 +272,7 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task WithoutTheStorageConfigured_TheAppRuns_AndEveryRouteSaysThePhotosStayOnTheDevice()
+    public async Task WithoutTheStorageConfigured_TheAppRuns_AndTheCloudPhotoRoutesAreNotPublished()
     {
         await using var app = await TrainingApp.StartAsync(postgres);
         var member = await app.NewGuestAsync("Conta", ["module:training"], 77);
@@ -283,13 +283,12 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
         using var read = await app.SendAsync(HttpMethod.Get, $"/api/v1/training/progress-photos/{id}/content", bearer: member.Login.AccessToken);
         using var delete = await app.SendAsync(HttpMethod.Put, $"/api/v1/training/progress-photos/{id}/deletion", bearer: member.Login.AccessToken);
 
-        foreach (var response in new[] { list, put, read, delete })
-        {
-            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-            var problem = await TrainingApp.JsonAsync(response);
-            problem.GetProperty("type").GetString().Should().EndWith("progress-photo-storage-disabled");
-            problem.GetProperty("title").GetString().Should().Contain("só neste aparelho");
-        }
+        // A nuvem de fotos está aposentada: sem a configuração ligada de propósito, as rotas nem existem. Leitura cai no
+        // 404 do fallback da API; escrita cai no 405 dele, que só atende GET e HEAD (nenhuma das duas chega ao Treino).
+        foreach (var response in new[] { list, read })
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        foreach (var response in new[] { put, delete })
+            response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
 
         await using var db = app.Db();
         (await db.Set<ProgressPhoto>().CountAsync(TestContext.Current.CancellationToken)).Should().Be(0, "sem armazenamento nada é gravado, nem metadado");
@@ -302,7 +301,7 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
         await using (var training = TrainingApp.CreateContext(app.Database.OwnerConnection))
         {
             await training.Database.MigrateAsync("20261024120000_AddTrainingPrograms", TestContext.Current.CancellationToken);
-            (await training.Database.GetPendingMigrationsAsync(TestContext.Current.CancellationToken)).Should().Equal("20261024130000_AddProgressPhotos");
+            (await training.Database.GetPendingMigrationsAsync(TestContext.Current.CancellationToken)).Should().Equal("20261024130000_AddProgressPhotos", "20261028010130_AddBodyMeasurements", "20261028024002_AddCalendarEntries");
             await training.Database.MigrateAsync(TestContext.Current.CancellationToken);
             (await training.Database.GetPendingMigrationsAsync(TestContext.Current.CancellationToken)).Should().BeEmpty();
         }

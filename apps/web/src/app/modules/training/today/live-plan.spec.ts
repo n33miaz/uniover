@@ -110,6 +110,30 @@ describe('live plan', () => {
     });
   });
 
+  describe('a chosen exercise of a superset', () => {
+    const pair = [
+      item('a', 'supino', 0, { supersetGroup: 1, targetSets: 2 }),
+      item('b', 'triceps', 1, { supersetGroup: 1, targetSets: 2, restSeconds: 60 }),
+    ];
+
+    it('does not rest in the middle of the pair, even when the exercise was picked from the list', () => {
+      const plan = buildLivePlan({ ...base, items: pair, chosen: itemKey('a') });
+
+      expect(plan.focus).toMatchObject({ exerciseId: 'supino', chosen: true, rest: false });
+    });
+
+    it('rests when the pick closes the round of the pair', () => {
+      const plan = buildLivePlan({
+        ...base,
+        items: pair,
+        sets: [work('supino')],
+        chosen: itemKey('b'),
+      });
+
+      expect(plan.focus).toMatchObject({ exerciseId: 'triceps', chosen: true, rest: true });
+    });
+  });
+
   describe('skipping', () => {
     it('takes the skipped exercise out of the plan and keeps it in the list', () => {
       const plan = buildLivePlan({ ...base, skipped: ['supino'] });

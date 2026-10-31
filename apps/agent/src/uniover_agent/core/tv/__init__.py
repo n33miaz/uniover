@@ -9,7 +9,10 @@ from uniover_agent.core.tv.cleanup import (
     TvCleanup,
     is_protected,
     tv_cleanup_handler,
+    tv_cleanup_skipped_handler,
 )
+from uniover_agent.core.tv.cleanup_schedule import TvCleanupScheduler
+from uniover_agent.core.tv.focus_closer import FocusBackgroundCloser
 from uniover_agent.core.tv.handlers import (
     DEFAULT_LINK_SCHEMES,
     POWER_OFF_CAPABILITY,
@@ -23,6 +26,7 @@ from uniover_agent.core.tv.handlers import (
     unsupported_handler,
 )
 from uniover_agent.core.tv.icons import AppIconPublisher, IconResolver
+from uniover_agent.core.tv.light_settings import TvLightSettings, can_restrict_background
 from uniover_agent.core.tv.locator import Located, TvIdentity, TvKnown, TvLocator
 from uniover_agent.core.tv.relocator import TvRelocator
 from uniover_agent.core.tv.samsung_apps import SamsungTvApps
@@ -51,6 +55,7 @@ __all__ = [
     "AppIconPublisher",
     "AppsAnnouncer",
     "CleanupReport",
+    "FocusBackgroundCloser",
     "IconResolver",
     "Located",
     "PackageLauncher",
@@ -60,9 +65,11 @@ __all__ = [
     "TextReconciler",
     "TvApps",
     "TvCleanup",
+    "TvCleanupScheduler",
     "TvControl",
     "TvIdentity",
     "TvKnown",
+    "TvLightSettings",
     "TvLocator",
     "TvRelocator",
     "TvSessionError",
@@ -70,11 +77,13 @@ __all__ = [
     "TvStatePublisher",
     "TvWatchdog",
     "WatchdogEvents",
+    "can_restrict_background",
     "describe_apps",
     "is_protected",
     "tv_app_launch_handler",
     "tv_apps_refresh_handler",
     "tv_cleanup_handler",
+    "tv_cleanup_skipped_handler",
     "tv_key_handler",
     "tv_power_off_handler",
     "tv_text_handler",

@@ -20,11 +20,15 @@ import {
   onDialogBackdropClick,
   restoreDialogFocus,
 } from '../../shared/ui/dialog-motion';
+import { cleanupKindText, cleanupOutcomeText } from '../../shared/tv-cleanup-text';
 import { SettingsGlyph } from './settings-glyph';
-import { SystemApi, TvComputer, TvItem } from './system-api';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
+import { SystemApi, TvAppOption, TvCleanupReportItem, TvComputer, TvItem } from './system-api';
 
 /** Tamanho máximo do nome da TV, o mesmo da API. */
 const NAME_MAX = 60;
+/** Anunciada pelo agente que fecha os outros apps no Modo Foco; sem ela o campo nem é enviado. */
+const FOCUS_CLOSES_CAPABILITY = 'tv.focus-closes-background.v1';
 
 /** O que a folha estava fazendo quando deu erro: cada passo tem as suas recusas. */
 type Step = 'create' | 'update' | 'members' | 'delete';
@@ -46,7 +50,7 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
  */
 @Component({
   selector: 'app-tv-edit-sheet',
-  imports: [SettingsGlyph],
+  imports: [SettingsGlyph, LoadingSkeleton],
   templateUrl: './tv-edit-sheet.html',
   styleUrl: './tv-edit-sheet.css',
 })
@@ -73,6 +77,34 @@ export class TvEditSheet implements OnInit {
     const free = this.computers();
     return free.length === 1 ? free[0].slug : null;
   });
+
+  /** Fechar apps em segundo plano na limpeza desta TV. Desligado por padrão. */
+  protected readonly closeBackground = linkedSignal(
+    () => this.tv()?.allowBackgroundAppClosing ?? false,
+  );
+  protected readonly focusMode = linkedSignal(() => this.tv()?.focusModeEnabled ?? false);
+  /**
+   * Fechar os outros apps enquanto o Modo Foco está ativo. Começa desligada e só muda por clique
+   * próprio: encerrar apps à força é um consentimento à parte, não vem junto com o Modo Foco.
+   */
+  protected readonly focusCloses = linkedSignal(() => this.tv()?.focusClosesBackground ?? false);
+  /** Só o agente que anuncia a capacidade entende o campo; aos outros a opção nem aparece. */
+  protected readonly supportsFocusCloses = computed(
+    () => this.tv()?.capabilities.includes(FOCUS_CLOSES_CAPABILITY) === true,
+  );
+  protected readonly shortAnimations = linkedSignal(
+    () => this.tv()?.shortAnimationsEnabled ?? false,
+  );
+  protected readonly restrictedPackages = linkedSignal<readonly string[]>(
+    () => this.tv()?.restrictedBackgroundPackages ?? [],
+  );
+  protected readonly apps = signal<readonly TvAppOption[]>([]);
+  /** A lista de apps tem três estados distintos: chegando, com erro (com nova tentativa) e pronta (talvez vazia). */
+  protected readonly appsState = signal<'loading' | 'error' | 'ready'>('loading');
+
+  /** As últimas limpezas desta TV (`null` até chegarem); só quem edita uma TV que já existe as vê. */
+  protected readonly reports = signal<readonly TvCleanupReportItem[] | null>(null);
+  protected readonly reportsFailed = signal(false);
 
   protected readonly people = signal<readonly GuestSummary[] | null>(null);
   /** As contas marcadas e as que já estavam (`null` até a lista da TV chegar: sem ela não há o que comparar). */
@@ -109,6 +141,20 @@ export class TvEditSheet implements OnInit {
   private readonly agentChanged = computed(
     () => this.agent() !== null && this.agent() !== this.current()?.agentSlug,
   );
+  private readonly closeBackgroundChanged = computed(
+    () =>
+      !this.creating() &&
+      this.closeBackground() !== (this.current()?.allowBackgroundAppClosing ?? false),
+  );
+  private readonly lightSettingsChanged = computed(
+    () =>
+      !this.creating() &&
+      (this.focusMode() !== (this.current()?.focusModeEnabled ?? false) ||
+        (this.supportsFocusCloses() &&
+          this.focusCloses() !== (this.current()?.focusClosesBackground ?? false)) ||
+        this.shortAnimations() !== (this.current()?.shortAnimationsEnabled ?? false) ||
+        !sameSet(this.restrictedPackages(), this.current()?.restrictedBackgroundPackages ?? [])),
+  );
   private readonly membersChanged = computed(() => {
     const base = this.savedMembers();
     return base !== null && !sameSet(this.members(), base);
@@ -118,7 +164,13 @@ export class TvEditSheet implements OnInit {
     const name = this.name().trim();
     if (name === '' || name.length > NAME_MAX) return false;
     if (this.creating()) return this.agent() !== null;
-    return this.nameChanged() || this.agentChanged() || this.membersChanged();
+    return (
+      this.nameChanged() ||
+      this.agentChanged() ||
+      this.closeBackgroundChanged() ||
+      this.lightSettingsChanged() ||
+      this.membersChanged()
+    );
   });
 
   constructor() {
@@ -135,6 +187,35 @@ export class TvEditSheet implements OnInit {
   /** Só aqui os inputs já chegaram: a TV a editar decide de quem é a lista de pessoas a ler. */
   ngOnInit(): void {
     void this.loadPeople();
+    void this.loadReports();
+    void this.loadApps();
+  }
+
+  /** A linha de uma limpeza: o tipo e quando foi, e embaixo o que fez ou por que foi pulada. */
+  protected reportTitle(report: TvCleanupReportItem): string {
+    const when = new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(report.startedAt));
+    if (report.trigger === 'focus') {
+      return $localize`:@@settings.system.tv.sheet.report-focus:Modo Foco · ${when}:when:`;
+    }
+    return report.trigger === 'automatic'
+      ? $localize`:@@settings.system.tv.sheet.report-auto:${cleanupKindText(report.kind)}:kind: automática · ${when}:when:`
+      : $localize`:@@settings.system.tv.sheet.report-manual:${cleanupKindText(report.kind)}:kind: manual · ${when}:when:`;
+  }
+
+  protected reportOutcome(report: TvCleanupReportItem): string {
+    return cleanupOutcomeText(report);
+  }
+
+  /** Os apps que o Modo Foco fechou, pelo nome que a tela já conhece (ou o pacote, se não houver). */
+  protected reportApps(report: TvCleanupReportItem): string {
+    if (report.trigger !== 'focus') return '';
+    const labels = new Map(this.apps().map((app) => [app.package, app.label]));
+    return report.closedPackages.map((item) => labels.get(item) ?? item).join(', ');
   }
 
   protected platform(computer: TvComputer): string {
@@ -165,6 +246,30 @@ export class TvEditSheet implements OnInit {
     this.members.update((list) =>
       on ? (list.includes(id) ? list : [...list, id]) : list.filter((item) => item !== id),
     );
+  }
+
+  protected toggleCloseBackground(event: Event): void {
+    this.closeBackground.set((event.target as HTMLInputElement).checked);
+  }
+
+  protected isRestricted(packageName: string): boolean {
+    return this.restrictedPackages().includes(packageName);
+  }
+
+  protected toggleRestricted(packageName: string, event: Event): void {
+    const enabled = (event.target as HTMLInputElement).checked;
+    this.restrictedPackages.update((items) =>
+      enabled
+        ? [...new Set([...items, packageName])]
+        : items.filter((item) => item !== packageName),
+    );
+  }
+
+  protected restoreLightSettings(): void {
+    this.focusMode.set(false);
+    this.focusCloses.set(false);
+    this.shortAnimations.set(false);
+    this.restrictedPackages.set([]);
   }
 
   protected setName(event: Event): void {
@@ -215,10 +320,28 @@ export class TvEditSheet implements OnInit {
         this.current.set(tv);
         // Uma TV nova não tem ninguém: o que estiver marcado agora ainda é só rascunho.
         this.savedMembers.set([]);
-      } else if (this.nameChanged() || this.agentChanged()) {
+      } else if (
+        this.nameChanged() ||
+        this.agentChanged() ||
+        this.closeBackgroundChanged() ||
+        this.lightSettingsChanged()
+      ) {
         tv = await this.api.updateTv(tv.id, {
           ...(this.nameChanged() ? { name: this.name().trim() } : {}),
           ...(this.agentChanged() ? { agentSlug: this.agent()! } : {}),
+          ...(this.closeBackgroundChanged()
+            ? { allowBackgroundAppClosing: this.closeBackground() }
+            : {}),
+          ...(this.lightSettingsChanged()
+            ? {
+                focusModeEnabled: this.focusMode(),
+                ...(this.supportsFocusCloses()
+                  ? { focusClosesBackground: this.focusCloses() }
+                  : {}),
+                shortAnimationsEnabled: this.shortAnimations(),
+                restrictedBackgroundPackages: this.restrictedPackages(),
+              }
+            : {}),
         });
         this.dirty = true;
         this.current.set(tv);
@@ -237,8 +360,34 @@ export class TvEditSheet implements OnInit {
     }
   }
 
+  private async loadReports(): Promise<void> {
+    const tv = this.current();
+    if (!tv) return;
+    try {
+      this.reports.set(await this.api.tvCleanupReports(tv.id));
+    } catch {
+      this.reportsFailed.set(true);
+    }
+  }
+
+  protected retryApps(): void {
+    void this.loadApps();
+  }
+
+  private async loadApps(): Promise<void> {
+    const tv = this.current();
+    if (!tv) return;
+    this.appsState.set('loading');
+    try {
+      this.apps.set(await this.api.tvApps(tv.id));
+      this.appsState.set('ready');
+    } catch {
+      this.appsState.set('error');
+    }
+  }
+
   /** As pessoas que podem ser marcadas (contas ativas) e, ao editar, quem já usa a TV. */
-  private async loadPeople(): Promise<void> {
+  protected async loadPeople(): Promise<void> {
     try {
       const tv = this.current();
       const [guests, members] = await Promise.all([
@@ -273,9 +422,18 @@ export class TvEditSheet implements OnInit {
     if (problem && isStepUpRequired(problem)) {
       return $localize`:@@settings.system.tv.sheet.error.unconfirmed:A mudança não foi confirmada com a passkey. Nada foi alterado.`;
     }
+    // O 409 de "ajuste não suportado" tem tipo próprio: não é o 409 de "computador já em uso".
+    if (problem?.kind === 'tv-light-settings-unsupported') {
+      return $localize`:@@settings.system.tv.sheet.error.unsupported:Não Suportado Nesta TV.`;
+    }
     switch (problem?.status) {
       case 0:
         return $localize`:@@settings.system.tv.sheet.error.network:Sem conexão com o servidor. Tente de novo.`;
+      case 400:
+        if (problem.fieldErrors['restrictedBackgroundPackages']) {
+          return $localize`:@@settings.system.tv.sheet.error.apps-invalid:A lista de apps tem algo inválido. Atualize a lista e escolha de novo.`;
+        }
+        break;
       case 404:
         return $localize`:@@settings.system.tv.sheet.error.not-found:Essa TV não existe mais. Feche e veja a lista.`;
       case 409:

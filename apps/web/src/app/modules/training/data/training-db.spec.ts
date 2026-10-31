@@ -10,6 +10,9 @@ import {
   TRAINING_SCHEMA_V4,
   TRAINING_SCHEMA_V5,
   TRAINING_SCHEMA_V6,
+  TRAINING_SCHEMA_V7,
+  TRAINING_SCHEMA_V8,
+  TRAINING_SCHEMA_V9,
   TrainingDb,
   trainingDbName,
 } from './training-db';
@@ -22,23 +25,25 @@ describe('TrainingDb', () => {
     expect(TRAINING_DB_NAME).not.toBe(OFFLINE_DATABASE_NAME);
   });
 
-  it('opens at version 8 with the existing training data and nutrition tables', async () => {
+  it('opens at version 10 with the existing training data, calendar and photo queue', async () => {
     const db = new TrainingDb('uniover-training-esquema', {
       indexedDB: new FakeIDBFactory(),
       ...FAKE,
     });
     await db.open();
 
-    expect(db.verno).toBe(8);
+    expect(db.verno).toBe(10);
     expect(db.tables.map((table) => table.name).sort()).toEqual([
       'assessmentDocuments',
       'bodyEntries',
       'bodyProfile',
+      'calendarEntries',
       'exercises',
       'foods',
       'goals',
       'meals',
       'meta',
+      'photoSync',
       'photos',
       'physicalAssessments',
       'program',
@@ -86,7 +91,7 @@ describe('TrainingDb', () => {
 
     const migrated = new TrainingDb(name, options);
     await migrated.open();
-    expect(migrated.verno).toBe(8);
+    expect(migrated.verno).toBe(10);
     expect(await migrated.physicalAssessments.get('history')).toMatchObject({
       assessedOn: '2026-10-01',
     });
@@ -125,6 +130,43 @@ describe('TrainingDb', () => {
     second.close();
   });
 
+  it('migrates version 9 without changing photos or calendar entries and starts with an empty photo queue', async () => {
+    const factory = new FakeIDBFactory();
+    const name = 'uniover-training-fotos-v9';
+    const options = { indexedDB: factory, ...FAKE };
+    class V9Db extends Dexie {
+      constructor() {
+        super(name, options);
+        this.version(1).stores(TRAINING_SCHEMA_V1);
+        this.version(2).stores(TRAINING_SCHEMA_V2);
+        this.version(3).stores(TRAINING_SCHEMA_V3);
+        this.version(4).stores(TRAINING_SCHEMA_V4);
+        this.version(5).stores(TRAINING_SCHEMA_V5);
+        this.version(6).stores(TRAINING_SCHEMA_V6);
+        this.version(7).stores(TRAINING_SCHEMA_V7);
+        this.version(8).stores(TRAINING_SCHEMA_V8);
+        this.version(9).stores(TRAINING_SCHEMA_V9);
+      }
+    }
+    const previous = new V9Db();
+    await previous
+      .table('photos')
+      .put({ id: 'local', takenOn: '2026-10-01', data: new ArrayBuffer(4) });
+    await previous
+      .table('calendarEntries')
+      .put({ id: 'day', dayKey: '2026-10-01', updatedAt: 1, deletedAt: null });
+    previous.close();
+
+    const migrated = new TrainingDb(name, options);
+    await migrated.open();
+
+    expect(migrated.verno).toBe(10);
+    expect(await migrated.calendarEntries.get('day')).toMatchObject({ dayKey: '2026-10-01' });
+    expect(await migrated.photos.get('local')).toMatchObject({ takenOn: '2026-10-01' });
+    expect(await migrated.photoSync.count()).toBe(0);
+    migrated.close();
+  });
+
   it('migrates version 5 without changing existing rows and creates empty local tables', async () => {
     const factory = new FakeIDBFactory();
     const name = 'uniover-training-avaliacoes-v5';
@@ -147,11 +189,13 @@ describe('TrainingDb', () => {
 
     const migrated = new TrainingDb(name, options);
     await migrated.open();
-    expect(migrated.verno).toBe(8);
+    expect(migrated.verno).toBe(10);
     expect(await migrated.bodyEntries.get('historic')).toMatchObject({
       measuredOn: '2026-10-01',
       weightKg: 80,
     });
+    // A agenda pessoal chega vazia: nenhuma linha antiga é tocada.
+    expect(await migrated.calendarEntries.count()).toBe(0);
     expect(await migrated.physicalAssessments.count()).toBe(0);
     expect(await migrated.assessmentDocuments.count()).toBe(0);
     expect(await migrated.foods.count()).toBe(0);

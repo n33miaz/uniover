@@ -49,7 +49,7 @@ describe('physical assessment screens', () => {
     await harness.navigateByUrl('/treino/corpo/avaliacoes');
     const el = harness.routeNativeElement as HTMLElement;
     await eventually({ detectChanges: () => harness.detectChanges() }, () => {
-      expect(el.textContent).toContain('Somente neste aparelho');
+      expect(el.textContent).toContain('Somente Neste Aparelho');
       expect(el.textContent).toContain('Clínica sintética');
     });
     await harness.navigateByUrl(`/treino/corpo/avaliacoes/${row.id}`);
@@ -116,6 +116,12 @@ describe('physical assessment screens', () => {
     await harness.fixture.whenStable();
     harness.detectChanges();
     expect((harness.routeNativeElement as HTMLElement).textContent).toContain('Prévia carregada');
+    const previewCount = (harness.routeNativeElement as HTMLElement)
+      .querySelector('.preview-count')
+      ?.textContent?.replace(/\s+/g, ' ')
+      .trim();
+    expect(previewCount).toContain('6 dados reconhecidos');
+    expect(previewCount).toContain('5 para revisar');
 
     const measureCandidate = Array.from(
       harness.routeNativeElement!.querySelectorAll<HTMLElement>('.candidate'),
@@ -210,12 +216,13 @@ describe('physical assessment screens', () => {
     )!;
     transferButton.click();
     await eventually({ detectChanges: () => harness.detectChanges() }, () => {
-      expect(page.textContent).toContain('Escolher medidas para o Corpo');
-      expect(page.querySelectorAll('.transfer-option')).toHaveLength(2);
+      expect(page.textContent).toContain('Escolher Medidas para o Corpo');
+      // Peso, cintura e a panturrilha direita (a medida com lado agora tem campo próprio no Corpo).
+      expect(page.querySelectorAll('.transfer-option')).toHaveLength(3);
     });
 
     const choices = Array.from(page.querySelectorAll<HTMLInputElement>('.transfer-option input'));
-    expect(choices).toHaveLength(2);
+    expect(choices).toHaveLength(3);
     expect(choices.every((choice) => !choice.checked)).toBe(true);
     choices[0].click();
     await eventually({ detectChanges: () => harness.detectChanges() }, () => {

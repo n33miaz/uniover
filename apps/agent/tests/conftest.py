@@ -13,10 +13,15 @@ REAL_WOL_SEND = _wol._send
 @pytest.fixture(autouse=True)
 def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """Nenhum teste fala com a rede local: o teste de vida da TV, a leitura do REST Samsung, o
-    ARP e o SSDP são trocados por respostas fixas (os testes que precisam de outra resposta a
-    trocam de novo)."""
+    ARP, o SSDP e o mDNS são trocados por respostas fixas (os testes que precisam de outra
+    resposta a trocam de novo)."""
     from uniover_agent import main as main_module  # noqa: PLC0415
-    from uniover_agent.adapters import tv_locate, tv_samsung, wol  # noqa: PLC0415
+    from uniover_agent.adapters import (  # noqa: PLC0415
+        tv_discovery,
+        tv_locate,
+        tv_samsung,
+        wol,
+    )
     from uniover_agent.adapters.tv_discovery import PortState  # noqa: PLC0415
 
     async def alive(host: str, port: int, wait: float = 1.0) -> bool:
@@ -43,6 +48,10 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     async def no_identity(kind: str, host: str) -> None:
         return None
 
+    async def no_mdns(listen_seconds: float = 0.0) -> list[object]:
+        return []
+
+    monkeypatch.setattr(tv_discovery, "discover_android_tvs", no_mdns)
     monkeypatch.setattr(tv_locate, "tcp_open", alive)
     monkeypatch.setattr(main_module, "tcp_probe", open_probe)
     monkeypatch.setattr(main_module, "identify_tv", no_identity)

@@ -70,6 +70,12 @@
   </p>
 </ng-template>
 
+<ng-template #lastCleanupNote>
+  @if (lastCleanupText(); as text) {
+    <p class="note" role="status">{{ text }}</p>
+  }
+</ng-template>
+
 @if (!access.appList()) {
   <!--
     Quem só controla (não abre apps nem edita atalhos) tem neste painel uma coisa só: limpar a TV. Nada de grade, busca,
@@ -93,12 +99,37 @@
     @if (store.cleaning()) {
       <ng-container [ngTemplateOutlet]="cleaningNote" />
     }
+    <ng-container [ngTemplateOutlet]="lastCleanupNote" />
     @if (!store.canSend()) {
       <p class="note">{{ store.disabledReason() }}</p>
     }
   </div>
+} @else if (!loaded() && store.shortcutsFailed()) {
+  <!-- O teto da primeira leitura venceu: nada de brilho em laço, uma frase e a nova tentativa. -->
+  <div class="empty">
+    <app-tv-icon name="apps" />
+    <p class="empty-title" i18n="@@tv.apps.unavailable-title">Não Foi Possível Carregar os Apps</p>
+    <button type="button" class="primary" [disabled]="reloading()" (click)="reload()">
+      <span i18n="@@tv.apps.retry">Tentar de Novo</span>
+    </button>
+  </div>
 } @else if (!loaded()) {
-  <p class="note" role="status" i18n="@@tv.apps.loading">Carregando os apps…</p>
+  <!--
+    A busca e a grade de azulejos, nas formas reais, só depois da espera curta do store (uma lista rápida não pisca). O
+    texto para o leitor de tela é o de sempre; os blocos são só desenho.
+  -->
+  <div class="loading" role="status" aria-live="polite" i18n-aria-live="@@common.aria.polite">
+    <span class="sr" i18n="@@tv.apps.loading">Carregando os apps…</span>
+    @if (store.shortcutsLoading()) {
+      <div class="loading-bar ui-skeleton" aria-hidden="true"></div>
+      <div class="loading-tiles" aria-hidden="true">
+        <span class="ui-skeleton"></span>
+        <span class="ui-skeleton"></span>
+        <span class="ui-skeleton"></span>
+        <span class="ui-skeleton"></span>
+      </div>
+    }
+  </div>
 } @else if (all().length === 0) {
   <div class="empty">
     <app-tv-icon name="apps" />
@@ -196,6 +227,7 @@
   @if (store.cleaning()) {
     <ng-container [ngTemplateOutlet]="cleaningNote" />
   }
+  <ng-container [ngTemplateOutlet]="lastCleanupNote" />
 
   @if (visible().length === 0) {
     <p class="note" role="status" i18n="@@tv.apps.no-match">

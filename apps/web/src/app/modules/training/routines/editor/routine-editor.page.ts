@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   Injector,
   afterNextRender,
@@ -22,6 +23,7 @@ import { ExercisePickerSheet } from '../../exercises/picker/exercise-picker-shee
 import { BackNavigation } from '../../shell/back-navigation';
 import { awaitingFirstPull } from '../../shell/first-pull';
 import { TrainingGlyph } from '../../shell/training-glyph';
+import { TrainingHeaderActions } from '../../shell/training-header-actions';
 import {
   ItemField,
   RoutineDraftState,
@@ -39,6 +41,7 @@ import {
   toggleLink,
   validateDraft,
 } from './routine-draft';
+import { TrainingFormSkeleton } from '../../shell/training-form-skeleton';
 
 interface FieldConfig {
   readonly key: ItemField;
@@ -56,12 +59,13 @@ interface FieldConfig {
  */
 @Component({
   selector: 'app-routine-editor-page',
-  imports: [TrainingGlyph, ExercisePickerSheet],
+  imports: [TrainingGlyph, ExercisePickerSheet, TrainingFormSkeleton],
   templateUrl: './routine-editor.page.html',
   styleUrl: './routine-editor.page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RoutineEditorPage {
+  protected readonly loadingLabel = $localize`:@@training.editor.loading:Carregando a rotina…`;
   private readonly routines = inject(RoutineRepository);
   private readonly catalog = inject(CatalogRepository);
   private readonly back = inject(BackNavigation);
@@ -71,6 +75,7 @@ export class RoutineEditorPage {
   private readonly connectivity = inject(ConnectivityService);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly headerActions = inject(TrainingHeaderActions);
 
   protected readonly routineId = this.route.snapshot.paramMap.get('id') ?? '';
   protected readonly editing = this.routineId !== '';
@@ -91,15 +96,20 @@ export class RoutineEditorPage {
   protected readonly confirmingLeave = signal(false);
   protected readonly confirmingDelete = signal(false);
 
-  protected readonly errors = computed(() =>
-    this.submitted() ? validateDraft(this.draft()) : { reps: new Set<string>() },
-  );
   protected readonly dirty = computed(() => isDraftDirty(this.initial(), this.draft()));
+  // Os avisos aparecem assim que a pessoa mexe: o Salvar fica desligado enquanto houver erro, e sem o aviso ela
+  // não teria como saber o que falta.
+  protected readonly errors = computed(() =>
+    this.submitted() || this.dirty() ? validateDraft(this.draft()) : { reps: new Set<string>() },
+  );
+  /** Salvar só vale com algo mudado, tudo válido e nenhuma gravação em andamento. */
+  protected readonly saveDisabled = computed(
+    () => this.saving() || !this.dirty() || hasErrors(validateDraft(this.draft())),
+  );
 
   protected readonly title = this.editing
-    ? $localize`:@@training.editor.title-edit:Editar rotina`
-    : $localize`:@@training.editor.title-new:Nova rotina`;
-  protected readonly backLabel = $localize`:@@training.editor.back:Sair do editor`;
+    ? $localize`:@@training.editor.title-edit:Editar Rotina`
+    : $localize`:@@training.editor.title-new:Nova Rotina`;
   protected readonly itemsLabel = $localize`:@@training.editor.items-label:Exercícios da rotina`;
   protected readonly dragHint = $localize`:@@training.editor.hint:Mude a ordem com as setas, ou arraste pela alça.`;
 
@@ -138,6 +148,7 @@ export class RoutineEditorPage {
   private opened = false;
 
   constructor() {
+    inject(DestroyRef).onDestroy(this.headerActions.registerBack(() => this.cancel()));
     if (this.editing) {
       // Aberto direto pelo endereço na primeira vez, o editor espera a primeira passada do servidor trazer a rotina.
       effect(() => {

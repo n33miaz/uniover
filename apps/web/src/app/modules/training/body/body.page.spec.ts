@@ -1,19 +1,51 @@
 import { TestBed } from '@angular/core/testing';
-import { setupScreen } from '../shell/screen-test-kit';
-import { BodyPage } from './body.page';
 import { vi } from 'vitest';
+import { eventually, setupScreen } from '../shell/screen-test-kit';
+import { BodyPage } from './body.page';
 
-describe('BodyPage section selector', () => {
+describe('BodyPage painel de sinais', () => {
   afterEach(() => vi.unstubAllGlobals());
+
   async function open() {
     await setupScreen();
     const fixture = TestBed.createComponent(BodyPage);
-    await fixture.whenStable();
     fixture.detectChanges();
-    return { fixture, el: fixture.nativeElement as HTMLElement };
+    const el = fixture.nativeElement as HTMLElement;
+    // Até a leitura do banco local terminar a aba é o esqueleto: o que o teste confere é a tela de verdade.
+    await eventually(fixture, () => expect(el.querySelector('app-body-skeleton')).toBeNull());
+    return { fixture, el };
   }
 
-  it('selects panels in both directions and clears only its own entrance animation', async () => {
+  it('mostra os sinais na ordem de consulta e mantém o peso como ação principal', async () => {
+    const { el } = await open();
+    const panel = el.querySelector('.section-content')!;
+    const labels = Array.from(
+      panel.querySelectorAll('.weight-card, .signal-card, .signal-row'),
+    ).map((element) => element.textContent?.replace(/\s+/g, ' ').trim());
+
+    expect(labels).toEqual([
+      expect.stringContaining('Peso'),
+      expect.stringContaining('Medidas'),
+      expect.stringContaining('Gordura Corporal'),
+      expect.stringContaining('Avaliações Físicas'),
+      expect.stringContaining('Fotos de Progresso'),
+    ]);
+    // O mapa fica dentro do Corpo; não há atalho para uma tela só do mapa.
+    expect(panel.querySelector('app-body-map-panel h2')?.textContent).toContain('Mapa do Corpo');
+    expect(panel.querySelector('a[href="/treino/exercicios/mapa"]')).toBeNull();
+    expect(panel.querySelector('.primary-action')?.textContent).toContain('Registrar Peso');
+  });
+
+  it('deixa o texto visível como nome acessível dos cartões de sinal', async () => {
+    const { el } = await open();
+    const cards = Array.from(el.querySelectorAll<HTMLButtonElement>('.signal-card'));
+
+    // Um aria-label que não contém o texto visível quebra o acesso por voz (regra label-content-name-mismatch do axe).
+    expect(cards).toHaveLength(2);
+    for (const card of cards) expect(card.hasAttribute('aria-label')).toBe(false);
+  });
+
+  it('abre registros e fotos pelo painel e anima apenas quando o movimento é permitido', async () => {
     const { fixture, el } = await open();
     const tabs = Array.from(el.querySelectorAll<HTMLButtonElement>('.tabs button'));
     const content = el.querySelector<HTMLElement>('.section-content')!;
@@ -21,32 +53,28 @@ describe('BodyPage section selector', () => {
     tabs[1].click();
     fixture.detectChanges();
     expect(tabs[1].getAttribute('aria-pressed')).toBe('true');
-    expect(content.classList.contains('forward')).toBe(true);
-
-    const child = document.createElement('span');
-    content.append(child);
-    child.dispatchEvent(new Event('animationend', { bubbles: true }));
+    expect(content.textContent).toContain('Perfil');
     expect(content.classList.contains('forward')).toBe(true);
 
     content.dispatchEvent(new Event('animationend'));
     fixture.detectChanges();
     expect(content.classList.contains('forward')).toBe(false);
 
-    tabs[0].click();
+    tabs[2].click();
     fixture.detectChanges();
-    expect(tabs[0].getAttribute('aria-pressed')).toBe('true');
-    expect(content.classList.contains('backward')).toBe(true);
+    expect(tabs[2].getAttribute('aria-pressed')).toBe('true');
+    expect(content.textContent).toContain('Fotos de Progresso');
   });
 
-  it('changes sections without motion when reduced motion is requested', async () => {
+  it('troca de visão sem animação quando o movimento reduzido é solicitado', async () => {
     vi.stubGlobal('matchMedia', () => ({ matches: true }));
     const { fixture, el } = await open();
     const tabs = el.querySelectorAll<HTMLButtonElement>('.tabs button');
     const content = el.querySelector<HTMLElement>('.section-content')!;
 
-    tabs[2].click();
+    tabs[1].click();
     fixture.detectChanges();
-    expect(tabs[2].getAttribute('aria-pressed')).toBe('true');
+
     expect(content.classList.contains('forward')).toBe(false);
     expect(content.classList.contains('backward')).toBe(false);
   });

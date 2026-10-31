@@ -35,6 +35,7 @@ class TvRelocator:
         check_seconds: float = DEFAULT_CHECK_SECONDS,
         summary_seconds: float = DEFAULT_SUMMARY_SECONDS,
         on_alive: Callable[[], Awaitable[None]] | None = None,
+        is_paused: Callable[[], bool] = lambda: False,
     ) -> None:
         """`rescan` devolve o novo endereço da **mesma** TV, ou `None` (não achou ou não mudou).
 
@@ -50,11 +51,14 @@ class TvRelocator:
         self._summary_seconds = summary_seconds
         # Chamado a cada conferência em que a TV está lá (para aprender o que falta dela).
         self._on_alive = on_alive
+        self._is_paused = is_paused
         self._failures = 0
         self._last_summary: float | None = None
 
     async def step(self) -> str | None:
         """Uma conferência. Devolve o novo endereço quando a TV mudou de lugar."""
+        if self._is_paused():
+            return None
         if self._is_hot() or await self._safe_reachable():
             if self._failures >= self._failures_needed:
                 _log.info("a TV voltou a responder no endereço de sempre")

@@ -21,10 +21,32 @@ export interface LocalPhoto {
   readonly bytes: number;
   /** Instante (ms) em que entrou neste aparelho; desempata fotos do mesmo dia. */
   readonly addedAt: number;
+  /**
+   * Lápide de uma exclusão que ficou pendente quando as fotos na nuvem ainda existiam. Nada mais a grava; a foto marcada
+   * continua fora da lista, como a pessoa pediu ao apagar.
+   */
+  readonly hidden?: boolean;
+  /**
+   * Miniatura (JPEG reduzido, também como bytes) feita sob demanda na primeira vez que a lista pede a foto. Fotos antigas
+   * a ganham ao serem vistas; é só cache e pode faltar.
+   */
+  readonly thumb?: ArrayBuffer;
 }
 
-/** A foto sem os bytes: é o que a tela recebe na lista (os bytes só saem pelo `dataUrl` e pelo `shareFile`). */
-export type PhotoInfo = Omit<LocalPhoto, 'data'>;
+/** A foto sem os bytes: é o que a tela recebe na lista (os bytes só saem pelo `dataUrl`, `thumbUrl` e `shareFile`). */
+export type PhotoInfo = Omit<LocalPhoto, 'data' | 'thumb'>;
+
+/**
+ * Resto da fila binária das fotos na nuvem, que foi aposentada. A tabela `photoSync` continua declarada no banco local para
+ * que nenhuma versão do esquema apague dados do aparelho; nada mais lê nem grava nela.
+ */
+export type PhotoCloudState = 'pending' | 'uploading' | 'error' | 'cloud' | 'deleting';
+
+export interface LocalPhotoSync {
+  readonly id: string;
+  readonly state: PhotoCloudState;
+  readonly error: boolean;
+}
 
 /** Quanto as fotos ocupam e quanto o navegador diz que ainda cabe. Os campos da cota vêm `null` quando o navegador não sabe. */
 export interface PhotoUsage {

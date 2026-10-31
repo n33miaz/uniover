@@ -164,7 +164,7 @@ public class IdentityOptionsTests
         options.Lockout.MaxDelay.Should().Be(TimeSpan.FromMinutes(15));
         options.MinPasswordLength.Should().Be(10);
         options.StreamTicketLifetime.Should().Be(TimeSpan.FromSeconds(120));
-        options.GuestInviteLifetime.Should().Be(TimeSpan.FromHours(48));
+        options.GuestInviteLifetime.Should().Be(TimeSpan.FromDays(7));
         options.MaxPendingGuestInvites.Should().Be(10);
         options.GuestStatusCacheLifetime.Should().Be(TimeSpan.FromSeconds(30));
         options.Cookies.SecureOverride.Should().BeNull();

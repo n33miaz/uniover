@@ -124,13 +124,13 @@ for (const scheme of ['light', 'dark'] as const) {
       await openTraining(page, '/treino/exercicios');
       await waitForCatalog(page);
       // Com rede, o aparelho traz o catálogo e o treino da semana; só então a rede cai.
-      await page.getByRole('link', { name: 'Mapa do corpo' }).click();
+      await page.getByRole('link', { name: 'Mapa do Treino' }).click();
       await expect(zone(page, 'chest')).toHaveAttribute('data-level', '3');
-      await page.getByRole('button', { name: 'Voltar para Exercícios' }).click();
+      await page.locator('app-page-top-bar .back').click();
       server.offline = true;
       await page.evaluate(() => window.dispatchEvent(new Event('offline')));
       await expectOfflineIcon(page);
-      await page.getByRole('link', { name: 'Mapa do corpo' }).click();
+      await page.getByRole('link', { name: 'Mapa do Treino' }).click();
       await expect(zone(page, 'chest')).toHaveAttribute('data-level', '3');
       await tapZone(page, 'chest');
       await expect(panel(page).getByRole('heading', { name: 'Peitoral' })).toBeVisible();
@@ -165,7 +165,7 @@ for (const scheme of ['light', 'dark'] as const) {
       const server = await startTraining(context, page, { catalog: false });
       server.offline = true;
       await openTraining(page, '/treino/exercicios/mapa');
-      await expect(page.getByText('O catálogo ainda não chegou')).toBeVisible();
+      await expect(page.getByText('O Catálogo Ainda Não Chegou')).toBeVisible();
       await shot(page, info, 'mapa-catalogo-vazio', scheme);
     });
   });

@@ -8,6 +8,33 @@
   gap: var(--space-3);
 }
 
+/* As abas deixam convites no contexto de Pessoas sem duplicar uma tela de administração. */
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius);
+  background: var(--a-surface-2);
+}
+
+.tab {
+  min-height: var(--tap);
+  border: 0;
+  border-radius: calc(var(--radius) - 3px);
+  background: transparent;
+  color: var(--a-ink2);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  background: var(--a-surface);
+  color: var(--a-ink);
+  box-shadow: var(--shadow-1);
+}
+
 .hint {
   margin: 0;
   color: var(--a-ink2);
@@ -101,23 +128,6 @@
 .empty.bad {
   border-color: color-mix(in srgb, var(--a-bad) 45%, var(--a-line));
   color: var(--a-bad-ink);
-}
-
-.skeleton-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: var(--space-4);
-}
-
-.bar {
-  display: block;
-  width: 40%;
-  height: 14px;
-}
-
-.bar.wide {
-  width: 70%;
 }
 
 .message app-settings-glyph,
@@ -236,4 +246,29 @@
 .link {
   font-size: var(--fs-small);
   overflow-wrap: anywhere;
+}
+
+/* Uso: só o último acesso, numa linha (rótulo e valor). */
+.usage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.usage strong {
+  color: var(--a-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.owner-usage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-3) var(--space-4);
 }

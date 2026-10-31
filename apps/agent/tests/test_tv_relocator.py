@@ -481,3 +481,12 @@ async def test_the_mac_the_arp_shows_for_a_confirmed_tv_is_saved_once(
         clock.advance(60)
         await relocator.step()
     assert lan.arp_calls == calls
+
+
+async def test_the_watch_does_nothing_while_focus_is_active() -> None:
+    scene = Scene()
+    scene.answer = "192.168.0.99"
+    relocator = scene.relocator(is_paused=lambda: True)
+
+    assert [await relocator.step() for _ in range(5)] == [None] * 5
+    assert scene.rescans == 0

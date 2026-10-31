@@ -87,7 +87,7 @@ async function openHome(page: Page, scheme: Scheme) {
 async function openSettings(page: Page, scheme: Scheme) {
   await page.emulateMedia({ colorScheme: scheme });
   await page.goto('/ajustes');
-  await expect(page.getByRole('heading', { level: 2, name: 'Conta' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Você' })).toBeVisible();
   await expect(page.getByRole('link', { name: /^Pessoas/ })).toBeVisible();
   await settle(page);
 }
@@ -134,9 +134,24 @@ test.describe('Início', () => {
       await expectNoA11yViolations(page);
 
       await page.getByRole('button', { name: 'Editar' }).click();
-      const sheet = page.getByRole('dialog', { name: 'Editar a Início' });
+      const sheet = page.getByRole('dialog', { name: 'Personalizar' });
       await expect(sheet).toBeVisible();
+      await expect(sheet.locator('.head .done')).toHaveText('Concluir');
+      await expect(sheet.locator('.footer')).toHaveCount(0);
+      await expect(sheet.locator('.grip')).toHaveCount(8);
       await settle(page);
+      // O foco inicial é o título (nenhuma seta ganha anel sem a pessoa ter tocado) e cada nome cabe numa linha, sem corte.
+      await expect(sheet.getByRole('heading', { name: 'Personalizar' })).toBeFocused();
+      const names = await sheet.locator('.name').evaluateAll((items) =>
+        items.map((item) => ({
+          text: item.textContent?.trim(),
+          oneLine:
+            item.getBoundingClientRect().height <
+            parseFloat(getComputedStyle(item).lineHeight) * 1.5,
+          cut: item.scrollWidth > item.clientWidth,
+        })),
+      );
+      expect(names.filter((name) => !name.oneLine || name.cut)).toEqual([]);
       await screenshot(page, printPath(info, 'home-sheet', scheme));
       expect(await smallTargets(page)).toEqual([]);
       await expectNoA11yViolations(page);
@@ -154,7 +169,7 @@ test.describe('Início', () => {
         expect(await smallTargets(page)).toEqual([]);
       }
       await page.getByRole('button', { name: 'Editar' }).click();
-      await expect(page.getByRole('dialog', { name: 'Editar a Início' })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Personalizar' })).toBeVisible();
       await settle(page);
       await screenshot(page, printPath(info, 'home-sheet-landscape', scheme));
       await expectNoHorizontalScroll(page);
@@ -174,6 +189,24 @@ test.describe('Início', () => {
       await screenshot(page, `test-results/screens/home-${part}-${info.project.name}-light.png`);
     }
     expect(new Set(scenes).size).toBe(3);
+  });
+
+  test('centraliza a marca e nem consulta os avisos dos computadores', async ({ page }) => {
+    const alertRequests: string[] = [];
+    await page.route('**/api/v1/devices/agent-alerts', (route) => {
+      alertRequests.push(route.request().url());
+      return route.fulfill({ contentType: 'application/json', body: '[]' });
+    });
+    await openHome(page, 'light');
+    expect(alertRequests).toEqual([]);
+
+    const center = await page.locator('.home-topbar .brand').evaluate((brand) => {
+      const box = brand.getBoundingClientRect();
+      return { brand: box.left + box.width / 2, viewport: window.innerWidth };
+    });
+    expect(center.brand).toBeCloseTo(center.viewport / 2, 0);
+    await expect(page.locator('.agent-status')).toHaveAttribute('aria-label', 'Agente ligado');
+    await expect(page.locator('.agent-alert')).toHaveCount(0);
   });
 
   test('estado vazio da Início com todos os módulos ocultos', async ({ page }, info) => {
@@ -200,7 +233,7 @@ test.describe('Início', () => {
       await expectNoA11yViolations(page);
     }
     await page.getByRole('button', { name: 'Escolher módulos' }).click();
-    await expect(page.getByRole('dialog', { name: 'Editar a Início' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Personalizar' })).toBeVisible();
   });
 
   test('com movimento reduzido nada anima e o foco por teclado é visível', async ({ page }) => {
@@ -227,7 +260,7 @@ test.describe('Início', () => {
   });
 });
 
-test.describe('Ajustes', () => {
+test.describe('Configurações', () => {
   for (const scheme of SCHEMES) {
     test(`a lista: prints e acessibilidade no tema ${scheme}`, async ({ page }, info) => {
       seedAccount();
@@ -296,6 +329,7 @@ test.describe('Ajustes', () => {
 
       // Link de convite gerado (com a confirmação já válida).
       mock.stepUpValid = true;
+      await page.getByRole('tab', { name: 'Convites' }).click();
       await page.getByRole('button', { name: 'Convidar alguém' }).click();
       await page.getByLabel('Nome do convidado').fill('Diego');
       await page.getByRole('button', { name: 'Gerar convite' }).click();
@@ -314,7 +348,6 @@ test.describe('Ajustes', () => {
       title: 'Segurança',
       route: '**/api/v1/identity/passkeys',
       empty: 'Nenhuma passkey cadastrada.',
-      loading: 'Carregando as passkeys…',
       error: 'Não foi possível carregar as passkeys agora.',
     },
     {
@@ -322,7 +355,6 @@ test.describe('Ajustes', () => {
       title: 'Pessoas',
       route: '**/api/v1/identity/guests',
       empty: 'Ninguém foi convidado ainda.',
-      loading: 'Carregando os convidados…',
       error: 'Não foi possível carregar os convidados agora.',
     },
   ]) {
@@ -350,7 +382,11 @@ test.describe('Ajustes', () => {
       let release!: () => void;
       gate = new Promise<void>((resolve) => (release = resolve));
       await page.reload();
-      await expect(page.getByText(screen.loading)).toBeVisible();
+      // O esqueleto da forma da lista (com a espera anunciada): sem o texto solto de antes, nunca uma área vazia.
+      await expect(
+        page.locator('app-loading-skeleton app-loading-frame[aria-busy="true"]').first(),
+      ).toBeVisible();
+      await settle(page);
       await screenshot(page, printPath(info, `settings-${name}-loading`, 'light'), {
         fullPage: true,
       });
@@ -398,7 +434,7 @@ test.describe('Ajustes', () => {
 
     // O cartão de tema mostra o foco quando o teclado chega nele. Entra pelo teclado (Tab e Shift+Tab): o WebKit
     // não conta como foco de teclado o que um script focou antes da primeira tecla.
-    await page.getByRole('radio', { name: 'Claro' }).focus();
+    await page.getByRole('radio', { name: /Automático/ }).focus();
     await page.keyboard.press('Tab');
     await page.keyboard.press('Shift+Tab');
     const focusedCard = page.locator('label.theme:has(input:focus)');
@@ -414,6 +450,23 @@ test.describe('Ajustes', () => {
         'none',
       );
     }
+  });
+
+  test('o seletor de tema da lista troca na hora, vale também na Aparência e não deixa subtítulos nas linhas', async ({
+    page,
+  }) => {
+    await openSettings(page, 'light');
+    await expect(page.locator('a.ui-row .ui-row-sub')).toHaveCount(0);
+    const group = page.getByRole('group', { name: 'Tema' });
+    await expect(group.getByRole('radio')).toHaveCount(3);
+    await group.getByRole('radio', { name: 'Escuro' }).check();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await group.getByRole('radio', { name: 'Claro' }).check();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await group.getByRole('radio', { name: 'Escuro' }).check();
+    // A mesma escolha aparece marcada na tela de Aparência.
+    await page.getByRole('link', { name: 'Aparência' }).click();
+    await expect(page.getByRole('radio', { name: 'Escuro' })).toBeChecked();
   });
 
   test('o botão Sair do Perfil mostra o foco por teclado', async ({ page }) => {

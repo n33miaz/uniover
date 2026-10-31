@@ -9,8 +9,8 @@
  *   mulher: %G = 163,205 × log10(cintura + quadril − pescoço) − 97,684 × log10(altura) − 78,387
  *
  * ONDE MEDIR (a tela deve dizer): no homem, o "abdômen" é a circunferência na altura do umbigo; na mulher, a cintura é o
- * ponto mais estreito do tronco e o quadril o ponto mais largo das nádegas; o pescoço, logo abaixo da laringe. É a medida
- * `waistCm` do app nos dois casos.
+ * ponto mais estreito do tronco e o quadril o ponto mais largo das nádegas; o pescoço, logo abaixo da laringe. No app é
+ * `abdomenCm` no homem que registrou o abdômen separado, e `waistCm` nos demais casos.
  *
  * É estimativa de população militar dos EUA, com erro de poucos pontos para cada pessoa: sempre com aviso, nunca como
  * diagnóstico. Abaixo de 18 anos devolve `null` (o app é pessoal e não atende menores).

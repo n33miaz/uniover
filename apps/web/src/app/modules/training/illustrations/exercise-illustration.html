@@ -1,22 +1,17 @@
 @if (entry()) {
-  <div class="card">
+  <button type="button" class="card" [attr.aria-label]="label()" (click)="tap()">
     @for (source of sources(); track index; let index = $index) {
       <img
         class="frame"
         [class.on]="frame() === index"
         [src]="source"
-        [alt]="altText(index)"
-        [attr.aria-hidden]="frame() === index ? null : 'true'"
+        alt=""
+        aria-hidden="true"
         width="268"
         height="275"
         [attr.loading]="'lazy'"
         [attr.decoding]="'async'"
       />
     }
-  </div>
-  @if (!animated()) {
-    <button type="button" class="other" (click)="flip()" i18n="@@training.art.other-pose">
-      Ver outra posição
-    </button>
-  }
+  </button>
 }

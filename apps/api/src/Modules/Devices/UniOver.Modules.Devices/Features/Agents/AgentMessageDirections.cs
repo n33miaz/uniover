@@ -37,6 +37,7 @@ internal static class AgentMessageDirections
         AgentMessageTypes.AgentMaintenanceV1,
         AgentMessageTypes.TvAppLaunchV1,
         AgentMessageTypes.TvAppsRefreshV1,
+        AgentMessageTypes.TvCleanupConfigV1,
         AgentMessageTypes.TvCleanupV1,
         AgentMessageTypes.TvKeyV1,
         AgentMessageTypes.TvKeyV2,

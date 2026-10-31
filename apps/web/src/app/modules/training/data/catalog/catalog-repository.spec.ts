@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
+import { IDBIndex, IDBObjectStore } from 'fake-indexeddb';
 import { setupTraining, localExercise } from '../sync/training-test-kit';
-import { CatalogRepository } from './catalog-repository';
+import { CatalogRepository, READ_BATCH_SIZE } from './catalog-repository';
 
 const names = (rows: readonly { name: string }[]) => rows.map((row) => row.name);
 
@@ -57,6 +58,45 @@ async function seed() {
 }
 
 describe('CatalogRepository', () => {
+  describe('batch reads', () => {
+    it('reads more than one batch by key, with no cursor, and still filters in memory', async () => {
+      setupTraining();
+      const repository = TestBed.inject(CatalogRepository);
+      const total = READ_BATCH_SIZE * 2 + 37;
+      await repository.applyRemote(
+        Array.from({ length: total }, (_, n) =>
+          localExercise(`row-${String(n).padStart(4, '0')}`, {
+            name: n % 100 === 0 ? `Especial ${n}` : `Enchimento ${n}`,
+            primaryMuscles: [n % 2 === 0 ? 'chest' : 'biceps'],
+            equipment: 'barbell',
+            deleted: n === 5,
+          }),
+        ),
+      );
+      // Cursor é o que travava o WebKit: nenhuma leitura do catálogo pode abri-lo.
+      const cursor = vi.spyOn(IDBObjectStore.prototype, 'openCursor');
+      const keyCursor = vi.spyOn(IDBObjectStore.prototype, 'openKeyCursor');
+      const indexCursor = vi.spyOn(IDBIndex.prototype, 'openCursor');
+      const getAll = vi.spyOn(IDBObjectStore.prototype, 'getAll');
+
+      expect(await repository.count()).toBe(total - 1);
+      expect(getAll.mock.calls.length).toBeGreaterThanOrEqual(3);
+      expect(names(await repository.search({ text: 'especial' }))).toHaveLength(
+        Math.ceil(total / 100),
+      );
+      expect(await repository.count({ group: 'chest' })).toBe(Math.ceil(total / 2));
+      expect(await repository.count({ muscle: 'biceps', text: 'enchimento' })).toBe(
+        Math.floor(total / 2) - 1,
+      );
+      expect(await repository.count({ equipment: 'barbell' })).toBe(total - 1);
+
+      expect(cursor).not.toHaveBeenCalled();
+      expect(keyCursor).not.toHaveBeenCalled();
+      expect(indexCursor).not.toHaveBeenCalled();
+      vi.restoreAllMocks();
+    });
+  });
+
   describe('text search', () => {
     it('finds "Supino reto" by "supino", without accent and without case', async () => {
       const { repository } = await seed();
