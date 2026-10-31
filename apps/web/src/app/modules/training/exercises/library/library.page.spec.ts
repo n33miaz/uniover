@@ -219,6 +219,22 @@ describe('ExerciseLibraryPage', () => {
     expect(pull).toHaveBeenCalledOnce();
   });
 
+  it('shows an error with "Tentar de Novo" when the local read fails, and reads again on tap', async () => {
+    const { fixture, el } = await open();
+    await eventually(fixture, () => expect(names(el)).toHaveLength(5));
+    const repository = TestBed.inject(CatalogRepository);
+    const real = repository.search.bind(repository);
+    vi.spyOn(repository, 'search').mockRejectedValueOnce(new Error('indexeddb unavailable'));
+    type(el, 'supino');
+    await eventually(fixture, () => expect(el.textContent).toContain('Os Exercícios Não Abriram'));
+    vi.spyOn(repository, 'search').mockImplementation(real);
+    Array.from(el.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('Tentar de Novo'))!
+      .click();
+    await eventually(fixture, () => expect(names(el)).toHaveLength(2));
+    expect(el.textContent).not.toContain('Os Exercícios Não Abriram');
+  });
+
   it('says nothing was found, and offers to clear the filters or to create the exercise from the search', async () => {
     const { fixture, el } = await open();
     await eventually(fixture, () => expect(rows(el)).toHaveLength(5));

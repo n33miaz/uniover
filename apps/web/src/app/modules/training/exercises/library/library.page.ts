@@ -84,6 +84,7 @@ export class ExerciseLibraryPage {
   private readonly searched = signal('');
 
   protected readonly ready = this.store.ready;
+  protected readonly failed = this.store.failed;
   protected readonly total = this.store.total;
   protected readonly results = this.store.results;
   /** O aparelho está trazendo o catálogo agora, ou ainda vai começar (primeira abertura). */
@@ -245,6 +246,10 @@ export class ExerciseLibraryPage {
     if (this.searchTimer === undefined) return;
     clearTimeout(this.searchTimer);
     this.mirror();
+  }
+
+  protected retryRead(): void {
+    this.store.retry();
   }
 
   protected retryDownload(): void {
