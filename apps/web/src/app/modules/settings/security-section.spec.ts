@@ -280,4 +280,22 @@ describe('SecuritySection', () => {
       await vi.waitFor(() => expect(api.passkeys).toHaveBeenCalled());
     });
   });
+
+  it('holds the shape of the passkey list as a busy skeleton until it arrives', async () => {
+    let finish: (list: PasskeySummary[]) => void = () => undefined;
+    api.passkeys.mockReturnValue(new Promise<PasskeySummary[]>((resolve) => (finish = resolve)));
+    const { fixture, el } = await render();
+
+    expect(
+      el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+    ).not.toBeNull();
+    expect(el.querySelector('.name')).toBeNull();
+
+    finish([passkey('p1', 'iPhone')]);
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(el.querySelector('app-loading-skeleton')).toBeNull();
+    });
+    expect(el.querySelector('.name')?.textContent).toBe('iPhone');
+  });
 });

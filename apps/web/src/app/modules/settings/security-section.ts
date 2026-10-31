@@ -10,6 +10,7 @@ import {
 } from '../../core/auth/step-up/webauthn';
 import { SessionState } from '../../core/session/session-state';
 import { SettingsGlyph } from './settings-glyph';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 
 /** Limite de caracteres do nome da passkey na API. */
 const MAX_NAME = 60;
@@ -20,7 +21,7 @@ const MAX_NAME = 60;
  */
 @Component({
   selector: 'app-security-section',
-  imports: [SettingsGlyph],
+  imports: [SettingsGlyph, LoadingSkeleton],
   templateUrl: './security-section.html',
   styleUrl: './security-section.css',
 })
@@ -188,7 +189,7 @@ export class SecuritySection {
     }
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     try {
       this.passkeys.set(await this.auth.authorized((token) => this.api.passkeys(token)));
       this.loadFailed.set(false);

@@ -41,7 +41,19 @@
       </li>
     }
 
-    @if (wger().length > 0) {
+    @if (wgerLoading()) {
+      <!-- Os autores do wger vêm do banco do aparelho: o espaço da seção fica reservado até a leitura terminar. -->
+      <li class="item wger-loading">
+        <app-loading-frame
+          label="Carregando os autores do wger…"
+          i18n-label="@@credits.wger.loading"
+        >
+          <span appSkeleton class="title"></span>
+          <span appSkeleton class="line"></span>
+          <span appSkeleton class="line short"></span>
+        </app-loading-frame>
+      </li>
+    } @else if (wger().length > 0) {
       <li class="item">
         <h2 id="wger-title" i18n="@@credits.wger.title">wger: exercícios importados</h2>
         <p class="note" i18n="@@credits.wger.note">

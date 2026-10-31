@@ -51,10 +51,13 @@
           </button>
         }
         @default {
-          <p class="state" role="status">
-            <span class="ui-spinner" aria-hidden="true"></span>
-            <span i18n="@@auth.qr.starting">Gerando o QR…</span>
-          </p>
+          <app-loading-skeleton
+            [kind]="'qr'"
+            i18n-label="@@auth.qr.starting"
+            label="Gerando o QR…"
+            [reload]="false"
+            (retried)="retry()"
+          />
         }
       }
     </div>

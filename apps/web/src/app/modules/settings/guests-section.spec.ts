@@ -678,4 +678,24 @@ describe('GuestsSection', () => {
       await vi.waitFor(() => expect(api.guests).toHaveBeenCalled());
     });
   });
+
+  it('holds the shape of the people list as a busy skeleton until it arrives', async () => {
+    let finish: (list: GuestSummary[]) => void = () => undefined;
+    api.guests.mockReturnValue(new Promise<GuestSummary[]>((resolve) => (finish = resolve)));
+    const { fixture, el } = await render();
+
+    expect(
+      el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+    ).not.toBeNull();
+    expect(el.querySelectorAll('app-loading-skeleton .ui-skeleton').length).toBeGreaterThan(2);
+    // As abas já são as de verdade: a tela não troca de forma quando o dado chega.
+    expect(el.querySelector('[role="tablist"]')).not.toBeNull();
+
+    finish([guest('g1', 'Bia')]);
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(el.querySelector('app-loading-skeleton')).toBeNull();
+    });
+    expect(el.textContent).toContain('Bia');
+  });
 });

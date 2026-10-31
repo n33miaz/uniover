@@ -697,4 +697,23 @@ describe('AuditPage', () => {
       for (const spy of spies) spy.mockRestore();
     }
   });
+
+  it('holds the shape of the rows as a busy skeleton until the first page arrives', async () => {
+    const first = deferred<{ items: AuditItem[]; nextCursor: string | null }>();
+    api.list.mockReturnValue(first.promise);
+    signIn();
+    const { fixture, el, rows } = await render();
+
+    expect(
+      el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+    ).not.toBeNull();
+    // Cada linha leva o selo e a seta da linha de verdade: a lista não muda de altura quando chega.
+    expect(el.querySelectorAll('app-loading-skeleton .row .chip')).toHaveLength(4);
+    expect(rows()).toHaveLength(0);
+
+    first.resolve({ items: [entry(1), entry(2)], nextCursor: null });
+    await settle(fixture);
+    expect(el.querySelector('app-loading-skeleton')).toBeNull();
+    expect(rows()).toHaveLength(2);
+  });
 });

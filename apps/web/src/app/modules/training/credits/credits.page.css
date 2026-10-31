@@ -92,3 +92,23 @@ dd {
   color: var(--a-ink2);
   font-size: var(--fs-small);
 }
+
+/* A seção do wger só chega depois da leitura do banco local: o espaço reservado (a moldura de espera) evita o salto. */
+.wger-loading .ui-skeleton {
+  display: block;
+  min-height: 0;
+}
+
+.wger-loading .title {
+  width: 60%;
+  height: 18px;
+}
+
+.wger-loading .line {
+  width: 100%;
+  height: 14px;
+}
+
+.wger-loading .line.short {
+  width: 45%;
+}

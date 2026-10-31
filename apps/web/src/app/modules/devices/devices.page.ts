@@ -5,6 +5,7 @@ import { isStepUpRequired, problemOf } from '../../core/auth/api-problem';
 import { canUseModule } from '../../core/auth/guest-home';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
 import { SessionState } from '../../core/session/session-state';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { ConnectSheet } from './connect-sheet';
 import { AgentLogSheet } from './agent-log-sheet';
 import { AgentAlert, DeviceAgent, DeviceTv, DevicesApi, MaintenanceAction } from './devices-api';
@@ -38,7 +39,7 @@ const outdatedText = () =>
  */
 @Component({
   selector: 'app-devices-page',
-  imports: [PairSheet, ConnectSheet, AgentLogSheet, GuestPairSheet],
+  imports: [PairSheet, ConnectSheet, AgentLogSheet, GuestPairSheet, LoadingSkeleton],
   templateUrl: './devices.page.html',
   styleUrl: './devices.page.css',
 })
@@ -73,6 +74,7 @@ export class DevicesPage {
   protected readonly canPairSelf = !this.canManage && this.canDownload;
   protected readonly guestPairing = signal(false);
   protected readonly connectorUrl = CONNECTOR_URL;
+  protected readonly loadingLabel = $localize`:@@devices.loading:Carregando os dispositivos…`;
   /** O conector só existe para Windows: nos outros aparelhos a tela diz isso em vez de oferecer o download. */
   protected readonly windowsPc = isWindowsPc(navigator);
   protected readonly revokingId = signal<string | null>(null);

@@ -144,7 +144,9 @@ describe('SessionsSection', () => {
     const fixture = TestBed.createComponent(SessionsSection);
     fixture.detectChanges();
     const root = fixture.nativeElement as HTMLElement;
-    expect(root.querySelector('.sessions-skeleton')).not.toBeNull();
-    expect(root.querySelectorAll('.sessions-skeleton .skeleton-card')).toHaveLength(2);
+    expect(
+      root.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+    ).not.toBeNull();
+    expect(root.querySelectorAll('app-loading-skeleton .card')).toHaveLength(2);
   });
 });

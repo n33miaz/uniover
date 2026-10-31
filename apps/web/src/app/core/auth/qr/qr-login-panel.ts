@@ -9,6 +9,7 @@ import {
   signal,
 } from '@angular/core';
 import { ApiProblem } from '../api-problem';
+import { LoadingSkeleton } from '../../../shared/ui/skeleton/loading-skeleton';
 import { AuthApi, QrLoginStarted } from '../auth-api';
 import { AuthGlyph } from '../auth-glyph';
 import { AuthService } from '../auth.service';
@@ -42,7 +43,7 @@ export const QR_PANEL_CONFIG = new InjectionToken<QrPanelConfig>('QR_PANEL_CONFI
  */
 @Component({
   selector: 'app-qr-login',
-  imports: [QrCode, AuthGlyph],
+  imports: [QrCode, AuthGlyph, LoadingSkeleton],
   templateUrl: './qr-login-panel.html',
   styleUrl: './qr-login-panel.css',
 })

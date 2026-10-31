@@ -20,6 +20,7 @@ import {
   onDialogBackdropClick,
   restoreDialogFocus,
 } from '../../shared/ui/dialog-motion';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { DevicesApi } from './devices-api';
 import { MAX_DEVICE_NAME, formatCodeInput, isValidDeviceName, normalizeCode } from './pairing-code';
 
@@ -35,6 +36,7 @@ export type PairOutcome =
  */
 @Component({
   selector: 'app-pair-sheet',
+  imports: [LoadingSkeleton],
   templateUrl: './pair-sheet.html',
   styleUrl: './pair-sheet.css',
 })

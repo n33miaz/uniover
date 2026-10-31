@@ -238,4 +238,21 @@ describe('SystemTvSection', () => {
     expect(rows()).toHaveLength(2);
     expect(el.querySelector('[role="alert"]')).toBeNull();
   });
+
+  it('holds the shape of the TV list as a busy skeleton until the TVs arrive', async () => {
+    let finish: (tvs: TvItem[]) => void = () => undefined;
+    api.tvs.mockReturnValue(new Promise<TvItem[]>((resolve) => (finish = resolve)));
+    signIn();
+    const { el, rows, settle } = await render();
+
+    expect(
+      el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+    ).not.toBeNull();
+    expect(rows()).toHaveLength(0);
+
+    finish([CASA]);
+    await settle();
+    expect(el.querySelector('app-loading-skeleton')).toBeNull();
+    expect(rows()).toHaveLength(1);
+  });
 });

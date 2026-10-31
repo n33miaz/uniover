@@ -48,10 +48,14 @@
         }
       </div>
       @if (people() === null && !peopleFailed()) {
-        <p class="note" role="status">
-          <span class="ui-spinner" aria-hidden="true"></span>
-          <span i18n="@@settings.audit.filter.people-loading">Carregando as pessoas…</span>
-        </p>
+        <app-loading-skeleton
+          [kind]="'options'"
+          [count]="2"
+          i18n-label="@@settings.audit.filter.people-loading"
+          label="Carregando as pessoas…"
+          [reload]="false"
+          (retried)="retryPeople.emit()"
+        />
       } @else if (peopleFailed()) {
         <p class="note bad" role="status">
           <span i18n="@@settings.audit.filter.people-failed"

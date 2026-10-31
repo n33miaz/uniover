@@ -206,7 +206,9 @@ describe('SystemPage configuration', () => {
     session.setUser({ id: '1', email: 'a@b.c', displayName: 'Dono', role: 'owner' });
     const fixture = TestBed.createComponent(SystemPage);
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('.config-skeleton')).not.toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('app-loading-skeleton app-loading-frame'),
+    ).not.toBeNull();
 
     reject(new Error('offline'));
     await fixture.whenStable();

@@ -82,10 +82,14 @@
           </ul>
         }
       } @else {
-        <p class="loading" role="status">
-          <span class="ui-spinner" aria-hidden="true"></span>
-          <span i18n="@@settings.system.tv.sheet.loading">Carregando…</span>
-        </p>
+        <app-loading-skeleton
+          [kind]="'options'"
+          [count]="2"
+          i18n-label="@@settings.system.tv.sheet.loading"
+          label="Carregando as pessoas…"
+          [reload]="false"
+          (retried)="loadPeople()"
+        />
       }
     </fieldset>
 
@@ -157,9 +161,13 @@
           </p>
           @switch (appsState()) {
             @case ('loading') {
-              <p class="empty" role="status" i18n="@@settings.system.tv.sheet.apps-loading">
-                Carregando apps…
-              </p>
+              <app-loading-skeleton
+                [kind]="'options'"
+                i18n-label="@@settings.system.tv.sheet.apps-loading"
+                label="Carregando os apps…"
+                [reload]="false"
+                (retried)="retryApps()"
+              />
             }
             @case ('error') {
               <p class="empty bad" role="alert" i18n="@@settings.system.tv.sheet.apps-failed">

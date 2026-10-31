@@ -32,8 +32,7 @@
 }
 
 .item,
-.panel,
-.skeleton-card {
+.panel {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -108,20 +107,6 @@
 
 .panel {
   gap: var(--space-4);
-}
-
-.bar {
-  display: block;
-  width: 40%;
-  height: 14px;
-}
-
-.bar.wide {
-  width: 70%;
-}
-
-.skeleton-card {
-  gap: 10px;
 }
 
 .recommend app-settings-glyph,

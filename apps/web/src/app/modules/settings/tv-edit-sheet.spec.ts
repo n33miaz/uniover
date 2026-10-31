@@ -408,7 +408,9 @@ describe('TvEditSheet', () => {
       let resolveApps: (value: { package: string; label: string }[]) => void = () => undefined;
       api.tvApps.mockReturnValueOnce(new Promise((resolve) => (resolveApps = resolve)));
       const { el, settle, button } = await render(ANDROID, [OWN]);
-      expect(el.textContent).toContain('Carregando apps');
+      expect(
+        el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+      ).not.toBeNull();
       expect(el.textContent).not.toContain('Nenhum app disponível');
 
       resolveApps([]);

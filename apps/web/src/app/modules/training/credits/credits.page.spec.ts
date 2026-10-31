@@ -112,6 +112,33 @@ describe('CreditsPage', () => {
     expect(items(el)).toHaveLength(CREDIT_SOURCES.length);
   });
 
+  it('holds the wger section as a busy skeleton while the local database is read, then drops it', async () => {
+    let finish: (credits: WgerCredit[]) => void = () => undefined;
+    const pending = new Promise<WgerCredit[]>((resolve) => (finish = resolve));
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: WgerCreditsReader, useValue: { read: () => pending } },
+      ],
+    });
+    const fixture = TestBed.createComponent(CreditsPage);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+
+    const loading = el.querySelector('.wger-loading') as HTMLElement;
+    expect(loading.querySelector('app-loading-frame')?.getAttribute('aria-busy')).toBe('true');
+    expect(loading.querySelector('[role="status"]')?.textContent).toContain(
+      'Carregando os autores do wger',
+    );
+    expect(loading.querySelectorAll('.ui-skeleton').length).toBeGreaterThan(1);
+
+    finish([]);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el.querySelector('.wger-loading')).toBeNull();
+    expect(items(el)).toHaveLength(CREDIT_SOURCES.length);
+  });
+
   it('declares no inline style in the markup', async () => {
     read.mockResolvedValue([{ author: 'Ana', license: 'L', licenseUrl: null, count: 1 }]);
     const el = await render();

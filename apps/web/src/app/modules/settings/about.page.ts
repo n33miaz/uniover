@@ -1,9 +1,10 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AuthApi } from '../../core/auth/auth-api';
 import { canUseModule } from '../../core/auth/guest-home';
 import { SessionState } from '../../core/session/session-state';
 import { version as appVersion } from '../../../../package.json';
+import { LOADING_TIMING } from '../../shared/ui/skeleton/loading-frame';
 import { SettingsGlyph } from './settings-glyph';
 
 /**
@@ -31,6 +32,11 @@ export class AboutPage {
 
   constructor() {
     void this.loadApiVersion();
+    // Um servidor que não responde não deixa o brilho correndo para sempre: no prazo a linha diz que a versão está indisponível.
+    const giveUp = setTimeout(() => {
+      if (this.apiVersion() === 'loading') this.apiVersion.set(null);
+    }, inject(LOADING_TIMING).giveUpAfterMs);
+    inject(DestroyRef).onDestroy(() => clearTimeout(giveUp));
   }
 
   private async loadApiVersion(): Promise<void> {

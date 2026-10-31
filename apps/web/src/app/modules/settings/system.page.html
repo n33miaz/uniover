@@ -187,20 +187,14 @@
       </section>
     </div>
   } @else if (configLoading()) {
-    <div class="config-skeleton" role="status">
-      <span class="ui-visually-hidden" i18n="@@settings.system.config.loading"
-        >Carregando configuração…</span
-      >
-      <div class="skeleton-card ui-card" aria-hidden="true">
-        <span class="ui-skeleton bar wide"></span>
-        <span class="ui-skeleton bar"></span>
-        <span class="ui-skeleton bar"></span>
-      </div>
-      <div class="skeleton-card ui-card" aria-hidden="true">
-        <span class="ui-skeleton bar wide"></span>
-        <span class="ui-skeleton bar"></span>
-      </div>
-    </div>
+    <app-loading-skeleton
+      [kind]="'groups'"
+      [count]="2"
+      i18n-label="@@settings.system.config.loading"
+      label="Carregando configuração…"
+      [reload]="false"
+      (retried)="load()"
+    />
   } @else if (configFailed()) {
     <button
       type="button"

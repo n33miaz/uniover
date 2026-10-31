@@ -20,6 +20,7 @@ import { PeoplePermissionPicker } from './people-permission-picker';
 import { PeoplePermissionsSheet } from './people-permissions-sheet';
 import { TV_CONTROL_ONLY, hasModule, permissionSummary } from './people-permissions';
 import { SettingsGlyph } from './settings-glyph';
+import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { SessionsSection } from './sessions-section';
 
 /** Limite de caracteres do nome do convidado na API. */
@@ -57,6 +58,7 @@ type PeopleTab = 'people' | 'invites';
     PeoplePermissionPicker,
     PeoplePermissionsSheet,
     SettingsGlyph,
+    LoadingSkeleton,
     SessionsSection,
   ],
   templateUrl: './guests-section.html',
@@ -328,7 +330,7 @@ export class GuestsSection {
     return this.doc.defaultView?.location.origin ?? '';
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     try {
       const [invites, guests] = await Promise.all([
         this.auth.authorized((token) => this.api.guestInvites(token)),

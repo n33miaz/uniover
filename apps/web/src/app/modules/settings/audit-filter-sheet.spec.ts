@@ -229,12 +229,14 @@ describe('AuditFilterSheet', () => {
     expect(dialog.open).toBe(false);
   });
 
-  it('says the people are loading, and shows the person already chosen meanwhile', async () => {
+  it('shows the people as a busy skeleton while they load, with the person already chosen meanwhile', async () => {
     const { el, chips, checked } = await render({
       people: null,
       filter: { ...EMPTY_FILTER, person: { id: 'g1', name: 'Bruno' } },
     });
-    expect(el.textContent).toContain('Carregando as pessoas');
+    expect(
+      el.querySelector('app-loading-skeleton app-loading-frame[aria-busy="true"]'),
+    ).not.toBeNull();
     expect(chips('Pessoa')).toEqual(['Todas as pessoas', 'Bruno']);
     expect(checked()).toContain('Bruno');
   });
