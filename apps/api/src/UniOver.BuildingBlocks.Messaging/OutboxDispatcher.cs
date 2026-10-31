@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using UniOver.SharedKernel.Diagnostics;
 
 namespace UniOver.BuildingBlocks.Messaging;
 
@@ -120,7 +121,7 @@ public sealed partial class OutboxDispatcher(
             catch (Exception ex)
 #pragma warning restore CA1031
             {
-                LogSweepFailed(ex.GetType().Name, module.ModuleKey);
+                LogSweepFailed(ErrorDetail.Stack(ex), module.ModuleKey);
                 consecutiveFailures++;
                 nextRetry = time.GetUtcNow() + FailureBackoffFor(consecutiveFailures, TimeSpan.FromSeconds(_options.IdlePollSeconds));
             }
@@ -249,7 +250,7 @@ public sealed partial class OutboxDispatcher(
 
             // Só o nome do tipo da exceção: a mensagem poderia carregar dado do payload ou segredo.
             message.LastError = ex.GetType().Name;
-            LogDeliveryFailed(message.Id, message.Type, message.Attempts, message.LastError);
+            LogDeliveryFailed(message.Id, message.Type, message.Attempts, ErrorDetail.Stack(ex));
 
             if (message.Attempts >= _options.MaxAttempts)
             {
@@ -303,8 +304,8 @@ public sealed partial class OutboxDispatcher(
     }
 
     // Só o tipo do erro: a mensagem do driver do banco pode citar o servidor e a conexão.
-    [LoggerMessage(Level = LogLevel.Error, Message = "Falha na varredura da outbox do módulo {Module} ({ErrorType}).")]
-    private partial void LogSweepFailed(string errorType, string module);
+    [LoggerMessage(Level = LogLevel.Error, Message = "Falha na varredura da outbox do módulo {Module} ({Error}).")]
+    private partial void LogSweepFailed(string error, string module);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Entrega do evento {EventId} ({EventType}) falhou na tentativa {Attempts}: {Error}.")]
     private partial void LogDeliveryFailed(Guid eventId, string eventType, int attempts, string error);

@@ -21,6 +21,7 @@ if (!string.IsNullOrWhiteSpace(port))
 builder.Services.AddUniOverProblemDetails();
 builder.Services.AddUniOverRateLimiting(builder.Configuration);
 builder.Services.AddUniOverRequestLimits(builder.Configuration);
+builder.Services.AddUniOverRequestLogging(builder.Configuration);
 builder.Services.AddUniOverSecurityHeaders(builder.Configuration);
 builder.Services.AddUniOverPwa(builder.Configuration);
 // A verificação do banco leva a etiqueta "ready": só /health/ready a executa (ver o mapeamento abaixo).
@@ -49,6 +50,8 @@ var app = builder.Build();
 
 // Ordem importa: IP real primeiro (o limite por IP depende dele), cabeçalhos e erros antes de qualquer resposta.
 app.UseUniOverForwardedHeaders();
+// Registro de cada requisição logo depois do IP real: vê o status final, inclusive o dos erros tratados abaixo dele.
+app.UseUniOverRequestLogging();
 app.UseUniOverSecurityHeaders();
 app.UseUniOverProblemDetails();
 app.UseUniOverStaticFiles();
