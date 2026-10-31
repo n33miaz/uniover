@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.24.0](https://github.com/n33miaz/uniover/compare/v0.23.0...v0.24.0) (2026-10-31)
+
+
+### Bug Fixes
+
+* **web:** add room under the page top bar
+* **home:** center the brand text on the screen
+* **training:** title case chips and routine name
+
 ## [0.23.0](https://github.com/n33miaz/uniover/compare/v0.22.0...v0.23.0) (2026-10-31)
 
 
