@@ -535,9 +535,9 @@ test.describe('treino ao vivo', () => {
     await expect(hint).toContainText('Última vez');
     await expect(hint).toContainText('40 kg × 10');
     await expect(hint).toContainText('42,5 kg × 6–8');
-    await expect(page.getByText('Você fechou o topo da faixa')).toBeHidden();
+    await expect(page.getByText('Fechou o topo da faixa')).toBeHidden();
     await page.getByRole('button', { name: 'Por que esta sugestão?' }).click();
-    await expect(page.getByText('Você fechou o topo da faixa na última vez')).toBeVisible();
+    await expect(page.getByText('Fechou o topo da faixa')).toBeVisible();
     // O esforço (RPE) é opcional e nasce recolhido; a tela acesa nasce desligada.
     await expect(page.getByRole('button', { name: '8', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: /Esforço \(RPE\)/ }).click();
