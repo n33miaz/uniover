@@ -37,7 +37,7 @@ interface FullPhoto extends PhotoInfo {
         }
       </p>
       <p class="retention" i18n="@@training.body.photos.retention">
-        Se o navegador apagar os dados do site, suas fotos somem. Salve uma cópia de vez em quando.
+        Se o navegador apagar os dados do site, as fotos somem. Salve uma cópia.
       </p>
       <label class="primary ui-btn add-photo">
         <span i18n="@@training.body.photos.add">Tirar ou Escolher Foto</span>
@@ -125,9 +125,7 @@ interface FullPhoto extends PhotoInfo {
           }
         </div>
       } @else {
-        <p class="empty" i18n="@@training.body.photos.empty">
-          Suas fotos de progresso ficam privadas neste aparelho.
-        </p>
+        <p class="empty" i18n="@@training.body.photos.empty">Nenhuma foto ainda.</p>
       }
       @if (comparison().length === 2) {
         <section class="comparison" aria-labelledby="compare-title">
