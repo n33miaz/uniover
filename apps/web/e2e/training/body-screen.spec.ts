@@ -10,9 +10,7 @@ test('registra peso e mantém medidas e gordura acessíveis nos registros', asyn
   await startTraining(context, page);
   await openTraining(page, '/treino/corpo');
   await page.getByRole('button', { name: 'Entendi' }).click();
-  await expect(
-    page.getByText('Registre seu primeiro peso para acompanhar como ele muda ao longo do tempo.'),
-  ).toBeVisible();
+  await expect(page.getByText('Registre seu primeiro peso.')).toBeVisible();
 
   await page.getByRole('button', { name: 'Registrar Peso' }).click();
   const dialog = page.getByRole('dialog', { name: 'Registrar Peso' });
