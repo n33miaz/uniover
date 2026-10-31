@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.32.0](https://github.com/n33miaz/uniover/compare/v0.31.0...v0.32.0) (2026-10-31)
+
+
+### Features
+
+* **api:** pause and resume guest accounts
+* **contracts:** guest pause field and routes
+* **web:** pause and resume people
+* **web:** show paused access on sign in
+* **web:** open credits as a collapsible sheet
+* **contracts:** add the tv livre messages
+* **agent:** add the tv livre module
+* **api:** add the tv livre routes
+* **web:** add the tv livre module
+
 ## [0.31.0](https://github.com/n33miaz/uniover/compare/v0.30.0...v0.31.0) (2026-10-31)
 
 
