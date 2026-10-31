@@ -503,7 +503,7 @@ Só o administrador, pela tela de Aparelhos do app, sem a pessoa do PC fazer nad
 ## Atualização
 
 O canal é o ramo de que o agente se atualiza (`develop` por padrão). Antes de trocar a pasta, a candidata passa por:
-zip inteiro e do commit pedido, arquivos conferidos contra a árvore do commit no GitHub, `uv sync --locked` num ambiente
+zip inteiro e do commit pedido, arquivos conferidos contra a árvore do commit no GitHub, `uv sync --frozen` (as versões do `uv.lock`, sem reescrevê-lo) num ambiente
 descartável e o auto-diagnóstico dela (`python -m uniover_agent.selfcheck`, que lê o `agent.toml` real com as regras
 novas). Versão em prova (menos de 10 minutos estável) não é substituída; atualização que falha tenta de novo em 30 min,
 1 h, 2 h... até 6 h. Detalhes e limites em `adr/0016-atualizacao-do-agente.md`.

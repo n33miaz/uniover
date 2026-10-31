@@ -101,8 +101,9 @@ function Stop-VenvUsers {
 
 function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
     Stop-VenvUsers
-    # --locked: o uv.lock manda. Dependencia nova ou diferente da que a atualizacao ensaiou nunca entra sozinha.
-    $output = & $Uv sync --locked --project $source --quiet 2>&1 | Out-String
+    # --frozen: o uv.lock manda (dependencia nova ou diferente da que a atualizacao ensaiou nunca entra sozinha), sem que
+    # uma versao nova do uv que reescreveria o lock faca o sync falhar no PC.
+    $output = & $Uv sync --frozen --project $source --quiet 2>&1 | Out-String
     if ($LASTEXITCODE -eq 0) { return $true }
     Write-SupLog 'WARNING' ('uv sync falhou (codigo ' + $LASTEXITCODE + '): ' + (Get-Tail $output))
     # Com uma versao em prova e a anterior guardada para onde voltar, o ambiente nao e apagado: se a segunda tentativa
@@ -110,7 +111,7 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
     if ($KeepEnvironment) { return $false }
     $venv = Join-Path $runtime 'venv'
     if (Test-Path -LiteralPath $venv) { Remove-Item -LiteralPath $venv -Recurse -Force -ErrorAction SilentlyContinue }
-    $output = & $Uv sync --locked --project $source --quiet 2>&1 | Out-String
+    $output = & $Uv sync --frozen --project $source --quiet 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) {
         Write-SupLog 'WARNING' ('uv sync falhou de novo depois de refazer o ambiente (codigo ' + $LASTEXITCODE + '): ' + (Get-Tail $output))
         return $false
