@@ -42,6 +42,12 @@ public sealed class AgentDiagnosticEvent
 
     public int Count { get; private set; } = 1;
 
+    /// <summary>
+    /// Quando o dono viu o aviso de falha de atualização que esta ocorrência alimenta (tirou da Dispositivos). Só importa
+    /// para as <c>update.*</c> de severidade <c>error</c>; nas demais fica nulo.
+    /// </summary>
+    public DateTimeOffset? SeenAt { get; private set; }
+
     public static AgentDiagnosticEvent Create(
         Guid id,
         Guid agentId,
