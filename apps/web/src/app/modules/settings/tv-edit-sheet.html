@@ -115,6 +115,25 @@
                 />
               </label>
             </li>
+            @if (focusMode() && supportsFocusCloses()) {
+              <li>
+                <label class="toggle">
+                  <span class="toggle-title" i18n="@@settings.system.tv.sheet.focus-closes"
+                    >Fechar Outros Apps no Foco</span
+                  >
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    class="ui-switch"
+                    [checked]="focusCloses()"
+                    (change)="focusCloses.set($any($event.target).checked)"
+                  />
+                </label>
+                <p class="toggle-hint" i18n="@@settings.system.tv.sheet.focus-closes-hint">
+                  Encerra à força; downloads e avisos deles param.
+                </p>
+              </li>
+            }
             <li>
               <label class="toggle">
                 <span class="toggle-title" i18n="@@settings.system.tv.sheet.short-animations"
@@ -239,6 +258,9 @@
                 <li class="report">
                   <span class="report-title">{{ reportTitle(report) }}</span>
                   <span class="report-outcome">{{ reportOutcome(report) }}</span>
+                  @if (reportApps(report); as closedApps) {
+                    <span class="report-outcome">{{ closedApps }}</span>
+                  }
                 </li>
               }
             </ul>

@@ -125,6 +125,14 @@ fieldset {
   background: var(--a-surface-2);
 }
 
+/* Aviso curto sob o interruptor que encerra apps à força. */
+.toggle-hint {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-2);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
 .reports-title {
   margin: var(--space-3) 0 var(--space-2);
   padding: 0;

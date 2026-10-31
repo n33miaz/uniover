@@ -150,6 +150,14 @@ describe('SystemApi', () => {
     expect((await change).focusModeEnabled).toBe(true);
   });
 
+  it('sends and reads back whether the focus mode closes the other apps', async () => {
+    const change = api.updateTv('tv-2', { focusModeEnabled: true, focusClosesBackground: true });
+    const request = http.expectOne('/api/v1/tv/tvs/tv-2');
+    expect(request.request.body).toEqual({ focusModeEnabled: true, focusClosesBackground: true });
+    request.flush({ ...TV, id: 'tv-2', focusModeEnabled: true, focusClosesBackground: true });
+    expect((await change).focusClosesBackground).toBe(true);
+  });
+
   it('lists the apps from the inventory of the TV being edited', async () => {
     const read = api.tvApps('tv-2');
     const request = http.expectOne('/api/v1/tv/tvs/tv-2/apps');

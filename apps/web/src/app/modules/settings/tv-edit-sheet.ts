@@ -26,6 +26,8 @@ import { SystemApi, TvAppOption, TvCleanupReportItem, TvComputer, TvItem } from 
 
 /** Tamanho máximo do nome da TV, o mesmo da API. */
 const NAME_MAX = 60;
+/** Anunciada pelo agente que fecha os outros apps no Modo Foco; sem ela o campo nem é enviado. */
+const FOCUS_CLOSES_CAPABILITY = 'tv.focus-closes-background.v1';
 
 /** O que a folha estava fazendo quando deu erro: cada passo tem as suas recusas. */
 type Step = 'create' | 'update' | 'members' | 'delete';
@@ -80,6 +82,15 @@ export class TvEditSheet implements OnInit {
     () => this.tv()?.allowBackgroundAppClosing ?? false,
   );
   protected readonly focusMode = linkedSignal(() => this.tv()?.focusModeEnabled ?? false);
+  /**
+   * Fechar os outros apps enquanto o Modo Foco está ativo. Começa desligada e só muda por clique
+   * próprio: encerrar apps à força é um consentimento à parte, não vem junto com o Modo Foco.
+   */
+  protected readonly focusCloses = linkedSignal(() => this.tv()?.focusClosesBackground ?? false);
+  /** Só o agente que anuncia a capacidade entende o campo; aos outros a opção nem aparece. */
+  protected readonly supportsFocusCloses = computed(
+    () => this.tv()?.capabilities.includes(FOCUS_CLOSES_CAPABILITY) === true,
+  );
   protected readonly shortAnimations = linkedSignal(
     () => this.tv()?.shortAnimationsEnabled ?? false,
   );
@@ -138,6 +149,8 @@ export class TvEditSheet implements OnInit {
     () =>
       !this.creating() &&
       (this.focusMode() !== (this.current()?.focusModeEnabled ?? false) ||
+        (this.supportsFocusCloses() &&
+          this.focusCloses() !== (this.current()?.focusClosesBackground ?? false)) ||
         this.shortAnimations() !== (this.current()?.shortAnimationsEnabled ?? false) ||
         !sameSet(this.restrictedPackages(), this.current()?.restrictedBackgroundPackages ?? [])),
   );
@@ -185,6 +198,9 @@ export class TvEditSheet implements OnInit {
       hour: '2-digit',
       minute: '2-digit',
     }).format(new Date(report.startedAt));
+    if (report.trigger === 'focus') {
+      return $localize`:@@settings.system.tv.sheet.report-focus:Modo Foco · ${when}:when:`;
+    }
     return report.trigger === 'automatic'
       ? $localize`:@@settings.system.tv.sheet.report-auto:${cleanupKindText(report.kind)}:kind: automática · ${when}:when:`
       : $localize`:@@settings.system.tv.sheet.report-manual:${cleanupKindText(report.kind)}:kind: manual · ${when}:when:`;
@@ -192,6 +208,13 @@ export class TvEditSheet implements OnInit {
 
   protected reportOutcome(report: TvCleanupReportItem): string {
     return cleanupOutcomeText(report);
+  }
+
+  /** Os apps que o Modo Foco fechou, pelo nome que a tela já conhece (ou o pacote, se não houver). */
+  protected reportApps(report: TvCleanupReportItem): string {
+    if (report.trigger !== 'focus') return '';
+    const labels = new Map(this.apps().map((app) => [app.package, app.label]));
+    return report.closedPackages.map((item) => labels.get(item) ?? item).join(', ');
   }
 
   protected platform(computer: TvComputer): string {
@@ -243,6 +266,7 @@ export class TvEditSheet implements OnInit {
 
   protected restoreLightSettings(): void {
     this.focusMode.set(false);
+    this.focusCloses.set(false);
     this.shortAnimations.set(false);
     this.restrictedPackages.set([]);
   }
@@ -310,6 +334,9 @@ export class TvEditSheet implements OnInit {
           ...(this.lightSettingsChanged()
             ? {
                 focusModeEnabled: this.focusMode(),
+                ...(this.supportsFocusCloses()
+                  ? { focusClosesBackground: this.focusCloses() }
+                  : {}),
                 shortAnimationsEnabled: this.shortAnimations(),
                 restrictedBackgroundPackages: this.restrictedPackages(),
               }

@@ -188,6 +188,35 @@ test.describe('Configurações > Sistema > TVs', () => {
     });
   }
 
+  test('o fechamento dos outros apps no Modo Foco só liga por clique próprio', async ({
+    page,
+  }, info) => {
+    seed();
+    tv.tvs![0]!.capabilities = [
+      ...CASA.capabilities,
+      'tv.light-settings.v1',
+      'tv.focus-closes-background.v1',
+    ];
+    await open(page);
+    await row(page, 'Casa').click();
+    const dialog = sheet(page);
+    await expect(dialog).toBeVisible();
+    const closing = dialog.getByRole('switch', { name: 'Fechar Outros Apps no Foco' });
+    await expect(closing).toHaveCount(0);
+
+    await dialog.getByRole('switch', { name: 'Modo Foco' }).check();
+    await expect(closing).not.toBeChecked();
+    await closing.check();
+    await closing.scrollIntoViewIfNeeded();
+    await check(page, info, 'tvs-foco-fecha-apps', 'light');
+
+    await dialog.getByRole('button', { name: 'Salvar' }).click();
+    await expect(dialog).toBeHidden();
+    expect(writes('PATCH').map((r) => r.body)).toEqual([
+      expect.objectContaining({ focusModeEnabled: true, focusClosesBackground: true }),
+    ]);
+  });
+
   test('adiciona uma TV com o computador livre e as pessoas marcadas', async ({ page }) => {
     seed();
     await open(page);
