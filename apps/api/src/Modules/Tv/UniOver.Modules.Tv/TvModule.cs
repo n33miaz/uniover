@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Persistence;
@@ -101,7 +102,13 @@ public static class TvModule
         services.AddScoped<IPersonUsageSource, TvUsageSource>();
         services.AddAuditPurge<TvDbContext>(configuration, TvDbContext.SchemaName, "purge_audit", AuditRetentionPolicy.CommandDays);
         services.AddScoped<ITvShortcutReader, EfShortcutReader>();
-        services.AddScoped<TvCommandRunner>();
+        // A trilha dos comandos entra numa fila e é gravada depois (o comando não espera o banco). A troca do computador e a
+        // edição de atalhos seguem no ITvCommandAudit síncrono acima: gravam os próprios dados no mesmo SaveChanges.
+        services.AddSingleton<TvAuditQueue>();
+        services.AddSingleton<QueuedCommandAudit>();
+        services.AddSingleton<TvAuditWriter>();
+        services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<TvAuditWriter>());
+        services.AddScoped(sp => ActivatorUtilities.CreateInstance<TvCommandRunner>(sp, sp.GetRequiredService<QueuedCommandAudit>()));
         services.AddScoped<IAgentMessageHandler, TvAgentMessageHandler>();
 
         services.AddSingleton(new GetModuleInfoHandler(version));
