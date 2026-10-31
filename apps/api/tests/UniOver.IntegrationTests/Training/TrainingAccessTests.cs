@@ -52,7 +52,7 @@ public sealed class TrainingAccessTests(PostgresFixture postgres)
     [Fact]
     public async Task Anonymous_Gets401_OnEveryTrainingRoute()
     {
-        await using var app = await TrainingApp.StartAsync(postgres);
+        await using var app = await TrainingApp.StartAsync(postgres, new TrainingAppOptions { PhotoStorageEnabled = true });
 
         foreach (var (method, pattern, url, body) in TrainingPermissionMap.AllCalls())
         {
@@ -64,7 +64,7 @@ public sealed class TrainingAccessTests(PostgresFixture postgres)
     [Fact]
     public async Task ATvOnlyGuest_Gets403_OnEveryTrainingRoute_WithTheSameAnswerEverywhere()
     {
-        await using var app = await TrainingApp.StartAsync(postgres, new TrainingAppOptions { Wger = OneExerciseWger() });
+        await using var app = await TrainingApp.StartAsync(postgres, new TrainingAppOptions { Wger = OneExerciseWger(), PhotoStorageEnabled = true });
         var tvGuest = await app.NewGuestAsync("So TV", TvOnly, 41);
         var trainingMember = await app.NewGuestAsync("Raphael", TrainingOnly, 42);
 

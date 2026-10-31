@@ -200,6 +200,9 @@ internal sealed class TvApp : IAsyncDisposable
             ["UNIOVER_OWNER_PASSWORD"] = password,
         };
 
+        // As varreduras de permissão do convidado olham o Treino inteiro, fotos de progresso incluídas.
+        Training.TrainingApp.EnablePhotoStorage(settings);
+
         var root = new EdgeFactory("Development", settings);
         var factory = root.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {

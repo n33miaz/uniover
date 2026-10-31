@@ -26,6 +26,9 @@ internal static class GuardHost
             ["RENDER_GIT_COMMIT"] = deployedCommit,
         };
 
+        // As varreduras olham o Treino inteiro, fotos de progresso incluídas (rotas que só existem com o armazenamento ligado).
+        Training.TrainingApp.EnablePhotoStorage(settings);
+
         var factory = new EdgeFactory(environment, settings);
 
         // O seed do dono roda em segundo plano logo após a partida. Esperar o fim dele antes de usar (e de
