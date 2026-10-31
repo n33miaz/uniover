@@ -64,6 +64,7 @@ const guest = (
   email: `${id}@exemplo.com`,
   createdAt: '2026-10-19T15:00:00Z',
   disabledAt,
+  pausedAt: null,
   permissions: ['module:tv'],
 });
 
