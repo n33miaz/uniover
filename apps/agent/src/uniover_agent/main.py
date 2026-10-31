@@ -1553,6 +1553,15 @@ def update_agent(
             f"erro inesperado na atualização ({type(exc).__name__})",
             datetime.now(UTC),
         )
+        if kit is not None:
+            # Toda falha de atualização chega ao dono (Sistema e alerta), mesmo a imprevista.
+            kit.recorder.record(
+                "update.failed",
+                "error",
+                "erro inesperado na atualização",
+                component="update",
+                error=exc,
+            )
         print("A atualização falhou; o agente atual continua valendo.")
         return EXIT_OK
     _safely(record_result, status_file, result, datetime.now(UTC))
@@ -1567,7 +1576,7 @@ def _note_update_outcome(kit: DiagnosticsKit, result: UpdateResult) -> None:
     if result.rejected:
         kit.recorder.record("update.rejected", "error", result.message, component="update")
     elif result.outcome == "failed":
-        kit.recorder.record("update.failed", "warn", result.message, component="update")
+        kit.recorder.record("update.failed", "error", result.message, component="update")
     elif result.outcome == "updated":
         kit.recorder.record("update.installed", "info", "versão nova instalada", component="update")
 

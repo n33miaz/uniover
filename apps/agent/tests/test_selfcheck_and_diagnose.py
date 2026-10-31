@@ -189,11 +189,33 @@ def test_a_rejected_package_is_recorded_as_an_error(monkeypatch: pytest.MonkeyPa
     assert run_update(monkeypatch, result) == [("update.rejected", "error")]
 
 
-def test_a_plain_failure_is_a_warning_and_an_install_is_noted(
+def test_a_plain_failure_is_an_error_and_an_install_is_noted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     failed = UpdateResult(False, "não atualizei agora: sem rede", "failed")
-    assert run_update(monkeypatch, failed) == [("update.failed", "warn")]
+    assert run_update(monkeypatch, failed) == [("update.failed", "error")]
     installed = UpdateResult(True, "agente atualizado", "updated")
     assert run_update(monkeypatch, installed) == [("update.installed", "info")]
     assert run_update(monkeypatch, UpdateResult(False, "já está", "up_to_date")) == []
+
+
+def test_an_unexpected_crash_of_the_update_is_recorded_as_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from uniover_agent.adapters.fakes import FakeClock  # noqa: PLC0415
+    from uniover_agent.care_setup import build_diagnostics  # noqa: PLC0415
+
+    def explode(source: object, *, sync: bool, channel: str) -> UpdateResult:
+        raise RuntimeError("falha qualquer em /home/pessoa")
+
+    monkeypatch.setattr(main_module, "self_update", explode)
+    kit = build_diagnostics(FakeClock())
+
+    assert update_agent(sync=False, kit=kit) == EXIT_OK
+    kit.recorder.flush_pending()
+
+    events = kit.store.take(20)
+    assert [(e.kind, e.severity, e.component) for e in events] == [
+        ("update.failed", "error", "update")
+    ]
+    assert "pessoa" not in events[0].detail
