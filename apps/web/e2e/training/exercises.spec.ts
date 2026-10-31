@@ -205,7 +205,7 @@ test.describe('exercícios: lista, busca e ficha', () => {
     await expect(page.locator('.origin')).toHaveCount(0);
   });
 
-  test('a biblioteca mostra a figura dos exercícios completados depois (WebP e SVG)', async ({
+  test('a biblioteca mostra a figura dos exercícios completados depois', async ({
     page,
     context,
   }, info) => {
@@ -240,7 +240,7 @@ test.describe('exercícios: lista, busca e ficha', () => {
 
     for (const [term, file] of [
       ['barra fixa supinada', 'chin-ups-1.webp'],
-      ['prancha lateral', '0113-relaxation.svg'],
+      ['prancha lateral', '0113-relaxation.webp'],
     ]) {
       await page.getByRole('searchbox', { name: 'Buscar exercício' }).fill(term);
       const thumb = page.locator('.list .ui-row .thumb img').first();

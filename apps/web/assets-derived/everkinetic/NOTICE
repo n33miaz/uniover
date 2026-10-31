@@ -11,13 +11,17 @@ Licença:    Creative Commons Atribuição-CompartilhaIgual 4.0 Internacional (C
             licença, CC BY-SA 4.0.
 
 O que foi alterado (indicação exigida pela licença):
-- Os 10 pares de PNG de src/images-web (20 arquivos NOME-1.png e NOME-2.png) foram convertidos para WebP com perda
-  leve (qualidade 85), com recorte pela caixa do desenho (a mesma para as duas poses do par), centralização sobre
-  fundo branco na proporção 268:275 dos SVG e redução para 536x550 pixels. O desenho em si não foi redesenhado,
+- Todas as figuras (os pares de SVG e de PNG de ../../assets-third-party/everkinetic/) foram convertidas para WebP com
+  perda leve (qualidade 85, reduzida só se o arquivo passar de 20 KB), com recorte pela caixa do desenho (a mesma
+  para as duas poses do par), centralização sobre fundo branco na proporção 268:275 e redução para 536x550 pixels,
+  para que todas as ilustrações tenham o mesmo tamanho e o mesmo enquadramento. O desenho em si não foi redesenhado,
   recolorido nem retocado.
-- Os SVG não foram alterados e não têm adaptação: são publicados a partir dos originais.
-- Os arquivos são gerados por apps/web/scripts/optimize-exercise-art.py a partir dos PNG originais; rodar o script
-  de novo reproduz estes arquivos.
+- Os SVG foram antes rasterizados em PNG grandes (3 vezes o tamanho natural, fundo branco) pelo Chromium, sem
+  nenhuma alteração do desenho; os PNG de origem entram direto na conversão.
+- Os arquivos são gerados por apps/web/scripts/render-exercise-svg.mjs e apps/web/scripts/optimize-exercise-art.py a
+  partir dos originais; rodar os dois de novo reproduz estes arquivos (a rasterização pode variar alguns pixels entre
+  versões do navegador).
+- Nomes: NNNN-relaxation.webp e NNNN-tension.webp vêm dos SVG de mesmo nome; NOME-1.webp e NOME-2.webp vêm dos PNG.
 
 Os arquivos são publicados em /exercise-art/ e recebem o mesmo crédito dos originais. A licença do UniOver não se
 aplica a eles.

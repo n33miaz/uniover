@@ -3,7 +3,7 @@ import { expect, test, waitForServiceWorkerControl } from '../fixtures';
 import { openTraining, startTraining, trainingDbName } from './support/training-pages';
 
 // Os dois quadros do supino reto com barra (o primeiro exercício das rotinas de teste).
-const BENCH_POSES = ['/exercise-art/0042-relaxation.svg', '/exercise-art/0042-tension.svg'];
+const BENCH_POSES = ['/exercise-art/0042-relaxation.webp', '/exercise-art/0042-tension.webp'];
 
 const cachedArt = (page: Page) =>
   page.evaluate(async () => {
