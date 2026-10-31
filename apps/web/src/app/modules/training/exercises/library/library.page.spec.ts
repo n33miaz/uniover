@@ -82,7 +82,7 @@ describe('ExerciseLibraryPage', () => {
     const body = row.querySelector('app-exercise-row-body')!;
     expect(body.firstElementChild?.classList.contains('thumb')).toBe(true);
     expect(row.querySelector('.thumb img')?.getAttribute('src')).toContain(
-      '/exercise-art/0042-relaxation.svg',
+      '/exercise-art/0042-relaxation.webp',
     );
     expect(getComputedStyle(row.querySelector('.thumb')!).width).toBe('64px');
   });

@@ -14,10 +14,15 @@ const REPO = resolve(process.cwd(), '../..');
 const ART_ROOT = resolve(process.cwd(), 'assets-third-party/everkinetic');
 const ART_DIR = resolve(ART_ROOT, 'svg');
 const PNG_DIR = resolve(ART_ROOT, 'png');
-// Os PNG originais são publicados na adaptação leve (WebP) que fica ao lado, em outra pasta.
+// Os originais (SVG e PNG) não são publicados: o app serve a adaptação leve (WebP) que fica em outra pasta.
 const DERIVED_DIR = resolve(process.cwd(), 'assets-derived/everkinetic');
-const artPath = (file: string) => resolve(file.endsWith('.webp') ? DERIVED_DIR : ART_DIR, file);
+const artPath = (file: string) => resolve(DERIVED_DIR, file);
 const originalOf = (file: string) => file.replace(/\.webp$/, '.png');
+// Figuras de origem SVG: NNNN-relaxation.webp e NNNN-tension.webp. As de origem PNG: NOME-1.webp e NOME-2.webp.
+const SVG_FRAME = /^(\d{4})-(relaxation|tension)\.webp$/;
+// Tamanho único de todas as figuras e peso máximo de cada arquivo.
+const FRAME_SIZE = { width: 536, height: 550 };
+const MAX_FRAME_BYTES = 20_000;
 const SEED = resolve(
   REPO,
   'apps/api/src/Modules/Training/UniOver.Modules.Training/Catalog/Seed/exercises.pt-br.json',
@@ -65,30 +70,51 @@ describe('illustration map', () => {
 
   it('keeps no file in the folders that the map does not use', () => {
     const used = new Set(entries.flatMap(([, entry]) => entry.frames));
-    const unused = [...readdirSync(ART_DIR), ...readdirSync(DERIVED_DIR)].filter(
-      (file) => (file.endsWith('.svg') || file.endsWith('.webp')) && !used.has(file),
+    const unused = readdirSync(DERIVED_DIR).filter(
+      (file) => file.endsWith('.webp') && !used.has(file),
     );
-    // Cada PNG original tem a sua adaptação citada pelo mapa.
-    const originalsWithoutUse = readdirSync(PNG_DIR).filter(
+    // Cada original (par de SVG, PNG solto) tem a sua adaptação citada pelo mapa.
+    const svgWithoutUse = readdirSync(ART_DIR).filter(
+      (file) => !used.has(file.replace(/\.svg$/, '.webp')),
+    );
+    const pngWithoutUse = readdirSync(PNG_DIR).filter(
       (file) => !used.has(file.replace(/\.png$/, '.webp')),
     );
     expect(unused).toEqual([]);
-    expect(originalsWithoutUse).toEqual([]);
+    expect(svgWithoutUse).toEqual([]);
+    expect(pngWithoutUse).toEqual([]);
   });
 
-  it('publishes the PNG pairs as light, same-size WebP made from the originals', () => {
+  it('publishes every figure as a light WebP of the same size, made from the originals', () => {
     const derived = readdirSync(DERIVED_DIR).filter((file) => file.endsWith('.webp'));
-    expect(derived.length).toBe(readdirSync(PNG_DIR).length);
+    expect(derived.length).toBe(readdirSync(PNG_DIR).length + readdirSync(ART_DIR).length);
     for (const file of derived) {
-      expect(existsSync(resolve(PNG_DIR, originalOf(file))), file).toBe(true);
+      const original = SVG_FRAME.test(file)
+        ? resolve(ART_DIR, file.replace(/\.webp$/, '.svg'))
+        : resolve(PNG_DIR, originalOf(file));
+      expect(existsSync(original), file).toBe(true);
       const bytes = readFileSync(resolve(DERIVED_DIR, file));
       // Cabeçalho RIFF/WEBP com quadro de perda leve ('VP8 '): largura e altura em 14 bits cada.
       expect(bytes.toString('ascii', 0, 4), file).toBe('RIFF');
       expect(bytes.toString('ascii', 8, 12), file).toBe('WEBP');
       expect(bytes.toString('ascii', 12, 16), file).toBe('VP8 ');
-      expect(bytes.readUInt16LE(26) & 0x3fff, file).toBe(536);
-      expect(bytes.readUInt16LE(28) & 0x3fff, file).toBe(550);
-      expect(bytes.length, file).toBeLessThan(40_000);
+      expect(bytes.readUInt16LE(26) & 0x3fff, file).toBe(FRAME_SIZE.width);
+      expect(bytes.readUInt16LE(28) & 0x3fff, file).toBe(FRAME_SIZE.height);
+      expect(bytes.length, file).toBeLessThanOrEqual(MAX_FRAME_BYTES);
+    }
+  });
+
+  it('serves every cited frame at the standard size and weight', () => {
+    for (const [slug, entry] of entries) {
+      for (const file of entry.frames) {
+        expect(file, slug).toMatch(/\.webp$/);
+        const bytes = readFileSync(artPath(file));
+        expect(
+          [bytes.readUInt16LE(26) & 0x3fff, bytes.readUInt16LE(28) & 0x3fff],
+          `${slug}: ${file}`,
+        ).toEqual([FRAME_SIZE.width, FRAME_SIZE.height]);
+        expect(bytes.length, `${slug}: ${file}`).toBeLessThanOrEqual(MAX_FRAME_BYTES);
+      }
     }
   });
 
@@ -113,17 +139,17 @@ describe('illustration map', () => {
     for (const [slug, entry] of entries) {
       const [start, end] = entry.frames;
       expect(start, slug).not.toBe(end);
-      if (start.endsWith('.webp')) {
-        expect(start.replace(/-[12]\.webp$/, ''), slug).toBe(end.replace(/-[12]\.webp$/, ''));
-        expect([start, end].map((file) => file.match(/-([12])\.webp$/)?.[1]).sort()).toEqual([
-          '1',
-          '2',
-        ]);
+      if (SVG_FRAME.test(start)) {
+        expect(start.split('-')[0], slug).toBe(end.split('-')[0]);
+        expect(start, slug).toMatch(/^\d{4}-relaxation\.webp$/);
+        expect(end, slug).toMatch(/^\d{4}-tension\.webp$/);
         continue;
       }
-      expect(start.split('-')[0], slug).toBe(end.split('-')[0]);
-      expect(start, slug).toMatch(/^\d{4}-relaxation\.svg$/);
-      expect(end, slug).toMatch(/^\d{4}-tension\.svg$/);
+      expect(start.replace(/-[12]\.webp$/, ''), slug).toBe(end.replace(/-[12]\.webp$/, ''));
+      expect([start, end].map((file) => file.match(/-([12])\.webp$/)?.[1]).sort()).toEqual([
+        '1',
+        '2',
+      ]);
     }
   });
 
@@ -139,7 +165,7 @@ describe('illustration map', () => {
     }
     const wrong = entries
       .filter(([, entry]) => {
-        if (entry.frames[0].endsWith('.webp')) {
+        if (!SVG_FRAME.test(entry.frames[0])) {
           return !source.some(
             (row) =>
               row.title === entry.title &&
@@ -202,6 +228,6 @@ describe('illustration map', () => {
   });
 
   it('builds the same-origin address of a frame', () => {
-    expect(illustrationUrl('0042-relaxation.svg')).toBe('/exercise-art/0042-relaxation.svg');
+    expect(illustrationUrl('0042-relaxation.webp')).toBe('/exercise-art/0042-relaxation.webp');
   });
 });
