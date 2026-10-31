@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/n33miaz/uniover/compare/v0.29.0...v0.30.0) (2026-10-31)
+
+
+### Bug Fixes
+
+* **web:** remove settings button from modules
+
 ## [0.29.0](https://github.com/n33miaz/uniover/compare/v0.28.0...v0.29.0) (2026-10-31)
 
 
