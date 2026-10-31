@@ -30,3 +30,5 @@ que o código é como é, sem precisar adivinhar.
 | [0011](0011-autenticacao.md) | Autenticação: senha, JWT curto, refresh rotativo, passkey e token de dispositivo | Aceito |
 | [0012](0012-material-de-terceiros.md) | Material de terceiros com licença própria | Aceito |
 | [0013](0013-fluxo-de-git.md) | Fluxo de git: `develop` e `main` protegidas, Conventional Commits | Aceito |
+| [0014](0014-csp-com-nonce.md) | CSP com nonce | Aceito |
+| [0015](0015-atualizacao-do-agente.md) | Atualização do agente: canal, pacote conferido, prova antes de confiar | Proposto |
