@@ -98,7 +98,7 @@ public sealed class AgentDiagnosticsTests(PostgresFixture postgres)
         await WaitForCountAsync(app, 1);
         await agent.SendTextAsync(agent.Envelope("agent.diagnostics.v1", batch));
         var marker = Event(Guid.NewGuid(), app.App.Time.GetUtcNow(), detail: "marcador");
-        await agent.SendTextAsync(agent.Envelope("agent.diagnostics.v1", Batch(first, marker)));
+        await agent.SendTextAsync(agent.Envelope("agent.diagnostics.v1", Batch((JsonObject)first.DeepClone(), marker)));
 
         // O marcador entra e o repetido não: o reenvio é processado em ordem, então 2 é o total final.
         await WaitForCountAsync(app, 2);
