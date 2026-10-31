@@ -49,6 +49,10 @@ internal static class PublicRoutes
         new("POST", "/api/v1/identity/auth/qr/start", "computador pede um QR de entrada: ainda não existe sessão"),
         new("POST", "/api/v1/identity/auth/qr/poll", "computador consulta o QR com o segredo de consulta para receber a sessão"),
 
+        // O app Atalhos do iPhone (e a Siri) não tem sessão. A credencial é a chave do atalho, no cabeçalho X-Atalho-Token (32 bytes
+        // aleatórios, só o hash no banco), que vale para uma TV e só para as ações escolhidas na criação; o limite por IP é próprio.
+        new("POST", "/api/v1/shortcuts/tv", "ordem de um atalho do iPhone à TV, autenticada pela chave do atalho"),
+
         // O PWA é público: o navegador precisa do HTML antes de qualquer login.
         new("GET", "/", "página inicial do PWA"),
         new("GET", "/index.html", "página inicial do PWA pelo nome do arquivo"),

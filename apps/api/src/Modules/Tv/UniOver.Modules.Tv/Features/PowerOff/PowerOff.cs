@@ -21,7 +21,11 @@ namespace UniOver.Modules.Tv.Features.PowerOff;
 /// </summary>
 internal sealed record PowerOffRequest(string? Mode);
 
-internal sealed record PowerOffCommand(TvCommandOrigin Origin, bool Safe);
+/// <param name="RequireSafe">
+/// Só vale o desligamento com leitura; se o agente não o conhece, nada é enviado. Os atalhos do iPhone pedem assim: a tecla
+/// <c>POWER</c> às cegas é um interruptor e, com a TV já desligada, poderia ligá-la.
+/// </param>
+internal sealed record PowerOffCommand(TvCommandOrigin Origin, bool Safe, bool RequireSafe = false);
 
 /// <summary>Desfechos que a tela recebe num 200: o que de fato aconteceu com a TV.</summary>
 internal static class PowerOffOutcomes
@@ -63,6 +67,9 @@ internal static class PowerOffValidator
 internal sealed class PowerOffHandler(
     TvCommandRunner runner, IAgentPresenceReader presence, IOptions<TvModuleOptions> options)
 {
+    /// <summary>Código de falha de quem exigiu o desligamento com leitura (<see cref="PowerOffCommand.RequireSafe"/>) e o agente não o conhece.</summary>
+    public const string UnsafePowerOffCode = "power_off_unsafe";
+
     /// <summary>
     /// Resultado do pedido: o que o agente respondeu e o desfecho para a tela. <c>already_off</c> chega do agente como
     /// falha de comando (ele não apertou nada), mas para a tela é um resultado, e não um erro.
@@ -75,6 +82,10 @@ internal sealed class PowerOffHandler(
         // mensagem, e a tecla sozinha (o comportamento de antes) é o que ele entende.
         var target = await runner.ResolveTargetAsync(cancellationToken);
         var safe = command.Safe && SupportsSafePowerOff(target.AgentSlug);
+        if (command.RequireSafe && !safe)
+        {
+            return (TvSendOutcome.Failed(TvSendStatus.CommandFailed, UnsafePowerOffCode), PowerOffOutcomes.Sent);
+        }
 
         // Com "power" a TV sai da rede e só o infravermelho a religa (ela não tem botão físico). O dono decidiu que
         // desligar não pede a passkey: o freio é o limite de comandos e a trilha, que guarda este comando com nome próprio.

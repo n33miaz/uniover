@@ -38,6 +38,9 @@ internal sealed record TvAppOptions
     /// <summary>Limite da política de comandos; o padrão alto não atrapalha os testes que não falam de limite.</summary>
     public int CommandsPermitted { get; init; } = 100000;
 
+    /// <summary>Limite da política dos Atalhos do iPhone (por IP); o padrão alto só cai nos testes que falam de limite.</summary>
+    public int SiriPermitted { get; init; } = 100000;
+
     /// <summary>Slug do agente que controla a TV. O pareamento de "PC Casa" produz exatamente <c>pc-casa</c>.</summary>
     public string AgentId { get; init; } = TvApp.AgentSlug;
 
@@ -189,6 +192,7 @@ internal sealed class TvApp : IAsyncDisposable
             ["RateLimiting:login:Permitted"] = "100000",
             ["RateLimiting:refresh:Permitted"] = "100000",
             ["RateLimiting:pairing:Permitted"] = "100000",
+            ["RateLimiting:siri:Permitted"] = options.SiriPermitted.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["RateLimiting:commands:Permitted"] = options.CommandsPermitted.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["Logging:LogLevel:Default"] = "Debug",
 

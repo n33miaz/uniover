@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.30.0](https://github.com/n33miaz/uniover/compare/v0.29.0...v0.30.0) (2026-10-31)
+
+
+### Features
+
+* **contracts:** add tv launcher config schema
+* **tv-launcher:** add home, sleep mode and config
+* **api:** shortcut keys for the tv commands
+* **contracts:** shortcut key routes
+* **web:** siri shortcuts screen
+
+
+### Bug Fixes
+
+* **api:** grant the app role on shortcut keys
+
 ## [0.29.0](https://github.com/n33miaz/uniover/compare/v0.28.0...v0.29.0) (2026-10-31)
 
 

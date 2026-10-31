@@ -65,6 +65,9 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/tv/shortcuts/{id:guid}/launch", RateLimitPolicies.Commands),
         ("PUT", "/api/v1/tv/shortcuts/order", RateLimitPolicies.Commands),
 
+        // Ordem de um atalho do iPhone: rota anônima, a chave do atalho é a credencial; o limite é por IP.
+        ("POST", "/api/v1/shortcuts/tv", RateLimitPolicies.Siri),
+
         // Trocar o computador que controla a TV: ação rara de administrador, com o mesmo limite baixo das outras que pedem passkey.
         ("PUT", "/api/v1/tv/config/agent", RateLimitPolicies.Login),
     ];

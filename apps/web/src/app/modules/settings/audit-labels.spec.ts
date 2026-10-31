@@ -67,6 +67,9 @@ const TV_ACTIONS = [
   'tv.shortcuts.reorder',
   'tv.shortcut.update',
   'tv.config.bind',
+  'tv.siri.create',
+  'tv.siri.revoke',
+  'tv.siri.denied',
 ];
 
 function item(overrides: Partial<AuditItem> = {}): AuditItem {
@@ -187,6 +190,15 @@ describe('describeTarget', () => {
   it('puts the TV targets in words: the key, the number of characters (never the text), the shortcuts, the app', () => {
     expect(describeTarget(item({ action: 'tv.key', target: 'VOLUME_UP/SHORT' }))).toBe(
       'Tecla volume up',
+    );
+    expect(describeTarget(item({ action: 'tv.key', target: 'VOLUME_UP via=siri' }))).toBe(
+      'Tecla volume up · Atalho da Siri',
+    );
+    expect(describeTarget(item({ action: 'tv.power-off', target: 'POWER via=siri' }))).toBe(
+      'Atalho da Siri',
+    );
+    expect(describeTarget(item({ action: 'tv.siri.create', target: 'Meu iPhone' }))).toBe(
+      'Meu iPhone',
     );
     expect(describeTarget(item({ action: 'tv.text', target: 'length=6' }))).toBe('6 caracteres');
     expect(describeTarget(item({ action: 'tv.text', target: 'length=1' }))).toBe('1 caractere');

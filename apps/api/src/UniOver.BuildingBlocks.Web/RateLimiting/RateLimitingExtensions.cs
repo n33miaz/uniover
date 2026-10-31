@@ -37,7 +37,10 @@ public static class RateLimitPolicies
     /// <summary>Manutenção remota de um agente (ver o registro, atualizar, reiniciar): por conta, baixa, pois cada pedido vai ao PC de alguém.</summary>
     public const string Maintenance = "maintenance";
 
-    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance];
+    /// <summary>Ordens dos Atalhos do iPhone (rota anônima, a credencial é a chave do atalho): por IP, para cortar tentativa em massa de chave.</summary>
+    public const string Siri = "siri";
+
+    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, Siri];
 }
 
 /// <summary>Uma política configurável em <c>RateLimiting:&lt;política&gt;</c>.</summary>
@@ -67,6 +70,7 @@ public static class RateLimitingExtensions
         [RateLimitPolicies.QrPoll] = new() { Permitted = 90, WindowSeconds = 60, Partition = "ip" },
         [RateLimitPolicies.QrDecide] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.Maintenance] = new() { Permitted = 12, WindowSeconds = 60, Partition = "user" },
+        [RateLimitPolicies.Siri] = new() { Permitted = 30, WindowSeconds = 60, Partition = "ip" },
     };
 
     /// <summary>

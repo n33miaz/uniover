@@ -105,6 +105,19 @@ export const routes: Routes = [
               import('./modules/settings/security.page').then((m) => m.SecurityPage),
           },
           {
+            // Chaves dos Atalhos do iPhone: só o administrador (criar uma exige a passkey). Volta para Segurança, de onde se chega.
+            path: 'seguranca/siri',
+            canMatch: [ownerOnlyGuard],
+            data: {
+              title: SETTINGS_TITLES.siri,
+              back: {
+                link: '/ajustes/seguranca',
+                label: $localize`:@@settings.siri.back-label:Voltar à Segurança`,
+              },
+            },
+            loadComponent: () => import('./modules/settings/siri.page').then((m) => m.SiriPage),
+          },
+          {
             path: 'pessoas',
             canMatch: [ownerOnlyGuard],
             data: { title: SETTINGS_TITLES.people, back: SETTINGS_BACK },
