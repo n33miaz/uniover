@@ -47,8 +47,17 @@ def _open_crash_file(logs: Path) -> TextIO | None:
     return handle
 
 
+# O gravador que os ganchos usam: `run` roda de novo no mesmo processo quando a TV muda de
+# endereço, e cada chamada embrulharia o gancho outra vez (a mesma queda registrada várias vezes).
+_active_recorder: list[DiagnosticsRecorder] = []
+_HOOK_MARK = "_uniover_crash_hook"
+
+
 def install_crash_trace(logs: Path, recorder: DiagnosticsRecorder) -> None:
-    """Liga as redes de segurança. Idempotente o bastante para ser chamada uma vez por processo."""
+    """Liga as redes de segurança; chamada de novo no mesmo processo, só troca o gravador."""
+    _active_recorder[:] = [recorder]
+    if getattr(sys.excepthook, _HOOK_MARK, False):
+        return
     handle = _open_crash_file(logs)
     if handle is not None:
         _keep_open.append(handle)
@@ -68,7 +77,7 @@ def install_crash_trace(logs: Path, recorder: DiagnosticsRecorder) -> None:
                 exc_info=(kind, error, trace),
                 extra={"recorded": True},
             )
-            recorder.record(
+            _active_recorder[0].record(
                 "process.crashed",
                 "error",
                 "uma exceção não tratada encerrou o agente",
@@ -77,6 +86,7 @@ def install_crash_trace(logs: Path, recorder: DiagnosticsRecorder) -> None:
             )
         previous_hook(kind, error, trace)
 
+    setattr(main_thread_hook, _HOOK_MARK, True)
     sys.excepthook = main_thread_hook
 
     def thread_hook(args: threading.ExceptHookArgs) -> None:
@@ -89,7 +99,7 @@ def install_crash_trace(logs: Path, recorder: DiagnosticsRecorder) -> None:
             exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
             extra={"recorded": True},
         )
-        recorder.record(
+        _active_recorder[0].record(
             "thread.failed",
             "error",
             f"a thread {name} terminou com exceção",
