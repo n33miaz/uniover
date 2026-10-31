@@ -1,6 +1,6 @@
 [project]
 name = "uniover-agent"
-version = "0.22.0"
+version = "0.23.0"
 description = "Agente local do UniOver: recebe comandos da API e controla os aparelhos de casa."
 readme = "README.md"
 license = "LicenseRef-Proprietary"

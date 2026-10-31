@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.23.0](https://github.com/n33miaz/uniover/compare/v0.22.0...v0.23.0) (2026-10-31)
+
+
+### Features
+
+* **tv:** say if the TV has an agent linked
+* **home:** centered brand and discreet agent dot
+* **home:** clearer customize sheet
+* **contracts:** focus closes background field
+* **api:** focus closes background per TV
+* **agent:** close background apps in focus mode
+* **web:** close other apps in focus switch
+
+
+### Bug Fixes
+
+* **home:** scale sheet glyphs, hide arrows
+* **agent:** focus needs the media owner in front
+* **agent:** protect Google TV, log sweep cap
+* **api:** refuse focus closing without capability
+* **api:** latest cleanup skips focus reports
+
 ## [0.22.0](https://github.com/n33miaz/uniover/compare/v0.21.0...v0.22.0) (2026-10-30)
 
 
