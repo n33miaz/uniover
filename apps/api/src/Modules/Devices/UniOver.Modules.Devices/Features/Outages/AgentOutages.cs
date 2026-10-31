@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Domain;
+using UniOver.Modules.Devices.Features.Diagnostics;
 using UniOver.Modules.Devices.Features.RemoteCare;
 using UniOver.Modules.Devices.Persistence;
 using UniOver.Modules.Identity.Contracts;
@@ -135,10 +136,24 @@ internal sealed partial class AgentOutageWorker(IServiceScopeFactory scopes, Tim
 }
 
 /// <summary>
-/// Um aviso de queda como o dono o vê: só nome do computador e horários. <c>RecoveredAt</c> preenchido = o computador voltou.
+/// Um aviso como o dono o vê: nome do computador e horários. <c>Kind</c> diz do que se trata: <c>offline</c> (o computador ficou
+/// sem sinal; <c>RecoveredAt</c> preenchido = voltou) ou <c>update_failed</c> (a atualização falhou; <c>Detail</c> é o resumo
+/// curto que o próprio agente mandou, sem caminhos nem segredos, e <c>DetectedAt</c> é a hora da falha).
 /// </summary>
 internal sealed record AgentAlert(
-    Guid Id, Guid AgentId, string AgentName, DateTimeOffset DetectedAt, DateTimeOffset? LastSeenAt, DateTimeOffset? RecoveredAt);
+    Guid Id,
+    Guid AgentId,
+    string AgentName,
+    DateTimeOffset DetectedAt,
+    DateTimeOffset? LastSeenAt,
+    DateTimeOffset? RecoveredAt,
+    string Kind,
+    string? Detail)
+{
+    public const string Offline = "offline";
+
+    public const string UpdateFailed = "update_failed";
+}
 
 internal sealed class AgentAlertsHandler(DevicesDbContext db, TimeProvider time)
 {
@@ -154,7 +169,29 @@ internal sealed class AgentAlertsHandler(DevicesDbContext db, TimeProvider time)
                           orderby o.DetectedAt descending
                           select new { o.Id, o.AgentId, a.Name, o.DetectedAt, o.LastSeenAt, o.RecoveredAt })
             .ToListAsync(cancellationToken);
-        return [.. rows.Select(r => new AgentAlert(r.Id, r.AgentId, r.Name, r.DetectedAt, r.LastSeenAt, r.RecoveredAt))];
+        var outages = rows.Select(r => new AgentAlert(r.Id, r.AgentId, r.Name, r.DetectedAt, r.LastSeenAt, r.RecoveredAt, AgentAlert.Offline, null));
+        var failures = await UpdateFailuresAsync(cancellationToken);
+        return [.. outages.Concat(failures).OrderByDescending(a => a.DetectedAt)];
+    }
+
+    /// <summary>
+    /// Uma falha de atualização por computador enquanto o dono não viu: a mais recente das ocorrências <c>update.*</c> de
+    /// severidade <c>error</c> que o agente contou (ver <see cref="AgentUpdateFailures"/>). Várias tentativas que falham em
+    /// sequência não empilham avisos; depois de visto, a próxima falha abre um novo.
+    /// </summary>
+    private async Task<IReadOnlyList<AgentAlert>> UpdateFailuresAsync(CancellationToken cancellationToken)
+    {
+        var floor = time.GetUtcNow() - DiagnosticsLimits.Retention;
+        var rows = await (from e in db.AgentDiagnosticEvents.AsNoTracking().UnseenUpdateFailures()
+                          join a in db.Agents.AsNoTracking() on e.AgentId equals a.Id
+                          where a.RevokedAt == null && e.At >= floor
+                          orderby e.At descending, e.Id descending
+                          select new { e.Id, e.AgentId, a.Name, e.At, e.Detail })
+            .ToListAsync(cancellationToken);
+        return [.. rows
+            .GroupBy(r => r.AgentId)
+            .Select(g => g.First())
+            .Select(r => new AgentAlert(r.Id, r.AgentId, r.Name, r.At, null, null, AgentAlert.UpdateFailed, r.Detail))];
     }
 
     /// <summary>O dono viu: os avisos abertos ou recém-voltados saem da Início e de Dispositivos.</summary>
@@ -163,14 +200,31 @@ internal sealed class AgentAlertsHandler(DevicesDbContext db, TimeProvider time)
         var now = time.GetUtcNow();
         await db.AgentOutages.Where(o => o.SeenAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(o => o.SeenAt, now), cancellationToken);
+        await db.AgentDiagnosticEvents.UnseenUpdateFailures()
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.SeenAt, now), cancellationToken);
     }
 
     /// <summary>Marca só o aviso escolhido como visto, sem esconder os outros computadores.</summary>
     public async Task MarkSeenAsync(Guid id, CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
-        await db.AgentOutages.Where(o => o.Id == id && o.SeenAt == null)
+        var seen = await db.AgentOutages.Where(o => o.Id == id && o.SeenAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(o => o.SeenAt, now), cancellationToken);
+        if (seen > 0)
+        {
+            return;
+        }
+
+        // O id também pode ser o de uma falha de atualização: o dono viu o aviso do computador, então as anteriores dele saem juntas.
+        var agentId = await db.AgentDiagnosticEvents.AsNoTracking().UnseenUpdateFailures()
+            .Where(e => e.Id == id)
+            .Select(e => (Guid?)e.AgentId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (agentId is not null)
+        {
+            await db.AgentDiagnosticEvents.UnseenUpdateFailures().Where(e => e.AgentId == agentId)
+                .ExecuteUpdateAsync(s => s.SetProperty(e => e.SeenAt, now), cancellationToken);
+        }
     }
 }
 
