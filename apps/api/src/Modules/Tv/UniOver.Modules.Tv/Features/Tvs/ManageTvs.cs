@@ -121,6 +121,12 @@ internal sealed class ManageTvsHandler(
             return (null, "unsupported");
         }
 
+        // Agente presente que não entende o fechamento no Modo Foco: ligar a opção seria um interruptor que não faz nada.
+        if (IsFocusClosesUnsupported(request, presence.Get(agentSlug)))
+        {
+            return (null, "unsupported");
+        }
+
         var now = time.GetUtcNow();
         tv.Rebind(agentSlug, name, userId, now);
         var closingChanged = request.AllowBackgroundAppClosing is { } allow && tv.SetBackgroundAppClosing(allow, userId, now);
@@ -196,6 +202,14 @@ internal sealed class ManageTvsHandler(
             r.Kind, r.Trigger, r.StartedAt, r.DurationMs, r.MemoryBeforeMb, r.MemoryAfterMb, r.ClosedApps,
             PackagesOf(r.AppsClosed), r.BackgroundProcesses, r.SessionOpenMs, r.Result, r.Reason))]);
     }
+
+    /// <summary>
+    /// Só o <c>true</c> é recusado, e só quando o agente já se apresentou sem a capacidade. Agente que nunca se conectou desde
+    /// que a API subiu não é conhecido: a preferência fica guardada e só chega a quem a anunciar.
+    /// </summary>
+    internal static bool IsFocusClosesUnsupported(UpdateTvRequest request, AgentPresenceInfo? info) =>
+        request.FocusClosesBackground == true && info is not null
+        && !info.Capabilities.Contains(Cleanup.CleanupSettingsPublisher.FocusClosesBackgroundCapability, StringComparer.Ordinal);
 
     private static bool WantsLightSettings(UpdateTvRequest request) =>
         request.FocusModeEnabled == true || request.ShortAnimationsEnabled == true || request.RestrictedBackgroundPackages is { Count: > 0 }
