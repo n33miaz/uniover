@@ -800,6 +800,23 @@ public sealed class TvConfigTests(PostgresFixture postgres)
         }
     }
 
+    [Fact]
+    public async Task TheOldVariable_TwoInstancesStartingTogether_CreateOneTv_WithoutErrors_AndConfigReadsItAtOnce()
+    {
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { WithoutTv = true, LegacyAgentSlug = TvApp.AgentSlug });
+
+        await app.RunLegacyImportConcurrentlyAsync(8);
+
+        await using (var db = app.Db())
+        {
+            (await db.Tvs.CountAsync(Ct)).Should().Be(1, "os índices únicos deixam passar só uma criação");
+        }
+
+        app.Logs.Lines.Should().NotContain(l => l.Contains("Não foi possível criar a TV", StringComparison.Ordinal), "perder a corrida é um não fazer nada, não uma falha");
+        // Sem invalidar à mão: a própria importação atualiza o resolvedor, e /config não responde "nenhum" por alguns segundos.
+        (await GetConfigAsync(app)).GetProperty("source").GetString().Should().Be("saved");
+    }
+
     // ----- o esquema -----
 
     [Fact]
