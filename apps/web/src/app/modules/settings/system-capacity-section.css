@@ -1,0 +1,271 @@
+.capacity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: 1.5rem;
+}
+
+.capacity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.alert {
+  align-items: center;
+}
+
+.alert .ui-btn {
+  flex: none;
+}
+
+.alert-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+}
+
+.alert-text span {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.meters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+}
+
+/* A faixa pinta a barra e o texto da porcentagem; o texto diz a faixa por extenso, então a cor nunca é a única pista. */
+.meter {
+  --tone: var(--a-ok);
+  --tone-ink: var(--a-ok-ink);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface-2);
+}
+
+.meter[data-band='amber'] {
+  --tone: var(--a-warn);
+  --tone-ink: var(--a-warn-ink);
+}
+
+.meter[data-band='red'] {
+  --tone: var(--a-bad);
+  --tone-ink: var(--a-bad-ink);
+}
+
+.meter-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.meter-label,
+.fact-label,
+.fact-detail,
+.estimate,
+.few {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.meter-band {
+  color: var(--tone-ink);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.meter-value {
+  font-size: var(--fs-body);
+  overflow-wrap: anywhere;
+}
+
+/* Trilha com as marcas de 50% e de 80%: onde a faixa muda, sem depender da cor. */
+.bar {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--a-ink3) 22%, var(--a-surface));
+}
+
+.fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  min-width: 4px;
+  border-radius: 999px;
+  background: var(--tone);
+  transition: width var(--dur-base) var(--ease-out);
+}
+
+.mark {
+  position: absolute;
+  inset-block: 0;
+  width: 2px;
+  background: var(--a-surface);
+}
+
+.mark.amber {
+  inset-inline-start: 50%;
+}
+
+.mark.red {
+  inset-inline-start: 80%;
+}
+
+.estimate {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.tag {
+  flex: none;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--a-line);
+  border-radius: 999px;
+  color: var(--a-ink);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface-2);
+}
+
+.fact strong {
+  font-size: var(--fs-body);
+  overflow-wrap: anywhere;
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.block h3 {
+  margin: 0;
+  font-size: var(--fs-body);
+}
+
+.tables {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+}
+
+.tables li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.table-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.table-size {
+  flex: none;
+  color: var(--a-ink2);
+  font-variant-numeric: tabular-nums;
+}
+
+.few,
+.rate {
+  margin: 0;
+}
+
+.rate {
+  font-weight: 650;
+}
+
+.spark {
+  display: block;
+  width: 100%;
+  height: auto;
+  color: var(--a-accent-ink);
+}
+
+.spark polyline {
+  stroke: currentColor;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.spark circle {
+  fill: currentColor;
+}
+
+.when {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.when div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.when dt {
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.when dd {
+  margin: 0;
+  font-weight: 650;
+}
+
+.error {
+  color: var(--a-bad-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    transition: none;
+  }
+}
