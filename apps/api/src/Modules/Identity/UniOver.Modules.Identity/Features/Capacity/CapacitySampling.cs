@@ -69,19 +69,26 @@ internal static class CapacitySampling
     }
 
     /// <summary>
-    /// Abre um aviso para cada métrica que chegou ao vermelho e ainda não tem um aberto, e fecha o de quem voltou ao normal.
-    /// Sem repetição: o aviso aberto vale até a métrica baixar.
+    /// Abre um aviso para cada métrica que chegou ao vermelho (80%) e ainda não tem um aberto, e fecha o de quem baixou de 75%.
+    /// Sem repetição: o aviso aberto vale até a métrica baixar; entre 75% e 80% ele fica como está (histerese). Depois de fechar,
+    /// a mesma métrica só abre outro aviso passado o cooldown, para quem oscila em torno do limite não gerar um por amostra.
     /// </summary>
     internal static async Task EvaluateAlertsAsync(
         IdentityDbContext db, IReadOnlyDictionary<string, double> percents, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var open = await db.CapacityAlerts.Where(a => a.RecoveredAt == null).ToDictionaryAsync(a => a.Metric, cancellationToken);
+        var coolingFrom = now - CapacityBands.AlertCooldown;
+        var cooling = (await db.CapacityAlerts.AsNoTracking()
+                .Where(a => a.RecoveredAt != null && a.RecoveredAt > coolingFrom)
+                .Select(a => a.Metric)
+                .ToListAsync(cancellationToken))
+            .ToHashSet(StringComparer.Ordinal);
         foreach (var (metric, percent) in percents)
         {
             open.TryGetValue(metric, out var alert);
             if (percent >= CapacityBands.RedPercent)
             {
-                if (alert is null)
+                if (alert is null && !cooling.Contains(metric))
                 {
                     db.CapacityAlerts.Add(new CapacityAlert
                     {
@@ -92,7 +99,7 @@ internal static class CapacitySampling
                     });
                 }
             }
-            else if (alert is not null)
+            else if (alert is not null && percent < CapacityBands.RecoverPercent)
             {
                 alert.RecoveredAt = now;
             }
@@ -117,6 +124,7 @@ internal static class CapacitySamplingRegistration
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddSingleton<ICapacityProbe, ProcessCapacityProbe>();
+        services.AddSingleton<CapacityDatabaseReading>();
         services.AddSingleton(new AuditPurgeJob(
             CapacitySampling.JobName,
             (provider, cancellationToken) => CapacitySampling.RunAsync(
