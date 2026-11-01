@@ -10,7 +10,7 @@ import {
   UpdateSkeleton,
 } from './update-skeleton';
 
-@Component({ template: `<div [attr.data-screen-ready]="'home'"></div>` })
+@Component({ template: '<div data-screen-ready="home"></div>' })
 class Blank {}
 
 function addReadyMarker(value: string): void {
