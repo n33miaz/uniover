@@ -154,6 +154,12 @@ export interface IdentityMock {
   readonly guests: MockGuest[];
   sessions: MockSession[];
   readonly guestSessions: Record<string, MockSession[]>;
+  /** As preferências da Início guardadas na conta, por id de conta (ausente: nunca gravou, versão zero). */
+  readonly preferences: Record<string, MockHomePreferences>;
+  /** Escolhe o que Pessoas mostra da Início de uma conta; sem isso vale o que `preferences` guarda. */
+  readonly peopleHome: Record<string, MockPersonHome>;
+  /** Quantos `PUT /me/preferences` chegaram (aceitos ou recusados por versão). */
+  preferenceWrites: number;
   /** Cria um convite pendente já pronto (o segredo do link é o devolvido). */
   seedInvite(displayName?: string, permissions?: string[]): MockInvite;
   /** Tokens emitidos (todos começam com "eyJ", como um JWT). */
@@ -167,6 +173,21 @@ export interface MockSession {
   createdAt: string;
   lastUsedAt: string;
   isCurrent: boolean;
+  /** O aparelho e o app instalado que o app informou (ausente: sessão de antes dessa informação). */
+  platform?: 'iphone' | 'ipad' | 'android' | 'pc' | null;
+  installed?: boolean | null;
+}
+
+/** A Início de uma conta como a API a guarda: versão e lista (`null` é o padrão). */
+export interface MockHomePreferences {
+  version: number;
+  home: { id: string; enabled: boolean }[] | null;
+}
+
+/** Como o dono lê a Início de alguém em Pessoas (o `home` do `people-usage`). */
+export interface MockPersonHome {
+  state: 'custom' | 'default' | 'unknown';
+  entries: { id: string; enabled: boolean }[];
 }
 
 const PROBLEM_BASE = 'https://uniover.app/problems/';
@@ -299,6 +320,9 @@ export async function mockIdentityApi(
       },
     ],
     guestSessions: {},
+    preferences: {},
+    peopleHome: {},
+    preferenceWrites: 0,
     seedInvite: (displayName = GUEST.displayName, permissions) => {
       const invite: MockInvite = {
         id: '00000000-0000-4000-8000-0000000000' + String(mock.invites.length + 10),
@@ -343,7 +367,8 @@ export async function mockIdentityApi(
 
   /** A mesma conferência da API: desafio de uso único e assinatura da chave da família sobre a mensagem combinada. */
   const recoveryProofIsValid = (challenge?: string, proof?: string): boolean => {
-    if (!challenge || !proof || !issuedChallenge || issuedChallenge.used || !mock.deviceKey) return false;
+    if (!challenge || !proof || !issuedChallenge || issuedChallenge.used || !mock.deviceKey)
+      return false;
     if (challenge !== `${issuedChallenge.id}.${issuedChallenge.nonce}`) return false;
     issuedChallenge.used = true;
     const message = `uniover-refresh-recovery|v1|${FAMILY}|${issuedChallenge.id}|${issuedChallenge.nonce}`;
@@ -351,7 +376,14 @@ export async function mockIdentityApi(
       return verify(
         'sha256',
         Buffer.from(message),
-        { key: createPublicKey({ key: Buffer.from(mock.deviceKey, 'base64url'), format: 'der', type: 'spki' }), dsaEncoding: 'ieee-p1363' },
+        {
+          key: createPublicKey({
+            key: Buffer.from(mock.deviceKey, 'base64url'),
+            format: 'der',
+            type: 'spki',
+          }),
+          dsaEncoding: 'ieee-p1363',
+        },
         Buffer.from(proof, 'base64url'),
       );
     } catch {
@@ -404,7 +436,10 @@ export async function mockIdentityApi(
       return json(route, 200, { module: 'identity', version: '0.9.0-teste', dependsOn: [] });
     }
 
-    if (method === 'POST' && ['/auth/login', '/auth/qr/poll', '/guest-invites/accept'].includes(path)) {
+    if (
+      method === 'POST' &&
+      ['/auth/login', '/auth/qr/poll', '/guest-invites/accept'].includes(path)
+    ) {
       mock.deviceKey = headers['x-uniover-device-key'] ?? null;
       rotationLost = false;
     }
@@ -547,6 +582,27 @@ export async function mockIdentityApi(
 
     // Tudo abaixo exige o token no cabeçalho.
     if (!authorized) return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
+
+    // As preferências da própria conta (a Início): a versão decide quem grava, como na API.
+    if (path === '/me/preferences') {
+      const account = sessionAccountId();
+      const current = mock.preferences[account] ?? { version: 0, home: null };
+      const view = () => ({
+        version: (mock.preferences[account] ?? current).version,
+        updatedAt: null,
+        home: (mock.preferences[account] ?? current).home,
+      });
+      if (method === 'GET') return json(route, 200, view());
+      if (method === 'PUT') {
+        mock.preferenceWrites++;
+        if (body?.['baseVersion'] !== current.version) return json(route, 409, view());
+        mock.preferences[account] = {
+          version: current.version + 1,
+          home: (body?.['home'] as MockHomePreferences['home']) ?? null,
+        };
+        return json(route, 200, view());
+      }
+    }
 
     if (method === 'GET' && path === '/sessions') return json(route, 200, mock.sessions);
     if (method === 'POST' && path === '/sessions/others/revoke') {
@@ -691,6 +747,12 @@ export async function mockIdentityApi(
     if (method === 'GET' && path === '/people-usage') {
       const counts = { last7Days: 12, last30Days: 40 };
       const workouts = { last7Days: 3, last30Days: 9 };
+      const homeOf = (id: string, fallback: MockPersonHome['state']): MockPersonHome => {
+        const chosen = mock.peopleHome[id];
+        if (chosen) return chosen;
+        const saved = mock.preferences[id]?.home;
+        return saved ? { state: 'custom', entries: saved } : { state: fallback, entries: [] };
+      };
       return json(route, 200, [
         {
           id: OWNER_ID,
@@ -701,6 +763,7 @@ export async function mockIdentityApi(
           activeSessions: 1,
           tvCommands: counts,
           workouts,
+          home: homeOf(OWNER_ID, 'default'),
         },
         ...mock.guests.map((guest) => ({
           id: guest.id,
@@ -713,6 +776,7 @@ export async function mockIdentityApi(
           activeSessions: guest.disabledAt ? 0 : 2,
           tvCommands: counts,
           workouts,
+          home: homeOf(guest.id, 'unknown'),
         })),
       ]);
     }
