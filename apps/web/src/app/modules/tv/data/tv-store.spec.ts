@@ -284,7 +284,7 @@ describe('TvStore', () => {
           agentSlug: null,
           kind: 'android',
           online: true,
-          capabilities: ['tv.remote', 'tv.kind.android', 'tv.power.off.v1'],
+          capabilities: ['tv.remote', 'tv.kind.android', 'tv.power.off.v1', 'tv.adb'],
         } satisfies TvSummary,
       ]);
       await started();
