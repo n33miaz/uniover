@@ -34,6 +34,7 @@ from uniover_agent.core import (
     EnvelopeGate,
     PowerOffResult,
     ResultStatus,
+    SamsungMaintenanceScheduler,
     TvSessionManager,
 )
 from uniover_agent.core.tv.handlers import unsupported_handler
@@ -720,6 +721,7 @@ async def test_samsung_apps_use_a_valid_alias_but_launch_the_original_app_id() -
     assert [entry.package for entry in entries] == ["samsung.app.id111299001912"]
     await apps.launch_package(entries[0].package)
     assert client.runs == [("111299001912", "NATIVE_LAUNCH", "")]
+    assert apps.last_opened_app_id == "111299001912"
 
 
 async def test_samsung_ws_list_publishes_its_square_icon_in_the_v2_contract() -> None:
@@ -858,7 +860,14 @@ def test_samsung_configuration_selects_its_capabilities_without_adb(
     )
     assert setup is not None
     expected = (
-        ["tv.remote", "tv.kind.samsung", "tv.power.off.v1", "tv.permission.v1", "tv.key.v3"]
+        [
+            "tv.remote",
+            "tv.kind.samsung",
+            "tv.power.off.v1",
+            "tv.permission.v1",
+            "tv.maintenance.v1",
+            "tv.key.v3",
+        ]
         + [f"tv.key.{key}" for key in SAMSUNG_OPTIONAL_KEYS]
         + ["tv.discovery.v1"]
     )
@@ -866,12 +875,31 @@ def test_samsung_configuration_selects_its_capabilities_without_adb(
     assert envelopes.hello("0.1.0", tuple(setup.capabilities))["body"]["capabilities"] == expected
     assert "tv.key.v3" in setup.handlers
     assert "tv.cleanup.v1" in setup.handlers
-    assert "tv.cleanup.config.v1" not in setup.handlers  # sem limpeza automática na Samsung
+    # A Samsung recebe só a preferência da manutenção por REST (`tv.maintenance.v1`); a limpeza
+    # automática do Android (`tv.cleanup.automatic.v1`) continua sendo só dele.
+    assert "tv.cleanup.config.v1" in setup.handlers
     assert "tv.cleanup.automatic.v1" not in setup.capabilities
     assert "tv.light-settings.v1" not in setup.capabilities
     assert "tv.focus-closes-background.v1" not in setup.capabilities  # fechar apps é só Android
     assert setup.text is None
     assert "token-secreto" not in caplog.text
+
+    # Sem o campo (API antiga) a manutenção fica parada; com ele, o valor desta TV manda.
+    scheduler = setup.cleanup_scheduler
+    assert isinstance(scheduler, SamsungMaintenanceScheduler)
+    configure = setup.handlers["tv.cleanup.config.v1"]
+    legacy = {"lightEnabled": True, "deepEnabled": True, "deepThresholdMb": 160}
+    configured = asyncio.run(configure(Command("c1", "tv.cleanup.config.v1", legacy)))
+    assert configured.status == ResultStatus.OK
+    assert scheduler.enabled is False
+    asyncio.run(
+        configure(Command("c2", "tv.cleanup.config.v1", {**legacy, "maintenanceEnabled": True}))
+    )
+    assert scheduler.enabled is True
+    asyncio.run(
+        configure(Command("c3", "tv.cleanup.config.v1", {**legacy, "maintenanceEnabled": False}))
+    )
+    assert scheduler.enabled is False
 
 
 async def test_read_power_asks_the_tv_again_instead_of_reusing_the_reading_from_connect() -> None:
