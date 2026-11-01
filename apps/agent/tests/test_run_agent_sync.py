@@ -23,6 +23,7 @@ SYSTEM32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
 POWERSHELL = SYSTEM32 / "WindowsPowerShell" / "v1.0" / "powershell.exe"
 TASKKILL = SYSTEM32 / "taskkill.exe"
 RUNNER = Path(__file__).parents[1] / "tools" / "run-agent.ps1"
+LAUNCHER = Path(__file__).parents[1] / "tools" / "launcher.ps1"
 pytestmark = pytest.mark.skipif(not POWERSHELL.is_file(), reason="precisa do Windows")
 
 OLD = "a" * 40
@@ -39,10 +40,13 @@ class Pc:
         self.previous = self.base / "app.previous"
         self.runtime = self.base / "runtime"
         self.marker = self.runtime / "venv" / "marca-do-ambiente"
-        self.record = tmp_path / "chamadas.txt"
+        self.record = tmp_path / "chamadas"
         self.bin = tmp_path / "bin"
         self.bin.mkdir()
-        self.source.mkdir(parents=True)
+        self.record.mkdir()
+        (self.source / "tools").mkdir(parents=True)
+        (self.source / "tools" / "run-agent.ps1").write_bytes(RUNNER.read_bytes())
+        (self.source / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
         (self.source / ".version").write_text(BAD + "\n", encoding="ascii")
         self.marker.parent.mkdir(parents=True)
         self.marker.write_text("ambiente que funcionava", encoding="utf-8")
@@ -59,26 +63,53 @@ class Pc:
     def uv(self, sync_lines: list[str]) -> None:
         """`self-update` termina logo, `sync` segue as linhas dadas, `run` e `tray` ficam vivos.
 
+        Cada papel deixa seu próprio marcador: o agente e o ícone iniciam em paralelo, e acrescentar
+        ambos no mesmo arquivo pode perder uma das chamadas.
+
         O `sync` fica depois de um rótulo, e não dentro de um bloco entre parênteses: no cmd, um
         `exit /b 1` dentro de um `if` aninhado num bloco não encerra o arquivo, e o `exit /b 0`
         seguinte devolveria sucesso.
         """
         lines = [
             "@echo off",
-            'echo %*>>"%UNIOVER_TEST_RECORD%"',
             'if "%~1"=="sync" goto sync',
-            'if "%~5"=="self-update" exit /b 0',
+            'if "%~5"=="self-update" goto self_update',
+            'if "%~5"=="tray" goto tray',
+            'if "%~5"=="run" goto run',
+            "exit /b 0",
+            ":self_update",
+            'echo.>"%UNIOVER_TEST_RECORD%\\self-update"',
+            "exit /b 0",
+            ":tray",
+            'echo.>"%UNIOVER_TEST_RECORD%\\tray"',
+            "ping -n 300 127.0.0.1 > nul",
+            "exit /b 0",
+            ":run",
+            'echo.>"%UNIOVER_TEST_RECORD%\\run"',
             "ping -n 300 127.0.0.1 > nul",
             "exit /b 0",
             ":sync",
+            'if not exist "%UNIOVER_TEST_RECORD%\\sync-1" goto sync_1',
+            'if not exist "%UNIOVER_TEST_RECORD%\\sync-2" goto sync_2',
+            ":sync_3",
+            'echo.>"%UNIOVER_TEST_RECORD%\\sync-3"',
+            "goto sync_body",
+            ":sync_1",
+            'echo.>"%UNIOVER_TEST_RECORD%\\sync-1"',
+            "goto sync_body",
+            ":sync_2",
+            'echo.>"%UNIOVER_TEST_RECORD%\\sync-2"',
+            ":sync_body",
             *sync_lines,
             "",
         ]
         (self.bin / "uv.cmd").write_text("\n".join(lines), encoding="ascii")
 
-    def calls(self, word: str) -> int:
-        text = self.record.read_text(encoding="utf-8") if self.record.exists() else ""
-        return sum(1 for line in text.splitlines() if line.split()[:1] == [word])
+    def sync_calls(self) -> int:
+        return sum((self.record / f"sync-{number}").is_file() for number in range(1, 4))
+
+    def started(self, role: str) -> bool:
+        return (self.record / role).is_file()
 
     def state(self) -> dict[str, object]:
         loaded: dict[str, object] = json.loads(
@@ -94,7 +125,7 @@ class Pc:
             "UNIOVER_TEST_VENV": str(self.runtime / "venv"),
         }
         return subprocess.Popen(  # noqa: S603 - Windows PowerShell do sistema; script do repositório
-            [str(POWERSHELL), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(RUNNER)],
+            [str(POWERSHELL), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(LAUNCHER)],
             env=environment,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -131,7 +162,10 @@ def test_three_failed_syncs_of_a_version_in_proof_go_back_without_touching_the_e
     pc.uv(["exit /b 1"])
     process = pc.start()
     try:
-        assert process.wait(timeout=120) == 42
+        assert wait_for((pc.runtime / ".blocked-versions").is_file, 120), (
+            "a versao em prova deveria voltar para a anterior"
+        )
+        assert process.poll() is None
     finally:
         stop(process)
 
@@ -142,9 +176,11 @@ def test_three_failed_syncs_of_a_version_in_proof_go_back_without_touching_the_e
     assert not (pc.runtime / "update-trial.txt").exists()
     # O ambiente que funcionava ficou: exatamente três tentativas, nenhuma segunda com apagamento.
     assert pc.marker.read_text(encoding="utf-8") == "ambiente que funcionava"
-    assert pc.calls("sync") == 3
+    assert pc.sync_calls() == 3
     # Nem o agente nem o ícone chegaram a subir com o ambiente quebrado.
-    assert pc.calls("run") == 1  # só o `self-update`, que também é `uv run`
+    assert pc.started("self-update")
+    assert not pc.started("tray")
+    assert not pc.started("run")
     state = pc.state()
     assert (state["outcome"], state["rolledBack"], state["blockedSha"]) == (
         "rolled_back",
@@ -172,12 +208,14 @@ def test_two_failures_followed_by_a_success_never_go_back_and_the_count_starts_o
     )
     process = pc.start()
     try:
-        assert wait_for(lambda: pc.calls("run") >= 3, 90), "o agente e o ícone deveriam subir"
+        assert wait_for(lambda: pc.started("tray") and pc.started("run"), 90), (
+            "o agente e o ícone deveriam subir"
+        )
         assert process.poll() is None
     finally:
         stop(process)
 
-    assert pc.calls("sync") == 3
+    assert pc.sync_calls() == 3
     assert (pc.source / ".version").read_text(encoding="ascii").strip() == BAD
     assert pc.previous.is_dir()
     assert (pc.runtime / "update-trial.txt").read_text(encoding="ascii") == f"{BAD}|0"
@@ -202,12 +240,14 @@ def test_without_a_version_in_proof_and_one_to_go_back_to_a_broken_environment_i
     pc.uv(['if exist "%UNIOVER_TEST_VENV%\\marca-do-ambiente" exit /b 1', "exit /b 0"])
     process = pc.start()
     try:
-        assert wait_for(lambda: pc.calls("run") >= 3, 90), "o agente e o ícone deveriam subir"
+        assert wait_for(lambda: pc.started("tray") and pc.started("run"), 90), (
+            "o agente e o ícone deveriam subir"
+        )
     finally:
         stop(process)
 
     assert not pc.marker.exists()
-    assert pc.calls("sync") == 2
+    assert pc.sync_calls() == 2
     assert (pc.source / ".version").read_text(encoding="ascii").strip() == BAD
     assert pc.previous.is_dir() == has_previous
     assert not (pc.runtime / ".blocked-versions").exists()
