@@ -39,11 +39,11 @@ public partial class SeedContentTests
     }
 
     // Palavras em inglês que denunciam texto não traduzido (estrangeirismos aceitos de academia não estão aqui).
-    [GeneratedRegex(@"\b(the|with|your|and|you|then|until|while|each|from|this|that|into|dumbbells?|barbell|cables?|machine|bench|kettlebells?)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    [GeneratedRegex(@"\b(the|with|your|and|you|then|until|while|each|from|this|that|into|dumbbells?|barbell|cables?|machine|bench)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
     private static partial Regex EnglishWords();
 
     // Sinônimos que misturariam o glossário: o app usa "polia" (nunca "cabo") e "halter" (nunca "dumbbell").
-    [GeneratedRegex(@"\b(cabos?|pesos livres|kettlebells?)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    [GeneratedRegex(@"\b(cabos?|pesos livres)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
     private static partial Regex ForbiddenSynonyms();
 
     [Fact]
@@ -57,17 +57,33 @@ public partial class SeedContentTests
     public void Seed_PointsToTheFixedSourceCommit()
     {
         Seed.SourceCommit.Should().MatchRegex("^[0-9a-f]{40}$");
-        Seed.Exercises.Should().OnlyContain(e => e.SourceCommit == Seed.SourceCommit);
+        FromFreeExerciseDb.Should().OnlyContain(e => e.SourceCommit == Seed.SourceCommit);
     }
+
+    // Os exercícios que o UniOver mesmo escreveu (fonte "uniover") não têm original em inglês.
+    private static IEnumerable<SeedExercise> FromFreeExerciseDb => Seed.Exercises.Where(e => e.Source == ExerciseSources.FreeExerciseDb);
+
+    private static IEnumerable<SeedExercise> Own => Seed.Exercises.Where(e => e.Source == ExerciseSources.Uniover);
 
     [Fact]
     public void EverySourceRef_ExistsInTheOriginalFile_AndIsUnique()
     {
-        Seed.Exercises.Select(e => e.SourceRef).Should().OnlyHaveUniqueItems();
-        foreach (var exercise in Seed.Exercises)
+        Seed.Exercises.Select(e => (e.Source, e.SourceRef)).Should().OnlyHaveUniqueItems();
+        foreach (var exercise in FromFreeExerciseDb)
         {
             Originals.Value.Should().ContainKey(exercise.SourceRef);
         }
+    }
+
+    [Fact]
+    public void OwnExercises_AreTheProposedListWithTheirOwnSource_AndNeverCollideWithTheOriginals()
+    {
+        Seed.Exercises.Select(e => e.Source).Distinct().Should().BeEquivalentTo([ExerciseSources.FreeExerciseDb, ExerciseSources.Uniover]);
+        Own.Should().HaveCount(37);
+        Own.Should().OnlyContain(e => e.SourceRef == e.Slug && e.SourceCommit == "uniover");
+        Own.Select(e => e.Equipment).Distinct().Should().Contain([Equipment.Kettlebell, Equipment.Band, Equipment.Cardio]);
+        Own.Where(e => e.Equipment == Equipment.Cardio).Should().OnlyContain(e => e.RecordType == ExerciseRecordTypes.Time);
+        Seed.SeedVersion.Should().BeGreaterThanOrEqualTo(2);
     }
 
     [Fact]
@@ -135,7 +151,7 @@ public partial class SeedContentTests
     [Fact]
     public void NoInstruction_IsIdenticalToTheEnglishOriginal_AndNoNameEither()
     {
-        foreach (var e in Seed.Exercises)
+        foreach (var e in FromFreeExerciseDb)
         {
             var original = Originals.Value[e.SourceRef];
             e.Instructions.Should().NotIntersectWith(original.Instructions, $"as instruções de '{e.Name}' devem ser reescritas");
@@ -194,6 +210,16 @@ public partial class SeedContentTests
             {
                 e.Equipment.Should().Be(Equipment.Barbell, $"'{e.Name}' fala em barra W");
             }
+
+            if (name.Contains("kettlebell", StringComparison.Ordinal))
+            {
+                e.Equipment.Should().Be(Equipment.Kettlebell, $"'{e.Name}' fala em kettlebell");
+            }
+
+            if (name.Contains("elastico", StringComparison.Ordinal) || name.Contains("mini band", StringComparison.Ordinal))
+            {
+                e.Equipment.Should().Be(Equipment.Band, $"'{e.Name}' fala em elástico");
+            }
         }
     }
 
@@ -204,7 +230,7 @@ public partial class SeedContentTests
         {
             if (e.RecordType == ExerciseRecordTypes.RepsOnly)
             {
-                e.Equipment.Should().BeOneOf(Equipment.Bodyweight, Equipment.Other);
+                e.Equipment.Should().BeOneOf(Equipment.Bodyweight, Equipment.Other, Equipment.Band);
             }
 
             if (e.Equipment == Equipment.Bodyweight && e.RecordType == ExerciseRecordTypes.WeightReps)
