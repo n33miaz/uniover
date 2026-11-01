@@ -41,11 +41,12 @@ const app = createAppServer({
   resolveRoot: () => (state.version === 'b' ? rootB : rootA),
   transformSw: (body) => {
     if (state.version !== 'b' || state.swDelayMs <= 0) return body;
-    // Por ser o primeiro ouvinte de `message`, adia o `skipWaiting` do worker (o do sw.ts roda junto e não vê a
-    // mensagem): é o que um celular lento ou ocupado faz com a ativação.
+    // Atrasa a própria chamada do worker, inclusive a que ele faz durante a instalação: é o que um celular lento ou
+    // ocupado faz com a ativação, sem deixar o teste depender de qual evento pediu a troca.
     const prelude =
-      `self.addEventListener('message',function(e){if(e.data&&e.data.type==='SKIP_WAITING'){` +
-      `e.stopImmediatePropagation();setTimeout(function(){self.skipWaiting()},${state.swDelayMs})}});\n`;
+      `var unioverSkipWaiting=self.skipWaiting.bind(self),unioverDelayedSkip;self.skipWaiting=function(){` +
+      `if(!unioverDelayedSkip)unioverDelayedSkip=new Promise(function(done){setTimeout(function(){` +
+      `Promise.resolve(unioverSkipWaiting()).then(done)},${state.swDelayMs})});return unioverDelayedSkip};\n`;
     return Buffer.concat([Buffer.from(prelude), body]);
   },
   // Sem cache HTTP: o navegador pode ter tirado do disco os arquivos da versão antiga (o iOS o faz cedo); o que o worker

@@ -17,8 +17,12 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: (PrecacheEntry | string)[];
 };
 
-// Atualização controlada: um worker novo espera até o app pedir (botão "Atualizar") para não trocar a
-// casca no meio do uso. Na primeira instalação não há worker anterior, então ele já assume sozinho.
+// A casca é o que mostra o esqueleto certo antes do app baixar. Por isso uma versão nova não pode ficar esperando
+// um toque: ela assume assim que termina de guardar o próprio precache e atende a próxima abertura com o HTML novo.
+// Isso só troca o controlador; não toca no IndexedDB, onde a fila offline do app é guardada.
+self.addEventListener('install', () => {
+  void self.skipWaiting();
+});
 self.addEventListener('message', (event) => {
   if ((event.data as { type?: string } | undefined)?.type === 'SKIP_WAITING')
     void self.skipWaiting();

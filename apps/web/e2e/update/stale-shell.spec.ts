@@ -117,6 +117,124 @@ async function openVersionA(page: Page): Promise<string> {
   return mainScript(page);
 }
 
+test('o worker novo assume o deploy e a próxima abertura fria da TV já recebe sua casca', async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(`${origin}/tv/`);
+  await waitForServiceWorkerControl(page);
+  const before = await mainScript(page);
+  const firstDocument = await page.evaluate(() => performance.timeOrigin);
+
+  // A primeira navegação depois do deploy ainda foi respondida pelo worker antigo. A ativação troca só o controlador;
+  // a próxima abertura é que tem de ler a casca nova, sem depender de botão ou de recarregar a página que está aberta.
+  await setControl('/use?v=b');
+  await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) throw new Error('registro ausente');
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error('worker novo não assumiu')), 30_000);
+      navigator.serviceWorker.addEventListener(
+        'controllerchange',
+        () => {
+          window.clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+      void registration.update().catch(reject);
+    });
+  });
+  expect(await page.evaluate(() => performance.timeOrigin)).toBe(firstDocument);
+
+  const second = await context.newPage();
+  await second.addInitScript(() => {
+    const state = window as unknown as { __tvBootSeen: boolean };
+    state.__tvBootSeen = false;
+    const inspect = () => {
+      const boot = document.getElementById('boot-skeleton');
+      const tv = boot?.querySelector<HTMLElement>('.bs-tv');
+      if (
+        tv &&
+        document.documentElement.getAttribute('data-boot') === 'tv' &&
+        getComputedStyle(tv).display !== 'none'
+      )
+        state.__tvBootSeen = true;
+      if (!state.__tvBootSeen) requestAnimationFrame(inspect);
+    };
+    new MutationObserver(inspect).observe(document, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
+    requestAnimationFrame(inspect);
+  });
+  await second.goto(`${origin}/tv/`);
+
+  await expect
+    .poll(() =>
+      second.evaluate(() => (window as never as { __tvBootSeen: boolean }).__tvBootSeen),
+    )
+    .toBe(true);
+  await expect.poll(() => mainScript(second)).not.toBe(before);
+  await second.close();
+});
+
+test('a atualização do worker não apaga a fila local IndexedDB', async ({ page }) => {
+  await openVersionA(page);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open('uniover-update-queue-proof', 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('queue');
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const transaction = request.result.transaction('queue', 'readwrite');
+          transaction.objectStore('queue').put({ id: 'pending-command' }, 'pending-command');
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+        };
+      }),
+  );
+
+  await setControl('/use?v=b');
+  await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) throw new Error('registro ausente');
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error('worker novo não assumiu')), 30_000);
+      navigator.serviceWorker.addEventListener(
+        'controllerchange',
+        () => {
+          window.clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+      void registration.update().catch(reject);
+    });
+  });
+  await page.reload();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          new Promise<string | undefined>((resolve, reject) => {
+            const request = indexedDB.open('uniover-update-queue-proof');
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+              const transaction = request.result.transaction('queue', 'readonly');
+              const read = transaction.objectStore('queue').get('pending-command');
+              read.onerror = () => reject(read.error);
+              read.onsuccess = () => resolve(read.result?.id);
+            };
+          }),
+      ),
+    )
+    .toBe('pending-command');
+});
+
 test.describe('atualização com a casca antiga já aberta', () => {
   /**
    * O defeito do dono (iPhone, 0.6.0): sessão válida, mas a leitura da conta (`/me`, o banco acordando) demora. O guarda
@@ -251,17 +369,10 @@ test.describe('atualização com a casca antiga já aberta', () => {
     await setControl('/use?v=b');
     await page.evaluate(async () => {
       const registration = await navigator.serviceWorker.getRegistration();
-      await registration?.update();
-      const worker = registration?.waiting ?? registration?.installing;
-      if (!worker) throw new Error('sem worker novo');
+      if (!registration) throw new Error('sem registro');
       await new Promise<void>((done) => {
         navigator.serviceWorker.addEventListener('controllerchange', () => done(), { once: true });
-        const post = () => worker.postMessage({ type: 'SKIP_WAITING' });
-        if (worker.state === 'installed') post();
-        else
-          worker.addEventListener('statechange', () => {
-            if (worker.state === 'installed') post();
-          });
+        void registration.update();
       });
     });
     expect(await mainScript(page)).toBe(before);
