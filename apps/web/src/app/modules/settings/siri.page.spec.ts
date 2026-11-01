@@ -187,6 +187,33 @@ describe('SiriPage', () => {
     expect(api.create).toHaveBeenCalledWith('Meu iPhone', 'tv-quarto', ['mute'], null);
   });
 
+  it('ignores the apps of a TV the person already left when the answers arrive out of order', async () => {
+    tvApi.tvs.mockResolvedValue([TV_SALA, TV_QUARTO]);
+    let answerSala!: (apps: SiriApp[]) => void;
+    api.apps.mockImplementation((tvId: string) =>
+      tvId === 'tv-sala'
+        ? new Promise<SiriApp[]>((resolve) => (answerSala = resolve))
+        : Promise.resolve([{ id: 'app-2', name: 'Jogos' }]),
+    );
+    const { el, click, fixture } = await render();
+    await click('Criar chave');
+
+    const radios = Array.from(el.querySelectorAll<HTMLInputElement>('input[name="siri-tv"]'));
+    radios[1].dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+    expect(el.textContent).toContain('Jogos');
+
+    // A resposta lenta da primeira TV chega depois da troca e não pode sobrescrever a lista da TV escolhida.
+    answerSala([{ id: 'app-1', name: 'Vídeo' }]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+
+    expect(el.textContent).toContain('Jogos');
+    expect(el.textContent).not.toContain('Vídeo');
+  });
+
   it('shows the secret once, ready to copy, and drops it when the person finishes', async () => {
     api.create.mockResolvedValue({
       id: 'k2',

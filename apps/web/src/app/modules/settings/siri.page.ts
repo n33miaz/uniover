@@ -314,6 +314,8 @@ export class SiriPage {
     const tvId = this.tvId();
     if (tvId === null) return;
     const names = await this.loadNames(tvId);
+    // Respostas fora de ordem: se a pessoa já trocou de TV, a lista desta não vale mais.
+    if (this.tvId() !== tvId) return;
     this.appActions.set(
       [...names]
         .map(([id, label]) => appAction(id, label))
