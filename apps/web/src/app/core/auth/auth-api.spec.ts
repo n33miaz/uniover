@@ -25,6 +25,12 @@ describe('AuthApi', () => {
     return { url, init, headers: init.headers as Record<string, string> };
   };
 
+  it('reads the deployed version from the health route, outside the versioned API prefix', async () => {
+    fetchFn.mockResolvedValue(reply(200, { commit: 'abc', version: '0.5.0' }));
+    await expect(api().deploymentVersion()).resolves.toEqual({ commit: 'abc', version: '0.5.0' });
+    expect(lastCall().url).toBe('/health/version');
+  });
+
   it('login sends the client header and the credentials, with no Authorization', async () => {
     fetchFn.mockResolvedValue(reply(200, { accessToken: 't', expiresIn: 600 }));
     await expect(api().login('a@b.c', 'senha')).resolves.toEqual({
