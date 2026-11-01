@@ -209,6 +209,7 @@ async def test_run_serves_the_pc_commands_without_any_tv(
         "transport.keepalive.v1",
         "agent.logs.v1",
         "agent.maintenance.v1",
+        "agent.diagnostics.v1",
         "pc.control.v1",
     ]
     announced = next(m for m in api.received if m["type"] == "pc.apps.v1")
