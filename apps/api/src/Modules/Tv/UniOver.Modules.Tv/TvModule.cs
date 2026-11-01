@@ -14,6 +14,7 @@ using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Audit;
 using UniOver.Modules.Tv.Contracts;
+using UniOver.Modules.Tv.Features.Access;
 using UniOver.Modules.Tv.Features.Agents;
 using UniOver.Modules.Tv.Features.Cleanup;
 using UniOver.Modules.Tv.Features.Commands;
@@ -132,6 +133,7 @@ public static class TvModule
         services.AddScoped<WakeHandler>();
         services.AddScoped<CleanupHandler>();
         services.AddScoped<RecentCommandsHandler>();
+        services.AddScoped<TvAccessHandler>();
         services.AddScoped<StreamEventsHandler>();
         services.AddScoped<TvConfigView>();
         services.AddScoped<GetConfigHandler>();
@@ -165,6 +167,7 @@ public static class TvModule
         group.MapWake();
         group.MapCleanup();
         group.MapRecentCommands();
+        group.MapTvAccess();
         group.MapStreamEvents();
         group.MapGetConfig();
         group.MapBindAgent();
