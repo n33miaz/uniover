@@ -442,7 +442,9 @@ def _verify_signer(signer: bytes, layout: _ApkLayout, *, v3: bool, pinned: str) 
     _check_attributes(signed.length_prefixed(MAX_SIGNER_BYTES, "lista de atributos"))
     _finish_signed_data(signed)
 
-    if set(signatures) != set(digests):
+    # A especificação exige a mesma lista, na mesma ordem: a ordem também é assinada e
+    # impede trocar algoritmos de lugar.
+    if list(signatures) != list(digests):
         raise _InvalidApkSignatureError(
             "apk_signature_invalid", "As assinaturas e os digests do APK não correspondem."
         )

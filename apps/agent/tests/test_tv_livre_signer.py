@@ -325,6 +325,20 @@ async def test_signature_and_digest_algorithm_lists_must_match(tmp_path: Path) -
     assert raised.value.code == "apk_signature_invalid"
 
 
+async def test_signature_and_digest_lists_must_keep_the_same_order(tmp_path: Path) -> None:
+    apk = tmp_path / "launcher.apk"
+    pin = signed_apk(
+        apk,
+        algorithms=(PSS_SHA256, PKCS1_SHA256),
+        signature_algorithms=(PKCS1_SHA256, PSS_SHA256),
+    )
+
+    with pytest.raises(LauncherApkError) as raised:
+        await ApkSignerVerifier(pinned=pin)(apk)
+
+    assert raised.value.code == "apk_signature_invalid"
+
+
 async def test_unknown_algorithms_need_a_valid_supported_peer(tmp_path: Path) -> None:
     accepted = tmp_path / "accepted.apk"
     pin = signed_apk(
