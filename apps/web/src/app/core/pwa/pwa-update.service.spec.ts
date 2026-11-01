@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import {
   AUTO_RECOVERY_GUARD_MS,
+  BOOT_APPLY_KEY,
+  BOOT_APPLY_TIMEOUT_MS,
   CHUNK_RECOVERY_KEY,
   FIRST_CONTENT_WATCHDOG_MS,
   PWA_ENABLED,
@@ -459,6 +461,85 @@ describe('PwaUpdateService', () => {
       expect(service.applyingUpdate()).toBe(false);
       expect(service.showSkeleton()).toBe(false);
       expect(sessionStorage.getItem(UPDATE_REFRESHING_KEY)).toBeNull();
+    });
+  });
+
+  describe('applying a waiting update on a cold open', () => {
+    /** Um app que abre a frio com um worker já esperando (o aviso "Atualizar" foi ignorado na vez anterior). */
+    function coldSetup(
+      controller: object | null = {},
+      options: { applyOnBoot?: boolean } = { applyOnBoot: true },
+    ) {
+      const registration = new FakeRegistration();
+      const waiting = new FakeWorker();
+      registration.waiting = waiting;
+      const container = stubServiceWorker(registration, controller);
+      Object.assign(container, { getRegistration: vi.fn().mockResolvedValue(registration) });
+      TestBed.configureTestingModule({ providers: [{ provide: PWA_ENABLED, useValue: true }] });
+      const service = TestBed.inject(PwaUpdateService);
+      const reload = stubReload();
+      stubCaches(['workbox-runtime-x']);
+      service.start(options);
+      return { registration, waiting, container, service, reload };
+    }
+
+    it('swaps to the waiting worker before the first content: skeleton up, then one reload', async () => {
+      const { waiting, container, service, reload } = coldSetup();
+      await flush();
+      expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+      expect(service.showSkeleton()).toBe(true);
+      expect(reload).not.toHaveBeenCalled();
+      container.dispatchEvent(new Event('controllerchange'));
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(sessionStorage.getItem(UPDATE_REFRESHING_KEY)).not.toBeNull();
+      expect(sessionStorage.getItem(BOOT_APPLY_KEY)).not.toBeNull();
+    });
+
+    it('gives up at the deadline: opens the current version, no reload, and the banner stays available', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      const { service, reload } = coldSetup();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(service.showSkeleton()).toBe(true);
+      await vi.advanceTimersByTimeAsync(BOOT_APPLY_TIMEOUT_MS);
+      expect(service.showSkeleton()).toBe(false);
+      expect(reload).not.toHaveBeenCalled();
+      // O aviso de sempre cobre a troca (o registro olha o worker que esperava).
+      await vi.advanceTimersByTimeAsync(0);
+      expect(service.updateReady()).toBe(true);
+    });
+
+    it('never reloads under a screen that is already showing', async () => {
+      const registration = new FakeRegistration();
+      registration.waiting = new FakeWorker();
+      const container = stubServiceWorker(registration, {});
+      Object.assign(container, { getRegistration: vi.fn().mockResolvedValue(registration) });
+      TestBed.configureTestingModule({ providers: [{ provide: PWA_ENABLED, useValue: true }] });
+      const service = TestBed.inject(PwaUpdateService);
+      service.markContentReady();
+      service.start({ applyOnBoot: true });
+      await flush();
+      expect(registration.waiting.postMessage).not.toHaveBeenCalled();
+      expect(service.showSkeleton()).toBe(false);
+    });
+
+    it('does not run without the cold-open option, on a first install, or inside the loop guard', async () => {
+      const plain = coldSetup({}, {});
+      await flush();
+      expect(plain.waiting.postMessage).not.toHaveBeenCalled();
+      TestBed.resetTestingModule();
+
+      const first = coldSetup(null);
+      await flush();
+      expect(first.waiting.postMessage).not.toHaveBeenCalled();
+      TestBed.resetTestingModule();
+
+      sessionStorage.setItem(BOOT_APPLY_KEY, String(Date.now()));
+      const guarded = coldSetup();
+      await flush();
+      expect(guarded.waiting.postMessage).not.toHaveBeenCalled();
+      expect(guarded.service.showSkeleton()).toBe(false);
+      expect(AUTO_RECOVERY_GUARD_MS).toBeGreaterThan(0);
     });
   });
 

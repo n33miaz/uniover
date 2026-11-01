@@ -40,7 +40,7 @@ export const appConfig: ApplicationConfig = {
       withInterceptors([connectivityInterceptor, authInterceptor, idempotencyInterceptor]),
     ),
     // Registra o service worker sem segurar a primeira tela (só em produção).
-    provideAppInitializer(() => inject(PwaUpdateService).start()),
+    provideAppInitializer(() => inject(PwaUpdateService).start({ applyOnBoot: true })),
     // Guarda o pedido de instalação do navegador (Chromium o entrega uma vez, cedo, antes de a sessão confirmar).
     provideAppInitializer(() => inject(InstallHintService).start()),
     // Mantém --kb-inset (teclado virtual) para os rodapés fixos subirem junto.

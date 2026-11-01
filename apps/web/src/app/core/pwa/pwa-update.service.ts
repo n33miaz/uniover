@@ -26,10 +26,18 @@ export const UPDATE_FLAG_MAX_AGE_MS = 60_000;
 /** Depois de uma recuperação automática, outra só vale passada esta janela: nunca há laço de recarga. */
 export const AUTO_RECOVERY_GUARD_MS = 60_000;
 
+/**
+ * Na abertura a frio, quanto se espera o worker novo (que já estava esperando) assumir antes de abrir a versão atual: a
+ * pessoa não fica olhando o esqueleto por causa de uma troca que demora. Passado o prazo o aviso "Atualizar" segue valendo.
+ */
+export const BOOT_APPLY_TIMEOUT_MS = 2_000;
+
 /** Chaves do `sessionStorage` (por aba): a marca de atualização em curso e as guardas contra laço. */
 export const UPDATE_REFRESHING_KEY = 'uniover.update.refreshing';
 export const UPDATE_WATCHDOG_KEY = 'uniover.update.watchdog';
 export const CHUNK_RECOVERY_KEY = 'uniover.update.chunk-recovery';
+/** Guarda da troca automática da abertura: uma por janela, nunca laço de recarga. */
+export const BOOT_APPLY_KEY = 'uniover.update.boot-apply';
 
 /** Caches que a limpeza nunca apaga: o precache (a casca atual, para funcionar offline) e a arte dos exercícios. */
 function isProtectedCache(name: string): boolean {
@@ -88,6 +96,8 @@ export class PwaUpdateService {
   private resumeUrl: string | undefined;
   private readonly watchedWorkers = new WeakSet<ServiceWorker>();
   private readonly bootRefreshing = signal(false);
+  /** A primeira tela já apareceu: depois disso nenhuma troca automática pode recarregar o app debaixo da pessoa. */
+  private contentReady = false;
 
   readonly updateReady = signal(false);
   readonly applyingUpdate = signal(false);
@@ -112,11 +122,16 @@ export class PwaUpdateService {
     }
   }
 
-  /** Chamado na inicialização do app; não bloqueia a primeira tela. */
-  start(): void {
+  /**
+   * Chamado na inicialização do app; não bloqueia a primeira tela. Com `applyOnBoot`, um worker novo que já esperava
+   * quando o app abriu a frio é aplicado antes de a primeira tela aparecer (com o esqueleto cobrindo a troca e o teto
+   * `BOOT_APPLY_TIMEOUT_MS`); sem o prazo cumprido, a versão atual abre e o aviso "Atualizar" fica para a próxima.
+   */
+  start(options: { applyOnBoot?: boolean } = {}): void {
     const win = this.win;
     if (this.started || !win || !this.enabled) return;
     this.started = true;
+    if (options.applyOnBoot) void this.applyWaitingOnBoot(win);
     const run = () => this.checkForUpdate(win);
     if (win.document.readyState === 'complete') run();
     else win.addEventListener('load', run, { once: true });
@@ -154,10 +169,49 @@ export class PwaUpdateService {
 
   /** A primeira página real da casca nova apareceu: o esqueleto pode sair e o vigia da carga é desarmado. */
   markContentReady(): void {
+    this.contentReady = true;
     if (!this.bootRefreshing()) return;
     if (this.watchdogTimer !== undefined) this.win?.clearTimeout(this.watchdogTimer);
     this.watchdogTimer = undefined;
     this.bootRefreshing.set(false);
+  }
+
+  /**
+   * Abertura a frio com um worker novo já esperando (o aviso foi ignorado na última vez): troca antes de mostrar a tela,
+   * com o esqueleto cobrindo e um teto curto. Só vale enquanto não há conteúdo e fora da guarda de laço; se o worker não
+   * assumir no prazo, desiste sem recarregar (o aviso "Atualizar" cuida da troca pelo caminho normal).
+   */
+  private async applyWaitingOnBoot(win: Window): Promise<void> {
+    try {
+      const container = win.navigator.serviceWorker;
+      const registration = await container?.getRegistration?.();
+      const waiting = registration?.waiting;
+      if (!waiting || !container.controller || this.contentReady || this.applying) return;
+      if (guardActive(win, BOOT_APPLY_KEY, AUTO_RECOVERY_GUARD_MS)) return;
+      writeStamp(win, BOOT_APPLY_KEY);
+      this.applying = true;
+      this.applyingUpdate.set(true);
+      const outcome = this.whenActivated(container, waiting);
+      try {
+        waiting.postMessage({ type: 'SKIP_WAITING' });
+      } catch {
+        // O worker pode ter terminado entre a leitura e a mensagem; o prazo abaixo cobre.
+      }
+      const result = await this.withTimeout(outcome, BOOT_APPLY_TIMEOUT_MS);
+      if (result !== 'taken') {
+        this.applying = false;
+        this.applyingUpdate.set(false);
+        return;
+      }
+      await this.clearRuntimeCaches();
+      this.reload();
+    } catch {
+      // Qualquer tropeço deixa a abertura seguir com a versão atual.
+      if (!this.reloading) {
+        this.applying = false;
+        this.applyingUpdate.set(false);
+      }
+    }
   }
 
   /**
