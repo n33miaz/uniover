@@ -5,6 +5,7 @@ import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { SystemApi, SystemSettingKey, SystemSettingValue } from './system-api';
 import { SystemTvSection } from './system-tv-section';
 import { SystemAgentErrorsSection } from './system-agent-errors-section';
+import { SystemCapacitySection } from './system-capacity-section';
 import { SystemHealthSection } from './system-health-section';
 
 /**
@@ -13,7 +14,13 @@ import { SystemHealthSection } from './system-health-section';
  */
 @Component({
   selector: 'app-system-page',
-  imports: [LoadingSkeleton, SystemAgentErrorsSection, SystemHealthSection, SystemTvSection],
+  imports: [
+    LoadingSkeleton,
+    SystemAgentErrorsSection,
+    SystemCapacitySection,
+    SystemHealthSection,
+    SystemTvSection,
+  ],
   templateUrl: './system.page.html',
   styleUrl: './system.page.css',
   styles: `

@@ -8,6 +8,56 @@ import { AgentDiagnostics, readAgentDiagnostics } from './agent-diagnostics';
 /** A configuração da TV padrão, como a API a entrega (tipo gerado do OpenAPI). */
 export type TvConfig = components['schemas']['TvConfigResponse'];
 
+/**
+ * O retrato da capacidade como o administrador o vê em `GET /api/v1/identity/capacity`. O tipo é local porque o OpenAPI
+ * gerado descreve todo número como `number | string`: o JSON traz números. Os campos `band`, `memoryBand` e `hoursBand`
+ * são {@link CapacityBand}; `state` da tendência é `few`, `flat` ou `growing`, e `daysToAmber`/`daysToRed` valem 0 quando o
+ * limite já passou e `null` quando não há data honesta.
+ */
+export interface CapacityReport {
+  readonly database: {
+    readonly bytes: number;
+    readonly limitBytes: number;
+    readonly percent: number;
+    readonly band: CapacityBand;
+    readonly tables: readonly {
+      readonly schema: string;
+      readonly name: string;
+      readonly bytes: number;
+    }[];
+  };
+  readonly server: {
+    readonly workingSetBytes: number;
+    readonly heapBytes: number;
+    readonly memoryLimitBytes: number;
+    readonly memoryPercent: number;
+    readonly memoryBand: CapacityBand;
+    readonly startedAt: string;
+    readonly uptimeSeconds: number;
+    readonly monthHours: number;
+    readonly hoursLimit: number;
+    readonly hoursPercent: number;
+    readonly hoursBand: CapacityBand;
+  };
+  readonly growth: {
+    readonly points: readonly { readonly day: string; readonly bytes: number }[];
+    readonly bytesPerDay: number | null;
+    readonly daysToAmber: number | null;
+    readonly daysToRed: number | null;
+    readonly state: 'few' | 'flat' | 'growing';
+  };
+  readonly alerts: readonly {
+    readonly id: string;
+    readonly metric: 'database' | 'memory' | 'hours';
+    readonly percent: number;
+    readonly detectedAt: string;
+  }[];
+  readonly measuredAt: string;
+}
+
+/** A faixa de uso: verde abaixo de 50%, âmbar de 50% a 80%, vermelho de 80% em diante. */
+export type CapacityBand = 'green' | 'amber' | 'red';
+
 /** Um computador pareado que pode controlar a TV. */
 export type TvComputer = components['schemas']['TvAgentChoice'];
 
@@ -215,6 +265,20 @@ export class SystemApi {
     );
     if (!dto || !Array.isArray(dto.items)) throw new Error('Lista de erros em formato inesperado.');
     return readAgentDiagnostics(dto);
+  }
+
+  /** Banco, memória, horas do mês e tendência (só o administrador). */
+  capacity(): Promise<CapacityReport> {
+    return firstValueFrom(
+      this.http.get<CapacityReport>(`${APP_CONFIG.apiBase}/v1/identity/capacity`),
+    );
+  }
+
+  /** O administrador viu os avisos de capacidade: eles saem do cartão. */
+  async dismissCapacityAlerts(): Promise<void> {
+    await firstValueFrom(
+      this.http.post<void>(`${APP_CONFIG.apiBase}/v1/identity/capacity/alerts/seen`, null),
+    );
   }
 
   /** O endpoint de saúde é público e não lê dados da conta. */

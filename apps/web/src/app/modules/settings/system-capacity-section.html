@@ -1,0 +1,146 @@
+<section class="capacity ui-rise" aria-labelledby="capacity-title">
+  <div class="capacity-head">
+    <h2 id="capacity-title" class="ui-section-label" i18n="@@settings.system.capacity.title">
+      Capacidade
+    </h2>
+    <button
+      type="button"
+      class="secondary ui-btn"
+      (click)="load()"
+      i18n="@@settings.system.capacity.refresh"
+    >
+      Atualizar
+    </button>
+  </div>
+  @if (report(); as data) {
+    @if (data.alerts.length > 0) {
+      <div class="ui-notice bad alert" role="status">
+        <p class="alert-text">
+          <strong i18n="@@settings.system.capacity.alert-title">Passou de 80%</strong>
+          <span>{{ alertMetrics() }}</span>
+        </p>
+        <button
+          type="button"
+          class="secondary ui-btn"
+          [disabled]="dismissing()"
+          (click)="dismiss()"
+          i18n="@@settings.system.capacity.dismiss"
+        >
+          Dispensar
+        </button>
+      </div>
+    }
+    <ul class="meters ui-plain">
+      @for (meter of meters(); track meter.key) {
+        <li class="meter" [attr.data-band]="meter.band">
+          <div class="meter-top">
+            <span class="meter-label">{{ meter.label }}</span>
+            <span class="meter-band"
+              >{{ percentText(meter.percent) }} · {{ bandLabel(meter.band) }}</span
+            >
+          </div>
+          <strong class="meter-value">{{ meter.value }}</strong>
+          <div
+            class="bar"
+            role="meter"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            [attr.aria-valuenow]="meter.percent > 100 ? 100 : meter.percent.toFixed(1)"
+            [attr.aria-label]="meter.label"
+          >
+            <span class="fill" [style.width.%]="meter.percent > 100 ? 100 : meter.percent"></span>
+            <span class="mark amber" aria-hidden="true"></span>
+            <span class="mark red" aria-hidden="true"></span>
+          </div>
+          @if (meter.estimate) {
+            <p class="estimate">
+              <span class="tag" i18n="@@settings.system.capacity.estimated">Estimado</span>
+              {{ meter.estimate }}
+            </p>
+          }
+        </li>
+      }
+    </ul>
+
+    <div class="facts">
+      <article class="fact">
+        <span class="fact-label" i18n="@@settings.system.capacity.uptime">No Ar</span>
+        <strong>{{ uptime() }}</strong>
+        <span class="fact-detail" i18n="@@settings.system.capacity.uptime-detail"
+          >Desde o último início</span
+        >
+      </article>
+      <article class="fact">
+        <span class="fact-label" i18n="@@settings.system.capacity.neon">Neon (Computação)</span>
+        <strong i18n="@@settings.system.capacity.not-measured">Não medido</strong>
+        <span class="fact-detail" i18n="@@settings.system.capacity.neon-detail"
+          >Só o painel do Neon sabe</span
+        >
+      </article>
+    </div>
+
+    <section class="block ui-group" aria-labelledby="capacity-tables-title">
+      <h3 id="capacity-tables-title" i18n="@@settings.system.capacity.tables">Maiores Tabelas</h3>
+      <ol class="tables ui-plain">
+        @for (table of data.database.tables; track table.schema + table.name) {
+          <li>
+            <span class="table-name">{{ tableName(table.schema, table.name) }}</span>
+            <span class="table-size">{{ bytes(table.bytes) }}</span>
+          </li>
+        }
+      </ol>
+    </section>
+
+    <section class="block ui-group" aria-labelledby="capacity-growth-title">
+      <h3 id="capacity-growth-title" i18n="@@settings.system.capacity.growth">
+        Crescimento do Banco
+      </h3>
+      @if (growthState() === 'few') {
+        <p class="few" i18n="@@settings.system.capacity.few">
+          Poucos dados. A tendência aparece depois de alguns dias.
+        </p>
+      } @else {
+        <svg
+          class="spark"
+          [attr.viewBox]="'-4 -4 ' + (sparkWidth + 8) + ' ' + (sparkHeight + 8)"
+          role="img"
+          [attr.aria-label]="sparkLabel()"
+        >
+          <polyline [attr.points]="sparkline()" fill="none" />
+          @if (sparkEnd(); as end) {
+            <circle [attr.cx]="end[0]" [attr.cy]="end[1]" r="3" />
+          }
+        </svg>
+        <p class="rate">
+          @if (growthState() === 'growing') {
+            {{ growthRate() }}
+          } @else {
+            <span i18n="@@settings.system.capacity.flat">Sem crescimento</span>
+          }
+        </p>
+        <dl class="when">
+          <div>
+            <dt i18n="@@settings.system.capacity.reach-amber">Chega a 50%</dt>
+            <dd>{{ amberIn() }}</dd>
+          </div>
+          <div>
+            <dt i18n="@@settings.system.capacity.reach-red">Chega a 80%</dt>
+            <dd>{{ redIn() }}</dd>
+          </div>
+        </dl>
+      }
+    </section>
+  } @else if (failed()) {
+    <p class="error" role="alert" i18n="@@settings.system.capacity.failed">
+      Não foi possível carregar a capacidade.
+    </p>
+  } @else {
+    <app-loading-skeleton
+      [kind]="'metrics'"
+      i18n-label="@@settings.system.capacity.loading"
+      label="Carregando a capacidade…"
+      [reload]="false"
+      (retried)="load()"
+    />
+  }
+</section>
