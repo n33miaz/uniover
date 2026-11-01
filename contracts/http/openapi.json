@@ -4509,6 +4509,31 @@
         ],
         "type": "object"
       },
+      "TvFocusCatalogResponse": {
+        "properties": {
+          "defaults": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "isCustom": {
+            "type": "boolean"
+          },
+          "packages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "packages",
+          "defaults",
+          "isCustom"
+        ],
+        "type": "object"
+      },
       "TvLayoutDocument": {
         "properties": {
           "buttonSize": {
@@ -4866,6 +4891,15 @@
             "type": [
               "null",
               "boolean"
+            ]
+          },
+          "focusPackages": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
             ]
           },
           "name": {
@@ -14047,6 +14081,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TvCleanupReportsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ManageTvsEndpoint"
+        ]
+      }
+    },
+    "/api/v1/tv/tvs/{id}/focus-catalog": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvFocusCatalogResponse"
                 }
               }
             },
