@@ -355,8 +355,9 @@ def test_the_start_menu_shortcut_is_created_once_and_points_at_the_open_script(p
     link = pc.roaming / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "UniOver Agente.lnk"
     with pc.running():
         assert wait_for(link.exists, 30), pc.supervisor_log()
-        first = link.stat().st_mtime_ns
         assert wait_for(lambda: pc.starts() >= 1, 90)
+        # O atalho aparece antes de terminar de ser gravado: o horario so vale depois do agente subir.
+        first = link.stat().st_mtime_ns
     # Um supervisor novo (depois de uma atualizacao) nao refaz o que ja esta certo.
     with pc.running():
         assert wait_for(lambda: pc.starts() >= 2, 30)
