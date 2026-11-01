@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.33.0](https://github.com/n33miaz/uniover/compare/v0.32.0...v0.33.0) (2026-11-01)
+
+
+### Features
+
+* **contracts:** add pc control messages
+* **agent:** add gated pc control
+* **api:** add pc control routes and permission
+* **web:** grant and audit the pc module
+* **web:** add the pc control module
+
+
+### Bug Fixes
+
+* **api:** drive the caller's own pc first
+* **api:** never fall back to another person's pc
+* **web:** show when the person has no pc
+* **agent:** fail when the shutdown is refused
+* **web:** drop pc state on account change
+
 ## [0.32.0](https://github.com/n33miaz/uniover/compare/v0.31.0...v0.32.0) (2026-10-31)
 
 
