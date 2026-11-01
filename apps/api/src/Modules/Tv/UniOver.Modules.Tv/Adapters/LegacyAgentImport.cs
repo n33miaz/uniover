@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Persistence;
+using UniOver.Modules.Tv.Ports;
 
 namespace UniOver.Modules.Tv.Adapters;
 
@@ -63,9 +64,37 @@ internal sealed partial class LegacyAgentImport(
 
         // Sem conta responsável: a linha é do sistema, e o administrador a renomeia ou troca em Sistema.
         db.Tvs.Add(ConfiguredTv.CreateDefault(null, listing.Slug, Guid.Empty, time.GetUtcNow()));
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // Duas instâncias subindo juntas: os índices únicos deixam passar só a primeira. A outra não cria nada; se a
+            // recusa tem outra causa (nenhuma TV existe agora), o erro segue e vira o aviso de falha da partida.
+            if (!await AnotherInstanceSavedAsync(cancellationToken))
+            {
+                throw;
+            }
+
+            LogRaced();
+            return;
+        }
+
+        // O resolvedor guarda a resposta por alguns segundos: sem isto, /config diria "nenhum" logo depois da importação.
+        scope.ServiceProvider.GetRequiredService<ITvAgentResolver>().Invalidate();
         LogImported();
     }
+
+    /// <summary>Relê o banco num escopo novo: o contexto da tentativa que falhou ainda guarda a linha recusada.</summary>
+    private async Task<bool> AnotherInstanceSavedAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<TvDbContext>().Tvs.AnyAsync(cancellationToken);
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "A TV padrão já foi criada por outra instância; nada a fazer.")]
+    private partial void LogRaced();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "TV padrão criada a partir da variável de ambiente antiga. Confirme a TV em Sistema e apague a variável do servidor.")]
     private partial void LogImported();
