@@ -107,7 +107,7 @@ export class DevicesApi {
 
   /**
    * O convidado com a TV aprova o pareamento do PC dele para a PRÓPRIA TV: a TV nasce só com ele (nunca a padrão), com
-   * o nome dado (ou o do PC). Exige a senha reconfirmada pouco antes (ver `AuthApi.stepUpWithPassword`).
+   * o apelido dado (ou "TV"). Exige a senha reconfirmada pouco antes (ver `AuthApi.stepUpWithPassword`).
    */
   async approveOwn(userCode: string, tvName: string | null): Promise<void> {
     const body: components['schemas']['ApproveOwnPairingRequest'] = {

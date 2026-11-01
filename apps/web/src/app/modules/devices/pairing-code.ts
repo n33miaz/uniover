@@ -24,10 +24,22 @@ export function normalizeCode(input: string): string | null {
 /** Limite de caracteres do nome do aparelho na API. */
 export const MAX_DEVICE_NAME = 60;
 
+/**
+ * Limite do apelido da TV, o que cabe no cabeçalho do controle (o mesmo teto do apelido que cada pessoa pode dar à TV nas
+ * preferências). A API aceita até `MAX_DEVICE_NAME`; a tela de cadastro pede curto.
+ */
+export const MAX_TV_NICKNAME = 20;
+
 const NAME_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} ._()-]*$/u;
 
 /** Nome em branco é válido (o aparelho fica com o nome que ele mesmo informou); senão segue a regra da API. */
 export function isValidDeviceName(name: string): boolean {
   const trimmed = name.trim();
   return trimmed.length === 0 || (trimmed.length <= MAX_DEVICE_NAME && NAME_PATTERN.test(trimmed));
+}
+
+/** O apelido da TV: em branco vale (a TV se chama "TV"); senão a mesma regra de nome, só que curto. */
+export function isValidTvNickname(name: string): boolean {
+  const trimmed = name.trim();
+  return isValidDeviceName(trimmed) && trimmed.length <= MAX_TV_NICKNAME;
 }

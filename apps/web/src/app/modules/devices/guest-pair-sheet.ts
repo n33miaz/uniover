@@ -14,10 +14,9 @@ import { ApiProblem, isStepUpRequired, problemOf } from '../../core/auth/api-pro
 import { AuthApi } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConnectivityService } from '../../core/connectivity/connectivity.service';
-import { SessionState } from '../../core/session/session-state';
 import { leaveDialog, onDialogBackdropClick } from '../../shared/ui/dialog-motion';
 import { DevicesApi } from './devices-api';
-import { MAX_DEVICE_NAME, formatCodeInput, isValidDeviceName, normalizeCode } from './pairing-code';
+import { MAX_TV_NICKNAME, formatCodeInput, isValidTvNickname, normalizeCode } from './pairing-code';
 
 /** A ação que a API aceita confirmar com a senha: aprovar o pareamento do próprio PC. */
 export const PAIR_SELF_ACTION = 'devices.pair-self';
@@ -38,16 +37,16 @@ export class GuestPairSheet {
   private readonly auth = inject(AuthService);
   private readonly authApi = inject(AuthApi);
   private readonly connectivity = inject(ConnectivityService);
-  private readonly session = inject(SessionState);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
   readonly initialCode = input('');
   readonly done = output<void>();
   readonly closed = output<void>();
 
-  protected readonly maxName = MAX_DEVICE_NAME;
+  protected readonly maxName = MAX_TV_NICKNAME;
   protected readonly code = linkedSignal(() => formatCodeInput(this.initialCode()));
-  protected readonly tvName = signal(this.suggestion());
+  /** Como a TV se chama para quem a usa; em branco, ela é só "TV". */
+  protected readonly tvName = signal('');
   protected readonly password = signal('');
   protected readonly busy = signal(false);
   protected readonly leaving = signal(false);
@@ -55,7 +54,7 @@ export class GuestPairSheet {
 
   protected readonly online = this.connectivity.online;
   protected readonly normalized = computed(() => normalizeCode(this.code()));
-  protected readonly nameValid = computed(() => isValidDeviceName(this.tvName()));
+  protected readonly nameValid = computed(() => isValidTvNickname(this.tvName()));
   protected readonly canApprove = computed(
     () =>
       this.online() &&
@@ -73,13 +72,6 @@ export class GuestPairSheet {
       dialog.showModal();
       onDialogBackdropClick(dialog, () => this.cancel());
     });
-  }
-
-  private suggestion(): string {
-    const name = this.session.user()?.displayName?.trim();
-    return name
-      ? $localize`:@@devices.guest-pair.tv-name:TV de ${name}:name:`.slice(0, MAX_DEVICE_NAME)
-      : '';
   }
 
   protected onCodeInput(event: Event): void {
