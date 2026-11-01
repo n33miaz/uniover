@@ -9471,6 +9471,8 @@ export interface components {
       agentSlug: null | string;
       /** @default false */
       allowBackgroundAppClosing: boolean;
+      /** @default true */
+      autoMaintenanceEnabled: boolean;
       capabilities: string[];
       /** @default false */
       focusClosesBackground: boolean;
@@ -9501,6 +9503,7 @@ export interface components {
     UpdateTvRequest: {
       agentSlug: null | string;
       allowBackgroundAppClosing?: null | boolean;
+      autoMaintenanceEnabled?: null | boolean;
       focusClosesBackground?: null | boolean;
       focusModeEnabled?: null | boolean;
       name: null | string;

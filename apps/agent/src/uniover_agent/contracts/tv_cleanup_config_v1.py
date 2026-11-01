@@ -28,6 +28,7 @@ class TvCleanupConfigV1Body(BaseModel):
     deepEnabled: bool
     deepThresholdMb: Annotated[int, Field(ge=64, le=512)]
     closeBackgroundApps: bool | None = None
+    maintenanceEnabled: bool | None = None
     focusEnabled: bool | None = None
     focusClosesBackground: bool | None = None
     shortAnimationsEnabled: bool | None = None
