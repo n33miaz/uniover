@@ -3,6 +3,7 @@ import { IDEMPOTENCY_HEADER, IdempotencyKeys } from '../api/idempotency';
 import { APP_CONFIG } from '../config/app-config';
 import { ConnectivityService } from '../connectivity/connectivity.service';
 import type { components } from '../api/generated/schema';
+import { CLIENT_ENV_HEADER, currentClientEnvHeader } from '../pwa/client-env';
 import { networkProblem, problemFrom } from './api-problem';
 import {
   DEVICE_KEYS,
@@ -316,8 +317,13 @@ export class AuthApi {
       ...options.headers,
     };
     if (options.token) headers['Authorization'] = `Bearer ${options.token}`;
-    if (method === 'POST' && (path.startsWith('/auth/') || path === ACCEPT_INVITE_PATH))
+    if (method === 'POST' && (path.startsWith('/auth/') || path === ACCEPT_INVITE_PATH)) {
       headers[CLIENT_HEADER] = CLIENT_HEADER_VALUE;
+      // Entrada e renovação dizem o aparelho e se o app está instalado: é o que o dono vê em Pessoas e Sessões. A API
+      // ignora o que não reconhece, então um valor estranho nunca atrapalha a renovação.
+      const env = currentClientEnvHeader();
+      if (env) headers[CLIENT_ENV_HEADER] = env;
+    }
     let body: string | undefined;
     if (options.body !== undefined) {
       headers['Content-Type'] = 'application/json';

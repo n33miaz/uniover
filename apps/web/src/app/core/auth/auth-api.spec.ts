@@ -362,15 +362,18 @@ describe('AuthApi', () => {
     it.each([
       ['login', () => api().login('a@b.c', 'senha')],
       ['invite accept', () => api().acceptInvite('segredo', 'a@b.c', 'senha-longa-1')],
-    ])('%s sends the public key of a fresh pair and keeps the pair only after it worked', async (_n, call) => {
-      create.mockResolvedValue(pending('chave-publica-1'));
-      fetchFn.mockResolvedValue(reply(200, tokens));
+    ])(
+      '%s sends the public key of a fresh pair and keeps the pair only after it worked',
+      async (_n, call) => {
+        create.mockResolvedValue(pending('chave-publica-1'));
+        fetchFn.mockResolvedValue(reply(200, tokens));
 
-      await call();
+        await call();
 
-      expect(lastCall().headers['X-UniOver-Device-Key']).toBe('chave-publica-1');
-      expect(commit).toHaveBeenCalledTimes(1);
-    });
+        expect(lastCall().headers['X-UniOver-Device-Key']).toBe('chave-publica-1');
+        expect(commit).toHaveBeenCalledTimes(1);
+      },
+    );
 
     it('a failed sign-in does not store the pair, and the next attempt reuses the same one', async () => {
       create.mockResolvedValue(pending('chave-publica-1'));
@@ -449,7 +452,9 @@ describe('AuthApi', () => {
     });
 
     it('asks for the challenge with a POST that has the client header and no body', async () => {
-      fetchFn.mockResolvedValue(reply(200, { challenge: 'id.nonce', familyId: 'f', expiresIn: 120 }));
+      fetchFn.mockResolvedValue(
+        reply(200, { challenge: 'id.nonce', familyId: 'f', expiresIn: 120 }),
+      );
 
       await expect(api().refreshChallenge()).resolves.toEqual({
         challenge: 'id.nonce',
@@ -462,6 +467,57 @@ describe('AuthApi', () => {
       expect(init.method).toBe('POST');
       expect(init.body).toBeUndefined();
       expect(headers['X-UniOver-Client']).toBe('web');
+    });
+  });
+
+  describe('device and installed app, reported to the API', () => {
+    const IPHONE =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+    afterEach(() => vi.unstubAllGlobals());
+
+    function fakeWindow(userAgent: string, standalone?: boolean): void {
+      vi.stubGlobal('window', {
+        navigator: { userAgent, standalone, maxTouchPoints: 5, platform: 'iPhone' },
+        matchMedia: () => ({ matches: false }),
+      });
+    }
+
+    it('the refresh and the login carry the device and whether the app is installed', async () => {
+      fetchFn.mockResolvedValue(reply(200, { accessToken: 't', expiresIn: 1 }));
+      fakeWindow(IPHONE, true);
+
+      await api().refresh();
+      expect(lastCall().headers['X-UniOver-Client-Env']).toBe('iphone;standalone');
+      await api().login('a@b.c', 'senha');
+      expect(lastCall().headers['X-UniOver-Client-Env']).toBe('iphone;standalone');
+    });
+
+    it('says "browser" for a Safari tab', async () => {
+      fetchFn.mockResolvedValue(reply(200, { accessToken: 't', expiresIn: 1 }));
+      fakeWindow(IPHONE, false);
+
+      await api().refresh();
+
+      expect(lastCall().headers['X-UniOver-Client-Env']).toBe('iphone;browser');
+    });
+
+    it('reads the window at the time of each call (installing between two renewals shows up)', async () => {
+      fetchFn.mockResolvedValue(reply(200, { accessToken: 't', expiresIn: 1 }));
+      fakeWindow(IPHONE, false);
+      await api().refresh();
+      fakeWindow(IPHONE, true);
+      await api().refresh();
+
+      expect(lastCall().headers['X-UniOver-Client-Env']).toBe('iphone;standalone');
+    });
+
+    it('does not tell the device on reads, only on the entries that open or renew a session', async () => {
+      fetchFn.mockResolvedValue(reply(200, { id: 'u1' }));
+      fakeWindow(IPHONE, true);
+
+      await api().me('jwt');
+
+      expect(lastCall().headers['X-UniOver-Client-Env']).toBeUndefined();
     });
   });
 });
