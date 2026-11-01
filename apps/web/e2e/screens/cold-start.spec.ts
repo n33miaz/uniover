@@ -60,7 +60,7 @@ const CASES: readonly Case[] = [
       '.bs-topbar .bs-title': 1,
       '.bs-hero .bs-cta': 1,
       '.bs-days .bs-day': 7,
-      '.bs-stats .bs-stat': 3,
+      '.bs-training-today-content .bs-stats .bs-stat': 3,
       '.bs-tabs .bs-tab': 3,
     },
     ready: async (page) => {

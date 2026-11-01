@@ -396,4 +396,28 @@ describe('UpdateSkeleton', () => {
     release();
     await pending;
   });
+
+  it('does not wait for a marker on a detail screen (it has none): the cover leaves after a frame', async () => {
+    sessionStorage.setItem('uniover.update.refreshing', String(Date.now()));
+    history.pushState({}, '', '/ajustes/sobre');
+    const { service, fixture } = setup();
+    await TestBed.inject(Router).navigateByUrl('/ok');
+    await fixture.whenStable();
+    await vi.waitFor(() => expect(service.showSkeleton()).toBe(false));
+    expect(document.documentElement.getAttribute('data-screen-timeout')).toBeNull();
+  });
+
+  it('does not cover a navigation inside the app when nothing was covering the screen', async () => {
+    history.pushState({}, '', '/tv');
+    addReadyMarker('tv');
+    const { fixture, el } = setup();
+    await TestBed.inject(Router).navigateByUrl('/tv');
+    await fixture.whenStable();
+    expect(el.querySelector('.bs-root')).toBeNull();
+    // Uma troca de tela depois, sem marcador no destino, continua sem cobertura.
+    history.pushState({}, '', '/treino');
+    await TestBed.inject(Router).navigateByUrl('/ok');
+    fixture.detectChanges();
+    expect(el.querySelector('.bs-root')).toBeNull();
+  });
 });

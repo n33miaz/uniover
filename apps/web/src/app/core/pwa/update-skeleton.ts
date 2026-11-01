@@ -331,6 +331,7 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
 })
 export class UpdateSkeleton {
   protected readonly pwa = inject(PwaUpdateService);
+  private readonly router = inject(Router);
   private readonly doc = inject(DOCUMENT);
   private readonly win = this.doc.defaultView;
   /** A primeira navegação do app passou de `SLOW_BOOT_MS` sem terminar: a abertura está lenta. */
@@ -386,7 +387,7 @@ export class UpdateSkeleton {
   protected readonly settingRows = [1, 2, 3];
 
   constructor() {
-    const router = inject(Router);
+    const router = this.router;
     // A rota que terminou (ou falhou) é o primeiro conteúdo; se a primeira navegação já acabou antes de o esqueleto
     // nascer, vale o estado do roteador.
     if (router.navigated) {
@@ -410,10 +411,13 @@ export class UpdateSkeleton {
           event instanceof NavigationCancel ||
           event instanceof NavigationError)
       ) {
+        // Só espera o marcador quando há algo cobrindo a tela (abertura, atualização ou espera de uma troca de módulo):
+        // dentro do app, trocar de tela sem cobertura não pode ligar uma cobertura nova por falta de marcador.
+        const covering = !this.bootDone || this.pwa.showSkeleton() || this.routeWait() !== null;
         this.bootDone = true;
         this.slowBoot.set(false);
         this.clearRouteWait();
-        this.waitForPageReady();
+        if (covering) this.waitForPageReady();
       }
     });
     this.doc.addEventListener('uniover:page-ready', this.contentReady);
@@ -459,7 +463,7 @@ export class UpdateSkeleton {
       const [segment] = path.slice(1).split('/');
       return `/${segment}`;
     };
-    return moduleOf(target) !== moduleOf(this.win?.location.pathname ?? '/');
+    return moduleOf(target) !== moduleOf(this.router.url);
   }
 
   private clearRouteWait(): void {
@@ -484,6 +488,11 @@ export class UpdateSkeleton {
       return;
     }
     const win = this.win;
+    if (win && this.screenMarker() === 'detail') {
+      // Telas de detalhe não têm marcador próprio: a rota ativada e um quadro desenhado já são o conteúdo.
+      win.requestAnimationFrame(() => this.finishPageReady());
+      return;
+    }
     if (win) {
       this.pageReadyTimer = win.setTimeout(() => this.keepOwnSkeletonOnTimeout(), PAGE_READY_TIMEOUT_MS);
     }
