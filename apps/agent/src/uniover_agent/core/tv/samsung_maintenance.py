@@ -12,7 +12,9 @@ Garantias, cada uma coberta por teste:
 - sem permissão válida (sem token, ou a TV já pediu o aceite de novo) não toca na TV: avisa uma vez;
 - exige exatamente um app visível na leitura, como prova de que o campo `visible` funciona nesta TV;
 - nunca fecha o app visível, o último que o UniOver abriu nem o que o estado da sessão aponta;
-- relê o app logo antes de cada fechamento e para se alguém voltou a usar a TV.
+- relê o app logo antes de cada fechamento e, sem nenhum `await` entre a última conferência de uso
+  (atividade, opção desligada, app protegido) e o `DELETE`, para se alguém voltou a usar a TV;
+- a passada inteira tem prazo: passado ele, nada novo é fechado.
 """
 
 import asyncio
@@ -35,6 +37,10 @@ IDLE_SECONDS: Final = 15 * 60.0
 CONFIRM_DELAY_SECONDS: Final = 3.0
 # O contrato do relatório limita a duração (5 min); uma passada nunca chega perto, mas o teto fica.
 MAX_DURATION_MS: Final = 300_000
+# Prazo da passada inteira (leituras, conferências e fechamentos), em tempo real. Cada pedido à TV
+# já tem o seu limite, mas muitos apps somados poderiam passar de minutos; passado o prazo a
+# passada para e relata o que fechou até ali.
+RUN_DEADLINE_SECONDS: Final = 120.0
 
 # Marcas do relatório: um tipo de limpeza já conhecido pela API (`deep`) e um gatilho próprio, que a
 # tela usa para escrever "Manutenção".
@@ -92,12 +98,17 @@ class SamsungMaintenance:
         driver: SamsungMaintenanceDriver,
         clock: Clock,
         protected: Callable[[], Collection[str]],
+        *,
+        deadline_seconds: float = RUN_DEADLINE_SECONDS,
     ) -> None:
         self._driver = driver
         self._clock = clock
         self._protected = protected
+        self._deadline_seconds = deadline_seconds
 
-    async def run(self, still_idle: Callable[[], bool]) -> MaintenanceOutcome:
+    async def run(self, may_continue: Callable[[], bool]) -> MaintenanceOutcome:
+        """Uma passada. `may_continue` diz se a TV segue ociosa e a opção segue ligada."""
+        started = asyncio.get_running_loop().time()
         blocked = await self._precondition()
         if blocked is not None:
             return blocked
@@ -107,17 +118,25 @@ class SamsungMaintenance:
 
         closed: list[str] = []
         for app_id in sorted(scan.hidden):
-            if not still_idle():
-                return self._interrupted(closed)
-            # Última conferência, deste app: se ficou visível agora, é o que a pessoa está vendo.
+            if self._expired(started):
+                return self._stopped(closed, REASON_UNAVAILABLE)
+            if not may_continue():
+                return self._stopped(closed, REASON_IN_USE)
             status = await self._driver.app_status(app_id)
             if status is None or status.visible is not False or status.running is not True:
                 continue
+            # Conferência final, SEM `await` até o fechamento: o que chegou durante a leitura acima
+            # (um comando, a opção desligada) já vale aqui. Fica só a janela do próprio pedido.
+            if not may_continue():
+                return self._stopped(closed, REASON_IN_USE)
             if app_id in self._protected():
                 continue
             if await self._driver.close_app(app_id):
                 closed.append(app_id)
         return MaintenanceOutcome(closed=tuple(closed))
+
+    def _expired(self, started: float) -> bool:
+        return asyncio.get_running_loop().time() - started >= self._deadline_seconds
 
     async def _precondition(self) -> MaintenanceOutcome | None:
         """O que impede a passada antes de qualquer leitura de apps; `None` se pode seguir."""
@@ -143,10 +162,11 @@ class SamsungMaintenance:
             return None
         return _Scan(first.foreground, first.hidden & second.hidden)
 
-    def _interrupted(self, closed: list[str]) -> MaintenanceOutcome:
+    def _stopped(self, closed: list[str], reason: str) -> MaintenanceOutcome:
+        """A passada parou no meio: o que já foi fechado é relatado, senão vale o motivo."""
         if closed:
             return MaintenanceOutcome(closed=tuple(closed))
-        return MaintenanceOutcome(skipped=REASON_IN_USE)
+        return MaintenanceOutcome(skipped=reason)
 
     async def _scan(self) -> _Scan | None:
         """Uma leitura com prova: exatamente um app visível e a lista do que está oculto e rodando.
@@ -256,8 +276,12 @@ class SamsungMaintenanceScheduler:
         self._pending = False
         started = self._clock.monotonic()
         marker = self._last_activity
-        outcome = await self._maintenance.run(lambda: self._last_activity == marker)
-        if outcome.silent:
+        # A opção também entra na conferência: desligá-la no app cancela a passada em curso.
+        outcome = await self._maintenance.run(
+            lambda: self._last_activity == marker and self.enabled
+        )
+        if outcome.silent or (not self.enabled and outcome.skipped is not None):
+            # Desligada no meio da passada e sem nada fechado: não há o que relatar.
             self._last_skip = None
             return
         duration = min(round((self._clock.monotonic() - started) * 1000), MAX_DURATION_MS)

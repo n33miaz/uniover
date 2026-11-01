@@ -62,7 +62,7 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_LOG_FILE` | também registra neste arquivo (rodízio de 1 MB, 2 cópias); o instalador usa `%LOCALAPPDATA%\UniOver\logs\agent.log` |
 | `UNIOVER_TV_CLIENT_NAME` | nome do agente que aparece na TV no pareamento (padrão `UniOver`) |
 | `UNIOVER_TV_NAME` | nome da pasta do certificado desta TV (padrão `tv`) |
-| `UNIOVER_TV_SAMSUNG_APPS` | IDs Tizen extras a procurar, separados por vírgula; a TV só publica os instalados |
+| `UNIOVER_TV_SAMSUNG_APPS` | IDs Tizen extras a procurar, separados por vírgula (no máximo 32); a TV só publica os instalados |
 | `UNIOVER_TV_SAMSUNG_MAINTENANCE_IDLE_SECONDS` | ociosidade antes da manutenção automática da Samsung (padrão 900, de 60 a 3600) |
 | `UNIOVER_TV_HIBERNATE_SECONDS` | segundos sem comando até a sessão com a TV hibernar (padrão `300`) |
 | `UNIOVER_TV_POWER_OFF_READ_TIMEOUT_SECONDS` | quanto o desligar com leitura espera a TV informar se está ligada, antes de apertar `POWER` (padrão `2`) |
@@ -179,8 +179,10 @@ endereço. Na dúvida nada é fechado e o relatório diz "pulada". Regras, todas
 - exige exatamente um app visível na leitura, como prova de que `visible` funciona nesta TV; com zero ou vários
   visíveis, ou `running`/`visible` que não sejam booleanos, pula tudo;
 - nunca fecha o app visível, o último aberto pelo UniOver nem o app do estado da sessão;
-- lê duas vezes (3 s entre elas) e relê o app logo antes de fechar; se a TV trocou de app ou alguém voltou a usá-la,
-  para;
+- lê duas vezes (3 s entre elas) e relê o app logo antes de fechar; a conferência final (uso pelo UniOver, opção
+  desligada, app protegido) roda sem `await` até o `DELETE`, então a TV trocar de app, alguém voltar a usá-la ou a
+  opção ser desligada cancela o que falta;
+- a passada inteira tem prazo de 120 s; passado ele nada novo é fechado e o relatório traz o que já foi;
 - só conta o `DELETE` que a TV aceitou;
 - só arma com uso pelo UniOver: uma TV usada só com o controle físico nunca dispara a manutenção.
 

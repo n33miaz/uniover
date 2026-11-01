@@ -25,6 +25,8 @@ from uniover_agent.adapters.self_update import CHANNELS, DEFAULT_CHANNEL
 from uniover_agent.adapters.tv_adb_parsing import is_valid_package
 
 CONFIG_FILE_ENV = "UNIOVER_CONFIG_FILE"
+# Quantos IDs Tizen extras a lista `tv_samsung_apps` aceita.
+MAX_SAMSUNG_EXTRA_APPS = 32
 
 _log = logging.getLogger(__name__)
 
@@ -156,7 +158,12 @@ class Settings(BaseSettings):
     def _validate_samsung_apps(cls, value: list[str]) -> list[str]:
         if any(not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", app_id) for app_id in value):
             raise ValueError("tv_samsung_apps precisa conter IDs Tizen separados por vírgula")
-        return list(dict.fromkeys(value))
+        unique = list(dict.fromkeys(value))
+        # A manutenção da Samsung lê cada ID a cada passada: um teto evita uma lista enorme esticar
+        # a passada e a carga na TV. O catálogo de fábrica já cobre os apps comuns.
+        if len(unique) > MAX_SAMSUNG_EXTRA_APPS:
+            raise ValueError(f"tv_samsung_apps aceita no máximo {MAX_SAMSUNG_EXTRA_APPS} IDs")
+        return unique
 
     @classmethod
     def settings_customise_sources(
