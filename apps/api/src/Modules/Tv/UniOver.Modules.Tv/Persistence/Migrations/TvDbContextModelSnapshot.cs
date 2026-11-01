@@ -297,6 +297,11 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("focus_mode_enabled");
 
+                    b.Property<string>("FocusPackages")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("focus_packages");
+
                     b.Property<bool>("IsDefault")
                         .HasColumnType("boolean")
                         .HasColumnName("is_default");
