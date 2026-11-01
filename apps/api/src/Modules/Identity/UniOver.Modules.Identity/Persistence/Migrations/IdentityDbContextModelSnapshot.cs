@@ -96,6 +96,34 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                     b.ToTable("idempotency_keys", "identity");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.AccountPreferences", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("HomeJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("home_json");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_account_preferences");
+
+                    b.ToTable("account_preferences", "identity");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.GuestInvite", b =>
                 {
                     b.Property<Guid>("Id")
@@ -429,6 +457,15 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<bool?>("ClientInstalled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("client_installed");
+
+                    b.Property<string>("ClientPlatform")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("client_platform");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -710,6 +747,16 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .HasDatabaseName("ix_webauthn_challenges_user_id");
 
                     b.ToTable("webauthn_challenges", "identity");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.AccountPreferences", b =>
+                {
+                    b.HasOne("UniOver.Modules.Identity.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_account_preferences_users_user_id");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.Passkey", b =>
