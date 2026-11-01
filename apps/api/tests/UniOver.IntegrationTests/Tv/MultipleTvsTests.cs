@@ -314,6 +314,44 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task AutoMaintenance_StopsOnTheOldAgent_AndStartsOnTheNewOne_WhenTheTvChangesComputer_OrIsRemoved()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var oldAgent = await app.PairAsync("PC Antigo");
+        var newAgent = await app.PairAsync("PC Novo");
+        var tvId = await CreateTvAsync(app, oldAgent.Slug, "TV Raphael");
+
+        await using var oldConnection = await app.ConnectAsync(oldAgent);
+        await oldConnection.SendHelloAsync("2.0.0", "tv.remote", "tv.kind.samsung", "tv.maintenance.v1");
+        (await TvApp.NextCommandAsync(oldConnection)).GetProperty("body").GetProperty("maintenanceEnabled")
+            .GetBoolean().Should().BeTrue();
+        await using var newConnection = await app.ConnectAsync(newAgent);
+        await newConnection.SendHelloAsync("2.0.0", "tv.remote", "tv.kind.samsung", "tv.maintenance.v1");
+
+        using (var moved = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new { agentSlug = newAgent.Slug }))
+        {
+            moved.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        // O antigo é mandado parar (um agendamento pendente não pode agir numa TV que deixou de ser dele) e o novo
+        // recebe as preferências da TV mesmo sem nenhuma delas ter mudado.
+        (await TvApp.NextCommandAsync(oldConnection)).GetProperty("body").GetProperty("maintenanceEnabled")
+            .GetBoolean().Should().BeFalse();
+        (await TvApp.NextCommandAsync(newConnection)).GetProperty("body").GetProperty("maintenanceEnabled")
+            .GetBoolean().Should().BeTrue();
+
+        using (var removed = await app.SendAsync(HttpMethod.Delete, $"/api/v1/tv/tvs/{tvId}"))
+        {
+            removed.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+        }
+
+        (await TvApp.NextCommandAsync(newConnection)).GetProperty("body").GetProperty("maintenanceEnabled")
+            .GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
     public async Task CleanupConfig_ForAnAgentWithoutLightSettings_KeepsExactlyTheOldBody()
     {
         await using var app = await TvApp.StartAsync(postgres);
