@@ -68,7 +68,7 @@ from uniover_agent.adapters.tv_discovery import (
     tcp_probe,
 )
 from uniover_agent.adapters.tv_livre_apk import ReleaseApkSource
-from uniover_agent.adapters.tv_livre_signer import ApkSignerVerifier, locate_apksigner
+from uniover_agent.adapters.tv_livre_signer import ApkSignerVerifier
 from uniover_agent.adapters.tv_locate import (
     build_liveness,
     build_locator,
@@ -815,11 +815,8 @@ def compose_livre(setup: TvSetup, settings: Settings, adb: AdbTv, host: str, clo
         ReleaseApkSource(
             settings.tv_livre_apk_url,
             base / "tv-livre-apk",
-            # O hash não autentica o APK: a assinatura fixada, sim (sem ela, nada é instalado).
-            verifier=ApkSignerVerifier(
-                frozenset(settings.tv_livre_signer_sha256),
-                locate_apksigner(settings.tv_livre_apksigner_path),
-            ),
+            # O hash não autentica o APK: a assinatura v2/v3, conferida localmente, sim.
+            verifier=ApkSignerVerifier(),
         ),
         LivreStateFile(base / f"tv-livre-{safe_host}.json"),
         photos,

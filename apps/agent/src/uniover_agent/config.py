@@ -63,9 +63,6 @@ def config_path() -> Path:
     return Path(override) if override else default_config_path()
 
 
-PROJECT_SIGNER_SHA256 = "f782151a18e6bc3ff22a201ff558fd833feb2120182034a3dec6aeab41b12bfc"
-
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="UNIOVER_", extra="ignore")
 
@@ -125,33 +122,10 @@ class Settings(BaseSettings):
     # depurar.
     self_care: bool = True
     # TV Livre (launcher próprio da TV Android): sempre opt-in por comando do dono; esta chave só
-    # decide se o agente oferece o módulo. O APK vem da publicação, conferido pelo hash.
+    # decide se o agente oferece o módulo. O APK vem da publicação, conferido pelo hash e pela
+    # assinatura Android v2/v3 fixada no agente.
     tv_livre: bool = True
     tv_livre_apk_url: str = "https://github.com/n33miaz/uniover/releases/latest/download"
-    # Certificado(s) de assinatura do APK, SHA-256 (hex, com ou sem `:`), separados por
-    # vírgula. O padrão é o certificado público da chave fixa do projeto
-    # (`apps/tv-launcher/signing-cert.sha256`). Lista vazia: nada é instalado, porque o hash
-    # da publicação não prova quem assinou. O `apksigner` vem do `build-tools` do Android SDK
-    # (ou do caminho configurado).
-    tv_livre_signer_sha256: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: [PROJECT_SIGNER_SHA256]
-    )
-    tv_livre_apksigner_path: str | None = None
-
-    @field_validator("tv_livre_signer_sha256", mode="before")
-    @classmethod
-    def _split_livre_signers(cls, value: Any) -> Any:
-        if isinstance(value, str):
-            return [part.strip() for part in value.split(",") if part.strip()]
-        return value
-
-    @field_validator("tv_livre_signer_sha256")
-    @classmethod
-    def _validate_livre_signers(cls, value: list[str]) -> list[str]:
-        if any(not re.fullmatch(r"[0-9A-Fa-f:]{64,95}", item) for item in value):
-            raise ValueError("tv_livre_signer_sha256 precisa conter SHA-256 em hexadecimal")
-        return [item.replace(":", "").lower() for item in value]
-
     # Limpeza da TV: pacotes que nunca são fechados, além dos protegidos de fábrica. Na variável de
     # ambiente, separados por vírgula; no arquivo, uma lista TOML ou o mesmo texto. Sem `NoDecode` o
     # pydantic-settings exigiria JSON na variável.
