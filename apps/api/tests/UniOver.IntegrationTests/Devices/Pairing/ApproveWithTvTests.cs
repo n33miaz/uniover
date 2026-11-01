@@ -31,7 +31,7 @@ public sealed class ApproveWithTvTests(PostgresFixture postgres)
         await using var tv = TvApp.CreateContext(app.Database.OwnerConnection);
         var row = await tv.Tvs.SingleAsync(Ct);
         row.AgentSlug.Should().Be(slug);
-        row.Name.Should().Be("PC Raphael");
+        row.Name.Should().Be("TV", "sem apelido a TV se chama só TV: o nome do computador é técnico e não vira o dela");
         row.IsDefault.Should().BeTrue();
         (await tv.TvMembers.Where(m => m.TvId == row.Id).Select(m => m.UserId).ToListAsync(Ct)).Should().Equal(guest);
     }
