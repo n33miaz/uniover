@@ -49,6 +49,12 @@ test('o ponto de estado pisca uma vez a cada toque em qualquer botão, sem troca
   await page.getByRole('button', { name: 'Mudo' }).click();
   await expect(dot).toHaveAttribute('data-pulses', '3');
 
+  // Desligar usa outra rota (não é uma tecla): também passa pelo mesmo ponto de envio do controle.
+  await header(page).getByRole('button', { name: 'Desligar a TV' }).click();
+  const power = page.getByRole('dialog', { name: 'Desligar a TV?' });
+  await power.getByRole('button', { name: 'Desligar', exact: true }).click();
+  await expect(dot).toHaveAttribute('data-pulses', '4');
+
   // O pulso é só brilho: terminado, a cor é a de estado de sempre e nada ficou animando.
   await expect
     .poll(() => dot.locator('.dot').evaluate((svg) => svg.getAnimations().length))
@@ -65,18 +71,17 @@ test('com movimento reduzido o pulso continua contando, só com variação suave
   const dot = statusButton(page).locator('app-status-dot');
   await page.getByRole('button', { name: 'OK', exact: true }).click();
   await expect(dot).toHaveAttribute('data-pulses', '1');
-  const keyframes = await dot.locator('.dot').evaluate(async (svg) => {
-    // O pulso dura ~250 ms: o teste pega a animação logo depois do toque, ou já terminada (aí não há o que ver).
+  const keyframes = await dot.locator('.dot').evaluate((svg) => {
     const animation = svg.getAnimations()[0];
     return animation
       ? (animation.effect as KeyframeEffect).getKeyframes().map((k) => Object.keys(k))
       : null;
   });
-  if (keyframes) {
-    for (const names of keyframes) {
-      expect(names).not.toContain('transform');
-      expect(names).not.toContain('filter');
-    }
+  expect(keyframes).not.toBeNull();
+  for (const names of keyframes!) {
+    expect(names).toContain('opacity');
+    expect(names).not.toContain('transform');
+    expect(names).not.toContain('filter');
   }
 });
 

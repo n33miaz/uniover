@@ -275,6 +275,29 @@ describe('TvStore', () => {
       expect(store.keyPulse()).toBe(3);
     });
 
+    it('counts one pulse for every accepted command, not only for keys', async () => {
+      api.tvs.mockResolvedValue([
+        {
+          id: 'sala',
+          name: 'Sala',
+          isDefault: true,
+          agentSlug: null,
+          kind: 'android',
+          online: true,
+          capabilities: ['tv.remote', 'tv.kind.android', 'tv.power.off.v1'],
+        } satisfies TvSummary,
+      ]);
+      await started();
+
+      await store.sendText('oi');
+      await store.powerOff();
+      await store.savePowerSchedule('2026-10-20T02:00:00Z', 'America/Sao_Paulo');
+      await store.launch(shortcut(1));
+      await store.cleanup();
+
+      expect(store.keyPulse()).toBe(5);
+    });
+
     it('sends the key and never changes the state by itself', async () => {
       await started();
       await expect(store.sendKey('VOLUME_UP')).resolves.toBe(true);

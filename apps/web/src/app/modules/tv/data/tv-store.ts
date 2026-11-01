@@ -173,7 +173,7 @@ export class TvStore {
   private readonly _streamStatus = signal<TvStreamStatus>('connecting');
   private readonly _notice = signal<TvNotice | null>(null);
   private readonly _inFlightKeys = signal(0);
-  /** Conta cada toque que o controle aceitou (tecla ou app aberto): o ponto de estado pisca uma vez por toque. */
+  /** Conta cada comando que o controle aceitou: o ponto de estado pisca uma vez por toque. */
   private readonly _keyPulse = signal(0);
   private readonly _volumeNudge = signal(0);
   private readonly _cleaning = signal(false);
@@ -626,10 +626,9 @@ export class TvStore {
     if (!this.canSend() || !this.access.control() || this.account === null || this.listFirst()) {
       return false;
     }
-    this._keyPulse.update((count) => count + 1);
     this._inFlightKeys.update((count) => count + 1);
     try {
-      await this.api.sendKey(key);
+      await this.sendCommand(() => this.api.sendKey(key));
       if (this.live(epoch) && this._notice()?.kind === 'error') this.clearNotice();
       if (this.live(epoch)) this.nudgeVolume(key);
       return true;
@@ -666,7 +665,7 @@ export class TvStore {
       };
     }
     try {
-      await this.api.sendText(text);
+      await this.sendCommand(() => this.api.sendText(text));
       return null;
     } catch (error) {
       const failure = describeFailure(error);
@@ -695,7 +694,7 @@ export class TvStore {
     }
     const safe = this.safePowerOff();
     try {
-      const outcome = await this.api.powerOff(safe);
+      const outcome = await this.sendCommand(() => this.api.powerOff(safe));
       if (this.live(epoch)) this.showNotice('info', powerOffNotice(outcome));
       return null;
     } catch (error) {
@@ -730,10 +729,8 @@ export class TvStore {
         retryAfterSeconds: null,
       };
     try {
-      const saved = await this.api.savePowerSchedule(
-        dueAtUtc,
-        timeZone,
-        this._powerSchedule()?.version ?? null,
+      const saved = await this.sendCommand(() =>
+        this.api.savePowerSchedule(dueAtUtc, timeZone, this._powerSchedule()?.version ?? null),
       );
       if (this.live(epoch)) this._powerSchedule.set(saved);
       return null;
@@ -748,7 +745,7 @@ export class TvStore {
     const active = this._powerSchedule();
     if (!active) return null;
     try {
-      await this.api.cancelPowerSchedule(active.version);
+      await this.sendCommand(() => this.api.cancelPowerSchedule(active.version));
       if (this.live(epoch)) this._powerSchedule.set(null);
       return null;
     } catch (error) {
@@ -771,9 +768,8 @@ export class TvStore {
     ) {
       return false;
     }
-    this._keyPulse.update((count) => count + 1);
     try {
-      await this.api.launch(shortcut.id);
+      await this.sendCommand(() => this.api.launch(shortcut.id));
       if (this.live(epoch)) {
         const name = shortcutLabel(shortcut);
         this.showNotice('info', $localize`:@@tv.apps.launched:${name}:name: aberto na TV.`);
@@ -803,7 +799,7 @@ export class TvStore {
     }
     this._cleaning.set(true);
     try {
-      const result = await this.api.cleanup();
+      const result = await this.sendCommand(() => this.api.cleanup());
       if (this.live(epoch)) {
         this._lastCleanup.set({
           at: new Date(),
@@ -1157,6 +1153,12 @@ export class TvStore {
     this._volumeNudge.update((steps) => steps + (key === 'VOLUME_UP' ? 1 : -1));
     clearTimeout(this.nudgeTimer);
     this.nudgeTimer = setTimeout(() => this._volumeNudge.set(0), VOLUME_NUDGE_MS);
+  }
+
+  /** Todo pedido que muda ou comanda a TV passa aqui, para o retorno visual não depender do tipo de comando. */
+  private async sendCommand<T>(request: () => Promise<T>): Promise<T> {
+    this._keyPulse.update((count) => count + 1);
+    return request();
   }
 
   /** Começa uma chamada: confere a conta e devolve a `epoch` com que ela vai ser conferida na volta. */
