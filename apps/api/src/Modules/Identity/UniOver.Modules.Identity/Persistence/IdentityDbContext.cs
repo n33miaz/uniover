@@ -35,6 +35,10 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<QrLoginRequest> QrLoginRequests => Set<QrLoginRequest>();
 
+    public DbSet<CapacitySample> CapacitySamples => Set<CapacitySample>();
+
+    public DbSet<CapacityAlert> CapacityAlerts => Set<CapacityAlert>();
+
     /// <summary>
     /// A lista do catálogo como texto SQL (<c>'module:tv', 'tv:control', ...</c>) para as restrições do banco. Só
     /// constantes do código entram aqui (nenhum dado de usuário). Quando o catálogo muda, o modelo muda e o EF exige uma
@@ -226,6 +230,25 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             e.HasKey(x => x.Key);
             e.Property(x => x.Key).HasMaxLength(64).IsRequired();
             e.Property(x => x.ValueJson).HasColumnType("jsonb").IsRequired();
+        });
+
+        modelBuilder.Entity<CapacitySample>(e =>
+        {
+            e.ToTable("capacity_samples");
+            e.HasKey(x => x.Day);
+            e.Property(x => x.Day).ValueGeneratedNever();
+        });
+
+        modelBuilder.Entity<CapacityAlert>(e =>
+        {
+            e.ToTable("capacity_alerts", t => t.HasCheckConstraint("ck_capacity_alerts_metric", "metric IN ('database', 'memory', 'hours')"));
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.Metric).HasMaxLength(20).IsRequired();
+
+            // Um aviso aberto por métrica: duas partidas ao mesmo tempo não abrem o mesmo aviso duas vezes.
+            e.HasIndex(x => x.Metric).IsUnique().HasFilter("recovered_at IS NULL");
+            e.HasIndex(x => x.DetectedAt);
         });
     }
 }

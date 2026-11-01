@@ -11,6 +11,7 @@ using UniOver.Modules.Identity.Audit;
 using UniOver.Modules.Identity.Bootstrap;
 using UniOver.Modules.Identity.Features.AcceptGuestInvite;
 using UniOver.Modules.Identity.Features.BeginPasskeyRegistration;
+using UniOver.Modules.Identity.Features.Capacity;
 using UniOver.Modules.Identity.Features.CompletePasskeyRegistration;
 using UniOver.Modules.Identity.Features.ConfirmStepUp;
 using UniOver.Modules.Identity.Features.ConfirmStepUpWithPassword;
@@ -85,6 +86,10 @@ public static class IdentityModule
 
         // Limpeza das famílias de refresh mortas, no mesmo despertar diário da retenção da auditoria (sem relógio novo).
         services.AddRefreshFamilyCleanup();
+
+        // Amostra diária do tamanho do banco e avisos de capacidade, também no mesmo despertar.
+        services.AddCapacitySampling();
+        services.AddScoped<CapacityHandler>();
 
         services.AddScoped<LoginHandler>();
         services.AddScoped<RefreshRecoveryService>();
@@ -161,6 +166,7 @@ public static class IdentityModule
         group.MapPauseGuest();
         group.MapSetGuestPermissions();
         group.MapSystemSettings();
+        group.MapCapacity();
         group.MapSessions();
         group.MapBeginPasskeyRegistration();
         group.MapCompletePasskeyRegistration();
