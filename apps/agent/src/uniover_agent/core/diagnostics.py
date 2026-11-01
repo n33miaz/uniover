@@ -224,11 +224,19 @@ class DiagnosticsShipper:
             except TransportError:
                 await asyncio.to_thread(self._store.put_back, batch)
                 break
+            except asyncio.CancelledError:
+                # Reinício ou atualização no meio do envio: o lote volta à fila (chamada direta, a
+                # tarefa já está cancelada) em vez de ficar emprestado, e o cancelamento segue.
+                self._store.put_back(batch)
+                raise
             except Exception:
                 # Um lote que não vira mensagem válida não pode travar a fila para sempre:
                 # descarta-o.
                 _log.warning("descartei um lote de diagnóstico inválido", exc_info=True)
+                await asyncio.to_thread(self._store.confirm, batch)
                 continue
+            # Só agora o lote sai da fila: antes disto, uma queda o deixaria para o reenvio.
+            await asyncio.to_thread(self._store.confirm, batch)
             sent += len(batch)
         return sent
 

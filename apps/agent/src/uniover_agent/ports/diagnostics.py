@@ -35,9 +35,16 @@ class DiagnosticStore(Protocol):
         ...
 
     def take(self, limit: int) -> list[DiagnosticEvent]:
-        """Tira da fila até `limit` ocorrências, as mais antigas primeiro."""
+        """Empresta da fila até `limit` ocorrências, as mais antigas primeiro.
+
+        O que foi emprestado continua guardado até `confirm`: se o processo cair ou o envio for
+        cancelado no meio, nada se perde (a API ignora o `id` repetido, então reenviar é seguro)."""
+        ...
+
+    def confirm(self, events: list[DiagnosticEvent]) -> None:
+        """O lote emprestado foi entregue (ou descartado de propósito): sai de vez da fila."""
         ...
 
     def put_back(self, events: list[DiagnosticEvent]) -> None:
-        """Devolve ao começo da fila o que não pôde ser enviado."""
+        """O lote emprestado não pôde ser enviado: volta a ficar disponível, no começo da fila."""
         ...
