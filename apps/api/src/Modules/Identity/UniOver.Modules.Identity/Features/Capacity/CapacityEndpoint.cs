@@ -16,12 +16,13 @@ internal sealed record CapacityDatabase(long Bytes, long LimitBytes, double Perc
 
 /// <summary>
 /// O servidor como o próprio processo o vê. A RAM do limite e as horas do mês são estimativas (o app não consulta o
-/// provedor): <c>MonthHours</c> é dias corridos x 24, como se o serviço ficasse sempre ligado.
+/// provedor): <c>MonthHours</c> é dias corridos x 24 x serviços do workspace, como se tudo ficasse sempre ligado. As horas são
+/// informativas (faixa <c>neutral</c>); só ficam vermelhas se <c>HoursProjected</c>, o mês inteiro, passar do limite.
 /// </summary>
 internal sealed record CapacityServer(
     long WorkingSetBytes, long HeapBytes, long MemoryLimitBytes, double MemoryPercent, string MemoryBand,
     DateTimeOffset StartedAt, long UptimeSeconds,
-    double MonthHours, int HoursLimit, double HoursPercent, string HoursBand);
+    double MonthHours, int HoursLimit, double HoursPercent, string HoursBand, double HoursProjected, int ServicesInWorkspace);
 
 internal sealed record CapacityAlertItem(Guid Id, string Metric, int Percent, DateTimeOffset DetectedAt);
 
@@ -64,7 +65,7 @@ internal sealed class CapacityHandler(
         var reading = probe.Read();
         var databasePercent = CapacityBands.PercentOf(size.DatabaseBytes, capacity.DatabaseLimitBytes);
         var memoryPercent = CapacityBands.PercentOf(reading.WorkingSetBytes, capacity.MemoryLimitBytes);
-        var monthHours = CapacityHours.MonthToDate(now);
+        var monthHours = CapacityHours.MonthToDate(now) * capacity.ServicesInWorkspace;
         var hoursPercent = CapacityBands.PercentOf(monthHours, capacity.MonthlyHoursLimit);
 
         return new CapacityResponse(
@@ -74,7 +75,8 @@ internal sealed class CapacityHandler(
             new CapacityServer(
                 reading.WorkingSetBytes, reading.HeapBytes, capacity.MemoryLimitBytes, memoryPercent, CapacityBands.Of(memoryPercent),
                 reading.StartedAt, (long)Math.Max(0, (now - reading.StartedAt).TotalSeconds),
-                monthHours, capacity.MonthlyHoursLimit, hoursPercent, CapacityBands.Of(hoursPercent)),
+                monthHours, capacity.MonthlyHoursLimit, hoursPercent, CapacityHours.Band(now, capacity),
+                CapacityHours.MonthProjection(now, capacity.ServicesInWorkspace), capacity.ServicesInWorkspace),
             CapacityTrend.Compute([.. samples.Select(s => (s.Day, s.DatabaseBytes))], size.DatabaseBytes, capacity.DatabaseLimitBytes),
             alerts,
             now);

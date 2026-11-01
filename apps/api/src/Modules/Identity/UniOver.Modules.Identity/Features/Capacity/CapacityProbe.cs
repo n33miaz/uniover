@@ -35,4 +35,25 @@ internal static class CapacityHours
         var start = new DateTime(utc.Year, utc.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         return (utc - start).TotalDays * 24;
     }
+
+    /// <summary>Horas do mês inteiro se tudo ficar ligado: dias do mês x 24 x serviços do workspace.</summary>
+    public static double MonthProjection(DateTimeOffset now, int servicesInWorkspace)
+    {
+        var utc = now.UtcDateTime;
+        return DateTime.DaysInMonth(utc.Year, utc.Month) * 24.0 * servicesInWorkspace;
+    }
+
+    /// <summary>
+    /// A faixa das horas: informativa (neutra) enquanto a projeção do mês cabe no limite; vermelha só quando a projeção
+    /// passa dele. Um serviço sempre ligado usa 744 de 750 todo mês: isso é o normal, não um problema.
+    /// </summary>
+    public static string Band(DateTimeOffset now, CapacityOptions options) =>
+        MonthProjection(now, options.ServicesInWorkspace) > options.MonthlyHoursLimit ? CapacityBands.Red : CapacityBands.Neutral;
+
+    /// <summary>O que entra na regra de aviso: a projeção em % do limite se ela passa dele, senão 0 (nada a avisar).</summary>
+    public static double AlertPercent(DateTimeOffset now, CapacityOptions options)
+    {
+        var projected = MonthProjection(now, options.ServicesInWorkspace);
+        return projected > options.MonthlyHoursLimit ? CapacityBands.PercentOf(projected, options.MonthlyHoursLimit) : 0;
+    }
 }
