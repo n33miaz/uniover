@@ -2,7 +2,7 @@
 // `optimize-exercise-art.py` termina (recorte, 536x550, WebP). Os SVG originais não são alterados.
 //
 // Uso (a partir de apps/web), com um Chromium do Playwright instalado:
-//   node scripts/render-exercise-svg.mjs <pasta de saída>
+//   node scripts/render-exercise-svg.mjs <pasta de saída> [NNNN ...]   (sem números, todos os pares)
 // Depois:
 //   python -I scripts/optimize-exercise-art.py <pasta de saída>
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -11,7 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright-core';
 
 const SOURCE = resolve(import.meta.dirname, '..', 'assets-third-party', 'everkinetic', 'svg');
-const out = process.argv[2];
+const [out, ...only] = process.argv.slice(2);
 if (!out) {
   console.error('uso: node scripts/render-exercise-svg.mjs <pasta de saída>');
   process.exit(1);
@@ -35,7 +35,9 @@ const page = await context.newPage();
 const holder = join(out, 'holder.html');
 try {
   for (const file of readdirSync(SOURCE)
-    .filter((name) => name.endsWith('.svg'))
+    .filter(
+      (name) => name.endsWith('.svg') && (only.length === 0 || only.includes(name.slice(0, 4))),
+    )
     .sort()) {
     const target = join(out, file.replace(/\.svg$/, '.png'));
     // Retomável: o que já foi rasterizado numa rodada interrompida não se refaz.
