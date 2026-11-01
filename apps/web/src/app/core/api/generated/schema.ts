@@ -2042,6 +2042,110 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/identity/capacity': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['CapacityResponse'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/identity/capacity/alerts/seen': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description No Content */
+        204: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/identity/guest-invites': {
     parameters: {
       query?: never;
@@ -8904,6 +9008,76 @@ export interface components {
       note: null | string;
       /** Format: date-time */
       updatedAt: string;
+    };
+    CapacityAlertItem: {
+      /** Format: date-time */
+      detectedAt: string;
+      /** Format: uuid */
+      id: string;
+      metric: string;
+      /** Format: int32 */
+      percent: number | string;
+    };
+    CapacityDatabase: {
+      band: string;
+      /** Format: int64 */
+      bytes: number | string;
+      /** Format: int64 */
+      limitBytes: number | string;
+      /** Format: double */
+      percent: number | string;
+      tables: components['schemas']['CapacityTable'][];
+    };
+    CapacityGrowth: {
+      /** Format: double */
+      bytesPerDay: null | number | string;
+      /** Format: double */
+      daysToAmber: null | number | string;
+      /** Format: double */
+      daysToRed: null | number | string;
+      points: components['schemas']['CapacityPoint'][];
+      state: string;
+    };
+    CapacityPoint: {
+      /** Format: int64 */
+      bytes: number | string;
+      day: string;
+    };
+    CapacityResponse: {
+      alerts: components['schemas']['CapacityAlertItem'][];
+      database: components['schemas']['CapacityDatabase'];
+      growth: components['schemas']['CapacityGrowth'];
+      /** Format: date-time */
+      measuredAt: string;
+      server: components['schemas']['CapacityServer'];
+    };
+    CapacityServer: {
+      /** Format: int64 */
+      heapBytes: number | string;
+      hoursBand: string;
+      /** Format: int32 */
+      hoursLimit: number | string;
+      /** Format: double */
+      hoursPercent: number | string;
+      memoryBand: string;
+      /** Format: int64 */
+      memoryLimitBytes: number | string;
+      /** Format: double */
+      memoryPercent: number | string;
+      /** Format: double */
+      monthHours: number | string;
+      /** Format: date-time */
+      startedAt: string;
+      /** Format: int64 */
+      uptimeSeconds: number | string;
+      /** Format: int64 */
+      workingSetBytes: number | string;
+    };
+    CapacityTable: {
+      /** Format: int64 */
+      bytes: number | string;
+      name: string;
+      schema: string;
     };
     CatalogCreditsResponse: {
       sources: components['schemas']['CreditSource'][];
