@@ -3,6 +3,9 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Npgsql;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Identity.Passkeys;
 using UniOver.IntegrationTests.Infrastructure;
@@ -481,13 +484,12 @@ public sealed class SiriTests(PostgresFixture postgres)
     // ---- credencial: ausente, falsa, revogada, vencida ----
 
     [Theory]
-    [InlineData(null)]
     [InlineData("")]
     [InlineData("lixo")]
     [InlineData("atalho_")]
     [InlineData("atalho_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
     [InlineData("uo_dev_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
-    public async Task AMissingOrUnknownKey_Returns401_WithoutAuditOrCommand(string? token)
+    public async Task AnUnknownKey_Returns401_WithoutAuditOrCommand(string token)
     {
         await using var app = await TvApp.StartAsync(postgres);
         var setup = await SetUpAsync(app);
@@ -498,6 +500,20 @@ public sealed class SiriTests(PostgresFixture postgres)
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         await using var db = app.Db();
         (await db.CommandAudit.CountAsync(Ct)).Should().Be(0, "sem conta reconhecida não há de quem registrar");
+    }
+
+    [Fact]
+    public async Task ARequestWithoutTheRequiredKeyHeader_Returns400_WithoutAuditOrCommand()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var setup = await SetUpAsync(app);
+        await using var agent = await app.ConnectAndWaitAsync();
+
+        using var response = await TriggerAsync(app, null, new { tv = setup.TvId, action = "volume_up" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await using var db = app.Db();
+        (await db.CommandAudit.CountAsync(Ct)).Should().Be(0, "o cabeçalho obrigatório é validado antes de reconhecer uma conta");
     }
 
     [Fact]
@@ -659,6 +675,213 @@ public sealed class SiriTests(PostgresFixture postgres)
         using var response = await TriggerAsync(app, token, new { tv = setup.TvId, action = "volume_up" });
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ---- concorrência: revogar e criar ----
+
+    [Fact]
+    public async Task Revoking_WaitsForAnOrderInFlight_AndNothingIsDeliveredAfterThe204()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var setup = await SetUpAsync(app);
+        var token = await NewTokenAsync(app, setup);
+        await using var agent = await app.ConnectAndWaitAsync();
+        Guid id;
+        await using (var db = app.Db())
+        {
+            id = (await db.SiriTokens.AsNoTracking().SingleAsync(Ct)).Id;
+        }
+
+        // A ordem chega ao agente e fica esperando a resposta dele: a trava da chave está com ela.
+        var inFlight = TriggerAsync(app, token, new { tv = setup.TvId, action = "volume_up" });
+        var command = await TvApp.NextCommandAsync(agent);
+
+        var revoke = app.SendAsync(HttpMethod.Delete, $"{TokensUrl}/{id}");
+        await Task.Delay(TimeSpan.FromSeconds(1), Ct);
+        revoke.IsCompleted.Should().BeFalse("a revogação espera a ordem em andamento terminar antes de responder");
+
+        await TvApp.ReplyAsync(agent, command);
+        using var delivered = await Within(inFlight);
+        delivered.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var revoked = await Within(revoke);
+        revoked.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Depois do 204 nenhuma ordem, nem as simultâneas, é entregue.
+        var after = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => TriggerAsync(app, token, new { tv = setup.TvId, action = "volume_up" })));
+        var statuses = after.Select(r => r.StatusCode).ToList();
+        foreach (var response in after)
+        {
+            response.Dispose();
+        }
+
+        statuses.Should().OnlyContain(code => code == HttpStatusCode.Unauthorized);
+        await using var check = app.Db();
+        (await check.CommandAudit.CountAsync(a => a.Command == TvCommandNames.Key, Ct)).Should().Be(1, "só a ordem de antes da revogação foi entregue");
+    }
+
+    [Fact]
+    public async Task ConcurrentOrdersForTheSameKey_AreSerializedWithoutDeadlocking()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var setup = await SetUpAsync(app);
+        var token = await NewTokenAsync(app, setup);
+        await using var agent = await app.ConnectAndWaitAsync();
+        Guid id;
+        await using (var db = app.Db())
+        {
+            id = (await db.SiriTokens.AsNoTracking().SingleAsync(Ct)).Id;
+        }
+
+        // O bloqueio compartilhado externo faz as duas requisições disputarem a atualização depois de já terem chegado à linha.
+        await using var holder = new NpgsqlConnection(app.Database.OwnerConnection);
+        await holder.OpenAsync(Ct);
+        await using var holderTransaction = await holder.BeginTransactionAsync(Ct);
+        await using (var lockRow = new NpgsqlCommand("SELECT id FROM tv.siri_tokens WHERE id = @id FOR SHARE", holder, holderTransaction))
+        {
+            lockRow.Parameters.AddWithValue("id", id);
+            await lockRow.ExecuteScalarAsync(Ct);
+        }
+
+        var first = TriggerAsync(app, token, new { tv = setup.TvId, action = "volume_up" });
+        var second = TriggerAsync(app, token, new { tv = setup.TvId, action = "volume_up" });
+        await Task.Delay(TimeSpan.FromSeconds(1), Ct);
+        await holderTransaction.CommitAsync(Ct);
+
+        var firstCommand = await TvApp.NextCommandAsync(agent);
+        var secondCommand = TvApp.NextCommandAsync(agent);
+        await Task.Delay(TimeSpan.FromSeconds(1), Ct);
+        secondCommand.IsCompleted.Should().BeFalse("a segunda ordem espera a primeira liberar a chave");
+        await TvApp.ReplyAsync(agent, firstCommand);
+        await TvApp.ReplyAsync(agent, await Within(secondCommand));
+
+        var responses = await Task.WhenAll(Within(first), Within(second));
+        foreach (var response in responses)
+        {
+            using (response)
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task AnOrderWaitingForTheLockWhileTheRevocationIsWritten_IsRefusedAndNothingIsDelivered()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var setup = await SetUpAsync(app);
+        var token = await NewTokenAsync(app, setup);
+        await using var agent = await app.ConnectAndWaitAsync();
+        Guid id;
+        await using (var db = app.Db())
+        {
+            id = (await db.SiriTokens.AsNoTracking().SingleAsync(Ct)).Id;
+        }
+
+        // Uma revogação "em andamento": outra conexão segura a linha com a trava exclusiva e ainda não gravou.
+        await using var holder = new NpgsqlConnection(app.Database.OwnerConnection);
+        await holder.OpenAsync(Ct);
+        await using var transaction = await holder.BeginTransactionAsync(Ct);
+        await using (var lockRow = new NpgsqlCommand("SELECT id FROM tv.siri_tokens WHERE id = @id FOR UPDATE", holder, transaction))
+        {
+            lockRow.Parameters.AddWithValue("id", id);
+            await lockRow.ExecuteScalarAsync(Ct);
+        }
+
+        var order = TriggerAsync(app, token, new { tv = setup.TvId, action = "volume_up" });
+        await Task.Delay(TimeSpan.FromSeconds(1), Ct);
+        order.IsCompleted.Should().BeFalse("a ordem espera a trava da chave");
+
+        await using (var revoke = new NpgsqlCommand("UPDATE tv.siri_tokens SET revoked_at = now() WHERE id = @id", holder, transaction))
+        {
+            revoke.Parameters.AddWithValue("id", id);
+            await revoke.ExecuteNonQueryAsync(Ct);
+        }
+
+        await transaction.CommitAsync(Ct);
+
+        using var response = await Within(order);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await using var check = app.Db();
+        (await check.CommandAudit.CountAsync(a => a.Command == TvCommandNames.Key, Ct)).Should().Be(0, "nada foi entregue ao agente");
+    }
+
+    [Fact]
+    public async Task SimultaneousCreations_AtTheLimit_LeaveExactlyOneCreation()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var setup = await SetUpAsync(app);
+        await using (var db = app.Db())
+        {
+            for (var i = 0; i < SiriToken.MaxActivePerUser - 1; i++)
+            {
+                db.SiriTokens.Add(SiriToken.Create(
+                    setup.OwnerId, setup.TvId, $"chave {i}", SiriSecrets.New().Hash, VolumeOnly, app.Time.GetUtcNow(), expiresAt: null));
+            }
+
+            await db.SaveChangesAsync(Ct);
+        }
+
+        await app.ConfirmOwnerActionAsync(setup.Authenticator, TvAuth.SiriTokenAction);
+        var attempts = await Task.WhenAll(Enumerable.Range(0, 2).Select(i => app.SendAsync(
+            HttpMethod.Post, TokensUrl, new { name = $"corrida {i}", tvId = setup.TvId, actions = VolumeOnly })));
+
+        var statuses = attempts.Select(r => r.StatusCode).ToList();
+        foreach (var attempt in attempts)
+        {
+            attempt.Dispose();
+        }
+
+        statuses.Count(code => code == HttpStatusCode.Created).Should().Be(1);
+        statuses.Count(code => code == HttpStatusCode.Conflict).Should().Be(1);
+        await using var check = app.Db();
+        (await check.SiriTokens.CountAsync(Ct)).Should().Be(SiriToken.MaxActivePerUser);
+    }
+
+    // ---- o papel da aplicação ----
+
+    [Fact]
+    public async Task TheMigration_GivesTheRuntimeRoleAccessToTheKeysTable_EvenWithoutDefaultPrivileges()
+    {
+        var database = await postgres.CreateDatabaseAsync();
+        await using (var owner = TvApp.CreateContext(database.OwnerConnection))
+        {
+            // Tudo até a migration anterior à das chaves; depois tira os privilégios padrão que as outras deixaram, como num
+            // banco em que quem aplica a migration não é quem os definiu: só o GRANT da própria migration vale.
+            await owner.GetService<IMigrator>().MigrateAsync("20261030224800_AddFocusClosesBackground", Ct);
+            await using var connection = new NpgsqlConnection(database.OwnerConnection);
+            await connection.OpenAsync(Ct);
+            await using var revoke = new NpgsqlCommand(
+                "ALTER DEFAULT PRIVILEGES IN SCHEMA tv REVOKE ALL ON TABLES FROM uniover_app", connection);
+            await revoke.ExecuteNonQueryAsync(Ct);
+
+            await owner.Database.MigrateAsync(Ct);
+        }
+
+        await using var runtime = new NpgsqlConnection(database.RuntimeConnection);
+        await runtime.OpenAsync(Ct);
+        var id = Guid.CreateVersion7();
+        await using (var insert = new NpgsqlCommand(
+            "INSERT INTO tv.siri_tokens (id, user_id, tv_id, name, token_hash, actions, created_at) "
+            + "VALUES (@id, @user, @tv, 'teste', @hash, ARRAY['mute'], now())", runtime))
+        {
+            insert.Parameters.AddWithValue("id", id);
+            insert.Parameters.AddWithValue("user", Guid.NewGuid());
+            insert.Parameters.AddWithValue("tv", Guid.NewGuid());
+            insert.Parameters.AddWithValue("hash", SiriSecrets.New().Hash);
+            (await insert.ExecuteNonQueryAsync(Ct)).Should().Be(1);
+        }
+
+        await using (var update = new NpgsqlCommand("UPDATE tv.siri_tokens SET last_used_at = now(), revoked_at = now() WHERE id = @id", runtime))
+        {
+            update.Parameters.AddWithValue("id", id);
+            (await update.ExecuteNonQueryAsync(Ct)).Should().Be(1);
+        }
+
+        await using (var lockRow = new NpgsqlCommand("SELECT id FROM tv.siri_tokens WHERE id = @id FOR SHARE", runtime))
+        {
+            lockRow.Parameters.AddWithValue("id", id);
+            (await lockRow.ExecuteScalarAsync(Ct)).Should().Be(id);
+        }
     }
 
     // ---- limite ----

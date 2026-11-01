@@ -42,6 +42,23 @@ public class OpenApiContractTests
     }
 
     [Fact]
+    public async Task ShortcutOperation_DeclaresTheKeyHeaderSoOutsideCallersKnowHowToAuthenticate()
+    {
+        await using var factory = new EdgeFactory("Development");
+        using var client = factory.CreateClient();
+        var document = JsonNode.Parse(await client.GetStringAsync("/openapi/v1.json", TestContext.Current.CancellationToken))!;
+        var operation = document["paths"]!["/api/v1/shortcuts/tv"]!["post"]!.AsObject();
+
+        var header = operation["parameters"]!.AsArray()
+            .Select(parameter => parameter!.AsObject())
+            .Single(parameter => parameter["name"]?.GetValue<string>() == "X-Atalho-Token");
+
+        header["in"]!.GetValue<string>().Should().Be("header");
+        header["required"]!.GetValue<bool>().Should().BeTrue();
+        operation["responses"]!.AsObject().Should().ContainKeys("200", "401", "403", "429");
+    }
+
+    [Fact]
     public async Task IdempotencyOperation_DeclaresTheOptionalHeaderAndItsProblemResponses()
     {
         await using var factory = new EdgeFactory("Development");
