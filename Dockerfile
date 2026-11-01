@@ -19,7 +19,7 @@ RUN dotnet publish apps/api/src/UniOver.Host -c Release -o /out \
     && rm -rf /out/wwwroot
 
 # --- Etapa 3: runtime mínimo, sem shell, usuário não root ---
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled@sha256:5165aeeb688df15e869a56a7584bb94bf16a14e0b3ba77b49fcdbe350f6b8020 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled@sha256:c89a6a61f494f20a5ae302990e814627a8d91b332fd4a8e7c1707c2d4da9555d AS final
 # O Host lê wwwroot e appsettings.json do diretório atual.
 WORKDIR /app
 COPY --from=api /out ./
