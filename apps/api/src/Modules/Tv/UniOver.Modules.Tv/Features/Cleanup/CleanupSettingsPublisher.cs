@@ -30,18 +30,25 @@ internal sealed class CleanupSettingsPublisher(
     /// </summary>
     public const string FocusClosesBackgroundCapability = "tv.focus-closes-background.v1";
 
+    /// <summary>
+    /// Quem a anuncia (a TV Samsung) recebe também a preferência da manutenção automática desta TV. O campo só vai a
+    /// quem o declara, pelo mesmo motivo das capacidades acima: o schema recusa campo desconhecido.
+    /// </summary>
+    public const string MaintenanceCapability = "tv.maintenance.v1";
+
     public async Task PublishAsync(string? agentSlug = null, CancellationToken cancellationToken = default)
     {
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TvDbContext>();
         var tvs = await db.Tvs.AsNoTracking()
             .Where(tv => agentSlug == null || tv.AgentSlug == agentSlug)
-            .Select(tv => new { tv.AgentSlug, tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled, tv.RestrictedBackgroundPackages, tv.FocusClosesBackground })
+            .Select(tv => new { tv.AgentSlug, tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled, tv.RestrictedBackgroundPackages, tv.FocusClosesBackground, tv.AutoMaintenanceEnabled })
             .ToListAsync(cancellationToken);
         var targets = tvs
             .Select(tv => (Tv: tv, Info: presence.Get(tv.AgentSlug)))
             .Where(item => item.Info is { Connected: true } info
-                && info.Capabilities.Contains(Capability, StringComparer.Ordinal))
+                && (info.Capabilities.Contains(Capability, StringComparer.Ordinal)
+                    || info.Capabilities.Contains(MaintenanceCapability, StringComparer.Ordinal)))
             .ToList();
         if (targets.Count == 0)
             return;
@@ -53,7 +60,7 @@ internal sealed class CleanupSettingsPublisher(
         {
             var body = BuildBody(
                 info!.Capabilities, tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled,
-                tv.RestrictedBackgroundPackages, tv.FocusClosesBackground, light, deep, threshold);
+                tv.RestrictedBackgroundPackages, tv.FocusClosesBackground, light, deep, threshold, tv.AutoMaintenanceEnabled);
             await sender.PostAsync(tv.AgentSlug, new TvMessage("tv.cleanup.config.v1", body), cancellationToken);
         }
     }
@@ -64,17 +71,21 @@ internal sealed class CleanupSettingsPublisher(
     /// </summary>
     internal static JsonElement BuildBody(
         IReadOnlyList<string> capabilities, bool closeBackgroundApps, bool focus, bool shortAnimations, string packages,
-        bool focusCloses, bool light, bool deep, int threshold)
+        bool focusCloses, bool light, bool deep, int threshold, bool autoMaintenance = true)
     {
+        var knowsMaintenance = capabilities.Contains(MaintenanceCapability, StringComparer.Ordinal);
         if (!capabilities.Contains(LightSettingsCapability, StringComparer.Ordinal))
         {
-            return JsonSerializer.SerializeToElement(new
+            var old = new Dictionary<string, object>
             {
-                lightEnabled = light,
-                deepEnabled = deep,
-                deepThresholdMb = threshold,
-                closeBackgroundApps,
-            });
+                ["lightEnabled"] = light,
+                ["deepEnabled"] = deep,
+                ["deepThresholdMb"] = threshold,
+                ["closeBackgroundApps"] = closeBackgroundApps,
+            };
+            if (knowsMaintenance)
+                old["maintenanceEnabled"] = autoMaintenance;
+            return JsonSerializer.SerializeToElement(old);
         }
 
         var knowsFocusCloses = capabilities.Contains(FocusClosesBackgroundCapability, StringComparer.Ordinal);
@@ -91,6 +102,8 @@ internal sealed class CleanupSettingsPublisher(
         // Só o Modo Foco ligado nesta TV pode mandar fechar apps: desligado, o campo vai falso.
         if (knowsFocusCloses)
             fields["focusClosesBackground"] = focus && focusCloses;
+        if (knowsMaintenance)
+            fields["maintenanceEnabled"] = autoMaintenance;
         return JsonSerializer.SerializeToElement(fields);
     }
 

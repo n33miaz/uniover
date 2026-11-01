@@ -281,6 +281,12 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("allow_background_app_closing");
 
+                    b.Property<bool>("AutoMaintenanceEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("auto_maintenance_enabled");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
