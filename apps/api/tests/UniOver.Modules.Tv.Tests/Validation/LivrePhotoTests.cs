@@ -81,13 +81,4 @@ public class LivrePhotoTests
         hash.Should().Be("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
         hash.Should().MatchRegex("^[0-9a-f]{64}$");
     }
-
-    [Theory]
-    [InlineData(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 }, true)]
-    [InlineData(new byte[] { 0xFF, 0xD8, 0xFF }, true)]
-    [InlineData(new byte[] { 0xFF, 0xD8 }, false)]
-    [InlineData(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, false)]
-    [InlineData(new byte[] { }, false)]
-    public void LooksLikeJpeg_ChecksTheThreeMagicBytes(byte[] data, bool expected) =>
-        LivrePhoto.LooksLikeJpeg(data).Should().Be(expected);
 }

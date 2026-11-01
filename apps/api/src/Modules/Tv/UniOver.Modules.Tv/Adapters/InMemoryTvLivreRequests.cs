@@ -4,14 +4,17 @@ using UniOver.SharedKernel;
 namespace UniOver.Modules.Tv.Adapters;
 
 /// <summary>
-/// Como <see cref="InMemoryTvCleanupReports"/>, para o TV Livre: um passo por TV, e o aviso de que o estado do pedido já
-/// foi guardado. O estado em si vai para o banco antes do aviso, então quem acorda lê o dado definitivo e não uma cópia.
-/// É da instância (singleton do módulo), nunca estático, e some quando a API reinicia.
+/// A vez por TV só dentro desta instância: serve a quem não tem PostgreSQL por baixo (testes de unidade) e é o que
+/// <see cref="TvLivreRequests"/> usa nesse caso. Com o banco de verdade a vez é a trava consultiva dele, que vale entre
+/// instâncias. É da instância (nunca estático) e some quando a API reinicia.
 /// </summary>
-internal sealed class InMemoryTvLivreRequests(TimeProvider time) : ITvLivreRequests
+internal sealed class InMemoryTvLivreRequests : ITvLivreRequests
 {
     private readonly object _gate = new();
-    private readonly Dictionary<Guid, Active> _active = [];
+    private readonly Dictionary<Guid, Guid> _active = [];
+
+    public Task<ITvLivreTicket?> TryBeginAsync(Guid tvId, CancellationToken cancellationToken) =>
+        Task.FromResult<ITvLivreTicket?>(TryBegin(tvId));
 
     public ITvLivreTicket? TryBegin(Guid tvId)
     {
@@ -22,64 +25,32 @@ internal sealed class InMemoryTvLivreRequests(TimeProvider time) : ITvLivreReque
                 return null;
             }
 
-            var active = new Active(IdGenerator.NewId());
-            _active.Add(tvId, active);
-            return new Ticket(this, tvId, active, time);
-        }
-    }
-
-    public void StateStored(Guid tvId, Guid requestId)
-    {
-        // Só vale o estado do pedido em andamento: o de um passo que já desistiu de esperar não confunde o seguinte.
-        lock (_gate)
-        {
-            if (_active.TryGetValue(tvId, out var active) && active.RequestId == requestId)
-            {
-                active.Stored.TrySetResult();
-            }
+            var requestId = IdGenerator.NewId();
+            _active.Add(tvId, requestId);
+            return new Ticket(this, tvId, requestId);
         }
     }
 
     private void Release(Guid tvId, Guid requestId)
     {
+        // Só quem tem a vez a devolve: um bilhete velho descartado de novo nunca solta a vez de um passo mais novo.
         lock (_gate)
         {
-            if (_active.TryGetValue(tvId, out var active) && active.RequestId == requestId)
+            if (_active.TryGetValue(tvId, out var current) && current == requestId)
             {
                 _active.Remove(tvId);
             }
         }
     }
 
-    private sealed class Active(Guid requestId)
+    private sealed class Ticket(InMemoryTvLivreRequests owner, Guid tvId, Guid requestId) : ITvLivreTicket
     {
         public Guid RequestId { get; } = requestId;
 
-        public TaskCompletionSource Stored { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    }
-
-    private sealed class Ticket(InMemoryTvLivreRequests owner, Guid tvId, Active active, TimeProvider time) : ITvLivreTicket
-    {
-        public Guid RequestId { get; } = active.RequestId;
-
-        public async Task<bool> WaitForStateAsync(TimeSpan grace, CancellationToken cancellationToken)
+        public ValueTask DisposeAsync()
         {
-            if (active.Stored.Task.IsCompletedSuccessfully)
-            {
-                return true;
-            }
-
-            try
-            {
-                await active.Stored.Task.WaitAsync(grace, time, cancellationToken);
-                return true;
-            }
-            catch (TimeoutException)
-            {
-                return false;
-            }
+            owner.Release(tvId, RequestId);
+            return ValueTask.CompletedTask;
         }
-
-        public void Dispose() => owner.Release(tvId, RequestId);
     }
 }

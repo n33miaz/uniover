@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -5,8 +6,13 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.Modules.Tv.Adapters;
+using UniOver.Modules.Tv.Features.TvLivre;
+using UniOver.Modules.Tv.Ports;
 
 namespace UniOver.IntegrationTests.Tv;
 
@@ -95,16 +101,8 @@ public sealed class TvLivreTests(PostgresFixture postgres)
 
     private static string ActionOf(JsonElement command) => command.GetProperty("body").GetProperty("action").GetString()!;
 
-    /// <summary>Um JPEG de mentira: começa pelos três bytes mágicos e o resto é ruído repetível.</summary>
-    private static byte[] Jpeg(int length)
-    {
-        var data = new byte[length];
-        new Random(7).NextBytes(data);
-        data[0] = 0xFF;
-        data[1] = 0xD8;
-        data[2] = 0xFF;
-        return data;
-    }
+    /// <summary>Um JPEG mínimo mas estruturalmente válido (marcadores, quadro de 640x360, varredura e EOI) com o tamanho total pedido.</summary>
+    private static byte[] Jpeg(int length) => TvJpeg.Build(640, 360, length);
 
     private static async Task<HttpResponseMessage> PutPhotoAsync(
         TvApp app, byte[] data, string contentType = "image/jpeg", string? bearer = "", HttpContent? content = null)
@@ -762,6 +760,192 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         empty.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
         await using var db = app.Db();
         (await db.TvLivre.CountAsync(e => e.PhotoData != null, Ct)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Photo_ThatIsTruncated_HasNoFrame_OrIsNoiseBehindTheMagicBytes_Returns415_AndSavesNothing()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var whole = TvJpeg.Build(640, 360, 3000);
+        var head = TvJpeg.Head(640, 360);
+        var noise = new byte[3000];
+        new Random(3).NextBytes(noise);
+        noise[0] = 0xFF;
+        noise[1] = 0xD8;
+        noise[2] = 0xFF;
+        (string Name, byte[] Data)[] cases =
+        [
+            ("sem o fim (EOI)", whole[..^2]),
+            ("cortado no meio", whole[..1500]),
+            ("sem quadro (SOF)", [.. head[..2], .. head[15..], 0x11, 0xFF, 0xD9]),
+            ("ruído atrás dos bytes mágicos", noise),
+            ("sobra depois do EOI", [.. whole, 0x00]),
+        ];
+
+        foreach (var (name, data) in cases)
+        {
+            using var response = await PutPhotoAsync(app, data);
+
+            response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType, name);
+        }
+
+        await using var db = app.Db();
+        (await db.TvLivre.CountAsync(e => e.PhotoData != null, Ct)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Photo_WithDimensionsOutsideOneTo4096_Returns400_AndTheLimitsThemselvesPass()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+
+        foreach (var (width, height) in new[] { (5000, 100), (100, 4097), (0, 10), (10, 0) })
+        {
+            using var response = await PutPhotoAsync(app, TvJpeg.Build(width, height, 2000));
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"{width}x{height}");
+            (await TvApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/tv-livre-photo-dimensions");
+        }
+
+        await using (var db = app.Db())
+        {
+            (await db.TvLivre.CountAsync(e => e.PhotoData != null, Ct)).Should().Be(0);
+        }
+
+        using var biggest = await PutPhotoAsync(app, TvJpeg.Build(4096, 4096, 2000));
+        using var smallest = await PutPhotoAsync(app, TvJpeg.Build(1, 1));
+
+        biggest.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        smallest.StatusCode.Should().Be(HttpStatusCode.NoContent, "o menor JPEG válido possível");
+    }
+
+    // ---- a vez por TV vale entre instâncias ----
+
+    [SuppressMessage("Security", "CA2100:Review SQL queries for security vulnerabilities", Justification = "O nome da função vem de constantes do próprio teste.")]
+    private static async Task<bool> AdvisoryAsync(NpgsqlConnection connection, string function, long key)
+    {
+        await using var command = new NpgsqlCommand($"SELECT {function}(@key)", connection);
+        command.Parameters.AddWithValue("key", key);
+        return (bool)(await command.ExecuteScalarAsync(Ct))!;
+    }
+
+    [Fact]
+    public async Task TheTurn_IsAPostgresAdvisoryLock_ThatAnotherSessionCannotTake_UntilItIsReleased()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var requests = app.Services.GetRequiredService<ITvLivreRequests>();
+        var tv = Guid.NewGuid();
+        await using var otherInstance = new NpgsqlConnection(app.Database.OwnerConnection);
+        await otherInstance.OpenAsync(Ct);
+
+        var first = await requests.TryBeginAsync(tv, Ct);
+
+        first.Should().NotBeNull();
+        (await requests.TryBeginAsync(tv, Ct)).Should().BeNull("a mesma TV só tem um passo por vez");
+        (await AdvisoryAsync(otherInstance, "pg_try_advisory_lock", TvLivreRequests.KeyOf(tv))).Should().BeFalse("outra sessão do banco não toma a vez");
+        await using (var otherTv = await requests.TryBeginAsync(Guid.NewGuid(), Ct))
+        {
+            otherTv.Should().NotBeNull("TVs diferentes não dividem a vez");
+        }
+
+        await first!.DisposeAsync();
+
+        (await AdvisoryAsync(otherInstance, "pg_try_advisory_lock", TvLivreRequests.KeyOf(tv))).Should().BeTrue("o descarte soltou a trava");
+        (await requests.TryBeginAsync(tv, Ct)).Should().BeNull("agora é a outra sessão que a tem");
+        (await AdvisoryAsync(otherInstance, "pg_advisory_unlock", TvLivreRequests.KeyOf(tv))).Should().BeTrue();
+        await using var again = await requests.TryBeginAsync(tv, Ct);
+        again.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task AStep_WhileAnotherInstanceHoldsTheTurn_Returns409Busy_AndRunsOnceItIsReleased()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app);
+        await using var otherInstance = new NpgsqlConnection(app.Database.OwnerConnection);
+        await otherInstance.OpenAsync(Ct);
+        var key = TvLivreRequests.KeyOf(Guid.Empty);
+        (await AdvisoryAsync(otherInstance, "pg_try_advisory_lock", key)).Should().BeTrue();
+
+        using (var busy = await Within(app.PostAsync($"{Base}/install")))
+        {
+            busy.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await TvApp.JsonAsync(busy)).GetProperty("type").GetString().Should().EndWith("/tv-livre-busy");
+        }
+
+        await using (var db = app.Db())
+        {
+            (await db.CommandAudit.CountAsync(Ct)).Should().Be(0, "o comando nem saiu");
+        }
+
+        (await AdvisoryAsync(otherInstance, "pg_advisory_unlock", key)).Should().BeTrue();
+        var request = app.PostAsync($"{Base}/install");
+        await StateThenReplyAsync(agent, await NextAsync(agent, "tv.livre.v1"));
+        (await Within(request)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task TheState_ThatAnotherInstanceStoredInTheDatabase_IsFoundByThePollingWait()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app);
+
+        // O agente está ligado a outra instância: aqui só chega o resultado do comando, e o estado entra no banco por lá.
+        var request = app.PostAsync($"{Base}/install");
+        var command = await NextAsync(agent, "tv.livre.v1");
+        await TvApp.ReplyAsync(agent, command);
+        var requestId = command.GetProperty("body").GetProperty("requestId").GetString();
+        await app.ExecuteSqlAsync($$"""
+            INSERT INTO tv.tv_livre (tv_id, revision, updated_at, state_json, state_request_id, state_at)
+            VALUES ('{{Guid.Empty}}', 0, now(),
+                '{"supported":true,"installed":true,"isHome":false,"version":"7.7.7","apps":[],"at":"2026-10-31T12:00:00Z"}'::jsonb,
+                '{{requestId}}', now())
+            ON CONFLICT (tv_id) DO UPDATE SET state_json = EXCLUDED.state_json,
+                state_request_id = EXCLUDED.state_request_id, state_at = EXCLUDED.state_at
+            """);
+        using var response = await app.AdvanceWhilePendingAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var view = await TvApp.JsonAsync(response);
+        view.GetProperty("version").GetString().Should().Be("7.7.7");
+        view.GetProperty("installed").GetBoolean().Should().BeTrue();
+    }
+
+    // ---- a revisão é reservada no banco ----
+
+    [Fact]
+    public async Task NextRevision_IsReservedAtomically_EvenWithManyParallelWriters()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var tv = Guid.NewGuid();
+
+        var revisions = await Task.WhenAll(Enumerable.Range(0, 20).Select(async _ =>
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<TvLivreStore>().NextRevisionAsync(tv, Ct);
+        }));
+
+        revisions.Order().Should().Equal(Enumerable.Range(1, 20), "duas aplicações nunca usam o mesmo número, e a primeira cria a linha");
+        await using var db = app.Db();
+        (await db.TvLivre.AsNoTracking().SingleAsync(e => e.TvId == tv, Ct)).Revision.Should().Be(20);
+    }
+
+    [Fact]
+    public async Task NextRevision_KeepsTheStoredConfigAndPhoto_OfTheRowItIncrements()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await SaveConfigAsync(app, Config());
+        (await PutPhotoAsync(app, Jpeg(2000))).Dispose();
+
+        await using (var scope = app.Services.CreateAsyncScope())
+        {
+            (await scope.ServiceProvider.GetRequiredService<TvLivreStore>().NextRevisionAsync(Guid.Empty, Ct)).Should().Be(1);
+        }
+
+        await using var db = app.Db();
+        var row = await db.TvLivre.AsNoTracking().SingleAsync(Ct);
+        row.Revision.Should().Be(1);
+        row.ConfigJson.Should().NotBeNull();
+        row.PhotoData!.Length.Should().Be(2000);
     }
 
     // ---- aplicar ----

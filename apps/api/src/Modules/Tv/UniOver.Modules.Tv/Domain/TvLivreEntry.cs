@@ -29,7 +29,8 @@ public sealed class TvLivreEntry
 
     /// <summary>
     /// Número da última aplicação enviada à TV. O launcher só aceita um número maior que o que já tem, então ele é
-    /// gravado antes de o comando sair: um comando que estourou o prazo mas chegou à TV nunca faz o número voltar.
+    /// reservado no banco, atomicamente (<c>TvLivreStore.NextRevisionAsync</c>), antes de o comando sair:
+    /// um comando que estourou o prazo mas chegou à TV nunca faz o número voltar, e duas aplicações nunca usam o mesmo.
     /// </summary>
     public int Revision { get; private set; }
 
@@ -65,14 +66,6 @@ public sealed class TvLivreEntry
         PhotoData = null;
         PhotoSha256 = null;
         UpdatedAt = now;
-    }
-
-    /// <summary>Reserva o próximo número de aplicação e o devolve.</summary>
-    public int NextRevision(DateTimeOffset now)
-    {
-        Revision = checked(Revision + 1);
-        UpdatedAt = now;
-        return Revision;
     }
 
     public void SaveState(string stateJson, Guid requestId, DateTimeOffset at, DateTimeOffset now)

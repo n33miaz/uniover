@@ -27,7 +27,6 @@ internal sealed partial class TvAgentMessageHandler(
     TvStatePersister persister,
     ITvStreamPublisher stream,
     ITvCleanupReports cleanupReports,
-    ITvLivreRequests livreRequests,
     TvLivreStore livreStore,
     ITvShortcutReader shortcutReader,
     IAgentPresenceReader presence,
@@ -84,9 +83,10 @@ internal sealed partial class TvAgentMessageHandler(
     }
 
     /// <summary>
-    /// Guarda o último estado do TV Livre da TV e avisa o pedido que o espera (pelo <c>requestId</c>). Primeiro o banco, depois
-    /// o aviso: quem acorda lê o dado definitivo. O agente manda o estado depois de CADA passo, inclusive dos que falharam, e
-    /// os de outro agente nem chegam aqui (a conferência do agente que controla a TV é a do início de <see cref="HandleAsync"/>).
+    /// Guarda o último estado do TV Livre da TV. Quem espera por ele (o pedido HTTP, que pode estar em OUTRA instância da API)
+    /// o encontra no banco pelo <c>requestId</c>, então não há sinal em memória a mandar. O agente manda o estado depois de
+    /// CADA passo, inclusive dos que falharam, e os de outro agente nem chegam aqui (a conferência do agente que controla a TV
+    /// é a do início de <see cref="HandleAsync"/>).
     /// </summary>
     private async Task HandleLivreStateAsync(Guid tvId, InboundMessage message, CancellationToken cancellationToken)
     {
@@ -95,7 +95,6 @@ internal sealed partial class TvAgentMessageHandler(
         var entry = await livreStore.EnsureAsync(tvId, cancellationToken);
         entry.SaveState(body.GetRawText(), requestId, body.GetProperty("at").GetDateTimeOffset(), time.GetUtcNow());
         await db.SaveChangesAsync(cancellationToken);
-        livreRequests.StateStored(tvId, requestId);
     }
 
     private async Task HandleCleanupResultAsync(Guid tvId, InboundMessage message, CancellationToken cancellationToken)

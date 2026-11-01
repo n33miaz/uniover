@@ -58,6 +58,9 @@ internal sealed class TvLivreHandler(
     /// </summary>
     public static readonly TimeSpan StateGrace = CleanupHandler.ReportGrace;
 
+    /// <summary>De quanto em quanto tempo a espera olha o banco dentro da folga.</summary>
+    private static readonly TimeSpan StatePollInterval = TimeSpan.FromMilliseconds(100);
+
     private Guid TvId => selection.Current.Id;
 
     public async Task<TvLivreView> ViewAsync(CancellationToken cancellationToken)
@@ -154,18 +157,20 @@ internal sealed class TvLivreHandler(
         }
 
         var tvId = TvId;
-        using var ticket = requests.TryBegin(tvId);
+        await using var ticket = await requests.TryBeginAsync(tvId, cancellationToken);
         if (ticket is null)
         {
             return LivreStep.Busy;
         }
 
-        var entry = await store.EnsureAsync(tvId, cancellationToken);
-        var config = LivreConfigValidator.Parse(entry.ConfigJson);
+        // Só leitura: a revisão não passa pela entidade (ver NextRevisionAsync).
+        var stored = await db.TvLivre.AsNoTracking().Where(e => e.TvId == tvId)
+            .Select(e => new { e.ConfigJson, e.PhotoData }).SingleOrDefaultAsync(cancellationToken);
+        var config = LivreConfigValidator.Parse(stored?.ConfigJson);
         var configJson = LivreConfigValidator.ToLauncherJson(config);
 
         Guid? photoId = null;
-        if (config.Wallpaper.Type == "photo" && entry.PhotoData is { Length: > 0 } photo)
+        if (config.Wallpaper.Type == "photo" && stored?.PhotoData is { Length: > 0 } photo)
         {
             photoId = IdGenerator.NewId();
             var failed = await SendPhotoAsync(origin, photoId.Value, photo, cancellationToken);
@@ -175,8 +180,7 @@ internal sealed class TvLivreHandler(
             }
         }
 
-        var revision = entry.NextRevision(time.GetUtcNow());
-        await db.SaveChangesAsync(cancellationToken);
+        var revision = await store.NextRevisionAsync(tvId, cancellationToken);
 
         var outcome = await runner.RunAsync(
             origin,
@@ -191,7 +195,7 @@ internal sealed class TvLivreHandler(
             return LivreStep.Failed(outcome);
         }
 
-        await ticket.WaitForStateAsync(StateGrace, cancellationToken);
+        await WaitForStateAsync(ticket.RequestId, cancellationToken);
         return LivreStep.Done;
     }
 
@@ -239,7 +243,7 @@ internal sealed class TvLivreHandler(
             return LivreStep.Unsupported;
         }
 
-        using var ticket = requests.TryBegin(TvId);
+        await using var ticket = await requests.TryBeginAsync(TvId, cancellationToken);
         if (ticket is null)
         {
             return LivreStep.Busy;
@@ -261,10 +265,36 @@ internal sealed class TvLivreHandler(
 
         if (waitForState)
         {
-            await ticket.WaitForStateAsync(StateGrace, cancellationToken);
+            await WaitForStateAsync(ticket.RequestId, cancellationToken);
         }
 
         return LivreStep.Done;
+    }
+
+    /// <summary>
+    /// Espera o estado do pedido aparecer no banco. O agente o manda antes do resultado do comando, mas pode estar ligado a
+    /// OUTRA instância da API, que é quem o recebe e o grava: por isso a espera olha o banco (<c>StateRequestId</c>) em vez de
+    /// esperar um sinal em memória. Normalmente já está lá na primeira olhada; a folga só cobre uma ordem trocada. Sem estado
+    /// dentro da folga a resposta segue com o que está guardado (<c>stateAt</c> mostra a idade).
+    /// </summary>
+    private async Task WaitForStateAsync(Guid requestId, CancellationToken cancellationToken)
+    {
+        var tvId = TvId;
+        var until = time.GetUtcNow() + StateGrace;
+        while (true)
+        {
+            if (await db.TvLivre.AsNoTracking().AnyAsync(e => e.TvId == tvId && e.StateRequestId == requestId, cancellationToken))
+            {
+                return;
+            }
+
+            if (time.GetUtcNow() >= until)
+            {
+                return;
+            }
+
+            await Task.Delay(StatePollInterval, time, cancellationToken);
+        }
     }
 
     /// <summary>

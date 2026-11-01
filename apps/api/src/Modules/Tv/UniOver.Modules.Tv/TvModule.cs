@@ -88,7 +88,7 @@ public static class TvModule
         services.AddSingleton<ITvCommandSender, DevicesGatewayCommandSender>();
         services.AddSingleton<ITvCleanupSettingsPublisher, CleanupSettingsPublisher>();
         services.AddSingleton<ITvCleanupReports, InMemoryTvCleanupReports>();
-        services.AddSingleton<ITvLivreRequests, InMemoryTvLivreRequests>();
+        services.AddSingleton<ITvLivreRequests, TvLivreRequests>();
         services.AddSingleton<TvStatePersister>();
         services.AddScoped<TvStateProvider>();
         services.AddSingleton<TvStreamPublisher>();

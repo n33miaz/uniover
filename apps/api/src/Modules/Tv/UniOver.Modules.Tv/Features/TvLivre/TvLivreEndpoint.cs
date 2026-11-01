@@ -22,7 +22,8 @@ internal static class TvLivreEndpoint
             .ProducesProblem(StatusCodes.Status400BadRequest);
         group.MapPut("/livre/photo", SavePhotoAsync).Owner().RateLimited()
             .Accepts<byte[]>(LivrePhoto.ContentType).Produces(StatusCodes.Status204NoContent)
-            .ProducesProblem(StatusCodes.Status413PayloadTooLarge).ProducesProblem(StatusCodes.Status415UnsupportedMediaType);
+            .ProducesProblem(StatusCodes.Status400BadRequest).ProducesProblem(StatusCodes.Status413PayloadTooLarge)
+            .ProducesProblem(StatusCodes.Status415UnsupportedMediaType);
         group.MapGet("/livre/photo", ReadPhotoAsync).Owner().Produces<byte[]>(StatusCodes.Status200OK, LivrePhoto.ContentType)
             .Produces(StatusCodes.Status304NotModified).ProducesProblem(StatusCodes.Status404NotFound);
         group.MapDelete("/livre/photo", RemovePhotoAsync).Owner().RateLimited().Produces(StatusCodes.Status204NoContent);
@@ -106,9 +107,17 @@ internal static class TvLivreEndpoint
             return LivreProblems.PhotoTooLarge();
         }
 
-        if (!LivrePhoto.LooksLikeJpeg(buffer.AsSpan(0, read)))
+        // Estrutura de verdade (marcadores, quadro, varredura, EOI): o corte e o lixo atrás de FF D8 FF não passam, e as
+        // dimensões saem do cabeçalho do próprio arquivo.
+        var check = JpegInspector.Inspect(buffer.AsSpan(0, read));
+        if (check == JpegCheck.NotJpeg)
         {
             return LivreProblems.NotJpeg();
+        }
+
+        if (check == JpegCheck.DimensionsOutOfRange)
+        {
+            return LivreProblems.PhotoDimensions();
         }
 
         await handler.SavePhotoAsync(buffer.AsSpan(0, read).ToArray(), cancellationToken);

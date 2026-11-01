@@ -4,7 +4,7 @@ namespace UniOver.Modules.Tv.Features.TvLivre;
 
 /// <summary>
 /// A foto do fundo: o que a API aceita guardar e como ela viaja até o agente. O navegador a reduz (no máximo 1920x1080,
-/// JPEG) antes de enviar; aqui só se confere o teto e o formato, porque o agente confere de novo (tamanho, formato e
+/// JPEG) antes de enviar; aqui se confere o teto e a estrutura do JPEG (<see cref="JpegInspector"/>), porque o agente confere de novo (tamanho, formato e
 /// sha256) antes de gravar na TV.
 /// </summary>
 internal static class LivrePhoto
@@ -22,11 +22,6 @@ internal static class LivrePhoto
     public const int MaxChunks = 16;
 
     public const string ContentType = "image/jpeg";
-
-    private static readonly byte[] JpegMagic = [0xFF, 0xD8, 0xFF];
-
-    /// <summary>Todo JPEG começa por FF D8 FF; o resto é problema do agente, que decodifica antes de gravar.</summary>
-    public static bool LooksLikeJpeg(ReadOnlySpan<byte> data) => data.StartsWith(JpegMagic);
 
     /// <summary>O sha256 em hexadecimal minúsculo, como o contrato da mensagem pede.</summary>
     public static string Sha256Hex(ReadOnlySpan<byte> data) => Convert.ToHexStringLower(SHA256.HashData(data));

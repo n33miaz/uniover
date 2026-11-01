@@ -95,6 +95,7 @@ internal static class LivreProblems
     public const string UnsupportedType = "tv-livre-unsupported";
     public const string BusyType = "tv-livre-busy";
     public const string PhotoTooLargeType = "tv-livre-photo-too-large";
+    public const string PhotoDimensionsType = "tv-livre-photo-dimensions";
 
     /// <summary>Código com que o agente diz que a TV não é Android TV/Google TV com Android 9 ou mais.</summary>
     public const string AgentUnsupportedCode = "unsupported";
@@ -116,9 +117,15 @@ internal static class LivreProblems
         title: "A foto passa do limite de 400 KB.",
         type: ProblemDetailsExtensions.TypeBase + PhotoTooLargeType);
 
+    /// <summary>A foto é um JPEG de verdade mas grande demais em pixels (largura ou altura fora de 1 a 4096).</summary>
+    public static IResult PhotoDimensions() => Results.Problem(
+        statusCode: StatusCodes.Status400BadRequest,
+        title: "As dimensões da foto passam do limite de 4096 pixels por lado.",
+        type: ProblemDetailsExtensions.TypeBase + PhotoDimensionsType);
+
     public static IResult NotJpeg() => Results.Problem(
         statusCode: StatusCodes.Status415UnsupportedMediaType,
-        title: "Envie a foto em JPEG.");
+        title: "Envie a foto em JPEG inteiro.");
 
     /// <summary>
     /// Uma falha de entrega ou do agente. Os códigos do agente (<c>not_installed</c>, <c>invalid_config</c>,

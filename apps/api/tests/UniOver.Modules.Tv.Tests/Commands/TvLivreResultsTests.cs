@@ -85,6 +85,9 @@ public class TvLivreResultsTests
     {
         Problem(LivreProblems.PhotoTooLarge()).StatusCode.Should().Be(StatusCodes.Status413PayloadTooLarge);
         Problem(LivreProblems.NotJpeg()).StatusCode.Should().Be(StatusCodes.Status415UnsupportedMediaType);
+        var dimensions = Problem(LivreProblems.PhotoDimensions());
+        dimensions.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        dimensions.ProblemDetails.Type.Should().EndWith("/tv-livre-photo-dimensions");
     }
 
     // ---- a resposta da tela ----
@@ -151,91 +154,55 @@ public class TvLivreResultsTests
     public void Options_ANonPositiveLivreTimeoutIsInvalid(int seconds) =>
         TvModuleOptions.IsValid(new TvModuleOptions { LivreTimeoutSeconds = seconds }).Should().BeFalse();
 
-    // ---- um passo por TV e o encontro do estado ----
+    // ---- um passo por TV ----
 
     [Fact]
-    public void OnlyOneStepRunsPerTv_AndDisposingFreesTheTurn()
+    public async Task OnlyOneStepRunsPerTv_AndDisposingFreesTheTurn()
     {
-        var requests = new InMemoryTvLivreRequests(TimeProvider.System);
+        var requests = new InMemoryTvLivreRequests();
 
-        var first = requests.TryBegin(Guid.Empty);
+        var first = await requests.TryBeginAsync(Guid.Empty, CancellationToken.None);
         first.Should().NotBeNull();
-        requests.TryBegin(Guid.Empty).Should().BeNull();
+        (await requests.TryBeginAsync(Guid.Empty, CancellationToken.None)).Should().BeNull();
 
-        first!.Dispose();
-        using var second = requests.TryBegin(Guid.Empty);
+        await first!.DisposeAsync();
+        await using var second = await requests.TryBeginAsync(Guid.Empty, CancellationToken.None);
         second.Should().NotBeNull();
         second!.RequestId.Should().NotBe(first.RequestId);
     }
 
     [Fact]
-    public void TwoTvs_DoNotShareTheTurn()
+    public async Task TwoTvs_DoNotShareTheTurn()
     {
-        var requests = new InMemoryTvLivreRequests(TimeProvider.System);
+        var requests = new InMemoryTvLivreRequests();
 
-        using var first = requests.TryBegin(Guid.NewGuid());
-        using var second = requests.TryBegin(Guid.NewGuid());
+        await using var first = await requests.TryBeginAsync(Guid.NewGuid(), CancellationToken.None);
+        await using var second = await requests.TryBeginAsync(Guid.NewGuid(), CancellationToken.None);
 
         first.Should().NotBeNull();
         second.Should().NotBeNull();
     }
 
     [Fact]
-    public async Task TheStoredState_WakesTheWaitOfItsRequestId()
+    public async Task DisposingAStaleTicket_NeverFreesTheTurnOfANewerOne()
     {
-        var requests = new InMemoryTvLivreRequests(TimeProvider.System);
-        using var ticket = requests.TryBegin(Guid.Empty)!;
+        var requests = new InMemoryTvLivreRequests();
+        var first = await requests.TryBeginAsync(Guid.Empty, CancellationToken.None);
+        await first!.DisposeAsync();
+        await using var second = await requests.TryBeginAsync(Guid.Empty, CancellationToken.None);
 
-        var waiting = ticket.WaitForStateAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
-        requests.StateStored(Guid.Empty, ticket.RequestId);
+        await first.DisposeAsync();
 
-        (await waiting.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)).Should().BeTrue();
+        (await requests.TryBeginAsync(Guid.Empty, CancellationToken.None)).Should().BeNull("o passo novo segue ocupando a vez");
     }
 
     [Fact]
-    public async Task AStateThatArrivedBeforeTheWait_IsFoundRightAway()
+    public void TheAdvisoryLockKey_IsStablePerTv_AndDiffersBetweenTvs()
     {
-        var requests = new InMemoryTvLivreRequests(TimeProvider.System);
-        using var ticket = requests.TryBegin(Guid.Empty)!;
+        var tv = Guid.Parse("018f0000-0000-7000-8000-0000000000aa");
 
-        requests.StateStored(Guid.Empty, ticket.RequestId);
-
-        (await ticket.WaitForStateAsync(TimeSpan.Zero, CancellationToken.None)).Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task AStateForAnotherRequestId_IsIgnored_AndTheWaitEndsFalse()
-    {
-        var requests = new InMemoryTvLivreRequests(TimeProvider.System);
-        using var ticket = requests.TryBegin(Guid.Empty)!;
-
-        requests.StateStored(Guid.Empty, Guid.NewGuid());
-
-        (await ticket.WaitForStateAsync(TimeSpan.FromMilliseconds(50), CancellationToken.None)).Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task AStateOfAnotherTv_IsIgnored()
-    {
-        var requests = new InMemoryTvLivreRequests(TimeProvider.System);
-        var tv = Guid.NewGuid();
-        using var ticket = requests.TryBegin(tv)!;
-
-        requests.StateStored(Guid.NewGuid(), ticket.RequestId);
-
-        (await ticket.WaitForStateAsync(TimeSpan.FromMilliseconds(50), CancellationToken.None)).Should().BeFalse();
-    }
-
-    [Fact]
-    public void DisposingAStaleTicket_NeverFreesTheTurnOfANewerOne()
-    {
-        var requests = new InMemoryTvLivreRequests(TimeProvider.System);
-        var first = requests.TryBegin(Guid.Empty)!;
-        first.Dispose();
-        using var second = requests.TryBegin(Guid.Empty)!;
-
-        first.Dispose();
-
-        requests.TryBegin(Guid.Empty).Should().BeNull("o passo novo segue ocupando a vez");
+        TvLivreRequests.KeyOf(tv).Should().Be(TvLivreRequests.KeyOf(tv));
+        TvLivreRequests.KeyOf(tv).Should().NotBe(TvLivreRequests.KeyOf(Guid.Parse("018f0000-0000-7000-8000-0000000000ab")));
+        TvLivreRequests.KeyOf(Guid.Empty).Should().NotBe(0);
     }
 }
