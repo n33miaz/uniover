@@ -223,7 +223,7 @@ describe('PcStore when the account changes', () => {
 
   /** Um pedido de movimento que só termina quando o teste manda. */
   function hangingPointer(api: ReturnType<typeof setup>['api']) {
-    let finish = () => undefined;
+    let finish: () => void = () => undefined;
     api.pointer.mockImplementationOnce(
       () =>
         new Promise<void>((resolve) => {
@@ -309,7 +309,7 @@ describe('PcStore when the account changes', () => {
     const { store, api } = setup();
     signIn('conta-a');
     TestBed.tick();
-    let finish = () => undefined;
+    let finish: () => void = () => undefined;
     api.click.mockImplementationOnce(
       () =>
         new Promise<void>((resolve) => {
