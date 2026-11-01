@@ -84,6 +84,7 @@ def make(  # noqa: PLR0913 - cada parte da cena é um parâmetro de teste
     permission_needed: bool = False,
     protected: tuple[str, ...] = (),
     configured: bool | None = True,
+    deadline_seconds: float = 120.0,
 ) -> tuple[SamsungMaintenanceScheduler, FakeTv, FakeTransport, FakeClock, EnvelopeGate]:
     tv = FakeTv(apps)
     opened: list[str] = []
@@ -114,7 +115,9 @@ def make(  # noqa: PLR0913 - cada parte da cena é um parâmetro de teste
     transport = FakeTransport()
     gate = EnvelopeGate(AGENT_ID)
     scheduler = SamsungMaintenanceScheduler(
-        SamsungMaintenance(driver, clock, lambda: set(protected)),
+        SamsungMaintenance(
+            driver, clock, lambda: set(protected), deadline_seconds=deadline_seconds
+        ),
         clock,
         transport,
         EnvelopeFactory(AGENT_ID, gate, clock),
@@ -369,8 +372,8 @@ async def test_the_timer_loop_survives_a_failing_run_and_stops_on_close() -> Non
     scheduler, tv, transport, _, _ = make({YOUTUBE: shown(), NETFLIX: hidden()})
 
     class Boom:
-        async def run(self, still_idle: Callable[[], bool]) -> Any:
-            del still_idle
+        async def run(self, may_continue: Callable[[], bool]) -> Any:
+            del may_continue
             raise RuntimeError("falha inesperada")
 
     real = scheduler._maintenance
@@ -391,3 +394,56 @@ async def test_the_timer_loop_survives_a_failing_run_and_stops_on_close() -> Non
 
     await scheduler.aclose()
     await asyncio.wait_for(loop, timeout=1)
+
+
+async def test_activity_that_arrives_during_the_last_reading_stops_the_closing() -> None:
+    # A corrida da revisão: o comando chega enquanto a conferência final da TV está em andamento.
+    scheduler, tv, transport, clock, _ = make({YOUTUBE: shown(), NETFLIX: hidden()})
+
+    def touch(app_id: str, count: int) -> None:
+        if app_id == NETFLIX and count == 3:
+            scheduler.note_message("tv.key.v3")
+
+    tv.on_get = touch
+    await idle_period(scheduler, clock)
+
+    assert tv.deleted == []
+    assert bodies(transport)[0]["reason"] == "recent-command"
+
+
+async def test_turning_the_option_off_during_the_last_reading_cancels_the_run() -> None:
+    scheduler, tv, transport, clock, _ = make({YOUTUBE: shown(), NETFLIX: hidden()})
+
+    def turn_off(app_id: str, count: int) -> None:
+        if app_id == NETFLIX and count == 3:
+            scheduler.configure(False)
+
+    tv.on_get = turn_off
+    await idle_period(scheduler, clock)
+
+    assert tv.deleted == []
+    assert transport.sent == []
+
+
+async def test_turning_the_option_off_after_a_closing_stops_the_rest_and_keeps_the_count() -> None:
+    scheduler, tv, transport, clock, _ = make(
+        {YOUTUBE: shown(), NETFLIX: hidden(), PRIME: hidden()}
+    )
+    tv.on_delete = lambda _app_id: scheduler.configure(False)
+
+    await idle_period(scheduler, clock)
+
+    assert len(tv.deleted) == 1
+    body = bodies(transport)[0]
+    assert (body["result"], body["closedApps"]) == ("completed", 1)
+
+
+async def test_the_whole_run_has_a_deadline_and_closes_nothing_past_it() -> None:
+    scheduler, tv, transport, clock, _ = make(
+        {YOUTUBE: shown(), NETFLIX: hidden(), PRIME: hidden()}, deadline_seconds=0.0
+    )
+
+    await idle_period(scheduler, clock)
+
+    assert tv.deleted == []
+    assert bodies(transport)[0]["reason"] == "state-unavailable"

@@ -946,6 +946,12 @@ def test_tv_kind_reads_the_environment_and_defaults_to_android(
     monkeypatch.setenv("UNIOVER_TV_SAMSUNG_APPS", "meu.app, 123456")
     assert Settings().tv_samsung_apps == ["meu.app", "123456"]
 
+    monkeypatch.setenv("UNIOVER_TV_SAMSUNG_APPS", ",".join(str(100000 + n) for n in range(32)))
+    assert len(Settings().tv_samsung_apps) == 32
+    monkeypatch.setenv("UNIOVER_TV_SAMSUNG_APPS", ",".join(str(100000 + n) for n in range(33)))
+    with pytest.raises(ValueError, match="no máximo 32"):
+        Settings()
+
 
 async def test_samsung_link_launch_is_explicitly_unsupported(
     monkeypatch: pytest.MonkeyPatch,
