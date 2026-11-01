@@ -1,5 +1,6 @@
-import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { PcAvailability } from '../../../core/modules/pc-availability';
+import { SessionState } from '../../../core/session/session-state';
 import { PointerAccelerator, wheelFromSwipe } from '../input/pc-acceleration';
 import { PointerBatch, PointerBatcher } from '../input/pointer-batcher';
 import { PcApi } from './pc-api';
@@ -26,6 +27,9 @@ export type PcPhase = 'loading' | 'unavailable' | 'offline' | 'ready';
 export class PcStore {
   private readonly api = inject(PcApi);
   private readonly availability = inject(PcAvailability);
+  private readonly session = inject(SessionState);
+  /** A conta de quem é o estado de movimento e de arrastar guardado aqui (o store vive a aba toda, as contas não). */
+  private account = this.session.accountId();
   private readonly accelerator = new PointerAccelerator();
   private readonly batcher = new PointerBatcher((batch) => this.sendPointer(batch));
 
@@ -42,6 +46,14 @@ export class PcStore {
   });
   readonly canSend = computed(() => this.phase() === 'ready');
   readonly apps = this.availability.apps;
+
+  constructor() {
+    // Trocar de conta (sair e entrar como outra pessoa, sem recarregar) descarta o que era da anterior, mesmo sem uso.
+    effect(() => {
+      this.session.accountId();
+      untracked(() => this.syncAccount());
+    });
+  }
 
   /**
    * A tela chama ao abrir: relê o estado já e depois a cada `PC_POLL_MS` (só com a aba visível). Devolve a função que
@@ -71,6 +83,7 @@ export class PcStore {
 
   /** Um dedo novo pousou: ele não herda a fração de pixel do anterior. */
   beginGesture(): void {
+    this.syncAccount();
     this.accelerator.reset();
   }
 
@@ -81,6 +94,7 @@ export class PcStore {
 
   /** Passo do dedo em pixels; a aceleração e o agrupamento são daqui. */
   movePointer(dx: number, dy: number, elapsedMs: number): void {
+    this.syncAccount();
     if (!this.canSend()) return;
     const step = this.accelerator.apply(dx, dy, elapsedMs);
     if (step.dx !== 0 || step.dy !== 0) this.batcher.addMove(step.dx, step.dy);
@@ -88,6 +102,7 @@ export class PcStore {
 
   /** Deslize de dois dedos em pixels do centro. */
   scrollPointer(dx: number, dy: number): void {
+    this.syncAccount();
     if (!this.canSend()) return;
     const wheel = wheelFromSwipe(dx, dy);
     if (wheel.scrollX !== 0 || wheel.scrollY !== 0) {
@@ -100,16 +115,22 @@ export class PcStore {
     button: PcClickButton,
     action?: 'CLICK' | 'DOUBLE' | 'DOWN' | 'UP',
   ): Promise<PcFailure | null> {
+    this.syncAccount();
     if (!this.canSend()) return this.blocked();
+    const asked = this.account;
     await this.batcher.drain();
+    // A conta trocou enquanto o movimento saía: o clique era de outra pessoa e não vai ao PC desta.
+    if (this.session.accountId() !== asked) return this.blocked();
     return this.run(() => this.api.click(button, action));
   }
 
   /** Aperta o botão esquerdo e o mantém (arrastar); chamar de novo solta. */
   async toggleDrag(): Promise<PcFailure | null> {
+    this.syncAccount();
+    const asked = this.account;
     const next = !this.dragging();
     const failure = await this.click('LEFT', next ? 'DOWN' : 'UP');
-    if (!failure) this.dragging.set(next);
+    if (!failure && this.session.accountId() === asked) this.dragging.set(next);
     return failure;
   }
 
@@ -159,7 +180,27 @@ export class PcStore {
         };
   }
 
+  /**
+   * Se a conta mudou desde que o estado daqui foi guardado, joga fora a fila e o aguardo da taxa do movimento, a fração
+   * do acelerador, o aviso e o "Arrastar" ligado (o botão apertado era no PC da outra pessoa: quem soltaria seria o próximo
+   * toque, mandando um `UP` ao PC desta). Não esvazia a fila: o que esperava nunca deve sair.
+   */
+  private syncAccount(): void {
+    const current = this.session.accountId();
+    if (current === this.account) return;
+    this.account = current;
+    this.batcher.discard();
+    this.accelerator.reset();
+    this.dragging.set(false);
+    this.notice.set(null);
+  }
+
   private async sendPointer(batch: PointerBatch): Promise<boolean> {
+    // Um movimento agendado por uma conta não sai depois que a aba virou outra.
+    if (this.session.accountId() !== this.account) {
+      this.syncAccount();
+      return false;
+    }
     try {
       await this.api.pointer(batch.dx, batch.dy, batch.scrollX, batch.scrollY);
       this.notice.set(null);

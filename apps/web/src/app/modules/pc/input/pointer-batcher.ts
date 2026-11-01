@@ -84,6 +84,16 @@ export class PointerBatcher {
     }
   }
 
+  /**
+   * Esquece o que esperava (movimento somado e o aguardo da taxa) e continua utilizável. É o que a troca de conta usa:
+   * movimento pendente de uma pessoa nunca sai depois como se fosse de outra. Não espera nada ("esvaziar" mandaria o
+   * movimento antigo). O pedido que já está em voo segue, mas o que ele deixar para trás também é descartado.
+   */
+  discard(): void {
+    this.cancelTimer();
+    this.pending = { dx: 0, dy: 0, scrollX: 0, scrollY: 0 };
+  }
+
   /** Encerra: o que esperava é descartado e nada mais sai. */
   stop(): void {
     this.stopped = true;

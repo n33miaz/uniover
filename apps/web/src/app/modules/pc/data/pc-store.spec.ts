@@ -2,6 +2,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { PcAvailability, type PcStatus } from '../../../core/modules/pc-availability';
+import { SessionState } from '../../../core/session/session-state';
 import { status } from '../pc-test-kit';
 import { PcApi } from './pc-api';
 import { PC_POLL_MS, PcStore } from './pc-store';
@@ -32,6 +33,15 @@ function setup(initial: PcStatus | null = status()) {
 }
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+function signIn(id: string) {
+  TestBed.inject(SessionState).setUser({
+    id,
+    email: `${id}@exemplo.com`,
+    displayName: id,
+    role: 'owner',
+  });
+}
 
 describe('PcStore phase', () => {
   it.each<[PcStatus | null, string, boolean]>([
@@ -205,5 +215,113 @@ describe('PcStore watch', () => {
     expect(availability.refresh).toHaveBeenCalledTimes(1);
     stop();
     vi.restoreAllMocks();
+  });
+});
+
+describe('PcStore when the account changes', () => {
+  afterEach(() => localStorage.clear());
+
+  /** Um pedido de movimento que só termina quando o teste manda. */
+  function hangingPointer(api: ReturnType<typeof setup>['api']) {
+    let finish = () => undefined;
+    api.pointer.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    return () => finish();
+  }
+
+  it('a movement scheduled by one account never leaves after the next person signed in', async () => {
+    const { store, api } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    const finish = hangingPointer(api);
+
+    store.movePointer(10, 0, 16); // sai já e fica em voo
+    store.movePointer(20, 0, 16); // fica esperando atrás dele
+    expect(api.pointer).toHaveBeenCalledTimes(1);
+
+    signIn('conta-b');
+    TestBed.tick();
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(api.pointer).toHaveBeenCalledTimes(1);
+
+    // E o store segue utilizável para a pessoa nova.
+    store.movePointer(5, 0, 16);
+    await flush();
+    expect(api.pointer).toHaveBeenCalledTimes(2);
+  });
+
+  it('a movement still waiting is dropped even before the effect noticed the change', async () => {
+    const { store, api } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    const finish = hangingPointer(api);
+    store.movePointer(10, 0, 16);
+    store.movePointer(20, 0, 16);
+
+    signIn('conta-b'); // sem `TestBed.tick()`: quem barra é a conferência na hora de enviar
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(api.pointer).toHaveBeenCalledTimes(1);
+  });
+
+  it('an active drag does not carry over: the next toggle presses, it does not release', async () => {
+    const { store, api } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    await store.toggleDrag();
+    expect(store.dragging()).toBe(true);
+
+    signIn('conta-b');
+    TestBed.tick();
+    expect(store.dragging()).toBe(false);
+
+    await store.toggleDrag();
+    expect(api.click.mock.calls).toEqual([
+      ['LEFT', 'DOWN'],
+      ['LEFT', 'DOWN'],
+    ]);
+    expect(store.dragging()).toBe(true);
+  });
+
+  it('a click that was waiting for the movement of another account is not sent', async () => {
+    const { store, api } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    const finish = hangingPointer(api);
+    store.movePointer(10, 0, 16);
+
+    const clicking = store.click('LEFT');
+    await flush();
+    signIn('conta-b');
+    finish();
+
+    expect((await clicking)?.kind).toBe('unavailable');
+    expect(api.click).not.toHaveBeenCalled();
+  });
+
+  it('a drag that finished after the change does not mark the new account as dragging', async () => {
+    const { store, api } = setup();
+    signIn('conta-a');
+    TestBed.tick();
+    let finish = () => undefined;
+    api.click.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const dragging = store.toggleDrag();
+    await flush();
+    signIn('conta-b');
+    TestBed.tick();
+    finish();
+    await dragging;
+    expect(store.dragging()).toBe(false);
   });
 });

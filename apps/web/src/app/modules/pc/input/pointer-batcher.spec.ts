@@ -152,6 +152,25 @@ describe('PointerBatcher', () => {
     expect(batcher.busy).toBe(false);
   });
 
+  it('discard drops what was waiting (and the wait for the rate) but keeps working afterwards', async () => {
+    const clock = fakeClock();
+    const { send, batches, finish } = controlledSend();
+    const batcher = new PointerBatcher(send, OPTIONS, clock);
+    batcher.addMove(1, 0);
+    batcher.addMove(5, 5);
+    batcher.discard();
+    finish();
+    await flush();
+    clock.advance(500);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(batcher.busy).toBe(false);
+
+    batcher.addMove(7, 7);
+    expect(batches[1]).toEqual({ dx: 7, dy: 7, scrollX: 0, scrollY: 0 });
+    finish();
+    await flush();
+  });
+
   it('stop discards what was waiting and nothing leaves afterwards', async () => {
     const clock = fakeClock();
     const { send, finish } = controlledSend();

@@ -72,12 +72,17 @@ export class PcAvailability {
     });
   }
 
-  /** Relê o estado. Devolve `false` quando a API não respondeu (rede, sessão, sem permissão): o estado anterior fica. */
+  /**
+   * Relê o estado. Devolve `false` quando a API não respondeu (rede, sessão, sem permissão): o estado anterior fica. Uma
+   * resposta que sai de uma conta e chega depois de a aba trocar para outra é descartada: o status e os favoritos do PC
+   * de uma pessoa nunca aparecem para a seguinte.
+   */
   async refresh(): Promise<boolean> {
+    const asked = this.session.accountId();
     try {
       const http = this.injector.get(HttpClient);
       const parsed = parsePcStatus(await firstValueFrom(http.get<unknown>(PC_STATUS_PATH)));
-      if (!parsed) return false;
+      if (!parsed || this.session.accountId() !== asked) return false;
       this.current.set(parsed);
       return true;
     } catch {
