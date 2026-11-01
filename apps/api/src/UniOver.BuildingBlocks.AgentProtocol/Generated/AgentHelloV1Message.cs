@@ -123,7 +123,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentLogsV1, AgentMaintenanceV1, TransportKeepaliveV1, TvAdb, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvPermissionV1, TvPowerOffV1, TvRemote };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentLogsV1, AgentMaintenanceV1, TransportKeepaliveV1, TvAdb, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvPermissionV1, TvPowerOffV1, TvRemote };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -253,6 +253,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.TvKindSamsung;
                 case "tv.light-settings.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvLightSettingsV1;
+                case "tv.livre.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.TvLivreV1;
                 case "tv.permission.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvPermissionV1;
                 case "tv.power.off.v1":
@@ -362,6 +364,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvLightSettingsV1:
                     JsonSerializer.Serialize(writer, "tv.light-settings.v1", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvLivreV1:
+                    JsonSerializer.Serialize(writer, "tv.livre.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvPermissionV1:
                     JsonSerializer.Serialize(writer, "tv.permission.v1", options);
