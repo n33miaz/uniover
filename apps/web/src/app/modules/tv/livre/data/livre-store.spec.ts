@@ -2,7 +2,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../../../core/session/session-state';
 import { TvApi } from '../../data/tv-api';
-import { makeShortcut } from '../../tv-test-kit';
+import { TvSelection } from '../../data/tv-selection';
+import { makeShortcut, makeTv } from '../../tv-test-kit';
 import { TvLivreApi } from './livre-api';
 import { TvLivreStore } from './livre-store';
 import { LIVRE_PHOTO_REDUCER, PhotoFit } from './photo-fit';
@@ -372,8 +373,7 @@ describe('TvLivreStore', () => {
       );
       api.photo.mockResolvedValue(jpeg);
       await open();
-      await settle();
-      expect(store.photoUrl()).toMatch(/^data:image\/jpeg/);
+      await vi.waitFor(() => expect(store.photoUrl()).toMatch(/^data:image\/jpeg/));
       api.deletePhoto.mockResolvedValue(undefined);
       expect(await store.removePhoto()).toBe(true);
       expect(store.view()?.hasPhoto).toBe(false);
@@ -457,5 +457,257 @@ describe('TvLivreStore', () => {
       await settle();
       expect(store.view()?.version).not.toBe('velha');
     });
+  });
+  describe('answers that arrive after the TV or the account changed', () => {
+    interface Deferred<T> {
+      promise: Promise<T>;
+      resolve: (value?: unknown) => void;
+      reject: (error: unknown) => void;
+    }
+
+    function deferred<T>(): Deferred<T> {
+      let resolve!: (value?: unknown) => void;
+      let reject!: (error: unknown) => void;
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res as (value?: unknown) => void;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    const jpeg = new Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: 'image/jpeg' });
+    const OLD = view({ version: 'antiga', hasPhoto: true });
+    const NEW = view({ version: 'nova' });
+
+    /** Cada ação, com o pedido de rede que ela espera segurado (para a troca acontecer no meio) e o que ele devolve com sucesso. */
+    const ACTIONS: {
+      name: string;
+      hold: (pending: Promise<unknown>) => void;
+      run: () => Promise<boolean>;
+      ok: unknown;
+    }[] = [
+      {
+        name: 'refresh',
+        hold: (p) => api.refresh.mockReturnValue(p),
+        run: () => store.refresh(),
+        ok: view({ version: 'velha', isHome: true, hasPhoto: true }),
+      },
+      {
+        name: 'apply (saving)',
+        hold: (p) => api.saveConfig.mockReturnValue(p),
+        run: () => store.apply(),
+        ok: view({ version: 'velha', hasPhoto: true }),
+      },
+      {
+        name: 'install',
+        hold: (p) => api.install.mockReturnValue(p),
+        run: () => store.install(),
+        ok: view({ version: 'velha', installed: true, hasPhoto: true }),
+      },
+      {
+        name: 'set as home',
+        hold: (p) => api.setHome.mockReturnValue(p),
+        run: () => store.setHome(true),
+        ok: view({ version: 'velha', isHome: true, hasPhoto: true }),
+      },
+      {
+        name: 'restore',
+        hold: (p) => api.restore.mockReturnValue(p),
+        run: () => store.restore(),
+        ok: view({ version: 'velha', installed: false, hasPhoto: true }),
+      },
+      {
+        name: 'sleep',
+        hold: (p) => api.sleep.mockReturnValue(p),
+        run: () => store.sleep(),
+        ok: undefined,
+      },
+      {
+        name: 'sending the photo',
+        hold: (p) => {
+          reducer.mockResolvedValue({
+            status: 'ok',
+            blob: jpeg,
+            size: { width: 1, height: 1 },
+            quality: 0.5,
+          });
+          api.putPhoto.mockReturnValue(p);
+        },
+        run: () => store.choosePhoto(new Blob(['x'])),
+        ok: undefined,
+      },
+      {
+        name: 'removing the photo',
+        hold: (p) => api.deletePhoto.mockReturnValue(p),
+        run: () => store.removePhoto(),
+        ok: undefined,
+      },
+    ];
+
+    const SWITCHES: { name: string; change: () => void }[] = [
+      { name: 'TV', change: () => TestBed.inject(TvSelection).select('b') },
+      {
+        name: 'account',
+        change: () =>
+          TestBed.inject(SessionState).setUser({
+            id: 'outra-conta',
+            email: 'outra@exemplo.com',
+            displayName: 'Outra',
+            role: 'owner',
+          }),
+      },
+    ];
+
+    /** Abre a tela com a TV "a" (e "b" disponível), estado antigo e uma foto, e anota onde se está. */
+    async function openOnOldTv() {
+      TestBed.inject(SessionState).setUser({
+        id: 'conta-dono',
+        email: 'dono@exemplo.com',
+        displayName: 'Dono',
+        role: 'owner',
+      });
+      TestBed.inject(TvSelection).setTvs([makeTv('a', { isDefault: true }), makeTv('b')]);
+      TestBed.tick();
+      api.get.mockResolvedValue(OLD);
+      api.photo.mockResolvedValue(jpeg);
+      await open();
+      // A leitura da foto (FileReader) termina fora da fila de promessas: espera o estado, nunca um tempo fixo.
+      await vi.waitFor(() => expect(store.photoUrl()).not.toBeNull());
+    }
+
+    function expectNewScreenUntouched() {
+      expect(store.view()?.version).toBe('nova');
+      expect(store.view()?.hasPhoto).toBe(false);
+      expect(store.view()?.isHome).toBe(false);
+      expect(store.photoUrl()).toBeNull();
+      expect(store.notice()).toBeNull();
+      expect(store.busy()).toBeNull();
+      expect(store.loadFailure()).toBeNull();
+      expect(store.draft()?.apps.items).toEqual([]);
+      expect(store.draft()?.wallpaper.type).toBe('gradient');
+    }
+
+    for (const change of SWITCHES) {
+      describe(`when the ${change.name} changes during`, () => {
+        for (const action of ACTIONS) {
+          it(`${action.name}: a late success does not touch the new screen`, async () => {
+            await openOnOldTv();
+            const held = deferred<unknown>();
+            action.hold(held.promise);
+            const result = action.run();
+            await settle();
+            expect(store.busy()).not.toBeNull();
+
+            api.get.mockResolvedValue(NEW);
+            api.photo.mockResolvedValue(null);
+            change.change();
+            await settle();
+            await settle();
+            expectNewScreenUntouched();
+
+            held.resolve(action.ok);
+            expect(await result).toBe(false);
+            await settle();
+            await settle();
+            expectNewScreenUntouched();
+            // Um pedido que se estende depois da troca (guardar e então aplicar) não chega a sair.
+            expect(api.apply).not.toHaveBeenCalled();
+          });
+
+          it(`${action.name}: a late failure does not touch the new screen either`, async () => {
+            await openOnOldTv();
+            const held = deferred<unknown>();
+            action.hold(held.promise);
+            const result = action.run();
+            await settle();
+
+            api.get.mockResolvedValue(NEW);
+            api.photo.mockResolvedValue(null);
+            change.change();
+            await settle();
+            await settle();
+
+            held.reject(failure(502, { agentError: 'install_failed' }));
+            expect(await result).toBe(false);
+            await settle();
+            await settle();
+            expectNewScreenUntouched();
+          });
+        }
+
+        it('apply (applying): the answer that comes after the save does not touch the new screen', async () => {
+          await openOnOldTv();
+          const held = deferred<unknown>();
+          api.saveConfig.mockResolvedValue(view({ version: 'velha', hasPhoto: true }));
+          api.apply.mockReturnValue(held.promise);
+          const result = store.apply();
+          await settle();
+          expect(api.apply).toHaveBeenCalledTimes(1);
+
+          api.get.mockResolvedValue(NEW);
+          api.photo.mockResolvedValue(null);
+          change.change();
+          await settle();
+          await settle();
+          held.reject(failure(502, { agentError: 'push_failed' }));
+          expect(await result).toBe(false);
+          await settle();
+          expectNewScreenUntouched();
+        });
+
+        it('the first reading of the old context does not fill the new one', async () => {
+          TestBed.inject(SessionState).setUser({
+            id: 'conta-dono',
+            email: 'dono@exemplo.com',
+            displayName: 'Dono',
+            role: 'owner',
+          });
+          TestBed.inject(TvSelection).setTvs([makeTv('a', { isDefault: true }), makeTv('b')]);
+          TestBed.tick();
+          const first = deferred<TvLivreView>();
+          api.get.mockReturnValueOnce(first.promise);
+          store.start();
+          api.get.mockResolvedValue(NEW);
+          api.photo.mockResolvedValue(null);
+          change.change();
+          await settle();
+          await settle();
+          first.resolve(OLD);
+          await settle();
+          await settle();
+          expectNewScreenUntouched();
+          expect(store.loading()).toBe(false);
+        });
+
+        it('the action of the TV in use still works, and is not blocked by the old one', async () => {
+          await openOnOldTv();
+          const held = deferred<unknown>();
+          api.install.mockReturnValue(held.promise);
+          const stale = store.install();
+          await settle();
+
+          api.get.mockResolvedValue(NEW);
+          api.photo.mockResolvedValue(null);
+          change.change();
+          await settle();
+          await settle();
+          expect(store.busy()).toBeNull();
+
+          api.setHome.mockResolvedValue(view({ version: 'nova', isHome: true }));
+          expect(await store.setHome(false)).toBe(true);
+          expect(store.view()?.isHome).toBe(true);
+          expect(store.notice()?.kind).toBe('ok');
+
+          // A resposta velha chega no meio e não desfaz nada do que a tela nova já mostra.
+          held.resolve(view({ version: 'velha', installed: true }));
+          expect(await stale).toBe(false);
+          await settle();
+          expect(store.view()?.version).toBe('nova');
+          expect(store.view()?.isHome).toBe(true);
+          expect(store.notice()?.kind).toBe('ok');
+          expect(store.busy()).toBeNull();
+        });
+      });
+    }
   });
 });

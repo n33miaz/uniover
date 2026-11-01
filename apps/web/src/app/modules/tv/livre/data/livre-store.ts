@@ -40,6 +40,9 @@ export type LivreBlock = 'unsupported' | 'offline';
 /** Falha que nasce na própria tela (a foto não pôde ser lida), com a frase já pronta. */
 class LocalFailure extends Error {}
 
+/** O pedido era de uma conta ou TV que já não está na tela: o que ele trouxer (sucesso ou erro) não vale mais. */
+class StaleRequest extends Error {}
+
 /** A foto como texto `data:` (a política de segurança do app só aceita `img-src 'self' data:`, nunca `blob:`). */
 function toDataUrl(blob: Blob): Promise<string | null> {
   return new Promise((resolve) => {
@@ -177,7 +180,7 @@ export class TvLivreStore {
       ]);
       if (epoch !== this.epoch) return;
       if (shortcuts) this._shortcuts.set(shortcuts);
-      this.adopt(view);
+      this.adopt(view, epoch);
     } catch (error) {
       if (epoch !== this.epoch) return;
       const text = describeLivreFailure(error).message;
@@ -190,8 +193,8 @@ export class TvLivreStore {
 
   /** Pede ao agente o estado de agora (instalado, versão, é a tela inicial?). */
   refresh(): Promise<boolean> {
-    return this.run('refresh', async () => {
-      this.adopt(await this.api.refresh());
+    return this.run('refresh', async (epoch) => {
+      this.adopt(await this.live(epoch, this.api.refresh()), epoch);
       return $localize`:@@tv-livre.notice.refreshed:Estado atualizado.`;
     });
   }
@@ -204,14 +207,16 @@ export class TvLivreStore {
     const draft = this._draft();
     const view = this._view();
     if (!draft || !view) return Promise.resolve(false);
-    return this.run('apply', async () => {
-      const saved = await this.api.saveConfig(
-        buildConfig(draft, { hasPhoto: view.hasPhoto, apps: view.apps }),
+    return this.run('apply', async (epoch) => {
+      const saved = await this.live(
+        epoch,
+        this.api.saveConfig(buildConfig(draft, { hasPhoto: view.hasPhoto, apps: view.apps })),
       );
-      this.adopt(saved, true);
+      this.adopt(saved, epoch, true);
       try {
-        this.adopt(await this.api.apply());
+        this.adopt(await this.live(epoch, this.api.apply()), epoch);
       } catch (error) {
+        if (error instanceof StaleRequest) throw error;
         const reason = describeLivreFailure(error).message;
         throw new LocalFailure(
           $localize`:@@tv-livre.notice.saved-not-applied:Salvo, mas a TV não aplicou. ${reason}:reason:`,
@@ -222,39 +227,39 @@ export class TvLivreStore {
   }
 
   install(): Promise<boolean> {
-    return this.run('install', async () => {
-      this.adopt(await this.api.install());
+    return this.run('install', async (epoch) => {
+      this.adopt(await this.live(epoch, this.api.install()), epoch);
       return $localize`:@@tv-livre.notice.installed:TV Livre instalado.`;
     });
   }
 
   /** Define o TV Livre como a tela inicial; com `disableFactory` desativa também o launcher de fábrica. */
   setHome(disableFactory: boolean): Promise<boolean> {
-    return this.run('set-home', async () => {
-      this.adopt(await this.api.setHome(disableFactory));
+    return this.run('set-home', async (epoch) => {
+      this.adopt(await this.live(epoch, this.api.setHome(disableFactory)), epoch);
       return $localize`:@@tv-livre.notice.home-set:TV Livre é a tela inicial.`;
     });
   }
 
   /** "Voltar ao Original": devolve a tela inicial de fábrica e desinstala o TV Livre. */
   restore(): Promise<boolean> {
-    return this.run('restore', async () => {
-      this.adopt(await this.api.restore(true));
+    return this.run('restore', async (epoch) => {
+      this.adopt(await this.live(epoch, this.api.restore(true)), epoch);
       return $localize`:@@tv-livre.notice.restored:A TV voltou ao original.`;
     });
   }
 
   sleep(): Promise<boolean> {
-    return this.run('sleep', async () => {
-      await this.api.sleep();
+    return this.run('sleep', async (epoch) => {
+      await this.live(epoch, this.api.sleep());
       return $localize`:@@tv-livre.notice.sleeping:Modo Dormir enviado à TV.`;
     });
   }
 
   /** Reduz a foto no navegador e a envia; o fundo passa a ser a foto. */
   choosePhoto(file: Blob): Promise<boolean> {
-    return this.run('photo', async () => {
-      const fit = await this.reducer(file);
+    return this.run('photo', async (epoch) => {
+      const fit = await this.live(epoch, this.reducer(file));
       if (fit.status === 'invalid') {
         throw new LocalFailure($localize`:@@tv-livre.photo.invalid:Não deu para ler esta foto.`);
       }
@@ -263,8 +268,9 @@ export class TvLivreStore {
           $localize`:@@tv-livre.photo.too-big:A foto continua grande demais mesmo reduzida.`,
         );
       }
-      await this.api.putPhoto(fit.blob);
-      this._photoUrl.set(await toDataUrl(fit.blob));
+      await this.live(epoch, this.api.putPhoto(fit.blob));
+      const url = await this.live(epoch, toDataUrl(fit.blob));
+      this._photoUrl.set(url);
       this._view.update((view) => (view ? { ...view, hasPhoto: true } : view));
       this.edit((draft) => ({ ...draft, wallpaper: { ...draft.wallpaper, type: 'photo' } }));
       return $localize`:@@tv-livre.photo.saved:Foto salva.`;
@@ -272,8 +278,8 @@ export class TvLivreStore {
   }
 
   removePhoto(): Promise<boolean> {
-    return this.run('photo', async () => {
-      await this.api.deletePhoto();
+    return this.run('photo', async (epoch) => {
+      await this.live(epoch, this.api.deletePhoto());
       this._photoUrl.set(null);
       this._view.update((view) => (view ? { ...view, hasPhoto: false } : view));
       // Sem foto, o fundo volta ao degradê (o launcher faria o mesmo, e a API não aplica foto que não existe).
@@ -345,18 +351,34 @@ export class TvLivreStore {
   }
 
   /**
-   * Adota o estado que o servidor devolveu. O rascunho nasce dele na primeira vez e depois só muda quando a pessoa edita
-   * (ou quando `resync` pede, ao guardar, para o rascunho ficar igual ao que foi guardado).
+   * Espera a resposta de um pedido e só a entrega se a conta e a TV ainda são as de quando ele saiu: do contrário nada do que ele
+   * traz (sucesso ou erro) pode tocar a tela nova. Toda mudança de signal depois de um `await` passa por aqui.
    */
-  private adopt(view: TvLivreView, resync = false): void {
+  private async live<T>(epoch: number, pending: Promise<T>): Promise<T> {
+    try {
+      const value = await pending;
+      if (epoch !== this.epoch) throw new StaleRequest();
+      return value;
+    } catch (error) {
+      if (epoch !== this.epoch) throw new StaleRequest();
+      throw error;
+    }
+  }
+
+  /**
+   * Adota o estado que o servidor devolveu. O rascunho nasce dele na primeira vez e depois só muda quando a pessoa edita
+   * (ou quando `resync` pede, ao guardar, para o rascunho ficar igual ao que foi guardado). Um estado de outra conta ou TV é
+   * descartado.
+   */
+  private adopt(view: TvLivreView, epoch: number, resync = false): void {
+    if (epoch !== this.epoch) throw new StaleRequest();
     this._view.set(view);
     if (this._draft() === null || resync) this._draft.set(normalizeApps(view.config));
     if (!view.hasPhoto) this._photoUrl.set(null);
-    else if (this._photoUrl() === null) void this.loadPhoto();
+    else if (this._photoUrl() === null) void this.loadPhoto(epoch);
   }
 
-  private async loadPhoto(): Promise<void> {
-    const epoch = this.epoch;
+  private async loadPhoto(epoch: number): Promise<void> {
     try {
       const blob = await this.api.photo();
       const url = blob ? await toDataUrl(blob) : null;
@@ -367,17 +389,21 @@ export class TvLivreStore {
   }
 
   /** Um pedido por vez; devolve se deu certo. O texto que o pedido devolve é o aviso de sucesso. */
-  private async run(action: LivreAction, task: () => Promise<string>): Promise<boolean> {
+  private async run(
+    action: LivreAction,
+    task: (epoch: number) => Promise<string>,
+  ): Promise<boolean> {
     if (this._busy() !== null) return false;
     const epoch = this.epoch;
     this._busy.set(action);
     this._notice.set(null);
     try {
-      const text = await task();
-      if (epoch === this.epoch) this._notice.set({ kind: 'ok', text });
-      return epoch === this.epoch;
+      const text = await task(epoch);
+      if (epoch !== this.epoch) return false;
+      this._notice.set({ kind: 'ok', text });
+      return true;
     } catch (error) {
-      if (epoch === this.epoch) {
+      if (epoch === this.epoch && !(error instanceof StaleRequest)) {
         const text =
           error instanceof LocalFailure ? error.message : describeLivreFailure(error).message;
         this._notice.set({ kind: 'error', text });
