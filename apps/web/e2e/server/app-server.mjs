@@ -46,7 +46,7 @@ async function sendPage(root, pathname, res, head) {
     .replace('<!--uniover:manifest-->', manifestLinks(pathname));
   res.writeHead(200, {
     'content-type': TYPES['.html'],
-    'content-security-policy': CSP_TEMPLATE.replace('{nonce}', nonce),
+    'content-security-policy': CSP_TEMPLATE.replaceAll('{nonce}', nonce),
     'cache-control': 'no-cache',
   });
   res.end(head ? undefined : html);
