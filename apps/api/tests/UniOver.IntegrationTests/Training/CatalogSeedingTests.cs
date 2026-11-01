@@ -2,10 +2,15 @@ using System.Diagnostics;
 using System.Net;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Npgsql;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Training.Catalog;
 using UniOver.Modules.Training.Contracts;
 using UniOver.Modules.Training.Domain;
+using UniOver.Modules.Training.Domain.Routines;
+using UniOver.Modules.Training.Domain.Sessions;
 
 namespace UniOver.IntegrationTests.Training;
 
@@ -154,6 +159,158 @@ public sealed class CatalogSeedingTests(PostgresFixture postgres)
         await SeederFor(app, Document(3, Item("goblet", "Supino A"))).EnsureSeededAsync(Ct);
         await using var check = app.Db();
         (await check.Exercises.SingleAsync(e => e.Source == ExerciseSources.Uniover, Ct)).DeletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task SeedVersionTwo_PreservesExistingReferencesAndLoadChoices_AndAddsEachNewExerciseOnce()
+    {
+        await using var app = await TrainingApp.StartAsync(postgres);
+        var versionTwo = CatalogSeedSource.Read();
+        var newExercises = versionTwo.Exercises.Where(e => e.Source == ExerciseSources.Uniover).ToArray();
+        var versionOne = new SeedDocument(1, versionTwo.SourceCommit,
+            versionTwo.Exercises.Where(e => e.Source != ExerciseSources.Uniover).ToArray());
+        var oldExercise = versionOne.Exercises[0];
+        var oldExerciseId = ExerciseIds.ForCatalog(oldExercise.Source, oldExercise.SourceRef);
+        var userId = Guid.NewGuid();
+        var routineId = Guid.CreateVersion7();
+        var sessionId = Guid.CreateVersion7();
+        var setId = Guid.CreateVersion7();
+        var now = DateTimeOffset.UtcNow;
+        var expectedLegacyExercises = versionOne.Exercises
+            .Select(e => (e.Source, e.SourceRef, Id: ExerciseIds.ForCatalog(e.Source, e.SourceRef)))
+            .OrderBy(e => e.Id)
+            .ToArray();
+        var expectedUniOverExercises = newExercises
+            .Select(e => (e.SourceRef, Id: ExerciseIds.ForCatalog(e.Source, e.SourceRef)))
+            .OrderBy(e => e.Id)
+            .ToArray();
+
+        newExercises.Should().NotBeEmpty();
+        await SeederFor(app, versionOne).EnsureSeededAsync(Ct);
+
+        await using (var db = app.Db())
+        {
+            db.Set<Routine>().Add(new Routine
+            {
+                Id = routineId,
+                UserId = userId,
+                Name = "Rotina preservada",
+                Position = 0,
+                CreatedAt = now,
+                UpdatedAt = now,
+                ClientUpdatedAt = now,
+                Items =
+                [
+                    new RoutineItem
+                    {
+                        Id = Guid.CreateVersion7(),
+                        ExerciseId = oldExerciseId,
+                        Position = 0,
+                        TargetSets = 3,
+                        RepMin = 8,
+                        RepMax = 12,
+                        RestSeconds = 90,
+                    },
+                ],
+            });
+            db.Set<Session>().Add(new Session
+            {
+                Id = sessionId,
+                UserId = userId,
+                RoutineId = routineId,
+                StartedAt = now,
+                FinishedAt = now.AddMinutes(30),
+                DeviceId = "aparelho",
+                CreatedAt = now,
+                UpdatedAt = now,
+                ClientUpdatedAt = now,
+            });
+            db.Set<SessionSet>().Add(new SessionSet
+            {
+                Id = setId,
+                UserId = userId,
+                SessionId = sessionId,
+                ExerciseId = oldExerciseId,
+                Position = 0,
+                SetType = SetTypes.Work,
+                WeightKg = 42.5m,
+                Reps = 10,
+                CompletedAt = now.AddMinutes(10),
+                CreatedAt = now,
+                UpdatedAt = now,
+                ClientUpdatedAt = now,
+            });
+            db.ExerciseOverrides.Add(new ExerciseOverride
+            {
+                UserId = userId,
+                ExerciseId = oldExerciseId,
+                StepKg = 1.25m,
+                UpdatedAt = now,
+                ClientUpdatedAt = now,
+            });
+            await db.SaveChangesAsync(Ct);
+        }
+
+        await SeederFor(app, versionTwo).EnsureSeededAsync(Ct);
+        DateTimeOffset seededAt;
+        Dictionary<Guid, DateTimeOffset> updatedAt;
+        await using (var afterFirstUpdate = app.Db())
+        {
+            seededAt = (await afterFirstUpdate.CatalogMeta.SingleAsync(Ct)).SeededAt;
+            updatedAt = await afterFirstUpdate.Exercises
+                .Select(e => new { e.Id, e.UpdatedAt })
+                .ToDictionaryAsync(e => e.Id, e => e.UpdatedAt, Ct);
+        }
+
+        await SeederFor(app, versionTwo).EnsureSeededAsync(Ct);
+
+        await using var check = app.Db();
+        var meta = await check.CatalogMeta.SingleAsync(Ct);
+        meta.SeedVersion.Should().Be(versionTwo.SeedVersion);
+        meta.SeededAt.Should().Be(seededAt, "a segunda carga não pode regravar os metadados");
+        (await check.Exercises.SingleAsync(e => e.Id == oldExerciseId, Ct)).SourceRef.Should().Be(oldExercise.SourceRef);
+        (await check.Set<RoutineItem>().SingleAsync(i => i.RoutineId == routineId, Ct)).ExerciseId.Should().Be(oldExerciseId);
+        (await check.Set<Session>().SingleAsync(s => s.Id == sessionId, Ct)).RoutineId.Should().Be(routineId);
+        var storedSet = await check.Set<SessionSet>().SingleAsync(s => s.Id == setId, Ct);
+        storedSet.ExerciseId.Should().Be(oldExerciseId);
+        storedSet.WeightKg.Should().Be(42.5m);
+        (await check.ExerciseOverrides.SingleAsync(o => o.UserId == userId && o.ExerciseId == oldExerciseId, Ct)).StepKg.Should().Be(1.25m);
+        (await check.Exercises.CountAsync(Ct)).Should().Be(versionTwo.Exercises.Count);
+        (await check.Exercises
+            .Select(e => new { e.Source, e.SourceRef, e.Id, e.UpdatedAt })
+            .ToDictionaryAsync(e => e.Id, e => e.UpdatedAt, Ct)).Should().BeEquivalentTo(updatedAt);
+
+        var legacyExercises = (await check.Exercises
+                .Where(e => e.Source != ExerciseSources.Uniover)
+                .Select(e => new { e.Source, e.SourceRef, e.Id })
+                .ToListAsync(Ct))
+            .Select(e => (e.Source, e.SourceRef, e.Id))
+            .OrderBy(e => e.Id)
+            .ToArray();
+        legacyExercises.Should().Equal(expectedLegacyExercises);
+
+        var uniOverExercises = (await check.Exercises
+                .Where(e => e.Source == ExerciseSources.Uniover)
+                .Select(e => new { e.SourceRef, e.Id })
+                .ToListAsync(Ct))
+            .Select(e => (e.SourceRef, e.Id))
+            .OrderBy(e => e.Id)
+            .ToArray();
+        uniOverExercises.Should().Equal(expectedUniOverExercises);
+    }
+
+    [Fact]
+    public async Task CatalogSourceMigration_RollbackIsAlwaysRefused()
+    {
+        await using var app = await TrainingApp.StartAsync(postgres);
+        await SeederFor(app, CatalogSeedSource.Read()).EnsureSeededAsync(Ct);
+
+        await using var db = app.Db();
+        var migrator = db.GetService<IMigrator>();
+        Func<Task> rollback = () => migrator.MigrateAsync("20261028024002_AddCalendarEntries", Ct);
+
+        var exception = await rollback.Should().ThrowAsync<PostgresException>();
+        exception.Which.MessageText.Should().Contain("irreversível");
     }
 
     [Fact]
