@@ -22,7 +22,17 @@ from uniover_agent.core.redaction import PATH_MARK, scrub_personal
         ),
         ("/home/Jane Doe/arquivo secreto.txt falhou", f"{PATH_MARK} falhou"),
         (r"caminho 'C:\Users\Jane Doe\a.txt' inválido", f"caminho '{PATH_MARK}' inválido"),
-        (r"copiou C:\a\b e seguiu", f"copiou {PATH_MARK} e seguiu"),
+        # Sem extensão o caminho vai até o delimitador ou o fim da linha: engolir texto a mais é o
+        # lado seguro (o que importa é nenhum pedaço do nome ir embora).
+        (r"copiou C:\a\b e seguiu", f"copiou {PATH_MARK}"),
+        (r"pasta C:\Users\Jane Doe", f"pasta {PATH_MARK}"),
+        (r"pasta C:\Users\Jane Doe: acesso negado", f"pasta {PATH_MARK}: acesso negado"),
+        (r"pasta C:\Users\Jane Doe (linha 3)", f"pasta {PATH_MARK} (linha 3)"),
+        ("pasta /home/Jane Doe", f"pasta {PATH_MARK}"),
+        ("pasta /home/Jane Doe, acesso negado", f"pasta {PATH_MARK}, acesso negado"),
+        (r"rede \\servidor\Jane Doe", f"rede {PATH_MARK}"),
+        (r"rede \\servidor\pasta\Jane Doe", f"rede {PATH_MARK}"),
+        (r"rede \\servidor", f"rede {PATH_MARK}"),
         (r"pasta C:\Users\Jane Doe\AppData\Local\UniOver\app", f"pasta {PATH_MARK}"),
     ],
 )
