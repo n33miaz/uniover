@@ -45,6 +45,8 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                 schema: "tv",
                 table: "siri_tokens",
                 column: "user_id");
+
+            migrationBuilder.Sql(RuntimeRoleGrants.Sql("tv"));
         }
 
         /// <inheritdoc />
