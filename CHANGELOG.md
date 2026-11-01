@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.35.0](https://github.com/n33miaz/uniover/compare/v0.34.0...v0.35.0) (2026-11-01)
+
+
+### Features
+
+* **web:** standardize exercise art as webp
+* **web:** add incline curl and row drawings
+* **api:** add own catalog source and new gear
+* **api:** add 37 exercises to the catalog
+* **api:** fill glute and back gaps in templates
+* **web:** add kettlebell, band and cardio gear
+* **web:** add nine more everkinetic pairs
+* **web:** add open exercise art figures
+* **persistence:** read database size from catalog
+* **identity:** sample and alert on capacity
+* **web:** add capacity card to system settings
+
+
+### Bug Fixes
+
+* **api:** stop auditing the tv prewarm
+* **web:** name the prewarm entry correctly
+* **api:** refuse rolling back the catalog source
+* **identity:** alert hours on projected excess
+* **web:** show month hours as informative
+* **identity:** cache size, add alert hysteresis
+* **identity:** date the capacity migration late
+
 ## [0.34.0](https://github.com/n33miaz/uniover/compare/v0.33.0...v0.34.0) (2026-11-01)
 
 
