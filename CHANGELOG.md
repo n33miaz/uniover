@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.33.0](https://github.com/n33miaz/uniover/compare/v0.32.0...v0.33.0) (2026-11-01)
+
+
+### Features
+
+* **contracts:** add agent diagnostics message
+* **agent:** queue diagnostics safely
+* **agent:** record why the agent stopped
+* **agent:** verify updates before swapping
+* **agent:** guard the supervisor
+* **agent:** check and repair itself
+* **agent:** simple installer, pick the folder
+* **api:** keep agent diagnostics for 7 days
+* **web:** show agent errors in system
+
+
+### Bug Fixes
+
+* **agent:** install the crash hooks once
+* **agent:** sync with the frozen lock on the pc
+* **agent:** keep background tasks alive
+* **agent:** rehearse the candidate before swap
+* **agent:** hide whole paths with spaces
+* **agent:** send diagnostics only when api asks
+* **api:** purge diagnostics and list features
+
 ## [0.32.0](https://github.com/n33miaz/uniover/compare/v0.31.0...v0.32.0) (2026-10-31)
 
 
