@@ -49,11 +49,11 @@ public class RoutineTemplatesTests
     public void OptionalPlansKeepTheirSupportedExerciseCountsAndDiscloseCatalogGaps()
     {
         var plans = Templates.Items.Skip(3).Take(5).ToDictionary(t => t.Id);
-        plans["ppl-superior-inferior"].Routines.Select(r => r.Items.Count).Should().Equal(5, 4, 4, 5, 5);
-        plans["superior-inferior-acessorios"].Routines.Select(r => r.Items.Count).Should().Equal(5, 3, 4, 5, 4);
-        plans["divisao-familiar-reforco-inferior"].Routines.Select(r => r.Items.Count).Should().Equal(4, 3, 4, 3, 5);
+        plans["ppl-superior-inferior"].Routines.Select(r => r.Items.Count).Should().Equal(5, 6, 6, 5, 8);
+        plans["superior-inferior-acessorios"].Routines.Select(r => r.Items.Count).Should().Equal(5, 5, 6, 8, 5);
+        plans["divisao-familiar-reforco-inferior"].Routines.Select(r => r.Items.Count).Should().Equal(4, 3, 7, 3, 5);
         plans["ab-reajustado"].Routines.Select(r => r.Items.Count).Should().Equal(6, 5);
-        plans["full-body-cardio"].Routines.Select(r => r.Items.Count).Should().Equal(4, 5, 3);
+        plans["full-body-cardio"].Routines.Select(r => r.Items.Count).Should().Equal(5, 5, 3);
 
         plans.Values.Select(t => t.Description).Should().OnlyContain(d =>
             d.Contains("omitid", StringComparison.OrdinalIgnoreCase));

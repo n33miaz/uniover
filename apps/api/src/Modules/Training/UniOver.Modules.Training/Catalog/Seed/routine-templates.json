@@ -136,6 +136,13 @@
               "repMin": 12,
               "repMax": 20,
               "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "elevacao-pelvica-com-barra",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
             }
           ]
         }
@@ -302,6 +309,13 @@
               "repMax": 15,
               "restSeconds": 60,
               "supersetGroup": 1
+            },
+            {
+              "exerciseSlug": "face-pull-na-polia",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
             }
           ]
         }
@@ -366,6 +380,13 @@
               "repMin": 12,
               "repMax": 20,
               "restSeconds": 45
+            },
+            {
+              "exerciseSlug": "prancha",
+              "targetSets": 3,
+              "repMin": 20,
+              "repMax": 40,
+              "restSeconds": 45
             }
           ]
         },
@@ -421,6 +442,20 @@
               "repMin": 12,
               "repMax": 15,
               "restSeconds": 45
+            },
+            {
+              "exerciseSlug": "hiperextensao-lombar-no-banco",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "prancha",
+              "targetSets": 3,
+              "repMin": 20,
+              "repMax": 40,
+              "restSeconds": 45
             }
           ]
         }
@@ -429,59 +464,246 @@
     {
       "id": "ppl-superior-inferior",
       "name": "PPL + superior/inferior",
-      "description": "Rascunho parcial · opção 1 · cinco sessões de força, seg–sex; 45–60 min por sessão.\n\nHá movimentos omitidos ou mapeados por aproximação; confira antes de criar. Descansos indicados: compostos 2–3 min; isolados 60–120 s. Agachamento goblet omitido: não há variação exata no catálogo. Rosca de quinta (bíceps) omitida: variação não informada. Confirmar o acessório de tríceps na polia. Terra romeno com halteres mapeado para stiff com halteres; confira a equivalência. Abdômen em casa: segunda, prancha frontal 2–3 × 20–40 s + abdominal supra 2 × 12–20; quarta, prancha lateral 2 × 20–40 s por lado + abdominal reverso 2 × 10–15; sexta, dead bug 2 × 8–12 por lado + prancha frontal 2 × 20–40 s. Pranchas são medidas em segundos, não repetições.",
+      "description": "Rascunho parcial · opção 1 · cinco sessões de força, seg–sex; 45–60 min por sessão.\n\nHá movimentos omitidos ou mapeados por aproximação; confira antes de criar. Descansos indicados: compostos 2–3 min; isolados 60–120 s. Agachamento goblet omitido nesta versão; ele já está no catálogo se quiser incluí-lo. Rosca de quinta (bíceps) omitida: variação não informada. Confirmar o acessório de tríceps na polia. Terra romeno com halteres mapeado para stiff com halteres; confira a equivalência. Abdômen em casa: segunda, prancha frontal 2–3 × 20–40 s + abdominal supra 2 × 12–20; quarta, prancha lateral 2 × 20–40 s por lado + abdominal reverso 2 × 10–15; sexta, dead bug 2 × 8–12 por lado + prancha frontal 2 × 20–40 s. Pranchas são medidas em segundos, não repetições.",
       "routines": [
         {
           "name": "Segunda · Peito, ombros e tríceps",
           "weekdays": [1],
           "items": [
-            { "exerciseSlug": "supino-reto-com-halteres", "targetSets": 3, "repMin": 6, "repMax": 10, "restSeconds": 120 },
-            { "exerciseSlug": "crucifixo-na-maquina-voador", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "desenvolvimento-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "elevacao-lateral-com-halteres", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 60 },
-            { "exerciseSlug": "triceps-na-polia-com-corda", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 60 }
+            {
+              "exerciseSlug": "supino-reto-com-halteres",
+              "targetSets": 3,
+              "repMin": 6,
+              "repMax": 10,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "crucifixo-na-maquina-voador",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "desenvolvimento-com-halteres",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "elevacao-lateral-com-halteres",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "triceps-na-polia-com-corda",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60
+            }
           ]
         },
         {
           "name": "Terça · Costas e bíceps",
           "weekdays": [2],
           "items": [
-            { "exerciseSlug": "puxada-aberta-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "remada-apoiada-no-banco-inclinado-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "crucifixo-inverso-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 90 },
-            { "exerciseSlug": "rosca-direta-na-polia", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 60 }
+            {
+              "exerciseSlug": "puxada-aberta-na-polia",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "remada-apoiada-no-banco-inclinado-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "crucifixo-inverso-na-maquina",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "rosca-direta-na-polia",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "face-pull-na-polia",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "rosca-martelo-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 60
+            }
           ]
         },
         {
           "name": "Quarta · Pernas A",
           "weekdays": [3],
           "items": [
-            { "exerciseSlug": "prensa-de-pernas-na-maquina", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "cadeira-extensora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "mesa-flexora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "panturrilha-em-pe-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 60 }
+            {
+              "exerciseSlug": "prensa-de-pernas-na-maquina",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "cadeira-extensora",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "mesa-flexora",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "panturrilha-em-pe-na-maquina",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "elevacao-pelvica-com-barra",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "cadeira-adutora",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            }
           ]
         },
         {
           "name": "Quinta · Superior misto",
           "weekdays": [4],
           "items": [
-            { "exerciseSlug": "supino-inclinado-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "remada-sentada-na-polia", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "puxada-com-triangulo-na-polia", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "elevacao-lateral-com-halteres", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 60 },
-            { "exerciseSlug": "triceps-na-polia-com-corda", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 60 }
+            {
+              "exerciseSlug": "supino-inclinado-com-halteres",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "remada-sentada-na-polia",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "puxada-com-triangulo-na-polia",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "elevacao-lateral-com-halteres",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "triceps-na-polia-com-corda",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60
+            }
           ]
         },
         {
           "name": "Sexta · Pernas B",
           "weekdays": [5],
           "items": [
-            { "exerciseSlug": "stiff-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 10, "restSeconds": 120 },
-            { "exerciseSlug": "mesa-flexora", "targetSets": 3, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "avanco-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "cadeira-extensora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "panturrilha-em-pe-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 60 }
+            {
+              "exerciseSlug": "stiff-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 10,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "mesa-flexora",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "avanco-com-halteres",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "cadeira-extensora",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "panturrilha-em-pe-na-maquina",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "elevacao-pelvica-com-barra",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "cadeira-abdutora",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "hiperextensao-lombar-no-banco",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60
+            }
           ]
         }
       ]
@@ -489,57 +711,239 @@
     {
       "id": "superior-inferior-acessorios",
       "name": "Superior/inferior + acessórios",
-      "description": "Rascunho parcial · opção 2 · quatro sessões principais + acessórios, seg–sex; 45–60 min por sessão.\n\nHá movimentos omitidos ou mapeados por aproximação; confira antes de criar. Descansos indicados: compostos 2–3 min; isolados 60–120 s. Agachamento goblet omitido: não há variação exata no catálogo. Roscas de quarta e sexta (bíceps) omitidas: variações não informadas. Terra romeno mapeado para stiff com halteres; passada reversa para avanço com halteres, embora o implemento não conste na fonte: confirme as equivalências. Confirmar acessório de tríceps na polia. Abdômen em casa: segunda, prancha frontal 2–3 × 20–40 s + abdominal supra 2 × 12–20; quarta, prancha lateral 2 × 20–40 s por lado + abdominal reverso 2 × 10–15; sexta, dead bug 2 × 8–12 por lado + prancha frontal 2 × 20–40 s. Pranchas são medidas em segundos, não repetições.",
+      "description": "Rascunho parcial · opção 2 · quatro sessões principais + acessórios, seg–sex; 45–60 min por sessão.\n\nHá movimentos omitidos ou mapeados por aproximação; confira antes de criar. Descansos indicados: compostos 2–3 min; isolados 60–120 s. Agachamento goblet omitido nesta versão; ele já está no catálogo se quiser incluí-lo. Roscas de quarta e sexta (bíceps) omitidas: variações não informadas. Terra romeno mapeado para stiff com halteres; passada reversa para avanço com halteres, embora o implemento não conste na fonte: confirme as equivalências. Confirmar acessório de tríceps na polia. Abdômen em casa: segunda, prancha frontal 2–3 × 20–40 s + abdominal supra 2 × 12–20; quarta, prancha lateral 2 × 20–40 s por lado + abdominal reverso 2 × 10–15; sexta, dead bug 2 × 8–12 por lado + prancha frontal 2 × 20–40 s. Pranchas são medidas em segundos, não repetições.",
       "routines": [
         {
           "name": "Segunda · Superior A",
           "weekdays": [1],
           "items": [
-            { "exerciseSlug": "supino-reto-com-halteres", "targetSets": 3, "repMin": 6, "repMax": 10, "restSeconds": 120 },
-            { "exerciseSlug": "puxada-aberta-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "remada-apoiada-no-banco-inclinado-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "desenvolvimento-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "triceps-na-polia-com-corda", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 60 }
+            {
+              "exerciseSlug": "supino-reto-com-halteres",
+              "targetSets": 3,
+              "repMin": 6,
+              "repMax": 10,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "puxada-aberta-na-polia",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "remada-apoiada-no-banco-inclinado-com-halteres",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "desenvolvimento-com-halteres",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "triceps-na-polia-com-corda",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60
+            }
           ]
         },
         {
           "name": "Terça · Inferior A",
           "weekdays": [2],
           "items": [
-            { "exerciseSlug": "prensa-de-pernas-na-maquina", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "mesa-flexora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "panturrilha-em-pe-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 60 }
+            {
+              "exerciseSlug": "prensa-de-pernas-na-maquina",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "mesa-flexora",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "panturrilha-em-pe-na-maquina",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "panturrilha-sentado-na-maquina",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 45
+            },
+            {
+              "exerciseSlug": "cadeira-adutora",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            }
           ]
         },
         {
           "name": "Quarta · Superior B",
           "weekdays": [3],
           "items": [
-            { "exerciseSlug": "supino-inclinado-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "remada-sentada-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "puxada-supinada-na-polia", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "elevacao-lateral-com-halteres", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 60 }
+            {
+              "exerciseSlug": "supino-inclinado-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "remada-sentada-na-polia",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "puxada-supinada-na-polia",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "elevacao-lateral-com-halteres",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "face-pull-na-polia",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "rosca-martelo-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 60
+            }
           ]
         },
         {
           "name": "Quinta · Inferior B",
           "weekdays": [4],
           "items": [
-            { "exerciseSlug": "stiff-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 10, "restSeconds": 120 },
-            { "exerciseSlug": "avanco-para-tras-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "cadeira-extensora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "mesa-flexora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "panturrilha-em-pe-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 60 }
+            {
+              "exerciseSlug": "stiff-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 10,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "avanco-para-tras-com-halteres",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "cadeira-extensora",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "mesa-flexora",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "panturrilha-em-pe-na-maquina",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "elevacao-pelvica-com-barra",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "cadeira-abdutora",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "hiperextensao-lombar-no-banco",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60
+            }
           ]
         },
         {
           "name": "Sexta · Ombros, braços e acessórios",
           "weekdays": [5],
           "items": [
-            { "exerciseSlug": "elevacao-lateral-com-halteres", "targetSets": 3, "repMin": 12, "repMax": 20, "restSeconds": 60 },
-            { "exerciseSlug": "crucifixo-inverso-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 90 },
-            { "exerciseSlug": "triceps-na-polia-com-corda", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 60 },
-            { "exerciseSlug": "panturrilha-em-pe-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 60 }
+            {
+              "exerciseSlug": "elevacao-lateral-com-halteres",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "crucifixo-inverso-na-maquina",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "triceps-na-polia-com-corda",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "panturrilha-em-pe-na-maquina",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "rosca-martelo-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 60
+            }
           ]
         }
       ]
@@ -547,55 +951,190 @@
     {
       "id": "divisao-familiar-reforco-inferior",
       "name": "Divisão familiar + reforço inferior",
-      "description": "Rascunho parcial · opção 3 · peito/tríceps, costas/bíceps e pernas + estímulo inferior; 45–60 min por sessão.\n\nHá movimentos omitidos ou mapeados por aproximação; confira antes de criar. Descansos indicados: compostos 2–3 min; isolados 60–120 s. Roscas de terça e sexta (bíceps) omitidas: variações não informadas; o treino de costas/bíceps de terça fica sem exercício de bíceps. Goblet e tríceps acima da cabeça sem correspondência exata no catálogo. Confirmar acessório de tríceps na polia. Na quinta, “crucifixo/voador” foi mapeado para voador de máquina. Abdômen em casa: segunda, prancha frontal 2–3 × 20–40 s + abdominal supra 2 × 12–20; quarta, prancha lateral 2 × 20–40 s por lado + abdominal reverso 2 × 10–15; sexta, dead bug 2 × 8–12 por lado + prancha frontal 2 × 20–40 s. Pranchas são medidas em segundos, não repetições.",
+      "description": "Rascunho parcial · opção 3 · peito/tríceps, costas/bíceps e pernas + estímulo inferior; 45–60 min por sessão.\n\nHá movimentos omitidos ou mapeados por aproximação; confira antes de criar. Descansos indicados: compostos 2–3 min; isolados 60–120 s. Roscas de terça e sexta (bíceps) omitidas: variações não informadas; o treino de costas/bíceps de terça fica sem exercício de bíceps. Goblet omitido nesta versão (já está no catálogo); tríceps acima da cabeça sem correspondência exata. Confirmar acessório de tríceps na polia. Na quinta, “crucifixo/voador” foi mapeado para voador de máquina. Abdômen em casa: segunda, prancha frontal 2–3 × 20–40 s + abdominal supra 2 × 12–20; quarta, prancha lateral 2 × 20–40 s por lado + abdominal reverso 2 × 10–15; sexta, dead bug 2 × 8–12 por lado + prancha frontal 2 × 20–40 s. Pranchas são medidas em segundos, não repetições.",
       "routines": [
         {
           "name": "Segunda · Peito e tríceps",
           "weekdays": [1],
           "items": [
-            { "exerciseSlug": "supino-reto-com-halteres", "targetSets": 3, "repMin": 6, "repMax": 10, "restSeconds": 120 },
-            { "exerciseSlug": "crucifixo-na-maquina-voador", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "desenvolvimento-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "triceps-na-polia-com-corda", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 60 }
+            {
+              "exerciseSlug": "supino-reto-com-halteres",
+              "targetSets": 3,
+              "repMin": 6,
+              "repMax": 10,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "crucifixo-na-maquina-voador",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "desenvolvimento-com-halteres",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "triceps-na-polia-com-corda",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60
+            }
           ]
         },
         {
           "name": "Terça · Costas e bíceps",
           "weekdays": [2],
           "items": [
-            { "exerciseSlug": "puxada-aberta-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "remada-apoiada-no-banco-inclinado-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "crucifixo-inverso-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 90 }
+            {
+              "exerciseSlug": "puxada-aberta-na-polia",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "remada-apoiada-no-banco-inclinado-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "crucifixo-inverso-na-maquina",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 90
+            }
           ]
         },
         {
           "name": "Quarta · Inferior completo",
           "weekdays": [3],
           "items": [
-            { "exerciseSlug": "prensa-de-pernas-na-maquina", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "cadeira-extensora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "mesa-flexora", "targetSets": 3, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "panturrilha-em-pe-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 60 }
+            {
+              "exerciseSlug": "prensa-de-pernas-na-maquina",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "cadeira-extensora",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "mesa-flexora",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "panturrilha-em-pe-na-maquina",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "elevacao-pelvica-com-barra",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "cadeira-abdutora",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "panturrilha-sentado-na-maquina",
+              "targetSets": 3,
+              "repMin": 12,
+              "repMax": 15,
+              "restSeconds": 45
+            }
           ]
         },
         {
           "name": "Quinta · Peito e tríceps (variante)",
           "weekdays": [4],
           "items": [
-            { "exerciseSlug": "supino-inclinado-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "crucifixo-na-maquina-voador", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "elevacao-lateral-com-halteres", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 60 }
+            {
+              "exerciseSlug": "supino-inclinado-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "crucifixo-na-maquina-voador",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "elevacao-lateral-com-halteres",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            }
           ]
         },
         {
           "name": "Sexta · Costas, bíceps e mini-inferior",
           "weekdays": [5],
           "items": [
-            { "exerciseSlug": "remada-sentada-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "puxada-supinada-na-polia", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "prensa-de-pernas-na-maquina", "targetSets": 2, "repMin": 10, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "mesa-flexora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "panturrilha-em-pe-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 60 }
+            {
+              "exerciseSlug": "remada-sentada-na-polia",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "puxada-supinada-na-polia",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "prensa-de-pernas-na-maquina",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "mesa-flexora",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "panturrilha-em-pe-na-maquina",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            }
           ]
         }
       ]
@@ -603,29 +1142,95 @@
     {
       "id": "ab-reajustado",
       "name": "A/B reajustado (PDF)",
-      "description": "Rascunho parcial · opção 4 A/B reajustado · 45–60 min por sessão; opcional, sem recomendação automática.\n\nHá movimentos omitidos ou mapeados por aproximação; confira antes de criar. Esta é a versão do PDF, não a ficha original do professor. Alterne A/B nos dias de treino (exemplo: A/B/A/B/A; semana seguinte B/A/B/A/B). Se houver fadiga nos dias repetidos, a fonte sugere reduzir série ou carga, sem especificar itens. Goblet omitido por falta de variação exata; rosca (bíceps) omitida por variação não informada; terra romeno sem implemento não mapeado. Confirmar acessório de tríceps na polia. Abdômen em casa: segunda, prancha frontal 2–3 × 20–40 s + abdominal supra 2 × 12–20; quarta, prancha lateral 2 × 20–40 s por lado + abdominal reverso 2 × 10–15; sexta, dead bug 2 × 8–12 por lado + prancha frontal 2 × 20–40 s. Pranchas são medidas em segundos, não repetições.",
+      "description": "Rascunho parcial · opção 4 A/B reajustado · 45–60 min por sessão; opcional, sem recomendação automática.\n\nHá movimentos omitidos ou mapeados por aproximação; confira antes de criar. Esta é a versão do PDF, não a ficha original do professor. Alterne A/B nos dias de treino (exemplo: A/B/A/B/A; semana seguinte B/A/B/A/B). Se houver fadiga nos dias repetidos, a fonte sugere reduzir série ou carga, sem especificar itens. Goblet omitido nesta versão (já está no catálogo); rosca (bíceps) omitida por variação não informada; terra romeno sem implemento não mapeado. Confirmar acessório de tríceps na polia. Abdômen em casa: segunda, prancha frontal 2–3 × 20–40 s + abdominal supra 2 × 12–20; quarta, prancha lateral 2 × 20–40 s por lado + abdominal reverso 2 × 10–15; sexta, dead bug 2 × 8–12 por lado + prancha frontal 2 × 20–40 s. Pranchas são medidas em segundos, não repetições.",
       "routines": [
         {
           "name": "A · Empurrar e quadríceps",
           "weekdays": [1, 2, 3, 4, 5],
           "items": [
-            { "exerciseSlug": "supino-reto-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "crucifixo-na-maquina-voador", "targetSets": 1, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "desenvolvimento-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "triceps-na-polia-com-corda", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 60 },
-            { "exerciseSlug": "prensa-de-pernas-na-maquina", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "cadeira-extensora", "targetSets": 1, "repMin": 10, "repMax": 15, "restSeconds": 90 }
+            {
+              "exerciseSlug": "supino-reto-com-halteres",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "crucifixo-na-maquina-voador",
+              "targetSets": 1,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "desenvolvimento-com-halteres",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "triceps-na-polia-com-corda",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "prensa-de-pernas-na-maquina",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "cadeira-extensora",
+              "targetSets": 1,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            }
           ]
         },
         {
           "name": "B · Puxar e posterior",
           "weekdays": [1, 2, 3, 4, 5],
           "items": [
-            { "exerciseSlug": "puxada-aberta-na-polia", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "remada-apoiada-no-banco-inclinado-com-halteres", "targetSets": 2, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "crucifixo-inverso-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 90 },
-            { "exerciseSlug": "mesa-flexora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "panturrilha-em-pe-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 60 }
+            {
+              "exerciseSlug": "puxada-aberta-na-polia",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "remada-apoiada-no-banco-inclinado-com-halteres",
+              "targetSets": 2,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "crucifixo-inverso-na-maquina",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "mesa-flexora",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "panturrilha-em-pe-na-maquina",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            }
           ]
         }
       ]
@@ -633,36 +1238,115 @@
     {
       "id": "full-body-cardio",
       "name": "Corpo inteiro + cardio",
-      "description": "Rascunho parcial · opção 5 · força seg/qua/sex (3 treinos), 45–60 min; cardio/mobilidade ter/qui fora do app.\n\nHá movimentos omitidos ou mapeados por aproximação; confira antes de criar. Terça: caminhada rápida ou bicicleta, cardio moderado 15–25 min + mobilidade dinâmica 5–8 min. Quinta: caminhada, bicicleta ou elíptico, sem corrida máxima, mais a mesma mobilidade. O app não agenda esses dias. Goblet omitido por falta de variação exata; rosca de sexta (bíceps) omitida por variação/equipamento não informados. Terra romeno sem implemento mapeado para stiff com halteres. Tríceps na polia usa corda como opção, confirmar. Abdômen em casa: segunda, prancha frontal 2–3 × 20–40 s + abdominal supra 2 × 12–20; quarta, prancha lateral 2 × 20–40 s por lado + abdominal reverso 2 × 10–15; sexta, dead bug 2 × 8–12 por lado + prancha frontal 2 × 20–40 s. Pranchas são medidas em segundos, não repetições.",
+      "description": "Rascunho parcial · opção 5 · força seg/qua/sex (3 treinos), 45–60 min; cardio/mobilidade ter/qui fora do app.\n\nHá movimentos omitidos ou mapeados por aproximação; confira antes de criar. Terça: caminhada rápida ou bicicleta, cardio moderado 15–25 min + mobilidade dinâmica 5–8 min. Quinta: caminhada, bicicleta ou elíptico, sem corrida máxima, mais a mesma mobilidade. O app não agenda esses dias. Goblet omitido nesta versão (já está no catálogo); rosca de sexta (bíceps) omitida por variação/equipamento não informados. Terra romeno sem implemento mapeado para stiff com halteres. Tríceps na polia usa corda como opção, confirmar. Abdômen em casa: segunda, prancha frontal 2–3 × 20–40 s + abdominal supra 2 × 12–20; quarta, prancha lateral 2 × 20–40 s por lado + abdominal reverso 2 × 10–15; sexta, dead bug 2 × 8–12 por lado + prancha frontal 2 × 20–40 s. Pranchas são medidas em segundos, não repetições.",
       "routines": [
         {
           "name": "A · Corpo inteiro (segunda)",
           "weekdays": [1],
           "items": [
-            { "exerciseSlug": "prensa-de-pernas-na-maquina", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "supino-reto-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "remada-apoiada-no-banco-inclinado-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "panturrilha-em-pe-na-maquina", "targetSets": 2, "repMin": 12, "repMax": 20, "restSeconds": 60 }
+            {
+              "exerciseSlug": "prensa-de-pernas-na-maquina",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "supino-reto-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "remada-apoiada-no-banco-inclinado-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "panturrilha-em-pe-na-maquina",
+              "targetSets": 2,
+              "repMin": 12,
+              "repMax": 20,
+              "restSeconds": 60
+            },
+            {
+              "exerciseSlug": "prancha",
+              "targetSets": 3,
+              "repMin": 20,
+              "repMax": 40,
+              "restSeconds": 45
+            }
           ]
         },
         {
           "name": "B · Corpo inteiro (quarta)",
           "weekdays": [3],
           "items": [
-            { "exerciseSlug": "stiff-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "puxada-aberta-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "supino-inclinado-com-halteres", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "cadeira-extensora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 },
-            { "exerciseSlug": "triceps-na-polia-com-corda", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 60 }
+            {
+              "exerciseSlug": "stiff-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "puxada-aberta-na-polia",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "supino-inclinado-com-halteres",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "cadeira-extensora",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "triceps-na-polia-com-corda",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 60
+            }
           ]
         },
         {
           "name": "C · Corpo inteiro (sexta)",
           "weekdays": [5],
           "items": [
-            { "exerciseSlug": "puxada-com-triangulo-na-polia", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "supino-articulado-na-maquina", "targetSets": 3, "repMin": 8, "repMax": 12, "restSeconds": 120 },
-            { "exerciseSlug": "mesa-flexora", "targetSets": 2, "repMin": 10, "repMax": 15, "restSeconds": 90 }
+            {
+              "exerciseSlug": "puxada-com-triangulo-na-polia",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "supino-articulado-na-maquina",
+              "targetSets": 3,
+              "repMin": 8,
+              "repMax": 12,
+              "restSeconds": 120
+            },
+            {
+              "exerciseSlug": "mesa-flexora",
+              "targetSets": 2,
+              "repMin": 10,
+              "repMax": 15,
+              "restSeconds": 90
+            }
           ]
         }
       ]
@@ -675,18 +1359,60 @@
         {
           "name": "A · Histórico rejeitado",
           "items": [
-            { "exerciseSlug": "crucifixo-na-maquina-voador", "targetSets": 3, "repMin": 10, "repMax": 10, "restSeconds": 90 },
-            { "exerciseSlug": "cadeira-extensora", "targetSets": 3, "repMin": 10, "repMax": 10, "restSeconds": 90 }
+            {
+              "exerciseSlug": "crucifixo-na-maquina-voador",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 10,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "cadeira-extensora",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 10,
+              "restSeconds": 90
+            }
           ]
         },
         {
           "name": "B · Histórico rejeitado",
           "items": [
-            { "exerciseSlug": "puxada-aberta-na-polia", "targetSets": 3, "repMin": 10, "repMax": 10, "restSeconds": 90 },
-            { "exerciseSlug": "puxada-supinada-na-polia", "targetSets": 3, "repMin": 10, "repMax": 10, "restSeconds": 90 },
-            { "exerciseSlug": "crucifixo-inverso-na-maquina", "targetSets": 3, "repMin": 10, "repMax": 10, "restSeconds": 90 },
-            { "exerciseSlug": "mesa-flexora", "targetSets": 3, "repMin": 10, "repMax": 10, "restSeconds": 90 },
-            { "exerciseSlug": "abdominal-crunch", "targetSets": 3, "repMin": 20, "repMax": 20, "restSeconds": 90 }
+            {
+              "exerciseSlug": "puxada-aberta-na-polia",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 10,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "puxada-supinada-na-polia",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 10,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "crucifixo-inverso-na-maquina",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 10,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "mesa-flexora",
+              "targetSets": 3,
+              "repMin": 10,
+              "repMax": 10,
+              "restSeconds": 90
+            },
+            {
+              "exerciseSlug": "abdominal-crunch",
+              "targetSets": 3,
+              "repMin": 20,
+              "repMax": 20,
+              "restSeconds": 90
+            }
           ]
         }
       ]
