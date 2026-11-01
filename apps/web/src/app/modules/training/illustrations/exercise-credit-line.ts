@@ -1,10 +1,11 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { illustrationFor } from './illustration-map';
 
 /** Licença da ilustração (CC BY-SA 4.0), como a Creative Commons recomenda: título, autor, fonte e licença. */
 export const ART_LICENSE_URL = 'https://creativecommons.org/licenses/by-sa/4.0/';
 
-/** Crédito curto que fica junto da ilustração, com link para a licença e para a tela de Créditos. */
+/** Crédito curto que fica junto da ilustração, com link para a licença e para a tela de Créditos. Cada origem tem o seu. */
 @Component({
   selector: 'app-exercise-credit-line',
   imports: [RouterLink],
@@ -13,6 +14,13 @@ export const ART_LICENSE_URL = 'https://creativecommons.org/licenses/by-sa/4.0/'
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ExerciseCreditLine {
+  /** `slug` do exercício, para saber de qual origem é a figura; sem ele vale o crédito do Everkinetic. */
+  readonly slug = input<string | null>(null);
+
+  protected readonly openArt = computed(() => {
+    const slug = this.slug();
+    return slug !== null && illustrationFor(slug)?.source === 'open-exercise-art';
+  });
   protected readonly licenseUrl = ART_LICENSE_URL;
   /** Link que sai do app: sem acesso à janela de origem e sem referência. */
   protected readonly linkRel = 'noopener noreferrer';

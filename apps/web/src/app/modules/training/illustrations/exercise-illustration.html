@@ -1,10 +1,25 @@
 @if (entry()) {
-  <button type="button" class="card" [attr.aria-label]="label()" (click)="tap()">
-    @for (source of sources(); track index; let index = $index) {
+  @if (twoPoses()) {
+    <button type="button" class="card" [attr.aria-label]="label()" (click)="tap()">
+      @for (source of sources(); track index; let index = $index) {
+        <img
+          class="frame"
+          [class.on]="frame() === index"
+          [src]="source"
+          alt=""
+          aria-hidden="true"
+          width="268"
+          height="275"
+          [attr.loading]="'lazy'"
+          [attr.decoding]="'async'"
+        />
+      }
+    </button>
+  } @else {
+    <div class="card still" role="img" [attr.aria-label]="label()">
       <img
-        class="frame"
-        [class.on]="frame() === index"
-        [src]="source"
+        class="frame on"
+        [src]="sources()[0]"
         alt=""
         aria-hidden="true"
         width="268"
@@ -12,6 +27,6 @@
         [attr.loading]="'lazy'"
         [attr.decoding]="'async'"
       />
-    }
-  </button>
+    </div>
+  }
 }

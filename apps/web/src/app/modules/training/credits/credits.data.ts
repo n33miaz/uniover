@@ -32,7 +32,7 @@ export const CREDIT_SOURCES: readonly CreditSource[] = [
     license: 'CC BY-SA 4.0',
     licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
     changes: $localize`:@@credits.everkinetic.changes:Os desenhos foram convertidos para WebP, recortados e padronizados em um só tamanho (as duas poses com o mesmo recorte), sem alterações no traço.`,
-    usage: $localize`:@@credits.everkinetic.usage:Ilustração dos exercícios do catálogo que têm um equivalente seguro. Os demais mostram só o texto.`,
+    usage: $localize`:@@credits.everkinetic.usage:Ilustração (duas poses) dos exercícios do catálogo que têm um equivalente. Alguns usam a figura de um exercício parecido (outro implemento, mesma pegada ou gesto).`,
   },
   {
     id: 'free-exercise-db',
@@ -43,6 +43,17 @@ export const CREDIT_SOURCES: readonly CreditSource[] = [
     license: 'Unlicense (domínio público)',
     licenseUrl: 'https://unlicense.org/',
     changes: $localize`:@@credits.free-exercise-db.changes:Texto reescrito em português por nós, a partir dos nomes e das instruções originais. As imagens dessa fonte não são usadas.`,
-    usage: $localize`:@@credits.free-exercise-db.usage:Nomes, instruções e classificação dos exercícios do catálogo.`,
+    usage: $localize`:@@credits.free-exercise-db.usage:Nomes, instruções e classificação da maior parte dos exercícios do catálogo (os demais foram escritos pelo UniOver).`,
+  },
+  {
+    id: 'open-exercise-art',
+    title: $localize`:@@credits.open-exercise-art.title:Open Exercise Art: ilustrações de exercícios`,
+    author: 'Alex Mollard',
+    sourceUrl: 'https://github.com/AlexMollard/Open-Exercise-Art',
+    sourceLabel: 'github.com/AlexMollard/Open-Exercise-Art',
+    license: 'CC BY-SA 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    changes: $localize`:@@credits.open-exercise-art.changes:Imagens geradas por IA e revisadas pelo autor, segundo o repositório de origem. Rasterizadas em preto sobre fundo branco, recortadas e padronizadas em um só tamanho (WebP de 536x550), sem alterações no traço. Uma pose por exercício.`,
+    usage: $localize`:@@credits.open-exercise-art.usage:Ilustração, parada e de uma pose, dos exercícios do catálogo que não têm figura de duas poses.`,
   },
 ];
