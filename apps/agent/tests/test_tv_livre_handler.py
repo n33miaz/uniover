@@ -23,7 +23,7 @@ from uniover_agent.ports import AdbUnreachable, TransportError
 from uniover_agent.ports.tv_livre import LauncherApkError
 
 from .support import AGENT_ID
-from .support_livre import FACTORY, NETFLIX, FakeAndroid, FakeApkSource
+from .support_livre import FACTORY, NETFLIX, FakeAndroid, FakeApkSource, jpeg_bytes
 
 REQUEST_ID = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea0"
 COMMAND_ID = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e9f"
@@ -196,7 +196,7 @@ def chunk(index: int, total: int, photo: bytes, part: bytes) -> Command:
 async def test_photo_pieces_are_accepted_and_the_photo_is_staged() -> None:
     staging = PhotoStaging(FakeClock())
     handler = tv_livre_photo_handler(staging)
-    photo = b"\xff\xd8\xff" + b"p" * 100
+    photo = jpeg_bytes()
 
     first = await handler(chunk(0, 2, photo, photo[:50]))
     second = await handler(chunk(1, 2, photo, photo[50:]))
@@ -208,7 +208,7 @@ async def test_photo_pieces_are_accepted_and_the_photo_is_staged() -> None:
 async def test_a_corrupt_photo_is_rejected_with_a_stable_code() -> None:
     staging = PhotoStaging(FakeClock())
     handler = tv_livre_photo_handler(staging)
-    photo = b"\xff\xd8\xff" + b"p" * 100
+    photo = jpeg_bytes()
     bad = chunk(0, 1, b"outra coisa", photo)
 
     result = await handler(bad)

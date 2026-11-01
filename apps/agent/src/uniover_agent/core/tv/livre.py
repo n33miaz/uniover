@@ -18,6 +18,7 @@ texto livre chega ao shell da TV: os comandos são fixos e o nome de pacote é v
 import asyncio
 import base64
 import hashlib
+import io
 import json
 import logging
 import re
@@ -25,6 +26,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
+
+from PIL import Image, UnidentifiedImageError
 
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.envelopes import EnvelopeFactory
@@ -49,14 +52,17 @@ MIN_SDK: Final = 28
 MAX_PHOTO_BYTES: Final = 400 * 1024
 PHOTO_TTL_SECONDS: Final = 600.0
 MAX_STATE_APPS: Final = 300
+MAX_PHOTO_SIDE: Final = 4096
 AUDIT_LIMIT: Final = 50
 SEND_FAILED: Final = "send_failed"
+STARTUP_WAIT_SECONDS: Final = 1.5
 
 _COMPONENT: Final = re.compile(
     r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+/\.?[A-Za-z0-9_.$]+"
 )
 _VERSION_NAME: Final = re.compile(r"versionName=(\S{1,40})")
 _DIGITS: Final = re.compile(r"\d{1,3}")
+_PID: Final = re.compile(r"\d+")
 _OWNER_OF_COMPONENT: Final = re.compile(r"([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+)/")
 _MAIN: Final = "-a android.intent.action.MAIN"
 _HOME_CATEGORY: Final = "-c android.intent.category.HOME"
@@ -146,6 +152,25 @@ def is_protected_for_disable(package: str, live: frozenset[str]) -> bool:
     )
 
 
+def is_decodable_jpeg(photo: bytes) -> bool:
+    """JPEG de verdade: o cabeçalho diz JPEG com lados razoáveis e a imagem inteira decodifica.
+
+    Três bytes iniciais não bastam: um arquivo truncado ou corrompido chegaria à TV e o launcher
+    cairia para o degradê sem ninguém saber por quê.
+    """
+    try:
+        with Image.open(io.BytesIO(photo)) as image:
+            width, height = image.size
+            if image.format != "JPEG" or not (
+                0 < width <= MAX_PHOTO_SIDE and 0 < height <= MAX_PHOTO_SIDE
+            ):
+                return False
+            image.load()
+    except UnidentifiedImageError, OSError, SyntaxError, ValueError:
+        return False
+    return True
+
+
 class PhotoStaging:
     """Junta os pedaços da foto do fundo e a guarda, na memória, até o `apply` que a cita."""
 
@@ -172,7 +197,7 @@ class PhotoStaging:
         valid = (
             len(self._parts) == total
             and 0 < len(photo) <= MAX_PHOTO_BYTES
-            and photo.startswith(b"\xff\xd8\xff")
+            and is_decodable_jpeg(photo)
             and hashlib.sha256(photo).hexdigest() == sha256
         )
         if not valid:
@@ -380,6 +405,29 @@ class TvLivre:
             rejected=True,
         )
 
+    async def _runs(self, command: str, package: str) -> bool:
+        """Abre e confere que de fato abriu: `am start` sem erro E o processo do app vivo.
+
+        Um APK que instala mas não inicia (ou cai ao abrir) passaria na verificação do gerenciador
+        de pacotes; esta é a conferência de que a tela inicial realmente executa.
+        """
+        started = await self._adb.shell(command)
+        if not started.ok or any(
+            line.strip().startswith("Error") or "Exception" in line
+            for line in started.text.splitlines()
+        ):
+            return False
+        await self._clock.sleep(STARTUP_WAIT_SECONDS)
+        alive = await self._adb.shell(f"pidof {package}")
+        return any(_PID.fullmatch(token) for token in alive.text.split())
+
+    async def _require_launcher_runs(self) -> None:
+        if not await self._runs(_OPEN_LAUNCHER, PACKAGE):
+            raise LivreError(
+                "launcher_not_running",
+                "O TV Livre instalou, mas não abriu na TV; nada foi alterado na tela inicial.",
+            )
+
     async def _install(self) -> None:
         await self._capture_original()
         apk = await self._apk.fetch()
@@ -392,7 +440,7 @@ class TvLivre:
         if not result.ok or "Success" not in result.text:
             raise LivreError("install_failed", "A TV não aceitou a instalação.")
         # Abre uma vez: cria a pasta da configuração. O launcher de fábrica segue como padrão.
-        await self._adb.shell(_OPEN_LAUNCHER)
+        await self._require_launcher_runs()
 
     async def _apply(self, body: dict[str, Any]) -> None:
         await self._require_installed()
@@ -427,7 +475,7 @@ class TvLivre:
                 if photo is not None:
                     await self._push_atomic(Path(scratch), "wallpaper.jpg", photo)
                 await self._push_atomic(Path(scratch), "config.json", text.encode("utf-8"))
-        await self._adb.shell(_OPEN_LAUNCHER)
+        await self._require_launcher_runs()
 
     async def _files_dir_ready(self) -> bool:
         if (await self._adb.shell(f"ls {FILES_DIR}")).ok:
@@ -454,6 +502,8 @@ class TvLivre:
         await self._require_installed()
         stored = await self._capture_original()
         factory = str(stored["factory"])
+        # Antes de tocar na tela inicial: a home nova precisa abrir e ficar de pé.
+        await self._require_launcher_runs()
         if not await self._set_home_activity(HOME_COMPONENT):
             raise LivreError("set_home_failed", "A TV não aceitou a nova tela inicial; nada mudou.")
         if await self._resolved_home_package() != PACKAGE:
@@ -461,7 +511,13 @@ class TvLivre:
             raise LivreError(
                 "verify_failed", "A nova tela inicial não ficou como padrão; voltei à original."
             )
-        await self._adb.shell(_GO_HOME)
+        if not await self._runs(_GO_HOME, PACKAGE):
+            await self._set_home_activity(factory)
+            await self._adb.shell(_GO_HOME)
+            raise LivreError(
+                "launcher_not_running",
+                "A nova tela inicial não abriu como padrão; voltei à original.",
+            )
         if not disable_factory:
             return
         package = _package_of(factory)
@@ -474,9 +530,12 @@ class TvLivre:
         if not result.ok or "disabled" not in result.text:
             await self._forget_disabled(stored, package)
             raise LivreError("disable_failed", "A TV não deixou desativar o launcher de fábrica.")
-        if await self._resolved_home_package() != PACKAGE:
+        if await self._resolved_home_package() != PACKAGE or not await self._runs(
+            _GO_HOME, PACKAGE
+        ):
             await self._adb.shell(f"pm enable --user 0 {package}")
             await self._set_home_activity(factory)
+            await self._adb.shell(_GO_HOME)
             await self._forget_disabled(stored, package)
             raise LivreError(
                 "verify_failed", "A tela inicial mudou ao desativar o original; reativei e voltei."
@@ -508,11 +567,12 @@ class TvLivre:
             package = _package_of(component)
             # 1. reabilita o launcher (se foi desativado) e 2. define como padrão.
             await self._adb.shell(f"pm enable --user 0 {package}")
-            if await self._set_home_activity(component) and (
-                await self._resolved_home_package() == package
+            if (
+                await self._set_home_activity(component)
+                and await self._resolved_home_package() == package
+                and await self._runs(_GO_HOME, package)
             ):
                 restored = True
-                await self._adb.shell(_GO_HOME)
                 break
         if not restored:
             # Não desinstala nada: o launcher novo segue como estava.

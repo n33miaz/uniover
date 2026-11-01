@@ -2,16 +2,16 @@
 
 A publicação deve trazer dois arquivos lado a lado: `uniover-launcher.apk` e
 `uniover-launcher.apk.sha256` (o hash em hexadecimal, opcionalmente seguido do nome do arquivo).
-O agente só entrega o APK ao ADB depois de o hash bater. Limite honesto: o hash vem do mesmo
-endereço (HTTPS) do APK, então protege de download corrompido e de troca só do APK, não de uma
-publicação comprometida; fixar a assinatura do projeto no APK é o que fecha essa porta (ver o
-README do `apps/tv-launcher`) e ainda não está publicado.
+O agente só entrega o APK ao ADB depois de o hash bater E de o `verifier` (a assinatura
+conferida contra o certificado fixado, em `tv_livre_signer.py`) aceitar. O hash vem do mesmo
+endereço (HTTPS) do APK: protege de download corrompido, mas quem trocasse a publicação trocaria
+o hash junto; quem autentica é a assinatura.
 """
 
 import hashlib
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Final
 
@@ -36,6 +36,7 @@ class ReleaseApkSource:
         scratch: Path,
         *,
         client_factory: Callable[[], httpx.AsyncClient] | None = None,
+        verifier: Callable[[Path], Awaitable[None]] | None = None,
         timeout: float = 60.0,
     ) -> None:
         if not base_url.startswith("https://"):
@@ -43,6 +44,7 @@ class ReleaseApkSource:
         self._base = base_url.rstrip("/")
         self._scratch = scratch
         self._timeout = timeout
+        self._verifier = verifier
         self._client_factory = client_factory or (
             lambda: httpx.AsyncClient(follow_redirects=True, timeout=timeout)
         )
@@ -79,6 +81,12 @@ class ReleaseApkSource:
         if total == 0 or not target.read_bytes()[:4] == _ZIP_MAGIC:
             target.unlink(missing_ok=True)
             raise LauncherApkError("apk_invalid", "O arquivo baixado não é um APK.")
+        if self._verifier is not None:
+            try:
+                await self._verifier(target)
+            except LauncherApkError:
+                target.unlink(missing_ok=True)
+                raise
         return LauncherApk(target, declared)
 
     async def _declared_hash(self, client: httpx.AsyncClient) -> str:

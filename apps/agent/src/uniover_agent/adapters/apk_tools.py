@@ -57,13 +57,18 @@ def locate_aapt2(configured: str | None) -> Path | None:
     Caminho configurado que não existe **não** cai nos outros: foi uma escolha explícita errada.
     Sem `aapt2` devolve `None` e o agente simplesmente segue sem ícones.
     """
+    return locate_build_tool(_AAPT_EXECUTABLE, configured)
+
+
+def locate_build_tool(executable: str, configured: str | None) -> Path | None:
+    """Uma ferramenta de `build-tools` (a mais nova) do Android SDK; mesma regra do `aapt2`."""
     if configured:
         path = Path(configured)
         return path if path.is_file() else None
     found: list[Path] = []
     for root in _sdk_roots():
         try:
-            found.extend(root.glob(f"build-tools/*/{_AAPT_EXECUTABLE}"))
+            found.extend(root.glob(f"build-tools/*/{executable}"))
         except OSError:
             continue
     found = [path for path in found if path.is_file()]

@@ -122,6 +122,26 @@ class Settings(BaseSettings):
     # decide se o agente oferece o módulo. O APK vem da publicação, conferido pelo hash.
     tv_livre: bool = True
     tv_livre_apk_url: str = "https://github.com/n33miaz/uniover/releases/latest/download"
+    # Certificado(s) de assinatura do APK, SHA-256 (hex, com ou sem `:`), separados por vírgula.
+    # Sem ele nada é instalado: o hash da publicação não prova quem assinou. `apksigner` vem do
+    # `build-tools` do Android SDK (ou do caminho configurado).
+    tv_livre_signer_sha256: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    tv_livre_apksigner_path: str | None = None
+
+    @field_validator("tv_livre_signer_sha256", mode="before")
+    @classmethod
+    def _split_livre_signers(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
+
+    @field_validator("tv_livre_signer_sha256")
+    @classmethod
+    def _validate_livre_signers(cls, value: list[str]) -> list[str]:
+        if any(not re.fullmatch(r"[0-9A-Fa-f:]{64,95}", item) for item in value):
+            raise ValueError("tv_livre_signer_sha256 precisa conter SHA-256 em hexadecimal")
+        return [item.replace(":", "").lower() for item in value]
+
     # Limpeza da TV: pacotes que nunca são fechados, além dos protegidos de fábrica. Na variável de
     # ambiente, separados por vírgula; no arquivo, uma lista TOML ou o mesmo texto. Sem `NoDecode` o
     # pydantic-settings exigiria JSON na variável.

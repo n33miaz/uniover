@@ -5,7 +5,11 @@ marca `black_screen` se algum passo deixar a TV sem nenhum launcher habilitado o
 home que está em uso. Nenhum teste fala com uma TV de verdade.
 """
 
+import io
+import os
 from pathlib import Path
+
+from PIL import Image
 
 from uniover_agent.core.tv.livre import FILES_DIR, HOME_COMPONENT, PACKAGE
 from uniover_agent.ports import LaunchableApp
@@ -32,6 +36,8 @@ class FakeAndroid:
         noise: bool = False,
     ) -> None:
         self.noise = noise
+        self.die_after_disable = False  # a home nova cai depois de desativar o original
+        self.dead: set[str] = set()  # apps que abrem mas não ficam de pé
         self.sdk = sdk
         self.leanback = leanback
         self.homes = list(homes)
@@ -129,6 +135,8 @@ class FakeAndroid:
         if command.startswith("pm disable-user"):
             package = command.rsplit(maxsplit=1)[-1]
             self.disabled.add(package)
+            if self.die_after_disable:
+                self.dead.add(PACKAGE)
             self._check_black_screen()
             return ShellResult(True, f"Package {package} new state: disabled-user\n")
         if command.startswith("pm enable"):
@@ -138,6 +146,10 @@ class FakeAndroid:
         if command == "pm list packages -s -f":
             lines = (f"package:{path}={package}\n" for package, path in self.packages.items())
             return ShellResult(True, "".join(lines))
+        if command.startswith("pidof "):
+            package = command.rsplit(maxsplit=1)[-1]
+            alive = (package != PACKAGE or self.installed) and package not in self.dead
+            return ShellResult(alive, "4242\n" if alive else "")
         if command == "pm list packages -d":
             return ShellResult(True, "".join(f"package:{p}\n" for p in sorted(self.disabled)))
         if command == "settings get secure default_input_method":
@@ -214,3 +226,19 @@ class FakeApkSource:
         path = self._tmp / "uniover-launcher.apk"
         path.write_bytes(b"PK\x03\x04fake")
         return LauncherApk(path, "0" * 64)
+
+
+def jpeg_bytes(width: int = 32, height: int = 24) -> bytes:
+    """Um JPEG de verdade (decodifica por inteiro), pequeno."""
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), (30, 60, 120)).save(buffer, "JPEG")
+    return buffer.getvalue()
+
+
+def noisy_jpeg(side: int = 1200) -> bytes:
+    """Um JPEG válido acima de 400 KiB (ruído não comprime)."""
+    buffer = io.BytesIO()
+    Image.frombytes("RGB", (side, side), os.urandom(side * side * 3)).save(
+        buffer, "JPEG", quality=95
+    )
+    return buffer.getvalue()

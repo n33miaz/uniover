@@ -34,6 +34,8 @@ from .support_livre import (
     YOUTUBE,
     FakeAndroid,
     FakeApkSource,
+    jpeg_bytes,
+    noisy_jpeg,
 )
 
 CONFIG = json.dumps({"clock": {"size": "large"}, "apps": {"mode": "listed", "items": [NETFLIX]}})
@@ -194,7 +196,7 @@ async def test_apply_pushes_a_temporary_file_then_renames_it(tmp_path: Path) -> 
     assert written["revision"] == 7
     assert written["apps"] == {"mode": "listed", "items": [NETFLIX]}
     # A pré-visualização: o app é aberto para redesenhar com a configuração nova.
-    assert android.log[-1] == f"am start -n {HOME_COMPONENT}"
+    assert f"am start -n {HOME_COMPONENT}" in android.log[-2:]
 
 
 async def test_apply_rejects_an_invalid_config_before_touching_the_tv(tmp_path: Path) -> None:
@@ -223,7 +225,7 @@ async def test_apply_requires_the_launcher_to_be_installed(tmp_path: Path) -> No
 
 async def test_apply_sends_the_staged_photo_before_the_config(tmp_path: Path) -> None:
     livre, android, _, _ = await installed(tmp_path)
-    photo = b"\xff\xd8\xff" + b"x" * 100
+    photo = jpeg_bytes()
     stage(livre, "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1", photo)
     config = json.dumps({"wallpaper": {"type": "photo", "colors": ["#112233"]}})
 
@@ -544,7 +546,7 @@ async def test_photo_pieces_are_joined_in_any_order_and_checked(tmp_path: Path) 
 
     clock = FakeClock()
     staging = PhotoStaging(clock)
-    photo = b"\xff\xd8\xff" + bytes(range(200))
+    photo = jpeg_bytes(64, 48)
     digest = hashlib.sha256(photo).hexdigest()
     pieces = [photo[:100], photo[100:]]
 
@@ -565,7 +567,7 @@ async def test_photo_pieces_are_joined_in_any_order_and_checked(tmp_path: Path) 
 async def test_a_bad_photo_is_refused(mutate: str) -> None:
 
     staging = PhotoStaging(FakeClock())
-    photo = b"\xff\xd8\xff" + b"y" * 50
+    photo = jpeg_bytes()
     digest = hashlib.sha256(photo).hexdigest()
     data = base64.b64encode(photo).decode()
     if mutate == "hash":
@@ -577,7 +579,7 @@ async def test_a_bad_photo_is_refused(mutate: str) -> None:
     elif mutate == "base64":
         data = "@@@@"
     else:
-        photo = b"\xff\xd8\xff" + b"z" * (400 * 1024 + 1)
+        photo = noisy_jpeg()
         digest = hashlib.sha256(photo).hexdigest()
         data = base64.b64encode(photo).decode()
 
@@ -591,8 +593,8 @@ async def test_a_bad_photo_is_refused(mutate: str) -> None:
 async def test_a_new_photo_replaces_the_old_one() -> None:
 
     staging = PhotoStaging(FakeClock())
-    first = b"\xff\xd8\xff" + b"a" * 10
-    second = b"\xff\xd8\xff" + b"b" * 10
+    first = jpeg_bytes(8, 8)
+    second = jpeg_bytes(16, 16)
     for photo_id, photo in (("one", first), ("two", second)):
         staging.add(
             photo_id, 0, 1, hashlib.sha256(photo).hexdigest(), base64.b64encode(photo).decode()
@@ -632,3 +634,89 @@ async def test_the_whole_flow_works_with_noise_before_every_answer(tmp_path: Pat
     assert state.load() == {}
     assert android.home == FACTORY
     assert android.black_screen is False
+
+
+# --- a home nova precisa abrir de verdade ----------------------------------------------------
+
+
+async def test_install_reports_a_launcher_that_installs_but_does_not_open(tmp_path: Path) -> None:
+    android = FakeAndroid()
+    android.dead.add(PACKAGE)
+    livre, android, _, _ = make(tmp_path, android)
+
+    await expect_error(livre, {"action": "install"}, "launcher_not_running")
+
+    assert android.home == FACTORY
+
+
+async def test_set_home_refuses_a_launcher_that_does_not_stay_running(tmp_path: Path) -> None:
+    livre, android, _, _ = await installed(tmp_path)
+    android.dead.add(PACKAGE)
+
+    await expect_error(
+        livre, {"action": "set-home", "disableFactory": True}, "launcher_not_running"
+    )
+
+    # Nada foi tocado na tela inicial nem no launcher de fábrica.
+    assert not any(c.startswith("cmd package set-home-activity") for c in android.log)
+    assert not any(c.startswith("pm disable") for c in android.log)
+    assert android.home == FACTORY
+
+
+async def test_a_home_that_does_not_open_after_set_home_goes_back_to_the_original(
+    tmp_path: Path,
+) -> None:
+    livre, android, _, _ = await installed(tmp_path)
+    android.fail.add("am start -a")  # abrir a Home pelo intent HOME falha
+
+    await expect_error(
+        livre, {"action": "set-home", "disableFactory": True}, "launcher_not_running"
+    )
+
+    assert android.home == FACTORY
+    assert not any(c.startswith("pm disable") for c in android.log)
+    assert android.black_screen is False
+
+
+async def test_a_home_that_dies_after_disabling_the_factory_reenables_it(tmp_path: Path) -> None:
+    livre, android, state, _ = await installed(tmp_path)
+    android.die_after_disable = True
+
+    await expect_error(livre, {"action": "set-home", "disableFactory": True}, "verify_failed")
+
+    assert FACTORY_PACKAGE not in android.disabled
+    assert android.home == FACTORY
+    assert state.load()["disabled"] == []
+    assert android.black_screen is False
+
+
+async def test_restore_does_not_uninstall_when_the_original_does_not_open(tmp_path: Path) -> None:
+    livre, android, _, _ = await installed(tmp_path)
+    await livre.run({"action": "set-home"})
+    android.dead.add(FACTORY_PACKAGE)
+    android.log.clear()
+
+    await expect_error(livre, {"action": "restore"}, "verify_failed")
+
+    assert not any(c.startswith("pm uninstall") for c in android.log)
+    assert android.installed is True
+
+
+@pytest.mark.parametrize(
+    "broken",
+    ["truncated", "garbage-after-header", "huge-side"],
+)
+async def test_a_jpeg_that_does_not_decode_is_refused(broken: str) -> None:
+    photo = jpeg_bytes(64, 48)
+    if broken == "truncated":
+        photo = photo[: len(photo) // 2]
+    elif broken == "garbage-after-header":
+        photo = photo[:20] + bytes(len(photo) - 20)
+    else:
+        photo = jpeg_bytes(4097, 8)
+    staging = PhotoStaging(FakeClock())
+
+    with pytest.raises(LivreError) as raised:
+        staging.add("p", 0, 1, hashlib.sha256(photo).hexdigest(), base64.b64encode(photo).decode())
+
+    assert raised.value.code == "invalid_photo"
