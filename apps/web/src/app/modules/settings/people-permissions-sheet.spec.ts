@@ -101,10 +101,10 @@ describe('PeoplePermissionsSheet', () => {
     expect(el.querySelector('app-people-permission-picker .summary')).toBeNull();
     const summary = () =>
       el.querySelector('.footer .summary')?.textContent?.replace(/\s+/g, ' ').trim();
-    expect(summary()).toBe('Poderá: Controlar a TV · Desligar a TV · Abrir apps · Ver o histórico');
+    expect(summary()).toBe('Poderá: Controlar a TV · Desligar a TV · Abrir apps');
     await flip('Desligar a TV');
     await fixture.whenStable();
-    expect(summary()).toBe('Poderá: Controlar a TV · Abrir apps · Ver o histórico');
+    expect(summary()).toBe('Poderá: Controlar a TV · Abrir apps');
   });
 
   it('opens with the focus on the title, so the first Tab lands on the first control and no model looks pressed', async () => {
