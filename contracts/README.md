@@ -61,7 +61,7 @@ O agente guarda num arquivo local (limitado, sem duplicar) os erros e as ocorrê
 
 | `type` | Direção | Corpo |
 |---|---|---|
-| `agent.diagnostics.v1` | agente para API | `events` (1 a 20, na ordem em que aconteceram): `id` (UUID, a API ignora repetidos), `at`, `kind` (`a-z`, `0-9`, `_` e `.`, até 48), `severity` (`info`, `warn`, `error`), `component` opcional (até 32), `detail` (1 a 300 caracteres, já sem dados pessoais) e `count` opcional (quantas vezes a mesma ocorrência se repetiu antes do envio). Sem resposta: o agente apaga o que enviou. |
+| `agent.diagnostics.v1` | agente para API | `events` (1 a 20, na ordem em que aconteceram): `id` (UUID, a API ignora repetidos), `at`, `kind` (`a-z`, `0-9`, `_` e `.`, até 48), `severity` (`info`, `warn`, `error`), `component` opcional (até 32), `detail` (1 a 300 caracteres, já sem dados pessoais) e `count` opcional (quantas vezes a mesma ocorrência se repetiu antes do envio). Sem resposta: o agente apaga o que enviou. O agente só declara a capacidade e envia depois de `GET /api/v1/devices/info` listar `agent.diagnostics.v1` em `features`. |
 
 Como na limpeza da TV, `agent.logs.v1` sai **antes** do `command.result.v1` do mesmo comando. `agent.maintenance.v1` só é
 respondido com `command.result.v1`, assim que o pedido foi entregue ao supervisor do Windows (o mesmo mecanismo do menu da

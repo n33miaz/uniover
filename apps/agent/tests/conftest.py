@@ -36,6 +36,9 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     async def open_probe(host: str, port: int, wait: float = 1.0) -> PortState:
         return PortState.OPEN
 
+    async def api_features(base_url: str, wait_seconds: float = 10.0) -> frozenset[str]:
+        return frozenset({"agent.diagnostics.v1"})
+
     async def no_info(host: str) -> None:
         return None
 
@@ -61,6 +64,8 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tv_locate, "tcp_open", alive)
     monkeypatch.setattr(main_module, "tcp_probe", open_probe)
     monkeypatch.setattr(main_module, "identify_tv", no_identity)
+    # A API dos testes "aceita o diagnóstico"; os testes do rollout trocam isto por vazio ou `None`.
+    monkeypatch.setattr(main_module, "fetch_api_features", api_features)
     monkeypatch.setattr(tv_locate, "http_json", no_json)
     monkeypatch.setattr(tv_locate, "ssdp_search", no_ssdp)
     monkeypatch.setattr(tv_locate, "arp_mac", no_mac)

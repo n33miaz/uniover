@@ -35,7 +35,7 @@ from uniover_agent.adapters.housekeeping import tidy
 from uniover_agent.adapters.installation import installation_base, migrate_layout
 from uniover_agent.adapters.local_config import ConfigValue, save_agent_config, update_config
 from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals
-from uniover_agent.adapters.pairing_http import HttpPairingClient, probe_api
+from uniover_agent.adapters.pairing_http import HttpPairingClient, fetch_api_features, probe_api
 from uniover_agent.adapters.pairing_page import (
     can_open_browser,
     open_connection_page,
@@ -167,6 +167,7 @@ from uniover_agent.core import (
     unsupported_handler,
     update_body,
 )
+from uniover_agent.core.api_features import ApiFeatures
 from uniover_agent.core.diagnostics import DIAGNOSTICS_CAPABILITY, DiagnosticsShipper
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
@@ -1204,7 +1205,18 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
     diary.start()
     watch = ConnectionWatch()
     health = TaskHealth(clock)
-    shipper = DiagnosticsShipper(kit.store, kit.recorder, transport, envelopes, clock)
+    # O diagnóstico só é declarado e enviado depois de a API dizer que o aceita (uma API anterior
+    # recusaria o `hello`).
+    features = ApiFeatures(lambda: fetch_api_features(api_url), clock)
+    await features.refresh()
+    shipper = DiagnosticsShipper(
+        kit.store,
+        kit.recorder,
+        transport,
+        envelopes,
+        clock,
+        enabled=lambda: features.supports(DIAGNOSTICS_CAPABILITY),
+    )
 
     def on_disconnected() -> None:
         tray.disconnected()
@@ -1228,11 +1240,15 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
         clock,
         random.SystemRandom().random,
         agent_version=build_version(),
-        capabilities=(
+        capabilities=lambda: (
             "transport.keepalive.v1",
             LOGS_CAPABILITY,
             MAINTENANCE_CAPABILITY,
-            *((DIAGNOSTICS_CAPABILITY,) if settings.self_care else ()),
+            *(
+                (DIAGNOSTICS_CAPABILITY,)
+                if settings.self_care and features.supports(DIAGNOSTICS_CAPABILITY)
+                else ()
+            ),
             *(tuple(tv.capabilities) if tv is not None else ()),
         ),
         on_connected=on_connected,
@@ -1261,7 +1277,7 @@ async def run(  # noqa: PLR0912, PLR0915 - composição
             clock,
             on_critical=lambda outcome: roll_back_if_in_trial(outcome, kit),
         )
-        jobs = [*jobs, care.run, shipper.run]
+        jobs = [*jobs, care.run, shipper.run, features.run]
     # Cada tarefa de fundo é supervisionada: erro vira registro e ocorrência, e ela recomeça.
     background = [
         asyncio.create_task(

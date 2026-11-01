@@ -138,3 +138,23 @@ async def probe_api(base_url: str, wait_seconds: float = 10.0) -> bool:
     except httpx.HTTPError:
         return False
     return response.status_code == HTTPStatus.OK
+
+
+async def fetch_api_features(base_url: str, wait_seconds: float = 10.0) -> frozenset[str] | None:
+    """As mensagens opcionais que a API diz aceitar (`features` de `devices/info`, rota pública).
+
+    `None` quando não dá para saber (API dormindo, rede). Uma API que ainda não tem o campo devolve
+    o conjunto vazio. Quem chama não declara nem usa o que não foi confirmado.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=wait_seconds) as client:
+            response = await client.get(base_url.rstrip("/") + f"{_BASE}/info")
+        if response.status_code != HTTPStatus.OK:
+            return None
+        data = response.json()
+    except httpx.HTTPError, ValueError:
+        return None
+    features = data.get("features") if isinstance(data, dict) else None
+    if not isinstance(features, list):
+        return frozenset()
+    return frozenset(item for item in features if isinstance(item, str))
