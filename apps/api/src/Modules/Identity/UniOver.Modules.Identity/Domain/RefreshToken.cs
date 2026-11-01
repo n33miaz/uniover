@@ -96,6 +96,15 @@ public sealed class RefreshToken
     public string? UserAgent { get; private set; }
 
     /// <summary>
+    /// Aparelho que o app informou ao abrir a sessão ou renovar (<c>iphone</c>, <c>ipad</c>, <c>android</c>, <c>pc</c>);
+    /// nulo para um app antigo ou um valor fora da lista. Só informação para o dono ver em Sessões: nunca decide acesso.
+    /// </summary>
+    public string? ClientPlatform { get; private set; }
+
+    /// <summary>O app estava aberto como app instalado (tela de início) e não numa aba do navegador; nulo se não informou.</summary>
+    public bool? ClientInstalled { get; private set; }
+
+    /// <summary>
     /// Preenchido quando este token foi o apresentado numa recuperação, ou o sucessor que ela consumiu: nenhum dos dois
     /// recupera de novo (uma recuperação por token girado, nunca em cadeia).
     /// </summary>
@@ -108,7 +117,9 @@ public sealed class RefreshToken
         DateTimeOffset now,
         DateTimeOffset expiresAt,
         string? ip,
-        string? userAgent)
+        string? userAgent,
+        string? clientPlatform = null,
+        bool? clientInstalled = null)
     {
         ArgumentNullException.ThrowIfNull(tokenHash);
 
@@ -122,6 +133,8 @@ public sealed class RefreshToken
             ExpiresAt = expiresAt,
             Ip = AuditText.Truncate(ip, AuditText.IpMax),
             UserAgent = AuditText.Truncate(userAgent, AuditText.UserAgentMax),
+            ClientPlatform = clientPlatform,
+            ClientInstalled = clientInstalled,
         };
     }
 
