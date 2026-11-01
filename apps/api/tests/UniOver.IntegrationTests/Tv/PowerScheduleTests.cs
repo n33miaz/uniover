@@ -16,11 +16,9 @@ public sealed class PowerScheduleTests(PostgresFixture postgres)
 
     private static async Task<Guid> ConfigureAsync(TvApp app)
     {
+        // A TV padrão já existe (a da instalação, ligada ao computador do teste): o agendamento é dela.
         await using var db = app.Db();
-        var tv = ConfiguredTv.CreateDefault("TV", app.Agent.Slug, Guid.NewGuid(), app.Time.GetUtcNow());
-        db.Tvs.Add(tv);
-        await db.SaveChangesAsync(Ct);
-        return tv.Id;
+        return await db.Tvs.Where(t => t.IsDefault).Select(t => t.Id).SingleAsync(Ct);
     }
 
     private static async Task<long> ScheduleAsync(TvApp app, Guid tvId, DateTimeOffset due)

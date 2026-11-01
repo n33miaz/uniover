@@ -56,7 +56,7 @@ public static class TvModule
         // O handler recebe só o valor da seção "Modules:Tv": módulo nenhum lê a configuração de outro.
         var version = configuration.GetSection(TvModuleOptions.SectionName)["Version"] ?? "0.0.0";
 
-        // O AgentId pode ficar vazio: a API sobe sem TV configurada e os comandos respondem 503.
+        // Sem nenhuma TV salva a API sobe normalmente e os comandos respondem 503.
         services.AddOptions<TvModuleOptions>()
             .Bind(configuration.GetSection(TvModuleOptions.SectionName))
             .Validate(TvModuleOptions.IsValid, "Modules:Tv tem valor fora do permitido (tempos devem ser positivos).")
@@ -82,9 +82,10 @@ public static class TvModule
         // Em memória e atrás de portas, sempre como instância do contêiner (nada estático).
         services.AddSingleton<ITvStateStore, InMemoryTvStateStore>();
 
-        // Qual agente controla a TV: a linha salva no app, depois a variável de ambiente (reserva), depois nenhum.
+        // Qual agente controla a TV: a linha salva no app, ou nenhum.
         services.AddSingleton<ISavedTvReader, EfSavedTvReader>();
         services.AddSingleton<ITvAgentResolver, TvAgentResolver>();
+        services.AddHostedService<LegacyAgentImport>();
         services.AddSingleton<ITvAgentPresence, DevicesAgentPresence>();
         services.AddSingleton<IAgentPresenceListener, TvPresenceListener>();
         services.AddSingleton<ITvCommandSender, DevicesGatewayCommandSender>();

@@ -219,7 +219,7 @@ public sealed class CommandTests(PostgresFixture postgres)
     [Fact]
     public async Task Command_WithNoAgentConfigured_Returns503_AndTheApiStillBoots()
     {
-        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { AgentId = string.Empty });
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { WithoutTv = true });
 
         using var response = await app.PostAsync("/api/v1/tv/keys", new { key = "HOME" });
 

@@ -87,7 +87,7 @@ public class CleanupTests
         var audit = new NoAudit();
         var reports = new InMemoryTvCleanupReports(TimeProvider.System);
         ITvCommandSender sender = agentReports ? new ReportingSender(inner, reports) : inner;
-        var options = Options.Create(new TvModuleOptions { AgentId = "pc-casa", CleanupTimeoutSeconds = cleanupTimeoutSeconds });
+        var options = Options.Create(new TvModuleOptions { CleanupTimeoutSeconds = cleanupTimeoutSeconds });
         var runner = new TvCommandRunner(options, new FixedAgentResolver("pc-casa"), new FakePresence(), sender, new InMemoryTvStateStore(), audit, new NoStream(), TimeProvider.System, NullLogger<TvCommandRunner>.Instance);
         return (new CleanupHandler(runner, reports, options), inner, audit, reports);
     }
