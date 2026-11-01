@@ -1,5 +1,7 @@
 """A promoção do ícone para a área visível da barra: uma vez só, sem tocar no registro real."""
 
+import json
+import os
 from pathlib import Path
 
 import pytest
@@ -37,8 +39,12 @@ class MemoryMarker:
     def done(self, executable: str) -> bool:
         return executable in self.paths
 
-    def mark(self, executable: str) -> None:
+    def mark(self, executable: str) -> bool:
         self.paths.append(executable)
+        return True
+
+    def forget(self, executable: str) -> None:
+        self.paths.remove(executable)
 
 
 OURS = NotifyIconEntry("111", OWN, "UniOver: conectado - Sala ligada")
@@ -181,18 +187,121 @@ def test_background_wait_reports_a_failed_write_to_the_diagnostics() -> None:
 def test_the_marker_survives_a_new_process(tmp_path: Path) -> None:
     path = tmp_path / "runtime" / "tray-promoted.json"
 
-    FilePromotionMarker(path).mark(OWN)
+    assert FilePromotionMarker(path).mark(OWN) is True
 
     assert FilePromotionMarker(path).done(OWN)
     assert FilePromotionMarker(path).done(OWN.upper())
     assert not FilePromotionMarker(path).done(r"C:\Outro\python.exe")
 
 
-def test_a_broken_marker_file_counts_as_not_promoted(tmp_path: Path) -> None:
-    path = tmp_path / "tray-promoted.json"
-    path.write_text("{ isto nao e json", encoding="utf-8")
+def test_no_marker_file_means_never_promoted(tmp_path: Path) -> None:
+    assert not FilePromotionMarker(tmp_path / "nao-existe" / "tray-promoted.json").done(OWN)
 
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "{ isto nao e json",
+        '{"executables": ["C:\\python.exe"',  # gravação cortada no meio por uma queda
+        "",
+        "[]",
+        '{"executables": "nao e lista"}',
+        '{"executables": [1, 2]}',
+        "\x00\x00\x00",
+    ],
+)
+def test_an_unreadable_marker_is_taken_as_already_promoted(tmp_path: Path, content: str) -> None:
+    """Na dúvida não se promove: a pessoa pode ter escondido o ícone depois da primeira vez."""
+    path = tmp_path / "tray-promoted.json"
+    path.write_text(content, encoding="utf-8")
+
+    assert FilePromotionMarker(path).done(OWN)
+
+
+def test_an_unreadable_marker_stops_the_promotion_and_is_left_untouched(tmp_path: Path) -> None:
+    path = tmp_path / "tray-promoted.json"
+    path.write_text("{ cortado", encoding="utf-8")
+    settings = FakeSettings([OURS])
+
+    assert promote_once(settings, FilePromotionMarker(path), OWN) == "already_done"
+
+    assert settings.promoted == []
+    assert path.read_text(encoding="utf-8") == "{ cortado"
+    assert not FilePromotionMarker(path).mark(OWN)
+
+
+def test_the_marker_is_written_through_a_temporary_file_and_replaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "tray-promoted.json"
+    replaced: list[tuple[str, str]] = []
+    real_replace = os.replace
+
+    def spy(source: object, destination: object) -> None:
+        # Na hora da troca o destino ainda não existe e o temporário já está inteiro.
+        assert json.loads(Path(str(source)).read_text(encoding="utf-8")) == {"executables": [OWN]}
+        assert not path.exists()
+        replaced.append((Path(str(source)).name, Path(str(destination)).name))
+        real_replace(str(source), str(destination))
+
+    monkeypatch.setattr(os, "replace", spy)
+
+    assert FilePromotionMarker(path).mark(OWN)
+
+    assert replaced == [("tray-promoted.json.tmp", "tray-promoted.json")]
+    assert not (tmp_path / "tray-promoted.json.tmp").exists()
+
+
+def test_a_crash_while_writing_leaves_the_old_marker_intact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "tray-promoted.json"
+    FilePromotionMarker(path).mark(r"C:\Antigo\python.exe")
+
+    def dies(source: object, destination: object) -> None:
+        raise OSError("disco cheio")
+
+    monkeypatch.setattr(os, "replace", dies)
+
+    assert FilePromotionMarker(path).mark(OWN) is False
+
+    monkeypatch.undo()
+    assert FilePromotionMarker(path).done(r"C:\Antigo\python.exe")
     assert not FilePromotionMarker(path).done(OWN)
+    assert not (tmp_path / "tray-promoted.json.tmp").exists()
+
+
+def test_without_a_writable_marker_the_icon_is_not_promoted(tmp_path: Path) -> None:
+    """A marca vem antes da escrita no registro: sem ela gravada, nada é promovido."""
+
+    class Unwritable(MemoryMarker):
+        def mark(self, executable: str) -> bool:
+            return False
+
+    settings = FakeSettings([OURS])
+
+    assert promote_once(settings, Unwritable(), OWN) == "failed"
+    assert settings.promoted == []
+
+
+def test_the_marker_is_forgotten_when_the_registry_write_fails() -> None:
+    settings, marker = FakeSettings([OURS], writable=False), MemoryMarker()
+
+    assert promote_once(settings, marker, OWN) == "failed"
+
+    assert marker.paths == []  # marcada antes e desfeita: dá para tentar de novo
+
+
+def test_forgetting_keeps_the_other_executables(tmp_path: Path) -> None:
+    path = tmp_path / "tray-promoted.json"
+    marker = FilePromotionMarker(path)
+    marker.mark(OWN)
+    marker.mark(r"C:\Outro\python.exe")
+
+    marker.forget(OWN.upper())
+
+    assert not marker.done(OWN)
+    assert marker.done(r"C:\Outro\python.exe")
 
 
 def test_the_real_registry_adapter_is_inert_off_windows(monkeypatch: pytest.MonkeyPatch) -> None:

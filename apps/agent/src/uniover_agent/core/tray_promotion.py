@@ -62,7 +62,11 @@ def promote_once(
     entry = find_entry(settings.entries(), own_executable)
     if entry is None:
         return "not_found"
-    if not settings.promote(entry.key):
+    # A marca vem antes da escrita no registro: promover no máximo uma vez vale mais do que tentar
+    # de novo sem certeza. Sem poder gravá-la não se promove; se a escrita falhar, ela é desfeita.
+    if not marker.mark(own_executable):
         return "failed"
-    marker.mark(own_executable)
+    if not settings.promote(entry.key):
+        marker.forget(own_executable)
+        return "failed"
     return "promoted"

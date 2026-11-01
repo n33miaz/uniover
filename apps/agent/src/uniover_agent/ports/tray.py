@@ -31,6 +31,15 @@ class NotifyIconSettings(Protocol):
 class PromotionMarker(Protocol):
     """Lembra, por executável, que o ícone já foi promovido uma vez (e nunca mais é mexido)."""
 
-    def done(self, executable: str) -> bool: ...
+    def done(self, executable: str) -> bool:
+        """Já promovido? Na dúvida (marca ilegível ou inválida) responde que sim: melhor não
+        promover do que desfazer a escolha de quem escondeu o ícone."""
+        ...
 
-    def mark(self, executable: str) -> None: ...
+    def mark(self, executable: str) -> bool:
+        """Grava a marca. `False` se não foi possível gravar (aí o ícone não deve ser promovido)."""
+        ...
+
+    def forget(self, executable: str) -> None:
+        """Desfaz a marca de uma promoção que não aconteceu, para tentar de novo depois."""
+        ...
