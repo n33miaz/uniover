@@ -9,7 +9,7 @@
   [attr.data-phase]="phase()"
   (click)="toggle()"
 >
-  <app-status-dot [phase]="phase()" />
+  <app-status-dot [phase]="phase()" [pulse]="store.keyPulse()" />
 </button>
 
 @if (open()) {

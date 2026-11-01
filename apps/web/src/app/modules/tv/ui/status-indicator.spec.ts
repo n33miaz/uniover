@@ -41,6 +41,34 @@ describe('StatusIndicator', () => {
     expect(panel()).toBeNull();
   });
 
+  it('pulses the dot once per tap on the control, without changing its phase', async () => {
+    const dot = () => root.querySelector<HTMLElement>('.trigger app-status-dot')!;
+    const animate = vi.fn();
+    (
+      root.querySelector('.trigger app-status-dot .dot') as unknown as { animate: unknown }
+    ).animate = animate;
+    expect(dot().getAttribute('data-pulses')).toBe('0');
+    store.keyPulse.set(1);
+    await render();
+    store.keyPulse.set(2);
+    await render();
+    expect(dot().getAttribute('data-pulses')).toBe('2');
+    expect(animate).toHaveBeenCalledTimes(2);
+    const [frames, options] = animate.mock.calls[0];
+    expect(options.duration).toBe(250);
+    expect(frames.length).toBe(3);
+    expect(phase()).toBe('connected');
+  });
+
+  it('does not pulse the dot inside the explanation panel', async () => {
+    trigger().click();
+    await render();
+    store.keyPulse.set(1);
+    await render();
+    const inPanel = panel()!.querySelector('app-status-dot')!;
+    expect(inPanel.getAttribute('data-pulses')).toBe('0');
+  });
+
   describe('phase of the dot, one per state', () => {
     it.each<[TvStatus, string, string]>([
       ['hot', 'connected', 'Conectada'],

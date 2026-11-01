@@ -173,6 +173,8 @@ export class TvStore {
   private readonly _streamStatus = signal<TvStreamStatus>('connecting');
   private readonly _notice = signal<TvNotice | null>(null);
   private readonly _inFlightKeys = signal(0);
+  /** Conta cada toque que o controle aceitou (tecla ou app aberto): o ponto de estado pisca uma vez por toque. */
+  private readonly _keyPulse = signal(0);
   private readonly _volumeNudge = signal(0);
   private readonly _cleaning = signal(false);
   private readonly _lastCleanup = signal<TvLastCleanup | null>(null);
@@ -220,6 +222,7 @@ export class TvStore {
   );
   readonly notice = computed(() => (this.currentAccount() ? this._notice() : null));
   readonly inFlightKeys = computed(() => (this.currentAccount() ? this._inFlightKeys() : 0));
+  readonly keyPulse = this._keyPulse.asReadonly();
   /**
    * Quantos passos de volume a TV confirmou desde o último toque (mais menos menos), por poucos segundos. Só serve à
    * pílula de volume quando o agente não consegue ler o nível: é o retorno do toque, nunca um número do volume.
@@ -623,6 +626,7 @@ export class TvStore {
     if (!this.canSend() || !this.access.control() || this.account === null || this.listFirst()) {
       return false;
     }
+    this._keyPulse.update((count) => count + 1);
     this._inFlightKeys.update((count) => count + 1);
     try {
       await this.api.sendKey(key);
@@ -767,6 +771,7 @@ export class TvStore {
     ) {
       return false;
     }
+    this._keyPulse.update((count) => count + 1);
     try {
       await this.api.launch(shortcut.id);
       if (this.live(epoch)) {

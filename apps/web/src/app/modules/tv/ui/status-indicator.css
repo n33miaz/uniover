@@ -3,10 +3,13 @@
   display: inline-flex;
 }
 
-/* Alvo de 44 px em volta do ponto pequeno. */
+/*
+ * Alvo de 44 px em volta do ponto pequeno. O ponto fica na ponta do alvo, do lado do desligar (e não no meio dele): a
+ * distância entre os dois fica curta sem que os alvos de toque se sobreponham.
+ */
 .trigger {
   display: grid;
-  place-items: center;
+  place-items: center end;
   width: 44px;
   height: 44px;
   padding: 0;

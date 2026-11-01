@@ -265,6 +265,16 @@ describe('TvStore', () => {
   });
 
   describe('keys', () => {
+    it('counts one pulse for every key the control accepts', async () => {
+      await started();
+      expect(store.keyPulse()).toBe(0);
+      await store.sendKey('VOLUME_UP');
+      await store.sendKey('VOLUME_UP');
+      expect(store.keyPulse()).toBe(2);
+      await store.sendKey('VOLUME_UP');
+      expect(store.keyPulse()).toBe(3);
+    });
+
     it('sends the key and never changes the state by itself', async () => {
       await started();
       await expect(store.sendKey('VOLUME_UP')).resolves.toBe(true);

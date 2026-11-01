@@ -144,6 +144,7 @@ export function createFakeTvStore() {
     watchdog: signal<TvWatchdog | null>(null),
     notConfigured: signal(false),
     inFlightKeys: signal(0),
+    keyPulse: signal(0),
     volumeNudge: signal(0),
     cleaning: signal(false),
     lastCleanup: signal<{
