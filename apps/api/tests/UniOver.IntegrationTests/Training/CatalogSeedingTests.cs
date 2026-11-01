@@ -131,6 +131,32 @@ public sealed class CatalogSeedingTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task RowsOfTheUniOverSource_AreSeededNextToTheOthers_WithTheirOwnIdsAndNoThirdPartyLicense()
+    {
+        await using var app = await TrainingApp.StartAsync(postgres);
+        var own = Item("goblet", "Agachamento Goblet", equipment: Equipment.Kettlebell) with { Source = ExerciseSources.Uniover };
+        // A mesma referência em duas fontes não colide: a chave inclui a fonte.
+        var document = Document(2, Item("goblet", "Supino A"), own);
+
+        await SeederFor(app, document).EnsureSeededAsync(Ct);
+
+        await using var db = app.Db();
+        var row = await db.Exercises.SingleAsync(e => e.Source == ExerciseSources.Uniover, Ct);
+        row.SourceRef.Should().Be("goblet");
+        row.Equipment.Should().Be(Equipment.Kettlebell);
+        row.Id.Should().Be(ExerciseIds.ForCatalog(ExerciseSources.Uniover, "goblet"));
+        row.License.Should().BeNull();
+        row.LicenseUrl.Should().BeNull();
+        row.IsCatalog.Should().BeTrue();
+        (await db.Exercises.CountAsync(Ct)).Should().Be(2);
+
+        // O que sai da semente vira lápide, também nesta fonte.
+        await SeederFor(app, Document(3, Item("goblet", "Supino A"))).EnsureSeededAsync(Ct);
+        await using var check = app.Db();
+        (await check.Exercises.SingleAsync(e => e.Source == ExerciseSources.Uniover, Ct)).DeletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task NewerSeedVersion_CorrectsTheText_AndNeverTouchesOwnOrWgerRows()
     {
         await using var app = await TrainingApp.StartAsync(postgres);

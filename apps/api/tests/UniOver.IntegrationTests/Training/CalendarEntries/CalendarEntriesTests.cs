@@ -139,7 +139,7 @@ public sealed class CalendarEntriesTests(PostgresFixture postgres)
         await using (var training = TrainingApp.CreateContext(app.Database.OwnerConnection))
         {
             await training.Database.MigrateAsync("20261028010130_AddBodyMeasurements", Ct);
-            (await training.Database.GetPendingMigrationsAsync(Ct)).Should().Equal("20261028024002_AddCalendarEntries");
+            (await training.Database.GetPendingMigrationsAsync(Ct)).Should().Equal("20261028024002_AddCalendarEntries", "20261031200000_AddUniOverCatalogSource");
             await training.Database.MigrateAsync(Ct);
             (await training.Database.GetPendingMigrationsAsync(Ct)).Should().BeEmpty();
         }
