@@ -125,10 +125,23 @@ internal sealed class SiriCommandHandler(
         }
 
         current.Set(target);
-        await TouchAsync(token, now, cancellationToken);
 
-        var origin = new TvCommandOrigin(token.UserId, client, TvCommandOrigin.ViaSiri);
-        return await RunAsync(code, origin, cancellationToken);
+        // A trava de atualização sem chave serializa as ordens desta chave e conflita com a trava exclusiva da revogação.
+        // Assim, depois do 204 nenhuma ordem é entregue; ela dura até o fim da resposta do agente.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var locked = (await db.SiriTokens.FromSql($"SELECT * FROM tv.siri_tokens WHERE id = {token.Id} FOR NO KEY UPDATE")
+            .AsNoTracking().ToListAsync(cancellationToken)).SingleOrDefault();
+        if (locked is null || !locked.IsUsable(time.GetUtcNow()))
+        {
+            return new SiriResult(SiriStatus.Unauthorized);
+        }
+
+        await TouchAsync(locked, time.GetUtcNow(), cancellationToken);
+
+        var origin = new TvCommandOrigin(locked.UserId, client, TvCommandOrigin.ViaSiri);
+        var result = await RunAsync(code, origin, cancellationToken);
+        await transaction.CommitAsync(CancellationToken.None);
+        return result;
     }
 
     private async Task<SiriResult> RunAsync(string code, TvCommandOrigin origin, CancellationToken cancellationToken)

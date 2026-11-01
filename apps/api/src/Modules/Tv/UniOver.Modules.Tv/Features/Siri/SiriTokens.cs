@@ -122,7 +122,12 @@ internal sealed class SiriTokensHandler(TvDbContext db, ITvCommandAudit audit, T
     {
         ArgumentNullException.ThrowIfNull(origin);
 
-        var token = await db.SiriTokens.SingleOrDefaultAsync(t => t.Id == id && t.UserId == origin.UserId, cancellationToken);
+        // Trava exclusiva da linha: espera as ordens em andamento (que seguram a trava compartilhada) e segura as novas até
+        // gravar a revogação. Depois do 204, nenhuma ordem é entregue com esta chave.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var token = (await db.SiriTokens
+            .FromSql($"SELECT * FROM tv.siri_tokens WHERE id = {id} AND user_id = {origin.UserId} FOR UPDATE")
+            .ToListAsync(cancellationToken)).SingleOrDefault();
         if (token is null)
         {
             return false;
@@ -142,6 +147,7 @@ internal sealed class SiriTokensHandler(TvDbContext db, ITvCommandAudit audit, T
                 origin.UserId, null, TvCommandNames.SiriTokenRevoke, token.Name, ok: true, errorCode: null, latencyMs: null,
                 origin.Client, now, token.TvId),
             cancellationToken);
+        await transaction.CommitAsync(CancellationToken.None);
         return true;
     }
 
