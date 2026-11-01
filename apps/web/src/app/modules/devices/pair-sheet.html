@@ -28,6 +28,25 @@
       8 caracteres, com ou sem hífen. Não usa vogais, 0 nem 1.
     </p>
 
+    <label for="pair-nickname" i18n="@@devices.pair.nickname">Como Chamar Esta TV?</label>
+    <input
+      id="pair-nickname"
+      class="ui-input"
+      type="text"
+      autocomplete="off"
+      [attr.maxlength]="maxNickname"
+      placeholder="TV"
+      i18n-placeholder="@@devices.pair.nickname-placeholder"
+      [attr.aria-invalid]="nicknameValid() ? null : 'true'"
+      [value]="nickname()"
+      (input)="onNicknameInput($event)"
+    />
+    @if (!nicknameValid()) {
+      <p class="error ui-notice bad ui-rise" role="alert" i18n="@@devices.pair.nickname-invalid">
+        Use letras, números, espaço e . _ ( ) -, começando por letra ou número.
+      </p>
+    }
+
     <label for="pair-name" i18n="@@devices.pair.name">Nome do dispositivo</label>
     <input
       id="pair-name"
