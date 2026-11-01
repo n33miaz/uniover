@@ -68,7 +68,6 @@ _MAIN: Final = "-a android.intent.action.MAIN"
 _HOME_CATEGORY: Final = "-c android.intent.category.HOME"
 _RESOLVE_HOME: Final = f"cmd package resolve-activity --brief {_MAIN} {_HOME_CATEGORY}"
 _QUERY_HOME: Final = f"cmd package query-activities --brief {_MAIN} {_HOME_CATEGORY}"
-_GO_HOME: Final = f"am start {_MAIN} {_HOME_CATEGORY}"
 _OPEN_LAUNCHER: Final = f"am start -n {HOME_COMPONENT}"
 _BROADCAST: Final = (
     f"am broadcast -n {PACKAGE}/.ConfigReceiver -a {PACKAGE}.action.APPLY_CONFIG --es config_b64 "
@@ -428,6 +427,18 @@ class TvLivre:
                 "O TV Livre instalou, mas não abriu na TV; nada foi alterado na tela inicial.",
             )
 
+    async def _restore_home(self, component: str, *, enable: bool = False) -> None:
+        """Tenta devolver a tela inicial anterior depois de uma troca que não pôde ser confirmada.
+
+        A volta é melhor esforço: a falha original continua sendo a que vai para a API, mas abrir a
+        activity explicitamente evita depender de como cada fabricante interpreta o intent HOME.
+        """
+        package = _package_of(component)
+        if enable:
+            await self._adb.shell(f"pm enable --user 0 {package}")
+        await self._set_home_activity(component)
+        await self._runs(f"am start -n {component}", package)
+
     async def _install(self) -> None:
         await self._capture_original()
         apk = await self._apk.fetch()
@@ -507,13 +518,12 @@ class TvLivre:
         if not await self._set_home_activity(HOME_COMPONENT):
             raise LivreError("set_home_failed", "A TV não aceitou a nova tela inicial; nada mudou.")
         if await self._resolved_home_package() != PACKAGE:
-            await self._set_home_activity(factory)
+            await self._restore_home(factory)
             raise LivreError(
                 "verify_failed", "A nova tela inicial não ficou como padrão; voltei à original."
             )
-        if not await self._runs(_GO_HOME, PACKAGE):
-            await self._set_home_activity(factory)
-            await self._adb.shell(_GO_HOME)
+        if not await self._runs(_OPEN_LAUNCHER, PACKAGE):
+            await self._restore_home(factory)
             raise LivreError(
                 "launcher_not_running",
                 "A nova tela inicial não abriu como padrão; voltei à original.",
@@ -528,14 +538,13 @@ class TvLivre:
             self._state.save(stored)  # antes de desativar: uma queda ainda deixa a volta possível
         result = await self._adb.shell(f"pm disable-user --user 0 {package}")
         if not result.ok or "disabled" not in result.text:
+            await self._restore_home(factory, enable=True)
             await self._forget_disabled(stored, package)
             raise LivreError("disable_failed", "A TV não deixou desativar o launcher de fábrica.")
         if await self._resolved_home_package() != PACKAGE or not await self._runs(
-            _GO_HOME, PACKAGE
+            _OPEN_LAUNCHER, PACKAGE
         ):
-            await self._adb.shell(f"pm enable --user 0 {package}")
-            await self._set_home_activity(factory)
-            await self._adb.shell(_GO_HOME)
+            await self._restore_home(factory, enable=True)
             await self._forget_disabled(stored, package)
             raise LivreError(
                 "verify_failed", "A tela inicial mudou ao desativar o original; reativei e voltei."
@@ -551,6 +560,7 @@ class TvLivre:
 
     async def _restore(self, uninstall: bool) -> None:
         stored = self._state.load()
+        previous = await self._resolved_home()
         candidates = [c for c in stored.get("candidates", []) if isinstance(c, str)]
         if isinstance(stored.get("factory"), str):
             candidates.insert(0, stored["factory"])
@@ -570,12 +580,14 @@ class TvLivre:
             if (
                 await self._set_home_activity(component)
                 and await self._resolved_home_package() == package
-                and await self._runs(_GO_HOME, package)
+                and await self._runs(f"am start -n {component}", package)
             ):
                 restored = True
                 break
         if not restored:
             # Não desinstala nada: o launcher novo segue como estava.
+            if previous is not None:
+                await self._restore_home(previous)
             raise LivreError(
                 "verify_failed",
                 "Não consegui confirmar a tela inicial original; nada foi desinstalado.",

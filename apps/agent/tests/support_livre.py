@@ -38,6 +38,7 @@ class FakeAndroid:
         self.noise = noise
         self.die_after_disable = False  # a home nova cai depois de desativar o original
         self.dead: set[str] = set()  # apps que abrem mas não ficam de pé
+        self.fail_open_when_current_home: set[str] = set()
         self.sdk = sdk
         self.leanback = leanback
         self.homes = list(homes)
@@ -170,6 +171,8 @@ class FakeAndroid:
             component = command.rsplit(maxsplit=1)[-1]
             if component.startswith(PACKAGE) and not self.installed:
                 return ShellResult(False, "Error type 3\n")
+            if component in self.fail_open_when_current_home and self.home == component:
+                return ShellResult(False, "Error: activity simulada não abriu\n")
             if component == HOME_COMPONENT:
                 self.files_dir = True
             return ShellResult(True, f"Starting: Intent {{ cmp={component} }}\n")

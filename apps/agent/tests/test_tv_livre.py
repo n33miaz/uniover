@@ -323,10 +323,8 @@ async def test_set_home_that_does_not_stick_goes_back_to_the_original(tmp_path: 
 
     # Sem verificação não se desativa nada, e a TV volta ao launcher de fábrica.
     assert not any(c.startswith("pm disable") for c in android.log)
-    assert (
-        android.log[-1].startswith("cmd package set-home-activity")
-        or "resolve-activity" in android.log[-1]
-    )
+    assert android.home == FACTORY
+    assert f"am start -n {FACTORY}" in android.log
     assert android.black_screen is False
 
 
@@ -667,7 +665,7 @@ async def test_a_home_that_does_not_open_after_set_home_goes_back_to_the_origina
     tmp_path: Path,
 ) -> None:
     livre, android, _, _ = await installed(tmp_path)
-    android.fail.add("am start -a")  # abrir a Home pelo intent HOME falha
+    android.fail_open_when_current_home.add(HOME_COMPONENT)
 
     await expect_error(
         livre, {"action": "set-home", "disableFactory": True}, "launcher_not_running"
@@ -675,6 +673,7 @@ async def test_a_home_that_does_not_open_after_set_home_goes_back_to_the_origina
 
     assert android.home == FACTORY
     assert not any(c.startswith("pm disable") for c in android.log)
+    assert f"am start -n {FACTORY}" in android.log
     assert android.black_screen is False
 
 
@@ -699,6 +698,25 @@ async def test_restore_does_not_uninstall_when_the_original_does_not_open(tmp_pa
     await expect_error(livre, {"action": "restore"}, "verify_failed")
 
     assert not any(c.startswith("pm uninstall") for c in android.log)
+    assert android.installed is True
+
+
+async def test_restore_reopens_the_previous_home_when_the_original_activity_fails(
+    tmp_path: Path,
+) -> None:
+    livre, android, _, _ = await installed(tmp_path)
+    await livre.run({"action": "set-home"})
+    android.fail_open_when_current_home.add(FACTORY)
+    android.log.clear()
+
+    await expect_error(livre, {"action": "restore"}, "verify_failed")
+
+    assert not any(c.startswith("pm uninstall") for c in android.log)
+    assert android.home == HOME_COMPONENT
+    assert (
+        f"am start -n {HOME_COMPONENT}"
+        in android.log[android.log.index(f"am start -n {FACTORY}") :]
+    )
     assert android.installed is True
 
 
