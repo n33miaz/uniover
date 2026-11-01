@@ -40,7 +40,10 @@ public static class RateLimitPolicies
     /// <summary>Prontidão pública (<c>/health/ready</c>): anônima e a única rota pública que pode acordar o banco, então por IP e baixa.</summary>
     public const string HealthReady = "health-ready";
 
-    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, HealthReady];
+    /// <summary>Retrato de capacidade do sistema (só o dono): por conta e baixa, pois mede o banco, e o app abre a tela poucas vezes.</summary>
+    public const string Capacity = "capacity";
+
+    internal static readonly string[] All = [Login, Refresh, Pairing, Commands, GuestInvite, Profile, QrStart, QrPoll, QrDecide, Maintenance, HealthReady, Capacity];
 }
 
 /// <summary>Uma política configurável em <c>RateLimiting:&lt;política&gt;</c>.</summary>
@@ -71,6 +74,7 @@ public static class RateLimitingExtensions
         [RateLimitPolicies.QrDecide] = new() { Permitted = 20, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.Maintenance] = new() { Permitted = 12, WindowSeconds = 60, Partition = "user" },
         [RateLimitPolicies.HealthReady] = new() { Permitted = 12, WindowSeconds = 60, Partition = "ip" },
+        [RateLimitPolicies.Capacity] = new() { Permitted = 6, WindowSeconds = 60, Partition = "user" },
     };
 
     /// <summary>

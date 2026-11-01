@@ -26,6 +26,7 @@ internal sealed record CapacityServer(
 
 internal sealed record CapacityAlertItem(Guid Id, string Metric, int Percent, DateTimeOffset DetectedAt);
 
+/// <summary>O cartão inteiro. <c>MeasuredAt</c> é quando o banco foi medido (pode ter alguns minutos); o servidor é lido na hora.</summary>
 internal sealed record CapacityResponse(
     CapacityDatabase Database, CapacityServer Server, CapacityGrowth Growth, IReadOnlyList<CapacityAlertItem> Alerts,
     DateTimeOffset MeasuredAt);
@@ -36,8 +37,8 @@ internal sealed record CapacityResponse(
 /// outro módulo.
 /// </summary>
 internal sealed class CapacityHandler(
-    IdentityDbContext db, ModuleDbContextRegistry modules, ICapacityProbe probe, IOptions<IdentityModuleOptions> options,
-    TimeProvider time)
+    IdentityDbContext db, ModuleDbContextRegistry modules, ICapacityProbe probe, CapacityDatabaseReading databaseReading,
+    IOptions<IdentityModuleOptions> options, TimeProvider time)
 {
     /// <summary>A janela da tendência, em dias.</summary>
     public const int TrendDays = 30;
@@ -48,8 +49,12 @@ internal sealed class CapacityHandler(
         var now = time.GetUtcNow();
         var today = DateOnly.FromDateTime(now.UtcDateTime);
 
-        var size = await DatabaseSizeReader.ReadAsync(
-            db, [.. modules.Registrations.Select(r => r.Schema)], CapacitySampling.TopTables, cancellationToken);
+        // A medida do banco é cara (varre o catálogo): reaproveitada por alguns minutos, com o instante em que foi feita.
+        var schemas = modules.Registrations.Select(r => r.Schema).ToArray();
+        var (size, databaseMeasuredAt) = await databaseReading.GetAsync(
+            TimeSpan.FromMinutes(capacity.DatabaseCacheMinutes),
+            token => DatabaseSizeReader.ReadAsync(db, schemas, CapacitySampling.TopTables, token),
+            cancellationToken);
         var since = today.AddDays(-(TrendDays - 1));
         var samples = await db.CapacitySamples.AsNoTracking()
             .Where(s => s.Day >= since)
@@ -79,14 +84,17 @@ internal sealed class CapacityHandler(
                 CapacityHours.MonthProjection(now, capacity.ServicesInWorkspace), capacity.ServicesInWorkspace),
             CapacityTrend.Compute([.. samples.Select(s => (s.Day, s.DatabaseBytes))], size.DatabaseBytes, capacity.DatabaseLimitBytes),
             alerts,
-            now);
+            databaseMeasuredAt);
     }
 
-    /// <summary>O dono viu: os avisos abertos saem do cartão (o próximo vermelho, depois de voltar ao normal, abre outro).</summary>
+    /// <summary>
+    /// O dono viu: só os avisos abertos saem do cartão. Um aviso que já fechou fica como está (nada a dispensar), e o próximo
+    /// vermelho, depois de voltar ao normal e do cooldown, abre outro.
+    /// </summary>
     public async Task MarkSeenAsync(CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
-        await db.CapacityAlerts.Where(a => a.SeenAt == null)
+        await db.CapacityAlerts.Where(a => a.SeenAt == null && a.RecoveredAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(a => a.SeenAt, now), cancellationToken);
     }
 }
@@ -99,7 +107,7 @@ internal static class CapacityEndpoint
         group.MapGet("/capacity", async (CapacityHandler handler, CancellationToken cancellationToken) =>
                 TypedResults.Ok(await handler.HandleAsync(cancellationToken)))
             .RequireAuthorization(UniOverAuth.OwnerPolicy)
-            .RequireRateLimiting(RateLimitPolicies.Commands)
+            .RequireRateLimiting(RateLimitPolicies.Capacity)
             .Produces<CapacityResponse>().ProducesProblem(401).ProducesProblem(403);
 
         group.MapPost("/capacity/alerts/seen", async (CapacityHandler handler, CancellationToken cancellationToken) =>

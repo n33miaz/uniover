@@ -20,13 +20,19 @@ public sealed class CapacityOptions
     /// </summary>
     public int ServicesInWorkspace { get; set; } = 1;
 
+    /// <summary>
+    /// Por quanto tempo a medida do banco (<c>pg_database_size</c> e o tamanho das tabelas, que varrem o catálogo) é
+    /// reaproveitada entre leituras do cartão. 0 desliga o reaproveitamento.
+    /// </summary>
+    public int DatabaseCacheMinutes { get; set; } = 10;
+
     /// <summary>Quantos dias de amostras a limpeza guarda.</summary>
     public int RetentionDays { get; set; } = 120;
 
     public long MemoryLimitBytes => MemoryLimitMb * 1024L * 1024;
 
     internal bool IsValid() =>
-        DatabaseLimitBytes >= 1 && MemoryLimitMb >= 1 && MonthlyHoursLimit >= 1 && ServicesInWorkspace is >= 1 and <= 20 && RetentionDays is >= 31 and <= 3650;
+        DatabaseLimitBytes >= 1 && MemoryLimitMb >= 1 && MonthlyHoursLimit >= 1 && ServicesInWorkspace is >= 1 and <= 20 && DatabaseCacheMinutes is >= 0 and <= 60 && RetentionDays is >= 31 and <= 3650;
 }
 
 /// <summary>As faixas do cartão: verde abaixo de 50%, âmbar de 50% a 80%, vermelho de 80% em diante.</summary>
@@ -34,6 +40,15 @@ internal static class CapacityBands
 {
     public const double AmberPercent = 50;
     public const double RedPercent = 80;
+
+    /// <summary>
+    /// Um aviso aberto só fecha abaixo deste valor, não ao voltar de 80%: uma métrica que oscila em torno do limite não
+    /// abre e fecha o aviso a cada amostra (histerese).
+    /// </summary>
+    public const double RecoverPercent = 75;
+
+    /// <summary>Depois que um aviso fecha, a mesma métrica só abre outro depois deste tempo (cooldown contra oscilação).</summary>
+    public static readonly TimeSpan AlertCooldown = TimeSpan.FromDays(3);
 
     /// <summary>Só informativo: a leitura aparece com a porcentagem, mas não vira alerta (as horas do mês).</summary>
     public const string Neutral = "neutral";
