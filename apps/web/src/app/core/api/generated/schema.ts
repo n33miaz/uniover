@@ -8887,6 +8887,7 @@ export interface components {
       version: string;
     };
     DevicesModuleInfo: {
+      features: string[];
       module: string;
       version: string;
     };
