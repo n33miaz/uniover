@@ -280,6 +280,109 @@ test.describe('exercícios: lista, busca e ficha', () => {
     }
   });
 
+  test('figuras de uma pose ficam paradas e as de duas poses alternam; kettlebell e cardio entram na biblioteca', async ({
+    page,
+    context,
+  }, info) => {
+    const server = await startTraining(context, page);
+    const extra = [
+      ['esteira', 'Esteira', 'quadriceps', 'cardio', 'time'],
+      [
+        'balanco-com-kettlebell-swing',
+        'Balanço com Kettlebell (Swing)',
+        'glutes',
+        'kettlebell',
+        'weight_reps',
+      ],
+      [
+        'remada-sentada-com-elastico',
+        'Remada Sentada com Elástico',
+        'middle_back',
+        'band',
+        'reps_only',
+      ],
+      ['stiff-com-barra', 'Stiff com Barra', 'hamstrings', 'barbell', 'weight_reps'],
+    ] as const;
+    server.seed(
+      'exercises',
+      extra.map(([slug, name, primary, equipment, recordType], index) =>
+        seedExercise({
+          n: 301 + index,
+          slug,
+          name,
+          primary,
+          equipment,
+          recordType,
+          instructions: ['Faça o movimento com controle.'],
+        }),
+      ),
+    );
+    await openTraining(page, '/treino/exercicios');
+    await waitForCatalog(page);
+
+    await page.getByRole('button', { name: 'Equipamento' }).click();
+    await chooseEquipment(page, 'Kettlebell');
+    await expect(rows(page)).toHaveText(['Balanço com Kettlebell (Swing)']);
+    await chooseEquipment(page, 'Elástico');
+    await expect(rows(page)).toHaveText(['Remada Sentada com Elástico']);
+    await chooseEquipment(page, 'Cardio');
+    await expect(rows(page)).toHaveText(['Esteira']);
+    const thumb = page.locator('.list .ui-row .thumb img').first();
+    await expect(thumb).toHaveAttribute('src', '/exercise-art/oea-treadmill-incline-walk.webp');
+    await expect
+      .poll(() => thumb.evaluate((image: HTMLImageElement) => image.naturalWidth))
+      .toBeGreaterThan(0);
+    if (process.env['TRAINING_SHOTS_DIR']) {
+      await settle(page);
+      await screenshot(
+        page,
+        join(process.env['TRAINING_SHOTS_DIR'], `biblioteca-cardio-${info.project.name}.png`),
+      );
+    }
+
+    // Uma pose só (Open Exercise Art): uma imagem, sem botão e sem alternar.
+    await rows(page).first().click();
+    await expect(page.getByRole('heading', { name: 'Esteira' })).toBeVisible();
+    const still = page.locator('app-exercise-illustration');
+    await expect(still.locator('img')).toHaveCount(1);
+    await expect(still.locator('button')).toHaveCount(0);
+    await expect(still.locator('img')).toHaveAttribute(
+      'src',
+      '/exercise-art/oea-treadmill-incline-walk.webp',
+    );
+    await expect
+      .poll(() => still.locator('img').evaluate((image: HTMLImageElement) => image.naturalWidth))
+      .toBeGreaterThan(0);
+    await still.locator('.card').click();
+    await page.waitForTimeout(1800);
+    await expect(still.locator('img.on')).toHaveCount(1);
+    if (process.env['TRAINING_SHOTS_DIR']) {
+      await settle(page);
+      await screenshot(
+        page,
+        join(process.env['TRAINING_SHOTS_DIR'], `ficha-uma-pose-${info.project.name}.png`),
+      );
+    }
+
+    // Duas poses (Everkinetic, figura de exercício equivalente): alterna ao tocar.
+    await openTraining(page, '/treino/exercicios/00000000-0000-4000-8000-000000000304');
+    await expect(page.getByRole('heading', { name: 'Stiff com Barra' })).toBeVisible();
+    const pair = page.locator('app-exercise-illustration');
+    await expect(pair.locator('img')).toHaveCount(2);
+    await expect(pair.locator('button')).toHaveCount(1);
+    await expect(pair.locator('img.on')).toHaveCount(1);
+    const before = await pair.locator('img.on').getAttribute('src');
+    await pair.locator('button').click();
+    await expect.poll(() => pair.locator('img.on').getAttribute('src')).not.toBe(before);
+    if (process.env['TRAINING_SHOTS_DIR']) {
+      await settle(page);
+      await screenshot(
+        page,
+        join(process.env['TRAINING_SHOTS_DIR'], `ficha-duas-poses-${info.project.name}.png`),
+      );
+    }
+  });
+
   test('a ficha sem ilustração mantém apenas as faces com músculos destacados', async ({
     page,
     context,
