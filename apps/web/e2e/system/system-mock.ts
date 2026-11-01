@@ -51,7 +51,7 @@ export interface CapacityMockReport {
 
 const MIB = 1024 * 1024;
 
-/** Um servidor saudável, banco pequeno e uma semana de amostras; só as horas do mês passam do vermelho. */
+/** Um servidor saudável, banco pequeno e uma semana de amostras; as horas do mês só informam (um serviço ligado). */
 export function defaultCapacity(): CapacityMockReport {
   return {
     database: {
@@ -73,10 +73,12 @@ export function defaultCapacity(): CapacityMockReport {
       memoryBand: 'green',
       startedAt: '2026-10-28T08:00:00Z',
       uptimeSeconds: 3 * 86400 + 4 * 3600,
-      monthHours: 612,
+      monthHours: 684,
       hoursLimit: 750,
-      hoursPercent: 81.6,
-      hoursBand: 'red',
+      hoursPercent: 91.2,
+      hoursBand: 'neutral',
+      hoursProjected: 744,
+      servicesInWorkspace: 1,
     },
     growth: {
       points: [
