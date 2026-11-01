@@ -34,7 +34,10 @@ export class SettingsPage {
   private readonly session = inject(SessionState);
 
   protected readonly isAdmin = computed(() => this.session.role() === 'owner');
-  protected readonly loading = computed(() => this.session.role() === null);
+  /** Só enquanto a sessão ainda não respondeu: sem conexão (`pending`) a lista segue com o que vale para todos. */
+  protected readonly loading = computed(
+    () => this.session.status() === 'unknown' && this.session.role() === null,
+  );
 
   private readonly profileEntry: SettingsEntry = {
     id: 'profile',

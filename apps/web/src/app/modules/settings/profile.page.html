@@ -1,4 +1,4 @@
-@if (!user()) {
+@if (!user() && status() === 'unknown') {
   <app-settings-page-skeleton kind="profile" marker="settings-profile" label="Carregando perfil…" i18n-label="@@settings.profile.loading" />
 } @else {
 <div class="profile ui-stagger" data-screen-ready="settings-profile">

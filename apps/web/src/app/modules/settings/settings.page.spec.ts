@@ -164,6 +164,7 @@ describe('SettingsPage (a list of screens)', () => {
           { provide: AuthApi, useValue: api },
         ],
       });
+      await TestBed.inject(AuthService).init();
       const harness = await RouterTestingHarness.create('/ajustes/perfil');
       const el = harness.routeNativeElement as HTMLElement;
       const current = Array.from(el.querySelectorAll('a[aria-current="page"]'));
