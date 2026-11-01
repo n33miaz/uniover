@@ -21,7 +21,14 @@ internal sealed class WakeHandler(TvCommandRunner runner)
     public Task<TvSendOutcome> HandleAsync(WakeCommand command, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
-        return runner.RunAsync(command.Origin, TvCommandNames.Wake, null, TvMessages.Wake(), waitForReply: false, cancellationToken);
+        return runner.RunAsync(
+            command.Origin,
+            TvCommandNames.Wake,
+            null,
+            TvMessages.Wake(),
+            waitForReply: false,
+            cancellationToken: cancellationToken,
+            auditCommand: false);
     }
 }
 
