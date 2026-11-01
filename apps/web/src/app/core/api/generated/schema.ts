@@ -8103,6 +8103,43 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/tv/tvs/{id}/focus-catalog': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvFocusCatalogResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/tvs/{id}/members': {
     parameters: {
       query?: never;
@@ -9492,6 +9529,11 @@ export interface components {
       name: string;
       source: string;
     };
+    TvFocusCatalogResponse: {
+      defaults: string[];
+      isCustom: boolean;
+      packages: string[];
+    };
     TvLayoutDocument: {
       buttonSize: string;
       dismissedSuggestions: string[];
@@ -9577,6 +9619,7 @@ export interface components {
       allowBackgroundAppClosing?: null | boolean;
       focusClosesBackground?: null | boolean;
       focusModeEnabled?: null | boolean;
+      focusPackages?: null | string[];
       name: null | string;
       restrictedBackgroundPackages?: null | string[];
       shortAnimationsEnabled?: null | boolean;
