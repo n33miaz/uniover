@@ -83,6 +83,7 @@ public static class DevicesModule
         services.AddScoped<AgentDiagnosticsStore>();
         services.AddScoped<AgentDiagnosticsHandler>();
         services.AddHostedService<AgentOutageWorker>();
+        services.AddHostedService<AgentDiagnosticsPurgeWorker>();
         services.AddSingleton(sp => new PublishedBuild(
             sp.GetRequiredService<IConfiguration>()["RENDER_GIT_COMMIT"]?.Trim().ToLowerInvariant(),
             sp.GetRequiredService<TimeProvider>().GetUtcNow()));
