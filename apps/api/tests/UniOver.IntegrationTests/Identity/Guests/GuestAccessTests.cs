@@ -39,6 +39,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
     private static readonly string[] GuestSessionRoutes =
     [
         "/api/v1/identity/me",
+        "/api/v1/identity/me/preferences",
         "/api/v1/identity/auth/logout",
         "/api/v1/identity/auth/stream-ticket",
         "/api/v1/identity/auth/qr/info",
