@@ -300,7 +300,6 @@ describe('SystemApi', () => {
     http.expectOne('/api/v1/devices/agents/diagnostics?limit=10').flush({});
     await expect(read).rejects.toThrow();
   });
-  });
 
   it('reads the focus mode catalog of a TV', async () => {
     const read = api.tvFocusCatalog('tv-2');
