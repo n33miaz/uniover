@@ -42,22 +42,155 @@
   visibility: hidden;
 }
 /* Passou muito tempo sem o app subir (falha de carga): o brilho eterno mentiria, então o desenho sai de cena. */
-.bs-root.bs-stale {
-  display: none;
+.bs-boot-timeout {
+  position: fixed;
+  inset-inline: var(--gutter);
+  bottom: calc(var(--gutter) + var(--safe-bottom));
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  max-width: 42rem;
+  margin-inline: auto;
+}
+.bs-boot-timeout p {
+  margin: 0;
 }
 
-/* O desenho estático só mostra o tipo que o `boot-route.js` escolheu pelo endereço; sem ele, nada aparece. */
+/* O desenho estático só mostra o tipo que o script pequeno do `index.html` escolheu pelo endereço. */
 .bs-boot .bs-variant {
   display: none;
 }
 html[data-boot='home'] .bs-boot .bs-home,
 html[data-boot='tv'] .bs-boot .bs-tv,
-html[data-boot='training'] .bs-boot .bs-training,
+html[data-boot='training-today'] .bs-boot .bs-training,
+html[data-boot='training-list'] .bs-boot .bs-training,
+html[data-boot='training-progress'] .bs-boot .bs-training,
+html[data-boot='training-body'] .bs-boot .bs-training,
 html[data-boot='settings'] .bs-boot .bs-settings,
+html[data-boot='settings-system'] .bs-boot .bs-detail,
+html[data-boot='settings-people'] .bs-boot .bs-detail,
+html[data-boot='settings-audit'] .bs-boot .bs-detail,
+html[data-boot='settings-devices'] .bs-boot .bs-detail,
+html[data-boot='settings-profile'] .bs-boot .bs-detail,
+html[data-boot='settings-appearance'] .bs-boot .bs-detail,
 html[data-boot='detail'] .bs-boot .bs-detail,
 html[data-boot='plain'] .bs-boot .bs-plain,
 html[data-boot='generic'] .bs-boot .bs-generic {
   display: flex;
+}
+
+/* O mesmo invólucro mantém as medidas estáveis, mas cada aba do Treino mostra a composição dela. */
+.bs-training-list-content,
+.bs-training-progress-content,
+.bs-training-body-content,
+.bs-settings-data-content,
+.bs-settings-profile-content,
+.bs-settings-appearance-content {
+  display: none;
+}
+.bs-chart {
+  min-height: 180px;
+}
+.bs-chart-line {
+  flex: 1;
+  min-height: 116px;
+  border-radius: var(--radius-sm);
+}
+.bs-body-map {
+  align-items: center;
+  min-height: 230px;
+}
+.bs-figure {
+  width: 112px;
+  height: 152px;
+  border-radius: 48% 48% 38% 38%;
+}
+.bs-form {
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.bs-detail-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.bs-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+.bs-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+}
+.bs-theme-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+}
+.bs-theme-choice {
+  height: 92px;
+  border-radius: var(--radius-sm);
+}
+.bs-input {
+  width: 100%;
+  height: var(--tap);
+  border-radius: var(--radius-sm);
+}
+html[data-boot='training-today'] .bs-training-today-content,
+.bs-root[data-boot-variant='training-today'] .bs-training-today-content,
+html[data-boot='training-list'] .bs-training-list-content,
+.bs-root[data-boot-variant='training-list'] .bs-training-list-content,
+html[data-boot='training-progress'] .bs-training-progress-content,
+.bs-root[data-boot-variant='training-progress'] .bs-training-progress-content,
+html[data-boot='training-body'] .bs-training-body-content,
+.bs-root[data-boot-variant='training-body'] .bs-training-body-content,
+html[data-boot='settings-system'] .bs-settings-data-content,
+html[data-boot='settings-people'] .bs-settings-data-content,
+html[data-boot='settings-audit'] .bs-settings-data-content,
+html[data-boot='settings-devices'] .bs-settings-data-content,
+.bs-root[data-boot-variant='settings-system'] .bs-settings-data-content,
+.bs-root[data-boot-variant='settings-people'] .bs-settings-data-content,
+.bs-root[data-boot-variant='settings-audit'] .bs-settings-data-content,
+.bs-root[data-boot-variant='settings-devices'] .bs-settings-data-content,
+html[data-boot='settings-profile'] .bs-settings-profile-content,
+.bs-root[data-boot-variant='settings-profile'] .bs-settings-profile-content,
+html[data-boot='settings-appearance'] .bs-settings-appearance-content,
+.bs-root[data-boot-variant='settings-appearance'] .bs-settings-appearance-content {
+  display: flex;
+}
+html[data-boot='training-list'] .bs-training-today-content,
+html[data-boot='training-progress'] .bs-training-today-content,
+html[data-boot='training-body'] .bs-training-today-content,
+.bs-root[data-boot-variant='training-list'] .bs-training-today-content,
+.bs-root[data-boot-variant='training-progress'] .bs-training-today-content,
+.bs-root[data-boot-variant='training-body'] .bs-training-today-content {
+  display: none;
+}
+html[data-boot='settings-system'] .bs-detail-cards,
+html[data-boot='settings-people'] .bs-detail-cards,
+html[data-boot='settings-audit'] .bs-detail-cards,
+html[data-boot='settings-devices'] .bs-detail-cards,
+html[data-boot='settings-profile'] .bs-detail-cards,
+html[data-boot='settings-appearance'] .bs-detail-cards,
+.bs-root[data-boot-variant='settings-system'] .bs-detail-cards,
+.bs-root[data-boot-variant='settings-people'] .bs-detail-cards,
+.bs-root[data-boot-variant='settings-audit'] .bs-detail-cards,
+.bs-root[data-boot-variant='settings-devices'] .bs-detail-cards,
+.bs-root[data-boot-variant='settings-profile'] .bs-detail-cards,
+.bs-root[data-boot-variant='settings-appearance'] .bs-detail-cards {
+  display: none;
 }
 
 .bs-variant {

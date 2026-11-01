@@ -730,6 +730,11 @@ button.ui-row:active {
   animation: ui-wait-in 1ms linear var(--wait-delay, 200ms) backwards;
 }
 
+/* O desenho que cobre a abertura já evita o pisca; a página abaixo precisa mostrar a própria forma no primeiro quadro. */
+html.has-boot-skeleton {
+  --wait-delay: 0ms;
+}
+
 .ui-skeleton.ui-wait {
   animation:
     ui-shimmer 2s ease-in-out infinite,

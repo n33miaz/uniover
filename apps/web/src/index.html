@@ -12,8 +12,42 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
     <!--uniover:manifest-->
-    <!-- Escolhe pelo endereço o esqueleto de abaixo; é um arquivo próprio porque a CSP não aceita script em linha. -->
-    <script src="boot-route.js"></script>
+    <!--
+      Escolhe o desenho antes de baixar qualquer pacote do app. O nonce é o mesmo que o servidor põe na CSP desta
+      resposta; assim este trecho pequeno não abre exceção para scripts em linha e não deixa a primeira pintura esperar
+      a rede.
+    -->
+    <script nonce="__CSP_NONCE__">
+      (function () {
+        var p = location.pathname;
+        var v = 'detail';
+        if (p === '/' || p === '/index.html') v = 'home';
+        else if (/^\/tv(\/|$)/.test(p)) v = 'tv';
+        else if (/^\/treino\/(exercicios|rotinas)(\/|$)/.test(p)) v = 'training-list';
+        else if (/^\/treino\/progresso(\/|$)/.test(p)) v = 'training-progress';
+        else if (/^\/treino\/corpo(\/|$)/.test(p)) v = 'training-body';
+        else if (/^\/treino(\/|$)/.test(p)) v = 'training-today';
+        else if (/^\/ajustes\/?$/.test(p)) v = 'settings';
+        else if (/^\/ajustes\/sistema(\/|$)/.test(p)) v = 'settings-system';
+        else if (/^\/ajustes\/pessoas(\/|$)/.test(p)) v = 'settings-people';
+        else if (/^\/ajustes\/auditoria(\/|$)/.test(p)) v = 'settings-audit';
+        else if (/^\/ajustes\/(dispositivos|aparelhos)(\/|$)/.test(p)) v = 'settings-devices';
+        else if (/^\/ajustes\/perfil(\/|$)/.test(p)) v = 'settings-profile';
+        else if (/^\/ajustes\/aparencia(\/|$)/.test(p)) v = 'settings-appearance';
+        else if (/^\/ajustes\//.test(p)) v = 'detail';
+        else if (/^\/(entrar|convite|boas-vindas|conectar)(\/|$)/.test(p)) v = 'plain';
+        document.documentElement.setAttribute('data-boot', v);
+        setTimeout(function () {
+          var el = document.getElementById('boot-skeleton');
+          var notice = document.getElementById('boot-timeout');
+          if (el) el.setAttribute('data-boot-timeout', 'true');
+          if (notice) notice.hidden = false;
+        }, 20000);
+        document.addEventListener('click', function (event) {
+          if (event.target && event.target.id === 'boot-timeout-retry') location.reload();
+        });
+      })();
+    </script>
   </head>
   <body>
     <!--
@@ -87,7 +121,6 @@
           <div class="bs-tv-shortcuts">
             <span class="bone ui-skeleton bs-tile"></span
             ><span class="bone ui-skeleton bs-tile"></span
-            ><span class="bone ui-skeleton bs-tile"></span
             ><span class="bone ui-skeleton bs-tile"></span>
           </div>
           <div class="bs-tv-stage">
@@ -136,7 +169,7 @@
           <span class="bone ui-skeleton bs-back"></span
           ><span class="bone ui-skeleton bs-title"></span><span class="bs-end"></span>
         </div>
-        <div class="bs-body">
+        <div class="bs-body bs-training-today-content">
           <div class="bs-hero">
             <span class="bone ui-skeleton bs-line bs-w40"></span
             ><span class="bone ui-skeleton bs-line bs-big bs-w80"></span
@@ -169,6 +202,24 @@
               ></span>
             </div>
           </div>
+        </div>
+        <div class="bs-body bs-training-list-content">
+          <div class="bs-list">
+            <div class="bs-row"><span class="bone ui-skeleton bs-icon"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span><span class="bone ui-skeleton bs-chevron"></span></div>
+            <div class="bs-row"><span class="bone ui-skeleton bs-icon"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span><span class="bone ui-skeleton bs-chevron"></span></div>
+            <div class="bs-row"><span class="bone ui-skeleton bs-icon"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span><span class="bone ui-skeleton bs-chevron"></span></div>
+            <div class="bs-row"><span class="bone ui-skeleton bs-icon"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span><span class="bone ui-skeleton bs-chevron"></span></div>
+          </div>
+        </div>
+        <div class="bs-body bs-training-progress-content">
+          <div class="bs-segments"><span class="bone ui-skeleton bs-segment"></span><span class="bone ui-skeleton bs-segment"></span></div>
+          <div class="bs-card bs-chart"><span class="bone ui-skeleton bs-line bs-w40"></span><span class="bone ui-skeleton bs-chart-line"></span></div>
+          <div class="bs-stats"><span class="bs-stat"><span class="bone ui-skeleton bs-line bs-big bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span><span class="bs-stat"><span class="bone ui-skeleton bs-line bs-big bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span><span class="bs-stat"><span class="bone ui-skeleton bs-line bs-big bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span></div>
+        </div>
+        <div class="bs-body bs-training-body-content">
+          <div class="bs-segments"><span class="bone ui-skeleton bs-segment"></span><span class="bone ui-skeleton bs-segment"></span></div>
+          <div class="bs-card bs-body-map"><span class="bone ui-skeleton bs-figure"></span><span class="bone ui-skeleton bs-line bs-big bs-w40"></span></div>
+          <div class="bs-list"><div class="bs-row"><span class="bone ui-skeleton bs-icon bs-round"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w30"></span></span></div><div class="bs-row"><span class="bone ui-skeleton bs-icon bs-round"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w30"></span></span></div><div class="bs-row"><span class="bone ui-skeleton bs-icon bs-round"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w30"></span></span></div><div class="bs-row"><span class="bone ui-skeleton bs-icon bs-round"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w30"></span></span></div></div>
         </div>
         <div class="bs-tabs">
           <span class="bone ui-skeleton bs-tab"></span><span class="bone ui-skeleton bs-tab"></span
@@ -230,6 +281,7 @@
           ><span class="bone ui-skeleton bs-title"></span><span class="bs-end"></span>
         </div>
         <div class="bs-body">
+          <div class="bs-detail-cards">
           <div class="bs-card">
             <span class="bone ui-skeleton bs-line bs-w40"></span
             ><span class="bone ui-skeleton bs-line bs-w80"></span
@@ -250,6 +302,15 @@
             ><span class="bone ui-skeleton bs-line bs-w80"></span
             ><span class="bone ui-skeleton bs-line bs-w60"></span>
           </div>
+          </div>
+          <div class="bs-settings-data-content bs-list">
+            <div class="bs-row"><span class="bone ui-skeleton bs-icon"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span><span class="bone ui-skeleton bs-chip"></span></div>
+            <div class="bs-row"><span class="bone ui-skeleton bs-icon"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span><span class="bone ui-skeleton bs-chip"></span></div>
+            <div class="bs-row"><span class="bone ui-skeleton bs-icon"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span><span class="bone ui-skeleton bs-chip"></span></div>
+            <div class="bs-row"><span class="bone ui-skeleton bs-icon"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span><span class="bone ui-skeleton bs-chip"></span></div>
+          </div>
+          <div class="bs-settings-profile-content bs-form"><div class="bs-identity"><span class="bone ui-skeleton bs-avatar"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span></div><span class="bone ui-skeleton bs-line bs-w30"></span><span class="bone ui-skeleton bs-input"></span><span class="bone ui-skeleton bs-cta"></span><div class="bs-card"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></div><div class="bs-card"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-cta"></span></div></div>
+          <div class="bs-settings-appearance-content bs-form"><span class="bone ui-skeleton bs-line bs-w30"></span><div class="bs-theme-choices"><span class="bone ui-skeleton bs-theme-choice"></span><span class="bone ui-skeleton bs-theme-choice"></span><span class="bone ui-skeleton bs-theme-choice"></span></div><div class="bs-row"><span class="bone ui-skeleton bs-icon"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span></div></div>
         </div>
       </div>
       <div class="bs-variant bs-plain bs-draw">
@@ -331,6 +392,10 @@
           ><span class="bone ui-skeleton bs-tab"></span>
         </div>
       </div>
+    </div>
+    <div class="bs-boot-timeout ui-notice warn" id="boot-timeout" role="alert" hidden>
+      <p i18n="@@boot.timeout">Ainda estamos preparando esta tela.</p>
+      <button id="boot-timeout-retry" type="button" class="secondary ui-btn" i18n="@@boot.retry">Tentar de Novo</button>
     </div>
     <!-- O servidor troca o marcador pelo nonce da CSP; o Angular o usa nos estilos que injeta. -->
     <app-root ngCspNonce="__CSP_NONCE__"></app-root>
