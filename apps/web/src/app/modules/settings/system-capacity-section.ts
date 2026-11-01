@@ -69,7 +69,10 @@ export class SystemCapacitySection {
         value: $localize`:@@settings.system.capacity.of:${formatHours(server.monthHours)}:used: de ${formatHours(server.hoursLimit)}:limit:`,
         percent: server.hoursPercent,
         band: server.hoursBand,
-        estimate: $localize`:@@settings.system.capacity.hours-note:Dias corridos × 24, como se o serviço ficasse sempre ligado.`,
+        estimate:
+          server.servicesInWorkspace > 1
+            ? $localize`:@@settings.system.capacity.hours-note-many:Dias corridos × 24 × ${server.servicesInWorkspace}:services: serviços. Projeção do mês: ${formatHours(server.hoursProjected)}:projected:.`
+            : $localize`:@@settings.system.capacity.hours-note:Dias corridos × 24, como se o serviço ficasse sempre ligado.`,
       },
     ];
   });
@@ -126,7 +129,9 @@ export class SystemCapacitySection {
       ? $localize`:@@settings.system.capacity.band-red:Crítico`
       : band === 'amber'
         ? $localize`:@@settings.system.capacity.band-amber:Atenção`
-        : $localize`:@@settings.system.capacity.band-green:Folga`;
+        : band === 'neutral'
+          ? $localize`:@@settings.system.capacity.band-neutral:Informativo`
+          : $localize`:@@settings.system.capacity.band-green:Folga`;
   }
 
   protected percentText(percent: number): string {

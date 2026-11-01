@@ -38,6 +38,9 @@ export interface CapacityReport {
     readonly hoursLimit: number;
     readonly hoursPercent: number;
     readonly hoursBand: CapacityBand;
+    /** O mês inteiro se tudo ficar ligado: dias do mês × 24 × serviços do workspace. */
+    readonly hoursProjected: number;
+    readonly servicesInWorkspace: number;
   };
   readonly growth: {
     readonly points: readonly { readonly day: string; readonly bytes: number }[];
@@ -55,8 +58,11 @@ export interface CapacityReport {
   readonly measuredAt: string;
 }
 
-/** A faixa de uso: verde abaixo de 50%, âmbar de 50% a 80%, vermelho de 80% em diante. */
-export type CapacityBand = 'green' | 'amber' | 'red';
+/**
+ * A faixa de uso: verde abaixo de 50%, âmbar de 50% a 80%, vermelho de 80% em diante. As horas do mês são só informativas
+ * (`neutral`) e só ficam vermelhas quando a projeção do mês inteiro passa do limite.
+ */
+export type CapacityBand = 'neutral' | 'green' | 'amber' | 'red';
 
 /** Um computador pareado que pode controlar a TV. */
 export type TvComputer = components['schemas']['TvAgentChoice'];
