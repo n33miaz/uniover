@@ -1,4 +1,7 @@
-<div class="appearance ui-stagger">
+@if (loading()) {
+  <app-settings-page-skeleton kind="appearance" marker="settings-appearance" label="Carregando aparência…" i18n-label="@@settings.appearance.loading" />
+} @else {
+<div class="appearance ui-stagger" data-screen-ready="settings-appearance">
   <section class="section ui-rise" aria-labelledby="theme-title">
     <h2 id="theme-title" class="ui-section-label" i18n="@@settings.appearance.title">Tema</h2>
     <fieldset class="themes ui-card">
@@ -25,3 +28,4 @@
 
   <app-install-hint-row class="ui-rise" [tile]="true" />
 </div>
+}

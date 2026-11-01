@@ -6,6 +6,7 @@ import { SessionState } from '../../core/session/session-state';
 import { SettingsGlyph, SettingsGlyphName } from './settings-glyph';
 import { SETTINGS_TITLES } from './settings-titles';
 import { ThemeSegment } from './theme-segment';
+import { SettingsPageSkeleton } from './settings-page-skeleton';
 
 /** Uma linha da lista de Configurações: leva a uma tela. Só o nome: a lista nunca chama a API nem repete o que a tela diz. */
 interface SettingsEntry {
@@ -25,7 +26,7 @@ interface SettingsEntry {
  */
 @Component({
   selector: 'app-settings-page',
-  imports: [NgTemplateOutlet, RouterLink, RouterLinkActive, SettingsGlyph, ThemeSegment],
+  imports: [NgTemplateOutlet, RouterLink, RouterLinkActive, SettingsGlyph, ThemeSegment, SettingsPageSkeleton],
   templateUrl: './settings.page.html',
   styleUrl: './settings.page.css',
 })
@@ -33,6 +34,7 @@ export class SettingsPage {
   private readonly session = inject(SessionState);
 
   protected readonly isAdmin = computed(() => this.session.role() === 'owner');
+  protected readonly loading = computed(() => this.session.role() === null);
 
   private readonly profileEntry: SettingsEntry = {
     id: 'profile',

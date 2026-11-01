@@ -100,6 +100,7 @@ function fallbackFilename(now: Date): string {
  */
 @Component({
   selector: 'app-audit-page',
+  host: { 'data-screen-ready': 'settings-data' },
   imports: [AuditFilterSheet, SettingsGlyph, LoadingSkeleton],
   templateUrl: './audit.page.html',
   styleUrl: './audit.page.css',
