@@ -66,6 +66,24 @@ internal sealed class CleanupSettingsPublisher(
     }
 
     /// <summary>
+    /// O computador não controla mais aquela TV: quem faz manutenção automática (a Samsung) recebe a configuração com a
+    /// manutenção desligada, para um agendamento já pendente não agir numa TV que deixou de ser dele. Os demais agentes
+    /// não têm nada a desligar por aqui.
+    /// </summary>
+    public async Task PublishUnboundAsync(string agentSlug, CancellationToken cancellationToken = default)
+    {
+        if (presence.Get(agentSlug) is not { Connected: true } info
+            || !info.Capabilities.Contains(MaintenanceCapability, StringComparer.Ordinal))
+            return;
+
+        var light = await settings.TvLightCleanupEnabledAsync(cancellationToken);
+        var deep = await settings.TvDeepCleanupEnabledAsync(cancellationToken);
+        var threshold = await settings.TvDeepCleanupMemoryThresholdMbAsync(cancellationToken);
+        var body = BuildBody(info.Capabilities, false, false, false, "[]", false, light, deep, threshold, autoMaintenance: false);
+        await sender.PostAsync(agentSlug, new TvMessage("tv.cleanup.config.v1", body), cancellationToken);
+    }
+
+    /// <summary>
     /// O corpo que o agente entende: sem <see cref="LightSettingsCapability"/> vai exatamente o corpo antigo, e o campo
     /// <c>focusClosesBackground</c> só existe para quem anuncia <see cref="FocusClosesBackgroundCapability"/>.
     /// </summary>

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
 using UniOver.Modules.Tv.Persistence;
@@ -67,7 +68,8 @@ internal sealed class BindAgentHandler(
     ITvAgentPresence presence,
     ITvStreamPublisher stream,
     TvConfigView view,
-    TimeProvider time)
+    TimeProvider time,
+    ITvCleanupSettingsPublisher? cleanupPublisher = null)
 {
     /// <summary>
     /// Passa o controle da TV para o computador escolhido. Devolve a configuração nova, ou nulo quando o computador não
@@ -97,6 +99,7 @@ internal sealed class BindAgentHandler(
         var now = time.GetUtcNow();
         ConfiguredTv tv;
         bool changed;
+        string? previousSlug = null;
         var attempt = 0;
         while (true)
         {
@@ -111,6 +114,7 @@ internal sealed class BindAgentHandler(
             else
             {
                 tv = existing;
+                previousSlug = existing.AgentSlug;
                 changed = tv.Rebind(listing.Slug, command.Name, command.Origin.UserId, now);
             }
 
@@ -149,9 +153,35 @@ internal sealed class BindAgentHandler(
         if (changed)
         {
             AnnounceNewAgent(tv.Id, binding.AgentSlug!);
+            await PublishCleanupAsync(previousSlug, tv.AgentSlug, cancellationToken);
         }
 
         return await view.ReadAsync(binding, cancellationToken);
+    }
+
+    /// <summary>
+    /// O computador antigo para a manutenção que tinha agendada nesta TV e o novo recebe as preferências dela. A troca já
+    /// está gravada: a entrega é melhor esforço e nunca vira erro para quem salvou.
+    /// </summary>
+    private async Task PublishCleanupAsync(string? previousSlug, string currentSlug, CancellationToken cancellationToken)
+    {
+        if (cleanupPublisher is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (previousSlug is not null && !string.Equals(previousSlug, currentSlug, StringComparison.Ordinal))
+            {
+                await cleanupPublisher.PublishUnboundAsync(previousSlug, cancellationToken);
+            }
+
+            await cleanupPublisher.PublishAsync(currentSlug, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+        }
     }
 
     /// <summary>O INSERT da TV padrão bateu no índice único: já existe uma linha padrão que este salvamento não viu.</summary>

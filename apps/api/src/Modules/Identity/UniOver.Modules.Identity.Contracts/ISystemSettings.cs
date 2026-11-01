@@ -19,4 +19,10 @@ public interface ISystemSettings
 public interface ITvCleanupSettingsPublisher
 {
     Task PublishAsync(string? agentSlug = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Avisa o computador que deixou de controlar uma TV (trocado por outro ou TV removida) para ele parar o que
+    /// ainda tinha agendado nela. Sem implementação, nada é enviado.
+    /// </summary>
+    Task PublishUnboundAsync(string agentSlug, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }

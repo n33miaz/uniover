@@ -129,7 +129,9 @@ internal sealed class ManageTvsHandler(
         }
 
         var now = time.GetUtcNow();
+        var previousSlug = tv.AgentSlug;
         tv.Rebind(agentSlug, name, userId, now);
+        var agentChanged = !string.Equals(previousSlug, agentSlug, StringComparison.Ordinal);
         var closingChanged = request.AllowBackgroundAppClosing is { } allow && tv.SetBackgroundAppClosing(allow, userId, now);
         var maintenanceChanged = request.AutoMaintenanceEnabled is { } maintenance
             && tv.SetAutoMaintenance(maintenance, userId, now);
@@ -158,7 +160,13 @@ internal sealed class ManageTvsHandler(
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        if (closingChanged || lightChanged || maintenanceChanged)
+        if (agentChanged)
+        {
+            // O computador antigo para o que tinha agendado nesta TV; o novo recebe as preferências dela.
+            await PublishUnboundAsync(previousSlug, cancellationToken);
+        }
+
+        if (closingChanged || lightChanged || maintenanceChanged || agentChanged)
         {
             await PublishCleanupSettingsAsync(tv.AgentSlug, cancellationToken);
         }
@@ -190,6 +198,7 @@ internal sealed class ManageTvsHandler(
         await TvMembershipLedger.ReconcileAsync(db, id, [.. members.Select(m => m.UserId)], [], time.GetUtcNow(), cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        await PublishUnboundAsync(tv.AgentSlug, cancellationToken);
         return true;
     }
 
@@ -297,6 +306,18 @@ internal sealed class ManageTvsHandler(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Entrega é melhor esforço: o administrador não deve ver erro numa preferência que ficou salva.
+        }
+    }
+
+    /// <summary>Mesma regra de <see cref="PublishCleanupSettingsAsync"/>: a mudança já está gravada e a entrega é melhor esforço.</summary>
+    private async Task PublishUnboundAsync(string agentSlug, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await cleanupPublisher.PublishUnboundAsync(agentSlug, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
         }
     }
 
