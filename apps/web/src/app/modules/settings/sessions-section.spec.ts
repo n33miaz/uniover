@@ -149,4 +149,44 @@ describe('SessionsSection', () => {
     ).not.toBeNull();
     expect(root.querySelectorAll('app-loading-skeleton .card')).toHaveLength(2);
   });
+
+  describe('device and installed app', () => {
+    const titles = (el: HTMLElement) =>
+      Array.from(el.querySelectorAll('summary strong')).map((node) => node.textContent?.trim());
+
+    it('says "App Instalado" for a session the app reported as installed', async () => {
+      api.sessions.mockResolvedValue([{ ...own, platform: 'iphone', installed: true }]);
+      const { el } = await render();
+      expect(titles(el)).toEqual(['iPhone · App Instalado']);
+    });
+
+    it('says the browser for a session opened in a tab, on every device', async () => {
+      api.sessions.mockResolvedValue([
+        { ...own, id: 'a', platform: 'iphone', installed: false },
+        {
+          ...own,
+          id: 'b',
+          userAgent:
+            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126.0 Mobile Safari/537.36',
+          platform: 'android',
+          installed: false,
+        },
+        { ...other, id: 'c', platform: 'pc', installed: false },
+        { ...other, id: 'd', platform: 'ipad', installed: true },
+      ]);
+      const { el } = await render();
+      expect(titles(el)).toEqual([
+        'iPhone · Safari',
+        'Android · Chrome',
+        'PC · Chrome',
+        'iPad · App Instalado',
+      ]);
+    });
+
+    it('keeps the old text for a session from before the app reported anything', async () => {
+      api.sessions.mockResolvedValue([own, { ...other, platform: null, installed: null }]);
+      const { el } = await render();
+      expect(titles(el)).toEqual(['Safari · iPhone/iPad', 'Chrome · Windows']);
+    });
+  });
 });
