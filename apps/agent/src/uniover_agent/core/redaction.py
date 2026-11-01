@@ -70,9 +70,18 @@ _MIN_NAME_LENGTH: Final = 3
 
 # Caminho do Windows (`C:\Users\fulano\...`), de rede (`\\servidor\pasta`) e de usuário em Unix. O
 # caminho inteiro some: ele quase sempre leva o nome do usuário ou do PC.
-_WINDOWS_PATH = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\s\"'<>|*?]*")
-_NETWORK_PATH = re.compile(r"\\\\[^\s\"'<>|*?\\]+(?:\\[^\s\"'<>|*?]*)*")
-_UNIX_HOME = re.compile(r"(?<![A-Za-z0-9_.-])/(?:home|Users|root)/[^\s\"'<>|*?]*")
+# Pastas podem ter espaço no nome (`C:\Users\Jane Doe\...`): as pastas do caminho consomem palavras
+# separadas por um espaço enquanto houver barra adiante, e o arquivo do fim leva as palavras até a
+# primeira que termina em extensão. Sem isso o caminho parava no primeiro espaço e o resto do nome
+# do usuário seguia para a API.
+_SEGMENT = r"[^\\/\s\"'<>|*?:,;]"
+_PATH_TAIL = (
+    rf"(?:{_SEGMENT}+(?: {_SEGMENT}+)*[\\/])*"
+    rf"(?:{_SEGMENT}+?(?: {_SEGMENT}+)*?\.[A-Za-z0-9]{{1,8}}(?![A-Za-z0-9])|{_SEGMENT}*)"
+)
+_WINDOWS_PATH = re.compile(rf"(?<![A-Za-z0-9])[A-Za-z]:[\\/]{_PATH_TAIL}")
+_NETWORK_PATH = re.compile(rf"\\\\{_SEGMENT}+[\\/]{_PATH_TAIL}|\\\\{_SEGMENT}+")
+_UNIX_HOME = re.compile(rf"(?<![A-Za-z0-9_.-])/(?:home|Users|root)/{_PATH_TAIL}")
 _IPV4 = re.compile(
     r"(?<![0-9.])(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}(?![0-9])"
 )
