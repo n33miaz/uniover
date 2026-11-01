@@ -2,12 +2,36 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { Component } from '@angular/core';
-import { TabBar, TabItem } from './tab-bar';
+import { TAB_CHUNK_PRELOAD, TabBar, TabItem } from './tab-bar';
 
 @Component({ template: '' })
 class Blank {}
 
 describe('TabBar', () => {
+  it('preloads once on pointerdown without navigating', async () => {
+    const preload = vi.fn();
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([
+          { path: '', component: Blank },
+          { path: 'treino', component: Blank },
+        ]),
+        { provide: TAB_CHUNK_PRELOAD, useValue: preload },
+      ],
+    });
+    const harness = await RouterTestingHarness.create('/');
+    const fixture = TestBed.createComponent(TabBar);
+    fixture.componentRef.setInput('tabs', [{ link: '/treino', label: 'Treino' }]);
+    await fixture.whenStable();
+    const link = (fixture.nativeElement as HTMLElement).querySelector('a')!;
+    link.dispatchEvent(new Event('pointerdown'));
+    link.dispatchEvent(new Event('pointerdown'));
+    expect(preload).toHaveBeenCalledTimes(1);
+    expect(preload).toHaveBeenCalledWith('/treino');
+    expect(TestBed.inject(Router).url).toBe('/');
+    void harness;
+  });
+
   it('renders one link per tab and marks the current one', async () => {
     TestBed.configureTestingModule({
       providers: [

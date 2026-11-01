@@ -1,4 +1,4 @@
-import { Component, inject, input } from '@angular/core';
+import { Component, InjectionToken, inject, input } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
@@ -20,6 +20,15 @@ export interface TabItem {
    */
   readonly also?: readonly string[];
 }
+
+/** Carrega o pedaço do módulo sem mudar o endereço; separado para testar o aquecimento sem rede real. */
+export const TAB_CHUNK_PRELOAD = new InjectionToken<(link: string) => void>('TAB_CHUNK_PRELOAD', {
+  providedIn: 'root',
+  factory: () => (link) => {
+    if (link.startsWith('/treino')) void import('../../../modules/training/training.routes');
+    if (link.startsWith('/tv')) void import('../../../modules/tv/tv-page');
+  },
+});
 
 /** Caminho sem consulta, sem fragmento e sem a barra do fim (a raiz continua `/`). */
 function pathOf(url: string): string {
@@ -53,6 +62,7 @@ function isWithin(path: string, base: string): boolean {
               [routerLink]="tab.link"
               [class.active]="isActive(tab)"
               [attr.aria-current]="isActive(tab) ? 'page' : null"
+              (pointerdown)="preload(tab.link)"
             >
               @if (tab.icon) {
                 <!-- A pílula do item ativo fica só atrás do ícone; o rótulo embaixo nunca some. -->
@@ -194,6 +204,8 @@ function isWithin(path: string, base: string): boolean {
 })
 export class TabBar {
   private readonly router = inject(Router);
+  private readonly preloadChunk = inject(TAB_CHUNK_PRELOAD);
+  private readonly warmed = new Set<string>();
 
   readonly tabs = input.required<readonly TabItem[]>();
   readonly variant = input<'default' | 'training'>('default');
@@ -212,5 +224,12 @@ export class TabBar {
     const path = pathOf(this.url());
     if (tab.nested ? isWithin(path, tab.link) : path === pathOf(tab.link)) return true;
     return (tab.also ?? []).some((base) => isWithin(path, pathOf(base)));
+  }
+
+  /** A aba aquece o pedaço da própria área antes do clique concluir a navegação. */
+  protected preload(link: string): void {
+    if (this.warmed.has(link)) return;
+    this.warmed.add(link);
+    this.preloadChunk(link);
   }
 }

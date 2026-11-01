@@ -1,5 +1,12 @@
 import { DOCUMENT } from '@angular/common';
-import { Component, DestroyRef, afterRenderEffect, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  afterRenderEffect,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   NavigationCancel,
@@ -20,6 +27,8 @@ export const ROUTE_WAIT_MS = 200;
 export const BOOT_SKELETON_ID = 'boot-skeleton';
 /** Tempo da saída do esqueleto estático (a animação `leaving` dura `--dur-exit`); passado isso ele é tirado do documento. */
 const BOOT_LEAVE_MS = 260;
+/** Teto para registrar a demora sem expor a página incompleta por baixo da cobertura. */
+export const PAGE_READY_TIMEOUT_MS = 8_000;
 
 /**
  * Cobre a tela inteira com um esqueleto que brilha nos momentos em que, sem ele, só haveria o fundo vazio: do toque em
@@ -39,13 +48,24 @@ const BOOT_LEAVE_MS = 260;
   selector: 'app-update-skeleton',
   template: `
     @if (visible()) {
-      <div class="bs-root" role="status" [animate.leave]="'leaving'">
+      <div
+        class="bs-root"
+        role="status"
+        [attr.data-boot-variant]="variant()"
+        [animate.leave]="'leaving'"
+      >
         @if (pwa.showSkeleton()) {
           <span class="ui-visually-hidden" i18n="@@pwa.updating">Atualizando…</span>
         } @else {
           <span class="ui-visually-hidden" i18n="@@pwa.loading">Carregando…</span>
         }
-        @switch (variant()) {
+        @if (pageTimedOut()) {
+          <div class="bs-timeout ui-notice warn" role="alert">
+            <p i18n="@@pwa.loading-timeout">A tela ainda está carregando.</p>
+            <button type="button" class="secondary ui-btn" (click)="reload()" i18n="@@pwa.loading-retry">Tentar de Novo</button>
+          </div>
+        }
+        @switch (drawing()) {
           @case ('home') {
             <div class="bs-variant bs-page bs-home bs-draw" aria-hidden="true">
               <span class="bone ui-skeleton bs-brand"></span>
@@ -140,7 +160,7 @@ const BOOT_LEAVE_MS = 260;
                 <span class="bone ui-skeleton bs-title"></span>
                 <span class="bs-end"></span>
               </div>
-              <div class="bs-body">
+              <div class="bs-body bs-training-today-content">
                 <div class="bs-hero">
                   <span class="bone ui-skeleton bs-line bs-w40"></span>
                   <span class="bone ui-skeleton bs-line bs-big bs-w80"></span>
@@ -165,6 +185,27 @@ const BOOT_LEAVE_MS = 260;
                     }
                   </div>
                 </div>
+              </div>
+              <div class="bs-body bs-training-list-content">
+                <div class="bs-list">
+                  @for (row of rows; track row) {
+                    <div class="bs-row"><span class="bone ui-skeleton bs-icon"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span><span class="bone ui-skeleton bs-chevron"></span></div>
+                  }
+                </div>
+              </div>
+              <div class="bs-body bs-training-progress-content">
+                <div class="bs-segments">
+                  @for (segment of twoTabs; track segment) { <span class="bone ui-skeleton bs-segment"></span> }
+                </div>
+                <div class="bs-card bs-chart"><span class="bone ui-skeleton bs-line bs-w40"></span><span class="bone ui-skeleton bs-chart-line"></span></div>
+                <div class="bs-stats">@for (stat of stats; track stat) { <span class="bs-stat"><span class="bone ui-skeleton bs-line bs-big bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span> }</div>
+              </div>
+              <div class="bs-body bs-training-body-content">
+                <div class="bs-segments">
+                  @for (segment of twoTabs; track segment) { <span class="bone ui-skeleton bs-segment"></span> }
+                </div>
+                <div class="bs-card bs-body-map"><span class="bone ui-skeleton bs-figure"></span><span class="bone ui-skeleton bs-line bs-big bs-w40"></span></div>
+                <div class="bs-list">@for (row of rows; track row) { <div class="bs-row"><span class="bone ui-skeleton bs-icon bs-round"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w30"></span></span></div> }</div>
               </div>
               <div class="bs-tabs">
                 @for (tab of threeTabs; track tab) {
@@ -209,6 +250,7 @@ const BOOT_LEAVE_MS = 260;
                 <span class="bs-end"></span>
               </div>
               <div class="bs-body">
+                <div class="bs-detail-cards">
                 @for (card of cards; track card) {
                   <div class="bs-card">
                     <span class="bone ui-skeleton bs-line bs-w40"></span>
@@ -216,6 +258,12 @@ const BOOT_LEAVE_MS = 260;
                     <span class="bone ui-skeleton bs-line bs-w60"></span>
                   </div>
                 }
+                </div>
+                <div class="bs-settings-data-content bs-list">
+                  @for (row of rows; track row) { <div class="bs-row"><span class="bone ui-skeleton bs-icon"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span><span class="bone ui-skeleton bs-chip"></span></div> }
+                </div>
+                <div class="bs-settings-profile-content bs-form"><div class="bs-identity"><span class="bone ui-skeleton bs-avatar"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span></div><span class="bone ui-skeleton bs-line bs-w30"></span><span class="bone ui-skeleton bs-input"></span><span class="bone ui-skeleton bs-cta"></span><div class="bs-card"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></div><div class="bs-card"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-cta"></span></div></div>
+                <div class="bs-settings-appearance-content bs-form"><span class="bone ui-skeleton bs-line bs-w30"></span><div class="bs-theme-choices"><span class="bone ui-skeleton bs-theme-choice"></span><span class="bone ui-skeleton bs-theme-choice"></span><span class="bone ui-skeleton bs-theme-choice"></span></div><div class="bs-row"><span class="bone ui-skeleton bs-icon"></span><span class="bs-lines"><span class="bone ui-skeleton bs-line bs-w60"></span><span class="bone ui-skeleton bs-line bs-w40"></span></span></div></div>
               </div>
             </div>
           }
@@ -292,8 +340,17 @@ export class UpdateSkeleton {
   /** A primeira navegação terminou (ou falhou): um temporizador atrasado não pode ligar o esqueleto depois disso. */
   private bootDone = false;
   private routeTimer: number | undefined;
+  private pageReadyTimer: number | undefined;
+  private readonly waitingForPage = signal(false);
+  protected readonly pageTimedOut = signal(false);
+  private readyObserver: MutationObserver | undefined;
   protected readonly visible = computed(
-    () => this.pwa.showSkeleton() || this.slowBoot() || this.routeWait() !== null,
+    () =>
+      this.pwa.showSkeleton() ||
+      this.slowBoot() ||
+      this.routeWait() !== null ||
+      this.waitingForPage() ||
+      this.pageTimedOut(),
   );
 
   /**
@@ -307,12 +364,20 @@ export class UpdateSkeleton {
     const target = this.routeWait();
     return bootVariantFor(target ?? this.win?.location.pathname ?? '/');
   });
+  /** Variações da mesma casca usam o desenho de base correspondente; o atributo conserva a rota exata para CSS e testes. */
+  protected readonly drawing = computed(() => {
+    const variant = this.variant();
+    if (variant.startsWith('training-')) return 'training';
+    if (variant.startsWith('settings-')) return variant === 'settings' ? 'settings' : 'detail';
+    return variant;
+  });
   protected readonly modules = [1, 2, 3, 4, 5, 6, 7, 8];
   protected readonly cards = [1, 2, 3, 4];
   protected readonly rows = [1, 2, 3, 4];
   protected readonly tabs = [1, 2, 3, 4];
   protected readonly threeTabs = [1, 2, 3];
-  protected readonly tiles = [1, 2, 3, 4];
+  protected readonly twoTabs = [1, 2];
+  protected readonly tiles = [1, 2, 3];
   protected readonly pips = [1, 2, 3];
   protected readonly keys = [1, 2, 3, 4, 5, 6, 7, 8];
   protected readonly days = [1, 2, 3, 4, 5, 6, 7];
@@ -326,12 +391,11 @@ export class UpdateSkeleton {
     // nascer, vale o estado do roteador.
     if (router.navigated) {
       this.bootDone = true;
-      this.pwa.markContentReady();
-      this.dismissBootSkeleton();
+      this.waitForPageReady();
     } else this.watchSlowBoot();
     router.events.pipe(takeUntilDestroyed()).subscribe((event) => {
       if (event instanceof NavigationStart) {
-        if (this.bootDone) this.armRouteWait(event.url);
+        if (this.bootDone && this.changesTopModule(event.url)) this.armRouteWait(event.url);
         return;
       }
       // Um guarda que redireciona (sessão vencida, boas-vindas) cancela esta navegação e começa outra: ainda não há conteúdo,
@@ -346,18 +410,26 @@ export class UpdateSkeleton {
           event instanceof NavigationCancel ||
           event instanceof NavigationError)
       ) {
-        this.pwa.markContentReady();
         this.bootDone = true;
         this.slowBoot.set(false);
         this.clearRouteWait();
-        this.dismissBootSkeleton();
+        this.waitForPageReady();
       }
     });
-    inject(DestroyRef).onDestroy(() => this.win?.clearTimeout(this.routeTimer));
+    this.doc.addEventListener('uniover:page-ready', this.contentReady);
+    inject(DestroyRef).onDestroy(() => {
+      this.win?.clearTimeout(this.routeTimer);
+      this.win?.clearTimeout(this.pageReadyTimer);
+      this.readyObserver?.disconnect();
+      this.doc.removeEventListener('uniover:page-ready', this.contentReady);
+      this.doc.documentElement.classList.remove('has-boot-skeleton');
+    });
     // Com o desenho do Angular por cima, o estático (idêntico) fica oculto por baixo: duas camadas de brilho custam pintura
     // em dobro, e num celular lento isso derruba a fluidez justo na espera.
     afterRenderEffect(() => {
-      this.doc.getElementById(BOOT_SKELETON_ID)?.classList.toggle('bs-covered', this.visible());
+      const visible = this.visible();
+      this.doc.getElementById(BOOT_SKELETON_ID)?.classList.toggle('bs-covered', visible);
+      this.doc.documentElement.classList.toggle('has-boot-skeleton', visible);
     });
   }
 
@@ -379,10 +451,102 @@ export class UpdateSkeleton {
     this.routeTimer = win.setTimeout(() => this.routeWait.set(url), ROUTE_WAIT_MS);
   }
 
+  /** Só uma troca entre módulos troca a casca inteira; abas, telas filhas e consulta preservam o cabeçalho visível. */
+  private changesTopModule(target: string): boolean {
+    const moduleOf = (url: string): string => {
+      const path = url.split(/[?#]/, 1)[0].replace(/\/+$/, '') || '/';
+      if (path === '/') return '/';
+      const [segment] = path.slice(1).split('/');
+      return `/${segment}`;
+    };
+    return moduleOf(target) !== moduleOf(this.win?.location.pathname ?? '/');
+  }
+
   private clearRouteWait(): void {
     this.win?.clearTimeout(this.routeTimer);
     this.routeTimer = undefined;
     this.routeWait.set(null);
+  }
+
+  /** O LoadingFrame anuncia a primeira forma; os marcadores da rota cobrem conteúdo síncrono e esqueletos locais. */
+  private readonly contentReady = (): void => {
+    if (this.waitingForPage() && this.hasScreenMarker()) this.finishPageReady();
+  };
+
+  private waitForPageReady(): void {
+    if (this.waitingForPage()) return;
+    this.pageTimedOut.set(false);
+    this.doc.documentElement.removeAttribute('data-screen-timeout');
+    this.waitingForPage.set(true);
+    this.watchScreenMarker();
+    if (this.hasScreenMarker()) {
+      this.finishPageReady();
+      return;
+    }
+    const win = this.win;
+    if (win) {
+      this.pageReadyTimer = win.setTimeout(() => this.keepOwnSkeletonOnTimeout(), PAGE_READY_TIMEOUT_MS);
+    }
+  }
+
+  private finishPageReady(): void {
+    if (!this.waitingForPage()) return;
+    this.waitingForPage.set(false);
+    this.win?.clearTimeout(this.pageReadyTimer);
+    this.pageReadyTimer = undefined;
+    this.readyObserver?.disconnect();
+    this.readyObserver = undefined;
+    this.pwa.markContentReady();
+    this.dismissBootSkeleton();
+  }
+
+  /** A rota não deixou conteúdo nem forma local no prazo: preserva o desenho dela e registra a causa. */
+  private keepOwnSkeletonOnTimeout(): void {
+    if (!this.waitingForPage()) return;
+    this.waitingForPage.set(false);
+    this.pageTimedOut.set(true);
+    this.readyObserver?.disconnect();
+    this.readyObserver = undefined;
+    this.doc.documentElement.setAttribute('data-screen-timeout', this.variant());
+    this.win?.sessionStorage.setItem(
+      'uniover.screen-timeout',
+      JSON.stringify({ variant: this.variant(), reason: 'missing-screen-marker' }),
+    );
+    this.doc.dispatchEvent(
+      new CustomEvent('uniover:screen-timeout', {
+        detail: { variant: this.variant(), reason: 'missing-screen-marker' },
+      }),
+    );
+  }
+
+  private watchScreenMarker(): void {
+    this.readyObserver?.disconnect();
+    this.readyObserver = new MutationObserver(() => {
+      if (this.waitingForPage() && this.hasScreenMarker()) this.finishPageReady();
+    });
+    this.readyObserver.observe(this.doc.body, { attributes: true, childList: true, subtree: true });
+  }
+
+  private hasScreenMarker(): boolean {
+    const marker = this.screenMarker();
+    return !!this.doc.querySelector(`[data-screen-ready="${marker}"], [data-screen-skeleton="${marker}"]`);
+  }
+
+  private screenMarker(): string {
+    const variant = this.variant();
+    if (variant.startsWith('training-')) return 'training';
+    if (
+      variant === 'settings-system' ||
+      variant === 'settings-people' ||
+      variant === 'settings-audit' ||
+      variant === 'settings-devices'
+    )
+      return 'settings-data';
+    return variant;
+  }
+
+  protected reload(): void {
+    this.doc.location.reload();
   }
 
   /**

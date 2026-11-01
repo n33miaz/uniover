@@ -2,15 +2,30 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { Component, inject } from '@angular/core';
 import { PwaUpdateService } from './pwa-update.service';
-import { BOOT_SKELETON_ID, ROUTE_WAIT_MS, SLOW_BOOT_MS, UpdateSkeleton } from './update-skeleton';
+import {
+  BOOT_SKELETON_ID,
+  PAGE_READY_TIMEOUT_MS,
+  ROUTE_WAIT_MS,
+  SLOW_BOOT_MS,
+  UpdateSkeleton,
+} from './update-skeleton';
 
-@Component({ template: '' })
+@Component({ template: '<div data-screen-ready="home"></div>' })
 class Blank {}
+
+function addReadyMarker(value: string): void {
+  const marker = document.createElement('div');
+  marker.setAttribute('data-screen-ready', value);
+  marker.setAttribute('data-test-screen-marker', '');
+  document.body.append(marker);
+}
 
 describe('UpdateSkeleton', () => {
   afterEach(() => {
     vi.useRealTimers();
     sessionStorage.clear();
+    document.querySelectorAll('[data-test-screen-marker]').forEach((element) => element.remove());
+    document.documentElement.removeAttribute('data-screen-timeout');
     history.pushState({}, '', '/');
   });
 
@@ -20,6 +35,7 @@ describe('UpdateSkeleton', () => {
         provideRouter([
           { path: '', component: Blank },
           { path: 'ok', component: Blank },
+          { path: 'tv', component: Blank },
           { path: 'cancelada', component: Blank, canActivate: [() => false] },
           {
             path: 'sumiu',
@@ -73,12 +89,15 @@ describe('UpdateSkeleton', () => {
     fixture.detectChanges();
     const overlay = el.querySelector('.bs-root');
     expect(overlay).not.toBeNull();
+    expect(document.documentElement.classList.contains('has-boot-skeleton')).toBe(true);
     expect(overlay!.textContent).toContain('Carregando…');
     expect(overlay!.textContent).not.toContain('Atualizando…');
     expect(overlay!.querySelectorAll('.bone.ui-skeleton').length).toBeGreaterThan(10);
 
     vi.useRealTimers();
-    await TestBed.inject(Router).navigateByUrl('/ok');
+    const pending = TestBed.inject(Router).navigateByUrl('/ok');
+    addReadyMarker('detail');
+    await pending;
     await fixture.whenStable();
     // Sai pela animação de saída (ou já saiu): nunca fica coberto depois da primeira tela.
     await vi.waitFor(() => {
@@ -92,7 +111,9 @@ describe('UpdateSkeleton', () => {
     const { fixture, el } = setup();
     fixture.detectChanges();
     vi.advanceTimersByTime(SLOW_BOOT_MS - 100);
-    await TestBed.inject(Router).navigateByUrl('/ok');
+    const pending = TestBed.inject(Router).navigateByUrl('/ok');
+    addReadyMarker('detail');
+    await pending;
     vi.advanceTimersByTime(SLOW_BOOT_MS * 3);
     fixture.detectChanges();
     expect(el.querySelector('.bs-root')).toBeNull();
@@ -123,7 +144,7 @@ describe('UpdateSkeleton', () => {
     expect(el.querySelectorAll('.bs-tv-head > .bs-tv-title').length).toBe(1);
     expect(el.querySelector('.bs-tv-head .bs-tv-actions .bs-state-dot')).not.toBeNull();
     expect(el.querySelectorAll('.bs-tv-head .bs-tv-actions > .bs-circle').length).toBe(1);
-    expect(el.querySelectorAll('.bs-tv-shortcuts .bs-tile').length).toBe(4);
+    expect(el.querySelectorAll('.bs-tv-shortcuts .bs-tile').length).toBe(3);
     expect(el.querySelector('.bs-ring .bs-ok')).not.toBeNull();
     expect(el.querySelectorAll('.bs-ring .bs-arrow').length).toBe(4);
     expect(el.querySelectorAll('.bs-tv-dots .bs-pip').length).toBe(3);
@@ -154,14 +175,13 @@ describe('UpdateSkeleton', () => {
     expect(second.el.querySelector('.bs-tabs')).toBeNull();
   });
 
-  it('keeps the generic page drawing (header, cards, list, tab bar) only as the last resort', async () => {
+  it('uses the detail drawing instead of the generic page for an unknown shell address', async () => {
     history.pushState({}, '', '/qualquer-coisa');
     const { service, fixture, el } = setup();
     service.applyingUpdate.set(true);
     await fixture.whenStable();
-    expect(el.querySelector('.bs-home, .bs-tv, .bs-training, .bs-settings')).toBeNull();
-    expect(el.querySelector('.bs-generic .bs-tabs')).not.toBeNull();
-    expect(el.querySelector('.bs-generic .bs-flat-top')).not.toBeNull();
+    expect(el.querySelector('.bs-home, .bs-tv, .bs-training, .bs-settings, .bs-generic')).toBeNull();
+    expect(el.querySelector('.bs-detail .bs-detail-cards')).not.toBeNull();
   });
 
   it('keeps the skeleton after the reload until the first navigation ends', async () => {
@@ -171,12 +191,14 @@ describe('UpdateSkeleton', () => {
     expect(service.showSkeleton()).toBe(true);
     expect(el.querySelector('.bs-root')).not.toBeNull();
 
-    await TestBed.inject(Router).navigateByUrl('/ok');
+    const pending = TestBed.inject(Router).navigateByUrl('/ok');
+    addReadyMarker('detail');
+    await pending;
     await fixture.whenStable();
     expect(service.showSkeleton()).toBe(false);
   });
 
-  it('treats an already finished first navigation as the first content', async () => {
+  it('treats an already finished first navigation as the first content after its marker is present', async () => {
     sessionStorage.setItem('uniover.update.refreshing', String(Date.now()));
     TestBed.configureTestingModule({
       providers: [provideRouter([{ path: '', component: Blank }])],
@@ -184,7 +206,9 @@ describe('UpdateSkeleton', () => {
     await TestBed.inject(Router).navigateByUrl('/');
     const service = TestBed.inject(PwaUpdateService);
     expect(service.showSkeleton()).toBe(true);
-    TestBed.createComponent(UpdateSkeleton);
+    addReadyMarker('home');
+    const fixture = TestBed.createComponent(UpdateSkeleton);
+    await fixture.whenStable();
     expect(service.showSkeleton()).toBe(false);
   });
 
@@ -207,23 +231,59 @@ describe('UpdateSkeleton', () => {
     TestBed.createComponent(UpdateSkeleton);
     const states: boolean[] = [];
     TestBed.inject(Router).events.subscribe(() => states.push(service.showSkeleton()));
+    addReadyMarker('plain');
     await TestBed.inject(Router).navigateByUrl('/privada');
     // O cancelamento do redirecionamento não derrubou o esqueleto; só o fim da navegação para /entrar.
     expect(states.slice(0, -1).every(Boolean)).toBe(true);
     expect(service.showSkeleton()).toBe(false);
   });
 
-  it('lets go when the navigation is cancelled or fails (the error handler takes over from there)', async () => {
+  it('keeps the own skeleton when navigation is cancelled or fails without a screen marker', async () => {
     for (const path of ['/cancelada', '/sumiu']) {
       sessionStorage.setItem('uniover.update.refreshing', String(Date.now()));
       TestBed.resetTestingModule();
-      const { service } = setup();
+      const { service, fixture, el } = setup();
       expect(service.showSkeleton()).toBe(true);
       await TestBed.inject(Router)
         .navigateByUrl(path)
         .catch(() => undefined);
-      expect(service.showSkeleton()).toBe(false);
+      await fixture.whenStable();
+      expect(service.showSkeleton()).toBe(true);
+      expect(el.querySelector('.bs-root')).not.toBeNull();
     }
+  });
+
+  it('does not release the overlay for a mounted shell until the destination marker arrives', async () => {
+    history.pushState({}, '', '/tv');
+    const { service, fixture, el } = setup();
+    service.applyingUpdate.set(true);
+    const pending = TestBed.inject(Router).navigateByUrl('/tv');
+    await pending;
+    await fixture.whenStable();
+    expect(el.querySelector('.bs-root .bs-tv')).not.toBeNull();
+    expect(service.showSkeleton()).toBe(true);
+    addReadyMarker('home');
+    await Promise.resolve();
+    expect(service.showSkeleton()).toBe(true);
+    addReadyMarker('tv');
+    await vi.waitFor(() => expect(service.showSkeleton()).toBe(false));
+  });
+
+  it('keeps the destination skeleton and records the reason when no screen marker arrives in time', async () => {
+    vi.useFakeTimers();
+    history.pushState({}, '', '/tv');
+    const { service, fixture, el } = setup();
+    service.applyingUpdate.set(true);
+    fixture.detectChanges();
+    const pending = TestBed.inject(Router).navigateByUrl('/tv');
+    await pending;
+    vi.advanceTimersByTime(PAGE_READY_TIMEOUT_MS);
+    fixture.detectChanges();
+    expect(el.querySelector('.bs-root .bs-tv')).not.toBeNull();
+    expect(el.querySelector('.bs-timeout')).not.toBeNull();
+    expect(service.showSkeleton()).toBe(true);
+    expect(document.documentElement.getAttribute('data-screen-timeout')).toBe('tv');
+    expect(sessionStorage.getItem('uniover.screen-timeout')).toContain('missing-screen-marker');
   });
 
   it('removes the static boot skeleton from the document when the first screen is ready', async () => {
@@ -235,7 +295,9 @@ describe('UpdateSkeleton', () => {
     fixture.detectChanges();
     expect(document.getElementById(BOOT_SKELETON_ID)).not.toBeNull();
     vi.useRealTimers();
-    await TestBed.inject(Router).navigateByUrl('/ok');
+    const pending = TestBed.inject(Router).navigateByUrl('/ok');
+    addReadyMarker('detail');
+    await pending;
     expect(boot.classList.contains('leaving')).toBe(true);
     await vi.waitFor(() => expect(document.getElementById(BOOT_SKELETON_ID)).toBeNull());
   });
@@ -262,7 +324,11 @@ describe('UpdateSkeleton', () => {
       providers: [
         provideRouter([
           { path: '', component: Blank },
-          { path: 'tv', component: Blank, canActivate: [() => gate.then(() => true)] },
+          {
+            path: 'tv',
+            component: Blank,
+            canActivate: [() => gate.then(() => true)],
+          },
         ]),
       ],
     });
@@ -282,10 +348,41 @@ describe('UpdateSkeleton', () => {
     vi.useRealTimers();
     release();
     await pending;
+    addReadyMarker('tv');
     await fixture.whenStable();
     await vi.waitFor(() => {
       const current = el.querySelector('.bs-root');
       expect(current === null || current.classList.contains('leaving')).toBe(true);
     });
+  });
+
+  it('does not cover a slow query-only navigation inside the same module', async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([
+          { path: '', component: Blank },
+          {
+            path: 'tv',
+            component: Blank,
+            canActivate: [() => (inject(Router).url === '/' ? true : gate.then(() => true))],
+          },
+        ]),
+      ],
+    });
+    const router = TestBed.inject(Router);
+    const fixture = TestBed.createComponent(UpdateSkeleton);
+    vi.useRealTimers();
+    await router.navigateByUrl('/tv');
+    vi.useFakeTimers();
+    const pending = router.navigateByUrl('/tv?painel=apps');
+    vi.advanceTimersByTime(ROUTE_WAIT_MS + 1);
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.bs-root')).toBeNull();
+    vi.useRealTimers();
+    release();
+    await pending;
   });
 });
