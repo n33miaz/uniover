@@ -1,5 +1,5 @@
 @if (loading()) {
-  <app-settings-page-skeleton kind="list" marker="settings" label="Carregando Configurações…" i18n-label="@@settings.loading" />
+  <app-settings-page-skeleton [kind]="'list'" [marker]="'settings'" label="Carregando Configurações…" i18n-label="@@settings.loading" />
 } @else {
 <!-- Uma linha que leva a uma tela: ladrilho, nome e a seta (sem subtítulo). A linha da tela aberta recebe aria-current. -->
 <ng-template #row let-entry>
@@ -17,7 +17,7 @@
   </a>
 </ng-template>
 
-<div class="settings ui-stagger" data-screen-ready="settings">
+<div class="settings ui-stagger" [attr.data-screen-ready]="'settings'">
   <app-theme-segment class="ui-rise" />
 
   <section class="section ui-rise" aria-labelledby="personal-title">

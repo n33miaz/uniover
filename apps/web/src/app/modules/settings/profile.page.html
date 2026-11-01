@@ -1,7 +1,7 @@
 @if (!user()) {
-  <app-settings-page-skeleton kind="profile" marker="settings-profile" label="Carregando perfil…" i18n-label="@@settings.profile.loading" />
+  <app-settings-page-skeleton [kind]="'profile'" [marker]="'settings-profile'" label="Carregando perfil…" i18n-label="@@settings.profile.loading" />
 } @else {
-<div class="profile ui-stagger" data-screen-ready="settings-profile">
+<div class="profile ui-stagger" [attr.data-screen-ready]="'settings-profile'">
   <section class="section ui-rise" aria-labelledby="identity-title">
     <h2 id="identity-title" class="ui-section-label" i18n="@@settings.profile.identity">Conta</h2>
     <div class="identity ui-card">

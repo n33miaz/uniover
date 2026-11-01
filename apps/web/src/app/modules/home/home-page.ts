@@ -19,6 +19,7 @@ import { HomeGlyph } from './home-glyph';
 import { ModuleAppIcon } from './module-app-icon';
 import { HomeSoonBadge } from './home-soon-badge';
 import { Skeleton } from '../../shared/ui/skeleton/skeleton';
+import { TAB_CHUNK_PRELOAD } from '../../shared/ui/tab-bar/tab-bar';
 
 type ChipTone = 'ok' | 'warn' | 'connecting';
 type DayPart = 'morning' | 'afternoon' | 'evening';
@@ -69,6 +70,7 @@ export function greetingFor(hour: number): string {
 })
 export class HomePage {
   private readonly clock = inject(ClockService);
+  private readonly preloadChunk = inject(TAB_CHUNK_PRELOAD);
   private readonly statusPort = inject(HomeStatusPort);
   private readonly status = this.statusPort.status;
   protected readonly loading = this.statusPort.loading;
@@ -183,8 +185,7 @@ export class HomePage {
 
   /** A intenção de tocar no cartão chega antes do clique; aquece só o módulo que a pessoa vai abrir. */
   protected preload(path: string): void {
-    if (path === '/tv') void import('../tv/tv-page');
-    if (path === '/treino') void import('../training/training.routes');
+    this.preloadChunk(path);
   }
 
   private canSeeModule(id: string): boolean {
