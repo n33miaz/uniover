@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.33.0](https://github.com/n33miaz/uniover/compare/v0.32.0...v0.33.0) (2026-11-01)
+
+
+### Features
+
+* **contracts:** add the tv livre messages
+* **agent:** add the tv livre module
+* **api:** add the tv livre routes
+* **web:** add the tv livre module
+* **contracts:** add agent diagnostics message
+* **agent:** queue diagnostics safely
+* **agent:** record why the agent stopped
+* **agent:** verify updates before swapping
+* **agent:** guard the supervisor
+* **agent:** check and repair itself
+* **agent:** simple installer, pick the folder
+* **api:** keep agent diagnostics for 7 days
+* **web:** show agent errors in system
+* **agent:** pin the project signing cert
+
+
+### Bug Fixes
+
+* **agent:** install the crash hooks once
+* **agent:** sync with the frozen lock on the pc
+* **agent:** keep background tasks alive
+* **agent:** verify tv livre home and signer
+* **api:** lock tv livre steps across replicas
+* **web:** ignore stale tv livre responses
+* **api:** raise the body cap of the photo route
+
 ## [0.32.0](https://github.com/n33miaz/uniover/compare/v0.31.0...v0.32.0) (2026-10-31)
 
 
