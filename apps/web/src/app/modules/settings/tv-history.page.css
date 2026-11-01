@@ -1,0 +1,77 @@
+:host {
+  display: block;
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.tv-name {
+  margin: 0;
+}
+
+.history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap);
+  padding: var(--space-3) var(--space-4);
+}
+
+.ui-row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ui-row-sub {
+  overflow-wrap: anywhere;
+}
+
+/* O resultado não encolhe nem quebra: o texto da linha é que cede a largura. */
+.result {
+  white-space: nowrap;
+}
+
+.result app-settings-glyph {
+  --glyph-size: 14px;
+}
+
+/* Vazio e erro: cartão tracejado, no mesmo desenho dos outros Ajustes. */
+.empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4);
+  border: 2px dashed var(--a-line);
+  border-radius: var(--radius-lg);
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+.empty p {
+  margin: 0;
+}
+
+.empty app-settings-glyph {
+  --glyph-size: 24px;
+}
+
+.empty.bad {
+  border-color: color-mix(in srgb, var(--a-bad) 45%, var(--a-line));
+  color: var(--a-bad-ink);
+}
+
+.retry {
+  align-self: flex-start;
+}
