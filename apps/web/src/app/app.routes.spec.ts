@@ -144,6 +144,8 @@ describe('app routes for a guest', () => {
     '/ajustes/pessoas',
     '/ajustes/auditoria',
     '/ajustes/sistema',
+    '/ajustes/tvs-por-pessoa',
+    '/ajustes/tv/0192f1e4-0000-7000-8000-0000000000d1/historico',
     '/tv/livre',
     '/nada',
   ];

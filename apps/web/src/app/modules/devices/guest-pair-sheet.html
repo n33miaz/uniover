@@ -28,13 +28,15 @@
       (input)="onCodeInput($event)"
     />
 
-    <label for="guest-pair-name" i18n="@@devices.guest-pair.name">Nome da TV</label>
+    <label for="guest-pair-name" i18n="@@devices.guest-pair.name">Como Chamar Esta TV?</label>
     <input
       id="guest-pair-name"
       class="ui-input"
       type="text"
       autocomplete="off"
       [attr.maxlength]="maxName"
+      placeholder="TV"
+      i18n-placeholder="@@devices.guest-pair.name-placeholder"
       [attr.aria-invalid]="nameValid() ? null : 'true'"
       [value]="tvName()"
       (input)="onNameInput($event)"

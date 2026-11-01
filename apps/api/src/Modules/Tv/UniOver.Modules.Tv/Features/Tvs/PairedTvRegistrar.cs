@@ -36,10 +36,11 @@ internal sealed class PairedTvRegistrar(TimeProvider time) : IPairedTvRegistrar
 
         var now = time.GetUtcNow();
         var hasDefault = await db.Tvs.AnyAsync(tv => tv.IsDefault, cancellationToken);
-        // Nome recusado pelas regras da TV (invisíveis, longo demais) não derruba a aprovação: cai no nome do computador.
+        // O apelido que a pessoa deu. Sem apelido (ou recusado pelas regras da TV: invisíveis, longo demais) a TV se chama "TV":
+        // o nome do computador é técnico e só o administrador o vê, em Dispositivos; nunca vira o nome que os outros leem.
         var name = registration.Name is not null && BindAgentValidator.ValidateName(registration.Name).Count == 0
             ? registration.Name
-            : registration.AgentName;
+            : null;
         var tv = ConfiguredTv.Create(name, registration.AgentSlug, registration.CanBeDefault && !hasDefault, registration.OwnerId, now);
         db.Tvs.Add(tv);
         var members = registration.MemberIds.Distinct().ToList();

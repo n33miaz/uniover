@@ -21,6 +21,20 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
 
     private static readonly string[] RestrictedApps = ["com.exemplo.video"];
 
+    private static readonly string[] CinemaOnly = ["com.exemplo.cinema"];
+
+    private static readonly string[] CinemaAndNetflix = ["com.exemplo.cinema", "com.netflix.ninja"];
+
+    private static readonly string[] NotAPackage = ["sem ponto"];
+
+    private static readonly string[] Repeated = ["com.exemplo.a", "com.exemplo.a"];
+
+    private static readonly string[] SystemApp = ["com.android.settings"];
+
+    private static readonly string[] TooManyApps = [.. Enumerable.Range(0, 51).Select(i => $"com.exemplo.app{i}")];
+
+    private static readonly string[] GuestWithEveryAction = ["module:tv", "tv:control", "tv:power", "tv:launch", "tv:edit-shortcuts"];
+
     private static async Task<VirtualAuthenticator> ConfirmedOwnerAsync(TvApp app)
     {
         var authenticator = new VirtualAuthenticator();
@@ -206,6 +220,121 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
         var trail = await db.CommandAudit.AsNoTracking()
             .Where(a => a.Command == TvCommandNames.CleanupSetting && a.TvId == tvId).Select(a => a.Detail).ToListAsync(Ct);
         trail.Should().Equal("light-settings");
+    }
+
+    [Fact]
+    public async Task FocusCatalog_IsPerTv_OnlyReachesAgentsThatKnowIt_AndTheOldBodyStaysTheSame()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var agent = await app.PairAsync("PC Sala");
+        var tvId = await CreateTvAsync(app, agent.Slug, "TV Sala");
+
+        // Sem nada guardado a TV usa a lista de fábrica, que o administrador lê para poder voltar a ela.
+        using (var initial = await app.GetAsync($"/api/v1/tv/tvs/{tvId}/focus-catalog"))
+        {
+            initial.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await TvApp.JsonAsync(initial);
+            body.GetProperty("isCustom").GetBoolean().Should().BeFalse();
+            body.GetProperty("packages").EnumerateArray().Select(p => p.GetString())
+                .Should().BeEquivalentTo(ConfiguredTv.DefaultFocusPackages);
+        }
+
+        // Agente que anuncia o catálogo: o primeiro corpo ainda não traz o campo (nada foi mudado).
+        await using var connection = await app.ConnectAsync(agent);
+        await connection.SendHelloAsync(
+            "2.0.0", "tv.remote", "tv.cleanup.automatic.v1", "tv.light-settings.v1", "tv.focus-closes-background.v1", "tv.focus-catalog.v1");
+        (await TvApp.NextCommandAsync(connection)).GetProperty("body").TryGetProperty("focusPackages", out _).Should().BeFalse();
+
+        using (var custom = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new
+        {
+            focusPackages = CinemaAndNetflix,
+        }))
+        {
+            custom.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        (await TvApp.NextCommandAsync(connection)).GetProperty("body").GetProperty("focusPackages").EnumerateArray()
+            .Select(p => p.GetString()).Should().Equal("com.exemplo.cinema", "com.netflix.ninja");
+        using (var read = await app.GetAsync($"/api/v1/tv/tvs/{tvId}/focus-catalog"))
+        {
+            var body = await TvApp.JsonAsync(read);
+            body.GetProperty("isCustom").GetBoolean().Should().BeTrue();
+            body.GetProperty("packages").EnumerateArray().Select(p => p.GetString())
+                .Should().Equal("com.exemplo.cinema", "com.netflix.ninja");
+        }
+
+        // Voltar ao padrão é salvar a lista de fábrica: some o que estava guardado e o agente deixa de receber o campo.
+        using (var restore = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tvId}", new
+        {
+            focusPackages = ConfiguredTv.DefaultFocusPackages.Reverse().ToArray(),
+        }))
+        {
+            restore.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        (await TvApp.NextCommandAsync(connection)).GetProperty("body").TryGetProperty("focusPackages", out _).Should().BeFalse();
+        await using var db = app.Db();
+        (await db.Tvs.AsNoTracking().SingleAsync(t => t.Id == tvId, Ct)).FocusPackages.Should().BeNull();
+        (await db.CommandAudit.AsNoTracking().Where(a => a.Command == TvCommandNames.CleanupSetting && a.TvId == tvId)
+            .Select(a => a.Detail).ToListAsync(Ct)).Should().OnlyContain(detail => detail == "light-settings");
+    }
+
+    [Fact]
+    public async Task FocusCatalog_IsRefusedForAgentsThatDoNotKnowIt_ForSamsung_AndForBadLists()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        using var authenticator = await ConfirmedOwnerAsync(app);
+        await BindDefaultAsync(app);
+        var oldAgent = await app.PairAsync("PC Antigo");
+        var oldTv = await CreateTvAsync(app, oldAgent.Slug, "TV Antiga");
+        var samsung = await app.PairAsync("PC Samsung");
+        var samsungTv = await CreateTvAsync(app, samsung.Slug, "TV Samsung");
+
+        await using var oldConnection = await app.ConnectAsync(oldAgent);
+        await oldConnection.SendHelloAsync("2.0.0", "tv.remote", "tv.cleanup.automatic.v1", "tv.light-settings.v1");
+        await using var samsungConnection = await app.ConnectAsync(samsung);
+        await samsungConnection.SendHelloAsync("2.0.0", "tv.remote", "tv.kind.samsung");
+        await TvApp.WaitUntilAsync(
+            () => app.Presence.Get(samsung.Slug)?.Capabilities.Contains("tv.kind.samsung") == true, "samsung apresentada");
+
+        async Task<HttpStatusCode> PatchAsync(Guid tv, object body)
+        {
+            using var response = await app.SendAsync(HttpMethod.Patch, $"/api/v1/tv/tvs/{tv}", body);
+            return response.StatusCode;
+        }
+
+        (await PatchAsync(oldTv, new { focusPackages = CinemaOnly })).Should().Be(HttpStatusCode.Conflict);
+        (await PatchAsync(samsungTv, new { focusPackages = CinemaOnly })).Should().Be(HttpStatusCode.Conflict);
+
+        // Lista vazia vale (a detecção automática fica sem apps); item inválido, repetido, protegido ou em excesso, não.
+        await using var knows = await app.ConnectAsync(app.Agent);
+        await knows.SendHelloAsync(
+            "2.0.0", "tv.remote", "tv.cleanup.automatic.v1", "tv.light-settings.v1", "tv.focus-catalog.v1");
+        var defaultTv = (await app.Db().Tvs.AsNoTracking().SingleAsync(t => t.IsDefault, Ct)).Id;
+        (await PatchAsync(defaultTv, new { focusPackages = Array.Empty<string>() })).Should().Be(HttpStatusCode.OK);
+        (await PatchAsync(defaultTv, new { focusPackages = NotAPackage })).Should().Be(HttpStatusCode.BadRequest);
+        (await PatchAsync(defaultTv, new { focusPackages = Repeated })).Should().Be(HttpStatusCode.BadRequest);
+        (await PatchAsync(defaultTv, new { focusPackages = SystemApp })).Should().Be(HttpStatusCode.BadRequest);
+        (await PatchAsync(defaultTv, new { focusPackages = TooManyApps }))
+            .Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task FocusCatalog_IsOnlyForTheAdministrator()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var defaultTv = (await app.Db().Tvs.AsNoTracking().SingleAsync(t => t.IsDefault, Ct)).Id;
+        var guest = await app.NewGuestAsync("Convidado", GuestWithEveryAction, 41);
+
+        using var read = await app.GetAsync($"/api/v1/tv/tvs/{defaultTv}/focus-catalog", bearer: guest.Login.AccessToken);
+        using var write = await app.SendAsync(
+            HttpMethod.Patch, $"/api/v1/tv/tvs/{defaultTv}", new { focusPackages = CinemaOnly }, bearer: guest.Login.AccessToken);
+
+        read.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        write.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await app.Db().Tvs.AsNoTracking().SingleAsync(t => t.Id == defaultTv, Ct)).FocusPackages.Should().BeNull();
     }
 
     [Fact]

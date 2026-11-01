@@ -753,6 +753,7 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
             bool(body.get("focusEnabled", False)),
             bool(body.get("shortAnimationsEnabled", False)),
             [item for item in body.get("restrictedPackages", []) if isinstance(item, str)],
+            body.get("focusPackages"),
         )
         return CommandResult(command.id, ResultStatus.OK)
 
@@ -789,7 +790,9 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
         setup.capabilities.append("tv.cleanup.automatic.v1")
         # Os campos novos de `tv.cleanup.config.v1` só vão a quem declara esta capacidade: o schema
         # antigo recusa campo desconhecido e perderia a mensagem inteira.
-        setup.capabilities.extend(("tv.light-settings.v1", "tv.focus-closes-background.v1"))
+        setup.capabilities.extend(
+            ("tv.light-settings.v1", "tv.focus-closes-background.v1", "tv.focus-catalog.v1")
+        )
 
     setup.prepare.append(declare_when_usable)
     compose_livre(setup, settings, adb, host, clock)

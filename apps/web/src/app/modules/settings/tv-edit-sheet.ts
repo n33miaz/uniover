@@ -20,7 +20,9 @@ import {
   onDialogBackdropClick,
   restoreDialogFocus,
 } from '../../shared/ui/dialog-motion';
+import { Router } from '@angular/router';
 import { cleanupKindText, cleanupOutcomeText } from '../../shared/tv-cleanup-text';
+import { FOCUS_APP_NAMES } from './focus-app-names';
 import { SettingsGlyph } from './settings-glyph';
 import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { TvPermissionSheet } from '../../core/tv-permission/tv-permission-sheet';
@@ -30,6 +32,7 @@ import {
   TvAppOption,
   TvCleanupReportItem,
   TvComputer,
+  TvFocusCatalog,
   TvItem,
 } from './system-api';
 
@@ -37,6 +40,15 @@ import {
 const NAME_MAX = 60;
 /** Anunciada pelo agente que fecha os outros apps no Modo Foco; sem ela o campo nem é enviado. */
 const FOCUS_CLOSES_CAPABILITY = 'tv.focus-closes-background.v1';
+/** Anunciada pelo agente que aceita o catálogo de apps do Modo Foco; sem ela a lista nem aparece. */
+const FOCUS_CATALOG_CAPABILITY = 'tv.focus-catalog.v1';
+
+/** Um app da lista do catálogo do Modo Foco: ligado, ele liga o Modo Foco sozinho quando está tocando. */
+interface CatalogRow {
+  readonly package: string;
+  readonly label: string;
+  readonly on: boolean;
+}
 
 /** O que a folha estava fazendo quando deu erro: cada passo tem as suas recusas. */
 type Step = 'create' | 'update' | 'members' | 'delete';
@@ -74,6 +86,7 @@ export class TvEditSheet implements OnInit {
   private readonly api = inject(SystemApi);
   private readonly auth = inject(AuthService);
   private readonly authApi = inject(AuthApi);
+  private readonly router = inject(Router);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private opener: Element | null = null;
 
@@ -108,6 +121,28 @@ export class TvEditSheet implements OnInit {
   protected readonly supportsFocusCloses = computed(
     () => this.tv()?.capabilities.includes(FOCUS_CLOSES_CAPABILITY) === true,
   );
+  /** Só o agente que anuncia a capacidade recebe o catálogo; aos outros a lista nem aparece. */
+  protected readonly supportsFocusCatalog = computed(
+    () => this.tv()?.capabilities.includes(FOCUS_CATALOG_CAPABILITY) === true,
+  );
+  /** O catálogo como está no servidor (`null` até chegar, ou se não deu para ler: aí a lista não aparece). */
+  private readonly savedCatalog = signal<TvFocusCatalog | null>(null);
+  /** O que o administrador marcou agora, antes de salvar. */
+  protected readonly catalog = signal<readonly string[]>([]);
+  /** Os apps do catálogo primeiro, depois os outros instalados: cada um com um interruptor. */
+  protected readonly catalogRows = computed<readonly CatalogRow[]>(() => {
+    if (this.savedCatalog() === null) return [];
+    const chosen = new Set(this.catalog());
+    const labels = new Map(this.apps().map((app) => [app.package, app.label]));
+    const rows = [...new Set([...chosen, ...labels.keys()])].map((name) => ({
+      package: name,
+      label: labels.get(name) ?? FOCUS_APP_NAMES[name] ?? name,
+      on: chosen.has(name),
+    }));
+    return rows.sort(
+      (a, b) => Number(b.on) - Number(a.on) || a.label.localeCompare(b.label, 'pt-BR'),
+    );
+  });
   protected readonly shortAnimations = linkedSignal(
     () => this.tv()?.shortAnimationsEnabled ?? false,
   );
@@ -199,6 +234,15 @@ export class TvEditSheet implements OnInit {
         this.shortAnimations() !== (this.current()?.shortAnimationsEnabled ?? false) ||
         !sameSet(this.restrictedPackages(), this.current()?.restrictedBackgroundPackages ?? [])),
   );
+  private readonly catalogChanged = computed(() => {
+    const saved = this.savedCatalog();
+    return (
+      !this.creating() &&
+      this.supportsFocusCatalog() &&
+      saved !== null &&
+      !sameSet(this.catalog(), saved.packages)
+    );
+  });
   private readonly membersChanged = computed(() => {
     const base = this.savedMembers();
     return base !== null && !sameSet(this.members(), base);
@@ -213,6 +257,7 @@ export class TvEditSheet implements OnInit {
       this.agentChanged() ||
       this.closeBackgroundChanged() ||
       this.lightSettingsChanged() ||
+      this.catalogChanged() ||
       this.membersChanged()
     );
   });
@@ -233,6 +278,7 @@ export class TvEditSheet implements OnInit {
     void this.loadPeople();
     void this.loadReports();
     void this.loadApps();
+    void this.loadFocusCatalog();
     if (this.creating()) void this.searchNearby();
   }
 
@@ -361,6 +407,23 @@ export class TvEditSheet implements OnInit {
     );
   }
 
+  protected isInCatalog(packageName: string): boolean {
+    return this.catalog().includes(packageName);
+  }
+
+  protected toggleCatalog(packageName: string, event: Event): void {
+    const on = (event.target as HTMLInputElement).checked;
+    this.catalog.update((items) =>
+      on ? [...new Set([...items, packageName])] : items.filter((item) => item !== packageName),
+    );
+  }
+
+  /** "Voltar ao Padrão" do catálogo: a lista de fábrica do agente (a API a entrega junto do catálogo). */
+  protected restoreFocusCatalog(): void {
+    const saved = this.savedCatalog();
+    if (saved) this.catalog.set(saved.defaults);
+  }
+
   protected restoreLightSettings(): void {
     this.focusMode.set(false);
     this.focusCloses.set(false);
@@ -420,7 +483,8 @@ export class TvEditSheet implements OnInit {
         this.nameChanged() ||
         this.agentChanged() ||
         this.closeBackgroundChanged() ||
-        this.lightSettingsChanged()
+        this.lightSettingsChanged() ||
+        this.catalogChanged()
       ) {
         tv = await this.api.updateTv(tv.id, {
           ...(this.nameChanged() ? { name: this.name().trim() } : {}),
@@ -438,6 +502,7 @@ export class TvEditSheet implements OnInit {
                 restrictedBackgroundPackages: this.restrictedPackages(),
               }
             : {}),
+          ...(this.catalogChanged() ? { focusPackages: this.catalog() } : {}),
         });
         this.dirty = true;
         this.current.set(tv);
@@ -464,6 +529,27 @@ export class TvEditSheet implements OnInit {
     } catch {
       this.reportsFailed.set(true);
     }
+  }
+
+  /** O catálogo só se lê onde ele existe: numa TV que já existe e que não é Samsung (que não tem o Modo Foco). */
+  private async loadFocusCatalog(): Promise<void> {
+    const tv = this.current();
+    if (!tv || tv.kind === 'samsung') return;
+    try {
+      const saved = await this.api.tvFocusCatalog(tv.id);
+      this.savedCatalog.set(saved);
+      this.catalog.set(saved.packages);
+    } catch {
+      // Sem o catálogo a lista não aparece; o resto da folha segue como sempre.
+    }
+  }
+
+  /** O histórico da TV é uma tela do administrador: a folha sai e a tela abre (o histórico não mora aqui). */
+  protected openHistory(): void {
+    const tv = this.current();
+    if (!tv || this.busy() || this.leaving()) return;
+    this.leave(this.dirty);
+    void this.router.navigate(['/ajustes/tv', tv.id, 'historico']);
   }
 
   protected retryApps(): void {
@@ -526,7 +612,10 @@ export class TvEditSheet implements OnInit {
       case 0:
         return $localize`:@@settings.system.tv.sheet.error.network:Sem conexão com o servidor. Tente de novo.`;
       case 400:
-        if (problem.fieldErrors['restrictedBackgroundPackages']) {
+        if (
+          problem.fieldErrors['restrictedBackgroundPackages'] ||
+          problem.fieldErrors['focusPackages']
+        ) {
           return $localize`:@@settings.system.tv.sheet.error.apps-invalid:A lista de apps tem algo inválido. Atualize a lista e escolha de novo.`;
         }
         break;

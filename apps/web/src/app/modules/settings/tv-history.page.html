@@ -1,0 +1,62 @@
+<section class="section" aria-label="Histórico da TV" i18n-aria-label="@@settings.tv-history.title">
+  @if (rows(); as list) {
+    @if (tvName(); as name) {
+      <p class="tv-name ui-section-label">{{ name }}</p>
+    }
+    @if (list.length === 0) {
+      <div class="empty ui-rise">
+        <app-settings-glyph name="audit" />
+        <p i18n="@@settings.tv-history.empty">Nada por aqui ainda.</p>
+      </div>
+    } @else {
+      <ul class="history ui-group ui-rise">
+        @for (row of list; track row.id) {
+          <li class="entry">
+            <span class="ui-row-text">
+              <span class="ui-row-title">{{ row.title }}</span>
+              @if (row.detail; as detail) {
+                <span class="ui-row-sub">{{ detail }}</span>
+              }
+              <span class="ui-row-sub">{{ row.who }} · {{ row.when }}</span>
+            </span>
+            <span
+              class="result ui-chip"
+              [class.ok]="row.outcome.tone === 'ok'"
+              [class.bad]="row.outcome.tone === 'bad'"
+            >
+              <app-settings-glyph [name]="row.outcome.glyph" />
+              {{ row.outcome.label }}
+            </span>
+          </li>
+        }
+      </ul>
+    }
+  } @else if (failed(); as problem) {
+    <p class="empty bad ui-rise" role="alert">
+      @if (problem === 'missing') {
+        <span i18n="@@settings.tv-history.missing">Essa TV não existe mais.</span>
+      } @else {
+        <span i18n="@@settings.tv-history.failed">Não foi possível carregar agora.</span>
+      }
+    </p>
+    @if (problem === 'load') {
+      <button
+        type="button"
+        class="retry secondary ui-btn"
+        (click)="load()"
+        i18n="@@settings.tv-history.retry"
+      >
+        Tentar de Novo
+      </button>
+    }
+  } @else {
+    <app-loading-skeleton
+      [kind]="'group'"
+      [count]="6"
+      i18n-label="@@settings.tv-history.loading"
+      label="Carregando o histórico…"
+      [reload]="false"
+      (retried)="load()"
+    />
+  }
+</section>

@@ -11,6 +11,8 @@ export const SETTINGS_TITLES = {
   people: $localize`:@@settings.route.people:Pessoas e Permissões`,
   audit: $localize`:@@settings.route.audit:Auditoria`,
   system: $localize`:@@settings.route.system:Sistema`,
+  tvPeople: $localize`:@@settings.route.tv-people:TVs por Pessoa`,
+  tvHistory: $localize`:@@settings.route.tv-history:Histórico`,
   about: $localize`:@@settings.route.about:Sobre`,
 } as const;
 
@@ -34,7 +36,8 @@ export function roleLabel(role: AccountRole | null): string | null {
 export function permissionLabels(permissions: readonly string[]): readonly string[] {
   const has = (permission: string) => permissions.includes(permission);
   const labels: string[] = [];
-  const tvActions = ['tv:control', 'tv:power', 'tv:launch', 'tv:edit-shortcuts', 'tv:history'];
+  // O histórico das TVs é só do administrador: a permissão legada dele não aparece em nenhuma lista.
+  const tvActions = ['tv:control', 'tv:power', 'tv:launch', 'tv:edit-shortcuts'];
   if (has('module:tv') && !tvActions.some(has)) {
     labels.push($localize`:@@settings.permission.tv-view:Ver a TV`);
   }
@@ -44,11 +47,10 @@ export function permissionLabels(permissions: readonly string[]): readonly strin
   if (has('tv:edit-shortcuts')) {
     labels.push($localize`:@@settings.permission.tv-edit:Editar atalhos`);
   }
-  if (has('tv:history')) labels.push($localize`:@@settings.permission.tv-history:Ver o histórico`);
   if (has('module:training')) {
     labels.push($localize`:@@settings.permission.training:Usar o Treino`);
   }
-  const known = new Set(['module:tv', ...tvActions, 'module:training']);
+  const known = new Set(['module:tv', ...tvActions, 'tv:history', 'module:training']);
   if (permissions.some((permission) => !known.has(permission))) {
     labels.push($localize`:@@settings.permission.additional:Permissão adicional`);
   }

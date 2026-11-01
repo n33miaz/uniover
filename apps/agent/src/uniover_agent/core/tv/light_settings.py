@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Final
@@ -25,6 +26,8 @@ ANIMATION_SETTINGS: Final = (
 SHORT_ANIMATION_SCALE: Final = "0.5"
 FOCUS_POLL_SECONDS: Final = 30.0
 FOCUS_STOP_GRACE_SECONDS: Final = 180.0
+# A lista de fábrica dos apps de vídeo que ligam o Modo Foco. A API pode mandar um catálogo próprio de cada TV
+# (`focusPackages`); sem ele, este é o que vale. A API guarda a mesma lista como padrão: um teste confere os dois lados.
 VIDEO_PACKAGES: Final = frozenset(
     {
         "com.google.android.youtube.tv",
@@ -62,6 +65,25 @@ BLOCKED_BACKGROUND_PACKAGES: Final = frozenset(
     }
 )
 BLOCKED_BACKGROUND_PREFIXES: Final = ("com.android.inputmethod.",)
+# A mesma forma de nome de pacote que o schema da mensagem e a API aceitam.
+_PACKAGE_NAME: Final = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$")
+_PACKAGE_NAME_MAX: Final = 255
+
+
+def focus_catalog_from(packages: object) -> frozenset[str]:
+    """O catálogo que a API mandou, ou a lista de fábrica quando ela não mandou nenhum.
+
+    Só uma lista conta como "mandou": ausente (agente falando com API antiga, ou TV sem lista própria) volta ao padrão.
+    Item que não é nome de pacote é ignorado em vez de derrubar a configuração inteira. Lista vazia é válida: a
+    detecção automática fica sem apps e o interruptor manual segue valendo.
+    """
+    if not isinstance(packages, list):
+        return VIDEO_PACKAGES
+    return frozenset(
+        item
+        for item in packages
+        if isinstance(item, str) and len(item) <= _PACKAGE_NAME_MAX and _PACKAGE_NAME.fullmatch(item)
+    )
 
 
 def can_restrict_background(package: str) -> bool:
@@ -97,6 +119,7 @@ class TvLightSettings:
         self._on_focus, self._on_focus_end = on_focus, on_focus_end
         self._animations_original, self._background_original = self._read_state()
         self._focus_enabled = False
+        self._focus_catalog = VIDEO_PACKAGES
         self._focus_active = False
         self._last_playing: float | None = None
         self._wake = asyncio.Event()
@@ -112,9 +135,14 @@ class TvLightSettings:
         self._on_release.append(callback)
 
     async def configure(
-        self, focus_enabled: bool, short_animations: bool, restricted_packages: list[str]
+        self,
+        focus_enabled: bool,
+        short_animations: bool,
+        restricted_packages: list[str],
+        focus_packages: object = None,
     ) -> None:
         self._focus_enabled = focus_enabled
+        self._focus_catalog = focus_catalog_from(focus_packages)
         if not focus_enabled:
             self._set_focus(False)
         self._wake.set()
@@ -306,7 +334,7 @@ class TvLightSettings:
         front = self._foreground()
         # Só vale o vídeo que está na frente **e** é dono da sessão que toca: com o Netflix
         # navegando e o Spotify tocando, ninguém está assistindo e nada pode ser fechado.
-        if front in VIDEO_PACKAGES and front in owners:
+        if front in self._focus_catalog and front in owners:
             self._last_playing = now
             if self._set_focus(True):
                 await self._warm_session()

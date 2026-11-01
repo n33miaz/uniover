@@ -253,9 +253,10 @@ describe('describeChange', () => {
     expect(describeChange(item({ action: 'permissions_changed', detail: '+tv:launch|-' }))).toBe(
       'Passou a poder: Abrir apps',
     );
-    expect(describeChange(item({ action: 'permissions_changed', detail: '+|-tv:history' }))).toBe(
-      'Deixou de poder: Ver o histórico',
-    );
+    // A permissão legada do histórico não tem nome em nenhuma tela: uma mudança só dela não vira frase.
+    expect(
+      describeChange(item({ action: 'permissions_changed', detail: '+|-tv:history' })),
+    ).toBeNull();
   });
 
   it('says what an invite grants, and how many rows an export carried', () => {

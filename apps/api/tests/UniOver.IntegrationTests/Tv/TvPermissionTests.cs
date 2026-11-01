@@ -330,12 +330,12 @@ public sealed partial class TvPermissionTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task History_ShowsOnlyTheGuestsOwnCommands_AndWithoutThePermissionIsRefused()
+    public async Task History_IsOnlyForTheAdministrator_AndNoGuestPermissionOpensIt()
     {
         await using var app = await TvApp.StartAsync(postgres);
         await using var agent = await app.ConnectAndWaitAsync();
-        var reader = await app.NewGuestAsync("Historico", ControlAndHistory, 16);
-        var blind = await app.NewGuestAsync("Sem historico", WithControl, 17);
+        var withLegacyGrant = await app.NewGuestAsync("Historico", ControlAndHistory, 16);
+        var plain = await app.NewGuestAsync("Sem historico", WithControl, 17);
 
         async Task SendAsync(string? bearer, string key)
         {
@@ -346,19 +346,44 @@ public sealed partial class TvPermissionTests(PostgresFixture postgres)
         }
 
         await SendAsync(string.Empty, "HOME");
-        await SendAsync(reader.Login.AccessToken, "MUTE");
-        await SendAsync(blind.Login.AccessToken, "BACK");
+        await SendAsync(withLegacyGrant.Login.AccessToken, "MUTE");
+        await SendAsync(plain.Login.AccessToken, "BACK");
 
-        using var asReader = await app.GetAsync("/api/v1/tv/commands/recent", bearer: reader.Login.AccessToken);
-        using var asBlind = await app.GetAsync("/api/v1/tv/commands/recent", bearer: blind.Login.AccessToken);
+        using var asLegacy = await app.GetAsync("/api/v1/tv/commands/recent", bearer: withLegacyGrant.Login.AccessToken);
+        using var asPlain = await app.GetAsync("/api/v1/tv/commands/recent", bearer: plain.Login.AccessToken);
         using var asOwner = await app.GetAsync("/api/v1/tv/commands/recent");
 
-        asReader.StatusCode.Should().Be(HttpStatusCode.OK);
-        var rows = (await TvApp.JsonAsync(asReader)).EnumerateArray().ToList();
-        rows.Select(r => r.GetProperty("detail").GetString()).Should().Equal("MUTE");
-        rows.Should().OnlyContain(r => r.GetProperty("byMe").GetBoolean());
-        asBlind.StatusCode.Should().Be(HttpStatusCode.Forbidden, "mandar teclas não dá o histórico");
-        (await TvApp.JsonAsync(asOwner)).GetArrayLength().Should().Be(3, "o administrador continua vendo o de todos");
+        // Nem a concessão antiga do histórico abre a rota: a recusa é a mesma para quem tem e para quem não tem, sem pista de que ela existe.
+        asLegacy.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        asPlain.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        static string WithoutTrace(string body) => System.Text.RegularExpressions.Regex.Replace(body, "\"traceId\":\"[^\"]*\"", string.Empty);
+        WithoutTrace(await asLegacy.Content.ReadAsStringAsync(Ct)).Should().Be(WithoutTrace(await asPlain.Content.ReadAsStringAsync(Ct)));
+        var rows = (await TvApp.JsonAsync(asOwner)).EnumerateArray().ToList();
+        rows.Should().HaveCount(3, "o administrador vê o de todos");
+        rows.Select(r => r.GetProperty("userId").GetGuid()).Should().Contain([withLegacyGrant.UserId, plain.UserId]);
+    }
+
+    [Fact]
+    public async Task History_OfAnotherTv_IsChosenByTheAdministrator_AndGuestsCannotChooseIt()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var second = await app.PairAsync("PC Extra");
+        var secondTv = Guid.NewGuid();
+        await app.ExecuteSqlAsync(
+            "INSERT INTO tv.tvs (id, name, agent_slug, is_default, created_at, updated_at, updated_by) " +
+            $"VALUES ('{secondTv}', 'Quarto', '{second.Slug}', false, now(), now(), gen_random_uuid())");
+        var guest = await app.NewGuestAsync("Convidado", ControlAndHistory, 19);
+
+        using var asOwner = await app.GetAsync($"/api/v1/tv/commands/recent?tvId={secondTv}");
+        using var asGuest = await app.GetAsync($"/api/v1/tv/commands/recent?tvId={secondTv}", bearer: guest.Login.AccessToken);
+        using var unknown = await app.GetAsync($"/api/v1/tv/commands/recent?tvId={Guid.NewGuid()}");
+        using var asGuestUnknown = await app.GetAsync($"/api/v1/tv/commands/recent?tvId={Guid.NewGuid()}", bearer: guest.Login.AccessToken);
+
+        asOwner.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await TvApp.JsonAsync(asOwner)).GetArrayLength().Should().Be(0);
+        unknown.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        asGuest.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        asGuestUnknown.StatusCode.Should().Be(HttpStatusCode.Forbidden, "a recusa vem antes de a TV ser procurada: nada revela se ela existe");
     }
 
     // ----- Recusas que não dependem das concessões -----

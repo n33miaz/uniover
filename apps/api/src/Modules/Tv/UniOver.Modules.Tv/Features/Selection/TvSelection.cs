@@ -10,7 +10,7 @@ using UniOver.Modules.Tv.Ports;
 
 namespace UniOver.Modules.Tv.Features.Selection;
 
-/// <summary>TV escolhida para a requisição. O id vazio só representa a compatibilidade temporária com AgentId no ambiente.</summary>
+/// <summary>TV escolhida para a requisição. O id vazio é a "ainda sem TV salva": a rota responde 503 em vez de 404.</summary>
 internal sealed record TvTarget(Guid Id, string AgentSlug, string Name, bool IsDefault)
 {
     public bool IsPersisted => Id != Guid.Empty;
@@ -88,7 +88,7 @@ internal sealed class TvSelectionService(TvDbContext db, ITvAgentResolver defaul
             var scope = await ScopeOfMemberAsync(userId, cancellationToken);
             if (scope == MemberScope.Nothing)
             {
-                // Retirada da última TV: nem a reserva do agente do ambiente abaixo vale, ela também é a TV do dono.
+                // Retirada da última TV: nem o "ainda sem TV" abaixo vale, a resposta dele também é sobre a TV do dono.
                 return null;
             }
 
@@ -106,7 +106,7 @@ internal sealed class TvSelectionService(TvDbContext db, ITvAgentResolver defaul
             return await query.OrderByDescending(t => t.IsDefault).ThenBy(t => t.Name).Select(ToTarget).FirstOrDefaultAsync(cancellationToken);
         }
 
-        // Sem linha salva, a instalação antiga ainda pode usar o AgentId do ambiente. Nunca aceita tvId nesse modo: não
+        // Sem linha salva ainda não há TV. Nunca aceita tvId nesse modo: não
         // há uma TV cuja visibilidade possa ser comprovada.
         if (requestedId is not null)
         {

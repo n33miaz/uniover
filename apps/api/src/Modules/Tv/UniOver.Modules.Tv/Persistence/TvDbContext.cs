@@ -103,6 +103,7 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             e.Property(x => x.FocusClosesBackground).HasDefaultValue(false);
             e.Property(x => x.PermissionNeeded).HasDefaultValue(false);
             e.Property(x => x.RestrictedBackgroundPackages).HasMaxLength(4000).HasDefaultValue("[]").IsRequired();
+            e.Property(x => x.FocusPackages).HasMaxLength(4000);
 
             // Exatamente uma TV padrão por enquanto: o índice único parcial impede uma segunda linha padrão mesmo
             // com dois salvamentos ao mesmo tempo. O mesmo agente pode controlar várias TVs no futuro, então o

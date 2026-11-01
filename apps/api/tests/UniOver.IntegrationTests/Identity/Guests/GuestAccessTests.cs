@@ -283,7 +283,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         (await db.UserGrants.Where(g => g.UserId == guest.UserId).Select(g => g.Permission).ToListAsync(Ct))
             .Should().BeEquivalentTo(PermissionRules.TvControlOnly, "o convidado não ampliou as próprias permissões");
 
-        foreach (var url in new[] { "/api/v1/tv/state", "/api/v1/tv/shortcuts", "/api/v1/tv/commands/recent", "/api/v1/identity/me" })
+        foreach (var url in new[] { "/api/v1/tv/state", "/api/v1/tv/shortcuts", "/api/v1/identity/me" })
         {
             using var response = await app.GetAsync(url, bearer: token);
             response.StatusCode.Should().Be(HttpStatusCode.OK, url);
@@ -396,7 +396,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task RecentCommands_TheGuestSeesOnlyHisOwn_TheOwnerSeesAllAndWhichAreHis()
+    public async Task RecentCommands_TheGuestIsRefused_TheOwnerSeesAllAndWhichAreHis()
     {
         await using var app = await TvApp.StartAsync(postgres);
         await using var agent = await app.ConnectAndWaitAsync();
@@ -418,14 +418,14 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         using var asGuest = await app.GetAsync("/api/v1/tv/commands/recent", bearer: guest.Login.AccessToken);
         using var asOwner = await app.GetAsync("/api/v1/tv/commands/recent");
 
-        var guestRows = (await TvApp.JsonAsync(asGuest)).EnumerateArray().ToList();
-        guestRows.Select(r => r.GetProperty("detail").GetString()).Should().Equal("MUTE", "VOLUME_UP");
-        guestRows.Should().OnlyContain(r => r.GetProperty("byMe").GetBoolean());
-        (await asGuest.Content.ReadAsStringAsync(Ct)).Should().NotContain(guest.UserId.ToString(), "o histórico não expõe ids");
+        // O histórico é só do administrador: nem o próprio convidado vê o que ele mandou, e a recusa não diz nada sobre a rota.
+        asGuest.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await asGuest.Content.ReadAsStringAsync(Ct)).Should().NotContain(guest.UserId.ToString());
 
         var ownerRows = (await TvApp.JsonAsync(asOwner)).EnumerateArray().ToList();
         ownerRows.Select(r => r.GetProperty("detail").GetString()).Should().Equal("MUTE", "BACK", "VOLUME_UP", "HOME");
         ownerRows.Select(r => r.GetProperty("byMe").GetBoolean()).Should().Equal(false, true, false, true);
+        ownerRows.Select(r => r.GetProperty("userId").GetGuid()).Should().Contain(guest.UserId);
     }
 
     [Fact]

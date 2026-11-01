@@ -6,6 +6,12 @@ import { AppShell } from './core/layout/app-shell';
 import { ShellBack } from './core/layout/route-data';
 import { SETTINGS_TITLES } from './modules/settings/settings-titles';
 
+/** O histórico de uma TV nasce na folha da TV, em Sistema: é para lá que ele volta. */
+const SYSTEM_BACK: ShellBack = {
+  link: '/ajustes/sistema',
+  label: $localize`:@@settings.system-back-label:Voltar ao Sistema`,
+};
+
 /** Cada tela de Configurações volta para a lista, não para o Início. */
 const SETTINGS_BACK: ShellBack = {
   link: '/ajustes',
@@ -109,6 +115,22 @@ export const routes: Routes = [
             canMatch: [ownerOnlyGuard],
             data: { title: SETTINGS_TITLES.people, back: SETTINGS_BACK },
             loadComponent: () => import('./modules/settings/people.page').then((m) => m.PeoplePage),
+          },
+          {
+            // Só o administrador vê quem usa cada TV e de qual computador ela vem; as pessoas só veem o apelido da TV.
+            path: 'tvs-por-pessoa',
+            canMatch: [ownerOnlyGuard],
+            data: { title: SETTINGS_TITLES.tvPeople, back: SETTINGS_BACK },
+            loadComponent: () =>
+              import('./modules/settings/tv-people.page').then((m) => m.TvPeoplePage),
+          },
+          {
+            // O histórico de uma TV é só do administrador: sem o guarda a rota nem casa para as demais contas.
+            path: 'tv/:id/historico',
+            canMatch: [ownerOnlyGuard],
+            data: { title: SETTINGS_TITLES.tvHistory, back: SYSTEM_BACK },
+            loadComponent: () =>
+              import('./modules/settings/tv-history.page').then((m) => m.TvHistoryPage),
           },
           {
             path: 'auditoria',

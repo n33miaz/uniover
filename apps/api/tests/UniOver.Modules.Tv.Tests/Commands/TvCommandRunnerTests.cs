@@ -76,7 +76,7 @@ public class TvCommandRunnerTests
         var audit = new FakeAudit(auditFails);
         var stream = new FakeStream();
         var state = new InMemoryTvStateStore();
-        var options = Options.Create(new TvModuleOptions { AgentId = agentId, CommandTimeoutSeconds = 8, HibernatingTimeoutSeconds = 15 });
+        var options = Options.Create(new TvModuleOptions { CommandTimeoutSeconds = 8, HibernatingTimeoutSeconds = 15 });
         var runner = new TvCommandRunner(options, new FixedAgentResolver(agentId), presence ?? new FakePresence(), sender, state, audit, stream, TimeProvider.System, NullLogger<TvCommandRunner>.Instance);
         return (runner, sender, audit, stream, state);
     }
@@ -210,7 +210,7 @@ public class TvCommandRunnerTests
     {
         var logger = new CapturingLogger<TvCommandRunner>();
         var runner = new TvCommandRunner(
-            Options.Create(new TvModuleOptions { AgentId = "pc-casa" }),
+            Options.Create(new TvModuleOptions()),
             new FixedAgentResolver("pc-casa"),
             new FakePresence(),
             new FakeSender(TvSendOutcome.Ok(TimeSpan.FromMilliseconds(5))),

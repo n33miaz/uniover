@@ -2,7 +2,7 @@ import { Component, computed, input, model, signal } from '@angular/core';
 import {
   PermissionModel,
   TRAINING_MODULE,
-  TV_ACTIONS,
+  TV_PICKER_ACTIONS,
   TV_MODULE,
   applyModel,
   hasModule,
@@ -41,7 +41,7 @@ export class PeoplePermissionPicker {
   protected readonly models: readonly PermissionModel[] = ['tv-control', 'training', 'custom'];
   protected readonly tvModule = TV_MODULE;
   protected readonly trainingModule = TRAINING_MODULE;
-  protected readonly tvOptions: readonly string[] = [TV_MODULE, ...TV_ACTIONS];
+  protected readonly tvOptions: readonly string[] = [TV_MODULE, ...TV_PICKER_ACTIONS];
 
   /**
    * "Personalizado" escolhido de propósito enquanto a lista ainda bate com um modelo: sem isto o botão pareceria não

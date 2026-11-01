@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -13,11 +12,12 @@ using UniOver.Modules.Tv.Persistence;
 namespace UniOver.Modules.Tv.Features.RecentCommands;
 
 /// <summary>
-/// Uma linha do histórico curto. Não leva conteúdo de texto digitado (a trilha só guarda o tamanho).
-/// <c>ByMe</c> diz se o comando foi do próprio usuário que consulta: o dono vê o de todos e distingue os dele.
+/// Uma linha do histórico de uma TV. Não leva conteúdo de texto digitado (a trilha só guarda o tamanho). <c>UserId</c> é a
+/// conta que mandou (o nome é do Identity: a tela o junta); <c>ByMe</c> diz se foi o próprio administrador que consulta.
 /// </summary>
 internal sealed record RecentCommand(
     Guid Id,
+    Guid UserId,
     string Command,
     string? Detail,
     bool Ok,
@@ -26,33 +26,35 @@ internal sealed record RecentCommand(
     DateTimeOffset OccurredAt,
     bool ByMe);
 
+/// <summary>
+/// O histórico por TV é só do administrador: quem usa a TV não tem rota, permissão nem texto que diga que ele existe. Por
+/// isso a rota é de administrador (nunca de uma permissão da TV) e o resultado sempre mostra as ações de todos.
+/// </summary>
 internal sealed class RecentCommandsHandler(TvDbContext db, ITvCurrentSelection selection)
 {
     public const int DefaultLimit = 20;
     public const int MaxLimit = 100;
 
     /// <param name="viewerId">Quem consulta (marca <c>ByMe</c>).</param>
-    /// <param name="onlyViewer"><c>true</c> para o convidado: só as ações dele; o dono passa <c>false</c> e vê todas.</param>
     public async Task<IReadOnlyList<RecentCommand>> HandleAsync(
-        Guid viewerId, bool onlyViewer, int limit, CancellationToken cancellationToken) =>
+        Guid viewerId, int limit, CancellationToken cancellationToken) =>
         await db.CommandAudit.AsNoTracking()
 
             // A anotação de teto diário não é um comando: fica só na trilha do administrador.
             .Where(a => a.Command != TvCommandNames.AuditLimit)
             .Where(a => a.TvId == selection.Current.Id)
-            .Where(a => !onlyViewer || a.UserId == viewerId)
             .OrderByDescending(a => a.OccurredAt)
             .ThenByDescending(a => a.Id)
             .Take(limit)
             .Select(a => new RecentCommand(
-                a.Id, a.Command, a.Detail, a.Ok, a.ErrorCode, a.LatencyMs, a.OccurredAt, a.UserId == viewerId))
+                a.Id, a.UserId, a.Command, a.Detail, a.Ok, a.ErrorCode, a.LatencyMs, a.OccurredAt, a.UserId == viewerId))
             .ToListAsync(cancellationToken);
 }
 
 internal static class RecentCommandsEndpoint
 {
     public static void MapRecentCommands(this IEndpointRouteBuilder group) =>
-        group.MapGet("/commands/recent", HandleAsync).RequireAuthorization(TvAuth.History)
+        group.MapGet("/commands/recent", HandleAsync).RequireAuthorization(UniOverAuth.OwnerPolicy)
             .Produces<IReadOnlyList<RecentCommand>>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
@@ -60,7 +62,6 @@ internal static class RecentCommandsEndpoint
 
     private static async Task<IResult> HandleAsync(
         ICurrentUser current,
-        ClaimsPrincipal principal,
         RecentCommandsHandler handler,
         CancellationToken cancellationToken,
         int? limit = null)
@@ -79,8 +80,6 @@ internal static class RecentCommandsEndpoint
             });
         }
 
-        // Só o dono vê o histórico de todos; qualquer outro papel vê apenas o que ele mesmo mandou.
-        var onlyViewer = AccountRoles.Of(principal) != AccountRoles.Owner;
-        return TypedResults.Ok(await handler.HandleAsync(userId, onlyViewer, take, cancellationToken));
+        return TypedResults.Ok(await handler.HandleAsync(userId, take, cancellationToken));
     }
 }

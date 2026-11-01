@@ -217,6 +217,38 @@
               </label>
             </li>
           </ul>
+          @if (focusMode() && supportsFocusCatalog() && catalogRows().length > 0) {
+            <p class="reports-title ui-section-label" i18n="@@settings.system.tv.sheet.focus-apps">
+              Apps do Modo Foco
+            </p>
+            <p class="cleanup-hint" i18n="@@settings.system.tv.sheet.focus-apps-hint">
+              Ligam o Modo Foco sozinhos ao tocar. Dá para ligar à mão do mesmo jeito.
+            </p>
+            <ul class="ui-group">
+              @for (row of catalogRows(); track row.package) {
+                <li>
+                  <label class="toggle">
+                    <span class="toggle-title">{{ row.label }}</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      class="ui-switch"
+                      [checked]="isInCatalog(row.package)"
+                      (change)="toggleCatalog(row.package, $event)"
+                    />
+                  </label>
+                </li>
+              }
+            </ul>
+            <button
+              type="button"
+              class="secondary ui-btn"
+              (click)="restoreFocusCatalog()"
+              i18n="@@settings.system.tv.sheet.focus-apps-restore"
+            >
+              Voltar ao Padrão
+            </button>
+          }
           <p
             class="reports-title ui-section-label"
             i18n="@@settings.system.tv.sheet.restrict-background"
@@ -339,6 +371,17 @@
           }
         }
       </fieldset>
+    }
+
+    @if (!creating()) {
+      <button
+        type="button"
+        class="history secondary ui-btn"
+        [disabled]="busy() || leaving()"
+        (click)="openHistory()"
+      >
+        <span i18n="@@settings.system.tv.sheet.history">Histórico</span>
+      </button>
     }
 
     @if (canRemove()) {

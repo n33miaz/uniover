@@ -273,7 +273,7 @@ export async function mockDevicesApi(
       const members = body?.['tvMemberIds'];
       if (Array.isArray(members)) {
         mock.tvs.push({
-          name: (body?.['tvName'] as string | null) ?? agent.name,
+          name: (body?.['tvName'] as string | null) ?? 'TV',
           agentSlug: agent.slug,
           memberIds: members as string[],
         });
@@ -320,7 +320,7 @@ export async function mockDevicesApi(
       };
       mock.agents.push(agent);
       mock.tvs.push({
-        name: (body?.['tvName'] as string | null) ?? agent.name,
+        name: (body?.['tvName'] as string | null) ?? 'TV',
         agentSlug: agent.slug,
         memberIds: [guest.id],
       });

@@ -22,7 +22,7 @@
         "capabilities": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "enum": ["transport.keepalive.v1", "agent.logs.v1", "agent.maintenance.v1", "agent.diagnostics.v1", "tv.cleanup.automatic.v1", "tv.light-settings.v1", "tv.focus-closes-background.v1", "tv.remote", "tv.adb", "tv.kind.android", "tv.kind.samsung", "tv.key.v3", "tv.power.off.v1", "tv.livre.v1", "tv.permission.v1", "tv.discovery.v1", "tv.key.INPUT", "tv.key.INFO", "tv.key.GUIDE", "tv.key.TOOLS", "tv.key.CHANNEL_LIST", "tv.key.PREVIOUS_CHANNEL", "tv.key.EXIT", "tv.key.PLAY", "tv.key.PAUSE", "tv.key.STOP", "tv.key.REWIND", "tv.key.FAST_FORWARD", "tv.key.RED", "tv.key.GREEN", "tv.key.YELLOW", "tv.key.BLUE", "tv.key.SUBTITLE", "tv.key.ASPECT", "tv.key.SLEEP", "tv.key.E_MANUAL"] }
+          "items": { "enum": ["transport.keepalive.v1", "agent.logs.v1", "agent.maintenance.v1", "agent.diagnostics.v1", "tv.cleanup.automatic.v1", "tv.light-settings.v1", "tv.focus-closes-background.v1", "tv.focus-catalog.v1", "tv.remote", "tv.adb", "tv.kind.android", "tv.kind.samsung", "tv.key.v3", "tv.power.off.v1", "tv.permission.v1", "tv.discovery.v1", "tv.key.INPUT", "tv.key.INFO", "tv.key.GUIDE", "tv.key.TOOLS", "tv.key.CHANNEL_LIST", "tv.key.PREVIOUS_CHANNEL", "tv.key.EXIT", "tv.key.PLAY", "tv.key.PAUSE", "tv.key.STOP", "tv.key.REWIND", "tv.key.FAST_FORWARD", "tv.key.RED", "tv.key.GREEN", "tv.key.YELLOW", "tv.key.BLUE", "tv.key.SUBTITLE", "tv.key.ASPECT", "tv.key.SLEEP", "tv.key.E_MANUAL"] }
         },
         "os": { "type": "string", "minLength": 1, "maxLength": 80 },
         "tv": {

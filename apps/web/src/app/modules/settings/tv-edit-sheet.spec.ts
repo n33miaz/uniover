@@ -1,5 +1,6 @@
 import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { AuthApi, GuestSummary } from '../../core/auth/auth-api';
 import { AuthService } from '../../core/auth/auth.service';
 import { TvPermissionService } from '../../core/tv-permission/tv-permission.service';
@@ -77,6 +78,7 @@ describe('TvEditSheet', () => {
     tvMembers: vi.fn(),
     tvCleanupReports: vi.fn(),
     tvApps: vi.fn(),
+    tvFocusCatalog: vi.fn(),
     setTvMembers: vi.fn(),
     nearbyTvs: vi.fn(),
     tvs: vi.fn(),
@@ -100,6 +102,7 @@ describe('TvEditSheet', () => {
     api.tvMembers.mockReset().mockResolvedValue(['g1']);
     api.tvCleanupReports.mockReset().mockResolvedValue([]);
     api.tvApps.mockReset().mockResolvedValue([]);
+    api.tvFocusCatalog.mockReset().mockRejectedValue(new Error('sem catálogo neste teste'));
     api.nearbyTvs.mockReset().mockResolvedValue({ status: 'ok', items: [] });
     api.tvs.mockReset().mockResolvedValue([]);
     permission.ask.mockReset().mockResolvedValue('asked');
@@ -441,6 +444,159 @@ describe('TvEditSheet', () => {
       await settle();
       expect(el.textContent).toContain('Vídeo');
       expect(el.textContent).not.toContain('Não foi possível carregar os apps agora.');
+    });
+
+    describe('the focus mode catalog', () => {
+      const WITH_CATALOG: TvItem = {
+        ...TV,
+        kind: 'android',
+        capabilities: ['tv.remote', 'tv.adb', 'tv.light-settings.v1', 'tv.focus-catalog.v1'],
+      };
+      const DEFAULTS = ['com.google.android.youtube.tv', 'com.netflix.ninja'];
+      const focusSwitch = (el: HTMLElement) =>
+        Array.from(el.querySelectorAll<HTMLElement>('label.toggle'))
+          .find((label) => label.textContent?.trim() === 'Modo Foco')!
+          .querySelector<HTMLInputElement>('input')!;
+      /** Os interruptores da lista "Apps do Modo Foco", pelo nome que a pessoa lê. */
+      const catalog = (el: HTMLElement) => {
+        const title = Array.from(el.querySelectorAll<HTMLElement>('p.reports-title')).find((p) =>
+          p.textContent?.includes('Apps do Modo Foco'),
+        );
+        const list = title?.nextElementSibling?.nextElementSibling;
+        return Array.from(list?.querySelectorAll<HTMLElement>('label.toggle') ?? []).map(
+          (label) => ({
+            label: label.querySelector('.toggle-title')?.textContent?.trim(),
+            input: label.querySelector<HTMLInputElement>('input')!,
+          }),
+        );
+      };
+
+      beforeEach(() => {
+        api.tvFocusCatalog.mockReset().mockResolvedValue({
+          packages: DEFAULTS,
+          defaults: DEFAULTS,
+          isCustom: false,
+        });
+        api.tvApps.mockResolvedValue([
+          { package: 'com.google.android.youtube.tv', label: 'YouTube' },
+          { package: 'com.exemplo.cinema', label: 'Cine Exemplo' },
+        ]);
+      });
+
+      it('only appears with the focus mode on, lists the catalog first and names the apps', async () => {
+        const { el, settle } = await render(WITH_CATALOG, [OWN]);
+        expect(el.textContent).not.toContain('Apps do Modo Foco');
+
+        focusSwitch(el).click();
+        await settle();
+        expect(catalog(el).map((row) => [row.label, row.input.checked])).toEqual([
+          ['Netflix', true],
+          ['YouTube', true],
+          ['Cine Exemplo', false],
+        ]);
+      });
+
+      it('sends only the catalog when only the catalog changed, and keeps the focus switch out of it', async () => {
+        const { el, settle, save } = await render(WITH_CATALOG, [OWN]);
+        focusSwitch(el).click();
+        await settle();
+        const rows = catalog(el);
+        rows.find((row) => row.label === 'Cine Exemplo')!.input.click();
+        rows.find((row) => row.label === 'Netflix')!.input.click();
+        await settle();
+        focusSwitch(el).click(); // volta ao que estava: só o catálogo mudou
+        await settle();
+
+        await save();
+
+        expect(api.updateTv).toHaveBeenCalledExactlyOnceWith('tv-2', {
+          focusPackages: ['com.google.android.youtube.tv', 'com.exemplo.cinema'],
+        });
+      });
+
+      it('does not send the catalog when nothing in it changed', async () => {
+        const { el, settle, save } = await render({ ...WITH_CATALOG, focusModeEnabled: false }, [
+          OWN,
+        ]);
+        focusSwitch(el).click();
+        await settle();
+        await save();
+
+        expect(api.updateTv).toHaveBeenCalledWith(
+          'tv-2',
+          expect.not.objectContaining({ focusPackages: expect.anything() }),
+        );
+      });
+
+      it('goes back to the factory list with Voltar ao Padrão', async () => {
+        api.tvFocusCatalog.mockResolvedValue({
+          packages: ['com.exemplo.cinema'],
+          defaults: DEFAULTS,
+          isCustom: true,
+        });
+        const { el, settle, save, button } = await render(
+          { ...WITH_CATALOG, focusModeEnabled: true },
+          [OWN],
+        );
+        expect(
+          catalog(el)
+            .filter((row) => row.input.checked)
+            .map((row) => row.label),
+        ).toEqual(['Cine Exemplo']);
+
+        button('Voltar ao Padrão').click();
+        await settle();
+        expect(
+          catalog(el)
+            .filter((row) => row.input.checked)
+            .map((row) => row.label),
+        ).toEqual(['Netflix', 'YouTube']);
+        await save();
+        expect(api.updateTv).toHaveBeenCalledWith('tv-2', { focusPackages: DEFAULTS });
+      });
+
+      it('is not offered for an agent that does not announce it', async () => {
+        const { el, settle } = await render(
+          { ...WITH_CATALOG, capabilities: ['tv.remote', 'tv.adb'] },
+          [OWN],
+        );
+        focusSwitch(el).click();
+        await settle();
+        expect(el.textContent).not.toContain('Apps do Modo Foco');
+      });
+
+      it('does not even ask for the catalog of a Samsung TV', async () => {
+        api.tvFocusCatalog.mockClear();
+        await render({ ...WITH_CATALOG, kind: 'samsung' }, [OWN]);
+        expect(api.tvFocusCatalog).not.toHaveBeenCalled();
+      });
+
+      it('hides the list, and the rest of the sheet still works, when the catalog cannot be read', async () => {
+        api.tvFocusCatalog.mockRejectedValue(new Error('falhou'));
+        const { el, settle } = await render(WITH_CATALOG, [OWN]);
+        focusSwitch(el).click();
+        await settle();
+        expect(el.textContent).not.toContain('Apps do Modo Foco');
+        expect(el.textContent).toContain('Animações Mais Curtas');
+      });
+    });
+
+    describe('the history entry', () => {
+      it('is only on a TV that already exists and takes the administrator to its history', async () => {
+        const router = TestBed.inject(Router);
+        const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+        const { button, settle } = await render(TV, [OWN]);
+
+        button('Histórico').click();
+        await settle();
+
+        expect(navigate).toHaveBeenCalledExactlyOnceWith(['/ajustes/tv', 'tv-2', 'historico']);
+      });
+
+      it('is not offered while creating a TV', async () => {
+        const { button } = await render(null, [FREE]);
+        expect(button('Histórico')).toBeUndefined();
+      });
     });
 
     describe('closing the other apps while the focus mode is on', () => {

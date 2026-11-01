@@ -22,7 +22,14 @@ import {
 } from '../../shared/ui/dialog-motion';
 import { LoadingSkeleton } from '../../shared/ui/skeleton/loading-skeleton';
 import { DevicesApi } from './devices-api';
-import { MAX_DEVICE_NAME, formatCodeInput, isValidDeviceName, normalizeCode } from './pairing-code';
+import {
+  MAX_DEVICE_NAME,
+  MAX_TV_NICKNAME,
+  formatCodeInput,
+  isValidDeviceName,
+  isValidTvNickname,
+  normalizeCode,
+} from './pairing-code';
 
 /** O que a folha avisa à página quando termina. */
 export type PairOutcome =
@@ -54,8 +61,12 @@ export class PairSheet {
   readonly closed = output<void>();
 
   protected readonly maxName = MAX_DEVICE_NAME;
+  protected readonly maxNickname = MAX_TV_NICKNAME;
   protected readonly code = linkedSignal(() => formatCodeInput(this.initialCode()));
+  /** O nome técnico do computador (só o administrador o vê, em Dispositivos). */
   protected readonly name = signal($localize`:@@devices.pair.name-suggestion:PC de casa`);
+  /** Como a TV se chama para todos; em branco ela é só "TV". */
+  protected readonly nickname = signal('');
   /** A pessoa marcada passa a ver a TV nova; sem marcas ela fica só para o administrador quando já existe padrão. */
   protected readonly people = signal<readonly GuestSummary[] | null>(null);
   /** A lista não carregou: nada de aprovar às cegas (uma TV sem as pessoas certas é um passo manual de volta). */
@@ -69,6 +80,7 @@ export class PairSheet {
   protected readonly online = this.connectivity.online;
   protected readonly normalized = computed(() => normalizeCode(this.code()));
   protected readonly nameValid = computed(() => isValidDeviceName(this.name()));
+  protected readonly nicknameValid = computed(() => isValidTvNickname(this.nickname()));
   protected readonly canApprove = computed(
     () =>
       this.online() &&
@@ -76,7 +88,8 @@ export class PairSheet {
       !this.leaving() &&
       this.people() !== null &&
       this.normalized() !== null &&
-      this.nameValid(),
+      this.nameValid() &&
+      this.nicknameValid(),
   );
   protected readonly canDeny = computed(
     () => this.online() && !this.busy() && !this.leaving() && this.normalized() !== null,
@@ -119,6 +132,11 @@ export class PairSheet {
     this.error.set(null);
   }
 
+  protected onNicknameInput(event: Event): void {
+    this.nickname.set((event.target as HTMLInputElement).value);
+    this.error.set(null);
+  }
+
   protected cancel(event?: Event): void {
     event?.preventDefault(); // quem tira a folha do DOM é a página; evita o fechamento duplo do navegador
     if (!this.busy()) this.leave(() => this.closed.emit());
@@ -131,15 +149,8 @@ export class PairSheet {
     this.busy.set(true);
     this.error.set(null);
     const name = this.name().trim() || null;
-    const chosen = this.people()?.filter((person) => this.members().includes(person.id)) ?? [];
-    // Uma pessoa só: a TV leva o nome dela (a API limita o nome a 60 caracteres).
-    const tvName =
-      chosen.length === 1
-        ? $localize`:@@devices.pair.tv-name:TV de ${chosen[0].displayName}:name:`.slice(
-            0,
-            MAX_DEVICE_NAME,
-          )
-        : null;
+    // O apelido que o administrador deu à TV; em branco, a API a chama de "TV". O nome do computador nunca vira o da TV.
+    const tvName = this.nickname().trim() || null;
     try {
       await this.api.approve(code, name, tvName, this.members());
       this.leave(() => this.done.emit({ kind: 'approved', name }));

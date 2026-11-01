@@ -9,15 +9,6 @@ public sealed class TvModuleOptions
 
     public string Version { get; set; } = "0.0.0";
 
-    /// <summary>
-    /// Valor de reserva do agente que controla a TV (variável <c>Modules__Tv__AgentId</c>). O que vale é o computador
-    /// que o administrador escolhe em Ajustes, guardado no banco: este valor só entra quando nada foi salvo lá. Uma TV
-    /// tem um dono só: com dois PCs pareados, só o escolhido comanda e só as mensagens dele valem. Vazio e nada salvo =
-    /// ninguém configurado (os comandos respondem 503 e a API sobe normalmente). Quem lê o valor é o
-    /// <c>ITvAgentResolver</c>, nunca esta opção direto.
-    /// </summary>
-    public string AgentId { get; set; } = string.Empty;
-
     /// <summary>Tempo que a API espera o agente responder a um comando.</summary>
     public int CommandTimeoutSeconds { get; set; } = 8;
 
@@ -62,7 +53,7 @@ public sealed class TvModuleOptions
 
     public TimeSpan StateDebounce => TimeSpan.FromSeconds(StateDebounceSeconds);
 
-    /// <summary>Valores que quebrariam o módulo (tempos não positivos ou slug fora do padrão).</summary>
+    /// <summary>Valores que quebrariam o módulo (tempos não positivos).</summary>
     public static bool IsValid(TvModuleOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -72,7 +63,6 @@ public sealed class TvModuleOptions
             && options.PowerOffTimeoutSeconds > 0
             && options.LivreTimeoutSeconds > 0
             && options.StateDebounceSeconds >= 0
-            && options.Sse.IsValid()
-            && options.AgentId.Length <= 40;
+            && options.Sse.IsValid();
     }
 }

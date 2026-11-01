@@ -175,8 +175,8 @@ describe('GuestsSection', () => {
       const summaries = Array.from(el.querySelectorAll('.abilities')).map((n) => n.textContent);
       // Bia (a TV de sempre), Alice (a TV de sempre) e Raphael (só o Treino); quem foi revogado não tem resumo.
       expect(summaries).toEqual([
-        'Controlar a TV · Desligar a TV · Abrir apps · Ver o histórico',
-        'Controlar a TV · Desligar a TV · Abrir apps · Ver o histórico',
+        'Controlar a TV · Desligar a TV · Abrir apps',
+        'Controlar a TV · Desligar a TV · Abrir apps',
         'Usar o Treino',
       ]);
       expect(el.textContent).not.toMatch(/module:|tv:/);
@@ -279,9 +279,7 @@ describe('GuestsSection', () => {
       const toggle = el.querySelector<HTMLButtonElement>('.perms-toggle')!;
       expect(toggle.textContent).toContain('O que essa pessoa poderá fazer');
       expect(toggle.getAttribute('aria-expanded')).toBe('false');
-      expect(toggle.textContent).toContain(
-        'Controlar a TV · Desligar a TV · Abrir apps · Ver o histórico',
-      );
+      expect(toggle.textContent).toContain('Controlar a TV · Desligar a TV · Abrir apps');
       expect(el.querySelector('app-people-permission-picker')).toBeNull();
 
       await openPermissions(fixture, el);
@@ -570,7 +568,7 @@ describe('GuestsSection', () => {
       const on = Array.from(sheet.querySelectorAll<HTMLInputElement>('label.option input'))
         .map((input, index) => (input.checked ? index : -1))
         .filter((index) => index >= 0);
-      expect(on).toEqual([0, 1, 2, 3, 5]);
+      expect(on).toEqual([0, 1, 2, 3]);
     });
 
     it('saves the whole list, updates the row at once and says when it takes effect', async () => {

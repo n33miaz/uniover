@@ -27,7 +27,10 @@ public static class AccessPermissions
     /// <summary>Renomear, ocultar e reordenar os atalhos.</summary>
     public const string TvEditShortcuts = "tv:edit-shortcuts";
 
-    /// <summary>Ver o histórico de comandos (o próprio).</summary>
+    /// <summary>
+    /// Legada: não dá acesso a nada. O histórico das TVs é só do administrador (nenhuma rota usa esta permissão). Continua no
+    /// catálogo porque convites e concessões já gravados a carregam, e tirá-la de lá recusaria listas que hoje são válidas.
+    /// </summary>
     public const string TvHistory = "tv:history";
 
     /// <summary>Usar o módulo de Treino (só os dados da própria conta).</summary>
