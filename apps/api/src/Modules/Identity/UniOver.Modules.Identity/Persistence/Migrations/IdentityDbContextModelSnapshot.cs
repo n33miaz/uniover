@@ -122,6 +122,73 @@ namespace UniOver.Modules.Identity.Persistence.Migrations
                         .HasName("pk_account_preferences");
 
                     b.ToTable("account_preferences", "identity");
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.CapacityAlert", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("DetectedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("detected_at");
+
+                    b.Property<string>("Metric")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("metric");
+
+                    b.Property<int>("Percent")
+                        .HasColumnType("integer")
+                        .HasColumnName("percent");
+
+                    b.Property<DateTimeOffset?>("RecoveredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recovered_at");
+
+                    b.Property<DateTimeOffset?>("SeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("seen_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_capacity_alerts");
+
+                    b.HasIndex("DetectedAt")
+                        .HasDatabaseName("ix_capacity_alerts_detected_at");
+
+                    b.HasIndex("Metric")
+                        .IsUnique()
+                        .HasDatabaseName("ix_capacity_alerts_metric")
+                        .HasFilter("recovered_at IS NULL");
+
+                    b.ToTable("capacity_alerts", "identity", t =>
+                        {
+                            t.HasCheckConstraint("ck_capacity_alerts_metric", "metric IN ('database', 'memory', 'hours')");
+                        });
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Identity.Domain.CapacitySample", b =>
+                {
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date")
+                        .HasColumnName("day");
+
+                    b.Property<long>("DatabaseBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("database_bytes");
+
+                    b.Property<DateTimeOffset>("TakenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("taken_at");
+
+                    b.Property<long?>("WorkingSetBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("working_set_bytes");
+
+                    b.HasKey("Day")
+                        .HasName("pk_capacity_samples");
+
+                    b.ToTable("capacity_samples", "identity");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Identity.Domain.GuestInvite", b =>
