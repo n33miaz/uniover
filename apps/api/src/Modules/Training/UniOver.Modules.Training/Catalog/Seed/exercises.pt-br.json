@@ -1,5 +1,5 @@
 {
-  "seedVersion": 1,
+  "seedVersion": 2,
   "sourceCommit": "f00c92c7dcf1216a928a52c3706c7ce8e2f71ed5",
   "exercises": [
     {
@@ -6601,6 +6601,963 @@
       "mechanic": "isolation",
       "reviewed": false,
       "sourceCommit": "f00c92c7dcf1216a928a52c3706c7ce8e2f71ed5"
+    },
+    {
+      "sourceRef": "agachamento-bulgaro-com-halteres",
+      "source": "uniover",
+      "slug": "agachamento-bulgaro-com-halteres",
+      "name": "Agachamento Búlgaro com Halteres",
+      "instructions": [
+        "Fique de costas para um banco e apoie o peito do pé de trás sobre ele, com um halter em cada mão.",
+        "Dê um passo largo à frente, com o tronco ereto e o peso na perna da frente.",
+        "Dobre o joelho da frente até a coxa ficar quase paralela ao chão, sem deixar o joelho cair para dentro.",
+        "Empurre o chão com o pé da frente para subir. Termine a série e troque de perna."
+      ],
+      "primaryMuscles": [
+        "quadriceps"
+      ],
+      "secondaryMuscles": [
+        "glutes",
+        "hamstrings"
+      ],
+      "equipment": "dumbbell",
+      "recordType": "weight_reps",
+      "level": "intermediate",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "agachamento-goblet",
+      "source": "uniover",
+      "slug": "agachamento-goblet",
+      "name": "Agachamento Goblet",
+      "instructions": [
+        "Segure um halter na vertical junto ao peito, com as duas mãos sob a cabeça do halter e os cotovelos para baixo.",
+        "Afaste os pés um pouco além da largura dos ombros, com as pontas levemente para fora.",
+        "Agache entre as pernas mantendo o tronco ereto e o halter junto ao corpo.",
+        "Suba empurrando o chão, sem tirar os calcanhares do lugar."
+      ],
+      "primaryMuscles": [
+        "quadriceps"
+      ],
+      "secondaryMuscles": [
+        "glutes",
+        "abdominals"
+      ],
+      "equipment": "dumbbell",
+      "recordType": "weight_reps",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "elevacao-pelvica-na-maquina",
+      "source": "uniover",
+      "slug": "elevacao-pelvica-na-maquina",
+      "name": "Elevação Pélvica na Máquina",
+      "instructions": [
+        "Ajuste a máquina e sente-se com as costas apoiadas no encosto e a almofada sobre o quadril.",
+        "Apoie os pés firmes no chão, na largura do quadril, com os joelhos dobrados.",
+        "Empurre o quadril para cima contraindo os glúteos até o corpo formar uma linha do ombro ao joelho.",
+        "Desça devagar, sem apoiar o peso por completo, e repita."
+      ],
+      "primaryMuscles": [
+        "glutes"
+      ],
+      "secondaryMuscles": [
+        "hamstrings"
+      ],
+      "equipment": "machine",
+      "recordType": "weight_reps",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "coice-de-gluteo-na-maquina",
+      "source": "uniover",
+      "slug": "coice-de-gluteo-na-maquina",
+      "name": "Coice de Glúteo na Máquina",
+      "instructions": [
+        "Ajuste a máquina e apoie o peito e as mãos nos suportes, com o pé na plataforma.",
+        "Mantenha o abdômen firme e o tronco parado durante todo o movimento.",
+        "Empurre a plataforma para trás estendendo a perna e contraindo o glúteo.",
+        "Volte devagar sem deixar o peso encostar e termine a série antes de trocar de perna."
+      ],
+      "primaryMuscles": [
+        "glutes"
+      ],
+      "secondaryMuscles": [
+        "hamstrings"
+      ],
+      "equipment": "machine",
+      "recordType": "weight_reps",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "isolation",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "abducao-de-quadril-na-polia",
+      "source": "uniover",
+      "slug": "abducao-de-quadril-na-polia",
+      "name": "Abdução de Quadril na Polia",
+      "instructions": [
+        "Prenda a caneleira no tornozelo e fique de lado para a polia baixa, segurando num apoio para se equilibrar.",
+        "Mantenha o tronco ereto e a perna de apoio levemente dobrada.",
+        "Afaste a perna da caneleira para o lado, sem inclinar o corpo.",
+        "Volte devagar e termine a série antes de trocar de perna."
+      ],
+      "primaryMuscles": [
+        "abductors"
+      ],
+      "secondaryMuscles": [
+        "glutes"
+      ],
+      "equipment": "cable",
+      "recordType": "weight_reps",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "isolation",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "stiff-unilateral-com-halter",
+      "source": "uniover",
+      "slug": "stiff-unilateral-com-halter",
+      "name": "Stiff Unilateral com Halter",
+      "instructions": [
+        "Em pé, segure um halter com a mão oposta à perna de apoio e flexione levemente o joelho dessa perna.",
+        "Incline o tronco à frente levando o quadril para trás, com a outra perna estendida atrás do corpo.",
+        "Desça o halter perto da perna de apoio, com a coluna reta, até sentir o posterior da coxa alongar.",
+        "Volte contraindo o glúteo. Termine a série e troque de lado."
+      ],
+      "primaryMuscles": [
+        "hamstrings"
+      ],
+      "secondaryMuscles": [
+        "glutes",
+        "lower_back"
+      ],
+      "equipment": "dumbbell",
+      "recordType": "weight_reps",
+      "level": "intermediate",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "afundo-lateral",
+      "source": "uniover",
+      "slug": "afundo-lateral",
+      "name": "Afundo Lateral",
+      "instructions": [
+        "Em pé, com os pés na largura do quadril e as mãos juntas à frente do peito.",
+        "Dê um passo largo para o lado e leve o quadril para trás, dobrando só o joelho desse lado.",
+        "Mantenha a outra perna estendida e os dois pés apontados para a frente.",
+        "Empurre o chão para voltar ao centro e repita para o outro lado."
+      ],
+      "primaryMuscles": [
+        "quadriceps"
+      ],
+      "secondaryMuscles": [
+        "glutes",
+        "adductors"
+      ],
+      "equipment": "bodyweight",
+      "recordType": "reps_only",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "panturrilha-unilateral-no-degrau",
+      "source": "uniover",
+      "slug": "panturrilha-unilateral-no-degrau",
+      "name": "Panturrilha Unilateral no Degrau",
+      "instructions": [
+        "Apoie a ponta de um pé na beira de um degrau e segure num apoio para se equilibrar.",
+        "Cruze a outra perna atrás ou deixe-a no ar, sem se apoiar nela.",
+        "Suba o máximo que conseguir na ponta do pé e segure um instante.",
+        "Desça devagar até o calcanhar ficar abaixo do degrau. Termine a série e troque de pé."
+      ],
+      "primaryMuscles": [
+        "calves"
+      ],
+      "secondaryMuscles": [],
+      "equipment": "bodyweight",
+      "recordType": "reps_only",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "isolation",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "terra-com-barra-hexagonal",
+      "source": "uniover",
+      "slug": "terra-com-barra-hexagonal",
+      "name": "Terra com Barra Hexagonal",
+      "instructions": [
+        "Entre no meio da barra hexagonal, com os pés na largura do quadril, e segure as alças laterais.",
+        "Agache até apoiar bem as mãos, com o peito aberto, as costas retas e o olhar à frente.",
+        "Empurre o chão e estenda quadril e joelhos juntos, mantendo a barra junto ao corpo.",
+        "Termine em pé, sem jogar o corpo para trás, e devolva a barra ao chão com controle."
+      ],
+      "primaryMuscles": [
+        "quadriceps"
+      ],
+      "secondaryMuscles": [
+        "glutes",
+        "hamstrings",
+        "lower_back"
+      ],
+      "equipment": "barbell",
+      "recordType": "weight_reps",
+      "level": "intermediate",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "flexao-nordica",
+      "source": "uniover",
+      "slug": "flexao-nordica",
+      "name": "Flexão Nórdica",
+      "instructions": [
+        "Ajoelhe-se sobre um tapete e prenda os calcanhares sob um apoio firme ou peça a alguém para segurá-los.",
+        "Mantenha o corpo reto do joelho à cabeça, com o quadril estendido.",
+        "Incline-se para a frente o mais devagar possível, freando a descida com o posterior da coxa.",
+        "Apoie as mãos no chão quando não conseguir mais segurar e use um impulso leve para voltar."
+      ],
+      "primaryMuscles": [
+        "hamstrings"
+      ],
+      "secondaryMuscles": [
+        "glutes",
+        "calves"
+      ],
+      "equipment": "bodyweight",
+      "recordType": "reps_only",
+      "level": "intermediate",
+      "category": "strength",
+      "mechanic": "isolation",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "agachamento-na-parede",
+      "source": "uniover",
+      "slug": "agachamento-na-parede",
+      "name": "Agachamento na Parede",
+      "instructions": [
+        "Encoste as costas numa parede lisa e afaste os pés à frente na largura do quadril.",
+        "Desça deslizando até os joelhos ficarem dobrados a 90 graus, com as coxas paralelas ao chão.",
+        "Mantenha as costas e a cabeça apoiadas e os joelhos sobre os tornozelos.",
+        "Segure a posição pelo tempo planejado, respirando normalmente, e suba devagar."
+      ],
+      "primaryMuscles": [
+        "quadriceps"
+      ],
+      "secondaryMuscles": [
+        "glutes",
+        "calves"
+      ],
+      "equipment": "bodyweight",
+      "recordType": "time",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "isolation",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "puxada-assistida-graviton",
+      "source": "uniover",
+      "slug": "puxada-assistida-graviton",
+      "name": "Puxada Assistida (Graviton)",
+      "instructions": [
+        "Escolha o contrapeso que ajuda a subir: quanto maior o peso escolhido, mais fácil fica o movimento.",
+        "Apoie os joelhos ou os pés na plataforma e segure as barras acima da cabeça.",
+        "Puxe o corpo para cima levando os cotovelos para baixo e para trás até o queixo passar das mãos.",
+        "Desça devagar até estender os braços e repita, sem balançar."
+      ],
+      "primaryMuscles": [
+        "lats"
+      ],
+      "secondaryMuscles": [
+        "biceps",
+        "middle_back"
+      ],
+      "equipment": "machine",
+      "recordType": "weight_reps",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "superman-lombar-no-solo",
+      "source": "uniover",
+      "slug": "superman-lombar-no-solo",
+      "name": "Superman (Lombar no Solo)",
+      "instructions": [
+        "Deite de barriga para baixo, com os braços estendidos à frente e as pernas juntas.",
+        "Contraia a lombar e os glúteos e levante ao mesmo tempo braços, peito e pernas.",
+        "Segure a posição por um instante, olhando para o chão para manter o pescoço alinhado.",
+        "Volte devagar até o chão e repita."
+      ],
+      "primaryMuscles": [
+        "lower_back"
+      ],
+      "secondaryMuscles": [
+        "glutes",
+        "hamstrings"
+      ],
+      "equipment": "bodyweight",
+      "recordType": "reps_only",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "isolation",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "flexao-com-apoio-nos-joelhos",
+      "source": "uniover",
+      "slug": "flexao-com-apoio-nos-joelhos",
+      "name": "Flexão com Apoio nos Joelhos",
+      "instructions": [
+        "Apoie as mãos no chão, um pouco mais abertas que os ombros, e os joelhos num tapete.",
+        "Mantenha o corpo reto dos joelhos à cabeça, com o abdômen firme.",
+        "Dobre os cotovelos até o peito chegar perto do chão.",
+        "Empurre o chão para subir até estender os braços, sem deixar o quadril cair."
+      ],
+      "primaryMuscles": [
+        "chest"
+      ],
+      "secondaryMuscles": [
+        "triceps",
+        "shoulders"
+      ],
+      "equipment": "bodyweight",
+      "recordType": "reps_only",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "flexao-pike",
+      "source": "uniover",
+      "slug": "flexao-pike",
+      "name": "Flexão Pike",
+      "instructions": [
+        "Apoie as mãos e os pés no chão com o quadril alto, formando um V invertido.",
+        "Mantenha as pernas quase estendidas e a cabeça entre os braços.",
+        "Dobre os cotovelos levando o topo da cabeça em direção ao chão, entre as mãos.",
+        "Empurre o chão para voltar ao V, sem tirar os pés do lugar."
+      ],
+      "primaryMuscles": [
+        "shoulders"
+      ],
+      "secondaryMuscles": [
+        "triceps",
+        "chest"
+      ],
+      "equipment": "bodyweight",
+      "recordType": "reps_only",
+      "level": "intermediate",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "rosca-bayesiana-na-polia",
+      "source": "uniover",
+      "slug": "rosca-bayesiana-na-polia",
+      "name": "Rosca Bayesiana na Polia",
+      "instructions": [
+        "Prenda a manopla na polia baixa e fique de costas para ela, com um passo à frente para se equilibrar.",
+        "Segure a manopla com o braço estendido para trás, com o cotovelo um pouco atrás do tronco.",
+        "Flexione o cotovelo levando a mão em direção ao ombro, sem mexer o braço para a frente.",
+        "Desça devagar até estender o braço por completo e termine a série antes de trocar de lado."
+      ],
+      "primaryMuscles": [
+        "biceps"
+      ],
+      "secondaryMuscles": [
+        "forearms"
+      ],
+      "equipment": "cable",
+      "recordType": "weight_reps",
+      "level": "intermediate",
+      "category": "strength",
+      "mechanic": "isolation",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "elevacao-de-pernas-na-barra-fixa",
+      "source": "uniover",
+      "slug": "elevacao-de-pernas-na-barra-fixa",
+      "name": "Elevação de Pernas na Barra Fixa",
+      "instructions": [
+        "Pendure-se na barra fixa com os braços estendidos e o corpo parado.",
+        "Contraia o abdômen e levante as pernas estendidas, ou com os joelhos dobrados se for mais fácil.",
+        "Suba até o quadril girar levemente para cima, sem balançar o corpo.",
+        "Desça devagar, sem deixar as pernas caírem, e repita."
+      ],
+      "primaryMuscles": [
+        "abdominals"
+      ],
+      "secondaryMuscles": [
+        "forearms"
+      ],
+      "equipment": "bodyweight",
+      "recordType": "reps_only",
+      "level": "intermediate",
+      "category": "strength",
+      "mechanic": "isolation",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "escalador-mountain-climber",
+      "source": "uniover",
+      "slug": "escalador-mountain-climber",
+      "name": "Escalador (Mountain Climber)",
+      "instructions": [
+        "Apoie as mãos no chão sob os ombros, com o corpo reto como numa flexão.",
+        "Leve um joelho em direção ao peito, mantendo o quadril baixo e o abdômen firme.",
+        "Troque as pernas num ritmo constante, como se corresse apoiado no chão.",
+        "Mantenha a respiração regular durante o tempo planejado."
+      ],
+      "primaryMuscles": [
+        "abdominals"
+      ],
+      "secondaryMuscles": [
+        "shoulders",
+        "quadriceps"
+      ],
+      "equipment": "bodyweight",
+      "recordType": "time",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "bird-dog",
+      "source": "uniover",
+      "slug": "bird-dog",
+      "name": "Bird Dog",
+      "instructions": [
+        "Apoie as mãos sob os ombros e os joelhos sob o quadril, com a coluna reta.",
+        "Estenda ao mesmo tempo um braço à frente e a perna oposta para trás, até ficarem na altura do corpo.",
+        "Mantenha o abdômen firme e o quadril parado, sem girar nem arquear a lombar.",
+        "Volte devagar, troque de lado e repita."
+      ],
+      "primaryMuscles": [
+        "abdominals"
+      ],
+      "secondaryMuscles": [
+        "lower_back",
+        "glutes",
+        "shoulders"
+      ],
+      "equipment": "bodyweight",
+      "recordType": "reps_only",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "isolation",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "balanco-com-kettlebell-swing",
+      "source": "uniover",
+      "slug": "balanco-com-kettlebell-swing",
+      "name": "Balanço com Kettlebell (Swing)",
+      "instructions": [
+        "Fique com os pés um pouco mais abertos que os ombros e o kettlebell no chão, à sua frente.",
+        "Incline o tronco levando o quadril para trás, segure a alça com as duas mãos e puxe o kettlebell para trás, entre as pernas.",
+        "Estenda o quadril com força, projetando o kettlebell para a frente até a altura do peito. Os braços só conduzem.",
+        "Deixe-o descer e leve o quadril para trás de novo, mantendo as costas retas."
+      ],
+      "primaryMuscles": [
+        "glutes"
+      ],
+      "secondaryMuscles": [
+        "hamstrings",
+        "lower_back",
+        "shoulders"
+      ],
+      "equipment": "kettlebell",
+      "recordType": "weight_reps",
+      "level": "intermediate",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "desenvolvimento-com-kettlebell",
+      "source": "uniover",
+      "slug": "desenvolvimento-com-kettlebell",
+      "name": "Desenvolvimento com Kettlebell",
+      "instructions": [
+        "Segure o kettlebell com uma mão na altura do ombro, com o cotovelo junto ao corpo e o punho firme.",
+        "Contraia o abdômen e os glúteos para manter o corpo estável.",
+        "Empurre o kettlebell para cima até estender o braço, sem arquear a lombar.",
+        "Desça devagar até o ombro e termine a série antes de trocar de lado."
+      ],
+      "primaryMuscles": [
+        "shoulders"
+      ],
+      "secondaryMuscles": [
+        "triceps"
+      ],
+      "equipment": "kettlebell",
+      "recordType": "weight_reps",
+      "level": "intermediate",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "levantamento-turco",
+      "source": "uniover",
+      "slug": "levantamento-turco",
+      "name": "Levantamento Turco",
+      "instructions": [
+        "Deite de costas com o kettlebell estendido sobre o ombro, um joelho dobrado e o braço livre afastado do corpo.",
+        "Apoie-se no cotovelo e depois na mão, mantendo o olhar no kettlebell e o braço vertical.",
+        "Levante o quadril, passe a perna estendida para trás e apoie o joelho no chão até ficar ajoelhado, depois em pé.",
+        "Faça o caminho inverso, devagar, com o kettlebell sempre acima do ombro. Treine primeiro com carga leve ou sem peso."
+      ],
+      "primaryMuscles": [
+        "abdominals"
+      ],
+      "secondaryMuscles": [
+        "shoulders",
+        "glutes"
+      ],
+      "equipment": "kettlebell",
+      "recordType": "weight_reps",
+      "level": "intermediate",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "caminhada-do-fazendeiro",
+      "source": "uniover",
+      "slug": "caminhada-do-fazendeiro",
+      "name": "Caminhada do Fazendeiro",
+      "instructions": [
+        "Segure um halter (ou um kettlebell) em cada mão, com os braços estendidos ao lado do corpo.",
+        "Mantenha o peito aberto, os ombros para trás e o abdômen firme.",
+        "Caminhe com passos curtos e firmes, sem inclinar o tronco nem deixar os pesos balançarem.",
+        "Pare ao fim do tempo planejado e apoie os pesos no chão com cuidado."
+      ],
+      "primaryMuscles": [
+        "forearms"
+      ],
+      "secondaryMuscles": [
+        "traps",
+        "abdominals"
+      ],
+      "equipment": "dumbbell",
+      "recordType": "time",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "remada-sentada-com-elastico",
+      "source": "uniover",
+      "slug": "remada-sentada-com-elastico",
+      "name": "Remada Sentada com Elástico",
+      "instructions": [
+        "Sente-se no chão com as pernas estendidas e passe o elástico pelas solas dos pés, segurando as pontas.",
+        "Mantenha as costas retas e os joelhos levemente dobrados.",
+        "Puxe o elástico até o abdômen, levando os cotovelos para trás e juntando as escápulas.",
+        "Volte devagar, mantendo a tensão no elástico, e repita."
+      ],
+      "primaryMuscles": [
+        "middle_back"
+      ],
+      "secondaryMuscles": [
+        "lats",
+        "biceps"
+      ],
+      "equipment": "band",
+      "recordType": "reps_only",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "pull-apart-com-elastico",
+      "source": "uniover",
+      "slug": "pull-apart-com-elastico",
+      "name": "Pull-apart com Elástico",
+      "instructions": [
+        "Em pé, segure o elástico à frente do peito com as mãos na largura dos ombros e os braços estendidos.",
+        "Mantenha os ombros baixos e o abdômen firme.",
+        "Abra os braços para os lados esticando o elástico, até ele encostar no peito.",
+        "Volte devagar sem soltar a tensão e repita."
+      ],
+      "primaryMuscles": [
+        "shoulders"
+      ],
+      "secondaryMuscles": [
+        "middle_back",
+        "traps"
+      ],
+      "equipment": "band",
+      "recordType": "reps_only",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "isolation",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "rosca-com-elastico",
+      "source": "uniover",
+      "slug": "rosca-com-elastico",
+      "name": "Rosca com Elástico",
+      "instructions": [
+        "Pise no meio do elástico com os pés na largura do quadril e segure as pontas com as palmas voltadas para a frente.",
+        "Mantenha os cotovelos junto ao tronco e o corpo parado.",
+        "Flexione os cotovelos levando as mãos em direção aos ombros.",
+        "Desça devagar até estender os braços e repita."
+      ],
+      "primaryMuscles": [
+        "biceps"
+      ],
+      "secondaryMuscles": [
+        "forearms"
+      ],
+      "equipment": "band",
+      "recordType": "reps_only",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "isolation",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "agachamento-com-elastico",
+      "source": "uniover",
+      "slug": "agachamento-com-elastico",
+      "name": "Agachamento com Elástico",
+      "instructions": [
+        "Pise no meio do elástico, com os pés na largura dos ombros, e segure as pontas junto aos ombros.",
+        "Mantenha o peito aberto e as costas retas.",
+        "Agache levando o quadril para trás e para baixo, com os joelhos alinhados aos pés.",
+        "Suba empurrando o chão contra a resistência do elástico."
+      ],
+      "primaryMuscles": [
+        "quadriceps"
+      ],
+      "secondaryMuscles": [
+        "glutes"
+      ],
+      "equipment": "band",
+      "recordType": "reps_only",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "monster-walk-com-mini-band",
+      "source": "uniover",
+      "slug": "monster-walk-com-mini-band",
+      "name": "Monster Walk com Mini Band",
+      "instructions": [
+        "Coloque a mini band acima dos joelhos (ou nos tornozelos, para mais carga) e afaste os pés na largura dos ombros.",
+        "Dobre levemente os joelhos e mantenha o elástico sempre esticado.",
+        "Dê passos largos para o lado, sem deixar os joelhos caírem para dentro.",
+        "Ande uma distância curta para um lado, depois volte para o outro, sempre sem juntar os pés."
+      ],
+      "primaryMuscles": [
+        "abductors"
+      ],
+      "secondaryMuscles": [
+        "glutes"
+      ],
+      "equipment": "band",
+      "recordType": "reps_only",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "clamshell-com-elastico",
+      "source": "uniover",
+      "slug": "clamshell-com-elastico",
+      "name": "Clamshell com Elástico",
+      "instructions": [
+        "Deite de lado, com a mini band acima dos joelhos, os joelhos dobrados e os pés juntos.",
+        "Apoie a cabeça no braço de baixo e mantenha o quadril firme, sem rolar para trás.",
+        "Abra o joelho de cima como uma concha, mantendo os pés juntos.",
+        "Volte devagar e termine a série antes de trocar de lado."
+      ],
+      "primaryMuscles": [
+        "abductors"
+      ],
+      "secondaryMuscles": [
+        "glutes"
+      ],
+      "equipment": "band",
+      "recordType": "reps_only",
+      "level": "beginner",
+      "category": "strength",
+      "mechanic": "isolation",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "burpee",
+      "source": "uniover",
+      "slug": "burpee",
+      "name": "Burpee",
+      "instructions": [
+        "Em pé, agache e apoie as mãos no chão à frente dos pés.",
+        "Jogue os pés para trás até a posição de flexão e, se quiser, faça uma flexão.",
+        "Traga os pés de volta para perto das mãos.",
+        "Levante-se e salte para cima com os braços estendidos, aterrissando com os joelhos macios."
+      ],
+      "primaryMuscles": [
+        "quadriceps"
+      ],
+      "secondaryMuscles": [
+        "chest",
+        "shoulders",
+        "abdominals"
+      ],
+      "equipment": "bodyweight",
+      "recordType": "reps_only",
+      "level": "intermediate",
+      "category": "plyometrics",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "polichinelo",
+      "source": "uniover",
+      "slug": "polichinelo",
+      "name": "Polichinelo",
+      "instructions": [
+        "Em pé, com os pés juntos e os braços ao lado do corpo.",
+        "Salte abrindo as pernas e levante os braços acima da cabeça.",
+        "Salte de novo, fechando as pernas e baixando os braços.",
+        "Mantenha um ritmo constante e a respiração regular durante o tempo planejado."
+      ],
+      "primaryMuscles": [
+        "quadriceps"
+      ],
+      "secondaryMuscles": [
+        "calves",
+        "shoulders"
+      ],
+      "equipment": "bodyweight",
+      "recordType": "time",
+      "level": "beginner",
+      "category": "plyometrics",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "agachamento-com-salto",
+      "source": "uniover",
+      "slug": "agachamento-com-salto",
+      "name": "Agachamento com Salto",
+      "instructions": [
+        "Em pé, com os pés na largura dos ombros, agache até as coxas ficarem quase paralelas ao chão.",
+        "Estenda o quadril e os joelhos com força, saltando para cima e balançando os braços para ajudar.",
+        "Aterrisse com os joelhos macios, voltando direto para a posição agachada.",
+        "Repita sem pausa longa, mantendo o tronco firme e os joelhos alinhados aos pés."
+      ],
+      "primaryMuscles": [
+        "quadriceps"
+      ],
+      "secondaryMuscles": [
+        "glutes",
+        "calves"
+      ],
+      "equipment": "bodyweight",
+      "recordType": "reps_only",
+      "level": "intermediate",
+      "category": "plyometrics",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "pular-corda",
+      "source": "uniover",
+      "slug": "pular-corda",
+      "name": "Pular Corda",
+      "instructions": [
+        "Segure as alças da corda com os cotovelos junto ao corpo e as mãos na altura do quadril.",
+        "Gire a corda com os punhos, não com os braços inteiros.",
+        "Salte baixo, só o suficiente para a corda passar, aterrissando na ponta dos pés.",
+        "Mantenha um ritmo constante e a respiração regular durante o tempo planejado."
+      ],
+      "primaryMuscles": [
+        "calves"
+      ],
+      "secondaryMuscles": [
+        "shoulders",
+        "forearms"
+      ],
+      "equipment": "cardio",
+      "recordType": "time",
+      "level": "beginner",
+      "category": "cardio",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "esteira",
+      "source": "uniover",
+      "slug": "esteira",
+      "name": "Esteira",
+      "instructions": [
+        "Suba na esteira com a velocidade mais baixa e prenda o cordão de segurança à roupa.",
+        "Aumente a velocidade aos poucos, até um ritmo em que ainda consiga conversar.",
+        "Mantenha o tronco ereto, o olhar à frente e os braços soltos, sem se segurar nos apoios.",
+        "Reduza a velocidade devagar nos últimos minutos antes de parar."
+      ],
+      "primaryMuscles": [
+        "quadriceps"
+      ],
+      "secondaryMuscles": [
+        "calves",
+        "hamstrings",
+        "glutes"
+      ],
+      "equipment": "cardio",
+      "recordType": "time",
+      "level": "beginner",
+      "category": "cardio",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "bicicleta-ergometrica",
+      "source": "uniover",
+      "slug": "bicicleta-ergometrica",
+      "name": "Bicicleta Ergométrica",
+      "instructions": [
+        "Ajuste o banco até o joelho ficar levemente dobrado com o pedal na posição mais baixa.",
+        "Sente-se com as costas retas e as mãos leves no guidão.",
+        "Pedale em ritmo constante, aumentando a carga de forma gradual.",
+        "Nos últimos minutos, diminua a carga e o ritmo para esfriar o corpo."
+      ],
+      "primaryMuscles": [
+        "quadriceps"
+      ],
+      "secondaryMuscles": [
+        "glutes",
+        "hamstrings",
+        "calves"
+      ],
+      "equipment": "cardio",
+      "recordType": "time",
+      "level": "beginner",
+      "category": "cardio",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "eliptico-transport",
+      "source": "uniover",
+      "slug": "eliptico-transport",
+      "name": "Elíptico (Transport)",
+      "instructions": [
+        "Suba nos pedais segurando as alças e mantendo o corpo ereto.",
+        "Empurre os pedais em movimento contínuo, com os pés inteiros apoiados.",
+        "Movimente os braços junto com as pernas e mantenha o abdômen firme.",
+        "Ajuste a resistência para um esforço que consiga manter e reduza-a ao final."
+      ],
+      "primaryMuscles": [
+        "quadriceps"
+      ],
+      "secondaryMuscles": [
+        "glutes",
+        "hamstrings",
+        "calves"
+      ],
+      "equipment": "cardio",
+      "recordType": "time",
+      "level": "beginner",
+      "category": "cardio",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
+    },
+    {
+      "sourceRef": "remo-ergometrico",
+      "source": "uniover",
+      "slug": "remo-ergometrico",
+      "name": "Remo Ergométrico",
+      "instructions": [
+        "Sente-se com os pés presos nos apoios e segure a alça com os braços estendidos.",
+        "Comece empurrando com as pernas, depois incline o tronco levemente para trás.",
+        "Termine puxando a alça até o abdômen, com os cotovelos junto ao corpo.",
+        "Volte na ordem inversa: braços, tronco e por último as pernas, em ritmo constante."
+      ],
+      "primaryMuscles": [
+        "lats"
+      ],
+      "secondaryMuscles": [
+        "quadriceps",
+        "hamstrings",
+        "biceps"
+      ],
+      "equipment": "cardio",
+      "recordType": "time",
+      "level": "intermediate",
+      "category": "cardio",
+      "mechanic": "compound",
+      "reviewed": false,
+      "sourceCommit": "uniover"
     }
   ]
 }
