@@ -349,7 +349,7 @@ public sealed class CustomExerciseTests(PostgresFixture postgres)
 
     [Theory]
     [InlineData("name", "")]
-    [InlineData("equipment", "kettlebell")]
+    [InlineData("equipment", "trampolim")]
     [InlineData("recordType", "distance")]
     public async Task InvalidBody_Returns400WithTheFieldName(string field, string value)
     {

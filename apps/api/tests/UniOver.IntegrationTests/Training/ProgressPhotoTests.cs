@@ -301,7 +301,7 @@ public sealed class ProgressPhotoTests(PostgresFixture postgres)
         await using (var training = TrainingApp.CreateContext(app.Database.OwnerConnection))
         {
             await training.Database.MigrateAsync("20261024120000_AddTrainingPrograms", TestContext.Current.CancellationToken);
-            (await training.Database.GetPendingMigrationsAsync(TestContext.Current.CancellationToken)).Should().Equal("20261024130000_AddProgressPhotos", "20261028010130_AddBodyMeasurements", "20261028024002_AddCalendarEntries");
+            (await training.Database.GetPendingMigrationsAsync(TestContext.Current.CancellationToken)).Should().Equal("20261024130000_AddProgressPhotos", "20261028010130_AddBodyMeasurements", "20261028024002_AddCalendarEntries", "20261031200000_AddUniOverCatalogSource");
             await training.Database.MigrateAsync(TestContext.Current.CancellationToken);
             (await training.Database.GetPendingMigrationsAsync(TestContext.Current.CancellationToken)).Should().BeEmpty();
         }
