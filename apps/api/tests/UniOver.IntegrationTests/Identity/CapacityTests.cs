@@ -200,7 +200,7 @@ public sealed class CapacityTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task TheAlert_ClosesWhenTheMetricRecovers_AndANewRedOpensANewOne()
+    public async Task TheAlert_HasHysteresis_ClosesOnlyBelowSeventyFive_AndCoolsDownBeforeReopening()
     {
         await using var app = await IdentityApp.StartAsync(postgres);
         var now = app.Time.GetUtcNow();
@@ -209,18 +209,119 @@ public sealed class CapacityTests(PostgresFixture postgres)
         await CapacitySampling.EvaluateAlertsAsync(db, new Dictionary<string, double> { ["database"] = 85 }, now, Ct);
         (await db.CapacityAlerts.CountAsync(Ct)).Should().Be(1);
 
-        // Entre 50% e 80%: voltou do vermelho, o aviso fecha e nenhum outro abre.
-        await CapacitySampling.EvaluateAlertsAsync(db, new Dictionary<string, double> { ["database"] = 60 }, now.AddHours(1), Ct);
-        (await db.CapacityAlerts.SingleAsync(Ct)).RecoveredAt.Should().Be(now.AddHours(1));
+        // Entre 75% e 80% o aviso aberto fica como está: oscilar em torno de 80% não o fecha.
+        await CapacitySampling.EvaluateAlertsAsync(db, new Dictionary<string, double> { ["database"] = 78 }, now.AddHours(1), Ct);
+        (await db.CapacityAlerts.SingleAsync(Ct)).RecoveredAt.Should().BeNull();
+        await CapacitySampling.EvaluateAlertsAsync(db, new Dictionary<string, double> { ["database"] = 82 }, now.AddHours(2), Ct);
+        (await db.CapacityAlerts.CountAsync(Ct)).Should().Be(1);
 
-        await CapacitySampling.EvaluateAlertsAsync(db, new Dictionary<string, double> { ["database"] = 99 }, now.AddHours(2), Ct);
+        // Abaixo de 75% fecha.
+        await CapacitySampling.EvaluateAlertsAsync(db, new Dictionary<string, double> { ["database"] = 74.9 }, now.AddHours(3), Ct);
+        (await db.CapacityAlerts.SingleAsync(Ct)).RecoveredAt.Should().Be(now.AddHours(3));
+
+        // De volta ao vermelho dentro do cooldown: nenhum aviso novo.
+        await CapacitySampling.EvaluateAlertsAsync(db, new Dictionary<string, double> { ["database"] = 99 }, now.AddHours(4), Ct);
+        (await db.CapacityAlerts.CountAsync(Ct)).Should().Be(1);
+        await CapacitySampling.EvaluateAlertsAsync(
+            db, new Dictionary<string, double> { ["database"] = 99 }, now.AddHours(3) + CapacityBands.AlertCooldown - TimeSpan.FromMinutes(1), Ct);
+        (await db.CapacityAlerts.CountAsync(Ct)).Should().Be(1);
+
+        // Passado o cooldown, abre um novo.
+        await CapacitySampling.EvaluateAlertsAsync(
+            db, new Dictionary<string, double> { ["database"] = 99 }, now.AddHours(3) + CapacityBands.AlertCooldown + TimeSpan.FromMinutes(1), Ct);
         (await db.CapacityAlerts.CountAsync(Ct)).Should().Be(2);
         (await db.CapacityAlerts.CountAsync(a => a.RecoveredAt == null, Ct)).Should().Be(1);
 
-        // Exatamente 80% já é vermelho; 79,99% não.
-        await CapacitySampling.EvaluateAlertsAsync(db, new Dictionary<string, double> { ["memory"] = 79.99, ["hours"] = 80 }, now.AddHours(3), Ct);
+        // Exatamente 80% já é vermelho; 79,99% não abre aviso para quem não tem um aberto.
+        await CapacitySampling.EvaluateAlertsAsync(
+            db, new Dictionary<string, double> { ["memory"] = 79.99, ["hours"] = 80 }, now.AddDays(30), Ct);
         (await db.CapacityAlerts.Where(a => a.RecoveredAt == null).Select(a => a.Metric).ToListAsync(Ct))
             .Should().BeEquivalentTo(["database", "hours"]);
+    }
+
+    [Fact]
+    public async Task Dismissing_OnlyTouchesTheOpenAlerts()
+    {
+        await using var app = await IdentityApp.StartAsync(postgres);
+        var owner = await app.LoginAsync();
+        var now = app.Time.GetUtcNow();
+        await using (var seed = app.Db())
+        {
+            seed.CapacityAlerts.AddRange(
+                new CapacityAlert { Id = Guid.NewGuid(), Metric = "memory", Percent = 90, DetectedAt = now.AddDays(-2), RecoveredAt = now.AddDays(-1) },
+                new CapacityAlert { Id = Guid.NewGuid(), Metric = "database", Percent = 85, DetectedAt = now.AddHours(-1) });
+            await seed.SaveChangesAsync(Ct);
+        }
+
+        using var seen = await app.SendAsync(HttpMethod.Post, Route + "/alerts/seen", bearer: owner.AccessToken);
+
+        seen.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await using var db = app.Db();
+        (await db.CapacityAlerts.AsNoTracking().SingleAsync(a => a.Metric == "database", Ct)).SeenAt.Should().NotBeNull();
+        (await db.CapacityAlerts.AsNoTracking().SingleAsync(a => a.Metric == "memory", Ct)).SeenAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TheDatabaseMeasure_IsReusedWithinTheCacheLifetime_AndTheRouteHasItsOwnLowLimit()
+    {
+        await using var app = await IdentityApp.StartAsync(postgres);
+        var owner = await app.LoginAsync();
+
+        using var first = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
+        var firstAt = (await IdentityApp.JsonAsync(first)).GetProperty("measuredAt").GetDateTimeOffset();
+        app.Time.Advance(TimeSpan.FromMinutes(1));
+        using var second = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
+        var secondAt = (await IdentityApp.JsonAsync(second)).GetProperty("measuredAt").GetDateTimeOffset();
+
+        // Dentro dos 10 minutos a medida do banco é a mesma (o instante dela, não o da leitura).
+        secondAt.Should().Be(firstAt);
+
+        // A rota tem balde próprio de 6 por minuto, por conta: as quatro seguintes passam e a sétima é recusada.
+        for (var i = 0; i < 4; i++)
+        {
+            using var ok = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
+            ok.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        using var limited = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
+        limited.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
+    public async Task WithTheCacheOff_EveryReadMeasuresTheDatabaseAgain()
+    {
+        await using var app = await IdentityApp.StartAsync(postgres, With(("DatabaseCacheMinutes", "0")));
+        var owner = await app.LoginAsync();
+
+        using var first = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
+        var firstAt = (await IdentityApp.JsonAsync(first)).GetProperty("measuredAt").GetDateTimeOffset();
+        app.Time.Advance(TimeSpan.FromMinutes(1));
+        using var second = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
+        var secondAt = (await IdentityApp.JsonAsync(second)).GetProperty("measuredAt").GetDateTimeOffset();
+
+        secondAt.Should().Be(firstAt.AddMinutes(1));
+    }
+
+    [Fact]
+    public async Task TwoProcessesSamplingTheSameDayAtOnce_LeaveOneSampleAndOneAlertPerMetric()
+    {
+        await using var first = await IdentityApp.StartAsync(postgres, With(("DatabaseLimitBytes", "1024")));
+        await using var second = await IdentityApp.StartAsync(
+            postgres, new IdentityAppOptions
+            {
+                Database = first.Database,
+                Start = first.Time.GetUtcNow(),
+                Extra = new Dictionary<string, string?> { ["Modules:Identity:Capacity:DatabaseLimitBytes"] = "1024" },
+            });
+
+        // Seis execuções ao mesmo tempo, três em cada processo: todas terminam sem falha.
+        var runs = await Task.WhenAll(Enumerable.Range(0, 6).Select(i => Task.Run(() => RunJobAsync(i % 2 == 0 ? first : second), Ct)));
+
+        runs.Should().OnlyContain(r => r.Succeeded);
+        await using var db = first.Db();
+        (await db.CapacitySamples.AsNoTracking().CountAsync(Ct)).Should().Be(1);
+        var open = await db.CapacityAlerts.AsNoTracking().Where(a => a.RecoveredAt == null).Select(a => a.Metric).ToListAsync(Ct);
+        open.Should().OnlyHaveUniqueItems().And.Contain("database");
     }
 
     [Fact]
