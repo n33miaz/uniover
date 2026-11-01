@@ -16,6 +16,9 @@ from uniover_agent.ports import Clock
 _log = logging.getLogger(__name__)
 
 CHECK_INTERVAL_SECONDS: Final = 300.0
+# Enquanto a API não disse nada (dormindo, ainda subindo), pergunta de novo logo e vai espaçando.
+FIRST_RETRY_SECONDS: Final = 15.0
+FEATURES_TIMEOUT_SECONDS: Final = 3.0
 
 
 class ApiFeatures:
@@ -46,6 +49,12 @@ class ApiFeatures:
 
     async def run(self) -> None:
         """Consulta de tempos em tempos: a resposta de hoje manda no próximo `hello`."""
+        retry = FIRST_RETRY_SECONDS
         while True:
             await self.refresh()
-            await self._clock.sleep(self._interval)
+            if self._known:
+                retry = self._interval
+                await self._clock.sleep(self._interval)
+            else:
+                await self._clock.sleep(min(retry, self._interval))
+                retry = min(retry * 2, self._interval)

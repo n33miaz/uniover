@@ -73,6 +73,21 @@ async def test_the_loop_asks_again_every_interval() -> None:
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
     assert len(calls) >= 2
+    # Sem resposta, volta logo e vai espaçando até o intervalo normal.
+    assert clock.sleeps[:3] == [15, 30, 60]
+
+
+async def test_once_the_api_answers_the_loop_goes_back_to_the_normal_interval() -> None:
+    clock = FakeClock()
+
+    async def fetch() -> frozenset[str] | None:
+        return frozenset({"agent.diagnostics.v1"})
+
+    task = asyncio.create_task(ApiFeatures(fetch, clock, interval=300).run())
+    for _ in range(20):
+        await asyncio.sleep(0)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
     assert clock.sleeps[:2] == [300, 300]
 
 
@@ -149,6 +164,29 @@ async def test_an_api_that_does_not_list_diagnostics_gets_a_hello_without_it_and
     hello = next(m for m in received if m["type"] == "agent.hello.v1")
     assert DIAGNOSTICS_CAPABILITY not in hello["body"]["capabilities"]
     assert all(m["type"] != "agent.diagnostics.v1" for m in received)
+
+
+async def test_a_query_that_never_answers_does_not_hold_the_first_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def hangs(base_url: str, wait_seconds: float = 10.0) -> frozenset[str] | None:
+        await asyncio.sleep(3600)
+        return None
+
+    monkeypatch.setattr(main_module, "fetch_api_features", hangs)
+
+    async def script(connection: Any) -> None:
+        await asyncio.sleep(0.3)
+        await connection.close(4403, "revoked")
+
+    store = FakeSecretStore()
+    store.set(AGENT_ID, TOKEN)
+    async with FakeApi(script) as api:
+        settings = Settings(api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True)
+        # O prazo é bem menor que o da consulta presa: se a conexão esperasse por ela, estouraria.
+        await asyncio.wait_for(run(settings, lambda: store), timeout=15)
+    hello = next(m for m in api.received if m["type"] == "agent.hello.v1")
+    assert DIAGNOSTICS_CAPABILITY not in hello["body"]["capabilities"]
 
 
 async def test_an_api_that_cannot_be_asked_yet_is_treated_the_same_way(
