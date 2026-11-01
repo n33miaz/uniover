@@ -70,12 +70,12 @@ public sealed class TvConfigTests(PostgresFixture postgres)
     // ----- leitura -----
 
     [Fact]
-    public async Task Get_WithOnlyTheEnvironmentValue_ShowsItsOrigin_AndTheAgentState()
+    public async Task Get_WithTheSavedTv_ShowsItsOrigin_AndTheAgentState()
     {
         await using var app = await TvApp.StartAsync(postgres);
 
         var offline = await GetConfigAsync(app);
-        offline.GetProperty("source").GetString().Should().Be("environment");
+        offline.GetProperty("source").GetString().Should().Be("saved");
         offline.GetProperty("agentSlug").GetString().Should().Be(TvApp.AgentSlug);
         offline.GetProperty("agentName").GetString().Should().Be("PC Casa");
         offline.GetProperty("agentStatus").GetString().Should().Be("offline");
@@ -95,7 +95,7 @@ public sealed class TvConfigTests(PostgresFixture postgres)
     [Fact]
     public async Task Get_WithNothingConfigured_SaysSo_AndStillListsThePairedComputers()
     {
-        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { AgentId = string.Empty });
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { WithoutTv = true });
 
         var config = await GetConfigAsync(app);
 
@@ -135,11 +135,13 @@ public sealed class TvConfigTests(PostgresFixture postgres)
     [Fact]
     public async Task Get_WhenTheConfiguredComputerWasNeverPaired_IsUnknown()
     {
-        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { AgentId = "fantasma" });
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { WithoutTv = true });
+        await app.ExecuteSqlAsync("INSERT INTO tv.tvs (id, name, agent_slug, is_default, created_at, updated_at, updated_by) " +
+            "VALUES (gen_random_uuid(), 'TV', 'fantasma', true, now(), now(), gen_random_uuid())");
 
         var config = await GetConfigAsync(app);
 
-        config.GetProperty("source").GetString().Should().Be("environment");
+        config.GetProperty("source").GetString().Should().Be("saved");
         config.GetProperty("agentSlug").GetString().Should().Be("fantasma");
         config.GetProperty("agentName").ValueKind.Should().Be(JsonValueKind.Null, "ninguém com esse identificador foi pareado");
         config.GetProperty("agentStatus").GetString().Should().Be("unknown");
@@ -242,7 +244,7 @@ public sealed class TvConfigTests(PostgresFixture postgres)
         problem.GetProperty("type").GetString().Should().EndWith("/step-up-required");
         problem.GetProperty("action").GetString().Should().Be(BindAction);
         (await app.TvFingerprintAsync()).Should().Be(before);
-        (await GetConfigAsync(app)).GetProperty("source").GetString().Should().Be("environment");
+        (await GetConfigAsync(app)).GetProperty("agentSlug").GetString().Should().Be(TvApp.AgentSlug);
     }
 
     [Fact]
@@ -387,11 +389,11 @@ public sealed class TvConfigTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Put_SavingTheValueThatCameFromTheEnvironment_CreatesTheRow_SoTheVariableCanGo()
+    public async Task Put_WithNoTvSaved_CreatesTheDefaultRow_AndAuditsIt()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { WithoutTv = true });
         using var authenticator = await ConfirmedOwnerAsync(app);
-        (await GetConfigAsync(app)).GetProperty("source").GetString().Should().Be("environment");
+        (await GetConfigAsync(app)).GetProperty("source").GetString().Should().Be("none");
 
         using var response = await BindAsync(app, new { agentSlug = TvApp.AgentSlug });
 
@@ -403,9 +405,9 @@ public sealed class TvConfigTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Put_WithoutAnyEnvironmentValue_MakesTheCommandsWork_FromTheSavedOne()
+    public async Task Put_WithNoTvSaved_MakesTheCommandsWork_FromTheSavedOne()
     {
-        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { AgentId = string.Empty });
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { WithoutTv = true });
         using var authenticator = await ConfirmedOwnerAsync(app);
         await using var agent = await app.ConnectAndWaitAsync();
 
@@ -476,7 +478,7 @@ public sealed class TvConfigTests(PostgresFixture postgres)
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         (await app.TvFingerprintAsync()).Should().Be(before, "sem registro de quem trocou, a troca não vale");
         var config = await GetConfigAsync(app);
-        config.GetProperty("source").GetString().Should().Be("environment");
+        config.GetProperty("source").GetString().Should().Be("saved");
         config.GetProperty("agentSlug").GetString().Should().Be(TvApp.AgentSlug);
     }
 
@@ -519,6 +521,8 @@ public sealed class TvConfigTests(PostgresFixture postgres)
 
     private static TvAppOptions Racing(RaceHook hook) => new()
     {
+        // A corrida é entre dois primeiros salvamentos: sem nenhuma TV salva antes.
+        WithoutTv = true,
         ConfigureServices = services =>
         {
             services.RemoveAll<ITvCommandAudit>();
@@ -686,7 +690,7 @@ public sealed class TvConfigTests(PostgresFixture postgres)
     [Fact]
     public async Task Presence_AfterARestart_IsStillRecognisedForTheSavedComputer_EvenWithNothingReadYet()
     {
-        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { AgentId = string.Empty });
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { WithoutTv = true });
         using var authenticator = await ConfirmedOwnerAsync(app);
         (await BindAsync(app, new { agentSlug = TvApp.AgentSlug })).Dispose();
 
@@ -706,7 +710,7 @@ public sealed class TvConfigTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task TheSavedValue_BeatsTheEnvironment_AlsoAfterTheCacheExpires_AndAnOutsideChangeIsPickedUp()
+    public async Task TheSavedValue_IsReadAgainAfterTheCacheExpires_AndAnOutsideChangeIsPickedUp()
     {
         await using var app = await TvApp.StartAsync(postgres);
         using var authenticator = await ConfirmedOwnerAsync(app);
@@ -715,7 +719,7 @@ public sealed class TvConfigTests(PostgresFixture postgres)
         await TvApp.WaitUntilAsync(() => app.Presence.Get(second.Slug)?.Connected == true, "computador novo conectado");
         (await BindAsync(app, new { agentSlug = second.Slug })).Dispose();
 
-        // Passado o prazo do cache, o valor é lido de novo do banco e continua sendo o salvo (não o da variável).
+        // Passado o prazo do cache, o valor é lido de novo do banco e continua sendo o salvo.
         app.Time.Advance(TimeSpan.FromSeconds(31));
         (await GetConfigAsync(app)).GetProperty("agentSlug").GetString().Should().Be(second.Slug);
 
@@ -747,21 +751,53 @@ public sealed class TvConfigTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task WithTheEnvironmentValueAndNoRow_EverythingWorksAsBefore()
+    public async Task ReadingAndCommanding_NeverCreateTheRowOnTheirOwn()
     {
-        await using var app = await TvApp.StartAsync(postgres);
-        await using var agent = await app.ConnectAndWaitAsync();
-        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(power: "on", volume: 12)));
-        await TvApp.WaitUntilAsync(async () =>
-        {
-            using var s = await app.GetAsync("/api/v1/tv/state");
-            return (await TvApp.JsonAsync(s)).GetProperty("power").GetString() == "on";
-        }, "estado recebido");
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { WithoutTv = true });
 
-        (await SendKeyAsync(app, agent)).Should().Be(HttpStatusCode.OK);
+        (await GetConfigAsync(app)).GetProperty("source").GetString().Should().Be("none");
+        using var key = await app.PostAsync("/api/v1/tv/keys", new { key = "HOME" });
+        key.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
 
         await using var db = app.Db();
         (await db.Tvs.CountAsync(Ct)).Should().Be(0, "ler e comandar nunca criam a linha sozinhos");
+    }
+
+    [Fact]
+    public async Task TheOldVariable_IsOnlyAOneTimeImport_WhenNoTvWasSaved_AndNeverOverridesASavedOne()
+    {
+        // Instalação de antes: nenhuma TV salva e a variável ainda no servidor. A partida cria a TV padrão a partir dela.
+        await using (var app = await TvApp.StartAsync(postgres, new TvAppOptions { WithoutTv = true, LegacyAgentSlug = TvApp.AgentSlug }))
+        {
+            await app.RunLegacyImportAsync();
+            var config = await GetConfigAsync(app);
+            config.GetProperty("source").GetString().Should().Be("saved");
+            config.GetProperty("agentSlug").GetString().Should().Be(TvApp.AgentSlug);
+            await using var agent = await app.ConnectAndWaitAsync();
+            (await SendKeyAsync(app, agent)).Should().Be(HttpStatusCode.OK);
+            await using var db = app.Db();
+            var tv = await db.Tvs.AsNoTracking().SingleAsync(Ct);
+            tv.IsDefault.Should().BeTrue();
+            tv.Name.Should().Be("TV");
+        }
+
+        // Com uma TV já salva a variável não muda nada, mesmo apontando outro computador.
+        await using (var app = await TvApp.StartAsync(postgres, new TvAppOptions { LegacyAgentSlug = "pc-antigo" }))
+        {
+            await app.RunLegacyImportAsync();
+            (await GetConfigAsync(app)).GetProperty("agentSlug").GetString().Should().Be(TvApp.AgentSlug);
+            await using var db = app.Db();
+            (await db.Tvs.CountAsync(Ct)).Should().Be(1);
+        }
+
+        // Variável que aponta um computador que não está pareado: nada é criado, e a API sobe normalmente.
+        await using (var app = await TvApp.StartAsync(postgres, new TvAppOptions { WithoutTv = true, LegacyAgentSlug = "fantasma" }))
+        {
+            await app.RunLegacyImportAsync();
+            (await GetConfigAsync(app)).GetProperty("source").GetString().Should().Be("none");
+            await using var db = app.Db();
+            (await db.Tvs.CountAsync(Ct)).Should().Be(0);
+        }
     }
 
     // ----- o esquema -----
@@ -769,7 +805,7 @@ public sealed class TvConfigTests(PostgresFixture postgres)
     [Fact]
     public async Task Schema_AllowsExactlyOneDefaultTv_AndOnlyOneTvPerComputer()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { WithoutTv = true });
         const string Insert = "INSERT INTO tv.tvs (id, name, agent_slug, is_default, created_at, updated_at, updated_by) " +
             "VALUES (gen_random_uuid(), 'TV', '{0}', {1}, now(), now(), gen_random_uuid())";
 

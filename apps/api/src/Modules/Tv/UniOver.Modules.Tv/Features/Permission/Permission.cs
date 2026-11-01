@@ -114,7 +114,7 @@ internal static class PermissionEndpoint
             return TvProblems.Unauthenticated();
         }
 
-        // Só uma TV salva tem estado de permissão; a reserva por variável de ambiente (sem linha) não tem.
+        // Só uma TV salva tem estado de permissão; sem linha não há TV.
         if (!selection.Current.IsPersisted)
         {
             return TypedResults.NotFound();

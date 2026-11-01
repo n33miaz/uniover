@@ -131,7 +131,7 @@ public sealed class TvStreamPermissionTests(PostgresFixture postgres)
     [Fact]
     public async Task Stream_ClosesWhenTheGuestGainsMembershipOfAnotherTv_AndLosesTheDefault()
     {
-        await using var app = await TvApp.StartAsync(postgres);
+        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { WithoutTv = true });
         using var authenticator = new VirtualAuthenticator();
         await app.RegisterOwnerPasskeyAsync(authenticator);
         await app.ConfirmOwnerActionAsync(authenticator, "tv.bind-agent");
