@@ -2983,6 +2983,118 @@ export interface paths {
     };
     trace?: never;
   };
+  '/api/v1/identity/me/preferences': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AccountPreferencesResponse'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          'application/json': null | components['schemas']['SavePreferencesRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AccountPreferencesResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Conflict */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AccountPreferencesResponse'];
+          };
+        };
+        /** @description Too Many Requests */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/identity/passkeys': {
     parameters: {
       query?: never;
@@ -8366,6 +8478,13 @@ export interface components {
       password: null | string;
       token: null | string;
     };
+    AccountPreferencesResponse: {
+      home: null | components['schemas']['HomeEntryDto'][];
+      /** Format: date-time */
+      updatedAt: null | string;
+      /** Format: int32 */
+      version: number | string;
+    };
     AgentAlert: {
       /** Format: uuid */
       agentId: string;
@@ -8884,6 +9003,14 @@ export interface components {
       pausedAt: null | string;
       permissions: string[];
     };
+    HomeEntry: {
+      enabled: boolean;
+      id: string;
+    };
+    HomeEntryDto: {
+      enabled: boolean;
+      id: null | string;
+    };
     IdentityModuleInfo: {
       dependsOn: string[];
       module: string;
@@ -8988,12 +9115,17 @@ export interface components {
     PermissionPendingResponse: {
       items: components['schemas']['PermissionPending'][];
     };
+    PersonHome: {
+      entries: components['schemas']['HomeEntry'][];
+      state: string;
+    };
     PersonUsage: {
       /** Format: int32 */
       activeSessions: number | string;
       /** Format: date-time */
       disabledAt: null | string;
       displayName: string;
+      home: components['schemas']['PersonHome'];
       /** Format: uuid */
       id: string;
       /** Format: date-time */
@@ -9227,6 +9359,11 @@ export interface components {
       /** Format: int64 */
       version: null | number | string;
     };
+    SavePreferencesRequest: {
+      /** Format: int32 */
+      baseVersion: null | number | string;
+      home: null | components['schemas']['HomeEntryDto'][];
+    };
     SaveSystemSettingRequest: {
       value: components['schemas']['JsonElement'];
     };
@@ -9266,10 +9403,12 @@ export interface components {
       createdAt: string;
       /** Format: uuid */
       id: string;
+      installed?: null | boolean;
       ip: null | string;
       isCurrent: boolean;
       /** Format: date-time */
       lastUsedAt: string;
+      platform?: null | string;
       userAgent: null | string;
     };
     SetExerciseStepRequest: {
