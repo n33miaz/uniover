@@ -22,6 +22,10 @@ export interface TvCleanupConfigV1Body {
   focusClosesBackground?: boolean;
   shortAnimationsEnabled?: boolean;
   /**
+   * @maxItems 50
+   */
+  focusPackages?: string[];
+  /**
    * @maxItems 100
    */
   restrictedPackages?: string[];

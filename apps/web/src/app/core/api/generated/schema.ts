@@ -8165,6 +8165,70 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/tv/tvs/access': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          userId?: string[];
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvAccessResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/tvs/nearby': {
     parameters: {
       query?: never;
@@ -9123,6 +9187,8 @@ export interface components {
       /** Format: date-time */
       occurredAt: string;
       ok: boolean;
+      /** Format: uuid */
+      userId: string;
     };
     RefreshChallengeResponse: {
       challenge: null | string;
@@ -9353,6 +9419,14 @@ export interface components {
       programId: string;
       /** Format: date-time */
       updatedAt: string;
+    };
+    TvAccessPerson: {
+      tvIds: string[];
+      /** Format: uuid */
+      userId: string;
+    };
+    TvAccessResponse: {
+      items: components['schemas']['TvAccessPerson'][];
     };
     TvAgentChoice: {
       name: string;

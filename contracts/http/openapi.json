@@ -3240,10 +3240,15 @@
           },
           "ok": {
             "type": "boolean"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
           }
         },
         "required": [
           "id",
+          "userId",
           "command",
           "detail",
           "ok",
@@ -4191,6 +4196,40 @@
           "programId",
           "updatedAt",
           "clientUpdatedAt"
+        ],
+        "type": "object"
+      },
+      "TvAccessPerson": {
+        "properties": {
+          "tvIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "tvIds"
+        ],
+        "type": "object"
+      },
+      "TvAccessResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TvAccessPerson"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
         ],
         "type": "object"
       },
@@ -13752,6 +13791,68 @@
         ]
       }
     },
+    "/api/v1/tv/tvs/access": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "userId",
+            "schema": {
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TvAccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "TvAccessEndpoint"
+        ]
+      }
+    },
     "/api/v1/tv/tvs/nearby": {
       "get": {
         "parameters": [
@@ -14172,6 +14273,9 @@
     },
     {
       "name": "RecentCommandsEndpoint"
+    },
+    {
+      "name": "TvAccessEndpoint"
     },
     {
       "name": "StreamEventsEndpoint"
