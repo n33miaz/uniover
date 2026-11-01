@@ -103,7 +103,8 @@ def test_a_value_that_is_not_a_list_means_the_factory_list() -> None:
 
 
 def test_the_factory_list_is_the_same_one_the_api_shows_as_default() -> None:
-    # A API guarda a lista de fábrica para mostrar "voltar ao padrão"; se as duas divergirem a tela mente.
+    # A API guarda a lista de fábrica para mostrar "voltar ao padrão"; se as duas divergirem, a tela
+    # mente.
     assert API_SOURCE.is_file(), "a fonte da API deveria estar no mesmo repositório"
     source = API_SOURCE.read_text(encoding="utf-8")
     block = source.split("DefaultFocusPackages { get; } =", 1)[1].split("];", 1)[0]

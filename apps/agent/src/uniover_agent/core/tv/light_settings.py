@@ -26,8 +26,9 @@ ANIMATION_SETTINGS: Final = (
 SHORT_ANIMATION_SCALE: Final = "0.5"
 FOCUS_POLL_SECONDS: Final = 30.0
 FOCUS_STOP_GRACE_SECONDS: Final = 180.0
-# A lista de fábrica dos apps de vídeo que ligam o Modo Foco. A API pode mandar um catálogo próprio de cada TV
-# (`focusPackages`); sem ele, este é o que vale. A API guarda a mesma lista como padrão: um teste confere os dois lados.
+# A lista de fábrica dos apps de vídeo que ligam o Modo Foco. A API pode mandar um catálogo
+# próprio de cada TV (`focusPackages`); sem ele, este é o que vale. A API guarda a mesma lista
+# como padrão: um teste confere os dois lados.
 VIDEO_PACKAGES: Final = frozenset(
     {
         "com.google.android.youtube.tv",
@@ -73,8 +74,9 @@ _PACKAGE_NAME_MAX: Final = 255
 def focus_catalog_from(packages: object) -> frozenset[str]:
     """O catálogo que a API mandou, ou a lista de fábrica quando ela não mandou nenhum.
 
-    Só uma lista conta como "mandou": ausente (agente falando com API antiga, ou TV sem lista própria) volta ao padrão.
-    Item que não é nome de pacote é ignorado em vez de derrubar a configuração inteira. Lista vazia é válida: a
+    Só uma lista conta como "mandou": ausente (agente falando com API antiga, ou TV sem lista
+    própria) volta ao padrão. Item que não é nome de pacote é ignorado em vez de derrubar a
+    configuração inteira. Lista vazia é válida: a
     detecção automática fica sem apps e o interruptor manual segue valendo.
     """
     if not isinstance(packages, list):
@@ -82,7 +84,9 @@ def focus_catalog_from(packages: object) -> frozenset[str]:
     return frozenset(
         item
         for item in packages
-        if isinstance(item, str) and len(item) <= _PACKAGE_NAME_MAX and _PACKAGE_NAME.fullmatch(item)
+        if isinstance(item, str)
+        and len(item) <= _PACKAGE_NAME_MAX
+        and _PACKAGE_NAME.fullmatch(item)
     )
 
 
