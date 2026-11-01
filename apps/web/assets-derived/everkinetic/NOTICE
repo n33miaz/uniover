@@ -16,6 +16,9 @@ O que foi alterado (indicação exigida pela licença):
   para as duas poses do par), centralização sobre fundo branco na proporção 268:275 e redução para 536x550 pixels,
   para que todas as ilustrações tenham o mesmo tamanho e o mesmo enquadramento. O desenho em si não foi redesenhado,
   recolorido nem retocado.
+- No par 0090 (barra fixa com pegada paralela), onde a barra é bem mais larga que o corpo, a largura do recorte foi reduzida
+  (de 20% a 92% da largura da caixa do par, nas duas poses) para o corpo aparecer do tamanho das demais figuras; o trecho
+  cortado é só barra vazia.
 - Os SVG foram antes rasterizados em PNG grandes (3 vezes o tamanho natural, fundo branco) pelo Chromium, sem
   nenhuma alteração do desenho; os PNG de origem entram direto na conversão.
 - Os arquivos são gerados por apps/web/scripts/render-exercise-svg.mjs e apps/web/scripts/optimize-exercise-art.py a
