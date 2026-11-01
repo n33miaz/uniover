@@ -234,10 +234,10 @@ internal static class SiriCommandEndpoint
     private static async Task<IResult> HandleAsync(
         HttpContext http,
         SiriCommandHandler handler,
-        CancellationToken cancellationToken,
         // Obrigatório para documentar no contrato que a credencial do Atalho vai no cabeçalho, não no corpo.
         [FromHeader(Name = SiriHeaders.Token)] string token,
-        SiriCommandRequest? request = null)
+        SiriCommandRequest? request,
+        CancellationToken cancellationToken)
     {
         var result = await handler.HandleAsync(token, request, TvHttp.ClientOf(http), cancellationToken);
 
