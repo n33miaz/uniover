@@ -124,6 +124,7 @@ from uniover_agent.core import (
     MAINTENANCE_TYPE,
     PERMISSION_CAPABILITY,
     POWER_OFF_CAPABILITY,
+    SAMSUNG_MAINTENANCE_CAPABILITY,
     AppIconPublisher,
     AppsAnnouncer,
     Command,
@@ -138,6 +139,8 @@ from uniover_agent.core import (
     PairAgent,
     ProcessMessage,
     ResultStatus,
+    SamsungMaintenance,
+    SamsungMaintenanceScheduler,
     SamsungTvApps,
     TextReconciler,
     TvApps,
@@ -294,7 +297,7 @@ class TvSetup:
     known: TvKnown = field(default_factory=TvKnown)
     # O vigia do serviço do controle (só Android TV com `adb`): quem vê uma porta recusada o avisa.
     watchdog: TvWatchdog | None = None
-    cleanup_scheduler: TvCleanupScheduler | None = None
+    cleanup_scheduler: TvCleanupScheduler | SamsungMaintenanceScheduler | None = None
     light_settings: TvLightSettings | None = None
 
 
@@ -484,7 +487,7 @@ def build_samsung_tv(
     envelopes: EnvelopeFactory,
     secrets: SecretStore | None,
 ) -> TvSetup | None:
-    """Compõe somente o que a Samsung Tizen oferece: remoto e apps, sem ADB nem limpeza."""
+    """Compõe o que a Samsung Tizen oferece: remoto, apps e a manutenção por REST (sem ADB)."""
     if secrets is None:
         _log.warning("TV Samsung configurada, mas o cofre não foi aberto para ler o pareamento.")
         return None
@@ -548,6 +551,34 @@ def build_samsung_tv(
     )
     manager.subscribe(announcer.on_state)
     permission = TvPermission(remote, manager, transport, envelopes)
+    # Só leituras e fechamento pelo REST da TV, nunca o canal do controle: a manutenção não pode
+    # causar o aviso "Permitir". O foco real é desconhecido, então ela protege o último app aberto
+    # pelo UniOver e o que o estado da sessão apontar, além do que a própria TV diz estar visível.
+    maintenance = SamsungMaintenance(
+        remote,
+        clock,
+        lambda: {
+            app_id
+            for app_id in (apps.last_opened_app_id, manager.snapshot().app)
+            if app_id is not None
+        },
+    )
+    maintenance_scheduler = SamsungMaintenanceScheduler(
+        maintenance,
+        clock,
+        transport,
+        envelopes,
+        idle_seconds=settings.tv_samsung_maintenance_idle_seconds,
+    )
+
+    async def configure_maintenance(command: Command) -> CommandResult:
+        # Só o valor desta TV importa: a API manda o corpo da limpeza do Android junto, e a Samsung
+        # o ignora. Sem o campo (API antiga) a manutenção continua sem fazer nada.
+        value = command.body.get("maintenanceEnabled")
+        if isinstance(value, bool):
+            maintenance_scheduler.configure(value)
+        return CommandResult(command.id, ResultStatus.OK)
+
     return TvSetup(
         manager,
         transport,
@@ -567,22 +598,25 @@ def build_samsung_tv(
             "tv.cleanup.v1": tv_cleanup_skipped_handler(
                 transport,
                 envelopes,
-                "model-unconfirmed",
-                "a limpeza automática da TV Samsung fica desligada até confirmar o modelo",
+                "automatic-only",
+                "a TV Samsung faz a manutenção sozinha, quando fica parada",
             ),
+            "tv.cleanup.config.v1": configure_maintenance,
         },
         capabilities=[
             "tv.remote",
             "tv.kind.samsung",
             POWER_OFF_CAPABILITY,
             PERMISSION_CAPABILITY,
+            SAMSUNG_MAINTENANCE_CAPABILITY,
             *key_capabilities(SAMSUNG_OPTIONAL_KEYS),
         ],
-        background=[announcer.run],
+        background=[announcer.run, maintenance_scheduler.run],
         after_hello=[permission.announce, announcer.after_hello],
         # O pedido responde em segundos, mas não pode segurar a recepção enquanto a TV é consultada.
         background_commands={"tv.permission.request.v1"},
         known=known,
+        cleanup_scheduler=maintenance_scheduler,
     )
 
 

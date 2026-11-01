@@ -25,6 +25,7 @@ from samsungtvws.event import (
 from uniover_agent.adapters.tv_discovery import samsung_identity
 from uniover_agent.adapters.tv_samsung_volume import SamsungVolume
 from uniover_agent.core.tv.locator import TvIdentity
+from uniover_agent.core.tv.samsung_maintenance import SamsungAppStatus
 from uniover_agent.ports import TvNotPaired, TvPermissionNeeded, TvUnreachable
 
 _log = logging.getLogger(__name__)
@@ -345,6 +346,11 @@ class SamsungTvDriver:
         """A TV não reconhece mais o UniOver: nenhuma conexão é tentada até um pedido explícito."""
         return self._permission_needed
 
+    @property
+    def permission_granted(self) -> bool:
+        """Há um token guardado e a TV não pediu o aceite de novo? Só então a manutenção age."""
+        return bool(self._token) and not self._permission_needed
+
     def on_permission(self, callback: Callable[[bool], None]) -> None:
         """Avisa quando a permissão passa a ser necessária (`True`) ou volta a valer (`False`)."""
         self._permission.append(callback)
@@ -551,6 +557,62 @@ class SamsungTvDriver:
         except Exception:
             self._lost()
             raise TvUnreachable("não consegui abrir o app na TV Samsung") from None
+
+    async def app_statuses(self) -> list[SamsungAppStatus]:
+        """Estado (`running`, `visible`) dos apps conhecidos, só pelo REST da TV.
+
+        Nunca abre o canal do controle: o aviso "Permitir" só aparece quando alguém o abre. Apps
+        que não responderam (ou não estão instalados) ficam de fora da lista.
+        """
+        async with httpx.AsyncClient(transport=self._rest_transport) as client:
+            semaphore = asyncio.Semaphore(SAMSUNG_APP_PROBE_CONCURRENCY)
+            results = await asyncio.gather(
+                *(self._fetch_status(client, semaphore, app_id) for app_id in self._app_ids)
+            )
+        return [status for status in results if status is not None]
+
+    async def app_status(self, app_id: str) -> SamsungAppStatus | None:
+        """O estado de um app agora, pelo REST; `None` se a TV não respondeu."""
+        async with httpx.AsyncClient(transport=self._rest_transport) as client:
+            return await self._fetch_status(client, asyncio.Semaphore(1), app_id)
+
+    async def close_app(self, app_id: str) -> bool:
+        """Fecha um app pelo REST (`DELETE`); `True` só se a TV respondeu com sucesso."""
+        try:
+            async with httpx.AsyncClient(transport=self._rest_transport) as client:
+                response = await asyncio.wait_for(
+                    client.delete(self._application_url(app_id)),
+                    timeout=self._app_timeout_seconds,
+                )
+        except httpx.HTTPError, TimeoutError:
+            return False
+        return response.is_success
+
+    async def _fetch_status(
+        self, client: httpx.AsyncClient, semaphore: asyncio.Semaphore, app_id: str
+    ) -> SamsungAppStatus | None:
+        async with semaphore:
+            try:
+                response = await asyncio.wait_for(
+                    client.get(self._application_url(app_id)), timeout=self._app_timeout_seconds
+                )
+            except httpx.HTTPError, TimeoutError:
+                return None
+        if response.status_code != httpx.codes.OK:
+            return None
+        try:
+            data = response.json()
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            return SamsungAppStatus(app_id, None, None)
+        # Só booleano de verdade é prova; texto como "true" ou número valem como "não sei".
+        running, visible = data.get("running"), data.get("visible")
+        return SamsungAppStatus(
+            app_id,
+            running if isinstance(running, bool) else None,
+            visible if isinstance(visible, bool) else None,
+        )
 
     def on_power(self, callback: Callable[[bool], None]) -> None:
         self._power.append(callback)

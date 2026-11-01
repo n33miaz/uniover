@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     tv_name: str = "tv"
     # Apps Tizen extras a consultar no endpoint REST da Samsung; a TV só publica os instalados.
     tv_samsung_apps: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Depois do uso pelo UniOver, quanto a Samsung deve ficar ociosa antes da manutenção automática.
+    # Cada agente controla uma TV, então este ajuste é naturalmente por TV.
+    tv_samsung_maintenance_idle_seconds: int = Field(default=15 * 60, ge=60, le=60 * 60)
     # Sem comando e sem aviso de "app aberto" por este tempo, a sessão com a TV hiberna.
     tv_hibernate_seconds: int = Field(default=300, ge=1)
     # Desligar com leitura (`tv.power.off.v1`): quanto esperar a leitura de energia antes da tecla e

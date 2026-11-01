@@ -32,6 +32,11 @@ from uniover_agent.core.tv.locator import Located, TvIdentity, TvKnown, TvLocato
 from uniover_agent.core.tv.permission import PERMISSION_CAPABILITY, TvPermission
 from uniover_agent.core.tv.relocator import TvRelocator
 from uniover_agent.core.tv.samsung_apps import SamsungTvApps
+from uniover_agent.core.tv.samsung_maintenance import (
+    SAMSUNG_MAINTENANCE_CAPABILITY,
+    SamsungMaintenance,
+    SamsungMaintenanceScheduler,
+)
 from uniover_agent.core.tv.session import (
     TV_NOT_PAIRED,
     TV_PERMISSION_NEEDED,
@@ -53,6 +58,7 @@ __all__ = [
     "DISCOVERY_CAPABILITY",
     "PERMISSION_CAPABILITY",
     "POWER_OFF_CAPABILITY",
+    "SAMSUNG_MAINTENANCE_CAPABILITY",
     "TV_NOT_PAIRED",
     "TV_PERMISSION_NEEDED",
     "TV_UNREACHABLE",
@@ -67,6 +73,8 @@ __all__ = [
     "Located",
     "PackageLauncher",
     "PowerOffResult",
+    "SamsungMaintenance",
+    "SamsungMaintenanceScheduler",
     "SamsungTvApps",
     "SessionState",
     "TextReconciler",

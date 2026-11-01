@@ -63,6 +63,7 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_TV_CLIENT_NAME` | nome do agente que aparece na TV no pareamento (padrão `UniOver`) |
 | `UNIOVER_TV_NAME` | nome da pasta do certificado desta TV (padrão `tv`) |
 | `UNIOVER_TV_SAMSUNG_APPS` | IDs Tizen extras a procurar, separados por vírgula; a TV só publica os instalados |
+| `UNIOVER_TV_SAMSUNG_MAINTENANCE_IDLE_SECONDS` | ociosidade antes da manutenção automática da Samsung (padrão 900, de 60 a 3600) |
 | `UNIOVER_TV_HIBERNATE_SECONDS` | segundos sem comando até a sessão com a TV hibernar (padrão `300`) |
 | `UNIOVER_TV_POWER_OFF_READ_TIMEOUT_SECONDS` | quanto o desligar com leitura espera a TV informar se está ligada, antes de apertar `POWER` (padrão `2`) |
 | `UNIOVER_TV_POWER_OFF_CONFIRMATION_TIMEOUT_SECONDS` | quanto espera a confirmação depois da tecla (padrão `5`); sem ela o resultado é `uncertain` e a tecla não é repetida |
@@ -165,7 +166,26 @@ WebSocket (quando o firmware entrega o caminho, o agente busca o ícone e public
 respondem, consulta pelo REST um catálogo de apps conhecidos e os IDs extras em `UNIOVER_TV_SAMSUNG_APPS`. A web tem
 ícones locais para os serviços Tizen mais comuns nesse segundo caso. A abertura tenta o mesmo REST antes de recorrer
 ao canal Samsung. A lista usa aliases internos válidos no contrato, mas abre o `appId` original Tizen. Não há ADB,
-limpeza de apps, abertura de links ou digitação pelo canal desta TV: esses pedidos retornam `unsupported`.
+abertura de links ou digitação pelo canal desta TV: esses pedidos retornam `unsupported`, e a limpeza pedida à mão
+responde "pulada" (a manutenção é automática, abaixo).
+
+**Manutenção automática (`tv.maintenance.v1`).** Depois de 15 minutos sem uso pelo UniOver (`UNIOVER_TV_SAMSUNG_MAINTENANCE_IDLE_SECONDS`,
+de 60 a 3600 s), a Samsung ligada fecha apps de fundo, e **só os que a própria TV prova** estarem rodando e ocultos: o
+REST `GET /api/v2/applications/<id>` informa `running` e `visible` por app, e o fechamento é o `DELETE` do mesmo
+endereço. Na dúvida nada é fechado e o relatório diz "pulada". Regras, todas com teste:
+
+- nunca abre o canal do controle (é isso que faz a TV mostrar "Permitir") e nunca pede permissão: sem token, ou com a
+  marca de permissão pendente, não toca na TV e avisa uma vez (o mesmo aviso que a tela de permissão já usa);
+- exige exatamente um app visível na leitura, como prova de que `visible` funciona nesta TV; com zero ou vários
+  visíveis, ou `running`/`visible` que não sejam booleanos, pula tudo;
+- nunca fecha o app visível, o último aberto pelo UniOver nem o app do estado da sessão;
+- lê duas vezes (3 s entre elas) e relê o app logo antes de fechar; se a TV trocou de app ou alguém voltou a usá-la,
+  para;
+- só conta o `DELETE` que a TV aceitou;
+- só arma com uso pelo UniOver: uma TV usada só com o controle físico nunca dispara a manutenção.
+
+A API manda a preferência desta TV em `tv.cleanup.config.v1` (`maintenanceEnabled`, ligada por padrão); o agente não
+faz nada antes de recebê-la. O relatório sai como limpeza `deep` com gatilho `maintenance`.
 
 O canal Samsung só envia teclas e não informa o volume. O agente tenta lê-lo pelo serviço UPnP RenderingControl, por
 uma cascata que guarda o caminho que funcionou nesta TV: (1) a descrição do renderizador na porta 9197 (`/dmr`), (2) o
