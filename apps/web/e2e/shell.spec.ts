@@ -367,6 +367,9 @@ test.describe('início e navegação', () => {
     const response = await request.get('/');
     const csp = response.headers()['content-security-policy'];
     expect(csp).toContain("script-src 'self'");
+    const nonce = /script-src 'self' 'nonce-([^']+)'/.exec(csp)?.[1];
+    expect(nonce).toBeTruthy();
+    expect(await response.text()).toContain(`<script nonce="${nonce}">`);
     expect(csp).not.toContain('unsafe-inline');
     expect(csp).not.toContain('unsafe-eval');
   });
@@ -417,35 +420,27 @@ test.describe('casca offline e service worker', () => {
     await expect(manifest).toHaveAttribute('href', '/manifest.webmanifest');
   });
 
-  test('versão nova do service worker mostra o aviso e atualiza ao aceitar', async ({
+  test('versão nova do service worker assume sozinha e atende a próxima abertura', async ({
     page,
     context,
     baseURL,
   }) => {
     await page.goto('/');
     await waitForServiceWorkerControl(page);
-    const banner = status(page, 'Nova versão disponível');
-    await expect(banner).toHaveCount(0);
-
     // O servidor de teste devolve um sw.js diferente quando este cookie existe.
     await context.addCookies([{ name: 'sw-variant', value: '2', url: baseURL! }]);
     await page.evaluate(async () => {
       const registration = await navigator.serviceWorker.getRegistration();
-      await registration?.update();
+      if (!registration) throw new Error('registro ausente');
+      await new Promise<void>((resolve) => {
+        navigator.serviceWorker.addEventListener('controllerchange', () => resolve(), {
+          once: true,
+        });
+        void registration.update();
+      });
     });
-    await expect(banner).toBeVisible();
-    await settle(page);
-    await screenshot(page, 'test-results/update-banner.png');
-
-    const before = await page.evaluate(() => performance.timeOrigin);
-    await banner.getByRole('button', { name: 'Atualizar' }).click();
-    await expect
-      .poll(() => page.evaluate(() => performance.timeOrigin).catch(() => before), {
-        message: 'a página recarregou',
-      })
-      .not.toBe(before);
+    await page.reload();
     await waitForServiceWorkerControl(page);
-    await expect(banner).toHaveCount(0);
     await expect(blocks(page)).toHaveCount(MODULE_COUNT);
   });
 });
