@@ -56,6 +56,11 @@
   background: var(--a-surface-2);
 }
 
+.meter[data-band='neutral'] {
+  --tone: var(--a-accent);
+  --tone-ink: var(--a-ink2);
+}
+
 .meter[data-band='amber'] {
   --tone: var(--a-warn);
   --tone-ink: var(--a-warn-ink);
