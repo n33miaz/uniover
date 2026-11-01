@@ -1852,6 +1852,12 @@
       },
       "DevicesModuleInfo": {
         "properties": {
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "module": {
             "type": "string"
           },
@@ -1861,7 +1867,8 @@
         },
         "required": [
           "module",
-          "version"
+          "version",
+          "features"
         ],
         "type": "object"
       },
