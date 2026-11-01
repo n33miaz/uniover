@@ -568,3 +568,12 @@ def test_both_install_modes_back_up_the_environment_before_the_swap_and_drop_it_
             "Get-AgentSource $source {", installer.index(marker)
         )
     assert installer.count("Remove-EnvironmentBackup") >= 3
+
+
+def test_manual_install_keeps_the_environment_backup_until_the_task_is_started() -> None:
+    installer = INSTALLER.read_text(encoding="utf-8")
+    manual = installer[installer.index("$answer = Read-Host") - 200 :]
+    before_question = manual[: manual.index("$answer = Read-Host")]
+    assert "Remove-EnvironmentBackup" not in before_question
+    started = manual.index("Start-ScheduledTask -TaskName $taskName")
+    assert manual.index("Remove-EnvironmentBackup", started) > started
