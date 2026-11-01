@@ -71,6 +71,34 @@ public class FocusClosesBackgroundTests
             .Should().BeFalse();
     }
 
+    private const string Catalog = CleanupSettingsPublisher.FocusCatalogCapability;
+
+    [Fact]
+    public void TheCatalogOnlyGoesToAnAgentThatAnnouncesIt_AndOnlyWhenTheAdministratorChangedIt()
+    {
+        const string list = "[\"com.exemplo.cinema\"]";
+        JsonElement With(string[] capabilities, string? packages) =>
+            CleanupSettingsPublisher.BuildBody(capabilities, false, true, false, "[]", false, true, true, 700, packages);
+
+        With([Light, Focus], list).TryGetProperty("focusPackages", out _).Should().BeFalse("o schema antigo recusaria a mensagem inteira");
+        With([Light, Focus, Catalog], null).TryGetProperty("focusPackages", out _).Should().BeFalse("sem lista própria vale a de fábrica");
+        With([Light, Focus, Catalog], list).GetProperty("focusPackages").EnumerateArray().Select(p => p.GetString())
+            .Should().Equal("com.exemplo.cinema");
+        With([CleanupSettingsPublisher.Capability], list).EnumerateObject().Select(p => p.Name).Should()
+            .BeEquivalentTo("lightEnabled", "deepEnabled", "deepThresholdMb", "closeBackgroundApps");
+    }
+
+    [Fact]
+    public void ChangingTheCatalog_IsRefusedWhenThePresentAgentDoesNotAnnounceIt()
+    {
+        var request = new UpdateTvRequest(null, null, FocusPackages: ["com.exemplo.cinema"]);
+
+        ManageTvsHandler.IsFocusCatalogUnsupported(request, Present(Light, Focus)).Should().BeTrue();
+        ManageTvsHandler.IsFocusCatalogUnsupported(request, Present(Light, Focus, Catalog)).Should().BeFalse();
+        ManageTvsHandler.IsFocusCatalogUnsupported(request, null).Should().BeFalse("agente que ainda não se apresentou: a lista fica guardada");
+        ManageTvsHandler.IsFocusCatalogUnsupported(new UpdateTvRequest(null, null, FocusModeEnabled: true), Present(Light)).Should().BeFalse();
+    }
+
     [Fact]
     public void TheLatestCleanupSummary_IgnoresTheReportsOfTheFocusMode()
     {

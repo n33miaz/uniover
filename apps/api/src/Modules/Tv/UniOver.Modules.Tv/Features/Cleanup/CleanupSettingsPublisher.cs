@@ -30,13 +30,19 @@ internal sealed class CleanupSettingsPublisher(
     /// </summary>
     public const string FocusClosesBackgroundCapability = "tv.focus-closes-background.v1";
 
+    /// <summary>
+    /// Quem a anuncia recebe o catálogo do Modo Foco da TV (<c>focusPackages</c>). Sem ela o campo nunca vai (o schema antigo
+    /// recusaria a mensagem inteira) e o agente segue com a lista de fábrica dele.
+    /// </summary>
+    public const string FocusCatalogCapability = "tv.focus-catalog.v1";
+
     public async Task PublishAsync(string? agentSlug = null, CancellationToken cancellationToken = default)
     {
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TvDbContext>();
         var tvs = await db.Tvs.AsNoTracking()
             .Where(tv => agentSlug == null || tv.AgentSlug == agentSlug)
-            .Select(tv => new { tv.AgentSlug, tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled, tv.RestrictedBackgroundPackages, tv.FocusClosesBackground })
+            .Select(tv => new { tv.AgentSlug, tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled, tv.RestrictedBackgroundPackages, tv.FocusClosesBackground, tv.FocusPackages })
             .ToListAsync(cancellationToken);
         var targets = tvs
             .Select(tv => (Tv: tv, Info: presence.Get(tv.AgentSlug)))
@@ -53,7 +59,7 @@ internal sealed class CleanupSettingsPublisher(
         {
             var body = BuildBody(
                 info!.Capabilities, tv.AllowBackgroundAppClosing, tv.FocusModeEnabled, tv.ShortAnimationsEnabled,
-                tv.RestrictedBackgroundPackages, tv.FocusClosesBackground, light, deep, threshold);
+                tv.RestrictedBackgroundPackages, tv.FocusClosesBackground, light, deep, threshold, tv.FocusPackages);
             await sender.PostAsync(tv.AgentSlug, new TvMessage("tv.cleanup.config.v1", body), cancellationToken);
         }
     }
@@ -64,7 +70,7 @@ internal sealed class CleanupSettingsPublisher(
     /// </summary>
     internal static JsonElement BuildBody(
         IReadOnlyList<string> capabilities, bool closeBackgroundApps, bool focus, bool shortAnimations, string packages,
-        bool focusCloses, bool light, bool deep, int threshold)
+        bool focusCloses, bool light, bool deep, int threshold, string? focusPackages = null)
     {
         if (!capabilities.Contains(LightSettingsCapability, StringComparer.Ordinal))
         {
@@ -91,6 +97,10 @@ internal sealed class CleanupSettingsPublisher(
         // Só o Modo Foco ligado nesta TV pode mandar fechar apps: desligado, o campo vai falso.
         if (knowsFocusCloses)
             fields["focusClosesBackground"] = focus && focusCloses;
+
+        // Só uma lista que o administrador mudou vai; sem ela o agente usa a de fábrica (campo ausente = padrão).
+        if (focusPackages is not null && capabilities.Contains(FocusCatalogCapability, StringComparer.Ordinal))
+            fields["focusPackages"] = ReadPackages(focusPackages);
         return JsonSerializer.SerializeToElement(fields);
     }
 

@@ -8215,6 +8215,43 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/tv/tvs/{id}/focus-catalog': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvFocusCatalogResponse'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/tv/tvs/{id}/members': {
     parameters: {
       query?: never;
@@ -8270,6 +8307,70 @@ export interface paths {
         };
       };
     };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/tv/tvs/access': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          userId?: string[];
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['TvAccessResponse'];
+          };
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['ProblemDetails'];
+          };
+        };
+      };
+    };
+    put?: never;
     post?: never;
     delete?: never;
     options?: never;
@@ -9255,6 +9356,8 @@ export interface components {
       /** Format: date-time */
       occurredAt: string;
       ok: boolean;
+      /** Format: uuid */
+      userId: string;
     };
     RefreshChallengeResponse: {
       challenge: null | string;
@@ -9493,6 +9596,14 @@ export interface components {
       /** Format: date-time */
       updatedAt: string;
     };
+    TvAccessPerson: {
+      tvIds: string[];
+      /** Format: uuid */
+      userId: string;
+    };
+    TvAccessResponse: {
+      items: components['schemas']['TvAccessPerson'][];
+    };
     TvAgentChoice: {
       name: string;
       online: boolean;
@@ -9556,6 +9667,11 @@ export interface components {
       agentStatus: string;
       name: string;
       source: string;
+    };
+    TvFocusCatalogResponse: {
+      defaults: string[];
+      isCustom: boolean;
+      packages: string[];
     };
     TvLayoutDocument: {
       buttonSize: string;
@@ -9642,6 +9758,7 @@ export interface components {
       allowBackgroundAppClosing?: null | boolean;
       focusClosesBackground?: null | boolean;
       focusModeEnabled?: null | boolean;
+      focusPackages?: null | string[];
       name: null | string;
       restrictedBackgroundPackages?: null | string[];
       shortAnimationsEnabled?: null | boolean;

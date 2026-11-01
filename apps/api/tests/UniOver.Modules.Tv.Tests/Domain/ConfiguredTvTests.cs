@@ -122,6 +122,46 @@ public class ConfiguredTvTests
     }
 
     [Fact]
+    public void FocusCatalog_StartsAsTheFactoryList_AndStoresOnlyWhatTheAdministratorChanged()
+    {
+        var tv = ConfiguredTv.CreateDefault("TV", "pc-casa", Admin, Now);
+        tv.FocusPackages.Should().BeNull();
+        tv.FocusCatalog().Should().BeEquivalentTo(ConfiguredTv.DefaultFocusPackages);
+
+        tv.SetFocusCatalog(ConfiguredTv.DefaultFocusPackages.Reverse().ToArray(), Admin, Now.AddMinutes(1)).Should().BeFalse("é a lista de fábrica");
+        tv.SetFocusCatalog(["com.exemplo.b", "com.exemplo.a", "com.exemplo.a"], Admin, Now.AddMinutes(2)).Should().BeTrue();
+        tv.FocusCatalog().Should().Equal("com.exemplo.a", "com.exemplo.b");
+        tv.UpdatedAt.Should().Be(Now.AddMinutes(2));
+        tv.SetFocusCatalog(["com.exemplo.a", "com.exemplo.b"], Admin, Now.AddMinutes(3)).Should().BeFalse();
+        tv.SetFocusCatalog([], Admin, Now.AddMinutes(4)).Should().BeTrue();
+        tv.FocusCatalog().Should().BeEmpty("lista vazia vale: só o interruptor manual liga o Modo Foco");
+        tv.SetFocusCatalog(ConfiguredTv.DefaultFocusPackages, Admin, Now.AddMinutes(5)).Should().BeTrue();
+        tv.FocusPackages.Should().BeNull("voltar ao padrão apaga o que estava guardado");
+    }
+
+    [Theory]
+    [InlineData("com.netflix.ninja", true)]
+    [InlineData("com.exemplo.remote.player", true)]
+    [InlineData("com.android.systemui", false)]
+    [InlineData("com.google.android.tvlauncher", false)]
+    [InlineData("com.tcl.sistema", false)]
+    [InlineData("sem ponto", false)]
+    [InlineData("", false)]
+    public void FocusApp_MustLookLikeAPackage_AndNotBeASystemPart(string package, bool expected) =>
+        ConfiguredTv.CanBeFocusApp(package).Should().Be(expected);
+
+    [Fact]
+    public void FocusCatalog_ListValidation_RefusesDuplicatesNullsAndTooMany()
+    {
+        ConfiguredTv.IsValidFocusPackages(null).Should().BeTrue();
+        ConfiguredTv.IsValidFocusPackages([]).Should().BeTrue();
+        ConfiguredTv.IsValidFocusPackages(["com.exemplo.a"]).Should().BeTrue();
+        ConfiguredTv.IsValidFocusPackages(["com.exemplo.a", "com.exemplo.a"]).Should().BeFalse();
+        ConfiguredTv.IsValidFocusPackages(["com.exemplo.a", null]).Should().BeFalse();
+        ConfiguredTv.IsValidFocusPackages(Enumerable.Range(0, 51).Select(i => $"com.exemplo.app{i}").ToArray()).Should().BeFalse();
+    }
+
+    [Fact]
     public void FocusClosesBackground_StartsOff_AndOnlyAChangeCounts()
     {
         var tv = ConfiguredTv.CreateDefault("TV", "pc-casa", Admin, Now);

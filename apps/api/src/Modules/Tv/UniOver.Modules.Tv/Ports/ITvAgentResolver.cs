@@ -11,14 +11,11 @@ internal enum TvAgentSource
 
     /// <summary>Salvo no app pelo administrador (o banco). É o que vale quando existe.</summary>
     Saved,
-
-    /// <summary>Só a variável de ambiente <c>Modules:Tv:AgentId</c>: o valor de reserva, de antes de haver tela.</summary>
-    Environment,
 }
 
 /// <summary>O computador (agente) que controla a TV padrão, como o resolvedor o entregou.</summary>
 /// <param name="AgentSlug">O <c>agentId</c>; nulo quando <paramref name="Source"/> é <see cref="TvAgentSource.None"/>.</param>
-/// <param name="Name">O nome da TV (o salvo no app, ou o padrão quando o valor vem do ambiente).</param>
+/// <param name="Name">O nome da TV salvo no app (o padrão quando nada foi salvo).</param>
 internal sealed record TvAgentBinding(string? AgentSlug, string Name, TvAgentSource Source)
 {
     public static TvAgentBinding NotConfigured { get; } = new(null, ConfiguredTv.DefaultName, TvAgentSource.None);
@@ -27,15 +24,15 @@ internal sealed record TvAgentBinding(string? AgentSlug, string Name, TvAgentSou
 }
 
 /// <summary>
-/// Quem diz qual agente controla a TV: a linha salva no app vence a variável de ambiente, que vence o "nada". Todo ponto
-/// do módulo que antes lia a opção direto pergunta aqui. O valor fica num cache curto, que quem salva troca na hora.
+/// Quem diz qual agente controla a TV: a linha salva no app, ou "nada". Todo ponto do módulo pergunta aqui. O valor fica
+/// num cache curto, que quem salva troca na hora.
 /// </summary>
 internal interface ITvAgentResolver
 {
     /// <summary>
     /// O valor atual. Com o cache válido volta já, sem ir ao banco; senão lê a linha da TV padrão. Se o banco não
     /// responder, segue com o último valor conhecido (a TV não pode parar por isso); sem nenhum valor conhecido devolve
-    /// "não configurado" e NUNCA a variável de ambiente, que só vale quando o banco respondeu e não tinha linha.
+    /// "não configurado".
     /// </summary>
     ValueTask<TvAgentBinding> ResolveAsync(CancellationToken cancellationToken);
 

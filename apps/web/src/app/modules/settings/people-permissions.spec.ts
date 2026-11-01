@@ -3,6 +3,7 @@ import {
   TRAINING_ONLY,
   TV_ACTIONS,
   TV_CONTROL_ONLY,
+  TV_PICKER_ACTIONS,
   applyModel,
   hasModule,
   modelLabel,
@@ -13,6 +14,7 @@ import {
   samePermissions,
   togglePermission,
 } from './people-permissions';
+import { permissionLabels } from './settings-titles';
 
 describe('people permissions', () => {
   describe('the catalog and the ready-made models', () => {
@@ -135,10 +137,30 @@ describe('people permissions', () => {
     });
   });
 
+  describe('the legacy history permission, which only the administrator uses', () => {
+    it('is never offered, named or summarized, but is kept when a list carries it', () => {
+      expect(TV_PICKER_ACTIONS).not.toContain('tv:history');
+      expect(permissionSummary(['module:tv', 'tv:history'])).toBe('Ver a TV');
+      expect(permissionLabels(['module:tv', 'tv:control', 'tv:history'])).toEqual([
+        'Controlar a TV',
+      ]);
+      expect(normalizePermissions(['tv:history', 'module:tv'])).toEqual([
+        'module:tv',
+        'tv:history',
+      ]);
+    });
+
+    it('does not change which ready-made model a list is, with or without it', () => {
+      const withoutHistory = TV_CONTROL_ONLY.filter((permission) => permission !== 'tv:history');
+      expect(modelOf(TV_CONTROL_ONLY)).toBe('tv-control');
+      expect(modelOf(withoutHistory)).toBe('tv-control');
+    });
+  });
+
   describe('the one-line summary, with the same phrases as the Profile', () => {
     it('summarizes the control-only model', () => {
       expect(permissionSummary(TV_CONTROL_ONLY)).toBe(
-        'Controlar a TV · Desligar a TV · Abrir apps · Ver o histórico',
+        'Controlar a TV · Desligar a TV · Abrir apps',
       );
     });
 
@@ -167,7 +189,8 @@ describe('people permissions', () => {
 
   describe('the texts of the switches and the models', () => {
     it('gives every permission of the catalog a plain phrase', () => {
-      for (const permission of CATALOG) {
+      // A permissão legada do histórico não tem frase: nenhuma tela a oferece.
+      for (const permission of CATALOG.filter((item) => item !== 'tv:history')) {
         expect(permissionOptionLabel(permission)).not.toBe(permission);
         expect(permissionOptionLabel(permission)).not.toMatch(/:/);
       }

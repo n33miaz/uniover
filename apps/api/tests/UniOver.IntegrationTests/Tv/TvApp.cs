@@ -38,8 +38,14 @@ internal sealed record TvAppOptions
     /// <summary>Limite da política de comandos; o padrão alto não atrapalha os testes que não falam de limite.</summary>
     public int CommandsPermitted { get; init; } = 100000;
 
-    /// <summary>Slug do agente que controla a TV. O pareamento de "PC Casa" produz exatamente <c>pc-casa</c>.</summary>
-    public string AgentId { get; init; } = TvApp.AgentSlug;
+    /// <summary>
+    /// Sem nenhuma TV salva: o computador "PC Casa" é pareado, mas a TV que a aprovação criou é apagada. Por padrão ela
+    /// fica (a TV padrão, ligada ao <c>pc-casa</c>), como numa instalação em uso.
+    /// </summary>
+    public bool WithoutTv { get; init; }
+
+    /// <summary>A variável de ambiente antiga da TV (<c>Modules:Tv:AgentId</c>), que só a passagem de partida ainda lê.</summary>
+    public string? LegacyAgentSlug { get; init; }
 
     /// <summary>
     /// Quando informado, o banco do Identity é migrado só até a versão anterior às permissões, este gancho grava os dados
@@ -187,7 +193,6 @@ internal sealed class TvApp : IAsyncDisposable
             ["Modules:Devices:Pairing:RequireStepUp"] = "false",
             // Sem graça de presença: estes testes conferem a queda na hora.
             ["Modules:Devices:Transport:PresenceGraceSeconds"] = "0",
-            ["Modules:Tv:AgentId"] = options.AgentId,
             ["RateLimiting:login:Permitted"] = "100000",
             ["RateLimiting:refresh:Permitted"] = "100000",
             ["RateLimiting:pairing:Permitted"] = "100000",
@@ -202,6 +207,11 @@ internal sealed class TvApp : IAsyncDisposable
 
         // As varreduras de permissão do convidado olham o Treino inteiro, fotos de progresso incluídas.
         Training.TrainingApp.EnablePhotoStorage(settings);
+
+        if (options.LegacyAgentSlug is { } legacy)
+        {
+            settings["Modules:Tv:AgentId"] = legacy;
+        }
 
         var root = new EdgeFactory("Development", settings);
         var factory = root.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
@@ -218,8 +228,28 @@ internal sealed class TvApp : IAsyncDisposable
         var app = new TvApp(root, factory, database, time, logs, ownerEmail, password) { SigningKey = signingKey };
         await factory.Services.GetRequiredService<OwnerBootstrapService>().Completion;
         app.Login = await app.LoginAsync();
-        app.Agent = await app.PairAsync("PC Casa");
+        app.Agent = await app.PairAsync("PC Casa", keepTv: !options.WithoutTv);
+        app.Services.GetRequiredService<Modules.Tv.Ports.ITvAgentResolver>().Invalidate();
         return app;
+    }
+
+    /// <summary>
+    /// Roda de novo a passagem que a partida faz com a variável antiga. O host de teste sobe antes de o computador ser pareado
+    /// (a partida real encontra o computador já pareado), por isso o teste a chama depois do pareamento, como numa partida seguinte.
+    /// </summary>
+    public async Task RunLegacyImportAsync()
+    {
+        var import = Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
+            .OfType<Modules.Tv.Adapters.LegacyAgentImport>().Single();
+        await import.StartAsync(TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>Várias partidas ao mesmo tempo, como duas instâncias da API subindo juntas.</summary>
+    public async Task RunLegacyImportConcurrentlyAsync(int instances)
+    {
+        var import = Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
+            .OfType<Modules.Tv.Adapters.LegacyAgentImport>().Single();
+        await Task.WhenAll(Enumerable.Range(0, instances).Select(_ => import.StartAsync(TestContext.Current.CancellationToken)));
     }
 
     public static TvDbContext CreateContext(string connection)
@@ -304,7 +334,7 @@ internal sealed class TvApp : IAsyncDisposable
     }
 
     /// <summary>Pareamento completo pelo fluxo HTTP (start, aprovação, consulta) para ter um token de dispositivo real.</summary>
-    public async Task<PairedAgent> PairAsync(string name)
+    public async Task<PairedAgent> PairAsync(string name, bool keepTv = false)
     {
         using var start = await SendAsync(
             HttpMethod.Post, "/api/v1/devices/pairing/start", new { agentName = name, platform = "windows", agentVersion = "0.1.0" }, bearer: null);
@@ -317,13 +347,16 @@ internal sealed class TvApp : IAsyncDisposable
         var approved = await JsonAsync(approve);
         var agentId = approved.GetProperty("id").GetGuid();
 
-        // A aprovação cria a TV do computador; estes testes montam a configuração da TV por conta própria.
-        await using (var tv = Db())
+        // A aprovação cria a TV do computador. Só a do primeiro computador fica (a TV da instalação); as demais os testes montam.
+        if (!keepTv)
         {
-            var slug = approved.GetProperty("slug").GetString();
-            var created = await tv.Tvs.Where(t => t.AgentSlug == slug).Select(t => t.Id).ToListAsync();
-            await tv.TvMembers.Where(m => created.Contains(m.TvId)).ExecuteDeleteAsync();
-            await tv.Tvs.Where(t => created.Contains(t.Id)).ExecuteDeleteAsync();
+            await using (var tv = Db())
+            {
+                var slug = approved.GetProperty("slug").GetString();
+                var created = await tv.Tvs.Where(t => t.AgentSlug == slug).Select(t => t.Id).ToListAsync();
+                await tv.TvMembers.Where(m => created.Contains(m.TvId)).ExecuteDeleteAsync();
+                await tv.Tvs.Where(t => created.Contains(t.Id)).ExecuteDeleteAsync();
+            }
         }
 
         using var poll = await SendAsync(

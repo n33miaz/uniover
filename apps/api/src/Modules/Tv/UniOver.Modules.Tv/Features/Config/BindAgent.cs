@@ -73,8 +73,7 @@ internal sealed class BindAgentHandler(
     /// Passa o controle da TV para o computador escolhido. Devolve a configuração nova, ou nulo quando o computador não
     /// existe entre os pareados ou foi revogado (nada é gravado). A troca e a linha da trilha saem no mesmo
     /// <c>SaveChanges</c>: não há troca sem registro de quem a fez, nem registro de uma troca que não houve. Salvar o
-    /// mesmo computador que já estava não grava nem registra nada, a não ser que o valor viesse só da variável de
-    /// ambiente: aí a linha é criada, que é como o administrador tira a variável do servidor com segurança. Se dois
+    /// mesmo computador que já estava não grava nem registra nada. Se dois
     /// primeiros salvamentos chegam juntos e o índice único barra o segundo, ele relê a linha que ficou e aplica a regra
     /// normal (igual: nada a gravar; diferente: o último vence), sem erro.
     /// </summary>

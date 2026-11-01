@@ -86,6 +86,12 @@ export class SettingsPage {
             title: SETTINGS_TITLES.people,
           },
           {
+            id: 'tv-people',
+            link: '/ajustes/tvs-por-pessoa',
+            glyph: 'tv',
+            title: SETTINGS_TITLES.tvPeople,
+          },
+          {
             id: 'devices',
             link: '/ajustes/dispositivos',
             glyph: 'laptop',

@@ -33,7 +33,7 @@ export interface SystemMock {
   readonly computers: MockComputer[];
   /** O computador que controla a TV agora (`null` = nenhum) e de onde vem a escolha. */
   current: string | null;
-  source: 'saved' | 'environment' | 'none';
+  source: 'saved' | 'none';
   /** Quantas leituras seguintes respondem 500 (para o estado de erro e o "Tentar de novo"). */
   failReads: number;
   settings: { key: string; value: string | number | boolean; source: 'app' | 'server' }[];

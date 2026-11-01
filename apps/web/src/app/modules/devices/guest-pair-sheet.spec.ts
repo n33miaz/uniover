@@ -68,10 +68,12 @@ describe('GuestPairSheet', () => {
     return { fixture, el, field, type, submit, done, closed };
   }
 
-  it('comes with the code and a TV name made from the account, and asks for the password', async () => {
+  it('comes with the code and an empty nickname, and asks for the password', async () => {
     const { field, submit } = await render();
     expect(field('guest-pair-code').value).toBe('BCDF-2345');
-    expect(field('guest-pair-name').value).toBe('TV de Raphael');
+    expect(field('guest-pair-name').value).toBe('');
+    expect(field('guest-pair-name').placeholder).toBe('TV');
+    expect(field('guest-pair-name').maxLength).toBe(20);
     expect(field('guest-pair-password').type).toBe('password');
     expect(field('guest-pair-password').getAttribute('autocomplete')).toBe('current-password');
     // Sem a senha não aprova.
@@ -84,8 +86,9 @@ describe('GuestPairSheet', () => {
     expect(el.textContent).not.toContain('Para quem é a TV');
   });
 
-  it('confirms the password first and then approves his own PC with the TV name', async () => {
+  it('confirms the password first and then approves his own PC with the nickname', async () => {
     const { fixture, type, submit, done } = await render();
+    type('guest-pair-name', 'Sala');
     type('guest-pair-password', 'minha-senha-123');
     expect(submit().disabled).toBe(false);
     submit().click();
@@ -96,10 +99,18 @@ describe('GuestPairSheet', () => {
       'devices.pair-self',
       'minha-senha-123',
     );
-    expect(api.approveOwn).toHaveBeenCalledExactlyOnceWith('BCDF2345', 'TV de Raphael');
+    expect(api.approveOwn).toHaveBeenCalledExactlyOnceWith('BCDF2345', 'Sala');
     expect(calls).toEqual(['password', 'approve']);
     fixture.detectChanges();
     await vi.waitFor(() => expect(done).toHaveBeenCalled());
+  });
+
+  it('sends no name when the nickname is left empty, so the TV is just "TV"', async () => {
+    const { type, submit } = await render();
+    type('guest-pair-password', 'minha-senha-123');
+    submit().click();
+    await vi.waitFor(() => expect(api.approveOwn).toHaveBeenCalled());
+    expect(api.approveOwn).toHaveBeenCalledExactlyOnceWith('BCDF2345', null);
   });
 
   it('does not approve when the password is wrong, and says so', async () => {

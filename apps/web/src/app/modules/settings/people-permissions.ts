@@ -12,6 +12,18 @@ export const TV_ACTIONS = [
   'tv:history',
 ] as const;
 
+/**
+ * A permissão legada do histórico. O histórico das TVs é só do administrador: nenhuma tela mostra esta permissão e a API não
+ * a usa para nada. Ela continua no catálogo só porque convites e concessões já gravados a carregam, e porque o modelo "só
+ * controlar a TV" da API ainda a inclui; por isso a tela a preserva e compara modelos sem olhar para ela.
+ */
+export const LEGACY_HISTORY = 'tv:history';
+
+/** O que o seletor oferece como ação da TV: tudo, menos a permissão legada do histórico (quem usa a TV não sabe dele). */
+export const TV_PICKER_ACTIONS: readonly string[] = TV_ACTIONS.filter(
+  (action) => action !== LEGACY_HISTORY,
+);
+
 /** O catálogo fechado de permissões da API, na ordem em que ela o devolve (a mesma ordem vale para o que a tela envia). */
 export const CATALOG: readonly string[] = [TV_MODULE, ...TV_ACTIONS, TRAINING_MODULE];
 
@@ -54,6 +66,11 @@ function known(permissions: readonly string[]): readonly string[] {
   return permissions.filter(isKnown);
 }
 
+/** Uma lista sem a permissão legada do histórico, que nenhuma tela mostra: serve para comparar com os modelos. */
+function visible(permissions: readonly string[]): readonly string[] {
+  return permissions.filter((permission) => permission !== LEGACY_HISTORY);
+}
+
 /**
  * Aplica o que a pessoa fez num interruptor, sempre sem recusar o toque: ligar qualquer ação da TV liga também "ver a
  * TV"; desligar "ver a TV" desliga todas as ações dela. O resultado já sai normalizado.
@@ -88,8 +105,8 @@ export function hasModule(permissions: readonly string[]): boolean {
 
 /** Qual modelo pronto a lista é (só conta o que a tela conhece); `custom` se não for nenhum. */
 export function modelOf(permissions: readonly string[]): PermissionModel {
-  const list = known(permissions);
-  if (samePermissions(list, TV_CONTROL_ONLY)) return 'tv-control';
+  const list = visible(known(permissions));
+  if (samePermissions(list, visible(TV_CONTROL_ONLY))) return 'tv-control';
   if (samePermissions(list, TRAINING_ONLY)) return 'training';
   return 'custom';
 }
@@ -133,8 +150,6 @@ export function permissionOptionLabel(permission: string): string {
       return $localize`:@@settings.people.option.tv-launch:Abrir apps e atualizar a lista`;
     case 'tv:edit-shortcuts':
       return $localize`:@@settings.people.option.tv-edit:Editar e reordenar atalhos`;
-    case 'tv:history':
-      return $localize`:@@settings.people.option.tv-history:Ver o histórico`;
     case TRAINING_MODULE:
       return $localize`:@@settings.people.option.training:Usar o Treino`;
     default:

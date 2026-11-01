@@ -1,0 +1,68 @@
+<section class="section" aria-label="TVs por Pessoa" i18n-aria-label="@@settings.tv-people.title">
+  @if (rows(); as list) {
+    @if (empty()) {
+      <div class="empty ui-rise">
+        <app-settings-glyph name="tv" />
+        <p i18n="@@settings.tv-people.empty">Nenhuma TV ainda.</p>
+      </div>
+    } @else {
+      <ul class="people ui-stagger">
+        @for (person of list; track person.id) {
+          <li class="person ui-rise" [class.paused]="person.state === 'paused'">
+            <div class="who">
+              <span class="ui-tile"><app-settings-glyph name="user" /></span>
+              <span class="name">{{ person.name }}</span>
+              @if (stateLabel(person); as label) {
+                <span class="chip ui-chip" [class.accent]="person.state === 'admin'">{{
+                  label
+                }}</span>
+              }
+            </div>
+            @if (person.tvs; as tvs) {
+              @if (tvs.length === 0) {
+                <p class="none" i18n="@@settings.tv-people.none">Nenhuma TV.</p>
+              } @else {
+                <ul class="ui-group">
+                  @for (tv of tvs; track tv.id) {
+                    <li class="tv">
+                      <span class="ui-row-text">
+                        <span class="ui-row-title">{{ tv.name }}</span>
+                        <span class="ui-row-sub">{{ tv.technical }}</span>
+                      </span>
+                      <span class="chip ui-chip" [class.ok]="tv.controls">{{
+                        accessLabel(tv)
+                      }}</span>
+                    </li>
+                  }
+                </ul>
+              }
+            } @else {
+              <p class="none" i18n="@@settings.tv-people.no-tv">Sem acesso à TV.</p>
+            }
+          </li>
+        }
+      </ul>
+    }
+  } @else if (failed()) {
+    <p class="empty bad ui-rise" role="alert" i18n="@@settings.tv-people.failed">
+      Não foi possível carregar agora.
+    </p>
+    <button
+      type="button"
+      class="retry secondary ui-btn"
+      (click)="load()"
+      i18n="@@settings.tv-people.retry"
+    >
+      Tentar de Novo
+    </button>
+  } @else {
+    <app-loading-skeleton
+      [kind]="'cards'"
+      [count]="3"
+      i18n-label="@@settings.tv-people.loading"
+      label="Carregando as TVs por pessoa…"
+      [reload]="false"
+      (retried)="load()"
+    />
+  }
+</section>

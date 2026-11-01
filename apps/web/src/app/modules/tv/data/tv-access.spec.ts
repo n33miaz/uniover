@@ -15,7 +15,6 @@ describe('TvAccess', () => {
     power: access().power(),
     launch: access().launch(),
     edit: access().editShortcuts(),
-    history: access().history(),
     list: access().appList(),
     apps: access().apps(),
   });
@@ -25,7 +24,6 @@ describe('TvAccess', () => {
     power: true,
     launch: true,
     edit: true,
-    history: true,
     list: true,
     apps: true,
   };
@@ -64,7 +62,6 @@ describe('TvAccess', () => {
       power: false,
       launch: false,
       edit: false,
-      history: false,
       // Só controla: sem grade de apps, mas o painel dos três pontos existe (a limpeza da TV mora nele).
       list: false,
       apps: true,
@@ -76,12 +73,11 @@ describe('TvAccess', () => {
       power: false,
       launch: true,
       edit: true,
-      history: false,
       list: true,
       apps: true,
     });
-    guest(['module:tv', 'tv:power', 'tv:history']);
-    expect(snapshot()).toMatchObject({ power: true, history: true, list: false, apps: false });
+    guest(['module:tv', 'tv:power']);
+    expect(snapshot()).toMatchObject({ power: true, list: false, apps: false });
   });
 
   it('opens the Apps panel for editing alone, since the edit mode lives there', () => {
@@ -104,7 +100,6 @@ describe('TvAccess', () => {
       power: false,
       launch: false,
       edit: false,
-      history: false,
       list: false,
       apps: false,
     });
@@ -118,7 +113,6 @@ describe('TvAccess', () => {
       power: false,
       launch: false,
       edit: false,
-      history: false,
       list: false,
       apps: false,
     });

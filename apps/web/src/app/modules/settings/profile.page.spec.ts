@@ -113,10 +113,12 @@ describe('ProfilePage', () => {
       expect(el.querySelector('.role-text')?.textContent?.trim()).toBe('Convidado');
       expect(
         Array.from(el.querySelectorAll('.abilities-list li')).map((li) => li.textContent?.trim()),
-      ).toEqual(['Controlar a TV', 'Desligar a TV', 'Abrir apps', 'Ver o histórico']);
+      ).toEqual(['Controlar a TV', 'Desligar a TV', 'Abrir apps']);
       // Não tem editar atalhos nem Treino: a lista não promete o que a API não liberou.
       expect(el.querySelector('.abilities')?.textContent).not.toContain('Editar atalhos');
       expect(el.querySelector('.abilities')?.textContent).not.toContain('Treino');
+      // A permissão legada do histórico não aparece: o histórico é só do administrador e o convidado não sabe dele.
+      expect(el.querySelector('.abilities')?.textContent).not.toContain('istórico');
       expect(el.querySelector('.all')).toBeNull();
     });
 

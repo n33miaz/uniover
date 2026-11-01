@@ -226,7 +226,7 @@ describe('PairSheet', () => {
   });
 
   describe('para quem é a TV', () => {
-    it('lists the active accounts and sends the chosen ones, naming the TV after a single person', async () => {
+    it('lists the active accounts and sends the chosen ones, with the nickname given to the TV', async () => {
       authApi.guests.mockResolvedValue([
         guest('g1', 'Raphael'),
         guest('g2', 'Ana', '2026-10-02T00:00:00Z'),
@@ -240,14 +240,40 @@ describe('PairSheet', () => {
 
       switches[0].click();
       await type('BCDF2345');
+      const nickname = el.querySelector<HTMLInputElement>('#pair-nickname')!;
+      nickname.value = 'Quarto';
+      nickname.dispatchEvent(new Event('input'));
       button('Aprovar').click();
       await vi.waitFor(() => expect(outcomes).toHaveLength(1));
-      expect(api.approve).toHaveBeenCalledExactlyOnceWith(
-        'BCDF2345',
-        'PC de casa',
-        'TV de Raphael',
-        ['g1'],
-      );
+      expect(api.approve).toHaveBeenCalledExactlyOnceWith('BCDF2345', 'PC de casa', 'Quarto', [
+        'g1',
+      ]);
+    });
+
+    it('never turns the computer name or a person into the TV name when no nickname is typed', async () => {
+      authApi.guests.mockResolvedValue([guest('g1', 'Raphael')]);
+      const { fixture, el, button, type, outcomes } = await render();
+      fixture.detectChanges();
+      el.querySelector<HTMLInputElement>('input[role="switch"]')!.click();
+      await type('BCDF2345');
+      button('Aprovar').click();
+      await vi.waitFor(() => expect(outcomes).toHaveLength(1));
+      expect(api.approve).toHaveBeenCalledExactlyOnceWith('BCDF2345', 'PC de casa', null, ['g1']);
+    });
+
+    it('asks for a short nickname: the field stops at 20 characters and an invalid one blocks Aprovar', async () => {
+      authApi.guests.mockResolvedValue([]);
+      const { fixture, el, button, type } = await render();
+      fixture.detectChanges();
+      const nickname = el.querySelector<HTMLInputElement>('#pair-nickname')!;
+      expect(nickname.maxLength).toBe(20);
+      expect(nickname.placeholder).toBe('TV');
+      await type('BCDF2345');
+      nickname.value = '#sala';
+      nickname.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      expect(el.querySelector('#pair-nickname')?.getAttribute('aria-invalid')).toBe('true');
+      expect(button('Aprovar').disabled).toBe(true);
     });
 
     it('keeps the default TV name when more than one person is chosen', async () => {

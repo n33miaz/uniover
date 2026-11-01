@@ -23,7 +23,7 @@ internal sealed record TvListResponse(IReadOnlyList<TvSummary> Items);
 internal sealed record CreateTvRequest(string? AgentSlug, string? Name);
 internal sealed record UpdateTvRequest(string? AgentSlug, string? Name, bool? AllowBackgroundAppClosing = null,
     bool? FocusModeEnabled = null, bool? ShortAnimationsEnabled = null, IReadOnlyList<string?>? RestrictedBackgroundPackages = null,
-    bool? FocusClosesBackground = null);
+    bool? FocusClosesBackground = null, IReadOnlyList<string?>? FocusPackages = null);
 internal sealed record TvMembersResponse(IReadOnlyList<Guid> UserIds);
 internal sealed record UpdateTvMembersRequest(IReadOnlyList<Guid>? UserIds);
 
@@ -34,6 +34,11 @@ internal sealed record TvCleanupReportItem(
     string? Reason);
 
 internal sealed record TvCleanupReportsResponse(IReadOnlyList<TvCleanupReportItem> Items);
+/// <summary>
+/// O catálogo do Modo Foco de uma TV: os apps que o ligam sozinhos (<c>Packages</c>), a lista de fábrica (<c>Defaults</c>, para
+/// "voltar ao padrão") e se o administrador já mudou a lista (<c>IsCustom</c>). Só o administrador a lê.
+/// </summary>
+internal sealed record TvFocusCatalogResponse(IReadOnlyList<string> Packages, IReadOnlyList<string> Defaults, bool IsCustom);
 internal sealed record TvAppOption(string Package, string Label);
 internal sealed record TvAppsResponse(IReadOnlyList<TvAppOption> Items);
 
@@ -86,9 +91,14 @@ internal sealed class ManageTvsHandler(
             return (null, "invalid-packages");
         }
 
+        if (!ConfiguredTv.IsValidFocusPackages(request.FocusPackages))
+        {
+            return (null, "invalid-focus-packages");
+        }
+
         if (errors.Count > 0 || (request.AgentSlug is null && name is null && request.AllowBackgroundAppClosing is null
             && request.FocusModeEnabled is null && request.ShortAnimationsEnabled is null && request.RestrictedBackgroundPackages is null
-            && request.FocusClosesBackground is null))
+            && request.FocusClosesBackground is null && request.FocusPackages is null))
         {
             return (null, "invalid");
         }
@@ -128,11 +138,19 @@ internal sealed class ManageTvsHandler(
             return (null, "unsupported");
         }
 
+        // Mesma razão: o agente presente que não recebe o catálogo o ignoraria, e a tela mostraria um catálogo que não vale.
+        if (IsFocusCatalogUnsupported(request, presence.Get(agentSlug)))
+        {
+            return (null, "unsupported");
+        }
+
         var now = time.GetUtcNow();
         tv.Rebind(agentSlug, name, userId, now);
         var closingChanged = request.AllowBackgroundAppClosing is { } allow && tv.SetBackgroundAppClosing(allow, userId, now);
         var lightChanged = tv.SetLightSettings(request.FocusModeEnabled, request.ShortAnimationsEnabled,
             request.RestrictedBackgroundPackages?.OfType<string>().ToArray(), userId, now, request.FocusClosesBackground);
+        var catalogChanged = request.FocusPackages is { } focusPackages && tv.SetFocusCatalog([.. focusPackages.OfType<string>()], userId, now);
+        lightChanged |= catalogChanged;
         if (closingChanged || lightChanged)
         {
             // O EfCommandAudit usa este mesmo TvDbContext: um SaveChanges grava a TV e a trilha juntas.
@@ -212,9 +230,23 @@ internal sealed class ManageTvsHandler(
         request.FocusClosesBackground == true && info is not null
         && !info.Capabilities.Contains(Cleanup.CleanupSettingsPublisher.FocusClosesBackgroundCapability, StringComparer.Ordinal);
 
+    /// <summary>
+    /// Qualquer lista de catálogo é recusada quando o agente já se apresentou sem a capacidade (mesma regra do fechamento no
+    /// foco). Agente que nunca se conectou desde que a API subiu não é conhecido: a lista fica guardada e só chega a quem a anunciar.
+    /// </summary>
+    internal static bool IsFocusCatalogUnsupported(UpdateTvRequest request, AgentPresenceInfo? info) =>
+        request.FocusPackages is not null && info is not null
+        && !info.Capabilities.Contains(Cleanup.CleanupSettingsPublisher.FocusCatalogCapability, StringComparer.Ordinal);
+
     private static bool WantsLightSettings(UpdateTvRequest request) =>
         request.FocusModeEnabled == true || request.ShortAnimationsEnabled == true || request.RestrictedBackgroundPackages is { Count: > 0 }
-        || request.FocusClosesBackground == true;
+        || request.FocusClosesBackground == true || request.FocusPackages is not null;
+
+    public async Task<TvFocusCatalogResponse?> FocusCatalogAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var tv = await db.Tvs.AsNoTracking().SingleOrDefaultAsync(t => t.Id == id, cancellationToken);
+        return tv is null ? null : new TvFocusCatalogResponse(tv.FocusCatalog(), ConfiguredTv.DefaultFocusPackages, tv.FocusPackages is not null);
+    }
 
     public async Task<TvAppsResponse?> AppsAsync(Guid id, CancellationToken cancellationToken)
     {
@@ -331,6 +363,7 @@ internal static class ManageTvsEndpoint
         group.MapGet("/tvs/{id:guid}/members", MembersAsync).RequireAuthorization(UniOverAuth.OwnerPolicy).Produces<TvMembersResponse>();
         group.MapGet("/tvs/{id:guid}/cleanup-reports", CleanupReportsAsync).RequireAuthorization(UniOverAuth.OwnerPolicy).Produces<TvCleanupReportsResponse>();
         group.MapGet("/tvs/{id:guid}/apps", AppsAsync).RequireAuthorization(UniOverAuth.OwnerPolicy).Produces<TvAppsResponse>();
+        group.MapGet("/tvs/{id:guid}/focus-catalog", FocusCatalogAsync).RequireAuthorization(UniOverAuth.OwnerPolicy).Produces<TvFocusCatalogResponse>();
         group.MapPut("/tvs/{id:guid}/members", ReplaceMembersAsync).RequireAuthorization(StepUp.Policy(TvAuth.BindAgentAction)).Produces<TvMembersResponse>();
     }
 
@@ -373,6 +406,9 @@ internal static class ManageTvsEndpoint
     private static async Task<IResult> CleanupReportsAsync(Guid id, ManageTvsHandler handler, CancellationToken ct) =>
         await handler.CleanupReportsAsync(id, ct) is { } result ? TypedResults.Ok(result) : TypedResults.NotFound();
 
+    private static async Task<IResult> FocusCatalogAsync(Guid id, ManageTvsHandler handler, CancellationToken ct) =>
+        await handler.FocusCatalogAsync(id, ct) is { } result ? TypedResults.Ok(result) : TypedResults.NotFound();
+
     private static async Task<IResult> AppsAsync(Guid id, ManageTvsHandler handler, CancellationToken ct) =>
         await handler.AppsAsync(id, ct) is { } result ? TypedResults.Ok(result) : TypedResults.NotFound();
 
@@ -391,6 +427,10 @@ internal static class ManageTvsEndpoint
         "invalid-packages" => ProblemDetailsExtensions.ValidationProblem(new Dictionary<string, string[]>
         {
             ["restrictedBackgroundPackages"] = ["Escolha até 100 apps válidos, sem repetir e sem apps do sistema, do lançador, do teclado ou do controle remoto."],
+        }),
+        "invalid-focus-packages" => ProblemDetailsExtensions.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["focusPackages"] = ["Escolha até 50 apps válidos, sem repetir e sem apps do sistema, do lançador ou do teclado."],
         }),
         _ => ProblemDetailsExtensions.ValidationProblem(new Dictionary<string, string[]> { ["body"] = ["Dados da TV inválidos."] }),
     };

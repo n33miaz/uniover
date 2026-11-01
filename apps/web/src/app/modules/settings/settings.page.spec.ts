@@ -90,6 +90,10 @@ describe('SettingsPage (a list of screens)', () => {
           href: '/ajustes/pessoas',
         },
         {
+          title: 'TVs por Pessoa',
+          href: '/ajustes/tvs-por-pessoa',
+        },
+        {
           title: 'Dispositivos',
           href: '/ajustes/dispositivos',
         },
@@ -203,10 +207,18 @@ describe('SettingsPage (a list of screens)', () => {
 
     it('does not even mention the administrator screens', async () => {
       const { el } = await render();
-      for (const name of ['Pessoas e Permissões', 'Auditoria', 'Sistema', 'passkeys']) {
+      for (const name of [
+        'Pessoas e Permissões',
+        'Auditoria',
+        'Sistema',
+        'passkeys',
+        'TVs por Pessoa',
+        'istórico',
+      ]) {
         expect(el.textContent).not.toContain(name);
       }
       expect(el.querySelector('a[href="/ajustes/auditoria"]')).toBeNull();
+      expect(el.querySelector('a[href="/ajustes/tvs-por-pessoa"]')).toBeNull();
     });
   });
 

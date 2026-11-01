@@ -79,7 +79,6 @@ internal static class TvPermissionMap
         new("POST", "/api/v1/tv/shortcuts/refresh", "tv:launch"),
         new("PATCH", "/api/v1/tv/shortcuts/{id:guid}", "tv:edit-shortcuts", RenameBody),
         new("PUT", "/api/v1/tv/shortcuts/order", "tv:edit-shortcuts", OrderBody),
-        new("GET", "/api/v1/tv/commands/recent", "tv:history"),
         new("GET", "/api/v1/tv/cleanup/latest", "tv:control"),
     ];
 
@@ -95,9 +94,12 @@ internal static class TvPermissionMap
         new("PATCH", "/api/v1/tv/tvs/{id:guid}", "tv.bind-agent", new { name = "TV adicional" }),
         new("DELETE", "/api/v1/tv/tvs/{id:guid}", "tv.bind-agent"),
         new("GET", "/api/v1/tv/tvs/nearby"),
+        new("GET", "/api/v1/tv/tvs/access"),
+        new("GET", "/api/v1/tv/commands/recent"),
         new("GET", "/api/v1/tv/tvs/{id:guid}/members"),
         new("GET", "/api/v1/tv/tvs/{id:guid}/cleanup-reports"),
         new("GET", "/api/v1/tv/tvs/{id:guid}/apps"),
+        new("GET", "/api/v1/tv/tvs/{id:guid}/focus-catalog"),
         new("PUT", "/api/v1/tv/tvs/{id:guid}/members", "tv.bind-agent", new { userIds = new[] { Guid.NewGuid() } }),
         new("POST", "/api/v1/tv/layout", Body: LayoutBody),
         new("PUT", "/api/v1/tv/layout", Body: LayoutBody),
