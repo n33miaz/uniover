@@ -108,6 +108,44 @@ public class CapacityMathTests
     }
 
     [Fact]
+    public void MonthProjection_IsTheWholeMonthTimesTheServices()
+    {
+        var october = new DateTimeOffset(2026, 10, 5, 0, 0, 0, TimeSpan.Zero);
+        var february = new DateTimeOffset(2027, 2, 5, 0, 0, 0, TimeSpan.Zero);
+
+        CapacityHours.MonthProjection(october, 1).Should().Be(744);
+        CapacityHours.MonthProjection(february, 1).Should().Be(672);
+        CapacityHours.MonthProjection(october, 2).Should().Be(1488);
+    }
+
+    [Theory]
+    [InlineData(1, 10, "neutral", 0)]
+    [InlineData(1, 2, "neutral", 0)]
+    public void Hours_WithOneAlwaysOnService_AreOnlyInformative_AndNeverAlert(int services, int month, string band, double alert)
+    {
+        var options = new CapacityOptions { ServicesInWorkspace = services };
+        // Mês de 31 dias (744 h) ou de 28 dias (672 h): a projeção cabe em 750 h.
+        var now = new DateTimeOffset(2026, month, 28, 12, 0, 0, TimeSpan.Zero);
+
+        CapacityHours.Band(now, options).Should().Be(band);
+        CapacityHours.AlertPercent(now, options).Should().Be(alert);
+    }
+
+    [Fact]
+    public void Hours_TurnRedAndAlert_OnlyWhenTheProjectedMonthPassesTheLimit()
+    {
+        var now = new DateTimeOffset(2026, 10, 2, 0, 0, 0, TimeSpan.Zero);
+        var two = new CapacityOptions { ServicesInWorkspace = 2 };
+
+        CapacityHours.Band(now, two).Should().Be("red");
+        CapacityHours.AlertPercent(now, two).Should().BeApproximately(1488d / 750 * 100, 0.0001);
+
+        // 31 dias x 24 = 744: exatamente no limite de 744 não passa; um limite de 743 passa.
+        CapacityHours.Band(now, new CapacityOptions { MonthlyHoursLimit = 744 }).Should().Be("neutral");
+        CapacityHours.Band(now, new CapacityOptions { MonthlyHoursLimit = 743 }).Should().Be("red");
+    }
+
+    [Fact]
     public void Options_DefaultsAreTheFreePlan_AndRejectNonsense()
     {
         var defaults = new CapacityOptions();
@@ -115,11 +153,14 @@ public class CapacityMathTests
         defaults.MemoryLimitBytes.Should().Be(512 * Mib);
         defaults.MonthlyHoursLimit.Should().Be(750);
         defaults.RetentionDays.Should().Be(120);
+        defaults.ServicesInWorkspace.Should().Be(1);
         defaults.IsValid().Should().BeTrue();
 
         new CapacityOptions { DatabaseLimitBytes = 0 }.IsValid().Should().BeFalse();
         new CapacityOptions { MemoryLimitMb = 0 }.IsValid().Should().BeFalse();
         new CapacityOptions { MonthlyHoursLimit = 0 }.IsValid().Should().BeFalse();
         new CapacityOptions { RetentionDays = 7 }.IsValid().Should().BeFalse();
+        new CapacityOptions { ServicesInWorkspace = 0 }.IsValid().Should().BeFalse();
+        new CapacityOptions { ServicesInWorkspace = 21 }.IsValid().Should().BeFalse();
     }
 }

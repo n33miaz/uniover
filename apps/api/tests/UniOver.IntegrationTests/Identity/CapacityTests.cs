@@ -224,24 +224,58 @@ public sealed class CapacityTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task TheMonthHours_OpenAnAlertAfterDayTwentyFive_AndCloseItWhenTheMonthTurns()
+    public async Task TheMonthHours_AreInformativeWithOneService_AndNeverOpenAnAlert()
     {
-        // 26/10 às 12h: 25,5 dias x 24 = 612 h de 750 (81,6%).
+        // 29/10 às 12h: 28,5 dias x 24 = 684 h (91% de 750), mas a projeção do mês é 744 h e cabe.
         await using var app = await IdentityApp.StartAsync(
-            postgres, new IdentityAppOptions { Start = new DateTimeOffset(2026, 10, 26, 12, 0, 0, TimeSpan.Zero) });
+            postgres, new IdentityAppOptions { Start = new DateTimeOffset(2026, 10, 29, 12, 0, 0, TimeSpan.Zero) });
+        var owner = await app.LoginAsync();
 
         await RunJobAsync(app);
+
         await using (var db = app.Db())
         {
-            var hours = await db.CapacityAlerts.AsNoTracking().SingleAsync(a => a.Metric == "hours", Ct);
-            hours.RecoveredAt.Should().BeNull();
-            hours.Percent.Should().Be(81);
+            (await db.CapacityAlerts.AsNoTracking().CountAsync(a => a.Metric == "hours", Ct)).Should().Be(0);
         }
 
-        // 2/11, num processo novo sobre o mesmo banco: o contador do mês recomeçou e o aviso das horas fecha.
-        await using var nextMonth = await IdentityApp.StartAsync(
-            postgres, new IdentityAppOptions { Database = app.Database, Start = new DateTimeOffset(2026, 11, 2, 12, 0, 0, TimeSpan.Zero) });
-        await RunJobAsync(nextMonth);
+        using var response = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
+        var server = (await IdentityApp.JsonAsync(response)).GetProperty("server");
+        server.GetProperty("monthHours").GetDouble().Should().Be(684);
+        server.GetProperty("hoursBand").GetString().Should().Be("neutral");
+        server.GetProperty("hoursProjected").GetDouble().Should().Be(744);
+        server.GetProperty("servicesInWorkspace").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task WithTwoServices_TheProjectedMonthPassesTheLimit_OpensTheAlertAndTurnsRed_UntilTheCountGoesBack()
+    {
+        var start = new DateTimeOffset(2026, 10, 3, 12, 0, 0, TimeSpan.Zero);
+        await using var app = await IdentityApp.StartAsync(postgres, new IdentityAppOptions
+        {
+            Start = start,
+            Extra = new Dictionary<string, string?> { ["Modules:Identity:Capacity:ServicesInWorkspace"] = "2" },
+        });
+        var owner = await app.LoginAsync();
+
+        await RunJobAsync(app);
+        await RunJobAsync(app);
+
+        await using (var db = app.Db())
+        {
+            var alert = await db.CapacityAlerts.AsNoTracking().SingleAsync(a => a.Metric == "hours", Ct);
+            alert.RecoveredAt.Should().BeNull();
+            alert.Percent.Should().BeGreaterThanOrEqualTo(100);
+        }
+
+        using var response = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
+        var body = await IdentityApp.JsonAsync(response);
+        body.GetProperty("server").GetProperty("hoursBand").GetString().Should().Be("red");
+        body.GetProperty("server").GetProperty("hoursProjected").GetDouble().Should().Be(1488);
+        body.GetProperty("alerts").EnumerateArray().Select(a => a.GetProperty("metric").GetString()).Should().Contain("hours");
+
+        // Outro processo sobre o mesmo banco, de volta a um serviço só: a projeção cabe e o aviso fecha.
+        await using var back = await IdentityApp.StartAsync(postgres, new IdentityAppOptions { Database = app.Database, Start = start });
+        await RunJobAsync(back);
         await using var after = app.Db();
         (await after.CapacityAlerts.AsNoTracking().SingleAsync(a => a.Metric == "hours", Ct)).RecoveredAt.Should().NotBeNull();
     }
