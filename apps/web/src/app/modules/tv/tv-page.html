@@ -112,9 +112,7 @@
     </div>
   </header>
 
-  @if (store.loading()) {
-    <app-tv-page-skeleton />
-  } @else if (!access.view()) {
+  @if (!access.view()) {
     <!-- Conta sem acesso à TV (por exemplo, só o Treino): nenhuma chamada é feita e a tela diz isso em uma frase. -->
     <div class="blocked">
       <app-tv-icon name="tv" />

@@ -412,7 +412,6 @@ describe('TvPage', () => {
       expect(root.querySelector('header.head h1')).not.toBeNull();
       expect(root.querySelector('header.head app-status-indicator')).not.toBeNull();
       expect(root.querySelector('header.head button.power')).not.toBeNull();
-      expect(root.querySelector('app-tv-page-skeleton')).not.toBeNull();
     });
   });
 

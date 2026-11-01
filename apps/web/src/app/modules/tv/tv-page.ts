@@ -31,7 +31,6 @@ import { PcOffIcon } from './ui/pc-off-icon';
 import { StatusIndicator } from './ui/status-indicator';
 import { TvIcon } from './ui/tv-icon';
 import { TvPanel } from './ui/tv-panel';
-import { TvPageSkeleton } from './ui/tv-page-skeleton';
 
 /**
  * Até quantas letras o nome cabe numa linha no tamanho inteiro (curto) e no médio. A coluna do meio do cabeçalho é a
@@ -73,7 +72,6 @@ const TITLE_MEDIUM_MAX = 12;
     AppsPanel,
     KeyboardPanel,
     MoreKeysPanel,
-    TvPageSkeleton,
   ],
   templateUrl: './tv-page.html',
   styleUrl: './tv-page.css',
