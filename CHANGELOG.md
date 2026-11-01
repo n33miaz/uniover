@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.34.0](https://github.com/n33miaz/uniover/compare/v0.33.0...v0.34.0) (2026-11-01)
+
+
+### Features
+
+* **agent:** draw the tray icons as vector assets
+* **agent:** promote the tray icon once
+* **agent:** new tray icon, status and menu
+* **agent:** keep the tray closed after Sair
+* **api:** alert the owner on update failures
+* **web:** show update failure alerts
+
+
+### Bug Fixes
+
+* **agent:** rehearse the candidate before swap
+* **agent:** hide whole paths with spaces
+* **agent:** send diagnostics only when api asks
+* **api:** purge diagnostics and list features
+* **agent:** hide paths that end in a space
+* **agent:** ask the api features in the background
+* **agent:** restore the python environment too
+* **agent:** drop the venv backup last
+* **agent:** report every update failure as error
+* **agent:** redraw the tray seal as a cutout
+* **agent:** hold the balloon until the icon shows
+* **agent:** promote only our own tray entry
+* **agent:** remove the tray shortcut on uninstall
+* **agent:** keep diagnostics until confirmed
+* **agent:** write the tray marker atomically
+
 ## [0.33.0](https://github.com/n33miaz/uniover/compare/v0.32.0...v0.33.0) (2026-11-01)
 
 
