@@ -1,4 +1,10 @@
-<div class="tv" [attr.data-pills]="prefs.pillLayout()" [class.pc-off]="store.pcOff()">
+<div
+  class="tv"
+  [attr.data-pills]="prefs.pillLayout()"
+  [attr.data-screen-skeleton]="store.loading() ? 'tv' : null"
+  [attr.data-screen-ready]="store.loading() ? null : 'tv'"
+  [class.pc-off]="store.pcOff()"
+>
   <!-- Quem usa leitor de tela ouve uma frase só enquanto o esqueleto está na tela. -->
   <p class="ui-visually-hidden" role="status">
     @if (store.loading()) {
@@ -106,7 +112,9 @@
     </div>
   </header>
 
-  @if (!access.view()) {
+  @if (store.loading()) {
+    <app-tv-page-skeleton />
+  } @else if (!access.view()) {
     <!-- Conta sem acesso à TV (por exemplo, só o Treino): nenhuma chamada é feita e a tela diz isso em uma frase. -->
     <div class="blocked">
       <app-tv-icon name="tv" />
