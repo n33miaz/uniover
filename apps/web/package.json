@@ -37,8 +37,8 @@
     "workbox-strategies": "^7.4.1"
   },
   "devDependencies": {
-    "@angular/build": "^22.2.4",
-    "@angular/cli": "^22.2.4",
+    "@angular/build": "^22.2.5",
+    "@angular/cli": "^22.2.5",
     "@angular/compiler-cli": "^22.2.0",
     "@axe-core/playwright": "^4.14.0",
     "@eslint/js": "^10.0.1",
@@ -48,7 +48,7 @@
     "angular-eslint": "22.6.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.12.0",
-    "eslint-plugin-boundaries": "^7.3.0",
+    "eslint-plugin-boundaries": "^7.4.0",
     "fake-indexeddb": "^6.2.6",
     "jsdom": "^30.0.0",
     "prettier": "^3.8.1",
