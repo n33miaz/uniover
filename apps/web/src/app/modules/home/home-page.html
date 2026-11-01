@@ -1,4 +1,4 @@
-<section class="home">
+<section class="home" data-screen-ready="home">
   <header class="home-topbar">
     <a
       class="hero-settings ui-tap"
@@ -78,6 +78,7 @@
               class="card-link"
               [routerLink]="path"
               [attr.aria-label]="linkLabel(widget.definition)"
+              (pointerdown)="preload(path)"
             ></a>
           }
         </article>

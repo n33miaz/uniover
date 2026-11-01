@@ -181,6 +181,12 @@ export class HomePage {
     queueMicrotask(() => this.editButton()?.nativeElement.focus());
   }
 
+  /** A intenção de tocar no cartão chega antes do clique; aquece só o módulo que a pessoa vai abrir. */
+  protected preload(path: string): void {
+    if (path === '/tv') void import('../tv/tv-page');
+    if (path === '/treino') void import('../training/training.routes');
+  }
+
   private canSeeModule(id: string): boolean {
     if (!this.session.isGuest()) return true;
     if (this.registry.find(id)?.status === 'soon') {

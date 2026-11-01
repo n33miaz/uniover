@@ -45,6 +45,7 @@ function isWithin(path: string, section: string): boolean {
  */
 @Component({
   selector: 'app-training-page',
+  host: { '[attr.data-screen-ready]': "routeMounted() ? 'training' : null" },
   imports: [
     PageTopBar,
     RouterLink,
@@ -105,7 +106,7 @@ function isWithin(path: string, section: string): boolean {
           >
         </nav>
       }
-      <router-outlet (activate)="animateRoute()" />
+      <router-outlet (activate)="routeMounted.set(true); animateRoute()" />
     </div>
     @if (syncRing.sheetOpen()) {
       <app-training-sync-sheet
@@ -217,6 +218,7 @@ export class TrainingPage {
   protected readonly syncRing = inject(TrainingSyncIndicator);
   protected readonly issuesOpen = signal(false);
   protected readonly menuOpen = signal(false);
+  protected readonly routeMounted = signal(false);
   protected readonly title = $localize`:@@training.shell.title:Treino`;
   protected readonly menuHeading = $localize`:@@training.shell.more-heading:Opções`;
   private readonly session = inject(SessionState);
