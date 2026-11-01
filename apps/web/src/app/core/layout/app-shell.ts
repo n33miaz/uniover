@@ -12,6 +12,7 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map, startWith } from 'rxjs';
 import { AuthService } from '../auth/auth.service';
+import { ModulePrefs } from '../modules/module-prefs';
 import { InstallHint } from '../pwa/install-hint';
 import { TvPermissionHost } from '../tv-permission/tv-permission-host';
 import { SessionState } from '../session/session-state';
@@ -120,7 +121,6 @@ export class AppShell {
   private readonly auth = inject(AuthService);
   private readonly session = inject(SessionState);
   private readonly injector = inject(Injector);
-
   protected readonly isGuest = this.session.isGuest;
 
   protected readonly data = toSignal(
@@ -150,6 +150,10 @@ export class AppShell {
   }
 
   constructor() {
+    // Vivo em toda tela autenticada (e não só na Início): a sincronização da Início com a conta começa quando a sessão se
+    // confirma, mesmo para quem abre direto o Treino ou a TV pelo atalho da tela de início.
+    inject(ModulePrefs);
+
     // Dentro de Ajustes cada tela nova leva o foco ao título: sem isso o foco ficaria num link que já não existe (e quem
     // usa leitor de tela não ouviria a tela nova). A primeira tela da casca fica de fora: o foco de uma página recém
     // aberta é do navegador.
