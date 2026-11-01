@@ -14,13 +14,19 @@ public sealed class CapacityOptions
     /// <summary>Horas de instância grátis por mês e por workspace.</summary>
     public int MonthlyHoursLimit { get; set; } = 750;
 
+    /// <summary>
+    /// Quantos serviços sempre ligados dividem as horas do workspace (padrão 1: só a API). As horas são do workspace, então
+    /// cada serviço a mais soma o mês inteiro: com 2 a projeção passa de 750 e o aviso abre.
+    /// </summary>
+    public int ServicesInWorkspace { get; set; } = 1;
+
     /// <summary>Quantos dias de amostras a limpeza guarda.</summary>
     public int RetentionDays { get; set; } = 120;
 
     public long MemoryLimitBytes => MemoryLimitMb * 1024L * 1024;
 
     internal bool IsValid() =>
-        DatabaseLimitBytes >= 1 && MemoryLimitMb >= 1 && MonthlyHoursLimit >= 1 && RetentionDays is >= 31 and <= 3650;
+        DatabaseLimitBytes >= 1 && MemoryLimitMb >= 1 && MonthlyHoursLimit >= 1 && ServicesInWorkspace is >= 1 and <= 20 && RetentionDays is >= 31 and <= 3650;
 }
 
 /// <summary>As faixas do cartão: verde abaixo de 50%, âmbar de 50% a 80%, vermelho de 80% em diante.</summary>
@@ -28,6 +34,9 @@ internal static class CapacityBands
 {
     public const double AmberPercent = 50;
     public const double RedPercent = 80;
+
+    /// <summary>Só informativo: a leitura aparece com a porcentagem, mas não vira alerta (as horas do mês).</summary>
+    public const string Neutral = "neutral";
 
     public const string Green = "green";
     public const string Amber = "amber";

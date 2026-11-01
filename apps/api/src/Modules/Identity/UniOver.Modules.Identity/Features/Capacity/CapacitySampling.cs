@@ -60,7 +60,8 @@ internal static class CapacitySampling
             {
                 [CapacityMetrics.Database] = CapacityBands.PercentOf(size.DatabaseBytes, options.DatabaseLimitBytes),
                 [CapacityMetrics.Memory] = CapacityBands.PercentOf(reading.WorkingSetBytes, options.MemoryLimitBytes),
-                [CapacityMetrics.Hours] = CapacityBands.PercentOf(CapacityHours.MonthToDate(now), options.MonthlyHoursLimit),
+                // As horas só avisam quando a projeção do mês passa do limite (mais de um serviço ligado).
+                [CapacityMetrics.Hours] = CapacityHours.AlertPercent(now, options),
             },
             now,
             cancellationToken);
