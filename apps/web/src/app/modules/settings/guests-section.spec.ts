@@ -644,23 +644,84 @@ describe('GuestsSection', () => {
       activeSessions: 2,
       tvCommands: { last7Days: 12, last30Days: 40 },
       workouts: { last7Days: 3, last30Days: 9 },
+      home: { state: 'unknown', entries: [] },
       ...extra,
     });
 
     it('shows only the last access for each person and for the owner, never the counters', async () => {
       people.usage.mockResolvedValue([usage('1', 'owner'), usage('g1', 'guest')]);
       const { el } = await render();
+      // Duas linhas por pessoa: o último acesso e a Início.
       const cards = Array.from(el.querySelectorAll('.usage'));
-      expect(cards).toHaveLength(2);
+      expect(cards).toHaveLength(4);
       const text = cards.map((card) => card.textContent ?? '');
-      expect(text[1]).toContain('Último Acesso');
-      expect(text[1]).toContain('há 3 h');
-      expect(text[1]).not.toContain('12 / 40');
-      expect(text[1]).not.toContain('3 / 9');
+      expect(text[2]).toContain('Último Acesso');
+      expect(text[2]).toContain('há 3 h');
+      expect(text[2]).not.toContain('12 / 40');
+      expect(text[2]).not.toContain('3 / 9');
       expect(el.textContent).not.toContain('Sessões Ativas');
       expect(el.textContent).not.toContain('TV (7 / 30 Dias)');
       expect(el.textContent).not.toContain('Treinos (7 / 30 Dias)');
       expect(el.querySelector('.owner-usage')?.textContent).toContain('Você');
+    });
+
+    describe('the Início line', () => {
+      const homeText = (el: HTMLElement) =>
+        Array.from(el.querySelectorAll('.home-line')).map((node) =>
+          node.textContent?.trim(),
+        );
+      const entries = (...list: [string, boolean][]) =>
+        list.map(([id, enabled]) => ({ id, enabled }));
+
+      it('says "Sem dados ainda" for who never opened the app that syncs, and "Padrão" for who never customized', async () => {
+        people.usage.mockResolvedValue([
+          usage('1', 'owner', { home: { state: 'default', entries: [] } }),
+          usage('g1', 'guest', { home: { state: 'unknown', entries: [] } }),
+        ]);
+        const { el } = await render();
+        expect(homeText(el)).toEqual(['Padrão', 'Sem dados ainda']);
+        expect(el.querySelector('.owner-usage')?.textContent).toContain('Início');
+      });
+
+      it('lists the visible modules in the order the person chose, with the available ones only', async () => {
+        people.usage.mockResolvedValue([
+          usage('1', 'owner', {
+            home: {
+              state: 'custom',
+              entries: entries(['training', true], ['health', true], ['tv', true]),
+            },
+          }),
+        ]);
+        const { el } = await render();
+        expect(homeText(el)).toEqual(['Treino, TV']);
+      });
+
+      it('leaves out what the person turned off and says so when nothing is left', async () => {
+        people.usage.mockResolvedValue([
+          usage('1', 'owner', {
+            home: { state: 'custom', entries: entries(['tv', false], ['training', true]) },
+          }),
+          usage('g1', 'guest', {
+            home: { state: 'custom', entries: entries(['tv', false], ['training', false]) },
+          }),
+        ]);
+        api.guests.mockResolvedValue([
+          guest('g1', 'Bia', null, ['module:tv', 'module:training', 'tv:control']),
+        ]);
+        const { el } = await render();
+        expect(homeText(el)).toEqual(['Treino', 'Nenhum módulo']);
+      });
+
+      it('shows a guest only what the permissions of that guest allow', async () => {
+        api.guests.mockResolvedValue([guest('g1', 'Bia', null, ['module:training'])]);
+        people.usage.mockResolvedValue([
+          usage('g1', 'guest', {
+            home: { state: 'custom', entries: entries(['tv', true], ['training', true]) },
+          }),
+        ]);
+        const { el } = await render();
+        expect(homeText(el)).toEqual(['Treino']);
+      });
     });
 
     it('says "Nunca entrou" for an account without access yet', async () => {

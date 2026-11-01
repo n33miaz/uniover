@@ -15,6 +15,21 @@ export interface UsageCounts {
   readonly last30Days: number;
 }
 
+/** Um módulo da Início como a conta o guardou: qual é e se aparece (a ordem é a da lista). */
+export interface HomeEntry {
+  readonly id: string;
+  readonly enabled: boolean;
+}
+
+/**
+ * Como a pessoa deixou a Início. `custom`: personalizou (`entries` traz a lista); `default`: já abriu o app que
+ * sincroniza, mas nunca personalizou; `unknown`: nunca abriu depois de a sincronização existir.
+ */
+export interface PersonHome {
+  readonly state: 'custom' | 'default' | 'unknown';
+  readonly entries: readonly HomeEntry[];
+}
+
 /** O uso de uma conta, só contagens: o dono vê quando entrou e quanto usou, nunca o conteúdo. */
 export interface PersonUsage {
   readonly id: string;
@@ -25,6 +40,7 @@ export interface PersonUsage {
   readonly activeSessions: number;
   readonly tvCommands: UsageCounts;
   readonly workouts: UsageCounts;
+  readonly home: PersonHome;
 }
 
 const BASE = `${APP_CONFIG.apiBase}/v1/identity`;
