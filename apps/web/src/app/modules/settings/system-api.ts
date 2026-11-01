@@ -15,7 +15,7 @@ export type TvComputer = components['schemas']['TvAgentChoice'];
 export type TvComputerStatus = 'online' | 'offline' | 'revoked' | 'unknown';
 
 /** De onde vem o computador escolhido (os valores que a API usa em `source`). */
-export type TvConfigSource = 'saved' | 'environment' | 'none';
+export type TvConfigSource = 'saved' | 'none';
 
 /**
  * Uma TV como o administrador a vê em `GET /api/v1/tv/tvs`. O tipo é local enquanto os tipos HTTP gerados não incluem
@@ -78,6 +78,30 @@ export interface TvCleanupReportItem {
   readonly sessionOpenMs: number | null;
   readonly result: string;
   readonly reason: string | null;
+}
+
+/** Uma linha do histórico de uma TV: quem mandou (a conta), o quê, quando e se deu certo. Só o administrador a lê. */
+export interface TvHistoryItem {
+  readonly id: string;
+  readonly userId: string;
+  readonly command: string;
+  readonly detail: string | null;
+  readonly ok: boolean;
+  readonly errorCode: string | null;
+  readonly occurredAt: string;
+}
+
+/** As TVs que uma conta vê hoje (as ids), pela regra do servidor. */
+export interface TvAccessPerson {
+  readonly userId: string;
+  readonly tvIds: readonly string[];
+}
+
+/** O catálogo do Modo Foco de uma TV: o que vale, a lista de fábrica e se o administrador já a mudou. */
+export interface TvFocusCatalog {
+  readonly packages: readonly string[];
+  readonly defaults: readonly string[];
+  readonly isCustom: boolean;
 }
 
 const BASE = `${APP_CONFIG.apiBase}/v1/tv`;
@@ -302,6 +326,7 @@ export class SystemApi {
       focusClosesBackground?: boolean;
       shortAnimationsEnabled?: boolean;
       restrictedBackgroundPackages?: readonly string[];
+      focusPackages?: readonly string[];
     },
   ): Promise<TvItem> {
     const body: Record<string, string | boolean | string[]> = {};
@@ -316,6 +341,7 @@ export class SystemApi {
       body['shortAnimationsEnabled'] = change.shortAnimationsEnabled;
     if (change.restrictedBackgroundPackages !== undefined)
       body['restrictedBackgroundPackages'] = [...change.restrictedBackgroundPackages];
+    if (change.focusPackages !== undefined) body['focusPackages'] = [...change.focusPackages];
     return readTvOrThrow(
       await firstValueFrom(this.http.patch(`${BASE}/tvs/${encodeURIComponent(id)}`, body)),
     );
@@ -330,6 +356,71 @@ export class SystemApi {
       (item): item is TvAppOption =>
         typeof item?.package === 'string' && typeof item?.label === 'string',
     );
+  }
+
+  /** O catálogo do Modo Foco da TV (só o administrador). */
+  async tvFocusCatalog(id: string): Promise<TvFocusCatalog> {
+    const dto = await firstValueFrom(
+      this.http.get<Partial<TvFocusCatalog>>(`${BASE}/tvs/${encodeURIComponent(id)}/focus-catalog`),
+    );
+    const names = (value: unknown): string[] =>
+      Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+    if (!Array.isArray(dto?.packages) || !Array.isArray(dto?.defaults)) {
+      throw new Error('Catálogo do Modo Foco em formato inesperado.');
+    }
+    return {
+      packages: names(dto.packages),
+      defaults: names(dto.defaults),
+      isCustom: dto.isCustom === true,
+    };
+  }
+
+  /**
+   * O histórico de comandos da TV, do mais novo para o mais antigo (só o administrador; a rota é dele e nenhuma outra conta
+   * a alcança).
+   */
+  async tvHistory(id: string, limit = 50): Promise<TvHistoryItem[]> {
+    const dto = await firstValueFrom(
+      this.http.get<unknown>(`${BASE}/commands/recent`, { params: { tvId: id, limit } }),
+    );
+    if (!Array.isArray(dto)) throw new Error('Histórico em formato inesperado.');
+    return dto.flatMap((row): TvHistoryItem[] => {
+      const item = row as Record<string, unknown> | null;
+      if (!item || typeof item['id'] !== 'string' || typeof item['userId'] !== 'string') return [];
+      if (typeof item['command'] !== 'string' || typeof item['occurredAt'] !== 'string') return [];
+      return [
+        {
+          id: item['id'],
+          userId: item['userId'],
+          command: item['command'],
+          detail: typeof item['detail'] === 'string' ? item['detail'] : null,
+          ok: item['ok'] === true,
+          errorCode: typeof item['errorCode'] === 'string' ? item['errorCode'] : null,
+          occurredAt: item['occurredAt'],
+        },
+      ];
+    });
+  }
+
+  /** As TVs que cada conta pedida vê hoje (só o administrador). Até 50 contas por pedido. */
+  async tvAccess(userIds: readonly string[]): Promise<TvAccessPerson[]> {
+    if (userIds.length === 0) return [];
+    const dto = await firstValueFrom(
+      this.http.get<{ items?: unknown }>(`${BASE}/tvs/access`, {
+        params: { userId: [...userIds] },
+      }),
+    );
+    if (!Array.isArray(dto?.items)) throw new Error('Acessos às TVs em formato inesperado.');
+    return dto.items.flatMap((row): TvAccessPerson[] => {
+      const item = row as Record<string, unknown> | null;
+      if (!item || typeof item['userId'] !== 'string' || !Array.isArray(item['tvIds'])) return [];
+      return [
+        {
+          userId: item['userId'],
+          tvIds: item['tvIds'].filter((id): id is string => typeof id === 'string'),
+        },
+      ];
+    });
   }
 
   /** As últimas limpezas da TV, da mais nova para a mais antiga. */
