@@ -121,6 +121,11 @@ class Settings(BaseSettings):
     # Auto-diagnóstico periódico com reparo seguro e envio das ocorrências à API. Desligue só para
     # depurar.
     self_care: bool = True
+    # TV Livre (launcher próprio da TV Android): sempre opt-in por comando do dono; esta chave só
+    # decide se o agente oferece o módulo. O APK vem da publicação, conferido pelo hash e pela
+    # assinatura Android v2/v3 fixada no agente.
+    tv_livre: bool = True
+    tv_livre_apk_url: str = "https://github.com/n33miaz/uniover/releases/latest/download"
     # Limpeza da TV: pacotes que nunca são fechados, além dos protegidos de fábrica. Na variável de
     # ambiente, separados por vírgula; no arquivo, uma lista TOML ou o mesmo texto. Sem `NoDecode` o
     # pydantic-settings exigiria JSON na variável.

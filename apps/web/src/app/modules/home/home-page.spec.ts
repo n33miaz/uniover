@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { modulePrefsStorageKey } from '../../core/modules/module-prefs';
 import { ModuleRegistry } from '../../core/modules/module-registry';
+import { TV_LIVRE_ENTRY } from '../../core/modules/tv-livre-entry.port';
 import { SessionState } from '../../core/session/session-state';
 import { HomeStatus, HomeStatusPort } from '../../core/status/home-status.port';
 import { ClockService } from '../../core/time/clock.service';
@@ -52,6 +53,9 @@ describe('HomePage', () => {
   const loading = signal(false);
   const release = vi.fn();
   const watch = vi.fn(() => release);
+  /** A porta do TV Livre: o módulo da TV diz se a TV atual declara a capacidade, a Início só pergunta. */
+  const livreAvailable = signal(false);
+  const livreRefresh = vi.fn();
   /** A escolha da Início é guardada por conta: a do dono que usa a tela nestes testes. */
   const ACCOUNT = 'conta-dono';
   const KEY = modulePrefsStorageKey(ACCOUNT);
@@ -73,10 +77,16 @@ describe('HomePage', () => {
     loading.set(false);
     release.mockClear();
     watch.mockClear();
+    livreAvailable.set(false);
+    livreRefresh.mockClear();
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
         { provide: HomeStatusPort, useValue: { status, loading, watch } },
+        {
+          provide: TV_LIVRE_ENTRY,
+          useValue: { available: livreAvailable.asReadonly(), refresh: livreRefresh },
+        },
       ],
     });
     TestBed.inject(ClockService).now.set(new Date('2026-10-18T09:30:00'));
@@ -158,6 +168,79 @@ describe('HomePage', () => {
     const { el } = await render();
     expect(titles(el)).toEqual(['TV', 'Treino', ...PLANNED]);
     expect(el.querySelectorAll('li.widget.wide')).toHaveLength(0);
+  });
+
+  describe('TV Livre card', () => {
+    it('is not there when the current TV does not declare the capability', async () => {
+      const { el } = await render();
+      expect(el.querySelector('article[data-module="tv-livre"]')).toBeNull();
+      expect(titles(el)).not.toContain('TV Livre');
+    });
+
+    it('shows up for the owner, right after Treino, and opens /tv/livre', async () => {
+      livreAvailable.set(true);
+      const { el } = await render();
+      expect(titles(el)).toEqual(['TV', 'Treino', 'TV Livre', ...PLANNED]);
+      const card = el.querySelector<HTMLElement>('article[data-module="tv-livre"]')!;
+      expect(card.classList.contains('planned')).toBe(false);
+      expect(card.querySelector('app-home-soon-badge')).toBeNull();
+      expect(card.querySelector('app-module-app-icon')).not.toBeNull();
+      const link = card.querySelector<HTMLAnchorElement>('a.card-link')!;
+      expect(link.getAttribute('href')).toBe('/tv/livre');
+      expect(link.getAttribute('aria-label')).toBe('TV Livre: Configurar');
+    });
+
+    it('appears and disappears as the TV in use changes', async () => {
+      const { fixture, el } = await render();
+      expect(el.querySelector('article[data-module="tv-livre"]')).toBeNull();
+      livreAvailable.set(true);
+      fixture.detectChanges();
+      expect(el.querySelector('article[data-module="tv-livre"]')).not.toBeNull();
+      livreAvailable.set(false);
+      fixture.detectChanges();
+      expect(el.querySelector('article[data-module="tv-livre"]')).toBeNull();
+    });
+
+    it('renews the list of TVs when Início opens', async () => {
+      await render();
+      expect(livreRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('never shows for a guest, even when the TV supports it', async () => {
+      livreAvailable.set(true);
+      TestBed.inject(SessionState).setUser({
+        id: ACCOUNT,
+        email: 'convidado@exemplo.com',
+        displayName: 'Convidado',
+        role: 'guest',
+        permissions: ['module:tv', 'module:training'],
+      });
+      const { fixture, el } = await render();
+      expect(titles(el)).not.toContain('TV Livre');
+      el.querySelector<HTMLButtonElement>('button.edit')!.click();
+      await fixture.whenStable();
+      expect(el.querySelector('app-home-edit-sheet [data-id="tv-livre"]')).toBeNull();
+    });
+
+    it('is offered in the edit sheet only when it can show', async () => {
+      const { fixture, el } = await render();
+      el.querySelector<HTMLButtonElement>('button.edit')!.click();
+      await fixture.whenStable();
+      expect(el.querySelector('app-home-edit-sheet [data-id="tv-livre"]')).toBeNull();
+      expect(el.querySelectorAll('app-home-edit-sheet [data-id]')).toHaveLength(8);
+    });
+
+    it('can be turned off in the edit sheet, and then it does not show', async () => {
+      livreAvailable.set(true);
+      storeAll((id) => id !== 'tv-livre');
+      const { fixture, el } = await render();
+      expect(el.querySelector('article[data-module="tv-livre"]')).toBeNull();
+      el.querySelector<HTMLButtonElement>('button.edit')!.click();
+      await fixture.whenStable();
+      const row = el.querySelector('app-home-edit-sheet [data-id="tv-livre"]');
+      expect(row).not.toBeNull();
+      expect(row?.querySelector<HTMLInputElement>('input[role="switch"]')?.checked).toBe(false);
+    });
   });
 
   it('links only the modules that have a screen', async () => {

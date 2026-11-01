@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/tv.livre.photo.v1.schema.json",
+  "title": "tv.livre.photo.v1",
+  "description": "API para agente: um pedaço da foto do fundo (JPEG já reduzido, até 400 KB). O transporte recusa mensagens acima de 64 KB, então a foto vai em até 16 pedaços; o agente junta, confere o sha256 e guarda até o `apply` que cita o `photoId`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "tv.livre.photo.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "photoId",
+        "index",
+        "total",
+        "sha256",
+        "data"
+      ],
+      "properties": {
+        "photoId": {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "sha256 da foto inteira (o mesmo em todos os pedaços)."
+        },
+        "data": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 40960,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+          "description": "base64 do pedaço (até 30 KB de bytes)."
+        }
+      }
+    }
+  }
+}

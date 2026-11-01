@@ -1,0 +1,132 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hint,
+.empty {
+  margin: 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+
+/* Uma linha por app: ícone, nome (uma linha só) e, à direita, subir, descer e o interruptor. */
+.app {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 60px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.icon {
+  --tile: 40px;
+  --tile-radius: 50%;
+}
+
+.name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.moves {
+  display: flex;
+  flex: none;
+}
+
+.move {
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--a-ink2);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.move svg,
+.chevron {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.move:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.move:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: -2px;
+}
+
+@media (hover: hover) {
+  .move:not(:disabled):hover {
+    background: var(--a-elev);
+    color: var(--a-ink);
+  }
+}
+
+.show {
+  display: grid;
+  flex: none;
+  place-items: center;
+  min-width: var(--tap);
+  min-height: var(--tap);
+}
+
+.ui-switch:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+/* "De Fábrica": o título do grupo é um botão que abre e fecha a lista, com o total ao lado. */
+.fold {
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-lg);
+  background: var(--a-surface);
+  box-shadow: var(--shadow-1);
+}
+
+.fold:focus-visible {
+  outline: 3px solid var(--a-accent);
+  outline-offset: 2px;
+}
+
+.fold[aria-expanded='true'] .chevron {
+  rotate: 180deg;
+}
+
+.chevron {
+  flex: none;
+  color: var(--a-ink2);
+  transition: rotate var(--dur-base) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}

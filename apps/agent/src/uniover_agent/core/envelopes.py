@@ -187,6 +187,42 @@ class EnvelopeFactory:
             body["sessionOpenMs"] = max(0, session_open_ms)
         return self._build("tv.cleanup.result.v1", body, correlation_id)
 
+    def tv_livre_state(  # noqa: PLR0913 - os campos do estado, como no contrato
+        self,
+        request_id: str,
+        correlation_id: str,
+        *,
+        supported: bool,
+        sdk: int | None,
+        installed: bool,
+        version: str | None,
+        is_home: bool,
+        factory_launcher: str | None,
+        disabled_packages: Sequence[str],
+        apps: Sequence[tuple[str, bool, bool]],
+    ) -> dict[str, Any]:
+        """`tv.livre.state.v1`: o estado do TV Livre na TV (apps: pacote, de fábrica, desativado)"""
+        body: dict[str, Any] = {
+            "requestId": request_id,
+            "supported": supported,
+            "installed": installed,
+            "isHome": is_home,
+            "apps": [
+                {"package": package, "factory": factory, "disabled": disabled}
+                for package, factory, disabled in apps
+            ],
+            "at": self._utc_now(),
+        }
+        if sdk is not None:
+            body["sdk"] = sdk
+        if version is not None:
+            body["version"] = version
+        if factory_launcher is not None:
+            body["factoryLauncher"] = factory_launcher
+        if disabled_packages:
+            body["disabledPackages"] = list(disabled_packages)
+        return self._build("tv.livre.state.v1", body, correlation_id)
+
     def tv_watchdog(
         self, kind: str, severity: str, detail: str, attempts: int, at: str | None = None
     ) -> dict[str, Any]:

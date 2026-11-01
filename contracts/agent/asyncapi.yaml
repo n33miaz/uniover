@@ -80,6 +80,16 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.cleanup.config.v1.schema.json'
+      tvLivre:
+        name: tv.livre.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.livre.v1.schema.json'
+      tvLivrePhoto:
+        name: tv.livre.photo.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.livre.photo.v1.schema.json'
       agentLogsRequest:
         name: agent.logs.request.v1
         contentType: application/json
@@ -146,6 +156,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/tv.cleanup.result.v1.schema.json'
+      tvLivreState:
+        name: tv.livre.state.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/tv.livre.state.v1.schema.json'
       agentLogs:
         name: agent.logs.v1
         contentType: application/json
@@ -303,6 +318,27 @@ operations:
     summary: A API recebe o que a limpeza da TV fez (apps fechados e memória antes e depois).
     messages:
       - $ref: '#/channels/agentEvents/messages/tvCleanupResult'
+  sendTvLivre:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API pede ao agente um passo do TV Livre (instalar, definir como padrão, aplicar a configuração, voltar ao original).
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvLivre'
+  sendTvLivrePhoto:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API envia ao agente, em pedaços, a foto do fundo do TV Livre.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/tvLivrePhoto'
+  receiveTvLivreState:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe o estado do TV Livre na TV depois de cada ação.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/tvLivreState'
   sendAgentLogsRequest:
     action: send
     channel:

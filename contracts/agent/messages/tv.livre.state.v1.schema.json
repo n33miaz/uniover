@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/tv.livre.state.v1.schema.json",
+  "title": "tv.livre.state.v1",
+  "description": "Agente para API: o estado do TV Livre na TV, enviado depois de cada ação (antes do command.result.v1). correlationId é o id do comando.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "tv.livre.state.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "supported",
+        "installed",
+        "isHome",
+        "apps",
+        "at"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "../envelope.schema.json#/$defs/uuid",
+          "description": "Gerado pela API; o agente o repete no tv.livre.state.v1 (a API não conhece o id do envelope que ela mesma monta)."
+        },
+        "supported": {
+          "type": "boolean",
+          "description": "A TV é Android TV ou Google TV com Android 9 ou mais. Falso: o módulo some da tela."
+        },
+        "sdk": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99
+        },
+        "installed": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "versionName do launcher instalado."
+        },
+        "isHome": {
+          "type": "boolean",
+          "description": "O launcher é a tela inicial padrão agora."
+        },
+        "factoryLauncher": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 300,
+          "description": "Componente do launcher de fábrica guardado (pacote/atividade)."
+        },
+        "disabledPackages": {
+          "type": "array",
+          "maxItems": 300,
+          "items": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*([.][A-Za-z][A-Za-z0-9_]*)+$"
+          },
+          "description": "Pacotes que o agente desativou (e que o Voltar ao Original reativa)."
+        },
+        "apps": {
+          "type": "array",
+          "maxItems": 300,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "package",
+              "factory",
+              "disabled"
+            ],
+            "properties": {
+              "package": {
+                "type": "string",
+                "maxLength": 255,
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*([.][A-Za-z][A-Za-z0-9_]*)+$"
+              },
+              "factory": {
+                "type": "boolean",
+                "description": "App de sistema que nunca foi atualizado."
+              },
+              "disabled": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "at": {
+          "$ref": "../envelope.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  }
+}

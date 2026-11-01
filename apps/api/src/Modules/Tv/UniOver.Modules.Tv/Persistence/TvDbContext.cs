@@ -32,6 +32,8 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
 
     public DbSet<CleanupReportEntry> CleanupReports => Set<CleanupReportEntry>();
 
+    public DbSet<TvLivreEntry> TvLivre => Set<TvLivreEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -175,6 +177,18 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
             e.Property(x => x.BackgroundProcesses);
             e.Property(x => x.SessionOpenMs);
             e.HasIndex(x => new { x.TvId, x.StartedAt });
+        });
+
+        modelBuilder.Entity<TvLivreEntry>(e =>
+        {
+            e.ToTable("tv_livre");
+            e.HasKey(x => x.TvId);
+            e.Property(x => x.TvId).ValueGeneratedNever();
+            e.Property(x => x.ConfigJson).HasColumnType("jsonb");
+            e.Property(x => x.PhotoData).HasColumnType("bytea");
+            e.Property(x => x.PhotoSha256).HasMaxLength(TvLivreEntry.PhotoSha256Length);
+            e.Property(x => x.Revision).HasDefaultValue(0);
+            e.Property(x => x.StateJson).HasColumnType("jsonb");
         });
 
         modelBuilder.AddOutbox().AddDeadLetters();

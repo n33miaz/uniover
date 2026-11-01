@@ -67,6 +67,8 @@ from uniover_agent.adapters.tv_discovery import (
     find_tvs,
     tcp_probe,
 )
+from uniover_agent.adapters.tv_livre_apk import ReleaseApkSource
+from uniover_agent.adapters.tv_livre_signer import ApkSignerVerifier
 from uniover_agent.adapters.tv_locate import (
     build_liveness,
     build_locator,
@@ -170,6 +172,16 @@ from uniover_agent.core import (
 from uniover_agent.core.diagnostics import DIAGNOSTICS_CAPABILITY, DiagnosticsShipper
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
+from uniover_agent.core.tv.livre import (
+    CAPABILITY as LIVRE_CAPABILITY,
+)
+from uniover_agent.core.tv.livre import (
+    LivreStateFile,
+    PhotoStaging,
+    TvLivre,
+    tv_livre_handler,
+    tv_livre_photo_handler,
+)
 from uniover_agent.ports import (
     AdbUnauthorized,
     Clock,
@@ -665,7 +677,9 @@ def compose_light_settings(
     return closer, light_settings
 
 
-def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> AdbTv | None:
+def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
+    setup: TvSetup, settings: Settings, host: str, clock: Clock
+) -> AdbTv | None:
     """Liga o canal ADB: lista de apps, abertura por pacote e digitação pelo `input text`.
 
     Sem o `adb` neste PC nada é registrado e a TV segue só com o controle remoto. O canal entra na
@@ -781,7 +795,43 @@ def compose_adb(setup: TvSetup, settings: Settings, host: str, clock: Clock) -> 
         )
 
     setup.prepare.append(declare_when_usable)
+    compose_livre(setup, settings, adb, host, clock)
     return adb
+
+
+def compose_livre(setup: TvSetup, settings: Settings, adb: AdbTv, host: str, clock: Clock) -> None:
+    """Liga o TV Livre: só reage a comandos do dono, um passo por vez e sempre reversível.
+
+    A instalação leva vários segundos (baixa o APK e copia para a TV): roda fora do laço de
+    mensagens, como a limpeza. O pedaço de foto é rápido e fica no laço.
+    """
+    if not settings.tv_livre:
+        return
+    base = installation_base()
+    safe_host = re.sub(r"[^A-Za-z0-9.-]", "_", host)
+    photos = PhotoStaging(clock)
+    livre = TvLivre(
+        adb,
+        ReleaseApkSource(
+            settings.tv_livre_apk_url,
+            base / "tv-livre-apk",
+            # O hash não autentica o APK: a assinatura v2/v3, conferida localmente, sim.
+            verifier=ApkSignerVerifier(),
+        ),
+        LivreStateFile(base / f"tv-livre-{safe_host}.json"),
+        photos,
+        clock,
+    )
+    setup.handlers["tv.livre.v1"] = tv_livre_handler(livre, setup.transport, setup.envelopes)
+    setup.handlers["tv.livre.photo.v1"] = tv_livre_photo_handler(photos)
+    setup.background_commands.add("tv.livre.v1")
+
+    async def declare_when_usable() -> None:
+        # Depois da declaração do ADB (hook anterior): sem ADB utilizável não há módulo.
+        if "tv.adb" in setup.capabilities:
+            setup.capabilities.append(LIVRE_CAPABILITY)
+
+    setup.prepare.append(declare_when_usable)
 
 
 def compose_watchdog(

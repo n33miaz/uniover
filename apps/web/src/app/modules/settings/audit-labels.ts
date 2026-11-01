@@ -116,6 +116,20 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.tv-shortcut-update:Atalho editado`;
     case 'tv.config.bind':
       return $localize`:@@settings.audit.action.tv-config-bind:Computador da TV trocado`;
+    case 'tv.livre.refresh':
+      return $localize`:@@settings.audit.action.tv-livre-refresh:Estado do TV Livre lido`;
+    case 'tv.livre.install':
+      return $localize`:@@settings.audit.action.tv-livre-install:TV Livre instalado`;
+    case 'tv.livre.apply':
+      return $localize`:@@settings.audit.action.tv-livre-apply:TV Livre configurado`;
+    case 'tv.livre.set-home':
+      return $localize`:@@settings.audit.action.tv-livre-set-home:TV Livre definido como padrão`;
+    case 'tv.livre.restore':
+      return $localize`:@@settings.audit.action.tv-livre-restore:TV devolvida ao original`;
+    case 'tv.livre.set-apps':
+      return $localize`:@@settings.audit.action.tv-livre-set-apps:Apps da TV desativados ou reativados`;
+    case 'tv.livre.sleep':
+      return $localize`:@@settings.audit.action.tv-livre-sleep:Modo Dormir ativado`;
     default:
       return null;
   }

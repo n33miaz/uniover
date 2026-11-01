@@ -103,6 +103,20 @@ internal static class TvPermissionMap
         new("PUT", "/api/v1/tv/tvs/{id:guid}/members", "tv.bind-agent", new { userIds = new[] { Guid.NewGuid() } }),
         new("POST", "/api/v1/tv/layout", Body: LayoutBody),
         new("PUT", "/api/v1/tv/layout", Body: LayoutBody),
+
+        // TV Livre: o launcher próprio da TV é só do dono (nem o convidado com todas as permissões da TV o alcança).
+        new("GET", "/api/v1/tv/livre"),
+        new("POST", "/api/v1/tv/livre/refresh"),
+        new("PUT", "/api/v1/tv/livre/config", Body: new { }),
+        new("PUT", "/api/v1/tv/livre/photo"),
+        new("GET", "/api/v1/tv/livre/photo"),
+        new("DELETE", "/api/v1/tv/livre/photo"),
+        new("POST", "/api/v1/tv/livre/apply"),
+        new("POST", "/api/v1/tv/livre/install"),
+        new("POST", "/api/v1/tv/livre/set-home", Body: new { disableFactory = false }),
+        new("POST", "/api/v1/tv/livre/restore", Body: new { uninstall = true }),
+        new("POST", "/api/v1/tv/livre/sleep"),
+        new("POST", "/api/v1/tv/livre/apps/visibility", Body: new { disable = new[] { "com.exemplo.app" } }),
     ];
 
     /// <summary>A chamada chegou à rota: a autorização deixou passar (o que veio depois é assunto do tratamento dela).</summary>

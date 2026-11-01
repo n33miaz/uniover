@@ -1,0 +1,141 @@
+@if (store.view()?.supported !== false) {
+  <section
+    class="status ui-group"
+    aria-label="Estado"
+    i18n-aria-label="@@tv-livre.install.state-label"
+  >
+    <div class="ui-row">
+      <span class="ui-row-text">
+        <span class="ui-row-title" i18n="@@tv-livre.install.installed">Instalado</span>
+        @if (installed() && version(); as v) {
+          <span class="ui-row-sub" i18n="@@tv-livre.install.version">Versão {{ v }}</span>
+        }
+      </span>
+      @if (installed()) {
+        <span class="ui-chip ok" i18n="@@tv-livre.install.yes">Sim</span>
+      } @else {
+        <span class="ui-chip" i18n="@@tv-livre.install.no">Não</span>
+      }
+    </div>
+    <div class="ui-row">
+      <span class="ui-row-text">
+        <span class="ui-row-title" i18n="@@tv-livre.install.is-home">Tela Inicial da TV</span>
+      </span>
+      @if (isHome()) {
+        <span class="ui-chip ok" i18n="@@tv-livre.install.yes">Sim</span>
+      } @else {
+        <span class="ui-chip" i18n="@@tv-livre.install.no">Não</span>
+      }
+    </div>
+  </section>
+
+  <div class="refresh">
+    @if (stateTime(); as time) {
+      <span class="hint" i18n="@@tv-livre.install.state-time">Estado das {{ time }}</span>
+    }
+    <button
+      type="button"
+      class="ui-btn secondary"
+      [disabled]="!idle()"
+      [attr.aria-busy]="store.busy() === 'refresh'"
+      (click)="store.refresh()"
+    >
+      @if (store.busy() === 'refresh') {
+        <span class="ui-spinner" aria-hidden="true"></span>
+      }
+      <span i18n="@@tv-livre.install.refresh">Atualizar</span>
+    </button>
+  </div>
+
+  <ol class="steps ui-plain">
+    <li class="step">
+      <span class="num" aria-hidden="true">1</span>
+      <div class="step-body">
+        <button
+          type="button"
+          class="ui-btn block"
+          [class.primary]="!installed()"
+          [class.secondary]="installed()"
+          [disabled]="!idle()"
+          [attr.aria-busy]="store.busy() === 'install'"
+          (click)="store.install()"
+        >
+          @if (store.busy() === 'install') {
+            <span class="ui-spinner" aria-hidden="true"></span>
+          }
+          <span i18n="@@tv-livre.install.install">Instalar</span>
+        </button>
+      </div>
+    </li>
+
+    <li class="step">
+      <span class="num" aria-hidden="true">2</span>
+      <div class="step-body">
+        <button
+          type="button"
+          class="ui-btn block"
+          [class.primary]="installed() && !isHome()"
+          [class.secondary]="!installed() || isHome()"
+          [disabled]="!canSetHome()"
+          [attr.aria-busy]="store.busy() === 'set-home'"
+          (click)="setHome()"
+        >
+          @if (store.busy() === 'set-home') {
+            <span class="ui-spinner" aria-hidden="true"></span>
+          }
+          <span i18n="@@tv-livre.install.set-home">Definir Como Padrão</span>
+        </button>
+        <label class="option">
+          <input
+            type="checkbox"
+            role="switch"
+            class="ui-switch"
+            [checked]="disableFactory()"
+            [disabled]="!canSetHome()"
+            (change)="setDisableFactory($event)"
+          />
+          <span class="option-text">
+            <span class="option-title" i18n="@@tv-livre.install.disable-factory"
+              >Desativar o Launcher de Fábrica</span
+            >
+            <span class="hint" i18n="@@tv-livre.install.disable-factory-hint"
+              >Voltar ao Original o reativa.</span
+            >
+          </span>
+        </label>
+      </div>
+    </li>
+  </ol>
+
+  @if (store.restoreVisible()) {
+    <section class="restore">
+      @if (confirmingRestore()) {
+        <p class="ask" role="alert" i18n="@@tv-livre.install.restore-ask">
+          Voltar à tela de fábrica e desinstalar o TV Livre?
+        </p>
+        <div class="ask-buttons">
+          <button #cancelButton type="button" class="ui-btn secondary" (click)="cancelRestore()">
+            <span i18n="@@tv-livre.install.restore-cancel">Cancelar</span>
+          </button>
+          <button type="button" class="ui-btn danger" [disabled]="!idle()" (click)="restore()">
+            <span i18n="@@tv-livre.install.restore-confirm">Voltar ao Original</span>
+          </button>
+        </div>
+      } @else {
+        <button
+          #restoreButton
+          type="button"
+          class="ui-btn secondary block"
+          [disabled]="!idle()"
+          [attr.aria-busy]="store.busy() === 'restore'"
+          (click)="askRestore()"
+        >
+          @if (store.busy() === 'restore') {
+            <span class="ui-spinner" aria-hidden="true"></span>
+          }
+          <span i18n="@@tv-livre.install.restore">Voltar ao Original</span>
+        </button>
+      }
+    </section>
+  }
+}

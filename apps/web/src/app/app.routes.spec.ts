@@ -59,6 +59,7 @@ describe('app routes', () => {
   it.each([
     ['/', 'app-home-page'],
     ['/tv', 'app-tv-page'],
+    ['/tv/livre', 'app-livre-page'],
     ['/treino', 'app-training-page'],
     ['/ajustes', 'app-settings-page'],
     ['/ajustes/perfil', 'app-profile-page'],
@@ -72,6 +73,20 @@ describe('app routes', () => {
     const root = harness.routeNativeElement as HTMLElement;
     expect(root.matches('app-shell')).toBe(true);
     expect(root.querySelector(selector)).not.toBeNull();
+  });
+
+  it('gives the TV Livre the standard top bar once, with the way back to the control of the TV', async () => {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/tv/livre');
+    const root = harness.routeNativeElement as HTMLElement;
+    expect(root.querySelectorAll('app-page-top-bar')).toHaveLength(1);
+    expect(root.querySelector('app-page-top-bar h1')?.textContent).toBe('TV Livre');
+    expect(root.querySelector('app-page-top-bar .back')?.getAttribute('aria-label')).toBe(
+      'Voltar ao Controle',
+    );
+    root.querySelector<HTMLButtonElement>('app-page-top-bar .back')!.click();
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/tv');
   });
 
   it('serves the sign-in page outside the shell', async () => {
@@ -131,6 +146,7 @@ describe('app routes for a guest', () => {
     '/ajustes/sistema',
     '/ajustes/tvs-por-pessoa',
     '/ajustes/tv/0192f1e4-0000-7000-8000-0000000000d1/historico',
+    '/tv/livre',
     '/nada',
   ];
 

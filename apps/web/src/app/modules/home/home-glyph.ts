@@ -24,6 +24,22 @@ const GLYPHS = {
       ['solid', 'M10.4 8.6l4.2 2.4-4.2 2.4z'],
     ],
   },
+  // TV Livre: a tela da TV com o relógio em cima e a fileira de círculos embaixo, o desenho da própria home.
+  launcher: {
+    box: '0 0 24 24',
+    layers: [
+      ['fill', 'M5 4h14a2 2 0 0 1 2 2v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z'],
+      [
+        'line',
+        'M5 4h14a2 2 0 0 1 2 2v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M8.5 20.5h7 M12 17.5v3',
+      ],
+      ['line', 'M9 8h6'],
+      [
+        'solid',
+        'M8 12.8m-1.1 0a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0-2.2 0 M12 12.8m-1.1 0a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0-2.2 0 M16 12.8m-1.1 0a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0-2.2 0',
+      ],
+    ],
+  },
   dumbbell: {
     box: '0 0 24 24',
     layers: [
@@ -223,6 +239,7 @@ export type HomeGlyphName = keyof typeof GLYPHS;
 const MODULE_GLYPHS: Record<ModuleIconName, HomeGlyphName> = {
   tv: 'tv',
   activity: 'dumbbell',
+  launcher: 'launcher',
   health: 'health',
   monitor: 'monitor',
   network: 'network',

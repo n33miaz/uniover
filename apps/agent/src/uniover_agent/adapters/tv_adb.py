@@ -61,6 +61,7 @@ from uniover_agent.ports import (
     AdbUnreachable,
     LaunchableApp,
 )
+from uniover_agent.ports.tv_livre import ShellResult
 
 _log = logging.getLogger(__name__)
 
@@ -533,6 +534,33 @@ class AdbTv:
         # O código de saída 0 não garante o arquivo: confere que ele existe e não está vazio.
         if await asyncio.to_thread(_is_empty_or_missing, local_path):
             raise AdbCommandFailed("a TV não entregou o arquivo")
+
+    # --- TV Livre -----------------------------------------------------------------------------
+    # O núcleo monta comandos fixos e validados (`core/tv/livre.py`); aqui só se executa, na mesma
+    # trava dos demais comandos.
+
+    async def shell(self, command: str) -> ShellResult:
+        async with self._lock:
+            await self._ensure_connected_locked()
+            output = await self._shell(command)
+        return ShellResult(output.returncode == 0, output.text)
+
+    async def push(self, local: Path, remote: str) -> None:
+        async with self._lock:
+            await self._ensure_connected_locked()
+            output = await self._exec(
+                "-s", self._serial, "push", str(local), remote, timeout=self._pull_timeout
+            )
+        if output.returncode != 0:
+            raise AdbCommandFailed("a TV não recebeu o arquivo")
+
+    async def install(self, apk: Path) -> ShellResult:
+        async with self._lock:
+            await self._ensure_connected_locked()
+            output = await self._exec(
+                "-s", self._serial, "install", "-r", str(apk), timeout=self._pull_timeout
+            )
+        return ShellResult(output.returncode == 0, output.text)
 
     # --- execução -----------------------------------------------------------------------------
 

@@ -29,6 +29,9 @@ from .tv_discovery_v1 import TvDiscoveryV1Message
 from .tv_key_v1 import TvKeyV1Message
 from .tv_key_v2 import TvKeyV2Message
 from .tv_key_v3 import TvKeyV3Message
+from .tv_livre_photo_v1 import TvLivrePhotoV1Message
+from .tv_livre_state_v1 import TvLivreStateV1Message
+from .tv_livre_v1 import TvLivreV1Message
 from .tv_permission_request_v1 import TvPermissionRequestV1Message
 from .tv_permission_v1 import TvPermissionV1Message
 from .tv_power_off_v1 import TvPowerOffV1Message
@@ -61,6 +64,9 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "tv.key.v1": TvKeyV1Message,
     "tv.key.v2": TvKeyV2Message,
     "tv.key.v3": TvKeyV3Message,
+    "tv.livre.photo.v1": TvLivrePhotoV1Message,
+    "tv.livre.state.v1": TvLivreStateV1Message,
+    "tv.livre.v1": TvLivreV1Message,
     "tv.permission.request.v1": TvPermissionRequestV1Message,
     "tv.permission.v1": TvPermissionV1Message,
     "tv.power.off.v1": TvPowerOffV1Message,

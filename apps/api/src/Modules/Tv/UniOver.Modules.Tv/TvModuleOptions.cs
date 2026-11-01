@@ -28,6 +28,14 @@ public sealed class TvModuleOptions
     /// </summary>
     public int PowerOffTimeoutSeconds { get; set; } = 25;
 
+    /// <summary>
+    /// Tempo que a API espera um passo do TV Livre. Instalar, definir como padrão e voltar ao original levam dezenas de
+    /// segundos (baixar e conferir o APK, instalar, verificar a home nova, reativar apps); aplicar e mudar a visibilidade de
+    /// apps também gravam no aparelho pelo ADB. Maior que o da limpeza: o agente roda esses passos fora do laço de
+    /// mensagens e responde só no fim.
+    /// </summary>
+    public int LivreTimeoutSeconds { get; set; } = 90;
+
     /// <summary>Espera antes de gravar uma mudança de estado, para juntar oscilações rápidas numa escrita só.</summary>
     public int StateDebounceSeconds { get; set; } = 2;
 
@@ -38,6 +46,8 @@ public sealed class TvModuleOptions
     public TimeSpan PowerOffTimeout => TimeSpan.FromSeconds(PowerOffTimeoutSeconds);
 
     public TimeSpan CleanupTimeout => TimeSpan.FromSeconds(CleanupTimeoutSeconds);
+
+    public TimeSpan LivreTimeout => TimeSpan.FromSeconds(LivreTimeoutSeconds);
 
     public TimeSpan HibernatingTimeout => TimeSpan.FromSeconds(HibernatingTimeoutSeconds);
 
@@ -51,6 +61,7 @@ public sealed class TvModuleOptions
             && options.HibernatingTimeoutSeconds > 0
             && options.CleanupTimeoutSeconds > 0
             && options.PowerOffTimeoutSeconds > 0
+            && options.LivreTimeoutSeconds > 0
             && options.StateDebounceSeconds >= 0
             && options.Sse.IsValid();
     }

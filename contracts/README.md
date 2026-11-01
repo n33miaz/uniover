@@ -41,6 +41,24 @@ existe, a API não envia o batimento novo para preservar a compatibilidade duran
 | `tv.discover.v1` | API para agente | `requestId` (UUID gerado pela API): procura as TVs compatíveis na rede local do computador (só leitura de identificação). Responde com `tv.discovery.v1` e depois `command.result.v1`. A API só a usa quando o agente declara a capacidade `tv.discovery.v1`. |
 | `tv.discovery.v1` | agente para API | `requestId` (o do pedido), `tvs` (até 50 de `{ id, kind, name | null, controlled }`; `id` é opaco e estável, nunca o IP nem o MAC, e `controlled` diz se é a TV que o agente já controla) e `at`. Sai antes do `command.result.v1` do mesmo comando (`correlationId` = id do comando). |
 
+## TV Livre
+
+Módulo opcional da Android TV e do Google TV (o launcher de `apps/tv-launcher`). O agente anuncia a capacidade
+`tv.livre.v1`; sem ela (TV Samsung, ou agente antigo) a API não oferece o módulo e não manda nada destas mensagens.
+Cada passo é um comando isolado, reversível e pedido pelo dono; nada roda sozinho.
+
+| `type` | Direção | Corpo |
+|---|---|---|
+| `tv.livre.v1` | API para agente | `requestId` (UUID gerado pela API) e `action`: `status` (só lê), `install` (captura e ensaia o launcher de fábrica, baixa o APK, confere o hash e a assinatura contra o certificado fixado no agente e instala, conferindo que o app abriu; não o define como padrão), `set-home` (define como padrão e verifica; `disableFactory` opcional desativa o de fábrica depois da verificação), `restore` (Voltar ao Original: reabilita, define o original, verifica e só então desinstala; `uninstall` padrão sim), `apply` (grava a configuração: `configJson`, `revision` e `photoId` opcional), `set-apps` (`disable` e `enable`, `pm disable-user`, reversível, com lista de proteção) e `sleep` (Modo Dormir). |
+| `tv.livre.photo.v1` | API para agente | Um pedaço da foto do fundo: `photoId`, `index` e `total` (até 16), `sha256` da foto inteira e `data` (base64, até 30 KB de bytes). O transporte recusa mensagem acima de 64 KB, por isso a foto vai em pedaços; o agente junta, confere tamanho, JPEG e hash e guarda até o `apply` que cita o `photoId`. |
+| `tv.livre.state.v1` | agente para API | O estado depois de cada ação, **antes** do `command.result.v1` do mesmo comando (como o relatório da limpeza): `requestId` (o do pedido), `supported` (Android 9 ou mais com leanback), `installed`, `version`, `isHome`, `factoryLauncher`, `disabledPackages` e `apps` (`package`, `factory`, `disabled`). |
+
+O agente guarda em disco, antes de cada passo que muda a TV, o launcher de fábrica e o que ele desativou, para o
+Voltar ao Original sobreviver a uma queda. Falhas voltam em `command.result.v1` com `error.code` estável
+(`unsupported`, `not_installed`, `invalid_config`, `verify_failed`, `protected_package`, `launcher_not_running`, `apk_hash_mismatch`, `apk_signer_mismatch`, `signer_not_pinned` e os
+`adb_*`). O corpo de `configJson` segue `tv-launcher/config.v1.schema.json` (sem `schema`, `revision` nem o nome da foto,
+que o agente acrescenta depois de conferir tudo: campo desconhecido recusa o pedido inteiro).
+
 ## Manutenção remota
 
 Só o administrador, e só por agente: ver o registro e pedir ao agente que se atualize ou reinicie. As capacidades
