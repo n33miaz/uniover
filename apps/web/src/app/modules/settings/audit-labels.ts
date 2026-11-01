@@ -97,7 +97,7 @@ export function knownActionLabel(code: string): string | null {
     case 'tv.app.launch':
       return $localize`:@@settings.audit.action.tv-app-launch:App aberto na TV`;
     case 'tv.wake':
-      return $localize`:@@settings.audit.action.tv-wake:TV ligada`;
+      return $localize`:@@settings.audit.action.tv-wake:Conexão Preparada`;
     case 'tv.power-off':
       return $localize`:@@settings.audit.action.tv-power-off:TV desligada`;
     case 'tv.cleanup':
